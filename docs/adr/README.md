@@ -15,6 +15,8 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0004](0004-electron-vite-for-build-tooling.md) | Use electron-vite for build tooling | accepted |
 | [0005](0005-tailwind-and-shadcn-ui-for-styling.md) | Use Tailwind CSS and shadcn/ui for renderer styling | accepted |
 | [0006](0006-pnpm-single-package-repo-layout.md) | Use pnpm with a single-package repo layout | accepted |
+| [0007](0007-one-utility-process-per-pane.md) | Run one utilityProcess per pane for concurrent independent agent sessions | accepted |
+| [0008](0008-local-file-persistence-for-session-and-layout-state.md) | Use local file-based persistence for pane layout and session state | accepted |
 
 ## Adding a new ADR
 
