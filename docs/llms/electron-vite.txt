@@ -1,0 +1,29 @@
+# electron-vite
+
+> electron-vite is the build tool this project uses for its Electron app (see docs/adr/0004-electron-vite-for-build-tooling.md). This index follows the llms.txt convention (https://llmstxt.org/#proposal) to point Claude at the official guide when working on build config, dev/HMR, packaging, or migration issues.
+
+## Guide
+
+- [Getting Started](https://electron-vite.org/guide/): overview, installation, and project scaffolding
+- [CLI](https://electron-vite.org/guide/cli): command-line usage (`electron-vite dev`, `build`, `preview`)
+- [Development](https://electron-vite.org/guide/dev): dev server behavior for main, preload, and renderer processes
+- [Asset Handling](https://electron-vite.org/guide/assets): importing static assets, public dir, and asset URL resolution
+- [HMR and Hot Reloading](https://electron-vite.org/guide/hmr-and-hot-reloading): hot module replacement for renderer and main/preload reload behavior
+- [TypeScript](https://electron-vite.org/guide/typescript): TypeScript setup across main, preload, and renderer
+- [Building for Production](https://electron-vite.org/guide/build): production build output and configuration
+- [Dependency Handling](https://electron-vite.org/guide/dependency-handling): externalizing and bundling npm dependencies for main/preload
+- [Isolated Build](https://electron-vite.org/guide/isolated-build): building main, preload, and renderer independently
+- [Source Code Protection](https://electron-vite.org/guide/source-code-protection): bytecode/obfuscation options for shipped code
+- [Distribution](https://electron-vite.org/guide/distribution): packaging and distributing the built app
+- [Env Variables and Modes](https://electron-vite.org/guide/env-and-mode): `.env` files and mode-based config
+- [Debugging](https://electron-vite.org/guide/debugging): debugging main, preload, and renderer processes
+- [Troubleshooting](https://electron-vite.org/guide/troubleshooting): common errors and fixes
+- [Migration from v4](https://electron-vite.org/guide/migration): upgrading from electron-vite v4
+
+## Config
+
+- [Config Reference](https://electron-vite.org/config/): `electron.vite.config.ts` options for main, preload, and renderer
+
+## API
+
+- [API Reference](https://electron-vite.org/api/): programmatic `build`/`createServer`/`preview` API

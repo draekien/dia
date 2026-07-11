@@ -9,3 +9,7 @@ All significant architecture and tech-stack decisions are recorded as ADRs in `d
 See `docs/adr/README.md` for the index of current decisions.
 
 When a new significant architecture decision is made during a session, write it up as a new ADR using `docs/adr/template.md`, following the numbering convention (`NNNN-short-title.md`), and add it to the index in `docs/adr/README.md`.
+
+## Reference docs
+
+- `docs/llms/electron-vite.txt` — an [llms.txt](https://llmstxt.org/#proposal) index of the electron-vite guide (build tool chosen in ADR-0004). Consult it before making electron-vite config, dev/HMR, build, or packaging changes.
