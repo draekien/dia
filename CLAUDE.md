@@ -13,3 +13,4 @@ When a new significant architecture decision is made during a session, write it 
 ## Reference docs
 
 - `docs/llms/electron-vite.txt` — an [llms.txt](https://llmstxt.org/#proposal) index of the electron-vite guide (build tool chosen in ADR-0004). Consult it before making electron-vite config, dev/HMR, build, or packaging changes.
+- `docs/llms/agent-sdk.txt` — an [llms.txt](https://llmstxt.org/#proposal) index of the Claude Agent SDK docs (the SDK dia uses to drive Claude, per ADR-0003). Consult it before making changes involving sessions, permissions, hooks, MCP, subagents, or the Agent SDK's TypeScript API.
