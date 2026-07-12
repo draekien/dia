@@ -7,7 +7,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prepare": "./scripts/prepare-effect.sh && lefthook install",
+    "prepare:effect": "./scripts/prepare-effect.sh",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
@@ -26,6 +26,7 @@
     "@vitejs/plugin-react": "6.0.3",
     "electron": "43.1.0",
     "electron-vite": "5.0.0",
+    "lefthook": "2.1.10",
     "tailwindcss": "4.3.2",
     "typescript": "7.0.2",
     "vite": "8.1.4",
