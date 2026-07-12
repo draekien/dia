@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { assert, describe, it } from '@effect/vitest'
-import { Effect, Layer, Logger, Option } from 'effect'
+import { Effect, Layer, Logger, Option, TestClock } from 'effect'
 import type { PaneConfig } from '../domain/pane'
 import type { IpcEvent } from '../ipc/contract'
 import { GitOpsService } from './git-ops-service'
@@ -177,6 +177,38 @@ describe('PaneSupervisor', () => {
 
         assert.isTrue(processes[0].posted.length > 0)
         assert.isFalse(capturedLogs.some((log) => log instanceof ProcessCrashedError))
+      }).pipe(Effect.scoped, Effect.provide(testLayer), Effect.provide(loggerLayer))
+    })
+  )
+
+  it.effect('auto-settles Completed back to Idle after 3 seconds', () =>
+    Effect.gen(function* () {
+      const { processes, testLayer, loggerLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        const events: IpcEvent[] = []
+
+        yield* supervisor.openPane(requestA, (event) => Effect.sync(() => events.push(event)))
+        yield* flush
+
+        processes[0].emit('message', { _tag: 'TurnCompleted' })
+        yield* flush
+
+        assert.isTrue(
+          events.some(
+            (event) => event._tag === 'PaneAttentionChanged' && event.attention._tag === 'Completed'
+          )
+        )
+
+        yield* TestClock.adjust('3 seconds')
+        yield* flush
+
+        assert.isTrue(
+          events.some(
+            (event) => event._tag === 'PaneAttentionChanged' && event.attention._tag === 'Idle'
+          )
+        )
       }).pipe(Effect.scoped, Effect.provide(testLayer), Effect.provide(loggerLayer))
     })
   )

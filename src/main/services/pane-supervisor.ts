@@ -215,6 +215,10 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
 
       if (result.right._tag === 'Completed') {
         const fiber = yield* Effect.sleep(Duration.seconds(3)).pipe(
+          // Clear settleFiberRef before recursing into applyAttention(Idle) -- otherwise this
+          // fiber reads its own reference back out of the Ref and interrupts itself mid-flight,
+          // aborting before it can ever apply the Idle transition (see reasoning log).
+          Effect.andThen(Ref.set(settleFiberRef, Option.none())),
           Effect.andThen(applyAttention({ _tag: 'Idle' })),
           Effect.fork
         )
