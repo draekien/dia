@@ -24,3 +24,9 @@ When you hit a genuinely non-obvious finding during a session — something that
 ## Design Context
 
 `PRODUCT.md` and `DESIGN.md` at the repo root carry dia's design system — read before any UI/UX work. Register: **product** (design serves the tool, a single-user pane workspace). North star: **"The Control Room"** — calm, glanceable status across up to six concurrent panes, with amber/red/green pulse indicators as the app's one deliberate loud signal. Key principles: glanceability over detail, one voice for attention (pulse only), calm density, native-not-decorative craft, fast under real use. `DESIGN.md` is currently a seed (no code yet); re-run `/impeccable document` once components exist to capture real tokens.
+
+## Coding
+
+- Make sure to set up logs for code you write using Effect's logger methods so its easy to trace and debug issues.
+- Use /module-design skill when creating new services
+- Use /with-testing-principals skill when writing or updating tests
