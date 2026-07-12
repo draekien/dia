@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import { AttentionState } from './attention'
 
 export const ConversationMessage = Schema.Struct({
   role: Schema.Literal('user', 'assistant'),
@@ -23,6 +24,7 @@ export type PaneConfig = typeof PaneConfig.Type
 
 export const PaneRecord = Schema.Struct({
   config: PaneConfig,
-  history: Schema.Array(ConversationMessage)
+  history: Schema.Array(ConversationMessage),
+  attention: AttentionState
 })
 export type PaneRecord = typeof PaneRecord.Type

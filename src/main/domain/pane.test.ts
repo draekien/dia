@@ -57,7 +57,8 @@ describe('PaneRecord', () => {
       history: [
         { role: 'user', content: 'hello' },
         { role: 'assistant', content: 'hi there' }
-      ]
+      ],
+      attention: { _tag: 'Idle' }
     }
 
     const encoded = Schema.encodeSync(PaneRecord)(value)
