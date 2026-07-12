@@ -5,3 +5,4 @@ allowBuilds:
   electron: true
   '@parcel/watcher': true
   msgpackr-extract: true
+  lefthook: true
