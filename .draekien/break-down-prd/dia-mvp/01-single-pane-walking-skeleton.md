@@ -10,14 +10,14 @@
 
 ## Tasks
 
-- [ ] **T1** [AFK] Define `Schema` types for `PaneConfig`, a minimal `PaneRecord` (config + history only), and the IPC message schemas for `SendMessage` / `PaneMessageAppended` (tech spec §3, §4.5) — serves: US-3, US-4 — depends: —
-- [ ] **T2** [AFK] Implement `AgentSession` inside the `utilityProcess`: initializes the Agent SDK query loop with the pane's `cwd`/`model`, sends/receives messages over the process's IPC channel (§4.3) — serves: US-3, US-4 — depends: T1
-- [ ] **T3** [AFK] Implement `PaneSupervisor` for a single pane: spawn the `utilityProcess` via `Effect.acquireRelease`, fork a `Fiber` consuming the process's message stream into a `Ref<PaneRecord>` (§4.2 steps 1–3, single pane only) — serves: US-3 — depends: T1
-- [ ] **T4** [AFK] Implement `IpcGateway` encode/decode for the `SendMessage` command and `PaneMessageAppended` event, wired main ↔ renderer (§4.5) — serves: US-3 — depends: T1
-- [ ] **T5** [AFK] Minimal renderer: single pane view, text input, message list rendered from IPC events — serves: US-3 — depends: T4
-- [ ] **T6** [AFK] Wire `PaneSupervisor`'s consumed stream to `IpcGateway` publish (§4.2 step 4), connecting T2/T3 to T4/T5 — serves: US-3 — depends: T2, T3, T4
-- [ ] **T7** [AFK] Automated test: `PaneConfig`/`PaneRecord` `Schema` encode/decode round-trip — serves: G-1 — depends: T1
-- [ ] **T8** [HIL] Manual verification: launch the app, create one pane against a real project `cwd`, send a message, confirm a real local Claude Code session replies and renders correctly — serves: US-3, US-4 — depends: T5, T6
+- [x] **T1** [AFK] Define `Schema` types for `PaneConfig`, a minimal `PaneRecord` (config + history only), and the IPC message schemas for `SendMessage` / `PaneMessageAppended` (tech spec §3, §4.5) — serves: US-3, US-4 — depends: —
+- [x] **T2** [AFK] Implement `AgentSession` inside the `utilityProcess`: initializes the Agent SDK query loop with the pane's `cwd`/`model`, sends/receives messages over the process's IPC channel (§4.3) — serves: US-3, US-4 — depends: T1
+- [x] **T3** [AFK] Implement `PaneSupervisor` for a single pane: spawn the `utilityProcess` via `Effect.acquireRelease`, fork a `Fiber` consuming the process's message stream into a `Ref<PaneRecord>` (§4.2 steps 1–3, single pane only) — serves: US-3 — depends: T1
+- [x] **T4** [AFK] Implement `IpcGateway` encode/decode for the `SendMessage` command and `PaneMessageAppended` event, wired main ↔ renderer (§4.5) — serves: US-3 — depends: T1
+- [x] **T5** [AFK] Minimal renderer: single pane view, text input, message list rendered from IPC events — serves: US-3 — depends: T4
+- [x] **T6** [AFK] Wire `PaneSupervisor`'s consumed stream to `IpcGateway` publish (§4.2 step 4), connecting T2/T3 to T4/T5 — serves: US-3 — depends: T2, T3, T4
+- [x] **T7** [AFK] Automated test: `PaneConfig`/`PaneRecord` `Schema` encode/decode round-trip — serves: G-1 — depends: T1
+- [x] **T8** [HIL] Manual verification: launch the app, create one pane against a real project `cwd`, send a message, confirm a real local Claude Code session replies and renders correctly — serves: US-3, US-4 — depends: T5, T6
 
 ## Dependency tree
 
