@@ -28,5 +28,6 @@ When you hit a genuinely non-obvious finding during a session — something that
 ## Coding
 
 - Make sure to set up logs for code you write using Effect's logger methods so its easy to trace and debug issues.
+- Use /effect-ts skill when writing effect code
 - Use /module-design skill when creating new services
 - Use /with-testing-principals skill when writing or updating tests

@@ -1,0 +1,153 @@
+import { EventEmitter } from 'node:events'
+import { assert, describe, it } from '@effect/vitest'
+import { Effect, Layer, Logger, Option } from 'effect'
+import type { PaneConfig } from '../domain/pane'
+import type { IpcEvent } from '../ipc/contract'
+import {
+  type PaneProcess,
+  PaneProcessSpawner,
+  PaneSupervisor,
+  PaneSupervisorLive,
+  ProcessCrashedError
+} from './pane-supervisor'
+
+class FakePaneProcess extends EventEmitter implements PaneProcess {
+  readonly pid = 4242
+  readonly posted: unknown[] = []
+
+  postMessage(message: unknown): void {
+    this.posted.push(message)
+  }
+
+  kill(): void {
+    this.emit('exit', 0)
+  }
+}
+
+const configA: PaneConfig = {
+  paneId: 'aaaaaaaa-0000-4000-8000-000000000001',
+  cwd: '/a',
+  model: 'm'
+}
+const configB: PaneConfig = {
+  paneId: 'bbbbbbbb-0000-4000-8000-000000000002',
+  cwd: '/b',
+  model: 'm'
+}
+
+// Runs the fiber-scheduler forward without touching the (virtualized) Clock, so a
+// synchronous EventEmitter.emit has a chance to reach the fiber consuming the exits Stream.
+const flush = Effect.repeatN(Effect.yieldNow(), 50)
+
+function makeTestSetup(): {
+  readonly processes: ReadonlyArray<FakePaneProcess>
+  readonly capturedLogs: ReadonlyArray<unknown>
+  readonly testLayer: Layer.Layer<PaneSupervisor>
+  readonly loggerLayer: Layer.Layer<never>
+} {
+  const processes: FakePaneProcess[] = []
+  const spawnerLayer = Layer.succeed(PaneProcessSpawner, {
+    spawn: () =>
+      Effect.sync(() => {
+        const process = new FakePaneProcess()
+        processes.push(process)
+        return process
+      })
+  })
+
+  const capturedLogs: unknown[] = []
+  const captureLogger = Logger.make(({ message }) => {
+    capturedLogs.push(...(Array.isArray(message) ? message : [message]))
+  })
+
+  const testLayer = Layer.provide(PaneSupervisorLive, spawnerLayer)
+  const loggerLayer = Logger.add(captureLogger)
+
+  return { processes, capturedLogs, testLayer, loggerLayer }
+}
+
+describe('PaneSupervisor', () => {
+  it.effect('removes a pane that crashes unexpectedly, leaving its sibling alive', () =>
+    Effect.gen(function* () {
+      const { processes, capturedLogs, testLayer, loggerLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        const eventsB: IpcEvent[] = []
+
+        yield* supervisor.openPane(configA, () => Effect.void)
+        const handleB = yield* supervisor.openPane(configB, (event) =>
+          Effect.sync(() => eventsB.push(event))
+        )
+
+        // openPane forks the exit listener registration; give it a chance to
+        // actually attach before emitting, since a synchronous EventEmitter.emit
+        // with no listener yet attached is silently dropped, not queued.
+        yield* flush
+
+        // Pane A crashes on its own, not in response to closePane.
+        processes[0].emit('exit', 1)
+        yield* flush
+
+        const afterCrashA = yield* supervisor.getHandle(configA.paneId)
+        assert.isTrue(Option.isNone(afterCrashA))
+
+        const afterCrashB = yield* supervisor.getHandle(configB.paneId)
+        assert.isTrue(Option.isSome(afterCrashB))
+
+        // Prove B is still functionally alive, not just present in the map.
+        processes[1].emit('message', {
+          _tag: 'AssistantMessageReceived',
+          message: { role: 'assistant', content: 'still alive' }
+        })
+        yield* flush
+        yield* handleB.sendMessage('ping')
+        assert.deepStrictEqual(processes[1].posted, [
+          { _tag: 'Init', config: configB },
+          { _tag: 'SendText', text: 'ping' }
+        ])
+        assert.deepStrictEqual(eventsB, [
+          {
+            _tag: 'PaneMessageAppended',
+            paneId: configB.paneId,
+            message: { role: 'assistant', content: 'still alive' }
+          }
+        ])
+
+        assert.isTrue(
+          capturedLogs.some(
+            (log) =>
+              log instanceof ProcessCrashedError &&
+              log.paneId === configA.paneId &&
+              log.exitCode === 1
+          )
+        )
+      }).pipe(Effect.scoped, Effect.provide(testLayer), Effect.provide(loggerLayer))
+    })
+  )
+
+  it.effect('does not misreport an intentional closePane as a crash', () =>
+    Effect.gen(function* () {
+      const { processes, capturedLogs, testLayer, loggerLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+
+        yield* supervisor.openPane(configA, () => Effect.void)
+        yield* supervisor.openPane(configB, () => Effect.void)
+
+        yield* supervisor.closePane(configA.paneId)
+        yield* flush
+
+        const afterCloseA = yield* supervisor.getHandle(configA.paneId)
+        assert.isTrue(Option.isNone(afterCloseA))
+
+        const afterCloseB = yield* supervisor.getHandle(configB.paneId)
+        assert.isTrue(Option.isSome(afterCloseB))
+
+        assert.isTrue(processes[0].posted.length > 0)
+        assert.isFalse(capturedLogs.some((log) => log instanceof ProcessCrashedError))
+      }).pipe(Effect.scoped, Effect.provide(testLayer), Effect.provide(loggerLayer))
+    })
+  )
+})

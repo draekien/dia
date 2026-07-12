@@ -1,15 +1,22 @@
 import { join } from 'node:path'
-import { Config, Effect, Logger, LogLevel, Option } from 'effect'
+import { Config, Effect, Layer, Logger, LogLevel, Option, Schema } from 'effect'
 import { app, BrowserWindow, shell } from 'electron'
 import type { PaneConfig } from './domain/pane'
-import { wireCommands, wireEvents } from './ipc/gateway'
-import { start } from './services/pane-supervisor'
+import { CHANNEL, IpcEvent } from './ipc/contract'
+import { wireCommands, wireGetInitialLayout } from './ipc/gateway'
+import {
+  PaneProcessSpawnerLive,
+  PaneSupervisor,
+  PaneSupervisorLive
+} from './services/pane-supervisor'
+import { makePaneWorkspaceLive, PaneWorkspace } from './services/pane-workspace'
+
+const encodeEvent = Schema.encodeSync(IpcEvent)
 
 const isDev = !app.isPackaged
 const rendererDevUrl = Effect.runSync(Config.string('ELECTRON_RENDERER_URL').pipe(Config.option))
 
-// Bullet 01 has exactly one pane and no split/create UI yet (that's Bullet 02) —
-// this paneId is a fixed placeholder matching the renderer's hardcoded pane view.
+// Seeds the workspace's initial (and initially only) pane; splitting from it creates the rest.
 const DEV_PANE_CONFIG: PaneConfig = {
   paneId: '00000000-0000-0000-0000-000000000001',
   cwd: process.cwd(),
@@ -49,14 +56,28 @@ function createWindow(): BrowserWindow {
 app.whenReady().then(() => {
   const mainWindow = createWindow()
 
+  const onEvent = (event: IpcEvent): Effect.Effect<void> =>
+    Effect.sync(() => mainWindow.webContents.send(CHANNEL.event, encodeEvent(event)))
+
+  const supervisorLayer = Layer.provide(PaneSupervisorLive, PaneProcessSpawnerLive)
+  const workspaceLayer = Layer.provide(
+    makePaneWorkspaceLive(DEV_PANE_CONFIG, onEvent),
+    supervisorLayer
+  )
+  const appLayer = Layer.merge(supervisorLayer, workspaceLayer)
+
   Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
-        const handle = yield* start(DEV_PANE_CONFIG)
-        yield* Effect.forkScoped(wireCommands(handle))
-        yield* wireEvents(mainWindow.webContents, handle)
+        const paneWorkspace = yield* PaneWorkspace
+        const paneSupervisor = yield* PaneSupervisor
+        wireGetInitialLayout(paneWorkspace)
+        yield* wireCommands({ paneWorkspace, paneSupervisor, webContents: mainWindow.webContents })
       })
-    ).pipe(Effect.provide(Logger.minimumLogLevel(isDev ? LogLevel.Debug : LogLevel.Info)))
+    ).pipe(
+      Effect.provide(appLayer),
+      Effect.provide(Logger.minimumLogLevel(isDev ? LogLevel.Debug : LogLevel.Info))
+    )
   )
 
   app.on('activate', () => {

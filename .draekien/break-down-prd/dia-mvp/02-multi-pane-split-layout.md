@@ -11,12 +11,12 @@
 
 ## Tasks
 
-- [ ] **T1** [AFK] Implement the `PaneNode` `Schema` type (`Split`/`Leaf`) and `PaneTreeService` pure tree operations: `split`, `close`, `resize` (§3, §4.1) — serves: US-1, US-2 — depends: —
-- [ ] **T2** [AFK] Automated unit tests for `split`/`close`/`resize` tree transforms, including nested/multi-directional splits — serves: US-1, US-2 — depends: T1
-- [ ] **T3** [AFK] Extend `PaneSupervisor` to manage N independent `Fiber`+`Scope` instances keyed by `paneId`, one per tree leaf, reusing Bullet 01's `AgentSession`/`utilityProcess` plumbing (§4.2, §5) — serves: US-3 — depends: T1
-- [ ] **T4** [AFK] Extend `IpcGateway` with `SplitPane`/`ClosePane` commands and a `LayoutChanged` event; render the `PaneNode` tree as resizable panes in the renderer — serves: US-1, US-2 — depends: T1, T3
-- [ ] **T5** [AFK] Automated test simulating a pane crash (`ProcessCrashedError`) via a test `Layer` in place of a real `utilityProcess`, confirming only that pane's `Scope` tears down and sibling panes are unaffected (ADR-0007 isolation guarantee) — serves: US-3 — depends: T3
-- [ ] **T6** [HIL] Manual verification: split to 6+ concurrent panes across real projects (including dia's own repo), confirm no perceptible input lag and that each pane's session stays fully independent — serves: US-1, US-2, US-3, G-2 — depends: T4, T5
+- [x] **T1** [AFK] Implement the `PaneNode` `Schema` type (`Split`/`Leaf`) and `PaneTreeService` pure tree operations: `split`, `close`, `resize` (§3, §4.1) — serves: US-1, US-2 — depends: —
+- [x] **T2** [AFK] Automated unit tests for `split`/`close`/`resize` tree transforms, including nested/multi-directional splits — serves: US-1, US-2 — depends: T1
+- [x] **T3** [AFK] Extend `PaneSupervisor` to manage N independent `Fiber`+`Scope` instances keyed by `paneId`, one per tree leaf, reusing Bullet 01's `AgentSession`/`utilityProcess` plumbing (§4.2, §5) — serves: US-3 — depends: T1
+- [x] **T4** [AFK] Extend `IpcGateway` with `SplitPane`/`ClosePane` commands and a `LayoutChanged` event; render the `PaneNode` tree as resizable panes in the renderer — serves: US-1, US-2 — depends: T1, T3
+- [x] **T5** [AFK] Automated test simulating a pane crash (`ProcessCrashedError`) via a test `Layer` in place of a real `utilityProcess`, confirming only that pane's `Scope` tears down and sibling panes are unaffected (ADR-0007 isolation guarantee) — serves: US-3 — depends: T3
+- [x] **T6** [HIL] Manual verification: split to 6+ concurrent panes across real projects (including dia's own repo), confirm no perceptible input lag and that each pane's session stays fully independent — serves: US-1, US-2, US-3, G-2 — depends: T4, T5
 
 ## Dependency tree
 

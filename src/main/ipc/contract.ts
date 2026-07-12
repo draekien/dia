@@ -1,11 +1,13 @@
 import { Schema } from 'effect'
 import { ConversationMessage } from '../domain/pane'
+import { PaneNode } from '../domain/pane-tree'
 
 const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
 
 export const CHANNEL = {
   command: 'dia:command',
-  event: 'dia:event'
+  event: 'dia:event',
+  getInitialLayout: 'dia:getInitialLayout'
 } as const
 
 export const SendMessage = Schema.TaggedStruct('SendMessage', {
@@ -22,9 +24,19 @@ export const ResolvePermission = Schema.TaggedStruct('ResolvePermission', {
 })
 export type ResolvePermission = typeof ResolvePermission.Type
 
-// Additional commands (SplitPane, ClosePane, FocusPane) join this
-// union in later bullets.
-export const IpcCommand = Schema.Union(SendMessage, ResolvePermission)
+export const SplitPane = Schema.TaggedStruct('SplitPane', {
+  paneId: Schema.UUID,
+  direction: Schema.Literal('row', 'column')
+})
+export type SplitPane = typeof SplitPane.Type
+
+export const ClosePane = Schema.TaggedStruct('ClosePane', {
+  paneId: Schema.UUID
+})
+export type ClosePane = typeof ClosePane.Type
+
+// Additional commands (FocusPane) join this union in later bullets.
+export const IpcCommand = Schema.Union(SendMessage, ResolvePermission, SplitPane, ClosePane)
 export type IpcCommand = typeof IpcCommand.Type
 
 export const PaneMessageAppended = Schema.TaggedStruct('PaneMessageAppended', {
@@ -62,13 +74,18 @@ export const PanePermissionRequested = Schema.TaggedStruct('PanePermissionReques
 })
 export type PanePermissionRequested = typeof PanePermissionRequested.Type
 
-// Additional events (LayoutChanged, PaneAttentionChanged, PaneClosed) join this
-// union in later bullets.
+export const LayoutChanged = Schema.TaggedStruct('LayoutChanged', {
+  tree: PaneNode
+})
+export type LayoutChanged = typeof LayoutChanged.Type
+
+// Additional events (PaneAttentionChanged, PaneClosed) join this union in later bullets.
 export const IpcEvent = Schema.Union(
   PaneMessageAppended,
   PaneAssistantTextDelta,
   PaneToolCallStarted,
   PaneToolCallCompleted,
-  PanePermissionRequested
+  PanePermissionRequested,
+  LayoutChanged
 )
 export type IpcEvent = typeof IpcEvent.Type

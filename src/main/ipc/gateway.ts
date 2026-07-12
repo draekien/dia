@@ -1,12 +1,36 @@
-import { Effect, Either, Schema, Stream } from 'effect'
+import type { Context } from 'effect'
+import { Effect, Either, Option, Schema, Stream } from 'effect'
 import { ipcMain, type WebContents } from 'electron'
-import type { PaneHandle } from '../services/pane-supervisor'
+import { PaneNode } from '../domain/pane-tree'
+import type { PaneSupervisor } from '../services/pane-supervisor'
+import type { PaneWorkspace } from '../services/pane-workspace'
 import { CHANNEL, IpcCommand, IpcEvent } from './contract'
 
 const decodeCommand = Schema.decodeUnknownEither(IpcCommand)
 const encodeEvent = Schema.encodeSync(IpcEvent)
+const encodeTree = Schema.encodeSync(PaneNode)
 
-export function wireCommands(handle: PaneHandle): Effect.Effect<void> {
+export function wireGetInitialLayout(
+  paneWorkspace: Context.Tag.Service<typeof PaneWorkspace>
+): void {
+  ipcMain.handle(CHANNEL.getInitialLayout, () =>
+    Effect.runPromise(paneWorkspace.getTree().pipe(Effect.map(encodeTree)))
+  )
+}
+
+export function wireCommands(deps: {
+  readonly paneWorkspace: Context.Tag.Service<typeof PaneWorkspace>
+  readonly paneSupervisor: Context.Tag.Service<typeof PaneSupervisor>
+  readonly webContents: WebContents
+}): Effect.Effect<void> {
+  const { paneWorkspace, paneSupervisor, webContents } = deps
+
+  const onEvent = (event: IpcEvent): Effect.Effect<void> =>
+    Effect.sync(() => webContents.send(CHANNEL.event, encodeEvent(event)))
+
+  const sendLayoutChanged = (tree: PaneNode): Effect.Effect<void> =>
+    onEvent({ _tag: 'LayoutChanged', tree })
+
   const rawCommands = Stream.async<unknown>((emit) => {
     const listener = (_event: unknown, raw: unknown): void => void emit.single(raw)
     ipcMain.on(CHANNEL.command, listener)
@@ -22,41 +46,72 @@ export function wireCommands(handle: PaneHandle): Effect.Effect<void> {
       }
 
       const command = decoded.right
-      if (command._tag === 'SendMessage') {
-        yield* Effect.logDebug('Received SendMessage command', { paneId: command.paneId })
-        yield* handle
-          .sendMessage(command.text)
-          .pipe(
+      switch (command._tag) {
+        case 'SendMessage': {
+          const handle = yield* paneSupervisor.getHandle(command.paneId)
+          if (Option.isNone(handle)) {
+            yield* Effect.logWarning('Dropped SendMessage for unknown pane', {
+              paneId: command.paneId
+            })
+            return
+          }
+          yield* handle.value.sendMessage(command.text).pipe(
             Effect.catchAllCause((cause) =>
-              Effect.logError('Failed to send message to pane', { paneId: command.paneId, cause })
+              Effect.logError('Failed to send message to pane', {
+                paneId: command.paneId,
+                cause
+              })
             )
           )
-      } else if (command._tag === 'ResolvePermission') {
-        yield* Effect.logDebug('Received ResolvePermission command', {
-          paneId: command.paneId,
-          requestId: command.requestId
-        })
-        yield* handle.resolvePermission(command.requestId, command.decision, command.message).pipe(
-          Effect.catchAllCause((cause) =>
-            Effect.logError('Failed to resolve permission for pane', {
-              paneId: command.paneId,
-              cause
+          return
+        }
+        case 'ResolvePermission': {
+          const handle = yield* paneSupervisor.getHandle(command.paneId)
+          if (Option.isNone(handle)) {
+            yield* Effect.logWarning('Dropped ResolvePermission for unknown pane', {
+              paneId: command.paneId
             })
-          )
-        )
+            return
+          }
+          yield* handle.value
+            .resolvePermission(command.requestId, command.decision, command.message)
+            .pipe(
+              Effect.catchAllCause((cause) =>
+                Effect.logError('Failed to resolve permission for pane', {
+                  paneId: command.paneId,
+                  cause
+                })
+              )
+            )
+          return
+        }
+        case 'SplitPane': {
+          const result = yield* paneWorkspace
+            .split(command.paneId, command.direction, onEvent)
+            .pipe(Effect.either)
+          if (Either.isLeft(result)) {
+            yield* Effect.logWarning('Failed to split pane', {
+              paneId: command.paneId,
+              issue: result.left
+            })
+            return
+          }
+          yield* sendLayoutChanged(result.right)
+          return
+        }
+        case 'ClosePane': {
+          const result = yield* paneWorkspace.close(command.paneId).pipe(Effect.either)
+          if (Either.isLeft(result)) {
+            yield* Effect.logWarning('Failed to close pane', {
+              paneId: command.paneId,
+              issue: result.left
+            })
+            return
+          }
+          yield* sendLayoutChanged(result.right)
+          return
+        }
       }
     })
-  )
-}
-
-export function wireEvents(webContents: WebContents, handle: PaneHandle): Effect.Effect<void> {
-  return Stream.runForEach(handle.subscribe(), (event) =>
-    Effect.logDebug('Publishing event to renderer', { paneId: event.paneId, tag: event._tag }).pipe(
-      Effect.andThen(
-        Effect.sync(() => {
-          webContents.send(CHANNEL.event, encodeEvent(event))
-        })
-      )
-    )
   )
 }
