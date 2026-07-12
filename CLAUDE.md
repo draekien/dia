@@ -10,6 +10,12 @@ See `docs/adr/README.md` for the index of current decisions.
 
 When a new significant architecture decision is made during a session, write it up as a new ADR using `docs/adr/template.md`, following the numbering convention (`NNNN-short-title.md`), and add it to the index in `docs/adr/README.md`.
 
+## Reasoning log
+
+`docs/reasoning/` captures non-obvious decisions, gotchas, and learnings from past sessions — smaller-grained than an ADR (a tricky bug's root cause, a library quirk, a rejected approach and why) but still worth not rediscovering the hard way. **Check `docs/REASONING.md` (the index) when starting work in an area that feels tricky or has surprised you before.**
+
+When you hit a genuinely non-obvious finding during a session — something that took real effort to figure out, or that would trip up a future session — write it up as a new entry using `docs/reasoning/template.md`, named `YYYY-MM-DD-short-slug.md`, and add it to the index in `docs/REASONING.md`. Don't log routine implementation notes.
+
 ## Reference docs
 
 - `docs/llms/electron-vite.txt` — an [llms.txt](https://llmstxt.org/#proposal) index of the electron-vite guide (build tool chosen in ADR-0004). Consult it before making electron-vite config, dev/HMR, build, or packaging changes.
