@@ -5,7 +5,7 @@
 **Serves these PRD items:**
 
 - US-3: "As a user, I want each pane to run its own fully independent agent session so that one pane's conversation, working directory, and progress are unaffected by any other pane."
-- US-4: "As a user, I want to set a different working directory and model for each pane so that I can work on different projects or different parts of a project at once."
+- US-4: "As a user, I want to choose a pane's working directory via a directory picker and set its model when I create the pane so that I can work on different projects or different parts of a project at once." (partial — this bullet only proves the `cwd`/`model` config plumbing works end-to-end via a hardcoded dev config; the actual directory-picker UI and worktree toggle are Bullet 03)
 - G-1: "Dogfooding milestone reached..." (partial — this bullet only proves the substrate the milestone depends on)
 
 ## Tasks

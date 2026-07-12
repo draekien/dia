@@ -1,21 +1,21 @@
-# Bullet 03 — Attention State & Pulse Indicators
+# Bullet 04 — Attention State & Pulse Indicators
 
 **Goal:** Every pane's `AttentionState` (waiting on permission / errored / completed) drives a pulse indicator visible across the whole layout, and clicking a pulsing pane focuses/expands it so the user can act on it — the one deliberate loud signal in dia's design.
 
 **Serves these PRD items:**
 
-- US-5: "As a user, I want a pane to pulse amber when its agent is waiting on a permission decision so that I notice it without having to actively watch every pane."
-- US-6: "As a user, I want a pane to pulse red on an error and green on completion so that I can tell each pane's status at a glance across the whole layout."
-- US-7: "As a user, I want to click a pulsing pane to focus it and have it expand so that I can easily see its context and act on its permission dialog."
+- US-7: "As a user, I want a pane to pulse amber when its agent is waiting on a permission decision so that I notice it without having to actively watch every pane."
+- US-8: "As a user, I want a pane to pulse red on an error and green on completion so that I can tell each pane's status at a glance across the whole layout."
+- US-9: "As a user, I want to click a pulsing pane to focus it and have it expand so that I can easily see its context and act on its permission dialog."
 - G-4: "Every pane's attention state... is visually reflected via its pulse indicator with no missed or incorrect state observed during testing."
 
 ## Tasks
 
-- [ ] **T1** [AFK] Implement the `AttentionState` `Schema` and pure transition logic: `Idle → AwaitingPermission → Idle`, `Idle → Errored`, `Idle → Completed → Idle` (§3) — serves: US-5, US-6 — depends: —
+- [ ] **T1** [AFK] Implement the `AttentionState` `Schema` and pure transition logic: `Idle → AwaitingPermission → Idle`, `Idle → Errored`, `Idle → Completed → Idle` (§3) — serves: US-7, US-8 — depends: —
 - [ ] **T2** [AFK] Automated tests for every valid `AttentionState` transition and rejection of invalid ones — serves: G-4 — depends: T1
-- [ ] **T3** [AFK] Wire `AgentSession`/`PaneSupervisor` to emit `AttentionState` changes on permission-request/error/completion events and publish `PaneAttentionChanged` via `IpcGateway` (§4.2 step 4, §4.3, §6) — serves: US-5, US-6 — depends: T1
-- [ ] **T4** [AFK] Renderer: pulse indicator component driven by `AttentionState` (amber/red/green), click-to-focus/expand behavior, and a `ResolvePermission` command wired to a permission dialog — serves: US-5, US-6, US-7 — depends: T3
-- [ ] **T5** [HIL] Manual verification: trigger a real permission-required tool call and confirm amber pulse + focus/expand + dialog + approve/deny resolution all work; trigger a real error and a real completion and confirm red/green pulses appear correctly — serves: US-5, US-6, US-7, G-4 — depends: T4
+- [ ] **T3** [AFK] Wire `AgentSession`/`PaneSupervisor` to emit `AttentionState` changes on permission-request/error/completion events and publish `PaneAttentionChanged` via `IpcGateway` (§4.2 step 4, §4.3, §6) — serves: US-7, US-8 — depends: T1
+- [ ] **T4** [AFK] Renderer: pulse indicator component driven by `AttentionState` (amber/red/green), click-to-focus/expand behavior, and a `ResolvePermission` command wired to a permission dialog — serves: US-7, US-8, US-9 — depends: T3
+- [ ] **T5** [HIL] Manual verification: trigger a real permission-required tool call and confirm amber pulse + focus/expand + dialog + approve/deny resolution all work; trigger a real error and a real completion and confirm red/green pulses appear correctly — serves: US-7, US-8, US-9, G-4 — depends: T4
 
 ## Dependency tree
 
