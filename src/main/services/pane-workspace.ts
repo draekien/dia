@@ -4,7 +4,6 @@ import { Context, Effect, Either, HashMap, Layer, Ref } from 'effect'
 import type { PaneConfig } from '../domain/pane'
 import {
   closePane,
-  type LastPaneError,
   markPaneReady,
   type PaneId,
   type PaneNode,
@@ -30,41 +29,26 @@ export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
       useWorktree: boolean,
       onEvent: (event: IpcEvent) => Effect.Effect<void>
     ) => Effect.Effect<PaneNode, PaneNotFoundError | ProcessSpawnError | WorktreeCreateError>
-    readonly close: (paneId: PaneId) => Effect.Effect<PaneNode, PaneNotFoundError | LastPaneError>
+    readonly close: (paneId: PaneId) => Effect.Effect<PaneNode, PaneNotFoundError>
   }
 >() {}
 
 // Only PaneWorkspace's own initialization can produce the first pane, since PaneTreeService's
 // pure transforms all start from an existing tree -- there is no valid PaneNode for zero panes.
-// The seeded pane is never worktree-backed and starts ready, not pending.
-export const makePaneWorkspaceLive = (
-  initialConfig: PaneConfig,
-  worktreesRoot: string,
-  onEvent: (event: IpcEvent) => Effect.Effect<void>
-) =>
+// It seeds as a pending leaf, same as any freshly-split pane, so the user picks its working
+// directory through the same onboarding form rather than the app assuming one for them.
+export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: string) =>
   Layer.effect(
     PaneWorkspace,
     Effect.gen(function* () {
       const supervisor = yield* PaneSupervisor
-      yield* supervisor.openPane(
-        {
-          paneId: initialConfig.paneId,
-          sourceCwd: initialConfig.cwd,
-          model: initialConfig.model,
-          worktreePath: undefined
-        },
-        onEvent
-      )
 
       const treeRef = yield* Ref.make<PaneNode>({
         _tag: 'Leaf',
-        paneId: initialConfig.paneId,
-        status: 'ready',
-        cwd: initialConfig.cwd
+        paneId: initialPaneId,
+        status: 'pending'
       })
-      const configsRef = yield* Ref.make<HashMap.HashMap<PaneId, PaneConfig>>(
-        HashMap.make([initialConfig.paneId, initialConfig])
-      )
+      const configsRef = yield* Ref.make<HashMap.HashMap<PaneId, PaneConfig>>(HashMap.empty())
 
       const getTree = () => Ref.get(treeRef)
 
@@ -118,7 +102,17 @@ export const makePaneWorkspaceLive = (
           const tree = yield* Ref.get(treeRef)
           const updated = closePane(tree, paneId)
           if (Either.isLeft(updated)) {
-            return yield* Effect.fail(updated.left)
+            if (updated.left._tag === 'PaneNotFoundError') {
+              return yield* Effect.fail(updated.left)
+            }
+            // Closing the workspace's last remaining pane doesn't leave an empty workspace --
+            // it tears down that pane and resets it to a fresh pending leaf, so the onboarding
+            // form reappears instead of the app being left with nothing to show.
+            yield* supervisor.closePane(paneId)
+            const resetTree: PaneNode = { _tag: 'Leaf', paneId, status: 'pending' }
+            yield* Ref.set(treeRef, resetTree)
+            yield* Ref.update(configsRef, HashMap.remove(paneId))
+            return resetTree
           }
 
           yield* supervisor.closePane(paneId)

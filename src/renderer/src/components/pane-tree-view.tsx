@@ -4,18 +4,21 @@ import {
   ResizablePanelGroup
 } from '@renderer/components/ui/resizable'
 import { Fragment } from 'react'
-import type { PaneNode } from './dia'
-import Pane from './Pane'
-import PaneCreationForm from './PaneCreationForm'
+import type { PaneNode } from '../dia'
+import Pane from './pane'
+import PaneCreationForm from './pane-creation-form'
 
 interface PaneTreeViewProps {
   node: PaneNode
+  // True only for the tree's root: a Leaf can only be the workspace's sole pane when it has no
+  // siblings, which is exactly the case where it's rendered directly at the root.
+  isRoot?: boolean
 }
 
-function PaneTreeView({ node }: PaneTreeViewProps) {
+function PaneTreeView({ node, isRoot = true }: PaneTreeViewProps) {
   if (node._tag === 'Leaf') {
     return node.status === 'pending' ? (
-      <PaneCreationForm paneId={node.paneId} />
+      <PaneCreationForm paneId={node.paneId} isOnlyPane={isRoot} />
     ) : (
       <Pane paneId={node.paneId} cwd={node.cwd} sourceRepo={node.sourceRepo} />
     )
@@ -27,7 +30,7 @@ function PaneTreeView({ node }: PaneTreeViewProps) {
         <Fragment key={child._tag === 'Leaf' ? child.paneId : index}>
           {index > 0 && <ResizableHandle withHandle />}
           <ResizablePanel defaultSize={`${(node.sizes[index] ?? 1 / node.children.length) * 100}%`}>
-            <PaneTreeView node={child} />
+            <PaneTreeView node={child} isRoot={false} />
           </ResizablePanel>
         </Fragment>
       ))}

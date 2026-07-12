@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
+import PaneTreeView from './components/pane-tree-view'
 import type { PaneNode } from './dia'
-import PaneTreeView from './PaneTreeView'
 
 function App() {
   const [tree, setTree] = useState<PaneNode | null>(null)

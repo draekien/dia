@@ -1,9 +1,8 @@
 import { join } from 'node:path'
 import { NodeContext } from '@effect/platform-node'
-import { Config, Effect, Layer, Logger, LogLevel, Option, Schema } from 'effect'
+import { Config, Effect, Layer, Logger, LogLevel, Option } from 'effect'
 import { app, BrowserWindow, shell } from 'electron'
-import type { PaneConfig } from './domain/pane'
-import { CHANNEL, IpcEvent } from './ipc/contract'
+import type { PaneId } from './domain/pane-tree'
 import { wireChooseDirectory, wireCommands, wireGetInitialLayout } from './ipc/gateway'
 import { GitOpsServiceLive } from './services/git-ops-service'
 import {
@@ -13,17 +12,13 @@ import {
 } from './services/pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './services/pane-workspace'
 
-const encodeEvent = Schema.encodeSync(IpcEvent)
-
 const isDev = !app.isPackaged
 const rendererDevUrl = Effect.runSync(Config.string('ELECTRON_RENDERER_URL').pipe(Config.option))
 
 // Seeds the workspace's initial (and initially only) pane; splitting from it creates the rest.
-const DEV_PANE_CONFIG: PaneConfig = {
-  paneId: '00000000-0000-0000-0000-000000000001',
-  cwd: process.cwd(),
-  model: 'claude-sonnet-5'
-}
+// It starts pending, same as any freshly-split pane -- the user picks its working directory
+// through the same onboarding form rather than the app assuming one for them.
+const INITIAL_PANE_ID: PaneId = '00000000-0000-0000-0000-000000000001'
 
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
@@ -58,9 +53,6 @@ function createWindow(): BrowserWindow {
 app.whenReady().then(() => {
   const mainWindow = createWindow()
 
-  const onEvent = (event: IpcEvent): Effect.Effect<void> =>
-    Effect.sync(() => mainWindow.webContents.send(CHANNEL.event, encodeEvent(event)))
-
   const gitOpsLayer = Layer.provide(GitOpsServiceLive, NodeContext.layer)
   const supervisorLayer = Layer.provide(
     PaneSupervisorLive,
@@ -68,7 +60,7 @@ app.whenReady().then(() => {
   )
   const worktreesRoot = join(app.getPath('userData'), 'worktrees')
   const workspaceLayer = Layer.provide(
-    makePaneWorkspaceLive(DEV_PANE_CONFIG, worktreesRoot, onEvent),
+    makePaneWorkspaceLive(INITIAL_PANE_ID, worktreesRoot),
     supervisorLayer
   )
   const appLayer = Layer.merge(supervisorLayer, workspaceLayer)

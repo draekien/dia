@@ -1,3 +1,4 @@
+import { Button } from '@renderer/components/ui/button'
 import {
   Select,
   SelectContent,
@@ -7,7 +8,7 @@ import {
 } from '@renderer/components/ui/select'
 import { Switch } from '@renderer/components/ui/switch'
 import { useEffect, useState } from 'react'
-import type { ChooseDirectoryResult } from './dia'
+import type { ChooseDirectoryResult } from '../dia'
 
 // Placeholder list pending a confirmed source for available models.
 const MODEL_OPTIONS = [
@@ -29,9 +30,12 @@ type FormState =
 
 interface PaneCreationFormProps {
   paneId: string
+  // Hides Cancel when this is the workspace's only pane -- there's no other pane or session to
+  // return to, so canceling would just reopen this same form.
+  isOnlyPane: boolean
 }
 
-function PaneCreationForm({ paneId }: PaneCreationFormProps) {
+function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
   const [state, setState] = useState<FormState>({ step: 'idle' })
   const [model, setModel] = useState(MODEL_OPTIONS[0].value)
   const [useWorktree, setUseWorktree] = useState(false)
@@ -66,13 +70,17 @@ function PaneCreationForm({ paneId }: PaneCreationFormProps) {
 
   return (
     <div className="relative flex h-full flex-col items-center justify-center gap-4 bg-background p-6 text-ink">
-      <button
-        type="button"
-        onClick={() => window.dia.closePane(paneId)}
-        className="absolute top-4 right-4 rounded-md border border-border px-2 py-1 text-xs text-ink-muted transition-colors hover:border-primary hover:text-ink"
-      >
-        Cancel
-      </button>
+      {!isOnlyPane && (
+        <Button
+          type="button"
+          variant="outline"
+          size="xs"
+          onClick={() => window.dia.closePane(paneId)}
+          className="absolute top-4 right-4 text-ink-muted hover:text-ink"
+        >
+          Cancel
+        </Button>
+      )}
       <div className="flex w-full max-w-sm flex-col gap-4">
         <div className="flex flex-col gap-1">
           <span className="text-sm font-medium">New pane</span>
@@ -81,14 +89,15 @@ function PaneCreationForm({ paneId }: PaneCreationFormProps) {
           </span>
         </div>
 
-        <button
+        <Button
           type="button"
+          variant="outline"
           onClick={handleChooseDirectory}
           disabled={isBusy}
-          className="rounded-md border border-border bg-surface px-3 py-2 text-left text-sm transition-colors hover:border-primary disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full justify-start bg-surface font-normal"
         >
           {state.step === 'idle' ? 'Choose directory…' : state.path}
-        </button>
+        </Button>
 
         {state.step !== 'idle' && (
           <>
@@ -122,14 +131,13 @@ function PaneCreationForm({ paneId }: PaneCreationFormProps) {
 
             {state.step === 'error' && <p className="text-sm text-destructive">{state.reason}</p>}
 
-            <button
+            <Button
               type="button"
               onClick={state.step === 'error' ? handleRetry : handleStart}
               disabled={isBusy}
-              className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isBusy ? 'Creating…' : state.step === 'error' ? 'Try again' : 'Start'}
-            </button>
+            </Button>
           </>
         )}
       </div>
