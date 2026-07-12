@@ -53,7 +53,7 @@ app.whenReady().then(() => {
     Effect.scoped(
       Effect.gen(function* () {
         const handle = yield* start(DEV_PANE_CONFIG)
-        wireCommands(handle)
+        yield* Effect.forkScoped(wireCommands(handle))
         yield* wireEvents(mainWindow.webContents, handle)
       })
     ).pipe(Effect.provide(Logger.minimumLogLevel(isDev ? LogLevel.Debug : LogLevel.Info)))

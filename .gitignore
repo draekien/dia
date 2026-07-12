@@ -32,3 +32,6 @@ coverage/
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# Vendored Effect source (effect-ts skill research checkout)
+.repos/effect

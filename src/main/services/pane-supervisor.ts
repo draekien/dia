@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { Data, Effect, Option, Queue, Ref, Runtime, Schema, type Scope, Stream } from 'effect'
+import { Data, Effect, Option, Queue, Ref, Schema, Stream } from 'effect'
 import { utilityProcess } from 'electron'
 import type { PaneConfig, PaneRecord } from '../domain/pane'
 import type { PaneMessageAppended } from '../ipc/contract'
@@ -20,10 +20,8 @@ const decodeOutbound = Schema.decodeUnknownOption(AssistantMessageReceived)
 
 const agentSessionModulePath = join(import.meta.dirname, 'pane-process/agent-session.js')
 
-export const start = (
-  config: PaneConfig
-): Effect.Effect<PaneHandle, ProcessSpawnError, Scope.Scope> =>
-  Effect.acquireRelease(
+export const start = Effect.fn('PaneSupervisor.start')(function* (config: PaneConfig) {
+  const child = yield* Effect.acquireRelease(
     Effect.try({
       try: () => utilityProcess.fork(agentSessionModulePath),
       catch: (cause) => new ProcessSpawnError({ paneId: config.paneId, cause })
@@ -32,65 +30,76 @@ export const start = (
       Effect.logInfo('Killing pane process', { paneId: config.paneId }).pipe(
         Effect.andThen(Effect.sync(() => child.kill()))
       )
-  ).pipe(
-    Effect.tap((child) =>
-      Effect.logInfo('Pane process spawned', { paneId: config.paneId, pid: child.pid })
-    ),
-    Effect.flatMap((child) =>
+  )
+  yield* Effect.logInfo('Pane process spawned', { paneId: config.paneId, pid: child.pid })
+
+  const outbound = yield* Queue.unbounded<PaneMessageAppended>()
+  const recordRef = yield* Ref.make<PaneRecord>({ config, history: [] })
+
+  const rawMessages = Stream.async<unknown>((emit) => {
+    const listener = (raw: unknown): void => void emit.single(raw)
+    child.on('message', listener)
+    return Effect.sync(() => child.off('message', listener))
+  })
+
+  const decoded = rawMessages.pipe(
+    Stream.mapEffect((raw) =>
       Effect.gen(function* () {
-        const outbound = yield* Queue.unbounded<PaneMessageAppended>()
-        const recordRef = yield* Ref.make<PaneRecord>({ config, history: [] })
-        const runtime = yield* Effect.runtime<never>()
-        const runSync = Runtime.runSync(runtime)
-
-        child.on('message', (raw) => {
-          runSync(
-            Effect.gen(function* () {
-              yield* Effect.logDebug('Received raw message from pane process', {
-                paneId: config.paneId,
-                raw
-              })
-              const decoded = decodeOutbound(raw)
-              if (Option.isNone(decoded)) {
-                yield* Effect.logWarning('Dropped malformed message from pane process', {
-                  paneId: config.paneId,
-                  raw
-                })
-                return
-              }
-
-              const message = decoded.value.message
-              yield* Ref.update(recordRef, (record) => ({
-                ...record,
-                history: [...record.history, message]
-              }))
-              yield* Queue.offer(outbound, {
-                _tag: 'PaneMessageAppended',
-                paneId: config.paneId,
-                message
-              })
-              yield* Effect.logInfo('Appended message to pane history', {
-                paneId: config.paneId,
-                role: message.role
-              })
-            })
-          )
+        yield* Effect.logDebug('Received raw message from pane process', {
+          paneId: config.paneId,
+          raw
         })
-
-        child.postMessage(encodeInbound({ _tag: 'Init', config }))
-        yield* Effect.logInfo('Sent Init message to pane process', { paneId: config.paneId })
-
-        const handle: PaneHandle = {
-          sendMessage: (text) =>
-            Effect.logDebug('Sending text to pane process', { paneId: config.paneId, text }).pipe(
-              Effect.andThen(
-                Effect.sync(() => child.postMessage(encodeInbound({ _tag: 'SendText', text })))
-              )
-            ),
-          subscribe: () => Stream.fromQueue(outbound)
+        const result = decodeOutbound(raw)
+        if (Option.isNone(result)) {
+          yield* Effect.logWarning('Dropped malformed message from pane process', {
+            paneId: config.paneId,
+            raw
+          })
         }
+        return result
+      })
+    ),
+    Stream.filterMap((result) => result)
+  )
 
-        return handle
+  const appended = decoded.pipe(
+    Stream.mapEffect(({ message }) =>
+      Ref.update(recordRef, (record) => ({
+        ...record,
+        history: [...record.history, message]
+      })).pipe(Effect.as(message))
+    ),
+    Stream.tap((message) =>
+      Effect.logInfo('Appended message to pane history', {
+        paneId: config.paneId,
+        role: message.role
+      })
+    ),
+    Stream.map(
+      (message): PaneMessageAppended => ({
+        _tag: 'PaneMessageAppended',
+        paneId: config.paneId,
+        message
       })
     )
   )
+
+  yield* Stream.runForEach(appended, (event) => Queue.offer(outbound, event)).pipe(
+    Effect.forkScoped
+  )
+
+  child.postMessage(encodeInbound({ _tag: 'Init', config }))
+  yield* Effect.logInfo('Sent Init message to pane process', { paneId: config.paneId })
+
+  const handle: PaneHandle = {
+    sendMessage: (text) =>
+      Effect.logDebug('Sending text to pane process', { paneId: config.paneId, text }).pipe(
+        Effect.andThen(
+          Effect.sync(() => child.postMessage(encodeInbound({ _tag: 'SendText', text })))
+        )
+      ),
+    subscribe: () => Stream.fromQueue(outbound)
+  }
+
+  return handle
+})
