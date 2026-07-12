@@ -43,6 +43,10 @@ graph TD
   T6 --> T8
 ```
 
+## Note on streaming plumbing
+
+T5's renderer only renders complete `PaneMessageAppended` events (final assistant turns). As of the Effect conversion of `agent-session.ts` (ADR-0010), the IPC contract also carries `PaneAssistantTextDelta` events — one per streamed text chunk from the Agent SDK's `includePartialMessages` mode — but nothing in the renderer consumes them yet; they flow through and decode correctly and are otherwise dropped. Whichever future bullet/task adds token-by-token rendering to the message view should subscribe to `PaneAssistantTextDelta` (keyed by pane, accumulated until the matching `PaneMessageAppended` finalizes the turn) rather than adding a new event — the plumbing already exists end-to-end.
+
 ## Human-in-the-loop callouts
 
 - **T8** — Only a human can drive a real Agent SDK conversation against a real local Claude Code installation and judge whether the reply is correct and the UX behaves as expected. This is blocked-on-info (the real behavior of the Agent SDK inside this new process architecture isn't known until observed) and cannot be decomposed further without losing the point of the verification.

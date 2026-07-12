@@ -31,6 +31,19 @@ export function wireCommands(handle: PaneHandle): Effect.Effect<void> {
               Effect.logError('Failed to send message to pane', { paneId: command.paneId, cause })
             )
           )
+      } else if (command._tag === 'ResolvePermission') {
+        yield* Effect.logDebug('Received ResolvePermission command', {
+          paneId: command.paneId,
+          requestId: command.requestId
+        })
+        yield* handle.resolvePermission(command.requestId, command.decision, command.message).pipe(
+          Effect.catchAllCause((cause) =>
+            Effect.logError('Failed to resolve permission for pane', {
+              paneId: command.paneId,
+              cause
+            })
+          )
+        )
       }
     })
   )

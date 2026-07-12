@@ -2,8 +2,8 @@ import { join } from 'node:path'
 import { Data, Effect, Option, Queue, Ref, Schema, Stream } from 'effect'
 import { utilityProcess } from 'electron'
 import type { PaneConfig, PaneRecord } from '../domain/pane'
-import type { PaneMessageAppended } from '../ipc/contract'
-import { AssistantMessageReceived, InboundMessage } from '../pane-process/protocol'
+import type { IpcEvent } from '../ipc/contract'
+import { InboundMessage, OutboundMessage } from '../pane-process/protocol'
 
 export class ProcessSpawnError extends Data.TaggedError('ProcessSpawnError')<{
   readonly paneId: string
@@ -12,13 +12,50 @@ export class ProcessSpawnError extends Data.TaggedError('ProcessSpawnError')<{
 
 export interface PaneHandle {
   readonly sendMessage: (text: string) => Effect.Effect<void>
-  readonly subscribe: () => Stream.Stream<PaneMessageAppended>
+  readonly resolvePermission: (
+    requestId: string,
+    decision: 'allow' | 'deny',
+    message?: string
+  ) => Effect.Effect<void>
+  readonly subscribe: () => Stream.Stream<IpcEvent>
 }
 
 const encodeInbound = Schema.encodeSync(InboundMessage)
-const decodeOutbound = Schema.decodeUnknownOption(AssistantMessageReceived)
+const decodeOutbound = Schema.decodeUnknownOption(OutboundMessage)
 
 const agentSessionModulePath = join(import.meta.dirname, 'pane-process/agent-session.js')
+
+function toIpcEvent(paneId: string, message: OutboundMessage): IpcEvent {
+  switch (message._tag) {
+    case 'AssistantMessageReceived':
+      return { _tag: 'PaneMessageAppended', paneId, message: message.message }
+    case 'AssistantTextDelta':
+      return { _tag: 'PaneAssistantTextDelta', paneId, text: message.text }
+    case 'ToolCallStarted':
+      return {
+        _tag: 'PaneToolCallStarted',
+        paneId,
+        toolCallId: message.toolCallId,
+        toolName: message.toolName
+      }
+    case 'ToolCallCompleted':
+      return {
+        _tag: 'PaneToolCallCompleted',
+        paneId,
+        toolCallId: message.toolCallId,
+        toolName: message.toolName,
+        input: message.input
+      }
+    case 'PermissionRequested':
+      return {
+        _tag: 'PanePermissionRequested',
+        paneId,
+        requestId: message.requestId,
+        toolName: message.toolName,
+        input: message.input
+      }
+  }
+}
 
 export const start = Effect.fn('PaneSupervisor.start')(function* (config: PaneConfig) {
   const child = yield* Effect.acquireRelease(
@@ -33,7 +70,7 @@ export const start = Effect.fn('PaneSupervisor.start')(function* (config: PaneCo
   )
   yield* Effect.logInfo('Pane process spawned', { paneId: config.paneId, pid: child.pid })
 
-  const outbound = yield* Queue.unbounded<PaneMessageAppended>()
+  const outbound = yield* Queue.unbounded<IpcEvent>()
   const recordRef = yield* Ref.make<PaneRecord>({ config, history: [] })
 
   const rawMessages = Stream.async<unknown>((emit) => {
@@ -62,31 +99,25 @@ export const start = Effect.fn('PaneSupervisor.start')(function* (config: PaneCo
     Stream.filterMap((result) => result)
   )
 
-  const appended = decoded.pipe(
-    Stream.mapEffect(({ message }) =>
-      Ref.update(recordRef, (record) => ({
-        ...record,
-        history: [...record.history, message]
-      })).pipe(Effect.as(message))
-    ),
-    Stream.tap((message) =>
-      Effect.logInfo('Appended message to pane history', {
-        paneId: config.paneId,
-        role: message.role
-      })
-    ),
-    Stream.map(
-      (message): PaneMessageAppended => ({
-        _tag: 'PaneMessageAppended',
-        paneId: config.paneId,
-        message
+  const events = decoded.pipe(
+    Stream.mapEffect((message) =>
+      Effect.gen(function* () {
+        if (message._tag === 'AssistantMessageReceived') {
+          yield* Ref.update(recordRef, (record) => ({
+            ...record,
+            history: [...record.history, message.message]
+          }))
+          yield* Effect.logInfo('Appended message to pane history', {
+            paneId: config.paneId,
+            role: message.message.role
+          })
+        }
+        return toIpcEvent(config.paneId, message)
       })
     )
   )
 
-  yield* Stream.runForEach(appended, (event) => Queue.offer(outbound, event)).pipe(
-    Effect.forkScoped
-  )
+  yield* Stream.runForEach(events, (event) => Queue.offer(outbound, event)).pipe(Effect.forkScoped)
 
   child.postMessage(encodeInbound({ _tag: 'Init', config }))
   yield* Effect.logInfo('Sent Init message to pane process', { paneId: config.paneId })
@@ -96,6 +127,20 @@ export const start = Effect.fn('PaneSupervisor.start')(function* (config: PaneCo
       Effect.logDebug('Sending text to pane process', { paneId: config.paneId, text }).pipe(
         Effect.andThen(
           Effect.sync(() => child.postMessage(encodeInbound({ _tag: 'SendText', text })))
+        )
+      ),
+    resolvePermission: (requestId, decision, message) =>
+      Effect.logDebug('Sending permission resolution to pane process', {
+        paneId: config.paneId,
+        requestId,
+        decision
+      }).pipe(
+        Effect.andThen(
+          Effect.sync(() =>
+            child.postMessage(
+              encodeInbound({ _tag: 'ResolvePermission', requestId, decision, message })
+            )
+          )
         )
       ),
     subscribe: () => Stream.fromQueue(outbound)

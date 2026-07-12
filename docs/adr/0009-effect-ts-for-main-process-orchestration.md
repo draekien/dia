@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "superseded by ADR-0010"
 date: 2026-07-11
 decision-makers: William Pei
 ---

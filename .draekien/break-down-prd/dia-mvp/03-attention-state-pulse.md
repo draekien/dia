@@ -32,6 +32,10 @@ graph TD
   T4 --> T5
 ```
 
+## Note on existing plumbing
+
+Some of the wiring T3/T4 need already exists, built ahead of this bullet while extending Effect TS into `agent-session.ts` (ADR-0010): `protocol.ts`/`contract.ts` carry `PermissionRequested`/`ResolvePermission` messages end-to-end, and `agent-session.ts` suspends `canUseTool` on an Effect `Deferred` until a `ResolvePermission` message resolves it. None of this is wired to an `AttentionState` yet (that schema doesn't exist) and there is no renderer UI — T1 (the `AttentionState` schema itself) and T4's actual dialog/pulse UI are still fully open. T3 can likely consume the existing `PermissionRequested` event rather than adding a new one.
+
 ## Human-in-the-loop callouts
 
 - **T5** — Whether the pulse actually appears correctly, on time, and is missed or not can only be judged by watching a real permission prompt / error / completion happen against a real local Claude Code session; this is blocked-on-info (the SDK's real event timing/shape isn't fully known until observed) and is exactly what G-4 requires to be demonstrated by a human, not asserted.

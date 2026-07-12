@@ -9,7 +9,9 @@ This is an index of non-obvious decisions, gotchas, and learnings recorded durin
 
 | Date | Entry | Summary |
 | --- | --- | --- |
-| _(none yet)_ | | |
+| 2026-07-12 | [Vendored `.repos/effect` API drift](reasoning/2026-07-12-effect-vendored-repo-api-drift.md) | The `/effect-ts` skill's vendored clone tracks a newer/different Effect package than what's installed — verify signatures against `node_modules/effect`, not `.repos/effect`. |
+| 2026-07-12 | [`Effect.fn` trailing transforms](reasoning/2026-07-12-effect-fn-trailing-transform.md) | `Effect.fn(name)(body, a, b, ...)` accepts pipe-transform args after the generator body, letting a blanket recovery live in the definition instead of every call site. |
+| 2026-07-12 | [Decode IPC boundaries non-throwing](reasoning/2026-07-12-decode-ipc-boundary-non-throwing.md) | `Schema.decodeUnknownSync` inside a raw IPC/process message listener crashes the whole process on malformed input — always use `Either`/`Option` decode there. |
 
 ## Adding a new entry
 
