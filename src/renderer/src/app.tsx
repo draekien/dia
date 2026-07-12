@@ -4,6 +4,7 @@ import type { PaneNode } from './dia'
 
 function App() {
   const [tree, setTree] = useState<PaneNode | null>(null)
+  const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null)
 
   useEffect(() => {
     window.dia.getInitialLayout().then(setTree)
@@ -14,7 +15,7 @@ function App() {
 
   return (
     <div className="h-screen bg-neutral-950">
-      <PaneTreeView node={tree} />
+      <PaneTreeView node={tree} focusedPaneId={focusedPaneId} onFocusPane={setFocusedPaneId} />
     </div>
   )
 }

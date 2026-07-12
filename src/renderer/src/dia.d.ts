@@ -15,6 +15,20 @@ export type PaneNode =
 
 export type ChooseDirectoryResult = { readonly path: string; readonly isGitRepo: boolean } | null
 
+export type PermissionRequest = {
+  readonly requestId: string
+  readonly toolName: string
+  readonly input: Record<string, unknown>
+}
+
+export type PaneError = { readonly message: string }
+
+export type AttentionState =
+  | { readonly _tag: 'Idle' }
+  | { readonly _tag: 'AwaitingPermission'; readonly request: PermissionRequest }
+  | { readonly _tag: 'Errored'; readonly error: PaneError }
+  | { readonly _tag: 'Completed' }
+
 declare global {
   interface Window {
     dia: {
@@ -38,6 +52,13 @@ declare global {
       ): () => void
       onLayoutChanged(listener: (event: { tree: PaneNode }) => void): () => void
       onPaneCreateFailed(listener: (event: { paneId: string; reason: string }) => void): () => void
+      onAttentionChanged(
+        listener: (event: { paneId: string; attention: AttentionState }) => void
+      ): () => void
+      onPermissionRequested(
+        listener: (event: PermissionRequest & { paneId: string }) => void
+      ): () => void
+      onAssistantTextDelta(listener: (event: { paneId: string; text: string }) => void): () => void
     }
   }
 }

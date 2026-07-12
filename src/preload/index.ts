@@ -8,8 +8,11 @@ import {
   CreatePane,
   IpcEvent,
   type LayoutChanged,
+  type PaneAssistantTextDelta,
+  type PaneAttentionChanged,
   type PaneCreateFailed,
   type PaneMessageAppended,
+  type PanePermissionRequested,
   ResolvePermission,
   SendMessage,
   SplitPane
@@ -24,17 +27,23 @@ const decodeEvent = Schema.decodeUnknownEither(IpcEvent)
 const decodeTree = Schema.decodeUnknownSync(PaneNode)
 const decodeChooseDirectoryResult = Schema.decodeUnknownSync(ChooseDirectoryResult)
 
-function subscribeToEvents(onDecoded: (event: IpcEvent) => void): () => void {
-  const handler = (_electronEvent: Electron.IpcRendererEvent, raw: unknown): void => {
-    const decoded = decodeEvent(raw)
-    if (Either.isLeft(decoded)) {
-      console.warn('Dropped malformed IPC event', decoded.left)
-      return
-    }
-    onDecoded(decoded.right)
+// A single raw ipcRenderer listener fans out to every subscriber below. Each subscriber
+// registering its own ipcRenderer.on would multiply with pane count and event-type count,
+// tripping Node's default 10-listener-per-emitter cap (MaxListenersExceededWarning).
+const subscribers = new Set<(event: IpcEvent) => void>()
+
+ipcRenderer.on(CHANNEL.event, (_electronEvent, raw: unknown) => {
+  const decoded = decodeEvent(raw)
+  if (Either.isLeft(decoded)) {
+    console.warn('Dropped malformed IPC event', decoded.left)
+    return
   }
-  ipcRenderer.on(CHANNEL.event, handler)
-  return () => ipcRenderer.removeListener(CHANNEL.event, handler)
+  for (const subscriber of subscribers) subscriber(decoded.right)
+})
+
+function subscribeToEvents(onDecoded: (event: IpcEvent) => void): () => void {
+  subscribers.add(onDecoded)
+  return () => subscribers.delete(onDecoded)
 }
 
 const api = {
@@ -85,6 +94,21 @@ const api = {
   onPaneCreateFailed(listener: (event: PaneCreateFailed) => void): () => void {
     return subscribeToEvents((event) => {
       if (event._tag === 'PaneCreateFailed') listener(event)
+    })
+  },
+  onAttentionChanged(listener: (event: PaneAttentionChanged) => void): () => void {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PaneAttentionChanged') listener(event)
+    })
+  },
+  onPermissionRequested(listener: (event: PanePermissionRequested) => void): () => void {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PanePermissionRequested') listener(event)
+    })
+  },
+  onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PaneAssistantTextDelta') listener(event)
     })
   }
 }
