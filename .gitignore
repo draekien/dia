@@ -29,3 +29,6 @@ coverage/
 
 # Vite / Electron cache
 .vite/
+
+# TypeScript incremental build info
+*.tsbuildinfo
