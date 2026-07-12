@@ -52,74 +52,74 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
 
       const getTree = () => Ref.get(treeRef)
 
-      const split = (paneId: PaneId, direction: 'row' | 'column') =>
-        Effect.gen(function* () {
-          const newPaneId: PaneId = randomUUID()
-          const tree = yield* Ref.get(treeRef)
-          const updated = splitPane(tree, paneId, direction, newPaneId)
-          if (Either.isLeft(updated)) {
-            return yield* Effect.fail(updated.left)
-          }
+      const split = Effect.fn('PaneWorkspace.split')(function* (
+        paneId: PaneId,
+        direction: 'row' | 'column'
+      ) {
+        const newPaneId: PaneId = randomUUID()
+        const tree = yield* Ref.get(treeRef)
+        const updated = splitPane(tree, paneId, direction, newPaneId)
+        if (Either.isLeft(updated)) {
+          return yield* Effect.fail(updated.left)
+        }
 
-          yield* Ref.set(treeRef, updated.right)
-          return updated.right
-        })
+        yield* Ref.set(treeRef, updated.right)
+        return updated.right
+      })
 
-      const createPane = (
+      const createPane = Effect.fn('PaneWorkspace.createPane')(function* (
         paneId: PaneId,
         sourceCwd: string,
         model: string,
         useWorktree: boolean,
         onCreateEvent: (event: IpcEvent) => Effect.Effect<void>
-      ) =>
-        Effect.gen(function* () {
-          const tree = yield* Ref.get(treeRef)
-          // Validate paneId is a pending leaf before spawning anything; the cwd here is a
-          // placeholder discarded below once the real (possibly worktree) cwd is known.
-          const precheck = markPaneReady(tree, paneId, sourceCwd)
-          if (Either.isLeft(precheck)) {
-            return yield* Effect.fail(precheck.left)
+      ) {
+        const tree = yield* Ref.get(treeRef)
+        // Validate paneId is a pending leaf before spawning anything; the cwd here is a
+        // placeholder discarded below once the real (possibly worktree) cwd is known.
+        const precheck = markPaneReady(tree, paneId, sourceCwd)
+        if (Either.isLeft(precheck)) {
+          return yield* Effect.fail(precheck.left)
+        }
+
+        const worktreePath = useWorktree ? join(worktreesRoot, paneId) : undefined
+        const { config } = yield* supervisor.openPane(
+          { paneId, sourceCwd, model, worktreePath },
+          onCreateEvent
+        )
+
+        const readyTree = markPaneReady(tree, paneId, config.cwd, config.worktree?.sourceRepo)
+        if (Either.isLeft(readyTree)) {
+          return yield* Effect.fail(readyTree.left)
+        }
+
+        yield* Ref.set(treeRef, readyTree.right)
+        yield* Ref.update(configsRef, HashMap.set(paneId, config))
+        return readyTree.right
+      })
+
+      const close = Effect.fn('PaneWorkspace.close')(function* (paneId: PaneId) {
+        const tree = yield* Ref.get(treeRef)
+        const updated = closePane(tree, paneId)
+        if (Either.isLeft(updated)) {
+          if (updated.left._tag === 'PaneNotFoundError') {
+            return yield* Effect.fail(updated.left)
           }
-
-          const worktreePath = useWorktree ? join(worktreesRoot, paneId) : undefined
-          const { config } = yield* supervisor.openPane(
-            { paneId, sourceCwd, model, worktreePath },
-            onCreateEvent
-          )
-
-          const readyTree = markPaneReady(tree, paneId, config.cwd, config.worktree?.sourceRepo)
-          if (Either.isLeft(readyTree)) {
-            return yield* Effect.fail(readyTree.left)
-          }
-
-          yield* Ref.set(treeRef, readyTree.right)
-          yield* Ref.update(configsRef, HashMap.set(paneId, config))
-          return readyTree.right
-        })
-
-      const close = (paneId: PaneId) =>
-        Effect.gen(function* () {
-          const tree = yield* Ref.get(treeRef)
-          const updated = closePane(tree, paneId)
-          if (Either.isLeft(updated)) {
-            if (updated.left._tag === 'PaneNotFoundError') {
-              return yield* Effect.fail(updated.left)
-            }
-            // Closing the workspace's last remaining pane doesn't leave an empty workspace --
-            // it tears down that pane and resets it to a fresh pending leaf, so the onboarding
-            // form reappears instead of the app being left with nothing to show.
-            yield* supervisor.closePane(paneId)
-            const resetTree: PaneNode = { _tag: 'Leaf', paneId, status: 'pending' }
-            yield* Ref.set(treeRef, resetTree)
-            yield* Ref.update(configsRef, HashMap.remove(paneId))
-            return resetTree
-          }
-
+          // Closing the workspace's last remaining pane doesn't leave an empty workspace --
+          // it tears down that pane and resets it to a fresh pending leaf, so the onboarding
+          // form reappears instead of the app being left with nothing to show.
           yield* supervisor.closePane(paneId)
-          yield* Ref.set(treeRef, updated.right)
+          const resetTree: PaneNode = { _tag: 'Leaf', paneId, status: 'pending' }
+          yield* Ref.set(treeRef, resetTree)
           yield* Ref.update(configsRef, HashMap.remove(paneId))
-          return updated.right
-        })
+          return resetTree
+        }
+
+        yield* supervisor.closePane(paneId)
+        yield* Ref.set(treeRef, updated.right)
+        yield* Ref.update(configsRef, HashMap.remove(paneId))
+        return updated.right
+      })
 
       return { getTree, split, createPane, close }
     })

@@ -9,10 +9,17 @@ const PANE_ID = 'aaaaaaaa-0000-4000-8000-000000000001'
 function makeFakeExecutor(
   exitCodeFor: (command: Command.Command) => number
 ): CommandExecutor.CommandExecutor {
+  const notImplemented = () => Effect.die('not implemented in fake executor')
   return {
+    [CommandExecutor.TypeId]: CommandExecutor.TypeId,
     exitCode: (command: Command.Command) =>
-      Effect.succeed(exitCodeFor(command) as CommandExecutor.ExitCode)
-  } as unknown as CommandExecutor.CommandExecutor
+      Effect.succeed(CommandExecutor.ExitCode(exitCodeFor(command))),
+    start: notImplemented,
+    string: notImplemented,
+    lines: notImplemented,
+    stream: notImplemented,
+    streamLines: notImplemented
+  }
 }
 
 function makeTestSetup(exitCodeFor: (command: Command.Command) => number): {

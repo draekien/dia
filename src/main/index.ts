@@ -11,6 +11,7 @@ import {
   PaneSupervisorLive
 } from './services/pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './services/pane-workspace'
+import { makeSettingsStoreLive, SettingsStore } from './services/settings-store'
 
 const isDev = !app.isPackaged
 const rendererDevUrl = Effect.runSync(Config.string('ELECTRON_RENDERER_URL').pipe(Config.option))
@@ -63,7 +64,11 @@ app.whenReady().then(() => {
     makePaneWorkspaceLive(INITIAL_PANE_ID, worktreesRoot),
     supervisorLayer
   )
-  const appLayer = Layer.merge(supervisorLayer, workspaceLayer)
+  const settingsStoreLayer = Layer.provide(
+    makeSettingsStoreLive(app.getPath('userData')),
+    NodeContext.layer
+  )
+  const appLayer = Layer.mergeAll(supervisorLayer, workspaceLayer, settingsStoreLayer)
 
   let shuttingDown = false
 
@@ -72,8 +77,9 @@ app.whenReady().then(() => {
       Effect.gen(function* () {
         const paneWorkspace = yield* PaneWorkspace
         const paneSupervisor = yield* PaneSupervisor
+        const settingsStore = yield* SettingsStore
         wireGetInitialLayout(paneWorkspace)
-        wireChooseDirectory(app.getPath('userData'), mainWindow)
+        wireChooseDirectory(settingsStore, mainWindow)
 
         app.on('before-quit', (event) => {
           if (shuttingDown) return

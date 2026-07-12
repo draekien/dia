@@ -2,11 +2,11 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Context } from 'effect'
 import { Effect, Either, Option, Schema, Stream } from 'effect'
-import { type BrowserWindow, dialog, ipcMain, type WebContents } from 'electron'
+import { type BrowserWindow, dialog, ipcMain } from 'electron'
 import { PaneNode } from '../domain/pane-tree'
 import type { PaneSupervisor } from '../services/pane-supervisor'
 import type { PaneWorkspace } from '../services/pane-workspace'
-import { makeSettingsStore } from '../services/settings-store'
+import type { SettingsStore } from '../services/settings-store'
 import { CHANNEL, type ChooseDirectoryResult, IpcCommand, IpcEvent } from './contract'
 
 const decodeCommand = Schema.decodeUnknownEither(IpcCommand)
@@ -21,8 +21,10 @@ export function wireGetInitialLayout(
   )
 }
 
-export function wireChooseDirectory(userDataPath: string, ownerWindow: BrowserWindow): void {
-  const settings = makeSettingsStore(userDataPath)
+export function wireChooseDirectory(
+  settingsStore: Context.Tag.Service<typeof SettingsStore>,
+  ownerWindow: BrowserWindow
+): void {
   // Native dialogs are per-call, not deduplicated by Electron itself -- without this guard,
   // rapid double-invokes (or an unresponsive first click) can stack multiple pickers.
   let pending: Promise<ChooseDirectoryResult> | null = null
@@ -30,31 +32,40 @@ export function wireChooseDirectory(userDataPath: string, ownerWindow: BrowserWi
   ipcMain.handle(CHANNEL.chooseDirectory, (): Promise<ChooseDirectoryResult> => {
     if (pending !== null) return pending
 
-    // Passing the owner window makes this an app-modal dialog: the window can't be
-    // interacted with again until the picker closes, reinforcing the single-picker guard.
-    pending = dialog
-      .showOpenDialog(ownerWindow, {
-        properties: ['openDirectory'],
-        defaultPath: settings.getLastDirectory()
-      })
-      .then((result): ChooseDirectoryResult => {
+    pending = Effect.runPromise(
+      Effect.gen(function* () {
+        const lastDirectory = yield* settingsStore.getLastDirectory()
+        // Passing the owner window makes this an app-modal dialog: the window can't be
+        // interacted with again until the picker closes, reinforcing the single-picker guard.
+        const result = yield* Effect.tryPromise(() =>
+          dialog.showOpenDialog(ownerWindow, {
+            properties: ['openDirectory'],
+            defaultPath: Option.getOrUndefined(lastDirectory)
+          })
+        )
         if (result.canceled || result.filePaths.length === 0) return null
         const path = result.filePaths[0]
-        settings.setLastDirectory(path)
+        yield* settingsStore.setLastDirectory(path)
         return { path, isGitRepo: existsSync(join(path, '.git')) }
       })
-      .finally(() => {
-        pending = null
-      })
+    ).finally(() => {
+      pending = null
+    })
 
     return pending
   })
 }
 
+// Narrowed to the single method wireCommands actually calls, so tests can substitute a fake
+// sender without constructing a real Electron WebContents.
+export interface EventSender {
+  readonly send: (channel: string, ...args: ReadonlyArray<unknown>) => void
+}
+
 export function wireCommands(deps: {
   readonly paneWorkspace: Context.Tag.Service<typeof PaneWorkspace>
   readonly paneSupervisor: Context.Tag.Service<typeof PaneSupervisor>
-  readonly webContents: WebContents
+  readonly webContents: EventSender
 }): Effect.Effect<void> {
   const { paneWorkspace, paneSupervisor, webContents } = deps
 

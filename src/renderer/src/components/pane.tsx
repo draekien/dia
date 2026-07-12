@@ -13,7 +13,7 @@ interface PaneProps {
   sourceRepo?: string
 }
 
-function dirName(path: string): string {
+export function dirName(path: string): string {
   const normalized = path.replace(/[/\\]+$/, '')
   const lastSeparator = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'))
   return lastSeparator === -1 ? normalized : normalized.slice(lastSeparator + 1)
