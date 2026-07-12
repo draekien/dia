@@ -2,10 +2,11 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Context } from 'effect'
 import { Effect, Either, Option, Schema, Stream } from 'effect'
-import { dialog, ipcMain, type WebContents } from 'electron'
+import { type BrowserWindow, dialog, ipcMain, type WebContents } from 'electron'
 import { PaneNode } from '../domain/pane-tree'
 import type { PaneSupervisor } from '../services/pane-supervisor'
 import type { PaneWorkspace } from '../services/pane-workspace'
+import { makeSettingsStore } from '../services/settings-store'
 import { CHANNEL, type ChooseDirectoryResult, IpcCommand, IpcEvent } from './contract'
 
 const decodeCommand = Schema.decodeUnknownEither(IpcCommand)
@@ -20,13 +21,33 @@ export function wireGetInitialLayout(
   )
 }
 
-export function wireChooseDirectory(): void {
-  ipcMain.handle(CHANNEL.chooseDirectory, async (): Promise<ChooseDirectoryResult> => {
-    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
-    if (result.canceled || result.filePaths.length === 0) return null
+export function wireChooseDirectory(userDataPath: string, ownerWindow: BrowserWindow): void {
+  const settings = makeSettingsStore(userDataPath)
+  // Native dialogs are per-call, not deduplicated by Electron itself -- without this guard,
+  // rapid double-invokes (or an unresponsive first click) can stack multiple pickers.
+  let pending: Promise<ChooseDirectoryResult> | null = null
 
-    const path = result.filePaths[0]
-    return { path, isGitRepo: existsSync(join(path, '.git')) }
+  ipcMain.handle(CHANNEL.chooseDirectory, (): Promise<ChooseDirectoryResult> => {
+    if (pending !== null) return pending
+
+    // Passing the owner window makes this an app-modal dialog: the window can't be
+    // interacted with again until the picker closes, reinforcing the single-picker guard.
+    pending = dialog
+      .showOpenDialog(ownerWindow, {
+        properties: ['openDirectory'],
+        defaultPath: settings.getLastDirectory()
+      })
+      .then((result): ChooseDirectoryResult => {
+        if (result.canceled || result.filePaths.length === 0) return null
+        const path = result.filePaths[0]
+        settings.setLastDirectory(path)
+        return { path, isGitRepo: existsSync(join(path, '.git')) }
+      })
+      .finally(() => {
+        pending = null
+      })
+
+    return pending
   })
 }
 

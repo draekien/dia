@@ -59,7 +59,8 @@ export const makePaneWorkspaceLive = (
       const treeRef = yield* Ref.make<PaneNode>({
         _tag: 'Leaf',
         paneId: initialConfig.paneId,
-        status: 'ready'
+        status: 'ready',
+        cwd: initialConfig.cwd
       })
       const configsRef = yield* Ref.make<HashMap.HashMap<PaneId, PaneConfig>>(
         HashMap.make([initialConfig.paneId, initialConfig])
@@ -89,9 +90,11 @@ export const makePaneWorkspaceLive = (
       ) =>
         Effect.gen(function* () {
           const tree = yield* Ref.get(treeRef)
-          const readyTree = markPaneReady(tree, paneId)
-          if (Either.isLeft(readyTree)) {
-            return yield* Effect.fail(readyTree.left)
+          // Validate paneId is a pending leaf before spawning anything; the cwd here is a
+          // placeholder discarded below once the real (possibly worktree) cwd is known.
+          const precheck = markPaneReady(tree, paneId, sourceCwd)
+          if (Either.isLeft(precheck)) {
+            return yield* Effect.fail(precheck.left)
           }
 
           const worktreePath = useWorktree ? join(worktreesRoot, paneId) : undefined
@@ -99,6 +102,11 @@ export const makePaneWorkspaceLive = (
             { paneId, sourceCwd, model, worktreePath },
             onCreateEvent
           )
+
+          const readyTree = markPaneReady(tree, paneId, config.cwd, config.worktree?.sourceRepo)
+          if (Either.isLeft(readyTree)) {
+            return yield* Effect.fail(readyTree.left)
+          }
 
           yield* Ref.set(treeRef, readyTree.right)
           yield* Ref.update(configsRef, HashMap.set(paneId, config))

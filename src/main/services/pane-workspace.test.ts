@@ -34,7 +34,8 @@ function makeSupervisorLayer(
   return Layer.succeed(PaneSupervisor, {
     openPane,
     closePane: () => Effect.void,
-    getHandle: () => Effect.succeed(Option.none())
+    getHandle: () => Effect.succeed(Option.none()),
+    closeAll: () => Effect.void
   })
 }
 
@@ -68,7 +69,7 @@ describe('PaneWorkspace', () => {
         _tag: 'Split',
         direction: 'row',
         children: [
-          { _tag: 'Leaf', paneId: INITIAL_CONFIG.paneId, status: 'ready' },
+          { _tag: 'Leaf', paneId: INITIAL_CONFIG.paneId, status: 'ready', cwd: INITIAL_CONFIG.cwd },
           { _tag: 'Leaf', paneId: secondLeafPaneId(tree), status: 'pending' }
         ],
         sizes: [0.5, 0.5]

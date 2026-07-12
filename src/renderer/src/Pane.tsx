@@ -9,9 +9,17 @@ interface Message {
 
 interface PaneProps {
   paneId: string
+  cwd?: string
+  sourceRepo?: string
 }
 
-function Pane({ paneId }: PaneProps) {
+function dirName(path: string): string {
+  const normalized = path.replace(/[/\\]+$/, '')
+  const lastSeparator = Math.max(normalized.lastIndexOf('/'), normalized.lastIndexOf('\\'))
+  return lastSeparator === -1 ? normalized : normalized.slice(lastSeparator + 1)
+}
+
+function Pane({ paneId, cwd, sourceRepo }: PaneProps) {
   const queryClient = useQueryClient()
   const messagesQueryKey = ['pane', paneId, 'messages'] as const
   const { data: messages = [] } = useQuery<Message[]>({
@@ -43,28 +51,43 @@ function Pane({ paneId }: PaneProps) {
 
   return (
     <div className="flex h-full flex-col bg-neutral-950 p-4 text-neutral-100">
-      <div className="flex items-center justify-end gap-2 pb-2">
-        <button
-          type="button"
-          className="rounded border border-neutral-700 px-2 py-1 text-xs"
-          onClick={() => window.dia.splitPane(paneId, 'row')}
-        >
-          Split ↔
-        </button>
-        <button
-          type="button"
-          className="rounded border border-neutral-700 px-2 py-1 text-xs"
-          onClick={() => window.dia.splitPane(paneId, 'column')}
-        >
-          Split ↕
-        </button>
-        <button
-          type="button"
-          className="rounded border border-neutral-700 px-2 py-1 text-xs"
-          onClick={() => window.dia.closePane(paneId)}
-        >
-          Close
-        </button>
+      <div className="flex items-center justify-between gap-2 pb-2">
+        {cwd !== undefined && (
+          <span
+            title={sourceRepo !== undefined ? `${sourceRepo} (worktree at ${cwd})` : cwd}
+            className="flex min-w-0 items-center gap-1.5 rounded border border-neutral-800 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-400"
+          >
+            <span className="truncate">{dirName(sourceRepo ?? cwd)}</span>
+            {sourceRepo !== undefined && (
+              <span className="shrink-0 rounded-sm bg-neutral-800 px-1 text-[10px] text-neutral-500">
+                worktree
+              </span>
+            )}
+          </span>
+        )}
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            className="rounded border border-neutral-700 px-2 py-1 text-xs"
+            onClick={() => window.dia.splitPane(paneId, 'row')}
+          >
+            Split ↔
+          </button>
+          <button
+            type="button"
+            className="rounded border border-neutral-700 px-2 py-1 text-xs"
+            onClick={() => window.dia.splitPane(paneId, 'column')}
+          >
+            Split ↕
+          </button>
+          <button
+            type="button"
+            className="rounded border border-neutral-700 px-2 py-1 text-xs"
+            onClick={() => window.dia.closePane(paneId)}
+          >
+            Close
+          </button>
+        </div>
       </div>
       <div className="flex-1 space-y-2 overflow-y-auto">
         {messages.map((message, index) => (

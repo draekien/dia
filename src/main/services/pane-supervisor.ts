@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import {
   Context,
   Data,
+  Duration,
   Effect,
   Either,
   Exit,
@@ -119,9 +120,27 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
       .spawn(agentSessionModulePath)
       .pipe(Effect.mapError((cause) => new ProcessSpawnError({ paneId: config.paneId, cause }))),
     (child) =>
-      Effect.logInfo('Killing pane process', { paneId: config.paneId }).pipe(
-        Effect.andThen(Effect.sync(() => child.kill()))
-      )
+      Effect.gen(function* () {
+        yield* Effect.logInfo('Killing pane process', { paneId: config.paneId })
+        // Wait for the OS process to actually exit (not just for kill() to be called) before
+        // this finalizer resolves -- a worktree-remove finalizer may run right after this one,
+        // and on Windows `git worktree remove` fails while the killed process still holds the
+        // worktree directory as its cwd/open handles.
+        // Register the exit listener and call kill() inside the same synchronous callback --
+        // a listener attached only after kill() can miss a synchronous 'exit' emission.
+        const exited = Effect.async<void>((resume) => {
+          child.on('exit', () => resume(Effect.void))
+          child.kill()
+        })
+        yield* exited.pipe(
+          Effect.timeout(Duration.seconds(5)),
+          Effect.catchAll(() =>
+            Effect.logWarning('Pane process did not exit within timeout', {
+              paneId: config.paneId
+            })
+          )
+        )
+      })
   )
   yield* Effect.logInfo('Pane process spawned', { paneId: config.paneId, pid: child.pid })
 
@@ -228,6 +247,10 @@ export class PaneSupervisor extends Context.Tag('PaneSupervisor')<
     >
     readonly closePane: (paneId: PaneId) => Effect.Effect<void>
     readonly getHandle: (paneId: PaneId) => Effect.Effect<Option.Option<PaneHandle>>
+    // Gracefully tears down every open pane (killing its process and removing its worktree, if
+    // any) -- for app shutdown, so panes are never left to be killed out-of-band and misreported
+    // as crashes.
+    readonly closeAll: () => Effect.Effect<void>
   }
 >() {}
 
@@ -332,6 +355,13 @@ export const PaneSupervisorLive = Layer.effect(
         Effect.map((entries) => Option.map(HashMap.get(entries, paneId), (entry) => entry.handle))
       )
 
-    return { openPane, closePane, getHandle }
+    const closeAll = () =>
+      Ref.get(entriesRef).pipe(
+        Effect.flatMap((entries) =>
+          Effect.forEach(Array.from(HashMap.keys(entries)), teardown, { discard: true })
+        )
+      )
+
+    return { openPane, closePane, getHandle, closeAll }
   })
 )

@@ -65,7 +65,14 @@ function PaneCreationForm({ paneId }: PaneCreationFormProps) {
   const isBusy = state.step === 'creating'
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 bg-background p-6 text-ink">
+    <div className="relative flex h-full flex-col items-center justify-center gap-4 bg-background p-6 text-ink">
+      <button
+        type="button"
+        onClick={() => window.dia.closePane(paneId)}
+        className="absolute top-4 right-4 rounded-md border border-border px-2 py-1 text-xs text-ink-muted transition-colors hover:border-primary hover:text-ink"
+      >
+        Cancel
+      </button>
       <div className="flex w-full max-w-sm flex-col gap-4">
         <div className="flex flex-col gap-1">
           <span className="text-sm font-medium">New pane</span>

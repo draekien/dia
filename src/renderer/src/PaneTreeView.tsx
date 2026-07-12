@@ -17,7 +17,7 @@ function PaneTreeView({ node }: PaneTreeViewProps) {
     return node.status === 'pending' ? (
       <PaneCreationForm paneId={node.paneId} />
     ) : (
-      <Pane paneId={node.paneId} />
+      <Pane paneId={node.paneId} cwd={node.cwd} sourceRepo={node.sourceRepo} />
     )
   }
 

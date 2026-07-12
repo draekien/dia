@@ -1,5 +1,11 @@
 export type PaneNode =
-  | { readonly _tag: 'Leaf'; readonly paneId: string; readonly status: 'pending' | 'ready' }
+  | {
+      readonly _tag: 'Leaf'
+      readonly paneId: string
+      readonly status: 'pending' | 'ready'
+      readonly cwd?: string
+      readonly sourceRepo?: string
+    }
   | {
       readonly _tag: 'Split'
       readonly direction: 'row' | 'column'

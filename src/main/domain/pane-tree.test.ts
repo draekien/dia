@@ -71,20 +71,20 @@ describe('markPaneReady', () => {
   it('flips a pending leaf to ready', () => {
     const split = Either.getOrThrow(splitPane(leaf(PANE_A), PANE_A, 'row', PANE_B))
 
-    const result = markPaneReady(split, PANE_B)
+    const result = markPaneReady(split, PANE_B, '/repo')
 
     expect(result).toEqual(
       Either.right({
         _tag: 'Split',
         direction: 'row',
-        children: [leaf(PANE_A), leaf(PANE_B, 'ready')],
+        children: [leaf(PANE_A), { ...leaf(PANE_B, 'ready'), cwd: '/repo' }],
         sizes: [0.5, 0.5]
       })
     )
   })
 
   it('returns PaneNotFoundError for an unknown paneId', () => {
-    const result = markPaneReady(leaf(PANE_A), 'not-a-real-id')
+    const result = markPaneReady(leaf(PANE_A), 'not-a-real-id', '/repo')
 
     expect(result).toEqual(Either.left(new PaneNotFoundError({ paneId: 'not-a-real-id' })))
   })

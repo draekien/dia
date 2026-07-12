@@ -73,13 +73,23 @@ app.whenReady().then(() => {
   )
   const appLayer = Layer.merge(supervisorLayer, workspaceLayer)
 
+  let shuttingDown = false
+
   Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
         const paneWorkspace = yield* PaneWorkspace
         const paneSupervisor = yield* PaneSupervisor
         wireGetInitialLayout(paneWorkspace)
-        wireChooseDirectory()
+        wireChooseDirectory(app.getPath('userData'), mainWindow)
+
+        app.on('before-quit', (event) => {
+          if (shuttingDown) return
+          shuttingDown = true
+          event.preventDefault()
+          Effect.runPromise(paneSupervisor.closeAll()).finally(() => app.quit())
+        })
+
         yield* wireCommands({ paneWorkspace, paneSupervisor, webContents: mainWindow.webContents })
       })
     ).pipe(

@@ -8,6 +8,10 @@ export interface PaneLeaf {
   readonly _tag: 'Leaf'
   readonly paneId: PaneId
   readonly status: PaneLeafStatus
+  readonly cwd?: string
+  // Set only when cwd is a worktree, so the UI can show where the pane originated
+  // from instead of the worktree's directory name (a bare paneId/GUID).
+  readonly sourceRepo?: string
 }
 
 export interface PaneSplit {
@@ -21,7 +25,9 @@ export type PaneNode = PaneLeaf | PaneSplit
 
 const PaneLeafSchema = Schema.TaggedStruct('Leaf', {
   paneId: Schema.UUID,
-  status: Schema.Literal('pending', 'ready')
+  status: Schema.Literal('pending', 'ready'),
+  cwd: Schema.optional(Schema.String),
+  sourceRepo: Schema.optional(Schema.String)
 })
 
 const PaneSplitSchema = Schema.TaggedStruct('Split', {
@@ -84,17 +90,19 @@ export function splitPane(
 
 function markReadyNode(
   node: PaneNode,
-  targetPaneId: PaneId
+  targetPaneId: PaneId,
+  cwd: string,
+  sourceRepo: string | undefined
 ): Either.Either<PaneNode, PaneNotFoundError> {
   if (node._tag === 'Leaf') {
     if (node.paneId !== targetPaneId) {
       return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
     }
-    return Either.right({ ...node, status: 'ready' })
+    return Either.right({ ...node, status: 'ready', cwd, sourceRepo })
   }
 
   for (let i = 0; i < node.children.length; i++) {
-    const result = markReadyNode(node.children[i], targetPaneId)
+    const result = markReadyNode(node.children[i], targetPaneId, cwd, sourceRepo)
     if (Either.isRight(result)) {
       const children = node.children.slice()
       children[i] = result.right
@@ -106,9 +114,11 @@ function markReadyNode(
 
 export function markPaneReady(
   tree: PaneNode,
-  targetPaneId: PaneId
+  targetPaneId: PaneId,
+  cwd: string,
+  sourceRepo?: string
 ): Either.Either<PaneNode, PaneNotFoundError> {
-  return markReadyNode(tree, targetPaneId)
+  return markReadyNode(tree, targetPaneId, cwd, sourceRepo)
 }
 
 function closeNode(
