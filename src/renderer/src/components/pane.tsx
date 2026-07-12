@@ -2,7 +2,9 @@ import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import type { AttentionState, PermissionRequest } from '../dia'
+import { PermissionInputPreview } from './permission-input-preview'
 import { PulseIndicator } from './pulse-indicator'
+import { Button } from './ui/button'
 import {
   Dialog,
   DialogContent,
@@ -205,27 +207,25 @@ function Pane({ paneId, cwd, sourceRepo, isFocused = false, onFocus }: PaneProps
           <DialogHeader>
             <DialogTitle>Permission requested</DialogTitle>
             <DialogDescription>
-              {pendingPermission?.toolName} wants to run with the following input:
+              Wants to run{' '}
+              <span className="rounded border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 font-mono text-xs text-neutral-300">
+                {pendingPermission?.toolName}
+              </span>
             </DialogDescription>
           </DialogHeader>
-          <pre className="max-h-64 overflow-auto rounded bg-neutral-900 p-2 text-xs text-neutral-300">
-            {JSON.stringify(pendingPermission?.input, null, 2)}
-          </pre>
+          <div className="max-h-64 overflow-auto">
+            {pendingPermission !== null && (
+              <PermissionInputPreview
+                toolName={pendingPermission.toolName}
+                input={pendingPermission.input}
+              />
+            )}
+          </div>
           <DialogFooter>
-            <button
-              type="button"
-              className="rounded border border-neutral-700 px-3 py-1 text-sm"
-              onClick={() => respondToPermission('deny')}
-            >
+            <Button variant="outline" onClick={() => respondToPermission('deny')}>
               Deny
-            </button>
-            <button
-              type="button"
-              className="rounded bg-neutral-100 px-3 py-1 text-sm text-neutral-950"
-              onClick={() => respondToPermission('allow')}
-            >
-              Allow
-            </button>
+            </Button>
+            <Button onClick={() => respondToPermission('allow')}>Allow</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
