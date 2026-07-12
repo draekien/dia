@@ -14,3 +14,7 @@ When a new significant architecture decision is made during a session, write it 
 
 - `docs/llms/electron-vite.txt` — an [llms.txt](https://llmstxt.org/#proposal) index of the electron-vite guide (build tool chosen in ADR-0004). Consult it before making electron-vite config, dev/HMR, build, or packaging changes.
 - `docs/llms/agent-sdk.txt` — an [llms.txt](https://llmstxt.org/#proposal) index of the Claude Agent SDK docs (the SDK dia uses to drive Claude, per ADR-0003). **This is the first thing to check for ANY Agent SDK question or task** — sessions, permissions, hooks, MCP, subagents, or the TypeScript/Python API — whether you're answering a question, debugging, or writing code. Read it before reaching for general Claude API knowledge, a skill, or a subagent; it covers sessions, permissions, hooks, MCP, subagents, and links the full TypeScript/Python API reference.
+
+## Design Context
+
+`PRODUCT.md` and `DESIGN.md` at the repo root carry dia's design system — read before any UI/UX work. Register: **product** (design serves the tool, a single-user pane workspace). North star: **"The Control Room"** — calm, glanceable status across up to six concurrent panes, with amber/red/green pulse indicators as the app's one deliberate loud signal. Key principles: glanceability over detail, one voice for attention (pulse only), calm density, native-not-decorative craft, fast under real use. `DESIGN.md` is currently a seed (no code yet); re-run `/impeccable document` once components exist to capture real tokens.
