@@ -222,7 +222,7 @@ function Pane({ paneId, cwd, sourceRepo, isFocused = false, onFocus }: PaneProps
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => respondToPermission('deny')}>
+            <Button variant="destructive" onClick={() => respondToPermission('deny')}>
               Deny
             </Button>
             <Button onClick={() => respondToPermission('allow')}>Allow</Button>
