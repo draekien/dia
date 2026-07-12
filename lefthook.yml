@@ -1,0 +1,10 @@
+pre-commit:
+  parallel: true
+  commands:
+    typecheck:
+      glob: "*.{ts,tsx}"
+      run: pnpm typecheck
+    lint-fix:
+      glob: "*.{ts,tsx,js,jsx,json}"
+      run: pnpm lint:fix --no-errors-on-unmatched {staged_files}
+      stage_fixed: true

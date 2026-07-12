@@ -7,7 +7,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prepare": "./scripts/prepare-effect.sh",
+    "prepare": "./scripts/prepare-effect.sh && lefthook install",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",

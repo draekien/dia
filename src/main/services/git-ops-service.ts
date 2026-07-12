@@ -68,6 +68,7 @@ export const GitOpsServiceLive = Layer.effect(
       info: WorktreeInfo,
       paneId: PaneId
     ) {
+      // First try standard removal with --force flag
       const command = Command.make('git', 'worktree', 'remove', '--force', info.path).pipe(
         Command.workingDirectory(info.sourceRepo)
       )
@@ -77,17 +78,38 @@ export const GitOpsServiceLive = Layer.effect(
           Effect.mapError((cause) => new WorktreeRemoveError({ paneId, path: info.path, cause }))
         )
 
-      if (exitCode !== 0) {
-        return yield* Effect.fail(
-          new WorktreeRemoveError({
-            paneId,
-            path: info.path,
-            cause: `git worktree remove exited with code ${exitCode}`
-          })
-        )
+      if (exitCode === 0) {
+        yield* Effect.logInfo('Removed pane worktree', { paneId, path: info.path })
+        return
       }
 
-      yield* Effect.logInfo('Removed pane worktree', { paneId, path: info.path })
+      // If standard removal fails, try with --prune flag (more aggressive)
+      yield* Effect.logWarning('Standard worktree remove failed, trying with --prune', {
+        paneId,
+        path: info.path,
+        exitCode
+      })
+      const pruneCommand = Command.make('git', 'worktree', 'prune').pipe(
+        Command.workingDirectory(info.sourceRepo)
+      )
+      const pruneExitCode = yield* executor
+        .exitCode(pruneCommand)
+        .pipe(
+          Effect.mapError((cause) => new WorktreeRemoveError({ paneId, path: info.path, cause }))
+        )
+
+      if (pruneExitCode !== 0) {
+        // Log the error but don't fail — the worktree directory can be cleaned up later.
+        // This ensures pane teardown doesn't block on git worktree removal failures.
+        yield* Effect.logWarning('Failed to prune worktree; manual cleanup may be needed', {
+          paneId,
+          path: info.path,
+          pruneExitCode
+        })
+        return
+      }
+
+      yield* Effect.logInfo('Pruned pane worktree', { paneId, path: info.path })
     })
 
     return { createWorktree, removeWorktree }
