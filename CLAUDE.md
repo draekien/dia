@@ -28,8 +28,17 @@ When you hit a genuinely non-obvious finding during a session — something that
 ## Coding
 
 - Make sure to set up logs for code you write using Effect's logger methods so its easy to trace and debug issues.
-- Use /effect-ts skill when writing effect code
-- Use /module-design skill when creating new services
-- Use /with-testing-principals skill when writing or updating tests
-- Use /impeccable craft skill before working on any UI
-- Use `shadcn` skill before writing any components
+
+### Mandatory skill invocation
+
+These are BLOCKING REQUIREMENTS, not suggestions. Before writing or editing any code matching a trigger below, invoke the listed skill via the Skill tool FIRST — before any other response, plan, or edit for that task. If a task matches more than one trigger, invoke all matching skills before starting. Do not skip a trigger because the change "looks small" or "is just a one-liner."
+
+| Trigger | Required skill |
+| --- | --- |
+| Writing or editing any `.ts`/`.tsx` code that uses Effect (services, layers, schemas, streams, runtimes, or typed errors) | `effect-ts` |
+| Creating a new service or module | `engineering-skills:module-design` |
+| Writing or updating any test file | `engineering-skills:with-testing-principles` |
+| Any UI/UX work — new components, layout, styling, interaction | `impeccable` (craft) |
+| Adding, modifying, or composing any shadcn/ui component | `shadcn` |
+
+If you realize partway through a task that a trigger applies and you skipped the skill, stop, invoke the skill, and reconcile your work against its guidance before continuing.
