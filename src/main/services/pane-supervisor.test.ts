@@ -93,9 +93,10 @@ describe('PaneSupervisor', () => {
 
       yield* Effect.gen(function* () {
         const supervisor = yield* PaneSupervisor
+        const eventsA: IpcEvent[] = []
         const eventsB: IpcEvent[] = []
 
-        yield* supervisor.openPane(requestA, () => Effect.void)
+        yield* supervisor.openPane(requestA, (event) => Effect.sync(() => eventsA.push(event)))
         const openedB = yield* supervisor.openPane(requestB, (event) =>
           Effect.sync(() => eventsB.push(event))
         )
@@ -141,6 +142,14 @@ describe('PaneSupervisor', () => {
               log instanceof ProcessCrashedError &&
               log.paneId === configA.paneId &&
               log.exitCode === 1
+          )
+        )
+
+        // Before being torn down, the crashed pane's attention transitions to Errored so the
+        // renderer can still show a red pulse for it.
+        assert.isTrue(
+          eventsA.some(
+            (event) => event._tag === 'PaneAttentionChanged' && event.attention._tag === 'Errored'
           )
         )
       }).pipe(Effect.scoped, Effect.provide(testLayer), Effect.provide(loggerLayer))

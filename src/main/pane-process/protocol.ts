@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import { PaneError } from '../domain/attention'
 import { ConversationMessage, PaneConfig } from '../domain/pane'
 
 const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
@@ -33,12 +34,16 @@ export const PermissionRequested = Schema.TaggedStruct('PermissionRequested', {
   toolName: Schema.String,
   input: JsonRecord
 })
+export const TurnCompleted = Schema.TaggedStruct('TurnCompleted', {})
+export const TurnErrored = Schema.TaggedStruct('TurnErrored', { error: PaneError })
 
 export const OutboundMessage = Schema.Union(
   AssistantMessageReceived,
   AssistantTextDelta,
   ToolCallStarted,
   ToolCallCompleted,
-  PermissionRequested
+  PermissionRequested,
+  TurnCompleted,
+  TurnErrored
 )
 export type OutboundMessage = typeof OutboundMessage.Type

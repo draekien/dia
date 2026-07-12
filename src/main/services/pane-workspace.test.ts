@@ -19,7 +19,8 @@ const WORKTREES_ROOT = '/worktrees'
 const fakeHandle: PaneHandle = {
   sendMessage: () => Effect.void,
   resolvePermission: () => Effect.void,
-  subscribe: () => Stream.empty
+  subscribe: () => Stream.empty,
+  markErrored: () => Effect.void
 }
 
 function makeSupervisorLayer(

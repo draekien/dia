@@ -100,6 +100,16 @@ const runSession = Effect.fn('AgentSession.runSession')(
           return
         }
 
+        if (event.type === 'result') {
+          if (event.subtype === 'success') {
+            yield* postOutbound({ _tag: 'TurnCompleted' })
+          } else {
+            const message = event.errors.length > 0 ? event.errors.join('; ') : event.subtype
+            yield* postOutbound({ _tag: 'TurnErrored', error: { message } })
+          }
+          return
+        }
+
         if (event.type !== 'stream_event') return
         const streamEvent = event.event
 

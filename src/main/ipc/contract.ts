@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import { AttentionState } from '../domain/attention'
 import { ConversationMessage } from '../domain/pane'
 import { PaneNode } from '../domain/pane-tree'
 
@@ -108,7 +109,13 @@ export const PaneCreateFailed = Schema.TaggedStruct('PaneCreateFailed', {
 })
 export type PaneCreateFailed = typeof PaneCreateFailed.Type
 
-// Additional events (PaneAttentionChanged, PaneClosed) join this union in later bullets.
+export const PaneAttentionChanged = Schema.TaggedStruct('PaneAttentionChanged', {
+  paneId: Schema.UUID,
+  attention: AttentionState
+})
+export type PaneAttentionChanged = typeof PaneAttentionChanged.Type
+
+// Additional events (PaneClosed) join this union in later bullets.
 export const IpcEvent = Schema.Union(
   PaneMessageAppended,
   PaneAssistantTextDelta,
@@ -116,6 +123,7 @@ export const IpcEvent = Schema.Union(
   PaneToolCallCompleted,
   PanePermissionRequested,
   LayoutChanged,
-  PaneCreateFailed
+  PaneCreateFailed,
+  PaneAttentionChanged
 )
 export type IpcEvent = typeof IpcEvent.Type
