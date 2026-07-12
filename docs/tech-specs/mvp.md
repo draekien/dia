@@ -18,7 +18,7 @@ Renderer (React)
 Main process (Effect runtime)
    ├── PaneTreeService     — layout tree: split/close/resize/serialize
    ├── PaneSupervisor       — one Fiber + Scope per pane, owns its utilityProcess
-   ├── WorktreeService     — creates/removes a pane's isolated git worktree
+   ├── GitOpsService       — git CLI operations (starting with worktree create/remove)
    ├── PersistenceService  — read/write layout + session state as local JSON
    └── IpcGateway           — validates/encodes messages to/from the renderer
          │
@@ -78,7 +78,7 @@ Holds the current `PaneNode` tree in a `Ref<PaneNode>`. Operations (`split`, `cl
 
 For each pane, `PaneSupervisor` runs a scoped `Effect` that:
 
-0. If the pane was created with the worktree toggle on, calls `WorktreeService.create` (`Effect.acquireRelease`, so the worktree's removal is guaranteed on scope close, including on error) and uses the resulting `WorktreeInfo.path` as the pane's effective `cwd`; otherwise uses the chosen directory directly.
+0. If the pane was created with the worktree toggle on, calls `GitOpsService.createWorktree` (`Effect.acquireRelease`, so the worktree's removal is guaranteed on scope close, including on error) and uses the resulting `WorktreeInfo.path` as the pane's effective `cwd`; otherwise uses the chosen directory directly.
 1. Spawns the pane's `utilityProcess` (`Effect.acquireRelease`, so process teardown is guaranteed on scope close, including on error).
 2. Starts an `AgentSession` inside that process, configured with the pane's `cwd` and `model`.
 3. Forks a `Fiber` that consumes the process's message stream (a `Queue`/`Stream`) and updates that pane's `AttentionState` and `history` in a `Ref<PaneRecord>`.
@@ -99,20 +99,20 @@ Wraps `@effect/platform-node`'s `FileSystem` to read/write two JSON documents un
 Defines the full command/event contract as `Schema`-validated messages:
 
 - **Commands** (renderer → main): `ChooseDirectory`, `CreatePane` (`cwd`, `model`, `useWorktree`), `SplitPane`, `ClosePane`, `SendMessage`, `ResolvePermission`, `FocusPane`
-- **Events** (main → renderer): `LayoutChanged`, `PaneMessageAppended`, `PaneAttentionChanged`, `PaneClosed`
+- **Events** (main → renderer): `LayoutChanged`, `PaneMessageAppended`, `PaneAttentionChanged`, `PaneClosed`, `PaneCreateFailed`
 
 Every message is decoded with its `Schema` on receipt; a decode failure is a typed error logged and dropped, never an uncaught exception crossing the IPC boundary.
 
-`ChooseDirectory` opens the OS-native directory picker (Electron's `dialog.showOpenDialog`, main-process only — nothing renderer-side reaches the filesystem directly) and returns the chosen path, which the renderer then passes into `CreatePane` along with the worktree toggle's value.
+`ChooseDirectory` opens the OS-native directory picker (Electron's `dialog.showOpenDialog`, main-process only — nothing renderer-side reaches the filesystem directly) and returns `{ path, isGitRepo }` (a `.git` presence check alongside the chosen path, so the renderer can render the worktree toggle without a second round-trip), which the renderer then passes into `CreatePane` along with the worktree toggle's value. `PaneCreateFailed` surfaces a `CreatePane` failure (worktree or process spawn) back to the still-pending pane.
 
-### 4.6 WorktreeService
+### 4.6 GitOpsService
 
-Wraps git CLI invocations (via `@effect/platform`'s `Command` executor) needed to isolate a pane's changes:
+Wraps git CLI invocations (via `@effect/platform`'s `Command` executor). Named generally rather than after its first use, since further git operations beyond worktree management are expected to join this service in later bullets:
 
-- `create(sourceRepo: string, paneId: PaneId): Effect<WorktreeInfo, WorktreeCreateError>` — runs `git worktree add` for a new branch under a dia-managed directory (Electron's `userData/worktrees/<paneId>`), returning the resulting `WorktreeInfo`.
-- `remove(info: WorktreeInfo): Effect<void, WorktreeRemoveError>` — runs `git worktree remove --force` for that pane's worktree.
+- `createWorktree(sourceRepo: string, paneId: PaneId): Effect<WorktreeInfo, WorktreeCreateError>` — runs `git worktree add` for a new branch under a dia-managed directory (Electron's `userData/worktrees/<paneId>`), returning the resulting `WorktreeInfo`.
+- `removeWorktree(info: WorktreeInfo): Effect<void, WorktreeRemoveError>` — runs `git worktree remove --force` for that pane's worktree.
 
-`create` is only invoked when the pane's chosen directory is a git repository and the user opted into a worktree at pane-creation time; `remove` runs as the release side of the `Effect.acquireRelease` in `PaneSupervisor` §4.2 step 0, so it always runs once when the pane's `Scope` closes.
+`createWorktree` is only invoked when the pane's chosen directory is a git repository and the user opted into a worktree at pane-creation time; `removeWorktree` runs as the release side of the `Effect.acquireRelease` in `PaneSupervisor` §4.2 step 0, so it always runs once when the pane's `Scope` closes.
 
 ## 5. Concurrency Model
 
@@ -132,7 +132,7 @@ All domain failures are typed tagged errors (`ProcessSpawnError`, `ProcessCrashe
 
 Consistent with the PRD's "automated + manual" decision:
 
-- **Automated**: `PaneTreeService` tree operations (split/close/resize) as pure unit tests; `AttentionState` transition logic; `PersistenceService` encode/decode round-trips including malformed-file fallback; `WorktreeService` create/remove against a test `Layer` in place of the real git `Command` executor, including the remove-failure-is-logged-not-thrown path; simulated pane crash/recovery using Effect's `TestClock`/test `Layer`s in place of a real `utilityProcess`.
+- **Automated**: `PaneTreeService` tree operations (split/close/resize) as pure unit tests; `AttentionState` transition logic; `PersistenceService` encode/decode round-trips including malformed-file fallback; `GitOpsService` create/remove-worktree against a test `Layer` in place of the real git `Command` executor, including the remove-failure-is-logged-not-thrown path; simulated pane crash/recovery using Effect's `TestClock`/test `Layer`s in place of a real `utilityProcess`.
 - **Manual**: pane splitting/resizing by hand, the focus/expand interaction, choosing a working directory via the native picker and toggling worktree creation, confirming a closed pane's worktree is actually removed on disk, and the full permission-request → pulse → focus → approve/deny flow against real local Claude Code sessions, including dogfooding on dia's own repository.
 
 ## 8. Non-Goals
@@ -143,8 +143,8 @@ Mirrors the PRD's Out of Scope, plus technical exclusions specific to this spec:
 - No cross-pane shared state or locking mechanism (each pane is fully independent, per ADR-0007).
 - No database or query layer over persisted state (per ADR-0008).
 - No dynamic reconfiguration of a running pane's `cwd`, `model`, or worktree — changing any of these requires closing and reopening the pane.
-- No worktree creation for a `cwd` that isn't a git repository — `WorktreeService.create` is simply not invoked, no fallback or detection UI.
-- No confirmation dialog or dirty-worktree check before `WorktreeService.remove` runs on pane close.
+- No worktree creation for a `cwd` that isn't a git repository — `GitOpsService.createWorktree` is simply not invoked, no fallback or detection UI.
+- No confirmation dialog or dirty-worktree check before `GitOpsService.removeWorktree` runs on pane close.
 - No merge/rebase tooling for reconciling a worktree's branch — out of scope per the PRD; the user does this with their own git tooling.
 
 ## 9. Open Questions

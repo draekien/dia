@@ -1,10 +1,12 @@
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Context } from 'effect'
 import { Effect, Either, Option, Schema, Stream } from 'effect'
-import { ipcMain, type WebContents } from 'electron'
+import { dialog, ipcMain, type WebContents } from 'electron'
 import { PaneNode } from '../domain/pane-tree'
 import type { PaneSupervisor } from '../services/pane-supervisor'
 import type { PaneWorkspace } from '../services/pane-workspace'
-import { CHANNEL, IpcCommand, IpcEvent } from './contract'
+import { CHANNEL, type ChooseDirectoryResult, IpcCommand, IpcEvent } from './contract'
 
 const decodeCommand = Schema.decodeUnknownEither(IpcCommand)
 const encodeEvent = Schema.encodeSync(IpcEvent)
@@ -16,6 +18,16 @@ export function wireGetInitialLayout(
   ipcMain.handle(CHANNEL.getInitialLayout, () =>
     Effect.runPromise(paneWorkspace.getTree().pipe(Effect.map(encodeTree)))
   )
+}
+
+export function wireChooseDirectory(): void {
+  ipcMain.handle(CHANNEL.chooseDirectory, async (): Promise<ChooseDirectoryResult> => {
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    if (result.canceled || result.filePaths.length === 0) return null
+
+    const path = result.filePaths[0]
+    return { path, isGitRepo: existsSync(join(path, '.git')) }
+  })
 }
 
 export function wireCommands(deps: {
@@ -87,7 +99,7 @@ export function wireCommands(deps: {
         }
         case 'SplitPane': {
           const result = yield* paneWorkspace
-            .split(command.paneId, command.direction, onEvent)
+            .split(command.paneId, command.direction)
             .pipe(Effect.either)
           if (Either.isLeft(result)) {
             yield* Effect.logWarning('Failed to split pane', {
@@ -105,6 +117,25 @@ export function wireCommands(deps: {
             yield* Effect.logWarning('Failed to close pane', {
               paneId: command.paneId,
               issue: result.left
+            })
+            return
+          }
+          yield* sendLayoutChanged(result.right)
+          return
+        }
+        case 'CreatePane': {
+          const result = yield* paneWorkspace
+            .createPane(command.paneId, command.cwd, command.model, command.useWorktree, onEvent)
+            .pipe(Effect.either)
+          if (Either.isLeft(result)) {
+            yield* Effect.logWarning('Failed to create pane', {
+              paneId: command.paneId,
+              issue: result.left
+            })
+            yield* onEvent({
+              _tag: 'PaneCreateFailed',
+              paneId: command.paneId,
+              reason: String(result.left)
             })
             return
           }

@@ -2,9 +2,12 @@ import { Data, Either, Schema } from 'effect'
 
 export type PaneId = string
 
+export type PaneLeafStatus = 'pending' | 'ready'
+
 export interface PaneLeaf {
   readonly _tag: 'Leaf'
   readonly paneId: PaneId
+  readonly status: PaneLeafStatus
 }
 
 export interface PaneSplit {
@@ -17,7 +20,8 @@ export interface PaneSplit {
 export type PaneNode = PaneLeaf | PaneSplit
 
 const PaneLeafSchema = Schema.TaggedStruct('Leaf', {
-  paneId: Schema.UUID
+  paneId: Schema.UUID,
+  status: Schema.Literal('pending', 'ready')
 })
 
 const PaneSplitSchema = Schema.TaggedStruct('Split', {
@@ -53,7 +57,7 @@ function splitNode(
     return Either.right({
       _tag: 'Split',
       direction,
-      children: [node, { _tag: 'Leaf', paneId: newPaneId }],
+      children: [node, { _tag: 'Leaf', paneId: newPaneId, status: 'pending' }],
       sizes: [0.5, 0.5]
     })
   }
@@ -76,6 +80,35 @@ export function splitPane(
   newPaneId: PaneId
 ): Either.Either<PaneNode, PaneNotFoundError> {
   return splitNode(tree, targetPaneId, direction, newPaneId)
+}
+
+function markReadyNode(
+  node: PaneNode,
+  targetPaneId: PaneId
+): Either.Either<PaneNode, PaneNotFoundError> {
+  if (node._tag === 'Leaf') {
+    if (node.paneId !== targetPaneId) {
+      return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+    }
+    return Either.right({ ...node, status: 'ready' })
+  }
+
+  for (let i = 0; i < node.children.length; i++) {
+    const result = markReadyNode(node.children[i], targetPaneId)
+    if (Either.isRight(result)) {
+      const children = node.children.slice()
+      children[i] = result.right
+      return Either.right({ ...node, children })
+    }
+  }
+  return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+}
+
+export function markPaneReady(
+  tree: PaneNode,
+  targetPaneId: PaneId
+): Either.Either<PaneNode, PaneNotFoundError> {
+  return markReadyNode(tree, targetPaneId)
 }
 
 function closeNode(

@@ -1,11 +1,40 @@
 @import 'tailwindcss';
 
 :root {
-  --border: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --background: oklch(0.16 0.008 255);
+  --surface: oklch(0.21 0.01 255);
+  --ink: oklch(0.94 0.005 255);
+  --ink-muted: oklch(0.64 0.015 255);
+  --border: oklch(0.32 0.012 255);
+  --primary: oklch(0.62 0.14 265);
+  --primary-ink: oklch(0.98 0.01 265);
+  --secondary: oklch(0.4 0.02 250);
+  --ring: oklch(0.62 0.14 265);
+  --error: oklch(0.58 0.19 25);
 }
 
 @theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
   --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-ink: var(--primary-ink);
+  --color-secondary: var(--secondary);
   --color-ring: var(--ring);
+  --color-error: var(--error);
+
+  /* shadcn/ui's generated components (select, switch) reference these standard
+     semantic names -- mapped onto the Control Room roles above rather than
+     duplicating a second color system. */
+  --color-foreground: var(--ink);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--ink);
+  --color-accent: var(--secondary);
+  --color-accent-foreground: var(--ink);
+  --color-input: var(--border);
+  --color-muted-foreground: var(--ink-muted);
+  --color-destructive: var(--error);
+  --color-primary-foreground: var(--primary-ink);
 }

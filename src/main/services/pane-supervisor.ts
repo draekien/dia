@@ -19,11 +19,21 @@ import type { PaneConfig, PaneRecord } from '../domain/pane'
 import type { PaneId } from '../domain/pane-tree'
 import type { IpcEvent } from '../ipc/contract'
 import { InboundMessage, OutboundMessage } from '../pane-process/protocol'
+import { GitOpsService, type WorktreeCreateError } from './git-ops-service'
 
 export class ProcessSpawnError extends Data.TaggedError('ProcessSpawnError')<{
   readonly paneId: string
   readonly cause: unknown
 }> {}
+
+// A pending pane's request to start running: the source directory and model the user chose,
+// plus the worktree path to provision when set (its presence is what "useWorktree" means).
+export interface PaneCreationRequest {
+  readonly paneId: PaneId
+  readonly sourceCwd: string
+  readonly model: string
+  readonly worktreePath: string | undefined
+}
 
 export class ProcessCrashedError extends Data.TaggedError('ProcessCrashedError')<{
   readonly paneId: string
@@ -210,9 +220,12 @@ export class PaneSupervisor extends Context.Tag('PaneSupervisor')<
   PaneSupervisor,
   {
     readonly openPane: (
-      config: PaneConfig,
+      request: PaneCreationRequest,
       onEvent: (event: IpcEvent) => Effect.Effect<void>
-    ) => Effect.Effect<PaneHandle, ProcessSpawnError>
+    ) => Effect.Effect<
+      { readonly handle: PaneHandle; readonly config: PaneConfig },
+      ProcessSpawnError | WorktreeCreateError
+    >
     readonly closePane: (paneId: PaneId) => Effect.Effect<void>
     readonly getHandle: (paneId: PaneId) => Effect.Effect<Option.Option<PaneHandle>>
   }
@@ -222,6 +235,7 @@ export const PaneSupervisorLive = Layer.effect(
   PaneSupervisor,
   Effect.gen(function* () {
     const spawner = yield* PaneProcessSpawner
+    const gitOps = yield* GitOpsService
     const entriesRef = yield* Ref.make(HashMap.empty<PaneId, PaneEntry>())
 
     const teardown = Effect.fn('PaneSupervisor.teardown')(function* (paneId: PaneId) {
@@ -234,11 +248,50 @@ export const PaneSupervisorLive = Layer.effect(
     })
 
     const openPane = Effect.fn('PaneSupervisor.openPane')(function* (
-      config: PaneConfig,
+      request: PaneCreationRequest,
       onEvent: (event: IpcEvent) => Effect.Effect<void>
     ) {
       const scope = yield* Scope.make()
       const expectedExit = yield* Ref.make(false)
+
+      const prepared = yield* Effect.gen(function* () {
+        if (request.worktreePath === undefined) {
+          const config: PaneConfig = {
+            paneId: request.paneId,
+            cwd: request.sourceCwd,
+            model: request.model
+          }
+          return config
+        }
+
+        const worktree = yield* Effect.acquireRelease(
+          gitOps.createWorktree(request.sourceCwd, request.paneId, request.worktreePath),
+          (info) =>
+            gitOps.removeWorktree(info, request.paneId).pipe(
+              Effect.catchAllCause((cause) =>
+                Effect.logError('Failed to remove pane worktree', {
+                  paneId: request.paneId,
+                  cause
+                })
+              )
+            )
+        )
+
+        const config: PaneConfig = {
+          paneId: request.paneId,
+          cwd: worktree.path,
+          model: request.model,
+          worktree
+        }
+        return config
+      }).pipe(Effect.provideService(Scope.Scope, scope), Effect.either)
+
+      if (Either.isLeft(prepared)) {
+        yield* Scope.close(scope, Exit.fail(prepared.left))
+        return yield* Effect.fail(prepared.left)
+      }
+
+      const config = prepared.right
 
       const started = yield* startProcess(config, spawner).pipe(
         Effect.provideService(Scope.Scope, scope),
@@ -269,7 +322,7 @@ export const PaneSupervisorLive = Layer.effect(
       )
 
       yield* Ref.update(entriesRef, HashMap.set(config.paneId, { handle, scope, expectedExit }))
-      return handle
+      return { handle, config }
     })
 
     const closePane = (paneId: PaneId) => teardown(paneId)

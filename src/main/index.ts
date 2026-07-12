@@ -1,9 +1,11 @@
 import { join } from 'node:path'
+import { NodeContext } from '@effect/platform-node'
 import { Config, Effect, Layer, Logger, LogLevel, Option, Schema } from 'effect'
 import { app, BrowserWindow, shell } from 'electron'
 import type { PaneConfig } from './domain/pane'
 import { CHANNEL, IpcEvent } from './ipc/contract'
-import { wireCommands, wireGetInitialLayout } from './ipc/gateway'
+import { wireChooseDirectory, wireCommands, wireGetInitialLayout } from './ipc/gateway'
+import { GitOpsServiceLive } from './services/git-ops-service'
 import {
   PaneProcessSpawnerLive,
   PaneSupervisor,
@@ -59,9 +61,14 @@ app.whenReady().then(() => {
   const onEvent = (event: IpcEvent): Effect.Effect<void> =>
     Effect.sync(() => mainWindow.webContents.send(CHANNEL.event, encodeEvent(event)))
 
-  const supervisorLayer = Layer.provide(PaneSupervisorLive, PaneProcessSpawnerLive)
+  const gitOpsLayer = Layer.provide(GitOpsServiceLive, NodeContext.layer)
+  const supervisorLayer = Layer.provide(
+    PaneSupervisorLive,
+    Layer.merge(PaneProcessSpawnerLive, gitOpsLayer)
+  )
+  const worktreesRoot = join(app.getPath('userData'), 'worktrees')
   const workspaceLayer = Layer.provide(
-    makePaneWorkspaceLive(DEV_PANE_CONFIG, onEvent),
+    makePaneWorkspaceLive(DEV_PANE_CONFIG, worktreesRoot, onEvent),
     supervisorLayer
   )
   const appLayer = Layer.merge(supervisorLayer, workspaceLayer)
@@ -72,6 +79,7 @@ app.whenReady().then(() => {
         const paneWorkspace = yield* PaneWorkspace
         const paneSupervisor = yield* PaneSupervisor
         wireGetInitialLayout(paneWorkspace)
+        wireChooseDirectory()
         yield* wireCommands({ paneWorkspace, paneSupervisor, webContents: mainWindow.webContents })
       })
     ).pipe(

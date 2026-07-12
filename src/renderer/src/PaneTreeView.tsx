@@ -6,6 +6,7 @@ import {
 import { Fragment } from 'react'
 import type { PaneNode } from './dia'
 import Pane from './Pane'
+import PaneCreationForm from './PaneCreationForm'
 
 interface PaneTreeViewProps {
   node: PaneNode
@@ -13,7 +14,11 @@ interface PaneTreeViewProps {
 
 function PaneTreeView({ node }: PaneTreeViewProps) {
   if (node._tag === 'Leaf') {
-    return <Pane paneId={node.paneId} />
+    return node.status === 'pending' ? (
+      <PaneCreationForm paneId={node.paneId} />
+    ) : (
+      <Pane paneId={node.paneId} />
+    )
   }
 
   return (

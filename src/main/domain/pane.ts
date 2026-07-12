@@ -6,10 +6,18 @@ export const ConversationMessage = Schema.Struct({
 })
 export type ConversationMessage = typeof ConversationMessage.Type
 
+export const WorktreeInfo = Schema.Struct({
+  path: Schema.String,
+  branch: Schema.String,
+  sourceRepo: Schema.String
+})
+export type WorktreeInfo = typeof WorktreeInfo.Type
+
 export const PaneConfig = Schema.Struct({
   paneId: Schema.UUID,
   cwd: Schema.String,
-  model: Schema.String
+  model: Schema.String,
+  worktree: Schema.optional(WorktreeInfo)
 })
 export type PaneConfig = typeof PaneConfig.Type
 

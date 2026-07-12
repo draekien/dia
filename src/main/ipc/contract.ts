@@ -7,8 +7,17 @@ const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
 export const CHANNEL = {
   command: 'dia:command',
   event: 'dia:event',
-  getInitialLayout: 'dia:getInitialLayout'
+  getInitialLayout: 'dia:getInitialLayout',
+  chooseDirectory: 'dia:chooseDirectory'
 } as const
+
+export const ChooseDirectoryResult = Schema.NullOr(
+  Schema.Struct({
+    path: Schema.String,
+    isGitRepo: Schema.Boolean
+  })
+)
+export type ChooseDirectoryResult = typeof ChooseDirectoryResult.Type
 
 export const SendMessage = Schema.TaggedStruct('SendMessage', {
   paneId: Schema.UUID,
@@ -35,8 +44,22 @@ export const ClosePane = Schema.TaggedStruct('ClosePane', {
 })
 export type ClosePane = typeof ClosePane.Type
 
+export const CreatePane = Schema.TaggedStruct('CreatePane', {
+  paneId: Schema.UUID,
+  cwd: Schema.String,
+  model: Schema.String,
+  useWorktree: Schema.Boolean
+})
+export type CreatePane = typeof CreatePane.Type
+
 // Additional commands (FocusPane) join this union in later bullets.
-export const IpcCommand = Schema.Union(SendMessage, ResolvePermission, SplitPane, ClosePane)
+export const IpcCommand = Schema.Union(
+  SendMessage,
+  ResolvePermission,
+  SplitPane,
+  ClosePane,
+  CreatePane
+)
 export type IpcCommand = typeof IpcCommand.Type
 
 export const PaneMessageAppended = Schema.TaggedStruct('PaneMessageAppended', {
@@ -79,6 +102,12 @@ export const LayoutChanged = Schema.TaggedStruct('LayoutChanged', {
 })
 export type LayoutChanged = typeof LayoutChanged.Type
 
+export const PaneCreateFailed = Schema.TaggedStruct('PaneCreateFailed', {
+  paneId: Schema.UUID,
+  reason: Schema.String
+})
+export type PaneCreateFailed = typeof PaneCreateFailed.Type
+
 // Additional events (PaneAttentionChanged, PaneClosed) join this union in later bullets.
 export const IpcEvent = Schema.Union(
   PaneMessageAppended,
@@ -86,6 +115,7 @@ export const IpcEvent = Schema.Union(
   PaneToolCallStarted,
   PaneToolCallCompleted,
   PanePermissionRequested,
-  LayoutChanged
+  LayoutChanged,
+  PaneCreateFailed
 )
 export type IpcEvent = typeof IpcEvent.Type

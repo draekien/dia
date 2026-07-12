@@ -3,7 +3,9 @@ import { assert, describe, it } from '@effect/vitest'
 import { Effect, Layer, Logger, Option } from 'effect'
 import type { PaneConfig } from '../domain/pane'
 import type { IpcEvent } from '../ipc/contract'
+import { GitOpsService } from './git-ops-service'
 import {
+  type PaneCreationRequest,
   type PaneProcess,
   PaneProcessSpawner,
   PaneSupervisor,
@@ -24,15 +26,28 @@ class FakePaneProcess extends EventEmitter implements PaneProcess {
   }
 }
 
-const configA: PaneConfig = {
+const requestA: PaneCreationRequest = {
   paneId: 'aaaaaaaa-0000-4000-8000-000000000001',
-  cwd: '/a',
-  model: 'm'
+  sourceCwd: '/a',
+  model: 'm',
+  worktreePath: undefined
+}
+const requestB: PaneCreationRequest = {
+  paneId: 'bbbbbbbb-0000-4000-8000-000000000002',
+  sourceCwd: '/b',
+  model: 'm',
+  worktreePath: undefined
+}
+
+const configA: PaneConfig = {
+  paneId: requestA.paneId,
+  cwd: requestA.sourceCwd,
+  model: requestA.model
 }
 const configB: PaneConfig = {
-  paneId: 'bbbbbbbb-0000-4000-8000-000000000002',
-  cwd: '/b',
-  model: 'm'
+  paneId: requestB.paneId,
+  cwd: requestB.sourceCwd,
+  model: requestB.model
 }
 
 // Runs the fiber-scheduler forward without touching the (virtualized) Clock, so a
@@ -55,12 +70,17 @@ function makeTestSetup(): {
       })
   })
 
+  const gitOpsLayer = Layer.succeed(GitOpsService, {
+    createWorktree: () => Effect.dieMessage('createWorktree should not be called in these tests'),
+    removeWorktree: () => Effect.dieMessage('removeWorktree should not be called in these tests')
+  })
+
   const capturedLogs: unknown[] = []
   const captureLogger = Logger.make(({ message }) => {
     capturedLogs.push(...(Array.isArray(message) ? message : [message]))
   })
 
-  const testLayer = Layer.provide(PaneSupervisorLive, spawnerLayer)
+  const testLayer = Layer.provide(PaneSupervisorLive, Layer.merge(spawnerLayer, gitOpsLayer))
   const loggerLayer = Logger.add(captureLogger)
 
   return { processes, capturedLogs, testLayer, loggerLayer }
@@ -75,10 +95,11 @@ describe('PaneSupervisor', () => {
         const supervisor = yield* PaneSupervisor
         const eventsB: IpcEvent[] = []
 
-        yield* supervisor.openPane(configA, () => Effect.void)
-        const handleB = yield* supervisor.openPane(configB, (event) =>
+        yield* supervisor.openPane(requestA, () => Effect.void)
+        const openedB = yield* supervisor.openPane(requestB, (event) =>
           Effect.sync(() => eventsB.push(event))
         )
+        const handleB = openedB.handle
 
         // openPane forks the exit listener registration; give it a chance to
         // actually attach before emitting, since a synchronous EventEmitter.emit
@@ -133,8 +154,8 @@ describe('PaneSupervisor', () => {
       yield* Effect.gen(function* () {
         const supervisor = yield* PaneSupervisor
 
-        yield* supervisor.openPane(configA, () => Effect.void)
-        yield* supervisor.openPane(configB, () => Effect.void)
+        yield* supervisor.openPane(requestA, () => Effect.void)
+        yield* supervisor.openPane(requestB, () => Effect.void)
 
         yield* supervisor.closePane(configA.paneId)
         yield* flush

@@ -4,6 +4,7 @@ import {
   closePane,
   InvalidResizeError,
   LastPaneError,
+  markPaneReady,
   type PaneNode,
   PaneNotFoundError,
   resizeSplit,
@@ -14,10 +15,14 @@ const PANE_A = 'aaaaaaaa-0000-4000-8000-000000000001'
 const PANE_B = 'bbbbbbbb-0000-4000-8000-000000000002'
 const PANE_C = 'cccccccc-0000-4000-8000-000000000003'
 
-const leaf = (paneId: string): PaneNode => ({ _tag: 'Leaf', paneId })
+const leaf = (paneId: string, status: 'pending' | 'ready' = 'ready'): PaneNode => ({
+  _tag: 'Leaf',
+  paneId,
+  status
+})
 
 describe('splitPane', () => {
-  it('splits a lone leaf into a two-child Split with equal sizes', () => {
+  it('splits a lone leaf into a two-child Split with equal sizes, the new leaf pending', () => {
     const tree = leaf(PANE_A)
 
     const result = splitPane(tree, PANE_A, 'row', PANE_B)
@@ -26,7 +31,7 @@ describe('splitPane', () => {
       Either.right({
         _tag: 'Split',
         direction: 'row',
-        children: [leaf(PANE_A), leaf(PANE_B)],
+        children: [leaf(PANE_A), leaf(PANE_B, 'pending')],
         sizes: [0.5, 0.5]
       })
     )
@@ -46,7 +51,7 @@ describe('splitPane', () => {
           {
             _tag: 'Split',
             direction: 'column',
-            children: [leaf(PANE_B), leaf(PANE_C)],
+            children: [leaf(PANE_B, 'pending'), leaf(PANE_C, 'pending')],
             sizes: [0.5, 0.5]
           }
         ],
@@ -57,6 +62,29 @@ describe('splitPane', () => {
 
   it('returns PaneNotFoundError for an unknown paneId', () => {
     const result = splitPane(leaf(PANE_A), 'not-a-real-id', 'row', PANE_B)
+
+    expect(result).toEqual(Either.left(new PaneNotFoundError({ paneId: 'not-a-real-id' })))
+  })
+})
+
+describe('markPaneReady', () => {
+  it('flips a pending leaf to ready', () => {
+    const split = Either.getOrThrow(splitPane(leaf(PANE_A), PANE_A, 'row', PANE_B))
+
+    const result = markPaneReady(split, PANE_B)
+
+    expect(result).toEqual(
+      Either.right({
+        _tag: 'Split',
+        direction: 'row',
+        children: [leaf(PANE_A), leaf(PANE_B, 'ready')],
+        sizes: [0.5, 0.5]
+      })
+    )
+  })
+
+  it('returns PaneNotFoundError for an unknown paneId', () => {
+    const result = markPaneReady(leaf(PANE_A), 'not-a-real-id')
 
     expect(result).toEqual(Either.left(new PaneNotFoundError({ paneId: 'not-a-real-id' })))
   })
@@ -81,7 +109,7 @@ describe('closePane', () => {
       Either.right({
         _tag: 'Split',
         direction: 'row',
-        children: [leaf(PANE_A), leaf(PANE_B)],
+        children: [leaf(PANE_A), leaf(PANE_B, 'pending')],
         sizes: [0.5, 0.5]
       })
     )
