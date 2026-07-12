@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
 import { Either, Schema } from 'effect'
+import { describe, expect, it } from 'vitest'
 import { PaneConfig, PaneRecord } from './pane'
 
 describe('PaneConfig', () => {

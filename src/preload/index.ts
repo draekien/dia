@@ -1,6 +1,6 @@
-import { contextBridge, ipcRenderer } from 'electron'
 import { Schema } from 'effect'
-import { CHANNEL, IpcEvent, PaneMessageAppended, SendMessage } from '../main/ipc/contract'
+import { contextBridge, ipcRenderer } from 'electron'
+import { CHANNEL, IpcEvent, type PaneMessageAppended, SendMessage } from '../main/ipc/contract'
 
 const encodeSendMessage = Schema.encodeSync(SendMessage)
 const decodeEvent = Schema.decodeUnknownSync(IpcEvent)

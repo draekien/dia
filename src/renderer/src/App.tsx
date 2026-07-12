@@ -20,10 +20,7 @@ function App(): React.JSX.Element {
 
   useEffect(() => {
     return window.dia.onMessageAppended((event) => {
-      queryClient.setQueryData<Message[]>(messagesQueryKey, (prev = []) => [
-        ...prev,
-        event.message
-      ])
+      queryClient.setQueryData<Message[]>(messagesQueryKey, (prev = []) => [...prev, event.message])
     })
   }, [queryClient])
 
@@ -45,10 +42,9 @@ function App(): React.JSX.Element {
     <div className="flex h-screen flex-col bg-neutral-950 p-4 text-neutral-100">
       <div className="flex-1 space-y-2 overflow-y-auto">
         {messages.map((message, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: history is append-only, index is stable
           <div key={index} className={message.role === 'user' ? 'text-right' : 'text-left'}>
-            <span className="inline-block rounded bg-neutral-800 px-3 py-1">
-              {message.content}
-            </span>
+            <span className="inline-block rounded bg-neutral-800 px-3 py-1">{message.content}</span>
           </div>
         ))}
       </div>

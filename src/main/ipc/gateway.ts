@@ -1,5 +1,5 @@
-import { ipcMain, type WebContents } from 'electron'
 import { Effect, Either, Schema, Stream } from 'effect'
+import { ipcMain, type WebContents } from 'electron'
 import type { PaneHandle } from '../services/pane-supervisor'
 import { CHANNEL, IpcCommand, IpcEvent } from './contract'
 
@@ -21,7 +21,9 @@ export function wireCommands(handle: PaneHandle): void {
           Effect.andThen(handle.sendMessage(command.text))
         )
       ).catch((cause) => {
-        Effect.runSync(Effect.logError('Failed to send message to pane', { paneId: command.paneId, cause }))
+        Effect.runSync(
+          Effect.logError('Failed to send message to pane', { paneId: command.paneId, cause })
+        )
       })
     }
   })

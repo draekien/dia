@@ -59,7 +59,10 @@ async function runSession(config: PaneConfig): Promise<void> {
         .flatMap((block) => (block.type === 'text' ? [block.text] : []))
         .join('')
       if (text) {
-        console.log('[agent-session] posting assistant message', { paneId: config.paneId, length: text.length })
+        console.log('[agent-session] posting assistant message', {
+          paneId: config.paneId,
+          length: text.length
+        })
         postAssistantMessage({ role: 'assistant', content: text })
       }
     }

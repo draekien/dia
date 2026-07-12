@@ -1,6 +1,6 @@
-import { app, BrowserWindow, shell } from 'electron'
-import { Config, Effect, Logger, LogLevel, Option } from 'effect'
 import { join } from 'node:path'
+import { Config, Effect, Logger, LogLevel, Option } from 'effect'
+import { app, BrowserWindow, shell } from 'electron'
 import type { PaneConfig } from './domain/pane'
 import { wireCommands, wireEvents } from './ipc/gateway'
 import { start } from './services/pane-supervisor'
