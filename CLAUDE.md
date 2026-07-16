@@ -16,6 +16,8 @@ When a new significant architecture decision is made during a session, write it 
 
 When you hit a genuinely non-obvious finding during a session — something that took real effort to figure out, or that would trip up a future session — write it up as a new entry using `docs/reasoning/template.md`, named `YYYY-MM-DD-short-slug.md`, and add it to the index in `docs/REASONING.md`. Don't log routine implementation notes.
 
+You must not let the reasoning log drift from the current state of the project. Out of sync documentation is worse than no documentation at all.
+
 ## Reference docs
 
 - `docs/llms/electron-vite.txt` — an [llms.txt](https://llmstxt.org/#proposal) index of the electron-vite guide (build tool chosen in ADR-0004). Consult it before making electron-vite config, dev/HMR, build, or packaging changes.
@@ -33,11 +35,11 @@ Renderer-specific — see `src/renderer/CLAUDE.md`.
 
 These are BLOCKING REQUIREMENTS, not suggestions. Before writing or editing any code matching a trigger below, invoke the listed skill via the Skill tool FIRST — before any other response, plan, or edit for that task. If a task matches more than one trigger, invoke all matching skills before starting. Do not skip a trigger because the change "looks small" or "is just a one-liner."
 
-| Trigger | Required skill |
-| --- | --- |
-| Writing or editing any `.ts`/`.tsx` code that uses Effect (services, layers, schemas, streams, runtimes, or typed errors) | `effect-ts` |
-| Creating a new service or module | `engineering-skills:module-design` |
-| Writing or updating any test file | `engineering-skills:with-testing-principles` |
+| Trigger                                                                                                                   | Required skill                               |
+| ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Writing or editing any `.ts`/`.tsx` code that uses Effect (services, layers, schemas, streams, runtimes, or typed errors) | `effect-ts`                                  |
+| Creating a new service or module                                                                                          | `engineering-skills:module-design`           |
+| Writing or updating any test file                                                                                         | `engineering-skills:with-testing-principles` |
 
 Renderer-specific triggers (UI/UX work, shadcn/ui components) are in `src/renderer/CLAUDE.md`.
 
