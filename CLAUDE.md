@@ -30,8 +30,8 @@ Renderer-specific — see `src/renderer/CLAUDE.md`.
 ## Coding
 
 - Make sure to set up logs for code you write using Effect's logger methods so its easy to trace and debug issues.
-- You are not allowed to write inline comments. Code must be self-documenting.
-- You must write JSDoc for module exports.
+- Do not write inline comments that explain what a piece of code does. Write self-documenting code instead — clear names, small functions, obvious structure — rather than narrating the implementation alongside it.
+- Every module export (function, class, const) must have a JSDoc comment. That JSDoc documents the export's purpose and how to consume it — inputs, outputs, preconditions, when to call it — and must not describe implementation detail (how it works internally).
 
 ### Mandatory skill invocation
 
