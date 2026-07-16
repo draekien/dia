@@ -4,8 +4,9 @@ import {
   query,
   type SDKUserMessage
 } from '@anthropic-ai/claude-agent-sdk'
-import { Data, Deferred, Effect, Either, Queue, Schema, Stream } from 'effect'
+import { Data, Deferred, Effect, Either, Logger, LogLevel, Queue, Schema, Stream } from 'effect'
 import type { ConversationMessage, PaneConfig } from '../domain/pane'
+import { makeLoggerLive } from '../logger'
 import { InboundMessage, OutboundMessage } from './protocol'
 
 export class SessionStreamError extends Data.TaggedError('SessionStreamError')<{
@@ -191,4 +192,12 @@ const program = Effect.gen(function* () {
   )
 })
 
-Effect.runFork(Effect.scoped(program))
+const isDev = process.env.DIA_IS_DEV === '1'
+const LoggerLive = makeLoggerLive(isDev, process.env.DIA_LOG_FILE ?? 'main.log')
+
+Effect.runFork(
+  Effect.scoped(program).pipe(
+    Effect.provide(LoggerLive),
+    Effect.provide(Logger.minimumLogLevel(isDev ? LogLevel.Debug : LogLevel.Info))
+  )
+)

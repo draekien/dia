@@ -1,9 +1,10 @@
 import { join } from 'node:path'
-import { NodeContext } from '@effect/platform-node'
+import { NodeContext, NodeFileSystem } from '@effect/platform-node'
 import { Config, Effect, Layer, Logger, LogLevel, Option } from 'effect'
 import { app, BrowserWindow, shell } from 'electron'
 import type { PaneId } from './domain/pane-tree'
 import { wireChooseDirectory, wireCommands, wireGetInitialLayout } from './ipc/gateway'
+import { DEFAULT_LOG_RETENTION, makeLoggerLive, pruneOldLogEntries } from './logger'
 import { GitOpsServiceLive } from './services/git-ops-service'
 import {
   PaneProcessSpawnerLive,
@@ -51,8 +52,24 @@ function createWindow(): BrowserWindow {
   return mainWindow
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const mainWindow = createWindow()
+
+  const repoLocalLogFilePath = join(process.cwd(), 'dia.log')
+  const osDefaultLogFilePath = join(app.getPath('logs'), 'main.log')
+  const logFilePath = isDev ? repoLocalLogFilePath : osDefaultLogFilePath
+
+  await Effect.runPromise(
+    pruneOldLogEntries(logFilePath, DEFAULT_LOG_RETENTION).pipe(
+      Effect.provide(NodeFileSystem.layer),
+      Effect.catchAll(() => Effect.void)
+    )
+  )
+
+  const LoggerLive = makeLoggerLive(isDev, logFilePath)
+
+  process.env.DIA_LOG_FILE = logFilePath
+  process.env.DIA_IS_DEV = isDev ? '1' : '0'
 
   const gitOpsLayer = Layer.provide(GitOpsServiceLive, NodeContext.layer)
   const supervisorLayer = Layer.provide(
@@ -92,6 +109,7 @@ app.whenReady().then(() => {
       })
     ).pipe(
       Effect.provide(appLayer),
+      Effect.provide(LoggerLive),
       Effect.provide(Logger.minimumLogLevel(isDev ? LogLevel.Debug : LogLevel.Info))
     )
   )
