@@ -8,15 +8,19 @@ const COLOR_BY_TAG: Record<Exclude<AttentionState['_tag'], 'Idle'>, string> = {
 
 interface PulseIndicatorProps {
   readonly attention: AttentionState
+  readonly className?: string
 }
 
-export function PulseIndicator({ attention }: PulseIndicatorProps): React.JSX.Element | null {
+export function PulseIndicator({
+  attention,
+  className = ''
+}: PulseIndicatorProps): React.JSX.Element | null {
   if (attention._tag === 'Idle') return null
 
   const color = COLOR_BY_TAG[attention._tag]
 
   return (
-    <span className="relative flex size-2.5">
+    <span className={`relative flex size-2.5 ${className}`}>
       <span
         className={`absolute inline-flex size-full animate-ping rounded-full ${color} opacity-75 motion-reduce:hidden`}
       />

@@ -32,6 +32,7 @@ function PaneTreeView({
         cwd={node.cwd}
         sourceRepo={node.sourceRepo}
         isFocused={focusedPaneId === node.paneId}
+        isDimmed={focusedPaneId !== null && focusedPaneId !== node.paneId}
         onFocus={() => onFocusPane?.(node.paneId)}
       />
     )
