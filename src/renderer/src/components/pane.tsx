@@ -1,7 +1,7 @@
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import type { AttentionState, PermissionRequest } from '../dia'
+import type { AttentionState, PermissionRequest } from '../../../main/domain/attention'
 import { PermissionInputPreview } from './permission-input-preview'
 import { PulseIndicator } from './pulse-indicator'
 import { Button } from './ui/button'

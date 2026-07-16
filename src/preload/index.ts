@@ -6,13 +6,8 @@ import {
   ChooseDirectoryResult,
   ClosePane,
   CreatePane,
+  type DiaApi,
   IpcEvent,
-  type LayoutChanged,
-  type PaneAssistantTextDelta,
-  type PaneAttentionChanged,
-  type PaneCreateFailed,
-  type PaneMessageAppended,
-  type PanePermissionRequested,
   ResolvePermission,
   SendMessage,
   SplitPane
@@ -46,78 +41,66 @@ function subscribeToEvents(onDecoded: (event: IpcEvent) => void): () => void {
   return () => subscribers.delete(onDecoded)
 }
 
-const api = {
-  sendMessage(paneId: string, text: string): void {
+const api: DiaApi = {
+  sendMessage(paneId, text) {
     ipcRenderer.send(CHANNEL.command, encodeSendMessage({ _tag: 'SendMessage', paneId, text }))
   },
-  resolvePermission(
-    paneId: string,
-    requestId: string,
-    decision: 'allow' | 'deny',
-    message?: string
-  ): void {
+  resolvePermission(paneId, requestId, decision, message) {
     ipcRenderer.send(
       CHANNEL.command,
       encodeResolvePermission({ _tag: 'ResolvePermission', paneId, requestId, decision, message })
     )
   },
-  splitPane(paneId: string, direction: 'row' | 'column'): void {
+  splitPane(paneId, direction) {
     ipcRenderer.send(CHANNEL.command, encodeSplitPane({ _tag: 'SplitPane', paneId, direction }))
   },
-  closePane(paneId: string): void {
+  closePane(paneId) {
     ipcRenderer.send(CHANNEL.command, encodeClosePane({ _tag: 'ClosePane', paneId }))
   },
-  createPane(paneId: string, cwd: string, model: string, useWorktree: boolean): void {
+  createPane(paneId, cwd, model, useWorktree) {
     ipcRenderer.send(
       CHANNEL.command,
       encodeCreatePane({ _tag: 'CreatePane', paneId, cwd, model, useWorktree })
     )
   },
-  getInitialLayout(): Promise<PaneNode> {
+  getInitialLayout() {
     return ipcRenderer.invoke(CHANNEL.getInitialLayout).then((raw) => decodeTree(raw))
   },
-  chooseDirectory(): Promise<ChooseDirectoryResult> {
+  chooseDirectory() {
     return ipcRenderer
       .invoke(CHANNEL.chooseDirectory)
       .then((raw) => decodeChooseDirectoryResult(raw))
   },
-  onMessageAppended(listener: (event: PaneMessageAppended) => void): () => void {
+  onMessageAppended(listener) {
     return subscribeToEvents((event) => {
       if (event._tag === 'PaneMessageAppended') listener(event)
     })
   },
-  onLayoutChanged(listener: (event: LayoutChanged) => void): () => void {
+  onLayoutChanged(listener) {
     return subscribeToEvents((event) => {
       if (event._tag === 'LayoutChanged') listener(event)
     })
   },
-  onPaneCreateFailed(listener: (event: PaneCreateFailed) => void): () => void {
+  onPaneCreateFailed(listener) {
     return subscribeToEvents((event) => {
       if (event._tag === 'PaneCreateFailed') listener(event)
     })
   },
-  onAttentionChanged(listener: (event: PaneAttentionChanged) => void): () => void {
+  onAttentionChanged(listener) {
     return subscribeToEvents((event) => {
       if (event._tag === 'PaneAttentionChanged') listener(event)
     })
   },
-  onPermissionRequested(listener: (event: PanePermissionRequested) => void): () => void {
+  onPermissionRequested(listener) {
     return subscribeToEvents((event) => {
       if (event._tag === 'PanePermissionRequested') listener(event)
     })
   },
-  onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void {
+  onAssistantTextDelta(listener) {
     return subscribeToEvents((event) => {
       if (event._tag === 'PaneAssistantTextDelta') listener(event)
     })
   }
 }
-
-/**
- * Shape of the `window.dia` bridge exposed to the renderer via `contextBridge`.
- * Import this type in renderer code to type-check calls against `window.dia`
- * (e.g. `declare global { interface Window { dia: DiaApi } }`).
- */
-export type DiaApi = typeof api
 
 contextBridge.exposeInMainWorld('dia', api)

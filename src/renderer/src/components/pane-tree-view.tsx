@@ -4,7 +4,7 @@ import {
   ResizablePanelGroup
 } from '@renderer/components/ui/resizable'
 import { Fragment } from 'react'
-import type { PaneNode } from '../dia'
+import type { PaneNode } from '../../../main/domain/pane-tree'
 import Pane from './pane'
 import PaneCreationForm from './pane-creation-form'
 

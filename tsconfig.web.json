@@ -16,5 +16,11 @@
       "@renderer/*": ["./src/renderer/src/*"]
     }
   },
-  "include": ["src/renderer/src/**/*"]
+  "include": [
+    "src/renderer/src/**/*",
+    "src/main/domain/pane-tree.ts",
+    "src/main/domain/attention.ts",
+    "src/main/domain/pane.ts",
+    "src/main/ipc/contract.ts"
+  ]
 }

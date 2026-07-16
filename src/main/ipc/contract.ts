@@ -213,3 +213,30 @@ export const IpcEvent = Schema.Union(
   PaneAttentionChanged
 )
 export type IpcEvent = typeof IpcEvent.Type
+
+/**
+ * Shape of the `window.dia` bridge the preload script exposes to the renderer.
+ * The single source of truth for that surface: preload's implementation is
+ * checked against this interface, and the renderer's ambient `Window.dia`
+ * declaration imports it directly, so the two can't drift apart.
+ */
+export interface DiaApi {
+  sendMessage(paneId: string, text: string): void
+  resolvePermission(
+    paneId: string,
+    requestId: string,
+    decision: 'allow' | 'deny',
+    message?: string
+  ): void
+  splitPane(paneId: string, direction: 'row' | 'column'): void
+  closePane(paneId: string): void
+  createPane(paneId: string, cwd: string, model: string, useWorktree: boolean): void
+  getInitialLayout(): Promise<PaneNode>
+  chooseDirectory(): Promise<ChooseDirectoryResult>
+  onMessageAppended(listener: (event: PaneMessageAppended) => void): () => void
+  onLayoutChanged(listener: (event: LayoutChanged) => void): () => void
+  onPaneCreateFailed(listener: (event: PaneCreateFailed) => void): () => void
+  onAttentionChanged(listener: (event: PaneAttentionChanged) => void): () => void
+  onPermissionRequested(listener: (event: PanePermissionRequested) => void): () => void
+  onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void
+}
