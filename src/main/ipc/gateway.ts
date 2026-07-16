@@ -13,6 +13,10 @@ const decodeCommand = Schema.decodeUnknownEither(IpcCommand)
 const encodeEvent = Schema.encodeSync(IpcEvent)
 const encodeTree = Schema.encodeSync(PaneNode)
 
+/**
+ * Registers the IPC handler that returns the current pane tree to the renderer.
+ * Call once during main-process startup, after `paneWorkspace` is available.
+ */
 export function wireGetInitialLayout(
   paneWorkspace: Context.Tag.Service<typeof PaneWorkspace>
 ): void {
@@ -21,6 +25,11 @@ export function wireGetInitialLayout(
   )
 }
 
+/**
+ * Registers the IPC handler that opens a native directory picker and reports the chosen
+ * path (with whether it's a git repo) back to the renderer. Call once during main-process
+ * startup with the window that should own the dialog.
+ */
 export function wireChooseDirectory(
   settingsStore: Context.Tag.Service<typeof SettingsStore>,
   ownerWindow: BrowserWindow
@@ -56,12 +65,21 @@ export function wireChooseDirectory(
   })
 }
 
-// Narrowed to the single method wireCommands actually calls, so tests can substitute a fake
-// sender without constructing a real Electron WebContents.
+/**
+ * The subset of Electron's `WebContents` that `wireCommands` needs to push events to the
+ * renderer. Narrowed to just `send` so tests can pass a fake sender instead of a real
+ * `WebContents` instance.
+ */
 export interface EventSender {
   readonly send: (channel: string, ...args: ReadonlyArray<unknown>) => void
 }
 
+/**
+ * Builds the Effect that listens for renderer-issued IPC commands, dispatches each to the
+ * appropriate pane workspace/supervisor operation, and pushes resulting events back over
+ * `deps.webContents`. Run the returned effect (e.g. via `Effect.runFork`) once during
+ * main-process startup to start handling commands.
+ */
 export function wireCommands(deps: {
   readonly paneWorkspace: Context.Tag.Service<typeof PaneWorkspace>
   readonly paneSupervisor: Context.Tag.Service<typeof PaneSupervisor>

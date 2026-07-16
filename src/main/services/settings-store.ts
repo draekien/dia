@@ -7,6 +7,11 @@ const Settings = Schema.Struct({
 const decodeSettings = Schema.decodeUnknownEither(Settings)
 const encodeSettings = Schema.encodeSync(Settings)
 
+/**
+ * Effect Context.Tag for the app's persisted settings store.
+ * Depend on this to read or update the user's last-opened directory.
+ * Provide it via {@link makeSettingsStoreLive}.
+ */
 export class SettingsStore extends Context.Tag('SettingsStore')<
   SettingsStore,
   {
@@ -15,6 +20,12 @@ export class SettingsStore extends Context.Tag('SettingsStore')<
   }
 >() {}
 
+/**
+ * Builds the live {@link SettingsStore} layer, persisting settings as JSON
+ * under `<userDataPath>/settings.json`. Requires `FileSystem.FileSystem` in
+ * the environment. Unreadable or malformed settings files are ignored
+ * (treated as empty) rather than failing; write failures are logged, not thrown.
+ */
 export const makeSettingsStoreLive = (userDataPath: string) =>
   Layer.effect(
     SettingsStore,

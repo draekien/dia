@@ -24,13 +24,17 @@ import type { IpcEvent } from '../ipc/contract'
 import { InboundMessage, OutboundMessage } from '../pane-process/protocol'
 import { GitOpsService, type WorktreeCreateError } from './git-ops-service'
 
+/** Failure raised by {@link PaneSupervisor.openPane} when the pane's utility process could not be spawned. */
 export class ProcessSpawnError extends Data.TaggedError('ProcessSpawnError')<{
   readonly paneId: string
   readonly cause: unknown
 }> {}
 
-// A pending pane's request to start running: the source directory and model the user chose,
-// plus the worktree path to provision when set (its presence is what "useWorktree" means).
+/**
+ * A pending pane's request to start running: the source directory and model the user chose,
+ * plus the worktree path to provision when set (its presence is what "useWorktree" means).
+ * Pass to {@link PaneSupervisor.openPane} to spawn and register a new pane.
+ */
 export interface PaneCreationRequest {
   readonly paneId: PaneId
   readonly sourceCwd: string
@@ -38,11 +42,13 @@ export interface PaneCreationRequest {
   readonly worktreePath: string | undefined
 }
 
+/** Failure raised when a pane's process exits unexpectedly (not as part of a requested teardown). */
 export class ProcessCrashedError extends Data.TaggedError('ProcessCrashedError')<{
   readonly paneId: string
   readonly exitCode: number
 }> {}
 
+/** Live control surface for an open pane, returned by {@link PaneSupervisor.openPane} and {@link PaneSupervisor.getHandle}. */
 export interface PaneHandle {
   readonly sendMessage: (text: string) => Effect.Effect<void>
   readonly resolvePermission: (
@@ -54,8 +60,10 @@ export interface PaneHandle {
   readonly markErrored: (error: PaneError) => Effect.Effect<void>
 }
 
-// Structural subset of Electron.UtilityProcess actually used here, so tests can
-// substitute a fake process without spawning a real one.
+/**
+ * Structural subset of Electron.UtilityProcess actually used here, so tests can
+ * substitute a fake process without spawning a real one.
+ */
 export interface PaneProcess {
   readonly pid: number | undefined
   on(event: 'message', listener: (message: unknown) => void): void
@@ -65,6 +73,7 @@ export interface PaneProcess {
   kill(): void
 }
 
+/** Service for spawning a pane's backing process from a module path. Swap for a fake in tests. */
 export class PaneProcessSpawner extends Context.Tag('PaneProcessSpawner')<
   PaneProcessSpawner,
   { readonly spawn: (modulePath: string) => Effect.Effect<PaneProcess> }
@@ -72,6 +81,7 @@ export class PaneProcessSpawner extends Context.Tag('PaneProcessSpawner')<
 
 const agentSessionModulePath = join(import.meta.dirname, 'pane-process/agent-session.js')
 
+/** Production {@link PaneProcessSpawner} that forks the real agent-session utility process via Electron. */
 export const PaneProcessSpawnerLive = Layer.succeed(PaneProcessSpawner, {
   spawn: (modulePath) => Effect.sync(() => utilityProcess.fork(modulePath))
 })
@@ -116,7 +126,6 @@ function toIpcEvent(paneId: string, message: OutboundMessage): IpcEvent | null {
   }
 }
 
-// The AttentionState a given outbound message should drive the pane to, if any.
 function toAttentionTarget(message: OutboundMessage): AttentionState | null {
   switch (message._tag) {
     case 'PermissionRequested':
@@ -137,9 +146,9 @@ function toAttentionTarget(message: OutboundMessage): AttentionState | null {
   }
 }
 
-// Spawns the pane's process and builds its handle. Deliberately doesn't know about scope
-// ownership or crash classification -- PaneSupervisor.openPane (the only caller) owns both,
-// since only it knows whether a given process exit was requested or unexpected.
+// Deliberately doesn't know about scope ownership or crash classification --
+// PaneSupervisor.openPane (the only caller) owns both, since only it knows whether
+// a given process exit was requested or unexpected.
 const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
   config: PaneConfig,
   spawner: Context.Tag.Service<PaneProcessSpawner>
@@ -181,12 +190,11 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
   })
   const settleFiberRef = yield* Ref.make<Option.Option<Fiber.RuntimeFiber<void>>>(Option.none())
 
-  // Applies a pure AttentionState transition (see attention.ts), updates the pane's record, and
-  // emits PaneAttentionChanged. Invalid transitions are logged and dropped rather than thrown --
-  // a stale or duplicate event (e.g. a second permission resolution) shouldn't crash the pane.
-  // Reaching `Completed` schedules its own auto-settle back to `Idle` after a few seconds (per
-  // DESIGN.md's "briefly shows, then settles"); any subsequent transition cancels a pending one,
-  // so a later error can't be clobbered by a stale settle-to-Idle firing after the fact.
+  // Invalid transitions are logged and dropped rather than thrown -- a stale or duplicate
+  // event (e.g. a second permission resolution) shouldn't crash the pane. Reaching `Completed`
+  // schedules its own auto-settle back to `Idle` after a few seconds (per DESIGN.md's "briefly
+  // shows, then settles"); any subsequent transition cancels a pending one, so a later error
+  // can't be clobbered by a stale settle-to-Idle firing after the fact.
   const applyAttention = (next: AttentionState): Effect.Effect<void> =>
     Effect.gen(function* () {
       const pending = yield* Ref.get(settleFiberRef)
@@ -318,9 +326,11 @@ interface PaneEntry {
   readonly expectedExit: Ref.Ref<boolean>
 }
 
+/** Manages the lifecycle of all open panes: spawning, event routing, and teardown. */
 export class PaneSupervisor extends Context.Tag('PaneSupervisor')<
   PaneSupervisor,
   {
+    /** Provisions a pane's worktree (if requested), spawns its process, and registers it for lookup and teardown. */
     readonly openPane: (
       request: PaneCreationRequest,
       onEvent: (event: IpcEvent) => Effect.Effect<void>
@@ -328,15 +338,20 @@ export class PaneSupervisor extends Context.Tag('PaneSupervisor')<
       { readonly handle: PaneHandle; readonly config: PaneConfig },
       ProcessSpawnError | WorktreeCreateError
     >
+    /** Kills the given pane's process and removes its worktree, marking the exit as expected. */
     readonly closePane: (paneId: PaneId) => Effect.Effect<void>
+    /** Looks up the live {@link PaneHandle} for an open pane, if any. */
     readonly getHandle: (paneId: PaneId) => Effect.Effect<Option.Option<PaneHandle>>
-    // Gracefully tears down every open pane (killing its process and removing its worktree, if
-    // any) -- for app shutdown, so panes are never left to be killed out-of-band and misreported
-    // as crashes.
+    /**
+     * Gracefully tears down every open pane (killing its process and removing its worktree, if
+     * any) -- for app shutdown, so panes are never left to be killed out-of-band and misreported
+     * as crashes.
+     */
     readonly closeAll: () => Effect.Effect<void>
   }
 >() {}
 
+/** Production {@link PaneSupervisor} layer backed by real utility processes and git worktrees. */
 export const PaneSupervisorLive = Layer.effect(
   PaneSupervisor,
   Effect.gen(function* () {

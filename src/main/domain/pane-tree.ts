@@ -1,19 +1,26 @@
 import { Data, Either, Schema } from 'effect'
 
+/** Identifier for a single pane, unique within a window's pane tree. */
 export type PaneId = string
 
+/** Lifecycle state of a pane: `pending` before its shell/session has attached, `ready` after. */
 export type PaneLeafStatus = 'pending' | 'ready'
 
+/**
+ * A single terminal/session pane — a leaf in the binary pane-split tree.
+ *
+ * `sourceRepo` is set only when `cwd` points into a worktree, so the UI can display the
+ * originating repo instead of the worktree directory name (a bare paneId/GUID).
+ */
 export interface PaneLeaf {
   readonly _tag: 'Leaf'
   readonly paneId: PaneId
   readonly status: PaneLeafStatus
   readonly cwd?: string
-  // Set only when cwd is a worktree, so the UI can show where the pane originated
-  // from instead of the worktree's directory name (a bare paneId/GUID).
   readonly sourceRepo?: string
 }
 
+/** A binary split of two child panes along `direction`, with their relative `sizes`. */
 export interface PaneSplit {
   readonly _tag: 'Split'
   readonly direction: 'row' | 'column'
@@ -21,6 +28,7 @@ export interface PaneSplit {
   readonly sizes: ReadonlyArray<number>
 }
 
+/** A node in the pane tree: either a leaf pane or a split of child nodes. */
 export type PaneNode = PaneLeaf | PaneSplit
 
 const PaneLeafSchema = Schema.TaggedStruct('Leaf', {
@@ -36,16 +44,20 @@ const PaneSplitSchema = Schema.TaggedStruct('Split', {
   sizes: Schema.Array(Schema.Number)
 })
 
+/** Schema for validating and decoding a {@link PaneNode} (e.g. when loading persisted state). */
 export const PaneNode: Schema.Schema<PaneNode> = Schema.Union(PaneLeafSchema, PaneSplitSchema)
 
+/** Raised when an operation targets a `paneId` that doesn't exist in the tree. */
 export class PaneNotFoundError extends Data.TaggedError('PaneNotFoundError')<{
   readonly paneId: PaneId
 }> {}
 
+/** Raised by {@link closePane} when asked to close the tree's only remaining pane. */
 export class LastPaneError extends Data.TaggedError('LastPaneError')<{
   readonly paneId: PaneId
 }> {}
 
+/** Raised by {@link resizeSplit} when the requested sizes are invalid for the target split. */
 export class InvalidResizeError extends Data.TaggedError('InvalidResizeError')<{
   readonly reason: string
 }> {}
@@ -79,6 +91,12 @@ function splitNode(
   return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
 }
 
+/**
+ * Splits the leaf pane identified by `targetPaneId` into a new {@link PaneSplit} containing the
+ * original pane and a fresh pending pane (`newPaneId`), divided evenly along `direction`.
+ *
+ * Fails with {@link PaneNotFoundError} if `targetPaneId` is not found anywhere in `tree`.
+ */
 export function splitPane(
   tree: PaneNode,
   targetPaneId: PaneId,
@@ -112,6 +130,12 @@ function markReadyNode(
   return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
 }
 
+/**
+ * Marks the leaf pane identified by `targetPaneId` as `ready`, recording its `cwd` and, if the
+ * pane originated from a worktree, its `sourceRepo`. Call once a pane's shell/session has attached.
+ *
+ * Fails with {@link PaneNotFoundError} if `targetPaneId` is not found anywhere in `tree`.
+ */
 export function markPaneReady(
   tree: PaneNode,
   targetPaneId: PaneId,
@@ -148,6 +172,13 @@ function closeNode(
   return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
 }
 
+/**
+ * Removes the leaf pane identified by `targetPaneId` from the tree, collapsing its parent split
+ * into the sibling pane that remains.
+ *
+ * Fails with {@link LastPaneError} if `targetPaneId` is the tree's sole remaining pane (a tree
+ * must always have at least one pane), or {@link PaneNotFoundError} if it isn't found.
+ */
 export function closePane(
   tree: PaneNode,
   targetPaneId: PaneId
@@ -161,6 +192,13 @@ export function closePane(
   return closeNode(tree, targetPaneId)
 }
 
+/**
+ * Updates the `sizes` of the split located at `path` (a sequence of child indices from the root).
+ * An empty `path` targets the root split itself.
+ *
+ * Fails with {@link InvalidResizeError} if any size is non-positive, `path` does not resolve to a
+ * `Split` node, or `sizes` does not match that split's number of children.
+ */
 export function resizeSplit(
   tree: PaneNode,
   path: ReadonlyArray<number>,

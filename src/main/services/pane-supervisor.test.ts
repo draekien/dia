@@ -107,7 +107,6 @@ describe('PaneSupervisor', () => {
         // with no listener yet attached is silently dropped, not queued.
         yield* flush
 
-        // Pane A crashes on its own, not in response to closePane.
         processes[0].emit('exit', 1)
         yield* flush
 

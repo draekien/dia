@@ -113,6 +113,11 @@ const api = {
   }
 }
 
+/**
+ * Shape of the `window.dia` bridge exposed to the renderer via `contextBridge`.
+ * Import this type in renderer code to type-check calls against `window.dia`
+ * (e.g. `declare global { interface Window { dia: DiaApi } }`).
+ */
 export type DiaApi = typeof api
 
 contextBridge.exposeInMainWorld('dia', api)

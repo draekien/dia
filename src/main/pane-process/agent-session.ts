@@ -9,6 +9,12 @@ import type { ConversationMessage, PaneConfig } from '../domain/pane'
 import { makeLoggerLive } from '../logger'
 import { InboundMessage, OutboundMessage } from './protocol'
 
+/**
+ * Wraps a failure surfaced while consuming the Agent SDK's event stream
+ * (e.g. the underlying async iterable throwing). Raised by the `events`
+ * stream in `runSession`; handle it via the surrounding Effect's error
+ * channel rather than a try/catch.
+ */
 export class SessionStreamError extends Data.TaggedError('SessionStreamError')<{
   readonly cause: unknown
 }> {}

@@ -26,8 +26,6 @@ beforeEach(() => {
   vi.mocked(ipcMain.on).mockClear()
 })
 
-// wireCommands registers exactly one listener via ipcMain.on(CHANNEL.command, listener) each
-// time it's forked; grab that listener and invoke it directly to simulate an inbound command.
 function emitCommand(command: unknown): void {
   const call = vi.mocked(ipcMain.on).mock.calls.at(-1)
   if (call === undefined) throw new Error('wireCommands did not register an ipcMain listener')

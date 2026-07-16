@@ -3,20 +3,38 @@ import { Context, Data, Effect, Layer } from 'effect'
 import type { WorktreeInfo } from '../domain/pane'
 import type { PaneId } from '../domain/pane-tree'
 
+/**
+ * Failure raised when `GitOpsService.createWorktree` cannot create a git
+ * worktree for a pane. Carries the pane id, source repo path, and the
+ * underlying cause so callers can log or surface the failure.
+ */
 export class WorktreeCreateError extends Data.TaggedError('WorktreeCreateError')<{
   readonly paneId: PaneId
   readonly sourceRepo: string
   readonly cause: unknown
 }> {}
 
+/**
+ * Failure raised when `GitOpsService.removeWorktree` cannot remove or prune
+ * a pane's git worktree. Carries the pane id, worktree path, and the
+ * underlying cause so callers can log or surface the failure.
+ */
 export class WorktreeRemoveError extends Data.TaggedError('WorktreeRemoveError')<{
   readonly paneId: PaneId
   readonly path: string
   readonly cause: unknown
 }> {}
 
-// Named for git operations generally, not just worktrees -- more git ops are
-// expected to join this service in later bullets.
+/**
+ * Service for git operations backing pane lifecycles. Named for git
+ * operations generally, not just worktrees -- more git ops are expected to
+ * join this service in later bullets.
+ *
+ * `createWorktree` provisions a new worktree and branch for a pane from a
+ * source repo; `removeWorktree` tears one down, falling back to `git
+ * worktree prune` if standard removal fails. Obtain an implementation via
+ * `GitOpsServiceLive` and provide it at the composition root.
+ */
 export class GitOpsService extends Context.Tag('GitOpsService')<
   GitOpsService,
   {
@@ -32,6 +50,11 @@ export class GitOpsService extends Context.Tag('GitOpsService')<
   }
 >() {}
 
+/**
+ * Live `GitOpsService` layer backed by the platform `CommandExecutor`,
+ * shelling out to the `git` CLI. Provide this at the composition root
+ * wherever `GitOpsService` is required.
+ */
 export const GitOpsServiceLive = Layer.effect(
   GitOpsService,
   Effect.gen(function* () {
@@ -68,7 +91,6 @@ export const GitOpsServiceLive = Layer.effect(
       info: WorktreeInfo,
       paneId: PaneId
     ) {
-      // First try standard removal with --force flag
       const command = Command.make('git', 'worktree', 'remove', '--force', info.path).pipe(
         Command.workingDirectory(info.sourceRepo)
       )
@@ -83,7 +105,6 @@ export const GitOpsServiceLive = Layer.effect(
         return
       }
 
-      // If standard removal fails, try with --prune flag (more aggressive)
       yield* Effect.logWarning('Standard worktree remove failed, trying with --prune', {
         paneId,
         path: info.path,

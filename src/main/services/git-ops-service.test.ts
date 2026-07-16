@@ -95,11 +95,9 @@ describe('GitOpsService', () => {
 
   it.effect('removeWorktree tries prune as fallback when remove fails', () =>
     Effect.gen(function* () {
-      // Create executor that tracks invocation count: first call fails, second (prune) succeeds
       let commandCount = 0
       const { capturedLogs, testLayer, loggerLayer } = makeTestSetup(() => {
         commandCount++
-        // First command (remove) returns 1, second (prune) returns 0
         return commandCount === 1 ? 1 : 0
       })
       const info: WorktreeInfo = {
@@ -113,7 +111,6 @@ describe('GitOpsService', () => {
         yield* gitOps.removeWorktree(info, PANE_ID)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
-      // Should have logged a warning about the initial remove failing
       const logs = capturedLogs.map((log) => String(log))
       assert.isTrue(logs.some((log) => log.includes('Standard worktree remove failed')))
       assert.isTrue(logs.some((log) => log.includes('Pruned pane worktree')))
@@ -134,7 +131,6 @@ describe('GitOpsService', () => {
         yield* gitOps.removeWorktree(info, PANE_ID)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
-      // Should have logged warnings for both failures
       const logs = capturedLogs.map((log) => String(log))
       assert.isTrue(logs.some((log) => log.includes('Standard worktree remove failed')))
       assert.isTrue(logs.some((log) => log.includes('manual cleanup may be needed')))

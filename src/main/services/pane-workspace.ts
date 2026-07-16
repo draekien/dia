@@ -14,6 +14,11 @@ import type { IpcEvent } from '../ipc/contract'
 import type { WorktreeCreateError } from './git-ops-service'
 import { PaneSupervisor, type ProcessSpawnError } from './pane-supervisor'
 
+/**
+ * Service tag for the pane workspace: owns the pane tree and per-pane configs, and
+ * coordinates splitting, creating, and closing panes against the {@link PaneSupervisor}.
+ * Depend on this tag wherever pane layout or lifecycle needs to be read or mutated.
+ */
 export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
   PaneWorkspace,
   {
@@ -33,10 +38,14 @@ export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
   }
 >() {}
 
-// Only PaneWorkspace's own initialization can produce the first pane, since PaneTreeService's
-// pure transforms all start from an existing tree -- there is no valid PaneNode for zero panes.
-// It seeds as a pending leaf, same as any freshly-split pane, so the user picks its working
-// directory through the same onboarding form rather than the app assuming one for them.
+/**
+ * Builds the live {@link PaneWorkspace} layer, requiring {@link PaneSupervisor} from context.
+ * Seeds the workspace with a single pending leaf pane (`initialPaneId`) rather than an empty
+ * tree, since there is no valid `PaneNode` representing zero panes -- the user fills in its
+ * working directory through the same onboarding form used for any freshly-split pane.
+ * `worktreesRoot` is the base directory under which per-pane git worktrees are created when
+ * `createPane` is called with `useWorktree: true`.
+ */
 export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: string) =>
   Layer.effect(
     PaneWorkspace,
