@@ -30,6 +30,8 @@ Renderer-specific — see `src/renderer/CLAUDE.md`.
 ## Coding
 
 - Make sure to set up logs for code you write using Effect's logger methods so its easy to trace and debug issues.
+- You are not allowed to write inline comments. Code must be self-documenting.
+- You must write JSDoc for module exports.
 
 ### Mandatory skill invocation
 
