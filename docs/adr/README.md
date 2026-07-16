@@ -16,9 +16,10 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0005](0005-tailwind-and-shadcn-ui-for-styling.md) | Use Tailwind CSS and shadcn/ui for renderer styling | accepted |
 | [0006](0006-pnpm-single-package-repo-layout.md) | Use pnpm with a single-package repo layout | accepted |
 | [0007](0007-one-utility-process-per-pane.md) | Run one utilityProcess per pane for concurrent independent agent sessions | accepted |
-| [0008](0008-local-file-persistence-for-session-and-layout-state.md) | Use local file-based persistence for pane layout and session state | accepted |
+| [0008](0008-local-file-persistence-for-session-and-layout-state.md) | Use local file-based persistence for pane layout and session state | superseded by ADR-0011 |
 | [0009](0009-effect-ts-for-main-process-orchestration.md) | Use Effect TS for main-process orchestration logic | superseded by ADR-0010 |
 | [0010](0010-extend-effect-ts-to-pane-process-orchestration.md) | Extend Effect TS to pane-process orchestration | accepted |
+| [0011](0011-delegate-transcript-persistence-to-agent-sdk-session-store.md) | Delegate conversation-transcript persistence to the Agent SDK session store | accepted |
 
 ## Adding a new ADR
 

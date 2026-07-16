@@ -1,10 +1,16 @@
 ---
-status: "accepted"
-date: 2026-07-11
+status: "superseded by ADR-0011"
+date: 2026-07-16
 decision-makers: William Pei
 ---
 
 # Use local file-based persistence for pane layout and session state
+
+> **Superseded by [ADR-0011](0011-delegate-transcript-persistence-to-agent-sdk-session-store.md).**
+> The local-JSON decision for the *layout tree* still holds, but the persisted shape no
+> longer includes per-pane conversation-history arrays — the transcript is now delegated
+> to the Agent SDK session store, and dia persists only the tree plus a per-pane index
+> (`config` + `sessionId`).
 
 ## Context and Problem Statement
 
