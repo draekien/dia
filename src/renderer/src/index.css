@@ -44,3 +44,17 @@
   --color-destructive: var(--error);
   --color-primary-foreground: var(--primary-ink);
 }
+
+@keyframes pulse-slow {
+  0%,
+  100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 3.2s ease-in-out infinite;
+}

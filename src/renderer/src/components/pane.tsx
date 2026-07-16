@@ -130,7 +130,6 @@ function Pane({
         isFocused ? 'ring-2 ring-ring ring-inset' : ''
       }`}
     >
-      <PulseIndicator attention={attention} className="absolute top-4 left-4 z-10" />
       <div
         className={`flex h-full min-h-0 flex-1 flex-col transition-opacity duration-200 ease-out motion-reduce:transition-none ${
           isDimmed ? 'opacity-50' : 'opacity-100'
@@ -138,7 +137,7 @@ function Pane({
       >
         <div className="flex items-center justify-between gap-2 pb-2">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="size-2.5 shrink-0" />
+            <PulseIndicator attention={attention} />
             {cwd !== undefined && (
               <span
                 title={sourceRepo !== undefined ? `${sourceRepo} (worktree at ${cwd})` : cwd}
