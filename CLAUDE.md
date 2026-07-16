@@ -23,7 +23,7 @@ When you hit a genuinely non-obvious finding during a session — something that
 
 ## Design Context
 
-`PRODUCT.md` and `DESIGN.md` at the repo root carry dia's design system — read before any UI/UX work. Register: **product** (design serves the tool, a single-user pane workspace). North star: **"The Control Room"** — calm, glanceable status across up to six concurrent panes, with amber/red/green pulse indicators as the app's one deliberate loud signal. Key principles: glanceability over detail, one voice for attention (pulse only), calm density, native-not-decorative craft, fast under real use. `DESIGN.md` is currently a seed (no code yet); re-run `/impeccable document` once components exist to capture real tokens.
+Renderer-specific — see `src/renderer/CLAUDE.md`.
 
 ## Coding
 
@@ -38,7 +38,7 @@ These are BLOCKING REQUIREMENTS, not suggestions. Before writing or editing any 
 | Writing or editing any `.ts`/`.tsx` code that uses Effect (services, layers, schemas, streams, runtimes, or typed errors) | `effect-ts` |
 | Creating a new service or module | `engineering-skills:module-design` |
 | Writing or updating any test file | `engineering-skills:with-testing-principles` |
-| Any UI/UX work — new components, layout, styling, interaction | `impeccable` (craft) |
-| Adding, modifying, or composing any shadcn/ui component | `shadcn` |
+
+Renderer-specific triggers (UI/UX work, shadcn/ui components) are in `src/renderer/CLAUDE.md`.
 
 If you realize partway through a task that a trigger applies and you skipped the skill, stop, invoke the skill, and reconcile your work against its guidance before continuing.
