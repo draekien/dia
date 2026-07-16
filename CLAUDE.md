@@ -33,6 +33,11 @@ Renderer-specific — see `src/renderer/CLAUDE.md`.
 - Do not write inline comments that explain what a piece of code does. Write self-documenting code instead — clear names, small functions, obvious structure — rather than narrating the implementation alongside it.
 - Every module export (function, class, const) must have a JSDoc comment. That JSDoc documents the export's purpose and how to consume it — inputs, outputs, preconditions, when to call it — and must not describe implementation detail (how it works internally).
 
+### Effect TS
+
+- Use Effect's `Clock` service (e.g. `Clock.currentTimeMillis`) instead of `Date.now()`/`new Date()` in any Effect code, so behavior can be driven deterministically with `TestClock` in tests.
+- Represent durations with Effect's `Duration` module (`Duration.seconds(5)`, `Duration.days(7)`, `Duration.toMillis(...)`) instead of raw millisecond math or ad-hoc string literals.
+
 ### Mandatory skill invocation
 
 These are BLOCKING REQUIREMENTS, not suggestions. Before writing or editing any code matching a trigger below, invoke the listed skill via the Skill tool FIRST — before any other response, plan, or edit for that task. If a task matches more than one trigger, invoke all matching skills before starting. Do not skip a trigger because the change "looks small" or "is just a one-liner."
