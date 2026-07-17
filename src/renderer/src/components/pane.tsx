@@ -1,8 +1,13 @@
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import type { AttentionState, PermissionResponse } from '../../../main/domain/attention'
-import type { PanePermissionRequested } from '../../../main/ipc/contract'
+import type {
+  AttentionState,
+  PermissionResponse,
+  QuestionResponse
+} from '../../../main/domain/attention'
+import type { PanePermissionRequested, PaneQuestionRequested } from '../../../main/ipc/contract'
+import { ClarifyingQuestionCard } from './clarifying-question-card'
 import { PermissionDialog } from './permission-dialog'
 import { PulseIndicator } from './pulse-indicator'
 
@@ -39,6 +44,7 @@ function Pane({
   const attentionQueryKey = ['pane', paneId, 'attention'] as const
   const streamingTextQueryKey = ['pane', paneId, 'streamingText'] as const
   const pendingPermissionQueryKey = ['pane', paneId, 'pendingPermission'] as const
+  const pendingQuestionQueryKey = ['pane', paneId, 'pendingQuestion'] as const
 
   const { data: messages = [] } = useQuery<Message[]>({
     queryKey: messagesQueryKey,
@@ -57,6 +63,11 @@ function Pane({
   })
   const { data: pendingPermission = null } = useQuery<PanePermissionRequested | null>({
     queryKey: pendingPermissionQueryKey,
+    queryFn: () => null,
+    staleTime: Infinity
+  })
+  const { data: pendingQuestion = null } = useQuery<PaneQuestionRequested | null>({
+    queryKey: pendingQuestionQueryKey,
     queryFn: () => null,
     staleTime: Infinity
   })
@@ -92,6 +103,13 @@ function Pane({
     })
   }, [queryClient, paneId, pendingPermissionQueryKey])
 
+  useEffect(() => {
+    return window.dia.onQuestionRequested((event) => {
+      if (event.paneId !== paneId) return
+      queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, event)
+    })
+  }, [queryClient, paneId, pendingQuestionQueryKey])
+
   const form = useForm({
     defaultValues: { text: '' },
     onSubmit: ({ value, formApi }) => {
@@ -110,6 +128,12 @@ function Pane({
     if (!pendingPermission) return
     window.dia.resolvePermission(paneId, pendingPermission.requestId, response)
     queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
+  }
+
+  function respondToQuestion(response: QuestionResponse): void {
+    if (!pendingQuestion) return
+    window.dia.resolveQuestion(paneId, pendingQuestion.requestId, response)
+    queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, null)
   }
 
   return (
@@ -183,6 +207,9 @@ function Pane({
             </div>
           )}
         </div>
+        {pendingQuestion !== null && (
+          <ClarifyingQuestionCard request={pendingQuestion} onResolve={respondToQuestion} />
+        )}
         <form
           className="mt-2 flex gap-2"
           onSubmit={(event) => {
