@@ -1,3 +1,4 @@
+import { FileSystem } from '@effect/platform'
 import { assert, describe, it } from '@effect/vitest'
 import { type Context, Effect, Either, Layer, Option, Stream } from 'effect'
 import type { ConversationMessage } from '../domain/pane'
@@ -27,12 +28,14 @@ const fakeHandle: PaneHandle = {
 }
 
 function makeSupervisorLayer(
-  openPane: Context.Tag.Service<typeof PaneSupervisor>['openPane']
+  openPane: Context.Tag.Service<typeof PaneSupervisor>['openPane'],
+  getHandle: Context.Tag.Service<typeof PaneSupervisor>['getHandle'] = () =>
+    Effect.succeed(Option.none())
 ): Layer.Layer<PaneSupervisor> {
   return Layer.succeed(PaneSupervisor, {
     openPane,
     closePane: () => Effect.void,
-    getHandle: () => Effect.succeed(Option.none()),
+    getHandle,
     closeAll: () => Effect.void
   })
 }
@@ -67,14 +70,22 @@ function makeTranscriptReader(history: ReadonlyArray<ConversationMessage> = []):
   return { reads, layer }
 }
 
+function makeFileSystemLayer(cwdExists = true): Layer.Layer<FileSystem.FileSystem> {
+  return Layer.succeed(
+    FileSystem.FileSystem,
+    FileSystem.makeNoop({ exists: () => Effect.succeed(cwdExists) })
+  )
+}
+
 function makeWorkspaceLayer(
   supervisorLayer: Layer.Layer<PaneSupervisor>,
   persistenceLayer: Layer.Layer<PersistenceService>,
-  transcriptLayer: Layer.Layer<TranscriptReader> = makeTranscriptReader().layer
+  transcriptLayer: Layer.Layer<TranscriptReader> = makeTranscriptReader().layer,
+  fileSystemLayer: Layer.Layer<FileSystem.FileSystem> = makeFileSystemLayer()
 ): Layer.Layer<PaneWorkspace> {
   return Layer.provide(
     makePaneWorkspaceLive(INITIAL_PANE_ID, WORKTREES_ROOT),
-    Layer.mergeAll(supervisorLayer, persistenceLayer, transcriptLayer)
+    Layer.mergeAll(supervisorLayer, persistenceLayer, transcriptLayer, fileSystemLayer)
   )
 }
 
@@ -408,6 +419,207 @@ describe('PaneWorkspace', () => {
 
       assert.deepStrictEqual(history, restored)
       assert.deepStrictEqual(reads, [{ sessionId: 'restored-session-1', cwd: '/repo' }])
+    })
+  )
+
+  const restoredWithSession: PersistedWorkspace = {
+    tree: { _tag: 'Leaf', paneId: INITIAL_PANE_ID, status: 'ready', cwd: '/repo' },
+    panes: {
+      [INITIAL_PANE_ID]: {
+        config: { paneId: INITIAL_PANE_ID, cwd: '/repo', model: 'm' },
+        sessionId: 'restored-session-1'
+      }
+    }
+  }
+
+  function recordEvents(): {
+    readonly events: Array<IpcEvent>
+    readonly onEvent: (event: IpcEvent) => Effect.Effect<void>
+  } {
+    const events: Array<IpcEvent> = []
+    return { events, onEvent: (event) => Effect.sync(() => events.push(event)) }
+  }
+
+  it.effect('resumePane opens the cold pane with its recorded sessionId threaded through', () =>
+    Effect.gen(function* () {
+      const requests: Array<Parameters<Context.Tag.Service<typeof PaneSupervisor>['openPane']>[0]> =
+        []
+      const supervisorLayer = makeSupervisorLayer((request) => {
+        requests.push(request)
+        return echoOpenPane(request)
+      })
+      const { layer: persistenceLayer } = makePersistence(restoredWithSession)
+      const { events, onEvent: recordingOnEvent } = recordEvents()
+
+      yield* Effect.gen(function* () {
+        const workspace = yield* PaneWorkspace
+        yield* workspace.resumePane(INITIAL_PANE_ID, recordingOnEvent)
+      }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
+
+      assert.strictEqual(requests.length, 1)
+      assert.strictEqual(requests[0].resume, 'restored-session-1')
+      assert.strictEqual(requests[0].sourceCwd, '/repo')
+      assert.strictEqual(requests[0].worktreePath, undefined)
+      assert.deepStrictEqual(events, [])
+    })
+  )
+
+  it.effect('resumePane is a no-op when the pane already has a live handle', () =>
+    Effect.gen(function* () {
+      let openPaneCalls = 0
+      const supervisorLayer = makeSupervisorLayer(
+        (request) => {
+          openPaneCalls++
+          return echoOpenPane(request)
+        },
+        () => Effect.succeed(Option.some(fakeHandle))
+      )
+      const { layer: persistenceLayer } = makePersistence(restoredWithSession)
+      const { events, onEvent: recordingOnEvent } = recordEvents()
+
+      yield* Effect.gen(function* () {
+        const workspace = yield* PaneWorkspace
+        yield* workspace.resumePane(INITIAL_PANE_ID, recordingOnEvent)
+      }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
+
+      assert.strictEqual(openPaneCalls, 0)
+      assert.deepStrictEqual(events, [])
+    })
+  )
+
+  it.effect('resumePane is a no-op when the pane has no recorded session', () =>
+    Effect.gen(function* () {
+      let openPaneCalls = 0
+      const supervisorLayer = makeSupervisorLayer((request) => {
+        openPaneCalls++
+        return echoOpenPane(request)
+      })
+      const { layer: persistenceLayer } = makePersistence({
+        tree: { _tag: 'Leaf', paneId: INITIAL_PANE_ID, status: 'ready', cwd: '/repo' },
+        panes: {
+          [INITIAL_PANE_ID]: { config: { paneId: INITIAL_PANE_ID, cwd: '/repo', model: 'm' } }
+        }
+      })
+      const { events, onEvent: recordingOnEvent } = recordEvents()
+
+      yield* Effect.gen(function* () {
+        const workspace = yield* PaneWorkspace
+        yield* workspace.resumePane(INITIAL_PANE_ID, recordingOnEvent)
+      }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
+
+      assert.strictEqual(openPaneCalls, 0)
+      assert.deepStrictEqual(events, [])
+    })
+  )
+
+  it.effect('resumePane emits Errored without opening when a non-worktree cwd is gone', () =>
+    Effect.gen(function* () {
+      let openPaneCalls = 0
+      const supervisorLayer = makeSupervisorLayer((request) => {
+        openPaneCalls++
+        return echoOpenPane(request)
+      })
+      const { layer: persistenceLayer } = makePersistence(restoredWithSession)
+      const { events, onEvent: recordingOnEvent } = recordEvents()
+
+      yield* Effect.gen(function* () {
+        const workspace = yield* PaneWorkspace
+        yield* workspace.resumePane(INITIAL_PANE_ID, recordingOnEvent)
+      }).pipe(
+        Effect.provide(
+          makeWorkspaceLayer(
+            supervisorLayer,
+            persistenceLayer,
+            makeTranscriptReader().layer,
+            makeFileSystemLayer(false)
+          )
+        )
+      )
+
+      assert.strictEqual(openPaneCalls, 0)
+      assert.strictEqual(events.length, 1)
+      const event = events[0]
+      assert.strictEqual(event._tag, 'PaneAttentionChanged')
+      if (event._tag === 'PaneAttentionChanged') {
+        assert.strictEqual(event.attention._tag, 'Errored')
+      }
+    })
+  )
+
+  it.effect('resumePane reattaches a worktree pane and skips the cwd existence check', () =>
+    Effect.gen(function* () {
+      const requests: Array<Parameters<Context.Tag.Service<typeof PaneSupervisor>['openPane']>[0]> =
+        []
+      const supervisorLayer = makeSupervisorLayer((request) => {
+        requests.push(request)
+        return echoOpenPane(request)
+      })
+      const { layer: persistenceLayer } = makePersistence({
+        tree: {
+          _tag: 'Leaf',
+          paneId: INITIAL_PANE_ID,
+          status: 'ready',
+          cwd: '/wt/x',
+          sourceRepo: '/repo'
+        },
+        panes: {
+          [INITIAL_PANE_ID]: {
+            config: {
+              paneId: INITIAL_PANE_ID,
+              cwd: '/wt/x',
+              model: 'm',
+              worktree: { path: '/wt/x', branch: `dia/${INITIAL_PANE_ID}`, sourceRepo: '/repo' }
+            },
+            sessionId: 'restored-session-1'
+          }
+        }
+      })
+      const { events, onEvent: recordingOnEvent } = recordEvents()
+
+      yield* Effect.gen(function* () {
+        const workspace = yield* PaneWorkspace
+        yield* workspace.resumePane(INITIAL_PANE_ID, recordingOnEvent)
+      }).pipe(
+        Effect.provide(
+          makeWorkspaceLayer(
+            supervisorLayer,
+            persistenceLayer,
+            makeTranscriptReader().layer,
+            makeFileSystemLayer(false)
+          )
+        )
+      )
+
+      assert.strictEqual(requests.length, 1)
+      assert.strictEqual(requests[0].worktreePath, '/wt/x')
+      assert.strictEqual(requests[0].sourceCwd, '/repo')
+      assert.strictEqual(requests[0].resume, 'restored-session-1')
+      assert.deepStrictEqual(events, [])
+    })
+  )
+
+  it.effect('resumePane emits Errored when the supervisor fails to open the pane', () =>
+    Effect.gen(function* () {
+      const supervisorLayer = makeSupervisorLayer((request) =>
+        Effect.fail(
+          new WorktreeCreateError({ paneId: request.paneId, sourceRepo: '/repo', cause: 'boom' })
+        )
+      )
+      const { layer: persistenceLayer } = makePersistence(restoredWithSession)
+      const { events, onEvent: recordingOnEvent } = recordEvents()
+
+      const result = yield* Effect.gen(function* () {
+        const workspace = yield* PaneWorkspace
+        return yield* workspace.resumePane(INITIAL_PANE_ID, recordingOnEvent).pipe(Effect.either)
+      }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
+
+      assert.isTrue(Either.isRight(result))
+      assert.strictEqual(events.length, 1)
+      const event = events[0]
+      assert.strictEqual(event._tag, 'PaneAttentionChanged')
+      if (event._tag === 'PaneAttentionChanged') {
+        assert.strictEqual(event.attention._tag, 'Errored')
+      }
     })
   )
 })

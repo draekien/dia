@@ -43,7 +43,8 @@ describe('wireCommands', () => {
         split: () => Effect.dieMessage('split should not be called'),
         createPane: () => Effect.dieMessage('createPane should not be called'),
         close: () => Effect.dieMessage('close should not be called'),
-        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called')
+        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
+        resumePane: () => Effect.dieMessage('resumePane should not be called')
       }
       const paneSupervisor = {
         openPane: () => Effect.dieMessage('openPane should not be called'),
@@ -82,7 +83,8 @@ describe('wireCommands', () => {
         split: () => Effect.succeed(splitTree),
         createPane: () => Effect.dieMessage('createPane should not be called'),
         close: () => Effect.dieMessage('close should not be called'),
-        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called')
+        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
+        resumePane: () => Effect.dieMessage('resumePane should not be called')
       }
       const paneSupervisor = {
         openPane: () => Effect.dieMessage('openPane should not be called'),
@@ -120,7 +122,8 @@ describe('wireCommands', () => {
         split: () => Effect.dieMessage('split should not be called'),
         createPane: () => Effect.fail(createError),
         close: () => Effect.dieMessage('close should not be called'),
-        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called')
+        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
+        resumePane: () => Effect.dieMessage('resumePane should not be called')
       }
       const paneSupervisor = {
         openPane: () => Effect.dieMessage('openPane should not be called'),
@@ -163,7 +166,8 @@ describe('wireCommands', () => {
         split: () => Effect.dieMessage('split should not be called'),
         createPane: () => Effect.dieMessage('createPane should not be called'),
         close: () => Effect.dieMessage('close should not be called'),
-        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called')
+        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
+        resumePane: () => Effect.dieMessage('resumePane should not be called')
       }
       const paneSupervisor = {
         openPane: () => Effect.dieMessage('openPane should not be called'),
@@ -180,6 +184,38 @@ describe('wireCommands', () => {
         yield* flush
 
         assert.deepStrictEqual(sent, [])
+      }).pipe(Effect.scoped)
+    })
+  )
+
+  it.effect('routes a FocusPane command to PaneWorkspace.resumePane', () =>
+    Effect.gen(function* () {
+      const sent: Array<[string, unknown]> = []
+      const webContents: EventSender = { send: (channel, payload) => sent.push([channel, payload]) }
+      const resumed: Array<string> = []
+      const paneWorkspace = {
+        getTree: () => Effect.dieMessage('getTree should not be called'),
+        split: () => Effect.dieMessage('split should not be called'),
+        createPane: () => Effect.dieMessage('createPane should not be called'),
+        close: () => Effect.dieMessage('close should not be called'),
+        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
+        resumePane: (paneId: string) => Effect.sync(() => resumed.push(paneId))
+      }
+      const paneSupervisor = {
+        openPane: () => Effect.dieMessage('openPane should not be called'),
+        closePane: () => Effect.dieMessage('closePane should not be called'),
+        getHandle: () => Effect.dieMessage('getHandle should not be called'),
+        closeAll: () => Effect.dieMessage('closeAll should not be called')
+      }
+
+      yield* Effect.gen(function* () {
+        yield* Effect.fork(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
+        yield* flush
+
+        emitCommand({ _tag: 'FocusPane', paneId: PANE_ID })
+        yield* flush
+
+        assert.deepStrictEqual(resumed, [PANE_ID])
       }).pipe(Effect.scoped)
     })
   )

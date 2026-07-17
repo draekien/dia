@@ -90,7 +90,7 @@ app.whenReady().then(async () => {
   )
   const workspaceLayer = Layer.provide(
     makePaneWorkspaceLive(INITIAL_PANE_ID, worktreesRoot),
-    Layer.mergeAll(supervisorLayer, persistenceLayer, TranscriptReaderLive)
+    Layer.mergeAll(supervisorLayer, persistenceLayer, TranscriptReaderLive, NodeFileSystem.layer)
   )
   const settingsStoreLayer = Layer.provide(
     makeSettingsStoreLive(app.getPath('userData')),

@@ -4,8 +4,11 @@ import { ConversationMessage, PaneConfig } from '../domain/pane'
 
 const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
 
-/** Sent by main to the pane subprocess once at startup to provide the pane's configuration and start its agent session. */
-export const InitMessage = Schema.TaggedStruct('Init', { config: PaneConfig })
+/** Sent by main to the pane subprocess once at startup to provide the pane's configuration and start its agent session. When `resume` is set, the session continues the prior Agent SDK session with that id instead of starting fresh. */
+export const InitMessage = Schema.TaggedStruct('Init', {
+  config: PaneConfig,
+  resume: Schema.optional(Schema.String)
+})
 /** Sent by main to the pane subprocess to forward a user-submitted message for the running agent session to process. */
 export const SendText = Schema.TaggedStruct('SendText', { text: Schema.String })
 /** Sent by main to the pane subprocess in response to a `PermissionRequested` message, carrying the user's allow/deny decision for the given `requestId`. */

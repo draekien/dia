@@ -79,14 +79,28 @@ const parseToolInput = (partialJson: string): Record<string, unknown> => {
 }
 
 const runSession = Effect.fn('AgentSession.runSession')(
-  function* (config: PaneConfig, promptQueue: Queue.Queue<SDKUserMessage>) {
-    yield* Effect.logInfo('Starting query session', { paneId: config.paneId, cwd: config.cwd })
+  function* (
+    config: PaneConfig,
+    promptQueue: Queue.Queue<SDKUserMessage>,
+    resume: string | undefined
+  ) {
+    yield* Effect.logInfo('Starting query session', {
+      paneId: config.paneId,
+      cwd: config.cwd,
+      resume
+    })
 
     const promptIterable = Stream.toAsyncIterable(Stream.fromQueue(promptQueue))
 
     const session = query({
       prompt: promptIterable,
-      options: { cwd: config.cwd, model: config.model, includePartialMessages: true, canUseTool }
+      options: {
+        cwd: config.cwd,
+        model: config.model,
+        includePartialMessages: true,
+        canUseTool,
+        resume
+      }
     })
 
     const events = Stream.fromAsyncIterable(session, (cause) => new SessionStreamError({ cause }))
@@ -193,7 +207,7 @@ const program = Effect.gen(function* () {
 
       const inbound = decoded.right
       if (inbound._tag === 'Init') {
-        yield* Effect.forkScoped(runSession(inbound.config, promptQueue))
+        yield* Effect.forkScoped(runSession(inbound.config, promptQueue, inbound.resume))
       } else if (inbound._tag === 'SendText') {
         yield* Queue.offer(promptQueue, toSDKUserMessage(inbound.text))
       } else {

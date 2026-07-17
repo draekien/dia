@@ -90,7 +90,16 @@ export const CreatePane = Schema.TaggedStruct('CreatePane', {
 })
 export type CreatePane = typeof CreatePane.Type
 
-// Additional commands (FocusPane) join this union in later bullets.
+/**
+ * Command sent by the renderer when the user focuses the pane `paneId`. A cold
+ * (restored-but-not-yet-live) pane resumes its Agent SDK session on receipt; a
+ * pane that is already live is left untouched (the command is idempotent).
+ */
+export const FocusPane = Schema.TaggedStruct('FocusPane', {
+  paneId: Schema.UUID
+})
+export type FocusPane = typeof FocusPane.Type
+
 /**
  * Union of every command the renderer may send over the `command` channel.
  * Main-process handlers should match on the `_tag` field to dispatch.
@@ -100,7 +109,8 @@ export const IpcCommand = Schema.Union(
   ResolvePermission,
   SplitPane,
   ClosePane,
-  CreatePane
+  CreatePane,
+  FocusPane
 )
 export type IpcCommand = typeof IpcCommand.Type
 
@@ -233,6 +243,7 @@ export interface DiaApi {
   splitPane(paneId: string, direction: 'row' | 'column'): void
   closePane(paneId: string): void
   createPane(paneId: string, cwd: string, model: string, useWorktree: boolean): void
+  focusPane(paneId: string): void
   getInitialLayout(): Promise<PaneNode>
   getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>
   chooseDirectory(): Promise<ChooseDirectoryResult>

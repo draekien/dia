@@ -210,6 +210,10 @@ export function wireCommands(deps: {
           yield* sendLayoutChanged(result.right)
           return
         }
+        case 'FocusPane': {
+          yield* paneWorkspace.resumePane(command.paneId, onEvent)
+          return
+        }
       }
     })
   )

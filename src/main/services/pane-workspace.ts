@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
+import { FileSystem } from '@effect/platform'
 import { Context, Effect, Either, HashMap, Layer, Option, Ref } from 'effect'
 import type { ConversationMessage } from '../domain/pane'
 import {
@@ -11,8 +12,8 @@ import {
   splitPane
 } from '../domain/pane-tree'
 import type { IpcEvent } from '../ipc/contract'
-import type { WorktreeCreateError } from './git-ops-service'
-import { PaneSupervisor, type ProcessSpawnError } from './pane-supervisor'
+import type { WorktreeCreateError, WorktreeReattachError } from './git-ops-service'
+import { type PaneCreationRequest, PaneSupervisor, type ProcessSpawnError } from './pane-supervisor'
 import { type PersistedPaneEntry, PersistenceService } from './persistence'
 import { TranscriptReader } from './transcript-reader'
 
@@ -35,9 +36,23 @@ export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
       model: string,
       useWorktree: boolean,
       onEvent: (event: IpcEvent) => Effect.Effect<void>
-    ) => Effect.Effect<PaneNode, PaneNotFoundError | ProcessSpawnError | WorktreeCreateError>
+    ) => Effect.Effect<
+      PaneNode,
+      PaneNotFoundError | ProcessSpawnError | WorktreeCreateError | WorktreeReattachError
+    >
     readonly close: (paneId: PaneId) => Effect.Effect<PaneNode, PaneNotFoundError>
     readonly getPaneHistory: (paneId: PaneId) => Effect.Effect<ReadonlyArray<ConversationMessage>>
+    /**
+     * Resumes a cold (restored-but-not-live) pane's Agent SDK session, streaming its events
+     * through `onEvent`. Idempotent: a no-op when the pane already has a live handle, when it is
+     * unknown, or when it has no recorded session to resume. Handles its own failures -- a gone
+     * non-worktree working directory, or a spawn/reattach failure -- by logging and emitting an
+     * `Errored` attention event rather than failing the effect.
+     */
+    readonly resumePane: (
+      paneId: PaneId,
+      onEvent: (event: IpcEvent) => Effect.Effect<void>
+    ) => Effect.Effect<void>
   }
 >() {}
 
@@ -52,7 +67,8 @@ export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
  * re-saving after every `split`/`createPane`/`close`. `worktreesRoot` is the base directory
  * under which per-pane git worktrees are created when `createPane` is called with
  * `useWorktree: true`. Also requires {@link TranscriptReader} to serve `getPaneHistory`
- * for restored panes without spawning a live session.
+ * for restored panes without spawning a live session, and `FileSystem` to detect a resumed
+ * non-worktree pane whose working directory has since been deleted.
  */
 export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: string) =>
   Layer.effect(
@@ -61,6 +77,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
       const supervisor = yield* PaneSupervisor
       const persistence = yield* PersistenceService
       const transcriptReader = yield* TranscriptReader
+      const fs = yield* FileSystem.FileSystem
 
       const persisted = yield* persistence.loadWorkspace()
       const seed = Option.match(persisted, {
@@ -190,6 +207,67 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         return yield* transcriptReader.readHistory(entry.value.sessionId, entry.value.config.cwd)
       })
 
-      return { getTree, split, createPane, close, getPaneHistory }
+      const emitErrored = (
+        paneId: PaneId,
+        onEvent: (event: IpcEvent) => Effect.Effect<void>,
+        message: string
+      ): Effect.Effect<void> =>
+        onEvent({
+          _tag: 'PaneAttentionChanged',
+          paneId,
+          attention: { _tag: 'Errored', error: { message } }
+        })
+
+      const resumePane = Effect.fn('PaneWorkspace.resumePane')(function* (
+        paneId: PaneId,
+        onEvent: (event: IpcEvent) => Effect.Effect<void>
+      ) {
+        const existing = yield* supervisor.getHandle(paneId)
+        if (Option.isSome(existing)) return
+
+        const configs = yield* Ref.get(configsRef)
+        const entry = HashMap.get(configs, paneId)
+        if (Option.isNone(entry)) {
+          yield* Effect.logWarning('resumePane for a pane not in the index', { paneId })
+          return
+        }
+
+        const { config, sessionId } = entry.value
+        if (sessionId === undefined) {
+          yield* Effect.logDebug('resumePane skipped; pane has no session to resume', { paneId })
+          return
+        }
+
+        if (config.worktree === undefined) {
+          const exists = yield* fs.exists(config.cwd).pipe(Effect.orElseSucceed(() => false))
+          if (!exists) {
+            yield* Effect.logWarning('resumePane: pane working directory no longer exists', {
+              paneId,
+              cwd: config.cwd
+            })
+            yield* emitErrored(paneId, onEvent, `Working directory no longer exists: ${config.cwd}`)
+            return
+          }
+        }
+
+        const request: PaneCreationRequest = {
+          paneId,
+          sourceCwd: config.worktree?.sourceRepo ?? config.cwd,
+          model: config.model,
+          worktreePath: config.worktree?.path,
+          resume: sessionId
+        }
+
+        const result = yield* supervisor
+          .openPane(request, onEvent, (newSessionId) => recordSessionId(paneId, newSessionId))
+          .pipe(Effect.either)
+
+        if (Either.isLeft(result)) {
+          yield* Effect.logError('Failed to resume pane', { paneId, cause: result.left })
+          yield* emitErrored(paneId, onEvent, `Failed to resume pane: ${String(result.left)}`)
+        }
+      })
+
+      return { getTree, split, createPane, close, getPaneHistory, resumePane }
     })
   )

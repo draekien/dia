@@ -8,6 +8,7 @@ import {
   ClosePane,
   CreatePane,
   type DiaApi,
+  FocusPane,
   IpcEvent,
   ResolvePermission,
   SendMessage,
@@ -19,6 +20,7 @@ const encodeResolvePermission = Schema.encodeSync(ResolvePermission)
 const encodeSplitPane = Schema.encodeSync(SplitPane)
 const encodeClosePane = Schema.encodeSync(ClosePane)
 const encodeCreatePane = Schema.encodeSync(CreatePane)
+const encodeFocusPane = Schema.encodeSync(FocusPane)
 const decodeEvent = Schema.decodeUnknownEither(IpcEvent)
 const decodeTree = Schema.decodeUnknownSync(PaneNode)
 const decodeHistory = Schema.decodeUnknownSync(Schema.Array(ConversationMessage))
@@ -64,6 +66,9 @@ const api: DiaApi = {
       CHANNEL.command,
       encodeCreatePane({ _tag: 'CreatePane', paneId, cwd, model, useWorktree })
     )
+  },
+  focusPane(paneId) {
+    ipcRenderer.send(CHANNEL.command, encodeFocusPane({ _tag: 'FocusPane', paneId }))
   },
   getInitialLayout() {
     return ipcRenderer.invoke(CHANNEL.getInitialLayout).then((raw) => decodeTree(raw))

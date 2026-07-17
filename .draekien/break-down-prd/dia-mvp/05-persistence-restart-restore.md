@@ -68,9 +68,9 @@ worktrees are removed on graceful shutdown while the branch `dia/<paneId>` persi
 - [x] **T2** [AFK] `PaneWorkspace` is now the **single writer** of `workspace.json`: `save()` after `split`/`createPane`/`close` (failures logged & swallowed). Self-hydrates on layer init from `PersistenceService.loadWorkspace` (restored tree kept cold, no spawn; falls back to the default pending leaf when absent/corrupt). `configsRef` now holds `PersistedPaneEntry` (`{ config, sessionId? }`) so T3 can attach `sessionId`. `PersistenceService` wired into the composition root. Tests: hydrate-without-spawn, save-on-create/split/close, sessionId survives a save cycle. — serves: US-10 — depends: T1
 - [x] **T3** [AFK] Capture & persist `sessionId`: `agent-session.ts` reads `session_id` from the `system`/`init` SDK message and posts a new Outbound `SessionStarted { sessionId }`; `PaneSupervisor.openPane` takes an `onSessionId` callback and routes `SessionStarted` to it (no workspace↔supervisor cycle); `PaneWorkspace.recordSessionId` updates the index entry and re-saves. Tests: supervisor routes `SessionStarted`→callback; workspace records an async sessionId + re-saves. — serves: US-10 — depends: T1, T2
 - [x] **T4** [AFK] Startup load + transcript display: `loadWorkspace` on launch → hydrate `PaneWorkspace` (tree + configs), falling back to the default pending leaf on absent/corrupt (done via T2 self-hydration). Added `TranscriptReader` service (`src/main/services/transcript-reader.ts`) wrapping SDK `getSessionMessages()` with a pure `sessionMessagesToConversation` projection (keeps user/assistant text turns, joins assistant text blocks, drops tool-only/undecodable turns, degrades to `[]` on a missing session). `PaneWorkspace.getPaneHistory(paneId)` returns `[]` for a pane with no recorded `sessionId`, else delegates to `TranscriptReader`. Added IPC `getPaneHistory` channel + `DiaApi.getPaneHistory` + preload bridge + gateway `wireGetPaneHistory`; renderer seeds each pane's messages query from it. Tests: mapping fixture (7 cases); workspace `getPaneHistory` empty-without-session + reads-by-restored-session. — serves: US-10 — depends: T2
-- [ ] **T5** [AFK] Resume-on-focus trigger: add `FocusPane` to the `IpcCommand` union + `DiaApi` + preload + gateway handler; wire renderer `onFocusPane` (in `app.tsx`). Cold pane + focus → `PaneWorkspace.resumePane` → recreate worktree if needed (T6) → `openPane` with `resume: sessionId` threaded through `Init` → `query({ resume })`. Idempotent (no-op) when the pane already has a live handle — serves: US-10 — depends: T3, T6
+- [x] **T5** [AFK] Resume-on-focus trigger: added `FocusPane` to the `IpcCommand` union + `DiaApi.focusPane` + preload bridge + gateway dispatch (`FocusPane` → `PaneWorkspace.resumePane`); wired renderer `onFocusPane` in `app.tsx` (`useCallback` → `window.dia.focusPane`). `PaneWorkspace.resumePane` is idempotent (no-op when the pane has a live handle, is unknown, or has no recorded `sessionId`), degrades to a usable pane (emits `Errored` attention rather than failing on a gone non-worktree cwd or a spawn/reattach failure), and threads `resume: sessionId` + the worktree path through `PaneSupervisor.openPane`. `openPane` reattaches (via T6) instead of creating when `request.resume` is set; `startProcess` posts `resume` in `Init`; `agent-session.ts` passes `resume` to `query()`. Tests: supervisor reattach+`Init` resume threading; workspace resumePane idempotent-when-live, no-op-without-session, gone-cwd→Errored, worktree-reattach-path, spawn-failure→Errored; gateway `FocusPane`→`resumePane`. — serves: US-10 — depends: T3, T6
 - [x] **T6** [AFK] Worktree reattach: added `GitOpsService.reattachWorktree` (+ `WorktreeReattachError`) running `git worktree add <path> dia/<paneId>` (checks out the existing branch — no `-b`, never `-B`, so committed work is preserved). Guarded via a `FileSystem.exists` check on the worktree path: already-present (already-live pane, or a crash-orphan whose recovery is out of scope) → logs and no-ops instead of re-adding. Returns the same `WorktreeInfo`. Tests: reattach uses exactly `worktree add <path> <branch>` (asserts no `-b`/`-B`); non-zero exit → `WorktreeReattachError`; existing path → no git command + skip log. — serves: US-10 — depends: T0
-- [ ] **T7** [AFK] Automated tests: `PersistenceService` round-trip (tree + index + `sessionId`), atomic write, malformed/absent → default fallback; `PaneWorkspace` save-on-op + hydrate + `sessionId` record; gateway `FocusPane`→resume with fakes; `getSessionMessages`→`ConversationMessage` mapping fixture. (Transcript zero-loss is no longer a dia unit test — the SDK owns it; covered by T8) — serves: US-10 — depends: T1, T2, T3, T5
+- [x] **T7** [AFK] Automated tests (landed incrementally alongside T1–T6): `PersistenceService` round-trip (tree + index + `sessionId`), atomic write, malformed/absent → default fallback (`persistence.test.ts`); `PaneWorkspace` save-on-op + hydrate + `sessionId` record + `getPaneHistory` (`pane-workspace.test.ts`); gateway `FocusPane`→`resumePane` with fakes (`gateway.test.ts`); `getSessionMessages`→`ConversationMessage` mapping fixture (`transcript-reader.test.ts`). Full suite 102/102 green, typecheck (node + web) + lint clean. (Transcript zero-loss is no longer a dia unit test — the SDK owns it; covered by T8) — serves: US-10 — depends: T1, T2, T3, T5
 - [ ] **T8** [HIL] Manual verification: build a real multi-pane layout with active conversations, restart the app, confirm layout and every pane's history restore exactly with zero data loss, and each pane resumes live context on focus — serves: US-10, G-3 — depends: T2, T4, T5, T6
 
 ## Dependency tree
@@ -82,9 +82,9 @@ graph TD
   T2[T2: PaneWorkspace single writer + hydrate]
   T3[T3: capture + persist sessionId]
   T4[T4: startup load + getPaneHistory display - DONE]
-  T5[T5: FocusPane -> resume trigger]
+  T5[T5: FocusPane -> resume trigger - DONE]
   T6[T6: GitOpsService.reattachWorktree - DONE]
-  T7[T7: automated tests]
+  T7[T7: automated tests - DONE]
   T8[T8: manual restart verification]
   T0 --> T1
   T0 --> T6
@@ -127,6 +127,14 @@ done. **No implementation code written yet.** Next actionable task: **T1**.
 above). **T1 DONE & verified** (`persistence.ts` + `persistence.test.ts`, full suite 76/76
 green, typecheck + lint clean; not yet committed). Next actionable task: **T2** (make
 `PaneWorkspace` the single writer of `workspace.json` + add a hydrate path).
+
+**Status 2026-07-17 (later, same day):** **T1–T7 all DONE & verified.** Full implementation
+landed (persistence, single-writer hydrate, sessionId capture, startup transcript display via
+`TranscriptReader`, resume-on-focus, worktree reattach) with tests committed per task on
+`main`. Full suite **102/102 green**, node + web typecheck clean, biome clean. **Only T8
+(manual restart verification, human-in-the-loop) remains** — it cannot be automated. Optional
+follow-up still open: the `docs/reasoning/` entry for the two non-obvious findings (SDK owns
+the transcript; `git worktree` `-b`/bare/`-B` semantics incl. `-B` data loss).
 
 **Files read/understood during scoping (the map for implementation):**
 

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { assert, describe, it } from '@effect/vitest'
 import { Effect, Layer, Logger, Option, TestClock } from 'effect'
-import type { PaneConfig } from '../domain/pane'
+import type { PaneConfig, WorktreeInfo } from '../domain/pane'
 import type { IpcEvent } from '../ipc/contract'
 import { GitOpsService } from './git-ops-service'
 import {
@@ -134,7 +134,7 @@ describe('PaneSupervisor', () => {
         yield* flush
         yield* handleB.sendMessage('ping')
         assert.deepStrictEqual(processes[1].posted, [
-          { _tag: 'Init', config: configB },
+          { _tag: 'Init', config: configB, resume: undefined },
           { _tag: 'SendText', text: 'ping' }
         ])
         assert.deepStrictEqual(eventsB, [
@@ -210,6 +210,65 @@ describe('PaneSupervisor', () => {
 
         assert.deepStrictEqual(sessionIds, ['session-xyz'])
       }).pipe(Effect.scoped, Effect.provide(testLayer), Effect.provide(loggerLayer))
+    })
+  )
+
+  it.effect('resuming a worktree pane reattaches its branch and threads resume into Init', () =>
+    Effect.gen(function* () {
+      const processes: FakePaneProcess[] = []
+      const spawnerLayer = Layer.succeed(PaneProcessSpawner, {
+        spawn: () =>
+          Effect.sync(() => {
+            const process = new FakePaneProcess()
+            processes.push(process)
+            return process
+          })
+      })
+      const reattachCalls: Array<{ info: WorktreeInfo; paneId: string }> = []
+      const gitOpsLayer = Layer.succeed(GitOpsService, {
+        createWorktree: () => Effect.dieMessage('createWorktree must not be called when resuming'),
+        removeWorktree: () => Effect.void,
+        reattachWorktree: (info, paneId) =>
+          Effect.sync(() => {
+            reattachCalls.push({ info, paneId })
+            return info
+          })
+      })
+      const testLayer = Layer.provide(PaneSupervisorLive, Layer.merge(spawnerLayer, gitOpsLayer))
+
+      const resumeRequest: PaneCreationRequest = {
+        paneId: 'cccccccc-0000-4000-8000-000000000003',
+        sourceCwd: '/repo',
+        model: 'm',
+        worktreePath: '/wt/c',
+        resume: 'session-resume-1'
+      }
+      const expectedInfo: WorktreeInfo = {
+        path: '/wt/c',
+        branch: `dia/${resumeRequest.paneId}`,
+        sourceRepo: '/repo'
+      }
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        const opened = yield* supervisor.openPane(resumeRequest, () => Effect.void, ignoreSessionId)
+        yield* flush
+
+        assert.deepStrictEqual(reattachCalls, [
+          { info: expectedInfo, paneId: resumeRequest.paneId }
+        ])
+        assert.strictEqual(opened.config.cwd, '/wt/c')
+        assert.deepStrictEqual(processes[0].posted[0], {
+          _tag: 'Init',
+          config: {
+            paneId: resumeRequest.paneId,
+            cwd: '/wt/c',
+            model: 'm',
+            worktree: expectedInfo
+          },
+          resume: 'session-resume-1'
+        })
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
     })
   )
 

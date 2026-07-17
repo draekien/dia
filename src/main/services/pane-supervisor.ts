@@ -18,11 +18,15 @@ import {
 } from 'effect'
 import { utilityProcess } from 'electron'
 import { type AttentionState, type PaneError, transitionAttention } from '../domain/attention'
-import type { PaneConfig, PaneRecord } from '../domain/pane'
+import type { PaneConfig, PaneRecord, WorktreeInfo } from '../domain/pane'
 import type { PaneId } from '../domain/pane-tree'
 import type { IpcEvent } from '../ipc/contract'
 import { InboundMessage, OutboundMessage } from '../pane-process/protocol'
-import { GitOpsService, type WorktreeCreateError } from './git-ops-service'
+import {
+  GitOpsService,
+  type WorktreeCreateError,
+  type WorktreeReattachError
+} from './git-ops-service'
 
 /** Failure raised by {@link PaneSupervisor.openPane} when the pane's utility process could not be spawned. */
 export class ProcessSpawnError extends Data.TaggedError('ProcessSpawnError')<{
@@ -33,6 +37,8 @@ export class ProcessSpawnError extends Data.TaggedError('ProcessSpawnError')<{
 /**
  * A pending pane's request to start running: the source directory and model the user chose,
  * plus the worktree path to provision when set (its presence is what "useWorktree" means).
+ * When `resume` is set, the pane continues the prior Agent SDK session with that id, and a
+ * worktree pane is reattached (its existing branch is checked out) rather than created afresh.
  * Pass to {@link PaneSupervisor.openPane} to spawn and register a new pane.
  */
 export interface PaneCreationRequest {
@@ -40,6 +46,7 @@ export interface PaneCreationRequest {
   readonly sourceCwd: string
   readonly model: string
   readonly worktreePath: string | undefined
+  readonly resume?: string
 }
 
 /** Failure raised when a pane's process exits unexpectedly (not as part of a requested teardown). */
@@ -153,7 +160,8 @@ function toAttentionTarget(message: OutboundMessage): AttentionState | null {
 const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
   config: PaneConfig,
   spawner: Context.Tag.Service<PaneProcessSpawner>,
-  onSessionId: (sessionId: string) => Effect.Effect<void>
+  onSessionId: (sessionId: string) => Effect.Effect<void>,
+  resume: string | undefined
 ) {
   const child = yield* Effect.acquireRelease(
     spawner
@@ -292,8 +300,8 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
 
   yield* Stream.runForEach(decoded, handleInbound).pipe(Effect.forkScoped)
 
-  child.postMessage(encodeInbound({ _tag: 'Init', config }))
-  yield* Effect.logInfo('Sent Init message to pane process', { paneId: config.paneId })
+  child.postMessage(encodeInbound({ _tag: 'Init', config, resume }))
+  yield* Effect.logInfo('Sent Init message to pane process', { paneId: config.paneId, resume })
 
   const exits = Stream.async<number>((emit) => {
     const listener = (code: number): void => void emit.single(code)
@@ -341,9 +349,10 @@ export class PaneSupervisor extends Context.Tag('PaneSupervisor')<
   PaneSupervisor,
   {
     /**
-     * Provisions a pane's worktree (if requested), spawns its process, and registers it for
-     * lookup and teardown. `onSessionId` is invoked when the pane's Agent SDK session starts or
-     * resumes, carrying the id the caller should persist for later resume.
+     * Provisions a pane's worktree (creating it, or reattaching the existing branch when
+     * `request.resume` is set), spawns its process, and registers it for lookup and teardown.
+     * `onSessionId` is invoked when the pane's Agent SDK session starts or resumes, carrying the
+     * id the caller should persist for later resume.
      */
     readonly openPane: (
       request: PaneCreationRequest,
@@ -351,7 +360,7 @@ export class PaneSupervisor extends Context.Tag('PaneSupervisor')<
       onSessionId: (sessionId: string) => Effect.Effect<void>
     ) => Effect.Effect<
       { readonly handle: PaneHandle; readonly config: PaneConfig },
-      ProcessSpawnError | WorktreeCreateError
+      ProcessSpawnError | WorktreeCreateError | WorktreeReattachError
     >
     /** Kills the given pane's process and removes its worktree, marking the exit as expected. */
     readonly closePane: (paneId: PaneId) => Effect.Effect<void>
@@ -401,17 +410,30 @@ export const PaneSupervisorLive = Layer.effect(
           return config
         }
 
-        const worktree = yield* Effect.acquireRelease(
-          gitOps.createWorktree(request.sourceCwd, request.paneId, request.worktreePath),
-          (info) =>
-            gitOps.removeWorktree(info, request.paneId).pipe(
-              Effect.catchAllCause((cause) =>
-                Effect.logError('Failed to remove pane worktree', {
-                  paneId: request.paneId,
-                  cause
-                })
+        // On resume the worktree was removed on the prior graceful shutdown but its branch
+        // persists, so reattach (check out the existing branch) rather than create a new one --
+        // creating would fail on the already-existing `dia/<paneId>` branch.
+        const acquire: Effect.Effect<WorktreeInfo, WorktreeCreateError | WorktreeReattachError> =
+          request.resume === undefined
+            ? gitOps.createWorktree(request.sourceCwd, request.paneId, request.worktreePath)
+            : gitOps.reattachWorktree(
+                {
+                  path: request.worktreePath,
+                  branch: `dia/${request.paneId}`,
+                  sourceRepo: request.sourceCwd
+                },
+                request.paneId
               )
+
+        const worktree = yield* Effect.acquireRelease(acquire, (info) =>
+          gitOps.removeWorktree(info, request.paneId).pipe(
+            Effect.catchAllCause((cause) =>
+              Effect.logError('Failed to remove pane worktree', {
+                paneId: request.paneId,
+                cause
+              })
             )
+          )
         )
 
         const config: PaneConfig = {
@@ -430,7 +452,7 @@ export const PaneSupervisorLive = Layer.effect(
 
       const config = prepared.right
 
-      const started = yield* startProcess(config, spawner, onSessionId).pipe(
+      const started = yield* startProcess(config, spawner, onSessionId, request.resume).pipe(
         Effect.provideService(Scope.Scope, scope),
         Effect.either
       )

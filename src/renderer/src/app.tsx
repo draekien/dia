@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { PaneNode } from '../../main/domain/pane-tree'
 import PaneTreeView from './components/pane-tree-view'
 
@@ -11,11 +11,16 @@ function App() {
     return window.dia.onLayoutChanged((event) => setTree(event.tree))
   }, [])
 
+  const handleFocusPane = useCallback((paneId: string) => {
+    setFocusedPaneId(paneId)
+    window.dia.focusPane(paneId)
+  }, [])
+
   if (tree === null) return null
 
   return (
     <div className="h-screen bg-neutral-950">
-      <PaneTreeView node={tree} focusedPaneId={focusedPaneId} onFocusPane={setFocusedPaneId} />
+      <PaneTreeView node={tree} focusedPaneId={focusedPaneId} onFocusPane={handleFocusPane} />
     </div>
   )
 }
