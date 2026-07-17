@@ -16,6 +16,7 @@ This is an index of non-obvious decisions, gotchas, and learnings recorded durin
 | 2026-07-12 | [`Effect.forkScoped` requires ambient `Scope` at the fork site](reasoning/2026-07-12-forkscoped-requires-ambient-scope.md) | `Scope.Scope` availability depends on which fiber lineage forked the effect, not the function itself — a function forked from multiple call sites can't assume `Scope` is uniformly ambient; use `Effect.fork` + manual `Fiber.interrupt` when call sites differ. |
 | 2026-07-12 | [Preload IPC listener fan-out](reasoning/2026-07-12-preload-ipc-listener-fanout.md) | One `ipcRenderer.on` per subscriber scales with `panes × event types` and trips Node's `MaxListeners` cap — register the raw IPC listener once and fan out to an internal `Set` of subscribers instead. |
 | 2026-07-12 | [Self-interrupting settle fiber](reasoning/2026-07-12-self-interrupting-settle-fiber.md) | A forked timer fiber that recurses into a function reading back its own tracking `Ref` can interrupt itself before finishing — clear the ref before recursing, not after. |
+| 2026-07-17 | [Worktree reattach resume incantation](reasoning/2026-07-17-worktree-reattach-resume-incantation.md) | Resuming a pane's worktree uses `git worktree add <path> <branch>` (no `-b`); recreating with `-b` fails on the existing branch and `-B` silently discards the pane's committed work. cwd must stay byte-identical or the SDK loses the transcript. |
 
 ## Adding a new entry
 

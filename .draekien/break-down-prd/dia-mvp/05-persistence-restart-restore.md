@@ -214,9 +214,11 @@ the transcript; `git worktree` `-b`/bare/`-B` semantics incl. `-B` data loss).
 - Closing a pane does not delete its SDK transcript; the SDK owns retention, dia only drops the
   pane from its own index.
 
-**Recommended follow-up not yet done:** add a `docs/reasoning/` entry capturing the two
-non-obvious findings (SDK owns the transcript; `git worktree` `-b`/bare/`-B` semantics incl.
-`-B` data loss) — both would trip up a future session.
+**Recommended follow-up — DONE:** the `git worktree` `-b`/bare/`-B` resume semantics (incl.
+`-B` data loss) are captured in
+[`docs/reasoning/2026-07-17-worktree-reattach-resume-incantation.md`](../../../docs/reasoning/2026-07-17-worktree-reattach-resume-incantation.md).
+The "SDK owns the transcript" finding is captured formally in ADR-0011, so it needs no
+separate reasoning-log entry.
 
 **Bullet 09 (Pending-request persistence)** builds directly on this substrate; its T1 SDK
 `defer`/resume spike is now partly informed by ADR-0011 and the findings above.
