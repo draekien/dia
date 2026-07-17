@@ -118,7 +118,46 @@
   font-weight: 500;
 }
 
+.prose pre {
+  overflow-x: auto;
+}
+
 .prose pre code.hljs {
+  display: block;
   padding: 0;
+  background: transparent;
+}
+
+.prose pre .code-line {
+  display: block;
+  white-space: pre;
+}
+
+.prose pre .numbered-code-line::before {
+  content: attr(data-line-number);
+  position: sticky;
+  left: 0;
+  display: inline-block;
+  width: 2rem;
+  margin-right: 1rem;
+  padding-right: 0.75rem;
+  border-right: 1px solid oklch(1 0 0 / 0.08);
+  background-color: #171717;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  user-select: none;
+}
+
+.prose pre::-webkit-scrollbar {
+  height: 8px;
+}
+
+.prose pre::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background-color: oklch(1 0 0 / 0.16);
+}
+
+.prose pre::-webkit-scrollbar-track {
   background: transparent;
 }
