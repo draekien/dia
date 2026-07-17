@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { Context, Effect, Either, HashMap, Layer, Ref } from 'effect'
-import type { PaneConfig } from '../domain/pane'
+import { Context, Effect, Either, HashMap, Layer, Option, Ref } from 'effect'
 import {
   closePane,
   markPaneReady,
@@ -13,6 +12,7 @@ import {
 import type { IpcEvent } from '../ipc/contract'
 import type { WorktreeCreateError } from './git-ops-service'
 import { PaneSupervisor, type ProcessSpawnError } from './pane-supervisor'
+import { type PersistedPaneEntry, PersistenceService } from './persistence'
 
 /**
  * Service tag for the pane workspace: owns the pane tree and per-pane configs, and
@@ -39,25 +39,52 @@ export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
 >() {}
 
 /**
- * Builds the live {@link PaneWorkspace} layer, requiring {@link PaneSupervisor} from context.
- * Seeds the workspace with a single pending leaf pane (`initialPaneId`) rather than an empty
- * tree, since there is no valid `PaneNode` representing zero panes -- the user fills in its
- * working directory through the same onboarding form used for any freshly-split pane.
- * `worktreesRoot` is the base directory under which per-pane git worktrees are created when
- * `createPane` is called with `useWorktree: true`.
+ * Builds the live {@link PaneWorkspace} layer, requiring {@link PaneSupervisor} and
+ * {@link PersistenceService} from context. On construction it hydrates from the persisted
+ * workspace (tree + per-pane index): if one exists it is restored as-is (panes stay cold --
+ * no processes are spawned here); otherwise the workspace is seeded with a single pending
+ * leaf pane (`initialPaneId`), since there is no valid `PaneNode` representing zero panes --
+ * the user fills in its working directory through the same onboarding form used for any
+ * freshly-split pane. Thereafter this is the single writer of the persisted workspace,
+ * re-saving after every `split`/`createPane`/`close`. `worktreesRoot` is the base directory
+ * under which per-pane git worktrees are created when `createPane` is called with
+ * `useWorktree: true`.
  */
 export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: string) =>
   Layer.effect(
     PaneWorkspace,
     Effect.gen(function* () {
       const supervisor = yield* PaneSupervisor
+      const persistence = yield* PersistenceService
 
-      const treeRef = yield* Ref.make<PaneNode>({
-        _tag: 'Leaf',
-        paneId: initialPaneId,
-        status: 'pending'
+      const persisted = yield* persistence.loadWorkspace()
+      const seed = Option.match(persisted, {
+        onNone: () => ({
+          tree: { _tag: 'Leaf', paneId: initialPaneId, status: 'pending' } satisfies PaneNode,
+          panes: HashMap.empty<PaneId, PersistedPaneEntry>()
+        }),
+        onSome: (workspace) => ({
+          tree: workspace.tree,
+          panes: HashMap.fromIterable(Object.entries(workspace.panes))
+        })
       })
-      const configsRef = yield* Ref.make<HashMap.HashMap<PaneId, PaneConfig>>(HashMap.empty())
+
+      const treeRef = yield* Ref.make<PaneNode>(seed.tree)
+      const configsRef = yield* Ref.make(seed.panes)
+
+      const save = Effect.fn('PaneWorkspace.save')(function* () {
+        const tree = yield* Ref.get(treeRef)
+        const configs = yield* Ref.get(configsRef)
+        const panes: Record<string, PersistedPaneEntry> = {}
+        for (const [paneId, entry] of configs) {
+          panes[paneId] = entry
+        }
+        yield* persistence
+          .saveWorkspace({ tree, panes })
+          .pipe(
+            Effect.catchAll((cause) => Effect.logError('Failed to persist workspace', { cause }))
+          )
+      })
 
       const getTree = () => Ref.get(treeRef)
 
@@ -73,6 +100,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         }
 
         yield* Ref.set(treeRef, updated.right)
+        yield* save()
         return updated.right
       })
 
@@ -103,7 +131,8 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         }
 
         yield* Ref.set(treeRef, readyTree.right)
-        yield* Ref.update(configsRef, HashMap.set(paneId, config))
+        yield* Ref.update(configsRef, HashMap.set(paneId, { config }))
+        yield* save()
         return readyTree.right
       })
 
@@ -121,12 +150,14 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
           const resetTree: PaneNode = { _tag: 'Leaf', paneId, status: 'pending' }
           yield* Ref.set(treeRef, resetTree)
           yield* Ref.update(configsRef, HashMap.remove(paneId))
+          yield* save()
           return resetTree
         }
 
         yield* supervisor.closePane(paneId)
         yield* Ref.set(treeRef, updated.right)
         yield* Ref.update(configsRef, HashMap.remove(paneId))
+        yield* save()
         return updated.right
       })
 

@@ -12,6 +12,7 @@ import {
   PaneSupervisorLive
 } from './services/pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './services/pane-workspace'
+import { makePersistenceServiceLive } from './services/persistence'
 import { makeSettingsStoreLive, SettingsStore } from './services/settings-store'
 
 const isDev = !app.isPackaged
@@ -77,9 +78,13 @@ app.whenReady().then(async () => {
     Layer.merge(PaneProcessSpawnerLive, gitOpsLayer)
   )
   const worktreesRoot = join(app.getPath('userData'), 'worktrees')
+  const persistenceLayer = Layer.provide(
+    makePersistenceServiceLive(app.getPath('userData')),
+    NodeContext.layer
+  )
   const workspaceLayer = Layer.provide(
     makePaneWorkspaceLive(INITIAL_PANE_ID, worktreesRoot),
-    supervisorLayer
+    Layer.merge(supervisorLayer, persistenceLayer)
   )
   const settingsStoreLayer = Layer.provide(
     makeSettingsStoreLive(app.getPath('userData')),
