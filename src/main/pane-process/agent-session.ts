@@ -96,6 +96,11 @@ const runSession = Effect.fn('AgentSession.runSession')(
 
     yield* Stream.runForEach(events, (event) =>
       Effect.gen(function* () {
+        if (event.type === 'system' && event.subtype === 'init') {
+          yield* postOutbound({ _tag: 'SessionStarted', sessionId: event.session_id })
+          return
+        }
+
         if (event.type === 'assistant') {
           const text = event.message.content
             .flatMap((block) => (block.type === 'text' ? [block.text] : []))

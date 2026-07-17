@@ -54,6 +54,8 @@ const configB: PaneConfig = {
 // synchronous EventEmitter.emit has a chance to reach the fiber consuming the exits Stream.
 const flush = Effect.repeatN(Effect.yieldNow(), 50)
 
+const ignoreSessionId = (_sessionId: string): Effect.Effect<void> => Effect.void
+
 function makeTestSetup(): {
   readonly processes: ReadonlyArray<FakePaneProcess>
   readonly capturedLogs: ReadonlyArray<unknown>
@@ -96,9 +98,15 @@ describe('PaneSupervisor', () => {
         const eventsA: IpcEvent[] = []
         const eventsB: IpcEvent[] = []
 
-        yield* supervisor.openPane(requestA, (event) => Effect.sync(() => eventsA.push(event)))
-        const openedB = yield* supervisor.openPane(requestB, (event) =>
-          Effect.sync(() => eventsB.push(event))
+        yield* supervisor.openPane(
+          requestA,
+          (event) => Effect.sync(() => eventsA.push(event)),
+          ignoreSessionId
+        )
+        const openedB = yield* supervisor.openPane(
+          requestB,
+          (event) => Effect.sync(() => eventsB.push(event)),
+          ignoreSessionId
         )
         const handleB = openedB.handle
 
@@ -162,8 +170,8 @@ describe('PaneSupervisor', () => {
       yield* Effect.gen(function* () {
         const supervisor = yield* PaneSupervisor
 
-        yield* supervisor.openPane(requestA, () => Effect.void)
-        yield* supervisor.openPane(requestB, () => Effect.void)
+        yield* supervisor.openPane(requestA, () => Effect.void, ignoreSessionId)
+        yield* supervisor.openPane(requestB, () => Effect.void, ignoreSessionId)
 
         yield* supervisor.closePane(configA.paneId)
         yield* flush
@@ -180,6 +188,29 @@ describe('PaneSupervisor', () => {
     })
   )
 
+  it.effect('routes a SessionStarted message from the pane to the onSessionId callback', () =>
+    Effect.gen(function* () {
+      const { processes, testLayer, loggerLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        const sessionIds: string[] = []
+
+        yield* supervisor.openPane(
+          requestA,
+          () => Effect.void,
+          (sessionId) => Effect.sync(() => sessionIds.push(sessionId))
+        )
+        yield* flush
+
+        processes[0].emit('message', { _tag: 'SessionStarted', sessionId: 'session-xyz' })
+        yield* flush
+
+        assert.deepStrictEqual(sessionIds, ['session-xyz'])
+      }).pipe(Effect.scoped, Effect.provide(testLayer), Effect.provide(loggerLayer))
+    })
+  )
+
   it.effect('auto-settles Completed back to Idle after 3 seconds', () =>
     Effect.gen(function* () {
       const { processes, testLayer, loggerLayer } = makeTestSetup()
@@ -188,7 +219,11 @@ describe('PaneSupervisor', () => {
         const supervisor = yield* PaneSupervisor
         const events: IpcEvent[] = []
 
-        yield* supervisor.openPane(requestA, (event) => Effect.sync(() => events.push(event)))
+        yield* supervisor.openPane(
+          requestA,
+          (event) => Effect.sync(() => events.push(event)),
+          ignoreSessionId
+        )
         yield* flush
 
         processes[0].emit('message', { _tag: 'TurnCompleted' })

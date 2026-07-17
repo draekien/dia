@@ -86,6 +86,20 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
           )
       })
 
+      const recordSessionId = Effect.fn('PaneWorkspace.recordSessionId')(function* (
+        paneId: PaneId,
+        sessionId: string
+      ) {
+        const configs = yield* Ref.get(configsRef)
+        const entry = HashMap.get(configs, paneId)
+        if (Option.isNone(entry)) {
+          yield* Effect.logWarning('Received sessionId for a pane not in the index', { paneId })
+          return
+        }
+        yield* Ref.set(configsRef, HashMap.set(configs, paneId, { ...entry.value, sessionId }))
+        yield* save()
+      })
+
       const getTree = () => Ref.get(treeRef)
 
       const split = Effect.fn('PaneWorkspace.split')(function* (
@@ -122,7 +136,8 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         const worktreePath = useWorktree ? join(worktreesRoot, paneId) : undefined
         const { config } = yield* supervisor.openPane(
           { paneId, sourceCwd, model, worktreePath },
-          onCreateEvent
+          onCreateEvent,
+          (sessionId) => recordSessionId(paneId, sessionId)
         )
 
         const readyTree = markPaneReady(tree, paneId, config.cwd, config.worktree?.sourceRepo)

@@ -122,6 +122,7 @@ function toIpcEvent(paneId: string, message: OutboundMessage): IpcEvent | null {
       }
     case 'TurnCompleted':
     case 'TurnErrored':
+    case 'SessionStarted':
       return null
   }
 }
@@ -151,7 +152,8 @@ function toAttentionTarget(message: OutboundMessage): AttentionState | null {
 // a given process exit was requested or unexpected.
 const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
   config: PaneConfig,
-  spawner: Context.Tag.Service<PaneProcessSpawner>
+  spawner: Context.Tag.Service<PaneProcessSpawner>,
+  onSessionId: (sessionId: string) => Effect.Effect<void>
 ) {
   const child = yield* Effect.acquireRelease(
     spawner
@@ -273,6 +275,14 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
         })
       }
 
+      if (message._tag === 'SessionStarted') {
+        yield* Effect.logInfo('Pane session started', {
+          paneId: config.paneId,
+          sessionId: message.sessionId
+        })
+        yield* onSessionId(message.sessionId)
+      }
+
       const event = toIpcEvent(config.paneId, message)
       if (event !== null) yield* Queue.offer(outbound, event)
 
@@ -330,10 +340,15 @@ interface PaneEntry {
 export class PaneSupervisor extends Context.Tag('PaneSupervisor')<
   PaneSupervisor,
   {
-    /** Provisions a pane's worktree (if requested), spawns its process, and registers it for lookup and teardown. */
+    /**
+     * Provisions a pane's worktree (if requested), spawns its process, and registers it for
+     * lookup and teardown. `onSessionId` is invoked when the pane's Agent SDK session starts or
+     * resumes, carrying the id the caller should persist for later resume.
+     */
     readonly openPane: (
       request: PaneCreationRequest,
-      onEvent: (event: IpcEvent) => Effect.Effect<void>
+      onEvent: (event: IpcEvent) => Effect.Effect<void>,
+      onSessionId: (sessionId: string) => Effect.Effect<void>
     ) => Effect.Effect<
       { readonly handle: PaneHandle; readonly config: PaneConfig },
       ProcessSpawnError | WorktreeCreateError
@@ -370,7 +385,8 @@ export const PaneSupervisorLive = Layer.effect(
 
     const openPane = Effect.fn('PaneSupervisor.openPane')(function* (
       request: PaneCreationRequest,
-      onEvent: (event: IpcEvent) => Effect.Effect<void>
+      onEvent: (event: IpcEvent) => Effect.Effect<void>,
+      onSessionId: (sessionId: string) => Effect.Effect<void>
     ) {
       const scope = yield* Scope.make()
       const expectedExit = yield* Ref.make(false)
@@ -414,7 +430,7 @@ export const PaneSupervisorLive = Layer.effect(
 
       const config = prepared.right
 
-      const started = yield* startProcess(config, spawner).pipe(
+      const started = yield* startProcess(config, spawner, onSessionId).pipe(
         Effect.provideService(Scope.Scope, scope),
         Effect.either
       )

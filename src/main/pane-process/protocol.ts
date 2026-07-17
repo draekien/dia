@@ -47,6 +47,10 @@ export const PermissionRequested = Schema.TaggedStruct('PermissionRequested', {
 export const TurnCompleted = Schema.TaggedStruct('TurnCompleted', {})
 /** Sent by the pane subprocess to main when the agent's current turn has failed. */
 export const TurnErrored = Schema.TaggedStruct('TurnErrored', { error: PaneError })
+/** Sent by the pane subprocess to main once the Agent SDK session has started (or resumed), carrying the `sessionId` main persists so the pane can later be resumed. */
+export const SessionStarted = Schema.TaggedStruct('SessionStarted', {
+  sessionId: Schema.String
+})
 
 /** The full set of messages a pane subprocess may send to main. Decode outbound IPC payloads against this union before acting on them. */
 export const OutboundMessage = Schema.Union(
@@ -56,6 +60,7 @@ export const OutboundMessage = Schema.Union(
   ToolCallCompleted,
   PermissionRequested,
   TurnCompleted,
-  TurnErrored
+  TurnErrored,
+  SessionStarted
 )
 export type OutboundMessage = typeof OutboundMessage.Type

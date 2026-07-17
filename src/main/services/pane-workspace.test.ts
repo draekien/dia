@@ -175,6 +175,29 @@ describe('PaneWorkspace', () => {
     })
   )
 
+  it.effect('records a sessionId reported after createPane into the index and re-saves', () =>
+    Effect.gen(function* () {
+      let captured: ((sessionId: string) => Effect.Effect<void>) | undefined
+      const supervisorLayer = makeSupervisorLayer((request, _onEvent, onSessionId) => {
+        captured = onSessionId
+        return echoOpenPane(request)
+      })
+      const { saves, layer: persistenceLayer } = makePersistence()
+
+      yield* Effect.gen(function* () {
+        const workspace = yield* PaneWorkspace
+        // createPane registers the pane's index entry and saves once; the session id only
+        // arrives afterwards (mirroring the async SystemMessage `init` in production).
+        yield* workspace.createPane(INITIAL_PANE_ID, '/repo', 'm', false, onEvent)
+        if (captured === undefined) throw new Error('onSessionId was not provided to openPane')
+        yield* captured('session-async-1')
+      }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
+
+      assert.strictEqual(saves.length, 2)
+      assert.strictEqual(saves[1].panes[INITIAL_PANE_ID].sessionId, 'session-async-1')
+    })
+  )
+
   it.effect('preserves a restored pane sessionId across a later save', () =>
     Effect.gen(function* () {
       const supervisorLayer = makeSupervisorLayer(echoOpenPane)
