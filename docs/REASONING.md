@@ -17,6 +17,7 @@ This is an index of non-obvious decisions, gotchas, and learnings recorded durin
 | 2026-07-12 | [Preload IPC listener fan-out](reasoning/2026-07-12-preload-ipc-listener-fanout.md) | One `ipcRenderer.on` per subscriber scales with `panes × event types` and trips Node's `MaxListeners` cap — register the raw IPC listener once and fan out to an internal `Set` of subscribers instead. |
 | 2026-07-12 | [Self-interrupting settle fiber](reasoning/2026-07-12-self-interrupting-settle-fiber.md) | A forked timer fiber that recurses into a function reading back its own tracking `Ref` can interrupt itself before finishing — clear the ref before recursing, not after. |
 | 2026-07-17 | [Worktree reattach resume incantation](reasoning/2026-07-17-worktree-reattach-resume-incantation.md) | Resuming a pane's worktree uses `git worktree add <path> <branch>` (no `-b`); recreating with `-b` fails on the existing branch and `-B` silently discards the pane's committed work. cwd must stay byte-identical or the SDK loses the transcript. |
+| 2026-07-17 | [Effect diagnostics via `@effect/tsgo`](reasoning/2026-07-17-effect-tsgo-diagnostics-tooling.md) | `@effect/tsgo` patches the native `tsc` so `tsc -p <config>` emits Effect diagnostics per that config's `diagnosticSeverity` map (arrays replace across `extends`, don't merge); relax test-only rules via a dedicated `tsconfig.test.json`, bust `.tsbuildinfo` after severity changes, and use `Effect.gen`+`withSpan` (not an immediately-invoked `Effect.fn`). |
 
 ## Adding a new entry
 

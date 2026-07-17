@@ -1,6 +1,7 @@
 # Plan: Effect hygiene, tooling, and path aliases
 
-Status: **awaiting sign-off**
+Status: **complete** — all phases (0–4) landed; `pnpm typecheck` (3 configs), `pnpm test`
+(114/114), and `pnpm build` green with 0 Effect diagnostics.
 Date: 2026-07-17
 Driven by: Effect LSP (`@effect/tsgo`) diagnostics + two audit subagents (composition/data-types, tagged-types/pattern-matching), reconciled against `effect@3.21.4`.
 
