@@ -3,16 +3,104 @@ import { Data, Either, Schema } from 'effect'
 const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
 
 /**
- * A pending tool-permission ask surfaced by a pane, carrying enough detail
- * (request id, tool name, input) to render a prompt and correlate the
- * user's decision back to the originating SDK request.
+ * An opaque permission-rule update owned by the Agent SDK. dia carries these
+ * through unmodified: the SDK offers them as a `PermissionRequest`'s
+ * `suggestions`, and the user's `Allow` echoes chosen ones back as
+ * `updatedPermissions` to persist an "always allow" rule. dia never inspects
+ * their internal shape.
  */
-export const PermissionRequest = Schema.Struct({
+export const PermissionUpdate = JsonRecord
+export type PermissionUpdate = typeof PermissionUpdate.Type
+
+const QuestionOption = Schema.Struct({
+  label: Schema.String,
+  description: Schema.String
+})
+
+/**
+ * One clarifying question the agent posed via `AskUserQuestion`: the prompt
+ * text, a short `header` label, its selectable `options`, and whether more than
+ * one option may be chosen. Rendered by the pane's clarifying-question card and
+ * echoed back inside a `QuestionResponse`.
+ */
+export const Question = Schema.Struct({
+  question: Schema.String,
+  header: Schema.String,
+  options: Schema.Array(QuestionOption),
+  multiSelect: Schema.Boolean
+})
+export type Question = typeof Question.Type
+
+/**
+ * A pending tool-permission ask surfaced by a pane, carrying enough detail
+ * (request id, tool name, input) to render a prompt and correlate the user's
+ * `PermissionResponse` back to the originating SDK request. `suggestions`, when
+ * present, are the SDK's offered "always allow" rules for this kind of call.
+ */
+export const PermissionRequest = Schema.TaggedStruct('PermissionRequest', {
   requestId: Schema.String,
   toolName: Schema.String,
-  input: JsonRecord
+  input: JsonRecord,
+  suggestions: Schema.optional(Schema.Array(PermissionUpdate))
 })
 export type PermissionRequest = typeof PermissionRequest.Type
+
+/**
+ * A pending `AskUserQuestion` ask surfaced by a pane, carrying the SDK's
+ * `questions` and the `requestId` used to correlate the user's
+ * `QuestionResponse` back to the originating SDK request.
+ */
+export const ClarifyingQuestion = Schema.TaggedStruct('ClarifyingQuestion', {
+  requestId: Schema.String,
+  questions: Schema.Array(Question)
+})
+export type ClarifyingQuestion = typeof ClarifyingQuestion.Type
+
+/**
+ * What a pane in `AwaitingPermission` is blocked on: either a tool
+ * `PermissionRequest` or a `ClarifyingQuestion`. Branch on `_tag` to route to
+ * the matching dialog and response command.
+ */
+export const UserInputRequest = Schema.Union(PermissionRequest, ClarifyingQuestion)
+export type UserInputRequest = typeof UserInputRequest.Type
+
+/**
+ * The user's decision on a `PermissionRequest`: `Allow` runs the tool with
+ * `updatedInput` (the input as approved, possibly edited) and optional
+ * `updatedPermissions` echoing an "always allow" suggestion back; `Deny`
+ * refuses it with a `message` surfaced to the agent, not just the user.
+ */
+export const PermissionResponse = Schema.Union(
+  Schema.TaggedStruct('Allow', {
+    updatedInput: JsonRecord,
+    updatedPermissions: Schema.optional(Schema.Array(PermissionUpdate))
+  }),
+  Schema.TaggedStruct('Deny', {
+    message: Schema.String
+  })
+)
+export type PermissionResponse = typeof PermissionResponse.Type
+
+const AnswerValue = Schema.Union(Schema.String, Schema.Array(Schema.String))
+
+/**
+ * The user's reply to a `ClarifyingQuestion`: `Answers` carries the resolved
+ * choice per question (a chosen label, a label array for `multiSelect`, or
+ * free text typed in place of an option), echoed alongside the `questions` it
+ * answers; `FreeformResponse` is sent instead when the user dismissed the card
+ * and typed a general reply.
+ */
+export const QuestionResponse = Schema.Union(
+  Schema.TaggedStruct('Answers', {
+    questions: Schema.Array(Question),
+    answers: Schema.Record({ key: Schema.String, value: AnswerValue })
+  }),
+  Schema.TaggedStruct('FreeformResponse', {
+    questions: Schema.Array(Question),
+    response: Schema.String
+  })
+)
+export type QuestionResponse = typeof QuestionResponse.Type
 
 /** A pane-level error message, used to describe why a pane entered `Errored`. */
 export const PaneError = Schema.Struct({
@@ -22,9 +110,9 @@ export type PaneError = typeof PaneError.Type
 
 /** A pane with no outstanding attention needs. */
 export const Idle = Schema.TaggedStruct('Idle', {})
-/** A pane blocked on a `PermissionRequest` that the user has not yet resolved. */
+/** A pane blocked on a `UserInputRequest` that the user has not yet resolved. */
 export const AwaitingPermission = Schema.TaggedStruct('AwaitingPermission', {
-  request: PermissionRequest
+  request: UserInputRequest
 })
 /**
  * A pane that has crashed or failed. This is terminal: see `validTransitions`

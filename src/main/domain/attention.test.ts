@@ -5,7 +5,7 @@ import { type AttentionState, InvalidAttentionTransition, transitionAttention } 
 const idle: AttentionState = { _tag: 'Idle' }
 const awaitingPermission: AttentionState = {
   _tag: 'AwaitingPermission',
-  request: { requestId: 'req-1', toolName: 'Bash', input: {} }
+  request: { _tag: 'PermissionRequest', requestId: 'req-1', toolName: 'Bash', input: {} }
 }
 const errored: AttentionState = { _tag: 'Errored', error: { message: 'boom' } }
 const completed: AttentionState = { _tag: 'Completed' }

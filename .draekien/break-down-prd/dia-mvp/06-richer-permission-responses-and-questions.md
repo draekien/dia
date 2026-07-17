@@ -14,7 +14,8 @@
 
 ## Tasks
 
-- [ ] **T1** [AFK] Generalize `AwaitingPermission`'s payload into the `UserInputRequest` `Schema` union (`PermissionRequest` | `ClarifyingQuestion`), and add `PermissionResponse` (`Allow`/`Deny`) and `QuestionResponse` (`Answers`/`FreeformResponse`) `Schema`s (§3) — serves: US-11, US-12, US-13, US-14 — depends: (Bullet04/T1)
+- [x] **T1** [AFK] Generalize `AwaitingPermission`'s payload into the `UserInputRequest` `Schema` union (`PermissionRequest` | `ClarifyingQuestion`), and add `PermissionResponse` (`Allow`/`Deny`) and `QuestionResponse` (`Answers`/`FreeformResponse`) `Schema`s (§3) — serves: US-11, US-12, US-13, US-14 — depends: (Bullet04/T1)
+  - Added to `domain/attention.ts`: `PermissionUpdate` (opaque SDK pass-through), `Question`, a tagged `PermissionRequest` (now carries `suggestions`), `ClarifyingQuestion`, `UserInputRequest = Union(PermissionRequest, ClarifyingQuestion)`, `PermissionResponse` (`Allow` with `updatedInput`/optional `updatedPermissions` | `Deny` with `message`), and `QuestionResponse` (`Answers` with per-question `answers: Record<string, string | string[]>` | `FreeformResponse`), both echoing the `questions` they answer. `AwaitingPermission.request` is now `UserInputRequest`. Both request variants carry `requestId` for correlation (a deliberate addition over §3's simplified shape). Ripple fixes to keep the build green: `pane-supervisor.ts` and `attention.test.ts` now stamp `_tag: 'PermissionRequest'` on the constructed request; `pane.tsx`'s `pendingPermission` query retyped to `PanePermissionRequested` (the event it actually holds). Kept the domain's `TaggedStruct` style over the guide's `Class` preference for codebase consistency.
 - [ ] **T2** [AFK] Extend `AgentSession`'s `canUseTool` to branch on `toolName === "AskUserQuestion"`, emitting a `ClarifyingQuestion` request instead of a `PermissionRequest`, and to pass through `suggestions`/`updatedPermissions` for an "always allow" rule (§4.3) — serves: US-11, US-13 — depends: T1
 - [ ] **T3** [AFK] Add the `ResolveQuestion` IPC command and route `PermissionResponse`/`QuestionResponse` end-to-end through `contract.ts`, `protocol.ts`, and the preload bridge — serves: US-11, US-12, US-13, US-14 — depends: T1, T2
 - [ ] **T4** [AFK] Renderer: extend the permission dialog with an editable input field before allowing, a required message field when denying, and an "always allow this kind of call" toggle that echoes a `suggestions` entry back as `updatedPermissions` — serves: US-12, US-13, US-14 — depends: T3
@@ -28,7 +29,7 @@
 ```mermaid
 graph TD
   B04[Bullet 04: AttentionState + permission dialog]
-  T1[T1: UserInputRequest/PermissionResponse/QuestionResponse schemas]
+  T1[T1: UserInputRequest/PermissionResponse/QuestionResponse schemas - DONE]
   T2[T2: canUseTool branches on AskUserQuestion]
   T3[T3: ResolveQuestion command + end-to-end wiring]
   T4[T4: dialog supports modify/deny-message/remember]

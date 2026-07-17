@@ -140,6 +140,7 @@ function toAttentionTarget(message: OutboundMessage): AttentionState | null {
       return {
         _tag: 'AwaitingPermission',
         request: {
+          _tag: 'PermissionRequest',
           requestId: message.requestId,
           toolName: message.toolName,
           input: message.input

@@ -1,7 +1,8 @@
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import type { AttentionState, PermissionRequest } from '../../../main/domain/attention'
+import type { AttentionState } from '../../../main/domain/attention'
+import type { PanePermissionRequested } from '../../../main/ipc/contract'
 import { PermissionInputPreview } from './permission-input-preview'
 import { PulseIndicator } from './pulse-indicator'
 import { Button } from './ui/button'
@@ -63,7 +64,7 @@ function Pane({
     queryFn: () => '',
     staleTime: Infinity
   })
-  const { data: pendingPermission = null } = useQuery<PermissionRequest | null>({
+  const { data: pendingPermission = null } = useQuery<PanePermissionRequested | null>({
     queryKey: pendingPermissionQueryKey,
     queryFn: () => null,
     staleTime: Infinity
@@ -96,7 +97,7 @@ function Pane({
   useEffect(() => {
     return window.dia.onPermissionRequested((event) => {
       if (event.paneId !== paneId) return
-      queryClient.setQueryData<PermissionRequest | null>(pendingPermissionQueryKey, event)
+      queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, event)
     })
   }, [queryClient, paneId, pendingPermissionQueryKey])
 
@@ -117,7 +118,7 @@ function Pane({
   function respondToPermission(decision: 'allow' | 'deny'): void {
     if (!pendingPermission) return
     window.dia.resolvePermission(paneId, pendingPermission.requestId, decision)
-    queryClient.setQueryData<PermissionRequest | null>(pendingPermissionQueryKey, null)
+    queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
   }
 
   return (
