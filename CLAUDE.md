@@ -40,6 +40,7 @@ Renderer-specific — see `src/renderer/CLAUDE.md`.
 - Derive types from their schema (`export type X = typeof XSchema.Type`); never hand-declare an interface/type and a parallel schema. For a recursive schema, a plain `type` alias self-references and errors — use `export interface X extends Schema.Schema.Type<typeof XSchema> {}` instead.
 - Construct tagged values via the schema's `.make({...})` constructor (it auto-fills `_tag`), never hand-written `{ _tag: ... }` literals. An anonymous `Schema.TaggedStruct` inline in a `Schema.Union` has no `.make` — extract it to a named export first.
 - Schemas shared across processes (main/preload/renderer) live in `src/shared` (import via `@shared/*`) and must stay platform-neutral — no Node/DOM/Electron imports. `tsconfig.shared.json` enforces this. See ADR-0013.
+- A path alias must be declared in all of: `tsconfig.base.json` (typecheck), every relevant `electron.vite.config.ts` block (main/preload/renderer — build), and `vitest.config.ts` (tests). Type-only imports resolve without the runtime aliases, so a missing one stays hidden until the first value import.
 - Effect diagnostics run inside `pnpm typecheck` and standalone via `pnpm diagnostics` (per-project: `diagnostics:{node,web,test}`). Bust stale `.tsbuildinfo` after changing a severity map. See `docs/reasoning/2026-07-17-effect-tsgo-diagnostics-tooling.md`.
 
 ### Mandatory skill invocation
