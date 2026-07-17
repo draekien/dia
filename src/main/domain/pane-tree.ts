@@ -3,34 +3,6 @@ import { Data, Either, Schema } from 'effect'
 /** Identifier for a single pane, unique within a window's pane tree. */
 export type PaneId = string
 
-/** Lifecycle state of a pane: `pending` before its shell/session has attached, `ready` after. */
-export type PaneLeafStatus = 'pending' | 'ready'
-
-/**
- * A single terminal/session pane — a leaf in the binary pane-split tree.
- *
- * `sourceRepo` is set only when `cwd` points into a worktree, so the UI can display the
- * originating repo instead of the worktree directory name (a bare paneId/GUID).
- */
-export interface PaneLeaf {
-  readonly _tag: 'Leaf'
-  readonly paneId: PaneId
-  readonly status: PaneLeafStatus
-  readonly cwd?: string
-  readonly sourceRepo?: string
-}
-
-/** A binary split of two child panes along `direction`, with their relative `sizes`. */
-export interface PaneSplit {
-  readonly _tag: 'Split'
-  readonly direction: 'row' | 'column'
-  readonly children: ReadonlyArray<PaneNode>
-  readonly sizes: ReadonlyArray<number>
-}
-
-/** A node in the pane tree: either a leaf pane or a split of child nodes. */
-export type PaneNode = PaneLeaf | PaneSplit
-
 /** Schema for a {@link PaneLeaf}. Use `PaneLeafSchema.make({...})` to construct a leaf so the `_tag` is set and fields are validated. */
 export const PaneLeafSchema = Schema.TaggedStruct('Leaf', {
   paneId: Schema.UUID,
@@ -45,6 +17,23 @@ export const PaneSplitSchema = Schema.TaggedStruct('Split', {
   children: Schema.Array(Schema.suspend((): Schema.Schema<PaneNode> => PaneNode)),
   sizes: Schema.Array(Schema.Number)
 })
+
+/**
+ * A single terminal/session pane — a leaf in the binary pane-split tree.
+ *
+ * `sourceRepo` is set only when `cwd` points into a worktree, so the UI can display the
+ * originating repo instead of the worktree directory name (a bare paneId/GUID).
+ */
+export type PaneLeaf = typeof PaneLeafSchema.Type
+
+/**
+ * A binary split of two child panes along `direction`, with their relative `sizes`. Declared as
+ * an interface extending the schema's type so the recursive `children` reference resolves.
+ */
+export interface PaneSplit extends Schema.Schema.Type<typeof PaneSplitSchema> {}
+
+/** A node in the pane tree: either a leaf pane or a split of child nodes. */
+export type PaneNode = PaneLeaf | PaneSplit
 
 /** Schema for validating and decoding a {@link PaneNode} (e.g. when loading persisted state). */
 export const PaneNode: Schema.Schema<PaneNode> = Schema.Union(PaneLeafSchema, PaneSplitSchema)
