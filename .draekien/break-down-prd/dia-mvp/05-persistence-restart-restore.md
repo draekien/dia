@@ -64,7 +64,7 @@ worktrees are removed on graceful shutdown while the branch `dia/<paneId>` persi
 ## Tasks
 
 - [ ] **T0** [AFK] ✅ **DONE** — Write ADR-0011 (delegate transcript to SDK session store; persist tree + pane index; resume lazily on focus), supersede ADR-0008, update the ADR index — depends: —
-- [ ] **T1** [AFK] Implement `PersistenceService` (`src/main/services/persistence.ts`): `saveWorkspace` (atomic temp-write + rename) / `loadWorkspace` (decode-tolerant → `Option`, falling back on `PersistenceReadError`/`PersistenceDecodeError`). New `PersistedWorkspace` schema (`{ tree, panes: Record<PaneId, { config, sessionId? }> }`). Mirror `SettingsStore`'s pattern (§ see `settings-store.ts`) — serves: US-10 — depends: T0
+- [ ] **T1** [AFK] ✅ **DONE** — Implement `PersistenceService` (`src/main/services/persistence.ts`): `saveWorkspace` (atomic temp-write + rename, typed `PersistenceWriteError`) / `loadWorkspace` (decode-tolerant → `Option`, catching `PersistenceReadError`/`PersistenceDecodeError` internally → `None` + log). New `PersistedWorkspace`/`PersistedPaneEntry` schema (`{ tree, panes: Record<PaneId, { config, sessionId? }> }`) in `persistence.ts`. Mirrors `SettingsStore`'s pattern. Tests: `persistence.test.ts` (round-trip incl. optional `sessionId`/`worktree`, atomic write order, absent/malformed/schema-mismatch/unreadable → `None`, write-failure → typed error). — serves: US-10 — depends: T0
 - [ ] **T2** [AFK] Make `PaneWorkspace` the **single writer** of `workspace.json`: call `saveWorkspace` after `split`/`close`/`createPane`. Add a `hydrate`/initial-snapshot path so it can be seeded from a loaded workspace instead of the hardcoded single pending leaf — serves: US-10 — depends: T1
 - [ ] **T3** [AFK] Capture & persist `sessionId`: in `agent-session.ts` read `session_id` from the `system`/`init` message and post a new Outbound `SessionStarted { sessionId }`; `PaneSupervisor` routes it to `PaneWorkspace` (via a callback passed into `openPane`, to avoid a workspace↔supervisor dependency cycle), which records it in the index and re-saves — serves: US-10 — depends: T1, T2
 - [ ] **T4** [AFK] Startup load + transcript display: `loadWorkspace` on launch → hydrate `PaneWorkspace` (tree + configs), falling back to the default pending leaf on absent/corrupt. Add IPC `getPaneHistory(paneId)` that maps SDK `getSessionMessages()` → `ConversationMessage[]` for the renderer to display restored panes without spawning — serves: US-10 — depends: T2
@@ -123,6 +123,11 @@ restored pane resumes its live Claude session with prior context.
 **Status at end of 2026-07-16 session:** design aligned, ADR-0011 written & accepted, spike
 done. **No implementation code written yet.** Next actionable task: **T1**.
 
+**Status 2026-07-17 session:** open decisions resolved (see "Resolved during alignment"
+above). **T1 DONE & verified** (`persistence.ts` + `persistence.test.ts`, full suite 76/76
+green, typecheck + lint clean; not yet committed). Next actionable task: **T2** (make
+`PaneWorkspace` the single writer of `workspace.json` + add a hydrate path).
+
 **Files read/understood during scoping (the map for implementation):**
 
 - `src/main/domain/pane.ts` — `PaneConfig` (`paneId, cwd, model, worktree?`), `PaneRecord`
@@ -169,16 +174,37 @@ done. **No implementation code written yet.** Next actionable task: **T1**.
   the root. `getSessionMessages()` returns the post-compaction chain. `cleanupPeriodDays`
   sweeps old sessions — handle a missing session file on resume/display as a fallback.
 
-**Open items / risks to verify during implementation:**
-1. **`getSessionMessages` call site** — confirm it reads the JSONL in-process from the main
-   process (vs shelling out to the CLI) and its exact arg shape (cwd/projectKey + sessionId,
-   or via a `sessionStore`). Affects T4 startup cost.
-2. **Crash-recovery worktree state** — if the worktree dir survives an ungraceful crash but is
-   unregistered, reattach may need `git worktree prune` first (untested in the spike).
-3. **Missing session fallback** — a persisted `sessionId` whose transcript the SDK has swept
-   (`cleanupPeriodDays`) should degrade gracefully (treat pane as fresh, keep config/cwd).
-4. **Non-worktree pane cwd** — the user's chosen dir must still exist on restart; if deleted,
-   resume can't find the cwd-keyed session. Decide fallback (fresh pane vs error surface).
+**Resolved during alignment (2026-07-17):**
+1. **`getSessionMessages` availability — RESOLVED.** Verified against the SDK docs
+   (`sessions.md` + TS reference): `listSessions()` and `getSessionMessages()` are real
+   TypeScript SDK exports for reading past sessions off disk without a `query()` spawn, so
+   T4's "render restored transcript without spawning" approach holds. Exact return shape is
+   an implementation detail to pin down while coding T4 (map text blocks → `ConversationMessage`,
+   skipping tool-only/tool-result turns, mirroring `agent-session.ts`'s non-empty-text emit).
+2. **Crash-recovery worktree state — DEFERRED.** T6 implements only the guarded,
+   graceful-shutdown reattach (`git worktree add <path> dia/<paneId>`, no `-b`, never `-B`,
+   no-op when a live handle exists). Crash-orphaned (dir-present-but-unregistered) worktrees
+   are **out of scope for this bullet** — logged with a clear message pointing at a future
+   crash-recovery bullet. No `git worktree prune`-before-reattach here.
+3. **Swept transcript — RESOLVED (degrade to a usable pane).** No special detection needed:
+   the SDK silently returns a *fresh* session when the transcript file is missing (per the
+   sessions-doc Tip), so resume-on-focus just starts fresh; T3's `session_id` capture
+   re-persists the new id. Empty restored history is the only visible effect; `getPaneHistory`
+   returns empty for a missing session rather than throwing.
+4. **Deleted non-worktree cwd — RESOLVED (degrade to a usable pane).** `resumePane` checks
+   `fs.exists(cwd)` up front and, if the dir is gone, fails fast to the pane's existing
+   `Errored` attention state (reuse `markErrored`/`PaneError`) rather than surfacing a cryptic
+   SDK spawn error. **No new domain type or leaf status is needed** — a cold restored pane is
+   `ready` in the tree with no live handle in `PaneSupervisor`, which is exactly what
+   `resumePane` keys off.
+
+**Assumptions carried into implementation (2026-07-17):**
+- Save failures in `PaneWorkspace` after `split`/`close`/`create` are logged and swallowed
+  (mirroring `SettingsStore.write`); the op already succeeded in memory and the next op retries
+  the write. No UI surfacing of write failures in this bullet.
+- Saves are synchronous after each layout op (split/close/create are infrequent — no debouncing).
+- Closing a pane does not delete its SDK transcript; the SDK owns retention, dia only drops the
+  pane from its own index.
 
 **Recommended follow-up not yet done:** add a `docs/reasoning/` entry capturing the two
 non-obvious findings (SDK owns the transcript; `git worktree` `-b`/bare/`-B` semantics incl.
