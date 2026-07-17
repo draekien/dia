@@ -44,7 +44,8 @@
   - Extracted the subprocess's pending-request bookkeeping (previously a module-level `Map` in `agent-session.ts`, untestable because importing that module bootstraps `program` against `process.parentPort`) into a new `pending-user-input.ts` — `makePendingUserInput()` returns a `PendingUserInput` registry (`register`/`resolve`/`drop`/`isPending`) that hides the `Map`, makes `resolve` return a matched-boolean (unknown/duplicate id = no-op, not an error), and gives tests isolated instances. `agent-session.ts` now uses one shared instance; `resolve` deletes on success so `canUseTool` no longer needs a manual post-await delete.
   - `pending-user-input.test.ts` (`@effect/vitest`): resolve-once-and-report-match, no-double-resolve, unknown-id no-op, drop-returns-every-id, and the **redirect test** — after `drop`, the registered `Deferred` is still `!isDone` (left unresolved, as the SDK drops it) and a later `resolve` for that id returns `false` (no revive / double-resolve). Falsifiability of the redirect assertion was verified by flipping `isFalse(resolvedAfterDrop)`→`isTrue` and confirming red, then restoring.
   - `attention.test.ts`: added `PermissionResponse`/`QuestionResponse` schema round trips asserting both the encoded wire shape and decode result — Allow-as-is (no `updatedInput`/`updatedPermissions` keys emitted), Allow-with-edited-input-and-remembered-permission, Deny-with-message, `Answers` with a single label + a `multiSelect` array carrying a free-text entry in place of a label, `FreeformResponse`, plus negative cases (unknown decision tag rejected; a numeric answer value rejected by `AnswerValue`). Expectations are derived from the §3 schema contract, not from code output. 114 tests total (was 102).
-- [ ] **T8** [HIL] Manual verification against a real session: exercise each `PermissionResponse` variant (allow, allow with modified input, deny with message, allow-and-remember) and confirm each changes Claude's behavior as documented; answer a real `AskUserQuestion` prompt including free text and a `multiSelect` question; redirect a pane mid-prompt with a new instruction and confirm Claude follows it instead of the original request — serves: US-11, US-12, US-13, US-14, US-15, G-6, G-7 — depends: T4, T5, T6
+- [x] **T8** [HIL] Manual verification against a real session: exercise each `PermissionResponse` variant (allow, allow with modified input, deny with message, allow-and-remember) and confirm each changes Claude's behavior as documented; answer a real `AskUserQuestion` prompt including free text and a `multiSelect` question; redirect a pane mid-prompt with a new instruction and confirm Claude follows it instead of the original request — serves: US-11, US-12, US-13, US-14, US-15, G-6, G-7 — depends: T4, T5, T6
+  - Verified by the user against a real session: all four `PermissionResponse` variants behaved as documented, a real `AskUserQuestion` prompt was answered including free text and a `multiSelect` question, and a mid-prompt redirect took over correctly. The open answer-key question (keying by `header`) is confirmed correct against the real SDK — `questionResponseToResult` and the clarifying-question card need no change; G-6/G-7 met.
 
 ## Dependency tree
 
@@ -58,7 +59,7 @@ graph TD
   T5[T5: clarifying-question card UI - DONE]
   T6[T6: redirect via SendMessage - DONE]
   T7[T7: automated schema + redirect tests - DONE]
-  T8[T8: manual verification]
+  T8[T8: manual verification - DONE]
   B04 --> T1
   T1 --> T2
   T2 --> T3
