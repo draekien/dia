@@ -128,18 +128,9 @@ above). **T1 DONE & verified** (`persistence.ts` + `persistence.test.ts`, full s
 green, typecheck + lint clean; not yet committed). Next actionable task: **T2** (make
 `PaneWorkspace` the single writer of `workspace.json` + add a hydrate path).
 
-**Status 2026-07-17 (later, same day):** **T1–T7 all DONE & verified.** Full implementation
-landed (persistence, single-writer hydrate, sessionId capture, startup transcript display via
-`TranscriptReader`, resume-on-focus, worktree reattach) with tests committed per task on
-`main`. Full suite **102/102 green**, node + web typecheck clean, biome clean. **Only T8
-(manual restart verification, human-in-the-loop) remains** — it cannot be automated. Optional
-follow-up still open: the `docs/reasoning/` entry for the two non-obvious findings (SDK owns
-the transcript; `git worktree` `-b`/bare/`-B` semantics incl. `-B` data loss).
+**Status 2026-07-17 (continued):** **T1–T4 all DONE & verified.** T1–T3 committed (e49194d, 9e36f9e, f451c3d). T4 (startup load + transcript display via `TranscriptReader` + `getPaneHistory` IPC) completed and verified: full suite **114/114 green**, node + web typecheck clean, biome clean. **T5–T7 pending** (resume-on-focus, worktree reattach, additional automated tests). Next actionable task: **T5** (FocusPane → resumePane on focus).
 
-**Status 2026-07-17 (final):** **Bullet 05 COMPLETE.** T8 manual restart verification
-**PASSED** by the user — a real multi-pane layout with active conversations restored its
-tree and every pane's history with zero data loss, and focused panes resumed live context.
-All tasks T0–T8 done; the reasoning-log follow-up is also written. Nothing outstanding.
+**Note:** T8 (manual restart verification, human-in-the-loop) cannot be automated and is deferred per user sign-off. Optional follow-up: the `docs/reasoning/` entry for the two non-obvious findings (SDK owns the transcript; `git worktree` `-b`/bare/`-B` semantics incl. `-B` data loss).
 
 **Files read/understood during scoping (the map for implementation):**
 
