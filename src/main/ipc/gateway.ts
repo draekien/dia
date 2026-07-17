@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { Context } from 'effect'
 import { Effect, Either, Option, Schema, Stream } from 'effect'
 import { type BrowserWindow, dialog, ipcMain } from 'electron'
+import type { PermissionResponse } from '../domain/attention'
 import { ConversationMessage } from '../domain/pane'
 import { PaneNode } from '../domain/pane-tree'
 import type { PaneSupervisor } from '../services/pane-supervisor'
@@ -153,16 +154,18 @@ export function wireCommands(deps: {
             })
             return
           }
-          yield* handle.value
-            .resolvePermission(command.requestId, command.decision, command.message)
-            .pipe(
-              Effect.catchAllCause((cause) =>
-                Effect.logError('Failed to resolve permission for pane', {
-                  paneId: command.paneId,
-                  cause
-                })
-              )
+          const response: PermissionResponse =
+            command.decision === 'allow'
+              ? { _tag: 'Allow' }
+              : { _tag: 'Deny', message: command.message ?? 'Permission denied' }
+          yield* handle.value.resolvePermission(command.requestId, response).pipe(
+            Effect.catchAllCause((cause) =>
+              Effect.logError('Failed to resolve permission for pane', {
+                paneId: command.paneId,
+                cause
+              })
             )
+          )
           return
         }
         case 'SplitPane': {

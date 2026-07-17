@@ -17,7 +17,13 @@ import {
   Stream
 } from 'effect'
 import { utilityProcess } from 'electron'
-import { type AttentionState, type PaneError, transitionAttention } from '../domain/attention'
+import {
+  type AttentionState,
+  type PaneError,
+  type PermissionResponse,
+  type QuestionResponse,
+  transitionAttention
+} from '../domain/attention'
 import type { PaneConfig, PaneRecord, WorktreeInfo } from '../domain/pane'
 import type { PaneId } from '../domain/pane-tree'
 import type { IpcEvent } from '../ipc/contract'
@@ -60,9 +66,9 @@ export interface PaneHandle {
   readonly sendMessage: (text: string) => Effect.Effect<void>
   readonly resolvePermission: (
     requestId: string,
-    decision: 'allow' | 'deny',
-    message?: string
+    response: PermissionResponse
   ) => Effect.Effect<void>
+  readonly resolveQuestion: (requestId: string, response: QuestionResponse) => Effect.Effect<void>
   readonly subscribe: () => Stream.Stream<IpcEvent>
   readonly markErrored: (error: PaneError) => Effect.Effect<void>
 }
@@ -96,8 +102,9 @@ export const PaneProcessSpawnerLive = Layer.succeed(PaneProcessSpawner, {
 const encodeInbound = Schema.encodeSync(InboundMessage)
 const decodeOutbound = Schema.decodeUnknownOption(OutboundMessage)
 
-// TurnCompleted/TurnErrored carry no renderer-facing content of their own -- they only drive
-// AttentionState (see toAttentionTarget below) -- so they have no corresponding IpcEvent.
+// TurnCompleted/TurnErrored/QuestionRequested carry no renderer-facing content of their own here --
+// they only drive AttentionState (see toAttentionTarget below) -- so they have no corresponding
+// IpcEvent yet (the clarifying-question card is wired in a later task).
 function toIpcEvent(paneId: string, message: OutboundMessage): IpcEvent | null {
   switch (message._tag) {
     case 'AssistantMessageReceived':
@@ -127,6 +134,7 @@ function toIpcEvent(paneId: string, message: OutboundMessage): IpcEvent | null {
         toolName: message.toolName,
         input: message.input
       }
+    case 'QuestionRequested':
     case 'TurnCompleted':
     case 'TurnErrored':
     case 'SessionStarted':
@@ -144,6 +152,15 @@ function toAttentionTarget(message: OutboundMessage): AttentionState | null {
           requestId: message.requestId,
           toolName: message.toolName,
           input: message.input
+        }
+      }
+    case 'QuestionRequested':
+      return {
+        _tag: 'AwaitingPermission',
+        request: {
+          _tag: 'ClarifyingQuestion',
+          requestId: message.requestId,
+          questions: message.questions
         }
       }
     case 'TurnCompleted':
@@ -317,17 +334,28 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
           Effect.sync(() => child.postMessage(encodeInbound({ _tag: 'SendText', text })))
         )
       ),
-    resolvePermission: (requestId, decision, message) =>
+    resolvePermission: (requestId, response) =>
       Effect.logDebug('Sending permission resolution to pane process', {
         paneId: config.paneId,
         requestId,
-        decision
+        decision: response._tag
       }).pipe(
         Effect.andThen(
           Effect.sync(() =>
-            child.postMessage(
-              encodeInbound({ _tag: 'ResolvePermission', requestId, decision, message })
-            )
+            child.postMessage(encodeInbound({ _tag: 'ResolvePermission', requestId, response }))
+          )
+        ),
+        Effect.andThen(applyAttention({ _tag: 'Idle' }))
+      ),
+    resolveQuestion: (requestId, response) =>
+      Effect.logDebug('Sending question resolution to pane process', {
+        paneId: config.paneId,
+        requestId,
+        kind: response._tag
+      }).pipe(
+        Effect.andThen(
+          Effect.sync(() =>
+            child.postMessage(encodeInbound({ _tag: 'ResolveQuestion', requestId, response }))
           )
         ),
         Effect.andThen(applyAttention({ _tag: 'Idle' }))

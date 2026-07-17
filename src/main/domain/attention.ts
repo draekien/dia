@@ -65,14 +65,14 @@ export const UserInputRequest = Schema.Union(PermissionRequest, ClarifyingQuesti
 export type UserInputRequest = typeof UserInputRequest.Type
 
 /**
- * The user's decision on a `PermissionRequest`: `Allow` runs the tool with
- * `updatedInput` (the input as approved, possibly edited) and optional
- * `updatedPermissions` echoing an "always allow" suggestion back; `Deny`
- * refuses it with a `message` surfaced to the agent, not just the user.
+ * The user's decision on a `PermissionRequest`: `Allow` runs the tool, with
+ * `updatedInput` present only when the user edited it (absent means "as-is")
+ * and optional `updatedPermissions` echoing an "always allow" suggestion back;
+ * `Deny` refuses it with a `message` surfaced to the agent, not just the user.
  */
 export const PermissionResponse = Schema.Union(
   Schema.TaggedStruct('Allow', {
-    updatedInput: JsonRecord,
+    updatedInput: Schema.optional(JsonRecord),
     updatedPermissions: Schema.optional(Schema.Array(PermissionUpdate))
   }),
   Schema.TaggedStruct('Deny', {

@@ -1,10 +1,12 @@
 import {
   type CanUseTool,
   type PermissionResult,
+  type PermissionUpdate,
   query,
   type SDKUserMessage
 } from '@anthropic-ai/claude-agent-sdk'
 import { Data, Deferred, Effect, Either, Logger, LogLevel, Queue, Schema, Stream } from 'effect'
+import { type PermissionResponse, Question, type QuestionResponse } from '../domain/attention'
 import type { ConversationMessage, PaneConfig } from '../domain/pane'
 import { makeLoggerLive } from '../logger'
 import { InboundMessage, OutboundMessage } from './protocol'
@@ -27,41 +29,117 @@ const port = process.parentPort
 const postOutbound = (message: OutboundMessage): Effect.Effect<void> =>
   Effect.sync(() => port.postMessage(encodeOutbound(message)))
 
-const pendingPermissions = new Map<string, Deferred.Deferred<PermissionResult>>()
+type UserInputResolution = PermissionResponse | QuestionResponse
+
+const pendingRequests = new Map<string, Deferred.Deferred<UserInputResolution>>()
+
+const decodeQuestions = Schema.decodeUnknownEither(Schema.Array(Question))
+
+const joinAnswer = (answer: string | ReadonlyArray<string>): string =>
+  typeof answer === 'string' ? answer : answer.join(', ')
+
+/**
+ * Maps a user's `QuestionResponse` to the `PermissionResult` the SDK's
+ * `AskUserQuestion` tool receives. The exact accepted shape is a real-session
+ * discovery item (tech-spec §9, Bullet 06 T8); this mirrors the SDK's
+ * `AskUserQuestionOutput` (questions plus comma-joined answers, and an optional
+ * freeform response). Kept isolated so T8 can correct it in one place.
+ */
+const questionResponseToResult = (response: QuestionResponse): PermissionResult => {
+  const answers =
+    response._tag === 'Answers'
+      ? Object.fromEntries(
+          Object.entries(response.answers).map(([question, answer]) => [
+            question,
+            joinAnswer(answer)
+          ])
+        )
+      : {}
+  return {
+    behavior: 'allow',
+    updatedInput: {
+      questions: response.questions,
+      answers,
+      ...(response._tag === 'FreeformResponse' ? { response: response.response } : {})
+    }
+  }
+}
+
+/**
+ * Maps a resolved `UserInputResolution` to the SDK `PermissionResult`. For an
+ * `Allow`, `updatedInput` is forwarded only when the user edited it, and the
+ * retained SDK `suggestions` are echoed back as `updatedPermissions` when the
+ * user asked to remember this kind of call.
+ */
+const toPermissionResult = (
+  resolution: UserInputResolution,
+  suggestions: PermissionUpdate[] | undefined
+): PermissionResult => {
+  switch (resolution._tag) {
+    case 'Deny':
+      return { behavior: 'deny', message: resolution.message }
+    case 'Allow':
+      return {
+        behavior: 'allow',
+        ...(resolution.updatedInput !== undefined
+          ? { updatedInput: { ...resolution.updatedInput } }
+          : {}),
+        ...(suggestions !== undefined &&
+        resolution.updatedPermissions !== undefined &&
+        resolution.updatedPermissions.length > 0
+          ? { updatedPermissions: suggestions }
+          : {})
+      }
+    case 'Answers':
+    case 'FreeformResponse':
+      return questionResponseToResult(resolution)
+  }
+}
 
 const canUseTool: CanUseTool = (toolName, input, options) =>
   Effect.runPromise(
     Effect.gen(function* () {
-      const deferred = yield* Deferred.make<PermissionResult>()
-      pendingPermissions.set(options.toolUseID, deferred)
-      yield* postOutbound({
-        _tag: 'PermissionRequested',
-        requestId: options.toolUseID,
-        toolName,
-        input
-      })
-      const result = yield* Deferred.await(deferred)
-      pendingPermissions.delete(options.toolUseID)
-      return result
+      const deferred = yield* Deferred.make<UserInputResolution>()
+      pendingRequests.set(options.toolUseID, deferred)
+
+      const questions =
+        toolName === 'AskUserQuestion' ? decodeQuestions(input.questions) : undefined
+      if (questions !== undefined && Either.isRight(questions)) {
+        yield* postOutbound({
+          _tag: 'QuestionRequested',
+          requestId: options.toolUseID,
+          questions: questions.right
+        })
+      } else {
+        if (questions !== undefined) {
+          yield* Effect.logWarning(
+            'AskUserQuestion input did not match the Question schema; surfacing it as a permission request',
+            { requestId: options.toolUseID, issue: questions.left }
+          )
+        }
+        yield* postOutbound({
+          _tag: 'PermissionRequested',
+          requestId: options.toolUseID,
+          toolName,
+          input,
+          suggestions: options.suggestions
+        })
+      }
+
+      const resolution = yield* Deferred.await(deferred)
+      pendingRequests.delete(options.toolUseID)
+      return toPermissionResult(resolution, options.suggestions)
     })
   )
 
-const resolvePermission = (
-  requestId: string,
-  decision: 'allow' | 'deny',
-  message: string | undefined
-): Effect.Effect<void> =>
+const resolveRequest = (requestId: string, resolution: UserInputResolution): Effect.Effect<void> =>
   Effect.gen(function* () {
-    const deferred = pendingPermissions.get(requestId)
+    const deferred = pendingRequests.get(requestId)
     if (!deferred) {
-      yield* Effect.logWarning('Received ResolvePermission for unknown requestId', { requestId })
+      yield* Effect.logWarning('Received a resolution for an unknown requestId', { requestId })
       return
     }
-    const result: PermissionResult =
-      decision === 'allow'
-        ? { behavior: 'allow' }
-        : { behavior: 'deny', message: message ?? 'Permission denied' }
-    yield* Deferred.succeed(deferred, result)
+    yield* Deferred.succeed(deferred, resolution)
   })
 
 const toSDKUserMessage = (text: string): SDKUserMessage => ({
@@ -211,7 +289,7 @@ const program = Effect.gen(function* () {
       } else if (inbound._tag === 'SendText') {
         yield* Queue.offer(promptQueue, toSDKUserMessage(inbound.text))
       } else {
-        yield* resolvePermission(inbound.requestId, inbound.decision, inbound.message)
+        yield* resolveRequest(inbound.requestId, inbound.response)
       }
     })
   )
