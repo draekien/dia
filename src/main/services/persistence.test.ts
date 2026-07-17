@@ -1,8 +1,8 @@
 import { FileSystem } from '@effect/platform'
 import { SystemError } from '@effect/platform/Error'
 import { assert, describe, it } from '@effect/vitest'
+import type { PaneNode } from '@shared/domain/pane-tree'
 import { Effect, Layer, Logger, Option } from 'effect'
-import type { PaneNode } from '../domain/pane-tree'
 import {
   makePersistenceServiceLive,
   type PersistedWorkspace,

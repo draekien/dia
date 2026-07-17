@@ -1,6 +1,6 @@
 import { getSessionMessages, type SessionMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { ConversationMessage } from '@shared/domain/pane'
 import { Context, Effect, Layer, Option, Schema } from 'effect'
-import type { ConversationMessage } from '../domain/pane'
 
 const TextBlock = Schema.Struct({
   type: Schema.Literal('text'),

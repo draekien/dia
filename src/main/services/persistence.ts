@@ -1,7 +1,7 @@
 import { FileSystem } from '@effect/platform'
+import { PaneConfig } from '@shared/domain/pane'
+import { PaneNode } from '@shared/domain/pane-tree'
 import { Context, Data, Effect, Layer, Option, Schema } from 'effect'
-import { PaneConfig } from '../domain/pane'
-import { PaneNode } from '../domain/pane-tree'
 
 /**
  * A single pane's persisted entry: the config needed to restore it plus the

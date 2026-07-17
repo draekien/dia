@@ -21,6 +21,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0010](0010-extend-effect-ts-to-pane-process-orchestration.md) | Extend Effect TS to pane-process orchestration | accepted |
 | [0011](0011-delegate-transcript-persistence-to-agent-sdk-session-store.md) | Delegate conversation-transcript persistence to the Agent SDK session store | accepted |
 | [0012](0012-effect-tsgo-for-effect-aware-typechecking.md) | Use @effect/tsgo for Effect-aware type checking | accepted |
+| [0013](0013-shared-schema-module-for-cross-process-code.md) | Extract cross-process schemas into a platform-neutral `src/shared` module | accepted |
 
 ## Adding a new ADR
 

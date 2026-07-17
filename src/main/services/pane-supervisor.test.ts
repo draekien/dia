@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events'
 import { assert, describe, it } from '@effect/vitest'
+import type { PaneConfig, WorktreeInfo } from '@shared/domain/pane'
+import type { IpcEvent } from '@shared/ipc/contract'
 import { Effect, Layer, Logger, Option, TestClock } from 'effect'
-import type { PaneConfig, WorktreeInfo } from '../domain/pane'
-import type { IpcEvent } from '../ipc/contract'
 import { GitOpsService } from './git-ops-service'
 import {
   type PaneCreationRequest,

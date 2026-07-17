@@ -1,6 +1,31 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- resolves a static module path at import time (import.meta.dirname), outside any Effect.
 import { join } from 'node:path'
 import {
+  type AttentionState,
+  AwaitingPermission,
+  ClarifyingQuestion,
+  Completed,
+  Errored,
+  Idle,
+  type PaneError,
+  PermissionRequest,
+  type PermissionResponse,
+  type QuestionResponse,
+  transitionAttention
+} from '@shared/domain/attention'
+import type { PaneConfig, PaneRecord, WorktreeInfo } from '@shared/domain/pane'
+import type { PaneId } from '@shared/domain/pane-tree'
+import {
+  type IpcEvent,
+  PaneAssistantTextDelta,
+  PaneAttentionChanged,
+  PaneMessageAppended,
+  PanePermissionRequested,
+  PaneQuestionRequested,
+  PaneToolCallCompleted,
+  PaneToolCallStarted
+} from '@shared/ipc/contract'
+import {
   Context,
   Data,
   Duration,
@@ -19,31 +44,6 @@ import {
   Stream
 } from 'effect'
 import { utilityProcess } from 'electron'
-import {
-  type AttentionState,
-  AwaitingPermission,
-  ClarifyingQuestion,
-  Completed,
-  Errored,
-  Idle,
-  type PaneError,
-  PermissionRequest,
-  type PermissionResponse,
-  type QuestionResponse,
-  transitionAttention
-} from '../domain/attention'
-import type { PaneConfig, PaneRecord, WorktreeInfo } from '../domain/pane'
-import type { PaneId } from '../domain/pane-tree'
-import {
-  type IpcEvent,
-  PaneAssistantTextDelta,
-  PaneAttentionChanged,
-  PaneMessageAppended,
-  PanePermissionRequested,
-  PaneQuestionRequested,
-  PaneToolCallCompleted,
-  PaneToolCallStarted
-} from '../ipc/contract'
 import {
   InboundMessage,
   InitMessage,

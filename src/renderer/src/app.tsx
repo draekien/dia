@@ -1,4 +1,4 @@
-import type { PaneNode } from '@main/domain/pane-tree'
+import type { PaneNode } from '@shared/domain/pane-tree'
 import { useCallback, useEffect, useState } from 'react'
 import PaneTreeView from './components/pane-tree-view'
 

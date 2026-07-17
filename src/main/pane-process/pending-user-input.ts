@@ -1,5 +1,5 @@
+import type { PermissionResponse, QuestionResponse } from '@shared/domain/attention'
 import { Deferred, Effect } from 'effect'
-import type { PermissionResponse, QuestionResponse } from '../domain/attention'
 
 /**
  * A resolution the user supplied for a pending `UserInputRequest`: either a

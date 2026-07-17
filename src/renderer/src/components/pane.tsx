@@ -3,12 +3,12 @@ import {
   Idle,
   type PermissionResponse,
   type QuestionResponse
-} from '@main/domain/attention'
+} from '@shared/domain/attention'
 import type {
   PanePermissionRequested,
   PaneQuestionRequested,
   PaneToolCallCompleted
-} from '@main/ipc/contract'
+} from '@shared/ipc/contract'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'

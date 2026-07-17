@@ -1,12 +1,12 @@
-import { Schema } from 'effect'
 import {
   PaneError,
   PermissionResponse,
   PermissionUpdate,
   Question,
   QuestionResponse
-} from '../domain/attention'
-import { ConversationMessage, PaneConfig } from '../domain/pane'
+} from '@shared/domain/attention'
+import { ConversationMessage, PaneConfig } from '@shared/domain/pane'
+import { Schema } from 'effect'
 
 const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
 

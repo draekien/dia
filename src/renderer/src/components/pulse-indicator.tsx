@@ -1,5 +1,5 @@
-import type { AttentionState } from '@main/domain/attention'
 import { cn } from '@renderer/lib/utils'
+import type { AttentionState } from '@shared/domain/attention'
 import { cva } from 'class-variance-authority'
 
 const pulseDot = cva('relative inline-flex size-2.5 rounded-full', {

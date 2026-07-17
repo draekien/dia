@@ -1,5 +1,5 @@
-import { Allow, Deny, type PermissionResponse } from '@main/domain/attention'
-import type { PanePermissionRequested } from '@main/ipc/contract'
+import { Allow, Deny, type PermissionResponse } from '@shared/domain/attention'
+import type { PanePermissionRequested } from '@shared/ipc/contract'
 import { useMemo, useState } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'

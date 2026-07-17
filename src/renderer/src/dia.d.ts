@@ -1,4 +1,4 @@
-import type { DiaApi } from '@main/ipc/contract'
+import type { DiaApi } from '@shared/ipc/contract'
 
 declare global {
   interface Window {

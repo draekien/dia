@@ -1,5 +1,5 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { ConversationMessage } from '../domain/pane'
+import type { ConversationMessage } from '@shared/domain/pane'
 import {
   AssistantMessageReceived,
   AssistantTextDelta,

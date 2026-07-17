@@ -1,7 +1,7 @@
 import { Command, CommandExecutor, FileSystem } from '@effect/platform'
+import type { WorktreeInfo } from '@shared/domain/pane'
+import type { PaneId } from '@shared/domain/pane-tree'
 import { Context, Data, Effect, Layer } from 'effect'
-import type { WorktreeInfo } from '../domain/pane'
-import type { PaneId } from '../domain/pane-tree'
 
 /**
  * Failure raised when `GitOpsService.createWorktree` cannot create a git

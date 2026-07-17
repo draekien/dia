@@ -1,13 +1,7 @@
 import { FileSystem, Path } from '@effect/platform'
 import { NodeContext } from '@effect/platform-node'
-import type { Context } from 'effect'
-import { Effect, Either, Match, Option, Schema, Stream } from 'effect'
-import { type BrowserWindow, dialog, ipcMain } from 'electron'
-import { ConversationMessage } from '../domain/pane'
-import { PaneNode } from '../domain/pane-tree'
-import type { PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
-import type { PaneWorkspace } from '../services/pane-workspace'
-import type { SettingsStore } from '../services/settings-store'
+import { ConversationMessage } from '@shared/domain/pane'
+import { PaneNode } from '@shared/domain/pane-tree'
 import {
   CHANNEL,
   type ChooseDirectoryResult,
@@ -15,7 +9,13 @@ import {
   IpcEvent,
   LayoutChanged,
   PaneCreateFailed
-} from './contract'
+} from '@shared/ipc/contract'
+import type { Context } from 'effect'
+import { Effect, Either, Match, Option, Schema, Stream } from 'effect'
+import { type BrowserWindow, dialog, ipcMain } from 'electron'
+import type { PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
+import type { PaneWorkspace } from '../services/pane-workspace'
+import type { SettingsStore } from '../services/settings-store'
 
 const decodeCommand = Schema.decodeUnknownEither(IpcCommand)
 const encodeEvent = Schema.encodeSync(IpcEvent)

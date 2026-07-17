@@ -1,5 +1,5 @@
-import { ConversationMessage } from '@main/domain/pane'
-import { PaneNode } from '@main/domain/pane-tree'
+import { ConversationMessage } from '@shared/domain/pane'
+import { PaneNode } from '@shared/domain/pane-tree'
 import {
   CHANNEL,
   ChooseDirectoryResult,
@@ -12,7 +12,7 @@ import {
   ResolveQuestion,
   SendMessage,
   SplitPane
-} from '@main/ipc/contract'
+} from '@shared/ipc/contract'
 import { Either, Schema } from 'effect'
 import { contextBridge, ipcRenderer } from 'electron'
 

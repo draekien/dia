@@ -1,11 +1,11 @@
 import { assert, beforeEach, describe, it } from '@effect/vitest'
+import type { PaneNode } from '@shared/domain/pane-tree'
+import { CHANNEL } from '@shared/ipc/contract'
 import { Effect, Option } from 'effect'
 import { ipcMain } from 'electron'
 import { vi } from 'vitest'
-import type { PaneNode } from '../domain/pane-tree'
 import { WorktreeCreateError } from '../services/git-ops-service'
 import type { PaneHandle } from '../services/pane-supervisor'
-import { CHANNEL } from './contract'
 import type { EventSender } from './gateway'
 import { wireCommands } from './gateway'
 

@@ -1,5 +1,5 @@
-import { Answers, type QuestionResponse } from '@main/domain/attention'
-import type { PaneQuestionRequested } from '@main/ipc/contract'
+import { Answers, type QuestionResponse } from '@shared/domain/attention'
+import type { PaneQuestionRequested } from '@shared/ipc/contract'
 import { useState } from 'react'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'

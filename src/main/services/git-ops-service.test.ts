@@ -1,7 +1,7 @@
 import { type Command, CommandExecutor, FileSystem } from '@effect/platform'
 import { assert, describe, it } from '@effect/vitest'
+import type { WorktreeInfo } from '@shared/domain/pane'
 import { Effect, Either, Layer, Logger } from 'effect'
-import type { WorktreeInfo } from '../domain/pane'
 import {
   GitOpsService,
   GitOpsServiceLive,

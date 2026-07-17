@@ -1,9 +1,9 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Electron main bootstrap composes filesystem paths outside any Effect (createWindow, whenReady).
 import { join } from 'node:path'
 import { NodeContext, NodeFileSystem, NodePath } from '@effect/platform-node'
+import type { PaneId } from '@shared/domain/pane-tree'
 import { Config, Effect, Layer, Logger, LogLevel, Option, Runtime } from 'effect'
 import { app, BrowserWindow, shell } from 'electron'
-import type { PaneId } from './domain/pane-tree'
 import {
   wireChooseDirectory,
   wireCommands,

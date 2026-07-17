@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { FileSystem, Path } from '@effect/platform'
-import { Context, Effect, Either, HashMap, Layer, Option, Ref } from 'effect'
-import { Errored } from '../domain/attention'
-import type { ConversationMessage } from '../domain/pane'
+import { Errored } from '@shared/domain/attention'
+import type { ConversationMessage } from '@shared/domain/pane'
 import {
   closePane,
   markPaneReady,
@@ -11,8 +10,9 @@ import {
   type PaneNode,
   type PaneNotFoundError,
   splitPane
-} from '../domain/pane-tree'
-import { type IpcEvent, PaneAttentionChanged } from '../ipc/contract'
+} from '@shared/domain/pane-tree'
+import { type IpcEvent, PaneAttentionChanged } from '@shared/ipc/contract'
+import { Context, Effect, Either, HashMap, Layer, Option, Ref } from 'effect'
 import type { WorktreeCreateError, WorktreeReattachError } from './git-ops-service'
 import { type PaneCreationRequest, PaneSupervisor, type ProcessSpawnError } from './pane-supervisor'
 import { type PersistedPaneEntry, PersistenceService } from './persistence'

@@ -1,6 +1,6 @@
 import { assert, describe, it } from '@effect/vitest'
+import type { PermissionResponse } from '@shared/domain/attention'
 import { Deferred, Effect } from 'effect'
-import type { PermissionResponse } from '../domain/attention'
 import { makePendingUserInput, type UserInputResolution } from './pending-user-input'
 
 const allow: PermissionResponse = { _tag: 'Allow' }

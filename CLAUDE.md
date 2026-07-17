@@ -39,6 +39,7 @@ Renderer-specific — see `src/renderer/CLAUDE.md`.
 - Represent durations with Effect's `Duration` module (`Duration.seconds(5)`, `Duration.days(7)`, `Duration.toMillis(...)`) instead of raw millisecond math or ad-hoc string literals.
 - Derive types from their schema (`export type X = typeof XSchema.Type`); never hand-declare an interface/type and a parallel schema. For a recursive schema, a plain `type` alias self-references and errors — use `export interface X extends Schema.Schema.Type<typeof XSchema> {}` instead.
 - Construct tagged values via the schema's `.make({...})` constructor (it auto-fills `_tag`), never hand-written `{ _tag: ... }` literals. An anonymous `Schema.TaggedStruct` inline in a `Schema.Union` has no `.make` — extract it to a named export first.
+- Schemas shared across processes (main/preload/renderer) live in `src/shared` (import via `@shared/*`) and must stay platform-neutral — no Node/DOM/Electron imports. `tsconfig.shared.json` enforces this. See ADR-0013.
 - Effect diagnostics run inside `pnpm typecheck` and standalone via `pnpm diagnostics` (per-project: `diagnostics:{node,web,test}`). Bust stale `.tsbuildinfo` after changing a severity map. See `docs/reasoning/2026-07-17-effect-tsgo-diagnostics-tooling.md`.
 
 ### Mandatory skill invocation

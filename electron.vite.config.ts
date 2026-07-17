@@ -6,6 +6,11 @@ import { defineConfig } from 'electron-vite'
 
 export default defineConfig({
   main: {
+    resolve: {
+      alias: {
+        '@shared': resolve('src/shared')
+      }
+    },
     build: {
       rollupOptions: {
         external: ['electron'],
@@ -19,7 +24,7 @@ export default defineConfig({
   preload: {
     resolve: {
       alias: {
-        '@main': resolve('src/main')
+        '@shared': resolve('src/shared')
       }
     }
   },
@@ -27,7 +32,7 @@ export default defineConfig({
     root: 'src/renderer',
     resolve: {
       alias: {
-        '@main': resolve('src/main'),
+        '@shared': resolve('src/shared'),
         '@renderer': resolve('src/renderer/src')
       }
     },

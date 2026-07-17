@@ -5,6 +5,8 @@ import {
   query,
   type SDKUserMessage
 } from '@anthropic-ai/claude-agent-sdk'
+import { Question, type QuestionResponse } from '@shared/domain/attention'
+import type { PaneConfig } from '@shared/domain/pane'
 import {
   Data,
   Deferred,
@@ -18,8 +20,6 @@ import {
   Schema,
   Stream
 } from 'effect'
-import { Question, type QuestionResponse } from '../domain/attention'
-import type { PaneConfig } from '../domain/pane'
 import { makeLoggerLive } from '../logger'
 import { makeSessionEventReducer } from './agent-session-reducer'
 import { makePendingUserInput, type UserInputResolution } from './pending-user-input'
