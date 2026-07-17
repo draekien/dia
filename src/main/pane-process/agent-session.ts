@@ -6,9 +6,10 @@ import {
   type SDKUserMessage
 } from '@anthropic-ai/claude-agent-sdk'
 import { Data, Deferred, Effect, Either, Logger, LogLevel, Queue, Schema, Stream } from 'effect'
-import { type PermissionResponse, Question, type QuestionResponse } from '../domain/attention'
+import { Question, type QuestionResponse } from '../domain/attention'
 import type { ConversationMessage, PaneConfig } from '../domain/pane'
 import { makeLoggerLive } from '../logger'
+import { makePendingUserInput, type UserInputResolution } from './pending-user-input'
 import { InboundMessage, OutboundMessage } from './protocol'
 
 /**
@@ -29,9 +30,7 @@ const port = process.parentPort
 const postOutbound = (message: OutboundMessage): Effect.Effect<void> =>
   Effect.sync(() => port.postMessage(encodeOutbound(message)))
 
-type UserInputResolution = PermissionResponse | QuestionResponse
-
-const pendingRequests = new Map<string, Deferred.Deferred<UserInputResolution>>()
+const pendingUserInput = makePendingUserInput()
 
 const decodeQuestions = Schema.decodeUnknownEither(Schema.Array(Question))
 
@@ -99,8 +98,7 @@ const toPermissionResult = (
 const canUseTool: CanUseTool = (toolName, input, options) =>
   Effect.runPromise(
     Effect.gen(function* () {
-      const deferred = yield* Deferred.make<UserInputResolution>()
-      pendingRequests.set(options.toolUseID, deferred)
+      const deferred = yield* pendingUserInput.register(options.toolUseID)
 
       const questions =
         toolName === 'AskUserQuestion' ? decodeQuestions(input.questions) : undefined
@@ -127,26 +125,23 @@ const canUseTool: CanUseTool = (toolName, input, options) =>
       }
 
       const resolution = yield* Deferred.await(deferred)
-      pendingRequests.delete(options.toolUseID)
       return toPermissionResult(resolution, options.suggestions)
     })
   )
 
 const resolveRequest = (requestId: string, resolution: UserInputResolution): Effect.Effect<void> =>
   Effect.gen(function* () {
-    const deferred = pendingRequests.get(requestId)
-    if (!deferred) {
+    const matched = yield* pendingUserInput.resolve(requestId, resolution)
+    if (!matched) {
       yield* Effect.logWarning('Received a resolution for an unknown requestId', { requestId })
-      return
     }
-    yield* Deferred.succeed(deferred, resolution)
   })
 
 const dropPendingRequests: Effect.Effect<void> = Effect.gen(function* () {
-  if (pendingRequests.size === 0) return
-  const requestIds = [...pendingRequests.keys()]
-  pendingRequests.clear()
-  yield* Effect.logInfo('Redirected pane; dropping pending user-input requests', { requestIds })
+  const requestIds = yield* pendingUserInput.drop
+  if (requestIds.length > 0) {
+    yield* Effect.logInfo('Redirected pane; dropping pending user-input requests', { requestIds })
+  }
 })
 
 const toSDKUserMessage = (text: string): SDKUserMessage => ({

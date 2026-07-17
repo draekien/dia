@@ -1,6 +1,13 @@
-import { Either } from 'effect'
+import { Either, Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
-import { type AttentionState, InvalidAttentionTransition, transitionAttention } from './attention'
+import {
+  type AttentionState,
+  InvalidAttentionTransition,
+  PermissionResponse,
+  type Question,
+  QuestionResponse,
+  transitionAttention
+} from './attention'
 
 const idle: AttentionState = { _tag: 'Idle' }
 const awaitingPermission: AttentionState = {
@@ -26,6 +33,97 @@ const validPairs: ReadonlySet<string> = new Set([
   'Completed->Idle',
   'Completed->Errored'
 ])
+
+const decodePermissionResponse = Schema.decodeUnknownEither(PermissionResponse)
+const encodePermissionResponse = Schema.encodeSync(PermissionResponse)
+const decodeQuestionResponse = Schema.decodeUnknownEither(QuestionResponse)
+const encodeQuestionResponse = Schema.encodeSync(QuestionResponse)
+
+const approach: Question = {
+  question: 'Which approach should I take?',
+  header: 'Approach',
+  options: [
+    { label: 'Rewrite', description: 'Start from scratch' },
+    { label: 'Patch', description: 'Minimal change' }
+  ],
+  multiSelect: false
+}
+const files: Question = {
+  question: 'Which files may I touch?',
+  header: 'Files',
+  options: [
+    { label: 'a.ts', description: 'the entrypoint' },
+    { label: 'b.ts', description: 'a helper' }
+  ],
+  multiSelect: true
+}
+
+describe('PermissionResponse schema', () => {
+  it('round-trips Allow as-is with no updatedInput or updatedPermissions', () => {
+    const wire = { _tag: 'Allow' }
+    expect(encodePermissionResponse({ _tag: 'Allow' })).toEqual(wire)
+    expect(decodePermissionResponse(wire)).toEqual(Either.right({ _tag: 'Allow' }))
+  })
+
+  it('round-trips Allow with edited input and a remembered permission', () => {
+    const value = {
+      _tag: 'Allow' as const,
+      updatedInput: { command: 'ls -la' },
+      updatedPermissions: [{ type: 'addRule', rule: 'Bash(ls:*)' }]
+    }
+    const wire = {
+      _tag: 'Allow',
+      updatedInput: { command: 'ls -la' },
+      updatedPermissions: [{ type: 'addRule', rule: 'Bash(ls:*)' }]
+    }
+    expect(encodePermissionResponse(value)).toEqual(wire)
+    expect(decodePermissionResponse(wire)).toEqual(Either.right(value))
+  })
+
+  it('round-trips Deny with a message', () => {
+    const value = { _tag: 'Deny' as const, message: 'use rg instead' }
+    expect(encodePermissionResponse(value)).toEqual(value)
+    expect(decodePermissionResponse(value)).toEqual(Either.right(value))
+  })
+
+  it('rejects an unknown decision tag', () => {
+    expect(Either.isLeft(decodePermissionResponse({ _tag: 'Maybe' }))).toBe(true)
+  })
+})
+
+describe('QuestionResponse schema', () => {
+  it('round-trips Answers with a single label, a multiSelect array, and free text', () => {
+    const value = {
+      _tag: 'Answers' as const,
+      questions: [approach, files],
+      answers: {
+        Approach: 'Rewrite',
+        Files: ['b.ts', 'src/custom-path.ts']
+      }
+    }
+    expect(encodeQuestionResponse(value)).toEqual(value)
+    expect(decodeQuestionResponse(value)).toEqual(Either.right(value))
+  })
+
+  it('round-trips FreeformResponse carrying the questions it answers', () => {
+    const value = {
+      _tag: 'FreeformResponse' as const,
+      questions: [approach],
+      response: 'None of these — refactor the module instead'
+    }
+    expect(encodeQuestionResponse(value)).toEqual(value)
+    expect(decodeQuestionResponse(value)).toEqual(Either.right(value))
+  })
+
+  it('rejects a non-string, non-array answer value', () => {
+    const wire = {
+      _tag: 'Answers',
+      questions: [approach],
+      answers: { Approach: 42 }
+    }
+    expect(Either.isLeft(decodeQuestionResponse(wire))).toBe(true)
+  })
+})
 
 describe('transitionAttention', () => {
   for (const from of states) {
