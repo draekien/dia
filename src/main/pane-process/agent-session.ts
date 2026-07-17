@@ -19,8 +19,9 @@ import {
   Stream
 } from 'effect'
 import { Question, type QuestionResponse } from '../domain/attention'
-import type { ConversationMessage, PaneConfig } from '../domain/pane'
+import type { PaneConfig } from '../domain/pane'
 import { makeLoggerLive } from '../logger'
+import { makeSessionEventReducer } from './agent-session-reducer'
 import { makePendingUserInput, type UserInputResolution } from './pending-user-input'
 import { InboundMessage, OutboundMessage } from './protocol'
 
@@ -161,9 +162,6 @@ const toSDKUserMessage = (text: string): SDKUserMessage => ({
   parent_tool_use_id: null
 })
 
-const parseToolInput = (partialJson: string): Record<string, unknown> =>
-  partialJson ? Either.try(() => JSON.parse(partialJson)).pipe(Either.getOrElse(() => ({}))) : {}
-
 const runSession = Effect.fn('AgentSession.runSession')(
   function* (
     config: PaneConfig,
@@ -190,80 +188,25 @@ const runSession = Effect.fn('AgentSession.runSession')(
     })
 
     const events = Stream.fromAsyncIterable(session, (cause) => new SessionStreamError({ cause }))
-
-    const toolCallsByBlockIndex = new Map<number, { id: string; name: string }>()
-    const partialJsonByBlockIndex = new Map<number, string>()
+    const reducer = makeSessionEventReducer()
 
     yield* Stream.runForEach(events, (event) =>
-      Effect.gen(function* () {
-        if (event.type === 'system' && event.subtype === 'init') {
-          yield* postOutbound({ _tag: 'SessionStarted', sessionId: event.session_id })
-          return
-        }
-
-        if (event.type === 'assistant') {
-          const text = event.message.content
-            .flatMap((block) => (block.type === 'text' ? [block.text] : []))
-            .join('')
-          if (text) {
-            const message: ConversationMessage = { role: 'assistant', content: text }
-            yield* postOutbound({ _tag: 'AssistantMessageReceived', message })
+      Effect.forEach(reducer.step(event), (outbound) =>
+        Effect.gen(function* () {
+          if (outbound._tag === 'ToolCallStarted') {
+            yield* Effect.logDebug('Tool call started', {
+              toolCallId: outbound.toolCallId,
+              toolName: outbound.toolName
+            })
+          } else if (outbound._tag === 'ToolCallCompleted') {
+            yield* Effect.logDebug('Tool call completed', {
+              toolCallId: outbound.toolCallId,
+              toolName: outbound.toolName
+            })
           }
-          return
-        }
-
-        if (event.type === 'result') {
-          if (event.subtype === 'success') {
-            yield* postOutbound({ _tag: 'TurnCompleted' })
-          } else {
-            const message = event.errors.length > 0 ? event.errors.join('; ') : event.subtype
-            yield* postOutbound({ _tag: 'TurnErrored', error: { message } })
-          }
-          return
-        }
-
-        if (event.type !== 'stream_event') return
-        const streamEvent = event.event
-
-        if (
-          streamEvent.type === 'content_block_start' &&
-          streamEvent.content_block.type === 'tool_use'
-        ) {
-          const { id, name } = streamEvent.content_block
-          toolCallsByBlockIndex.set(streamEvent.index, { id, name })
-          partialJsonByBlockIndex.set(streamEvent.index, '')
-          yield* postOutbound({ _tag: 'ToolCallStarted', toolCallId: id, toolName: name })
-          return
-        }
-
-        if (streamEvent.type === 'content_block_delta') {
-          if (streamEvent.delta.type === 'text_delta') {
-            yield* postOutbound({ _tag: 'AssistantTextDelta', text: streamEvent.delta.text })
-          } else if (streamEvent.delta.type === 'input_json_delta') {
-            const existing = partialJsonByBlockIndex.get(streamEvent.index) ?? ''
-            partialJsonByBlockIndex.set(
-              streamEvent.index,
-              existing + streamEvent.delta.partial_json
-            )
-          }
-          return
-        }
-
-        if (streamEvent.type === 'content_block_stop') {
-          const toolCall = toolCallsByBlockIndex.get(streamEvent.index)
-          if (!toolCall) return
-          const partialJson = partialJsonByBlockIndex.get(streamEvent.index) ?? ''
-          toolCallsByBlockIndex.delete(streamEvent.index)
-          partialJsonByBlockIndex.delete(streamEvent.index)
-
-          yield* postOutbound({
-            _tag: 'ToolCallCompleted',
-            toolCallId: toolCall.id,
-            toolName: toolCall.name,
-            input: parseToolInput(partialJson)
-          })
-        }
-      })
+          yield* postOutbound(outbound)
+        })
+      )
     )
   },
   (effect, config) =>
