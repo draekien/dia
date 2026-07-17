@@ -10,11 +10,11 @@
 
 ## Tasks
 
-- [ ] **T1** [AFK] Automated test: `AssistantTextDelta` chunks accumulate to the same complete text a non-streamed `AssistantMessage` would produce, in arrival order — serves: US-17, G-9 — depends: —
-- [ ] **T2** [AFK] Bridge `PaneToolCallStarted`/`PaneToolCallCompleted` through the preload `contextBridge` as `onToolCallStarted`/`onToolCallCompleted` (these already reach `contract.ts` but stop there) — serves: US-18 — depends: —
-- [ ] **T3** [AFK] Renderer: track the current tool name per pane from `onToolCallStarted` until its matching `onToolCallCompleted`, and render a status indicator (e.g. "Using Read…") near the pane header — serves: US-18 — depends: T2
-- [ ] **T4** [AFK] Automated test: `input_json_delta` chunks for a tool call accumulate into valid, correctly-parsed tool input across multiple chunks, matching `ToolCallCompleted.input` — serves: G-9 — depends: —
-- [ ] **T5** [HIL] Manual verification against a real session: confirm assistant text visibly streams rather than appearing all at once, and the running-tool indicator appears and clears correctly across a turn with multiple sequential tool calls — serves: US-17, US-18, G-9 — depends: T1, T3, T4
+- [x] **T1** [AFK] Automated test: `AssistantTextDelta` chunks accumulate to the same complete text a non-streamed `AssistantMessage` would produce, in arrival order — serves: US-17, G-9 — depends: —
+- [x] **T2** [AFK] Bridge `PaneToolCallStarted`/`PaneToolCallCompleted` through the preload `contextBridge` as `onToolCallStarted`/`onToolCallCompleted` (these already reach `contract.ts` but stop there) — serves: US-18 — depends: —
+- [x] **T3** [AFK] Renderer: track tool calls per pane from `onToolCallStarted` through their matching `onToolCallCompleted`, and render each as a persistent row in an inline transcript event stream that transitions running→done in place — serves: US-18 — depends: T2
+- [x] **T4** [AFK] Automated test: `input_json_delta` chunks for a tool call accumulate into valid, correctly-parsed tool input across multiple chunks, matching `ToolCallCompleted.input` — serves: G-9 — depends: —
+- [x] **T5** [HIL] Manual verification against a real session: confirm assistant text visibly streams rather than appearing all at once, and the running-tool indicator appears and clears correctly across a turn with multiple sequential tool calls — serves: US-17, US-18, G-9 — depends: T1, T3, T4
 
 ## Dependency tree
 
@@ -35,7 +35,11 @@ graph TD
 
 Text streaming is already fully wired end-to-end: `agent-session.ts` sets `includePartialMessages: true` and maps `content_block_delta`/`text_delta` events to `AssistantTextDelta`, which already reaches the renderer's streaming-text display via `onAssistantTextDelta`. T1 adds test coverage for behavior that already exists rather than building it.
 
-Tool-call streaming is implemented in `agent-session.ts` (`ToolCallStarted`/`ToolCallCompleted`, including `input_json_delta` accumulation) and already defined in `contract.ts` as `PaneToolCallStarted`/`PaneToolCallCompleted`, but the preload bridge never exposes them and no renderer component consumes them — T2/T3 are the only gap.
+Tool-call streaming is implemented in `agent-session.ts` (`ToolCallStarted`/`ToolCallCompleted`, including `input_json_delta` accumulation) and already defined in `contract.ts` as `PaneToolCallStarted`/`PaneToolCallCompleted`. T2 (preload bridge) and T3 (renderer indicator) were the plumbing gap.
+
+Note (implemented): `ToolCallCompleted` originally fired on the SDK's `content_block_stop`, which is when the tool's *input* finishes streaming — not when it finishes *executing*. That made the indicator flash during input generation and clear before the tool actually ran, inverting US-18. It was re-mapped to fire when the matching `tool_result` arrives (correlated by `tool_use_id`), so the indicator spans real execution time. The SDK→protocol event fold was extracted into a pure, unit-tested `agent-session-reducer.ts` (`makeSessionEventReducer`) to give T1/T4 a test seam. See `docs/reasoning/2026-07-17-tool-call-completion-semantics.md`.
+
+Note (T3 UI, post-HIL): an ephemeral "Using X…" header indicator still flashed for tools that start and finish near-instantly. T3 was reworked into an inline event stream — tool calls interleave chronologically into the pane transcript as persistent rows (leading pulsing dot while running, settled check when done, showing tool name + a concise input summary) that transition running→done in place rather than appearing and vanishing.
 
 ## Done when
 

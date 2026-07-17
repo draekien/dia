@@ -286,4 +286,6 @@ export interface DiaApi {
   onPermissionRequested(listener: (event: PanePermissionRequested) => void): () => void
   onQuestionRequested(listener: (event: PaneQuestionRequested) => void): () => void
   onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void
+  onToolCallStarted(listener: (event: PaneToolCallStarted) => void): () => void
+  onToolCallCompleted(listener: (event: PaneToolCallCompleted) => void): () => void
 }

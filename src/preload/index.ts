@@ -124,6 +124,16 @@ const api: DiaApi = {
     return subscribeToEvents((event) => {
       if (event._tag === 'PaneAssistantTextDelta') listener(event)
     })
+  },
+  onToolCallStarted(listener) {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PaneToolCallStarted') listener(event)
+    })
+  },
+  onToolCallCompleted(listener) {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PaneToolCallCompleted') listener(event)
+    })
   }
 }
 

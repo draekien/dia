@@ -1,16 +1,34 @@
 import type { AttentionState, PermissionResponse, QuestionResponse } from '@main/domain/attention'
-import type { PanePermissionRequested, PaneQuestionRequested } from '@main/ipc/contract'
+import type {
+  PanePermissionRequested,
+  PaneQuestionRequested,
+  PaneToolCallCompleted
+} from '@main/ipc/contract'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Check } from 'lucide-react'
 import { useEffect } from 'react'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import { PermissionRequestCard } from './permission-request-card'
 import { PulseIndicator } from './pulse-indicator'
 
-interface Message {
+interface MessageItem {
+  kind: 'message'
   role: 'user' | 'assistant'
   content: string
 }
+
+type ToolInput = PaneToolCallCompleted['input']
+
+interface ToolEventItem {
+  kind: 'tool'
+  toolCallId: string
+  toolName: string
+  status: 'running' | 'done'
+  input?: ToolInput
+}
+
+type TimelineItem = MessageItem | ToolEventItem
 
 interface PaneProps {
   paneId: string
@@ -27,6 +45,38 @@ export function dirName(path: string): string {
   return lastSeparator === -1 ? normalized : normalized.slice(lastSeparator + 1)
 }
 
+const summaryKeys = ['command', 'file_path', 'path', 'pattern', 'url', 'query', 'prompt'] as const
+
+function toolInputSummary(input: ToolInput | undefined): string | undefined {
+  if (input === undefined) return undefined
+  for (const key of summaryKeys) {
+    const value = input[key]
+    if (typeof value === 'string' && value.trim() !== '') {
+      return key === 'file_path' || key === 'path' ? dirName(value) : value
+    }
+  }
+  return undefined
+}
+
+function ToolEventRow({ event }: { event: ToolEventItem }): React.JSX.Element {
+  const running = event.status === 'running'
+  const summary = toolInputSummary(event.input)
+  return (
+    <div className="flex items-center gap-2 pl-0.5 font-mono text-xs text-ink-muted">
+      <span aria-hidden className="flex size-3.5 shrink-0 items-center justify-center">
+        {running ? (
+          <span className="size-1.5 animate-pulse-slow rounded-full bg-ink-muted motion-reduce:animate-none" />
+        ) : (
+          <Check className="size-3 text-ink-muted/70" strokeWidth={2.5} />
+        )}
+      </span>
+      <span className="shrink-0 text-ink/90">{event.toolName}</span>
+      {summary !== undefined && <span className="truncate text-ink-muted/80">{summary}</span>}
+      <span className="sr-only">{running ? 'running' : 'completed'}</span>
+    </div>
+  )
+}
+
 function Pane({
   paneId,
   cwd,
@@ -36,15 +86,24 @@ function Pane({
   onFocus
 }: PaneProps) {
   const queryClient = useQueryClient()
-  const messagesQueryKey = ['pane', paneId, 'messages'] as const
+  const timelineQueryKey = ['pane', paneId, 'timeline'] as const
   const attentionQueryKey = ['pane', paneId, 'attention'] as const
   const streamingTextQueryKey = ['pane', paneId, 'streamingText'] as const
   const pendingPermissionQueryKey = ['pane', paneId, 'pendingPermission'] as const
   const pendingQuestionQueryKey = ['pane', paneId, 'pendingQuestion'] as const
 
-  const { data: messages = [] } = useQuery<Message[]>({
-    queryKey: messagesQueryKey,
-    queryFn: () => window.dia.getPaneHistory(paneId).then((history) => [...history]),
+  const { data: timeline = [] } = useQuery<TimelineItem[]>({
+    queryKey: timelineQueryKey,
+    queryFn: () =>
+      window.dia.getPaneHistory(paneId).then((history) =>
+        history.map(
+          (message): TimelineItem => ({
+            kind: 'message',
+            role: message.role,
+            content: message.content
+          })
+        )
+      ),
     staleTime: Infinity
   })
   const { data: attention = { _tag: 'Idle' } } = useQuery<AttentionState>({
@@ -71,12 +130,15 @@ function Pane({
   useEffect(() => {
     return window.dia.onMessageAppended((event) => {
       if (event.paneId !== paneId) return
-      queryClient.setQueryData<Message[]>(messagesQueryKey, (prev = []) => [...prev, event.message])
+      queryClient.setQueryData<TimelineItem[]>(timelineQueryKey, (prev = []) => [
+        ...prev,
+        { kind: 'message', role: event.message.role, content: event.message.content }
+      ])
       if (event.message.role === 'assistant') {
         queryClient.setQueryData<string>(streamingTextQueryKey, '')
       }
     })
-  }, [queryClient, paneId, messagesQueryKey, streamingTextQueryKey])
+  }, [queryClient, paneId, timelineQueryKey, streamingTextQueryKey])
 
   useEffect(() => {
     return window.dia.onAssistantTextDelta((event) => {
@@ -84,6 +146,38 @@ function Pane({
       queryClient.setQueryData<string>(streamingTextQueryKey, (prev = '') => prev + event.text)
     })
   }, [queryClient, paneId, streamingTextQueryKey])
+
+  useEffect(() => {
+    return window.dia.onToolCallStarted((event) => {
+      if (event.paneId !== paneId) return
+      queryClient.setQueryData<TimelineItem[]>(timelineQueryKey, (prev = []) =>
+        prev.some((item) => item.kind === 'tool' && item.toolCallId === event.toolCallId)
+          ? prev
+          : [
+              ...prev,
+              {
+                kind: 'tool',
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                status: 'running'
+              }
+            ]
+      )
+    })
+  }, [queryClient, paneId, timelineQueryKey])
+
+  useEffect(() => {
+    return window.dia.onToolCallCompleted((event) => {
+      if (event.paneId !== paneId) return
+      queryClient.setQueryData<TimelineItem[]>(timelineQueryKey, (prev = []) =>
+        prev.map((item) =>
+          item.kind === 'tool' && item.toolCallId === event.toolCallId
+            ? { ...item, status: 'done', input: event.input }
+            : item
+        )
+      )
+    })
+  }, [queryClient, paneId, timelineQueryKey])
 
   useEffect(() => {
     return window.dia.onAttentionChanged((event) => {
@@ -111,9 +205,9 @@ function Pane({
     onSubmit: ({ value, formApi }) => {
       const text = value.text.trim()
       if (!text) return
-      queryClient.setQueryData<Message[]>(messagesQueryKey, (prev = []) => [
+      queryClient.setQueryData<TimelineItem[]>(timelineQueryKey, (prev = []) => [
         ...prev,
-        { role: 'user', content: text }
+        { kind: 'message', role: 'user', content: text }
       ])
       window.dia.sendMessage(paneId, text)
       queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
@@ -191,14 +285,20 @@ function Pane({
           </div>
         </div>
         <div className="flex-1 space-y-2 overflow-y-auto">
-          {messages.map((message, index) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: history is append-only, index is stable
-            <div key={index} className={message.role === 'user' ? 'text-right' : 'text-left'}>
-              <span className="inline-block rounded bg-neutral-800 px-3 py-1">
-                {message.content}
-              </span>
-            </div>
-          ))}
+          {timeline.map((item, index) => {
+            if (item.kind === 'tool') {
+              // biome-ignore lint/suspicious/noArrayIndexKey: timeline is append-only; items only update in place, never reorder
+              return <ToolEventRow key={index} event={item} />
+            }
+            return (
+              // biome-ignore lint/suspicious/noArrayIndexKey: timeline is append-only; items only update in place, never reorder
+              <div key={index} className={item.role === 'user' ? 'text-right' : 'text-left'}>
+                <span className="inline-block rounded bg-neutral-800 px-3 py-1">
+                  {item.content}
+                </span>
+              </div>
+            )
+          })}
           {streamingText !== '' && (
             <div className="text-left">
               <span className="inline-block rounded bg-neutral-800 px-3 py-1">{streamingText}</span>
