@@ -37,6 +37,8 @@ Renderer-specific — see `src/renderer/CLAUDE.md`.
 
 - Use Effect's `Clock` service (e.g. `Clock.currentTimeMillis`) instead of `Date.now()`/`new Date()` in any Effect code, so behavior can be driven deterministically with `TestClock` in tests.
 - Represent durations with Effect's `Duration` module (`Duration.seconds(5)`, `Duration.days(7)`, `Duration.toMillis(...)`) instead of raw millisecond math or ad-hoc string literals.
+- Derive types from their schema (`export type X = typeof XSchema.Type`); never hand-declare an interface/type and a parallel schema. For a recursive schema, a plain `type` alias self-references and errors — use `export interface X extends Schema.Schema.Type<typeof XSchema> {}` instead.
+- Effect diagnostics run inside `pnpm typecheck` and standalone via `pnpm diagnostics` (per-project: `diagnostics:{node,web,test}`). Bust stale `.tsbuildinfo` after changing a severity map. See `docs/reasoning/2026-07-17-effect-tsgo-diagnostics-tooling.md`.
 
 ### Mandatory skill invocation
 
