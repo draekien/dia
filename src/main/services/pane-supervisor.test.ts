@@ -74,7 +74,9 @@ function makeTestSetup(): {
 
   const gitOpsLayer = Layer.succeed(GitOpsService, {
     createWorktree: () => Effect.dieMessage('createWorktree should not be called in these tests'),
-    removeWorktree: () => Effect.dieMessage('removeWorktree should not be called in these tests')
+    removeWorktree: () => Effect.dieMessage('removeWorktree should not be called in these tests'),
+    reattachWorktree: () =>
+      Effect.dieMessage('reattachWorktree should not be called in these tests')
   })
 
   const capturedLogs: unknown[] = []

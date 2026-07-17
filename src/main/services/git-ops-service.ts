@@ -1,4 +1,4 @@
-import { Command, CommandExecutor } from '@effect/platform'
+import { Command, CommandExecutor, FileSystem } from '@effect/platform'
 import { Context, Data, Effect, Layer } from 'effect'
 import type { WorktreeInfo } from '../domain/pane'
 import type { PaneId } from '../domain/pane-tree'
@@ -26,13 +26,26 @@ export class WorktreeRemoveError extends Data.TaggedError('WorktreeRemoveError')
 }> {}
 
 /**
+ * Failure raised when `GitOpsService.reattachWorktree` cannot re-add a pane's
+ * previously-created worktree on resume. Carries the pane id, worktree path, and
+ * the underlying cause so callers can log or surface the failure.
+ */
+export class WorktreeReattachError extends Data.TaggedError('WorktreeReattachError')<{
+  readonly paneId: PaneId
+  readonly path: string
+  readonly cause: unknown
+}> {}
+
+/**
  * Service for git operations backing pane lifecycles. Named for git
  * operations generally, not just worktrees -- more git ops are expected to
  * join this service in later bullets.
  *
  * `createWorktree` provisions a new worktree and branch for a pane from a
  * source repo; `removeWorktree` tears one down, falling back to `git
- * worktree prune` if standard removal fails. Obtain an implementation via
+ * worktree prune` if standard removal fails; `reattachWorktree` re-adds a
+ * pane's existing worktree/branch on resume (worktrees are removed on graceful
+ * shutdown but their branch persists). Obtain an implementation via
  * `GitOpsServiceLive` and provide it at the composition root.
  */
 export class GitOpsService extends Context.Tag('GitOpsService')<
@@ -47,6 +60,18 @@ export class GitOpsService extends Context.Tag('GitOpsService')<
       info: WorktreeInfo,
       paneId: PaneId
     ) => Effect.Effect<void, WorktreeRemoveError>
+    /**
+     * Re-adds the worktree described by `info` at its original path, checking out
+     * its existing `dia/<paneId>` branch (via `git worktree add <path> <branch>`,
+     * never `-b`/`-B`, so committed work is preserved, not reset). No-ops if the
+     * worktree path is already present on disk (an already-live pane, or a
+     * crash-orphaned worktree whose recovery is out of scope). Returns the same
+     * `info` so callers can thread it back into the pane config.
+     */
+    readonly reattachWorktree: (
+      info: WorktreeInfo,
+      paneId: PaneId
+    ) => Effect.Effect<WorktreeInfo, WorktreeReattachError>
   }
 >() {}
 
@@ -59,6 +84,7 @@ export const GitOpsServiceLive = Layer.effect(
   GitOpsService,
   Effect.gen(function* () {
     const executor = yield* CommandExecutor.CommandExecutor
+    const fs = yield* FileSystem.FileSystem
 
     const createWorktree = Effect.fn('GitOpsService.createWorktree')(function* (
       sourceRepo: string,
@@ -133,6 +159,46 @@ export const GitOpsServiceLive = Layer.effect(
       yield* Effect.logInfo('Pruned pane worktree', { paneId, path: info.path })
     })
 
-    return { createWorktree, removeWorktree }
+    const reattachWorktree = Effect.fn('GitOpsService.reattachWorktree')(function* (
+      info: WorktreeInfo,
+      paneId: PaneId
+    ) {
+      const alreadyPresent = yield* fs.exists(info.path).pipe(Effect.orElseSucceed(() => false))
+      if (alreadyPresent) {
+        yield* Effect.logWarning(
+          'Worktree path already present; skipping reattach (crash-orphan recovery is out of scope)',
+          { paneId, path: info.path }
+        )
+        return info
+      }
+
+      const command = Command.make('git', 'worktree', 'add', info.path, info.branch).pipe(
+        Command.workingDirectory(info.sourceRepo)
+      )
+      const exitCode = yield* executor
+        .exitCode(command)
+        .pipe(
+          Effect.mapError((cause) => new WorktreeReattachError({ paneId, path: info.path, cause }))
+        )
+
+      if (exitCode !== 0) {
+        return yield* Effect.fail(
+          new WorktreeReattachError({
+            paneId,
+            path: info.path,
+            cause: `git worktree add exited with code ${exitCode}`
+          })
+        )
+      }
+
+      yield* Effect.logInfo('Reattached pane worktree', {
+        paneId,
+        path: info.path,
+        branch: info.branch
+      })
+      return info
+    })
+
+    return { createWorktree, removeWorktree, reattachWorktree }
   })
 )
