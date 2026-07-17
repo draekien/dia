@@ -1,3 +1,4 @@
+import { cn } from '@renderer/lib/utils'
 import {
   type AttentionState,
   Idle,
@@ -12,7 +13,9 @@ import type {
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import { PermissionRequestCard } from './permission-request-card'
 import { PulseIndicator } from './pulse-indicator'
@@ -78,6 +81,63 @@ function ToolEventRow({ event }: { event: ToolEventItem }): React.JSX.Element {
       <span className="shrink-0 text-ink/90">{event.toolName}</span>
       {summary !== undefined && <span className="truncate text-ink-muted/80">{summary}</span>}
       <span className="sr-only">{running ? 'running' : 'completed'}</span>
+    </div>
+  )
+}
+
+const proseClassName =
+  'prose prose-sm prose-invert max-w-none prose-p:my-2 prose-headings:mb-2 prose-headings:mt-3 prose-pre:my-2 prose-pre:bg-neutral-900 prose-code:font-mono prose-code:before:content-none prose-code:after:content-none prose-a:text-primary [&>*:first-child]:mt-0 [&>*:last-child]:mb-0'
+
+function Markdown({
+  content,
+  className
+}: {
+  content: string
+  className?: string
+}): React.JSX.Element {
+  return (
+    <div className={cn(proseClassName, className)}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  )
+}
+
+const revealCatchUpDivisor = 6
+
+function StreamingMessage({ text }: { text: string }): React.JSX.Element {
+  const [revealedLength, setRevealedLength] = useState(0)
+  const targetLengthRef = useRef(text.length)
+  targetLengthRef.current = text.length
+
+  useEffect(() => {
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    let frame = 0
+    const tick = (): void => {
+      setRevealedLength((current) => {
+        const target = targetLengthRef.current
+        if (current >= target) return current
+        if (reduced) return target
+        const step = Math.max(1, Math.ceil((target - current) / revealCatchUpDivisor))
+        return Math.min(target, current + step)
+      })
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [])
+
+  return (
+    <div className="animate-stream-enter text-left motion-reduce:animate-none">
+      <div className="inline-block max-w-full rounded bg-neutral-800 px-3 py-2">
+        <Markdown content={text.slice(0, revealedLength)} className="stream-cursor" />
+      </div>
     </div>
   )
 }
@@ -298,17 +358,13 @@ function Pane({
             return (
               // biome-ignore lint/suspicious/noArrayIndexKey: timeline is append-only; items only update in place, never reorder
               <div key={index} className={item.role === 'user' ? 'text-right' : 'text-left'}>
-                <span className="inline-block rounded bg-neutral-800 px-3 py-1">
-                  {item.content}
-                </span>
+                <div className="inline-block max-w-full rounded bg-neutral-800 px-3 py-2 text-left">
+                  <Markdown content={item.content} />
+                </div>
               </div>
             )
           })}
-          {streamingText !== '' && (
-            <div className="text-left">
-              <span className="inline-block rounded bg-neutral-800 px-3 py-1">{streamingText}</span>
-            </div>
-          )}
+          {streamingText !== '' && <StreamingMessage text={streamingText} />}
         </div>
         {pendingPermission !== null && (
           <PermissionRequestCard request={pendingPermission} onResolve={respondToPermission} />
