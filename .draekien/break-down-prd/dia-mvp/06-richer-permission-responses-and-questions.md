@@ -28,7 +28,10 @@
   - `pane-supervisor.ts` `toIpcEvent`: `QuestionRequested` now emits `PaneQuestionRequested`; `PermissionRequested` threads `suggestions` through when present.
   - `preload/index.ts`: `resolvePermission` sends `response`; added `resolveQuestion` (with `encodeResolveQuestion`) and `onQuestionRequested` subscriber.
   - `pane.tsx`: `respondToPermission` builds a `PermissionResponse` (`allow` → `{_tag:'Allow'}`, `deny` → `{_tag:'Deny', message}`) — behavior-preserving plumbing; the rich dialog is T4.
-- [ ] **T4** [AFK] Renderer: extend the permission dialog with an editable input field before allowing, a required message field when denying, and an "always allow this kind of call" toggle that echoes a `suggestions` entry back as `updatedPermissions` — serves: US-12, US-13, US-14 — depends: T3
+- [x] **T4** [AFK] Renderer: extend the permission dialog with an editable input field before allowing, a required message field when denying, and an "always allow this kind of call" toggle that echoes a `suggestions` entry back as `updatedPermissions` — serves: US-12, US-13, US-14 — depends: T3
+  - New `permission-dialog.tsx` (`PermissionDialog`): structured per-field editor over the tool's top-level input — primitives as `Input`/`Switch`, nested objects/arrays as a JSON `Textarea` (per the user's "top-level fields, JSON for nested" decision). Pure `reconstructInput` helper merges edits over the original and reports `changed` (so `updatedInput` is sent only when the user actually edited) and per-field validity (bad number / unparseable JSON disables Allow and marks the field `aria-invalid`). A "Note to Claude" textarea gates Deny (required, non-empty); dismissal (Esc / overlay) denies with a default note. An "always allow {tool} in this pane" `Switch` appears only when the request carries `suggestions`, echoing them back as `updatedPermissions`.
+  - Added shadcn `textarea`/`input`/`label` via the CLI; reused existing `switch`. Styled with semantic tokens (`bg-muted`, `text-foreground`, `text-muted-foreground`, `text-destructive`) and mono for tool data per DESIGN.md's Content-Is-Mono Rule.
+  - `pane.tsx`: `respondToPermission` now takes a `PermissionResponse` and the inline dialog is replaced by `<PermissionDialog>`. Deleted the now-superseded `permission-input-preview.tsx` (its only consumer). Visual/behavioral confirmation against a real session is T8.
 - [ ] **T5** [AFK] Renderer: new clarifying-question card — render `questions[]` as radio groups (or checkboxes when `multiSelect`) plus an "Other" free-text option per question, and submit via `ResolveQuestion` — serves: US-11 — depends: T3
 - [ ] **T6** [AFK] Wire the pane's existing `SendMessage` path so sending a message while a `UserInputRequest` is pending forwards a new instruction to the SDK's streaming input and leaves the pending `Deferred` to be dropped once the SDK moves on (§4.3) — serves: US-15 — depends: T2
 - [ ] **T7** [AFK] Automated tests: `PermissionResponse`/`QuestionResponse` `Schema` encode/decode round trips (including `multiSelect` arrays and free text in place of a label), and a test confirming a redirect leaves the pending `Deferred` unresolved rather than double-resolving it — serves: G-6, G-7 — depends: T1, T6
@@ -42,7 +45,7 @@ graph TD
   T1[T1: UserInputRequest/PermissionResponse/QuestionResponse schemas - DONE]
   T2[T2: canUseTool branches on AskUserQuestion - DONE]
   T3[T3: ResolveQuestion command + end-to-end wiring - DONE]
-  T4[T4: dialog supports modify/deny-message/remember]
+  T4[T4: dialog supports modify/deny-message/remember - DONE]
   T5[T5: clarifying-question card UI]
   T6[T6: redirect via SendMessage]
   T7[T7: automated schema + redirect tests]

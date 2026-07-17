@@ -1,19 +1,10 @@
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import type { AttentionState } from '../../../main/domain/attention'
+import type { AttentionState, PermissionResponse } from '../../../main/domain/attention'
 import type { PanePermissionRequested } from '../../../main/ipc/contract'
-import { PermissionInputPreview } from './permission-input-preview'
+import { PermissionDialog } from './permission-dialog'
 import { PulseIndicator } from './pulse-indicator'
-import { Button } from './ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from './ui/dialog'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -115,12 +106,8 @@ function Pane({
     }
   })
 
-  function respondToPermission(decision: 'allow' | 'deny'): void {
+  function respondToPermission(response: PermissionResponse): void {
     if (!pendingPermission) return
-    const response =
-      decision === 'allow'
-        ? ({ _tag: 'Allow' } as const)
-        : ({ _tag: 'Deny', message: 'Denied by user.' } as const)
     window.dia.resolvePermission(paneId, pendingPermission.requestId, response)
     queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
   }
@@ -218,38 +205,7 @@ function Pane({
           </button>
         </form>
       </div>
-      <Dialog
-        open={pendingPermission !== null}
-        onOpenChange={(open) => {
-          if (!open) respondToPermission('deny')
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Permission requested</DialogTitle>
-            <DialogDescription>
-              Wants to run{' '}
-              <span className="rounded border border-neutral-800 bg-neutral-900 px-1.5 py-0.5 font-mono text-xs text-neutral-300">
-                {pendingPermission?.toolName}
-              </span>
-            </DialogDescription>
-          </DialogHeader>
-          <div className="max-h-64 overflow-auto">
-            {pendingPermission !== null && (
-              <PermissionInputPreview
-                toolName={pendingPermission.toolName}
-                input={pendingPermission.input}
-              />
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="destructive" onClick={() => respondToPermission('deny')}>
-              Deny
-            </Button>
-            <Button onClick={() => respondToPermission('allow')}>Allow</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PermissionDialog request={pendingPermission} onResolve={respondToPermission} />
     </div>
   )
 }
