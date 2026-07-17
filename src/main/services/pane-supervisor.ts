@@ -102,9 +102,8 @@ export const PaneProcessSpawnerLive = Layer.succeed(PaneProcessSpawner, {
 const encodeInbound = Schema.encodeSync(InboundMessage)
 const decodeOutbound = Schema.decodeUnknownOption(OutboundMessage)
 
-// TurnCompleted/TurnErrored/QuestionRequested carry no renderer-facing content of their own here --
-// they only drive AttentionState (see toAttentionTarget below) -- so they have no corresponding
-// IpcEvent yet (the clarifying-question card is wired in a later task).
+// TurnCompleted/TurnErrored/SessionStarted carry no renderer-facing content of their own -- they
+// only drive AttentionState (see toAttentionTarget below) -- so they have no corresponding IpcEvent.
 function toIpcEvent(paneId: string, message: OutboundMessage): IpcEvent | null {
   switch (message._tag) {
     case 'AssistantMessageReceived':
@@ -132,9 +131,16 @@ function toIpcEvent(paneId: string, message: OutboundMessage): IpcEvent | null {
         paneId,
         requestId: message.requestId,
         toolName: message.toolName,
-        input: message.input
+        input: message.input,
+        ...(message.suggestions !== undefined ? { suggestions: message.suggestions } : {})
       }
     case 'QuestionRequested':
+      return {
+        _tag: 'PaneQuestionRequested',
+        paneId,
+        requestId: message.requestId,
+        questions: message.questions
+      }
     case 'TurnCompleted':
     case 'TurnErrored':
     case 'SessionStarted':

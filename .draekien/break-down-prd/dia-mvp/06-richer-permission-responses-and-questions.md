@@ -22,7 +22,12 @@
   - `protocol.ts`: `ResolvePermission` now carries a `PermissionResponse`; added `ResolveQuestion` (carries `QuestionResponse`) and outbound `QuestionRequested`; `PermissionRequested` gained optional `suggestions`.
   - `pane-supervisor.ts`: `PaneHandle.resolvePermission(requestId, PermissionResponse)` + new `resolveQuestion(requestId, QuestionResponse)`; `QuestionRequested` drives an `AwaitingPermission`/`ClarifyingQuestion` attention (amber) with no renderer event yet (card is T5).
   - `gateway.ts`: transitional shim translating the still-unchanged contract `ResolvePermission {decision, message}` into a `PermissionResponse`, keeping `contract.ts`/preload/renderer untouched this task (removed in T3).
-- [ ] **T3** [AFK] Add the `ResolveQuestion` IPC command and route `PermissionResponse`/`QuestionResponse` end-to-end through `contract.ts`, `protocol.ts`, and the preload bridge — serves: US-11, US-12, US-13, US-14 — depends: T1, T2
+- [x] **T3** [AFK] Add the `ResolveQuestion` IPC command and route `PermissionResponse`/`QuestionResponse` end-to-end through `contract.ts`, `protocol.ts`, and the preload bridge — serves: US-11, US-12, US-13, US-14 — depends: T1, T2
+  - `contract.ts`: `ResolvePermission` now carries a `PermissionResponse` (dropped `decision`/`message`); added `ResolveQuestion` command (`QuestionResponse`) to the `IpcCommand` union; `PanePermissionRequested` gained optional `suggestions`; added `PaneQuestionRequested` event to the `IpcEvent` union; `DiaApi` gained `resolveQuestion` + `onQuestionRequested` and `resolvePermission`'s signature changed to take a `PermissionResponse`.
+  - `gateway.ts`: removed the T2 shim — `ResolvePermission` now forwards `command.response` straight through; added a `ResolveQuestion` case mirroring the same getHandle/Option/catchAllCause pattern.
+  - `pane-supervisor.ts` `toIpcEvent`: `QuestionRequested` now emits `PaneQuestionRequested`; `PermissionRequested` threads `suggestions` through when present.
+  - `preload/index.ts`: `resolvePermission` sends `response`; added `resolveQuestion` (with `encodeResolveQuestion`) and `onQuestionRequested` subscriber.
+  - `pane.tsx`: `respondToPermission` builds a `PermissionResponse` (`allow` → `{_tag:'Allow'}`, `deny` → `{_tag:'Deny', message}`) — behavior-preserving plumbing; the rich dialog is T4.
 - [ ] **T4** [AFK] Renderer: extend the permission dialog with an editable input field before allowing, a required message field when denying, and an "always allow this kind of call" toggle that echoes a `suggestions` entry back as `updatedPermissions` — serves: US-12, US-13, US-14 — depends: T3
 - [ ] **T5** [AFK] Renderer: new clarifying-question card — render `questions[]` as radio groups (or checkboxes when `multiSelect`) plus an "Other" free-text option per question, and submit via `ResolveQuestion` — serves: US-11 — depends: T3
 - [ ] **T6** [AFK] Wire the pane's existing `SendMessage` path so sending a message while a `UserInputRequest` is pending forwards a new instruction to the SDK's streaming input and leaves the pending `Deferred` to be dropped once the SDK moves on (§4.3) — serves: US-15 — depends: T2
@@ -36,7 +41,7 @@ graph TD
   B04[Bullet 04: AttentionState + permission dialog]
   T1[T1: UserInputRequest/PermissionResponse/QuestionResponse schemas - DONE]
   T2[T2: canUseTool branches on AskUserQuestion - DONE]
-  T3[T3: ResolveQuestion command + end-to-end wiring]
+  T3[T3: ResolveQuestion command + end-to-end wiring - DONE]
   T4[T4: dialog supports modify/deny-message/remember]
   T5[T5: clarifying-question card UI]
   T6[T6: redirect via SendMessage]

@@ -117,7 +117,11 @@ function Pane({
 
   function respondToPermission(decision: 'allow' | 'deny'): void {
     if (!pendingPermission) return
-    window.dia.resolvePermission(paneId, pendingPermission.requestId, decision)
+    const response =
+      decision === 'allow'
+        ? ({ _tag: 'Allow' } as const)
+        : ({ _tag: 'Deny', message: 'Denied by user.' } as const)
+    window.dia.resolvePermission(paneId, pendingPermission.requestId, response)
     queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
   }
 

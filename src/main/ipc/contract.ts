@@ -1,5 +1,11 @@
 import { Schema } from 'effect'
-import { AttentionState } from '../domain/attention'
+import {
+  AttentionState,
+  PermissionResponse,
+  PermissionUpdate,
+  Question,
+  QuestionResponse
+} from '../domain/attention'
 import { ConversationMessage } from '../domain/pane'
 import { PaneNode } from '../domain/pane-tree'
 
@@ -47,16 +53,29 @@ export type SendMessage = typeof SendMessage.Type
 
 /**
  * Command sent by the renderer to answer a pending tool-permission prompt
- * (identified by `requestId`) for the pane `paneId`. `decision` allows or
- * denies the tool call; `message` optionally explains a denial to the agent.
+ * (identified by `requestId`) for the pane `paneId`. `response` carries the
+ * user's decision: `Allow` (optionally with edited input and/or an "always
+ * allow" rule) or `Deny` (with an explanation for the agent).
  */
 export const ResolvePermission = Schema.TaggedStruct('ResolvePermission', {
   paneId: Schema.UUID,
   requestId: Schema.String,
-  decision: Schema.Literal('allow', 'deny'),
-  message: Schema.optional(Schema.String)
+  response: PermissionResponse
 })
 export type ResolvePermission = typeof ResolvePermission.Type
+
+/**
+ * Command sent by the renderer to answer a pending clarifying-question prompt
+ * (identified by `requestId`) for the pane `paneId`. `response` carries the
+ * user's `Answers` (per-question choices, including free text) or a
+ * `FreeformResponse` typed instead of using the question card.
+ */
+export const ResolveQuestion = Schema.TaggedStruct('ResolveQuestion', {
+  paneId: Schema.UUID,
+  requestId: Schema.String,
+  response: QuestionResponse
+})
+export type ResolveQuestion = typeof ResolveQuestion.Type
 
 /**
  * Command sent by the renderer to split the pane `paneId` into two panes
@@ -107,6 +126,7 @@ export type FocusPane = typeof FocusPane.Type
 export const IpcCommand = Schema.Union(
   SendMessage,
   ResolvePermission,
+  ResolveQuestion,
   SplitPane,
   ClosePane,
   CreatePane,
@@ -165,16 +185,31 @@ export type PaneToolCallCompleted = typeof PaneToolCallCompleted.Type
 /**
  * Event pushed to the renderer when the agent in pane `paneId` wants to run
  * tool `toolName` with the given `input` and is blocked awaiting approval.
- * Renderer should prompt the user and reply with a {@link ResolvePermission}
- * command carrying the same `requestId`.
+ * `suggestions`, when present, are the SDK's offered "always allow" rules the
+ * renderer may echo back. Renderer should prompt the user and reply with a
+ * {@link ResolvePermission} command carrying the same `requestId`.
  */
 export const PanePermissionRequested = Schema.TaggedStruct('PanePermissionRequested', {
   paneId: Schema.UUID,
   requestId: Schema.String,
   toolName: Schema.String,
-  input: JsonRecord
+  input: JsonRecord,
+  suggestions: Schema.optional(Schema.Array(PermissionUpdate))
 })
 export type PanePermissionRequested = typeof PanePermissionRequested.Type
+
+/**
+ * Event pushed to the renderer when the agent in pane `paneId` calls
+ * `AskUserQuestion` and is blocked awaiting the user's answers. Renderer should
+ * show the clarifying-question card and reply with a {@link ResolveQuestion}
+ * command carrying the same `requestId`.
+ */
+export const PaneQuestionRequested = Schema.TaggedStruct('PaneQuestionRequested', {
+  paneId: Schema.UUID,
+  requestId: Schema.String,
+  questions: Schema.Array(Question)
+})
+export type PaneQuestionRequested = typeof PaneQuestionRequested.Type
 
 /**
  * Event pushed to the renderer whenever the pane layout tree changes (pane
@@ -220,6 +255,7 @@ export const IpcEvent = Schema.Union(
   PaneToolCallStarted,
   PaneToolCallCompleted,
   PanePermissionRequested,
+  PaneQuestionRequested,
   LayoutChanged,
   PaneCreateFailed,
   PaneAttentionChanged
@@ -234,12 +270,8 @@ export type IpcEvent = typeof IpcEvent.Type
  */
 export interface DiaApi {
   sendMessage(paneId: string, text: string): void
-  resolvePermission(
-    paneId: string,
-    requestId: string,
-    decision: 'allow' | 'deny',
-    message?: string
-  ): void
+  resolvePermission(paneId: string, requestId: string, response: PermissionResponse): void
+  resolveQuestion(paneId: string, requestId: string, response: QuestionResponse): void
   splitPane(paneId: string, direction: 'row' | 'column'): void
   closePane(paneId: string): void
   createPane(paneId: string, cwd: string, model: string, useWorktree: boolean): void
@@ -252,5 +284,6 @@ export interface DiaApi {
   onPaneCreateFailed(listener: (event: PaneCreateFailed) => void): () => void
   onAttentionChanged(listener: (event: PaneAttentionChanged) => void): () => void
   onPermissionRequested(listener: (event: PanePermissionRequested) => void): () => void
+  onQuestionRequested(listener: (event: PaneQuestionRequested) => void): () => void
   onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void
 }

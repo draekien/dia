@@ -11,12 +11,14 @@ import {
   FocusPane,
   IpcEvent,
   ResolvePermission,
+  ResolveQuestion,
   SendMessage,
   SplitPane
 } from '../main/ipc/contract'
 
 const encodeSendMessage = Schema.encodeSync(SendMessage)
 const encodeResolvePermission = Schema.encodeSync(ResolvePermission)
+const encodeResolveQuestion = Schema.encodeSync(ResolveQuestion)
 const encodeSplitPane = Schema.encodeSync(SplitPane)
 const encodeClosePane = Schema.encodeSync(ClosePane)
 const encodeCreatePane = Schema.encodeSync(CreatePane)
@@ -49,10 +51,16 @@ const api: DiaApi = {
   sendMessage(paneId, text) {
     ipcRenderer.send(CHANNEL.command, encodeSendMessage({ _tag: 'SendMessage', paneId, text }))
   },
-  resolvePermission(paneId, requestId, decision, message) {
+  resolvePermission(paneId, requestId, response) {
     ipcRenderer.send(
       CHANNEL.command,
-      encodeResolvePermission({ _tag: 'ResolvePermission', paneId, requestId, decision, message })
+      encodeResolvePermission({ _tag: 'ResolvePermission', paneId, requestId, response })
+    )
+  },
+  resolveQuestion(paneId, requestId, response) {
+    ipcRenderer.send(
+      CHANNEL.command,
+      encodeResolveQuestion({ _tag: 'ResolveQuestion', paneId, requestId, response })
     )
   },
   splitPane(paneId, direction) {
@@ -104,6 +112,11 @@ const api: DiaApi = {
   onPermissionRequested(listener) {
     return subscribeToEvents((event) => {
       if (event._tag === 'PanePermissionRequested') listener(event)
+    })
+  },
+  onQuestionRequested(listener) {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PaneQuestionRequested') listener(event)
     })
   },
   onAssistantTextDelta(listener) {
