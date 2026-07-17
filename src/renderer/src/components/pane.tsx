@@ -1,4 +1,9 @@
-import type { AttentionState, PermissionResponse, QuestionResponse } from '@main/domain/attention'
+import {
+  type AttentionState,
+  Idle,
+  type PermissionResponse,
+  type QuestionResponse
+} from '@main/domain/attention'
 import type {
   PanePermissionRequested,
   PaneQuestionRequested,
@@ -106,9 +111,9 @@ function Pane({
       ),
     staleTime: Infinity
   })
-  const { data: attention = { _tag: 'Idle' } } = useQuery<AttentionState>({
+  const { data: attention = Idle.make({}) } = useQuery<AttentionState>({
     queryKey: attentionQueryKey,
-    queryFn: () => ({ _tag: 'Idle' }),
+    queryFn: () => Idle.make({}),
     staleTime: Infinity
   })
   const { data: streamingText = '' } = useQuery<string>({

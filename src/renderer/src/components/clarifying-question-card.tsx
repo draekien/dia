@@ -1,4 +1,4 @@
-import type { QuestionResponse } from '@main/domain/attention'
+import { Answers, type QuestionResponse } from '@main/domain/attention'
 import type { PaneQuestionRequested } from '@main/ipc/contract'
 import { useState } from 'react'
 import { Button } from './ui/button'
@@ -94,11 +94,12 @@ export function ClarifyingQuestionCard({
 
   function submit(): void {
     if (!complete) return
-    onResolve({
-      _tag: 'Answers',
-      questions: request.questions,
-      answers: resolveAnswers(request.questions, single, multi, otherText)
-    })
+    onResolve(
+      Answers.make({
+        questions: request.questions,
+        answers: resolveAnswers(request.questions, single, multi, otherText)
+      })
+    )
   }
 
   return (

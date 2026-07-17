@@ -65,41 +65,63 @@ export const UserInputRequest = Schema.Union(PermissionRequest, ClarifyingQuesti
 export type UserInputRequest = typeof UserInputRequest.Type
 
 /**
- * The user's decision on a `PermissionRequest`: `Allow` runs the tool, with
- * `updatedInput` present only when the user edited it (absent means "as-is")
- * and optional `updatedPermissions` echoing an "always allow" suggestion back;
- * `Deny` refuses it with a `message` surfaced to the agent, not just the user.
+ * The user allowing a `PermissionRequest`: the tool runs, with `updatedInput`
+ * present only when the user edited it (absent means "as-is") and optional
+ * `updatedPermissions` echoing an "always allow" suggestion back. Construct
+ * with `Allow.make(...)`.
  */
-export const PermissionResponse = Schema.Union(
-  Schema.TaggedStruct('Allow', {
-    updatedInput: Schema.optional(JsonRecord),
-    updatedPermissions: Schema.optional(Schema.Array(PermissionUpdate))
-  }),
-  Schema.TaggedStruct('Deny', {
-    message: Schema.String
-  })
-)
+export const Allow = Schema.TaggedStruct('Allow', {
+  updatedInput: Schema.optional(JsonRecord),
+  updatedPermissions: Schema.optional(Schema.Array(PermissionUpdate))
+})
+export type Allow = typeof Allow.Type
+
+/**
+ * The user denying a `PermissionRequest`: the tool is refused with a `message`
+ * surfaced to the agent, not just the user. Construct with `Deny.make(...)`.
+ */
+export const Deny = Schema.TaggedStruct('Deny', {
+  message: Schema.String
+})
+export type Deny = typeof Deny.Type
+
+/**
+ * The user's decision on a `PermissionRequest`: either an `Allow` or a `Deny`.
+ * Branch on `_tag` to route the response.
+ */
+export const PermissionResponse = Schema.Union(Allow, Deny)
 export type PermissionResponse = typeof PermissionResponse.Type
 
 const AnswerValue = Schema.Union(Schema.String, Schema.Array(Schema.String))
 
 /**
- * The user's reply to a `ClarifyingQuestion`: `Answers` carries the resolved
- * choice per question (a chosen label, a label array for `multiSelect`, or
- * free text typed in place of an option), echoed alongside the `questions` it
- * answers; `FreeformResponse` is sent instead when the user dismissed the card
- * and typed a general reply.
+ * The user's per-question reply to a `ClarifyingQuestion`: the resolved choice
+ * per question (a chosen label, a label array for `multiSelect`, or free text
+ * typed in place of an option), echoed alongside the `questions` it answers.
+ * Construct with `Answers.make(...)`.
  */
-export const QuestionResponse = Schema.Union(
-  Schema.TaggedStruct('Answers', {
-    questions: Schema.Array(Question),
-    answers: Schema.Record({ key: Schema.String, value: AnswerValue })
-  }),
-  Schema.TaggedStruct('FreeformResponse', {
-    questions: Schema.Array(Question),
-    response: Schema.String
-  })
-)
+export const Answers = Schema.TaggedStruct('Answers', {
+  questions: Schema.Array(Question),
+  answers: Schema.Record({ key: Schema.String, value: AnswerValue })
+})
+export type Answers = typeof Answers.Type
+
+/**
+ * The user's reply to a `ClarifyingQuestion` when they dismissed the card and
+ * typed a general reply instead of answering per question. Construct with
+ * `FreeformResponse.make(...)`.
+ */
+export const FreeformResponse = Schema.TaggedStruct('FreeformResponse', {
+  questions: Schema.Array(Question),
+  response: Schema.String
+})
+export type FreeformResponse = typeof FreeformResponse.Type
+
+/**
+ * The user's reply to a `ClarifyingQuestion`: either per-question `Answers` or
+ * a `FreeformResponse`. Branch on `_tag` to route the response.
+ */
+export const QuestionResponse = Schema.Union(Answers, FreeformResponse)
 export type QuestionResponse = typeof QuestionResponse.Type
 
 /** A pane-level error message, used to describe why a pane entered `Errored`. */

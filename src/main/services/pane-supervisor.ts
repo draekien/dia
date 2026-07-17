@@ -34,8 +34,24 @@ import {
 } from '../domain/attention'
 import type { PaneConfig, PaneRecord, WorktreeInfo } from '../domain/pane'
 import type { PaneId } from '../domain/pane-tree'
-import { type IpcEvent, PaneAttentionChanged } from '../ipc/contract'
-import { InboundMessage, OutboundMessage } from '../pane-process/protocol'
+import {
+  type IpcEvent,
+  PaneAssistantTextDelta,
+  PaneAttentionChanged,
+  PaneMessageAppended,
+  PanePermissionRequested,
+  PaneQuestionRequested,
+  PaneToolCallCompleted,
+  PaneToolCallStarted
+} from '../ipc/contract'
+import {
+  InboundMessage,
+  InitMessage,
+  OutboundMessage,
+  ResolvePermission,
+  ResolveQuestion,
+  SendText
+} from '../pane-process/protocol'
 import {
   GitOpsService,
   type WorktreeCreateError,
@@ -113,45 +129,49 @@ const decodeOutbound = Schema.decodeUnknownOption(OutboundMessage)
 function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<IpcEvent> {
   return Match.value(message).pipe(
     Match.tag('AssistantMessageReceived', (m) =>
-      Option.some<IpcEvent>({ _tag: 'PaneMessageAppended', paneId, message: m.message })
+      Option.some<IpcEvent>(PaneMessageAppended.make({ paneId, message: m.message }))
     ),
     Match.tag('AssistantTextDelta', (m) =>
-      Option.some<IpcEvent>({ _tag: 'PaneAssistantTextDelta', paneId, text: m.text })
+      Option.some<IpcEvent>(PaneAssistantTextDelta.make({ paneId, text: m.text }))
     ),
     Match.tag('ToolCallStarted', (m) =>
-      Option.some<IpcEvent>({
-        _tag: 'PaneToolCallStarted',
-        paneId,
-        toolCallId: m.toolCallId,
-        toolName: m.toolName
-      })
+      Option.some<IpcEvent>(
+        PaneToolCallStarted.make({
+          paneId,
+          toolCallId: m.toolCallId,
+          toolName: m.toolName
+        })
+      )
     ),
     Match.tag('ToolCallCompleted', (m) =>
-      Option.some<IpcEvent>({
-        _tag: 'PaneToolCallCompleted',
-        paneId,
-        toolCallId: m.toolCallId,
-        toolName: m.toolName,
-        input: m.input
-      })
+      Option.some<IpcEvent>(
+        PaneToolCallCompleted.make({
+          paneId,
+          toolCallId: m.toolCallId,
+          toolName: m.toolName,
+          input: m.input
+        })
+      )
     ),
     Match.tag('PermissionRequested', (m) =>
-      Option.some<IpcEvent>({
-        _tag: 'PanePermissionRequested',
-        paneId,
-        requestId: m.requestId,
-        toolName: m.toolName,
-        input: m.input,
-        ...(m.suggestions !== undefined ? { suggestions: m.suggestions } : {})
-      })
+      Option.some<IpcEvent>(
+        PanePermissionRequested.make({
+          paneId,
+          requestId: m.requestId,
+          toolName: m.toolName,
+          input: m.input,
+          ...(m.suggestions !== undefined ? { suggestions: m.suggestions } : {})
+        })
+      )
     ),
     Match.tag('QuestionRequested', (m) =>
-      Option.some<IpcEvent>({
-        _tag: 'PaneQuestionRequested',
-        paneId,
-        requestId: m.requestId,
-        questions: m.questions
-      })
+      Option.some<IpcEvent>(
+        PaneQuestionRequested.make({
+          paneId,
+          requestId: m.requestId,
+          questions: m.questions
+        })
+      )
     ),
     // TurnCompleted/TurnErrored/SessionStarted carry no renderer-facing content of their own --
     // they only drive AttentionState (see toAttentionTarget below) -- so they have no IpcEvent.
@@ -335,7 +355,7 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
 
   yield* Stream.runForEach(decoded, handleInbound).pipe(Effect.forkScoped)
 
-  child.postMessage(encodeInbound({ _tag: 'Init', config, resume }))
+  child.postMessage(encodeInbound(InitMessage.make({ config, resume })))
   yield* Effect.logInfo('Sent Init message to pane process', { paneId: config.paneId, resume })
 
   const exits = Stream.async<number>((emit) => {
@@ -347,9 +367,7 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
   const handle: PaneHandle = {
     sendMessage: (text) =>
       Effect.logDebug('Sending text to pane process', { paneId: config.paneId, text }).pipe(
-        Effect.andThen(
-          Effect.sync(() => child.postMessage(encodeInbound({ _tag: 'SendText', text })))
-        )
+        Effect.andThen(Effect.sync(() => child.postMessage(encodeInbound(SendText.make({ text })))))
       ),
     resolvePermission: (requestId, response) =>
       Effect.logDebug('Sending permission resolution to pane process', {
@@ -359,7 +377,7 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
       }).pipe(
         Effect.andThen(
           Effect.sync(() =>
-            child.postMessage(encodeInbound({ _tag: 'ResolvePermission', requestId, response }))
+            child.postMessage(encodeInbound(ResolvePermission.make({ requestId, response })))
           )
         ),
         Effect.andThen(applyAttention(Idle.make({})))
@@ -372,7 +390,7 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
       }).pipe(
         Effect.andThen(
           Effect.sync(() =>
-            child.postMessage(encodeInbound({ _tag: 'ResolveQuestion', requestId, response }))
+            child.postMessage(encodeInbound(ResolveQuestion.make({ requestId, response })))
           )
         ),
         Effect.andThen(applyAttention(Idle.make({})))

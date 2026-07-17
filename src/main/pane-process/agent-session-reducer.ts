@@ -1,6 +1,15 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { ConversationMessage } from '../domain/pane'
-import type { OutboundMessage } from './protocol'
+import {
+  AssistantMessageReceived,
+  AssistantTextDelta,
+  type OutboundMessage,
+  SessionStarted,
+  ToolCallCompleted,
+  ToolCallStarted,
+  TurnCompleted,
+  TurnErrored
+} from './protocol'
 
 /**
  * Folds the Agent SDK's raw message/event stream into the {@link OutboundMessage}
@@ -46,12 +55,11 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
     const pending = pendingToolCalls.get(toolCallId)
     if (!pending) return undefined
     pendingToolCalls.delete(toolCallId)
-    return {
-      _tag: 'ToolCallCompleted',
+    return ToolCallCompleted.make({
       toolCallId,
       toolName: pending.name,
       input: pending.input
-    }
+    })
   }
 
   const flushPendingToolCalls = (): OutboundMessage[] => {
@@ -65,7 +73,7 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
 
   const step = (message: SDKMessage): ReadonlyArray<OutboundMessage> => {
     if (message.type === 'system' && message.subtype === 'init') {
-      return [{ _tag: 'SessionStarted', sessionId: message.session_id }]
+      return [SessionStarted.make({ sessionId: message.session_id })]
     }
 
     if (message.type === 'assistant') {
@@ -74,16 +82,16 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
         .join('')
       if (!text) return []
       const conversationMessage: ConversationMessage = { role: 'assistant', content: text }
-      return [{ _tag: 'AssistantMessageReceived', message: conversationMessage }]
+      return [AssistantMessageReceived.make({ message: conversationMessage })]
     }
 
     if (message.type === 'result') {
       const flushed = flushPendingToolCalls()
       if (message.subtype === 'success') {
-        return [...flushed, { _tag: 'TurnCompleted' }]
+        return [...flushed, TurnCompleted.make({})]
       }
       const errorMessage = message.errors.length > 0 ? message.errors.join('; ') : message.subtype
-      return [...flushed, { _tag: 'TurnErrored', error: { message: errorMessage } }]
+      return [...flushed, TurnErrored.make({ error: { message: errorMessage } })]
     }
 
     if (message.type === 'user') {
@@ -108,12 +116,12 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
       const { id, name } = streamEvent.content_block
       toolCallsByBlockIndex.set(streamEvent.index, { id, name })
       partialJsonByBlockIndex.set(streamEvent.index, '')
-      return [{ _tag: 'ToolCallStarted', toolCallId: id, toolName: name }]
+      return [ToolCallStarted.make({ toolCallId: id, toolName: name })]
     }
 
     if (streamEvent.type === 'content_block_delta') {
       if (streamEvent.delta.type === 'text_delta') {
-        return [{ _tag: 'AssistantTextDelta', text: streamEvent.delta.text }]
+        return [AssistantTextDelta.make({ text: streamEvent.delta.text })]
       }
       if (streamEvent.delta.type === 'input_json_delta') {
         const existing = partialJsonByBlockIndex.get(streamEvent.index) ?? ''

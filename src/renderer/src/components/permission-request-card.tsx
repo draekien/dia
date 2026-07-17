@@ -1,4 +1,4 @@
-import type { PermissionResponse } from '@main/domain/attention'
+import { Allow, Deny, type PermissionResponse } from '@main/domain/attention'
 import type { PanePermissionRequested } from '@main/ipc/contract'
 import { useMemo, useState } from 'react'
 import { Button } from './ui/button'
@@ -123,17 +123,16 @@ export function PermissionRequestCard({
 
   function allow(): void {
     if (!reconstruction.ok) return
-    const response: PermissionResponse = {
-      _tag: 'Allow',
+    const response = Allow.make({
       ...(reconstruction.changed ? { updatedInput: reconstruction.value } : {}),
       ...(remember && canRemember ? { updatedPermissions: [...request.suggestions] } : {})
-    }
+    })
     onResolve(response)
   }
 
   function deny(): void {
     if (!canDeny) return
-    onResolve({ _tag: 'Deny', message: denyMessage.trim() })
+    onResolve(Deny.make({ message: denyMessage.trim() }))
   }
 
   return (

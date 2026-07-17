@@ -23,7 +23,7 @@ import type { PaneConfig } from '../domain/pane'
 import { makeLoggerLive } from '../logger'
 import { makeSessionEventReducer } from './agent-session-reducer'
 import { makePendingUserInput, type UserInputResolution } from './pending-user-input'
-import { InboundMessage, OutboundMessage } from './protocol'
+import { InboundMessage, OutboundMessage, PermissionRequested, QuestionRequested } from './protocol'
 
 /**
  * Wraps a failure surfaced while consuming the Agent SDK's event stream
@@ -113,11 +113,12 @@ const canUseTool: CanUseTool = (toolName, input, options) =>
       const questions =
         toolName === 'AskUserQuestion' ? decodeQuestions(input.questions) : undefined
       if (questions !== undefined && Either.isRight(questions)) {
-        yield* postOutbound({
-          _tag: 'QuestionRequested',
-          requestId: options.toolUseID,
-          questions: questions.right
-        })
+        yield* postOutbound(
+          QuestionRequested.make({
+            requestId: options.toolUseID,
+            questions: questions.right
+          })
+        )
       } else {
         if (questions !== undefined) {
           yield* Effect.logWarning(
@@ -125,13 +126,14 @@ const canUseTool: CanUseTool = (toolName, input, options) =>
             { requestId: options.toolUseID, issue: questions.left }
           )
         }
-        yield* postOutbound({
-          _tag: 'PermissionRequested',
-          requestId: options.toolUseID,
-          toolName,
-          input,
-          suggestions: options.suggestions
-        })
+        yield* postOutbound(
+          PermissionRequested.make({
+            requestId: options.toolUseID,
+            toolName,
+            input,
+            suggestions: options.suggestions
+          })
+        )
       }
 
       const resolution = yield* Deferred.await(deferred)
