@@ -1,14 +1,21 @@
 import { FileSystem, Path } from '@effect/platform'
 import { NodeContext } from '@effect/platform-node'
 import type { Context } from 'effect'
-import { Effect, Either, Option, Schema, Stream } from 'effect'
+import { Effect, Either, Match, Option, Schema, Stream } from 'effect'
 import { type BrowserWindow, dialog, ipcMain } from 'electron'
 import { ConversationMessage } from '../domain/pane'
 import { PaneNode } from '../domain/pane-tree'
-import type { PaneSupervisor } from '../services/pane-supervisor'
+import type { PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import type { PaneWorkspace } from '../services/pane-workspace'
 import type { SettingsStore } from '../services/settings-store'
-import { CHANNEL, type ChooseDirectoryResult, IpcCommand, IpcEvent } from './contract'
+import {
+  CHANNEL,
+  type ChooseDirectoryResult,
+  IpcCommand,
+  IpcEvent,
+  LayoutChanged,
+  PaneCreateFailed
+} from './contract'
 
 const decodeCommand = Schema.decodeUnknownEither(IpcCommand)
 const encodeEvent = Schema.encodeSync(IpcEvent)
@@ -114,7 +121,27 @@ export function wireCommands(deps: {
     Effect.sync(() => webContents.send(CHANNEL.event, encodeEvent(event)))
 
   const sendLayoutChanged = (tree: PaneNode): Effect.Effect<void> =>
-    onEvent({ _tag: 'LayoutChanged', tree })
+    onEvent(LayoutChanged.make({ tree }))
+
+  // Shared shape for the three commands that target a live pane handle: look the pane up, drop
+  // the command with a warning if it's gone, otherwise run `op` and log any failure as a defect.
+  const withHandle = (
+    command: string,
+    paneId: string,
+    failure: string,
+    op: (handle: PaneHandle) => Effect.Effect<void>
+  ): Effect.Effect<void> =>
+    paneSupervisor.getHandle(paneId).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.logWarning(`Dropped ${command} for unknown pane`, { paneId }),
+          onSome: (handle) =>
+            op(handle).pipe(
+              Effect.catchAllCause((cause) => Effect.logError(failure, { paneId, cause }))
+            )
+        })
+      )
+    )
 
   const rawCommands = Stream.async<unknown>((emit) => {
     const listener = (_event: unknown, raw: unknown): void => void emit.single(raw)
@@ -130,112 +157,66 @@ export function wireCommands(deps: {
         return
       }
 
-      const command = decoded.right
-      switch (command._tag) {
-        case 'SendMessage': {
-          const handle = yield* paneSupervisor.getHandle(command.paneId)
-          if (Option.isNone(handle)) {
-            yield* Effect.logWarning('Dropped SendMessage for unknown pane', {
-              paneId: command.paneId
-            })
-            return
-          }
-          yield* handle.value.sendMessage(command.text).pipe(
-            Effect.catchAllCause((cause) =>
-              Effect.logError('Failed to send message to pane', {
-                paneId: command.paneId,
-                cause
-              })
+      yield* Match.value(decoded.right).pipe(
+        Match.tag('SendMessage', (command) =>
+          withHandle('SendMessage', command.paneId, 'Failed to send message to pane', (handle) =>
+            handle.sendMessage(command.text)
+          )
+        ),
+        Match.tag('ResolvePermission', (command) =>
+          withHandle(
+            'ResolvePermission',
+            command.paneId,
+            'Failed to resolve permission for pane',
+            (handle) => handle.resolvePermission(command.requestId, command.response)
+          )
+        ),
+        Match.tag('ResolveQuestion', (command) =>
+          withHandle(
+            'ResolveQuestion',
+            command.paneId,
+            'Failed to resolve question for pane',
+            (handle) => handle.resolveQuestion(command.requestId, command.response)
+          )
+        ),
+        Match.tag('SplitPane', (command) =>
+          paneWorkspace.split(command.paneId, command.direction).pipe(
+            Effect.flatMap(sendLayoutChanged),
+            Effect.catchAll((issue) =>
+              Effect.logWarning('Failed to split pane', { paneId: command.paneId, issue })
             )
           )
-          return
-        }
-        case 'ResolvePermission': {
-          const handle = yield* paneSupervisor.getHandle(command.paneId)
-          if (Option.isNone(handle)) {
-            yield* Effect.logWarning('Dropped ResolvePermission for unknown pane', {
-              paneId: command.paneId
-            })
-            return
-          }
-          yield* handle.value.resolvePermission(command.requestId, command.response).pipe(
-            Effect.catchAllCause((cause) =>
-              Effect.logError('Failed to resolve permission for pane', {
-                paneId: command.paneId,
-                cause
-              })
+        ),
+        Match.tag('ClosePane', (command) =>
+          paneWorkspace.close(command.paneId).pipe(
+            Effect.flatMap(sendLayoutChanged),
+            Effect.catchAll((issue) =>
+              Effect.logWarning('Failed to close pane', { paneId: command.paneId, issue })
             )
           )
-          return
-        }
-        case 'ResolveQuestion': {
-          const handle = yield* paneSupervisor.getHandle(command.paneId)
-          if (Option.isNone(handle)) {
-            yield* Effect.logWarning('Dropped ResolveQuestion for unknown pane', {
-              paneId: command.paneId
-            })
-            return
-          }
-          yield* handle.value.resolveQuestion(command.requestId, command.response).pipe(
-            Effect.catchAllCause((cause) =>
-              Effect.logError('Failed to resolve question for pane', {
-                paneId: command.paneId,
-                cause
-              })
-            )
-          )
-          return
-        }
-        case 'SplitPane': {
-          const result = yield* paneWorkspace
-            .split(command.paneId, command.direction)
-            .pipe(Effect.either)
-          if (Either.isLeft(result)) {
-            yield* Effect.logWarning('Failed to split pane', {
-              paneId: command.paneId,
-              issue: result.left
-            })
-            return
-          }
-          yield* sendLayoutChanged(result.right)
-          return
-        }
-        case 'ClosePane': {
-          const result = yield* paneWorkspace.close(command.paneId).pipe(Effect.either)
-          if (Either.isLeft(result)) {
-            yield* Effect.logWarning('Failed to close pane', {
-              paneId: command.paneId,
-              issue: result.left
-            })
-            return
-          }
-          yield* sendLayoutChanged(result.right)
-          return
-        }
-        case 'CreatePane': {
-          const result = yield* paneWorkspace
+        ),
+        Match.tag('CreatePane', (command) =>
+          paneWorkspace
             .createPane(command.paneId, command.cwd, command.model, command.useWorktree, onEvent)
-            .pipe(Effect.either)
-          if (Either.isLeft(result)) {
-            yield* Effect.logWarning('Failed to create pane', {
-              paneId: command.paneId,
-              issue: result.left
-            })
-            yield* onEvent({
-              _tag: 'PaneCreateFailed',
-              paneId: command.paneId,
-              reason: String(result.left)
-            })
-            return
-          }
-          yield* sendLayoutChanged(result.right)
-          return
-        }
-        case 'FocusPane': {
-          yield* paneWorkspace.resumePane(command.paneId, onEvent)
-          return
-        }
-      }
+            .pipe(
+              Effect.flatMap(sendLayoutChanged),
+              Effect.catchAll((issue) =>
+                Effect.logWarning('Failed to create pane', {
+                  paneId: command.paneId,
+                  issue
+                }).pipe(
+                  Effect.andThen(
+                    onEvent(
+                      PaneCreateFailed.make({ paneId: command.paneId, reason: String(issue) })
+                    )
+                  )
+                )
+              )
+            )
+        ),
+        Match.tag('FocusPane', (command) => paneWorkspace.resumePane(command.paneId, onEvent)),
+        Match.exhaustive
+      )
     })
   )
 }

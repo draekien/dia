@@ -1,16 +1,18 @@
 import { randomUUID } from 'node:crypto'
 import { FileSystem, Path } from '@effect/platform'
 import { Context, Effect, Either, HashMap, Layer, Option, Ref } from 'effect'
+import { Errored } from '../domain/attention'
 import type { ConversationMessage } from '../domain/pane'
 import {
   closePane,
   markPaneReady,
   type PaneId,
+  PaneLeafSchema,
   type PaneNode,
   type PaneNotFoundError,
   splitPane
 } from '../domain/pane-tree'
-import type { IpcEvent } from '../ipc/contract'
+import { type IpcEvent, PaneAttentionChanged } from '../ipc/contract'
 import type { WorktreeCreateError, WorktreeReattachError } from './git-ops-service'
 import { type PaneCreationRequest, PaneSupervisor, type ProcessSpawnError } from './pane-supervisor'
 import { type PersistedPaneEntry, PersistenceService } from './persistence'
@@ -83,7 +85,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
       const persisted = yield* persistence.loadWorkspace()
       const seed = Option.match(persisted, {
         onNone: () => ({
-          tree: { _tag: 'Leaf', paneId: initialPaneId, status: 'pending' } satisfies PaneNode,
+          tree: PaneLeafSchema.make({ paneId: initialPaneId, status: 'pending' }),
           panes: HashMap.empty<PaneId, PersistedPaneEntry>()
         }),
         onSome: (workspace) => ({
@@ -185,7 +187,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
           // it tears down that pane and resets it to a fresh pending leaf, so the onboarding
           // form reappears instead of the app being left with nothing to show.
           yield* supervisor.closePane(paneId)
-          const resetTree: PaneNode = { _tag: 'Leaf', paneId, status: 'pending' }
+          const resetTree: PaneNode = PaneLeafSchema.make({ paneId, status: 'pending' })
           yield* Ref.set(treeRef, resetTree)
           yield* Ref.update(configsRef, HashMap.remove(paneId))
           yield* save()
@@ -213,11 +215,12 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         onEvent: (event: IpcEvent) => Effect.Effect<void>,
         message: string
       ): Effect.Effect<void> =>
-        onEvent({
-          _tag: 'PaneAttentionChanged',
-          paneId,
-          attention: { _tag: 'Errored', error: { message } }
-        })
+        onEvent(
+          PaneAttentionChanged.make({
+            paneId,
+            attention: Errored.make({ error: { message } })
+          })
+        )
 
       const resumePane = Effect.fn('PaneWorkspace.resumePane')(function* (
         paneId: PaneId,

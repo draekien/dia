@@ -50,34 +50,34 @@ function subscribeToEvents(onDecoded: (event: IpcEvent) => void): () => void {
 
 const api: DiaApi = {
   sendMessage(paneId, text) {
-    ipcRenderer.send(CHANNEL.command, encodeSendMessage({ _tag: 'SendMessage', paneId, text }))
+    ipcRenderer.send(CHANNEL.command, encodeSendMessage(SendMessage.make({ paneId, text })))
   },
   resolvePermission(paneId, requestId, response) {
     ipcRenderer.send(
       CHANNEL.command,
-      encodeResolvePermission({ _tag: 'ResolvePermission', paneId, requestId, response })
+      encodeResolvePermission(ResolvePermission.make({ paneId, requestId, response }))
     )
   },
   resolveQuestion(paneId, requestId, response) {
     ipcRenderer.send(
       CHANNEL.command,
-      encodeResolveQuestion({ _tag: 'ResolveQuestion', paneId, requestId, response })
+      encodeResolveQuestion(ResolveQuestion.make({ paneId, requestId, response }))
     )
   },
   splitPane(paneId, direction) {
-    ipcRenderer.send(CHANNEL.command, encodeSplitPane({ _tag: 'SplitPane', paneId, direction }))
+    ipcRenderer.send(CHANNEL.command, encodeSplitPane(SplitPane.make({ paneId, direction })))
   },
   closePane(paneId) {
-    ipcRenderer.send(CHANNEL.command, encodeClosePane({ _tag: 'ClosePane', paneId }))
+    ipcRenderer.send(CHANNEL.command, encodeClosePane(ClosePane.make({ paneId })))
   },
   createPane(paneId, cwd, model, useWorktree) {
     ipcRenderer.send(
       CHANNEL.command,
-      encodeCreatePane({ _tag: 'CreatePane', paneId, cwd, model, useWorktree })
+      encodeCreatePane(CreatePane.make({ paneId, cwd, model, useWorktree }))
     )
   },
   focusPane(paneId) {
-    ipcRenderer.send(CHANNEL.command, encodeFocusPane({ _tag: 'FocusPane', paneId }))
+    ipcRenderer.send(CHANNEL.command, encodeFocusPane(FocusPane.make({ paneId })))
   },
   getInitialLayout() {
     return ipcRenderer.invoke(CHANNEL.getInitialLayout).then((raw) => decodeTree(raw))

@@ -10,6 +10,7 @@ import {
   Fiber,
   HashMap,
   Layer,
+  Match,
   Option,
   Queue,
   Ref,
@@ -20,14 +21,20 @@ import {
 import { utilityProcess } from 'electron'
 import {
   type AttentionState,
+  AwaitingPermission,
+  ClarifyingQuestion,
+  Completed,
+  Errored,
+  Idle,
   type PaneError,
+  PermissionRequest,
   type PermissionResponse,
   type QuestionResponse,
   transitionAttention
 } from '../domain/attention'
 import type { PaneConfig, PaneRecord, WorktreeInfo } from '../domain/pane'
 import type { PaneId } from '../domain/pane-tree'
-import type { IpcEvent } from '../ipc/contract'
+import { type IpcEvent, PaneAttentionChanged } from '../ipc/contract'
 import { InboundMessage, OutboundMessage } from '../pane-process/protocol'
 import {
   GitOpsService,
@@ -103,80 +110,83 @@ export const PaneProcessSpawnerLive = Layer.succeed(PaneProcessSpawner, {
 const encodeInbound = Schema.encodeSync(InboundMessage)
 const decodeOutbound = Schema.decodeUnknownOption(OutboundMessage)
 
-// TurnCompleted/TurnErrored/SessionStarted carry no renderer-facing content of their own -- they
-// only drive AttentionState (see toAttentionTarget below) -- so they have no corresponding IpcEvent.
-function toIpcEvent(paneId: string, message: OutboundMessage): IpcEvent | null {
-  switch (message._tag) {
-    case 'AssistantMessageReceived':
-      return { _tag: 'PaneMessageAppended', paneId, message: message.message }
-    case 'AssistantTextDelta':
-      return { _tag: 'PaneAssistantTextDelta', paneId, text: message.text }
-    case 'ToolCallStarted':
-      return {
+function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<IpcEvent> {
+  return Match.value(message).pipe(
+    Match.tag('AssistantMessageReceived', (m) =>
+      Option.some<IpcEvent>({ _tag: 'PaneMessageAppended', paneId, message: m.message })
+    ),
+    Match.tag('AssistantTextDelta', (m) =>
+      Option.some<IpcEvent>({ _tag: 'PaneAssistantTextDelta', paneId, text: m.text })
+    ),
+    Match.tag('ToolCallStarted', (m) =>
+      Option.some<IpcEvent>({
         _tag: 'PaneToolCallStarted',
         paneId,
-        toolCallId: message.toolCallId,
-        toolName: message.toolName
-      }
-    case 'ToolCallCompleted':
-      return {
+        toolCallId: m.toolCallId,
+        toolName: m.toolName
+      })
+    ),
+    Match.tag('ToolCallCompleted', (m) =>
+      Option.some<IpcEvent>({
         _tag: 'PaneToolCallCompleted',
         paneId,
-        toolCallId: message.toolCallId,
-        toolName: message.toolName,
-        input: message.input
-      }
-    case 'PermissionRequested':
-      return {
+        toolCallId: m.toolCallId,
+        toolName: m.toolName,
+        input: m.input
+      })
+    ),
+    Match.tag('PermissionRequested', (m) =>
+      Option.some<IpcEvent>({
         _tag: 'PanePermissionRequested',
         paneId,
-        requestId: message.requestId,
-        toolName: message.toolName,
-        input: message.input,
-        ...(message.suggestions !== undefined ? { suggestions: message.suggestions } : {})
-      }
-    case 'QuestionRequested':
-      return {
+        requestId: m.requestId,
+        toolName: m.toolName,
+        input: m.input,
+        ...(m.suggestions !== undefined ? { suggestions: m.suggestions } : {})
+      })
+    ),
+    Match.tag('QuestionRequested', (m) =>
+      Option.some<IpcEvent>({
         _tag: 'PaneQuestionRequested',
         paneId,
-        requestId: message.requestId,
-        questions: message.questions
-      }
-    case 'TurnCompleted':
-    case 'TurnErrored':
-    case 'SessionStarted':
-      return null
-  }
+        requestId: m.requestId,
+        questions: m.questions
+      })
+    ),
+    // TurnCompleted/TurnErrored/SessionStarted carry no renderer-facing content of their own --
+    // they only drive AttentionState (see toAttentionTarget below) -- so they have no IpcEvent.
+    Match.tag('TurnCompleted', 'TurnErrored', 'SessionStarted', () => Option.none<IpcEvent>()),
+    Match.exhaustive
+  )
 }
 
-function toAttentionTarget(message: OutboundMessage): AttentionState | null {
-  switch (message._tag) {
-    case 'PermissionRequested':
-      return {
-        _tag: 'AwaitingPermission',
-        request: {
-          _tag: 'PermissionRequest',
-          requestId: message.requestId,
-          toolName: message.toolName,
-          input: message.input
-        }
-      }
-    case 'QuestionRequested':
-      return {
-        _tag: 'AwaitingPermission',
-        request: {
-          _tag: 'ClarifyingQuestion',
-          requestId: message.requestId,
-          questions: message.questions
-        }
-      }
-    case 'TurnCompleted':
-      return { _tag: 'Completed' }
-    case 'TurnErrored':
-      return { _tag: 'Errored', error: message.error }
-    default:
-      return null
-  }
+function toAttentionTarget(message: OutboundMessage): Option.Option<AttentionState> {
+  return Match.value(message).pipe(
+    Match.tag('PermissionRequested', (m) =>
+      Option.some<AttentionState>(
+        AwaitingPermission.make({
+          request: PermissionRequest.make({
+            requestId: m.requestId,
+            toolName: m.toolName,
+            input: m.input
+          })
+        })
+      )
+    ),
+    Match.tag('QuestionRequested', (m) =>
+      Option.some<AttentionState>(
+        AwaitingPermission.make({
+          request: ClarifyingQuestion.make({
+            requestId: m.requestId,
+            questions: m.questions
+          })
+        })
+      )
+    ),
+    Match.tag('TurnCompleted', () => Option.some<AttentionState>(Completed.make({}))),
+    Match.tag('TurnErrored', (m) => Option.some<AttentionState>(Errored.make({ error: m.error }))),
+    Match.orElse(() => Option.none<AttentionState>())
+  )
 }
 
 // Deliberately doesn't know about scope ownership or crash classification --
@@ -221,7 +231,7 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
   const recordRef = yield* Ref.make<PaneRecord>({
     config,
     history: [],
-    attention: { _tag: 'Idle' }
+    attention: Idle.make({})
   })
   const settleFiberRef = yield* Ref.make<Option.Option<Fiber.RuntimeFiber<void>>>(Option.none())
 
@@ -230,44 +240,44 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
   // schedules its own auto-settle back to `Idle` after a few seconds (per DESIGN.md's "briefly
   // shows, then settles"); any subsequent transition cancels a pending one, so a later error
   // can't be clobbered by a stale settle-to-Idle firing after the fact.
-  const applyAttention = (next: AttentionState): Effect.Effect<void> =>
-    Effect.gen(function* () {
-      const pending = yield* Ref.get(settleFiberRef)
-      if (Option.isSome(pending)) {
-        yield* Fiber.interrupt(pending.value)
-        yield* Ref.set(settleFiberRef, Option.none())
-      }
+  const applyAttention: (next: AttentionState) => Effect.Effect<void> = Effect.fn(
+    'PaneSupervisor.applyAttention'
+  )(function* (next: AttentionState) {
+    const pending = yield* Ref.get(settleFiberRef)
+    if (Option.isSome(pending)) {
+      yield* Fiber.interrupt(pending.value)
+      yield* Ref.set(settleFiberRef, Option.none())
+    }
 
-      const record = yield* Ref.get(recordRef)
-      const result = transitionAttention(record.attention, next)
-      if (Either.isLeft(result)) {
-        yield* Effect.logWarning('Rejected invalid attention transition', {
-          paneId: config.paneId,
-          from: record.attention._tag,
-          to: next._tag
-        })
-        return
-      }
-
-      yield* Ref.update(recordRef, (r) => ({ ...r, attention: result.right }))
-      yield* Queue.offer(outbound, {
-        _tag: 'PaneAttentionChanged',
+    const record = yield* Ref.get(recordRef)
+    const result = transitionAttention(record.attention, next)
+    if (Either.isLeft(result)) {
+      yield* Effect.logWarning('Rejected invalid attention transition', {
         paneId: config.paneId,
-        attention: result.right
+        from: record.attention._tag,
+        to: next._tag
       })
+      return
+    }
 
-      if (result.right._tag === 'Completed') {
-        const fiber = yield* Effect.sleep(Duration.seconds(3)).pipe(
-          // Clear settleFiberRef before recursing into applyAttention(Idle) -- otherwise this
-          // fiber reads its own reference back out of the Ref and interrupts itself mid-flight,
-          // aborting before it can ever apply the Idle transition (see reasoning log).
-          Effect.andThen(Ref.set(settleFiberRef, Option.none())),
-          Effect.andThen(applyAttention({ _tag: 'Idle' })),
-          Effect.fork
-        )
-        yield* Ref.set(settleFiberRef, Option.some(fiber))
-      }
-    })
+    yield* Ref.update(recordRef, (r) => ({ ...r, attention: result.right }))
+    yield* Queue.offer(
+      outbound,
+      PaneAttentionChanged.make({ paneId: config.paneId, attention: result.right })
+    )
+
+    if (result.right._tag === 'Completed') {
+      const fiber = yield* Effect.sleep(Duration.seconds(3)).pipe(
+        // Clear settleFiberRef before recursing into applyAttention(Idle) -- otherwise this
+        // fiber reads its own reference back out of the Ref and interrupts itself mid-flight,
+        // aborting before it can ever apply the Idle transition (see reasoning log).
+        Effect.andThen(Ref.set(settleFiberRef, Option.none())),
+        Effect.andThen(applyAttention(Idle.make({}))),
+        Effect.fork
+      )
+      yield* Ref.set(settleFiberRef, Option.some(fiber))
+    }
+  })
 
   const rawMessages = Stream.async<unknown>((emit) => {
     const listener = (raw: unknown): void => void emit.single(raw)
@@ -317,10 +327,10 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
       }
 
       const event = toIpcEvent(config.paneId, message)
-      if (event !== null) yield* Queue.offer(outbound, event)
+      if (Option.isSome(event)) yield* Queue.offer(outbound, event.value)
 
       const attentionTarget = toAttentionTarget(message)
-      if (attentionTarget !== null) yield* applyAttention(attentionTarget)
+      if (Option.isSome(attentionTarget)) yield* applyAttention(attentionTarget.value)
     })
 
   yield* Stream.runForEach(decoded, handleInbound).pipe(Effect.forkScoped)
@@ -352,7 +362,7 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
             child.postMessage(encodeInbound({ _tag: 'ResolvePermission', requestId, response }))
           )
         ),
-        Effect.andThen(applyAttention({ _tag: 'Idle' }))
+        Effect.andThen(applyAttention(Idle.make({})))
       ),
     resolveQuestion: (requestId, response) =>
       Effect.logDebug('Sending question resolution to pane process', {
@@ -365,10 +375,10 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
             child.postMessage(encodeInbound({ _tag: 'ResolveQuestion', requestId, response }))
           )
         ),
-        Effect.andThen(applyAttention({ _tag: 'Idle' }))
+        Effect.andThen(applyAttention(Idle.make({})))
       ),
     subscribe: () => Stream.fromQueue(outbound),
-    markErrored: (error) => applyAttention({ _tag: 'Errored', error })
+    markErrored: (error) => applyAttention(Errored.make({ error }))
   }
 
   return { handle, exits }

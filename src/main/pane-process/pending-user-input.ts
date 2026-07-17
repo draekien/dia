@@ -56,14 +56,16 @@ export const makePendingUserInput = (): PendingUserInput => {
         pending.set(requestId, deferred)
         return deferred
       }),
-    resolve: (requestId, resolution) =>
-      Effect.gen(function* () {
-        const deferred = pending.get(requestId)
-        if (deferred === undefined) return false
-        pending.delete(requestId)
-        yield* Deferred.succeed(deferred, resolution)
-        return true
-      }),
+    resolve: Effect.fn('PendingUserInput.resolve')(function* (
+      requestId: string,
+      resolution: UserInputResolution
+    ) {
+      const deferred = pending.get(requestId)
+      if (deferred === undefined) return false
+      pending.delete(requestId)
+      yield* Deferred.succeed(deferred, resolution)
+      return true
+    }),
     drop: Effect.sync(() => {
       const requestIds = [...pending.keys()]
       pending.clear()

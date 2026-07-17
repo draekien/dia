@@ -31,14 +31,16 @@ export interface PaneSplit {
 /** A node in the pane tree: either a leaf pane or a split of child nodes. */
 export type PaneNode = PaneLeaf | PaneSplit
 
-const PaneLeafSchema = Schema.TaggedStruct('Leaf', {
+/** Schema for a {@link PaneLeaf}. Use `PaneLeafSchema.make({...})` to construct a leaf so the `_tag` is set and fields are validated. */
+export const PaneLeafSchema = Schema.TaggedStruct('Leaf', {
   paneId: Schema.UUID,
   status: Schema.Literal('pending', 'ready'),
   cwd: Schema.optional(Schema.String),
   sourceRepo: Schema.optional(Schema.String)
 })
 
-const PaneSplitSchema = Schema.TaggedStruct('Split', {
+/** Schema for a {@link PaneSplit}. Use `PaneSplitSchema.make({...})` to construct a split so the `_tag` is set and fields are validated. */
+export const PaneSplitSchema = Schema.TaggedStruct('Split', {
   direction: Schema.Literal('row', 'column'),
   children: Schema.Array(Schema.suspend((): Schema.Schema<PaneNode> => PaneNode)),
   sizes: Schema.Array(Schema.Number)
@@ -72,12 +74,13 @@ function splitNode(
     if (node.paneId !== targetPaneId) {
       return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
     }
-    return Either.right({
-      _tag: 'Split',
-      direction,
-      children: [node, { _tag: 'Leaf', paneId: newPaneId, status: 'pending' }],
-      sizes: [0.5, 0.5]
-    })
+    return Either.right(
+      PaneSplitSchema.make({
+        direction,
+        children: [node, PaneLeafSchema.make({ paneId: newPaneId, status: 'pending' })],
+        sizes: [0.5, 0.5]
+      })
+    )
   }
 
   for (let i = 0; i < node.children.length; i++) {

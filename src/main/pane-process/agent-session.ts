@@ -13,6 +13,7 @@ import {
   Layer,
   Logger,
   LogLevel,
+  Match,
   Queue,
   Schema,
   Stream
@@ -84,27 +85,24 @@ const questionResponseToResult = (response: QuestionResponse): PermissionResult 
 const toPermissionResult = (
   resolution: UserInputResolution,
   suggestions: PermissionUpdate[] | undefined
-): PermissionResult => {
-  switch (resolution._tag) {
-    case 'Deny':
-      return { behavior: 'deny', message: resolution.message }
-    case 'Allow':
-      return {
+): PermissionResult =>
+  Match.value(resolution).pipe(
+    Match.tag('Deny', (r): PermissionResult => ({ behavior: 'deny', message: r.message })),
+    Match.tag(
+      'Allow',
+      (r): PermissionResult => ({
         behavior: 'allow',
-        ...(resolution.updatedInput !== undefined
-          ? { updatedInput: { ...resolution.updatedInput } }
-          : {}),
+        ...(r.updatedInput !== undefined ? { updatedInput: { ...r.updatedInput } } : {}),
         ...(suggestions !== undefined &&
-        resolution.updatedPermissions !== undefined &&
-        resolution.updatedPermissions.length > 0
+        r.updatedPermissions !== undefined &&
+        r.updatedPermissions.length > 0
           ? { updatedPermissions: suggestions }
           : {})
-      }
-    case 'Answers':
-    case 'FreeformResponse':
-      return questionResponseToResult(resolution)
-  }
-}
+      })
+    ),
+    Match.tag('Answers', 'FreeformResponse', (r): PermissionResult => questionResponseToResult(r)),
+    Match.exhaustive
+  )
 
 const canUseTool: CanUseTool = (toolName, input, options) =>
   Effect.runPromise(
@@ -137,18 +135,20 @@ const canUseTool: CanUseTool = (toolName, input, options) =>
 
       const resolution = yield* Deferred.await(deferred)
       return toPermissionResult(resolution, options.suggestions)
-    })
+    }).pipe(Effect.withSpan('AgentSession.canUseTool'))
   )
 
-const resolveRequest = (requestId: string, resolution: UserInputResolution): Effect.Effect<void> =>
-  Effect.gen(function* () {
-    const matched = yield* pendingUserInput.resolve(requestId, resolution)
-    if (!matched) {
-      yield* Effect.logWarning('Received a resolution for an unknown requestId', { requestId })
-    }
-  })
+const resolveRequest = Effect.fn('AgentSession.resolveRequest')(function* (
+  requestId: string,
+  resolution: UserInputResolution
+) {
+  const matched = yield* pendingUserInput.resolve(requestId, resolution)
+  if (!matched) {
+    yield* Effect.logWarning('Received a resolution for an unknown requestId', { requestId })
+  }
+})
 
-const dropPendingRequests: Effect.Effect<void> = Effect.gen(function* () {
+const dropPendingRequests = Effect.fn('AgentSession.dropPendingRequests')(function* () {
   const requestIds = yield* pendingUserInput.drop
   if (requestIds.length > 0) {
     yield* Effect.logInfo('Redirected pane; dropping pending user-input requests', { requestIds })
@@ -161,13 +161,8 @@ const toSDKUserMessage = (text: string): SDKUserMessage => ({
   parent_tool_use_id: null
 })
 
-const parseToolInput = (partialJson: string): Record<string, unknown> => {
-  try {
-    return partialJson ? JSON.parse(partialJson) : {}
-  } catch {
-    return {}
-  }
-}
+const parseToolInput = (partialJson: string): Record<string, unknown> =>
+  partialJson ? Either.try(() => JSON.parse(partialJson)).pipe(Either.getOrElse(() => ({}))) : {}
 
 const runSession = Effect.fn('AgentSession.runSession')(
   function* (
@@ -300,7 +295,7 @@ const program = Effect.gen(function* () {
       if (inbound._tag === 'Init') {
         yield* Effect.forkScoped(runSession(inbound.config, promptQueue, inbound.resume))
       } else if (inbound._tag === 'SendText') {
-        yield* dropPendingRequests
+        yield* dropPendingRequests()
         yield* Queue.offer(promptQueue, toSDKUserMessage(inbound.text))
       } else {
         yield* resolveRequest(inbound.requestId, inbound.response)
