@@ -128,9 +128,13 @@ above). **T1 DONE & verified** (`persistence.ts` + `persistence.test.ts`, full s
 green, typecheck + lint clean; not yet committed). Next actionable task: **T2** (make
 `PaneWorkspace` the single writer of `workspace.json` + add a hydrate path).
 
-**Status 2026-07-17 (continued):** **T1–T6 all DONE & verified.** T1–T4 committed (e49194d, 9e36f9e, f451c3d, 44ec3f6). T5 (resume-on-focus via FocusPane IPC command + PaneWorkspace.resumePane) and T6 (GitOpsService.reattachWorktree) were already fully implemented and tested. Full suite **114/114 green** (6 new resumePane tests + 3 reattachWorktree tests + FocusPane gateway test), node + web typecheck clean, biome clean. **T7 pending** (additional gateway/mapping tests). Next actionable task: **T7** (additional automated tests).
+**Status 2026-07-17 (final):** **Bullet 05 COMPLETE.** All tasks T0–T8 DONE & verified.
+- **T0** ADR-0011 written, aligned, accepted.
+- **T1–T4** committed (e49194d, 9e36f9e, f451c3d, 44ec3f6): PersistenceService, PaneWorkspace hydrate + single-writer, sessionId capture/persist, TranscriptReader + getPaneHistory.
+- **T5–T7** committed (9d3b5b4): resume-on-focus (FocusPane IPC + PaneWorkspace.resumePane), worktree reattach (GitOpsService.reattachWorktree), comprehensive test suite (114/114 green).
+- **T8 PASSED** (2026-07-17): user performed manual restart verification — real multi-pane layout with active conversations restored tree + every pane's history with zero data loss; focused panes resumed live context.
 
-**Note:** T8 (manual restart verification, human-in-the-loop) is deferred per user sign-off. Optional follow-up: `docs/reasoning/` entry for SDK session ownership and git worktree resume semantics.
+All tasks verified: node + web typecheck clean, biome clean, 114 tests green. Optional follow-up (not blocking): `docs/reasoning/` entry for SDK session ownership and git worktree resume semantics.
 
 **Files read/understood during scoping (the map for implementation):**
 
