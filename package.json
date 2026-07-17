@@ -14,10 +14,12 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "biome check",
-    "lint:fix": "biome check --write"
+    "lint:fix": "biome check --write",
+    "prepare": "effect-tsgo patch"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.3",
+    "@effect/tsgo": "0.22.0",
     "@effect/vitest": "0.29.0",
     "@tailwindcss/vite": "4.3.2",
     "@types/node": "26.1.1",
