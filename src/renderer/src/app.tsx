@@ -1,5 +1,5 @@
+import type { PaneNode } from '@main/domain/pane-tree'
 import { useCallback, useEffect, useState } from 'react'
-import type { PaneNode } from '../../main/domain/pane-tree'
 import PaneTreeView from './components/pane-tree-view'
 
 function App() {

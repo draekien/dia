@@ -16,11 +16,18 @@ export default defineConfig({
       }
     }
   },
-  preload: {},
+  preload: {
+    resolve: {
+      alias: {
+        '@main': resolve('src/main')
+      }
+    }
+  },
   renderer: {
     root: 'src/renderer',
     resolve: {
       alias: {
+        '@main': resolve('src/main'),
         '@renderer': resolve('src/renderer/src')
       }
     },

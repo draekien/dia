@@ -13,9 +13,6 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "noEmit": true,
-    "paths": {
-      "@renderer/*": ["./src/renderer/src/*"]
-    },
     "plugins": [
       {
         "name": "@effect/language-service",

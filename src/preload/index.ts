@@ -1,7 +1,5 @@
-import { Either, Schema } from 'effect'
-import { contextBridge, ipcRenderer } from 'electron'
-import { ConversationMessage } from '../main/domain/pane'
-import { PaneNode } from '../main/domain/pane-tree'
+import { ConversationMessage } from '@main/domain/pane'
+import { PaneNode } from '@main/domain/pane-tree'
 import {
   CHANNEL,
   ChooseDirectoryResult,
@@ -14,7 +12,9 @@ import {
   ResolveQuestion,
   SendMessage,
   SplitPane
-} from '../main/ipc/contract'
+} from '@main/ipc/contract'
+import { Either, Schema } from 'effect'
+import { contextBridge, ipcRenderer } from 'electron'
 
 const encodeSendMessage = Schema.encodeSync(SendMessage)
 const encodeResolvePermission = Schema.encodeSync(ResolvePermission)

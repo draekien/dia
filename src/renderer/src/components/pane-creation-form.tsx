@@ -1,3 +1,4 @@
+import type { ChooseDirectoryResult } from '@main/ipc/contract'
 import { Button } from '@renderer/components/ui/button'
 import {
   Select,
@@ -8,7 +9,6 @@ import {
 } from '@renderer/components/ui/select'
 import { Switch } from '@renderer/components/ui/switch'
 import { useEffect, useState } from 'react'
-import type { ChooseDirectoryResult } from '../../../main/ipc/contract'
 
 // Placeholder list pending a confirmed source for available models.
 const MODEL_OPTIONS = [

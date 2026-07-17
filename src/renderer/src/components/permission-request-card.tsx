@@ -1,6 +1,6 @@
+import type { PermissionResponse } from '@main/domain/attention'
+import type { PanePermissionRequested } from '@main/ipc/contract'
 import { useMemo, useState } from 'react'
-import type { PermissionResponse } from '../../../main/domain/attention'
-import type { PanePermissionRequested } from '../../../main/ipc/contract'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'

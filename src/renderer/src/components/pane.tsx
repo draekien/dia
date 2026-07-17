@@ -1,12 +1,8 @@
+import type { AttentionState, PermissionResponse, QuestionResponse } from '@main/domain/attention'
+import type { PanePermissionRequested, PaneQuestionRequested } from '@main/ipc/contract'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import type {
-  AttentionState,
-  PermissionResponse,
-  QuestionResponse
-} from '../../../main/domain/attention'
-import type { PanePermissionRequested, PaneQuestionRequested } from '../../../main/ipc/contract'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import { PermissionRequestCard } from './permission-request-card'
 import { PulseIndicator } from './pulse-indicator'

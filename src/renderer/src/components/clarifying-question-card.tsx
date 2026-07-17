@@ -1,6 +1,6 @@
+import type { QuestionResponse } from '@main/domain/attention'
+import type { PaneQuestionRequested } from '@main/ipc/contract'
 import { useState } from 'react'
-import type { QuestionResponse } from '../../../main/domain/attention'
-import type { PaneQuestionRequested } from '../../../main/ipc/contract'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
 import { Input } from './ui/input'
