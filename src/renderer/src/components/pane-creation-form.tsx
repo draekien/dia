@@ -49,6 +49,7 @@ function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
     })
   }, [paneId])
 
+  // @effect-diagnostics-next-line asyncFunction:off -- React event handler awaiting an IPC call; the renderer is React, not Effect-orchestrated.
   async function handleChooseDirectory() {
     const result: ChooseDirectoryResult = await window.dia.chooseDirectory()
     if (result === null) return

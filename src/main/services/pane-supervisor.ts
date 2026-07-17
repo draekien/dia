@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- resolves a static module path at import time (import.meta.dirname), outside any Effect.
 import { join } from 'node:path'
 import {
   Context,
@@ -482,7 +483,7 @@ export const PaneSupervisorLive = Layer.effect(
 
       if (Either.isLeft(prepared)) {
         yield* Scope.close(scope, Exit.fail(prepared.left))
-        return yield* Effect.fail(prepared.left)
+        return yield* prepared.left
       }
 
       const config = prepared.right
@@ -494,7 +495,7 @@ export const PaneSupervisorLive = Layer.effect(
 
       if (Either.isLeft(started)) {
         yield* Scope.close(scope, Exit.fail(started.left))
-        return yield* Effect.fail(started.left)
+        return yield* started.left
       }
 
       const { handle, exits } = started.right

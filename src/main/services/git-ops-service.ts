@@ -100,13 +100,11 @@ export const GitOpsServiceLive = Layer.effect(
         .pipe(Effect.mapError((cause) => new WorktreeCreateError({ paneId, sourceRepo, cause })))
 
       if (exitCode !== 0) {
-        return yield* Effect.fail(
-          new WorktreeCreateError({
-            paneId,
-            sourceRepo,
-            cause: `git worktree add exited with code ${exitCode}`
-          })
-        )
+        return yield* new WorktreeCreateError({
+          paneId,
+          sourceRepo,
+          cause: `git worktree add exited with code ${exitCode}`
+        })
       }
 
       yield* Effect.logInfo('Created pane worktree', { paneId, path: worktreePath, branch })
@@ -182,13 +180,11 @@ export const GitOpsServiceLive = Layer.effect(
         )
 
       if (exitCode !== 0) {
-        return yield* Effect.fail(
-          new WorktreeReattachError({
-            paneId,
-            path: info.path,
-            cause: `git worktree add exited with code ${exitCode}`
-          })
-        )
+        return yield* new WorktreeReattachError({
+          paneId,
+          path: info.path,
+          cause: `git worktree add exited with code ${exitCode}`
+        })
       }
 
       yield* Effect.logInfo('Reattached pane worktree', {

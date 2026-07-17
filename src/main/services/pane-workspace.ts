@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
-import { FileSystem } from '@effect/platform'
+import { FileSystem, Path } from '@effect/platform'
 import { Context, Effect, Either, HashMap, Layer, Option, Ref } from 'effect'
 import type { ConversationMessage } from '../domain/pane'
 import {
@@ -67,8 +66,9 @@ export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
  * re-saving after every `split`/`createPane`/`close`. `worktreesRoot` is the base directory
  * under which per-pane git worktrees are created when `createPane` is called with
  * `useWorktree: true`. Also requires {@link TranscriptReader} to serve `getPaneHistory`
- * for restored panes without spawning a live session, and `FileSystem` to detect a resumed
- * non-worktree pane whose working directory has since been deleted.
+ * for restored panes without spawning a live session, `FileSystem` to detect a resumed
+ * non-worktree pane whose working directory has since been deleted, and `Path` to compose
+ * per-pane worktree paths under `worktreesRoot`.
  */
 export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: string) =>
   Layer.effect(
@@ -78,6 +78,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
       const persistence = yield* PersistenceService
       const transcriptReader = yield* TranscriptReader
       const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
 
       const persisted = yield* persistence.loadWorkspace()
       const seed = Option.match(persisted, {
@@ -132,7 +133,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         const tree = yield* Ref.get(treeRef)
         const updated = splitPane(tree, paneId, direction, newPaneId)
         if (Either.isLeft(updated)) {
-          return yield* Effect.fail(updated.left)
+          return yield* updated.left
         }
 
         yield* Ref.set(treeRef, updated.right)
@@ -152,10 +153,10 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         // placeholder discarded below once the real (possibly worktree) cwd is known.
         const precheck = markPaneReady(tree, paneId, sourceCwd)
         if (Either.isLeft(precheck)) {
-          return yield* Effect.fail(precheck.left)
+          return yield* precheck.left
         }
 
-        const worktreePath = useWorktree ? join(worktreesRoot, paneId) : undefined
+        const worktreePath = useWorktree ? path.join(worktreesRoot, paneId) : undefined
         const { config } = yield* supervisor.openPane(
           { paneId, sourceCwd, model, worktreePath },
           onCreateEvent,
@@ -164,7 +165,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
 
         const readyTree = markPaneReady(tree, paneId, config.cwd, config.worktree?.sourceRepo)
         if (Either.isLeft(readyTree)) {
-          return yield* Effect.fail(readyTree.left)
+          return yield* readyTree.left
         }
 
         yield* Ref.set(treeRef, readyTree.right)
@@ -178,7 +179,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         const updated = closePane(tree, paneId)
         if (Either.isLeft(updated)) {
           if (updated.left._tag === 'PaneNotFoundError') {
-            return yield* Effect.fail(updated.left)
+            return yield* updated.left
           }
           // Closing the workspace's last remaining pane doesn't leave an empty workspace --
           // it tears down that pane and resets it to a fresh pending leaf, so the onboarding

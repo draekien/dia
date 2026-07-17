@@ -1,0 +1,50 @@
+{
+  "$schema": "./node_modules/@effect/tsgo/schema.json",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
+    "skipLibCheck": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "paths": {
+      "@renderer/*": ["./src/renderer/src/*"]
+    },
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": {
+          "asyncFunction": "warning",
+          "cryptoRandomUUID": "warning",
+          "cryptoRandomUUIDInEffect": "warning",
+          "extendsNativeError": "warning",
+          "globalConsole": "warning",
+          "globalConsoleInEffect": "warning",
+          "globalDate": "warning",
+          "globalDateInEffect": "off",
+          "globalFetch": "warning",
+          "globalFetchInEffect": "warning",
+          "globalRandom": "warning",
+          "globalRandomInEffect": "warning",
+          "globalTimers": "warning",
+          "globalTimersInEffect": "warning",
+          "instanceOfSchema": "warning",
+          "multipleEffectProvide": "off",
+          "newPromise": "warning",
+          "nodeBuiltinImport": "warning",
+          "preferSchemaOverJson": "off",
+          "processEnv": "warning",
+          "processEnvInEffect": "warning",
+          "unsafeEffectTypeAssertion": "warning"
+        }
+      }
+    ]
+  },
+  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.d.ts"]
+}

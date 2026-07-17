@@ -12,18 +12,10 @@ export const DEFAULT_LOG_RETENTION = Duration.days(7)
 const LOG_BATCH_WINDOW = Duration.seconds(5)
 
 const LogLine = Schema.Struct({ timestamp: Schema.DateFromString })
-const decodeLogLine = Schema.decodeUnknownOption(LogLine)
+const decodeLogLine = Schema.decodeUnknownOption(Schema.parseJson(LogLine))
 
-function lineTimestamp(line: string): number | undefined {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(line)
-  } catch {
-    return undefined
-  }
-  return Option.map(decodeLogLine(parsed), (entry) => entry.timestamp.getTime()).pipe(
-    Option.getOrUndefined
-  )
+function lineTimestamp(line: string): Option.Option<number> {
+  return Option.map(decodeLogLine(line), (entry) => entry.timestamp.getTime())
 }
 
 /**
@@ -31,27 +23,27 @@ function lineTimestamp(line: string): number | undefined {
  * file at `logFilePath`. Call this before providing {@link makeLoggerLive} for
  * the same path, so pruning doesn't race with the logger's own writes.
  */
-export function pruneOldLogEntries(
+export const pruneOldLogEntries = Effect.fn('Logger.pruneOldLogEntries')(function* (
   logFilePath: string,
   retention: Duration.DurationInput
-): Effect.Effect<void, PlatformError, FileSystem.FileSystem> {
-  return Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem
-    const exists = yield* fs.exists(logFilePath)
-    if (!exists) return
+) {
+  const fs = yield* FileSystem.FileSystem
+  const exists = yield* fs.exists(logFilePath)
+  if (!exists) return
 
-    const content = yield* fs.readFileString(logFilePath)
-    const now = yield* Clock.currentTimeMillis
-    const cutoff = now - Duration.toMillis(retention)
-    const kept = content.split('\n').filter((line) => {
-      if (line.length === 0) return false
-      const timestamp = lineTimestamp(line)
-      return timestamp !== undefined && timestamp >= cutoff
+  const content = yield* fs.readFileString(logFilePath)
+  const now = yield* Clock.currentTimeMillis
+  const cutoff = now - Duration.toMillis(retention)
+  const kept = content.split('\n').filter((line) => {
+    if (line.length === 0) return false
+    return Option.match(lineTimestamp(line), {
+      onNone: () => false,
+      onSome: (timestamp) => timestamp >= cutoff
     })
-
-    yield* fs.writeFileString(logFilePath, kept.length > 0 ? `${kept.join('\n')}\n` : '')
   })
-}
+
+  yield* fs.writeFileString(logFilePath, kept.length > 0 ? `${kept.join('\n')}\n` : '')
+})
 
 /**
  * Builds the logger layer for a process: pretty console output in dev (no

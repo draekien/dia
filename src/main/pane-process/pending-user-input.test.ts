@@ -63,8 +63,8 @@ describe('PendingUserInput', () => {
   it.effect('drop returns every outstanding requestId', () =>
     Effect.gen(function* () {
       const registry = makePendingUserInput()
-      yield* registry.register('req-1')
-      yield* registry.register('req-2')
+      yield* registry.register('req-1').pipe(Effect.asVoid)
+      yield* registry.register('req-2').pipe(Effect.asVoid)
 
       const dropped = yield* registry.drop
 

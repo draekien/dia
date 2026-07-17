@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { FileSystem, Path } from '@effect/platform'
+import { NodeContext } from '@effect/platform-node'
 import type { Context } from 'effect'
 import { Effect, Either, Option, Schema, Stream } from 'effect'
 import { type BrowserWindow, dialog, ipcMain } from 'electron'
@@ -61,6 +61,8 @@ export function wireChooseDirectory(
 
     pending = Effect.runPromise(
       Effect.gen(function* () {
+        const path = yield* Path.Path
+        const fs = yield* FileSystem.FileSystem
         const lastDirectory = yield* settingsStore.getLastDirectory()
         // Passing the owner window makes this an app-modal dialog: the window can't be
         // interacted with again until the picker closes, reinforcing the single-picker guard.
@@ -71,10 +73,13 @@ export function wireChooseDirectory(
           })
         )
         if (result.canceled || result.filePaths.length === 0) return null
-        const path = result.filePaths[0]
-        yield* settingsStore.setLastDirectory(path)
-        return { path, isGitRepo: existsSync(join(path, '.git')) }
-      })
+        const chosenPath = result.filePaths[0]
+        yield* settingsStore.setLastDirectory(chosenPath)
+        const isGitRepo = yield* fs
+          .exists(path.join(chosenPath, '.git'))
+          .pipe(Effect.orElseSucceed(() => false))
+        return { path: chosenPath, isGitRepo }
+      }).pipe(Effect.provide(NodeContext.layer))
     ).finally(() => {
       pending = null
     })

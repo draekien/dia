@@ -1,6 +1,7 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Electron main bootstrap composes filesystem paths outside any Effect (createWindow, whenReady).
 import { join } from 'node:path'
-import { NodeContext, NodeFileSystem } from '@effect/platform-node'
-import { Config, Effect, Layer, Logger, LogLevel, Option } from 'effect'
+import { NodeContext, NodeFileSystem, NodePath } from '@effect/platform-node'
+import { Config, Effect, Layer, Logger, LogLevel, Option, Runtime } from 'effect'
 import { app, BrowserWindow, shell } from 'electron'
 import type { PaneId } from './domain/pane-tree'
 import {
@@ -59,6 +60,7 @@ function createWindow(): BrowserWindow {
   return mainWindow
 }
 
+// @effect-diagnostics-next-line asyncFunction:off -- Electron's app.whenReady() imperative callback boundary; Effect programs run within it via runPromise/runFork.
 app.whenReady().then(async () => {
   const mainWindow = createWindow()
 
@@ -75,7 +77,9 @@ app.whenReady().then(async () => {
 
   const LoggerLive = makeLoggerLive(isDev, logFilePath)
 
+  // @effect-diagnostics-next-line processEnv:off -- deliberate cross-process config channel handed to forked pane processes (read in agent-session.ts).
   process.env.DIA_LOG_FILE = logFilePath
+  // @effect-diagnostics-next-line processEnv:off -- deliberate cross-process config channel handed to forked pane processes (read in agent-session.ts).
   process.env.DIA_IS_DEV = isDev ? '1' : '0'
 
   const gitOpsLayer = Layer.provide(GitOpsServiceLive, NodeContext.layer)
@@ -90,7 +94,13 @@ app.whenReady().then(async () => {
   )
   const workspaceLayer = Layer.provide(
     makePaneWorkspaceLive(INITIAL_PANE_ID, worktreesRoot),
-    Layer.mergeAll(supervisorLayer, persistenceLayer, TranscriptReaderLive, NodeFileSystem.layer)
+    Layer.mergeAll(
+      supervisorLayer,
+      persistenceLayer,
+      TranscriptReaderLive,
+      NodeFileSystem.layer,
+      NodePath.layer
+    )
   )
   const settingsStoreLayer = Layer.provide(
     makeSettingsStoreLive(app.getPath('userData')),
@@ -106,6 +116,7 @@ app.whenReady().then(async () => {
         const paneWorkspace = yield* PaneWorkspace
         const paneSupervisor = yield* PaneSupervisor
         const settingsStore = yield* SettingsStore
+        const runtime = yield* Effect.runtime()
         wireGetInitialLayout(paneWorkspace)
         wireGetPaneHistory(paneWorkspace)
         wireChooseDirectory(settingsStore, mainWindow)
@@ -114,15 +125,19 @@ app.whenReady().then(async () => {
           if (shuttingDown) return
           shuttingDown = true
           event.preventDefault()
-          Effect.runPromise(paneSupervisor.closeAll()).finally(() => app.quit())
+          Runtime.runPromise(runtime)(paneSupervisor.closeAll()).finally(() => app.quit())
         })
 
         yield* wireCommands({ paneWorkspace, paneSupervisor, webContents: mainWindow.webContents })
       })
     ).pipe(
-      Effect.provide(appLayer),
-      Effect.provide(LoggerLive),
-      Effect.provide(Logger.minimumLogLevel(isDev ? LogLevel.Debug : LogLevel.Info))
+      Effect.provide(
+        Layer.mergeAll(
+          appLayer,
+          LoggerLive,
+          Logger.minimumLogLevel(isDev ? LogLevel.Debug : LogLevel.Info)
+        )
+      )
     )
   )
 

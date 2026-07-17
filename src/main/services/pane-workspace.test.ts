@@ -1,4 +1,5 @@
 import { FileSystem } from '@effect/platform'
+import { NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import { type Context, Effect, Either, Layer, Option, Stream } from 'effect'
 import type { ConversationMessage } from '../domain/pane'
@@ -86,7 +87,13 @@ function makeWorkspaceLayer(
 ): Layer.Layer<PaneWorkspace> {
   return Layer.provide(
     makePaneWorkspaceLive(INITIAL_PANE_ID, WORKTREES_ROOT),
-    Layer.mergeAll(supervisorLayer, persistenceLayer, transcriptLayer, fileSystemLayer)
+    Layer.mergeAll(
+      supervisorLayer,
+      persistenceLayer,
+      transcriptLayer,
+      fileSystemLayer,
+      NodePath.layer
+    )
   )
 }
 

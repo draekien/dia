@@ -71,8 +71,9 @@ export class PersistenceService extends Context.Tag('PersistenceService')<
   }
 >() {}
 
-const decodeWorkspace = Schema.decodeUnknown(PersistedWorkspace)
-const encodeWorkspace = Schema.encode(PersistedWorkspace)
+const WorkspaceJson = Schema.parseJson(PersistedWorkspace, { space: 2 })
+const decodeWorkspace = Schema.decodeUnknown(WorkspaceJson)
+const encodeWorkspace = Schema.encode(WorkspaceJson)
 
 /**
  * Builds the live {@link PersistenceService} layer, persisting the workspace as JSON
@@ -91,10 +92,9 @@ export const makePersistenceServiceLive = (userDataPath: string) =>
       const saveWorkspace = Effect.fn('PersistenceService.saveWorkspace')(function* (
         workspace: PersistedWorkspace
       ) {
-        const encoded = yield* encodeWorkspace(workspace).pipe(
+        const serialized = yield* encodeWorkspace(workspace).pipe(
           Effect.mapError((cause) => new PersistenceWriteError({ path: filePath, cause }))
         )
-        const serialized = JSON.stringify(encoded, null, 2)
 
         yield* fs
           .writeFileString(tempPath, serialized)
@@ -114,11 +114,7 @@ export const makePersistenceServiceLive = (userDataPath: string) =>
           const raw = yield* fs
             .readFileString(filePath)
             .pipe(Effect.mapError((cause) => new PersistenceReadError({ path: filePath, cause })))
-          const parsed = yield* Effect.try({
-            try: () => JSON.parse(raw) as unknown,
-            catch: (cause) => new PersistenceDecodeError({ path: filePath, cause })
-          })
-          const workspace = yield* decodeWorkspace(parsed).pipe(
+          const workspace = yield* decodeWorkspace(raw).pipe(
             Effect.mapError((cause) => new PersistenceDecodeError({ path: filePath, cause }))
           )
           return Option.some(workspace)

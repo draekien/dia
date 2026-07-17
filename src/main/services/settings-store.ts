@@ -4,8 +4,9 @@ import { Context, Effect, Either, Layer, Option, Schema } from 'effect'
 const Settings = Schema.Struct({
   lastDirectory: Schema.optional(Schema.String)
 })
+const parseJson = Schema.decodeUnknownEither(Schema.parseJson())
 const decodeSettings = Schema.decodeUnknownEither(Settings)
-const encodeSettings = Schema.encodeSync(Settings)
+const encodeSettings = Schema.encodeSync(Schema.parseJson(Settings, { space: 2 }))
 
 /**
  * Effect Context.Tag for the app's persisted settings store.
@@ -38,14 +39,14 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
         if (!exists) return {}
 
         const raw = yield* fs.readFileString(filePath).pipe(Effect.orElseSucceed(() => '{}'))
-        const parsed = Either.try(() => JSON.parse(raw) as unknown)
-        if (parsed._tag === 'Left') {
+        const parsed = parseJson(raw)
+        if (Either.isLeft(parsed)) {
           yield* Effect.logWarning('Ignoring unparseable settings file', { cause: parsed.left })
           return {}
         }
 
         const decoded = decodeSettings(parsed.right)
-        if (decoded._tag === 'Left') {
+        if (Either.isLeft(decoded)) {
           yield* Effect.logWarning('Ignoring malformed settings file', { issue: decoded.left })
           return {}
         }
@@ -54,7 +55,7 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
 
       const write = Effect.fn('SettingsStore.write')(function* (settings: typeof Settings.Type) {
         yield* fs
-          .writeFileString(filePath, JSON.stringify(encodeSettings(settings), null, 2))
+          .writeFileString(filePath, encodeSettings(settings))
           .pipe(
             Effect.catchAll((cause) => Effect.logError('Failed to persist settings', { cause }))
           )

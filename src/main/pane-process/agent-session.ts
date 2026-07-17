@@ -5,7 +5,18 @@ import {
   query,
   type SDKUserMessage
 } from '@anthropic-ai/claude-agent-sdk'
-import { Data, Deferred, Effect, Either, Logger, LogLevel, Queue, Schema, Stream } from 'effect'
+import {
+  Data,
+  Deferred,
+  Effect,
+  Either,
+  Layer,
+  Logger,
+  LogLevel,
+  Queue,
+  Schema,
+  Stream
+} from 'effect'
 import { Question, type QuestionResponse } from '../domain/attention'
 import type { ConversationMessage, PaneConfig } from '../domain/pane'
 import { makeLoggerLive } from '../logger'
@@ -298,12 +309,15 @@ const program = Effect.gen(function* () {
   )
 })
 
+// @effect-diagnostics-next-line processEnv:off -- deliberate cross-process config channel; the parent main process sets DIA_IS_DEV (see src/main/index.ts).
 const isDev = process.env.DIA_IS_DEV === '1'
+// @effect-diagnostics-next-line processEnv:off -- deliberate cross-process config channel; the parent main process sets DIA_LOG_FILE (see src/main/index.ts).
 const LoggerLive = makeLoggerLive(isDev, process.env.DIA_LOG_FILE ?? 'main.log')
 
 Effect.runFork(
   Effect.scoped(program).pipe(
-    Effect.provide(LoggerLive),
-    Effect.provide(Logger.minimumLogLevel(isDev ? LogLevel.Debug : LogLevel.Info))
+    Effect.provide(
+      Layer.mergeAll(LoggerLive, Logger.minimumLogLevel(isDev ? LogLevel.Debug : LogLevel.Info))
+    )
   )
 )

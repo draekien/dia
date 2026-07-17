@@ -23,5 +23,6 @@
     "src/main/domain/attention.ts",
     "src/main/domain/pane.ts",
     "src/main/ipc/contract.ts"
-  ]
+  ],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }

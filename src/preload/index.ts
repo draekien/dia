@@ -36,6 +36,7 @@ const subscribers = new Set<(event: IpcEvent) => void>()
 ipcRenderer.on(CHANNEL.event, (_electronEvent, raw: unknown) => {
   const decoded = decodeEvent(raw)
   if (Either.isLeft(decoded)) {
+    // @effect-diagnostics-next-line globalConsole:off -- preload runs in Electron's isolated bridge context with no Effect runtime/logger available.
     console.warn('Dropped malformed IPC event', decoded.left)
     return
   }
