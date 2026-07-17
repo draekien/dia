@@ -142,6 +142,13 @@ const resolveRequest = (requestId: string, resolution: UserInputResolution): Eff
     yield* Deferred.succeed(deferred, resolution)
   })
 
+const dropPendingRequests: Effect.Effect<void> = Effect.gen(function* () {
+  if (pendingRequests.size === 0) return
+  const requestIds = [...pendingRequests.keys()]
+  pendingRequests.clear()
+  yield* Effect.logInfo('Redirected pane; dropping pending user-input requests', { requestIds })
+})
+
 const toSDKUserMessage = (text: string): SDKUserMessage => ({
   type: 'user',
   message: { role: 'user', content: text },
@@ -287,6 +294,7 @@ const program = Effect.gen(function* () {
       if (inbound._tag === 'Init') {
         yield* Effect.forkScoped(runSession(inbound.config, promptQueue, inbound.resume))
       } else if (inbound._tag === 'SendText') {
+        yield* dropPendingRequests
         yield* Queue.offer(promptQueue, toSDKUserMessage(inbound.text))
       } else {
         yield* resolveRequest(inbound.requestId, inbound.response)

@@ -8,7 +8,7 @@ import type {
 } from '../../../main/domain/attention'
 import type { PanePermissionRequested, PaneQuestionRequested } from '../../../main/ipc/contract'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
-import { PermissionDialog } from './permission-dialog'
+import { PermissionRequestCard } from './permission-request-card'
 import { PulseIndicator } from './pulse-indicator'
 
 interface Message {
@@ -120,6 +120,8 @@ function Pane({
         { role: 'user', content: text }
       ])
       window.dia.sendMessage(paneId, text)
+      queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
+      queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, null)
       formApi.reset()
     }
   })
@@ -207,6 +209,9 @@ function Pane({
             </div>
           )}
         </div>
+        {pendingPermission !== null && (
+          <PermissionRequestCard request={pendingPermission} onResolve={respondToPermission} />
+        )}
         {pendingQuestion !== null && (
           <ClarifyingQuestionCard request={pendingQuestion} onResolve={respondToQuestion} />
         )}
@@ -232,7 +237,6 @@ function Pane({
           </button>
         </form>
       </div>
-      <PermissionDialog request={pendingPermission} onResolve={respondToPermission} />
     </div>
   )
 }

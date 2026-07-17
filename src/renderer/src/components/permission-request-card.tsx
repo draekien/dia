@@ -2,14 +2,6 @@ import { useMemo, useState } from 'react'
 import type { PermissionResponse } from '../../../main/domain/attention'
 import type { PanePermissionRequested } from '../../../main/ipc/contract'
 import { Button } from './ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from './ui/dialog'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Switch } from './ui/switch'
@@ -89,9 +81,15 @@ function reconstructInput(
   return { ok: true, value: { ...input, ...edits }, changed }
 }
 
-const DENY_ON_DISMISS: PermissionResponse = { _tag: 'Deny', message: 'Denied by user.' }
-
-function PermissionForm({
+/**
+ * Inline card that prompts the user to resolve a pane's pending tool-permission request.
+ * Renders the tool's proposed input as an editable per-field form (top-level primitives
+ * inline, nested values as JSON), an "always allow" toggle when the SDK offered suggestions,
+ * and a required note when denying. Pass the pane's {@link PanePermissionRequested} as
+ * `request`; `onResolve` is called once with the user's {@link PermissionResponse}. The card
+ * is non-blocking, so the user may instead redirect the pane via the composer, superseding it.
+ */
+export function PermissionRequestCard({
   request,
   onResolve
 }: {
@@ -139,19 +137,19 @@ function PermissionForm({
   }
 
   return (
-    <>
-      <DialogHeader>
-        <DialogTitle>Permission requested</DialogTitle>
-        <DialogDescription>
+    <section className="mt-2 flex flex-col gap-4 rounded-md border bg-muted/40 p-3">
+      <div className="flex flex-col gap-1">
+        <p className="text-sm font-medium text-foreground">Permission requested</p>
+        <p className="text-xs text-muted-foreground">
           Wants to run{' '}
-          <span className="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
+          <span className="rounded border bg-muted px-1.5 py-0.5 font-mono text-foreground">
             {request.toolName}
           </span>
           . Review or edit the parameters before allowing.
-        </DialogDescription>
-      </DialogHeader>
+        </p>
+      </div>
 
-      <div className="flex max-h-[45vh] flex-col gap-4 overflow-y-auto">
+      <div className="flex max-h-64 flex-col gap-4 overflow-y-auto">
         {fields.length === 0 ? (
           <p className="text-sm text-muted-foreground">This tool takes no parameters.</p>
         ) : (
@@ -202,7 +200,7 @@ function PermissionForm({
         {canRemember && (
           <label
             htmlFor="permission-remember"
-            className="flex items-center justify-between gap-3 rounded-md border bg-muted/40 px-3 py-2"
+            className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2"
           >
             <span className="text-sm text-foreground">
               Always allow {request.toolName} in this pane
@@ -225,45 +223,14 @@ function PermissionForm({
         </div>
       </div>
 
-      <DialogFooter>
-        <Button variant="destructive" disabled={!canDeny} onClick={deny}>
+      <div className="flex justify-end gap-2">
+        <Button size="sm" variant="destructive" disabled={!canDeny} onClick={deny}>
           Deny
         </Button>
-        <Button disabled={!reconstruction.ok} onClick={allow}>
+        <Button size="sm" disabled={!reconstruction.ok} onClick={allow}>
           {reconstruction.ok && reconstruction.changed ? 'Allow edited' : 'Allow'}
         </Button>
-      </DialogFooter>
-    </>
-  )
-}
-
-/**
- * Modal that prompts the user to resolve a pending tool-permission request for a pane.
- * Renders the tool's proposed input as an editable per-field form (top-level primitives
- * inline, nested values as JSON), an "always allow" toggle when the SDK offered
- * suggestions, and a required note when denying. Pass the current
- * {@link PanePermissionRequested} as `request` (or `null` to close); `onResolve` is called
- * once with the user's {@link PermissionResponse} — including on dismissal, which denies.
- */
-export function PermissionDialog({
-  request,
-  onResolve
-}: {
-  request: PanePermissionRequested | null
-  onResolve: (response: PermissionResponse) => void
-}) {
-  return (
-    <Dialog
-      open={request !== null}
-      onOpenChange={(open) => {
-        if (!open && request !== null) onResolve(DENY_ON_DISMISS)
-      }}
-    >
-      <DialogContent>
-        {request !== null && (
-          <PermissionForm key={request.requestId} request={request} onResolve={onResolve} />
-        )}
-      </DialogContent>
-    </Dialog>
+      </div>
+    </section>
   )
 }
