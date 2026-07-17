@@ -102,3 +102,15 @@
     animation: none;
   }
 }
+
+.prose :not(pre) > code {
+  border-radius: 0.25rem;
+  background-color: oklch(1 0 0 / 0.09);
+  padding: 0.1em 0.35em;
+  font-weight: 500;
+}
+
+.prose pre code.hljs {
+  padding: 0;
+  background: transparent;
+}

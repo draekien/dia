@@ -15,6 +15,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import rehypeHighlight from 'rehype-highlight'
 import remarkGfm from 'remark-gfm'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import { PermissionRequestCard } from './permission-request-card'
@@ -99,6 +100,7 @@ function Markdown({
     <div className={cn(proseClassName, className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
         components={{
           a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />
         }}
