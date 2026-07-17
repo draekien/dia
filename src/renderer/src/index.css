@@ -46,6 +46,14 @@
   --color-primary-foreground: var(--primary-ink);
 }
 
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+}
+
 @keyframes pulse-slow {
   0%,
   100% {
