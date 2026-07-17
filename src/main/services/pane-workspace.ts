@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { Context, Effect, Either, HashMap, Layer, Option, Ref } from 'effect'
+import type { ConversationMessage } from '../domain/pane'
 import {
   closePane,
   markPaneReady,
@@ -13,6 +14,7 @@ import type { IpcEvent } from '../ipc/contract'
 import type { WorktreeCreateError } from './git-ops-service'
 import { PaneSupervisor, type ProcessSpawnError } from './pane-supervisor'
 import { type PersistedPaneEntry, PersistenceService } from './persistence'
+import { TranscriptReader } from './transcript-reader'
 
 /**
  * Service tag for the pane workspace: owns the pane tree and per-pane configs, and
@@ -35,6 +37,7 @@ export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
       onEvent: (event: IpcEvent) => Effect.Effect<void>
     ) => Effect.Effect<PaneNode, PaneNotFoundError | ProcessSpawnError | WorktreeCreateError>
     readonly close: (paneId: PaneId) => Effect.Effect<PaneNode, PaneNotFoundError>
+    readonly getPaneHistory: (paneId: PaneId) => Effect.Effect<ReadonlyArray<ConversationMessage>>
   }
 >() {}
 
@@ -48,7 +51,8 @@ export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
  * freshly-split pane. Thereafter this is the single writer of the persisted workspace,
  * re-saving after every `split`/`createPane`/`close`. `worktreesRoot` is the base directory
  * under which per-pane git worktrees are created when `createPane` is called with
- * `useWorktree: true`.
+ * `useWorktree: true`. Also requires {@link TranscriptReader} to serve `getPaneHistory`
+ * for restored panes without spawning a live session.
  */
 export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: string) =>
   Layer.effect(
@@ -56,6 +60,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
     Effect.gen(function* () {
       const supervisor = yield* PaneSupervisor
       const persistence = yield* PersistenceService
+      const transcriptReader = yield* TranscriptReader
 
       const persisted = yield* persistence.loadWorkspace()
       const seed = Option.match(persisted, {
@@ -176,6 +181,15 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         return updated.right
       })
 
-      return { getTree, split, createPane, close }
+      const getPaneHistory = Effect.fn('PaneWorkspace.getPaneHistory')(function* (paneId: PaneId) {
+        const configs = yield* Ref.get(configsRef)
+        const entry = HashMap.get(configs, paneId)
+        if (Option.isNone(entry) || entry.value.sessionId === undefined) {
+          return []
+        }
+        return yield* transcriptReader.readHistory(entry.value.sessionId, entry.value.config.cwd)
+      })
+
+      return { getTree, split, createPane, close, getPaneHistory }
     })
   )

@@ -3,7 +3,12 @@ import { NodeContext, NodeFileSystem } from '@effect/platform-node'
 import { Config, Effect, Layer, Logger, LogLevel, Option } from 'effect'
 import { app, BrowserWindow, shell } from 'electron'
 import type { PaneId } from './domain/pane-tree'
-import { wireChooseDirectory, wireCommands, wireGetInitialLayout } from './ipc/gateway'
+import {
+  wireChooseDirectory,
+  wireCommands,
+  wireGetInitialLayout,
+  wireGetPaneHistory
+} from './ipc/gateway'
 import { DEFAULT_LOG_RETENTION, makeLoggerLive, pruneOldLogEntries } from './logger'
 import { GitOpsServiceLive } from './services/git-ops-service'
 import {
@@ -14,6 +19,7 @@ import {
 import { makePaneWorkspaceLive, PaneWorkspace } from './services/pane-workspace'
 import { makePersistenceServiceLive } from './services/persistence'
 import { makeSettingsStoreLive, SettingsStore } from './services/settings-store'
+import { TranscriptReaderLive } from './services/transcript-reader'
 
 const isDev = !app.isPackaged
 const rendererDevUrl = Effect.runSync(Config.string('ELECTRON_RENDERER_URL').pipe(Config.option))
@@ -84,7 +90,7 @@ app.whenReady().then(async () => {
   )
   const workspaceLayer = Layer.provide(
     makePaneWorkspaceLive(INITIAL_PANE_ID, worktreesRoot),
-    Layer.merge(supervisorLayer, persistenceLayer)
+    Layer.mergeAll(supervisorLayer, persistenceLayer, TranscriptReaderLive)
   )
   const settingsStoreLayer = Layer.provide(
     makeSettingsStoreLive(app.getPath('userData')),
@@ -101,6 +107,7 @@ app.whenReady().then(async () => {
         const paneSupervisor = yield* PaneSupervisor
         const settingsStore = yield* SettingsStore
         wireGetInitialLayout(paneWorkspace)
+        wireGetPaneHistory(paneWorkspace)
         wireChooseDirectory(settingsStore, mainWindow)
 
         app.on('before-quit', (event) => {

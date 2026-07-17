@@ -1,11 +1,13 @@
 import { assert, describe, it } from '@effect/vitest'
 import { type Context, Effect, Either, Layer, Option, Stream } from 'effect'
+import type { ConversationMessage } from '../domain/pane'
 import type { PaneNode } from '../domain/pane-tree'
 import type { IpcEvent } from '../ipc/contract'
 import { WorktreeCreateError } from './git-ops-service'
 import { type PaneHandle, PaneSupervisor } from './pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
 import { type PersistedWorkspace, PersistenceService } from './persistence'
+import { TranscriptReader } from './transcript-reader'
 
 function secondLeafPaneId(tree: PaneNode): string {
   if (tree._tag !== 'Split') throw new Error('expected a Split')
@@ -50,13 +52,29 @@ function makePersistence(initial?: PersistedWorkspace): {
   return { saves, layer }
 }
 
+function makeTranscriptReader(history: ReadonlyArray<ConversationMessage> = []): {
+  readonly reads: Array<{ sessionId: string; cwd: string }>
+  readonly layer: Layer.Layer<TranscriptReader>
+} {
+  const reads: Array<{ sessionId: string; cwd: string }> = []
+  const layer = Layer.succeed(TranscriptReader, {
+    readHistory: (sessionId, cwd) =>
+      Effect.sync(() => {
+        reads.push({ sessionId, cwd })
+        return history
+      })
+  })
+  return { reads, layer }
+}
+
 function makeWorkspaceLayer(
   supervisorLayer: Layer.Layer<PaneSupervisor>,
-  persistenceLayer: Layer.Layer<PersistenceService>
+  persistenceLayer: Layer.Layer<PersistenceService>,
+  transcriptLayer: Layer.Layer<TranscriptReader> = makeTranscriptReader().layer
 ): Layer.Layer<PaneWorkspace> {
   return Layer.provide(
     makePaneWorkspaceLive(INITIAL_PANE_ID, WORKTREES_ROOT),
-    Layer.merge(supervisorLayer, persistenceLayer)
+    Layer.mergeAll(supervisorLayer, persistenceLayer, transcriptLayer)
   )
 }
 
@@ -337,6 +355,59 @@ describe('PaneWorkspace', () => {
       // createPane saved once, close saved again with the pane removed from the index.
       assert.strictEqual(saves.length, 2)
       assert.deepStrictEqual(saves[1].panes, {})
+    })
+  )
+
+  it.effect(
+    'getPaneHistory returns empty without reading a transcript when no session is recorded',
+    () =>
+      Effect.gen(function* () {
+        const supervisorLayer = makeSupervisorLayer(echoOpenPane)
+        const { layer: persistenceLayer } = makePersistence()
+        const { reads, layer: transcriptLayer } = makeTranscriptReader([
+          { role: 'user', content: 'x' }
+        ])
+
+        const history = yield* Effect.gen(function* () {
+          const workspace = yield* PaneWorkspace
+          yield* workspace.createPane(INITIAL_PANE_ID, '/repo', 'm', false, onEvent)
+          return yield* workspace.getPaneHistory(INITIAL_PANE_ID)
+        }).pipe(
+          Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer, transcriptLayer))
+        )
+
+        assert.deepStrictEqual(history, [])
+        assert.strictEqual(reads.length, 0)
+      })
+  )
+
+  it.effect('getPaneHistory reads the transcript by the restored pane sessionId and cwd', () =>
+    Effect.gen(function* () {
+      const supervisorLayer = makeSupervisorLayer(echoOpenPane)
+      const { layer: persistenceLayer } = makePersistence({
+        tree: { _tag: 'Leaf', paneId: INITIAL_PANE_ID, status: 'ready', cwd: '/repo' },
+        panes: {
+          [INITIAL_PANE_ID]: {
+            config: { paneId: INITIAL_PANE_ID, cwd: '/repo', model: 'm' },
+            sessionId: 'restored-session-1'
+          }
+        }
+      })
+      const restored: ReadonlyArray<ConversationMessage> = [
+        { role: 'user', content: 'hello' },
+        { role: 'assistant', content: 'hi there' }
+      ]
+      const { reads, layer: transcriptLayer } = makeTranscriptReader(restored)
+
+      const history = yield* Effect.gen(function* () {
+        const workspace = yield* PaneWorkspace
+        return yield* workspace.getPaneHistory(INITIAL_PANE_ID)
+      }).pipe(
+        Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer, transcriptLayer))
+      )
+
+      assert.deepStrictEqual(history, restored)
+      assert.deepStrictEqual(reads, [{ sessionId: 'restored-session-1', cwd: '/repo' }])
     })
   )
 })

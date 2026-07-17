@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { Context } from 'effect'
 import { Effect, Either, Option, Schema, Stream } from 'effect'
 import { type BrowserWindow, dialog, ipcMain } from 'electron'
+import { ConversationMessage } from '../domain/pane'
 import { PaneNode } from '../domain/pane-tree'
 import type { PaneSupervisor } from '../services/pane-supervisor'
 import type { PaneWorkspace } from '../services/pane-workspace'
@@ -12,6 +13,7 @@ import { CHANNEL, type ChooseDirectoryResult, IpcCommand, IpcEvent } from './con
 const decodeCommand = Schema.decodeUnknownEither(IpcCommand)
 const encodeEvent = Schema.encodeSync(IpcEvent)
 const encodeTree = Schema.encodeSync(PaneNode)
+const encodeHistory = Schema.encodeSync(Schema.Array(ConversationMessage))
 
 /**
  * Registers the IPC handler that returns the current pane tree to the renderer.
@@ -22,6 +24,22 @@ export function wireGetInitialLayout(
 ): void {
   ipcMain.handle(CHANNEL.getInitialLayout, () =>
     Effect.runPromise(paneWorkspace.getTree().pipe(Effect.map(encodeTree)))
+  )
+}
+
+/**
+ * Registers the IPC handler that returns a pane's past conversation to the renderer,
+ * read from the Agent SDK session store without spawning a live session. Returns an
+ * empty list for a pane with no recorded session (or an unrecognized id). Call once
+ * during main-process startup, after `paneWorkspace` is available.
+ */
+export function wireGetPaneHistory(paneWorkspace: Context.Tag.Service<typeof PaneWorkspace>): void {
+  ipcMain.handle(CHANNEL.getPaneHistory, (_event, paneId: unknown) =>
+    Effect.runPromise(
+      typeof paneId === 'string'
+        ? paneWorkspace.getPaneHistory(paneId).pipe(Effect.map(encodeHistory))
+        : Effect.succeed(encodeHistory([]))
+    )
   )
 }
 

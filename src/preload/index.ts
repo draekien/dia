@@ -1,5 +1,6 @@
 import { Either, Schema } from 'effect'
 import { contextBridge, ipcRenderer } from 'electron'
+import { ConversationMessage } from '../main/domain/pane'
 import { PaneNode } from '../main/domain/pane-tree'
 import {
   CHANNEL,
@@ -20,6 +21,7 @@ const encodeClosePane = Schema.encodeSync(ClosePane)
 const encodeCreatePane = Schema.encodeSync(CreatePane)
 const decodeEvent = Schema.decodeUnknownEither(IpcEvent)
 const decodeTree = Schema.decodeUnknownSync(PaneNode)
+const decodeHistory = Schema.decodeUnknownSync(Schema.Array(ConversationMessage))
 const decodeChooseDirectoryResult = Schema.decodeUnknownSync(ChooseDirectoryResult)
 
 // A single raw ipcRenderer listener fans out to every subscriber below. Each subscriber
@@ -65,6 +67,9 @@ const api: DiaApi = {
   },
   getInitialLayout() {
     return ipcRenderer.invoke(CHANNEL.getInitialLayout).then((raw) => decodeTree(raw))
+  },
+  getPaneHistory(paneId) {
+    return ipcRenderer.invoke(CHANNEL.getPaneHistory, paneId).then((raw) => decodeHistory(raw))
   },
   chooseDirectory() {
     return ipcRenderer

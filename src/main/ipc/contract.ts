@@ -9,13 +9,15 @@ const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
  * Electron IPC channel names shared by main, preload, and renderer.
  * Use `command` to send an {@link IpcCommand} from renderer to main, `event` to
  * receive an {@link IpcEvent} pushed from main to renderer, `getInitialLayout` to
- * fetch the pane tree on renderer startup, and `chooseDirectory` to invoke the
- * native directory picker.
+ * fetch the pane tree on renderer startup, `getPaneHistory` to fetch a restored
+ * pane's past conversation, and `chooseDirectory` to invoke the native directory
+ * picker.
  */
 export const CHANNEL = {
   command: 'dia:command',
   event: 'dia:event',
   getInitialLayout: 'dia:getInitialLayout',
+  getPaneHistory: 'dia:getPaneHistory',
   chooseDirectory: 'dia:chooseDirectory'
 } as const
 
@@ -232,6 +234,7 @@ export interface DiaApi {
   closePane(paneId: string): void
   createPane(paneId: string, cwd: string, model: string, useWorktree: boolean): void
   getInitialLayout(): Promise<PaneNode>
+  getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>
   chooseDirectory(): Promise<ChooseDirectoryResult>
   onMessageAppended(listener: (event: PaneMessageAppended) => void): () => void
   onLayoutChanged(listener: (event: LayoutChanged) => void): () => void

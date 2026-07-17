@@ -50,7 +50,7 @@ function Pane({
 
   const { data: messages = [] } = useQuery<Message[]>({
     queryKey: messagesQueryKey,
-    queryFn: () => [],
+    queryFn: () => window.dia.getPaneHistory(paneId).then((history) => [...history]),
     staleTime: Infinity
   })
   const { data: attention = { _tag: 'Idle' } } = useQuery<AttentionState>({

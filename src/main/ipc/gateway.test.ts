@@ -42,7 +42,8 @@ describe('wireCommands', () => {
         getTree: () => Effect.succeed(READY_TREE),
         split: () => Effect.dieMessage('split should not be called'),
         createPane: () => Effect.dieMessage('createPane should not be called'),
-        close: () => Effect.dieMessage('close should not be called')
+        close: () => Effect.dieMessage('close should not be called'),
+        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called')
       }
       const paneSupervisor = {
         openPane: () => Effect.dieMessage('openPane should not be called'),
@@ -80,7 +81,8 @@ describe('wireCommands', () => {
         getTree: () => Effect.dieMessage('getTree should not be called'),
         split: () => Effect.succeed(splitTree),
         createPane: () => Effect.dieMessage('createPane should not be called'),
-        close: () => Effect.dieMessage('close should not be called')
+        close: () => Effect.dieMessage('close should not be called'),
+        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called')
       }
       const paneSupervisor = {
         openPane: () => Effect.dieMessage('openPane should not be called'),
@@ -117,7 +119,8 @@ describe('wireCommands', () => {
         getTree: () => Effect.dieMessage('getTree should not be called'),
         split: () => Effect.dieMessage('split should not be called'),
         createPane: () => Effect.fail(createError),
-        close: () => Effect.dieMessage('close should not be called')
+        close: () => Effect.dieMessage('close should not be called'),
+        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called')
       }
       const paneSupervisor = {
         openPane: () => Effect.dieMessage('openPane should not be called'),
@@ -159,7 +162,8 @@ describe('wireCommands', () => {
         getTree: () => Effect.dieMessage('getTree should not be called'),
         split: () => Effect.dieMessage('split should not be called'),
         createPane: () => Effect.dieMessage('createPane should not be called'),
-        close: () => Effect.dieMessage('close should not be called')
+        close: () => Effect.dieMessage('close should not be called'),
+        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called')
       }
       const paneSupervisor = {
         openPane: () => Effect.dieMessage('openPane should not be called'),
