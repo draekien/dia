@@ -104,7 +104,7 @@ export function ClarifyingQuestionCard({
 
   return (
     <section className="mt-2 flex flex-col gap-4 rounded-md border bg-muted/40 p-3">
-      <p className="text-sm font-medium text-foreground">Claude needs your input</p>
+      <p className="text-base font-semibold text-foreground">Claude needs your input</p>
       {request.questions.map((question) => {
         const key = questionKey(question)
         const otherSelected = question.multiSelect

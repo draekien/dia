@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
 @plugin '@tailwindcss/typography';
 
 :root {
@@ -18,6 +20,9 @@
 }
 
 @theme inline {
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-ink: var(--ink);

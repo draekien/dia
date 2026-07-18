@@ -42,20 +42,22 @@ A full-palette, cool-neutral strategy: several named roles, each with one delibe
 
 ## 3. Typography
 
-**Display/UI Font:** [font pairing to be chosen at implementation] — a technical/geometric sans for chrome, labels, and UI copy.
-**Mono Font:** [font pairing to be chosen at implementation] — for session transcripts, code, file paths, and any literal agent output.
+**Display/UI Font:** Geist Sans (`Geist Variable`, self-hosted via `@fontsource-variable/geist`) — a technical/geometric sans for chrome, labels, and UI copy. Wired as `--font-sans` in `src/renderer/src/index.css`.
+**Mono Font:** Geist Mono (`Geist Mono Variable`, self-hosted via `@fontsource-variable/geist-mono`) — for code, file paths, tool names, and other literal agent output. Wired as `--font-mono`. Paired with Geist Sans as one metric-matched superfamily, so sans and mono read as one system.
 
-**Character:** Crisp and native-feeling, closer to an IDE or terminal-adjacent tool than a marketing document. The sans carries structure and labels; the mono carries content, so the two are never used interchangeably for the same kind of information.
+**Character:** Crisp and native-feeling, closer to an IDE or terminal-adjacent tool than a marketing document. The sans carries structure and labels; the mono carries literal/technical content, so the two are never used interchangeably for the same kind of information.
 
 ### Hierarchy
-- **Display** — [to be resolved]: reserved for empty-state or first-run moments only; dia has no marketing headlines.
-- **Headline** — [to be resolved]: pane titles, dialog titles.
-- **Title** — [to be resolved]: section labels within a pane (e.g. permission dialog heading).
-- **Body** — [to be resolved]: UI copy and chrome; sans. Session/agent content renders in mono regardless of body size.
-- **Label** — [to be resolved]: pane status labels, button text, small UI affordances.
+
+A fixed `rem` scale (Tailwind v4 defaults, product-appropriate ~1.125–1.2 ratio); no fluid `clamp()`. Hierarchy is carried by size **and** weight together, not size alone.
+
+- **Display** — `text-xl`+ / semibold: reserved for empty-state or first-run moments only; dia has no marketing headlines.
+- **Heading** — `text-base` (1rem) / semibold: card, section, and form titles (e.g. "Permission requested", "New pane"). This is the top of the shipped chrome hierarchy.
+- **Body** — `text-sm` (0.875rem): UI copy and chrome, and agent **prose** message bodies; all sans. Weight `font-medium` marks a label within body-size text.
+- **Caption** — `text-xs` (0.75rem): status labels, metadata, field hints, tool-event rows, path chips.
 
 ### Named Rules
-**The Content-Is-Mono Rule.** Anything that is the agent's literal output (messages, code, file paths, tool results) renders in the mono family. Anything that is dia's own chrome (buttons, labels, dialogs) renders in the sans family. The two are never mixed within one piece of text.
+**The Content-Is-Mono Rule.** The agent's *literal output* — code, file paths, tool names, command strings, and other verbatim snippets — renders in the mono family. Everything else, including the agent's *prose* (paragraphs, lists, and headings inside a Markdown message) and all of dia's own chrome (buttons, labels, dialogs), renders in the sans family. The two are never mixed within one span of text: mono is a signal that "this is a literal string," so widening it to whole prose bodies would drain that signal.
 
 ## 4. Elevation
 

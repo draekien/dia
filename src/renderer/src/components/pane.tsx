@@ -21,6 +21,8 @@ import remarkGfm from 'remark-gfm'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import { PermissionRequestCard } from './permission-request-card'
 import { PulseIndicator } from './pulse-indicator'
+import { Button } from './ui/button'
+import { Input } from './ui/input'
 
 interface MessageItem {
   kind: 'message'
@@ -88,7 +90,7 @@ function ToolEventRow({ event }: { event: ToolEventItem }): React.JSX.Element {
 }
 
 const proseClassName =
-  'prose prose-sm prose-invert max-w-none prose-p:my-2 prose-headings:mb-2 prose-headings:mt-3 prose-pre:my-2 prose-pre:bg-neutral-900 prose-code:font-mono prose-code:before:content-none prose-code:after:content-none prose-a:text-primary [&>*:first-child]:mt-0 [&>*:last-child]:mb-0'
+  'prose prose-sm prose-invert max-w-[68ch] prose-pre:max-w-none prose-p:my-2 prose-headings:mb-2 prose-headings:mt-3 prose-pre:my-2 prose-pre:bg-background prose-code:font-mono prose-code:before:content-none prose-code:after:content-none prose-a:text-primary [&>*:first-child]:mt-0 [&>*:last-child]:mb-0'
 
 function Markdown({
   content,
@@ -141,7 +143,7 @@ function StreamingMessage({ text }: { text: string }): React.JSX.Element {
 
   return (
     <div className="animate-stream-enter text-left motion-reduce:animate-none">
-      <div className="inline-block max-w-full rounded bg-neutral-800 px-3 py-2">
+      <div className="inline-block max-w-full rounded bg-surface px-3 py-2">
         <Markdown content={text.slice(0, revealedLength)} className="stream-cursor" />
       </div>
     </div>
@@ -305,14 +307,16 @@ function Pane({
       // biome-ignore lint/a11y/noNoninteractiveTabindex: must itself be focusable so clicking empty pane space still activates it
       tabIndex={0}
       onFocus={onFocus}
-      className={`relative flex h-full flex-col bg-neutral-950 p-4 text-neutral-100 outline-none transition-shadow ${
-        isFocused ? 'ring-2 ring-ring ring-inset' : ''
-      }`}
+      className={cn(
+        'relative flex h-full flex-col bg-background p-4 text-ink outline-none transition-shadow',
+        isFocused && 'ring-2 ring-ring ring-inset'
+      )}
     >
       <div
-        className={`flex h-full min-h-0 flex-1 flex-col transition-opacity duration-200 ease-out motion-reduce:transition-none ${
+        className={cn(
+          'flex h-full min-h-0 flex-1 flex-col transition-opacity duration-200 ease-out motion-reduce:transition-none',
           isDimmed ? 'opacity-50' : 'opacity-100'
-        }`}
+        )}
       >
         <div className="flex items-center justify-between gap-2 pb-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -320,11 +324,11 @@ function Pane({
             {cwd !== undefined && (
               <span
                 title={sourceRepo !== undefined ? `${sourceRepo} (worktree at ${cwd})` : cwd}
-                className="flex min-w-0 items-center gap-1.5 rounded border border-neutral-800 bg-neutral-900 px-2 py-1 font-mono text-xs text-neutral-400"
+                className="flex min-w-0 items-center gap-1.5 rounded border border-border bg-surface px-2 py-1 font-mono text-xs text-ink-muted"
               >
                 <span className="truncate">{dirName(sourceRepo ?? cwd)}</span>
                 {sourceRepo !== undefined && (
-                  <span className="shrink-0 rounded-sm bg-neutral-800 px-1 text-[10px] text-neutral-500">
+                  <span className="shrink-0 rounded-sm bg-background px-1 text-xs text-ink-muted">
                     worktree
                   </span>
                 )}
@@ -332,27 +336,30 @@ function Pane({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <button
+            <Button
               type="button"
-              className="rounded border border-neutral-700 px-2 py-1 text-xs"
+              variant="outline"
+              size="xs"
               onClick={() => window.dia.splitPane(paneId, 'row')}
             >
               Split ↔
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="rounded border border-neutral-700 px-2 py-1 text-xs"
+              variant="outline"
+              size="xs"
               onClick={() => window.dia.splitPane(paneId, 'column')}
             >
               Split ↕
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="rounded border border-neutral-700 px-2 py-1 text-xs"
+              variant="ghost"
+              size="xs"
               onClick={() => window.dia.closePane(paneId)}
             >
               Close
-            </button>
+            </Button>
           </div>
         </div>
         <div className="flex-1 space-y-2 overflow-y-auto">
@@ -364,7 +371,7 @@ function Pane({
             return (
               // biome-ignore lint/suspicious/noArrayIndexKey: timeline is append-only; items only update in place, never reorder
               <div key={index} className={item.role === 'user' ? 'text-right' : 'text-left'}>
-                <div className="inline-block max-w-full rounded bg-neutral-800 px-3 py-2 text-left">
+                <div className="inline-block max-w-full rounded bg-surface px-3 py-2 text-left">
                   <Markdown content={item.content} />
                 </div>
               </div>
@@ -387,17 +394,17 @@ function Pane({
         >
           <form.Field name="text">
             {(field) => (
-              <input
-                className="flex-1 rounded border border-neutral-700 bg-neutral-900 px-2 py-1"
+              <Input
+                className="flex-1"
                 value={field.state.value}
                 onChange={(event) => field.handleChange(event.target.value)}
                 placeholder="Message dia..."
               />
             )}
           </form.Field>
-          <button type="submit" className="rounded bg-neutral-100 px-3 py-1 text-neutral-950">
+          <Button type="submit" size="sm">
             Send
-          </button>
+          </Button>
         </form>
       </div>
     </div>

@@ -84,7 +84,7 @@ function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
       )}
       <div className="flex w-full max-w-sm flex-col gap-4">
         <div className="flex flex-col gap-1">
-          <span className="text-sm font-medium">New pane</span>
+          <span className="text-base font-semibold">New pane</span>
           <span className="text-sm text-ink-muted">
             Choose a working directory to start this session.
           </span>

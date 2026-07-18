@@ -138,7 +138,7 @@ export function PermissionRequestCard({
   return (
     <section className="mt-2 flex flex-col gap-4 rounded-md border bg-muted/40 p-3">
       <div className="flex flex-col gap-1">
-        <p className="text-sm font-medium text-foreground">Permission requested</p>
+        <p className="text-base font-semibold text-foreground">Permission requested</p>
         <p className="text-xs text-muted-foreground">
           Wants to run{' '}
           <span className="rounded border bg-muted px-1.5 py-0.5 font-mono text-foreground">
