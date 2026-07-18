@@ -3,7 +3,50 @@
 @import '@fontsource-variable/geist-mono';
 @plugin '@tailwindcss/typography';
 
+/* Class-based dark mode: the theme provider toggles `.dark` on <html>, and the
+   `.dark { ... }` block below re-points every role var. Enables `dark:` utilities
+   (e.g. `dark:prose-invert`) to key off that class rather than the OS setting. */
+@custom-variant dark (&:is(.dark *));
+
+/* Light theme (default). Cool-neutral Control Room palette at the light end of
+   the ramp: near-white surfaces, dark cool ink, pulse/accent hues darkened so
+   they hold contrast on light. The `.dark` block mirrors it at the dark end. */
 :root {
+  --background: oklch(0.97 0.004 255);
+  --surface: oklch(0.995 0.001 255);
+  --ink: oklch(0.25 0.015 255);
+  --ink-muted: oklch(0.5 0.02 255);
+  --border: oklch(0.9 0.006 255);
+  --primary: oklch(0.52 0.18 265);
+  --primary-ink: oklch(0.99 0.01 265);
+  --secondary: oklch(0.93 0.008 255);
+  --ring: oklch(0.52 0.18 265);
+  --error: oklch(0.52 0.2 25);
+  --pulse-amber: oklch(0.7 0.15 70);
+  --pulse-red: oklch(0.55 0.22 25);
+  --pulse-green: oklch(0.55 0.15 145);
+
+  --chart-1: oklch(0.52 0.16 265);
+  --chart-2: oklch(0.55 0.12 195);
+  --chart-3: oklch(0.55 0.14 145);
+  --chart-4: oklch(0.62 0.14 85);
+  --chart-5: oklch(0.52 0.16 320);
+
+  --syntax-fg: oklch(0.27 0.02 255);
+  --syntax-comment: oklch(0.55 0.02 255);
+  --syntax-keyword: oklch(0.55 0.18 20);
+  --syntax-title: oklch(0.5 0.18 300);
+  --syntax-entity: oklch(0.48 0.15 255);
+  --syntax-string: oklch(0.38 0.12 260);
+  --syntax-builtin: oklch(0.58 0.16 50);
+  --syntax-addition: oklch(0.52 0.14 150);
+  --syntax-deletion: oklch(0.5 0.18 25);
+
+  --radius: 0.625rem;
+}
+
+/* Dark theme -- the original Control Room palette. */
+.dark {
   --background: oklch(0.16 0.008 255);
   --surface: oklch(0.21 0.01 255);
   --ink: oklch(0.94 0.005 255);
@@ -24,7 +67,15 @@
   --chart-4: oklch(0.75 0.14 85);
   --chart-5: oklch(0.66 0.16 320);
 
-  --radius: 0.625rem;
+  --syntax-fg: oklch(0.85 0.02 255);
+  --syntax-comment: oklch(0.65 0.02 255);
+  --syntax-keyword: oklch(0.72 0.15 25);
+  --syntax-title: oklch(0.75 0.13 300);
+  --syntax-entity: oklch(0.75 0.13 245);
+  --syntax-string: oklch(0.85 0.08 235);
+  --syntax-builtin: oklch(0.78 0.14 60);
+  --syntax-addition: oklch(0.87 0.14 150);
+  --syntax-deletion: oklch(0.85 0.09 25);
 }
 
 @theme inline {
@@ -92,6 +143,19 @@
   #root {
     height: 100%;
   }
+
+  /* Tailwind v4's `border`/`divide` utilities default to `currentColor`; without
+     this a bare `border` renders as ink, not the neutral divider. Matches shadcn. */
+  *,
+  ::after,
+  ::before {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--ink);
+  }
 }
 
 @keyframes pulse-slow {
@@ -153,7 +217,7 @@
 
 .prose :not(pre) > code {
   border-radius: 0.25rem;
-  background-color: oklch(1 0 0 / 0.09);
+  background-color: color-mix(in oklch, var(--ink) 9%, transparent);
   padding: 0.1em 0.35em;
   font-weight: 500;
 }
@@ -182,7 +246,7 @@
   left: 0;
   width: 2rem;
   padding-right: 0.75rem;
-  border-right: 1px solid oklch(1 0 0 / 0.08);
+  border-right: 1px solid color-mix(in oklch, var(--ink) 12%, transparent);
   color: var(--ink-muted);
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -195,9 +259,80 @@
 
 .prose pre::-webkit-scrollbar-thumb {
   border-radius: 4px;
-  background-color: oklch(1 0 0 / 0.16);
+  background-color: color-mix(in oklch, var(--ink) 20%, transparent);
 }
 
 .prose pre::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Theme-aware syntax highlighting. Replaces the dark-only highlight.js theme
+   stylesheet: each highlight.js token class maps to a `--syntax-*` role that
+   flips between github-light (:root) and github-dark (.dark) values above. */
+.hljs {
+  color: var(--syntax-fg);
+}
+
+.hljs-comment,
+.hljs-code,
+.hljs-formula {
+  color: var(--syntax-comment);
+}
+
+.hljs-keyword,
+.hljs-doctag,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-variable.language_ {
+  color: var(--syntax-keyword);
+}
+
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_,
+.hljs-section {
+  color: var(--syntax-title);
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-meta,
+.hljs-number,
+.hljs-operator,
+.hljs-variable,
+.hljs-selector-attr,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: var(--syntax-entity);
+}
+
+.hljs-regexp,
+.hljs-string,
+.hljs-meta .hljs-string {
+  color: var(--syntax-string);
+}
+
+.hljs-built_in,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link {
+  color: var(--syntax-builtin);
+}
+
+.hljs-addition {
+  color: var(--syntax-addition);
+}
+
+.hljs-deletion {
+  color: var(--syntax-deletion);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 600;
 }

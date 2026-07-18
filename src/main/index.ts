@@ -8,7 +8,8 @@ import {
   wireChooseDirectory,
   wireCommands,
   wireGetInitialLayout,
-  wireGetPaneHistory
+  wireGetPaneHistory,
+  wireTheme
 } from './ipc/gateway'
 import { DEFAULT_LOG_RETENTION, makeLoggerLive, pruneOldLogEntries } from './logger'
 import { GitOpsServiceLive } from './services/git-ops-service'
@@ -120,6 +121,7 @@ app.whenReady().then(async () => {
         wireGetInitialLayout(paneWorkspace)
         wireGetPaneHistory(paneWorkspace)
         wireChooseDirectory(settingsStore, mainWindow)
+        wireTheme(settingsStore)
 
         app.on('before-quit', (event) => {
           if (shuttingDown) return

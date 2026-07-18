@@ -90,7 +90,7 @@ function ToolEventRow({ event }: { event: ToolEventItem }): React.JSX.Element {
 }
 
 const proseClassName =
-  'prose prose-sm prose-invert max-w-[68ch] prose-pre:max-w-none prose-p:my-2 prose-headings:mb-2 prose-headings:mt-3 prose-pre:my-2 prose-pre:bg-background prose-code:font-mono prose-code:before:content-none prose-code:after:content-none prose-a:text-primary [&>*:first-child]:mt-0 [&>*:last-child]:mb-0'
+  'prose prose-sm dark:prose-invert max-w-[68ch] prose-pre:max-w-none prose-p:my-2 prose-headings:mb-2 prose-headings:mt-3 prose-pre:my-2 prose-pre:bg-background prose-code:font-mono prose-code:before:content-none prose-code:after:content-none prose-a:text-primary [&>*:first-child]:mt-0 [&>*:last-child]:mb-0'
 
 function Markdown({
   content,

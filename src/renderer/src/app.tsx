@@ -19,7 +19,7 @@ function App() {
   if (tree === null) return null
 
   return (
-    <div className="h-screen bg-neutral-950">
+    <div className="h-screen bg-background">
       <PaneTreeView node={tree} focusedPaneId={focusedPaneId} onFocusPane={handleFocusPane} />
     </div>
   )

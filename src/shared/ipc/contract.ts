@@ -8,6 +8,7 @@ import {
 } from '../domain/attention'
 import { ConversationMessage } from '../domain/pane'
 import { PaneNode } from '../domain/pane-tree'
+import type { ThemePreference } from '../domain/theme'
 
 const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
 
@@ -16,15 +17,17 @@ const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
  * Use `command` to send an {@link IpcCommand} from renderer to main, `event` to
  * receive an {@link IpcEvent} pushed from main to renderer, `getInitialLayout` to
  * fetch the pane tree on renderer startup, `getPaneHistory` to fetch a restored
- * pane's past conversation, and `chooseDirectory` to invoke the native directory
- * picker.
+ * pane's past conversation, `chooseDirectory` to invoke the native directory
+ * picker, and `getTheme`/`setTheme` to read and persist the colour-theme choice.
  */
 export const CHANNEL = {
   command: 'dia:command',
   event: 'dia:event',
   getInitialLayout: 'dia:getInitialLayout',
   getPaneHistory: 'dia:getPaneHistory',
-  chooseDirectory: 'dia:chooseDirectory'
+  chooseDirectory: 'dia:chooseDirectory',
+  getTheme: 'dia:getTheme',
+  setTheme: 'dia:setTheme'
 } as const
 
 /**
@@ -279,6 +282,8 @@ export interface DiaApi {
   getInitialLayout(): Promise<PaneNode>
   getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>
   chooseDirectory(): Promise<ChooseDirectoryResult>
+  getTheme(): Promise<ThemePreference>
+  setTheme(theme: ThemePreference): Promise<void>
   onMessageAppended(listener: (event: PaneMessageAppended) => void): () => void
   onLayoutChanged(listener: (event: LayoutChanged) => void): () => void
   onPaneCreateFailed(listener: (event: PaneCreateFailed) => void): () => void

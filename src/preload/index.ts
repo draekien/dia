@@ -1,5 +1,6 @@
 import { ConversationMessage } from '@shared/domain/pane'
 import { PaneNode } from '@shared/domain/pane-tree'
+import { ThemePreference } from '@shared/domain/theme'
 import {
   CHANNEL,
   ChooseDirectoryResult,
@@ -27,6 +28,8 @@ const decodeEvent = Schema.decodeUnknownEither(IpcEvent)
 const decodeTree = Schema.decodeUnknownSync(PaneNode)
 const decodeHistory = Schema.decodeUnknownSync(Schema.Array(ConversationMessage))
 const decodeChooseDirectoryResult = Schema.decodeUnknownSync(ChooseDirectoryResult)
+const decodeTheme = Schema.decodeUnknownSync(ThemePreference)
+const encodeTheme = Schema.encodeSync(ThemePreference)
 
 // A single raw ipcRenderer listener fans out to every subscriber below. Each subscriber
 // registering its own ipcRenderer.on would multiply with pane count and event-type count,
@@ -89,6 +92,12 @@ const api: DiaApi = {
     return ipcRenderer
       .invoke(CHANNEL.chooseDirectory)
       .then((raw) => decodeChooseDirectoryResult(raw))
+  },
+  getTheme() {
+    return ipcRenderer.invoke(CHANNEL.getTheme).then((raw) => decodeTheme(raw))
+  },
+  setTheme(theme) {
+    return ipcRenderer.invoke(CHANNEL.setTheme, encodeTheme(theme))
   },
   onMessageAppended(listener) {
     return subscribeToEvents((event) => {

@@ -1,8 +1,10 @@
 import { FileSystem } from '@effect/platform'
+import { ThemePreference } from '@shared/domain/theme'
 import { Context, Effect, Either, Layer, Option, Schema } from 'effect'
 
 const Settings = Schema.Struct({
-  lastDirectory: Schema.optional(Schema.String)
+  lastDirectory: Schema.optional(Schema.String),
+  theme: Schema.optional(ThemePreference)
 })
 const parseJson = Schema.decodeUnknownEither(Schema.parseJson())
 const decodeSettings = Schema.decodeUnknownEither(Settings)
@@ -10,14 +12,16 @@ const encodeSettings = Schema.encodeSync(Schema.parseJson(Settings, { space: 2 }
 
 /**
  * Effect Context.Tag for the app's persisted settings store.
- * Depend on this to read or update the user's last-opened directory.
- * Provide it via {@link makeSettingsStoreLive}.
+ * Depend on this to read or update the user's last-opened directory and
+ * colour-theme choice. Provide it via {@link makeSettingsStoreLive}.
  */
 export class SettingsStore extends Context.Tag('SettingsStore')<
   SettingsStore,
   {
     readonly getLastDirectory: () => Effect.Effect<Option.Option<string>>
     readonly setLastDirectory: (path: string) => Effect.Effect<void>
+    readonly getTheme: () => Effect.Effect<Option.Option<ThemePreference>>
+    readonly setTheme: (theme: ThemePreference) => Effect.Effect<void>
   }
 >() {}
 
@@ -67,6 +71,12 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
       const setLastDirectory = (path: string) =>
         read().pipe(Effect.flatMap((settings) => write({ ...settings, lastDirectory: path })))
 
-      return { getLastDirectory, setLastDirectory }
+      const getTheme = () =>
+        read().pipe(Effect.map((settings) => Option.fromNullable(settings.theme)))
+
+      const setTheme = (theme: ThemePreference) =>
+        read().pipe(Effect.flatMap((settings) => write({ ...settings, theme })))
+
+      return { getLastDirectory, setLastDirectory, getTheme, setTheme }
     })
   )

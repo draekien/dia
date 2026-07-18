@@ -2,6 +2,7 @@ import { FileSystem, Path } from '@effect/platform'
 import { NodeContext } from '@effect/platform-node'
 import { ConversationMessage } from '@shared/domain/pane'
 import { PaneNode } from '@shared/domain/pane-tree'
+import { DEFAULT_THEME, ThemePreference } from '@shared/domain/theme'
 import {
   CHANNEL,
   type ChooseDirectoryResult,
@@ -18,6 +19,7 @@ import type { PaneWorkspace } from '../services/pane-workspace'
 import type { SettingsStore } from '../services/settings-store'
 
 const decodeCommand = Schema.decodeUnknownEither(IpcCommand)
+const decodeTheme = Schema.decodeUnknownEither(ThemePreference)
 const encodeEvent = Schema.encodeSync(IpcEvent)
 const encodeTree = Schema.encodeSync(PaneNode)
 const encodeHistory = Schema.encodeSync(Schema.Array(ConversationMessage))
@@ -93,6 +95,39 @@ export function wireChooseDirectory(
 
     return pending
   })
+}
+
+/**
+ * Registers the IPC handlers that read and persist the user's colour-theme choice.
+ * `getTheme` resolves an absent stored preference to {@link DEFAULT_THEME} so the
+ * renderer always receives a concrete value; `setTheme` decodes the incoming value
+ * at the boundary and ignores (with a warning) anything that isn't a valid
+ * {@link ThemePreference}, rather than throwing. Call once during main-process
+ * startup, after `settingsStore` is available.
+ */
+export function wireTheme(settingsStore: Context.Tag.Service<typeof SettingsStore>): void {
+  ipcMain.handle(
+    CHANNEL.getTheme,
+    (): Promise<ThemePreference> =>
+      Effect.runPromise(
+        settingsStore.getTheme().pipe(Effect.map(Option.getOrElse(() => DEFAULT_THEME)))
+      )
+  )
+
+  ipcMain.handle(
+    CHANNEL.setTheme,
+    (_event, raw: unknown): Promise<void> =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const decoded = decodeTheme(raw)
+          if (Either.isLeft(decoded)) {
+            yield* Effect.logWarning('Dropped invalid setTheme value', { issue: decoded.left })
+            return
+          }
+          yield* settingsStore.setTheme(decoded.right)
+        })
+      )
+  )
 }
 
 /**

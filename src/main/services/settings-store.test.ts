@@ -109,4 +109,78 @@ describe('SettingsStore', () => {
       assert.deepStrictEqual(JSON.parse(writes[0]), { lastDirectory: '/repo-a' })
     })
   )
+
+  it.effect('getTheme returns None when no settings file exists', () =>
+    Effect.gen(function* () {
+      const { testLayer, loggerLayer } = makeTestSetup(undefined)
+
+      const result = yield* Effect.gen(function* () {
+        const store = yield* SettingsStore
+        return yield* store.getTheme()
+      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+
+      assert.isTrue(Option.isNone(result))
+    })
+  )
+
+  it.effect('getTheme returns the stored theme when the file is valid', () =>
+    Effect.gen(function* () {
+      const { testLayer, loggerLayer } = makeTestSetup(JSON.stringify({ theme: 'light' }))
+
+      const result = yield* Effect.gen(function* () {
+        const store = yield* SettingsStore
+        return yield* store.getTheme()
+      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+
+      assert.deepStrictEqual(result, Option.some('light'))
+    })
+  )
+
+  it.effect('getTheme returns None and warns when the theme is not a known value', () =>
+    Effect.gen(function* () {
+      const { capturedLogs, testLayer, loggerLayer } = makeTestSetup(
+        JSON.stringify({ theme: 'sepia' })
+      )
+
+      const result = yield* Effect.gen(function* () {
+        const store = yield* SettingsStore
+        return yield* store.getTheme()
+      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+
+      assert.isTrue(Option.isNone(result))
+      assert.isTrue(
+        capturedLogs.some((log) => String(log).includes('Ignoring malformed settings file'))
+      )
+    })
+  )
+
+  it.effect('setTheme persists the choice, then getTheme reflects it', () =>
+    Effect.gen(function* () {
+      const { writes, testLayer, loggerLayer } = makeTestSetup(undefined)
+
+      const result = yield* Effect.gen(function* () {
+        const store = yield* SettingsStore
+        yield* store.setTheme('dark')
+        return yield* store.getTheme()
+      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+
+      assert.deepStrictEqual(result, Option.some('dark'))
+      assert.deepStrictEqual(JSON.parse(writes[0]), { theme: 'dark' })
+    })
+  )
+
+  it.effect('setTheme preserves an already-stored lastDirectory', () =>
+    Effect.gen(function* () {
+      const { writes, testLayer, loggerLayer } = makeTestSetup(
+        JSON.stringify({ lastDirectory: '/repo' })
+      )
+
+      yield* Effect.gen(function* () {
+        const store = yield* SettingsStore
+        yield* store.setTheme('system')
+      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+
+      assert.deepStrictEqual(JSON.parse(writes[0]), { lastDirectory: '/repo', theme: 'system' })
+    })
+  )
 })

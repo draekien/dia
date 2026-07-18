@@ -2,7 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './app'
-import 'highlight.js/styles/github-dark.css'
+import { CommandPalette } from './components/command-palette'
+import { ThemeProvider } from './components/theme-provider'
 import './index.css'
 
 const queryClient = new QueryClient()
@@ -12,8 +13,11 @@ if (!rootElement) throw new Error('Root element not found')
 
 createRoot(rootElement).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <App />
+        <CommandPalette />
+      </QueryClientProvider>
+    </ThemeProvider>
   </StrictMode>
 )
