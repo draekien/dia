@@ -1,11 +1,11 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/geist';
 @import '@fontsource-variable/geist-mono';
-@plugin '@tailwindcss/typography';
+@import './typeset.css';
 
 /* Class-based dark mode: the theme provider toggles `.dark` on <html>, and the
    `.dark { ... }` block below re-points every role var. Enables `dark:` utilities
-   (e.g. `dark:prose-invert`) to key off that class rather than the OS setting. */
+   (e.g. `dark:bg-input/30`) to key off that class rather than the OS setting. */
 @custom-variant dark (&:is(.dark *));
 
 /* Light theme (default). Cool-neutral Control Room palette at the light end of
@@ -137,6 +137,15 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+.typeset-docs {
+  --typeset-font-body: var(--font-sans);
+  --typeset-font-heading: var(--font-sans);
+  --typeset-font-mono: var(--font-mono);
+  --typeset-size: 14px;
+  --typeset-leading: 1.75;
+  --typeset-flow: 1.25em;
+}
+
 @layer base {
   html,
   body,
@@ -215,24 +224,27 @@
   }
 }
 
-.prose :not(pre) > code {
-  border-radius: 0.25rem;
+/* Code-surface overrides for typeset. These sit outside `@layer components`,
+   so they win over typeset.css regardless of specificity. Two reasons they
+   exist: (1) typeset maps inline code and `pre` onto `--color-muted`, which in
+   this project resolves to `--surface` -- the same color as the message bubble
+   -- so both need a distinct tint to stay legible; (2) typeset has no concept
+   of the highlight.js line-number gutter this pane renders. */
+.typeset :not(pre) > code {
   background-color: color-mix(in oklch, var(--ink) 9%, transparent);
-  padding: 0.1em 0.35em;
-  font-weight: 500;
 }
 
-.prose pre {
-  overflow-x: auto;
+.typeset pre {
+  background-color: var(--background);
 }
 
-.prose pre code.hljs {
+.typeset pre code.hljs {
   display: block;
   padding: 0;
   background: transparent;
 }
 
-.prose pre .code-line {
+.typeset pre .code-line {
   display: block;
   position: relative;
   padding-left: 3rem;
@@ -240,7 +252,7 @@
   overflow-wrap: anywhere;
 }
 
-.prose pre .numbered-code-line::before {
+.typeset pre .numbered-code-line::before {
   content: attr(data-line-number);
   position: absolute;
   left: 0;
@@ -253,16 +265,16 @@
   user-select: none;
 }
 
-.prose pre::-webkit-scrollbar {
+.typeset pre::-webkit-scrollbar {
   height: 8px;
 }
 
-.prose pre::-webkit-scrollbar-thumb {
+.typeset pre::-webkit-scrollbar-thumb {
   border-radius: 4px;
   background-color: color-mix(in oklch, var(--ink) 20%, transparent);
 }
 
-.prose pre::-webkit-scrollbar-track {
+.typeset pre::-webkit-scrollbar-track {
   background: transparent;
 }
 
