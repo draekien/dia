@@ -1,5 +1,5 @@
 import { Data, Either, Schema } from 'effect'
-import { ThinkingLevel } from './pane'
+import { PermissionMode, ThinkingLevel } from './pane'
 
 /** Identifier for a single pane, unique within a window's pane tree. */
 export type PaneId = string
@@ -10,7 +10,8 @@ export const PaneLeafSchema = Schema.TaggedStruct('Leaf', {
   status: Schema.Literal('pending', 'ready'),
   cwd: Schema.optional(Schema.String),
   sourceRepo: Schema.optional(Schema.String),
-  thinkingLevel: Schema.optional(ThinkingLevel)
+  thinkingLevel: Schema.optional(ThinkingLevel),
+  permissionMode: Schema.optional(PermissionMode)
 })
 
 /** Schema for a {@link PaneSplit}. Use `PaneSplitSchema.make({...})` to construct a split so the `_tag` is set and fields are validated. */
@@ -105,17 +106,32 @@ function markReadyNode(
   targetPaneId: PaneId,
   cwd: string,
   sourceRepo: string | undefined,
-  thinkingLevel: ThinkingLevel | undefined
+  thinkingLevel: ThinkingLevel | undefined,
+  permissionMode: PermissionMode | undefined
 ): Either.Either<PaneNode, PaneNotFoundError> {
   if (node._tag === 'Leaf') {
     if (node.paneId !== targetPaneId) {
       return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
     }
-    return Either.right({ ...node, status: 'ready', cwd, sourceRepo, thinkingLevel })
+    return Either.right({
+      ...node,
+      status: 'ready',
+      cwd,
+      sourceRepo,
+      thinkingLevel,
+      permissionMode
+    })
   }
 
   for (let i = 0; i < node.children.length; i++) {
-    const result = markReadyNode(node.children[i], targetPaneId, cwd, sourceRepo, thinkingLevel)
+    const result = markReadyNode(
+      node.children[i],
+      targetPaneId,
+      cwd,
+      sourceRepo,
+      thinkingLevel,
+      permissionMode
+    )
     if (Either.isRight(result)) {
       const children = node.children.slice()
       children[i] = result.right
@@ -127,8 +143,8 @@ function markReadyNode(
 
 /**
  * Marks the leaf pane identified by `targetPaneId` as `ready`, recording its `cwd`, its
- * `thinkingLevel`, and, if the pane originated from a worktree, its `sourceRepo`. Call once a
- * pane's shell/session has attached.
+ * `thinkingLevel`, its `permissionMode`, and, if the pane originated from a worktree, its
+ * `sourceRepo`. Call once a pane's shell/session has attached.
  *
  * Fails with {@link PaneNotFoundError} if `targetPaneId` is not found anywhere in `tree`.
  */
@@ -137,9 +153,10 @@ export function markPaneReady(
   targetPaneId: PaneId,
   cwd: string,
   sourceRepo?: string,
-  thinkingLevel?: ThinkingLevel
+  thinkingLevel?: ThinkingLevel,
+  permissionMode?: PermissionMode
 ): Either.Either<PaneNode, PaneNotFoundError> {
-  return markReadyNode(tree, targetPaneId, cwd, sourceRepo, thinkingLevel)
+  return markReadyNode(tree, targetPaneId, cwd, sourceRepo, thinkingLevel, permissionMode)
 }
 
 function setThinkingLevelNode(
@@ -178,6 +195,44 @@ export function setPaneThinkingLevel(
   thinkingLevel: ThinkingLevel
 ): Either.Either<PaneNode, PaneNotFoundError> {
   return setThinkingLevelNode(tree, targetPaneId, thinkingLevel)
+}
+
+function setPermissionModeNode(
+  node: PaneNode,
+  targetPaneId: PaneId,
+  permissionMode: PermissionMode
+): Either.Either<PaneNode, PaneNotFoundError> {
+  if (node._tag === 'Leaf') {
+    if (node.paneId !== targetPaneId) {
+      return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+    }
+    return Either.right({ ...node, permissionMode })
+  }
+
+  for (let i = 0; i < node.children.length; i++) {
+    const result = setPermissionModeNode(node.children[i], targetPaneId, permissionMode)
+    if (Either.isRight(result)) {
+      const children = node.children.slice()
+      children[i] = result.right
+      return Either.right({ ...node, children })
+    }
+  }
+  return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+}
+
+/**
+ * Records a new `permissionMode` on the leaf pane identified by `targetPaneId`, leaving the rest of
+ * the tree unchanged. Call when a live pane's permission mode changes (by the user, or by a plan
+ * being approved) so the layout the renderer reads back reflects the current mode.
+ *
+ * Fails with {@link PaneNotFoundError} if `targetPaneId` is not found anywhere in `tree`.
+ */
+export function setPanePermissionMode(
+  tree: PaneNode,
+  targetPaneId: PaneId,
+  permissionMode: PermissionMode
+): Either.Either<PaneNode, PaneNotFoundError> {
+  return setPermissionModeNode(tree, targetPaneId, permissionMode)
 }
 
 function closeNode(

@@ -35,7 +35,8 @@ const workspace: PersistedWorkspace = {
         paneId: PANE_A,
         cwd: '/repo/a',
         model: 'claude-sonnet-5',
-        thinkingLevel: 'adaptive'
+        thinkingLevel: 'adaptive',
+        permissionMode: 'default'
       }
     },
     [PANE_B]: {
@@ -44,6 +45,7 @@ const workspace: PersistedWorkspace = {
         cwd: '/wt/b',
         model: 'claude-opus-4-8',
         thinkingLevel: 'high',
+        permissionMode: 'auto',
         worktree: { path: '/wt/b', branch: 'dia/pane-b', sourceRepo: '/repo' }
       },
       sessionId: 'session-b-123'

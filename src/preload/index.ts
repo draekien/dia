@@ -10,8 +10,10 @@ import {
   FocusPane,
   IpcEvent,
   ResolvePermission,
+  ResolvePlanReview,
   ResolveQuestion,
   SendMessage,
+  SetPermissionMode,
   SetThinkingLevel,
   SplitPane
 } from '@shared/ipc/contract'
@@ -25,6 +27,8 @@ const encodeSplitPane = Schema.encodeSync(SplitPane)
 const encodeClosePane = Schema.encodeSync(ClosePane)
 const encodeCreatePane = Schema.encodeSync(CreatePane)
 const encodeSetThinkingLevel = Schema.encodeSync(SetThinkingLevel)
+const encodeSetPermissionMode = Schema.encodeSync(SetPermissionMode)
+const encodeResolvePlanReview = Schema.encodeSync(ResolvePlanReview)
 const encodeFocusPane = Schema.encodeSync(FocusPane)
 const decodeEvent = Schema.decodeUnknownEither(IpcEvent)
 const decodeTree = Schema.decodeUnknownSync(PaneNode)
@@ -75,16 +79,30 @@ const api: DiaApi = {
   closePane(paneId) {
     ipcRenderer.send(CHANNEL.command, encodeClosePane(ClosePane.make({ paneId })))
   },
-  createPane(paneId, cwd, model, thinkingLevel, useWorktree) {
+  createPane(paneId, cwd, model, thinkingLevel, permissionMode, useWorktree) {
     ipcRenderer.send(
       CHANNEL.command,
-      encodeCreatePane(CreatePane.make({ paneId, cwd, model, thinkingLevel, useWorktree }))
+      encodeCreatePane(
+        CreatePane.make({ paneId, cwd, model, thinkingLevel, permissionMode, useWorktree })
+      )
     )
   },
   setThinkingLevel(paneId, level) {
     ipcRenderer.send(
       CHANNEL.command,
       encodeSetThinkingLevel(SetThinkingLevel.make({ paneId, level }))
+    )
+  },
+  setPermissionMode(paneId, mode) {
+    ipcRenderer.send(
+      CHANNEL.command,
+      encodeSetPermissionMode(SetPermissionMode.make({ paneId, mode }))
+    )
+  },
+  resolvePlanReview(paneId, requestId, approved) {
+    ipcRenderer.send(
+      CHANNEL.command,
+      encodeResolvePlanReview(ResolvePlanReview.make({ paneId, requestId, approved }))
     )
   },
   focusPane(paneId) {
@@ -135,6 +153,11 @@ const api: DiaApi = {
   onQuestionRequested(listener) {
     return subscribeToEvents((event) => {
       if (event._tag === 'PaneQuestionRequested') listener(event)
+    })
+  },
+  onPlanReviewRequested(listener) {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PanePlanReviewRequested') listener(event)
     })
   },
   onAssistantTextDelta(listener) {

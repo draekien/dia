@@ -5,7 +5,7 @@ import {
   Question,
   QuestionResponse
 } from '@shared/domain/attention'
-import { ConversationMessage, PaneConfig, ThinkingLevel } from '@shared/domain/pane'
+import { ConversationMessage, PaneConfig, PermissionMode, ThinkingLevel } from '@shared/domain/pane'
 import { Schema } from 'effect'
 
 const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
@@ -21,6 +21,10 @@ export const SendText = Schema.TaggedStruct('SendText', { text: Schema.String })
 export const SetThinkingLevel = Schema.TaggedStruct('SetThinkingLevel', {
   level: ThinkingLevel
 })
+/** Sent by main to the pane subprocess when the user changes the pane's permission mode. Applied live to the running Agent SDK session via `setPermissionMode`, so it affects the next tool call. Switching into `plan` records the pane's prior mode for restoration on plan approval. */
+export const SetPermissionMode = Schema.TaggedStruct('SetPermissionMode', {
+  mode: PermissionMode
+})
 /** Sent by main to the pane subprocess in response to a `PermissionRequested` message, carrying the user's `PermissionResponse` for the given `requestId`. */
 export const ResolvePermission = Schema.TaggedStruct('ResolvePermission', {
   requestId: Schema.String,
@@ -31,13 +35,20 @@ export const ResolveQuestion = Schema.TaggedStruct('ResolveQuestion', {
   requestId: Schema.String,
   response: QuestionResponse
 })
+/** Sent by main to the pane subprocess in response to a `PlanReviewRequested` message. `approved` true allows the agent's `ExitPlanMode` call and restores the mode held before entering plan; false denies it so the pane keeps planning. */
+export const ResolvePlanReview = Schema.TaggedStruct('ResolvePlanReview', {
+  requestId: Schema.String,
+  approved: Schema.Boolean
+})
 /** The full set of messages main may send to a pane subprocess. Decode inbound IPC payloads against this union before acting on them. */
 export const InboundMessage = Schema.Union(
   InitMessage,
   SendText,
   SetThinkingLevel,
+  SetPermissionMode,
   ResolvePermission,
-  ResolveQuestion
+  ResolveQuestion,
+  ResolvePlanReview
 )
 export type InboundMessage = typeof InboundMessage.Type
 
@@ -78,6 +89,15 @@ export const QuestionRequested = Schema.TaggedStruct('QuestionRequested', {
   requestId: Schema.String,
   questions: Schema.Array(Question)
 })
+/** Sent by the pane subprocess to main when the agent (in `plan` mode) calls `ExitPlanMode`, carrying the proposed `plan` text. Main should respond with a `ResolvePlanReview` message carrying the same `requestId`. */
+export const PlanReviewRequested = Schema.TaggedStruct('PlanReviewRequested', {
+  requestId: Schema.String,
+  plan: Schema.String
+})
+/** Sent by the pane subprocess to main when the pane's permission mode changed on its own (a plan was approved, so the mode held before entering plan was restored), so main can persist it and reflect it in the layout. User-initiated mode changes do not emit this — main already knows those. */
+export const PermissionModeChanged = Schema.TaggedStruct('PermissionModeChanged', {
+  mode: PermissionMode
+})
 /** Sent by the pane subprocess to main when the agent's current turn has finished successfully. */
 export const TurnCompleted = Schema.TaggedStruct('TurnCompleted', {})
 /** Sent by the pane subprocess to main when the agent's current turn has failed. */
@@ -96,6 +116,8 @@ export const OutboundMessage = Schema.Union(
   ToolCallCompleted,
   PermissionRequested,
   QuestionRequested,
+  PlanReviewRequested,
+  PermissionModeChanged,
   TurnCompleted,
   TurnErrored,
   SessionStarted

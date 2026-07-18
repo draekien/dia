@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
+import { PERMISSION_MODE_OPTIONS } from '@renderer/lib/permission-modes'
 import { THINKING_LEVEL_OPTIONS } from '@renderer/lib/thinking-levels'
 import { cn } from '@renderer/lib/utils'
 import {
@@ -24,21 +25,28 @@ import {
   type PermissionResponse,
   type QuestionResponse
 } from '@shared/domain/attention'
-import { DEFAULT_THINKING_LEVEL, type ThinkingLevel } from '@shared/domain/pane'
-import type { PanePermissionRequested, PaneQuestionRequested } from '@shared/ipc/contract'
+import {
+  DEFAULT_PERMISSION_MODE,
+  DEFAULT_THINKING_LEVEL,
+  type PermissionMode,
+  type ThinkingLevel
+} from '@shared/domain/pane'
+import type {
+  PanePermissionRequested,
+  PanePlanReviewRequested,
+  PaneQuestionRequested
+} from '@shared/ipc/contract'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUp, Brain, Check } from 'lucide-react'
+import { ArrowUp, Brain, Check, ShieldCheck } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import rehypeHighlight from 'rehype-highlight'
-import rehypeHighlightLines from 'rehype-highlight-code-lines'
-import remarkGfm from 'remark-gfm'
 import type { PaneMessage, ToolCallPart } from '../lib/pane-chat'
 import { emptyPaneChatState } from '../lib/pane-chat'
 import { paneChatAtom, paneSendAtom } from '../lib/pane-chat-atoms'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
+import { Markdown } from './markdown'
 import { PermissionRequestCard } from './permission-request-card'
+import { PlanReviewCard } from './plan-review-card'
 import { PulseIndicator } from './pulse-indicator'
 import { Bubble, BubbleContent } from './ui/bubble'
 import { Button } from './ui/button'
@@ -49,6 +57,7 @@ interface PaneProps {
   cwd?: string
   sourceRepo?: string
   thinkingLevel?: ThinkingLevel
+  permissionMode?: PermissionMode
   isFocused?: boolean
   isDimmed?: boolean
   onFocus?: () => void
@@ -96,33 +105,6 @@ export function formatToolOutput(output: unknown): string | undefined {
   } catch {
     return undefined
   }
-}
-
-const typesetClassName = 'typeset typeset-docs max-w-[75ch]'
-
-function Markdown({
-  content,
-  className
-}: {
-  content: string
-  className?: string
-}): React.JSX.Element {
-  return (
-    <div className={cn(typesetClassName, className)}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[
-          [rehypeHighlight, { detect: true, ignoreMissing: true }],
-          [rehypeHighlightLines, { showLineNumbers: true }]
-        ]}
-        components={{
-          a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
-  )
 }
 
 function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
@@ -238,18 +220,51 @@ function ThinkingLevelSelect({
   )
 }
 
+function PermissionModeSelect({
+  value,
+  onChange
+}: {
+  value: PermissionMode
+  onChange: (mode: PermissionMode) => void
+}): React.JSX.Element {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger
+        size="sm"
+        aria-label="Permission mode"
+        className="gap-1 border-0 bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground dark:bg-transparent dark:hover:bg-accent/50"
+      >
+        <ShieldCheck />
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align="start">
+        {PERMISSION_MODE_OPTIONS.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
 function PaneChat({
   paneId,
   thinkingLevel,
-  onThinkingLevelChange
+  onThinkingLevelChange,
+  permissionMode,
+  onPermissionModeChange
 }: {
   paneId: string
   thinkingLevel: ThinkingLevel
   onThinkingLevelChange: (level: ThinkingLevel) => void
+  permissionMode: PermissionMode
+  onPermissionModeChange: (mode: PermissionMode) => void
 }): React.JSX.Element {
   const queryClient = useQueryClient()
   const pendingPermissionQueryKey = ['pane', paneId, 'pendingPermission'] as const
   const pendingQuestionQueryKey = ['pane', paneId, 'pendingQuestion'] as const
+  const pendingPlanReviewQueryKey = ['pane', paneId, 'pendingPlanReview'] as const
 
   const chat = Result.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
   const sendMessage = useAtomSet(paneSendAtom(paneId))
@@ -261,6 +276,11 @@ function PaneChat({
   })
   const { data: pendingQuestion = null } = useQuery<PaneQuestionRequested | null>({
     queryKey: pendingQuestionQueryKey,
+    queryFn: () => null,
+    staleTime: Infinity
+  })
+  const { data: pendingPlanReview = null } = useQuery<PanePlanReviewRequested | null>({
+    queryKey: pendingPlanReviewQueryKey,
     queryFn: () => null,
     staleTime: Infinity
   })
@@ -279,6 +299,13 @@ function PaneChat({
     })
   }, [queryClient, paneId, pendingQuestionQueryKey])
 
+  useEffect(() => {
+    return window.dia.onPlanReviewRequested((event) => {
+      if (event.paneId !== paneId) return
+      queryClient.setQueryData<PanePlanReviewRequested | null>(pendingPlanReviewQueryKey, event)
+    })
+  }, [queryClient, paneId, pendingPlanReviewQueryKey])
+
   const form = useForm({
     defaultValues: { text: '' },
     onSubmit: ({ value, formApi }) => {
@@ -287,6 +314,7 @@ function PaneChat({
       sendMessage(text)
       queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
       queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, null)
+      queryClient.setQueryData<PanePlanReviewRequested | null>(pendingPlanReviewQueryKey, null)
       formApi.reset()
     }
   })
@@ -301,6 +329,12 @@ function PaneChat({
     if (!pendingQuestion) return
     window.dia.resolveQuestion(paneId, pendingQuestion.requestId, response)
     queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, null)
+  }
+
+  function respondToPlanReview(approved: boolean): void {
+    if (!pendingPlanReview) return
+    window.dia.resolvePlanReview(paneId, pendingPlanReview.requestId, approved)
+    queryClient.setQueryData<PanePlanReviewRequested | null>(pendingPlanReviewQueryKey, null)
   }
 
   return (
@@ -329,6 +363,9 @@ function PaneChat({
       {pendingQuestion !== null && (
         <ClarifyingQuestionCard request={pendingQuestion} onResolve={respondToQuestion} />
       )}
+      {pendingPlanReview !== null && (
+        <PlanReviewCard request={pendingPlanReview} onResolve={respondToPlanReview} />
+      )}
       <form
         className="mt-2"
         onSubmit={(event) => {
@@ -354,6 +391,7 @@ function PaneChat({
               />
               <InputGroupAddon align="block-end">
                 <ThinkingLevelSelect value={thinkingLevel} onChange={onThinkingLevelChange} />
+                <PermissionModeSelect value={permissionMode} onChange={onPermissionModeChange} />
                 <InputGroupButton
                   type="submit"
                   variant="default"
@@ -378,6 +416,7 @@ function Pane({
   cwd,
   sourceRepo,
   thinkingLevel,
+  permissionMode,
   isFocused = false,
   isDimmed = false,
   onFocus
@@ -386,11 +425,21 @@ function Pane({
   const attentionQueryKey = ['pane', paneId, 'attention'] as const
 
   const [level, setLevel] = useState<ThinkingLevel>(thinkingLevel ?? DEFAULT_THINKING_LEVEL)
+  const [mode, setMode] = useState<PermissionMode>(permissionMode ?? DEFAULT_PERMISSION_MODE)
 
   function changeThinkingLevel(next: ThinkingLevel): void {
     setLevel(next)
     window.dia.setThinkingLevel(paneId, next)
   }
+
+  function changePermissionMode(next: PermissionMode): void {
+    setMode(next)
+    window.dia.setPermissionMode(paneId, next)
+  }
+
+  useEffect(() => {
+    if (permissionMode !== undefined) setMode(permissionMode)
+  }, [permissionMode])
 
   const { data: attention = Idle.make({}) } = useQuery<AttentionState>({
     queryKey: attentionQueryKey,
@@ -471,6 +520,8 @@ function Pane({
           paneId={paneId}
           thinkingLevel={level}
           onThinkingLevelChange={changeThinkingLevel}
+          permissionMode={mode}
+          onPermissionModeChange={changePermissionMode}
         />
       </div>
     </div>

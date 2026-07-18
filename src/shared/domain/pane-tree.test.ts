@@ -8,6 +8,7 @@ import {
   type PaneNode,
   PaneNotFoundError,
   resizeSplit,
+  setPanePermissionMode,
   splitPane
 } from './pane-tree'
 
@@ -85,6 +86,29 @@ describe('markPaneReady', () => {
 
   it('returns PaneNotFoundError for an unknown paneId', () => {
     const result = markPaneReady(leaf(PANE_A), 'not-a-real-id', '/repo')
+
+    expect(result).toEqual(Either.left(new PaneNotFoundError({ paneId: 'not-a-real-id' })))
+  })
+})
+
+describe('setPanePermissionMode', () => {
+  it('records the mode on the target leaf, leaving its sibling unchanged', () => {
+    const split = Either.getOrThrow(splitPane(leaf(PANE_A), PANE_A, 'row', PANE_B))
+
+    const result = setPanePermissionMode(split, PANE_B, 'acceptEdits')
+
+    expect(result).toEqual(
+      Either.right({
+        _tag: 'Split',
+        direction: 'row',
+        children: [leaf(PANE_A), { ...leaf(PANE_B, 'pending'), permissionMode: 'acceptEdits' }],
+        sizes: [0.5, 0.5]
+      })
+    )
+  })
+
+  it('returns PaneNotFoundError for an unknown paneId', () => {
+    const result = setPanePermissionMode(leaf(PANE_A), 'not-a-real-id', 'auto')
 
     expect(result).toEqual(Either.left(new PaneNotFoundError({ paneId: 'not-a-real-id' })))
   })

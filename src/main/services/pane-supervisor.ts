@@ -10,10 +10,18 @@ import {
   type PaneError,
   PermissionRequest,
   type PermissionResponse,
+  PlanReview,
   type QuestionResponse,
   transitionAttention
 } from '@shared/domain/attention'
-import type { PaneConfig, PaneRecord, ThinkingLevel, WorktreeInfo } from '@shared/domain/pane'
+import type {
+  PaneConfig,
+  PaneRecord,
+  PermissionMode,
+  StartupPermissionMode,
+  ThinkingLevel,
+  WorktreeInfo
+} from '@shared/domain/pane'
 import type { PaneId } from '@shared/domain/pane-tree'
 import {
   type IpcEvent,
@@ -22,6 +30,7 @@ import {
   PaneAttentionChanged,
   PaneMessageAppended,
   PanePermissionRequested,
+  PanePlanReviewRequested,
   PaneQuestionRequested,
   PaneToolCallCompleted,
   PaneToolCallStarted
@@ -50,8 +59,10 @@ import {
   InitMessage,
   OutboundMessage,
   ResolvePermission,
+  ResolvePlanReview,
   ResolveQuestion,
   SendText,
+  SetPermissionMode,
   SetThinkingLevel
 } from '../pane-process/protocol'
 import {
@@ -78,6 +89,7 @@ export interface PaneCreationRequest {
   readonly sourceCwd: string
   readonly model: string
   readonly thinkingLevel: ThinkingLevel
+  readonly permissionMode: PermissionMode
   readonly worktreePath: string | undefined
   readonly resume?: string
 }
@@ -92,11 +104,13 @@ export class ProcessCrashedError extends Data.TaggedError('ProcessCrashedError')
 export interface PaneHandle {
   readonly sendMessage: (text: string) => Effect.Effect<void>
   readonly setThinkingLevel: (level: ThinkingLevel) => Effect.Effect<void>
+  readonly setPermissionMode: (mode: PermissionMode) => Effect.Effect<void>
   readonly resolvePermission: (
     requestId: string,
     response: PermissionResponse
   ) => Effect.Effect<void>
   readonly resolveQuestion: (requestId: string, response: QuestionResponse) => Effect.Effect<void>
+  readonly resolvePlanReview: (requestId: string, approved: boolean) => Effect.Effect<void>
   readonly subscribe: () => Stream.Stream<IpcEvent>
   readonly markErrored: (error: PaneError) => Effect.Effect<void>
 }
@@ -182,9 +196,22 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
         })
       )
     ),
+    Match.tag('PlanReviewRequested', (m) =>
+      Option.some<IpcEvent>(
+        PanePlanReviewRequested.make({
+          paneId,
+          requestId: m.requestId,
+          plan: m.plan
+        })
+      )
+    ),
     // TurnCompleted/TurnErrored/SessionStarted carry no renderer-facing content of their own --
     // they only drive AttentionState (see toAttentionTarget below) -- so they have no IpcEvent.
-    Match.tag('TurnCompleted', 'TurnErrored', 'SessionStarted', () => Option.none<IpcEvent>()),
+    // PermissionModeChanged is handled out of band by onPermissionModeChanged (it updates the
+    // persisted config and layout tree), not surfaced as a standalone renderer event here.
+    Match.tag('TurnCompleted', 'TurnErrored', 'SessionStarted', 'PermissionModeChanged', () =>
+      Option.none<IpcEvent>()
+    ),
     Match.exhaustive
   )
 }
@@ -212,6 +239,16 @@ function toAttentionTarget(message: OutboundMessage): Option.Option<AttentionSta
         })
       )
     ),
+    Match.tag('PlanReviewRequested', (m) =>
+      Option.some<AttentionState>(
+        AwaitingPermission.make({
+          request: PlanReview.make({
+            requestId: m.requestId,
+            plan: m.plan
+          })
+        })
+      )
+    ),
     Match.tag('TurnCompleted', () => Option.some<AttentionState>(Completed.make({}))),
     Match.tag('TurnErrored', (m) => Option.some<AttentionState>(Errored.make({ error: m.error }))),
     Match.orElse(() => Option.none<AttentionState>())
@@ -225,6 +262,7 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
   config: PaneConfig,
   spawner: Context.Tag.Service<PaneProcessSpawner>,
   onSessionId: (sessionId: string) => Effect.Effect<void>,
+  onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>,
   resume: string | undefined
 ) {
   const child = yield* Effect.acquireRelease(
@@ -355,6 +393,14 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
         yield* onSessionId(message.sessionId)
       }
 
+      if (message._tag === 'PermissionModeChanged') {
+        yield* Effect.logInfo('Pane permission mode changed by the session', {
+          paneId: config.paneId,
+          mode: message.mode
+        })
+        yield* onPermissionModeChanged(message.mode)
+      }
+
       const event = toIpcEvent(config.paneId, message)
       if (Option.isSome(event)) yield* Queue.offer(outbound, event.value)
 
@@ -387,6 +433,15 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
           Effect.sync(() => child.postMessage(encodeInbound(SetThinkingLevel.make({ level }))))
         )
       ),
+    setPermissionMode: (mode) =>
+      Effect.logDebug('Sending permission mode to pane process', {
+        paneId: config.paneId,
+        mode
+      }).pipe(
+        Effect.andThen(
+          Effect.sync(() => child.postMessage(encodeInbound(SetPermissionMode.make({ mode }))))
+        )
+      ),
     resolvePermission: (requestId, response) =>
       Effect.logDebug('Sending permission resolution to pane process', {
         paneId: config.paneId,
@@ -413,6 +468,19 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
         ),
         Effect.andThen(applyAttention(Idle.make({})))
       ),
+    resolvePlanReview: (requestId, approved) =>
+      Effect.logDebug('Sending plan-review resolution to pane process', {
+        paneId: config.paneId,
+        requestId,
+        approved
+      }).pipe(
+        Effect.andThen(
+          Effect.sync(() =>
+            child.postMessage(encodeInbound(ResolvePlanReview.make({ requestId, approved })))
+          )
+        ),
+        Effect.andThen(applyAttention(Idle.make({})))
+      ),
     subscribe: () => Stream.fromQueue(outbound),
     markErrored: (error) => applyAttention(Errored.make({ error }))
   }
@@ -434,12 +502,15 @@ export class PaneSupervisor extends Context.Tag('PaneSupervisor')<
      * Provisions a pane's worktree (creating it, or reattaching the existing branch when
      * `request.resume` is set), spawns its process, and registers it for lookup and teardown.
      * `onSessionId` is invoked when the pane's Agent SDK session starts or resumes, carrying the
-     * id the caller should persist for later resume.
+     * id the caller should persist for later resume. `onPermissionModeChanged` is invoked when the
+     * pane changes its own permission mode (a plan was approved, restoring the pre-plan mode),
+     * carrying the mode the caller should persist and reflect in the layout.
      */
     readonly openPane: (
       request: PaneCreationRequest,
       onEvent: (event: IpcEvent) => Effect.Effect<void>,
-      onSessionId: (sessionId: string) => Effect.Effect<void>
+      onSessionId: (sessionId: string) => Effect.Effect<void>,
+      onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>
     ) => Effect.Effect<
       { readonly handle: PaneHandle; readonly config: PaneConfig },
       ProcessSpawnError | WorktreeCreateError | WorktreeReattachError
@@ -477,7 +548,8 @@ export const PaneSupervisorLive = Layer.effect(
     const openPane = Effect.fn('PaneSupervisor.openPane')(function* (
       request: PaneCreationRequest,
       onEvent: (event: IpcEvent) => Effect.Effect<void>,
-      onSessionId: (sessionId: string) => Effect.Effect<void>
+      onSessionId: (sessionId: string) => Effect.Effect<void>,
+      onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>
     ) {
       const scope = yield* Scope.make()
       const expectedExit = yield* Ref.make(false)
@@ -488,7 +560,8 @@ export const PaneSupervisorLive = Layer.effect(
             paneId: request.paneId,
             cwd: request.sourceCwd,
             model: request.model,
-            thinkingLevel: request.thinkingLevel
+            thinkingLevel: request.thinkingLevel,
+            permissionMode: request.permissionMode
           }
           return config
         }
@@ -524,6 +597,7 @@ export const PaneSupervisorLive = Layer.effect(
           cwd: worktree.path,
           model: request.model,
           thinkingLevel: request.thinkingLevel,
+          permissionMode: request.permissionMode,
           worktree
         }
         return config
@@ -536,10 +610,13 @@ export const PaneSupervisorLive = Layer.effect(
 
       const config = prepared.right
 
-      const started = yield* startProcess(config, spawner, onSessionId, request.resume).pipe(
-        Effect.provideService(Scope.Scope, scope),
-        Effect.either
-      )
+      const started = yield* startProcess(
+        config,
+        spawner,
+        onSessionId,
+        onPermissionModeChanged,
+        request.resume
+      ).pipe(Effect.provideService(Scope.Scope, scope), Effect.either)
 
       if (Either.isLeft(started)) {
         yield* Scope.close(scope, Exit.fail(started.left))

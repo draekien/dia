@@ -5,7 +5,7 @@ import {
   query,
   type SDKUserMessage
 } from '@anthropic-ai/claude-agent-sdk'
-import { Question, type QuestionResponse } from '@shared/domain/attention'
+import { PlanReviewResponse, Question, type QuestionResponse } from '@shared/domain/attention'
 import type { PaneConfig, ThinkingLevel } from '@shared/domain/pane'
 import {
   Data,
@@ -26,7 +26,18 @@ import {
 import { makeLoggerLive } from '../logger'
 import { makeSessionEventReducer } from './agent-session-reducer'
 import { makePendingUserInput, type UserInputResolution } from './pending-user-input'
-import { InboundMessage, OutboundMessage, PermissionRequested, QuestionRequested } from './protocol'
+import {
+  makePermissionModeController,
+  type PermissionModeController
+} from './permission-mode-controller'
+import {
+  InboundMessage,
+  OutboundMessage,
+  PermissionModeChanged,
+  PermissionRequested,
+  PlanReviewRequested,
+  QuestionRequested
+} from './protocol'
 import { thinkingOptions } from './thinking-options'
 
 /**
@@ -106,6 +117,13 @@ const toPermissionResult = (
       })
     ),
     Match.tag('Answers', 'FreeformResponse', (r): PermissionResult => questionResponseToResult(r)),
+    Match.tag(
+      'PlanReviewResponse',
+      (r): PermissionResult =>
+        r.approved
+          ? { behavior: 'allow' }
+          : { behavior: 'deny', message: 'Plan not approved; keep planning.' }
+    ),
     Match.exhaustive
   )
 
@@ -113,6 +131,13 @@ const canUseTool: CanUseTool = (toolName, input, options) =>
   Effect.runPromise(
     Effect.gen(function* () {
       const deferred = yield* pendingUserInput.register(options.toolUseID)
+
+      if (toolName === 'ExitPlanMode') {
+        const plan = typeof input.plan === 'string' ? input.plan : ''
+        yield* postOutbound(PlanReviewRequested.make({ requestId: options.toolUseID, plan }))
+        const resolution = yield* Deferred.await(deferred)
+        return toPermissionResult(resolution, options.suggestions)
+      }
 
       const questions =
         toolName === 'AskUserQuestion' ? decodeQuestions(input.questions) : undefined
@@ -173,12 +198,14 @@ const runSession = Effect.fn('AgentSession.runSession')(
     config: PaneConfig,
     promptQueue: Queue.Queue<SDKUserMessage>,
     sessionIdRef: Ref.Ref<Option.Option<string>>,
+    modeController: PermissionModeController,
     resume: string | undefined
   ) {
     yield* Effect.logInfo('Starting query session', {
       paneId: config.paneId,
       cwd: config.cwd,
       thinkingLevel: config.thinkingLevel,
+      permissionMode: config.permissionMode,
       resume
     })
 
@@ -191,10 +218,12 @@ const runSession = Effect.fn('AgentSession.runSession')(
         model: config.model,
         includePartialMessages: true,
         canUseTool,
+        permissionMode: config.permissionMode,
         resume,
         ...thinkingOptions(config.thinkingLevel)
       }
     })
+    yield* modeController.attachQuery(session)
 
     const events = Stream.fromAsyncIterable(session, (cause) => new SessionStreamError({ cause }))
     const reducer = makeSessionEventReducer()
@@ -234,12 +263,16 @@ const program = Effect.gen(function* () {
   const configRef = yield* Ref.make<Option.Option<PaneConfig>>(Option.none())
   const desiredLevelRef = yield* Ref.make<Option.Option<ThinkingLevel>>(Option.none())
   const fiberRef = yield* Ref.make<Option.Option<Fiber.RuntimeFiber<void>>>(Option.none())
+  const modeController = yield* makePermissionModeController
 
   const startSession = Effect.fn('AgentSession.startSession')(function* (
     config: PaneConfig,
     resume: string | undefined
   ) {
-    const fiber = yield* Effect.forkScoped(runSession(config, promptQueue, sessionIdRef, resume))
+    yield* modeController.seed(config.permissionMode)
+    const fiber = yield* Effect.forkScoped(
+      runSession(config, promptQueue, sessionIdRef, modeController, resume)
+    )
     yield* Ref.set(configRef, Option.some(config))
     yield* Ref.set(fiberRef, Option.some(fiber))
   })
@@ -273,7 +306,9 @@ const program = Effect.gen(function* () {
     const fiberOpt = yield* Ref.get(fiberRef)
     if (Option.isSome(fiberOpt)) yield* Fiber.interrupt(fiberOpt.value)
 
-    yield* startSession({ ...config, thinkingLevel: desired }, sessionId.value)
+    const currentModeOpt = yield* modeController.currentMode
+    const permissionMode = Option.getOrElse(currentModeOpt, () => config.permissionMode)
+    yield* startSession({ ...config, thinkingLevel: desired, permissionMode }, sessionId.value)
   })
 
   const rawInbound = Stream.async<unknown>((emit) => {
@@ -296,6 +331,17 @@ const program = Effect.gen(function* () {
         yield* startSession(inbound.config, inbound.resume)
       } else if (inbound._tag === 'SetThinkingLevel') {
         yield* Ref.set(desiredLevelRef, Option.some(inbound.level))
+      } else if (inbound._tag === 'SetPermissionMode') {
+        yield* modeController.applyMode(inbound.mode)
+      } else if (inbound._tag === 'ResolvePlanReview') {
+        const restored = yield* modeController.resolvePlan(inbound.approved)
+        if (Option.isSome(restored)) {
+          yield* postOutbound(PermissionModeChanged.make({ mode: restored.value }))
+        }
+        yield* resolveRequest(
+          inbound.requestId,
+          PlanReviewResponse.make({ approved: inbound.approved })
+        )
       } else if (inbound._tag === 'SendText') {
         yield* restartForThinkingChange()
         yield* dropPendingRequests()

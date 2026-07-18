@@ -235,6 +235,19 @@ export function wireCommands(deps: {
             .setThinkingLevel(command.paneId, command.level)
             .pipe(Effect.flatMap(sendLayoutChanged))
         ),
+        Match.tag('SetPermissionMode', (command) =>
+          paneWorkspace
+            .setPermissionMode(command.paneId, command.mode)
+            .pipe(Effect.flatMap(sendLayoutChanged))
+        ),
+        Match.tag('ResolvePlanReview', (command) =>
+          withHandle(
+            'ResolvePlanReview',
+            command.paneId,
+            'Failed to resolve plan review for pane',
+            (handle) => handle.resolvePlanReview(command.requestId, command.approved)
+          )
+        ),
         Match.tag('CreatePane', (command) =>
           paneWorkspace
             .createPane(
@@ -242,6 +255,7 @@ export function wireCommands(deps: {
               command.cwd,
               command.model,
               command.thinkingLevel,
+              command.permissionMode,
               command.useWorktree,
               onEvent
             )

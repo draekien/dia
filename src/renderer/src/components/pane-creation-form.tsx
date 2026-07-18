@@ -7,8 +7,13 @@ import {
   SelectValue
 } from '@renderer/components/ui/select'
 import { Switch } from '@renderer/components/ui/switch'
+import { CREATE_PERMISSION_MODE_OPTIONS } from '@renderer/lib/permission-modes'
 import { THINKING_LEVEL_OPTIONS } from '@renderer/lib/thinking-levels'
-import { DEFAULT_THINKING_LEVEL, type ThinkingLevel } from '@shared/domain/pane'
+import {
+  DEFAULT_THINKING_LEVEL,
+  type StartupPermissionMode,
+  type ThinkingLevel
+} from '@shared/domain/pane'
 import type { ChooseDirectoryResult } from '@shared/ipc/contract'
 import { useEffect, useState } from 'react'
 
@@ -41,6 +46,7 @@ function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
   const [state, setState] = useState<FormState>({ step: 'idle' })
   const [model, setModel] = useState(MODEL_OPTIONS[0].value)
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL)
+  const [permissionMode, setPermissionMode] = useState<StartupPermissionMode>('auto')
   const [useWorktree, setUseWorktree] = useState(false)
 
   useEffect(() => {
@@ -62,7 +68,14 @@ function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
   function handleStart() {
     if (state.step !== 'chosen') return
     setState({ step: 'creating', path: state.path, isGitRepo: state.isGitRepo })
-    window.dia.createPane(paneId, state.path, model, thinkingLevel, state.isGitRepo && useWorktree)
+    window.dia.createPane(
+      paneId,
+      state.path,
+      model,
+      thinkingLevel,
+      permissionMode,
+      state.isGitRepo && useWorktree
+    )
   }
 
   function handleRetry() {
@@ -133,6 +146,26 @@ function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
                 </SelectTrigger>
                 <SelectContent>
                   {THINKING_LEVEL_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-ink-muted">Permissions</span>
+              <Select
+                value={permissionMode}
+                onValueChange={(value: StartupPermissionMode) => setPermissionMode(value)}
+                disabled={isBusy}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CREATE_PERMISSION_MODE_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value}>
                       {option.label}
                     </SelectItem>

@@ -57,11 +57,23 @@ export const ClarifyingQuestion = Schema.TaggedStruct('ClarifyingQuestion', {
 export type ClarifyingQuestion = typeof ClarifyingQuestion.Type
 
 /**
- * What a pane in `AwaitingPermission` is blocked on: either a tool
- * `PermissionRequest` or a `ClarifyingQuestion`. Branch on `_tag` to route to
- * the matching dialog and response command.
+ * A pending plan review surfaced by a pane running in `plan` mode, raised when
+ * the agent calls `ExitPlanMode`. Carries the proposed `plan` text and the
+ * `requestId` used to correlate the user's approve/reject decision back to the
+ * originating SDK request.
  */
-export const UserInputRequest = Schema.Union(PermissionRequest, ClarifyingQuestion)
+export const PlanReview = Schema.TaggedStruct('PlanReview', {
+  requestId: Schema.String,
+  plan: Schema.String
+})
+export type PlanReview = typeof PlanReview.Type
+
+/**
+ * What a pane in `AwaitingPermission` is blocked on: a tool `PermissionRequest`,
+ * a `ClarifyingQuestion`, or a `PlanReview`. Branch on `_tag` to route to the
+ * matching dialog and response command.
+ */
+export const UserInputRequest = Schema.Union(PermissionRequest, ClarifyingQuestion, PlanReview)
 export type UserInputRequest = typeof UserInputRequest.Type
 
 /**
@@ -123,6 +135,17 @@ export type FreeformResponse = typeof FreeformResponse.Type
  */
 export const QuestionResponse = Schema.Union(Answers, FreeformResponse)
 export type QuestionResponse = typeof QuestionResponse.Type
+
+/**
+ * The user's decision on a `PlanReview`: `approved` true lets the agent's
+ * `ExitPlanMode` call proceed (and the pane's mode is restored to what it was
+ * before entering plan); false keeps the pane planning. Construct with
+ * `PlanReviewResponse.make(...)`.
+ */
+export const PlanReviewResponse = Schema.TaggedStruct('PlanReviewResponse', {
+  approved: Schema.Boolean
+})
+export type PlanReviewResponse = typeof PlanReviewResponse.Type
 
 /** A pane-level error message, used to describe why a pane entered `Errored`. */
 export const PaneError = Schema.Struct({

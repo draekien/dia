@@ -6,7 +6,12 @@ import {
   Question,
   QuestionResponse
 } from '../domain/attention'
-import { ConversationMessage, ThinkingLevel } from '../domain/pane'
+import {
+  ConversationMessage,
+  PermissionMode,
+  StartupPermissionMode,
+  ThinkingLevel
+} from '../domain/pane'
 import { PaneNode } from '../domain/pane-tree'
 import type { ThemePreference } from '../domain/theme'
 
@@ -101,14 +106,17 @@ export type ClosePane = typeof ClosePane.Type
 
 /**
  * Command sent by the renderer to create a new pane with id `paneId`, rooted
- * at `cwd`, running the given `model`. Set `useWorktree` to have the pane
- * operate on a dedicated git worktree instead of `cwd` directly.
+ * at `cwd`, running the given `model` under the chosen `permissionMode` (a
+ * {@link StartupPermissionMode} — `plan` is never a starting mode). Set
+ * `useWorktree` to have the pane operate on a dedicated git worktree instead of
+ * `cwd` directly.
  */
 export const CreatePane = Schema.TaggedStruct('CreatePane', {
   paneId: Schema.UUID,
   cwd: Schema.String,
   model: Schema.String,
   thinkingLevel: ThinkingLevel,
+  permissionMode: StartupPermissionMode,
   useWorktree: Schema.Boolean
 })
 export type CreatePane = typeof CreatePane.Type
@@ -123,6 +131,32 @@ export const SetThinkingLevel = Schema.TaggedStruct('SetThinkingLevel', {
   level: ThinkingLevel
 })
 export type SetThinkingLevel = typeof SetThinkingLevel.Type
+
+/**
+ * Command sent by the renderer to change the permission mode of the live pane
+ * `paneId`. Applied immediately to the running Agent SDK session (so it affects
+ * the next tool call, not just the next turn) and persisted on the pane's
+ * `PaneConfig`. Switching into `plan` records the prior mode so it can be
+ * restored when the pane's plan is approved.
+ */
+export const SetPermissionMode = Schema.TaggedStruct('SetPermissionMode', {
+  paneId: Schema.UUID,
+  mode: PermissionMode
+})
+export type SetPermissionMode = typeof SetPermissionMode.Type
+
+/**
+ * Command sent by the renderer to answer a pending plan review (identified by
+ * `requestId`) for the pane `paneId`, raised when the agent called
+ * `ExitPlanMode`. `approved` true lets the agent proceed and restores the mode
+ * the pane held before entering plan mode; false keeps the pane planning.
+ */
+export const ResolvePlanReview = Schema.TaggedStruct('ResolvePlanReview', {
+  paneId: Schema.UUID,
+  requestId: Schema.String,
+  approved: Schema.Boolean
+})
+export type ResolvePlanReview = typeof ResolvePlanReview.Type
 
 /**
  * Command sent by the renderer when the user focuses the pane `paneId`. A cold
@@ -146,6 +180,8 @@ export const IpcCommand = Schema.Union(
   ClosePane,
   CreatePane,
   SetThinkingLevel,
+  SetPermissionMode,
+  ResolvePlanReview,
   FocusPane
 )
 export type IpcCommand = typeof IpcCommand.Type
@@ -243,6 +279,19 @@ export const PaneQuestionRequested = Schema.TaggedStruct('PaneQuestionRequested'
 export type PaneQuestionRequested = typeof PaneQuestionRequested.Type
 
 /**
+ * Event pushed to the renderer when the agent in pane `paneId` (running in
+ * `plan` mode) calls `ExitPlanMode` to present its `plan` and is blocked
+ * awaiting approval. Renderer should show the plan-review card and reply with a
+ * {@link ResolvePlanReview} command carrying the same `requestId`.
+ */
+export const PanePlanReviewRequested = Schema.TaggedStruct('PanePlanReviewRequested', {
+  paneId: Schema.UUID,
+  requestId: Schema.String,
+  plan: Schema.String
+})
+export type PanePlanReviewRequested = typeof PanePlanReviewRequested.Type
+
+/**
  * Event pushed to the renderer whenever the pane layout tree changes (pane
  * created, split, closed, or resized). `tree` is the full, current layout and
  * should replace the renderer's local copy rather than being merged.
@@ -288,6 +337,7 @@ export const IpcEvent = Schema.Union(
   PaneToolCallCompleted,
   PanePermissionRequested,
   PaneQuestionRequested,
+  PanePlanReviewRequested,
   LayoutChanged,
   PaneCreateFailed,
   PaneAttentionChanged
@@ -311,9 +361,12 @@ export interface DiaApi {
     cwd: string,
     model: string,
     thinkingLevel: ThinkingLevel,
+    permissionMode: StartupPermissionMode,
     useWorktree: boolean
   ): void
   setThinkingLevel(paneId: string, level: ThinkingLevel): void
+  setPermissionMode(paneId: string, mode: PermissionMode): void
+  resolvePlanReview(paneId: string, requestId: string, approved: boolean): void
   focusPane(paneId: string): void
   getInitialLayout(): Promise<PaneNode>
   getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>
@@ -326,6 +379,7 @@ export interface DiaApi {
   onAttentionChanged(listener: (event: PaneAttentionChanged) => void): () => void
   onPermissionRequested(listener: (event: PanePermissionRequested) => void): () => void
   onQuestionRequested(listener: (event: PaneQuestionRequested) => void): () => void
+  onPlanReviewRequested(listener: (event: PanePlanReviewRequested) => void): () => void
   onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void
   onAssistantThinkingDelta(listener: (event: PaneAssistantThinkingDelta) => void): () => void
   onToolCallStarted(listener: (event: PaneToolCallStarted) => void): () => void

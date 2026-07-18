@@ -45,6 +45,7 @@ describe('wireCommands', () => {
         close: () => Effect.dieMessage('close should not be called'),
         getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
         setThinkingLevel: () => Effect.dieMessage('setThinkingLevel should not be called'),
+        setPermissionMode: () => Effect.dieMessage('setPermissionMode should not be called'),
         resumePane: () => Effect.dieMessage('resumePane should not be called')
       }
       const paneSupervisor = {
@@ -86,6 +87,7 @@ describe('wireCommands', () => {
         close: () => Effect.dieMessage('close should not be called'),
         getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
         setThinkingLevel: () => Effect.dieMessage('setThinkingLevel should not be called'),
+        setPermissionMode: () => Effect.dieMessage('setPermissionMode should not be called'),
         resumePane: () => Effect.dieMessage('resumePane should not be called')
       }
       const paneSupervisor = {
@@ -133,6 +135,7 @@ describe('wireCommands', () => {
             calls.push([paneId, level])
             return updatedTree
           }),
+        setPermissionMode: () => Effect.dieMessage('setPermissionMode should not be called'),
         resumePane: () => Effect.dieMessage('resumePane should not be called')
       }
       const paneSupervisor = {
@@ -158,6 +161,55 @@ describe('wireCommands', () => {
     })
   )
 
+  it.effect('routes SetPermissionMode to PaneWorkspace and broadcasts the returned layout', () =>
+    Effect.gen(function* () {
+      const sent: Array<[string, unknown]> = []
+      const webContents: EventSender = { send: (channel, payload) => sent.push([channel, payload]) }
+      const updatedTree: PaneNode = {
+        _tag: 'Leaf',
+        paneId: PANE_ID,
+        status: 'ready',
+        cwd: '/repo',
+        permissionMode: 'acceptEdits'
+      }
+      const calls: Array<[string, string]> = []
+      const paneWorkspace = {
+        getTree: () => Effect.dieMessage('getTree should not be called'),
+        split: () => Effect.dieMessage('split should not be called'),
+        createPane: () => Effect.dieMessage('createPane should not be called'),
+        close: () => Effect.dieMessage('close should not be called'),
+        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
+        setThinkingLevel: () => Effect.dieMessage('setThinkingLevel should not be called'),
+        setPermissionMode: (paneId: string, mode: string) =>
+          Effect.sync(() => {
+            calls.push([paneId, mode])
+            return updatedTree
+          }),
+        resumePane: () => Effect.dieMessage('resumePane should not be called')
+      }
+      const paneSupervisor = {
+        openPane: () => Effect.dieMessage('openPane should not be called'),
+        closePane: () => Effect.dieMessage('closePane should not be called'),
+        getHandle: () => Effect.dieMessage('getHandle should not be called'),
+        closeAll: () => Effect.dieMessage('closeAll should not be called')
+      }
+
+      yield* Effect.gen(function* () {
+        yield* Effect.fork(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
+        yield* flush
+
+        emitCommand({ _tag: 'SetPermissionMode', paneId: PANE_ID, mode: 'acceptEdits' })
+        yield* flush
+
+        assert.deepStrictEqual(calls, [[PANE_ID, 'acceptEdits']])
+        assert.strictEqual(sent.length, 1)
+        const [channel, payload] = sent[0]
+        assert.strictEqual(channel, CHANNEL.event)
+        assert.deepStrictEqual(payload, { _tag: 'LayoutChanged', tree: updatedTree })
+      }).pipe(Effect.scoped)
+    })
+  )
+
   it.effect('emits PaneCreateFailed instead of LayoutChanged when CreatePane fails', () =>
     Effect.gen(function* () {
       const sent: Array<[string, unknown]> = []
@@ -174,6 +226,7 @@ describe('wireCommands', () => {
         close: () => Effect.dieMessage('close should not be called'),
         getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
         setThinkingLevel: () => Effect.dieMessage('setThinkingLevel should not be called'),
+        setPermissionMode: () => Effect.dieMessage('setPermissionMode should not be called'),
         resumePane: () => Effect.dieMessage('resumePane should not be called')
       }
       const paneSupervisor = {
@@ -193,6 +246,7 @@ describe('wireCommands', () => {
           cwd: '/repo',
           model: 'm',
           thinkingLevel: 'adaptive',
+          permissionMode: 'auto',
           useWorktree: false
         })
         yield* flush
@@ -220,6 +274,7 @@ describe('wireCommands', () => {
         close: () => Effect.dieMessage('close should not be called'),
         getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
         setThinkingLevel: () => Effect.dieMessage('setThinkingLevel should not be called'),
+        setPermissionMode: () => Effect.dieMessage('setPermissionMode should not be called'),
         resumePane: () => Effect.dieMessage('resumePane should not be called')
       }
       const paneSupervisor = {
@@ -253,6 +308,7 @@ describe('wireCommands', () => {
         close: () => Effect.dieMessage('close should not be called'),
         getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
         setThinkingLevel: () => Effect.dieMessage('setThinkingLevel should not be called'),
+        setPermissionMode: () => Effect.dieMessage('setPermissionMode should not be called'),
         resumePane: (paneId: string) => Effect.sync(() => resumed.push(paneId))
       }
       const paneSupervisor = {

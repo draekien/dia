@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { FileSystem, Path } from '@effect/platform'
 import { Errored } from '@shared/domain/attention'
-import type { ConversationMessage, ThinkingLevel } from '@shared/domain/pane'
+import type {
+  ConversationMessage,
+  PermissionMode,
+  StartupPermissionMode,
+  ThinkingLevel
+} from '@shared/domain/pane'
 import {
   closePane,
   markPaneReady,
@@ -9,10 +14,11 @@ import {
   PaneLeafSchema,
   type PaneNode,
   type PaneNotFoundError,
+  setPanePermissionMode,
   setPaneThinkingLevel,
   splitPane
 } from '@shared/domain/pane-tree'
-import { type IpcEvent, PaneAttentionChanged } from '@shared/ipc/contract'
+import { type IpcEvent, LayoutChanged, PaneAttentionChanged } from '@shared/ipc/contract'
 import { Context, Effect, Either, HashMap, Layer, Option, Ref } from 'effect'
 import type { WorktreeCreateError, WorktreeReattachError } from './git-ops-service'
 import { type PaneCreationRequest, PaneSupervisor, type ProcessSpawnError } from './pane-supervisor'
@@ -37,6 +43,7 @@ export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
       sourceCwd: string,
       model: string,
       thinkingLevel: ThinkingLevel,
+      permissionMode: StartupPermissionMode,
       useWorktree: boolean,
       onEvent: (event: IpcEvent) => Effect.Effect<void>
     ) => Effect.Effect<
@@ -50,6 +57,13 @@ export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
      * tree unchanged (and still returns it) for an unknown pane.
      */
     readonly setThinkingLevel: (paneId: PaneId, level: ThinkingLevel) => Effect.Effect<PaneNode>
+    /**
+     * Changes a pane's permission mode: persists it on the pane's config, records it on the layout
+     * tree, and, when the pane is live, forwards it to the running process (which applies it to the
+     * live session immediately). Returns the resulting layout tree so the caller can broadcast it.
+     * Leaves the tree unchanged (and still returns it) for an unknown pane.
+     */
+    readonly setPermissionMode: (paneId: PaneId, mode: PermissionMode) => Effect.Effect<PaneNode>
     readonly close: (paneId: PaneId) => Effect.Effect<PaneNode, PaneNotFoundError>
     readonly getPaneHistory: (paneId: PaneId) => Effect.Effect<ReadonlyArray<ConversationMessage>>
     /**
@@ -134,6 +148,42 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         yield* save()
       })
 
+      // Persists a permission-mode change the pane made on its own (a plan was approved, restoring
+      // the pre-plan mode) onto its config and the layout tree, then broadcasts the updated tree so
+      // the renderer's mode selector reflects it. User-initiated changes go through setPermissionMode
+      // instead; this is only for changes originating in the pane process.
+      const recordPermissionMode = Effect.fn('PaneWorkspace.recordPermissionMode')(function* (
+        paneId: PaneId,
+        mode: PermissionMode,
+        onEvent: (event: IpcEvent) => Effect.Effect<void>
+      ) {
+        const configs = yield* Ref.get(configsRef)
+        const entry = HashMap.get(configs, paneId)
+        if (Option.isNone(entry)) {
+          yield* Effect.logWarning('Received permission mode for a pane not in the index', {
+            paneId
+          })
+          return
+        }
+        yield* Ref.set(
+          configsRef,
+          HashMap.set(configs, paneId, {
+            ...entry.value,
+            config: { ...entry.value.config, permissionMode: mode }
+          })
+        )
+
+        const tree = yield* Ref.get(treeRef)
+        const updated = setPanePermissionMode(tree, paneId, mode)
+        if (Either.isRight(updated)) {
+          yield* Ref.set(treeRef, updated.right)
+          yield* save()
+          yield* onEvent(LayoutChanged.make({ tree: updated.right }))
+        } else {
+          yield* save()
+        }
+      })
+
       const getTree = () => Ref.get(treeRef)
 
       const split = Effect.fn('PaneWorkspace.split')(function* (
@@ -157,6 +207,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         sourceCwd: string,
         model: string,
         thinkingLevel: ThinkingLevel,
+        permissionMode: StartupPermissionMode,
         useWorktree: boolean,
         onCreateEvent: (event: IpcEvent) => Effect.Effect<void>
       ) {
@@ -170,9 +221,10 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
 
         const worktreePath = useWorktree ? path.join(worktreesRoot, paneId) : undefined
         const { config } = yield* supervisor.openPane(
-          { paneId, sourceCwd, model, thinkingLevel, worktreePath },
+          { paneId, sourceCwd, model, thinkingLevel, permissionMode, worktreePath },
           onCreateEvent,
-          (sessionId) => recordSessionId(paneId, sessionId)
+          (sessionId) => recordSessionId(paneId, sessionId),
+          (mode) => recordPermissionMode(paneId, mode, onCreateEvent)
         )
 
         const readyTree = markPaneReady(
@@ -180,7 +232,8 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
           paneId,
           config.cwd,
           config.worktree?.sourceRepo,
-          config.thinkingLevel
+          config.thinkingLevel,
+          config.permissionMode
         )
         if (Either.isLeft(readyTree)) {
           return yield* readyTree.left
@@ -220,6 +273,39 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         const handle = yield* supervisor.getHandle(paneId)
         if (Option.isSome(handle)) {
           yield* handle.value.setThinkingLevel(level)
+        }
+
+        return nextTree
+      })
+
+      const setPermissionMode = Effect.fn('PaneWorkspace.setPermissionMode')(function* (
+        paneId: PaneId,
+        mode: PermissionMode
+      ) {
+        const configs = yield* Ref.get(configsRef)
+        const entry = HashMap.get(configs, paneId)
+        if (Option.isNone(entry)) {
+          yield* Effect.logWarning('setPermissionMode for a pane not in the index', { paneId })
+          return yield* Ref.get(treeRef)
+        }
+
+        yield* Ref.set(
+          configsRef,
+          HashMap.set(configs, paneId, {
+            ...entry.value,
+            config: { ...entry.value.config, permissionMode: mode }
+          })
+        )
+
+        const tree = yield* Ref.get(treeRef)
+        const updated = setPanePermissionMode(tree, paneId, mode)
+        const nextTree = Either.isRight(updated) ? updated.right : tree
+        if (Either.isRight(updated)) yield* Ref.set(treeRef, updated.right)
+        yield* save()
+
+        const handle = yield* supervisor.getHandle(paneId)
+        if (Option.isSome(handle)) {
+          yield* handle.value.setPermissionMode(mode)
         }
 
         return nextTree
@@ -308,12 +394,18 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
           sourceCwd: config.worktree?.sourceRepo ?? config.cwd,
           model: config.model,
           thinkingLevel: config.thinkingLevel,
+          permissionMode: config.permissionMode,
           worktreePath: config.worktree?.path,
           resume: sessionId
         }
 
         const result = yield* supervisor
-          .openPane(request, onEvent, (newSessionId) => recordSessionId(paneId, newSessionId))
+          .openPane(
+            request,
+            onEvent,
+            (newSessionId) => recordSessionId(paneId, newSessionId),
+            (mode) => recordPermissionMode(paneId, mode, onEvent)
+          )
           .pipe(Effect.either)
 
         if (Either.isLeft(result)) {
@@ -327,6 +419,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         split,
         createPane,
         setThinkingLevel,
+        setPermissionMode,
         close,
         getPaneHistory,
         resumePane

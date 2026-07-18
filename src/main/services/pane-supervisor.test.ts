@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { assert, describe, it } from '@effect/vitest'
-import type { PaneConfig, WorktreeInfo } from '@shared/domain/pane'
+import type { PaneConfig, PermissionMode, WorktreeInfo } from '@shared/domain/pane'
 import type { IpcEvent } from '@shared/ipc/contract'
 import { Effect, Layer, Logger, Option, TestClock } from 'effect'
 import { GitOpsService } from './git-ops-service'
@@ -31,6 +31,7 @@ const requestA: PaneCreationRequest = {
   sourceCwd: '/a',
   model: 'm',
   thinkingLevel: 'adaptive',
+  permissionMode: 'default',
   worktreePath: undefined
 }
 const requestB: PaneCreationRequest = {
@@ -38,6 +39,7 @@ const requestB: PaneCreationRequest = {
   sourceCwd: '/b',
   model: 'm',
   thinkingLevel: 'adaptive',
+  permissionMode: 'auto',
   worktreePath: undefined
 }
 
@@ -45,13 +47,15 @@ const configA: PaneConfig = {
   paneId: requestA.paneId,
   cwd: requestA.sourceCwd,
   model: requestA.model,
-  thinkingLevel: requestA.thinkingLevel
+  thinkingLevel: requestA.thinkingLevel,
+  permissionMode: requestA.permissionMode
 }
 const configB: PaneConfig = {
   paneId: requestB.paneId,
   cwd: requestB.sourceCwd,
   model: requestB.model,
-  thinkingLevel: requestB.thinkingLevel
+  thinkingLevel: requestB.thinkingLevel,
+  permissionMode: requestB.permissionMode
 }
 
 // Runs the fiber-scheduler forward without touching the (virtualized) Clock, so a
@@ -59,6 +63,7 @@ const configB: PaneConfig = {
 const flush = Effect.repeatN(Effect.yieldNow(), 50)
 
 const ignoreSessionId = (_sessionId: string): Effect.Effect<void> => Effect.void
+const ignorePermissionMode = (_mode: PermissionMode): Effect.Effect<void> => Effect.void
 
 function makeTestSetup(): {
   readonly processes: ReadonlyArray<FakePaneProcess>
@@ -107,12 +112,14 @@ describe('PaneSupervisor', () => {
         yield* supervisor.openPane(
           requestA,
           (event) => Effect.sync(() => eventsA.push(event)),
-          ignoreSessionId
+          ignoreSessionId,
+          ignorePermissionMode
         )
         const openedB = yield* supervisor.openPane(
           requestB,
           (event) => Effect.sync(() => eventsB.push(event)),
-          ignoreSessionId
+          ignoreSessionId,
+          ignorePermissionMode
         )
         const handleB = openedB.handle
 
@@ -176,8 +183,18 @@ describe('PaneSupervisor', () => {
       yield* Effect.gen(function* () {
         const supervisor = yield* PaneSupervisor
 
-        yield* supervisor.openPane(requestA, () => Effect.void, ignoreSessionId)
-        yield* supervisor.openPane(requestB, () => Effect.void, ignoreSessionId)
+        yield* supervisor.openPane(
+          requestA,
+          () => Effect.void,
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+        yield* supervisor.openPane(
+          requestB,
+          () => Effect.void,
+          ignoreSessionId,
+          ignorePermissionMode
+        )
 
         yield* supervisor.closePane(configA.paneId)
         yield* flush
@@ -205,7 +222,8 @@ describe('PaneSupervisor', () => {
         yield* supervisor.openPane(
           requestA,
           () => Effect.void,
-          (sessionId) => Effect.sync(() => sessionIds.push(sessionId))
+          (sessionId) => Effect.sync(() => sessionIds.push(sessionId)),
+          ignorePermissionMode
         )
         yield* flush
 
@@ -245,6 +263,7 @@ describe('PaneSupervisor', () => {
         sourceCwd: '/repo',
         model: 'm',
         thinkingLevel: 'adaptive',
+        permissionMode: 'default',
         worktreePath: '/wt/c',
         resume: 'session-resume-1'
       }
@@ -256,7 +275,12 @@ describe('PaneSupervisor', () => {
 
       yield* Effect.gen(function* () {
         const supervisor = yield* PaneSupervisor
-        const opened = yield* supervisor.openPane(resumeRequest, () => Effect.void, ignoreSessionId)
+        const opened = yield* supervisor.openPane(
+          resumeRequest,
+          () => Effect.void,
+          ignoreSessionId,
+          ignorePermissionMode
+        )
         yield* flush
 
         assert.deepStrictEqual(reattachCalls, [
@@ -270,6 +294,7 @@ describe('PaneSupervisor', () => {
             cwd: '/wt/c',
             model: 'm',
             thinkingLevel: 'adaptive',
+            permissionMode: 'default',
             worktree: expectedInfo
           },
           resume: 'session-resume-1'
@@ -289,7 +314,8 @@ describe('PaneSupervisor', () => {
         yield* supervisor.openPane(
           requestA,
           (event) => Effect.sync(() => events.push(event)),
-          ignoreSessionId
+          ignoreSessionId,
+          ignorePermissionMode
         )
         yield* flush
 
@@ -310,6 +336,41 @@ describe('PaneSupervisor', () => {
             (event) => event._tag === 'PaneAttentionChanged' && event.attention._tag === 'Idle'
           )
         )
+      }).pipe(Effect.scoped, Effect.provide(testLayer), Effect.provide(loggerLayer))
+    })
+  )
+
+  it.effect('sends a permission-mode change to the target pane process only, not a sibling', () =>
+    Effect.gen(function* () {
+      const { processes, testLayer, loggerLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+
+        const openedA = yield* supervisor.openPane(
+          requestA,
+          () => Effect.void,
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+        yield* supervisor.openPane(
+          requestB,
+          () => Effect.void,
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+        yield* flush
+
+        yield* openedA.handle.setPermissionMode('acceptEdits')
+        yield* flush
+
+        assert.deepStrictEqual(processes[0].posted, [
+          { _tag: 'Init', config: configA, resume: undefined },
+          { _tag: 'SetPermissionMode', mode: 'acceptEdits' }
+        ])
+        assert.deepStrictEqual(processes[1].posted, [
+          { _tag: 'Init', config: configB, resume: undefined }
+        ])
       }).pipe(Effect.scoped, Effect.provide(testLayer), Effect.provide(loggerLayer))
     })
   )

@@ -24,8 +24,10 @@ const WORKTREES_ROOT = '/worktrees'
 const fakeHandle: PaneHandle = {
   sendMessage: () => Effect.void,
   setThinkingLevel: () => Effect.void,
+  setPermissionMode: () => Effect.void,
   resolvePermission: () => Effect.void,
   resolveQuestion: () => Effect.void,
+  resolvePlanReview: () => Effect.void,
   subscribe: () => Stream.empty,
   markErrored: () => Effect.void
 }
@@ -107,6 +109,7 @@ const echoOpenPane = (
     cwd: string
     model: string
     thinkingLevel: (typeof request)['thinkingLevel']
+    permissionMode: (typeof request)['permissionMode']
   }
 }> =>
   Effect.succeed({
@@ -115,7 +118,8 @@ const echoOpenPane = (
       paneId: request.paneId,
       cwd: request.sourceCwd,
       model: request.model,
-      thinkingLevel: request.thinkingLevel
+      thinkingLevel: request.thinkingLevel,
+      permissionMode: request.permissionMode
     }
   })
 
@@ -175,7 +179,8 @@ describe('PaneWorkspace', () => {
               paneId: INITIAL_PANE_ID,
               cwd: '/repo/a',
               model: 'm',
-              thinkingLevel: 'adaptive'
+              thinkingLevel: 'adaptive',
+              permissionMode: 'default'
             }
           }
         }
@@ -198,7 +203,15 @@ describe('PaneWorkspace', () => {
 
       yield* Effect.gen(function* () {
         const workspace = yield* PaneWorkspace
-        yield* workspace.createPane(INITIAL_PANE_ID, '/repo', 'model-x', 'adaptive', false, onEvent)
+        yield* workspace.createPane(
+          INITIAL_PANE_ID,
+          '/repo',
+          'model-x',
+          'adaptive',
+          'default',
+          false,
+          onEvent
+        )
       }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
 
       assert.strictEqual(saves.length, 1)
@@ -208,7 +221,8 @@ describe('PaneWorkspace', () => {
           paneId: INITIAL_PANE_ID,
           cwd: '/repo',
           model: 'model-x',
-          thinkingLevel: 'adaptive'
+          thinkingLevel: 'adaptive',
+          permissionMode: 'default'
         }
       })
       if (snapshot.tree._tag === 'Leaf') {
@@ -226,7 +240,15 @@ describe('PaneWorkspace', () => {
 
       const splitTree = yield* Effect.gen(function* () {
         const workspace = yield* PaneWorkspace
-        yield* workspace.createPane(INITIAL_PANE_ID, '/repo', 'm', 'adaptive', false, onEvent)
+        yield* workspace.createPane(
+          INITIAL_PANE_ID,
+          '/repo',
+          'm',
+          'adaptive',
+          'default',
+          false,
+          onEvent
+        )
         return yield* workspace.split(INITIAL_PANE_ID, 'row')
       }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
 
@@ -249,7 +271,15 @@ describe('PaneWorkspace', () => {
         const workspace = yield* PaneWorkspace
         // createPane registers the pane's index entry and saves once; the session id only
         // arrives afterwards (mirroring the async SystemMessage `init` in production).
-        yield* workspace.createPane(INITIAL_PANE_ID, '/repo', 'm', 'adaptive', false, onEvent)
+        yield* workspace.createPane(
+          INITIAL_PANE_ID,
+          '/repo',
+          'm',
+          'adaptive',
+          'default',
+          false,
+          onEvent
+        )
         if (captured === undefined) throw new Error('onSessionId was not provided to openPane')
         yield* captured('session-async-1')
       }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
@@ -270,7 +300,8 @@ describe('PaneWorkspace', () => {
               paneId: INITIAL_PANE_ID,
               cwd: '/repo',
               model: 'm',
-              thinkingLevel: 'adaptive'
+              thinkingLevel: 'adaptive',
+              permissionMode: 'default'
             },
             sessionId: 'restored-session-1'
           }
@@ -298,7 +329,15 @@ describe('PaneWorkspace', () => {
 
       const tree = yield* Effect.gen(function* () {
         const workspace = yield* PaneWorkspace
-        yield* workspace.createPane(INITIAL_PANE_ID, '/repo', 'm', 'adaptive', false, onEvent)
+        yield* workspace.createPane(
+          INITIAL_PANE_ID,
+          '/repo',
+          'm',
+          'adaptive',
+          'default',
+          false,
+          onEvent
+        )
         return yield* workspace.split(INITIAL_PANE_ID, 'row')
       }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
 
@@ -314,7 +353,8 @@ describe('PaneWorkspace', () => {
             status: 'ready',
             cwd: '/repo',
             sourceRepo: undefined,
-            thinkingLevel: 'adaptive'
+            thinkingLevel: 'adaptive',
+            permissionMode: 'default'
           },
           { _tag: 'Leaf', paneId: secondLeafPaneId(tree), status: 'pending' }
         ],
@@ -330,10 +370,26 @@ describe('PaneWorkspace', () => {
 
       const tree = yield* Effect.gen(function* () {
         const workspace = yield* PaneWorkspace
-        yield* workspace.createPane(INITIAL_PANE_ID, '/repo', 'm', 'adaptive', false, onEvent)
+        yield* workspace.createPane(
+          INITIAL_PANE_ID,
+          '/repo',
+          'm',
+          'adaptive',
+          'default',
+          false,
+          onEvent
+        )
         const split = yield* workspace.split(INITIAL_PANE_ID, 'row')
         const newPaneId = secondLeafPaneId(split)
-        return yield* workspace.createPane(newPaneId, '/other', 'm', 'adaptive', false, onEvent)
+        return yield* workspace.createPane(
+          newPaneId,
+          '/other',
+          'm',
+          'adaptive',
+          'default',
+          false,
+          onEvent
+        )
       }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
 
       assert.isTrue(tree._tag === 'Split')
@@ -360,11 +416,19 @@ describe('PaneWorkspace', () => {
 
       const result = yield* Effect.gen(function* () {
         const workspace = yield* PaneWorkspace
-        yield* workspace.createPane(INITIAL_PANE_ID, '/repo', 'm', 'adaptive', false, onEvent)
+        yield* workspace.createPane(
+          INITIAL_PANE_ID,
+          '/repo',
+          'm',
+          'adaptive',
+          'default',
+          false,
+          onEvent
+        )
         const split = yield* workspace.split(INITIAL_PANE_ID, 'row')
         const newPaneId = secondLeafPaneId(split)
         return yield* workspace
-          .createPane(newPaneId, '/other', 'm', 'adaptive', true, onEvent)
+          .createPane(newPaneId, '/other', 'm', 'adaptive', 'default', true, onEvent)
           .pipe(Effect.either)
       }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
 
@@ -391,7 +455,15 @@ describe('PaneWorkspace', () => {
 
       const tree = yield* Effect.gen(function* () {
         const workspace = yield* PaneWorkspace
-        yield* workspace.createPane(INITIAL_PANE_ID, '/repo', 'm', 'adaptive', false, onEvent)
+        yield* workspace.createPane(
+          INITIAL_PANE_ID,
+          '/repo',
+          'm',
+          'adaptive',
+          'default',
+          false,
+          onEvent
+        )
         return yield* workspace.close(INITIAL_PANE_ID)
       }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
 
@@ -419,7 +491,15 @@ describe('PaneWorkspace', () => {
 
         const history = yield* Effect.gen(function* () {
           const workspace = yield* PaneWorkspace
-          yield* workspace.createPane(INITIAL_PANE_ID, '/repo', 'm', 'adaptive', false, onEvent)
+          yield* workspace.createPane(
+            INITIAL_PANE_ID,
+            '/repo',
+            'm',
+            'adaptive',
+            'default',
+            false,
+            onEvent
+          )
           return yield* workspace.getPaneHistory(INITIAL_PANE_ID)
         }).pipe(
           Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer, transcriptLayer))
@@ -441,7 +521,8 @@ describe('PaneWorkspace', () => {
               paneId: INITIAL_PANE_ID,
               cwd: '/repo',
               model: 'm',
-              thinkingLevel: 'adaptive'
+              thinkingLevel: 'adaptive',
+              permissionMode: 'default'
             },
             sessionId: 'restored-session-1'
           }
@@ -469,7 +550,13 @@ describe('PaneWorkspace', () => {
     tree: { _tag: 'Leaf', paneId: INITIAL_PANE_ID, status: 'ready', cwd: '/repo' },
     panes: {
       [INITIAL_PANE_ID]: {
-        config: { paneId: INITIAL_PANE_ID, cwd: '/repo', model: 'm', thinkingLevel: 'adaptive' },
+        config: {
+          paneId: INITIAL_PANE_ID,
+          cwd: '/repo',
+          model: 'm',
+          thinkingLevel: 'adaptive',
+          permissionMode: 'default'
+        },
         sessionId: 'restored-session-1'
       }
     }
@@ -541,7 +628,13 @@ describe('PaneWorkspace', () => {
         tree: { _tag: 'Leaf', paneId: INITIAL_PANE_ID, status: 'ready', cwd: '/repo' },
         panes: {
           [INITIAL_PANE_ID]: {
-            config: { paneId: INITIAL_PANE_ID, cwd: '/repo', model: 'm', thinkingLevel: 'adaptive' }
+            config: {
+              paneId: INITIAL_PANE_ID,
+              cwd: '/repo',
+              model: 'm',
+              thinkingLevel: 'adaptive',
+              permissionMode: 'default'
+            }
           }
         }
       })
@@ -614,6 +707,7 @@ describe('PaneWorkspace', () => {
               cwd: '/wt/x',
               model: 'm',
               thinkingLevel: 'adaptive',
+              permissionMode: 'default',
               worktree: { path: '/wt/x', branch: `dia/${INITIAL_PANE_ID}`, sourceRepo: '/repo' }
             },
             sessionId: 'restored-session-1'

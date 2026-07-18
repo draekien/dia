@@ -1,12 +1,17 @@
-import type { PermissionResponse, QuestionResponse } from '@shared/domain/attention'
+import type {
+  PermissionResponse,
+  PlanReviewResponse,
+  QuestionResponse
+} from '@shared/domain/attention'
 import { Deferred, Effect } from 'effect'
 
 /**
- * A resolution the user supplied for a pending `UserInputRequest`: either a
- * `PermissionResponse` (for a tool `PermissionRequest`) or a `QuestionResponse`
- * (for a `ClarifyingQuestion`). The two are disjoint on `_tag`.
+ * A resolution the user supplied for a pending `UserInputRequest`: a
+ * `PermissionResponse` (for a tool `PermissionRequest`), a `QuestionResponse`
+ * (for a `ClarifyingQuestion`), or a `PlanReviewResponse` (for a `PlanReview`).
+ * All are disjoint on `_tag`.
  */
-export type UserInputResolution = PermissionResponse | QuestionResponse
+export type UserInputResolution = PermissionResponse | QuestionResponse | PlanReviewResponse
 
 /**
  * Owns the set of tool-permission / clarifying-question requests a pane session
