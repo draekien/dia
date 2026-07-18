@@ -2,6 +2,14 @@
 
 **Date:** 2026-07-18
 
+> **Superseded (2026-07-18) by [ADR-0015](../adr/0015-effect-atom-and-direct-ipc-reducer-for-renderer-chat-state.md).**
+> The AG-UI adapter (`ipc-connection-adapter.ts`) was deleted along with TanStack
+> AI. The `Stream.asyncPush` scoped subscribe/unsubscribe pattern below lives on —
+> it now feeds the per-pane state atom's IPC fold — but the `mapAccum`/AG-UI chunk
+> translation and `toAsyncIterable` boundary are gone, replaced by the pure
+> `reducePaneChat` folding into a `SubscriptionRef`. See
+> [effect-atom pane chat state](2026-07-18-effect-atom-pane-chat-state.md).
+
 ## Context
 
 ADR-0014 adopts TanStack AI `useChat` driven by a custom `ConnectConnectionAdapter`

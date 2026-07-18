@@ -22,7 +22,8 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0011](0011-delegate-transcript-persistence-to-agent-sdk-session-store.md) | Delegate conversation-transcript persistence to the Agent SDK session store | accepted |
 | [0012](0012-effect-tsgo-for-effect-aware-typechecking.md) | Use @effect/tsgo for Effect-aware type checking | accepted |
 | [0013](0013-shared-schema-module-for-cross-process-code.md) | Extract cross-process schemas into a platform-neutral `src/shared` module | accepted |
-| [0014](0014-tanstack-ai-usechat-for-renderer-chat-state.md) | Use TanStack AI `useChat` with a custom IPC ConnectionAdapter for renderer chat state | accepted |
+| [0014](0014-tanstack-ai-usechat-for-renderer-chat-state.md) | Use TanStack AI `useChat` with a custom IPC ConnectionAdapter for renderer chat state | superseded by ADR-0015 |
+| [0015](0015-effect-atom-and-direct-ipc-reducer-for-renderer-chat-state.md) | Use effect-atom and a direct IPC-event reducer for renderer chat state | accepted |
 
 ## Adding a new ADR
 

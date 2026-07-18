@@ -2,6 +2,16 @@
 
 **Date:** 2026-07-18
 
+> **Superseded (2026-07-18) by [ADR-0015](../adr/0015-effect-atom-and-direct-ipc-reducer-for-renderer-chat-state.md).**
+> `useChat` and the IPC→AG-UI adapter were dropped for effect-atom + a direct
+> IPC-event reducer; `pane.tsx` no longer uses any of the wiring below. The
+> "known gap" (a split *mid-turn* freezing the response) was this document's
+> unresolved bug and is what motivated the rewrite — it is now fixed at the root
+> (registry-held, remount-durable state). Kept as a historical record of why the
+> `useChat` approach was abandoned; see
+> [effect-atom pane chat state](2026-07-18-effect-atom-pane-chat-state.md) for the
+> current design.
+
 ## Context
 
 ADR-0014 adopts TanStack AI `useChat` as the pane's chat-state engine, driven by

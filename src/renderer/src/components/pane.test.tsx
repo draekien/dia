@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-import type { UIMessage } from '@tanstack/ai-client'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { dirName, historyToInitialMessages, MessageView, resolveInitialMessages } from './pane'
+import type { PaneMessage } from '../lib/pane-chat'
+import { dirName, MessageView } from './pane'
 
 afterEach(cleanup)
 
-const userMessage = (content: string): UIMessage => ({
+const userMessage = (content: string): PaneMessage => ({
   id: 'u1',
   role: 'user',
   parts: [{ type: 'text', content }]
@@ -34,44 +34,6 @@ describe('dirName', () => {
   })
 })
 
-describe('historyToInitialMessages', () => {
-  it('maps each turn to a UIMessage with a stable pane-scoped id and one text part', () => {
-    const result = historyToInitialMessages('pane-7', [
-      { role: 'user', content: 'hi' },
-      { role: 'assistant', content: 'hello' }
-    ])
-
-    expect(result).toEqual([
-      { id: 'pane-7:history:0', role: 'user', parts: [{ type: 'text', content: 'hi' }] },
-      { id: 'pane-7:history:1', role: 'assistant', parts: [{ type: 'text', content: 'hello' }] }
-    ])
-  })
-
-  it('returns an empty list for empty history', () => {
-    expect(historyToInitialMessages('pane-7', [])).toEqual([])
-  })
-})
-
-describe('resolveInitialMessages', () => {
-  it('prefers a cached live snapshot over persisted history', () => {
-    const snapshot: UIMessage[] = [
-      { id: 'live-1', role: 'assistant', parts: [{ type: 'text', content: 'streamed' }] }
-    ]
-
-    const result = resolveInitialMessages(snapshot, 'pane-7', [{ role: 'user', content: 'old' }])
-
-    expect(result).toBe(snapshot)
-  })
-
-  it('falls back to mapped history when there is no snapshot', () => {
-    const history = [{ role: 'user' as const, content: 'hi' }]
-
-    expect(resolveInitialMessages(undefined, 'pane-7', history)).toEqual(
-      historyToInitialMessages('pane-7', history)
-    )
-  })
-})
-
 describe('MessageView', () => {
   it('renders a user turn as an end-aligned bubble carrying the text', () => {
     const { container } = render(<MessageView message={userMessage('deploy the thing')} />)
@@ -84,7 +46,7 @@ describe('MessageView', () => {
   })
 
   it('renders an assistant text turn as a start-aligned muted bubble', () => {
-    const message: UIMessage = {
+    const message: PaneMessage = {
       id: 'a1',
       role: 'assistant',
       parts: [{ type: 'text', content: 'here is the answer' }]
@@ -102,17 +64,18 @@ describe('MessageView', () => {
   })
 
   it('shows a completed tool call as name, input summary, and an output disclosure', () => {
-    const message: UIMessage = {
+    const message: PaneMessage = {
       id: 'a2',
       role: 'assistant',
       parts: [
         {
           type: 'tool-call',
-          id: 't1',
+          toolCallId: 't1',
           name: 'Bash',
-          arguments: JSON.stringify({ command: 'ls -la' }),
-          state: 'complete',
-          output: 'file.txt\nfile2.txt'
+          state: 'done',
+          input: { command: 'ls -la' },
+          output: 'file.txt\nfile2.txt',
+          isError: false
         }
       ]
     }
@@ -127,18 +90,10 @@ describe('MessageView', () => {
   })
 
   it('marks an in-flight tool call as running and shows no output disclosure', () => {
-    const message: UIMessage = {
+    const message: PaneMessage = {
       id: 'a3',
       role: 'assistant',
-      parts: [
-        {
-          type: 'tool-call',
-          id: 't2',
-          name: 'Read',
-          arguments: '',
-          state: 'input-streaming'
-        }
-      ]
+      parts: [{ type: 'tool-call', toolCallId: 't2', name: 'Read', state: 'running' }]
     }
 
     const { container } = render(<MessageView message={message} />)
@@ -148,36 +103,32 @@ describe('MessageView', () => {
     expect(container.querySelector('details')).toBeNull()
   })
 
-  it('omits tool-result parts, showing output only via the tool-call part', () => {
-    const message: UIMessage = {
+  it('shows no output disclosure for a completed tool call that produced empty output', () => {
+    const message: PaneMessage = {
       id: 'a4',
       role: 'assistant',
       parts: [
         {
           type: 'tool-call',
-          id: 't3',
-          name: 'Read',
-          arguments: JSON.stringify({ file_path: '/repo/notes.md' }),
-          state: 'complete',
-          output: 'tool-call output'
-        },
-        {
-          type: 'tool-result',
           toolCallId: 't3',
-          content: 'duplicate result body',
-          state: 'complete'
+          name: 'Read',
+          state: 'done',
+          input: { file_path: '/repo/notes.md' },
+          output: '',
+          isError: false
         }
       ]
     }
 
-    render(<MessageView message={message} />)
+    const { container } = render(<MessageView message={message} />)
 
-    expect(screen.getByText('tool-call output')).toBeTruthy()
-    expect(screen.queryByText('duplicate result body')).toBeNull()
+    expect(screen.getByText('Read')).toBeTruthy()
+    expect(screen.getByText('completed')).toBeTruthy()
+    expect(container.querySelector('details')).toBeNull()
   })
 
   it('renders a thinking part as a collapsed disclosure carrying the reasoning text', () => {
-    const message: UIMessage = {
+    const message: PaneMessage = {
       id: 'a6',
       role: 'assistant',
       parts: [{ type: 'thinking', content: 'weighing the trade-offs' }]
@@ -192,7 +143,7 @@ describe('MessageView', () => {
   })
 
   it('drops an empty thinking part rather than rendering an empty disclosure', () => {
-    const message: UIMessage = {
+    const message: PaneMessage = {
       id: 'a7',
       role: 'assistant',
       parts: [{ type: 'thinking', content: '   ' }]
@@ -204,7 +155,7 @@ describe('MessageView', () => {
   })
 
   it('drops an empty assistant text part rather than rendering an empty bubble', () => {
-    const message: UIMessage = {
+    const message: PaneMessage = {
       id: 'a5',
       role: 'assistant',
       parts: [{ type: 'text', content: '   ' }]

@@ -1,3 +1,5 @@
+import { Result } from '@effect-atom/atom'
+import { useAtomSet, useAtomValue } from '@effect-atom/atom-react'
 import { Message, MessageContent } from '@renderer/components/ui/message'
 import {
   MessageScroller,
@@ -22,23 +24,19 @@ import {
   type PermissionResponse,
   type QuestionResponse
 } from '@shared/domain/attention'
-import {
-  type ConversationMessage,
-  DEFAULT_THINKING_LEVEL,
-  type ThinkingLevel
-} from '@shared/domain/pane'
+import { DEFAULT_THINKING_LEVEL, type ThinkingLevel } from '@shared/domain/pane'
 import type { PanePermissionRequested, PaneQuestionRequested } from '@shared/ipc/contract'
-import type { ToolCallPart, ToolCallState, UIMessage } from '@tanstack/ai-client'
-import { useChat } from '@tanstack/ai-react'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, Brain, Check } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeHighlightLines from 'rehype-highlight-code-lines'
 import remarkGfm from 'remark-gfm'
-import { createPaneConnectionAdapter } from '../lib/ipc-connection-adapter'
+import type { PaneMessage, ToolCallPart } from '../lib/pane-chat'
+import { emptyPaneChatState } from '../lib/pane-chat'
+import { paneChatAtom, paneSendAtom } from '../lib/pane-chat-atoms'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import { PermissionRequestCard } from './permission-request-card'
 import { PulseIndicator } from './pulse-indicator'
@@ -68,13 +66,6 @@ export function dirName(path: string): string {
 
 const summaryKeys = ['command', 'file_path', 'path', 'pattern', 'url', 'query', 'prompt'] as const
 
-const toRecord = (value: unknown): Record<string, unknown> | undefined => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
-  const record: Record<string, unknown> = {}
-  for (const [key, entry] of Object.entries(value)) record[key] = entry
-  return record
-}
-
 /**
  * Picks the most representative single-line summary of a tool call's input for
  * a compact status row (the first recognised key: command, path, pattern, …),
@@ -93,21 +84,6 @@ export function toolInputSummary(input: Record<string, unknown> | undefined): st
 }
 
 /**
- * Parses a tool call's `arguments` JSON string into a plain record for
- * summarising, returning `undefined` for empty or non-object arguments. Use to
- * feed {@link toolInputSummary} from a `tool-call` message part.
- */
-export function parseToolArguments(argumentsJson: string): Record<string, unknown> | undefined {
-  const trimmed = argumentsJson.trim()
-  if (trimmed === '') return undefined
-  try {
-    return toRecord(JSON.parse(trimmed))
-  } catch {
-    return undefined
-  }
-}
-
-/**
  * Renders a tool call's `output` as displayable text — strings verbatim,
  * anything else pretty-printed JSON — returning `undefined` when there is no
  * output to show. Use to decide whether to render an output disclosure.
@@ -120,46 +96,6 @@ export function formatToolOutput(output: unknown): string | undefined {
   } catch {
     return undefined
   }
-}
-
-/**
- * Collapses a tool call's fine-grained lifecycle state into the two visual
- * states the status row distinguishes: `running` while the call is in flight,
- * `done` once it has resolved (successfully or not). Use to drive the row icon.
- */
-export function toolCallDisplayState(state: ToolCallState): 'running' | 'done' {
-  return state === 'complete' || state === 'error' ? 'done' : 'running'
-}
-
-/**
- * Projects a pane's persisted conversation history into `useChat`'s
- * `initialMessages`, giving each turn a stable pane-scoped id and a single
- * text part. Pass the result as `initialMessages` when mounting {@link PaneChat}.
- */
-export function historyToInitialMessages(
-  paneId: string,
-  history: ReadonlyArray<ConversationMessage>
-): UIMessage[] {
-  return history.map((message, index) => ({
-    id: `${paneId}:history:${index}`,
-    role: message.role,
-    parts: [{ type: 'text', content: message.content }]
-  }))
-}
-
-/**
- * Chooses the `initialMessages` to seed `useChat` with on (re)mount: a live
- * message snapshot cached from a prior mount when present, otherwise the pane's
- * persisted history. The snapshot lets the pane survive the remount a split
- * forces without losing the current session's messages. Pass the QueryClient's
- * cached snapshot (or `undefined`) and the pane's history.
- */
-export function resolveInitialMessages(
-  snapshot: UIMessage[] | undefined,
-  paneId: string,
-  history: ReadonlyArray<ConversationMessage>
-): UIMessage[] {
-  return snapshot ?? historyToInitialMessages(paneId, history)
 }
 
 const typesetClassName = 'typeset typeset-docs max-w-[75ch]'
@@ -190,8 +126,8 @@ function Markdown({
 }
 
 function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
-  const status = toolCallDisplayState(part.state)
-  const summary = toolInputSummary(parseToolArguments(part.arguments) ?? toRecord(part.input))
+  const status = part.state
+  const summary = toolInputSummary(part.input)
   const output = formatToolOutput(part.output)
   const row = (
     <div className="flex items-center gap-2 pl-0.5 font-mono text-xs text-muted-foreground">
@@ -234,15 +170,14 @@ function ThinkingDisclosure({ content }: { content: string }): React.JSX.Element
 }
 
 /**
- * Renders one `useChat` message as an aligned bubble stack: user turns as a
+ * Renders one {@link PaneMessage} as an aligned bubble stack: user turns as a
  * single trailing tinted bubble, assistant turns as their ordered parts
  * (collapsed thinking disclosures, text bubbles, tool-call status rows).
  * Thinking parts render as a collapsed `Thinking` disclosure, click to expand.
- * Text parts render markdown directly with no reveal animation. Tool-result
- * parts are omitted (their output is shown on the tool-call part). Pass a
- * message from `useChat`'s `messages`.
+ * Text parts render markdown directly with no reveal animation. Pass a message
+ * from a pane's chat state ({@link paneChatAtom}).
  */
-export function MessageView({ message }: { message: UIMessage }): React.JSX.Element {
+export function MessageView({ message }: { message: PaneMessage }): React.JSX.Element {
   const isUser = message.role === 'user'
   return (
     <Message align={isUser ? 'end' : 'start'}>
@@ -305,26 +240,19 @@ function ThinkingLevelSelect({
 
 function PaneChat({
   paneId,
-  initialMessages,
   thinkingLevel,
   onThinkingLevelChange
 }: {
   paneId: string
-  initialMessages: UIMessage[]
   thinkingLevel: ThinkingLevel
   onThinkingLevelChange: (level: ThinkingLevel) => void
 }): React.JSX.Element {
   const queryClient = useQueryClient()
   const pendingPermissionQueryKey = ['pane', paneId, 'pendingPermission'] as const
   const pendingQuestionQueryKey = ['pane', paneId, 'pendingQuestion'] as const
-  const messagesQueryKey = ['pane', paneId, 'messages'] as const
 
-  const connection = useMemo(() => createPaneConnectionAdapter(paneId), [paneId])
-  const chat = useChat({ connection, initialMessages, threadId: paneId })
-
-  useEffect(() => {
-    queryClient.setQueryData<UIMessage[]>(messagesQueryKey, chat.messages)
-  }, [queryClient, messagesQueryKey, chat.messages])
+  const chat = Result.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
+  const sendMessage = useAtomSet(paneSendAtom(paneId))
 
   const { data: pendingPermission = null } = useQuery<PanePermissionRequested | null>({
     queryKey: pendingPermissionQueryKey,
@@ -356,7 +284,7 @@ function PaneChat({
     onSubmit: ({ value, formApi }) => {
       const text = value.text.trim()
       if (!text) return
-      void chat.sendMessage(text)
+      sendMessage(text)
       queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
       queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, null)
       formApi.reset()
@@ -456,7 +384,6 @@ function Pane({
 }: PaneProps) {
   const queryClient = useQueryClient()
   const attentionQueryKey = ['pane', paneId, 'attention'] as const
-  const historyQueryKey = ['pane', paneId, 'history'] as const
 
   const [level, setLevel] = useState<ThinkingLevel>(thinkingLevel ?? DEFAULT_THINKING_LEVEL)
 
@@ -470,13 +397,6 @@ function Pane({
     queryFn: () => Idle.make({}),
     staleTime: Infinity
   })
-  const { data: history, isPending: isHistoryPending } = useQuery<
-    ReadonlyArray<ConversationMessage>
-  >({
-    queryKey: historyQueryKey,
-    queryFn: () => window.dia.getPaneHistory(paneId),
-    staleTime: Infinity
-  })
 
   useEffect(() => {
     return window.dia.onAttentionChanged((event) => {
@@ -484,16 +404,6 @@ function Pane({
       queryClient.setQueryData<AttentionState>(attentionQueryKey, event.attention)
     })
   }, [queryClient, paneId, attentionQueryKey])
-
-  const initialMessages = useMemo(
-    () =>
-      resolveInitialMessages(
-        queryClient.getQueryData<UIMessage[]>(['pane', paneId, 'messages']),
-        paneId,
-        history ?? []
-      ),
-    [queryClient, paneId, history]
-  )
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: tracks focus bubbling up from any descendant control to mark this pane active
@@ -556,17 +466,12 @@ function Pane({
             </Button>
           </div>
         </div>
-        {isHistoryPending ? (
-          <div className="min-h-0 flex-1" />
-        ) : (
-          <PaneChat
-            key={paneId}
-            paneId={paneId}
-            initialMessages={initialMessages}
-            thinkingLevel={level}
-            onThinkingLevelChange={changeThinkingLevel}
-          />
-        )}
+        <PaneChat
+          key={paneId}
+          paneId={paneId}
+          thinkingLevel={level}
+          onThinkingLevelChange={changeThinkingLevel}
+        />
       </div>
     </div>
   )
