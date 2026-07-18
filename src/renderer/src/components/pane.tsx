@@ -32,7 +32,7 @@ import type { ToolCallPart, ToolCallState, UIMessage } from '@tanstack/ai-client
 import { useChat } from '@tanstack/ai-react'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check } from 'lucide-react'
+import { ArrowUp, Brain, Check } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
@@ -44,7 +44,7 @@ import { PermissionRequestCard } from './permission-request-card'
 import { PulseIndicator } from './pulse-indicator'
 import { Bubble, BubbleContent } from './ui/bubble'
 import { Button } from './ui/button'
-import { Input } from './ui/input'
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from './ui/input-group'
 
 interface PaneProps {
   paneId: string
@@ -275,12 +275,44 @@ export function MessageView({ message }: { message: UIMessage }): React.JSX.Elem
   )
 }
 
+function ThinkingLevelSelect({
+  value,
+  onChange
+}: {
+  value: ThinkingLevel
+  onChange: (level: ThinkingLevel) => void
+}): React.JSX.Element {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger
+        size="sm"
+        aria-label="Thinking level"
+        className="gap-1 border-0 bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground dark:bg-transparent dark:hover:bg-accent/50"
+      >
+        <Brain />
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align="start">
+        {THINKING_LEVEL_OPTIONS.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
 function PaneChat({
   paneId,
-  initialMessages
+  initialMessages,
+  thinkingLevel,
+  onThinkingLevelChange
 }: {
   paneId: string
   initialMessages: UIMessage[]
+  thinkingLevel: ThinkingLevel
+  onThinkingLevelChange: (level: ThinkingLevel) => void
 }): React.JSX.Element {
   const queryClient = useQueryClient()
   const pendingPermissionQueryKey = ['pane', paneId, 'pendingPermission'] as const
@@ -370,7 +402,7 @@ function PaneChat({
         <ClarifyingQuestionCard request={pendingQuestion} onResolve={respondToQuestion} />
       )}
       <form
-        className="mt-2 flex gap-2"
+        className="mt-2"
         onSubmit={(event) => {
           event.preventDefault()
           void form.handleSubmit()
@@ -378,17 +410,36 @@ function PaneChat({
       >
         <form.Field name="text">
           {(field) => (
-            <Input
-              className="flex-1"
-              value={field.state.value}
-              onChange={(event) => field.handleChange(event.target.value)}
-              placeholder="Message dia..."
-            />
+            <InputGroup>
+              <InputGroupTextarea
+                className="min-h-14"
+                value={field.state.value}
+                onChange={(event) => field.handleChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                    event.preventDefault()
+                    void form.handleSubmit()
+                  }
+                }}
+                placeholder="Message dia..."
+                aria-label="Message dia"
+              />
+              <InputGroupAddon align="block-end">
+                <ThinkingLevelSelect value={thinkingLevel} onChange={onThinkingLevelChange} />
+                <InputGroupButton
+                  type="submit"
+                  variant="default"
+                  size="icon-sm"
+                  className="ml-auto"
+                  aria-label="Send message"
+                  disabled={field.state.value.trim() === ''}
+                >
+                  <ArrowUp />
+                </InputGroupButton>
+              </InputGroupAddon>
+            </InputGroup>
           )}
         </form.Field>
-        <Button type="submit" size="sm">
-          Send
-        </Button>
       </form>
     </div>
   )
@@ -479,18 +530,6 @@ function Pane({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <Select value={level} onValueChange={changeThinkingLevel}>
-              <SelectTrigger size="sm" className="gap-1 text-xs" aria-label="Thinking level">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {THINKING_LEVEL_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             <Button
               type="button"
               variant="outline"
@@ -520,7 +559,13 @@ function Pane({
         {isHistoryPending ? (
           <div className="min-h-0 flex-1" />
         ) : (
-          <PaneChat key={paneId} paneId={paneId} initialMessages={initialMessages} />
+          <PaneChat
+            key={paneId}
+            paneId={paneId}
+            initialMessages={initialMessages}
+            thinkingLevel={level}
+            onThinkingLevelChange={changeThinkingLevel}
+          />
         )}
       </div>
     </div>
