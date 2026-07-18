@@ -44,6 +44,7 @@ Renderer-specific — see `src/renderer/CLAUDE.md`.
 - Schemas shared across processes (main/preload/renderer) live in `src/shared` (import via `@shared/*`) and must stay platform-neutral — no Node/DOM/Electron imports. `tsconfig.shared.json` enforces this. See ADR-0013.
 - A path alias must be declared in all of: `tsconfig.base.json` (typecheck), every relevant `electron.vite.config.ts` block (main/preload/renderer — build), and `vitest.config.ts` (tests). Type-only imports resolve without the runtime aliases, so a missing one stays hidden until the first value import.
 - Effect diagnostics run inside `pnpm typecheck` and standalone via `pnpm diagnostics` (per-project: `diagnostics:{node,web,test}`). Bust stale `.tsbuildinfo` after changing a severity map. See `docs/reasoning/2026-07-17-effect-tsgo-diagnostics-tooling.md`.
+- Avoid excessive nesting from chained `.pipe`/`Effect.andThen` callbacks (see [effect.website/docs/code-style/do](https://effect.website/docs/code-style/do/)). Prefer `Effect.gen` for sequential logic — it reads top-to-bottom like imperative code instead of nesting a callback per step. Reach for the Do-simulation (`Effect.Do`/`Effect.bind`/`Effect.let`) only where `Effect.gen` doesn't fit.
 
 ### Mandatory skill invocation
 
