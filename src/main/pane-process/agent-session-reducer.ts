@@ -39,6 +39,19 @@ const parseToolInput = (partialJson: string): Record<string, unknown> => {
   }
 }
 
+type UserContentBlock = Exclude<
+  Extract<SDKMessage, { type: 'user' }>['message']['content'],
+  string
+>[number]
+
+type ToolResultBlock = Extract<UserContentBlock, { type: 'tool_result' }>
+
+const flattenToolResultContent = (content: ToolResultBlock['content']): string => {
+  if (content === undefined) return ''
+  if (typeof content === 'string') return content
+  return content.map((block) => (block.type === 'text' ? block.text : `[${block.type}]`)).join('')
+}
+
 /**
  * Builds a fresh {@link SessionEventReducer}. Each instance is single-use and
  * stateful: it accumulates streaming tool input and remembers which tool calls
@@ -51,14 +64,19 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
   const partialJsonByBlockIndex = new Map<number, string>()
   const pendingToolCalls = new Map<string, { name: string; input: Record<string, unknown> }>()
 
-  const completeToolCall = (toolCallId: string): OutboundMessage | undefined => {
+  const completeToolCall = (
+    toolCallId: string,
+    result?: { output: string; isError: boolean }
+  ): OutboundMessage | undefined => {
     const pending = pendingToolCalls.get(toolCallId)
     if (!pending) return undefined
     pendingToolCalls.delete(toolCallId)
     return ToolCallCompleted.make({
       toolCallId,
       toolName: pending.name,
-      input: pending.input
+      input: pending.input,
+      output: result?.output ?? '',
+      isError: result?.isError ?? false
     })
   }
 
@@ -100,7 +118,10 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
       const completed: OutboundMessage[] = []
       for (const block of content) {
         if (block.type !== 'tool_result') continue
-        const completion = completeToolCall(block.tool_use_id)
+        const completion = completeToolCall(block.tool_use_id, {
+          output: flattenToolResultContent(block.content),
+          isError: block.is_error ?? false
+        })
         if (completion) completed.push(completion)
       }
       return completed

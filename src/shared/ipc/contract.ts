@@ -175,13 +175,17 @@ export type PaneToolCallStarted = typeof PaneToolCallStarted.Type
 /**
  * Event pushed to the renderer when the tool call `toolCallId` (`toolName`)
  * previously reported via {@link PaneToolCallStarted} in pane `paneId` has
- * finished, carrying the resolved `input` the tool was called with.
+ * finished, carrying the resolved `input` the tool was called with, the
+ * `output` it produced (flattened to text; empty when the turn ended before a
+ * result arrived), and `isError` flagging a failed or denied result.
  */
 export const PaneToolCallCompleted = Schema.TaggedStruct('PaneToolCallCompleted', {
   paneId: Schema.UUID,
   toolCallId: Schema.String,
   toolName: Schema.String,
-  input: JsonRecord
+  input: JsonRecord,
+  output: Schema.String,
+  isError: Schema.Boolean
 })
 export type PaneToolCallCompleted = typeof PaneToolCallCompleted.Type
 

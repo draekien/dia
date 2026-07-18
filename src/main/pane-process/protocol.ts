@@ -49,11 +49,13 @@ export const ToolCallStarted = Schema.TaggedStruct('ToolCallStarted', {
   toolCallId: Schema.String,
   toolName: Schema.String
 })
-/** Sent by the pane subprocess to main once a tool invocation has finished, including the input it was called with. */
+/** Sent by the pane subprocess to main once a tool invocation has finished, including the input it was called with, the `output` it produced (flattened to text; empty when the turn ended before a result arrived), and `isError` flagging a failed/denied result. */
 export const ToolCallCompleted = Schema.TaggedStruct('ToolCallCompleted', {
   toolCallId: Schema.String,
   toolName: Schema.String,
-  input: JsonRecord
+  input: JsonRecord,
+  output: Schema.String,
+  isError: Schema.Boolean
 })
 /** Sent by the pane subprocess to main when the agent needs the user to approve or deny a tool call. `suggestions`, when present, are the SDK's offered "always allow" rules for this call. Main should respond with a `ResolvePermission` message carrying the same `requestId`. */
 export const PermissionRequested = Schema.TaggedStruct('PermissionRequested', {

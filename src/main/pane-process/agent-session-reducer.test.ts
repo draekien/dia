@@ -73,8 +73,19 @@ const userMessage = (content: UserContent): SDKMessage => ({
   message: { role: 'user', content }
 })
 
-const toolResult = (toolUseId: string): UserContent => [
-  { type: 'tool_result', tool_use_id: toolUseId }
+const toolResult = (
+  toolUseId: string,
+  options?: {
+    content?: Extract<UserContent[number], { type: 'tool_result' }>['content']
+    isError?: boolean
+  }
+): UserContent => [
+  {
+    type: 'tool_result',
+    tool_use_id: toolUseId,
+    ...(options?.content !== undefined ? { content: options.content } : {}),
+    ...(options?.isError !== undefined ? { is_error: options.isError } : {})
+  }
 ]
 
 const run = (messages: ReadonlyArray<SDKMessage>): OutboundMessage[] => {
@@ -148,7 +159,14 @@ describe('makeSessionEventReducer — tool input accumulation (T4)', () => {
     const completions = toolCompletions(run(messages))
 
     expect(completions).toEqual([
-      { _tag: 'ToolCallCompleted', toolCallId: 'tool-1', toolName: 'Read', input: expectedInput }
+      {
+        _tag: 'ToolCallCompleted',
+        toolCallId: 'tool-1',
+        toolName: 'Read',
+        input: expectedInput,
+        output: '',
+        isError: false
+      }
     ])
   })
 
@@ -200,13 +218,17 @@ describe('makeSessionEventReducer — tool input accumulation (T4)', () => {
         _tag: 'ToolCallCompleted',
         toolCallId: 'tool-bash',
         toolName: 'Bash',
-        input: { command: 'ls' }
+        input: { command: 'ls' },
+        output: '',
+        isError: false
       },
       {
         _tag: 'ToolCallCompleted',
         toolCallId: 'tool-read',
         toolName: 'Read',
-        input: { file_path: '/a' }
+        input: { file_path: '/a' },
+        output: '',
+        isError: false
       }
     ])
   })
@@ -215,5 +237,39 @@ describe('makeSessionEventReducer — tool input accumulation (T4)', () => {
     const emitted = run([toolUseStart(0, 'tool-1', 'Read')])
 
     expect(emitted).toEqual([{ _tag: 'ToolCallStarted', toolCallId: 'tool-1', toolName: 'Read' }])
+  })
+})
+
+describe('makeSessionEventReducer — tool output capture', () => {
+  const completeCall = (result: ReturnType<typeof toolResult>) =>
+    toolCompletions(run([toolUseStart(0, 'tool-1', 'Bash'), blockStop(0), userMessage(result)]))[0]
+
+  it('captures string tool_result content as the completion output', () => {
+    const completion = completeCall(toolResult('tool-1', { content: 'hello world' }))
+
+    expect(completion?.output).toBe('hello world')
+    expect(completion?.isError).toBe(false)
+  })
+
+  it('flattens an array of text content blocks into the output', () => {
+    const completion = completeCall(
+      toolResult('tool-1', {
+        content: [
+          { type: 'text', text: 'first ' },
+          { type: 'text', text: 'second' }
+        ]
+      })
+    )
+
+    expect(completion?.output).toBe('first second')
+  })
+
+  it('flags a failed or denied result via isError', () => {
+    const completion = completeCall(
+      toolResult('tool-1', { content: 'permission denied', isError: true })
+    )
+
+    expect(completion?.isError).toBe(true)
+    expect(completion?.output).toBe('permission denied')
   })
 })

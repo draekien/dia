@@ -19,5 +19,6 @@ The event-folding logic was extracted into a pure `agent-session-reducer.ts` (`m
 ## Implication
 
 - `ToolCallCompleted` means "the tool finished executing," keyed off the `user`/`tool_result` message — not "input finished streaming." Don't revert it to `content_block_stop`; the reducer test `defers completion until the tool result arrives` guards this.
+- The `tool_result` block also carries the tool's output (`content`, flattened to text — non-text blocks become `[type]`) and an `is_error` flag; both are captured onto `ToolCallCompleted` (`output`/`isError`) and threaded through to `PaneToolCallCompleted` for the renderer (the TanStack AI adapter emits them as the AG-UI `TOOL_CALL_RESULT`, per ADR-0014). Turn-end flushes have no result, so they complete with empty `output` and `isError: false`.
 - Correlation is by `tool_use_id`, never by arrival order or block index — subagent tool results (with `parent_tool_use_id` set) whose ids were never registered via stream events are naturally ignored.
 - New per-event SDK→protocol mapping belongs in `agent-session-reducer.ts` (pure, tested), not inline in the effectful shell.

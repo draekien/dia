@@ -149,7 +149,9 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
           paneId,
           toolCallId: m.toolCallId,
           toolName: m.toolName,
-          input: m.input
+          input: m.input,
+          output: m.output,
+          isError: m.isError
         })
       )
     ),
