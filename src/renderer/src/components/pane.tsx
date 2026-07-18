@@ -21,7 +21,7 @@ import { useChat } from '@tanstack/ai-react'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeHighlightLines from 'rehype-highlight-code-lines'
@@ -176,59 +176,6 @@ function Markdown({
   )
 }
 
-const revealWindowMs = 140
-const revealMinCharsPerSecond = 60
-const revealMaxCharsPerSecond = 900
-
-/**
- * Computes the next reveal position for the streaming text animation, advancing
- * `current` toward `target` over `dtMs` at a rate that drains the backlog across
- * a fixed window, clamped between a floor and ceiling characters/second. Use per
- * frame with the elapsed time to pace the reveal smoothly regardless of how
- * bursty the underlying text updates arrive; returns a fractional position that
- * never exceeds `target`.
- */
-export function nextRevealLength(current: number, target: number, dtMs: number): number {
-  if (current >= target) return current
-  const backlog = target - current
-  const charsPerSecond = Math.min(
-    revealMaxCharsPerSecond,
-    Math.max(revealMinCharsPerSecond, (backlog * 1000) / revealWindowMs)
-  )
-  return Math.min(target, current + (charsPerSecond * dtMs) / 1000)
-}
-
-function StreamingMessage({ text }: { text: string }): React.JSX.Element {
-  const [revealedLength, setRevealedLength] = useState(0)
-  const targetLengthRef = useRef(text.length)
-  targetLengthRef.current = text.length
-  const revealedRef = useRef(0)
-
-  useEffect(() => {
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    let frame = 0
-    let previous = performance.now()
-    const tick = (now: number): void => {
-      const dtMs = now - previous
-      previous = now
-      const target = targetLengthRef.current
-      if (revealedRef.current < target) {
-        revealedRef.current = reduced ? target : nextRevealLength(revealedRef.current, target, dtMs)
-        setRevealedLength(Math.floor(revealedRef.current))
-      }
-      frame = requestAnimationFrame(tick)
-    }
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
-  }, [])
-
-  return (
-    <div className="animate-stream-enter motion-reduce:animate-none">
-      <Markdown content={text.slice(0, revealedLength)} className="stream-cursor" />
-    </div>
-  )
-}
-
 function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
   const status = toolCallDisplayState(part.state)
   const summary = toolInputSummary(parseToolArguments(part.arguments) ?? toRecord(part.input))
@@ -263,27 +210,19 @@ function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
 /**
  * Renders one `useChat` message as an aligned bubble stack: user turns as a
  * single trailing tinted bubble, assistant turns as their ordered parts (text
- * bubbles, tool-call status rows). When `isStreamingMessage` is set, the final
- * text part animates its reveal. Tool-result parts are omitted (their output is
- * shown on the tool-call part). Pass a message from `useChat`'s `messages`.
+ * bubbles, tool-call status rows). Text parts render markdown directly with no
+ * reveal animation. Tool-result parts are omitted (their output is shown on the
+ * tool-call part). Pass a message from `useChat`'s `messages`.
  */
-export function MessageView({
-  message,
-  isStreamingMessage
-}: {
-  message: UIMessage
-  isStreamingMessage: boolean
-}): React.JSX.Element {
+export function MessageView({ message }: { message: UIMessage }): React.JSX.Element {
   const isUser = message.role === 'user'
-  const lastIndex = message.parts.length - 1
   return (
     <Message align={isUser ? 'end' : 'start'}>
       <MessageContent>
         {message.parts.map((part, index) => {
           const key = `${message.id}:${index}`
           if (part.type === 'text') {
-            const streaming = isStreamingMessage && index === lastIndex
-            if (part.content.trim() === '' && !streaming) return null
+            if (part.content.trim() === '') return null
             return (
               <Bubble
                 key={key}
@@ -291,11 +230,7 @@ export function MessageView({
                 align={isUser ? 'end' : 'start'}
               >
                 <BubbleContent>
-                  {streaming ? (
-                    <StreamingMessage text={part.content} />
-                  ) : (
-                    <Markdown content={part.content} />
-                  )}
+                  <Markdown content={part.content} />
                 </BubbleContent>
               </Bubble>
             )
@@ -376,26 +311,19 @@ function PaneChat({
     queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, null)
   }
 
-  const lastMessageIndex = chat.messages.length - 1
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <MessageScrollerProvider autoScroll>
         <MessageScroller className="flex-1">
           <MessageScrollerViewport>
             <MessageScrollerContent className="gap-2 py-2">
-              {chat.messages.map((message, index) => (
+              {chat.messages.map((message) => (
                 <MessageScrollerItem
                   key={message.id}
                   messageId={message.id}
                   scrollAnchor={message.role === 'user'}
                 >
-                  <MessageView
-                    message={message}
-                    isStreamingMessage={
-                      chat.isLoading && index === lastMessageIndex && message.role === 'assistant'
-                    }
-                  />
+                  <MessageView message={message} />
                 </MessageScrollerItem>
               ))}
             </MessageScrollerContent>

@@ -2,13 +2,7 @@
 import type { UIMessage } from '@tanstack/ai-client'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import {
-  dirName,
-  historyToInitialMessages,
-  MessageView,
-  nextRevealLength,
-  resolveInitialMessages
-} from './pane'
+import { dirName, historyToInitialMessages, MessageView, resolveInitialMessages } from './pane'
 
 afterEach(cleanup)
 
@@ -78,42 +72,9 @@ describe('resolveInitialMessages', () => {
   })
 })
 
-describe('nextRevealLength', () => {
-  it('does not advance past an already-reached target', () => {
-    expect(nextRevealLength(10, 10, 16)).toBe(10)
-    expect(nextRevealLength(12, 10, 16)).toBe(12)
-  })
-
-  it('caps a large backlog at the maximum reveal speed', () => {
-    // backlog 1000 over 100ms would demand 10000 cps; capped to 900 cps => 90 chars.
-    expect(nextRevealLength(0, 1000, 100)).toBe(90)
-  })
-
-  it('advances proportionally to the backlog within the speed band', () => {
-    // backlog 70 over a 140ms window => 500 cps; 500 cps for 100ms => 50 chars.
-    expect(nextRevealLength(0, 70, 100)).toBe(50)
-  })
-
-  it('scales with elapsed time so the rate is frame-rate independent', () => {
-    // Same 500 cps as above, half the elapsed time => half the advance.
-    expect(nextRevealLength(0, 70, 50)).toBe(25)
-  })
-
-  it('applies the minimum speed floor for a tiny backlog', () => {
-    // backlog 8 => 57.1 cps proportionally, floored to 60 cps; 60 cps for 10ms => 0.6 chars.
-    expect(nextRevealLength(0, 8, 10)).toBeCloseTo(0.6, 5)
-  })
-
-  it('never overshoots the target even when the rate would exceed it', () => {
-    expect(nextRevealLength(0, 70, 1000)).toBe(70)
-  })
-})
-
 describe('MessageView', () => {
   it('renders a user turn as an end-aligned bubble carrying the text', () => {
-    const { container } = render(
-      <MessageView message={userMessage('deploy the thing')} isStreamingMessage={false} />
-    )
+    const { container } = render(<MessageView message={userMessage('deploy the thing')} />)
 
     expect(screen.getByText('deploy the thing')).toBeTruthy()
     expect(container.querySelector('[data-slot="message"]')?.getAttribute('data-align')).toBe('end')
@@ -129,7 +90,7 @@ describe('MessageView', () => {
       parts: [{ type: 'text', content: 'here is the answer' }]
     }
 
-    const { container } = render(<MessageView message={message} isStreamingMessage={false} />)
+    const { container } = render(<MessageView message={message} />)
 
     expect(screen.getByText('here is the answer')).toBeTruthy()
     expect(container.querySelector('[data-slot="message"]')?.getAttribute('data-align')).toBe(
@@ -156,7 +117,7 @@ describe('MessageView', () => {
       ]
     }
 
-    const { container } = render(<MessageView message={message} isStreamingMessage={false} />)
+    const { container } = render(<MessageView message={message} />)
 
     expect(screen.getByText('Bash')).toBeTruthy()
     expect(screen.getByText('ls -la')).toBeTruthy()
@@ -180,7 +141,7 @@ describe('MessageView', () => {
       ]
     }
 
-    const { container } = render(<MessageView message={message} isStreamingMessage={false} />)
+    const { container } = render(<MessageView message={message} />)
 
     expect(screen.getByText('Read')).toBeTruthy()
     expect(screen.getByText('running')).toBeTruthy()
@@ -209,20 +170,20 @@ describe('MessageView', () => {
       ]
     }
 
-    render(<MessageView message={message} isStreamingMessage={false} />)
+    render(<MessageView message={message} />)
 
     expect(screen.getByText('tool-call output')).toBeTruthy()
     expect(screen.queryByText('duplicate result body')).toBeNull()
   })
 
-  it('drops an empty non-streaming assistant text part rather than rendering an empty bubble', () => {
+  it('drops an empty assistant text part rather than rendering an empty bubble', () => {
     const message: UIMessage = {
       id: 'a5',
       role: 'assistant',
       parts: [{ type: 'text', content: '   ' }]
     }
 
-    const { container } = render(<MessageView message={message} isStreamingMessage={false} />)
+    const { container } = render(<MessageView message={message} />)
 
     expect(container.querySelector('[data-slot="bubble"]')).toBeNull()
   })
