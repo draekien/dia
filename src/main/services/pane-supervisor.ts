@@ -18,7 +18,6 @@ import type {
   PaneConfig,
   PaneRecord,
   PermissionMode,
-  StartupPermissionMode,
   ThinkingLevel,
   WorktreeInfo
 } from '@shared/domain/pane'
