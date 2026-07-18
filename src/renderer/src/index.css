@@ -45,7 +45,9 @@
   --color-popover-foreground: var(--ink);
   --color-accent: var(--secondary);
   --color-accent-foreground: var(--ink);
+  --color-secondary-foreground: var(--ink);
   --color-input: var(--border);
+  --color-muted: var(--surface);
   --color-muted-foreground: var(--ink-muted);
   --color-destructive: var(--error);
   --color-primary-foreground: var(--primary-ink);
