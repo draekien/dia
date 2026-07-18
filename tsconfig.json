@@ -4,6 +4,7 @@
   "references": [
     { "path": "./tsconfig.shared.json" },
     { "path": "./tsconfig.node.json" },
-    { "path": "./tsconfig.web.json" }
+    { "path": "./tsconfig.web.json" },
+    { "path": "./tsconfig.test.json" }
   ]
 }
