@@ -3,6 +3,7 @@ import type { ConversationMessage } from '@shared/domain/pane'
 import {
   AssistantMessageReceived,
   AssistantTextDelta,
+  AssistantThinkingDelta,
   type OutboundMessage,
   SessionStarted,
   ToolCallCompleted,
@@ -143,6 +144,9 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
     if (streamEvent.type === 'content_block_delta') {
       if (streamEvent.delta.type === 'text_delta') {
         return [AssistantTextDelta.make({ text: streamEvent.delta.text })]
+      }
+      if (streamEvent.delta.type === 'thinking_delta') {
+        return [AssistantThinkingDelta.make({ text: streamEvent.delta.thinking })]
       }
       if (streamEvent.delta.type === 'input_json_delta') {
         const existing = partialJsonByBlockIndex.get(streamEvent.index) ?? ''

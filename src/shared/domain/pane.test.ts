@@ -7,13 +7,24 @@ describe('PaneConfig', () => {
     const value: PaneConfig = {
       paneId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
       cwd: '/home/william/projects/dia',
-      model: 'claude-sonnet-5'
+      model: 'claude-sonnet-5',
+      thinkingLevel: 'high'
     }
 
     const encoded = Schema.encodeSync(PaneConfig)(value)
     const decoded = Schema.decodeUnknownSync(PaneConfig)(encoded)
 
     expect(decoded).toEqual(value)
+  })
+
+  it('defaults thinkingLevel to adaptive when absent (migrating older records)', () => {
+    const decoded = Schema.decodeUnknownSync(PaneConfig)({
+      paneId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+      cwd: '/home/william/projects/dia',
+      model: 'claude-sonnet-5'
+    })
+
+    expect(decoded.thinkingLevel).toBe('adaptive')
   })
 
   it('round-trips with an optional worktree field set', () => {
@@ -26,6 +37,7 @@ describe('PaneConfig', () => {
       paneId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
       cwd: worktree.path,
       model: 'claude-sonnet-5',
+      thinkingLevel: 'adaptive',
       worktree
     }
 
@@ -52,7 +64,8 @@ describe('PaneRecord', () => {
       config: {
         paneId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
         cwd: '/home/william/projects/dia',
-        model: 'claude-sonnet-5'
+        model: 'claude-sonnet-5',
+        thinkingLevel: 'adaptive'
       },
       history: [
         { role: 'user', content: 'hello' },

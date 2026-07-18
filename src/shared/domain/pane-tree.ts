@@ -1,4 +1,5 @@
 import { Data, Either, Schema } from 'effect'
+import { ThinkingLevel } from './pane'
 
 /** Identifier for a single pane, unique within a window's pane tree. */
 export type PaneId = string
@@ -8,7 +9,8 @@ export const PaneLeafSchema = Schema.TaggedStruct('Leaf', {
   paneId: Schema.UUID,
   status: Schema.Literal('pending', 'ready'),
   cwd: Schema.optional(Schema.String),
-  sourceRepo: Schema.optional(Schema.String)
+  sourceRepo: Schema.optional(Schema.String),
+  thinkingLevel: Schema.optional(ThinkingLevel)
 })
 
 /** Schema for a {@link PaneSplit}. Use `PaneSplitSchema.make({...})` to construct a split so the `_tag` is set and fields are validated. */
@@ -102,17 +104,18 @@ function markReadyNode(
   node: PaneNode,
   targetPaneId: PaneId,
   cwd: string,
-  sourceRepo: string | undefined
+  sourceRepo: string | undefined,
+  thinkingLevel: ThinkingLevel | undefined
 ): Either.Either<PaneNode, PaneNotFoundError> {
   if (node._tag === 'Leaf') {
     if (node.paneId !== targetPaneId) {
       return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
     }
-    return Either.right({ ...node, status: 'ready', cwd, sourceRepo })
+    return Either.right({ ...node, status: 'ready', cwd, sourceRepo, thinkingLevel })
   }
 
   for (let i = 0; i < node.children.length; i++) {
-    const result = markReadyNode(node.children[i], targetPaneId, cwd, sourceRepo)
+    const result = markReadyNode(node.children[i], targetPaneId, cwd, sourceRepo, thinkingLevel)
     if (Either.isRight(result)) {
       const children = node.children.slice()
       children[i] = result.right
@@ -123,8 +126,9 @@ function markReadyNode(
 }
 
 /**
- * Marks the leaf pane identified by `targetPaneId` as `ready`, recording its `cwd` and, if the
- * pane originated from a worktree, its `sourceRepo`. Call once a pane's shell/session has attached.
+ * Marks the leaf pane identified by `targetPaneId` as `ready`, recording its `cwd`, its
+ * `thinkingLevel`, and, if the pane originated from a worktree, its `sourceRepo`. Call once a
+ * pane's shell/session has attached.
  *
  * Fails with {@link PaneNotFoundError} if `targetPaneId` is not found anywhere in `tree`.
  */
@@ -132,9 +136,48 @@ export function markPaneReady(
   tree: PaneNode,
   targetPaneId: PaneId,
   cwd: string,
-  sourceRepo?: string
+  sourceRepo?: string,
+  thinkingLevel?: ThinkingLevel
 ): Either.Either<PaneNode, PaneNotFoundError> {
-  return markReadyNode(tree, targetPaneId, cwd, sourceRepo)
+  return markReadyNode(tree, targetPaneId, cwd, sourceRepo, thinkingLevel)
+}
+
+function setThinkingLevelNode(
+  node: PaneNode,
+  targetPaneId: PaneId,
+  thinkingLevel: ThinkingLevel
+): Either.Either<PaneNode, PaneNotFoundError> {
+  if (node._tag === 'Leaf') {
+    if (node.paneId !== targetPaneId) {
+      return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+    }
+    return Either.right({ ...node, thinkingLevel })
+  }
+
+  for (let i = 0; i < node.children.length; i++) {
+    const result = setThinkingLevelNode(node.children[i], targetPaneId, thinkingLevel)
+    if (Either.isRight(result)) {
+      const children = node.children.slice()
+      children[i] = result.right
+      return Either.right({ ...node, children })
+    }
+  }
+  return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+}
+
+/**
+ * Records a new `thinkingLevel` on the leaf pane identified by `targetPaneId`, leaving the rest of
+ * the tree unchanged. Call when the user changes a live pane's thinking level so the layout the
+ * renderer reads back reflects the new choice.
+ *
+ * Fails with {@link PaneNotFoundError} if `targetPaneId` is not found anywhere in `tree`.
+ */
+export function setPaneThinkingLevel(
+  tree: PaneNode,
+  targetPaneId: PaneId,
+  thinkingLevel: ThinkingLevel
+): Either.Either<PaneNode, PaneNotFoundError> {
+  return setThinkingLevelNode(tree, targetPaneId, thinkingLevel)
 }
 
 function closeNode(

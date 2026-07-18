@@ -32,6 +32,13 @@ const inputJsonDelta = (index: number, partialJson: string): SDKMessage =>
     delta: { type: 'input_json_delta', partial_json: partialJson }
   })
 
+const thinkingDelta = (index: number, thinking: string): SDKMessage =>
+  streamEvent({
+    type: 'content_block_delta',
+    index,
+    delta: { type: 'thinking_delta', thinking, estimated_tokens: null }
+  })
+
 const blockStop = (index: number): SDKMessage => streamEvent({ type: 'content_block_stop', index })
 
 const assistantMessage = (content: AssistantContent): SDKMessage => ({
@@ -101,6 +108,9 @@ const toolCompletions = (
 ): Extract<OutboundMessage, { _tag: 'ToolCallCompleted' }>[] =>
   emitted.flatMap((message) => (message._tag === 'ToolCallCompleted' ? [message] : []))
 
+const thinkingDeltas = (emitted: ReadonlyArray<OutboundMessage>): string[] =>
+  emitted.flatMap((message) => (message._tag === 'AssistantThinkingDelta' ? [message.text] : []))
+
 describe('makeSessionEventReducer — assistant text streaming (T1)', () => {
   it('accumulates text deltas in arrival order into the intended message text', () => {
     const chunks = ['The ', 'quick ', 'brown ', 'fox']
@@ -141,6 +151,28 @@ describe('makeSessionEventReducer — assistant text streaming (T1)', () => {
     ]
 
     expect(textDeltas(run(messages)).join('')).toBe('beforeafter')
+  })
+})
+
+describe('makeSessionEventReducer — extended thinking streaming', () => {
+  it('emits one AssistantThinkingDelta per thinking_delta, preserving text and arrival order', () => {
+    const chunks = ['Let me ', 'consider ', 'the options']
+
+    const emitted = run(chunks.map((chunk, index) => thinkingDelta(index, chunk)))
+
+    expect(thinkingDeltas(emitted)).toEqual(chunks)
+  })
+
+  it('keeps thinking deltas out of the accumulated assistant text stream', () => {
+    const messages: SDKMessage[] = [
+      thinkingDelta(0, 'reasoning about it'),
+      textDelta(1, 'the answer')
+    ]
+
+    const emitted = run(messages)
+
+    expect(thinkingDeltas(emitted)).toEqual(['reasoning about it'])
+    expect(textDeltas(emitted)).toEqual(['the answer'])
   })
 })
 

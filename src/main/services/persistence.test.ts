@@ -30,12 +30,20 @@ const tree: PaneNode = {
 const workspace: PersistedWorkspace = {
   tree,
   panes: {
-    [PANE_A]: { config: { paneId: PANE_A, cwd: '/repo/a', model: 'claude-sonnet-5' } },
+    [PANE_A]: {
+      config: {
+        paneId: PANE_A,
+        cwd: '/repo/a',
+        model: 'claude-sonnet-5',
+        thinkingLevel: 'adaptive'
+      }
+    },
     [PANE_B]: {
       config: {
         paneId: PANE_B,
         cwd: '/wt/b',
         model: 'claude-opus-4-8',
+        thinkingLevel: 'high',
         worktree: { path: '/wt/b', branch: 'dia/pane-b', sourceRepo: '/repo' }
       },
       sessionId: 'session-b-123'

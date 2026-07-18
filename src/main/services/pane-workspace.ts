@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { FileSystem, Path } from '@effect/platform'
 import { Errored } from '@shared/domain/attention'
-import type { ConversationMessage } from '@shared/domain/pane'
+import type { ConversationMessage, ThinkingLevel } from '@shared/domain/pane'
 import {
   closePane,
   markPaneReady,
@@ -9,6 +9,7 @@ import {
   PaneLeafSchema,
   type PaneNode,
   type PaneNotFoundError,
+  setPaneThinkingLevel,
   splitPane
 } from '@shared/domain/pane-tree'
 import { type IpcEvent, PaneAttentionChanged } from '@shared/ipc/contract'
@@ -35,12 +36,20 @@ export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
       paneId: PaneId,
       sourceCwd: string,
       model: string,
+      thinkingLevel: ThinkingLevel,
       useWorktree: boolean,
       onEvent: (event: IpcEvent) => Effect.Effect<void>
     ) => Effect.Effect<
       PaneNode,
       PaneNotFoundError | ProcessSpawnError | WorktreeCreateError | WorktreeReattachError
     >
+    /**
+     * Changes a pane's thinking level: persists it on the pane's config, records it on the layout
+     * tree, and, when the pane is live, forwards it to the running process (which applies it on the
+     * next user turn). Returns the resulting layout tree so the caller can broadcast it. Leaves the
+     * tree unchanged (and still returns it) for an unknown pane.
+     */
+    readonly setThinkingLevel: (paneId: PaneId, level: ThinkingLevel) => Effect.Effect<PaneNode>
     readonly close: (paneId: PaneId) => Effect.Effect<PaneNode, PaneNotFoundError>
     readonly getPaneHistory: (paneId: PaneId) => Effect.Effect<ReadonlyArray<ConversationMessage>>
     /**
@@ -147,6 +156,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         paneId: PaneId,
         sourceCwd: string,
         model: string,
+        thinkingLevel: ThinkingLevel,
         useWorktree: boolean,
         onCreateEvent: (event: IpcEvent) => Effect.Effect<void>
       ) {
@@ -160,12 +170,18 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
 
         const worktreePath = useWorktree ? path.join(worktreesRoot, paneId) : undefined
         const { config } = yield* supervisor.openPane(
-          { paneId, sourceCwd, model, worktreePath },
+          { paneId, sourceCwd, model, thinkingLevel, worktreePath },
           onCreateEvent,
           (sessionId) => recordSessionId(paneId, sessionId)
         )
 
-        const readyTree = markPaneReady(tree, paneId, config.cwd, config.worktree?.sourceRepo)
+        const readyTree = markPaneReady(
+          tree,
+          paneId,
+          config.cwd,
+          config.worktree?.sourceRepo,
+          config.thinkingLevel
+        )
         if (Either.isLeft(readyTree)) {
           return yield* readyTree.left
         }
@@ -174,6 +190,39 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         yield* Ref.update(configsRef, HashMap.set(paneId, { config }))
         yield* save()
         return readyTree.right
+      })
+
+      const setThinkingLevel = Effect.fn('PaneWorkspace.setThinkingLevel')(function* (
+        paneId: PaneId,
+        level: ThinkingLevel
+      ) {
+        const configs = yield* Ref.get(configsRef)
+        const entry = HashMap.get(configs, paneId)
+        if (Option.isNone(entry)) {
+          yield* Effect.logWarning('setThinkingLevel for a pane not in the index', { paneId })
+          return yield* Ref.get(treeRef)
+        }
+
+        yield* Ref.set(
+          configsRef,
+          HashMap.set(configs, paneId, {
+            ...entry.value,
+            config: { ...entry.value.config, thinkingLevel: level }
+          })
+        )
+
+        const tree = yield* Ref.get(treeRef)
+        const updated = setPaneThinkingLevel(tree, paneId, level)
+        const nextTree = Either.isRight(updated) ? updated.right : tree
+        if (Either.isRight(updated)) yield* Ref.set(treeRef, updated.right)
+        yield* save()
+
+        const handle = yield* supervisor.getHandle(paneId)
+        if (Option.isSome(handle)) {
+          yield* handle.value.setThinkingLevel(level)
+        }
+
+        return nextTree
       })
 
       const close = Effect.fn('PaneWorkspace.close')(function* (paneId: PaneId) {
@@ -258,6 +307,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
           paneId,
           sourceCwd: config.worktree?.sourceRepo ?? config.cwd,
           model: config.model,
+          thinkingLevel: config.thinkingLevel,
           worktreePath: config.worktree?.path,
           resume: sessionId
         }
@@ -272,6 +322,14 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         }
       })
 
-      return { getTree, split, createPane, close, getPaneHistory, resumePane }
+      return {
+        getTree,
+        split,
+        createPane,
+        setThinkingLevel,
+        close,
+        getPaneHistory,
+        resumePane
+      }
     })
   )

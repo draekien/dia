@@ -30,24 +30,28 @@ const requestA: PaneCreationRequest = {
   paneId: 'aaaaaaaa-0000-4000-8000-000000000001',
   sourceCwd: '/a',
   model: 'm',
+  thinkingLevel: 'adaptive',
   worktreePath: undefined
 }
 const requestB: PaneCreationRequest = {
   paneId: 'bbbbbbbb-0000-4000-8000-000000000002',
   sourceCwd: '/b',
   model: 'm',
+  thinkingLevel: 'adaptive',
   worktreePath: undefined
 }
 
 const configA: PaneConfig = {
   paneId: requestA.paneId,
   cwd: requestA.sourceCwd,
-  model: requestA.model
+  model: requestA.model,
+  thinkingLevel: requestA.thinkingLevel
 }
 const configB: PaneConfig = {
   paneId: requestB.paneId,
   cwd: requestB.sourceCwd,
-  model: requestB.model
+  model: requestB.model,
+  thinkingLevel: requestB.thinkingLevel
 }
 
 // Runs the fiber-scheduler forward without touching the (virtualized) Clock, so a
@@ -240,6 +244,7 @@ describe('PaneSupervisor', () => {
         paneId: 'cccccccc-0000-4000-8000-000000000003',
         sourceCwd: '/repo',
         model: 'm',
+        thinkingLevel: 'adaptive',
         worktreePath: '/wt/c',
         resume: 'session-resume-1'
       }
@@ -264,6 +269,7 @@ describe('PaneSupervisor', () => {
             paneId: resumeRequest.paneId,
             cwd: '/wt/c',
             model: 'm',
+            thinkingLevel: 'adaptive',
             worktree: expectedInfo
           },
           resume: 'session-resume-1'

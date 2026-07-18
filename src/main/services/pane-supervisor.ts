@@ -13,11 +13,12 @@ import {
   type QuestionResponse,
   transitionAttention
 } from '@shared/domain/attention'
-import type { PaneConfig, PaneRecord, WorktreeInfo } from '@shared/domain/pane'
+import type { PaneConfig, PaneRecord, ThinkingLevel, WorktreeInfo } from '@shared/domain/pane'
 import type { PaneId } from '@shared/domain/pane-tree'
 import {
   type IpcEvent,
   PaneAssistantTextDelta,
+  PaneAssistantThinkingDelta,
   PaneAttentionChanged,
   PaneMessageAppended,
   PanePermissionRequested,
@@ -50,7 +51,8 @@ import {
   OutboundMessage,
   ResolvePermission,
   ResolveQuestion,
-  SendText
+  SendText,
+  SetThinkingLevel
 } from '../pane-process/protocol'
 import {
   GitOpsService,
@@ -75,6 +77,7 @@ export interface PaneCreationRequest {
   readonly paneId: PaneId
   readonly sourceCwd: string
   readonly model: string
+  readonly thinkingLevel: ThinkingLevel
   readonly worktreePath: string | undefined
   readonly resume?: string
 }
@@ -88,6 +91,7 @@ export class ProcessCrashedError extends Data.TaggedError('ProcessCrashedError')
 /** Live control surface for an open pane, returned by {@link PaneSupervisor.openPane} and {@link PaneSupervisor.getHandle}. */
 export interface PaneHandle {
   readonly sendMessage: (text: string) => Effect.Effect<void>
+  readonly setThinkingLevel: (level: ThinkingLevel) => Effect.Effect<void>
   readonly resolvePermission: (
     requestId: string,
     response: PermissionResponse
@@ -133,6 +137,9 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
     ),
     Match.tag('AssistantTextDelta', (m) =>
       Option.some<IpcEvent>(PaneAssistantTextDelta.make({ paneId, text: m.text }))
+    ),
+    Match.tag('AssistantThinkingDelta', (m) =>
+      Option.some<IpcEvent>(PaneAssistantThinkingDelta.make({ paneId, text: m.text }))
     ),
     Match.tag('ToolCallStarted', (m) =>
       Option.some<IpcEvent>(
@@ -371,6 +378,15 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
       Effect.logDebug('Sending text to pane process', { paneId: config.paneId, text }).pipe(
         Effect.andThen(Effect.sync(() => child.postMessage(encodeInbound(SendText.make({ text })))))
       ),
+    setThinkingLevel: (level) =>
+      Effect.logDebug('Sending thinking level to pane process', {
+        paneId: config.paneId,
+        level
+      }).pipe(
+        Effect.andThen(
+          Effect.sync(() => child.postMessage(encodeInbound(SetThinkingLevel.make({ level }))))
+        )
+      ),
     resolvePermission: (requestId, response) =>
       Effect.logDebug('Sending permission resolution to pane process', {
         paneId: config.paneId,
@@ -471,7 +487,8 @@ export const PaneSupervisorLive = Layer.effect(
           const config: PaneConfig = {
             paneId: request.paneId,
             cwd: request.sourceCwd,
-            model: request.model
+            model: request.model,
+            thinkingLevel: request.thinkingLevel
           }
           return config
         }
@@ -506,6 +523,7 @@ export const PaneSupervisorLive = Layer.effect(
           paneId: request.paneId,
           cwd: worktree.path,
           model: request.model,
+          thinkingLevel: request.thinkingLevel,
           worktree
         }
         return config

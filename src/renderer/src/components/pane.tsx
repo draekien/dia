@@ -7,6 +7,14 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport
 } from '@renderer/components/ui/message-scroller'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@renderer/components/ui/select'
+import { THINKING_LEVEL_OPTIONS } from '@renderer/lib/thinking-levels'
 import { cn } from '@renderer/lib/utils'
 import {
   type AttentionState,
@@ -14,14 +22,18 @@ import {
   type PermissionResponse,
   type QuestionResponse
 } from '@shared/domain/attention'
-import type { ConversationMessage } from '@shared/domain/pane'
+import {
+  type ConversationMessage,
+  DEFAULT_THINKING_LEVEL,
+  type ThinkingLevel
+} from '@shared/domain/pane'
 import type { PanePermissionRequested, PaneQuestionRequested } from '@shared/ipc/contract'
 import type { ToolCallPart, ToolCallState, UIMessage } from '@tanstack/ai-client'
 import { useChat } from '@tanstack/ai-react'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check } from 'lucide-react'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeHighlightLines from 'rehype-highlight-code-lines'
@@ -38,6 +50,7 @@ interface PaneProps {
   paneId: string
   cwd?: string
   sourceRepo?: string
+  thinkingLevel?: ThinkingLevel
   isFocused?: boolean
   isDimmed?: boolean
   onFocus?: () => void
@@ -207,12 +220,27 @@ function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
   )
 }
 
+function ThinkingDisclosure({ content }: { content: string }): React.JSX.Element {
+  return (
+    <details className="min-w-0">
+      <summary className="w-fit cursor-pointer font-mono text-xs text-muted-foreground marker:text-muted-foreground/60">
+        Thinking
+      </summary>
+      <div className="mt-1 pl-3">
+        <Markdown content={content} className="text-muted-foreground" />
+      </div>
+    </details>
+  )
+}
+
 /**
  * Renders one `useChat` message as an aligned bubble stack: user turns as a
- * single trailing tinted bubble, assistant turns as their ordered parts (text
- * bubbles, tool-call status rows). Text parts render markdown directly with no
- * reveal animation. Tool-result parts are omitted (their output is shown on the
- * tool-call part). Pass a message from `useChat`'s `messages`.
+ * single trailing tinted bubble, assistant turns as their ordered parts
+ * (collapsed thinking disclosures, text bubbles, tool-call status rows).
+ * Thinking parts render as a collapsed `Thinking` disclosure, click to expand.
+ * Text parts render markdown directly with no reveal animation. Tool-result
+ * parts are omitted (their output is shown on the tool-call part). Pass a
+ * message from `useChat`'s `messages`.
  */
 export function MessageView({ message }: { message: UIMessage }): React.JSX.Element {
   const isUser = message.role === 'user'
@@ -221,6 +249,10 @@ export function MessageView({ message }: { message: UIMessage }): React.JSX.Elem
       <MessageContent>
         {message.parts.map((part, index) => {
           const key = `${message.id}:${index}`
+          if (part.type === 'thinking') {
+            if (part.content.trim() === '') return null
+            return <ThinkingDisclosure key={key} content={part.content} />
+          }
           if (part.type === 'text') {
             if (part.content.trim() === '') return null
             return (
@@ -366,6 +398,7 @@ function Pane({
   paneId,
   cwd,
   sourceRepo,
+  thinkingLevel,
   isFocused = false,
   isDimmed = false,
   onFocus
@@ -373,6 +406,13 @@ function Pane({
   const queryClient = useQueryClient()
   const attentionQueryKey = ['pane', paneId, 'attention'] as const
   const historyQueryKey = ['pane', paneId, 'history'] as const
+
+  const [level, setLevel] = useState<ThinkingLevel>(thinkingLevel ?? DEFAULT_THINKING_LEVEL)
+
+  function changeThinkingLevel(next: ThinkingLevel): void {
+    setLevel(next)
+    window.dia.setThinkingLevel(paneId, next)
+  }
 
   const { data: attention = Idle.make({}) } = useQuery<AttentionState>({
     queryKey: attentionQueryKey,
@@ -439,6 +479,18 @@ function Pane({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <Select value={level} onValueChange={changeThinkingLevel}>
+              <SelectTrigger size="sm" className="gap-1 text-xs" aria-label="Thinking level">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {THINKING_LEVEL_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button
               type="button"
               variant="outline"

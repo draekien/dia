@@ -1,5 +1,6 @@
 import type {
   PaneAssistantTextDelta,
+  PaneAssistantThinkingDelta,
   PaneAttentionChanged,
   PaneMessageAppended,
   PaneToolCallCompleted,
@@ -15,6 +16,7 @@ import { Effect, Stream } from 'effect'
 
 type PaneStreamEvent =
   | PaneAssistantTextDelta
+  | PaneAssistantThinkingDelta
   | PaneToolCallStarted
   | PaneToolCallCompleted
   | PaneMessageAppended
@@ -74,6 +76,23 @@ const textEnd = (messageId: string): StreamChunk => ({
   messageId
 })
 
+const reasoningStart = (messageId: string): StreamChunk => ({
+  type: EventType.REASONING_MESSAGE_START,
+  messageId,
+  role: 'reasoning'
+})
+
+const reasoningContent = (messageId: string, delta: string): StreamChunk => ({
+  type: EventType.REASONING_MESSAGE_CONTENT,
+  messageId,
+  delta
+})
+
+const reasoningEnd = (messageId: string): StreamChunk => ({
+  type: EventType.REASONING_MESSAGE_END,
+  messageId
+})
+
 const toolStart = (toolCallId: string, toolName: string): StreamChunk => ({
   type: EventType.TOOL_CALL_START,
   toolCallId,
@@ -104,16 +123,40 @@ const toolResult = (toolCallId: string, content: string): StreamChunk => ({
 
 interface TranslationState {
   readonly openTextMessageId: string | undefined
+  readonly openReasoningMessageId: string | undefined
 }
 
-const initialTranslationState: TranslationState = { openTextMessageId: undefined }
+const initialTranslationState: TranslationState = {
+  openTextMessageId: undefined,
+  openReasoningMessageId: undefined
+}
 
 const closeOpenText = (
   state: TranslationState
 ): readonly [TranslationState, ReadonlyArray<StreamChunk>] =>
   state.openTextMessageId === undefined
     ? [state, []]
-    : [initialTranslationState, [textEnd(state.openTextMessageId)]]
+    : [{ ...state, openTextMessageId: undefined }, [textEnd(state.openTextMessageId)]]
+
+const closeOpenReasoning = (
+  state: TranslationState
+): readonly [TranslationState, ReadonlyArray<StreamChunk>] =>
+  state.openReasoningMessageId === undefined
+    ? [state, []]
+    : [
+        { ...state, openReasoningMessageId: undefined },
+        [reasoningEnd(state.openReasoningMessageId)]
+      ]
+
+// Closes both the in-progress reasoning and text messages, in that order, so a boundary event
+// (tool call, assistant message, or run end) never leaves either dangling open.
+const closeOpen = (
+  state: TranslationState
+): readonly [TranslationState, ReadonlyArray<StreamChunk>] => {
+  const [afterReasoning, closingReasoning] = closeOpenReasoning(state)
+  const [afterText, closingText] = closeOpenText(afterReasoning)
+  return [afterText, [...closingReasoning, ...closingText]]
+}
 
 const translateEvent = (
   threadId: string,
@@ -122,20 +165,35 @@ const translateEvent = (
   event: PaneStreamEvent
 ): readonly [TranslationState, ReadonlyArray<StreamChunk>] => {
   switch (event._tag) {
-    case 'PaneAssistantTextDelta': {
-      if (state.openTextMessageId === undefined) {
+    case 'PaneAssistantThinkingDelta': {
+      if (state.openReasoningMessageId === undefined) {
         const messageId = generateMessageId()
         return [
-          { openTextMessageId: messageId },
-          [textStart(messageId), textContent(messageId, event.text)]
+          { ...state, openReasoningMessageId: messageId },
+          [reasoningStart(messageId), reasoningContent(messageId, event.text)]
         ]
       }
-      return [state, [textContent(state.openTextMessageId, event.text)]]
+      return [state, [reasoningContent(state.openReasoningMessageId, event.text)]]
+    }
+    case 'PaneAssistantTextDelta': {
+      // Thinking always precedes the answer, so the first answer delta closes any open reasoning.
+      const [afterReasoning, closingReasoning] = closeOpenReasoning(state)
+      if (afterReasoning.openTextMessageId === undefined) {
+        const messageId = generateMessageId()
+        return [
+          { ...afterReasoning, openTextMessageId: messageId },
+          [...closingReasoning, textStart(messageId), textContent(messageId, event.text)]
+        ]
+      }
+      return [
+        afterReasoning,
+        [...closingReasoning, textContent(afterReasoning.openTextMessageId, event.text)]
+      ]
     }
     case 'PaneMessageAppended':
-      return event.message.role === 'assistant' ? closeOpenText(state) : [state, []]
+      return event.message.role === 'assistant' ? closeOpen(state) : [state, []]
     case 'PaneToolCallStarted': {
-      const [nextState, closing] = closeOpenText(state)
+      const [nextState, closing] = closeOpen(state)
       return [nextState, [...closing, toolStart(event.toolCallId, event.toolName)]]
     }
     case 'PaneToolCallCompleted':
@@ -149,11 +207,11 @@ const translateEvent = (
       ]
     case 'PaneAttentionChanged': {
       if (event.attention._tag === 'Completed') {
-        const [, closing] = closeOpenText(state)
+        const [, closing] = closeOpen(state)
         return [initialTranslationState, [...closing, runFinished(threadId, runId)]]
       }
       if (event.attention._tag === 'Errored') {
-        const [, closing] = closeOpenText(state)
+        const [, closing] = closeOpen(state)
         return [
           initialTranslationState,
           [...closing, runError(threadId, runId, event.attention.error.message)]
@@ -204,6 +262,7 @@ export const createPaneConnectionAdapter = (paneId: string): ConnectConnectionAd
           }
           const unsubscribes = [
             window.dia.onAssistantTextDelta(forPane(push)),
+            window.dia.onAssistantThinkingDelta(forPane(push)),
             window.dia.onToolCallStarted(forPane(push)),
             window.dia.onToolCallCompleted(forPane(push)),
             window.dia.onMessageAppended(forPane(push)),

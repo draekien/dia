@@ -6,17 +6,20 @@ import {
   type SDKUserMessage
 } from '@anthropic-ai/claude-agent-sdk'
 import { Question, type QuestionResponse } from '@shared/domain/attention'
-import type { PaneConfig } from '@shared/domain/pane'
+import type { PaneConfig, ThinkingLevel } from '@shared/domain/pane'
 import {
   Data,
   Deferred,
   Effect,
   Either,
+  Fiber,
   Layer,
   Logger,
   LogLevel,
   Match,
+  Option,
   Queue,
+  Ref,
   Schema,
   Stream
 } from 'effect'
@@ -24,6 +27,7 @@ import { makeLoggerLive } from '../logger'
 import { makeSessionEventReducer } from './agent-session-reducer'
 import { makePendingUserInput, type UserInputResolution } from './pending-user-input'
 import { InboundMessage, OutboundMessage, PermissionRequested, QuestionRequested } from './protocol'
+import { thinkingOptions } from './thinking-options'
 
 /**
  * Wraps a failure surfaced while consuming the Agent SDK's event stream
@@ -168,11 +172,13 @@ const runSession = Effect.fn('AgentSession.runSession')(
   function* (
     config: PaneConfig,
     promptQueue: Queue.Queue<SDKUserMessage>,
+    sessionIdRef: Ref.Ref<Option.Option<string>>,
     resume: string | undefined
   ) {
     yield* Effect.logInfo('Starting query session', {
       paneId: config.paneId,
       cwd: config.cwd,
+      thinkingLevel: config.thinkingLevel,
       resume
     })
 
@@ -185,7 +191,8 @@ const runSession = Effect.fn('AgentSession.runSession')(
         model: config.model,
         includePartialMessages: true,
         canUseTool,
-        resume
+        resume,
+        ...thinkingOptions(config.thinkingLevel)
       }
     })
 
@@ -195,7 +202,9 @@ const runSession = Effect.fn('AgentSession.runSession')(
     yield* Stream.runForEach(events, (event) =>
       Effect.forEach(reducer.step(event), (outbound) =>
         Effect.gen(function* () {
-          if (outbound._tag === 'ToolCallStarted') {
+          if (outbound._tag === 'SessionStarted') {
+            yield* Ref.set(sessionIdRef, Option.some(outbound.sessionId))
+          } else if (outbound._tag === 'ToolCallStarted') {
             yield* Effect.logDebug('Tool call started', {
               toolCallId: outbound.toolCallId,
               toolName: outbound.toolName
@@ -221,6 +230,51 @@ const runSession = Effect.fn('AgentSession.runSession')(
 
 const program = Effect.gen(function* () {
   const promptQueue = yield* Queue.unbounded<SDKUserMessage>()
+  const sessionIdRef = yield* Ref.make<Option.Option<string>>(Option.none())
+  const configRef = yield* Ref.make<Option.Option<PaneConfig>>(Option.none())
+  const desiredLevelRef = yield* Ref.make<Option.Option<ThinkingLevel>>(Option.none())
+  const fiberRef = yield* Ref.make<Option.Option<Fiber.RuntimeFiber<void>>>(Option.none())
+
+  const startSession = Effect.fn('AgentSession.startSession')(function* (
+    config: PaneConfig,
+    resume: string | undefined
+  ) {
+    const fiber = yield* Effect.forkScoped(runSession(config, promptQueue, sessionIdRef, resume))
+    yield* Ref.set(configRef, Option.some(config))
+    yield* Ref.set(fiberRef, Option.some(fiber))
+  })
+
+  // A running query's thinking/effort options are fixed for its lifetime, so a level change is
+  // deferred to the next user turn: we tear the current query down and resume it fresh with the
+  // new options before offering the pending prompt. Resuming (rather than a cold start) preserves
+  // the conversation. A no-op when the level is unchanged or no session has started yet.
+  const restartForThinkingChange = Effect.fn('AgentSession.restartForThinkingChange')(function* () {
+    const configOpt = yield* Ref.get(configRef)
+    const desiredOpt = yield* Ref.get(desiredLevelRef)
+    if (Option.isNone(configOpt) || Option.isNone(desiredOpt)) return
+    const config = configOpt.value
+    const desired = desiredOpt.value
+    if (desired === config.thinkingLevel) return
+
+    const sessionId = yield* Ref.get(sessionIdRef)
+    if (Option.isNone(sessionId)) {
+      yield* Effect.logWarning('Cannot apply new thinking level yet; no session to resume', {
+        paneId: config.paneId
+      })
+      return
+    }
+
+    yield* Effect.logInfo('Restarting session to apply new thinking level', {
+      paneId: config.paneId,
+      from: config.thinkingLevel,
+      to: desired
+    })
+
+    const fiberOpt = yield* Ref.get(fiberRef)
+    if (Option.isSome(fiberOpt)) yield* Fiber.interrupt(fiberOpt.value)
+
+    yield* startSession({ ...config, thinkingLevel: desired }, sessionId.value)
+  })
 
   const rawInbound = Stream.async<unknown>((emit) => {
     const listener = (event: { data: unknown }): void => void emit.single(event.data)
@@ -238,8 +292,12 @@ const program = Effect.gen(function* () {
 
       const inbound = decoded.right
       if (inbound._tag === 'Init') {
-        yield* Effect.forkScoped(runSession(inbound.config, promptQueue, inbound.resume))
+        yield* Ref.set(desiredLevelRef, Option.some(inbound.config.thinkingLevel))
+        yield* startSession(inbound.config, inbound.resume)
+      } else if (inbound._tag === 'SetThinkingLevel') {
+        yield* Ref.set(desiredLevelRef, Option.some(inbound.level))
       } else if (inbound._tag === 'SendText') {
+        yield* restartForThinkingChange()
         yield* dropPendingRequests()
         yield* Queue.offer(promptQueue, toSDKUserMessage(inbound.text))
       } else {

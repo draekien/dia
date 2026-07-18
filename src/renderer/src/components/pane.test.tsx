@@ -176,6 +176,33 @@ describe('MessageView', () => {
     expect(screen.queryByText('duplicate result body')).toBeNull()
   })
 
+  it('renders a thinking part as a collapsed disclosure carrying the reasoning text', () => {
+    const message: UIMessage = {
+      id: 'a6',
+      role: 'assistant',
+      parts: [{ type: 'thinking', content: 'weighing the trade-offs' }]
+    }
+
+    const { container } = render(<MessageView message={message} />)
+
+    const details = container.querySelector('details')
+    expect(details).toBeTruthy()
+    expect(details?.querySelector('summary')?.textContent).toBe('Thinking')
+    expect(screen.getByText('weighing the trade-offs')).toBeTruthy()
+  })
+
+  it('drops an empty thinking part rather than rendering an empty disclosure', () => {
+    const message: UIMessage = {
+      id: 'a7',
+      role: 'assistant',
+      parts: [{ type: 'thinking', content: '   ' }]
+    }
+
+    const { container } = render(<MessageView message={message} />)
+
+    expect(container.querySelector('details')).toBeNull()
+  })
+
   it('drops an empty assistant text part rather than rendering an empty bubble', () => {
     const message: UIMessage = {
       id: 'a5',

@@ -230,9 +230,21 @@ export function wireCommands(deps: {
             )
           )
         ),
+        Match.tag('SetThinkingLevel', (command) =>
+          paneWorkspace
+            .setThinkingLevel(command.paneId, command.level)
+            .pipe(Effect.flatMap(sendLayoutChanged))
+        ),
         Match.tag('CreatePane', (command) =>
           paneWorkspace
-            .createPane(command.paneId, command.cwd, command.model, command.useWorktree, onEvent)
+            .createPane(
+              command.paneId,
+              command.cwd,
+              command.model,
+              command.thinkingLevel,
+              command.useWorktree,
+              onEvent
+            )
             .pipe(
               Effect.flatMap(sendLayoutChanged),
               Effect.catchAll((issue) =>

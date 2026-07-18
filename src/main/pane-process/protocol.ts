@@ -5,7 +5,7 @@ import {
   Question,
   QuestionResponse
 } from '@shared/domain/attention'
-import { ConversationMessage, PaneConfig } from '@shared/domain/pane'
+import { ConversationMessage, PaneConfig, ThinkingLevel } from '@shared/domain/pane'
 import { Schema } from 'effect'
 
 const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
@@ -17,6 +17,10 @@ export const InitMessage = Schema.TaggedStruct('Init', {
 })
 /** Sent by main to the pane subprocess to forward a user-submitted message for the running agent session to process. */
 export const SendText = Schema.TaggedStruct('SendText', { text: Schema.String })
+/** Sent by main to the pane subprocess when the user changes the pane's thinking level. The new level is applied on the next user turn, which restarts the Agent SDK session (resuming it) so the fresh `query` picks up the new thinking/effort options. */
+export const SetThinkingLevel = Schema.TaggedStruct('SetThinkingLevel', {
+  level: ThinkingLevel
+})
 /** Sent by main to the pane subprocess in response to a `PermissionRequested` message, carrying the user's `PermissionResponse` for the given `requestId`. */
 export const ResolvePermission = Schema.TaggedStruct('ResolvePermission', {
   requestId: Schema.String,
@@ -31,6 +35,7 @@ export const ResolveQuestion = Schema.TaggedStruct('ResolveQuestion', {
 export const InboundMessage = Schema.Union(
   InitMessage,
   SendText,
+  SetThinkingLevel,
   ResolvePermission,
   ResolveQuestion
 )
@@ -42,6 +47,10 @@ export const AssistantMessageReceived = Schema.TaggedStruct('AssistantMessageRec
 })
 /** Sent by the pane subprocess to main for each incremental chunk of assistant text as it streams in. */
 export const AssistantTextDelta = Schema.TaggedStruct('AssistantTextDelta', {
+  text: Schema.String
+})
+/** Sent by the pane subprocess to main for each incremental chunk of the assistant's extended-thinking text as it streams in, before the answer text. */
+export const AssistantThinkingDelta = Schema.TaggedStruct('AssistantThinkingDelta', {
   text: Schema.String
 })
 /** Sent by the pane subprocess to main when the agent begins invoking a tool. */
@@ -82,6 +91,7 @@ export const SessionStarted = Schema.TaggedStruct('SessionStarted', {
 export const OutboundMessage = Schema.Union(
   AssistantMessageReceived,
   AssistantTextDelta,
+  AssistantThinkingDelta,
   ToolCallStarted,
   ToolCallCompleted,
   PermissionRequested,

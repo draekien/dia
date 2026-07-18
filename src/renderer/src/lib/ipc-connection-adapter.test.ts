@@ -1,6 +1,7 @@
 import { AwaitingPermission, Completed, Errored, PermissionRequest } from '@shared/domain/attention'
 import {
   PaneAssistantTextDelta,
+  PaneAssistantThinkingDelta,
   PaneAttentionChanged,
   PaneMessageAppended,
   PaneToolCallCompleted,
@@ -15,6 +16,7 @@ const PANE_ID = '00000000-0000-4000-8000-000000000000'
 
 type PaneStreamEvent =
   | PaneAssistantTextDelta
+  | PaneAssistantThinkingDelta
   | PaneToolCallStarted
   | PaneToolCallCompleted
   | PaneMessageAppended
@@ -22,6 +24,9 @@ type PaneStreamEvent =
 
 const textDelta = (text: string): PaneStreamEvent =>
   PaneAssistantTextDelta.make({ paneId: PANE_ID, text })
+
+const thinkingDelta = (text: string): PaneStreamEvent =>
+  PaneAssistantThinkingDelta.make({ paneId: PANE_ID, text })
 
 const toolStarted = (toolCallId: string, toolName: string): PaneStreamEvent =>
   PaneToolCallStarted.make({ paneId: PANE_ID, toolCallId, toolName })
@@ -95,6 +100,10 @@ const makeDia = () => {
     onAssistantTextDelta: (listener: (event: PaneAssistantTextDelta) => void) =>
       add((event) => {
         if (event._tag === 'PaneAssistantTextDelta') listener(event)
+      }),
+    onAssistantThinkingDelta: (listener: (event: PaneAssistantThinkingDelta) => void) =>
+      add((event) => {
+        if (event._tag === 'PaneAssistantThinkingDelta') listener(event)
       }),
     onToolCallStarted: (listener: (event: PaneToolCallStarted) => void) =>
       add((event) => {
@@ -242,6 +251,50 @@ describe('createPaneConnectionAdapter — assistant text', () => {
   })
 })
 
+describe('createPaneConnectionAdapter — extended thinking', () => {
+  it('opens a reasoning message once and streams one CONTENT chunk per thinking delta', async () => {
+    const { chunks } = await drive([thinkingDelta('let me '), thinkingDelta('think'), completed()])
+
+    expect(chunkTypes(chunks)).toEqual([
+      EventType.RUN_STARTED,
+      EventType.REASONING_MESSAGE_START,
+      EventType.REASONING_MESSAGE_CONTENT,
+      EventType.REASONING_MESSAGE_CONTENT,
+      EventType.REASONING_MESSAGE_END,
+      EventType.RUN_FINISHED
+    ])
+
+    const reasoningDeltas = chunks
+      .filter((chunk) => chunk.type === EventType.REASONING_MESSAGE_CONTENT)
+      .map((chunk) => (chunk as { delta: string }).delta)
+    expect(reasoningDeltas).toEqual(['let me ', 'think'])
+
+    const reasoningIds = chunks
+      .filter(
+        (chunk) =>
+          chunk.type === EventType.REASONING_MESSAGE_START ||
+          chunk.type === EventType.REASONING_MESSAGE_CONTENT
+      )
+      .map((chunk) => (chunk as { messageId: string }).messageId)
+    expect(new Set(reasoningIds).size).toBe(1)
+  })
+
+  it('closes the reasoning message before opening the answer text on the first text delta', async () => {
+    const { chunks } = await drive([thinkingDelta('reasoning'), textDelta('answer'), completed()])
+
+    expect(chunkTypes(chunks)).toEqual([
+      EventType.RUN_STARTED,
+      EventType.REASONING_MESSAGE_START,
+      EventType.REASONING_MESSAGE_CONTENT,
+      EventType.REASONING_MESSAGE_END,
+      EventType.TEXT_MESSAGE_START,
+      EventType.TEXT_MESSAGE_CONTENT,
+      EventType.TEXT_MESSAGE_END,
+      EventType.RUN_FINISHED
+    ])
+  })
+})
+
 describe('createPaneConnectionAdapter — tool calls', () => {
   it('closes open text before starting a tool call', async () => {
     const { chunks } = await drive([
@@ -298,7 +351,7 @@ describe('createPaneConnectionAdapter — teardown', () => {
   it('unsubscribes every IPC listener once the run completes', async () => {
     const { dia } = await drive([completed()])
 
-    expect(dia.unsubscribeCount()).toBe(5)
+    expect(dia.unsubscribeCount()).toBe(6)
   })
 
   it('closes the stream and unsubscribes when the abort signal fires', async () => {
@@ -313,6 +366,6 @@ describe('createPaneConnectionAdapter — teardown', () => {
     const chunks = await drain(adapter.connect(userMessages(), undefined, controller.signal))
 
     expect(chunkTypes(chunks)).toEqual([EventType.RUN_STARTED])
-    expect(dia.unsubscribeCount()).toBe(5)
+    expect(dia.unsubscribeCount()).toBe(6)
   })
 })

@@ -6,7 +6,7 @@ import {
   Question,
   QuestionResponse
 } from '../domain/attention'
-import { ConversationMessage } from '../domain/pane'
+import { ConversationMessage, ThinkingLevel } from '../domain/pane'
 import { PaneNode } from '../domain/pane-tree'
 import type { ThemePreference } from '../domain/theme'
 
@@ -108,9 +108,21 @@ export const CreatePane = Schema.TaggedStruct('CreatePane', {
   paneId: Schema.UUID,
   cwd: Schema.String,
   model: Schema.String,
+  thinkingLevel: ThinkingLevel,
   useWorktree: Schema.Boolean
 })
 export type CreatePane = typeof CreatePane.Type
+
+/**
+ * Command sent by the renderer to change the thinking level of the live pane
+ * `paneId`. The change is persisted and applied on the pane's next user turn
+ * (which restarts its Agent SDK session with the new thinking/effort options).
+ */
+export const SetThinkingLevel = Schema.TaggedStruct('SetThinkingLevel', {
+  paneId: Schema.UUID,
+  level: ThinkingLevel
+})
+export type SetThinkingLevel = typeof SetThinkingLevel.Type
 
 /**
  * Command sent by the renderer when the user focuses the pane `paneId`. A cold
@@ -133,6 +145,7 @@ export const IpcCommand = Schema.Union(
   SplitPane,
   ClosePane,
   CreatePane,
+  SetThinkingLevel,
   FocusPane
 )
 export type IpcCommand = typeof IpcCommand.Type
@@ -159,6 +172,17 @@ export const PaneAssistantTextDelta = Schema.TaggedStruct('PaneAssistantTextDelt
   text: Schema.String
 })
 export type PaneAssistantTextDelta = typeof PaneAssistantTextDelta.Type
+
+/**
+ * Event pushed to the renderer as the assistant streams its extended-thinking
+ * text (before the answer) in pane `paneId`. `text` is an incremental chunk to
+ * append to the in-progress thinking block, not the full thinking so far.
+ */
+export const PaneAssistantThinkingDelta = Schema.TaggedStruct('PaneAssistantThinkingDelta', {
+  paneId: Schema.UUID,
+  text: Schema.String
+})
+export type PaneAssistantThinkingDelta = typeof PaneAssistantThinkingDelta.Type
 
 /**
  * Event pushed to the renderer when the agent in pane `paneId` begins
@@ -259,6 +283,7 @@ export type PaneAttentionChanged = typeof PaneAttentionChanged.Type
 export const IpcEvent = Schema.Union(
   PaneMessageAppended,
   PaneAssistantTextDelta,
+  PaneAssistantThinkingDelta,
   PaneToolCallStarted,
   PaneToolCallCompleted,
   PanePermissionRequested,
@@ -281,7 +306,14 @@ export interface DiaApi {
   resolveQuestion(paneId: string, requestId: string, response: QuestionResponse): void
   splitPane(paneId: string, direction: 'row' | 'column'): void
   closePane(paneId: string): void
-  createPane(paneId: string, cwd: string, model: string, useWorktree: boolean): void
+  createPane(
+    paneId: string,
+    cwd: string,
+    model: string,
+    thinkingLevel: ThinkingLevel,
+    useWorktree: boolean
+  ): void
+  setThinkingLevel(paneId: string, level: ThinkingLevel): void
   focusPane(paneId: string): void
   getInitialLayout(): Promise<PaneNode>
   getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>
@@ -295,6 +327,7 @@ export interface DiaApi {
   onPermissionRequested(listener: (event: PanePermissionRequested) => void): () => void
   onQuestionRequested(listener: (event: PaneQuestionRequested) => void): () => void
   onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void
+  onAssistantThinkingDelta(listener: (event: PaneAssistantThinkingDelta) => void): () => void
   onToolCallStarted(listener: (event: PaneToolCallStarted) => void): () => void
   onToolCallCompleted(listener: (event: PaneToolCallCompleted) => void): () => void
 }

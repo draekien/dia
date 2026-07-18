@@ -12,6 +12,7 @@ import {
   ResolvePermission,
   ResolveQuestion,
   SendMessage,
+  SetThinkingLevel,
   SplitPane
 } from '@shared/ipc/contract'
 import { Either, Schema } from 'effect'
@@ -23,6 +24,7 @@ const encodeResolveQuestion = Schema.encodeSync(ResolveQuestion)
 const encodeSplitPane = Schema.encodeSync(SplitPane)
 const encodeClosePane = Schema.encodeSync(ClosePane)
 const encodeCreatePane = Schema.encodeSync(CreatePane)
+const encodeSetThinkingLevel = Schema.encodeSync(SetThinkingLevel)
 const encodeFocusPane = Schema.encodeSync(FocusPane)
 const decodeEvent = Schema.decodeUnknownEither(IpcEvent)
 const decodeTree = Schema.decodeUnknownSync(PaneNode)
@@ -73,10 +75,16 @@ const api: DiaApi = {
   closePane(paneId) {
     ipcRenderer.send(CHANNEL.command, encodeClosePane(ClosePane.make({ paneId })))
   },
-  createPane(paneId, cwd, model, useWorktree) {
+  createPane(paneId, cwd, model, thinkingLevel, useWorktree) {
     ipcRenderer.send(
       CHANNEL.command,
-      encodeCreatePane(CreatePane.make({ paneId, cwd, model, useWorktree }))
+      encodeCreatePane(CreatePane.make({ paneId, cwd, model, thinkingLevel, useWorktree }))
+    )
+  },
+  setThinkingLevel(paneId, level) {
+    ipcRenderer.send(
+      CHANNEL.command,
+      encodeSetThinkingLevel(SetThinkingLevel.make({ paneId, level }))
     )
   },
   focusPane(paneId) {
@@ -132,6 +140,11 @@ const api: DiaApi = {
   onAssistantTextDelta(listener) {
     return subscribeToEvents((event) => {
       if (event._tag === 'PaneAssistantTextDelta') listener(event)
+    })
+  },
+  onAssistantThinkingDelta(listener) {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PaneAssistantThinkingDelta') listener(event)
     })
   },
   onToolCallStarted(listener) {
