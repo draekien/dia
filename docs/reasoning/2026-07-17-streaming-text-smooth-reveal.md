@@ -34,10 +34,33 @@ The blinking cursor is a pure-CSS `::after` on the markdown wrapper's
 `> :last-child`, so it sits inline at the end of the last rendered block without
 any DOM juggling — the ChatGPT-style block caret.
 
+## Update (2026-07-18): proportional catch-up → time-based capped reveal
+
+The proportional `ceil(gap / divisor)` step above is **front-loaded**: it drains
+most of a burst in the first 2-3 frames, then idles once caught up. That was
+tolerable while text arrived per-delta synchronously (old TanStack Query
+`streamingText` path), but the move to `useChat` routes deltas through the Effect
+`Stream` → `toAsyncIterable` → processor `for await` bridge, which **batches** the
+microtask-fast IPC deltas into coarser, more spaced bursts. The front-loaded
+reveal then reads as "each segment streams in really fast, then a pause" — the
+exact jerk this entry set out to kill, reintroduced by a burstier source.
+
+Fix: reveal at a **time-based, speed-capped** rate instead of a per-frame
+fraction. `nextRevealLength(current, target, dtMs)` (pure, unit-tested) advances
+at `clamp(backlog / revealWindowMs, minCps, maxCps)` characters/second, integrated
+over the real elapsed `dtMs` (so it is frame-rate independent). The ceiling stops
+a big batch from dumping in one frame (kills the "really fast"); draining a fixed
+backlog window keeps the reveal continuously busy across the gaps (kills the
+"pause"). The loop keeps a fractional `revealedRef` accumulator and renders
+`Math.floor` of it. Reduced motion still jumps straight to `target`.
+
 ## Implication
 
 Never animate per-delta for streamed content. Reveal from a buffer on a frame
-timer. When adding markdown rendering on top, note that live markdown reflows at
-block boundaries mid-stream (a `#` becoming a heading, a fence closing) — that
-reflow is inherent and accepted, distinct from the delta-driven jerk this entry
-is about.
+timer, and pace that reveal by **elapsed time with a capped rate**, not a
+per-frame fraction of the backlog — the fraction is front-loaded and stutters
+when the source is bursty (and `useChat`'s async pipeline is burstier than a
+synchronous per-delta path). Tune the reveal in `nextRevealLength`, not the loop.
+When adding markdown rendering on top, note that live markdown reflows at block
+boundaries mid-stream (a `#` becoming a heading, a fence closing) — that reflow is
+inherent and accepted, distinct from the delta-driven jerk this entry is about.

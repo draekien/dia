@@ -134,6 +134,21 @@ export function historyToInitialMessages(
   }))
 }
 
+/**
+ * Chooses the `initialMessages` to seed `useChat` with on (re)mount: a live
+ * message snapshot cached from a prior mount when present, otherwise the pane's
+ * persisted history. The snapshot lets the pane survive the remount a split
+ * forces without losing the current session's messages. Pass the QueryClient's
+ * cached snapshot (or `undefined`) and the pane's history.
+ */
+export function resolveInitialMessages(
+  snapshot: UIMessage[] | undefined,
+  paneId: string,
+  history: ReadonlyArray<ConversationMessage>
+): UIMessage[] {
+  return snapshot ?? historyToInitialMessages(paneId, history)
+}
+
 const typesetClassName = 'typeset typeset-docs max-w-[75ch]'
 
 function Markdown({
@@ -161,24 +176,46 @@ function Markdown({
   )
 }
 
-const revealCatchUpDivisor = 6
+const revealWindowMs = 140
+const revealMinCharsPerSecond = 60
+const revealMaxCharsPerSecond = 900
+
+/**
+ * Computes the next reveal position for the streaming text animation, advancing
+ * `current` toward `target` over `dtMs` at a rate that drains the backlog across
+ * a fixed window, clamped between a floor and ceiling characters/second. Use per
+ * frame with the elapsed time to pace the reveal smoothly regardless of how
+ * bursty the underlying text updates arrive; returns a fractional position that
+ * never exceeds `target`.
+ */
+export function nextRevealLength(current: number, target: number, dtMs: number): number {
+  if (current >= target) return current
+  const backlog = target - current
+  const charsPerSecond = Math.min(
+    revealMaxCharsPerSecond,
+    Math.max(revealMinCharsPerSecond, (backlog * 1000) / revealWindowMs)
+  )
+  return Math.min(target, current + (charsPerSecond * dtMs) / 1000)
+}
 
 function StreamingMessage({ text }: { text: string }): React.JSX.Element {
   const [revealedLength, setRevealedLength] = useState(0)
   const targetLengthRef = useRef(text.length)
   targetLengthRef.current = text.length
+  const revealedRef = useRef(0)
 
   useEffect(() => {
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     let frame = 0
-    const tick = (): void => {
-      setRevealedLength((current) => {
-        const target = targetLengthRef.current
-        if (current >= target) return current
-        if (reduced) return target
-        const step = Math.max(1, Math.ceil((target - current) / revealCatchUpDivisor))
-        return Math.min(target, current + step)
-      })
+    let previous = performance.now()
+    const tick = (now: number): void => {
+      const dtMs = now - previous
+      previous = now
+      const target = targetLengthRef.current
+      if (revealedRef.current < target) {
+        revealedRef.current = reduced ? target : nextRevealLength(revealedRef.current, target, dtMs)
+        setRevealedLength(Math.floor(revealedRef.current))
+      }
       frame = requestAnimationFrame(tick)
     }
     frame = requestAnimationFrame(tick)
@@ -281,9 +318,14 @@ function PaneChat({
   const queryClient = useQueryClient()
   const pendingPermissionQueryKey = ['pane', paneId, 'pendingPermission'] as const
   const pendingQuestionQueryKey = ['pane', paneId, 'pendingQuestion'] as const
+  const messagesQueryKey = ['pane', paneId, 'messages'] as const
 
   const connection = useMemo(() => createPaneConnectionAdapter(paneId), [paneId])
   const chat = useChat({ connection, initialMessages, threadId: paneId })
+
+  useEffect(() => {
+    queryClient.setQueryData<UIMessage[]>(messagesQueryKey, chat.messages)
+  }, [queryClient, messagesQueryKey, chat.messages])
 
   const { data: pendingPermission = null } = useQuery<PanePermissionRequested | null>({
     queryKey: pendingPermissionQueryKey,
@@ -425,8 +467,13 @@ function Pane({
   }, [queryClient, paneId, attentionQueryKey])
 
   const initialMessages = useMemo(
-    () => historyToInitialMessages(paneId, history ?? []),
-    [paneId, history]
+    () =>
+      resolveInitialMessages(
+        queryClient.getQueryData<UIMessage[]>(['pane', paneId, 'messages']),
+        paneId,
+        history ?? []
+      ),
+    [queryClient, paneId, history]
   )
 
   return (

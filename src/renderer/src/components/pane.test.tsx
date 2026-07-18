@@ -2,7 +2,13 @@
 import type { UIMessage } from '@tanstack/ai-client'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { dirName, historyToInitialMessages, MessageView } from './pane'
+import {
+  dirName,
+  historyToInitialMessages,
+  MessageView,
+  nextRevealLength,
+  resolveInitialMessages
+} from './pane'
 
 afterEach(cleanup)
 
@@ -49,6 +55,57 @@ describe('historyToInitialMessages', () => {
 
   it('returns an empty list for empty history', () => {
     expect(historyToInitialMessages('pane-7', [])).toEqual([])
+  })
+})
+
+describe('resolveInitialMessages', () => {
+  it('prefers a cached live snapshot over persisted history', () => {
+    const snapshot: UIMessage[] = [
+      { id: 'live-1', role: 'assistant', parts: [{ type: 'text', content: 'streamed' }] }
+    ]
+
+    const result = resolveInitialMessages(snapshot, 'pane-7', [{ role: 'user', content: 'old' }])
+
+    expect(result).toBe(snapshot)
+  })
+
+  it('falls back to mapped history when there is no snapshot', () => {
+    const history = [{ role: 'user' as const, content: 'hi' }]
+
+    expect(resolveInitialMessages(undefined, 'pane-7', history)).toEqual(
+      historyToInitialMessages('pane-7', history)
+    )
+  })
+})
+
+describe('nextRevealLength', () => {
+  it('does not advance past an already-reached target', () => {
+    expect(nextRevealLength(10, 10, 16)).toBe(10)
+    expect(nextRevealLength(12, 10, 16)).toBe(12)
+  })
+
+  it('caps a large backlog at the maximum reveal speed', () => {
+    // backlog 1000 over 100ms would demand 10000 cps; capped to 900 cps => 90 chars.
+    expect(nextRevealLength(0, 1000, 100)).toBe(90)
+  })
+
+  it('advances proportionally to the backlog within the speed band', () => {
+    // backlog 70 over a 140ms window => 500 cps; 500 cps for 100ms => 50 chars.
+    expect(nextRevealLength(0, 70, 100)).toBe(50)
+  })
+
+  it('scales with elapsed time so the rate is frame-rate independent', () => {
+    // Same 500 cps as above, half the elapsed time => half the advance.
+    expect(nextRevealLength(0, 70, 50)).toBe(25)
+  })
+
+  it('applies the minimum speed floor for a tiny backlog', () => {
+    // backlog 8 => 57.1 cps proportionally, floored to 60 cps; 60 cps for 10ms => 0.6 chars.
+    expect(nextRevealLength(0, 8, 10)).toBeCloseTo(0.6, 5)
+  })
+
+  it('never overshoots the target even when the rate would exceed it', () => {
+    expect(nextRevealLength(0, 70, 1000)).toBe(70)
   })
 })
 

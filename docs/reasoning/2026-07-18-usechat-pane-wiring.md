@@ -36,6 +36,24 @@ non-obvious behaviours of `useChat`/`ChatClient` that shape how the pane mounts.
   the chat stream (permission/question are excluded per ADR-0014, and attention
   drives the pulse independently).
 
+- **`useChat` message state is component-local, so a remount blanks the pane —
+  splitting forces exactly that remount.** `PaneTreeView` renders a split as a
+  nested `ResizablePanelGroup`, so splitting a leaf moves the surviving `Pane`
+  from a direct child to inside a new group: its position in the React tree
+  changes and React remounts it (a stable `key={paneId}` cannot prevent a
+  parent-chain change). `useChat`'s in-memory `messages` die with the unmount,
+  and `getPaneHistory` returns the *persisted* transcript, which does not yet
+  contain the live session's turns — so the remounted pane came back **blank**.
+  The old bespoke timeline never had this bug because it lived in the global
+  TanStack Query cache, which is independent of component mount lifecycle. Fix:
+  mirror `chat.messages` into the Query cache (`['pane', paneId, 'messages']`) on
+  every change, and seed `initialMessages` from that snapshot when present,
+  falling back to mapped history (`resolveInitialMessages`). This restores the
+  remount durability the Query-cache timeline had for free. Known gap: a split
+  *mid-turn* still loses in-flight deltas, because `useChat` only reconnects the
+  adapter on `sendMessage` (and we must not set `live` — see above); the snapshot
+  only preserves what had streamed before the remount.
+
 Rendering notes worth keeping: tool output is read directly off the `tool-call`
 part (`part.output`), and the separate `tool-result` part is skipped to avoid
 duplication. The streaming reveal animation applies only to the *final text
