@@ -2,6 +2,8 @@
 
 dia is a personal desktop application — a self-built alternative to Claude Desktop — that drives the user's local Claude installation via the Anthropic TypeScript Agent SDK.
 
+@AGENTS.md
+
 ## Architecture decisions
 
 All significant architecture and tech-stack decisions are recorded as ADRs in `docs/adr/`, written in MADR format. **Before proposing or changing anything architectural (process model, framework, build tooling, styling, repo layout), read the existing ADRs in `docs/adr/` first** — do not contradict an accepted decision without first surfacing the conflict to the user and, if they agree to change course, writing a new ADR (or superseding the old one).
