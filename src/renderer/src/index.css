@@ -17,6 +17,14 @@
   --pulse-amber: oklch(0.75 0.16 70);
   --pulse-red: oklch(0.62 0.22 25);
   --pulse-green: oklch(0.72 0.17 145);
+
+  --chart-1: oklch(0.62 0.14 265);
+  --chart-2: oklch(0.7 0.13 195);
+  --chart-3: oklch(0.72 0.15 145);
+  --chart-4: oklch(0.75 0.14 85);
+  --chart-5: oklch(0.66 0.16 320);
+
+  --radius: 0.625rem;
 }
 
 @theme inline {
@@ -51,6 +59,28 @@
   --color-muted-foreground: var(--ink-muted);
   --color-destructive: var(--error);
   --color-primary-foreground: var(--primary-ink);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--ink);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--surface);
+  --color-sidebar-foreground: var(--ink);
+  --color-sidebar-primary: var(--primary);
+  --color-sidebar-primary-foreground: var(--primary-ink);
+  --color-sidebar-accent: var(--secondary);
+  --color-sidebar-accent-foreground: var(--ink);
+  --color-sidebar-border: var(--border);
+  --color-sidebar-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 @layer base {
