@@ -14,6 +14,7 @@ import {
 } from '../domain/pane'
 import { PaneNode } from '../domain/pane-tree'
 import type { ThemePreference } from '../domain/theme'
+import { UpdateStatus } from '../domain/update'
 
 const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
 
@@ -23,7 +24,10 @@ const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
  * receive an {@link IpcEvent} pushed from main to renderer, `getInitialLayout` to
  * fetch the pane tree on renderer startup, `getPaneHistory` to fetch a restored
  * pane's past conversation, `chooseDirectory` to invoke the native directory
- * picker, and `getTheme`/`setTheme` to read and persist the colour-theme choice.
+ * picker, `getTheme`/`setTheme` to read and persist the colour-theme choice,
+ * `setTitleBarOverlay` to recolour the native window-control overlay when the
+ * theme changes, and `getAppVersion`/`checkForUpdates`/`installUpdate` to read
+ * the running version and drive the self-updater.
  */
 export const CHANNEL = {
   command: 'dia:command',
@@ -32,8 +36,26 @@ export const CHANNEL = {
   getPaneHistory: 'dia:getPaneHistory',
   chooseDirectory: 'dia:chooseDirectory',
   getTheme: 'dia:getTheme',
-  setTheme: 'dia:setTheme'
+  setTheme: 'dia:setTheme',
+  setTitleBarOverlay: 'dia:setTitleBarOverlay',
+  getAppVersion: 'dia:getAppVersion',
+  getUpdateStatus: 'dia:getUpdateStatus',
+  checkForUpdates: 'dia:checkForUpdates',
+  installUpdate: 'dia:installUpdate'
 } as const
+
+/**
+ * The colours the renderer pushes to the main process (over `setTitleBarOverlay`)
+ * so the OS-drawn window-control buttons match the active theme: `color` is the
+ * overlay background (matched to the app header), `symbolColor` the button glyph
+ * colour. Both are CSS colour strings the platform title-bar overlay accepts
+ * (hex/rgb — not `oklch`).
+ */
+export const TitleBarOverlayColors = Schema.Struct({
+  color: Schema.String,
+  symbolColor: Schema.String
+})
+export type TitleBarOverlayColors = typeof TitleBarOverlayColors.Type
 
 /**
  * Result of the native directory picker invoked over the `chooseDirectory`
@@ -323,6 +345,18 @@ export const PaneAttentionChanged = Schema.TaggedStruct('PaneAttentionChanged', 
 })
 export type PaneAttentionChanged = typeof PaneAttentionChanged.Type
 
+/**
+ * Event pushed to the renderer whenever the app's background self-update
+ * changes state (checking, downloading, ready to install, up to date, or
+ * errored). `status` is the full current {@link UpdateStatus} and replaces the
+ * renderer's held value. Drives the header update indicator and the About
+ * dialog's update line.
+ */
+export const UpdateStatusChanged = Schema.TaggedStruct('UpdateStatusChanged', {
+  status: UpdateStatus
+})
+export type UpdateStatusChanged = typeof UpdateStatusChanged.Type
+
 // Additional events (PaneClosed) join this union in later bullets.
 /**
  * Union of every event the main process may push to the renderer over the
@@ -340,7 +374,8 @@ export const IpcEvent = Schema.Union(
   PanePlanReviewRequested,
   LayoutChanged,
   PaneCreateFailed,
-  PaneAttentionChanged
+  PaneAttentionChanged,
+  UpdateStatusChanged
 )
 export type IpcEvent = typeof IpcEvent.Type
 
@@ -373,6 +408,12 @@ export interface DiaApi {
   chooseDirectory(): Promise<ChooseDirectoryResult>
   getTheme(): Promise<ThemePreference>
   setTheme(theme: ThemePreference): Promise<void>
+  setTitleBarOverlay(colors: TitleBarOverlayColors): void
+  getAppVersion(): Promise<string>
+  getUpdateStatus(): Promise<UpdateStatus>
+  checkForUpdates(): void
+  installUpdate(): void
+  onUpdateStatusChanged(listener: (event: UpdateStatusChanged) => void): () => void
   onMessageAppended(listener: (event: PaneMessageAppended) => void): () => void
   onLayoutChanged(listener: (event: LayoutChanged) => void): () => void
   onPaneCreateFailed(listener: (event: PaneCreateFailed) => void): () => void

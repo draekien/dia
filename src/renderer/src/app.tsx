@@ -1,5 +1,6 @@
 import type { PaneNode } from '@shared/domain/pane-tree'
 import { useCallback, useEffect, useState } from 'react'
+import { AppHeader } from './components/app-header'
 import PaneTreeView from './components/pane-tree-view'
 
 function App() {
@@ -19,8 +20,11 @@ function App() {
   if (tree === null) return null
 
   return (
-    <div className="h-screen bg-background">
-      <PaneTreeView node={tree} focusedPaneId={focusedPaneId} onFocusPane={handleFocusPane} />
+    <div className="flex h-screen flex-col bg-background">
+      <AppHeader />
+      <div className="min-h-0 flex-1">
+        <PaneTreeView node={tree} focusedPaneId={focusedPaneId} onFocusPane={handleFocusPane} />
+      </div>
     </div>
   )
 }

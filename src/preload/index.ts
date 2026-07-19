@@ -1,6 +1,7 @@
 import { ConversationMessage } from '@shared/domain/pane'
 import { PaneNode } from '@shared/domain/pane-tree'
 import { ThemePreference } from '@shared/domain/theme'
+import { UpdateStatus } from '@shared/domain/update'
 import {
   CHANNEL,
   ChooseDirectoryResult,
@@ -15,7 +16,8 @@ import {
   SendMessage,
   SetPermissionMode,
   SetThinkingLevel,
-  SplitPane
+  SplitPane,
+  TitleBarOverlayColors
 } from '@shared/ipc/contract'
 import { Either, Schema } from 'effect'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -36,6 +38,8 @@ const decodeHistory = Schema.decodeUnknownSync(Schema.Array(ConversationMessage)
 const decodeChooseDirectoryResult = Schema.decodeUnknownSync(ChooseDirectoryResult)
 const decodeTheme = Schema.decodeUnknownSync(ThemePreference)
 const encodeTheme = Schema.encodeSync(ThemePreference)
+const encodeTitleBarOverlay = Schema.encodeSync(TitleBarOverlayColors)
+const decodeUpdateStatus = Schema.decodeUnknownSync(UpdateStatus)
 
 // A single raw ipcRenderer listener fans out to every subscriber below. Each subscriber
 // registering its own ipcRenderer.on would multiply with pane count and event-type count,
@@ -124,6 +128,28 @@ const api: DiaApi = {
   },
   setTheme(theme) {
     return ipcRenderer.invoke(CHANNEL.setTheme, encodeTheme(theme))
+  },
+  setTitleBarOverlay(colors) {
+    ipcRenderer.send(CHANNEL.setTitleBarOverlay, encodeTitleBarOverlay(colors))
+  },
+  getAppVersion() {
+    return ipcRenderer
+      .invoke(CHANNEL.getAppVersion)
+      .then((raw) => (typeof raw === 'string' ? raw : ''))
+  },
+  getUpdateStatus() {
+    return ipcRenderer.invoke(CHANNEL.getUpdateStatus).then((raw) => decodeUpdateStatus(raw))
+  },
+  checkForUpdates() {
+    ipcRenderer.send(CHANNEL.checkForUpdates)
+  },
+  installUpdate() {
+    ipcRenderer.send(CHANNEL.installUpdate)
+  },
+  onUpdateStatusChanged(listener) {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'UpdateStatusChanged') listener(event)
+    })
   },
   onMessageAppended(listener) {
     return subscribeToEvents((event) => {
