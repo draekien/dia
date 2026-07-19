@@ -186,6 +186,21 @@ const api: DiaApi = {
       if (event._tag === 'PanePlanReviewRequested') listener(event)
     })
   },
+  onSlashCommandsAvailable(listener) {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PaneSlashCommandsAvailable') listener(event)
+    })
+  },
+  onConversationCompacted(listener) {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PaneConversationCompacted') listener(event)
+    })
+  },
+  onConversationReset(listener) {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PaneConversationReset') listener(event)
+    })
+  },
   onAssistantTextDelta(listener) {
     return subscribeToEvents((event) => {
       if (event._tag === 'PaneAssistantTextDelta') listener(event)

@@ -6,6 +6,7 @@ import {
   QuestionResponse
 } from '@shared/domain/attention'
 import { ConversationMessage, PaneConfig, PermissionMode, ThinkingLevel } from '@shared/domain/pane'
+import { SlashCommandInfo } from '@shared/domain/slash-command'
 import { Schema } from 'effect'
 
 const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
@@ -106,6 +107,20 @@ export const TurnErrored = Schema.TaggedStruct('TurnErrored', { error: PaneError
 export const SessionStarted = Schema.TaggedStruct('SessionStarted', {
   sessionId: Schema.String
 })
+/** Sent by the pane subprocess to main with the slash commands available in the session, so the renderer can offer them in the `/` popover. Emitted from the session `init` message (command names only, empty hints) and again whenever a `commands_changed` message enriches them. Each list is the complete, replacement set. */
+export const SlashCommandsAvailable = Schema.TaggedStruct('SlashCommandsAvailable', {
+  commands: Schema.Array(SlashCommandInfo)
+})
+/** Sent by the pane subprocess to main when the agent's context was compacted (e.g. the user ran `/compact`), so the renderer can mark the boundary in the transcript. `preTokens`/`postTokens` bracket the compaction; `trigger` distinguishes a manual `/compact` from an automatic one. */
+export const ConversationCompacted = Schema.TaggedStruct('ConversationCompacted', {
+  trigger: Schema.Literal('manual', 'auto'),
+  preTokens: Schema.Number,
+  postTokens: Schema.optional(Schema.Number)
+})
+/** Sent by the pane subprocess to main when the session's conversation was reset to empty (e.g. the user ran `/clear`), carrying the `newSessionId` main must persist in place of the prior one so a later resume continues the fresh conversation rather than the cleared transcript. */
+export const ConversationReset = Schema.TaggedStruct('ConversationReset', {
+  newSessionId: Schema.String
+})
 
 /** The full set of messages a pane subprocess may send to main. Decode outbound IPC payloads against this union before acting on them. */
 export const OutboundMessage = Schema.Union(
@@ -120,6 +135,9 @@ export const OutboundMessage = Schema.Union(
   PermissionModeChanged,
   TurnCompleted,
   TurnErrored,
-  SessionStarted
+  SessionStarted,
+  SlashCommandsAvailable,
+  ConversationCompacted,
+  ConversationReset
 )
 export type OutboundMessage = typeof OutboundMessage.Type

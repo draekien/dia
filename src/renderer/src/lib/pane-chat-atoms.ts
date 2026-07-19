@@ -23,7 +23,10 @@ const paneStreamEvents = (paneId: string): Stream.Stream<PaneStreamEvent> =>
           window.dia.onToolCallStarted(push),
           window.dia.onToolCallCompleted(push),
           window.dia.onMessageAppended(push),
-          window.dia.onAttentionChanged(push)
+          window.dia.onAttentionChanged(push),
+          window.dia.onSlashCommandsAvailable(push),
+          window.dia.onConversationCompacted(push),
+          window.dia.onConversationReset(push)
         ]
       }),
       (unsubscribes) =>

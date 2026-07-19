@@ -4,8 +4,11 @@ import {
   AssistantMessageReceived,
   AssistantTextDelta,
   AssistantThinkingDelta,
+  ConversationCompacted,
+  ConversationReset,
   type OutboundMessage,
   SessionStarted,
+  SlashCommandsAvailable,
   ToolCallCompleted,
   ToolCallStarted,
   TurnCompleted,
@@ -92,7 +95,43 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
 
   const step = (message: SDKMessage): ReadonlyArray<OutboundMessage> => {
     if (message.type === 'system' && message.subtype === 'init') {
-      return [SessionStarted.make({ sessionId: message.session_id })]
+      return [
+        SessionStarted.make({ sessionId: message.session_id }),
+        SlashCommandsAvailable.make({
+          commands: message.slash_commands.map((name) => ({
+            name,
+            description: '',
+            argumentHint: ''
+          }))
+        })
+      ]
+    }
+
+    if (message.type === 'system' && message.subtype === 'commands_changed') {
+      return [
+        SlashCommandsAvailable.make({
+          commands: message.commands.map((command) => ({
+            name: command.name,
+            description: command.description,
+            argumentHint: command.argumentHint
+          }))
+        })
+      ]
+    }
+
+    if (message.type === 'system' && message.subtype === 'compact_boundary') {
+      const { trigger, pre_tokens, post_tokens } = message.compact_metadata
+      return [
+        ConversationCompacted.make({
+          trigger,
+          preTokens: pre_tokens,
+          ...(post_tokens !== undefined ? { postTokens: post_tokens } : {})
+        })
+      ]
+    }
+
+    if (message.type === 'conversation_reset') {
+      return [ConversationReset.make({ newSessionId: message.new_conversation_id })]
     }
 
     if (message.type === 'assistant') {

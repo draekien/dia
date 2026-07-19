@@ -1,10 +1,14 @@
 import type { AttentionState } from '@shared/domain/attention'
 import type { ConversationMessage } from '@shared/domain/pane'
+import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import type {
   PaneAssistantTextDelta,
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
+  PaneConversationCompacted,
+  PaneConversationReset,
   PaneMessageAppended,
+  PaneSlashCommandsAvailable,
   PaneToolCallCompleted,
   PaneToolCallStarted
 } from '@shared/ipc/contract'
@@ -40,24 +44,29 @@ export type MessagePart = TextPart | ThinkingPart | ToolCallPart
 
 /**
  * A single rendered conversation turn: a stable pane-scoped `id`, a `role`, and
- * the ordered `parts` that compose it (user turns carry a single text part;
- * assistant turns interleave thinking, text, and tool-call parts).
+ * the ordered `parts` that compose it. User turns carry a single text part;
+ * assistant turns interleave thinking, text, and tool-call parts; a `notice`
+ * turn is a system-generated marker (e.g. a context-compaction divider) with a
+ * single text part and no conversational author.
  */
 export interface PaneMessage {
   readonly id: string
-  readonly role: 'user' | 'assistant'
+  readonly role: 'user' | 'assistant' | 'notice'
   readonly parts: ReadonlyArray<MessagePart>
 }
 
 /**
- * The renderable state of a pane's conversation: the ordered `messages` and
- * whether a turn is currently in flight (`isLoading`). This is the sole
- * contract consumers depend on — how streaming deltas are assembled into it is
- * private to {@link reducePaneChat}.
+ * The renderable state of a pane's conversation: the ordered `messages`,
+ * whether a turn is currently in flight (`isLoading`), and the `slashCommands`
+ * available in the pane's live session (for the `/` command popover; empty
+ * until the session reports them). This is the sole contract consumers depend
+ * on — how streaming deltas are assembled into it is private to
+ * {@link reducePaneChat}.
  */
 export interface PaneChatState {
   readonly messages: ReadonlyArray<PaneMessage>
   readonly isLoading: boolean
+  readonly slashCommands: ReadonlyArray<SlashCommandInfo>
 }
 
 /**
@@ -72,9 +81,16 @@ export type PaneStreamEvent =
   | PaneToolCallCompleted
   | PaneMessageAppended
   | PaneAttentionChanged
+  | PaneSlashCommandsAvailable
+  | PaneConversationCompacted
+  | PaneConversationReset
 
 /** The empty conversation state a pane starts from before history loads. */
-export const emptyPaneChatState: PaneChatState = { messages: [], isLoading: false }
+export const emptyPaneChatState: PaneChatState = {
+  messages: [],
+  isLoading: false,
+  slashCommands: []
+}
 
 /**
  * Projects a pane's persisted history into initial chat state: each turn
@@ -90,7 +106,8 @@ export const paneChatStateFromHistory = (
     role: message.role,
     parts: [{ type: 'text', content: message.content }]
   })),
-  isLoading: false
+  isLoading: false,
+  slashCommands: []
 })
 
 /**
@@ -103,6 +120,7 @@ export const appendUserMessage = (
   id: string,
   text: string
 ): PaneChatState => ({
+  ...state,
   messages: [...state.messages, { id, role: 'user', parts: [{ type: 'text', content: text }] }],
   isLoading: true
 })
@@ -178,14 +196,22 @@ const completeToolCall = (
 const isTurnOver = (attention: AttentionState): boolean =>
   attention._tag === 'Completed' || attention._tag === 'Errored'
 
+const compactionNotice = (event: PaneConversationCompacted): string =>
+  event.postTokens !== undefined
+    ? `Context compacted — ${event.preTokens} → ${event.postTokens} tokens`
+    : 'Context compacted'
+
 /**
  * Folds one pane stream event into conversation state. Text and thinking deltas
  * extend the in-flight assistant turn; a tool-call start adds a running row and
  * its completion resolves it in place; a terminal attention change (`Completed`
  * or `Errored`) ends the turn. `PaneMessageAppended` is a backstop that only
  * adds a turn's final text when no deltas built it, and user appends are
- * ignored (the optimistic {@link appendUserMessage} already added them). Pure
- * and total — drive a pane's state atom by scanning the IPC stream with it.
+ * ignored (the optimistic {@link appendUserMessage} already added them).
+ * `PaneSlashCommandsAvailable` replaces the available command list; a
+ * compaction appends a `notice` divider; a conversation reset clears the
+ * transcript while keeping the available commands. Pure and total — drive a
+ * pane's state atom by scanning the IPC stream with it.
  */
 export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): PaneChatState => {
   switch (event._tag) {
@@ -216,5 +242,21 @@ export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): Pa
     }
     case 'PaneAttentionChanged':
       return isTurnOver(event.attention) ? { ...state, isLoading: false } : state
+    case 'PaneSlashCommandsAvailable':
+      return { ...state, slashCommands: event.commands }
+    case 'PaneConversationCompacted':
+      return {
+        ...state,
+        messages: [
+          ...state.messages,
+          {
+            id: `${state.messages.length}:notice`,
+            role: 'notice',
+            parts: [{ type: 'text', content: compactionNotice(event) }]
+          }
+        ]
+      }
+    case 'PaneConversationReset':
+      return { ...emptyPaneChatState, slashCommands: state.slashCommands }
   }
 }

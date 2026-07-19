@@ -1,4 +1,5 @@
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { UUID } from 'node:crypto'
+import type { SDKMessage, SlashCommand } from '@anthropic-ai/claude-agent-sdk'
 import { describe, expect, it } from 'vitest'
 import { makeSessionEventReducer } from './agent-session-reducer'
 import type { OutboundMessage } from './protocol'
@@ -94,6 +95,55 @@ const toolResult = (
     ...(options?.isError !== undefined ? { is_error: options.isError } : {})
   }
 ]
+
+const systemInit = (slashCommands: string[], sessionId = 'test-session'): SDKMessage => ({
+  type: 'system',
+  subtype: 'init',
+  apiKeySource: 'user',
+  claude_code_version: '2.1.0',
+  cwd: '/repo',
+  tools: [],
+  mcp_servers: [],
+  model: 'claude-sonnet-5',
+  permissionMode: 'default',
+  slash_commands: slashCommands,
+  output_style: 'default',
+  skills: [],
+  plugins: [],
+  uuid: '00000000-0000-0000-0000-000000000000',
+  session_id: sessionId
+})
+
+const commandsChanged = (commands: ReadonlyArray<SlashCommand>): SDKMessage => ({
+  type: 'system',
+  subtype: 'commands_changed',
+  commands: [...commands],
+  uuid: '00000000-0000-0000-0000-000000000000',
+  session_id: 'test-session'
+})
+
+const compactBoundary = (
+  trigger: 'manual' | 'auto',
+  preTokens: number,
+  postTokens?: number
+): SDKMessage => ({
+  type: 'system',
+  subtype: 'compact_boundary',
+  compact_metadata: {
+    trigger,
+    pre_tokens: preTokens,
+    ...(postTokens !== undefined ? { post_tokens: postTokens } : {})
+  },
+  uuid: '00000000-0000-0000-0000-000000000000',
+  session_id: 'test-session'
+})
+
+const conversationReset = (newConversationId: UUID): SDKMessage => ({
+  type: 'conversation_reset',
+  new_conversation_id: newConversationId,
+  uuid: '00000000-0000-0000-0000-000000000000',
+  session_id: 'test-session'
+})
 
 const run = (messages: ReadonlyArray<SDKMessage>): OutboundMessage[] => {
   const reducer = makeSessionEventReducer()
@@ -269,6 +319,62 @@ describe('makeSessionEventReducer — tool input accumulation (T4)', () => {
     const emitted = run([toolUseStart(0, 'tool-1', 'Read')])
 
     expect(emitted).toEqual([{ _tag: 'ToolCallStarted', toolCallId: 'tool-1', toolName: 'Read' }])
+  })
+})
+
+describe('makeSessionEventReducer — slash commands and session lifecycle', () => {
+  it('emits SessionStarted then the available slash commands (names only) on init', () => {
+    const emitted = run([systemInit(['compact', 'clear'])])
+
+    expect(emitted).toEqual([
+      { _tag: 'SessionStarted', sessionId: 'test-session' },
+      {
+        _tag: 'SlashCommandsAvailable',
+        commands: [
+          { name: 'compact', description: '', argumentHint: '' },
+          { name: 'clear', description: '', argumentHint: '' }
+        ]
+      }
+    ])
+  })
+
+  it('enriches the slash-command list with descriptions from a commands_changed message', () => {
+    const emitted = run([
+      commandsChanged([
+        { name: 'compact', description: 'Compact history', argumentHint: '[instructions]' }
+      ])
+    ])
+
+    expect(emitted).toEqual([
+      {
+        _tag: 'SlashCommandsAvailable',
+        commands: [
+          { name: 'compact', description: 'Compact history', argumentHint: '[instructions]' }
+        ]
+      }
+    ])
+  })
+
+  it('reports a compaction boundary with its manual trigger and token span', () => {
+    const emitted = run([compactBoundary('manual', 1842, 500)])
+
+    expect(emitted).toEqual([
+      { _tag: 'ConversationCompacted', trigger: 'manual', preTokens: 1842, postTokens: 500 }
+    ])
+  })
+
+  it('omits postTokens when the compaction boundary does not report them', () => {
+    const emitted = run([compactBoundary('auto', 900)])
+
+    expect(emitted).toEqual([{ _tag: 'ConversationCompacted', trigger: 'auto', preTokens: 900 }])
+  })
+
+  it('surfaces a conversation reset carrying the new conversation id to persist', () => {
+    const emitted = run([conversationReset('11111111-1111-4111-8111-111111111111')])
+
+    expect(emitted).toEqual([
+      { _tag: 'ConversationReset', newSessionId: '11111111-1111-4111-8111-111111111111' }
+    ])
   })
 })
 
