@@ -1,5 +1,5 @@
 import type { ThemePreference } from '@shared/domain/theme'
-import { CheckIcon, InfoIcon, MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
+import { InfoIcon, MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
 import { type ComponentType, useEffect, useState } from 'react'
 import { AboutDialog } from './about-dialog'
 import { useTheme } from './theme-provider'
@@ -11,6 +11,7 @@ import {
   CommandItem,
   CommandList
 } from './ui/command'
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 
 interface ThemeItem {
   readonly value: ThemePreference
@@ -24,10 +25,22 @@ const THEME_ITEMS: ReadonlyArray<ThemeItem> = [
   { value: 'system', label: 'System', icon: MonitorIcon }
 ]
 
+const OPEN_EVENT = 'dia:open-command-palette'
+
 /**
- * The app-wide command palette, opened with Cmd/Ctrl+K. Currently hosts the
- * theme switcher (light / dark / system); mount it once near the app root,
- * inside a {@link ThemeProvider}. It renders as an overlay dialog, so its
+ * Opens the app-wide command palette from anywhere in the renderer (e.g. a
+ * header affordance), without threading its open state through props. Equivalent
+ * to pressing the Cmd/Ctrl+K shortcut; a mounted {@link CommandPalette} responds.
+ */
+export function openCommandPalette(): void {
+  window.dispatchEvent(new Event(OPEN_EVENT))
+}
+
+/**
+ * The app-wide command palette, opened with Cmd/Ctrl+K or {@link
+ * openCommandPalette}. Hosts the About action and a persistent theme switcher
+ * (light / dark / system) as a single segmented row; mount it once near the app
+ * root, inside a {@link ThemeProvider}. It renders as an overlay dialog, so its
  * position in the tree only needs to be within the provider, not any layout.
  */
 export function CommandPalette() {
@@ -42,18 +55,23 @@ export function CommandPalette() {
         setOpen((previous) => !previous)
       }
     }
+    const onOpen = () => setOpen(true)
     document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
+    window.addEventListener(OPEN_EVENT, onOpen)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener(OPEN_EVENT, onOpen)
+    }
   }, [])
-
-  const chooseTheme = (value: ThemePreference) => {
-    setTheme(value)
-    setOpen(false)
-  }
 
   const openAbout = () => {
     setOpen(false)
     setAboutOpen(true)
+  }
+
+  const chooseTheme = (value: string) => {
+    if (value === '') return
+    setTheme(value as ThemePreference)
   }
 
   return (
@@ -67,19 +85,6 @@ export function CommandPalette() {
         <CommandInput placeholder="Type a command or search…" />
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
-          <CommandGroup heading="Theme">
-            {THEME_ITEMS.map((item) => (
-              <CommandItem
-                key={item.value}
-                value={`Theme ${item.label}`}
-                onSelect={() => chooseTheme(item.value)}
-              >
-                <item.icon />
-                <span>{item.label}</span>
-                {theme === item.value && <CheckIcon className="ml-auto" />}
-              </CommandItem>
-            ))}
-          </CommandGroup>
           <CommandGroup heading="Help">
             <CommandItem value="About dia" onSelect={openAbout}>
               <InfoIcon />
@@ -87,6 +92,23 @@ export function CommandPalette() {
             </CommandItem>
           </CommandGroup>
         </CommandList>
+        <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
+          <span className="text-xs font-medium text-muted-foreground">Theme</span>
+          <ToggleGroup
+            type="single"
+            value={theme}
+            onValueChange={chooseTheme}
+            variant="outline"
+            size="sm"
+          >
+            {THEME_ITEMS.map((item) => (
+              <ToggleGroupItem key={item.value} value={item.value} aria-label={item.label}>
+                <item.icon />
+                <span>{item.label}</span>
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </div>
       </CommandDialog>
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
     </>

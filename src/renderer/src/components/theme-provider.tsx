@@ -39,7 +39,10 @@ function readToken(variable: string): string {
 }
 
 function pushTitleBarOverlay(): void {
-  window.dia.setTitleBarOverlay({ color: readToken('--surface'), symbolColor: readToken('--ink') })
+  window.dia.setTitleBarOverlay({
+    color: readToken('--background'),
+    symbolColor: readToken('--ink')
+  })
 }
 
 function applyTheme(theme: ThemePreference): void {

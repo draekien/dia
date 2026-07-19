@@ -53,8 +53,8 @@ const INITIAL_PANE_ID: PaneId = '00000000-0000-0000-0000-000000000001'
 // (resolved from the OS scheme); the renderer pushes exact theme-matched colours on mount.
 const TITLE_BAR_HEIGHT = 40
 const initialOverlay = nativeTheme.shouldUseDarkColors
-  ? { color: '#2b2e33', symbolColor: '#ededef', height: TITLE_BAR_HEIGHT }
-  : { color: '#fcfcfd', symbolColor: '#3b3f45', height: TITLE_BAR_HEIGHT }
+  ? { color: '#0b0d11', symbolColor: '#ededef', height: TITLE_BAR_HEIGHT }
+  : { color: '#f3f5f8', symbolColor: '#3b3f45', height: TITLE_BAR_HEIGHT }
 
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({

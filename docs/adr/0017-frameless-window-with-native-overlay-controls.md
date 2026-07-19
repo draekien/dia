@@ -39,10 +39,10 @@ strip without owning control behaviour. The renderer keeps content clear of the
 buttons with `env(titlebar-area-width)` and marks the header
 `-webkit-app-region: drag` (interactive children opt out with `no-drag`).
 
-To stop the overlay's button glyph background from clashing with the theme, the
-renderer computes the exact `--surface` / `--ink` token colours from live CSS
-(via a hidden probe element read with `getComputedStyle`) and pushes them to the
-main process through `setTitleBarOverlay` on every theme change; the main process
+To keep the overlay seamless with the app body, the renderer computes the exact
+`--background` / `--ink` token colours from live CSS (via a hidden probe element
+read with `getComputedStyle`) and pushes them to the main process through
+`setTitleBarOverlay` on every theme change; the main process
 sets a rough `nativeTheme.shouldUseDarkColors` default pre-mount so the first
 paint isn't jarring.
 
