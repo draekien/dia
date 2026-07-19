@@ -146,6 +146,9 @@ const api: DiaApi = {
   installUpdate() {
     ipcRenderer.send(CHANNEL.installUpdate)
   },
+  toggleDevTools() {
+    ipcRenderer.send(CHANNEL.toggleDevTools)
+  },
   onUpdateStatusChanged(listener) {
     return subscribeToEvents((event) => {
       if (event._tag === 'UpdateStatusChanged') listener(event)

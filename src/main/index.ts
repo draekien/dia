@@ -14,6 +14,7 @@ import {
   wireGetUpdateStatus,
   wireTheme,
   wireTitleBarOverlay,
+  wireToggleDevTools,
   wireUpdaterCommands
 } from './ipc/gateway'
 import { DEFAULT_LOG_RETENTION, makeLoggerLive, pruneOldLogEntries } from './logger'
@@ -169,6 +170,7 @@ app.whenReady().then(async () => {
         wireGetAppVersion(app.getVersion())
         wireGetUpdateStatus(updaterBridge.current)
         wireTitleBarOverlay(mainWindow)
+        wireToggleDevTools(mainWindow)
         wireUpdaterCommands({
           checkForUpdates: runUpdateCheck,
           installUpdate: Effect.sync(() => autoUpdater.quitAndInstall())

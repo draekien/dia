@@ -176,6 +176,20 @@ export function wireTitleBarOverlay(window: BrowserWindow): void {
 }
 
 /**
+ * Registers the listener that opens or closes the renderer's Chrome DevTools when
+ * the renderer requests it (from the command palette). dia uses a custom title bar
+ * with no native menu, so this is the only in-app way to reach DevTools in a
+ * packaged build. Call once during main-process startup with the window whose web
+ * contents' DevTools should toggle.
+ */
+export function wireToggleDevTools(window: BrowserWindow): void {
+  ipcMain.on(CHANNEL.toggleDevTools, () => {
+    Effect.runFork(Effect.logDebug('Toggling renderer DevTools'))
+    window.webContents.toggleDevTools()
+  })
+}
+
+/**
  * Registers the listeners that drive the self-updater from the renderer:
  * `checkForUpdates` runs an on-demand update check (from the About dialog) and
  * `installUpdate` quits and installs a downloaded update. Both are supplied as

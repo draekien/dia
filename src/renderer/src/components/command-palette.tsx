@@ -1,5 +1,5 @@
 import type { ThemePreference } from '@shared/domain/theme'
-import { InfoIcon, MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
+import { CodeIcon, InfoIcon, MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
 import { type ComponentType, useEffect, useState } from 'react'
 import { AboutDialog } from './about-dialog'
 import { useTheme } from './theme-provider'
@@ -69,6 +69,11 @@ export function CommandPalette() {
     setAboutOpen(true)
   }
 
+  const toggleDevTools = () => {
+    setOpen(false)
+    window.dia.toggleDevTools()
+  }
+
   const chooseTheme = (value: string) => {
     if (value === '') return
     setTheme(value as ThemePreference)
@@ -89,6 +94,12 @@ export function CommandPalette() {
             <CommandItem value="About dia" onSelect={openAbout}>
               <InfoIcon />
               <span>About dia</span>
+            </CommandItem>
+          </CommandGroup>
+          <CommandGroup heading="Developer">
+            <CommandItem value="Toggle Developer Tools" onSelect={toggleDevTools}>
+              <CodeIcon />
+              <span>Toggle Developer Tools</span>
             </CommandItem>
           </CommandGroup>
         </CommandList>

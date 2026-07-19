@@ -27,8 +27,10 @@ const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
  * pane's past conversation, `chooseDirectory` to invoke the native directory
  * picker, `getTheme`/`setTheme` to read and persist the colour-theme choice,
  * `setTitleBarOverlay` to recolour the native window-control overlay when the
- * theme changes, and `getAppVersion`/`checkForUpdates`/`installUpdate` to read
- * the running version and drive the self-updater.
+ * theme changes, `getAppVersion`/`checkForUpdates`/`installUpdate` to read the
+ * running version and drive the self-updater, and `toggleDevTools` to open or
+ * close the renderer's DevTools (dia's custom title bar has no native menu to do
+ * so).
  */
 export const CHANNEL = {
   command: 'dia:command',
@@ -42,7 +44,8 @@ export const CHANNEL = {
   getAppVersion: 'dia:getAppVersion',
   getUpdateStatus: 'dia:getUpdateStatus',
   checkForUpdates: 'dia:checkForUpdates',
-  installUpdate: 'dia:installUpdate'
+  installUpdate: 'dia:installUpdate',
+  toggleDevTools: 'dia:toggleDevTools'
 } as const
 
 /**
@@ -470,6 +473,7 @@ export interface DiaApi {
   getUpdateStatus(): Promise<UpdateStatus>
   checkForUpdates(): void
   installUpdate(): void
+  toggleDevTools(): void
   onUpdateStatusChanged(listener: (event: UpdateStatusChanged) => void): () => void
   onMessageAppended(listener: (event: PaneMessageAppended) => void): () => void
   onLayoutChanged(listener: (event: LayoutChanged) => void): () => void
