@@ -1,6 +1,7 @@
 import type { ThemePreference } from '@shared/domain/theme'
-import { CheckIcon, MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
+import { CheckIcon, InfoIcon, MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
 import { type ComponentType, useEffect, useState } from 'react'
+import { AboutDialog } from './about-dialog'
 import { useTheme } from './theme-provider'
 import {
   CommandDialog,
@@ -31,6 +32,7 @@ const THEME_ITEMS: ReadonlyArray<ThemeItem> = [
  */
 export function CommandPalette() {
   const [open, setOpen] = useState(false)
+  const [aboutOpen, setAboutOpen] = useState(false)
   const { theme, setTheme } = useTheme()
 
   useEffect(() => {
@@ -49,30 +51,44 @@ export function CommandPalette() {
     setOpen(false)
   }
 
+  const openAbout = () => {
+    setOpen(false)
+    setAboutOpen(true)
+  }
+
   return (
-    <CommandDialog
-      open={open}
-      onOpenChange={setOpen}
-      title="Command palette"
-      description="Search for a command to run."
-    >
-      <CommandInput placeholder="Type a command or search…" />
-      <CommandList>
-        <CommandEmpty>No results found.</CommandEmpty>
-        <CommandGroup heading="Theme">
-          {THEME_ITEMS.map((item) => (
-            <CommandItem
-              key={item.value}
-              value={`Theme ${item.label}`}
-              onSelect={() => chooseTheme(item.value)}
-            >
-              <item.icon />
-              <span>{item.label}</span>
-              {theme === item.value && <CheckIcon className="ml-auto" />}
+    <>
+      <CommandDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="Command palette"
+        description="Search for a command to run."
+      >
+        <CommandInput placeholder="Type a command or search…" />
+        <CommandList>
+          <CommandEmpty>No results found.</CommandEmpty>
+          <CommandGroup heading="Theme">
+            {THEME_ITEMS.map((item) => (
+              <CommandItem
+                key={item.value}
+                value={`Theme ${item.label}`}
+                onSelect={() => chooseTheme(item.value)}
+              >
+                <item.icon />
+                <span>{item.label}</span>
+                {theme === item.value && <CheckIcon className="ml-auto" />}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+          <CommandGroup heading="Help">
+            <CommandItem value="About dia" onSelect={openAbout}>
+              <InfoIcon />
+              <span>About dia</span>
             </CommandItem>
-          ))}
-        </CommandGroup>
-      </CommandList>
-    </CommandDialog>
+          </CommandGroup>
+        </CommandList>
+      </CommandDialog>
+      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+    </>
   )
 }

@@ -3,13 +3,15 @@ import { NodeContext } from '@effect/platform-node'
 import { ConversationMessage } from '@shared/domain/pane'
 import { PaneNode } from '@shared/domain/pane-tree'
 import { DEFAULT_THEME, ThemePreference } from '@shared/domain/theme'
+import { UpdateStatus } from '@shared/domain/update'
 import {
   CHANNEL,
   type ChooseDirectoryResult,
   IpcCommand,
   IpcEvent,
   LayoutChanged,
-  PaneCreateFailed
+  PaneCreateFailed,
+  TitleBarOverlayColors
 } from '@shared/ipc/contract'
 import type { Context } from 'effect'
 import { Effect, Either, Match, Option, Schema, Stream } from 'effect'
@@ -20,9 +22,11 @@ import type { SettingsStore } from '../services/settings-store'
 
 const decodeCommand = Schema.decodeUnknownEither(IpcCommand)
 const decodeTheme = Schema.decodeUnknownEither(ThemePreference)
+const decodeTitleBarOverlay = Schema.decodeUnknownEither(TitleBarOverlayColors)
 const encodeEvent = Schema.encodeSync(IpcEvent)
 const encodeTree = Schema.encodeSync(PaneNode)
 const encodeHistory = Schema.encodeSync(Schema.Array(ConversationMessage))
+const encodeUpdateStatus = Schema.encodeSync(UpdateStatus)
 
 /**
  * Registers the IPC handler that returns the current pane tree to the renderer.
@@ -128,6 +132,62 @@ export function wireTheme(settingsStore: Context.Tag.Service<typeof SettingsStor
         })
       )
   )
+}
+
+/**
+ * Registers the IPC handler that returns the running application version to the
+ * renderer (for the About dialog). Call once during main-process startup with
+ * `app.getVersion()`.
+ */
+export function wireGetAppVersion(version: string): void {
+  ipcMain.handle(CHANNEL.getAppVersion, (): string => version)
+}
+
+/**
+ * Registers the IPC handler that returns the current self-update status, so a
+ * renderer mounting after the first updater events can seed itself. Back it with
+ * an updater bridge's `current` effect. Call once during main-process startup.
+ */
+export function wireGetUpdateStatus(current: Effect.Effect<UpdateStatus>): void {
+  ipcMain.handle(CHANNEL.getUpdateStatus, () =>
+    Effect.runPromise(current.pipe(Effect.map(encodeUpdateStatus)))
+  )
+}
+
+/**
+ * Registers the listener that recolours the OS-drawn window-control overlay to
+ * match the renderer's active theme. The renderer pushes {@link
+ * TitleBarOverlayColors} whenever the resolved theme changes; invalid payloads
+ * are dropped with a warning. Call once during main-process startup with the
+ * window whose overlay should track the theme.
+ */
+export function wireTitleBarOverlay(window: BrowserWindow): void {
+  ipcMain.on(CHANNEL.setTitleBarOverlay, (_event, raw: unknown) => {
+    const decoded = decodeTitleBarOverlay(raw)
+    if (Either.isLeft(decoded)) {
+      Effect.runFork(Effect.logWarning('Dropped invalid setTitleBarOverlay value'))
+      return
+    }
+    window.setTitleBarOverlay({
+      color: decoded.right.color,
+      symbolColor: decoded.right.symbolColor
+    })
+  })
+}
+
+/**
+ * Registers the listeners that drive the self-updater from the renderer:
+ * `checkForUpdates` runs an on-demand update check (from the About dialog) and
+ * `installUpdate` quits and installs a downloaded update. Both are supplied as
+ * effects by the composition root (which owns electron-updater). Call once
+ * during main-process startup.
+ */
+export function wireUpdaterCommands(deps: {
+  readonly checkForUpdates: Effect.Effect<void>
+  readonly installUpdate: Effect.Effect<void>
+}): void {
+  ipcMain.on(CHANNEL.checkForUpdates, () => void Effect.runPromise(deps.checkForUpdates))
+  ipcMain.on(CHANNEL.installUpdate, () => void Effect.runPromise(deps.installUpdate))
 }
 
 /**

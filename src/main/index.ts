@@ -3,14 +3,18 @@ import { join } from 'node:path'
 import { NodeContext, NodeFileSystem, NodePath } from '@effect/platform-node'
 import type { PaneId } from '@shared/domain/pane-tree'
 import { Config, Effect, Layer, Logger, LogLevel, Option, Runtime } from 'effect'
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import electronUpdater from 'electron-updater'
 import {
   wireChooseDirectory,
   wireCommands,
+  wireGetAppVersion,
   wireGetInitialLayout,
   wireGetPaneHistory,
-  wireTheme
+  wireGetUpdateStatus,
+  wireTheme,
+  wireTitleBarOverlay,
+  wireUpdaterCommands
 } from './ipc/gateway'
 import { DEFAULT_LOG_RETENTION, makeLoggerLive, pruneOldLogEntries } from './logger'
 import { GitOpsServiceLive } from './services/git-ops-service'
@@ -23,27 +27,34 @@ import { makePaneWorkspaceLive, PaneWorkspace } from './services/pane-workspace'
 import { makePersistenceServiceLive } from './services/persistence'
 import { makeSettingsStoreLive, SettingsStore } from './services/settings-store'
 import { TranscriptReaderLive } from './services/transcript-reader'
+import { makeUpdaterBridge, type UpdaterSignal } from './services/updater'
 
 const isDev = !app.isPackaged
 const rendererDevUrl = Effect.runSync(Config.string('ELECTRON_RENDERER_URL').pipe(Config.option))
 
 const { autoUpdater } = electronUpdater
 
-// Checks GitHub Releases for a newer build, downloading it in the background and notifying the
-// user; it installs on next quit. A no-op-with-warning if the update feed can't be reached, so a
-// transient network failure never blocks startup.
-const checkForUpdates = Effect.fn('checkForUpdates')(function* () {
-  yield* Effect.logInfo('Checking for application updates')
-  yield* Effect.tryPromise(() => autoUpdater.checkForUpdatesAndNotify()).pipe(
-    Effect.tapErrorCause((cause) => Effect.logWarning('Update check failed', { cause })),
-    Effect.ignore
-  )
-})
+// Kicks a GitHub Releases check; electron-updater downloads any newer build in the background
+// (autoDownload) and installs it on next quit (autoInstallOnAppQuit). Progress and readiness are
+// reported to the renderer via the updater bridge's event listeners, not here. A
+// no-op-with-warning if the feed can't be reached, so a transient network failure never blocks.
+const runUpdateCheck = Effect.tryPromise(() => autoUpdater.checkForUpdates()).pipe(
+  Effect.tapErrorCause((cause) => Effect.logWarning('Update check failed', { cause })),
+  Effect.ignore
+)
 
 // Seeds the workspace's initial (and initially only) pane; splitting from it creates the rest.
 // It starts pending, same as any freshly-split pane -- the user picks its working directory
 // through the same onboarding form rather than the app assuming one for them.
 const INITIAL_PANE_ID: PaneId = '00000000-0000-0000-0000-000000000001'
+
+// The dia app header is 40px tall; the native window-control overlay must match so the
+// OS-drawn buttons sit flush in it. These pre-mount overlay colours are a rough default
+// (resolved from the OS scheme); the renderer pushes exact theme-matched colours on mount.
+const TITLE_BAR_HEIGHT = 40
+const initialOverlay = nativeTheme.shouldUseDarkColors
+  ? { color: '#2b2e33', symbolColor: '#ededef', height: TITLE_BAR_HEIGHT }
+  : { color: '#fcfcfd', symbolColor: '#3b3f45', height: TITLE_BAR_HEIGHT }
 
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
@@ -51,6 +62,8 @@ function createWindow(): BrowserWindow {
     height: 800,
     show: false,
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: initialOverlay,
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.mjs'),
       sandbox: false
@@ -137,6 +150,30 @@ app.whenReady().then(async () => {
         wireChooseDirectory(settingsStore, mainWindow)
         wireTheme(settingsStore)
 
+        const updaterBridge = yield* makeUpdaterBridge(mainWindow.webContents)
+        const reportSignal = (signal: UpdaterSignal): void =>
+          void Runtime.runFork(runtime)(updaterBridge.report(signal))
+        autoUpdater.autoDownload = true
+        autoUpdater.autoInstallOnAppQuit = true
+        autoUpdater.on('checking-for-update', () => reportSignal({ _tag: 'Checking' }))
+        autoUpdater.on('update-available', () => reportSignal({ _tag: 'Progress', percent: 0 }))
+        autoUpdater.on('update-not-available', () => reportSignal({ _tag: 'NotAvailable' }))
+        autoUpdater.on('download-progress', (progress) =>
+          reportSignal({ _tag: 'Progress', percent: progress.percent })
+        )
+        autoUpdater.on('update-downloaded', (info) =>
+          reportSignal({ _tag: 'Downloaded', version: info.version })
+        )
+        autoUpdater.on('error', (error) => reportSignal({ _tag: 'Failed', message: error.message }))
+
+        wireGetAppVersion(app.getVersion())
+        wireGetUpdateStatus(updaterBridge.current)
+        wireTitleBarOverlay(mainWindow)
+        wireUpdaterCommands({
+          checkForUpdates: runUpdateCheck,
+          installUpdate: Effect.sync(() => autoUpdater.quitAndInstall())
+        })
+
         app.on('before-quit', (event) => {
           if (shuttingDown) return
           shuttingDown = true
@@ -144,7 +181,7 @@ app.whenReady().then(async () => {
           Runtime.runPromise(runtime)(paneSupervisor.closeAll()).finally(() => app.quit())
         })
 
-        if (!isDev) yield* Effect.forkScoped(checkForUpdates())
+        if (!isDev) yield* Effect.forkScoped(runUpdateCheck)
 
         yield* wireCommands({ paneWorkspace, paneSupervisor, webContents: mainWindow.webContents })
       })

@@ -15,8 +15,23 @@ function resolveIsDark(theme: ThemePreference): boolean {
   return theme === 'dark'
 }
 
+function readToken(variable: string): string {
+  const probe = document.createElement('span')
+  probe.style.color = `var(${variable})`
+  probe.style.display = 'none'
+  document.body.appendChild(probe)
+  const value = getComputedStyle(probe).color
+  probe.remove()
+  return value
+}
+
+function pushTitleBarOverlay(): void {
+  window.dia.setTitleBarOverlay({ color: readToken('--surface'), symbolColor: readToken('--ink') })
+}
+
 function applyTheme(theme: ThemePreference): void {
   document.documentElement.classList.toggle('dark', resolveIsDark(theme))
+  pushTitleBarOverlay()
 }
 
 /**

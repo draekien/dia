@@ -167,6 +167,16 @@
   }
 }
 
+/* Frameless-window drag regions: the custom title bar is draggable, but its
+   interactive controls must opt back out or they can't receive clicks. */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
+
 @keyframes pulse-slow {
   0%,
   100% {
