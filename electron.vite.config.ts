@@ -11,6 +11,9 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
+    ssr: {
+      external: ['@anthropic-ai/claude-agent-sdk']
+    },
     build: {
       rollupOptions: {
         external: ['electron'],

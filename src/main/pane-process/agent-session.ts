@@ -1,3 +1,6 @@
+import { createRequire } from 'node:module'
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- resolving the SDK's native binary path is a synchronous filesystem-path computation outside any Effect.
+import { sep } from 'node:path'
 import {
   type CanUseTool,
   type PermissionResult,
@@ -8,6 +11,7 @@ import {
 import { PlanReviewResponse, Question, type QuestionResponse } from '@shared/domain/attention'
 import type { PaneConfig, ThinkingLevel } from '@shared/domain/pane'
 import {
+  Cause,
   Data,
   Deferred,
   Effect,
@@ -187,6 +191,27 @@ const dropPendingRequests = Effect.fn('AgentSession.dropPendingRequests')(functi
   }
 })
 
+/**
+ * Resolves the Agent SDK's bundled native Claude Code binary to a real,
+ * spawnable filesystem path. In a packaged app the SDK resolves this binary to
+ * its `app.asar` virtual path, which the OS cannot execute; this redirects it
+ * to the unpacked copy (`app.asar.unpacked`) so the SDK can spawn it. Returns
+ * `undefined` when the binary can't be resolved (e.g. an unpackaged dev run),
+ * letting the SDK fall back to its own resolution.
+ */
+const resolveClaudeExecutable = (): string | undefined => {
+  const ext = process.platform === 'win32' ? '.exe' : ''
+  const nativePackage = `@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}`
+  try {
+    const resolved = createRequire(import.meta.url).resolve(`${nativePackage}/claude${ext}`)
+    return resolved.replace(`app.asar${sep}`, `app.asar.unpacked${sep}`)
+  } catch {
+    return undefined
+  }
+}
+
+const claudeExecutablePath = resolveClaudeExecutable()
+
 const toSDKUserMessage = (text: string): SDKUserMessage => ({
   type: 'user',
   message: { role: 'user', content: text },
@@ -220,7 +245,10 @@ const runSession = Effect.fn('AgentSession.runSession')(
         canUseTool,
         permissionMode: config.permissionMode,
         resume,
-        ...thinkingOptions(config.thinkingLevel)
+        ...thinkingOptions(config.thinkingLevel),
+        ...(claudeExecutablePath !== undefined
+          ? { pathToClaudeCodeExecutable: claudeExecutablePath }
+          : {})
       }
     })
     yield* modeController.attachQuery(session)
@@ -251,9 +279,20 @@ const runSession = Effect.fn('AgentSession.runSession')(
   },
   (effect, config) =>
     effect.pipe(
-      Effect.catchAllCause((cause) =>
-        Effect.logError('Agent session failed', { paneId: config.paneId, cause })
-      )
+      Effect.catchAllCause((cause) => {
+        const failure = Cause.failureOption(cause)
+        const underlying =
+          Option.isSome(failure) && failure.value instanceof SessionStreamError
+            ? failure.value.cause
+            : undefined
+        const rendered =
+          underlying instanceof Error
+            ? `${underlying.name}: ${underlying.message}\n${underlying.stack ?? ''}`
+            : underlying !== undefined
+              ? String(underlying)
+              : Cause.pretty(cause)
+        return Effect.logError('Agent session failed', { paneId: config.paneId, rendered })
+      })
     )
 )
 
