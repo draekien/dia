@@ -288,22 +288,26 @@
   background: transparent;
 }
 
-/* Replace the OS-native scrollbar with a restrained overlay pill drawn from the
-   neutral ink ramp, so scroll surfaces read as part of the app rather than the
-   platform. Chromium-only (Electron), matching the .typeset pre treatment above.
-   `scrollbar-none` hides the track entirely; `scrollbar-gutter-stable` reserves
-   its width so toggling visibility never shifts layout. */
+/* Replace the OS-native scrollbar with a pill that mirrors the shadcn ScrollArea
+   thumb (`rounded-full bg-border`), so native scroll surfaces read identically to
+   the Radix-driven ones. The thumb draws from the same `--border` token; a 1px
+   transparent border with `background-clip: padding-box` insets an 8px pill inside
+   the 10px bar, matching the ScrollArea's `w-2.5` bar with `p-px`. Chromium-only
+   (Electron). `scrollbar-none` hides the track entirely; `scrollbar-gutter-stable`
+   reserves its width so toggling visibility never shifts layout. */
 @utility scrollbar-thin {
   &::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
   }
   &::-webkit-scrollbar-thumb {
     border-radius: 9999px;
-    background-color: color-mix(in oklch, var(--ink) 22%, transparent);
+    border: 1px solid transparent;
+    background-clip: padding-box;
+    background-color: var(--border);
   }
   &::-webkit-scrollbar-thumb:hover {
-    background-color: color-mix(in oklch, var(--ink) 38%, transparent);
+    background-color: color-mix(in oklch, var(--border) 65%, var(--ink));
   }
   &::-webkit-scrollbar-track {
     background: transparent;
