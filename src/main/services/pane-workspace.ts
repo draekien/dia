@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { FileSystem, Path } from '@effect/platform'
+import { FileSystem } from '@effect/platform'
 import { Errored } from '@shared/domain/attention'
 import type {
   ConversationMessage,
@@ -91,9 +91,9 @@ export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
  * re-saving after every `split`/`createPane`/`close`. `worktreesRoot` is the base directory
  * under which per-pane git worktrees are created when `createPane` is called with
  * `useWorktree: true`. Also requires {@link TranscriptReader} to serve `getPaneHistory`
- * for restored panes without spawning a live session, `FileSystem` to detect a resumed
- * non-worktree pane whose working directory has since been deleted, and `Path` to compose
- * per-pane worktree paths under `worktreesRoot`.
+ * for restored panes without spawning a live session, and `FileSystem` to detect a resumed
+ * non-worktree pane whose working directory has since been deleted. The per-pane worktree
+ * directory and branch names are composed by {@link GitOpsService.createWorktree} itself.
  */
 export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: string) =>
   Layer.effect(
@@ -103,7 +103,6 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
       const persistence = yield* PersistenceService
       const transcriptReader = yield* TranscriptReader
       const fs = yield* FileSystem.FileSystem
-      const path = yield* Path.Path
 
       const persisted = yield* persistence.loadWorkspace()
       const seed = Option.match(persisted, {
@@ -219,9 +218,9 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
           return yield* precheck.left
         }
 
-        const worktreePath = useWorktree ? path.join(worktreesRoot, paneId) : undefined
+        const worktree = useWorktree ? ({ _tag: 'Create', worktreesRoot } as const) : undefined
         const { config } = yield* supervisor.openPane(
-          { paneId, sourceCwd, model, thinkingLevel, permissionMode, worktreePath },
+          { paneId, sourceCwd, model, thinkingLevel, permissionMode, worktree },
           onCreateEvent,
           (sessionId) => recordSessionId(paneId, sessionId),
           (mode) => recordPermissionMode(paneId, mode, onCreateEvent)
@@ -395,7 +394,8 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
           model: config.model,
           thinkingLevel: config.thinkingLevel,
           permissionMode: config.permissionMode,
-          worktreePath: config.worktree?.path,
+          worktree:
+            config.worktree !== undefined ? { _tag: 'Reattach', info: config.worktree } : undefined,
           resume: sessionId
         }
 

@@ -589,7 +589,7 @@ describe('PaneWorkspace', () => {
       assert.strictEqual(requests.length, 1)
       assert.strictEqual(requests[0].resume, 'restored-session-1')
       assert.strictEqual(requests[0].sourceCwd, '/repo')
-      assert.strictEqual(requests[0].worktreePath, undefined)
+      assert.strictEqual(requests[0].worktree, undefined)
       assert.deepStrictEqual(events, [])
     })
   )
@@ -708,7 +708,7 @@ describe('PaneWorkspace', () => {
               model: 'm',
               thinkingLevel: 'adaptive',
               permissionMode: 'default',
-              worktree: { path: '/wt/x', branch: `dia/${INITIAL_PANE_ID}`, sourceRepo: '/repo' }
+              worktree: { path: '/wt/x', branch: 'dia/silver-heron', sourceRepo: '/repo' }
             },
             sessionId: 'restored-session-1'
           }
@@ -731,7 +731,12 @@ describe('PaneWorkspace', () => {
       )
 
       assert.strictEqual(requests.length, 1)
-      assert.strictEqual(requests[0].worktreePath, '/wt/x')
+      // Reattach must carry the persisted WorktreeInfo verbatim -- including its slug branch --
+      // so the supervisor checks out the existing branch rather than reconstructing a name.
+      assert.deepStrictEqual(requests[0].worktree, {
+        _tag: 'Reattach',
+        info: { path: '/wt/x', branch: 'dia/silver-heron', sourceRepo: '/repo' }
+      })
       assert.strictEqual(requests[0].sourceCwd, '/repo')
       assert.strictEqual(requests[0].resume, 'restored-session-1')
       assert.deepStrictEqual(events, [])

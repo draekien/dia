@@ -11,8 +11,17 @@ the pane's `cwd` differs by even one character on resume, `resume: sessionId` si
 starts a fresh session instead of continuing the old one.
 
 dia removes worktrees on graceful shutdown (via the `acquireRelease` finalizer in
-`PaneSupervisor.openPane`) but the branch `dia/<paneId>` persists. So on resume the
-directory is gone but the branch — with the pane's committed work — is still there.
+`PaneSupervisor.openPane`) but the branch persists. So on resume the directory is gone but
+the branch — with the pane's committed work — is still there.
+
+> **Update (2026-07-19):** worktree branches/dirs are now named `dia/<adjective-noun>` (a
+> friendly, collision-checked slug from `GitOpsService.createWorktree` — see
+> `worktree-slug.ts`), not `dia/<paneId>`. The branch string is no longer derivable from the
+> pane id, so reattach must read the **persisted** `WorktreeInfo.branch` rather than
+> reconstruct it. `PaneCreationRequest.worktree` is now a discriminated `Create`/`Reattach`
+> union carrying that persisted info; `openPane` no longer rebuilds `dia/<paneId>` on resume
+> (it used to, which would have silently broken resume once names became slugs). The `<paneId>`
+> examples below are kept verbatim as originally verified against git — read them as `<branch>`.
 
 ## Reasoning / Learning
 

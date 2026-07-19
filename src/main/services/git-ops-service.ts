@@ -1,7 +1,8 @@
-import { Command, CommandExecutor, FileSystem } from '@effect/platform'
+import { Command, CommandExecutor, FileSystem, Path } from '@effect/platform'
 import type { WorktreeInfo } from '@shared/domain/pane'
 import type { PaneId } from '@shared/domain/pane-tree'
-import { Context, Data, Effect, Layer } from 'effect'
+import { Context, Data, Effect, Layer, Random } from 'effect'
+import { generateWorktreeSlug } from './worktree-slug'
 
 /**
  * Failure raised when `GitOpsService.createWorktree` cannot create a git
@@ -42,8 +43,11 @@ export class WorktreeReattachError extends Data.TaggedError('WorktreeReattachErr
  * join this service in later bullets.
  *
  * `createWorktree` provisions a new worktree and branch for a pane from a
- * source repo; `removeWorktree` tears one down, falling back to `git
- * worktree prune` if standard removal fails; `reattachWorktree` re-adds a
+ * source repo, giving both a friendly `dia/<adjective-noun>` name (see
+ * {@link generateWorktreeSlug}) under `worktreesRoot` rather than an opaque
+ * UUID, and collision-checking the generated name against existing branches
+ * and directories before use; `removeWorktree` tears one down, falling back to
+ * `git worktree prune` if standard removal fails; `reattachWorktree` re-adds a
  * pane's existing worktree/branch on resume (worktrees are removed on graceful
  * shutdown but their branch persists). Obtain an implementation via
  * `GitOpsServiceLive` and provide it at the composition root.
@@ -51,10 +55,17 @@ export class WorktreeReattachError extends Data.TaggedError('WorktreeReattachErr
 export class GitOpsService extends Context.Tag('GitOpsService')<
   GitOpsService,
   {
+    /**
+     * Provisions a fresh worktree for a pane: generates a friendly, unique
+     * `dia/<adjective-noun>` branch and a matching directory under
+     * `worktreesRoot`, then `git worktree add <dir> -b <branch>`. The generated
+     * name is collision-checked against both existing branches in `sourceRepo`
+     * and existing directories under `worktreesRoot`, regenerating on a clash.
+     */
     readonly createWorktree: (
       sourceRepo: string,
       paneId: PaneId,
-      worktreePath: string
+      worktreesRoot: string
     ) => Effect.Effect<WorktreeInfo, WorktreeCreateError>
     readonly removeWorktree: (
       info: WorktreeInfo,
@@ -85,13 +96,59 @@ export const GitOpsServiceLive = Layer.effect(
   Effect.gen(function* () {
     const executor = yield* CommandExecutor.CommandExecutor
     const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+
+    const branchExists = Effect.fn('GitOpsService.branchExists')(function* (
+      sourceRepo: string,
+      paneId: PaneId,
+      branch: string
+    ) {
+      const command = Command.make(
+        'git',
+        'rev-parse',
+        '--verify',
+        '--quiet',
+        `refs/heads/${branch}`
+      ).pipe(Command.workingDirectory(sourceRepo))
+      const exitCode = yield* executor
+        .exitCode(command)
+        .pipe(Effect.mapError((cause) => new WorktreeCreateError({ paneId, sourceRepo, cause })))
+      return exitCode === 0
+    })
+
+    // A worktree's directory is removed on graceful shutdown but its branch persists (and
+    // lingers after a pane is closed), so a fresh pane can generate a name whose branch already
+    // exists even though no directory does -- both must be checked. After a bounded number of
+    // clashes (astronomically unlikely) fall back to appending random hex to force a unique name.
+    const MAX_SLUG_ATTEMPTS = 50
+    const findAvailableWorktreeName = Effect.fn('GitOpsService.findAvailableWorktreeName')(
+      function* (sourceRepo: string, paneId: PaneId, worktreesRoot: string) {
+        for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
+          const slug = yield* generateWorktreeSlug()
+          const branch = `dia/${slug}`
+          const dirPath = path.join(worktreesRoot, slug)
+          const dirTaken = yield* fs.exists(dirPath).pipe(Effect.orElseSucceed(() => false))
+          const taken = dirTaken || (yield* branchExists(sourceRepo, paneId, branch))
+          if (!taken) return { path: dirPath, branch }
+        }
+
+        const base = yield* generateWorktreeSlug()
+        const suffix = (yield* Random.nextIntBetween(0x1000, 0x10000)).toString(16)
+        const slug = `${base}-${suffix}`
+        return { path: path.join(worktreesRoot, slug), branch: `dia/${slug}` }
+      }
+    )
 
     const createWorktree = Effect.fn('GitOpsService.createWorktree')(function* (
       sourceRepo: string,
       paneId: PaneId,
-      worktreePath: string
+      worktreesRoot: string
     ) {
-      const branch = `dia/${paneId}`
+      const { path: worktreePath, branch } = yield* findAvailableWorktreeName(
+        sourceRepo,
+        paneId,
+        worktreesRoot
+      )
       const command = Command.make('git', 'worktree', 'add', worktreePath, '-b', branch).pipe(
         Command.workingDirectory(sourceRepo)
       )

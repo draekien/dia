@@ -32,7 +32,7 @@ const requestA: PaneCreationRequest = {
   model: 'm',
   thinkingLevel: 'adaptive',
   permissionMode: 'default',
-  worktreePath: undefined
+  worktree: undefined
 }
 const requestB: PaneCreationRequest = {
   paneId: 'bbbbbbbb-0000-4000-8000-000000000002',
@@ -40,7 +40,7 @@ const requestB: PaneCreationRequest = {
   model: 'm',
   thinkingLevel: 'adaptive',
   permissionMode: 'auto',
-  worktreePath: undefined
+  worktree: undefined
 }
 
 const configA: PaneConfig = {
@@ -258,19 +258,21 @@ describe('PaneSupervisor', () => {
       })
       const testLayer = Layer.provide(PaneSupervisorLive, Layer.merge(spawnerLayer, gitOpsLayer))
 
+      // A friendly slug branch, deliberately unrelated to the pane id: reattach must use the
+      // persisted branch verbatim, never reconstruct `dia/<paneId>`.
+      const expectedInfo: WorktreeInfo = {
+        path: '/wt/c',
+        branch: 'dia/brave-otter',
+        sourceRepo: '/repo'
+      }
       const resumeRequest: PaneCreationRequest = {
         paneId: 'cccccccc-0000-4000-8000-000000000003',
         sourceCwd: '/repo',
         model: 'm',
         thinkingLevel: 'adaptive',
         permissionMode: 'default',
-        worktreePath: '/wt/c',
+        worktree: { _tag: 'Reattach', info: expectedInfo },
         resume: 'session-resume-1'
-      }
-      const expectedInfo: WorktreeInfo = {
-        path: '/wt/c',
-        branch: `dia/${resumeRequest.paneId}`,
-        sourceRepo: '/repo'
       }
 
       yield* Effect.gen(function* () {

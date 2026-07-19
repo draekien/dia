@@ -77,11 +77,22 @@ export class ProcessSpawnError extends Data.TaggedError('ProcessSpawnError')<{
 }> {}
 
 /**
+ * How a pane's worktree should be obtained. `Create` provisions a brand-new worktree
+ * (friendly `dia/<slug>` branch + directory under `worktreesRoot`, collision-checked);
+ * `Reattach` re-adds the pane's already-created worktree from its persisted {@link WorktreeInfo}
+ * (checking out the existing branch), used on resume after the directory was removed on the
+ * prior graceful shutdown. Absent from a {@link PaneCreationRequest} means a non-worktree pane.
+ */
+export type WorktreeRequest =
+  | { readonly _tag: 'Create'; readonly worktreesRoot: string }
+  | { readonly _tag: 'Reattach'; readonly info: WorktreeInfo }
+
+/**
  * A pending pane's request to start running: the source directory and model the user chose,
- * plus the worktree path to provision when set (its presence is what "useWorktree" means).
- * When `resume` is set, the pane continues the prior Agent SDK session with that id, and a
- * worktree pane is reattached (its existing branch is checked out) rather than created afresh.
- * Pass to {@link PaneSupervisor.openPane} to spawn and register a new pane.
+ * plus how to obtain its worktree ({@link WorktreeRequest}) when it is a worktree pane. When
+ * `resume` is set, the pane continues the prior Agent SDK session with that id; a worktree pane
+ * pairs `resume` with a `Reattach` worktree so its existing branch is checked out rather than
+ * created afresh. Pass to {@link PaneSupervisor.openPane} to spawn and register a new pane.
  */
 export interface PaneCreationRequest {
   readonly paneId: PaneId
@@ -89,7 +100,7 @@ export interface PaneCreationRequest {
   readonly model: string
   readonly thinkingLevel: ThinkingLevel
   readonly permissionMode: PermissionMode
-  readonly worktreePath: string | undefined
+  readonly worktree: WorktreeRequest | undefined
   readonly resume?: string
 }
 
@@ -554,7 +565,8 @@ export const PaneSupervisorLive = Layer.effect(
       const expectedExit = yield* Ref.make(false)
 
       const prepared = yield* Effect.gen(function* () {
-        if (request.worktreePath === undefined) {
+        const worktreeRequest = request.worktree
+        if (worktreeRequest === undefined) {
           const config: PaneConfig = {
             paneId: request.paneId,
             cwd: request.sourceCwd,
@@ -566,19 +578,16 @@ export const PaneSupervisorLive = Layer.effect(
         }
 
         // On resume the worktree was removed on the prior graceful shutdown but its branch
-        // persists, so reattach (check out the existing branch) rather than create a new one --
-        // creating would fail on the already-existing `dia/<paneId>` branch.
+        // persists, so reattach from the persisted WorktreeInfo (checking out the existing
+        // branch) rather than create a new one -- creating would fail on the existing branch.
         const acquire: Effect.Effect<WorktreeInfo, WorktreeCreateError | WorktreeReattachError> =
-          request.resume === undefined
-            ? gitOps.createWorktree(request.sourceCwd, request.paneId, request.worktreePath)
-            : gitOps.reattachWorktree(
-                {
-                  path: request.worktreePath,
-                  branch: `dia/${request.paneId}`,
-                  sourceRepo: request.sourceCwd
-                },
-                request.paneId
+          worktreeRequest._tag === 'Create'
+            ? gitOps.createWorktree(
+                request.sourceCwd,
+                request.paneId,
+                worktreeRequest.worktreesRoot
               )
+            : gitOps.reattachWorktree(worktreeRequest.info, request.paneId)
 
         const worktree = yield* Effect.acquireRelease(acquire, (info) =>
           gitOps.removeWorktree(info, request.paneId).pipe(
