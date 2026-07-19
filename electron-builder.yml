@@ -1,0 +1,37 @@
+appId: com.draekien.dia
+productName: dia
+copyright: Copyright © 2026 William Pei
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+
+# The Agent SDK ships the Claude Code CLI and its native helper binaries (ripgrep, etc.),
+# which the SDK spawns as child processes. Binaries cannot be executed from inside an asar
+# archive, so this package must be unpacked to app.asar.unpacked at install time.
+asarUnpack:
+  - node_modules/@anthropic-ai/claude-agent-sdk/**
+  - node_modules/@anthropic-ai/claude-agent-sdk-*/**
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+publish:
+  provider: github
+  owner: draekien
+  repo: dia

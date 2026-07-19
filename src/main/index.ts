@@ -4,6 +4,7 @@ import { NodeContext, NodeFileSystem, NodePath } from '@effect/platform-node'
 import type { PaneId } from '@shared/domain/pane-tree'
 import { Config, Effect, Layer, Logger, LogLevel, Option, Runtime } from 'effect'
 import { app, BrowserWindow, shell } from 'electron'
+import electronUpdater from 'electron-updater'
 import {
   wireChooseDirectory,
   wireCommands,
@@ -25,6 +26,19 @@ import { TranscriptReaderLive } from './services/transcript-reader'
 
 const isDev = !app.isPackaged
 const rendererDevUrl = Effect.runSync(Config.string('ELECTRON_RENDERER_URL').pipe(Config.option))
+
+const { autoUpdater } = electronUpdater
+
+// Checks GitHub Releases for a newer build, downloading it in the background and notifying the
+// user; it installs on next quit. A no-op-with-warning if the update feed can't be reached, so a
+// transient network failure never blocks startup.
+const checkForUpdates = Effect.fn('checkForUpdates')(function* () {
+  yield* Effect.logInfo('Checking for application updates')
+  yield* Effect.tryPromise(() => autoUpdater.checkForUpdatesAndNotify()).pipe(
+    Effect.tapErrorCause((cause) => Effect.logWarning('Update check failed', { cause })),
+    Effect.ignore
+  )
+})
 
 // Seeds the workspace's initial (and initially only) pane; splitting from it creates the rest.
 // It starts pending, same as any freshly-split pane -- the user picks its working directory
@@ -129,6 +143,8 @@ app.whenReady().then(async () => {
           event.preventDefault()
           Runtime.runPromise(runtime)(paneSupervisor.closeAll()).finally(() => app.quit())
         })
+
+        if (!isDev) yield* Effect.forkScoped(checkForUpdates())
 
         yield* wireCommands({ paneWorkspace, paneSupervisor, webContents: mainWindow.webContents })
       })

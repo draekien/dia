@@ -6,3 +6,4 @@ allowBuilds:
   '@parcel/watcher': true
   msgpackr-extract: true
   lefthook: true
+  electron-winstaller: false
