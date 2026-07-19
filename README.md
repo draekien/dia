@@ -5,6 +5,13 @@ A personal desktop app that drives your local Claude installation via the
 self-built alternative to Claude Desktop, built around running multiple agent
 sessions in parallel panes.
 
+> [!IMPORTANT]
+> **This is an experimental personal project with no guaranteed support.**
+> It's built for the author's own use and shared as-is — there are no
+> guarantees of stability, maintenance, or help with issues. **External pull
+> requests are not accepted.** You're welcome to fork it and build on it for
+> your own needs.
+
 ## Prerequisites
 
 dia drives your **local Claude installation**, so you need Claude Code installed
