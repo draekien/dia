@@ -1,6 +1,6 @@
 {
   "name": "dia",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "dia — a personal desktop app that drives a local Claude installation via the Agent SDK",
   "main": "./out/main/index.js",
   "author": "William Pei",
