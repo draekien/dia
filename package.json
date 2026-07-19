@@ -70,6 +70,7 @@
     "rehype-highlight": "7.0.2",
     "rehype-highlight-code-lines": "1.2.4",
     "remark-gfm": "4.0.1",
+    "shadcn": "4.13.1",
     "tailwind-merge": "3.6.0"
   }
 }

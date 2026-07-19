@@ -2,6 +2,7 @@
 @import '@fontsource-variable/geist';
 @import '@fontsource-variable/geist-mono';
 @import './typeset.css';
+@import 'shadcn/tailwind.css';
 
 /* Class-based dark mode: the theme provider toggles `.dark` on <html>, and the
    `.dark { ... }` block below re-points every role var. Enables `dark:` utilities
@@ -286,42 +287,6 @@
 
 .typeset pre::-webkit-scrollbar-track {
   background: transparent;
-}
-
-/* Replace the OS-native scrollbar with a pill that mirrors the shadcn ScrollArea
-   thumb (`rounded-full bg-border`), so native scroll surfaces read identically to
-   the Radix-driven ones. The thumb draws from the same `--border` token; a 1px
-   transparent border with `background-clip: padding-box` insets an 8px pill inside
-   the 10px bar, matching the ScrollArea's `w-2.5` bar with `p-px`. Chromium-only
-   (Electron). `scrollbar-none` hides the track entirely; `scrollbar-gutter-stable`
-   reserves its width so toggling visibility never shifts layout. */
-@utility scrollbar-thin {
-  &::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  &::-webkit-scrollbar-thumb {
-    border-radius: 9999px;
-    border: 1px solid transparent;
-    background-clip: padding-box;
-    background-color: var(--border);
-  }
-  &::-webkit-scrollbar-thumb:hover {
-    background-color: color-mix(in oklch, var(--border) 65%, var(--ink));
-  }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-}
-
-@utility scrollbar-none {
-  &::-webkit-scrollbar {
-    display: none;
-  }
-}
-
-@utility scrollbar-gutter-stable {
-  scrollbar-gutter: stable;
 }
 
 /* Theme-aware syntax highlighting. Replaces the dark-only highlight.js theme
