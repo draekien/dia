@@ -17,6 +17,12 @@ import {
   SelectValue
 } from '@renderer/components/ui/select'
 import { PERMISSION_MODE_OPTIONS } from '@renderer/lib/permission-modes'
+import {
+  filterSlashCommands,
+  slashCommandCompletion,
+  slashCommandQuery,
+  wrapHighlight
+} from '@renderer/lib/slash-command-menu'
 import { THINKING_LEVEL_OPTIONS } from '@renderer/lib/thinking-levels'
 import { cn } from '@renderer/lib/utils'
 import {
@@ -31,6 +37,7 @@ import {
   type PermissionMode,
   type ThinkingLevel
 } from '@shared/domain/pane'
+import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import type {
   PanePermissionRequested,
   PanePlanReviewRequested,
@@ -48,6 +55,7 @@ import { Markdown } from './markdown'
 import { PermissionRequestCard } from './permission-request-card'
 import { PlanReviewCard } from './plan-review-card'
 import { PulseIndicator } from './pulse-indicator'
+import { SlashCommandMenu, slashMenuListboxId, slashMenuOptionId } from './slash-command-menu'
 import { Bubble, BubbleContent } from './ui/bubble'
 import { Button } from './ui/button'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from './ui/input-group'
@@ -160,6 +168,16 @@ function ThinkingDisclosure({ content }: { content: string }): React.JSX.Element
  * from a pane's chat state ({@link paneChatAtom}).
  */
 export function MessageView({ message }: { message: PaneMessage }): React.JSX.Element {
+  if (message.role === 'notice') {
+    const text = message.parts.find((part) => part.type === 'text')?.content ?? ''
+    return (
+      <div className="flex items-center gap-3 py-1 text-xs text-muted-foreground">
+        <span aria-hidden className="h-px flex-1 bg-border" />
+        <span className="shrink-0">{text}</span>
+        <span aria-hidden className="h-px flex-1 bg-border" />
+      </div>
+    )
+  }
   const isUser = message.role === 'user'
   return (
     <Message align={isUser ? 'end' : 'start'}>
@@ -269,6 +287,9 @@ function PaneChat({
   const chat = Result.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
   const sendMessage = useAtomSet(paneSendAtom(paneId))
 
+  const [slashHighlight, setSlashHighlight] = useState(0)
+  const [slashDismissed, setSlashDismissed] = useState(false)
+
   const { data: pendingPermission = null } = useQuery<PanePermissionRequested | null>({
     queryKey: pendingPermissionQueryKey,
     queryFn: () => null,
@@ -374,37 +395,106 @@ function PaneChat({
         }}
       >
         <form.Field name="text">
-          {(field) => (
-            <InputGroup>
-              <InputGroupTextarea
-                className="min-h-14"
-                value={field.state.value}
-                onChange={(event) => field.handleChange(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                    event.preventDefault()
-                    void form.handleSubmit()
-                  }
-                }}
-                placeholder="Message dia..."
-                aria-label="Message dia"
-              />
-              <InputGroupAddon align="block-end">
-                <ThinkingLevelSelect value={thinkingLevel} onChange={onThinkingLevelChange} />
-                <PermissionModeSelect value={permissionMode} onChange={onPermissionModeChange} />
-                <InputGroupButton
-                  type="submit"
-                  variant="default"
-                  size="icon-sm"
-                  className="ml-auto"
-                  aria-label="Send message"
-                  disabled={field.state.value.trim() === ''}
-                >
-                  <ArrowUp />
-                </InputGroupButton>
-              </InputGroupAddon>
-            </InputGroup>
-          )}
+          {(field) => {
+            const query = slashCommandQuery(field.state.value)
+            const matches = query === null ? [] : filterSlashCommands(chat.slashCommands, query)
+            const isMenuOpen = matches.length > 0 && !slashDismissed
+            const highlight = wrapHighlight(slashHighlight, 0, matches.length)
+
+            const changeText = (value: string): void => {
+              field.handleChange(value)
+              setSlashDismissed(false)
+              setSlashHighlight(0)
+            }
+            const selectCommand = (command: SlashCommandInfo): void => {
+              field.handleChange(slashCommandCompletion(command))
+              setSlashHighlight(0)
+            }
+
+            return (
+              <div className="relative">
+                {isMenuOpen && (
+                  <SlashCommandMenu
+                    paneId={paneId}
+                    commands={matches}
+                    highlightedIndex={highlight}
+                    onSelect={selectCommand}
+                    onHighlight={setSlashHighlight}
+                  />
+                )}
+                <InputGroup>
+                  <InputGroupTextarea
+                    className="min-h-14"
+                    value={field.state.value}
+                    onChange={(event) => changeText(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (isMenuOpen) {
+                        if (event.key === 'ArrowDown') {
+                          event.preventDefault()
+                          setSlashHighlight(wrapHighlight(highlight, 1, matches.length))
+                          return
+                        }
+                        if (event.key === 'ArrowUp') {
+                          event.preventDefault()
+                          setSlashHighlight(wrapHighlight(highlight, -1, matches.length))
+                          return
+                        }
+                        if (event.key === 'Escape') {
+                          event.preventDefault()
+                          setSlashDismissed(true)
+                          return
+                        }
+                        if (
+                          (event.key === 'Enter' || event.key === 'Tab') &&
+                          !event.shiftKey &&
+                          !event.nativeEvent.isComposing
+                        ) {
+                          event.preventDefault()
+                          const command = matches[highlight]
+                          if (command !== undefined) selectCommand(command)
+                          return
+                        }
+                      }
+                      if (
+                        event.key === 'Enter' &&
+                        !event.shiftKey &&
+                        !event.nativeEvent.isComposing
+                      ) {
+                        event.preventDefault()
+                        void form.handleSubmit()
+                      }
+                    }}
+                    role="combobox"
+                    aria-expanded={isMenuOpen}
+                    aria-controls={slashMenuListboxId(paneId)}
+                    aria-autocomplete="list"
+                    aria-activedescendant={
+                      isMenuOpen ? slashMenuOptionId(paneId, highlight) : undefined
+                    }
+                    placeholder="Message dia..."
+                    aria-label="Message dia"
+                  />
+                  <InputGroupAddon align="block-end">
+                    <ThinkingLevelSelect value={thinkingLevel} onChange={onThinkingLevelChange} />
+                    <PermissionModeSelect
+                      value={permissionMode}
+                      onChange={onPermissionModeChange}
+                    />
+                    <InputGroupButton
+                      type="submit"
+                      variant="default"
+                      size="icon-sm"
+                      className="ml-auto"
+                      aria-label="Send message"
+                      disabled={field.state.value.trim() === ''}
+                    >
+                      <ArrowUp />
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                </InputGroup>
+              </div>
+            )
+          }}
         </form.Field>
       </form>
     </div>
