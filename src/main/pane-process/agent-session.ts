@@ -40,7 +40,8 @@ import {
   PermissionModeChanged,
   PermissionRequested,
   PlanReviewRequested,
-  QuestionRequested
+  QuestionRequested,
+  SlashCommandsAvailable
 } from './protocol'
 import { thinkingOptions } from './thinking-options'
 
@@ -252,6 +253,37 @@ const runSession = Effect.fn('AgentSession.runSession')(
       }
     })
     yield* modeController.attachQuery(session)
+
+    // Warm up the pane's slash-command list without waiting for the user's first turn.
+    // The SDK runs its control-protocol initialize() eagerly when query() is created, and
+    // supportedCommands() awaits that, so the full list (with descriptions and argument
+    // hints -- richer than the streamed init message's names-only list) is available right
+    // away on both a cold start and a resume. Forked so it never blocks reading the event
+    // stream, and tied to this session run so a restart interrupts it.
+    yield* Effect.fork(
+      Effect.tryPromise({
+        try: () => session.supportedCommands(),
+        catch: (cause) => new SessionStreamError({ cause })
+      }).pipe(
+        Effect.flatMap((commands) =>
+          postOutbound(
+            SlashCommandsAvailable.make({
+              commands: commands.map((command) => ({
+                name: command.name,
+                description: command.description,
+                argumentHint: command.argumentHint
+              }))
+            })
+          )
+        ),
+        Effect.catchAll((error) =>
+          Effect.logWarning('Failed to warm up slash commands', {
+            paneId: config.paneId,
+            error
+          })
+        )
+      )
+    )
 
     const events = Stream.fromAsyncIterable(session, (cause) => new SessionStreamError({ cause }))
     const reducer = makeSessionEventReducer()

@@ -323,22 +323,13 @@ describe('makeSessionEventReducer — tool input accumulation (T4)', () => {
 })
 
 describe('makeSessionEventReducer — slash commands and session lifecycle', () => {
-  it('emits SessionStarted then the available slash commands (names only) on init', () => {
+  it('emits only SessionStarted on init, leaving the command list to the warm-up', () => {
     const emitted = run([systemInit(['compact', 'clear'])])
 
-    expect(emitted).toEqual([
-      { _tag: 'SessionStarted', sessionId: 'test-session' },
-      {
-        _tag: 'SlashCommandsAvailable',
-        commands: [
-          { name: 'compact', description: '', argumentHint: '' },
-          { name: 'clear', description: '', argumentHint: '' }
-        ]
-      }
-    ])
+    expect(emitted).toEqual([{ _tag: 'SessionStarted', sessionId: 'test-session' }])
   })
 
-  it('enriches the slash-command list with descriptions from a commands_changed message', () => {
+  it('reports the slash-command list with descriptions from a commands_changed message', () => {
     const emitted = run([
       commandsChanged([
         { name: 'compact', description: 'Compact history', argumentHint: '[instructions]' }

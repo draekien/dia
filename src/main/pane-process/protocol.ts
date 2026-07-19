@@ -107,7 +107,7 @@ export const TurnErrored = Schema.TaggedStruct('TurnErrored', { error: PaneError
 export const SessionStarted = Schema.TaggedStruct('SessionStarted', {
   sessionId: Schema.String
 })
-/** Sent by the pane subprocess to main with the slash commands available in the session, so the renderer can offer them in the `/` popover. Emitted from the session `init` message (command names only, empty hints) and again whenever a `commands_changed` message enriches them. Each list is the complete, replacement set. */
+/** Sent by the pane subprocess to main with the slash commands available in the session, so the renderer can offer them in the `/` popover. Emitted once at session start from a `query.supportedCommands()` warm-up (names plus descriptions and argument hints, so the popover is populated before the user's first turn) and again whenever a `commands_changed` message reports a mid-session change. Each list is the complete, replacement set. */
 export const SlashCommandsAvailable = Schema.TaggedStruct('SlashCommandsAvailable', {
   commands: Schema.Array(SlashCommandInfo)
 })

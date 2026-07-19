@@ -1,9 +1,9 @@
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import { describe, expect, it } from 'vitest'
 import {
+  activeSlashToken,
   filterSlashCommands,
   slashCommandCompletion,
-  slashCommandQuery,
   wrapHighlight
 } from './slash-command-menu'
 
@@ -13,41 +13,61 @@ const command = (name: string, description = '', argumentHint = ''): SlashComman
   argumentHint
 })
 
-describe('slashCommandQuery', () => {
-  it('returns an empty query for a lone slash', () => {
-    expect(slashCommandQuery('/')).toBe('')
+describe('activeSlashToken', () => {
+  it('returns an empty query spanning a lone slash', () => {
+    expect(activeSlashToken('/', 1)).toEqual({ query: '', start: 0, end: 1 })
   })
 
   it('returns the partial name while typing a command', () => {
-    expect(slashCommandQuery('/cl')).toBe('cl')
+    expect(activeSlashToken('/cl', 3)).toEqual({ query: 'cl', start: 0, end: 3 })
   })
 
   it('returns the full name for a complete command with no trailing space', () => {
-    expect(slashCommandQuery('/clear')).toBe('clear')
+    expect(activeSlashToken('/clear', 6)).toEqual({ query: 'clear', start: 0, end: 6 })
   })
 
   it('accepts hyphens in command names', () => {
-    expect(slashCommandQuery('/output-style')).toBe('output-style')
+    expect(activeSlashToken('/output-style', 13)).toEqual({
+      query: 'output-style',
+      start: 0,
+      end: 13
+    })
   })
 
   it('closes once a space follows the command (the argument boundary)', () => {
-    expect(slashCommandQuery('/clear ')).toBeNull()
+    expect(activeSlashToken('/clear ', 7)).toBeNull()
   })
 
   it('closes when the command already has an argument', () => {
-    expect(slashCommandQuery('/compact keep the plan')).toBeNull()
+    expect(activeSlashToken('/compact keep the plan', 22)).toBeNull()
   })
 
-  it('does not treat ordinary prose as a query', () => {
-    expect(slashCommandQuery('hello there')).toBeNull()
+  it('does not treat ordinary prose as a token', () => {
+    expect(activeSlashToken('hello there', 11)).toBeNull()
   })
 
-  it('does not match a slash that is not the first character', () => {
-    expect(slashCommandQuery('a/b')).toBeNull()
+  it('does not match a slash that is not first on its line', () => {
+    expect(activeSlashToken('a/b', 3)).toBeNull()
   })
 
   it('returns null for empty input', () => {
-    expect(slashCommandQuery('')).toBeNull()
+    expect(activeSlashToken('', 0)).toBeNull()
+  })
+
+  it('detects a second command on its own line, spanning only that line', () => {
+    expect(activeSlashToken('/clear\n/compact', 15)).toEqual({
+      query: 'compact',
+      start: 7,
+      end: 15
+    })
+  })
+
+  it('targets the line the caret is on, not a later one', () => {
+    expect(activeSlashToken('/clear\n/compact', 3)).toEqual({ query: 'clear', start: 0, end: 6 })
+  })
+
+  it('is null when the caret sits on a prose line below a command line', () => {
+    expect(activeSlashToken('/clear\nhello', 11)).toBeNull()
   })
 })
 
@@ -89,8 +109,19 @@ describe('slashCommandCompletion', () => {
     expect(slashCommandCompletion(command('clear'))).toBe('/clear ')
   })
 
-  it('produces text that no longer opens the menu', () => {
-    expect(slashCommandQuery(slashCommandCompletion(command('compact')))).toBeNull()
+  it('produces a line that no longer opens the menu', () => {
+    const completion = slashCommandCompletion(command('compact'))
+    expect(activeSlashToken(completion, completion.length)).toBeNull()
+  })
+
+  it('splices over the active token range to complete a second command in place', () => {
+    const input = '/clear\n/comp'
+    const token = activeSlashToken(input, input.length)
+    expect(token).not.toBeNull()
+    if (token === null) return
+    const completion = slashCommandCompletion(command('compact'))
+    const next = input.slice(0, token.start) + completion + input.slice(token.end)
+    expect(next).toBe('/clear\n/compact ')
   })
 })
 

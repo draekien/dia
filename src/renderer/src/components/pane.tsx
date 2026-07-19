@@ -18,9 +18,10 @@ import {
 } from '@renderer/components/ui/select'
 import { PERMISSION_MODE_OPTIONS } from '@renderer/lib/permission-modes'
 import {
+  type ActiveSlashToken,
+  activeSlashToken,
   filterSlashCommands,
   slashCommandCompletion,
-  slashCommandQuery,
   wrapHighlight
 } from '@renderer/lib/slash-command-menu'
 import { THINKING_LEVEL_OPTIONS } from '@renderer/lib/thinking-levels'
@@ -46,7 +47,7 @@ import type {
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, Brain, Check, ShieldCheck } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PaneMessage, ToolCallPart } from '../lib/pane-chat'
 import { emptyPaneChatState } from '../lib/pane-chat'
 import { paneChatAtom, paneSendAtom } from '../lib/pane-chat-atoms'
@@ -289,6 +290,8 @@ function PaneChat({
 
   const [slashHighlight, setSlashHighlight] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
+  const [caret, setCaret] = useState(0)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const { data: pendingPermission = null } = useQuery<PanePermissionRequested | null>({
     queryKey: pendingPermissionQueryKey,
@@ -396,37 +399,54 @@ function PaneChat({
       >
         <form.Field name="text">
           {(field) => {
-            const query = slashCommandQuery(field.state.value)
-            const matches = query === null ? [] : filterSlashCommands(chat.slashCommands, query)
+            const token = activeSlashToken(field.state.value, caret)
+            const matches =
+              token === null ? [] : filterSlashCommands(chat.slashCommands, token.query)
             const isMenuOpen = matches.length > 0 && !slashDismissed
             const highlight = wrapHighlight(slashHighlight, 0, matches.length)
 
-            const changeText = (value: string): void => {
+            const changeText = (value: string, nextCaret: number): void => {
               field.handleChange(value)
+              setCaret(nextCaret)
               setSlashDismissed(false)
               setSlashHighlight(0)
             }
-            const selectCommand = (command: SlashCommandInfo): void => {
-              field.handleChange(slashCommandCompletion(command))
+            const selectCommand = (command: SlashCommandInfo, at: ActiveSlashToken): void => {
+              const completion = slashCommandCompletion(command)
+              const value =
+                field.state.value.slice(0, at.start) + completion + field.state.value.slice(at.end)
+              const nextCaret = at.start + completion.length
+              field.handleChange(value)
               setSlashHighlight(0)
+              requestAnimationFrame(() => {
+                const element = textareaRef.current
+                if (element === null) return
+                element.selectionStart = nextCaret
+                element.selectionEnd = nextCaret
+                setCaret(nextCaret)
+              })
             }
 
             return (
               <div className="relative">
-                {isMenuOpen && (
+                {isMenuOpen && token !== null && (
                   <SlashCommandMenu
                     paneId={paneId}
                     commands={matches}
                     highlightedIndex={highlight}
-                    onSelect={selectCommand}
+                    onSelect={(command) => selectCommand(command, token)}
                     onHighlight={setSlashHighlight}
                   />
                 )}
                 <InputGroup>
                   <InputGroupTextarea
+                    ref={textareaRef}
                     className="min-h-14"
                     value={field.state.value}
-                    onChange={(event) => changeText(event.target.value)}
+                    onChange={(event) =>
+                      changeText(event.target.value, event.target.selectionStart)
+                    }
+                    onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
                     onKeyDown={(event) => {
                       if (isMenuOpen) {
                         if (event.key === 'ArrowDown') {
@@ -451,7 +471,9 @@ function PaneChat({
                         ) {
                           event.preventDefault()
                           const command = matches[highlight]
-                          if (command !== undefined) selectCommand(command)
+                          if (command !== undefined && token !== null) {
+                            selectCommand(command, token)
+                          }
                           return
                         }
                       }

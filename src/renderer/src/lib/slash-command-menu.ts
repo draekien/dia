@@ -1,18 +1,31 @@
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
 
-const SLASH_QUERY = /^\/([\w-]*)$/
+const SLASH_LINE = /^\/([\w-]*)$/
+
+/** The `/` command token active at the caret: its filter `query` and the input
+ * range (`start`..`end`) it occupies, used to splice in a completion. */
+export interface ActiveSlashToken {
+  readonly query: string
+  readonly start: number
+  readonly end: number
+}
 
 /**
- * Extracts the active command query from a pane input, or `null` when the input
- * is not a bare slash token. Matches only a leading `/` followed by command-name
- * characters (`[\w-]`) with nothing else — so `/`, `/cl`, and `/clear` yield
- * `''`, `'cl'`, `'clear'`, while `'/clear '` (trailing space), `'/clear arg'`,
- * and text not starting with `/` yield `null`. Use to decide whether the `/`
- * command menu is open: a non-`null` result is the prefix to filter by.
+ * Finds the `/` command token being typed on the line that contains `caret`, so
+ * the popover can assist several commands in one message (one per line). A line
+ * qualifies only when it is exactly a leading `/` followed by command-name
+ * characters (`[\w-]`) — so `/`, `/cl`, `/clear` yield queries `''`, `'cl'`,
+ * `'clear'`, while a line with a trailing space, an argument (`/clear arg`), or
+ * ordinary prose yields `null`. Returns the query plus the line's `start`/`end`
+ * range for {@link slashCommandCompletion} to replace, or `null` when the caret's
+ * line is not a bare command token. `caret` is the textarea `selectionStart`.
  */
-export const slashCommandQuery = (input: string): string | null => {
-  const match = SLASH_QUERY.exec(input)
-  return match === null ? null : match[1]
+export const activeSlashToken = (input: string, caret: number): ActiveSlashToken | null => {
+  const start = caret === 0 ? 0 : input.lastIndexOf('\n', caret - 1) + 1
+  const nextNewline = input.indexOf('\n', caret)
+  const end = nextNewline === -1 ? input.length : nextNewline
+  const match = SLASH_LINE.exec(input.slice(start, end))
+  return match === null ? null : { query: match[1], start, end }
 }
 
 /**
@@ -29,9 +42,10 @@ export const filterSlashCommands = (
 }
 
 /**
- * The input text produced by choosing `command`: its name prefixed with `/` and
- * a trailing space, so the caret sits ready for arguments and
- * {@link slashCommandQuery} of the result is `null` (closing the menu).
+ * The line text produced by choosing `command`: its name prefixed with `/` and
+ * a trailing space, so the caret sits ready for arguments and the line is no
+ * longer a bare token, closing the menu (see {@link activeSlashToken}). Splice
+ * this over the active token's `start`..`end` range.
  */
 export const slashCommandCompletion = (command: SlashCommandInfo): string => `/${command.name} `
 

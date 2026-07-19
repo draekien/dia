@@ -95,16 +95,14 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
 
   const step = (message: SDKMessage): ReadonlyArray<OutboundMessage> => {
     if (message.type === 'system' && message.subtype === 'init') {
-      return [
-        SessionStarted.make({ sessionId: message.session_id }),
-        SlashCommandsAvailable.make({
-          commands: message.slash_commands.map((name) => ({
-            name,
-            description: '',
-            argumentHint: ''
-          }))
-        })
-      ]
+      // The streamed init message lists command names only (no descriptions). The
+      // full list -- with descriptions and argument hints -- is fetched once at
+      // session start via query.supportedCommands() in agent-session.ts, so this
+      // branch deliberately emits only SessionStarted and leaves the command list
+      // to that warm-up (and to later commands_changed messages). Emitting the
+      // names-only list here too would race the warm-up and could clobber the
+      // enriched list with empty descriptions.
+      return [SessionStarted.make({ sessionId: message.session_id })]
     }
 
     if (message.type === 'system' && message.subtype === 'commands_changed') {

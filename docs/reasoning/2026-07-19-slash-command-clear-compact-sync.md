@@ -11,13 +11,29 @@ mechanical; the two mutating commands each hid a non-obvious trap.
 
 ## Reasoning / Learning
 
-**Two SDK messages describe the command list, not one.** `system/init` carries
-`slash_commands: string[]` — names only, no descriptions. A later
-`system/commands_changed` carries `SlashCommand[]` with `description` and
-`argumentHint`. So the shared `SlashCommandInfo { name, description,
-argumentHint }` is populated name-only from init (empty hint/description
-strings) and *enriched* when `commands_changed` arrives. Both are treated as a
-full replacement set, not a merge — the reducer just overwrites `slashCommands`.
+**The command list comes from `query.supportedCommands()`, not the streamed
+`system/init`.** (Superseded the original init-based approach — see the update
+below.) `system/init` carries `slash_commands: string[]` — names only, no
+descriptions — and is only emitted once the SDK consumes the first prompt, so
+relying on it left the popover empty (and description-less) until the user's
+first turn. The SDK runs its control-protocol `initialize()` eagerly when
+`query()` is constructed; `query.supportedCommands()` awaits that and returns
+the full `SlashCommand[]` (name, description, argumentHint) *before any prompt*.
+So `agent-session.ts` fires a forked `supportedCommands()` warm-up right after
+`query()` on every session start/resume and emits `SlashCommandsAvailable` from
+it; the reducer's `init` branch emits only `SessionStarted`. A later
+`system/commands_changed` still overwrites the list for mid-session changes
+(e.g. skills discovered in a subdirectory). Every list is a full replacement,
+not a merge.
+
+> **Update (2026-07-19, later same day):** the initial implementation drove the
+> list from the streamed `system/init` message (names only) and expected
+> `commands_changed` to enrich it. In practice `commands_changed` rarely fires,
+> so descriptions never appeared, and init doesn't arrive until the first
+> prompt, so the popover was empty on a fresh pane. Switching to the
+> `supportedCommands()` warm-up fixed both. If `supportedCommands()` ever fails,
+> the pane simply has no commands until a `commands_changed` arrives — a rare,
+> logged degradation.
 
 **`/clear` must persist the new conversation id or resume silently reloads the
 old transcript.** `/clear` surfaces as a top-level `conversation_reset` SDK
