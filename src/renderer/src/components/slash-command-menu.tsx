@@ -1,6 +1,7 @@
 import { cn } from '@renderer/lib/utils'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import { useEffect, useRef } from 'react'
+import { ScrollArea } from './ui/scroll-area'
 
 /**
  * The DOM id of the menu's listbox for a pane, used to wire the input's
@@ -45,59 +46,67 @@ export function SlashCommandMenu({
   }, [highlightedIndex])
 
   return (
-    <div
-      ref={listRef}
-      id={slashMenuListboxId(paneId)}
-      role="listbox"
-      aria-label="Slash commands"
-      className="scrollbar-thin absolute right-0 bottom-full left-0 z-50 mb-2 max-h-64 overflow-x-hidden overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 motion-reduce:animate-none"
+    <ScrollArea
+      className={cn(
+        'absolute right-0 bottom-full left-0 z-50 mb-2 rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 motion-reduce:animate-none',
+        '[&>[data-slot=scroll-area-viewport]]:max-h-64',
+        '[&>[data-slot=scroll-area-viewport]>div]:block!'
+      )}
     >
-      {commands.map((command, index) => {
-        const isActive = index === highlightedIndex
-        return (
-          // The combobox owns focus and keyboard nav (aria-activedescendant on the input);
-          // options are intentionally non-focusable and selected via the input's Enter/Tab.
-          // biome-ignore lint/a11y/useFocusableInteractive: activedescendant pattern keeps focus on the input, not the options
-          // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard selection is handled at the input, onClick is the pointer affordance
-          <div
-            key={command.name}
-            id={slashMenuOptionId(paneId, index)}
-            role="option"
-            aria-selected={isActive}
-            onMouseDown={(event) => event.preventDefault()}
-            onMouseMove={() => onHighlight(index)}
-            onClick={() => onSelect(command)}
-            className={cn(
-              'flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm',
-              isActive && 'bg-accent text-accent-foreground'
-            )}
-          >
-            <span className="shrink-0 whitespace-nowrap font-mono" title={`/${command.name}`}>
-              /{command.name}
-            </span>
-            {command.argumentHint !== '' && (
-              <span
-                className={cn(
-                  'shrink-0 whitespace-nowrap font-mono text-xs',
-                  isActive ? 'text-accent-foreground/70' : 'text-muted-foreground'
-                )}
-              >
-                {command.argumentHint}
+      <div
+        ref={listRef}
+        id={slashMenuListboxId(paneId)}
+        role="listbox"
+        aria-label="Slash commands"
+        className="p-1"
+      >
+        {commands.map((command, index) => {
+          const isActive = index === highlightedIndex
+          return (
+            // The combobox owns focus and keyboard nav (aria-activedescendant on the input);
+            // options are intentionally non-focusable and selected via the input's Enter/Tab.
+            // biome-ignore lint/a11y/useFocusableInteractive: activedescendant pattern keeps focus on the input, not the options
+            // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard selection is handled at the input, onClick is the pointer affordance
+            <div
+              key={command.name}
+              id={slashMenuOptionId(paneId, index)}
+              role="option"
+              aria-selected={isActive}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseMove={() => onHighlight(index)}
+              onClick={() => onSelect(command)}
+              className={cn(
+                'flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm',
+                isActive && 'bg-accent text-accent-foreground'
+              )}
+            >
+              <span className="shrink-0 whitespace-nowrap font-mono" title={`/${command.name}`}>
+                /{command.name}
               </span>
-            )}
-            {command.description !== '' && (
-              <span
-                className={cn(
-                  'min-w-0 flex-1 truncate text-xs',
-                  isActive ? 'text-accent-foreground/70' : 'text-muted-foreground'
-                )}
-              >
-                {command.description}
-              </span>
-            )}
-          </div>
-        )
-      })}
-    </div>
+              {command.argumentHint !== '' && (
+                <span
+                  className={cn(
+                    'shrink-0 whitespace-nowrap font-mono text-xs',
+                    isActive ? 'text-accent-foreground/70' : 'text-muted-foreground'
+                  )}
+                >
+                  {command.argumentHint}
+                </span>
+              )}
+              {command.description !== '' && (
+                <span
+                  className={cn(
+                    'min-w-0 flex-1 truncate text-xs',
+                    isActive ? 'text-accent-foreground/70' : 'text-muted-foreground'
+                  )}
+                >
+                  {command.description}
+                </span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </ScrollArea>
   )
 }
