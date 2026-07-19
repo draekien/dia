@@ -50,7 +50,7 @@ export function SlashCommandMenu({
       id={slashMenuListboxId(paneId)}
       role="listbox"
       aria-label="Slash commands"
-      className="absolute right-0 bottom-full left-0 z-50 mb-2 max-h-64 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 motion-reduce:animate-none"
+      className="scrollbar-thin absolute right-0 bottom-full left-0 z-50 mb-2 max-h-64 overflow-x-hidden overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 motion-reduce:animate-none"
     >
       {commands.map((command, index) => {
         const isActive = index === highlightedIndex
@@ -68,18 +68,30 @@ export function SlashCommandMenu({
             onMouseMove={() => onHighlight(index)}
             onClick={() => onSelect(command)}
             className={cn(
-              'flex cursor-pointer items-baseline gap-2 rounded-sm px-2 py-1.5 text-sm',
+              'flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm',
               isActive && 'bg-accent text-accent-foreground'
             )}
           >
-            <span className="font-mono">/{command.name}</span>
+            <span className="shrink-0 whitespace-nowrap font-mono" title={`/${command.name}`}>
+              /{command.name}
+            </span>
             {command.argumentHint !== '' && (
-              <span className="font-mono text-xs text-muted-foreground">
+              <span
+                className={cn(
+                  'shrink-0 whitespace-nowrap font-mono text-xs',
+                  isActive ? 'text-accent-foreground/70' : 'text-muted-foreground'
+                )}
+              >
                 {command.argumentHint}
               </span>
             )}
             {command.description !== '' && (
-              <span className="ml-auto truncate pl-4 text-xs text-muted-foreground">
+              <span
+                className={cn(
+                  'min-w-0 flex-1 truncate text-xs',
+                  isActive ? 'text-accent-foreground/70' : 'text-muted-foreground'
+                )}
+              >
                 {command.description}
               </span>
             )}

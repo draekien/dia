@@ -288,6 +288,38 @@
   background: transparent;
 }
 
+/* Replace the OS-native scrollbar with a restrained overlay pill drawn from the
+   neutral ink ramp, so scroll surfaces read as part of the app rather than the
+   platform. Chromium-only (Electron), matching the .typeset pre treatment above.
+   `scrollbar-none` hides the track entirely; `scrollbar-gutter-stable` reserves
+   its width so toggling visibility never shifts layout. */
+@utility scrollbar-thin {
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  &::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background-color: color-mix(in oklch, var(--ink) 22%, transparent);
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklch, var(--ink) 38%, transparent);
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@utility scrollbar-none {
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
 /* Theme-aware syntax highlighting. Replaces the dark-only highlight.js theme
    stylesheet: each highlight.js token class maps to a `--syntax-*` role that
    flips between github-light (:root) and github-dark (.dark) values above. */
