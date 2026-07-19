@@ -1,5 +1,14 @@
 # Bullet 09 — Pending-Request Persistence Across Restart
 
+> **Status: Parked (not doing).** Blocked on the T1 spike, which was declined.
+> The whole bullet depends on T1 observing how the Agent SDK resumes an
+> unanswered tool call across a restart — and dia surfaces prompts via a
+> blocking `canUseTool` callback (`src/main/pane-process/agent-session.ts`), not
+> the SDK's `defer` hook that the plan below assumes. Until T1 is run, the
+> mechanism (adopt `defer` vs. keep blocking `canUseTool` and re-drive on
+> `resume`) is undetermined, so T2–T5 cannot be designed correctly. Unpark by
+> running T1 first.
+
 **Goal:** A permission or clarifying-question prompt left unanswered when dia is closed is still present and answerable after dia is reopened, instead of being silently lost.
 
 **Serves these PRD items:**
