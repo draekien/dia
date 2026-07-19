@@ -15,6 +15,19 @@ function resolveIsDark(theme: ThemePreference): boolean {
   return theme === 'dark'
 }
 
+function toSrgbHex(cssColor: string): string {
+  const canvas = document.createElement('canvas')
+  canvas.width = 1
+  canvas.height = 1
+  const ctx = canvas.getContext('2d')
+  if (ctx === null) return cssColor
+  ctx.fillStyle = cssColor
+  ctx.fillRect(0, 0, 1, 1)
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+  const hex = (n: number): string => n.toString(16).padStart(2, '0')
+  return `#${hex(r)}${hex(g)}${hex(b)}`
+}
+
 function readToken(variable: string): string {
   const probe = document.createElement('span')
   probe.style.color = `var(${variable})`
@@ -22,7 +35,7 @@ function readToken(variable: string): string {
   document.body.appendChild(probe)
   const value = getComputedStyle(probe).color
   probe.remove()
-  return value
+  return toSrgbHex(value)
 }
 
 function pushTitleBarOverlay(): void {
