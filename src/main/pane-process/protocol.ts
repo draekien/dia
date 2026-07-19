@@ -41,9 +41,10 @@ export const ResolvePlanReview = Schema.TaggedStruct('ResolvePlanReview', {
   requestId: Schema.String,
   approved: Schema.Boolean
 })
-/** Sent by main to the pane subprocess to rewind the pane to a prior checkpoint: `messageUuid` is a user-turn UUID previously surfaced via `CheckpointAvailable`. The pane restores the working tree to that turn's pre-edit state (Agent SDK `rewindFiles`) and branches the conversation at that turn (`resumeSessionAt` + `forkSession`), so files and conversation are rewound together. On success the pane replies with `RewoundToCheckpoint`. */
+/** Sent by main to the pane subprocess to rewind the pane to a prior checkpoint: `messageUuid` is a user-turn UUID previously surfaced via `CheckpointAvailable`. The pane restores the working tree to that turn's pre-edit state (Agent SDK `rewindFiles`) and branches the conversation at the matching `resumeAnchorUuid` recorded for that turn (`resumeSessionAt` + `forkSession`, or a fresh unresumed session when no prior assistant turn exists), so files and conversation are rewound together and exclude this turn and everything after it. On success the pane replies with `RewoundToCheckpoint`. */
 export const RewindToCheckpoint = Schema.TaggedStruct('RewindToCheckpoint', {
-  messageUuid: Schema.String
+  messageUuid: Schema.String,
+  resumeAnchorUuid: Schema.optional(Schema.String)
 })
 /** The full set of messages main may send to a pane subprocess. Decode inbound IPC payloads against this union before acting on them. */
 export const InboundMessage = Schema.Union(
@@ -130,9 +131,10 @@ export const ConversationCompacted = Schema.TaggedStruct('ConversationCompacted'
 export const ConversationReset = Schema.TaggedStruct('ConversationReset', {
   newSessionId: Schema.String
 })
-/** Sent by the pane subprocess to main once per user turn, carrying the turn's `messageUuid`. This UUID is the file-checkpoint id (Agent SDK `rewindFiles`) and the conversation-branch point (`resumeSessionAt`) for that turn; main forwards it to the renderer so a "rewind to here" affordance can be anchored to the turn. Emitted only when file checkpointing is enabled (the UUID comes from replayed user messages). */
+/** Sent by the pane subprocess to main once per user turn, carrying the turn's `messageUuid` (the file-checkpoint id for Agent SDK `rewindFiles`) and, when a prior assistant turn exists, `resumeAnchorUuid` — the *assistant* message uuid `resumeSessionAt` must branch at to resume the conversation up to and including that reply, excluding this turn and everything after it. `resumeAnchorUuid` is absent when this is the first turn of the conversation (rewinding it means starting a fresh, unresumed session). Main forwards this so a "rewind to here" affordance can be anchored to the turn. Emitted only when file checkpointing is enabled (the UUID comes from replayed user messages). */
 export const CheckpointAvailable = Schema.TaggedStruct('CheckpointAvailable', {
-  messageUuid: Schema.String
+  messageUuid: Schema.String,
+  resumeAnchorUuid: Schema.optional(Schema.String)
 })
 /** Sent by the pane subprocess to main after a `RewindToCheckpoint` completes successfully, carrying the `messageUuid` that was rewound to. The pane's files and conversation are now branched at that turn; the forked session's new id arrives separately via `SessionStarted`. Main forwards this so the renderer can truncate the displayed transcript at that turn. */
 export const RewoundToCheckpoint = Schema.TaggedStruct('RewoundToCheckpoint', {

@@ -355,7 +355,7 @@ export function wireCommands(deps: {
             'RewindToCheckpoint',
             command.paneId,
             'Failed to rewind pane to checkpoint',
-            (handle) => handle.rewindToCheckpoint(command.messageUuid)
+            (handle) => handle.rewindToCheckpoint(command.messageUuid, command.resumeAnchorUuid)
           )
         ),
         Match.exhaustive

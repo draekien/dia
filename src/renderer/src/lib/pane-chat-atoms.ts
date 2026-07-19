@@ -110,19 +110,25 @@ export const paneSendAtom = Atom.family((paneId: string) =>
   )
 )
 
+/** The pair of uuids identifying a rewind target: the user turn's checkpoint id and, when a prior assistant turn exists, the branch point to resume from. */
+export interface RewindTarget {
+  readonly checkpointUuid: string
+  readonly resumeAnchorUuid?: string
+}
+
 /**
- * Per-pane rewind action, keyed by `paneId`. Set it with the `checkpointUuid` of
- * a user turn to rewind that pane's files and conversation back to that point
- * (ADR-0018). It dispatches the request to the pane process; the resulting
- * transcript truncation arrives back through {@link paneChatAtom}'s IPC fold on
- * `PaneRewoundToCheckpoint`, so this performs no optimistic state change. Bind
- * with `useAtomSet(paneRewindAtom(paneId))`.
+ * Per-pane rewind action, keyed by `paneId`. Set it with a {@link RewindTarget}
+ * (a user turn's `checkpointUuid` and optional `resumeAnchorUuid`) to rewind that
+ * pane's files and conversation back to that point (ADR-0018). It dispatches the
+ * request to the pane process; the resulting transcript truncation arrives back
+ * through {@link paneChatAtom}'s IPC fold on `PaneRewoundToCheckpoint`, so this
+ * performs no optimistic state change. Bind with `useAtomSet(paneRewindAtom(paneId))`.
  */
 export const paneRewindAtom = Atom.family((paneId: string) =>
   Atom.writable(
     (): null => null,
-    (_ctx, checkpointUuid: string) => {
-      window.dia.rewindToCheckpoint(paneId, checkpointUuid)
+    (_ctx, target: RewindTarget) => {
+      window.dia.rewindToCheckpoint(paneId, target.checkpointUuid, target.resumeAnchorUuid)
     }
   )
 )

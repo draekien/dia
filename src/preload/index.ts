@@ -114,10 +114,16 @@ const api: DiaApi = {
   focusPane(paneId) {
     ipcRenderer.send(CHANNEL.command, encodeFocusPane(FocusPane.make({ paneId })))
   },
-  rewindToCheckpoint(paneId, messageUuid) {
+  rewindToCheckpoint(paneId, messageUuid, resumeAnchorUuid) {
     ipcRenderer.send(
       CHANNEL.command,
-      encodeRewindToCheckpoint(RewindToCheckpoint.make({ paneId, messageUuid }))
+      encodeRewindToCheckpoint(
+        RewindToCheckpoint.make({
+          paneId,
+          messageUuid,
+          ...(resumeAnchorUuid !== undefined ? { resumeAnchorUuid } : {})
+        })
+      )
     )
   },
   getInitialLayout() {

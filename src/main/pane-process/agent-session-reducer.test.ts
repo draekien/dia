@@ -439,6 +439,30 @@ describe('makeSessionEventReducer — file-checkpoint anchoring', () => {
     expect(checkpoints(emitted)).toEqual([])
   })
 
+  it('carries the preceding assistant uuid as resumeAnchorUuid', () => {
+    const uuid = 'ckpt-1111-4111-8111-111111111111'
+
+    const emitted = run([
+      replayedUserPrompt('first prompt', 'ckpt-0000-4000-8000-000000000000'),
+      assistantMessage([{ type: 'text', text: 'a reply', citations: null }]),
+      replayedUserPrompt('second prompt', uuid)
+    ])
+
+    expect(emitted).toContainEqual({
+      _tag: 'CheckpointAvailable',
+      messageUuid: uuid,
+      resumeAnchorUuid: '00000000-0000-0000-0000-000000000000'
+    })
+  })
+
+  it('omits resumeAnchorUuid on the first turn (no preceding assistant)', () => {
+    const uuid = 'ckpt-1111-4111-8111-111111111111'
+
+    const emitted = run([replayedUserPrompt('first prompt', uuid)])
+
+    expect(emitted).toEqual([{ _tag: 'CheckpointAvailable', messageUuid: uuid }])
+  })
+
   it('does not treat a tool-result user message as a checkpoint even when it carries a uuid', () => {
     const emitted = run([
       toolUseStart(0, 'tool-1', 'Read'),

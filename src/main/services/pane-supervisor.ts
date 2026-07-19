@@ -128,7 +128,10 @@ export interface PaneHandle {
   ) => Effect.Effect<void>
   readonly resolveQuestion: (requestId: string, response: QuestionResponse) => Effect.Effect<void>
   readonly resolvePlanReview: (requestId: string, approved: boolean) => Effect.Effect<void>
-  readonly rewindToCheckpoint: (messageUuid: string) => Effect.Effect<void>
+  readonly rewindToCheckpoint: (
+    messageUuid: string,
+    resumeAnchorUuid: string | undefined
+  ) => Effect.Effect<void>
   readonly subscribe: () => Stream.Stream<IpcEvent>
   readonly markErrored: (error: PaneError) => Effect.Effect<void>
 }
@@ -243,7 +246,13 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
       Option.some<IpcEvent>(PaneConversationReset.make({ paneId }))
     ),
     Match.tag('CheckpointAvailable', (m) =>
-      Option.some<IpcEvent>(PaneCheckpointAvailable.make({ paneId, messageUuid: m.messageUuid }))
+      Option.some<IpcEvent>(
+        PaneCheckpointAvailable.make({
+          paneId,
+          messageUuid: m.messageUuid,
+          ...(m.resumeAnchorUuid !== undefined ? { resumeAnchorUuid: m.resumeAnchorUuid } : {})
+        })
+      )
     ),
     Match.tag('RewoundToCheckpoint', (m) =>
       Option.some<IpcEvent>(PaneRewoundToCheckpoint.make({ paneId, messageUuid: m.messageUuid }))
@@ -532,14 +541,22 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
         ),
         Effect.andThen(applyAttention(Idle.make({})))
       ),
-    rewindToCheckpoint: (messageUuid) =>
+    rewindToCheckpoint: (messageUuid, resumeAnchorUuid) =>
       Effect.logDebug('Sending rewind request to pane process', {
         paneId: config.paneId,
-        messageUuid
+        messageUuid,
+        resumeAnchorUuid
       }).pipe(
         Effect.andThen(
           Effect.sync(() =>
-            child.postMessage(encodeInbound(RewindToCheckpoint.make({ messageUuid })))
+            child.postMessage(
+              encodeInbound(
+                RewindToCheckpoint.make({
+                  messageUuid,
+                  ...(resumeAnchorUuid !== undefined ? { resumeAnchorUuid } : {})
+                })
+              )
+            )
           )
         )
       ),

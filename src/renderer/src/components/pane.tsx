@@ -595,7 +595,12 @@ function PaneChat({
             <AlertDialogAction
               variant="destructive"
               onClick={() => {
-                if (rewindTarget?.checkpointUuid !== undefined) rewind(rewindTarget.checkpointUuid)
+                if (rewindTarget?.checkpointUuid !== undefined) {
+                  rewind({
+                    checkpointUuid: rewindTarget.checkpointUuid,
+                    resumeAnchorUuid: rewindTarget.resumeAnchorUuid
+                  })
+                }
                 setRewindTarget(null)
               }}
             >

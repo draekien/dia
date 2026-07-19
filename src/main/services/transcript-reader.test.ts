@@ -95,7 +95,32 @@ describe('sessionMessagesToConversation', () => {
     assert.deepStrictEqual(result, [
       { role: 'user', content: 'first', checkpointUuid: 'turn-1' },
       { role: 'assistant', content: 'second' },
-      { role: 'user', content: 'third', checkpointUuid: 'turn-4' }
+      { role: 'user', content: 'third', checkpointUuid: 'turn-4', resumeAnchorUuid: 'turn-2' }
+    ])
+  })
+
+  it('anchors the resume uuid to the most recent assistant turn, including tool-only ones', () => {
+    const result = sessionMessagesToConversation([
+      sessionMessage('user', { role: 'user', content: 'first' }, 'turn-1'),
+      sessionMessage(
+        'assistant',
+        {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { path: '/x' } }]
+        },
+        'turn-2'
+      ),
+      sessionMessage(
+        'user',
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] },
+        'turn-3'
+      ),
+      sessionMessage('user', { role: 'user', content: 'second' }, 'turn-4')
+    ])
+
+    assert.deepStrictEqual(result, [
+      { role: 'user', content: 'first', checkpointUuid: 'turn-1' },
+      { role: 'user', content: 'second', checkpointUuid: 'turn-4', resumeAnchorUuid: 'turn-2' }
     ])
   })
 

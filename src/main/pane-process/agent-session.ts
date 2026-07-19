@@ -411,12 +411,17 @@ const program = Effect.gen(function* () {
   })
 
   // Rewinds the pane to a prior user turn: restore the working tree to that turn's pre-edit state
-  // via the live query's rewindFiles, then tear the query down and resume it branched at the same
-  // turn (resumeSessionAt + forkSession) so the conversation the agent sees matches the files on
-  // disk. A no-op (logged) when there is no live session, and aborted without a restart when the
-  // file rewind itself does not succeed, so a failed rewind never desyncs conversation from disk.
+  // via the live query's rewindFiles(userMessageUuid), then tear the query down and resume it
+  // branched just before that turn so the conversation the agent sees matches the files on disk.
+  // The branch point is the *preceding assistant* turn's uuid (resumeAnchorUuid) -- the SDK's
+  // resumeSessionAt resumes up to and including an assistant message, so it excludes the rewound
+  // user turn and everything after. When there is no preceding assistant turn (rewinding the first
+  // turn) we start a fresh, unresumed session instead. A no-op (logged) when there is no live
+  // session, and aborted without a restart when the file rewind itself does not succeed, so a
+  // failed rewind never desyncs conversation from disk.
   const rewindToCheckpoint = Effect.fn('AgentSession.rewindToCheckpoint')(function* (
-    messageUuid: string
+    messageUuid: string,
+    resumeAnchorUuid: string | undefined
   ) {
     const configOpt = yield* Ref.get(configRef)
     const sessionIdOpt = yield* Ref.get(sessionIdRef)
@@ -449,6 +454,7 @@ const program = Effect.gen(function* () {
     yield* Effect.logInfo('Rewound files to checkpoint; forking conversation', {
       paneId: config.paneId,
       messageUuid,
+      resumeAnchorUuid,
       filesChanged: result.value.filesChanged?.length ?? 0
     })
 
@@ -458,7 +464,11 @@ const program = Effect.gen(function* () {
 
     const currentModeOpt = yield* modeController.currentMode
     const permissionMode = Option.getOrElse(currentModeOpt, () => config.permissionMode)
-    yield* startSession({ ...config, permissionMode }, sessionId, messageUuid)
+    if (resumeAnchorUuid !== undefined) {
+      yield* startSession({ ...config, permissionMode }, sessionId, resumeAnchorUuid)
+    } else {
+      yield* startSession({ ...config, permissionMode }, undefined, undefined)
+    }
     yield* postOutbound(RewoundToCheckpoint.make({ messageUuid }))
   })
 
@@ -498,7 +508,7 @@ const program = Effect.gen(function* () {
         yield* dropPendingRequests()
         yield* Queue.offer(promptQueue, toSDKUserMessage(inbound.text))
       } else if (inbound._tag === 'RewindToCheckpoint') {
-        yield* rewindToCheckpoint(inbound.messageUuid)
+        yield* rewindToCheckpoint(inbound.messageUuid, inbound.resumeAnchorUuid)
       } else {
         yield* resolveRequest(inbound.requestId, inbound.response)
       }

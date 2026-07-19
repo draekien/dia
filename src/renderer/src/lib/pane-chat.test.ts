@@ -64,8 +64,12 @@ const conversationCompacted = (
     ...(postTokens !== undefined ? { postTokens } : {})
   })
 const conversationReset = () => PaneConversationReset.make({ paneId: PANE })
-const checkpointAvailable = (messageUuid: string) =>
-  PaneCheckpointAvailable.make({ paneId: PANE, messageUuid })
+const checkpointAvailable = (messageUuid: string, resumeAnchorUuid?: string) =>
+  PaneCheckpointAvailable.make({
+    paneId: PANE,
+    messageUuid,
+    ...(resumeAnchorUuid !== undefined ? { resumeAnchorUuid } : {})
+  })
 const rewoundToCheckpoint = (messageUuid: string) =>
   PaneRewoundToCheckpoint.make({ paneId: PANE, messageUuid })
 
@@ -539,6 +543,24 @@ describe('reducePaneChat: checkpoint availability', () => {
 
     expect(result.messages).toBe(seeded.messages)
   })
+
+  it('anchors the resume uuid alongside the checkpoint uuid when present', () => {
+    const afterSend = appendUserMessage(emptyPaneChatState, 'u-1', 'deploy')
+
+    const result = reducePaneChat(afterSend, checkpointAvailable('turn-1', 'assistant-0'))
+
+    expect(result.messages[0].checkpointUuid).toBe('turn-1')
+    expect(result.messages[0].resumeAnchorUuid).toBe('assistant-0')
+  })
+
+  it('leaves the resume uuid absent when the checkpoint carries none (first turn)', () => {
+    const afterSend = appendUserMessage(emptyPaneChatState, 'u-1', 'deploy')
+
+    const result = reducePaneChat(afterSend, checkpointAvailable('turn-1'))
+
+    expect(result.messages[0].checkpointUuid).toBe('turn-1')
+    expect(result.messages[0].resumeAnchorUuid).toBeUndefined()
+  })
 })
 
 describe('reducePaneChat: rewind to checkpoint', () => {
@@ -549,16 +571,16 @@ describe('reducePaneChat: rewind to checkpoint', () => {
     { role: 'assistant', content: 'reply two' }
   ])
 
-  it('drops every turn after the anchor, keeping the anchoring user turn', () => {
+  it('drops the anchored turn and everything after it', () => {
     const result = reducePaneChat(loadingWith(branched), rewoundToCheckpoint('a'))
 
-    expect(result.messages).toEqual([branched.messages[0]])
+    expect(result.messages).toEqual([])
   })
 
-  it('keeps the anchor and its predecessors when rewinding to a later turn', () => {
+  it('keeps the anchor turn predecessors when rewinding to a later turn', () => {
     const result = reducePaneChat(branched, rewoundToCheckpoint('b'))
 
-    expect(result.messages).toEqual(branched.messages.slice(0, 3))
+    expect(result.messages).toEqual(branched.messages.slice(0, 2))
   })
 
   it('ends any in-flight turn on rewind', () => {

@@ -25,31 +25,43 @@ const extractText = (content: string | ReadonlyArray<unknown>): string =>
         )
         .join('')
 
-const toConversationMessage = (message: SessionMessage): Option.Option<ConversationMessage> =>
-  Option.flatMap(decodeEnvelope(message.message), (envelope) => {
-    const content = extractText(envelope.content)
-    if (content.length === 0) return Option.none()
-    const isCheckpointAnchor = envelope.role === 'user' && typeof envelope.content === 'string'
-    return Option.some(
-      isCheckpointAnchor
-        ? { role: envelope.role, content, checkpointUuid: message.uuid }
-        : { role: envelope.role, content }
-    )
-  })
-
 /**
  * Projects the Agent SDK's raw session transcript into dia's `ConversationMessage`
  * list: keeps user/assistant turns that carry displayable text, joining an
  * assistant turn's text blocks and dropping tool-only turns (tool calls/results
  * with no text) and any message whose shape it can't decode. Use to render a
  * restored pane's history from {@link getSessionMessages} output.
+ *
+ * A rewindable user turn (string content) is anchored with its own uuid as
+ * `checkpointUuid` and the most recent assistant turn's uuid as
+ * `resumeAnchorUuid` (absent for the first turn), so a restored pane offers the
+ * same rewind behaviour a live one does — mirroring the live reducer's anchoring.
  */
 export const sessionMessagesToConversation = (
   messages: ReadonlyArray<SessionMessage>
-): ReadonlyArray<ConversationMessage> =>
-  messages.flatMap((message) =>
-    Option.match(toConversationMessage(message), { onNone: () => [], onSome: (c) => [c] })
-  )
+): ReadonlyArray<ConversationMessage> => {
+  const conversation: ConversationMessage[] = []
+  let lastAssistantUuid: string | undefined
+  for (const message of messages) {
+    const envelopeOpt = decodeEnvelope(message.message)
+    if (Option.isNone(envelopeOpt)) continue
+    const envelope = envelopeOpt.value
+    if (envelope.role === 'assistant') lastAssistantUuid = message.uuid
+    const content = extractText(envelope.content)
+    if (content.length === 0) continue
+    if (envelope.role === 'user' && typeof envelope.content === 'string') {
+      conversation.push({
+        role: 'user',
+        content,
+        checkpointUuid: message.uuid,
+        ...(lastAssistantUuid !== undefined ? { resumeAnchorUuid: lastAssistantUuid } : {})
+      })
+    } else {
+      conversation.push({ role: envelope.role, content })
+    }
+  }
+  return conversation
+}
 
 /**
  * Service tag for reading a pane's past conversation from the Agent SDK session

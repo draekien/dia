@@ -197,14 +197,18 @@ export type FocusPane = typeof FocusPane.Type
 /**
  * Command sent by the renderer to rewind pane `paneId` to a prior checkpoint:
  * `messageUuid` is a user-turn UUID previously surfaced via
- * {@link PaneCheckpointAvailable}. The pane restores the working tree to that
- * turn's pre-edit state and branches the conversation there, so files and
- * conversation are rewound together. This is destructive (later turns and file
- * edits are discarded); the renderer should confirm with the user first.
+ * {@link PaneCheckpointAvailable}, and `resumeAnchorUuid` (from the same event)
+ * is the preceding assistant turn the conversation branches at. The pane
+ * restores the working tree to the user turn's pre-edit state and branches the
+ * conversation just before it, so files and conversation are rewound together.
+ * `resumeAnchorUuid` is absent when rewinding the first turn (the pane starts a
+ * fresh conversation). This is destructive (that turn onward, and its file
+ * edits, are discarded); the renderer should confirm with the user first.
  */
 export const RewindToCheckpoint = Schema.TaggedStruct('RewindToCheckpoint', {
   paneId: Schema.UUID,
-  messageUuid: Schema.String
+  messageUuid: Schema.String,
+  resumeAnchorUuid: Schema.optional(Schema.String)
 })
 export type RewindToCheckpoint = typeof RewindToCheckpoint.Type
 
@@ -386,13 +390,17 @@ export type PaneConversationReset = typeof PaneConversationReset.Type
 
 /**
  * Event pushed to the renderer once per user turn in pane `paneId`, carrying the
- * turn's `messageUuid` file-checkpoint id. The renderer associates it with the
- * turn so a "rewind to here" affordance can dispatch a {@link RewindToCheckpoint}
- * command for that turn. Emitted only while file checkpointing is enabled.
+ * turn's `messageUuid` file-checkpoint id and, when a prior assistant turn
+ * exists, `resumeAnchorUuid` — the assistant turn the conversation branches at
+ * on rewind. The renderer associates both with the turn so a "rewind to here"
+ * affordance can dispatch a {@link RewindToCheckpoint} command carrying them.
+ * `resumeAnchorUuid` is absent for the first turn of a conversation. Emitted
+ * only while file checkpointing is enabled.
  */
 export const PaneCheckpointAvailable = Schema.TaggedStruct('PaneCheckpointAvailable', {
   paneId: Schema.UUID,
-  messageUuid: Schema.String
+  messageUuid: Schema.String,
+  resumeAnchorUuid: Schema.optional(Schema.String)
 })
 export type PaneCheckpointAvailable = typeof PaneCheckpointAvailable.Type
 
@@ -504,7 +512,7 @@ export interface DiaApi {
   setPermissionMode(paneId: string, mode: PermissionMode): void
   resolvePlanReview(paneId: string, requestId: string, approved: boolean): void
   focusPane(paneId: string): void
-  rewindToCheckpoint(paneId: string, messageUuid: string): void
+  rewindToCheckpoint(paneId: string, messageUuid: string, resumeAnchorUuid?: string): void
   getInitialLayout(): Promise<PaneNode>
   getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>
   chooseDirectory(): Promise<ChooseDirectoryResult>
