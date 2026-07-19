@@ -36,3 +36,4 @@ publish:
   provider: github
   owner: draekien
   repo: dia
+  releaseType: release
