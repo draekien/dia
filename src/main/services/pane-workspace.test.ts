@@ -28,6 +28,7 @@ const fakeHandle: PaneHandle = {
   resolvePermission: () => Effect.void,
   resolveQuestion: () => Effect.void,
   resolvePlanReview: () => Effect.void,
+  rewindToCheckpoint: () => Effect.void,
   subscribe: () => Stream.empty,
   markErrored: () => Effect.void
 }

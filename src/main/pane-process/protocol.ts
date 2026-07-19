@@ -41,6 +41,10 @@ export const ResolvePlanReview = Schema.TaggedStruct('ResolvePlanReview', {
   requestId: Schema.String,
   approved: Schema.Boolean
 })
+/** Sent by main to the pane subprocess to rewind the pane to a prior checkpoint: `messageUuid` is a user-turn UUID previously surfaced via `CheckpointAvailable`. The pane restores the working tree to that turn's pre-edit state (Agent SDK `rewindFiles`) and branches the conversation at that turn (`resumeSessionAt` + `forkSession`), so files and conversation are rewound together. On success the pane replies with `RewoundToCheckpoint`. */
+export const RewindToCheckpoint = Schema.TaggedStruct('RewindToCheckpoint', {
+  messageUuid: Schema.String
+})
 /** The full set of messages main may send to a pane subprocess. Decode inbound IPC payloads against this union before acting on them. */
 export const InboundMessage = Schema.Union(
   InitMessage,
@@ -49,7 +53,8 @@ export const InboundMessage = Schema.Union(
   SetPermissionMode,
   ResolvePermission,
   ResolveQuestion,
-  ResolvePlanReview
+  ResolvePlanReview,
+  RewindToCheckpoint
 )
 export type InboundMessage = typeof InboundMessage.Type
 
@@ -125,6 +130,14 @@ export const ConversationCompacted = Schema.TaggedStruct('ConversationCompacted'
 export const ConversationReset = Schema.TaggedStruct('ConversationReset', {
   newSessionId: Schema.String
 })
+/** Sent by the pane subprocess to main once per user turn, carrying the turn's `messageUuid`. This UUID is the file-checkpoint id (Agent SDK `rewindFiles`) and the conversation-branch point (`resumeSessionAt`) for that turn; main forwards it to the renderer so a "rewind to here" affordance can be anchored to the turn. Emitted only when file checkpointing is enabled (the UUID comes from replayed user messages). */
+export const CheckpointAvailable = Schema.TaggedStruct('CheckpointAvailable', {
+  messageUuid: Schema.String
+})
+/** Sent by the pane subprocess to main after a `RewindToCheckpoint` completes successfully, carrying the `messageUuid` that was rewound to. The pane's files and conversation are now branched at that turn; the forked session's new id arrives separately via `SessionStarted`. Main forwards this so the renderer can truncate the displayed transcript at that turn. */
+export const RewoundToCheckpoint = Schema.TaggedStruct('RewoundToCheckpoint', {
+  messageUuid: Schema.String
+})
 
 /** The full set of messages a pane subprocess may send to main. Decode outbound IPC payloads against this union before acting on them. */
 export const OutboundMessage = Schema.Union(
@@ -143,6 +156,8 @@ export const OutboundMessage = Schema.Union(
   SlashCommandsWarming,
   SlashCommandsAvailable,
   ConversationCompacted,
-  ConversationReset
+  ConversationReset,
+  CheckpointAvailable,
+  RewoundToCheckpoint
 )
 export type OutboundMessage = typeof OutboundMessage.Type

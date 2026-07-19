@@ -2,10 +2,14 @@ import type { SessionMessage } from '@anthropic-ai/claude-agent-sdk'
 import { assert, describe, it } from '@effect/vitest'
 import { sessionMessagesToConversation } from './transcript-reader'
 
-function sessionMessage(type: SessionMessage['type'], message: unknown): SessionMessage {
+function sessionMessage(
+  type: SessionMessage['type'],
+  message: unknown,
+  uuid = 'uuid'
+): SessionMessage {
   return {
     type,
-    uuid: 'uuid',
+    uuid,
     session_id: 'session',
     message,
     parent_tool_use_id: null,
@@ -14,12 +18,14 @@ function sessionMessage(type: SessionMessage['type'], message: unknown): Session
 }
 
 describe('sessionMessagesToConversation', () => {
-  it('maps a user turn with string content to a conversation message', () => {
+  it('anchors a checkpoint uuid onto a user turn with string content', () => {
     const result = sessionMessagesToConversation([
-      sessionMessage('user', { role: 'user', content: 'hello there' })
+      sessionMessage('user', { role: 'user', content: 'hello there' }, 'turn-1')
     ])
 
-    assert.deepStrictEqual(result, [{ role: 'user', content: 'hello there' }])
+    assert.deepStrictEqual(result, [
+      { role: 'user', content: 'hello there', checkpointUuid: 'turn-1' }
+    ])
   })
 
   it('joins an assistant turn’s text blocks into one message', () => {
@@ -70,24 +76,26 @@ describe('sessionMessagesToConversation', () => {
     assert.deepStrictEqual(result, [])
   })
 
-  it('preserves chronological order across a mixed list', () => {
+  it('preserves chronological order and anchors each user turn to its own uuid', () => {
     const result = sessionMessagesToConversation([
-      sessionMessage('user', { role: 'user', content: 'first' }),
-      sessionMessage('assistant', {
-        role: 'assistant',
-        content: [{ type: 'text', text: 'second' }]
-      }),
-      sessionMessage('user', {
-        role: 'user',
-        content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ignored' }]
-      }),
-      sessionMessage('user', { role: 'user', content: 'third' })
+      sessionMessage('user', { role: 'user', content: 'first' }, 'turn-1'),
+      sessionMessage(
+        'assistant',
+        { role: 'assistant', content: [{ type: 'text', text: 'second' }] },
+        'turn-2'
+      ),
+      sessionMessage(
+        'user',
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ignored' }] },
+        'turn-3'
+      ),
+      sessionMessage('user', { role: 'user', content: 'third' }, 'turn-4')
     ])
 
     assert.deepStrictEqual(result, [
-      { role: 'user', content: 'first' },
+      { role: 'user', content: 'first', checkpointUuid: 'turn-1' },
       { role: 'assistant', content: 'second' },
-      { role: 'user', content: 'third' }
+      { role: 'user', content: 'third', checkpointUuid: 'turn-4' }
     ])
   })
 

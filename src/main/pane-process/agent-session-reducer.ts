@@ -4,6 +4,7 @@ import {
   AssistantMessageReceived,
   AssistantTextDelta,
   AssistantThinkingDelta,
+  CheckpointAvailable,
   ConversationCompacted,
   ConversationReset,
   type OutboundMessage,
@@ -152,7 +153,11 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
 
     if (message.type === 'user') {
       const content = message.message.content
-      if (typeof content === 'string') return []
+      if (typeof content === 'string') {
+        return message.uuid !== undefined
+          ? [CheckpointAvailable.make({ messageUuid: message.uuid })]
+          : []
+      }
       const completed: OutboundMessage[] = []
       for (const block of content) {
         if (block.type !== 'tool_result') continue

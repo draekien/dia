@@ -27,12 +27,14 @@ import {
   PaneAssistantTextDelta,
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
+  PaneCheckpointAvailable,
   PaneConversationCompacted,
   PaneConversationReset,
   PaneMessageAppended,
   PanePermissionRequested,
   PanePlanReviewRequested,
   PaneQuestionRequested,
+  PaneRewoundToCheckpoint,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
   PaneToolCallCompleted,
@@ -64,6 +66,7 @@ import {
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
+  RewindToCheckpoint,
   SendText,
   SetPermissionMode,
   SetThinkingLevel
@@ -125,6 +128,7 @@ export interface PaneHandle {
   ) => Effect.Effect<void>
   readonly resolveQuestion: (requestId: string, response: QuestionResponse) => Effect.Effect<void>
   readonly resolvePlanReview: (requestId: string, approved: boolean) => Effect.Effect<void>
+  readonly rewindToCheckpoint: (messageUuid: string) => Effect.Effect<void>
   readonly subscribe: () => Stream.Stream<IpcEvent>
   readonly markErrored: (error: PaneError) => Effect.Effect<void>
 }
@@ -237,6 +241,12 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
     ),
     Match.tag('ConversationReset', () =>
       Option.some<IpcEvent>(PaneConversationReset.make({ paneId }))
+    ),
+    Match.tag('CheckpointAvailable', (m) =>
+      Option.some<IpcEvent>(PaneCheckpointAvailable.make({ paneId, messageUuid: m.messageUuid }))
+    ),
+    Match.tag('RewoundToCheckpoint', (m) =>
+      Option.some<IpcEvent>(PaneRewoundToCheckpoint.make({ paneId, messageUuid: m.messageUuid }))
     ),
     // TurnCompleted/TurnErrored/SessionStarted carry no renderer-facing content of their own --
     // they only drive AttentionState (see toAttentionTarget below) -- so they have no IpcEvent.
@@ -521,6 +531,17 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
           )
         ),
         Effect.andThen(applyAttention(Idle.make({})))
+      ),
+    rewindToCheckpoint: (messageUuid) =>
+      Effect.logDebug('Sending rewind request to pane process', {
+        paneId: config.paneId,
+        messageUuid
+      }).pipe(
+        Effect.andThen(
+          Effect.sync(() =>
+            child.postMessage(encodeInbound(RewindToCheckpoint.make({ messageUuid })))
+          )
+        )
       ),
     subscribe: () => Stream.fromQueue(outbound),
     markErrored: (error) => applyAttention(Errored.make({ error }))

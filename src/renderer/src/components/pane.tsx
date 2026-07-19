@@ -1,5 +1,15 @@
 import { Result } from '@effect-atom/atom'
 import { useAtomSet, useAtomValue } from '@effect-atom/atom-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@renderer/components/ui/alert-dialog'
 import { Message, MessageContent } from '@renderer/components/ui/message'
 import {
   MessageScroller,
@@ -46,11 +56,11 @@ import type {
 } from '@shared/ipc/contract'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUp, Brain, Check, Loader2Icon, ShieldCheck } from 'lucide-react'
+import { ArrowUp, Brain, Check, Loader2Icon, RotateCcw, ShieldCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { PaneMessage, ToolCallPart } from '../lib/pane-chat'
 import { emptyPaneChatState } from '../lib/pane-chat'
-import { paneChatAtom, paneSendAtom } from '../lib/pane-chat-atoms'
+import { paneChatAtom, paneRewindAtom, paneSendAtom } from '../lib/pane-chat-atoms'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import { Markdown } from './markdown'
 import { PermissionRequestCard } from './permission-request-card'
@@ -165,10 +175,19 @@ function ThinkingDisclosure({ content }: { content: string }): React.JSX.Element
  * single trailing tinted bubble, assistant turns as their ordered parts
  * (collapsed thinking disclosures, text bubbles, tool-call status rows).
  * Thinking parts render as a collapsed `Thinking` disclosure, click to expand.
- * Text parts render markdown directly with no reveal animation. Pass a message
- * from a pane's chat state ({@link paneChatAtom}).
+ * Text parts render markdown directly with no reveal animation. When `onRewind`
+ * is provided and the turn is a rewindable user turn (carries a
+ * `checkpointUuid`), a hover-revealed rewind control is shown that invokes
+ * `onRewind` with this message. Pass a message from a pane's chat state
+ * ({@link paneChatAtom}).
  */
-export function MessageView({ message }: { message: PaneMessage }): React.JSX.Element {
+export function MessageView({
+  message,
+  onRewind
+}: {
+  message: PaneMessage
+  onRewind?: (message: PaneMessage) => void
+}): React.JSX.Element {
   if (message.role === 'notice') {
     const text = message.parts.find((part) => part.type === 'text')?.content ?? ''
     return (
@@ -180,8 +199,22 @@ export function MessageView({ message }: { message: PaneMessage }): React.JSX.El
     )
   }
   const isUser = message.role === 'user'
+  const canRewind = isUser && message.checkpointUuid !== undefined && onRewind !== undefined
   return (
     <Message align={isUser ? 'end' : 'start'}>
+      {canRewind && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Rewind to this point"
+          title="Rewind to this point"
+          onClick={() => onRewind(message)}
+          className="self-center text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 focus-visible:opacity-100 motion-reduce:transition-none"
+        >
+          <RotateCcw />
+        </Button>
+      )}
       <MessageContent>
         {message.parts.map((part, index) => {
           const key = `${message.id}:${index}`
@@ -287,6 +320,8 @@ function PaneChat({
 
   const chat = Result.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
   const sendMessage = useAtomSet(paneSendAtom(paneId))
+  const rewind = useAtomSet(paneRewindAtom(paneId))
+  const [rewindTarget, setRewindTarget] = useState<PaneMessage | null>(null)
 
   const [slashHighlight, setSlashHighlight] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
@@ -373,7 +408,7 @@ function PaneChat({
                   messageId={message.id}
                   scrollAnchor={message.role === 'user'}
                 >
-                  <MessageView message={message} />
+                  <MessageView message={message} onRewind={setRewindTarget} />
                 </MessageScrollerItem>
               ))}
             </MessageScrollerContent>
@@ -525,6 +560,35 @@ function PaneChat({
           }}
         </form.Field>
       </form>
+      <AlertDialog
+        open={rewindTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRewindTarget(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rewind to this point?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This restores your files and the conversation to just before this message. Everything
+              after it — later messages and the file edits Claude made — is discarded. Changes made
+              through the terminal can’t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (rewindTarget?.checkpointUuid !== undefined) rewind(rewindTarget.checkpointUuid)
+                setRewindTarget(null)
+              }}
+            >
+              Rewind
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

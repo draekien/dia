@@ -28,7 +28,13 @@ const extractText = (content: string | ReadonlyArray<unknown>): string =>
 const toConversationMessage = (message: SessionMessage): Option.Option<ConversationMessage> =>
   Option.flatMap(decodeEnvelope(message.message), (envelope) => {
     const content = extractText(envelope.content)
-    return content.length === 0 ? Option.none() : Option.some({ role: envelope.role, content })
+    if (content.length === 0) return Option.none()
+    const isCheckpointAnchor = envelope.role === 'user' && typeof envelope.content === 'string'
+    return Option.some(
+      isCheckpointAnchor
+        ? { role: envelope.role, content, checkpointUuid: message.uuid }
+        : { role: envelope.role, content }
+    )
   })
 
 /**

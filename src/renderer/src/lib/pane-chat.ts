@@ -5,9 +5,11 @@ import type {
   PaneAssistantTextDelta,
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
+  PaneCheckpointAvailable,
   PaneConversationCompacted,
   PaneConversationReset,
   PaneMessageAppended,
+  PaneRewoundToCheckpoint,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
   PaneToolCallCompleted,
@@ -48,12 +50,16 @@ export type MessagePart = TextPart | ThinkingPart | ToolCallPart
  * the ordered `parts` that compose it. User turns carry a single text part;
  * assistant turns interleave thinking, text, and tool-call parts; a `notice`
  * turn is a system-generated marker (e.g. a context-compaction divider) with a
- * single text part and no conversational author.
+ * single text part and no conversational author. `checkpointUuid`, present only
+ * on user turns the pane has confirmed as rewindable, is the Agent SDK message
+ * id to pass to `window.dia.rewindToCheckpoint` to restore files and conversation
+ * to that point (see ADR-0018).
  */
 export interface PaneMessage {
   readonly id: string
   readonly role: 'user' | 'assistant' | 'notice'
   readonly parts: ReadonlyArray<MessagePart>
+  readonly checkpointUuid?: string
 }
 
 /**
@@ -88,6 +94,8 @@ export type PaneStreamEvent =
   | PaneSlashCommandsAvailable
   | PaneConversationCompacted
   | PaneConversationReset
+  | PaneCheckpointAvailable
+  | PaneRewoundToCheckpoint
 
 /** The empty conversation state a pane starts from before history loads. */
 export const emptyPaneChatState: PaneChatState = {
@@ -109,7 +117,8 @@ export const paneChatStateFromHistory = (
   messages: history.map((message, index) => ({
     id: `${paneId}:history:${index}`,
     role: message.role,
-    parts: [{ type: 'text', content: message.content }]
+    parts: [{ type: 'text', content: message.content }],
+    ...(message.checkpointUuid !== undefined ? { checkpointUuid: message.checkpointUuid } : {})
   })),
   isLoading: false,
   slashCommands: [],
@@ -202,6 +211,30 @@ const completeToolCall = (
 const isTurnOver = (attention: AttentionState): boolean =>
   attention._tag === 'Completed' || attention._tag === 'Errored'
 
+// Checkpoint uuids arrive after their optimistic user turn is already rendered, in the
+// same order the turns were submitted, so bind each to the earliest user turn still
+// lacking one. Turns restored from history already carry their uuid and are skipped.
+const anchorCheckpoint = (
+  messages: ReadonlyArray<PaneMessage>,
+  messageUuid: string
+): ReadonlyArray<PaneMessage> => {
+  const target = messages.findIndex(
+    (message) => message.role === 'user' && message.checkpointUuid === undefined
+  )
+  if (target === -1) return messages
+  return messages.map((message, index) =>
+    index === target ? { ...message, checkpointUuid: messageUuid } : message
+  )
+}
+
+const truncateToCheckpoint = (
+  messages: ReadonlyArray<PaneMessage>,
+  messageUuid: string
+): ReadonlyArray<PaneMessage> => {
+  const anchor = messages.findIndex((message) => message.checkpointUuid === messageUuid)
+  return anchor === -1 ? messages : messages.slice(0, anchor + 1)
+}
+
 const compactionNotice = (event: PaneConversationCompacted): string =>
   event.postTokens !== undefined
     ? `Context compacted — ${event.preTokens} → ${event.postTokens} tokens`
@@ -217,8 +250,12 @@ const compactionNotice = (event: PaneConversationCompacted): string =>
  * `PaneSlashCommandsWarming` toggles the `warmingCommands` indicator, and
  * `PaneSlashCommandsAvailable` replaces the available command list (ending any
  * warming state); a compaction appends a `notice` divider; a conversation reset
- * clears the transcript while keeping the available commands. Pure and total —
- * drive a pane's state atom by scanning the IPC stream with it.
+ * clears the transcript while keeping the available commands.
+ * `PaneCheckpointAvailable` anchors a rewindable checkpoint uuid onto the
+ * earliest user turn still lacking one, and `PaneRewoundToCheckpoint` truncates
+ * the transcript back to (and including) the turn holding that uuid, ending any
+ * in-flight turn. Pure and total — drive a pane's state atom by scanning the IPC
+ * stream with it.
  */
 export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): PaneChatState => {
   switch (event._tag) {
@@ -267,5 +304,13 @@ export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): Pa
       }
     case 'PaneConversationReset':
       return { ...emptyPaneChatState, slashCommands: state.slashCommands }
+    case 'PaneCheckpointAvailable':
+      return { ...state, messages: anchorCheckpoint(state.messages, event.messageUuid) }
+    case 'PaneRewoundToCheckpoint':
+      return {
+        ...state,
+        messages: truncateToCheckpoint(state.messages, event.messageUuid),
+        isLoading: false
+      }
   }
 }

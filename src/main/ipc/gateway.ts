@@ -350,6 +350,14 @@ export function wireCommands(deps: {
             )
         ),
         Match.tag('FocusPane', (command) => paneWorkspace.resumePane(command.paneId, onEvent)),
+        Match.tag('RewindToCheckpoint', (command) =>
+          withHandle(
+            'RewindToCheckpoint',
+            command.paneId,
+            'Failed to rewind pane to checkpoint',
+            (handle) => handle.rewindToCheckpoint(command.messageUuid)
+          )
+        ),
         Match.exhaustive
       )
     })

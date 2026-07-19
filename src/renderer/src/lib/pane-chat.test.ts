@@ -12,9 +12,11 @@ import {
   PaneAssistantTextDelta,
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
+  PaneCheckpointAvailable,
   PaneConversationCompacted,
   PaneConversationReset,
   PaneMessageAppended,
+  PaneRewoundToCheckpoint,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
   PaneToolCallCompleted,
@@ -62,6 +64,10 @@ const conversationCompacted = (
     ...(postTokens !== undefined ? { postTokens } : {})
   })
 const conversationReset = () => PaneConversationReset.make({ paneId: PANE })
+const checkpointAvailable = (messageUuid: string) =>
+  PaneCheckpointAvailable.make({ paneId: PANE, messageUuid })
+const rewoundToCheckpoint = (messageUuid: string) =>
+  PaneRewoundToCheckpoint.make({ paneId: PANE, messageUuid })
 
 const loadingWith = (state: PaneChatState): PaneChatState => ({ ...state, isLoading: true })
 
@@ -90,6 +96,16 @@ describe('paneChatStateFromHistory', () => {
       slashCommands: [],
       warmingCommands: false
     })
+  })
+
+  it('carries a restored user turn’s checkpoint uuid onto its message', () => {
+    const result = paneChatStateFromHistory(PANE, [
+      { role: 'user', content: 'hi', checkpointUuid: 'turn-1' },
+      { role: 'assistant', content: 'hello' }
+    ])
+
+    expect(result.messages[0].checkpointUuid).toBe('turn-1')
+    expect(result.messages[1].checkpointUuid).toBeUndefined()
   })
 })
 
@@ -476,5 +492,84 @@ describe('reducePaneChat: conversation reset', () => {
     expect(result.messages).toEqual([])
     expect(result.isLoading).toBe(false)
     expect(result.slashCommands).toEqual([command])
+  })
+})
+
+describe('reducePaneChat: checkpoint availability', () => {
+  it('anchors the uuid onto the optimistic user turn that had none', () => {
+    const afterSend = appendUserMessage(emptyPaneChatState, 'u-1', 'deploy')
+
+    const result = reducePaneChat(afterSend, checkpointAvailable('turn-1'))
+
+    expect(result.messages[0].checkpointUuid).toBe('turn-1')
+  })
+
+  it('binds to the earliest un-anchored user turn when several await one', () => {
+    const twoPending = appendUserMessage(
+      appendUserMessage(emptyPaneChatState, 'u-1', 'first'),
+      'u-2',
+      'second'
+    )
+
+    const result = reducePaneChat(twoPending, checkpointAvailable('turn-1'))
+
+    expect(result.messages[0].checkpointUuid).toBe('turn-1')
+    expect(result.messages[1].checkpointUuid).toBeUndefined()
+  })
+
+  it('skips a user turn already anchored and binds the next un-anchored one', () => {
+    const restoredThenSent = appendUserMessage(
+      paneChatStateFromHistory(PANE, [{ role: 'user', content: 'earlier', checkpointUuid: 'a' }]),
+      'u-2',
+      'later'
+    )
+
+    const result = reducePaneChat(restoredThenSent, checkpointAvailable('b'))
+
+    expect(result.messages[0].checkpointUuid).toBe('a')
+    expect(result.messages[1].checkpointUuid).toBe('b')
+  })
+
+  it('leaves messages untouched when no user turn awaits a uuid', () => {
+    const seeded = paneChatStateFromHistory(PANE, [
+      { role: 'user', content: 'hi', checkpointUuid: 'a' }
+    ])
+
+    const result = reducePaneChat(seeded, checkpointAvailable('b'))
+
+    expect(result.messages).toBe(seeded.messages)
+  })
+})
+
+describe('reducePaneChat: rewind to checkpoint', () => {
+  const branched = paneChatStateFromHistory(PANE, [
+    { role: 'user', content: 'first', checkpointUuid: 'a' },
+    { role: 'assistant', content: 'reply one' },
+    { role: 'user', content: 'second', checkpointUuid: 'b' },
+    { role: 'assistant', content: 'reply two' }
+  ])
+
+  it('drops every turn after the anchor, keeping the anchoring user turn', () => {
+    const result = reducePaneChat(loadingWith(branched), rewoundToCheckpoint('a'))
+
+    expect(result.messages).toEqual([branched.messages[0]])
+  })
+
+  it('keeps the anchor and its predecessors when rewinding to a later turn', () => {
+    const result = reducePaneChat(branched, rewoundToCheckpoint('b'))
+
+    expect(result.messages).toEqual(branched.messages.slice(0, 3))
+  })
+
+  it('ends any in-flight turn on rewind', () => {
+    const result = reducePaneChat(loadingWith(branched), rewoundToCheckpoint('a'))
+
+    expect(result.isLoading).toBe(false)
+  })
+
+  it('leaves the transcript intact when no turn matches the uuid', () => {
+    const result = reducePaneChat(branched, rewoundToCheckpoint('missing'))
+
+    expect(result.messages).toBe(branched.messages)
   })
 })

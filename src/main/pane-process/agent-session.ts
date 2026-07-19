@@ -5,6 +5,7 @@ import {
   type CanUseTool,
   type PermissionResult,
   type PermissionUpdate,
+  type Query,
   query,
   type SDKUserMessage
 } from '@anthropic-ai/claude-agent-sdk'
@@ -41,6 +42,7 @@ import {
   PermissionRequested,
   PlanReviewRequested,
   QuestionRequested,
+  RewoundToCheckpoint,
   SlashCommandsAvailable,
   SlashCommandsWarming
 } from './protocol'
@@ -220,20 +222,30 @@ const toSDKUserMessage = (text: string): SDKUserMessage => ({
   parent_tool_use_id: null
 })
 
+/**
+ * The slice of the live Agent SDK `Query` the rewind handler drives: restoring
+ * files on disk to a checkpoint. Narrowed so the current query can be held in a
+ * `Ref` and a fake supplied in tests.
+ */
+type LiveRewindQuery = Pick<Query, 'rewindFiles'>
+
 const runSession = Effect.fn('AgentSession.runSession')(
   function* (
     config: PaneConfig,
     promptQueue: Queue.Queue<SDKUserMessage>,
     sessionIdRef: Ref.Ref<Option.Option<string>>,
+    queryRef: Ref.Ref<Option.Option<LiveRewindQuery>>,
     modeController: PermissionModeController,
-    resume: string | undefined
+    resume: string | undefined,
+    branchAt: string | undefined
   ) {
     yield* Effect.logInfo('Starting query session', {
       paneId: config.paneId,
       cwd: config.cwd,
       thinkingLevel: config.thinkingLevel,
       permissionMode: config.permissionMode,
-      resume
+      resume,
+      branchAt
     })
 
     const promptIterable = Stream.toAsyncIterable(Stream.fromQueue(promptQueue))
@@ -246,7 +258,10 @@ const runSession = Effect.fn('AgentSession.runSession')(
         includePartialMessages: true,
         canUseTool,
         permissionMode: config.permissionMode,
+        enableFileCheckpointing: true,
+        extraArgs: { 'replay-user-messages': null },
         resume,
+        ...(branchAt !== undefined ? { resumeSessionAt: branchAt, forkSession: true } : {}),
         ...thinkingOptions(config.thinkingLevel),
         ...(claudeExecutablePath !== undefined
           ? { pathToClaudeCodeExecutable: claudeExecutablePath }
@@ -254,6 +269,7 @@ const runSession = Effect.fn('AgentSession.runSession')(
       }
     })
     yield* modeController.attachQuery(session)
+    yield* Ref.set(queryRef, Option.some(session))
 
     // Warm up the pane's slash-command list without waiting for the user's first turn.
     // The SDK runs its control-protocol initialize() eagerly when query() is created, and
@@ -337,6 +353,7 @@ const runSession = Effect.fn('AgentSession.runSession')(
 const program = Effect.gen(function* () {
   const promptQueue = yield* Queue.unbounded<SDKUserMessage>()
   const sessionIdRef = yield* Ref.make<Option.Option<string>>(Option.none())
+  const queryRef = yield* Ref.make<Option.Option<LiveRewindQuery>>(Option.none())
   const configRef = yield* Ref.make<Option.Option<PaneConfig>>(Option.none())
   const desiredLevelRef = yield* Ref.make<Option.Option<ThinkingLevel>>(Option.none())
   const fiberRef = yield* Ref.make<Option.Option<Fiber.RuntimeFiber<void>>>(Option.none())
@@ -344,11 +361,12 @@ const program = Effect.gen(function* () {
 
   const startSession = Effect.fn('AgentSession.startSession')(function* (
     config: PaneConfig,
-    resume: string | undefined
+    resume: string | undefined,
+    branchAt: string | undefined
   ) {
     yield* modeController.seed(config.permissionMode)
     const fiber = yield* Effect.forkScoped(
-      runSession(config, promptQueue, sessionIdRef, modeController, resume)
+      runSession(config, promptQueue, sessionIdRef, queryRef, modeController, resume, branchAt)
     )
     yield* Ref.set(configRef, Option.some(config))
     yield* Ref.set(fiberRef, Option.some(fiber))
@@ -385,7 +403,63 @@ const program = Effect.gen(function* () {
 
     const currentModeOpt = yield* modeController.currentMode
     const permissionMode = Option.getOrElse(currentModeOpt, () => config.permissionMode)
-    yield* startSession({ ...config, thinkingLevel: desired, permissionMode }, sessionId.value)
+    yield* startSession(
+      { ...config, thinkingLevel: desired, permissionMode },
+      sessionId.value,
+      undefined
+    )
+  })
+
+  // Rewinds the pane to a prior user turn: restore the working tree to that turn's pre-edit state
+  // via the live query's rewindFiles, then tear the query down and resume it branched at the same
+  // turn (resumeSessionAt + forkSession) so the conversation the agent sees matches the files on
+  // disk. A no-op (logged) when there is no live session, and aborted without a restart when the
+  // file rewind itself does not succeed, so a failed rewind never desyncs conversation from disk.
+  const rewindToCheckpoint = Effect.fn('AgentSession.rewindToCheckpoint')(function* (
+    messageUuid: string
+  ) {
+    const configOpt = yield* Ref.get(configRef)
+    const sessionIdOpt = yield* Ref.get(sessionIdRef)
+    const queryOpt = yield* Ref.get(queryRef)
+    if (Option.isNone(configOpt) || Option.isNone(sessionIdOpt) || Option.isNone(queryOpt)) {
+      yield* Effect.logWarning('Cannot rewind; no live session to rewind', { messageUuid })
+      return
+    }
+    const config = configOpt.value
+    const sessionId = sessionIdOpt.value
+
+    const result = yield* Effect.tryPromise({
+      try: () => queryOpt.value.rewindFiles(messageUuid),
+      catch: (cause) => new SessionStreamError({ cause })
+    }).pipe(
+      Effect.tapErrorCause((cause) =>
+        Effect.logError('rewindFiles failed', { paneId: config.paneId, messageUuid, cause })
+      ),
+      Effect.option
+    )
+    if (Option.isNone(result) || !result.value.canRewind) {
+      yield* Effect.logWarning('Rewind aborted; files were not rewound', {
+        paneId: config.paneId,
+        messageUuid,
+        error: Option.isSome(result) ? result.value.error : undefined
+      })
+      return
+    }
+
+    yield* Effect.logInfo('Rewound files to checkpoint; forking conversation', {
+      paneId: config.paneId,
+      messageUuid,
+      filesChanged: result.value.filesChanged?.length ?? 0
+    })
+
+    const fiberOpt = yield* Ref.get(fiberRef)
+    if (Option.isSome(fiberOpt)) yield* Fiber.interrupt(fiberOpt.value)
+    yield* dropPendingRequests()
+
+    const currentModeOpt = yield* modeController.currentMode
+    const permissionMode = Option.getOrElse(currentModeOpt, () => config.permissionMode)
+    yield* startSession({ ...config, permissionMode }, sessionId, messageUuid)
+    yield* postOutbound(RewoundToCheckpoint.make({ messageUuid }))
   })
 
   const rawInbound = Stream.async<unknown>((emit) => {
@@ -405,7 +479,7 @@ const program = Effect.gen(function* () {
       const inbound = decoded.right
       if (inbound._tag === 'Init') {
         yield* Ref.set(desiredLevelRef, Option.some(inbound.config.thinkingLevel))
-        yield* startSession(inbound.config, inbound.resume)
+        yield* startSession(inbound.config, inbound.resume, undefined)
       } else if (inbound._tag === 'SetThinkingLevel') {
         yield* Ref.set(desiredLevelRef, Option.some(inbound.level))
       } else if (inbound._tag === 'SetPermissionMode') {
@@ -423,6 +497,8 @@ const program = Effect.gen(function* () {
         yield* restartForThinkingChange()
         yield* dropPendingRequests()
         yield* Queue.offer(promptQueue, toSDKUserMessage(inbound.text))
+      } else if (inbound._tag === 'RewindToCheckpoint') {
+        yield* rewindToCheckpoint(inbound.messageUuid)
       } else {
         yield* resolveRequest(inbound.requestId, inbound.response)
       }
