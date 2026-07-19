@@ -7,11 +7,15 @@ import {
   PermissionRequest
 } from '@shared/domain/attention'
 import { ConversationMessage } from '@shared/domain/pane'
+import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import {
   PaneAssistantTextDelta,
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
+  PaneConversationCompacted,
+  PaneConversationReset,
   PaneMessageAppended,
+  PaneSlashCommandsAvailable,
   PaneToolCallCompleted,
   PaneToolCallStarted
 } from '@shared/ipc/contract'
@@ -41,6 +45,20 @@ const messageAppended = (role: 'user' | 'assistant', content: string) =>
   PaneMessageAppended.make({ paneId: PANE, message: ConversationMessage.make({ role, content }) })
 const attentionChanged = (attention: AttentionState) =>
   PaneAttentionChanged.make({ paneId: PANE, attention })
+const slashCommandsAvailable = (commands: ReadonlyArray<SlashCommandInfo>) =>
+  PaneSlashCommandsAvailable.make({ paneId: PANE, commands })
+const conversationCompacted = (
+  trigger: 'manual' | 'auto',
+  preTokens: number,
+  postTokens?: number
+) =>
+  PaneConversationCompacted.make({
+    paneId: PANE,
+    trigger,
+    preTokens,
+    ...(postTokens !== undefined ? { postTokens } : {})
+  })
+const conversationReset = () => PaneConversationReset.make({ paneId: PANE })
 
 const loadingWith = (state: PaneChatState): PaneChatState => ({ ...state, isLoading: true })
 
@@ -53,6 +71,7 @@ describe('paneChatStateFromHistory', () => {
 
     expect(result).toEqual({
       isLoading: false,
+      slashCommands: [],
       messages: [
         { id: `${PANE}:history:0`, role: 'user', parts: [{ type: 'text', content: 'hi' }] },
         { id: `${PANE}:history:1`, role: 'assistant', parts: [{ type: 'text', content: 'hello' }] }
@@ -61,7 +80,11 @@ describe('paneChatStateFromHistory', () => {
   })
 
   it('yields no messages and a settled turn for empty history', () => {
-    expect(paneChatStateFromHistory(PANE, [])).toEqual({ messages: [], isLoading: false })
+    expect(paneChatStateFromHistory(PANE, [])).toEqual({
+      messages: [],
+      isLoading: false,
+      slashCommands: []
+    })
   })
 })
 
@@ -76,6 +99,15 @@ describe('appendUserMessage', () => {
       seeded.messages[0],
       { id: 'u-1', role: 'user', parts: [{ type: 'text', content: 'do the thing' }] }
     ])
+  })
+
+  it('preserves the available slash commands across an optimistic append', () => {
+    const command: SlashCommandInfo = { name: 'compact', description: '', argumentHint: '' }
+    const seeded: PaneChatState = { ...emptyPaneChatState, slashCommands: [command] }
+
+    const result = appendUserMessage(seeded, 'u-1', 'hi')
+
+    expect(result.slashCommands).toEqual([command])
   })
 })
 
@@ -113,6 +145,7 @@ describe('reducePaneChat: text deltas', () => {
   it('starts a fresh assistant message when a delta arrives after the previous turn settled', () => {
     const settled: PaneChatState = {
       isLoading: false,
+      slashCommands: [],
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'done' }] }
       ]
@@ -156,6 +189,7 @@ describe('reducePaneChat: tool calls', () => {
   it('appends a running tool-call part to the streaming assistant message', () => {
     const streaming = loadingWith({
       isLoading: true,
+      slashCommands: [],
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'let me look' }] }
       ]
@@ -172,6 +206,7 @@ describe('reducePaneChat: tool calls', () => {
   it('resolves the matching running tool call in place with input, output, and error flag', () => {
     const streaming: PaneChatState = {
       isLoading: true,
+      slashCommands: [],
       messages: [
         {
           id: '0:assistant',
@@ -202,6 +237,7 @@ describe('reducePaneChat: tool calls', () => {
   it('leaves other tool-call parts untouched when completing one by id', () => {
     const streaming: PaneChatState = {
       isLoading: true,
+      slashCommands: [],
       messages: [
         {
           id: '0:assistant',
@@ -273,6 +309,7 @@ describe('reducePaneChat: PaneMessageAppended backstop', () => {
   it('ignores the appended assistant turn when deltas already built the streaming message', () => {
     const streaming: PaneChatState = {
       isLoading: true,
+      slashCommands: [],
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'streamed' }] }
       ]
@@ -334,5 +371,73 @@ describe('reducePaneChat: attention', () => {
     const result = reducePaneChat(streaming, attentionChanged(Idle.make({})))
 
     expect(result).toBe(streaming)
+  })
+})
+
+describe('reducePaneChat: slash commands', () => {
+  it('sets the available slash-command list without touching the transcript', () => {
+    const seeded = paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }])
+    const commands: ReadonlyArray<SlashCommandInfo> = [
+      { name: 'compact', description: 'Compact history', argumentHint: '' }
+    ]
+
+    const result = reducePaneChat(seeded, slashCommandsAvailable(commands))
+
+    expect(result.slashCommands).toEqual(commands)
+    expect(result.messages).toBe(seeded.messages)
+  })
+
+  it('replaces the prior list rather than merging when a richer list arrives', () => {
+    const names = reducePaneChat(
+      emptyPaneChatState,
+      slashCommandsAvailable([{ name: 'compact', description: '', argumentHint: '' }])
+    )
+
+    const enriched: SlashCommandInfo = {
+      name: 'compact',
+      description: 'Compact conversation history',
+      argumentHint: '[instructions]'
+    }
+    const result = reducePaneChat(names, slashCommandsAvailable([enriched]))
+
+    expect(result.slashCommands).toEqual([enriched])
+  })
+})
+
+describe('reducePaneChat: conversation compaction', () => {
+  it('appends a notice divider with the token span, keeping prior messages and load state', () => {
+    const streaming = loadingWith(paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }]))
+
+    const result = reducePaneChat(streaming, conversationCompacted('manual', 1842, 500))
+
+    expect(result.isLoading).toBe(true)
+    expect(result.messages.slice(0, -1)).toEqual(streaming.messages)
+    expect(result.messages.at(-1)).toEqual({
+      id: '1:notice',
+      role: 'notice',
+      parts: [{ type: 'text', content: 'Context compacted — 1842 → 500 tokens' }]
+    })
+  })
+
+  it('omits the token span when the post-compaction size is unknown', () => {
+    const result = reducePaneChat(emptyPaneChatState, conversationCompacted('auto', 900))
+
+    expect(result.messages.at(-1)?.parts).toEqual([{ type: 'text', content: 'Context compacted' }])
+  })
+})
+
+describe('reducePaneChat: conversation reset', () => {
+  it('clears messages and load state while preserving the available slash commands', () => {
+    const command: SlashCommandInfo = { name: 'clear', description: '', argumentHint: '' }
+    const active = reducePaneChat(
+      loadingWith(paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }])),
+      slashCommandsAvailable([command])
+    )
+
+    const result = reducePaneChat(active, conversationReset())
+
+    expect(result.messages).toEqual([])
+    expect(result.isLoading).toBe(false)
+    expect(result.slashCommands).toEqual([command])
   })
 })

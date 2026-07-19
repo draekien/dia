@@ -13,6 +13,7 @@ import {
   ThinkingLevel
 } from '../domain/pane'
 import { PaneNode } from '../domain/pane-tree'
+import { SlashCommandInfo } from '../domain/slash-command'
 import type { ThemePreference } from '../domain/theme'
 import { UpdateStatus } from '../domain/update'
 
@@ -314,6 +315,45 @@ export const PanePlanReviewRequested = Schema.TaggedStruct('PanePlanReviewReques
 export type PanePlanReviewRequested = typeof PanePlanReviewRequested.Type
 
 /**
+ * Event pushed to the renderer with the slash commands available in pane
+ * `paneId`'s live session, so the renderer can offer them in the `/` popover.
+ * Sent when the session starts (names only, empty hints) and again whenever the
+ * session's command set changes (enriched with descriptions and argument
+ * hints). `commands` is the complete, replacement set — the renderer should
+ * replace its held list rather than merge.
+ */
+export const PaneSlashCommandsAvailable = Schema.TaggedStruct('PaneSlashCommandsAvailable', {
+  paneId: Schema.UUID,
+  commands: Schema.Array(SlashCommandInfo)
+})
+export type PaneSlashCommandsAvailable = typeof PaneSlashCommandsAvailable.Type
+
+/**
+ * Event pushed to the renderer when pane `paneId`'s conversation context was
+ * compacted (e.g. the user ran `/compact`), so the renderer can mark the
+ * boundary in the transcript. `preTokens`/`postTokens` bracket the compaction
+ * and `trigger` distinguishes a manual `/compact` from an automatic one.
+ */
+export const PaneConversationCompacted = Schema.TaggedStruct('PaneConversationCompacted', {
+  paneId: Schema.UUID,
+  trigger: Schema.Literal('manual', 'auto'),
+  preTokens: Schema.Number,
+  postTokens: Schema.optional(Schema.Number)
+})
+export type PaneConversationCompacted = typeof PaneConversationCompacted.Type
+
+/**
+ * Event pushed to the renderer when pane `paneId`'s conversation was reset to
+ * empty (e.g. the user ran `/clear`), so the renderer can clear the pane's
+ * displayed transcript. The new underlying session id is persisted in the main
+ * process and is not part of this renderer-facing event.
+ */
+export const PaneConversationReset = Schema.TaggedStruct('PaneConversationReset', {
+  paneId: Schema.UUID
+})
+export type PaneConversationReset = typeof PaneConversationReset.Type
+
+/**
  * Event pushed to the renderer whenever the pane layout tree changes (pane
  * created, split, closed, or resized). `tree` is the full, current layout and
  * should replace the renderer's local copy rather than being merged.
@@ -372,6 +412,9 @@ export const IpcEvent = Schema.Union(
   PanePermissionRequested,
   PaneQuestionRequested,
   PanePlanReviewRequested,
+  PaneSlashCommandsAvailable,
+  PaneConversationCompacted,
+  PaneConversationReset,
   LayoutChanged,
   PaneCreateFailed,
   PaneAttentionChanged,
@@ -421,6 +464,9 @@ export interface DiaApi {
   onPermissionRequested(listener: (event: PanePermissionRequested) => void): () => void
   onQuestionRequested(listener: (event: PaneQuestionRequested) => void): () => void
   onPlanReviewRequested(listener: (event: PanePlanReviewRequested) => void): () => void
+  onSlashCommandsAvailable(listener: (event: PaneSlashCommandsAvailable) => void): () => void
+  onConversationCompacted(listener: (event: PaneConversationCompacted) => void): () => void
+  onConversationReset(listener: (event: PaneConversationReset) => void): () => void
   onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void
   onAssistantThinkingDelta(listener: (event: PaneAssistantThinkingDelta) => void): () => void
   onToolCallStarted(listener: (event: PaneToolCallStarted) => void): () => void

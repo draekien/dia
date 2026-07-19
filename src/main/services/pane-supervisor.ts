@@ -27,10 +27,13 @@ import {
   PaneAssistantTextDelta,
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
+  PaneConversationCompacted,
+  PaneConversationReset,
   PaneMessageAppended,
   PanePermissionRequested,
   PanePlanReviewRequested,
   PaneQuestionRequested,
+  PaneSlashCommandsAvailable,
   PaneToolCallCompleted,
   PaneToolCallStarted
 } from '@shared/ipc/contract'
@@ -214,6 +217,22 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
           plan: m.plan
         })
       )
+    ),
+    Match.tag('SlashCommandsAvailable', (m) =>
+      Option.some<IpcEvent>(PaneSlashCommandsAvailable.make({ paneId, commands: m.commands }))
+    ),
+    Match.tag('ConversationCompacted', (m) =>
+      Option.some<IpcEvent>(
+        PaneConversationCompacted.make({
+          paneId,
+          trigger: m.trigger,
+          preTokens: m.preTokens,
+          ...(m.postTokens !== undefined ? { postTokens: m.postTokens } : {})
+        })
+      )
+    ),
+    Match.tag('ConversationReset', () =>
+      Option.some<IpcEvent>(PaneConversationReset.make({ paneId }))
     ),
     // TurnCompleted/TurnErrored/SessionStarted carry no renderer-facing content of their own --
     // they only drive AttentionState (see toAttentionTarget below) -- so they have no IpcEvent.
@@ -401,6 +420,14 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
           sessionId: message.sessionId
         })
         yield* onSessionId(message.sessionId)
+      }
+
+      if (message._tag === 'ConversationReset') {
+        yield* Effect.logInfo('Pane conversation reset; persisting new session id', {
+          paneId: config.paneId,
+          newSessionId: message.newSessionId
+        })
+        yield* onSessionId(message.newSessionId)
       }
 
       if (message._tag === 'PermissionModeChanged') {
