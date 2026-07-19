@@ -186,6 +186,11 @@ const api: DiaApi = {
       if (event._tag === 'PanePlanReviewRequested') listener(event)
     })
   },
+  onSlashCommandsWarming(listener) {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PaneSlashCommandsWarming') listener(event)
+    })
+  },
   onSlashCommandsAvailable(listener) {
     return subscribeToEvents((event) => {
       if (event._tag === 'PaneSlashCommandsAvailable') listener(event)

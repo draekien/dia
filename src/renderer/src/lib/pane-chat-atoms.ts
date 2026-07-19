@@ -24,6 +24,7 @@ const paneStreamEvents = (paneId: string): Stream.Stream<PaneStreamEvent> =>
           window.dia.onToolCallCompleted(push),
           window.dia.onMessageAppended(push),
           window.dia.onAttentionChanged(push),
+          window.dia.onSlashCommandsWarming(push),
           window.dia.onSlashCommandsAvailable(push),
           window.dia.onConversationCompacted(push),
           window.dia.onConversationReset(push)
@@ -49,21 +50,32 @@ const paneStreamEvents = (paneId: string): Stream.Stream<PaneStreamEvent> =>
  * subscription is released only when the atom is disposed, which idle-TTL defers
  * until the pane is truly gone. Write a new {@link PaneChatState} to set state
  * directly (used by {@link paneSendAtom} for optimistic user appends).
+ *
+ * The event subscription is attached *before* the history fetch, and the fetched
+ * history is then folded in while preserving any slash-command state the stream
+ * already delivered. This closes a resume race: a freshly resumed pane warms up
+ * its slash commands as soon as its process spawns, and that push would be lost
+ * if it landed during the (async) history round-trip on a not-yet-subscribed atom.
  */
 export const paneChatAtom = Atom.family((paneId: string) =>
   Atom.subscriptionRef(
     Effect.gen(function* () {
-      const history = yield* Effect.promise(() => window.dia.getPaneHistory(paneId))
-      const ref = yield* SubscriptionRef.make(paneChatStateFromHistory(paneId, history))
-      yield* Effect.logDebug('pane chat subscription established').pipe(
-        Effect.annotateLogs({ paneId })
-      )
+      const ref = yield* SubscriptionRef.make(emptyPaneChatState)
       yield* paneStreamEvents(paneId).pipe(
         Stream.runForEach((event) =>
           SubscriptionRef.update(ref, (state) => reducePaneChat(state, event))
         ),
         Effect.forkScoped
       )
+      yield* Effect.logDebug('pane chat subscription established').pipe(
+        Effect.annotateLogs({ paneId })
+      )
+      const history = yield* Effect.promise(() => window.dia.getPaneHistory(paneId))
+      yield* SubscriptionRef.update(ref, (state) => ({
+        ...paneChatStateFromHistory(paneId, history),
+        slashCommands: state.slashCommands,
+        warmingCommands: state.warmingCommands
+      }))
       yield* Effect.addFinalizer(() =>
         Effect.logDebug('pane chat subscription released').pipe(Effect.annotateLogs({ paneId }))
       )

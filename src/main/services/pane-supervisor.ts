@@ -34,6 +34,7 @@ import {
   PanePlanReviewRequested,
   PaneQuestionRequested,
   PaneSlashCommandsAvailable,
+  PaneSlashCommandsWarming,
   PaneToolCallCompleted,
   PaneToolCallStarted
 } from '@shared/ipc/contract'
@@ -217,6 +218,9 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
           plan: m.plan
         })
       )
+    ),
+    Match.tag('SlashCommandsWarming', (m) =>
+      Option.some<IpcEvent>(PaneSlashCommandsWarming.make({ paneId, active: m.active }))
     ),
     Match.tag('SlashCommandsAvailable', (m) =>
       Option.some<IpcEvent>(PaneSlashCommandsAvailable.make({ paneId, commands: m.commands }))

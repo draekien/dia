@@ -16,6 +16,7 @@ import {
   PaneConversationReset,
   PaneMessageAppended,
   PaneSlashCommandsAvailable,
+  PaneSlashCommandsWarming,
   PaneToolCallCompleted,
   PaneToolCallStarted
 } from '@shared/ipc/contract'
@@ -47,6 +48,8 @@ const attentionChanged = (attention: AttentionState) =>
   PaneAttentionChanged.make({ paneId: PANE, attention })
 const slashCommandsAvailable = (commands: ReadonlyArray<SlashCommandInfo>) =>
   PaneSlashCommandsAvailable.make({ paneId: PANE, commands })
+const slashCommandsWarming = (active: boolean) =>
+  PaneSlashCommandsWarming.make({ paneId: PANE, active })
 const conversationCompacted = (
   trigger: 'manual' | 'auto',
   preTokens: number,
@@ -72,6 +75,7 @@ describe('paneChatStateFromHistory', () => {
     expect(result).toEqual({
       isLoading: false,
       slashCommands: [],
+      warmingCommands: false,
       messages: [
         { id: `${PANE}:history:0`, role: 'user', parts: [{ type: 'text', content: 'hi' }] },
         { id: `${PANE}:history:1`, role: 'assistant', parts: [{ type: 'text', content: 'hello' }] }
@@ -83,7 +87,8 @@ describe('paneChatStateFromHistory', () => {
     expect(paneChatStateFromHistory(PANE, [])).toEqual({
       messages: [],
       isLoading: false,
-      slashCommands: []
+      slashCommands: [],
+      warmingCommands: false
     })
   })
 })
@@ -146,6 +151,7 @@ describe('reducePaneChat: text deltas', () => {
     const settled: PaneChatState = {
       isLoading: false,
       slashCommands: [],
+      warmingCommands: false,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'done' }] }
       ]
@@ -190,6 +196,7 @@ describe('reducePaneChat: tool calls', () => {
     const streaming = loadingWith({
       isLoading: true,
       slashCommands: [],
+      warmingCommands: false,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'let me look' }] }
       ]
@@ -207,6 +214,7 @@ describe('reducePaneChat: tool calls', () => {
     const streaming: PaneChatState = {
       isLoading: true,
       slashCommands: [],
+      warmingCommands: false,
       messages: [
         {
           id: '0:assistant',
@@ -238,6 +246,7 @@ describe('reducePaneChat: tool calls', () => {
     const streaming: PaneChatState = {
       isLoading: true,
       slashCommands: [],
+      warmingCommands: false,
       messages: [
         {
           id: '0:assistant',
@@ -310,6 +319,7 @@ describe('reducePaneChat: PaneMessageAppended backstop', () => {
     const streaming: PaneChatState = {
       isLoading: true,
       slashCommands: [],
+      warmingCommands: false,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'streamed' }] }
       ]
@@ -401,6 +411,33 @@ describe('reducePaneChat: slash commands', () => {
     const result = reducePaneChat(names, slashCommandsAvailable([enriched]))
 
     expect(result.slashCommands).toEqual([enriched])
+  })
+
+  it('raises the warming indicator when a warm-up starts', () => {
+    const result = reducePaneChat(emptyPaneChatState, slashCommandsWarming(true))
+
+    expect(result.warmingCommands).toBe(true)
+  })
+
+  it('clears the warming indicator when the available list arrives', () => {
+    const warming = reducePaneChat(emptyPaneChatState, slashCommandsWarming(true))
+    const commands: ReadonlyArray<SlashCommandInfo> = [
+      { name: 'compact', description: '', argumentHint: '' }
+    ]
+
+    const result = reducePaneChat(warming, slashCommandsAvailable(commands))
+
+    expect(result.warmingCommands).toBe(false)
+    expect(result.slashCommands).toEqual(commands)
+  })
+
+  it('clears the warming indicator when the warm-up fails without a list', () => {
+    const warming = reducePaneChat(emptyPaneChatState, slashCommandsWarming(true))
+
+    const result = reducePaneChat(warming, slashCommandsWarming(false))
+
+    expect(result.warmingCommands).toBe(false)
+    expect(result.slashCommands).toEqual([])
   })
 })
 

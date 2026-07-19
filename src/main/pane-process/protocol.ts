@@ -107,7 +107,11 @@ export const TurnErrored = Schema.TaggedStruct('TurnErrored', { error: PaneError
 export const SessionStarted = Schema.TaggedStruct('SessionStarted', {
   sessionId: Schema.String
 })
-/** Sent by the pane subprocess to main with the slash commands available in the session, so the renderer can offer them in the `/` popover. Emitted once at session start from a `query.supportedCommands()` warm-up (names plus descriptions and argument hints, so the popover is populated before the user's first turn) and again whenever a `commands_changed` message reports a mid-session change. Each list is the complete, replacement set. */
+/** Sent by the pane subprocess to main when the slash-command warm-up begins (`active` true, emitted right after the session's `query()` is created, before the `supportedCommands()` result is known) and again if that warm-up fails without producing a list (`active` false, so the renderer can stop showing a warming indicator without wrongly clearing an already-known command list). A successful warm-up ends the warming state by emitting `SlashCommandsAvailable` instead. */
+export const SlashCommandsWarming = Schema.TaggedStruct('SlashCommandsWarming', {
+  active: Schema.Boolean
+})
+/** Sent by the pane subprocess to main with the slash commands available in the session, so the renderer can offer them in the `/` popover. Emitted once at session start from a `query.supportedCommands()` warm-up (names plus descriptions and argument hints, so the popover is populated before the user's first turn) and again whenever a `commands_changed` message reports a mid-session change. Each list is the complete, replacement set, and receipt ends any warming state signalled by `SlashCommandsWarming`. */
 export const SlashCommandsAvailable = Schema.TaggedStruct('SlashCommandsAvailable', {
   commands: Schema.Array(SlashCommandInfo)
 })
@@ -136,6 +140,7 @@ export const OutboundMessage = Schema.Union(
   TurnCompleted,
   TurnErrored,
   SessionStarted,
+  SlashCommandsWarming,
   SlashCommandsAvailable,
   ConversationCompacted,
   ConversationReset

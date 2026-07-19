@@ -46,7 +46,7 @@ import type {
 } from '@shared/ipc/contract'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUp, Brain, Check, ShieldCheck } from 'lucide-react'
+import { ArrowUp, Brain, Check, Loader2Icon, ShieldCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { PaneMessage, ToolCallPart } from '../lib/pane-chat'
 import { emptyPaneChatState } from '../lib/pane-chat'
@@ -429,6 +429,12 @@ function PaneChat({
 
             return (
               <div className="relative">
+                {chat.warmingCommands && (
+                  <div className="mb-1.5 flex items-center gap-2 px-1 text-muted-foreground text-xs">
+                    <Loader2Icon className="size-3.5 animate-spin motion-reduce:animate-none" />
+                    Loading commands…
+                  </div>
+                )}
                 {isMenuOpen && token !== null && (
                   <SlashCommandMenu
                     paneId={paneId}

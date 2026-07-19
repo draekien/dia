@@ -41,7 +41,8 @@ import {
   PermissionRequested,
   PlanReviewRequested,
   QuestionRequested,
-  SlashCommandsAvailable
+  SlashCommandsAvailable,
+  SlashCommandsWarming
 } from './protocol'
 import { thinkingOptions } from './thinking-options'
 
@@ -259,12 +260,17 @@ const runSession = Effect.fn('AgentSession.runSession')(
     // supportedCommands() awaits that, so the full list (with descriptions and argument
     // hints -- richer than the streamed init message's names-only list) is available right
     // away on both a cold start and a resume. Forked so it never blocks reading the event
-    // stream, and tied to this session run so a restart interrupts it.
+    // stream, and tied to this session run so a restart interrupts it. The warming signal
+    // brackets the await so the renderer can show a "loading commands" indicator; success
+    // ends it via SlashCommandsAvailable, failure via SlashCommandsWarming(active: false).
     yield* Effect.fork(
-      Effect.tryPromise({
-        try: () => session.supportedCommands(),
-        catch: (cause) => new SessionStreamError({ cause })
-      }).pipe(
+      postOutbound(SlashCommandsWarming.make({ active: true })).pipe(
+        Effect.andThen(
+          Effect.tryPromise({
+            try: () => session.supportedCommands(),
+            catch: (cause) => new SessionStreamError({ cause })
+          })
+        ),
         Effect.flatMap((commands) =>
           postOutbound(
             SlashCommandsAvailable.make({
@@ -280,7 +286,7 @@ const runSession = Effect.fn('AgentSession.runSession')(
           Effect.logWarning('Failed to warm up slash commands', {
             paneId: config.paneId,
             error
-          })
+          }).pipe(Effect.andThen(postOutbound(SlashCommandsWarming.make({ active: false }))))
         )
       )
     )

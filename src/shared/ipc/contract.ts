@@ -315,6 +315,19 @@ export const PanePlanReviewRequested = Schema.TaggedStruct('PanePlanReviewReques
 export type PanePlanReviewRequested = typeof PanePlanReviewRequested.Type
 
 /**
+ * Event pushed to the renderer when pane `paneId`'s slash-command warm-up
+ * begins (`active` true) or fails without producing a list (`active` false),
+ * so the renderer can show a "loading commands" indicator above the input while
+ * the session's command set is being discovered. A successful warm-up ends the
+ * warming state via {@link PaneSlashCommandsAvailable} rather than this event.
+ */
+export const PaneSlashCommandsWarming = Schema.TaggedStruct('PaneSlashCommandsWarming', {
+  paneId: Schema.UUID,
+  active: Schema.Boolean
+})
+export type PaneSlashCommandsWarming = typeof PaneSlashCommandsWarming.Type
+
+/**
  * Event pushed to the renderer with the slash commands available in pane
  * `paneId`'s live session, so the renderer can offer them in the `/` popover.
  * Sent when the session starts (names only, empty hints) and again whenever the
@@ -412,6 +425,7 @@ export const IpcEvent = Schema.Union(
   PanePermissionRequested,
   PaneQuestionRequested,
   PanePlanReviewRequested,
+  PaneSlashCommandsWarming,
   PaneSlashCommandsAvailable,
   PaneConversationCompacted,
   PaneConversationReset,
@@ -464,6 +478,7 @@ export interface DiaApi {
   onPermissionRequested(listener: (event: PanePermissionRequested) => void): () => void
   onQuestionRequested(listener: (event: PaneQuestionRequested) => void): () => void
   onPlanReviewRequested(listener: (event: PanePlanReviewRequested) => void): () => void
+  onSlashCommandsWarming(listener: (event: PaneSlashCommandsWarming) => void): () => void
   onSlashCommandsAvailable(listener: (event: PaneSlashCommandsAvailable) => void): () => void
   onConversationCompacted(listener: (event: PaneConversationCompacted) => void): () => void
   onConversationReset(listener: (event: PaneConversationReset) => void): () => void

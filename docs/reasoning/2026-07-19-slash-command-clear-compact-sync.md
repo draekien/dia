@@ -35,6 +35,24 @@ not a merge.
 > the pane simply has no commands until a `commands_changed` arrives — a rare,
 > logged degradation.
 
+> **Update (2026-07-19, resume delivery + warming indicator):** the warm-up
+> already runs on resume — `runSession` fires it on every `Init`, and resume is
+> just an `Init` carrying `resume` (triggered by `FocusPane` →
+> `PaneWorkspace.resumePane`). The gap on resume was *delivery*, not discovery:
+> `paneChatAtom` fetched history (an async IPC round-trip) *before* forking its
+> event subscription, so a warm-up `SlashCommandsAvailable` push landing in that
+> window was dropped. Fix: the atom now subscribes *first*, then folds the
+> fetched history in while preserving whatever slash-command state the stream
+> already delivered (`slashCommands`/`warmingCommands`). This trades an almost
+> impossible "streamed delta before history resolves on a just-resumed pane" for
+> reliable command delivery — the right trade, since resume doesn't auto-start a
+> turn. Separately, a `SlashCommandsWarming { active }` message now brackets the
+> warm-up await (`active: true` before, `active: false` on failure; success ends
+> it via `SlashCommandsAvailable`), driving a muted "Loading commands…" spinner
+> just above the pane input. It stays off the amber/red/green pulse reserved for
+> attention (One Voice Rule) and never collides with the `/` popover: while
+> warming the command list is empty, so the popover can't open.
+
 **`/clear` must persist the new conversation id or resume silently reloads the
 old transcript.** `/clear` surfaces as a top-level `conversation_reset` SDK
 message carrying `new_conversation_id`. dia persists the pane's `sessionId` to
