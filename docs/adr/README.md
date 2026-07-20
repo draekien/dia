@@ -26,6 +26,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0015](0015-effect-atom-and-direct-ipc-reducer-for-renderer-chat-state.md) | Use effect-atom and a direct IPC-event reducer for renderer chat state | accepted |
 | [0016](0016-electron-builder-distribution-and-auto-update.md) | Distribute dia as an electron-builder NSIS installer with GitHub-backed auto-update | accepted |
 | [0017](0017-frameless-window-with-native-overlay-controls.md) | Replace the native window frame with a custom titlebar and native overlay controls | accepted |
+| [0018](0018-transcript-anchored-file-checkpointing-with-conversation-fork.md) | Transcript-anchored file checkpointing that forks the conversation on rewind | accepted |
 
 ## Adding a new ADR
 

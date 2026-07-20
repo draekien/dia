@@ -195,6 +195,24 @@ export const FocusPane = Schema.TaggedStruct('FocusPane', {
 export type FocusPane = typeof FocusPane.Type
 
 /**
+ * Command sent by the renderer to rewind pane `paneId` to a prior checkpoint:
+ * `messageUuid` is a user-turn UUID previously surfaced via
+ * {@link PaneCheckpointAvailable}, and `resumeAnchorUuid` (from the same event)
+ * is the preceding assistant turn the conversation branches at. The pane
+ * restores the working tree to the user turn's pre-edit state and branches the
+ * conversation just before it, so files and conversation are rewound together.
+ * `resumeAnchorUuid` is absent when rewinding the first turn (the pane starts a
+ * fresh conversation). This is destructive (that turn onward, and its file
+ * edits, are discarded); the renderer should confirm with the user first.
+ */
+export const RewindToCheckpoint = Schema.TaggedStruct('RewindToCheckpoint', {
+  paneId: Schema.UUID,
+  messageUuid: Schema.String,
+  resumeAnchorUuid: Schema.optional(Schema.String)
+})
+export type RewindToCheckpoint = typeof RewindToCheckpoint.Type
+
+/**
  * Union of every command the renderer may send over the `command` channel.
  * Main-process handlers should match on the `_tag` field to dispatch.
  */
@@ -208,7 +226,8 @@ export const IpcCommand = Schema.Union(
   SetThinkingLevel,
   SetPermissionMode,
   ResolvePlanReview,
-  FocusPane
+  FocusPane,
+  RewindToCheckpoint
 )
 export type IpcCommand = typeof IpcCommand.Type
 
@@ -370,6 +389,34 @@ export const PaneConversationReset = Schema.TaggedStruct('PaneConversationReset'
 export type PaneConversationReset = typeof PaneConversationReset.Type
 
 /**
+ * Event pushed to the renderer once per user turn in pane `paneId`, carrying the
+ * turn's `messageUuid` file-checkpoint id and, when a prior assistant turn
+ * exists, `resumeAnchorUuid` — the assistant turn the conversation branches at
+ * on rewind. The renderer associates both with the turn so a "rewind to here"
+ * affordance can dispatch a {@link RewindToCheckpoint} command carrying them.
+ * `resumeAnchorUuid` is absent for the first turn of a conversation. Emitted
+ * only while file checkpointing is enabled.
+ */
+export const PaneCheckpointAvailable = Schema.TaggedStruct('PaneCheckpointAvailable', {
+  paneId: Schema.UUID,
+  messageUuid: Schema.String,
+  resumeAnchorUuid: Schema.optional(Schema.String)
+})
+export type PaneCheckpointAvailable = typeof PaneCheckpointAvailable.Type
+
+/**
+ * Event pushed to the renderer after a {@link RewindToCheckpoint} completes for
+ * pane `paneId`, carrying the `messageUuid` that was rewound to. The renderer
+ * should truncate the pane's displayed transcript at that turn (its files and
+ * conversation are now branched there).
+ */
+export const PaneRewoundToCheckpoint = Schema.TaggedStruct('PaneRewoundToCheckpoint', {
+  paneId: Schema.UUID,
+  messageUuid: Schema.String
+})
+export type PaneRewoundToCheckpoint = typeof PaneRewoundToCheckpoint.Type
+
+/**
  * Event pushed to the renderer whenever the pane layout tree changes (pane
  * created, split, closed, or resized). `tree` is the full, current layout and
  * should replace the renderer's local copy rather than being merged.
@@ -432,6 +479,8 @@ export const IpcEvent = Schema.Union(
   PaneSlashCommandsAvailable,
   PaneConversationCompacted,
   PaneConversationReset,
+  PaneCheckpointAvailable,
+  PaneRewoundToCheckpoint,
   LayoutChanged,
   PaneCreateFailed,
   PaneAttentionChanged,
@@ -463,6 +512,7 @@ export interface DiaApi {
   setPermissionMode(paneId: string, mode: PermissionMode): void
   resolvePlanReview(paneId: string, requestId: string, approved: boolean): void
   focusPane(paneId: string): void
+  rewindToCheckpoint(paneId: string, messageUuid: string, resumeAnchorUuid?: string): void
   getInitialLayout(): Promise<PaneNode>
   getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>
   chooseDirectory(): Promise<ChooseDirectoryResult>
@@ -486,6 +536,8 @@ export interface DiaApi {
   onSlashCommandsAvailable(listener: (event: PaneSlashCommandsAvailable) => void): () => void
   onConversationCompacted(listener: (event: PaneConversationCompacted) => void): () => void
   onConversationReset(listener: (event: PaneConversationReset) => void): () => void
+  onCheckpointAvailable(listener: (event: PaneCheckpointAvailable) => void): () => void
+  onRewoundToCheckpoint(listener: (event: PaneRewoundToCheckpoint) => void): () => void
   onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void
   onAssistantThinkingDelta(listener: (event: PaneAssistantThinkingDelta) => void): () => void
   onToolCallStarted(listener: (event: PaneToolCallStarted) => void): () => void

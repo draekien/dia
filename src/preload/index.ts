@@ -13,6 +13,7 @@ import {
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
+  RewindToCheckpoint,
   SendMessage,
   SetPermissionMode,
   SetThinkingLevel,
@@ -32,6 +33,7 @@ const encodeSetThinkingLevel = Schema.encodeSync(SetThinkingLevel)
 const encodeSetPermissionMode = Schema.encodeSync(SetPermissionMode)
 const encodeResolvePlanReview = Schema.encodeSync(ResolvePlanReview)
 const encodeFocusPane = Schema.encodeSync(FocusPane)
+const encodeRewindToCheckpoint = Schema.encodeSync(RewindToCheckpoint)
 const decodeEvent = Schema.decodeUnknownEither(IpcEvent)
 const decodeTree = Schema.decodeUnknownSync(PaneNode)
 const decodeHistory = Schema.decodeUnknownSync(Schema.Array(ConversationMessage))
@@ -111,6 +113,18 @@ const api: DiaApi = {
   },
   focusPane(paneId) {
     ipcRenderer.send(CHANNEL.command, encodeFocusPane(FocusPane.make({ paneId })))
+  },
+  rewindToCheckpoint(paneId, messageUuid, resumeAnchorUuid) {
+    ipcRenderer.send(
+      CHANNEL.command,
+      encodeRewindToCheckpoint(
+        RewindToCheckpoint.make({
+          paneId,
+          messageUuid,
+          ...(resumeAnchorUuid !== undefined ? { resumeAnchorUuid } : {})
+        })
+      )
+    )
   },
   getInitialLayout() {
     return ipcRenderer.invoke(CHANNEL.getInitialLayout).then((raw) => decodeTree(raw))
@@ -207,6 +221,16 @@ const api: DiaApi = {
   onConversationReset(listener) {
     return subscribeToEvents((event) => {
       if (event._tag === 'PaneConversationReset') listener(event)
+    })
+  },
+  onCheckpointAvailable(listener) {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PaneCheckpointAvailable') listener(event)
+    })
+  },
+  onRewoundToCheckpoint(listener) {
+    return subscribeToEvents((event) => {
+      if (event._tag === 'PaneRewoundToCheckpoint') listener(event)
     })
   },
   onAssistantTextDelta(listener) {

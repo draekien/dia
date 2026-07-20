@@ -81,6 +81,22 @@ const userMessage = (content: UserContent): SDKMessage => ({
   message: { role: 'user', content }
 })
 
+const replayedUserPrompt = (text: string, uuid: string): SDKMessage => ({
+  type: 'user',
+  parent_tool_use_id: null,
+  uuid: uuid as UUID,
+  session_id: 'test-session',
+  message: { role: 'user', content: text }
+})
+
+const userMessageWithUuid = (content: UserContent, uuid: string): SDKMessage => ({
+  type: 'user',
+  parent_tool_use_id: null,
+  uuid: uuid as UUID,
+  session_id: 'test-session',
+  message: { role: 'user', content }
+})
+
 const toolResult = (
   toolUseId: string,
   options?: {
@@ -160,6 +176,11 @@ const toolCompletions = (
 
 const thinkingDeltas = (emitted: ReadonlyArray<OutboundMessage>): string[] =>
   emitted.flatMap((message) => (message._tag === 'AssistantThinkingDelta' ? [message.text] : []))
+
+const checkpoints = (emitted: ReadonlyArray<OutboundMessage>): string[] =>
+  emitted.flatMap((message) =>
+    message._tag === 'CheckpointAvailable' ? [message.messageUuid] : []
+  )
 
 describe('makeSessionEventReducer — assistant text streaming (T1)', () => {
   it('accumulates text deltas in arrival order into the intended message text', () => {
@@ -400,5 +421,56 @@ describe('makeSessionEventReducer — tool output capture', () => {
 
     expect(completion?.isError).toBe(true)
     expect(completion?.output).toBe('permission denied')
+  })
+})
+
+describe('makeSessionEventReducer — file-checkpoint anchoring', () => {
+  it('emits CheckpointAvailable carrying the uuid of a replayed user prompt turn', () => {
+    const uuid = 'ckpt-1111-4111-8111-111111111111'
+
+    const emitted = run([replayedUserPrompt('Refactor the auth module', uuid)])
+
+    expect(emitted).toEqual([{ _tag: 'CheckpointAvailable', messageUuid: uuid }])
+  })
+
+  it('emits no CheckpointAvailable for a user prompt turn without a uuid (replay disabled)', () => {
+    const emitted = run([userMessage('Refactor the auth module')])
+
+    expect(checkpoints(emitted)).toEqual([])
+  })
+
+  it('carries the preceding assistant uuid as resumeAnchorUuid', () => {
+    const uuid = 'ckpt-1111-4111-8111-111111111111'
+
+    const emitted = run([
+      replayedUserPrompt('first prompt', 'ckpt-0000-4000-8000-000000000000'),
+      assistantMessage([{ type: 'text', text: 'a reply', citations: null }]),
+      replayedUserPrompt('second prompt', uuid)
+    ])
+
+    expect(emitted).toContainEqual({
+      _tag: 'CheckpointAvailable',
+      messageUuid: uuid,
+      resumeAnchorUuid: '00000000-0000-0000-0000-000000000000'
+    })
+  })
+
+  it('omits resumeAnchorUuid on the first turn (no preceding assistant)', () => {
+    const uuid = 'ckpt-1111-4111-8111-111111111111'
+
+    const emitted = run([replayedUserPrompt('first prompt', uuid)])
+
+    expect(emitted).toEqual([{ _tag: 'CheckpointAvailable', messageUuid: uuid }])
+  })
+
+  it('does not treat a tool-result user message as a checkpoint even when it carries a uuid', () => {
+    const emitted = run([
+      toolUseStart(0, 'tool-1', 'Read'),
+      blockStop(0),
+      userMessageWithUuid(toolResult('tool-1', { content: 'ok' }), 'tr-2222-4222-8222-222222222222')
+    ])
+
+    expect(checkpoints(emitted)).toEqual([])
+    expect(toolCompletions(emitted)).toHaveLength(1)
   })
 })

@@ -3,11 +3,19 @@ import { AttentionState } from './attention'
 
 /**
  * A single turn in a pane's conversation history, as exchanged with Claude.
- * Use to append to or read `PaneRecord.history`.
+ * Use to append to or read `PaneRecord.history`. `checkpointUuid`, when present,
+ * is the Agent SDK message id anchoring a rewindable file checkpoint to this
+ * user turn (see ADR-0018); absent on assistant turns and on user turns that
+ * carry no checkpoint (e.g. tool results). `resumeAnchorUuid`, present alongside
+ * `checkpointUuid` when a prior assistant turn exists, is that assistant turn's
+ * id — the point the conversation branches at on rewind; absent for the first
+ * turn of a conversation.
  */
 export const ConversationMessage = Schema.Struct({
   role: Schema.Literal('user', 'assistant'),
-  content: Schema.String
+  content: Schema.String,
+  checkpointUuid: Schema.optional(Schema.String),
+  resumeAnchorUuid: Schema.optional(Schema.String)
 })
 export type ConversationMessage = typeof ConversationMessage.Type
 

@@ -4,6 +4,7 @@ import {
   AssistantMessageReceived,
   AssistantTextDelta,
   AssistantThinkingDelta,
+  CheckpointAvailable,
   ConversationCompacted,
   ConversationReset,
   type OutboundMessage,
@@ -61,12 +62,17 @@ const flattenToolResultContent = (content: ToolResultBlock['content']): string =
  * stateful: it accumulates streaming tool input and remembers which tool calls
  * are awaiting their result, so a `ToolCallCompleted` is emitted only once the
  * matching tool result arrives (or the turn ends), reflecting real execution
- * time rather than the moment the tool's input finished streaming.
+ * time rather than the moment the tool's input finished streaming. It also
+ * remembers the uuid of the most recent assistant message seen, so each
+ * `CheckpointAvailable` it emits for a user turn carries that uuid as
+ * `resumeAnchorUuid` — the point `resumeSessionAt` must branch at to resume
+ * up to but excluding that user turn.
  */
 export const makeSessionEventReducer = (): SessionEventReducer => {
   const toolCallsByBlockIndex = new Map<number, { id: string; name: string }>()
   const partialJsonByBlockIndex = new Map<number, string>()
   const pendingToolCalls = new Map<string, { name: string; input: Record<string, unknown> }>()
+  let lastAssistantUuid: string | undefined
 
   const completeToolCall = (
     toolCallId: string,
@@ -133,6 +139,7 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
     }
 
     if (message.type === 'assistant') {
+      lastAssistantUuid = message.uuid
       const text = message.message.content
         .flatMap((block) => (block.type === 'text' ? [block.text] : []))
         .join('')
@@ -152,7 +159,16 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
 
     if (message.type === 'user') {
       const content = message.message.content
-      if (typeof content === 'string') return []
+      if (typeof content === 'string') {
+        return message.uuid !== undefined
+          ? [
+              CheckpointAvailable.make({
+                messageUuid: message.uuid,
+                ...(lastAssistantUuid !== undefined ? { resumeAnchorUuid: lastAssistantUuid } : {})
+              })
+            ]
+          : []
+      }
       const completed: OutboundMessage[] = []
       for (const block of content) {
         if (block.type !== 'tool_result') continue

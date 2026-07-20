@@ -1,5 +1,16 @@
 import { Result } from '@effect-atom/atom'
 import { useAtomSet, useAtomValue } from '@effect-atom/atom-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@renderer/components/ui/alert-dialog'
+import { Marker, MarkerContent, MarkerIcon } from '@renderer/components/ui/marker'
 import { Message, MessageContent } from '@renderer/components/ui/message'
 import {
   MessageScroller,
@@ -46,11 +57,11 @@ import type {
 } from '@shared/ipc/contract'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUp, Brain, Check, Loader2Icon, ShieldCheck } from 'lucide-react'
+import { ArrowUp, Brain, Check, Loader2Icon, RotateCcw, ShieldCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { PaneMessage, ToolCallPart } from '../lib/pane-chat'
 import { emptyPaneChatState } from '../lib/pane-chat'
-import { paneChatAtom, paneSendAtom } from '../lib/pane-chat-atoms'
+import { paneChatAtom, paneRewindAtom, paneSendAtom } from '../lib/pane-chat-atoms'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import { Markdown } from './markdown'
 import { PermissionRequestCard } from './permission-request-card'
@@ -121,20 +132,22 @@ function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
   const summary = toolInputSummary(part.input)
   const output = formatToolOutput(part.output)
   const row = (
-    <div className="flex items-center gap-2 pl-0.5 font-mono text-xs text-muted-foreground">
-      <span aria-hidden className="flex size-3.5 shrink-0 items-center justify-center">
+    <Marker className="pl-0.5 font-mono text-xs">
+      <MarkerIcon className="flex items-center justify-center">
         {status === 'running' ? (
           <span className="size-1.5 animate-pulse-slow rounded-full bg-muted-foreground motion-reduce:animate-none" />
         ) : (
           <Check className="size-3 text-muted-foreground/70" strokeWidth={2.5} />
         )}
-      </span>
-      <span className="shrink-0 text-foreground/90">{part.name}</span>
-      {summary !== undefined && (
-        <span className="truncate text-muted-foreground/80">{summary}</span>
-      )}
+      </MarkerIcon>
+      <MarkerContent className="flex min-w-0 items-center gap-2">
+        <span className="shrink-0 text-foreground/90">{part.name}</span>
+        {summary !== undefined && (
+          <span className="truncate text-muted-foreground/80">{summary}</span>
+        )}
+      </MarkerContent>
       <span className="sr-only">{status === 'running' ? 'running' : 'completed'}</span>
-    </div>
+    </Marker>
   )
   if (output === undefined) return row
   return (
@@ -150,8 +163,13 @@ function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
 function ThinkingDisclosure({ content }: { content: string }): React.JSX.Element {
   return (
     <details className="min-w-0">
-      <summary className="w-fit cursor-pointer font-mono text-xs text-muted-foreground marker:text-muted-foreground/60">
-        Thinking
+      <summary className="w-fit cursor-pointer list-none">
+        <Marker className="w-fit font-mono text-xs">
+          <MarkerIcon>
+            <Brain className="size-3" />
+          </MarkerIcon>
+          <MarkerContent>Thinking</MarkerContent>
+        </Marker>
       </summary>
       <div className="mt-1 pl-3">
         <Markdown content={content} className="text-muted-foreground" />
@@ -165,49 +183,80 @@ function ThinkingDisclosure({ content }: { content: string }): React.JSX.Element
  * single trailing tinted bubble, assistant turns as their ordered parts
  * (collapsed thinking disclosures, text bubbles, tool-call status rows).
  * Thinking parts render as a collapsed `Thinking` disclosure, click to expand.
- * Text parts render markdown directly with no reveal animation. Pass a message
- * from a pane's chat state ({@link paneChatAtom}).
+ * Text parts render markdown directly with no reveal animation. When `onRewind`
+ * is provided and the turn is a rewindable user turn (carries a
+ * `checkpointUuid`), a hover-revealed separator marker is shown above the
+ * message — the branch point rewind restores to, just before this turn — with a
+ * rewind action that invokes `onRewind` with this message.
+ * Pass a message from a pane's chat state ({@link paneChatAtom}).
  */
-export function MessageView({ message }: { message: PaneMessage }): React.JSX.Element {
+export function MessageView({
+  message,
+  onRewind
+}: {
+  message: PaneMessage
+  onRewind?: (message: PaneMessage) => void
+}): React.JSX.Element {
   if (message.role === 'notice') {
     const text = message.parts.find((part) => part.type === 'text')?.content ?? ''
     return (
-      <div className="flex items-center gap-3 py-1 text-xs text-muted-foreground">
-        <span aria-hidden className="h-px flex-1 bg-border" />
-        <span className="shrink-0">{text}</span>
-        <span aria-hidden className="h-px flex-1 bg-border" />
-      </div>
+      <Marker variant="separator" className="py-1 text-xs">
+        <MarkerContent>{text}</MarkerContent>
+      </Marker>
     )
   }
   const isUser = message.role === 'user'
+  const canRewind = isUser && message.checkpointUuid !== undefined && onRewind !== undefined
   return (
-    <Message align={isUser ? 'end' : 'start'}>
-      <MessageContent>
-        {message.parts.map((part, index) => {
-          const key = `${message.id}:${index}`
-          if (part.type === 'thinking') {
-            if (part.content.trim() === '') return null
-            return <ThinkingDisclosure key={key} content={part.content} />
-          }
-          if (part.type === 'text') {
-            if (part.content.trim() === '') return null
-            return (
-              <Bubble
-                key={key}
-                variant={isUser ? 'tinted' : 'muted'}
-                align={isUser ? 'end' : 'start'}
-              >
-                <BubbleContent>
-                  <Markdown content={part.content} />
-                </BubbleContent>
-              </Bubble>
-            )
-          }
-          if (part.type === 'tool-call') return <ToolCallRow key={key} part={part} />
-          return null
-        })}
-      </MessageContent>
-    </Message>
+    <div className={canRewind ? 'group/turn' : undefined}>
+      {canRewind && (
+        <Marker
+          variant="separator"
+          className="mb-1 opacity-0 after:hidden transition-opacity group-hover/turn:opacity-100 group-focus-within/turn:opacity-100 motion-reduce:transition-none"
+        >
+          <MarkerContent>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              aria-label="Rewind to this point"
+              onClick={() => onRewind(message)}
+              className="gap-1 text-muted-foreground hover:text-foreground"
+            >
+              <RotateCcw />
+              Rewind to this point
+            </Button>
+          </MarkerContent>
+        </Marker>
+      )}
+      <Message align={isUser ? 'end' : 'start'}>
+        <MessageContent>
+          {message.parts.map((part, index) => {
+            const key = `${message.id}:${index}`
+            if (part.type === 'thinking') {
+              if (part.content.trim() === '') return null
+              return <ThinkingDisclosure key={key} content={part.content} />
+            }
+            if (part.type === 'text') {
+              if (part.content.trim() === '') return null
+              return (
+                <Bubble
+                  key={key}
+                  variant={isUser ? 'tinted' : 'muted'}
+                  align={isUser ? 'end' : 'start'}
+                >
+                  <BubbleContent>
+                    <Markdown content={part.content} />
+                  </BubbleContent>
+                </Bubble>
+              )
+            }
+            if (part.type === 'tool-call') return <ToolCallRow key={key} part={part} />
+            return null
+          })}
+        </MessageContent>
+      </Message>
+    </div>
   )
 }
 
@@ -287,6 +336,8 @@ function PaneChat({
 
   const chat = Result.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
   const sendMessage = useAtomSet(paneSendAtom(paneId))
+  const rewind = useAtomSet(paneRewindAtom(paneId))
+  const [rewindTarget, setRewindTarget] = useState<PaneMessage | null>(null)
 
   const [slashHighlight, setSlashHighlight] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
@@ -373,7 +424,7 @@ function PaneChat({
                   messageId={message.id}
                   scrollAnchor={message.role === 'user'}
                 >
-                  <MessageView message={message} />
+                  <MessageView message={message} onRewind={setRewindTarget} />
                 </MessageScrollerItem>
               ))}
             </MessageScrollerContent>
@@ -525,6 +576,40 @@ function PaneChat({
           }}
         </form.Field>
       </form>
+      <AlertDialog
+        open={rewindTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRewindTarget(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rewind to this point?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This restores your files and the conversation to just before this message. Everything
+              after it — later messages and the file edits Claude made — is discarded. Changes made
+              through the terminal can’t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (rewindTarget?.checkpointUuid !== undefined) {
+                  rewind({
+                    checkpointUuid: rewindTarget.checkpointUuid,
+                    resumeAnchorUuid: rewindTarget.resumeAnchorUuid
+                  })
+                }
+                setRewindTarget(null)
+              }}
+            >
+              Rewind
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
