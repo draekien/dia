@@ -185,8 +185,9 @@ function ThinkingDisclosure({ content }: { content: string }): React.JSX.Element
  * Thinking parts render as a collapsed `Thinking` disclosure, click to expand.
  * Text parts render markdown directly with no reveal animation. When `onRewind`
  * is provided and the turn is a rewindable user turn (carries a
- * `checkpointUuid`), a hover-revealed separator marker is shown below the
- * message with a rewind action that invokes `onRewind` with this message.
+ * `checkpointUuid`), a hover-revealed separator marker is shown above the
+ * message — the branch point rewind restores to, just before this turn — with a
+ * rewind action that invokes `onRewind` with this message.
  * Pass a message from a pane's chat state ({@link paneChatAtom}).
  */
 export function MessageView({
@@ -208,6 +209,26 @@ export function MessageView({
   const canRewind = isUser && message.checkpointUuid !== undefined && onRewind !== undefined
   return (
     <div className={canRewind ? 'group/turn' : undefined}>
+      {canRewind && (
+        <Marker
+          variant="separator"
+          className="mb-1 opacity-0 after:hidden transition-opacity group-hover/turn:opacity-100 group-focus-within/turn:opacity-100 motion-reduce:transition-none"
+        >
+          <MarkerContent>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              aria-label="Rewind to this point"
+              onClick={() => onRewind(message)}
+              className="gap-1 text-muted-foreground hover:text-foreground"
+            >
+              <RotateCcw />
+              Rewind to this point
+            </Button>
+          </MarkerContent>
+        </Marker>
+      )}
       <Message align={isUser ? 'end' : 'start'}>
         <MessageContent>
           {message.parts.map((part, index) => {
@@ -235,26 +256,6 @@ export function MessageView({
           })}
         </MessageContent>
       </Message>
-      {canRewind && (
-        <Marker
-          variant="separator"
-          className="mt-1 opacity-0 after:hidden transition-opacity group-hover/turn:opacity-100 group-focus-within/turn:opacity-100 motion-reduce:transition-none"
-        >
-          <MarkerContent>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              aria-label="Rewind to this point"
-              onClick={() => onRewind(message)}
-              className="gap-1 text-muted-foreground hover:text-foreground"
-            >
-              <RotateCcw />
-              Rewind to this point
-            </Button>
-          </MarkerContent>
-        </Marker>
-      )}
     </div>
   )
 }
