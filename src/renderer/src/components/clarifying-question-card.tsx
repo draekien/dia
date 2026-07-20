@@ -11,8 +11,11 @@ type Question = PaneQuestionRequested['questions'][number]
 
 const OTHER = '__other__'
 
+// The SDK's AskUserQuestionOutput keys answers by the full question text
+// (question text -> answer string); keying by header instead makes the CLI find
+// no answer for any question and report that the user did not answer.
 function questionKey(question: Question): string {
-  return question.header.length > 0 ? question.header : question.question
+  return question.question
 }
 
 function resolveAnswers(
@@ -68,7 +71,8 @@ function isComplete(
  * (`multiSelect`), always with an "Other" free-text option for answers that fit none of the
  * choices. Pass the pane's {@link PaneQuestionRequested} as `request`; `onResolve` is called
  * once, when every question is answered and the user submits, with an `Answers`
- * {@link QuestionResponse} keyed by each question's header.
+ * {@link QuestionResponse} keyed by each question's full text (the shape the SDK
+ * matches answers against).
  */
 export function ClarifyingQuestionCard({
   request,
