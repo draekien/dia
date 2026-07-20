@@ -2,6 +2,7 @@ import type { AttentionState } from '@shared/domain/attention'
 import {
   AwaitingPermission,
   Completed,
+  Crashed,
   Errored,
   Idle,
   PermissionRequest
@@ -27,6 +28,7 @@ import type { PaneChatState } from './pane-chat'
 import {
   appendUserMessage,
   emptyPaneChatState,
+  lastUserText,
   paneChatStateFromHistory,
   reducePaneChat
 } from './pane-chat'
@@ -369,7 +371,7 @@ describe('reducePaneChat: attention', () => {
     expect(result.messages).toBe(streaming.messages)
   })
 
-  it('ends the turn when attention reports Errored', () => {
+  it('ends the turn and appends a retryable error turn when attention reports Errored', () => {
     const streaming = loadingWith(paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }]))
 
     const result = reducePaneChat(
@@ -378,6 +380,23 @@ describe('reducePaneChat: attention', () => {
     )
 
     expect(result.isLoading).toBe(false)
+    const appended = result.messages.at(-1)
+    expect(appended?.role).toBe('error')
+    expect(appended?.parts).toEqual([{ type: 'text', content: 'boom' }])
+  })
+
+  it('ends the turn and appends an error turn when attention reports Crashed', () => {
+    const streaming = loadingWith(paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }]))
+
+    const result = reducePaneChat(
+      streaming,
+      attentionChanged(Crashed.make({ error: { message: 'process exited' } }))
+    )
+
+    expect(result.isLoading).toBe(false)
+    const appended = result.messages.at(-1)
+    expect(appended?.role).toBe('error')
+    expect(appended?.parts).toEqual([{ type: 'text', content: 'process exited' }])
   })
 
   it('keeps the turn loading while awaiting permission', () => {
@@ -401,6 +420,25 @@ describe('reducePaneChat: attention', () => {
     const result = reducePaneChat(streaming, attentionChanged(Idle.make({})))
 
     expect(result).toBe(streaming)
+  })
+})
+
+describe('lastUserText', () => {
+  it('returns undefined when there is no user turn', () => {
+    expect(lastUserText(emptyPaneChatState)).toBeUndefined()
+  })
+
+  it('returns the most recent user turn text, ignoring later assistant/error turns', () => {
+    const withTurns = reducePaneChat(
+      appendUserMessage(
+        appendUserMessage(emptyPaneChatState, 'u-1', 'first question'),
+        'u-2',
+        'second question'
+      ),
+      attentionChanged(Errored.make({ error: { message: 'boom' } }))
+    )
+
+    expect(lastUserText(withTurns)).toBe('second question')
   })
 })
 

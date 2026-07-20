@@ -9,6 +9,7 @@ import {
   CreatePane,
   type DiaApi,
   FocusPane,
+  InterruptPane,
   IpcEvent,
   ResolvePermission,
   ResolvePlanReview,
@@ -33,6 +34,7 @@ const encodeSetThinkingLevel = Schema.encodeSync(SetThinkingLevel)
 const encodeSetPermissionMode = Schema.encodeSync(SetPermissionMode)
 const encodeResolvePlanReview = Schema.encodeSync(ResolvePlanReview)
 const encodeFocusPane = Schema.encodeSync(FocusPane)
+const encodeInterruptPane = Schema.encodeSync(InterruptPane)
 const encodeRewindToCheckpoint = Schema.encodeSync(RewindToCheckpoint)
 const decodeEvent = Schema.decodeUnknownEither(IpcEvent)
 const decodeTree = Schema.decodeUnknownSync(PaneNode)
@@ -113,6 +115,9 @@ const api: DiaApi = {
   },
   focusPane(paneId) {
     ipcRenderer.send(CHANNEL.command, encodeFocusPane(FocusPane.make({ paneId })))
+  },
+  interrupt(paneId) {
+    ipcRenderer.send(CHANNEL.command, encodeInterruptPane(InterruptPane.make({ paneId })))
   },
   rewindToCheckpoint(paneId, messageUuid, resumeAnchorUuid) {
     ipcRenderer.send(

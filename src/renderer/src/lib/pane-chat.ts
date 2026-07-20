@@ -1,4 +1,4 @@
-import type { AttentionState } from '@shared/domain/attention'
+import type { AttentionState, PaneError } from '@shared/domain/attention'
 import type { ConversationMessage } from '@shared/domain/pane'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import type {
@@ -50,16 +50,20 @@ export type MessagePart = TextPart | ThinkingPart | ToolCallPart
  * the ordered `parts` that compose it. User turns carry a single text part;
  * assistant turns interleave thinking, text, and tool-call parts; a `notice`
  * turn is a system-generated marker (e.g. a context-compaction divider) with a
- * single text part and no conversational author. `checkpointUuid`, present only
- * on user turns the pane has confirmed as rewindable, is the Agent SDK message
- * id to pass to `window.dia.rewindToCheckpoint` to restore files and conversation
- * to that point (see ADR-0018). `resumeAnchorUuid`, present alongside it when a
- * prior assistant turn exists, is the branch point that rewind resumes from;
- * absent for the first turn.
+ * single text part and no conversational author; an `error` turn is a failed
+ * turn's message (its single text part is the error message). Whether an error
+ * is retryable is a property of the pane's live attention state (`Errored` is
+ * recoverable, `Crashed` is terminal), not of this row. `checkpointUuid`,
+ * present only on user turns the
+ * pane has confirmed as rewindable, is the Agent SDK message id to pass to
+ * `window.dia.rewindToCheckpoint` to restore files and conversation to that
+ * point (see ADR-0018). `resumeAnchorUuid`, present alongside it when a prior
+ * assistant turn exists, is the branch point that rewind resumes from; absent
+ * for the first turn.
  */
 export interface PaneMessage {
   readonly id: string
-  readonly role: 'user' | 'assistant' | 'notice'
+  readonly role: 'user' | 'assistant' | 'notice' | 'error'
   readonly parts: ReadonlyArray<MessagePart>
   readonly checkpointUuid?: string
   readonly resumeAnchorUuid?: string
@@ -148,6 +152,26 @@ export const appendUserMessage = (
 
 const lastMessage = (state: PaneChatState): PaneMessage | undefined => state.messages.at(-1)
 
+/**
+ * The text of the most recent user turn, or `undefined` when the pane has no
+ * user turn yet. Used to populate a resend/retry action after an error.
+ */
+export const lastUserText = (state: PaneChatState): string | undefined => {
+  for (let index = state.messages.length - 1; index >= 0; index--) {
+    const message = state.messages[index]
+    if (message.role !== 'user') continue
+    const text = message.parts.find((part) => part.type === 'text')
+    return text?.type === 'text' ? text.content : undefined
+  }
+  return undefined
+}
+
+const errorMessage = (state: PaneChatState, error: PaneError): PaneMessage => ({
+  id: `${state.messages.length}:error`,
+  role: 'error',
+  parts: [{ type: 'text', content: error.message }]
+})
+
 // The turn currently being streamed is the trailing assistant message while a turn is in flight;
 // once a turn settles (isLoading false) that message is closed and the next event opens a new one.
 const isStreamingAssistant = (state: PaneChatState): boolean => {
@@ -215,7 +239,7 @@ const completeToolCall = (
   )
 
 const isTurnOver = (attention: AttentionState): boolean =>
-  attention._tag === 'Completed' || attention._tag === 'Errored'
+  attention._tag === 'Completed' || attention._tag === 'Errored' || attention._tag === 'Crashed'
 
 // Checkpoint uuids arrive after their optimistic user turn is already rendered, in the
 // same order the turns were submitted, so bind each to the earliest user turn still
@@ -259,8 +283,9 @@ const compactionNotice = (event: PaneConversationCompacted): string =>
 /**
  * Folds one pane stream event into conversation state. Text and thinking deltas
  * extend the in-flight assistant turn; a tool-call start adds a running row and
- * its completion resolves it in place; a terminal attention change (`Completed`
- * or `Errored`) ends the turn. `PaneMessageAppended` is a backstop that only
+ * its completion resolves it in place; a terminal attention change ends the
+ * turn — `Completed` silently, `Errored`/`Crashed` by appending an `error` turn
+ * carrying the failure message so the transcript records it. `PaneMessageAppended` is a backstop that only
  * adds a turn's final text when no deltas built it, and user appends are
  * ignored (the optimistic {@link appendUserMessage} already added them).
  * `PaneSlashCommandsWarming` toggles the `warmingCommands` indicator, and
@@ -301,6 +326,13 @@ export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): Pa
       }
     }
     case 'PaneAttentionChanged':
+      if (event.attention._tag === 'Errored' || event.attention._tag === 'Crashed') {
+        return {
+          ...state,
+          messages: [...state.messages, errorMessage(state, event.attention.error)],
+          isLoading: false
+        }
+      }
       return isTurnOver(event.attention) ? { ...state, isLoading: false } : state
     case 'PaneSlashCommandsWarming':
       return { ...state, warmingCommands: event.active }

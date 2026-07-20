@@ -165,11 +165,11 @@ describe('PaneSupervisor', () => {
           )
         )
 
-        // Before being torn down, the crashed pane's attention transitions to Errored so the
-        // renderer can still show a red pulse for it.
+        // Before being torn down, the crashed pane's attention transitions to Crashed (terminal)
+        // so the renderer can still show a red pulse for it.
         assert.isTrue(
           eventsA.some(
-            (event) => event._tag === 'PaneAttentionChanged' && event.attention._tag === 'Errored'
+            (event) => event._tag === 'PaneAttentionChanged' && event.attention._tag === 'Crashed'
           )
         )
       }).pipe(Effect.scoped, Effect.provide(testLayer), Effect.provide(loggerLayer))
@@ -372,6 +372,98 @@ describe('PaneSupervisor', () => {
         ])
         assert.deepStrictEqual(processes[1].posted, [
           { _tag: 'Init', config: configB, resume: undefined }
+        ])
+      }).pipe(Effect.scoped, Effect.provide(testLayer), Effect.provide(loggerLayer))
+    })
+  )
+
+  it.effect(
+    'sending while AwaitingPermission clears attention so a later TurnCompleted lands',
+    () =>
+      Effect.gen(function* () {
+        const { processes, testLayer, loggerLayer } = makeTestSetup()
+
+        yield* Effect.gen(function* () {
+          const supervisor = yield* PaneSupervisor
+          const events: IpcEvent[] = []
+
+          const opened = yield* supervisor.openPane(
+            requestA,
+            (event) => Effect.sync(() => events.push(event)),
+            ignoreSessionId,
+            ignorePermissionMode
+          )
+          yield* flush
+
+          processes[0].emit('message', {
+            _tag: 'PermissionRequested',
+            requestId: 'req-1',
+            toolName: 'Bash',
+            input: {}
+          })
+          yield* flush
+
+          yield* opened.handle.sendMessage('take this instead')
+          yield* flush
+
+          processes[0].emit('message', { _tag: 'TurnCompleted' })
+          yield* flush
+
+          const attentionTags = events
+            .filter((event) => event._tag === 'PaneAttentionChanged')
+            .map((event) =>
+              event._tag === 'PaneAttentionChanged' ? event.attention._tag : event._tag
+            )
+
+          // AwaitingPermission -> Idle (on send) -> Completed (on the fresh turn's completion).
+          // Without the send clearing attention, TurnCompleted from AwaitingPermission would be an
+          // invalid transition and Completed would never appear.
+          assert.deepStrictEqual(attentionTags, ['AwaitingPermission', 'Idle', 'Completed'])
+          assert.deepStrictEqual(processes[0].posted, [
+            { _tag: 'Init', config: configA, resume: undefined },
+            { _tag: 'SendText', text: 'take this instead' }
+          ])
+        }).pipe(Effect.scoped, Effect.provide(testLayer), Effect.provide(loggerLayer))
+      })
+  )
+
+  it.effect('interrupt posts an Interrupt message and clears a pending permission', () =>
+    Effect.gen(function* () {
+      const { processes, testLayer, loggerLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        const events: IpcEvent[] = []
+
+        const opened = yield* supervisor.openPane(
+          requestA,
+          (event) => Effect.sync(() => events.push(event)),
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+        yield* flush
+
+        processes[0].emit('message', {
+          _tag: 'PermissionRequested',
+          requestId: 'req-1',
+          toolName: 'Bash',
+          input: {}
+        })
+        yield* flush
+
+        yield* opened.handle.interrupt()
+        yield* flush
+
+        const attentionTags = events
+          .filter((event) => event._tag === 'PaneAttentionChanged')
+          .map((event) =>
+            event._tag === 'PaneAttentionChanged' ? event.attention._tag : event._tag
+          )
+
+        assert.deepStrictEqual(attentionTags, ['AwaitingPermission', 'Idle'])
+        assert.deepStrictEqual(processes[0].posted, [
+          { _tag: 'Init', config: configA, resume: undefined },
+          { _tag: 'Interrupt' }
         ])
       }).pipe(Effect.scoped, Effect.provide(testLayer), Effect.provide(loggerLayer))
     })

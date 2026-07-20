@@ -195,6 +195,18 @@ export const FocusPane = Schema.TaggedStruct('FocusPane', {
 export type FocusPane = typeof FocusPane.Type
 
 /**
+ * Command sent by the renderer to interrupt the running turn of pane `paneId`.
+ * The pane supersedes any pending permission/question/plan prompt and aborts
+ * in-flight generation, so a turn that has stalled with no response can be
+ * cancelled without sending a new message. Dispatched over the `command`
+ * channel.
+ */
+export const InterruptPane = Schema.TaggedStruct('InterruptPane', {
+  paneId: Schema.UUID
+})
+export type InterruptPane = typeof InterruptPane.Type
+
+/**
  * Command sent by the renderer to rewind pane `paneId` to a prior checkpoint:
  * `messageUuid` is a user-turn UUID previously surfaced via
  * {@link PaneCheckpointAvailable}, and `resumeAnchorUuid` (from the same event)
@@ -227,6 +239,7 @@ export const IpcCommand = Schema.Union(
   SetPermissionMode,
   ResolvePlanReview,
   FocusPane,
+  InterruptPane,
   RewindToCheckpoint
 )
 export type IpcCommand = typeof IpcCommand.Type
@@ -512,6 +525,7 @@ export interface DiaApi {
   setPermissionMode(paneId: string, mode: PermissionMode): void
   resolvePlanReview(paneId: string, requestId: string, approved: boolean): void
   focusPane(paneId: string): void
+  interrupt(paneId: string): void
   rewindToCheckpoint(paneId: string, messageUuid: string, resumeAnchorUuid?: string): void
   getInitialLayout(): Promise<PaneNode>
   getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>

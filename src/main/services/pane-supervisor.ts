@@ -5,6 +5,7 @@ import {
   AwaitingPermission,
   ClarifyingQuestion,
   Completed,
+  Crashed,
   Errored,
   Idle,
   type PaneError,
@@ -62,6 +63,7 @@ import { utilityProcess } from 'electron'
 import {
   InboundMessage,
   InitMessage,
+  Interrupt,
   OutboundMessage,
   ResolvePermission,
   ResolvePlanReview,
@@ -132,8 +134,9 @@ export interface PaneHandle {
     messageUuid: string,
     resumeAnchorUuid: string | undefined
   ) => Effect.Effect<void>
+  readonly interrupt: () => Effect.Effect<void>
   readonly subscribe: () => Stream.Stream<IpcEvent>
-  readonly markErrored: (error: PaneError) => Effect.Effect<void>
+  readonly markCrashed: (error: PaneError) => Effect.Effect<void>
 }
 
 /**
@@ -482,7 +485,12 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
   const handle: PaneHandle = {
     sendMessage: (text) =>
       Effect.logDebug('Sending text to pane process', { paneId: config.paneId, text }).pipe(
-        Effect.andThen(Effect.sync(() => child.postMessage(encodeInbound(SendText.make({ text })))))
+        Effect.andThen(
+          Effect.sync(() => child.postMessage(encodeInbound(SendText.make({ text }))))
+        ),
+        // Sending supersedes any pending prompt in the pane process; clear attention here too so a
+        // pane stuck AwaitingPermission returns to Idle and the following TurnCompleted is valid.
+        Effect.andThen(applyAttention(Idle.make({})))
       ),
     setThinkingLevel: (level) =>
       Effect.logDebug('Sending thinking level to pane process', {
@@ -560,8 +568,13 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
           )
         )
       ),
+    interrupt: () =>
+      Effect.logDebug('Sending interrupt to pane process', { paneId: config.paneId }).pipe(
+        Effect.andThen(Effect.sync(() => child.postMessage(encodeInbound(Interrupt.make({}))))),
+        Effect.andThen(applyAttention(Idle.make({})))
+      ),
     subscribe: () => Stream.fromQueue(outbound),
-    markErrored: (error) => applyAttention(Errored.make({ error }))
+    markCrashed: (error) => applyAttention(Crashed.make({ error }))
   }
 
   return { handle, exits }
@@ -713,7 +726,7 @@ export const PaneSupervisorLive = Layer.effect(
                     new ProcessCrashedError({ paneId: config.paneId, exitCode })
                   ).pipe(
                     Effect.andThen(
-                      handle.markErrored({
+                      handle.markCrashed({
                         message: `Pane process exited unexpectedly (code ${exitCode})`
                       })
                     ),

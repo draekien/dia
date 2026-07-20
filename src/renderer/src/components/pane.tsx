@@ -57,17 +57,32 @@ import type {
 } from '@shared/ipc/contract'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUp, Brain, Check, Loader2Icon, RotateCcw, ShieldCheck } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowUp,
+  Brain,
+  Check,
+  Loader2Icon,
+  RotateCcw,
+  ShieldCheck
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { PaneMessage, ToolCallPart } from '../lib/pane-chat'
-import { emptyPaneChatState } from '../lib/pane-chat'
-import { paneChatAtom, paneRewindAtom, paneSendAtom } from '../lib/pane-chat-atoms'
+import type { PaneChatState, PaneMessage, ToolCallPart } from '../lib/pane-chat'
+import { emptyPaneChatState, lastUserText } from '../lib/pane-chat'
+import {
+  paneChatAtom,
+  paneInterruptAtom,
+  paneRewindAtom,
+  paneSendAtom
+} from '../lib/pane-chat-atoms'
+import { turnActivity } from '../lib/turn-activity'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import { Markdown } from './markdown'
 import { PermissionRequestCard } from './permission-request-card'
 import { PlanReviewCard } from './plan-review-card'
 import { PulseIndicator } from './pulse-indicator'
 import { SlashCommandMenu, slashMenuListboxId, slashMenuOptionId } from './slash-command-menu'
+import { TurnActivityLine } from './turn-activity-line'
 import { Bubble, BubbleContent } from './ui/bubble'
 import { Button } from './ui/button'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from './ui/input-group'
@@ -205,6 +220,17 @@ export function MessageView({
       </Marker>
     )
   }
+  if (message.role === 'error') {
+    const text = message.parts.find((part) => part.type === 'text')?.content ?? ''
+    return (
+      <Marker className="py-1 text-destructive text-xs">
+        <MarkerIcon>
+          <AlertTriangle className="size-3" />
+        </MarkerIcon>
+        <MarkerContent>{text}</MarkerContent>
+      </Marker>
+    )
+  }
   const isUser = message.role === 'user'
   const canRewind = isUser && message.checkpointUuid !== undefined && onRewind !== undefined
   return (
@@ -316,14 +342,28 @@ function PermissionModeSelect({
   )
 }
 
+const messageActivitySignature = (state: PaneChatState): string => {
+  const last = state.messages.at(-1)
+  const lastPart = last?.parts.at(-1)
+  const detail =
+    lastPart === undefined
+      ? ''
+      : lastPart.type === 'tool-call'
+        ? lastPart.state
+        : String(lastPart.content.length)
+  return `${state.messages.length}:${last?.parts.length ?? 0}:${detail}`
+}
+
 function PaneChat({
   paneId,
+  attention,
   thinkingLevel,
   onThinkingLevelChange,
   permissionMode,
   onPermissionModeChange
 }: {
   paneId: string
+  attention: AttentionState
   thinkingLevel: ThinkingLevel
   onThinkingLevelChange: (level: ThinkingLevel) => void
   permissionMode: PermissionMode
@@ -336,6 +376,7 @@ function PaneChat({
 
   const chat = Result.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
   const sendMessage = useAtomSet(paneSendAtom(paneId))
+  const interrupt = useAtomSet(paneInterruptAtom(paneId))
   const rewind = useAtomSet(paneRewindAtom(paneId))
   const [rewindTarget, setRewindTarget] = useState<PaneMessage | null>(null)
 
@@ -380,6 +421,48 @@ function PaneChat({
       queryClient.setQueryData<PanePlanReviewRequested | null>(pendingPlanReviewQueryKey, event)
     })
   }, [queryClient, paneId, pendingPlanReviewQueryKey])
+
+  const isLoading = chat.isLoading
+  const [clockMs, setClockMs] = useState(() => performance.now())
+  const turnStartRef = useRef<number | null>(null)
+  const lastActivityRef = useRef<number>(performance.now())
+  const activitySignatureRef = useRef<string>('')
+
+  const activitySignature = messageActivitySignature(chat)
+  if (activitySignatureRef.current !== activitySignature) {
+    activitySignatureRef.current = activitySignature
+    lastActivityRef.current = performance.now()
+  }
+
+  useEffect(() => {
+    if (!isLoading) {
+      turnStartRef.current = null
+      return
+    }
+    const now = performance.now()
+    turnStartRef.current = now
+    setClockMs(now)
+  }, [isLoading])
+
+  useEffect(() => {
+    if (!isLoading) return
+    const id = window.setInterval(() => setClockMs(performance.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [isLoading])
+
+  const elapsedMs = turnStartRef.current === null ? 0 : clockMs - turnStartRef.current
+  const activity = turnActivity(chat, elapsedMs, clockMs - lastActivityRef.current)
+  const pendingInteraction =
+    pendingPermission !== null || pendingQuestion !== null || pendingPlanReview !== null
+  const retryText = lastUserText(chat)
+
+  const resend = (): void => {
+    if (retryText !== undefined) sendMessage(retryText)
+  }
+  const interruptAndRetry = (): void => {
+    interrupt()
+    resend()
+  }
 
   const form = useForm({
     defaultValues: { text: '' },
@@ -427,6 +510,27 @@ function PaneChat({
                   <MessageView message={message} onRewind={setRewindTarget} />
                 </MessageScrollerItem>
               ))}
+              {activity !== null && !pendingInteraction && (
+                <TurnActivityLine
+                  activity={activity}
+                  onResend={resend}
+                  onInterruptAndRetry={interruptAndRetry}
+                />
+              )}
+              {attention._tag === 'Errored' && retryText !== undefined && (
+                <div className="flex px-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    className="gap-1"
+                    onClick={resend}
+                  >
+                    <RotateCcw />
+                    Retry
+                  </Button>
+                </div>
+              )}
             </MessageScrollerContent>
           </MessageScrollerViewport>
           <MessageScrollerButton />
@@ -721,6 +825,7 @@ function Pane({
         <PaneChat
           key={paneId}
           paneId={paneId}
+          attention={attention}
           thinkingLevel={level}
           onThinkingLevelChange={changeThinkingLevel}
           permissionMode={mode}

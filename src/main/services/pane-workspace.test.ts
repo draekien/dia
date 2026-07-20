@@ -29,8 +29,9 @@ const fakeHandle: PaneHandle = {
   resolveQuestion: () => Effect.void,
   resolvePlanReview: () => Effect.void,
   rewindToCheckpoint: () => Effect.void,
+  interrupt: () => Effect.void,
   subscribe: () => Stream.empty,
-  markErrored: () => Effect.void
+  markCrashed: () => Effect.void
 }
 
 function makeSupervisorLayer(

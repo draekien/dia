@@ -147,7 +147,7 @@ export const PlanReviewResponse = Schema.TaggedStruct('PlanReviewResponse', {
 })
 export type PlanReviewResponse = typeof PlanReviewResponse.Type
 
-/** A pane-level error message, used to describe why a pane entered `Errored`. */
+/** A pane-level error message, used to describe why a pane entered `Errored` or `Crashed`. */
 export const PaneError = Schema.Struct({
   message: Schema.String
 })
@@ -160,10 +160,15 @@ export const AwaitingPermission = Schema.TaggedStruct('AwaitingPermission', {
   request: UserInputRequest
 })
 /**
- * A pane that has crashed or failed. This is terminal: see `validTransitions`
- * for why no transition leads back out of it.
+ * A pane whose turn failed recoverably: the user can retry or send a fresh
+ * message, so `Errored -> Idle` clears it. A hard crash uses `Crashed` instead.
  */
 export const Errored = Schema.TaggedStruct('Errored', { error: PaneError })
+/**
+ * A pane whose backing process crashed. Terminal: there is no transition out of
+ * it (the process is gone), so the pane stays in this state until it is closed.
+ */
+export const Crashed = Schema.TaggedStruct('Crashed', { error: PaneError })
 /** A pane whose run finished; settles back to `Idle` after a timeout. */
 export const Completed = Schema.TaggedStruct('Completed', {})
 
@@ -171,7 +176,7 @@ export const Completed = Schema.TaggedStruct('Completed', {})
  * The set of attention states a pane can be in. Use `transitionAttention`
  * rather than constructing transitions by hand so invalid moves are rejected.
  */
-export const AttentionState = Schema.Union(Idle, AwaitingPermission, Errored, Completed)
+export const AttentionState = Schema.Union(Idle, AwaitingPermission, Errored, Crashed, Completed)
 export type AttentionState = typeof AttentionState.Type
 
 /**
@@ -184,16 +189,25 @@ export class InvalidAttentionTransition extends Data.TaggedError('InvalidAttenti
 }> {}
 
 // Idle <-> AwaitingPermission (resolved), Idle <-> Completed (settles after a timeout), and
-// Idle/AwaitingPermission/Completed -> Errored. Errored is terminal: there is no pure transition
-// out of it -- a crashed/errored pane stays red until the user closes it.
+// Idle/AwaitingPermission/Completed -> Errored. Errored -> Idle lets a retry or fresh send clear a
+// recoverable error. Idle -> Idle is a self-loop so sending a message / interrupting from an
+// already-idle pane clears attention without a rejected-transition warning. A crash can strike
+// from any non-terminal state, so every non-Crashed state -> Crashed; Crashed itself is terminal
+// (no outbound transition) since its process is gone.
 const validTransitions: ReadonlySet<string> = new Set([
+  'Idle->Idle',
   'Idle->AwaitingPermission',
   'Idle->Errored',
   'Idle->Completed',
+  'Idle->Crashed',
   'AwaitingPermission->Idle',
   'AwaitingPermission->Errored',
+  'AwaitingPermission->Crashed',
   'Completed->Idle',
-  'Completed->Errored'
+  'Completed->Errored',
+  'Completed->Crashed',
+  'Errored->Idle',
+  'Errored->Crashed'
 ])
 
 /**

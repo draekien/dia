@@ -1,6 +1,9 @@
 # Plan: Supersede a pending user-input request when the user sends a new message
 
-Status: **proposed**
+Status: **implemented** (folded into the turn-feedback work — activity line, inline
+error + retry, and cross-process interrupt; see
+`docs/reasoning/2026-07-20-supersede-and-interrupt-turn-feedback.md`). Live-CLI
+verification (Phase 4) still outstanding.
 Date: 2026-07-20
 Driven by: bug — sending a new message while `AskUserQuestion` (or a permission/plan prompt) is pending deadlocks the pane instead of abandoning the prompt and taking up the new message.
 

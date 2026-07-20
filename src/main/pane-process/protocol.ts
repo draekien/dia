@@ -41,6 +41,8 @@ export const ResolvePlanReview = Schema.TaggedStruct('ResolvePlanReview', {
   requestId: Schema.String,
   approved: Schema.Boolean
 })
+/** Sent by main to the pane subprocess to interrupt the running agent turn: it supersedes any pending permission/question/plan requests (denying them so their `canUseTool` callbacks release) and calls `query.interrupt()` to abort in-flight generation, so a silently stalled turn can be cancelled without a new message. */
+export const Interrupt = Schema.TaggedStruct('Interrupt', {})
 /** Sent by main to the pane subprocess to rewind the pane to a prior checkpoint: `messageUuid` is a user-turn UUID previously surfaced via `CheckpointAvailable`. The pane restores the working tree to that turn's pre-edit state (Agent SDK `rewindFiles`) and branches the conversation at the matching `resumeAnchorUuid` recorded for that turn (`resumeSessionAt` + `forkSession`, or a fresh unresumed session when no prior assistant turn exists), so files and conversation are rewound together and exclude this turn and everything after it. On success the pane replies with `RewoundToCheckpoint`. */
 export const RewindToCheckpoint = Schema.TaggedStruct('RewindToCheckpoint', {
   messageUuid: Schema.String,
@@ -55,6 +57,7 @@ export const InboundMessage = Schema.Union(
   ResolvePermission,
   ResolveQuestion,
   ResolvePlanReview,
+  Interrupt,
   RewindToCheckpoint
 )
 export type InboundMessage = typeof InboundMessage.Type

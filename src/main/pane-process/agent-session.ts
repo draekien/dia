@@ -44,7 +44,8 @@ import {
   QuestionRequested,
   RewoundToCheckpoint,
   SlashCommandsAvailable,
-  SlashCommandsWarming
+  SlashCommandsWarming,
+  TurnCompleted
 } from './protocol'
 import { thinkingOptions } from './thinking-options'
 
@@ -132,6 +133,14 @@ const toPermissionResult = (
           ? { behavior: 'allow' }
           : { behavior: 'deny', message: 'Plan not approved; keep planning.' }
     ),
+    Match.tag(
+      'Superseded',
+      (): PermissionResult => ({
+        behavior: 'deny',
+        message: 'Superseded by a new message from the user.',
+        interrupt: true
+      })
+    ),
     Match.exhaustive
   )
 
@@ -196,6 +205,53 @@ const dropPendingRequests = Effect.fn('AgentSession.dropPendingRequests')(functi
 })
 
 /**
+ * Supersedes every pending user-input request with a new message: resolves each
+ * with `Superseded` so its `canUseTool` denies with `interrupt: true`, aborting
+ * the stale turn. Arms `abortExpectedRef` when any request was actually
+ * superseded, so the resulting error-subtype turn result is presented as a clean
+ * turn end rather than an error.
+ */
+const supersedePendingRequests = Effect.fn('AgentSession.supersedePendingRequests')(function* (
+  abortExpectedRef: Ref.Ref<boolean>
+) {
+  const requestIds = yield* pendingUserInput.interruptAll
+  if (requestIds.length > 0) {
+    yield* Ref.set(abortExpectedRef, true)
+    yield* Effect.logInfo('Superseded pending user-input requests with a new message', {
+      requestIds
+    })
+  }
+})
+
+/**
+ * Interrupts the live turn on user request: supersedes any pending requests,
+ * then calls `query.interrupt()` to abort in-flight generation even when nothing
+ * is blocked on a `canUseTool` callback. Arms `abortExpectedRef` so the aborted
+ * turn's error result is presented as a clean turn end. A no-op (logged) when no
+ * session is live.
+ */
+const interruptSession = Effect.fn('AgentSession.interruptSession')(function* (
+  queryRef: Ref.Ref<Option.Option<LiveControlQuery>>,
+  abortExpectedRef: Ref.Ref<boolean>
+) {
+  const requestIds = yield* pendingUserInput.interruptAll
+  const queryOpt = yield* Ref.get(queryRef)
+  if (Option.isNone(queryOpt)) {
+    yield* Effect.logWarning('Cannot interrupt; no live session')
+    return
+  }
+  yield* Ref.set(abortExpectedRef, true)
+  yield* Effect.tryPromise({
+    try: () => queryOpt.value.interrupt(),
+    catch: (cause) => new SessionStreamError({ cause })
+  }).pipe(
+    Effect.tapErrorCause((cause) => Effect.logError('query.interrupt() failed', { cause })),
+    Effect.ignore
+  )
+  yield* Effect.logInfo('Interrupted session', { superseded: requestIds })
+})
+
+/**
  * Resolves the Agent SDK's bundled native Claude Code binary to a real,
  * spawnable filesystem path. In a packaged app the SDK resolves this binary to
  * its `app.asar` virtual path, which the OS cannot execute; this redirects it
@@ -223,19 +279,21 @@ const toSDKUserMessage = (text: string): SDKUserMessage => ({
 })
 
 /**
- * The slice of the live Agent SDK `Query` the rewind handler drives: restoring
- * files on disk to a checkpoint. Narrowed so the current query can be held in a
- * `Ref` and a fake supplied in tests.
+ * The slice of the live Agent SDK `Query` main-process handlers drive: restoring
+ * files on disk to a checkpoint (`rewindFiles`) and aborting an in-flight turn
+ * (`interrupt`). Narrowed so the current query can be held in a `Ref` and a fake
+ * supplied in tests.
  */
-type LiveRewindQuery = Pick<Query, 'rewindFiles'>
+type LiveControlQuery = Pick<Query, 'rewindFiles' | 'interrupt'>
 
 const runSession = Effect.fn('AgentSession.runSession')(
   function* (
     config: PaneConfig,
     promptQueue: Queue.Queue<SDKUserMessage>,
     sessionIdRef: Ref.Ref<Option.Option<string>>,
-    queryRef: Ref.Ref<Option.Option<LiveRewindQuery>>,
+    queryRef: Ref.Ref<Option.Option<LiveControlQuery>>,
     modeController: PermissionModeController,
+    abortExpectedRef: Ref.Ref<boolean>,
     resume: string | undefined,
     branchAt: string | undefined
   ) {
@@ -326,6 +384,26 @@ const runSession = Effect.fn('AgentSession.runSession')(
               toolName: outbound.toolName
             })
           }
+
+          // A turn aborted by a supersede/interrupt returns an error-subtype result the reducer
+          // maps to TurnErrored; the abort was deliberate, so present it as a clean turn end
+          // rather than lighting the pane's error pulse. The flag is armed for exactly one
+          // terminal outcome and cleared once one arrives.
+          const abortExpected = yield* Ref.get(abortExpectedRef)
+          if (
+            abortExpected &&
+            (outbound._tag === 'TurnErrored' || outbound._tag === 'TurnCompleted')
+          ) {
+            yield* Ref.set(abortExpectedRef, false)
+            if (outbound._tag === 'TurnErrored') {
+              yield* Effect.logInfo('Suppressing expected turn abort as a clean turn end', {
+                paneId: config.paneId
+              })
+              yield* postOutbound(TurnCompleted.make({}))
+              return
+            }
+          }
+
           yield* postOutbound(outbound)
         })
       )
@@ -353,7 +431,8 @@ const runSession = Effect.fn('AgentSession.runSession')(
 const program = Effect.gen(function* () {
   const promptQueue = yield* Queue.unbounded<SDKUserMessage>()
   const sessionIdRef = yield* Ref.make<Option.Option<string>>(Option.none())
-  const queryRef = yield* Ref.make<Option.Option<LiveRewindQuery>>(Option.none())
+  const queryRef = yield* Ref.make<Option.Option<LiveControlQuery>>(Option.none())
+  const abortExpectedRef = yield* Ref.make(false)
   const configRef = yield* Ref.make<Option.Option<PaneConfig>>(Option.none())
   const desiredLevelRef = yield* Ref.make<Option.Option<ThinkingLevel>>(Option.none())
   const fiberRef = yield* Ref.make<Option.Option<Fiber.RuntimeFiber<void>>>(Option.none())
@@ -366,7 +445,16 @@ const program = Effect.gen(function* () {
   ) {
     yield* modeController.seed(config.permissionMode)
     const fiber = yield* Effect.forkScoped(
-      runSession(config, promptQueue, sessionIdRef, queryRef, modeController, resume, branchAt)
+      runSession(
+        config,
+        promptQueue,
+        sessionIdRef,
+        queryRef,
+        modeController,
+        abortExpectedRef,
+        resume,
+        branchAt
+      )
     )
     yield* Ref.set(configRef, Option.some(config))
     yield* Ref.set(fiberRef, Option.some(fiber))
@@ -505,8 +593,10 @@ const program = Effect.gen(function* () {
         )
       } else if (inbound._tag === 'SendText') {
         yield* restartForThinkingChange()
-        yield* dropPendingRequests()
+        yield* supersedePendingRequests(abortExpectedRef)
         yield* Queue.offer(promptQueue, toSDKUserMessage(inbound.text))
+      } else if (inbound._tag === 'Interrupt') {
+        yield* interruptSession(queryRef, abortExpectedRef)
       } else if (inbound._tag === 'RewindToCheckpoint') {
         yield* rewindToCheckpoint(inbound.messageUuid, inbound.resumeAnchorUuid)
       } else {

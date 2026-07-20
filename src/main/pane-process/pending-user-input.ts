@@ -3,23 +3,42 @@ import type {
   PlanReviewResponse,
   QuestionResponse
 } from '@shared/domain/attention'
-import { Deferred, Effect } from 'effect'
+import { Deferred, Effect, Schema } from 'effect'
 
 /**
- * A resolution the user supplied for a pending `UserInputRequest`: a
- * `PermissionResponse` (for a tool `PermissionRequest`), a `QuestionResponse`
- * (for a `ClarifyingQuestion`), or a `PlanReviewResponse` (for a `PlanReview`).
+ * A pane-local marker that a pending request was abandoned because the user sent
+ * a new message before answering. It is not a `@shared/domain/attention`
+ * response — it never leaves the pane process — but resolving a `Deferred` with
+ * it (rather than dropping it silently) lets `toPermissionResult` deny the stale
+ * tool call with `interrupt: true`, which both releases the blocked `canUseTool`
+ * and aborts the superseded turn. Construct with `Superseded.make({})`.
+ */
+export const Superseded = Schema.TaggedStruct('Superseded', {})
+export type Superseded = typeof Superseded.Type
+
+/**
+ * A resolution supplied for a pending `UserInputRequest`: the user's
+ * `PermissionResponse` (for a tool `PermissionRequest`), `QuestionResponse`
+ * (for a `ClarifyingQuestion`), or `PlanReviewResponse` (for a `PlanReview`), or
+ * a pane-local {@link Superseded} marker when a new message abandoned the ask.
  * All are disjoint on `_tag`.
  */
-export type UserInputResolution = PermissionResponse | QuestionResponse | PlanReviewResponse
+export type UserInputResolution =
+  | PermissionResponse
+  | QuestionResponse
+  | PlanReviewResponse
+  | Superseded
 
 /**
  * Owns the set of tool-permission / clarifying-question requests a pane session
  * has surfaced and is blocked awaiting. Register a request to obtain a
  * `Deferred` the `canUseTool` callback awaits; `resolve` completes it with the
- * user's answer; `drop` abandons every outstanding request (used when a
- * redirect supersedes them). Callers hold only the `Deferred` and the
- * `requestId`, never the registry's internal bookkeeping.
+ * user's answer; `interruptAll` resolves every outstanding request with
+ * {@link Superseded} (used when a new message supersedes them, so the blocked
+ * callbacks unblock and abort their turns); `drop` abandons every outstanding
+ * request without resolving it (used on teardown/restart paths where the query
+ * is replaced). Callers hold only the `Deferred` and the `requestId`, never the
+ * registry's internal bookkeeping.
  */
 export interface PendingUserInput {
   /**
@@ -36,10 +55,19 @@ export interface PendingUserInput {
    */
   readonly resolve: (requestId: string, resolution: UserInputResolution) => Effect.Effect<boolean>
   /**
+   * Resolves every outstanding request with {@link Superseded} and clears the
+   * registry, returning the `requestId`s that were resolved. Each awaiting
+   * `canUseTool` callback unblocks and (via `toPermissionResult`) denies its
+   * tool call with `interrupt: true`, aborting the superseded turn. A subsequent
+   * `resolve` for a superseded id returns `false`.
+   */
+  readonly interruptAll: Effect.Effect<ReadonlyArray<string>>
+  /**
    * Abandons every outstanding request without resolving its `Deferred`,
    * returning the `requestId`s that were dropped. The awaiting `canUseTool`
-   * callbacks are left pending on purpose (the SDK drops them once a redirect
-   * moves it on); a subsequent `resolve` for a dropped id returns `false`.
+   * callbacks are left pending on purpose (the query is being torn down and
+   * replaced, so the leaked promise dies with it); a subsequent `resolve` for a
+   * dropped id returns `false`.
    */
   readonly drop: Effect.Effect<ReadonlyArray<string>>
   /** Whether a request is currently registered under `requestId`. */
@@ -70,6 +98,13 @@ export const makePendingUserInput = (): PendingUserInput => {
       pending.delete(requestId)
       yield* Deferred.succeed(deferred, resolution)
       return true
+    }),
+    interruptAll: Effect.gen(function* () {
+      const entries = [...pending.entries()]
+      pending.clear()
+      const superseded = Superseded.make({})
+      for (const [, deferred] of entries) yield* Deferred.succeed(deferred, superseded)
+      return entries.map(([requestId]) => requestId)
     }),
     drop: Effect.sync(() => {
       const requestIds = [...pending.keys()]

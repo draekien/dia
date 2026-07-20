@@ -15,23 +15,39 @@ const awaitingPermission: AttentionState = {
   request: { _tag: 'PermissionRequest', requestId: 'req-1', toolName: 'Bash', input: {} }
 }
 const errored: AttentionState = { _tag: 'Errored', error: { message: 'boom' } }
+const crashed: AttentionState = { _tag: 'Crashed', error: { message: 'process exited' } }
 const completed: AttentionState = { _tag: 'Completed' }
 
-const states: ReadonlyArray<AttentionState> = [idle, awaitingPermission, errored, completed]
+const states: ReadonlyArray<AttentionState> = [
+  idle,
+  awaitingPermission,
+  errored,
+  crashed,
+  completed
+]
 
 // Derived from the bullet doc's transition diagram (Idle -> AwaitingPermission -> Idle,
 // Idle -> Errored, Idle -> Completed -> Idle) plus mvp.md §6: a crash can transition a pane to
 // Errored at any point in a turn's lifecycle, not only from Idle, so AwaitingPermission/Completed
-// -> Errored are also valid. Errored has no way out -- a crashed/errored pane stays red until the
-// user closes it, so every pair with Errored as the "from" state must be rejected.
+// -> Errored are also valid. Errored -> Idle is the only way out: a retry or fresh send clears a
+// recoverable error. Errored -> AwaitingPermission/Completed stay rejected (a cleared error must
+// pass through Idle first). Idle -> Idle is a valid self-loop (send/interrupt from an idle pane).
+// A crash can strike from any non-terminal state, so every non-Crashed state -> Crashed; Crashed
+// is terminal, so every pair with Crashed as the "from" state must be rejected.
 const validPairs: ReadonlySet<string> = new Set([
+  'Idle->Idle',
   'Idle->AwaitingPermission',
   'Idle->Errored',
   'Idle->Completed',
+  'Idle->Crashed',
   'AwaitingPermission->Idle',
   'AwaitingPermission->Errored',
+  'AwaitingPermission->Crashed',
   'Completed->Idle',
-  'Completed->Errored'
+  'Completed->Errored',
+  'Completed->Crashed',
+  'Errored->Idle',
+  'Errored->Crashed'
 ])
 
 const decodePermissionResponse = Schema.decodeUnknownEither(PermissionResponse)

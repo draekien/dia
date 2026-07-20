@@ -71,4 +71,36 @@ describe('PendingUserInput', () => {
       assert.deepStrictEqual([...dropped].sort(), ['req-1', 'req-2'])
     })
   )
+
+  it.effect('interruptAll resolves every request with Superseded and empties the registry', () =>
+    Effect.gen(function* () {
+      const registry = makePendingUserInput()
+      const first = yield* registry.register('req-1')
+      const second = yield* registry.register('req-2')
+
+      const interrupted = yield* registry.interruptAll
+      const firstResolution = yield* Deferred.await(first)
+      const secondResolution = yield* Deferred.await(second)
+
+      assert.deepStrictEqual([...interrupted].sort(), ['req-1', 'req-2'])
+      assert.deepStrictEqual(firstResolution, { _tag: 'Superseded' })
+      assert.deepStrictEqual(secondResolution, { _tag: 'Superseded' })
+      assert.isFalse(yield* registry.isPending('req-1'))
+      assert.isFalse(yield* registry.isPending('req-2'))
+    })
+  )
+
+  it.effect('interruptAll makes a later resolve for a superseded id a no-op', () =>
+    Effect.gen(function* () {
+      const registry = makePendingUserInput()
+      const deferred = yield* registry.register('req-1')
+
+      yield* registry.interruptAll
+      const lateResolve = yield* registry.resolve('req-1', allow)
+      const resolution = yield* Deferred.await(deferred)
+
+      assert.isFalse(lateResolve)
+      assert.deepStrictEqual(resolution, { _tag: 'Superseded' })
+    })
+  )
 })
