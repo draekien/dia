@@ -31,6 +31,30 @@ import { TranscriptReaderLive } from './services/transcript-reader'
 import { makeUpdaterBridge, type UpdaterSignal } from './services/updater'
 
 const isDev = !app.isPackaged
+
+// The dev build must be able to run alongside an installed production dia for dogfooding.
+// Both derive every on-disk path (workspace.json, settings.json, worktrees, and Chromium's
+// own profile/lock files) from userData, which is keyed off the app name -- identical for
+// both by default, so they collide. Giving dev its own name and userData isolates it to
+// %APPDATA%/dia-dev, leaving production's %APPDATA%/dia untouched.
+if (isDev) {
+  app.setName('dia-dev')
+  app.setPath('userData', join(app.getPath('appData'), 'dia-dev'))
+}
+
+// The single-instance lock is keyed to userData, so dev (dia-dev) and production (dia) hold
+// separate locks and coexist; a second launch of the *same* build fails to acquire the lock,
+// quits, and hands focus to the window already running.
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) app.quit()
+
+app.on('second-instance', () => {
+  const [existing] = BrowserWindow.getAllWindows()
+  if (existing === undefined) return
+  if (existing.isMinimized()) existing.restore()
+  existing.focus()
+})
+
 const rendererDevUrl = Effect.runSync(Config.string('ELECTRON_RENDERER_URL').pipe(Config.option))
 
 const { autoUpdater } = electronUpdater
@@ -91,6 +115,8 @@ function createWindow(): BrowserWindow {
 
 // @effect-diagnostics-next-line asyncFunction:off -- Electron's app.whenReady() imperative callback boundary; Effect programs run within it via runPromise/runFork.
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) return
+
   const mainWindow = createWindow()
 
   const repoLocalLogFilePath = join(process.cwd(), 'dia.log')
