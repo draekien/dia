@@ -5,6 +5,7 @@ import type { PaneId } from '@shared/domain/pane-tree'
 import { Config, Effect, Layer, Option, References } from 'effect'
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import electronUpdater from 'electron-updater'
+import { runSpike } from '../../spike/main'
 import {
   wireChooseDirectory,
   wireCommands,
@@ -116,6 +117,8 @@ function createWindow(): BrowserWindow {
 // @effect-diagnostics-next-line asyncFunction:off -- Electron's app.whenReady() imperative callback boundary; Effect programs run within it via runPromise/runFork.
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return
+  // @effect-diagnostics-next-line processEnv:off -- throwaway phase 0 spike switch.
+  if (process.env.DIA_SPIKE === '1') return runSpike()
 
   const mainWindow = createWindow()
 
