@@ -46,15 +46,16 @@ import {
   Data,
   Duration,
   Effect,
-  Either,
   Exit,
   Fiber,
+  Filter,
   HashMap,
   Layer,
   Match,
   Option,
   Queue,
   Ref,
+  Result,
   Schema,
   Scope,
   Stream
@@ -153,15 +154,15 @@ export interface PaneProcess {
 }
 
 /** Service for spawning a pane's backing process from a module path. Swap for a fake in tests. */
-export class PaneProcessSpawner extends Context.Tag('PaneProcessSpawner')<
+export class PaneProcessSpawner extends Context.Service<
   PaneProcessSpawner,
   { readonly spawn: (modulePath: string) => Effect.Effect<PaneProcess> }
->() {}
+>()('PaneProcessSpawner') {}
 
 const agentSessionModulePath = join(import.meta.dirname, 'pane-process/agent-session.js')
 
 /** Production {@link PaneProcessSpawner} that forks the real agent-session utility process via Electron. */
-export const PaneProcessSpawnerLive = Layer.succeed(PaneProcessSpawner, {
+export const PaneProcessSpawnerLive = Layer.succeed(PaneProcessSpawner)({
   spawn: (modulePath) => Effect.sync(() => utilityProcess.fork(modulePath))
 })
 
@@ -315,7 +316,7 @@ function toAttentionTarget(message: OutboundMessage): Option.Option<AttentionSta
 // a given process exit was requested or unexpected.
 const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
   config: PaneConfig,
-  spawner: Context.Tag.Service<PaneProcessSpawner>,
+  spawner: PaneProcessSpawner['Service'],
   onSessionId: (sessionId: string) => Effect.Effect<void>,
   onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>,
   resume: string | undefined
@@ -333,13 +334,13 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
         // worktree directory as its cwd/open handles.
         // Register the exit listener and call kill() inside the same synchronous callback --
         // a listener attached only after kill() can miss a synchronous 'exit' emission.
-        const exited = Effect.async<void>((resume) => {
+        const exited = Effect.callback<void>((resume) => {
           child.on('exit', () => resume(Effect.void))
           child.kill()
         })
         yield* exited.pipe(
           Effect.timeout(Duration.seconds(5)),
-          Effect.catchAll(() =>
+          Effect.catch(() =>
             Effect.logWarning('Pane process did not exit within timeout', {
               paneId: config.paneId
             })
@@ -355,7 +356,7 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
     history: [],
     attention: Idle.make({})
   })
-  const settleFiberRef = yield* Ref.make<Option.Option<Fiber.RuntimeFiber<void>>>(Option.none())
+  const settleFiberRef = yield* Ref.make<Option.Option<Fiber.Fiber<void>>>(Option.none())
 
   // Invalid transitions are logged and dropped rather than thrown -- a stale or duplicate
   // event (e.g. a second permission resolution) shouldn't crash the pane. Reaching `Completed`
@@ -373,7 +374,7 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
 
     const record = yield* Ref.get(recordRef)
     const result = transitionAttention(record.attention, next)
-    if (Either.isLeft(result)) {
+    if (Result.isFailure(result)) {
       yield* Effect.logWarning('Rejected invalid attention transition', {
         paneId: config.paneId,
         from: record.attention._tag,
@@ -382,30 +383,34 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
       return
     }
 
-    yield* Ref.update(recordRef, (r) => ({ ...r, attention: result.right }))
+    yield* Ref.update(recordRef, (r) => ({ ...r, attention: result.success }))
     yield* Queue.offer(
       outbound,
-      PaneAttentionChanged.make({ paneId: config.paneId, attention: result.right })
+      PaneAttentionChanged.make({ paneId: config.paneId, attention: result.success })
     )
 
-    if (result.right._tag === 'Completed') {
+    if (result.success._tag === 'Completed') {
       const fiber = yield* Effect.sleep(Duration.seconds(3)).pipe(
         // Clear settleFiberRef before recursing into applyAttention(Idle) -- otherwise this
         // fiber reads its own reference back out of the Ref and interrupts itself mid-flight,
         // aborting before it can ever apply the Idle transition (see reasoning log).
         Effect.andThen(Ref.set(settleFiberRef, Option.none())),
         Effect.andThen(applyAttention(Idle.make({}))),
-        Effect.fork
+        Effect.forkChild
       )
       yield* Ref.set(settleFiberRef, Option.some(fiber))
     }
   })
 
-  const rawMessages = Stream.async<unknown>((emit) => {
-    const listener = (raw: unknown): void => void emit.single(raw)
-    child.on('message', listener)
-    return Effect.sync(() => child.off('message', listener))
-  })
+  const rawMessages = Stream.callback<unknown>((queue) =>
+    Effect.gen(function* () {
+      const listener = (raw: unknown): void => {
+        Queue.offerUnsafe(queue, raw)
+      }
+      child.on('message', listener)
+      yield* Effect.addFinalizer(() => Effect.sync(() => child.off('message', listener)))
+    })
+  )
 
   const decoded = rawMessages.pipe(
     Stream.mapEffect((raw) =>
@@ -424,7 +429,7 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
         return result
       })
     ),
-    Stream.filterMap((result) => result)
+    Stream.filterMap(Filter.fromPredicateOption((result: Option.Option<OutboundMessage>) => result))
   )
 
   const handleInbound = (message: OutboundMessage): Effect.Effect<void> =>
@@ -476,11 +481,14 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
   child.postMessage(encodeInbound(InitMessage.make({ config, resume })))
   yield* Effect.logInfo('Sent Init message to pane process', { paneId: config.paneId, resume })
 
-  const exits = Stream.async<number>((emit) => {
-    const listener = (code: number): void => void emit.single(code)
-    child.on('exit', listener)
-    return Effect.void
-  })
+  const exits = Stream.callback<number>((queue) =>
+    Effect.sync(() => {
+      const listener = (code: number): void => {
+        Queue.offerUnsafe(queue, code)
+      }
+      child.on('exit', listener)
+    })
+  )
 
   const handle: PaneHandle = {
     sendMessage: (text) =>
@@ -582,12 +590,12 @@ const startProcess = Effect.fn('PaneSupervisor.startProcess')(function* (
 
 interface PaneEntry {
   readonly handle: PaneHandle
-  readonly scope: Scope.CloseableScope
+  readonly scope: Scope.Closeable
   readonly expectedExit: Ref.Ref<boolean>
 }
 
 /** Manages the lifecycle of all open panes: spawning, event routing, and teardown. */
-export class PaneSupervisor extends Context.Tag('PaneSupervisor')<
+export class PaneSupervisor extends Context.Service<
   PaneSupervisor,
   {
     /**
@@ -618,7 +626,7 @@ export class PaneSupervisor extends Context.Tag('PaneSupervisor')<
      */
     readonly closeAll: () => Effect.Effect<void>
   }
->() {}
+>()('PaneSupervisor') {}
 
 /** Production {@link PaneSupervisor} layer backed by real utility processes and git worktrees. */
 export const PaneSupervisorLive = Layer.effect(
@@ -673,7 +681,7 @@ export const PaneSupervisorLive = Layer.effect(
 
         const worktree = yield* Effect.acquireRelease(acquire, (info) =>
           gitOps.removeWorktree(info, request.paneId).pipe(
-            Effect.catchAllCause((cause) =>
+            Effect.catchCause((cause) =>
               Effect.logError('Failed to remove pane worktree', {
                 paneId: request.paneId,
                 cause
@@ -691,14 +699,14 @@ export const PaneSupervisorLive = Layer.effect(
           worktree
         }
         return config
-      }).pipe(Effect.provideService(Scope.Scope, scope), Effect.either)
+      }).pipe(Effect.provideService(Scope.Scope, scope), Effect.result)
 
-      if (Either.isLeft(prepared)) {
-        yield* Scope.close(scope, Exit.fail(prepared.left))
-        return yield* prepared.left
+      if (Result.isFailure(prepared)) {
+        yield* Scope.close(scope, Exit.fail(prepared.failure))
+        return yield* prepared.failure
       }
 
-      const config = prepared.right
+      const config = prepared.success
 
       const started = yield* startProcess(
         config,
@@ -706,14 +714,14 @@ export const PaneSupervisorLive = Layer.effect(
         onSessionId,
         onPermissionModeChanged,
         request.resume
-      ).pipe(Effect.provideService(Scope.Scope, scope), Effect.either)
+      ).pipe(Effect.provideService(Scope.Scope, scope), Effect.result)
 
-      if (Either.isLeft(started)) {
-        yield* Scope.close(scope, Exit.fail(started.left))
-        return yield* started.left
+      if (Result.isFailure(started)) {
+        yield* Scope.close(scope, Exit.fail(started.failure))
+        return yield* started.failure
       }
 
-      const { handle, exits } = started.right
+      const { handle, exits } = started.success
 
       yield* Effect.forkIn(Stream.runForEach(handle.subscribe(), onEvent), scope)
       yield* Effect.forkIn(
@@ -730,6 +738,7 @@ export const PaneSupervisorLive = Layer.effect(
                         message: `Pane process exited unexpectedly (code ${exitCode})`
                       })
                     ),
+                    Effect.andThen(Effect.yieldNow),
                     Effect.andThen(teardown(config.paneId))
                   )
             )

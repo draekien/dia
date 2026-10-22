@@ -16,8 +16,9 @@ import { PaneNode } from '../domain/pane-tree'
 import { SlashCommandInfo } from '../domain/slash-command'
 import type { ThemePreference } from '../domain/theme'
 import { UpdateStatus } from '../domain/update'
+import { Uuid } from '../domain/uuid'
 
-const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
+const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
 
 /**
  * Electron IPC channel names shared by main, preload, and renderer.
@@ -80,7 +81,7 @@ export type ChooseDirectoryResult = typeof ChooseDirectoryResult.Type
  * supervisor to forward `text` into that pane's agent session.
  */
 export const SendMessage = Schema.TaggedStruct('SendMessage', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   text: Schema.String
 })
 export type SendMessage = typeof SendMessage.Type
@@ -92,7 +93,7 @@ export type SendMessage = typeof SendMessage.Type
  * allow" rule) or `Deny` (with an explanation for the agent).
  */
 export const ResolvePermission = Schema.TaggedStruct('ResolvePermission', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   requestId: Schema.String,
   response: PermissionResponse
 })
@@ -105,7 +106,7 @@ export type ResolvePermission = typeof ResolvePermission.Type
  * `FreeformResponse` typed instead of using the question card.
  */
 export const ResolveQuestion = Schema.TaggedStruct('ResolveQuestion', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   requestId: Schema.String,
   response: QuestionResponse
 })
@@ -116,8 +117,8 @@ export type ResolveQuestion = typeof ResolveQuestion.Type
  * arranged along `direction` (`row` for side-by-side, `column` for stacked).
  */
 export const SplitPane = Schema.TaggedStruct('SplitPane', {
-  paneId: Schema.UUID,
-  direction: Schema.Literal('row', 'column')
+  paneId: Uuid,
+  direction: Schema.Literals(['row', 'column'])
 })
 export type SplitPane = typeof SplitPane.Type
 
@@ -126,7 +127,7 @@ export type SplitPane = typeof SplitPane.Type
  * the layout tree.
  */
 export const ClosePane = Schema.TaggedStruct('ClosePane', {
-  paneId: Schema.UUID
+  paneId: Uuid
 })
 export type ClosePane = typeof ClosePane.Type
 
@@ -138,7 +139,7 @@ export type ClosePane = typeof ClosePane.Type
  * `cwd` directly.
  */
 export const CreatePane = Schema.TaggedStruct('CreatePane', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   cwd: Schema.String,
   model: Schema.String,
   thinkingLevel: ThinkingLevel,
@@ -153,7 +154,7 @@ export type CreatePane = typeof CreatePane.Type
  * (which restarts its Agent SDK session with the new thinking/effort options).
  */
 export const SetThinkingLevel = Schema.TaggedStruct('SetThinkingLevel', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   level: ThinkingLevel
 })
 export type SetThinkingLevel = typeof SetThinkingLevel.Type
@@ -166,7 +167,7 @@ export type SetThinkingLevel = typeof SetThinkingLevel.Type
  * restored when the pane's plan is approved.
  */
 export const SetPermissionMode = Schema.TaggedStruct('SetPermissionMode', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   mode: PermissionMode
 })
 export type SetPermissionMode = typeof SetPermissionMode.Type
@@ -178,7 +179,7 @@ export type SetPermissionMode = typeof SetPermissionMode.Type
  * the pane held before entering plan mode; false keeps the pane planning.
  */
 export const ResolvePlanReview = Schema.TaggedStruct('ResolvePlanReview', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   requestId: Schema.String,
   approved: Schema.Boolean
 })
@@ -190,7 +191,7 @@ export type ResolvePlanReview = typeof ResolvePlanReview.Type
  * pane that is already live is left untouched (the command is idempotent).
  */
 export const FocusPane = Schema.TaggedStruct('FocusPane', {
-  paneId: Schema.UUID
+  paneId: Uuid
 })
 export type FocusPane = typeof FocusPane.Type
 
@@ -202,7 +203,7 @@ export type FocusPane = typeof FocusPane.Type
  * channel.
  */
 export const InterruptPane = Schema.TaggedStruct('InterruptPane', {
-  paneId: Schema.UUID
+  paneId: Uuid
 })
 export type InterruptPane = typeof InterruptPane.Type
 
@@ -218,7 +219,7 @@ export type InterruptPane = typeof InterruptPane.Type
  * edits, are discarded); the renderer should confirm with the user first.
  */
 export const RewindToCheckpoint = Schema.TaggedStruct('RewindToCheckpoint', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   messageUuid: Schema.String,
   resumeAnchorUuid: Schema.optional(Schema.String)
 })
@@ -228,7 +229,7 @@ export type RewindToCheckpoint = typeof RewindToCheckpoint.Type
  * Union of every command the renderer may send over the `command` channel.
  * Main-process handlers should match on the `_tag` field to dispatch.
  */
-export const IpcCommand = Schema.Union(
+export const IpcCommand = Schema.Union([
   SendMessage,
   ResolvePermission,
   ResolveQuestion,
@@ -241,7 +242,7 @@ export const IpcCommand = Schema.Union(
   FocusPane,
   InterruptPane,
   RewindToCheckpoint
-)
+])
 export type IpcCommand = typeof IpcCommand.Type
 
 /**
@@ -251,7 +252,7 @@ export type IpcCommand = typeof IpcCommand.Type
  * conversation history.
  */
 export const PaneMessageAppended = Schema.TaggedStruct('PaneMessageAppended', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   message: ConversationMessage
 })
 export type PaneMessageAppended = typeof PaneMessageAppended.Type
@@ -262,7 +263,7 @@ export type PaneMessageAppended = typeof PaneMessageAppended.Type
  * assistant message, not the full message so far.
  */
 export const PaneAssistantTextDelta = Schema.TaggedStruct('PaneAssistantTextDelta', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   text: Schema.String
 })
 export type PaneAssistantTextDelta = typeof PaneAssistantTextDelta.Type
@@ -273,7 +274,7 @@ export type PaneAssistantTextDelta = typeof PaneAssistantTextDelta.Type
  * append to the in-progress thinking block, not the full thinking so far.
  */
 export const PaneAssistantThinkingDelta = Schema.TaggedStruct('PaneAssistantThinkingDelta', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   text: Schema.String
 })
 export type PaneAssistantThinkingDelta = typeof PaneAssistantThinkingDelta.Type
@@ -284,7 +285,7 @@ export type PaneAssistantThinkingDelta = typeof PaneAssistantThinkingDelta.Type
  * the later {@link PaneToolCallCompleted} event.
  */
 export const PaneToolCallStarted = Schema.TaggedStruct('PaneToolCallStarted', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   toolCallId: Schema.String,
   toolName: Schema.String
 })
@@ -298,7 +299,7 @@ export type PaneToolCallStarted = typeof PaneToolCallStarted.Type
  * result arrived), and `isError` flagging a failed or denied result.
  */
 export const PaneToolCallCompleted = Schema.TaggedStruct('PaneToolCallCompleted', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   toolCallId: Schema.String,
   toolName: Schema.String,
   input: JsonRecord,
@@ -315,7 +316,7 @@ export type PaneToolCallCompleted = typeof PaneToolCallCompleted.Type
  * {@link ResolvePermission} command carrying the same `requestId`.
  */
 export const PanePermissionRequested = Schema.TaggedStruct('PanePermissionRequested', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   requestId: Schema.String,
   toolName: Schema.String,
   input: JsonRecord,
@@ -330,7 +331,7 @@ export type PanePermissionRequested = typeof PanePermissionRequested.Type
  * command carrying the same `requestId`.
  */
 export const PaneQuestionRequested = Schema.TaggedStruct('PaneQuestionRequested', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   requestId: Schema.String,
   questions: Schema.Array(Question)
 })
@@ -343,7 +344,7 @@ export type PaneQuestionRequested = typeof PaneQuestionRequested.Type
  * {@link ResolvePlanReview} command carrying the same `requestId`.
  */
 export const PanePlanReviewRequested = Schema.TaggedStruct('PanePlanReviewRequested', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   requestId: Schema.String,
   plan: Schema.String
 })
@@ -357,7 +358,7 @@ export type PanePlanReviewRequested = typeof PanePlanReviewRequested.Type
  * warming state via {@link PaneSlashCommandsAvailable} rather than this event.
  */
 export const PaneSlashCommandsWarming = Schema.TaggedStruct('PaneSlashCommandsWarming', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   active: Schema.Boolean
 })
 export type PaneSlashCommandsWarming = typeof PaneSlashCommandsWarming.Type
@@ -371,7 +372,7 @@ export type PaneSlashCommandsWarming = typeof PaneSlashCommandsWarming.Type
  * replace its held list rather than merge.
  */
 export const PaneSlashCommandsAvailable = Schema.TaggedStruct('PaneSlashCommandsAvailable', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   commands: Schema.Array(SlashCommandInfo)
 })
 export type PaneSlashCommandsAvailable = typeof PaneSlashCommandsAvailable.Type
@@ -383,8 +384,8 @@ export type PaneSlashCommandsAvailable = typeof PaneSlashCommandsAvailable.Type
  * and `trigger` distinguishes a manual `/compact` from an automatic one.
  */
 export const PaneConversationCompacted = Schema.TaggedStruct('PaneConversationCompacted', {
-  paneId: Schema.UUID,
-  trigger: Schema.Literal('manual', 'auto'),
+  paneId: Uuid,
+  trigger: Schema.Literals(['manual', 'auto']),
   preTokens: Schema.Number,
   postTokens: Schema.optional(Schema.Number)
 })
@@ -397,7 +398,7 @@ export type PaneConversationCompacted = typeof PaneConversationCompacted.Type
  * process and is not part of this renderer-facing event.
  */
 export const PaneConversationReset = Schema.TaggedStruct('PaneConversationReset', {
-  paneId: Schema.UUID
+  paneId: Uuid
 })
 export type PaneConversationReset = typeof PaneConversationReset.Type
 
@@ -411,7 +412,7 @@ export type PaneConversationReset = typeof PaneConversationReset.Type
  * only while file checkpointing is enabled.
  */
 export const PaneCheckpointAvailable = Schema.TaggedStruct('PaneCheckpointAvailable', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   messageUuid: Schema.String,
   resumeAnchorUuid: Schema.optional(Schema.String)
 })
@@ -424,7 +425,7 @@ export type PaneCheckpointAvailable = typeof PaneCheckpointAvailable.Type
  * conversation are now branched there).
  */
 export const PaneRewoundToCheckpoint = Schema.TaggedStruct('PaneRewoundToCheckpoint', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   messageUuid: Schema.String
 })
 export type PaneRewoundToCheckpoint = typeof PaneRewoundToCheckpoint.Type
@@ -445,7 +446,7 @@ export type LayoutChanged = typeof LayoutChanged.Type
  * so the renderer can surface it and roll back any optimistic UI state.
  */
 export const PaneCreateFailed = Schema.TaggedStruct('PaneCreateFailed', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   reason: Schema.String
 })
 export type PaneCreateFailed = typeof PaneCreateFailed.Type
@@ -456,7 +457,7 @@ export type PaneCreateFailed = typeof PaneCreateFailed.Type
  * renderer can update attention indicators such as tab badges.
  */
 export const PaneAttentionChanged = Schema.TaggedStruct('PaneAttentionChanged', {
-  paneId: Schema.UUID,
+  paneId: Uuid,
   attention: AttentionState
 })
 export type PaneAttentionChanged = typeof PaneAttentionChanged.Type
@@ -479,7 +480,7 @@ export type UpdateStatusChanged = typeof UpdateStatusChanged.Type
  * `event` channel. Renderer handlers should match on the `_tag` field to
  * dispatch.
  */
-export const IpcEvent = Schema.Union(
+export const IpcEvent = Schema.Union([
   PaneMessageAppended,
   PaneAssistantTextDelta,
   PaneAssistantThinkingDelta,
@@ -498,7 +499,7 @@ export const IpcEvent = Schema.Union(
   PaneCreateFailed,
   PaneAttentionChanged,
   UpdateStatusChanged
-)
+])
 export type IpcEvent = typeof IpcEvent.Type
 
 /**

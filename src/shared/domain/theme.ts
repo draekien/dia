@@ -7,7 +7,7 @@ import { Schema } from 'effect'
  * theme provider. A closed literal union, so no other theme value is
  * representable anywhere it flows (settings file, IPC, renderer state).
  */
-export const ThemePreference = Schema.Literal('light', 'dark', 'system')
+export const ThemePreference = Schema.Literals(['light', 'dark', 'system'])
 export type ThemePreference = typeof ThemePreference.Type
 
 /**

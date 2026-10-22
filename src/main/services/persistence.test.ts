@@ -1,8 +1,6 @@
-import { FileSystem } from '@effect/platform'
-import { SystemError } from '@effect/platform/Error'
 import { assert, describe, it } from '@effect/vitest'
 import type { PaneNode } from '@shared/domain/pane-tree'
-import { Effect, Layer, Logger, Option } from 'effect'
+import { Effect, FileSystem, Layer, Logger, Option, PlatformError } from 'effect'
 import {
   makePersistenceServiceLive,
   type PersistedWorkspace,
@@ -53,9 +51,9 @@ const workspace: PersistedWorkspace = {
   }
 }
 
-function missingFile(path: string): SystemError {
-  return new SystemError({
-    reason: 'NotFound',
+function missingFile(path: string): PlatformError.PlatformError {
+  return PlatformError.systemError({
+    _tag: 'NotFound',
     module: 'FileSystem',
     method: 'readFileString',
     pathOrDescriptor: path
@@ -93,7 +91,7 @@ function makeInMemoryFs(overrides: Partial<FileSystem.FileSystem> = {}): {
     ...overrides
   })
 
-  return { files, ops, fsLayer: Layer.succeed(FileSystem.FileSystem, fs) }
+  return { files, ops, fsLayer: Layer.succeed(FileSystem.FileSystem)(fs) }
 }
 
 function makeLogCapture(): {
@@ -104,7 +102,7 @@ function makeLogCapture(): {
   const logger = Logger.make(({ message }) => {
     logs.push(...(Array.isArray(message) ? message : [message]))
   })
-  return { logs, loggerLayer: Logger.add(logger) }
+  return { logs, loggerLayer: Logger.layer([logger], { mergeWithExisting: true }) }
 }
 
 describe('PersistenceService', () => {
@@ -222,8 +220,8 @@ describe('PersistenceService', () => {
       const { fsLayer } = makeInMemoryFs({
         writeFileString: (path) =>
           Effect.fail(
-            new SystemError({
-              reason: 'PermissionDenied',
+            PlatformError.systemError({
+              _tag: 'PermissionDenied',
               module: 'FileSystem',
               method: 'writeFileString',
               pathOrDescriptor: String(path)

@@ -1,4 +1,4 @@
-import { Either, Schema } from 'effect'
+import { Result, Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
 import {
   type AttentionState,
@@ -50,9 +50,9 @@ const validPairs: ReadonlySet<string> = new Set([
   'Errored->Crashed'
 ])
 
-const decodePermissionResponse = Schema.decodeUnknownEither(PermissionResponse)
+const decodePermissionResponse = Schema.decodeUnknownResult(PermissionResponse)
 const encodePermissionResponse = Schema.encodeSync(PermissionResponse)
-const decodeQuestionResponse = Schema.decodeUnknownEither(QuestionResponse)
+const decodeQuestionResponse = Schema.decodeUnknownResult(QuestionResponse)
 const encodeQuestionResponse = Schema.encodeSync(QuestionResponse)
 
 const approach: Question = {
@@ -78,7 +78,7 @@ describe('PermissionResponse schema', () => {
   it('round-trips Allow as-is with no updatedInput or updatedPermissions', () => {
     const wire = { _tag: 'Allow' }
     expect(encodePermissionResponse({ _tag: 'Allow' })).toEqual(wire)
-    expect(decodePermissionResponse(wire)).toEqual(Either.right({ _tag: 'Allow' }))
+    expect(decodePermissionResponse(wire)).toEqual(Result.succeed({ _tag: 'Allow' }))
   })
 
   it('round-trips Allow with edited input and a remembered permission', () => {
@@ -93,17 +93,17 @@ describe('PermissionResponse schema', () => {
       updatedPermissions: [{ type: 'addRule', rule: 'Bash(ls:*)' }]
     }
     expect(encodePermissionResponse(value)).toEqual(wire)
-    expect(decodePermissionResponse(wire)).toEqual(Either.right(value))
+    expect(decodePermissionResponse(wire)).toEqual(Result.succeed(value))
   })
 
   it('round-trips Deny with a message', () => {
     const value = { _tag: 'Deny' as const, message: 'use rg instead' }
     expect(encodePermissionResponse(value)).toEqual(value)
-    expect(decodePermissionResponse(value)).toEqual(Either.right(value))
+    expect(decodePermissionResponse(value)).toEqual(Result.succeed(value))
   })
 
   it('rejects an unknown decision tag', () => {
-    expect(Either.isLeft(decodePermissionResponse({ _tag: 'Maybe' }))).toBe(true)
+    expect(Result.isFailure(decodePermissionResponse({ _tag: 'Maybe' }))).toBe(true)
   })
 })
 
@@ -118,7 +118,7 @@ describe('QuestionResponse schema', () => {
       }
     }
     expect(encodeQuestionResponse(value)).toEqual(value)
-    expect(decodeQuestionResponse(value)).toEqual(Either.right(value))
+    expect(decodeQuestionResponse(value)).toEqual(Result.succeed(value))
   })
 
   it('round-trips FreeformResponse carrying the questions it answers', () => {
@@ -128,7 +128,7 @@ describe('QuestionResponse schema', () => {
       response: 'None of these — refactor the module instead'
     }
     expect(encodeQuestionResponse(value)).toEqual(value)
-    expect(decodeQuestionResponse(value)).toEqual(Either.right(value))
+    expect(decodeQuestionResponse(value)).toEqual(Result.succeed(value))
   })
 
   it('rejects a non-string, non-array answer value', () => {
@@ -137,7 +137,7 @@ describe('QuestionResponse schema', () => {
       questions: [approach],
       answers: { Approach: 42 }
     }
-    expect(Either.isLeft(decodeQuestionResponse(wire))).toBe(true)
+    expect(Result.isFailure(decodeQuestionResponse(wire))).toBe(true)
   })
 })
 
@@ -151,11 +151,11 @@ describe('transitionAttention', () => {
         const result = transitionAttention(from, to)
 
         if (isValid) {
-          expect(result).toEqual(Either.right(to))
+          expect(result).toEqual(Result.succeed(to))
         } else {
-          expect(Either.isLeft(result)).toBe(true)
+          expect(Result.isFailure(result)).toBe(true)
           expect(result).toEqual(
-            Either.left(new InvalidAttentionTransition({ from: from._tag, to: to._tag }))
+            Result.fail(new InvalidAttentionTransition({ from: from._tag, to: to._tag }))
           )
         }
       })

@@ -42,7 +42,8 @@ into one accumulated string.
 dropdown reads the current level from the layout tree (like `cwd`/`sourceRepo`), so it
 survives remounts/restores. `setThinkingLevel` updates both the persisted config and the
 tree node, then broadcasts `LayoutChanged`. Old persisted records without the field decode
-via `Schema.optionalWith(ThinkingLevel, { default: () => 'adaptive' })`.
+via `ThinkingLevel.pipe(Schema.withDecodingDefaultType(Effect.succeed(DEFAULT_THINKING_LEVEL)))`
+(Effect v3 used `Schema.optionalWith(ThinkingLevel, { default: () => 'adaptive' })`).
 
 ## Implication
 

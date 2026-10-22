@@ -1,5 +1,4 @@
-import { Result } from '@effect-atom/atom'
-import { useAtomSet, useAtomValue } from '@effect-atom/atom-react'
+import { useAtomSet, useAtomValue } from '@effect/atom-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,6 +56,7 @@ import type {
 } from '@shared/ipc/contract'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { AsyncResult } from 'effect/reactivity'
 import {
   AlertTriangle,
   ArrowUp,
@@ -374,7 +374,7 @@ function PaneChat({
   const pendingQuestionQueryKey = ['pane', paneId, 'pendingQuestion'] as const
   const pendingPlanReviewQueryKey = ['pane', paneId, 'pendingPlanReview'] as const
 
-  const chat = Result.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
+  const chat = AsyncResult.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
   const sendMessage = useAtomSet(paneSendAtom(paneId))
   const interrupt = useAtomSet(paneInterruptAtom(paneId))
   const rewind = useAtomSet(paneRewindAtom(paneId))

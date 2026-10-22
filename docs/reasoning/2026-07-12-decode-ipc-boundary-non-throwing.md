@@ -1,4 +1,4 @@
-# Decode messages at process/IPC boundaries with `Either`/`Option`, never `Schema.decodeUnknownSync`
+# Decode messages at process/IPC boundaries with `Result`/`Option`, never `Schema.decodeUnknownSync`
 
 **Date:** 2026-07-12
 
@@ -12,4 +12,4 @@ A malformed or unexpected payload arriving over `ipcMain`/`utilityProcess`/`pare
 
 ## Implication
 
-Any schema decode sitting directly in a raw event-emitter callback (IPC, child process messages, WebSocket frames, etc.) must use `Schema.decodeUnknownEither` or `Schema.decodeUnknownOption` and handle the failure branch (log + drop), never `decodeUnknownSync`. Apply this pattern to any future IPC-like boundary added to `dia` (renderer↔main, main↔pane-process, or any future main↔external-process channel).
+Any schema decode sitting directly in a raw event-emitter callback (IPC, child process messages, WebSocket frames, etc.) must use `Schema.decodeUnknownResult` or `Schema.decodeUnknownOption` (Effect v4; v3 named the first one `Schema.decodeUnknownEither`) and handle the failure branch (log + drop), never `decodeUnknownSync`. Apply this pattern to any future IPC-like boundary added to `dia` (renderer↔main, main↔pane-process, or any future main↔external-process channel).

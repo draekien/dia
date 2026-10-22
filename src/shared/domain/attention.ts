@@ -1,6 +1,6 @@
-import { Data, Either, Schema } from 'effect'
+import { Data, Result, Schema } from 'effect'
 
-const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
+const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
 
 /**
  * An opaque permission-rule update owned by the Agent SDK. dia carries these
@@ -73,7 +73,7 @@ export type PlanReview = typeof PlanReview.Type
  * a `ClarifyingQuestion`, or a `PlanReview`. Branch on `_tag` to route to the
  * matching dialog and response command.
  */
-export const UserInputRequest = Schema.Union(PermissionRequest, ClarifyingQuestion, PlanReview)
+export const UserInputRequest = Schema.Union([PermissionRequest, ClarifyingQuestion, PlanReview])
 export type UserInputRequest = typeof UserInputRequest.Type
 
 /**
@@ -101,10 +101,10 @@ export type Deny = typeof Deny.Type
  * The user's decision on a `PermissionRequest`: either an `Allow` or a `Deny`.
  * Branch on `_tag` to route the response.
  */
-export const PermissionResponse = Schema.Union(Allow, Deny)
+export const PermissionResponse = Schema.Union([Allow, Deny])
 export type PermissionResponse = typeof PermissionResponse.Type
 
-const AnswerValue = Schema.Union(Schema.String, Schema.Array(Schema.String))
+const AnswerValue = Schema.Union([Schema.String, Schema.Array(Schema.String)])
 
 /**
  * The user's per-question reply to a `ClarifyingQuestion`: the resolved choice
@@ -114,7 +114,7 @@ const AnswerValue = Schema.Union(Schema.String, Schema.Array(Schema.String))
  */
 export const Answers = Schema.TaggedStruct('Answers', {
   questions: Schema.Array(Question),
-  answers: Schema.Record({ key: Schema.String, value: AnswerValue })
+  answers: Schema.Record(Schema.String, AnswerValue)
 })
 export type Answers = typeof Answers.Type
 
@@ -133,7 +133,7 @@ export type FreeformResponse = typeof FreeformResponse.Type
  * The user's reply to a `ClarifyingQuestion`: either per-question `Answers` or
  * a `FreeformResponse`. Branch on `_tag` to route the response.
  */
-export const QuestionResponse = Schema.Union(Answers, FreeformResponse)
+export const QuestionResponse = Schema.Union([Answers, FreeformResponse])
 export type QuestionResponse = typeof QuestionResponse.Type
 
 /**
@@ -176,7 +176,7 @@ export const Completed = Schema.TaggedStruct('Completed', {})
  * The set of attention states a pane can be in. Use `transitionAttention`
  * rather than constructing transitions by hand so invalid moves are rejected.
  */
-export const AttentionState = Schema.Union(Idle, AwaitingPermission, Errored, Crashed, Completed)
+export const AttentionState = Schema.Union([Idle, AwaitingPermission, Errored, Crashed, Completed])
 export type AttentionState = typeof AttentionState.Type
 
 /**
@@ -219,7 +219,7 @@ const validTransitions: ReadonlySet<string> = new Set([
 export const transitionAttention = (
   current: AttentionState,
   next: AttentionState
-): Either.Either<AttentionState, InvalidAttentionTransition> =>
+): Result.Result<AttentionState, InvalidAttentionTransition> =>
   validTransitions.has(`${current._tag}->${next._tag}`)
-    ? Either.right(next)
-    : Either.left(new InvalidAttentionTransition({ from: current._tag, to: next._tag }))
+    ? Result.succeed(next)
+    : Result.fail(new InvalidAttentionTransition({ from: current._tag, to: next._tag }))

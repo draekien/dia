@@ -37,9 +37,11 @@ Renderer-specific — see `src/renderer/CLAUDE.md`.
 
 ### Effect TS
 
+This repository uses Effect v4. Before writing any Effect code, first read `node_modules/effect/AGENTS.md` **completely**, and follow the links in the file when required. If you need to learn more about particular Effect APIs and concepts that the guide doesn't cover, search through the source code in `node_modules/effect/src`.
+
 - Use Effect's `Clock` service (e.g. `Clock.currentTimeMillis`) instead of `Date.now()`/`new Date()` in any Effect code, so behavior can be driven deterministically with `TestClock` in tests.
 - Represent durations with Effect's `Duration` module (`Duration.seconds(5)`, `Duration.days(7)`, `Duration.toMillis(...)`) instead of raw millisecond math or ad-hoc string literals.
-- Derive types from their schema (`export type X = typeof XSchema.Type`); never hand-declare an interface/type and a parallel schema. For a recursive schema, a plain `type` alias self-references and errors — use `export interface X extends Schema.Schema.Type<typeof XSchema> {}` instead.
+- Derive types from their schema (`export type X = typeof XSchema.Type`); never hand-declare an interface/type and a parallel schema. For a recursive schema, a plain `type` alias self-references and errors — use `export interface X extends Schema.Schema.Type<typeof XSchema> {}` instead, and annotate the recursive schema constant and its `Schema.suspend` thunk as `Schema.Codec<X>`, not `Schema.Schema<X>`: in v4 `Schema.Schema<X>` carries no encoding, so `Schema.encodeSync` on any schema containing it fails to type-check.
 - Construct tagged values via the schema's `.make({...})` constructor (it auto-fills `_tag`), never hand-written `{ _tag: ... }` literals. An anonymous `Schema.TaggedStruct` inline in a `Schema.Union` has no `.make` — extract it to a named export first.
 - Schemas shared across processes (main/preload/renderer) live in `src/shared` (import via `@shared/*`) and must stay platform-neutral — no Node/DOM/Electron imports. `tsconfig.shared.json` enforces this. See ADR-0013.
 - A path alias must be declared in all of: `tsconfig.base.json` (typecheck), every relevant `electron.vite.config.ts` block (main/preload/renderer — build), and `vitest.config.ts` (tests). Type-only imports resolve without the runtime aliases, so a missing one stays hidden until the first value import.

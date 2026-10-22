@@ -9,7 +9,7 @@ import { ConversationMessage, PaneConfig, PermissionMode, ThinkingLevel } from '
 import { SlashCommandInfo } from '@shared/domain/slash-command'
 import { Schema } from 'effect'
 
-const JsonRecord = Schema.Record({ key: Schema.String, value: Schema.Unknown })
+const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
 
 /** Sent by main to the pane subprocess once at startup to provide the pane's configuration and start its agent session. When `resume` is set, the session continues the prior Agent SDK session with that id instead of starting fresh. */
 export const InitMessage = Schema.TaggedStruct('Init', {
@@ -49,7 +49,7 @@ export const RewindToCheckpoint = Schema.TaggedStruct('RewindToCheckpoint', {
   resumeAnchorUuid: Schema.optional(Schema.String)
 })
 /** The full set of messages main may send to a pane subprocess. Decode inbound IPC payloads against this union before acting on them. */
-export const InboundMessage = Schema.Union(
+export const InboundMessage = Schema.Union([
   InitMessage,
   SendText,
   SetThinkingLevel,
@@ -59,7 +59,7 @@ export const InboundMessage = Schema.Union(
   ResolvePlanReview,
   Interrupt,
   RewindToCheckpoint
-)
+])
 export type InboundMessage = typeof InboundMessage.Type
 
 /** Sent by the pane subprocess to main when the agent has produced a complete conversation message. */
@@ -126,7 +126,7 @@ export const SlashCommandsAvailable = Schema.TaggedStruct('SlashCommandsAvailabl
 })
 /** Sent by the pane subprocess to main when the agent's context was compacted (e.g. the user ran `/compact`), so the renderer can mark the boundary in the transcript. `preTokens`/`postTokens` bracket the compaction; `trigger` distinguishes a manual `/compact` from an automatic one. */
 export const ConversationCompacted = Schema.TaggedStruct('ConversationCompacted', {
-  trigger: Schema.Literal('manual', 'auto'),
+  trigger: Schema.Literals(['manual', 'auto']),
   preTokens: Schema.Number,
   postTokens: Schema.optional(Schema.Number)
 })
@@ -145,7 +145,7 @@ export const RewoundToCheckpoint = Schema.TaggedStruct('RewoundToCheckpoint', {
 })
 
 /** The full set of messages a pane subprocess may send to main. Decode outbound IPC payloads against this union before acting on them. */
-export const OutboundMessage = Schema.Union(
+export const OutboundMessage = Schema.Union([
   AssistantMessageReceived,
   AssistantTextDelta,
   AssistantThinkingDelta,
@@ -164,5 +164,5 @@ export const OutboundMessage = Schema.Union(
   ConversationReset,
   CheckpointAvailable,
   RewoundToCheckpoint
-)
+])
 export type OutboundMessage = typeof OutboundMessage.Type

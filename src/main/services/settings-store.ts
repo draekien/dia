@@ -1,21 +1,20 @@
-import { FileSystem } from '@effect/platform'
 import { ThemePreference } from '@shared/domain/theme'
-import { Context, Effect, Either, Layer, Option, Schema } from 'effect'
+import { Context, Effect, FileSystem, Layer, Option, Result, Schema } from 'effect'
 
 const Settings = Schema.Struct({
   lastDirectory: Schema.optional(Schema.String),
   theme: Schema.optional(ThemePreference)
 })
-const parseJson = Schema.decodeUnknownEither(Schema.parseJson())
-const decodeSettings = Schema.decodeUnknownEither(Settings)
-const encodeSettings = Schema.encodeSync(Schema.parseJson(Settings, { space: 2 }))
+const parseJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
+const decodeSettings = Schema.decodeUnknownResult(Settings)
+const encodeSettings = Schema.encodeSync(Schema.fromJsonString(Settings, { space: 2 }))
 
 /**
- * Effect Context.Tag for the app's persisted settings store.
+ * Effect Context.Service for the app's persisted settings store.
  * Depend on this to read or update the user's last-opened directory and
  * colour-theme choice. Provide it via {@link makeSettingsStoreLive}.
  */
-export class SettingsStore extends Context.Tag('SettingsStore')<
+export class SettingsStore extends Context.Service<
   SettingsStore,
   {
     readonly getLastDirectory: () => Effect.Effect<Option.Option<string>>
@@ -23,7 +22,7 @@ export class SettingsStore extends Context.Tag('SettingsStore')<
     readonly getTheme: () => Effect.Effect<Option.Option<ThemePreference>>
     readonly setTheme: (theme: ThemePreference) => Effect.Effect<void>
   }
->() {}
+>()('SettingsStore') {}
 
 /**
  * Builds the live {@link SettingsStore} layer, persisting settings as JSON
@@ -44,35 +43,33 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
 
         const raw = yield* fs.readFileString(filePath).pipe(Effect.orElseSucceed(() => '{}'))
         const parsed = parseJson(raw)
-        if (Either.isLeft(parsed)) {
-          yield* Effect.logWarning('Ignoring unparseable settings file', { cause: parsed.left })
+        if (Result.isFailure(parsed)) {
+          yield* Effect.logWarning('Ignoring unparseable settings file', { cause: parsed.failure })
           return {}
         }
 
-        const decoded = decodeSettings(parsed.right)
-        if (Either.isLeft(decoded)) {
-          yield* Effect.logWarning('Ignoring malformed settings file', { issue: decoded.left })
+        const decoded = decodeSettings(parsed.success)
+        if (Result.isFailure(decoded)) {
+          yield* Effect.logWarning('Ignoring malformed settings file', { issue: decoded.failure })
           return {}
         }
-        return decoded.right
+        return decoded.success
       })
 
       const write = Effect.fn('SettingsStore.write')(function* (settings: typeof Settings.Type) {
         yield* fs
           .writeFileString(filePath, encodeSettings(settings))
-          .pipe(
-            Effect.catchAll((cause) => Effect.logError('Failed to persist settings', { cause }))
-          )
+          .pipe(Effect.catch((cause) => Effect.logError('Failed to persist settings', { cause })))
       })
 
       const getLastDirectory = () =>
-        read().pipe(Effect.map((settings) => Option.fromNullable(settings.lastDirectory)))
+        read().pipe(Effect.map((settings) => Option.fromNullishOr(settings.lastDirectory)))
 
       const setLastDirectory = (path: string) =>
         read().pipe(Effect.flatMap((settings) => write({ ...settings, lastDirectory: path })))
 
       const getTheme = () =>
-        read().pipe(Effect.map((settings) => Option.fromNullable(settings.theme)))
+        read().pipe(Effect.map((settings) => Option.fromNullishOr(settings.theme)))
 
       const setTheme = (theme: ThemePreference) =>
         read().pipe(Effect.flatMap((settings) => write({ ...settings, theme })))

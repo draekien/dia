@@ -1,7 +1,7 @@
-import { Command, CommandExecutor, FileSystem, Path } from '@effect/platform'
 import type { WorktreeInfo } from '@shared/domain/pane'
 import type { PaneId } from '@shared/domain/pane-tree'
-import { Context, Data, Effect, Layer, Random } from 'effect'
+import { Context, Data, Effect, FileSystem, Layer, Path, Random } from 'effect'
+import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { generateWorktreeSlug } from './worktree-slug'
 
 /**
@@ -52,7 +52,7 @@ export class WorktreeReattachError extends Data.TaggedError('WorktreeReattachErr
  * shutdown but their branch persists). Obtain an implementation via
  * `GitOpsServiceLive` and provide it at the composition root.
  */
-export class GitOpsService extends Context.Tag('GitOpsService')<
+export class GitOpsService extends Context.Service<
   GitOpsService,
   {
     /**
@@ -84,17 +84,17 @@ export class GitOpsService extends Context.Tag('GitOpsService')<
       paneId: PaneId
     ) => Effect.Effect<WorktreeInfo, WorktreeReattachError>
   }
->() {}
+>()('GitOpsService') {}
 
 /**
- * Live `GitOpsService` layer backed by the platform `CommandExecutor`,
+ * Live `GitOpsService` layer backed by the platform `ChildProcessSpawner`,
  * shelling out to the `git` CLI. Provide this at the composition root
  * wherever `GitOpsService` is required.
  */
 export const GitOpsServiceLive = Layer.effect(
   GitOpsService,
   Effect.gen(function* () {
-    const executor = yield* CommandExecutor.CommandExecutor
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
 
@@ -103,14 +103,13 @@ export const GitOpsServiceLive = Layer.effect(
       paneId: PaneId,
       branch: string
     ) {
-      const command = Command.make(
-        'git',
+      const command = ChildProcess.make('git', [
         'rev-parse',
         '--verify',
         '--quiet',
         `refs/heads/${branch}`
-      ).pipe(Command.workingDirectory(sourceRepo))
-      const exitCode = yield* executor
+      ]).pipe(ChildProcess.setCwd(sourceRepo))
+      const exitCode = yield* spawner
         .exitCode(command)
         .pipe(Effect.mapError((cause) => new WorktreeCreateError({ paneId, sourceRepo, cause })))
       return exitCode === 0
@@ -149,10 +148,14 @@ export const GitOpsServiceLive = Layer.effect(
         paneId,
         worktreesRoot
       )
-      const command = Command.make('git', 'worktree', 'add', worktreePath, '-b', branch).pipe(
-        Command.workingDirectory(sourceRepo)
-      )
-      const exitCode = yield* executor
+      const command = ChildProcess.make('git', [
+        'worktree',
+        'add',
+        worktreePath,
+        '-b',
+        branch
+      ]).pipe(ChildProcess.setCwd(sourceRepo))
+      const exitCode = yield* spawner
         .exitCode(command)
         .pipe(Effect.mapError((cause) => new WorktreeCreateError({ paneId, sourceRepo, cause })))
 
@@ -172,10 +175,10 @@ export const GitOpsServiceLive = Layer.effect(
       info: WorktreeInfo,
       paneId: PaneId
     ) {
-      const command = Command.make('git', 'worktree', 'remove', '--force', info.path).pipe(
-        Command.workingDirectory(info.sourceRepo)
+      const command = ChildProcess.make('git', ['worktree', 'remove', '--force', info.path]).pipe(
+        ChildProcess.setCwd(info.sourceRepo)
       )
-      const exitCode = yield* executor
+      const exitCode = yield* spawner
         .exitCode(command)
         .pipe(
           Effect.mapError((cause) => new WorktreeRemoveError({ paneId, path: info.path, cause }))
@@ -191,10 +194,10 @@ export const GitOpsServiceLive = Layer.effect(
         path: info.path,
         exitCode
       })
-      const pruneCommand = Command.make('git', 'worktree', 'prune').pipe(
-        Command.workingDirectory(info.sourceRepo)
+      const pruneCommand = ChildProcess.make('git', ['worktree', 'prune']).pipe(
+        ChildProcess.setCwd(info.sourceRepo)
       )
-      const pruneExitCode = yield* executor
+      const pruneExitCode = yield* spawner
         .exitCode(pruneCommand)
         .pipe(
           Effect.mapError((cause) => new WorktreeRemoveError({ paneId, path: info.path, cause }))
@@ -227,10 +230,10 @@ export const GitOpsServiceLive = Layer.effect(
         return info
       }
 
-      const command = Command.make('git', 'worktree', 'add', info.path, info.branch).pipe(
-        Command.workingDirectory(info.sourceRepo)
+      const command = ChildProcess.make('git', ['worktree', 'add', info.path, info.branch]).pipe(
+        ChildProcess.setCwd(info.sourceRepo)
       )
-      const exitCode = yield* executor
+      const exitCode = yield* spawner
         .exitCode(command)
         .pipe(
           Effect.mapError((cause) => new WorktreeReattachError({ paneId, path: info.path, cause }))

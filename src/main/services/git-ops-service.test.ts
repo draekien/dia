@@ -1,7 +1,7 @@
-import { type Command, CommandExecutor, FileSystem, Path } from '@effect/platform'
 import { assert, describe, it } from '@effect/vitest'
 import type { WorktreeInfo } from '@shared/domain/pane'
-import { Effect, Either, Layer, Logger } from 'effect'
+import { Effect, FileSystem, Layer, Logger, Path, Result, Stream } from 'effect'
+import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import {
   GitOpsService,
   GitOpsServiceLive,
@@ -11,43 +11,39 @@ import {
 
 const PANE_ID = 'aaaaaaaa-0000-4000-8000-000000000001'
 
-function makeFakeExecutor(
-  exitCodeFor: (command: Command.Command) => number
-): CommandExecutor.CommandExecutor {
-  const notImplemented = () => Effect.die('not implemented in fake executor')
-  return {
-    [CommandExecutor.TypeId]: CommandExecutor.TypeId,
-    exitCode: (command: Command.Command) =>
-      Effect.succeed(CommandExecutor.ExitCode(exitCodeFor(command))),
-    start: notImplemented,
+function makeFakeSpawner(
+  exitCodeFor: (command: ChildProcess.Command) => number
+): ChildProcessSpawner.ChildProcessSpawner['Service'] {
+  const notImplemented = () => Effect.die('not implemented in fake spawner')
+  const streamNotImplemented = () => Stream.die('not implemented in fake spawner')
+  return ChildProcessSpawner.ChildProcessSpawner.of({
+    spawn: notImplemented,
+    exitCode: (command) => Effect.succeed(ChildProcessSpawner.ExitCode(exitCodeFor(command))),
     string: notImplemented,
     lines: notImplemented,
-    stream: notImplemented,
-    streamLines: notImplemented
-  }
+    streamString: streamNotImplemented,
+    streamLines: streamNotImplemented
+  })
 }
 
-function argsOf(command: Command.Command): ReadonlyArray<string> {
-  if (command._tag !== 'StandardCommand') throw new Error('expected a StandardCommand')
+function argsOf(command: ChildProcess.Command): ReadonlyArray<string> {
+  if (!ChildProcess.isStandardCommand(command)) throw new Error('expected a StandardCommand')
   return command.args
 }
 
 function makeTestSetup(
-  exitCodeFor: (command: Command.Command) => number,
+  exitCodeFor: (command: ChildProcess.Command) => number,
   worktreeExists = false
 ): {
   readonly capturedLogs: ReadonlyArray<unknown>
   readonly testLayer: Layer.Layer<GitOpsService>
   readonly loggerLayer: Layer.Layer<never>
 } {
-  const executorLayer = Layer.succeed(
-    CommandExecutor.CommandExecutor,
-    makeFakeExecutor(exitCodeFor)
+  const spawnerLayer = Layer.succeed(
+    ChildProcessSpawner.ChildProcessSpawner,
+    makeFakeSpawner(exitCodeFor)
   )
-  const fsLayer = Layer.succeed(
-    FileSystem.FileSystem,
-    FileSystem.makeNoop({ exists: () => Effect.succeed(worktreeExists) })
-  )
+  const fsLayer = FileSystem.layerNoop({ exists: () => Effect.succeed(worktreeExists) })
 
   const capturedLogs: unknown[] = []
   const captureLogger = Logger.make(({ message }) => {
@@ -56,9 +52,9 @@ function makeTestSetup(
 
   const testLayer = Layer.provide(
     GitOpsServiceLive,
-    Layer.mergeAll(executorLayer, fsLayer, Path.layer)
+    Layer.mergeAll(spawnerLayer, fsLayer, Path.layer)
   )
-  const loggerLayer = Logger.add(captureLogger)
+  const loggerLayer = Logger.layer([captureLogger], { mergeWithExisting: true })
 
   return { capturedLogs, testLayer, loggerLayer }
 }
@@ -70,14 +66,14 @@ const WORKTREE_INFO: WorktreeInfo = {
 }
 
 const WORKTREES_ROOT = '/worktrees'
-const isRevParse = (command: Command.Command): boolean => argsOf(command)[0] === 'rev-parse'
-const isWorktreeAdd = (command: Command.Command): boolean =>
+const isRevParse = (command: ChildProcess.Command): boolean => argsOf(command)[0] === 'rev-parse'
+const isWorktreeAdd = (command: ChildProcess.Command): boolean =>
   argsOf(command)[0] === 'worktree' && argsOf(command)[1] === 'add'
 
 describe('GitOpsService', () => {
   it.effect('createWorktree provisions a friendly dia/<slug> branch and matching directory', () =>
     Effect.gen(function* () {
-      const commands: Command.Command[] = []
+      const commands: ChildProcess.Command[] = []
       // rev-parse exits non-zero => the generated branch is free; the add then succeeds.
       const { testLayer, loggerLayer } = makeTestSetup((command) => {
         commands.push(command)
@@ -108,7 +104,7 @@ describe('GitOpsService', () => {
   it.effect('createWorktree regenerates the slug when the branch is already taken', () =>
     Effect.gen(function* () {
       let revParseCalls = 0
-      const commands: Command.Command[] = []
+      const commands: ChildProcess.Command[] = []
       // First candidate's branch already exists (rev-parse exits 0); the next is free.
       const { testLayer, loggerLayer } = makeTestSetup((command) => {
         commands.push(command)
@@ -137,7 +133,7 @@ describe('GitOpsService', () => {
       // Every branch is free (rev-parse exits 1), yet fs.exists reports every directory present,
       // so each candidate is still rejected on the directory clash before its branch is checked.
       let revParseCalls = 0
-      const commands: Command.Command[] = []
+      const commands: ChildProcess.Command[] = []
       const { testLayer, loggerLayer } = makeTestSetup((command) => {
         commands.push(command)
         if (isRevParse(command)) {
@@ -167,11 +163,11 @@ describe('GitOpsService', () => {
       const result = yield* Effect.gen(function* () {
         const gitOps = yield* GitOpsService
         return yield* gitOps.createWorktree('/repo', PANE_ID, WORKTREES_ROOT)
-      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer), Effect.either)
+      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer), Effect.result)
 
-      assert.isTrue(Either.isLeft(result))
-      if (Either.isLeft(result)) {
-        assert.instanceOf(result.left, WorktreeCreateError)
+      assert.isTrue(Result.isFailure(result))
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, WorktreeCreateError)
       }
     })
   )
@@ -238,7 +234,7 @@ describe('GitOpsService', () => {
 
   it.effect('reattachWorktree checks out the existing branch without -b or -B', () =>
     Effect.gen(function* () {
-      const commands: Command.Command[] = []
+      const commands: ChildProcess.Command[] = []
       const { testLayer, loggerLayer } = makeTestSetup((command) => {
         commands.push(command)
         return 0
@@ -267,18 +263,18 @@ describe('GitOpsService', () => {
       const result = yield* Effect.gen(function* () {
         const gitOps = yield* GitOpsService
         return yield* gitOps.reattachWorktree(WORKTREE_INFO, PANE_ID)
-      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer), Effect.either)
+      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer), Effect.result)
 
-      assert.isTrue(Either.isLeft(result))
-      if (Either.isLeft(result)) {
-        assert.instanceOf(result.left, WorktreeReattachError)
+      assert.isTrue(Result.isFailure(result))
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, WorktreeReattachError)
       }
     })
   )
 
   it.effect('reattachWorktree no-ops when the worktree path already exists', () =>
     Effect.gen(function* () {
-      const commands: Command.Command[] = []
+      const commands: ChildProcess.Command[] = []
       const { capturedLogs, testLayer, loggerLayer } = makeTestSetup((command) => {
         commands.push(command)
         return 0

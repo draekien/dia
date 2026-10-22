@@ -12,4 +12,6 @@ The vendored clone at `.repos/effect` tracks `effect-smol`, which is a newer/dif
 
 ## Implication
 
-Always verify exact API signatures against `node_modules/effect/dist/dts/*.d.ts` (the installed version), not `.repos/effect/packages/effect/src/*` (the vendored research clone), even though the skill's own guidance says to use the vendored source for "exact API details." Treat the vendored repo as conceptual/pattern reference only; treat `node_modules` as the source of truth for what will actually compile.
+Always verify exact API signatures against `node_modules/effect/src/*.ts` or `node_modules/effect/dist/*.d.ts` (the installed version), not `.repos/effect/packages/effect/src/*` (the vendored research clone), even though the skill's own guidance says to use the vendored source for "exact API details." Treat the vendored repo as conceptual/pattern reference only; treat `node_modules` as the source of truth for what will actually compile.
+
+**Update (2026-10-22):** dia now runs Effect v4 (`effect@4.0.5`). `scripts/prepare-effect.sh` clones the canonical `Effect-TS/effect` repo at the installed tag, so a fresh `.repos/effect` matches `node_modules`. A `.repos/effect` cloned by hand (for example from `main` for the v3 → v4 migration guides in `.repos/effect/migration/`) can still be ahead of the installed version, so the rule above still applies.

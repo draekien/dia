@@ -1,7 +1,15 @@
-import { FileSystem, PlatformLogger } from '@effect/platform'
-import type { PlatformError } from '@effect/platform/Error'
 import { NodeFileSystem } from '@effect/platform-node'
-import { Clock, Duration, Effect, Layer, Logger, Option, Schema } from 'effect'
+import {
+  Clock,
+  Duration,
+  Effect,
+  FileSystem,
+  Layer,
+  Logger,
+  Option,
+  type PlatformError,
+  Schema
+} from 'effect'
 
 /**
  * Default log retention window, applied by {@link pruneOldLogEntries} until a
@@ -12,7 +20,7 @@ export const DEFAULT_LOG_RETENTION = Duration.days(7)
 const LOG_BATCH_WINDOW = Duration.seconds(5)
 
 const LogLine = Schema.Struct({ timestamp: Schema.DateFromString })
-const decodeLogLine = Schema.decodeUnknownOption(Schema.parseJson(LogLine))
+const decodeLogLine = Schema.decodeUnknownOption(Schema.fromJsonString(LogLine))
 
 function lineTimestamp(line: string): Option.Option<number> {
   return Option.map(decodeLogLine(line), (entry) => entry.timestamp.getTime())
@@ -25,7 +33,7 @@ function lineTimestamp(line: string): Option.Option<number> {
  */
 export const pruneOldLogEntries = Effect.fn('Logger.pruneOldLogEntries')(function* (
   logFilePath: string,
-  retention: Duration.DurationInput
+  retention: Duration.Input
 ) {
   const fs = yield* FileSystem.FileSystem
   const exists = yield* fs.exists(logFilePath)
@@ -54,10 +62,12 @@ export const pruneOldLogEntries = Effect.fn('Logger.pruneOldLogEntries')(functio
 export function makeLoggerLive(
   isDev: boolean,
   logFilePath: string
-): Layer.Layer<never, PlatformError> {
-  const consoleLoggerLayer = isDev ? Logger.pretty : Logger.remove(Logger.defaultLogger)
-  const fileLoggerLayer = Logger.addScoped(
-    Logger.jsonLogger.pipe(PlatformLogger.toFile(logFilePath, { batchWindow: LOG_BATCH_WINDOW }))
-  ).pipe(Layer.provide(NodeFileSystem.layer))
-  return Layer.merge(consoleLoggerLayer, fileLoggerLayer)
+): Layer.Layer<never, PlatformError.PlatformError> {
+  const consoleLogger = isDev ? [Logger.consolePretty()] : []
+  const fileLogger = Logger.formatJson.pipe(
+    Logger.toFile(logFilePath, { batchWindow: LOG_BATCH_WINDOW })
+  )
+  return Logger.layer([...consoleLogger, Logger.tracerLogger, fileLogger]).pipe(
+    Layer.provide(NodeFileSystem.layer)
+  )
 }

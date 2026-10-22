@@ -57,14 +57,14 @@ export type UpdateError = typeof UpdateError.Type
  * the About dialog's update line. Pushed from the main process as it observes
  * the updater; seed the renderer with {@link DEFAULT_UPDATE_STATUS}.
  */
-export const UpdateStatus = Schema.Union(
+export const UpdateStatus = Schema.Union([
   UpdateIdle,
   UpdateChecking,
   UpdateUpToDate,
   UpdateDownloading,
   UpdateReady,
   UpdateError
-)
+])
 export type UpdateStatus = typeof UpdateStatus.Type
 
 /**

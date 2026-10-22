@@ -16,15 +16,14 @@ import {
   Data,
   Deferred,
   Effect,
-  Either,
   Fiber,
   Layer,
-  Logger,
-  LogLevel,
   Match,
   Option,
   Queue,
   Ref,
+  References,
+  Result,
   Schema,
   Stream
 } from 'effect'
@@ -59,7 +58,7 @@ export class SessionStreamError extends Data.TaggedError('SessionStreamError')<{
   readonly cause: unknown
 }> {}
 
-const decodeInbound = Schema.decodeUnknownEither(InboundMessage)
+const decodeInbound = Schema.decodeUnknownResult(InboundMessage)
 const encodeOutbound = Schema.encodeSync(OutboundMessage)
 
 const port = process.parentPort
@@ -69,7 +68,7 @@ const postOutbound = (message: OutboundMessage): Effect.Effect<void> =>
 
 const pendingUserInput = makePendingUserInput()
 
-const decodeQuestions = Schema.decodeUnknownEither(Schema.Array(Question))
+const decodeQuestions = Schema.decodeUnknownResult(Schema.Array(Question))
 
 const joinAnswer = (answer: string | ReadonlyArray<string>): string =>
   typeof answer === 'string' ? answer : answer.join(', ')
@@ -158,18 +157,18 @@ const canUseTool: CanUseTool = (toolName, input, options) =>
 
       const questions =
         toolName === 'AskUserQuestion' ? decodeQuestions(input.questions) : undefined
-      if (questions !== undefined && Either.isRight(questions)) {
+      if (questions !== undefined && Result.isSuccess(questions)) {
         yield* postOutbound(
           QuestionRequested.make({
             requestId: options.toolUseID,
-            questions: questions.right
+            questions: questions.success
           })
         )
       } else {
         if (questions !== undefined) {
           yield* Effect.logWarning(
             'AskUserQuestion input did not match the Question schema; surfacing it as a permission request',
-            { requestId: options.toolUseID, issue: questions.left }
+            { requestId: options.toolUseID, issue: questions.failure }
           )
         }
         yield* postOutbound(
@@ -245,7 +244,7 @@ const interruptSession = Effect.fn('AgentSession.interruptSession')(function* (
     try: () => queryOpt.value.interrupt(),
     catch: (cause) => new SessionStreamError({ cause })
   }).pipe(
-    Effect.tapErrorCause((cause) => Effect.logError('query.interrupt() failed', { cause })),
+    Effect.tapCause((cause) => Effect.logError('query.interrupt() failed', { cause })),
     Effect.ignore
   )
   yield* Effect.logInfo('Interrupted session', { superseded: requestIds })
@@ -337,7 +336,7 @@ const runSession = Effect.fn('AgentSession.runSession')(
     // stream, and tied to this session run so a restart interrupts it. The warming signal
     // brackets the await so the renderer can show a "loading commands" indicator; success
     // ends it via SlashCommandsAvailable, failure via SlashCommandsWarming(active: false).
-    yield* Effect.fork(
+    yield* Effect.forkChild(
       postOutbound(SlashCommandsWarming.make({ active: true })).pipe(
         Effect.andThen(
           Effect.tryPromise({
@@ -356,7 +355,7 @@ const runSession = Effect.fn('AgentSession.runSession')(
             })
           )
         ),
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.logWarning('Failed to warm up slash commands', {
             paneId: config.paneId,
             error
@@ -411,8 +410,8 @@ const runSession = Effect.fn('AgentSession.runSession')(
   },
   (effect, config) =>
     effect.pipe(
-      Effect.catchAllCause((cause) => {
-        const failure = Cause.failureOption(cause)
+      Effect.catchCause((cause) => {
+        const failure = Cause.findErrorOption(cause)
         const underlying =
           Option.isSome(failure) && failure.value instanceof SessionStreamError
             ? failure.value.cause
@@ -435,7 +434,7 @@ const program = Effect.gen(function* () {
   const abortExpectedRef = yield* Ref.make(false)
   const configRef = yield* Ref.make<Option.Option<PaneConfig>>(Option.none())
   const desiredLevelRef = yield* Ref.make<Option.Option<ThinkingLevel>>(Option.none())
-  const fiberRef = yield* Ref.make<Option.Option<Fiber.RuntimeFiber<void>>>(Option.none())
+  const fiberRef = yield* Ref.make<Option.Option<Fiber.Fiber<void>>>(Option.none())
   const modeController = yield* makePermissionModeController
 
   const startSession = Effect.fn('AgentSession.startSession')(function* (
@@ -525,7 +524,7 @@ const program = Effect.gen(function* () {
       try: () => queryOpt.value.rewindFiles(messageUuid),
       catch: (cause) => new SessionStreamError({ cause })
     }).pipe(
-      Effect.tapErrorCause((cause) =>
+      Effect.tapCause((cause) =>
         Effect.logError('rewindFiles failed', { paneId: config.paneId, messageUuid, cause })
       ),
       Effect.option
@@ -560,21 +559,23 @@ const program = Effect.gen(function* () {
     yield* postOutbound(RewoundToCheckpoint.make({ messageUuid }))
   })
 
-  const rawInbound = Stream.async<unknown>((emit) => {
-    const listener = (event: { data: unknown }): void => void emit.single(event.data)
-    port.on('message', listener)
-    return Effect.sync(() => port.off('message', listener))
-  })
+  const rawInbound = Stream.callback<unknown>((queue) =>
+    Effect.gen(function* () {
+      const listener = (event: { data: unknown }): void => void Queue.offerUnsafe(queue, event.data)
+      port.on('message', listener)
+      yield* Effect.addFinalizer(() => Effect.sync(() => port.off('message', listener)))
+    })
+  )
 
   yield* Stream.runForEach(rawInbound, (raw) =>
     Effect.gen(function* () {
       const decoded = decodeInbound(raw)
-      if (Either.isLeft(decoded)) {
-        yield* Effect.logWarning('Dropped malformed inbound message', { issue: decoded.left })
+      if (Result.isFailure(decoded)) {
+        yield* Effect.logWarning('Dropped malformed inbound message', { issue: decoded.failure })
         return
       }
 
-      const inbound = decoded.right
+      const inbound = decoded.success
       if (inbound._tag === 'Init') {
         yield* Ref.set(desiredLevelRef, Option.some(inbound.config.thinkingLevel))
         yield* startSession(inbound.config, inbound.resume, undefined)
@@ -614,7 +615,10 @@ const LoggerLive = makeLoggerLive(isDev, process.env.DIA_LOG_FILE ?? 'main.log')
 Effect.runFork(
   Effect.scoped(program).pipe(
     Effect.provide(
-      Layer.mergeAll(LoggerLive, Logger.minimumLogLevel(isDev ? LogLevel.Debug : LogLevel.Info))
+      Layer.mergeAll(
+        LoggerLive,
+        Layer.succeed(References.MinimumLogLevel, isDev ? 'Debug' : 'Info')
+      )
     )
   )
 )

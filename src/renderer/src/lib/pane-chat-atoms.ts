@@ -1,5 +1,5 @@
-import { Atom, Result } from '@effect-atom/atom'
-import { Duration, Effect, Stream, SubscriptionRef } from 'effect'
+import { Duration, Effect, Queue, Stream, SubscriptionRef } from 'effect'
+import { AsyncResult, Atom } from 'effect/reactivity'
 import type { PaneChatState, PaneStreamEvent } from './pane-chat'
 import {
   appendUserMessage,
@@ -11,11 +11,11 @@ import {
 const IDLE_TTL = Duration.seconds(30)
 
 const paneStreamEvents = (paneId: string): Stream.Stream<PaneStreamEvent> =>
-  Stream.asyncPush<PaneStreamEvent>((emit) =>
+  Stream.callback<PaneStreamEvent>((queue) =>
     Effect.acquireRelease(
       Effect.sync(() => {
         const push = (event: PaneStreamEvent): void => {
-          if (event.paneId === paneId) emit.single(event)
+          if (event.paneId === paneId) Queue.offerUnsafe(queue, event)
         }
         return [
           window.dia.onAssistantTextDelta(push),
@@ -41,12 +41,12 @@ const paneStreamEvents = (paneId: string): Stream.Stream<PaneStreamEvent> =>
 
 /**
  * Per-pane conversation-state atom, keyed by `paneId`. Reading it yields a
- * `Result` of {@link PaneChatState}: pending until the pane's history loads,
+ * `AsyncResult` of {@link PaneChatState}: pending until the pane's history loads,
  * then success. On construction it fetches the pane's history, seeds a
  * `SubscriptionRef`, and forks a continuous subscription that folds every
  * `window.dia.on*` event for the pane into state via {@link reducePaneChat}.
  *
- * The atom lives in the process-global effect-atom registry, outside the React
+ * The atom lives in the process-global atom registry, outside the React
  * tree, so a component remount (e.g. splitting a pane) re-attaches to the same
  * atom and its still-running subscription — streaming never drops. The forked
  * subscription is released only when the atom is disposed, which idle-TTL defers
@@ -100,7 +100,7 @@ export const paneSendAtom = Atom.family((paneId: string) =>
   Atom.writable(
     (): null => null,
     (ctx, text: string) => {
-      const current = Result.getOrElse(ctx.get(paneChatAtom(paneId)), () => emptyPaneChatState)
+      const current = AsyncResult.getOrElse(ctx.get(paneChatAtom(paneId)), () => emptyPaneChatState)
       ctx.set(
         paneChatAtom(paneId),
         appendUserMessage(current, nextUserMessageId(paneId, current), text)

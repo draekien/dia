@@ -26,7 +26,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.3",
     "@effect/tsgo": "0.22.0",
-    "@effect/vitest": "0.29.0",
+    "@effect/vitest": "4.0.5",
     "@tailwindcss/vite": "4.3.2",
     "@testing-library/dom": "10.4.1",
     "@testing-library/react": "16.3.2",
@@ -42,14 +42,12 @@
     "tailwindcss": "4.3.2",
     "typescript": "7.0.2",
     "vite": "8.1.4",
-    "vitest": "4.1.10"
+    "vitest": "5.0.5"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.207",
-    "@effect-atom/atom": "0.5.3",
-    "@effect-atom/atom-react": "0.5.0",
-    "@effect/platform": "0.96.2",
-    "@effect/platform-node": "0.107.0",
+    "@effect/atom-react": "4.0.5",
+    "@effect/platform-node": "4.0.5",
     "@fontsource-variable/geist": "5.2.9",
     "@fontsource-variable/geist-mono": "5.2.8",
     "@shadcn/react": "0.2.1",
@@ -58,7 +56,7 @@
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
-    "effect": "3.21.4",
+    "effect": "4.0.5",
     "electron-updater": "6.8.9",
     "highlight.js": "11.11.1",
     "lucide-react": "1.24.0",

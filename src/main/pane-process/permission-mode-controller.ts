@@ -73,9 +73,7 @@ export const makePermissionModeController: Effect.Effect<PermissionModeControlle
       const queryOpt = yield* Ref.get(queryRef)
       if (Option.isSome(queryOpt)) {
         yield* Effect.tryPromise(() => queryOpt.value.setPermissionMode(mode)).pipe(
-          Effect.tapErrorCause((cause) =>
-            Effect.logError('setPermissionMode failed', { mode, cause })
-          ),
+          Effect.tapCause((cause) => Effect.logError('setPermissionMode failed', { mode, cause })),
           Effect.ignore
         )
       }

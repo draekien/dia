@@ -1,7 +1,6 @@
-import { FileSystem } from '@effect/platform'
 import { PaneConfig } from '@shared/domain/pane'
 import { PaneNode } from '@shared/domain/pane-tree'
-import { Context, Data, Effect, Layer, Option, Schema } from 'effect'
+import { Context, Data, Effect, FileSystem, Layer, Option, Schema } from 'effect'
 
 /**
  * A single pane's persisted entry: the config needed to restore it plus the
@@ -23,7 +22,7 @@ export type PersistedPaneEntry = typeof PersistedPaneEntry.Type
  */
 export const PersistedWorkspace = Schema.Struct({
   tree: PaneNode,
-  panes: Schema.Record({ key: Schema.String, value: PersistedPaneEntry })
+  panes: Schema.Record(Schema.String, PersistedPaneEntry)
 })
 export type PersistedWorkspace = typeof PersistedWorkspace.Type
 
@@ -50,7 +49,7 @@ export class PersistenceDecodeError extends Data.TaggedError('PersistenceDecodeE
  * Depend on this to save the current layout + pane index after a layout change, or
  * to load it on startup. Provide it via {@link makePersistenceServiceLive}.
  */
-export class PersistenceService extends Context.Tag('PersistenceService')<
+export class PersistenceService extends Context.Service<
   PersistenceService,
   {
     /**
@@ -69,11 +68,11 @@ export class PersistenceService extends Context.Tag('PersistenceService')<
      */
     readonly loadWorkspace: () => Effect.Effect<Option.Option<PersistedWorkspace>>
   }
->() {}
+>()('PersistenceService') {}
 
-const WorkspaceJson = Schema.parseJson(PersistedWorkspace, { space: 2 })
-const decodeWorkspace = Schema.decodeUnknown(WorkspaceJson)
-const encodeWorkspace = Schema.encode(WorkspaceJson)
+const WorkspaceJson = Schema.fromJsonString(PersistedWorkspace, { space: 2 })
+const decodeWorkspace = Schema.decodeUnknownEffect(WorkspaceJson)
+const encodeWorkspace = Schema.encodeEffect(WorkspaceJson)
 
 /**
  * Builds the live {@link PersistenceService} layer, persisting the workspace as JSON

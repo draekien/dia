@@ -1,5 +1,4 @@
-import { FileSystem, Path } from '@effect/platform'
-import { NodeContext } from '@effect/platform-node'
+import { NodeServices } from '@effect/platform-node'
 import { ConversationMessage } from '@shared/domain/pane'
 import { PaneNode } from '@shared/domain/pane-tree'
 import { DEFAULT_THEME, ThemePreference } from '@shared/domain/theme'
@@ -14,15 +13,15 @@ import {
   TitleBarOverlayColors
 } from '@shared/ipc/contract'
 import type { Context } from 'effect'
-import { Effect, Either, Match, Option, Schema, Stream } from 'effect'
+import { Effect, FileSystem, Match, Option, Path, Queue, Result, Schema, Stream } from 'effect'
 import { type BrowserWindow, dialog, ipcMain } from 'electron'
 import type { PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import type { PaneWorkspace } from '../services/pane-workspace'
 import type { SettingsStore } from '../services/settings-store'
 
-const decodeCommand = Schema.decodeUnknownEither(IpcCommand)
-const decodeTheme = Schema.decodeUnknownEither(ThemePreference)
-const decodeTitleBarOverlay = Schema.decodeUnknownEither(TitleBarOverlayColors)
+const decodeCommand = Schema.decodeUnknownResult(IpcCommand)
+const decodeTheme = Schema.decodeUnknownResult(ThemePreference)
+const decodeTitleBarOverlay = Schema.decodeUnknownResult(TitleBarOverlayColors)
 const encodeEvent = Schema.encodeSync(IpcEvent)
 const encodeTree = Schema.encodeSync(PaneNode)
 const encodeHistory = Schema.encodeSync(Schema.Array(ConversationMessage))
@@ -33,7 +32,7 @@ const encodeUpdateStatus = Schema.encodeSync(UpdateStatus)
  * Call once during main-process startup, after `paneWorkspace` is available.
  */
 export function wireGetInitialLayout(
-  paneWorkspace: Context.Tag.Service<typeof PaneWorkspace>
+  paneWorkspace: Context.Service.Shape<typeof PaneWorkspace>
 ): void {
   ipcMain.handle(CHANNEL.getInitialLayout, () =>
     Effect.runPromise(paneWorkspace.getTree().pipe(Effect.map(encodeTree)))
@@ -46,7 +45,9 @@ export function wireGetInitialLayout(
  * empty list for a pane with no recorded session (or an unrecognized id). Call once
  * during main-process startup, after `paneWorkspace` is available.
  */
-export function wireGetPaneHistory(paneWorkspace: Context.Tag.Service<typeof PaneWorkspace>): void {
+export function wireGetPaneHistory(
+  paneWorkspace: Context.Service.Shape<typeof PaneWorkspace>
+): void {
   ipcMain.handle(CHANNEL.getPaneHistory, (_event, paneId: unknown) =>
     Effect.runPromise(
       typeof paneId === 'string'
@@ -62,7 +63,7 @@ export function wireGetPaneHistory(paneWorkspace: Context.Tag.Service<typeof Pan
  * startup with the window that should own the dialog.
  */
 export function wireChooseDirectory(
-  settingsStore: Context.Tag.Service<typeof SettingsStore>,
+  settingsStore: Context.Service.Shape<typeof SettingsStore>,
   ownerWindow: BrowserWindow
 ): void {
   // Native dialogs are per-call, not deduplicated by Electron itself -- without this guard,
@@ -92,7 +93,7 @@ export function wireChooseDirectory(
           .exists(path.join(chosenPath, '.git'))
           .pipe(Effect.orElseSucceed(() => false))
         return { path: chosenPath, isGitRepo }
-      }).pipe(Effect.provide(NodeContext.layer))
+      }).pipe(Effect.provide(NodeServices.layer))
     ).finally(() => {
       pending = null
     })
@@ -109,7 +110,7 @@ export function wireChooseDirectory(
  * {@link ThemePreference}, rather than throwing. Call once during main-process
  * startup, after `settingsStore` is available.
  */
-export function wireTheme(settingsStore: Context.Tag.Service<typeof SettingsStore>): void {
+export function wireTheme(settingsStore: Context.Service.Shape<typeof SettingsStore>): void {
   ipcMain.handle(
     CHANNEL.getTheme,
     (): Promise<ThemePreference> =>
@@ -124,11 +125,11 @@ export function wireTheme(settingsStore: Context.Tag.Service<typeof SettingsStor
       Effect.runPromise(
         Effect.gen(function* () {
           const decoded = decodeTheme(raw)
-          if (Either.isLeft(decoded)) {
-            yield* Effect.logWarning('Dropped invalid setTheme value', { issue: decoded.left })
+          if (Result.isFailure(decoded)) {
+            yield* Effect.logWarning('Dropped invalid setTheme value', { issue: decoded.failure })
             return
           }
-          yield* settingsStore.setTheme(decoded.right)
+          yield* settingsStore.setTheme(decoded.success)
         })
       )
   )
@@ -164,13 +165,13 @@ export function wireGetUpdateStatus(current: Effect.Effect<UpdateStatus>): void 
 export function wireTitleBarOverlay(window: BrowserWindow): void {
   ipcMain.on(CHANNEL.setTitleBarOverlay, (_event, raw: unknown) => {
     const decoded = decodeTitleBarOverlay(raw)
-    if (Either.isLeft(decoded)) {
+    if (Result.isFailure(decoded)) {
       Effect.runFork(Effect.logWarning('Dropped invalid setTitleBarOverlay value'))
       return
     }
     window.setTitleBarOverlay({
-      color: decoded.right.color,
-      symbolColor: decoded.right.symbolColor
+      color: decoded.success.color,
+      symbolColor: decoded.success.symbolColor
     })
   })
 }
@@ -220,8 +221,8 @@ export interface EventSender {
  * main-process startup to start handling commands.
  */
 export function wireCommands(deps: {
-  readonly paneWorkspace: Context.Tag.Service<typeof PaneWorkspace>
-  readonly paneSupervisor: Context.Tag.Service<typeof PaneSupervisor>
+  readonly paneWorkspace: Context.Service.Shape<typeof PaneWorkspace>
+  readonly paneSupervisor: Context.Service.Shape<typeof PaneSupervisor>
   readonly webContents: EventSender
 }): Effect.Effect<void> {
   const { paneWorkspace, paneSupervisor, webContents } = deps
@@ -246,27 +247,29 @@ export function wireCommands(deps: {
           onNone: () => Effect.logWarning(`Dropped ${command} for unknown pane`, { paneId }),
           onSome: (handle) =>
             op(handle).pipe(
-              Effect.catchAllCause((cause) => Effect.logError(failure, { paneId, cause }))
+              Effect.catchCause((cause) => Effect.logError(failure, { paneId, cause }))
             )
         })
       )
     )
 
-  const rawCommands = Stream.async<unknown>((emit) => {
-    const listener = (_event: unknown, raw: unknown): void => void emit.single(raw)
-    ipcMain.on(CHANNEL.command, listener)
-    return Effect.sync(() => ipcMain.off(CHANNEL.command, listener))
-  })
+  const rawCommands = Stream.callback<unknown>((queue) =>
+    Effect.gen(function* () {
+      const listener = (_event: unknown, raw: unknown): void => void Queue.offerUnsafe(queue, raw)
+      ipcMain.on(CHANNEL.command, listener)
+      yield* Effect.addFinalizer(() => Effect.sync(() => ipcMain.off(CHANNEL.command, listener)))
+    })
+  )
 
   return Stream.runForEach(rawCommands, (raw) =>
     Effect.gen(function* () {
       const decoded = decodeCommand(raw)
-      if (Either.isLeft(decoded)) {
-        yield* Effect.logWarning('Dropped malformed IPC command', { issue: decoded.left })
+      if (Result.isFailure(decoded)) {
+        yield* Effect.logWarning('Dropped malformed IPC command', { issue: decoded.failure })
         return
       }
 
-      yield* Match.value(decoded.right).pipe(
+      yield* Match.value(decoded.success).pipe(
         Match.tag('SendMessage', (command) =>
           withHandle('SendMessage', command.paneId, 'Failed to send message to pane', (handle) =>
             handle.sendMessage(command.text)
@@ -291,7 +294,7 @@ export function wireCommands(deps: {
         Match.tag('SplitPane', (command) =>
           paneWorkspace.split(command.paneId, command.direction).pipe(
             Effect.flatMap(sendLayoutChanged),
-            Effect.catchAll((issue) =>
+            Effect.catch((issue) =>
               Effect.logWarning('Failed to split pane', { paneId: command.paneId, issue })
             )
           )
@@ -299,7 +302,7 @@ export function wireCommands(deps: {
         Match.tag('ClosePane', (command) =>
           paneWorkspace.close(command.paneId).pipe(
             Effect.flatMap(sendLayoutChanged),
-            Effect.catchAll((issue) =>
+            Effect.catch((issue) =>
               Effect.logWarning('Failed to close pane', { paneId: command.paneId, issue })
             )
           )
@@ -335,7 +338,7 @@ export function wireCommands(deps: {
             )
             .pipe(
               Effect.flatMap(sendLayoutChanged),
-              Effect.catchAll((issue) =>
+              Effect.catch((issue) =>
                 Effect.logWarning('Failed to create pane', {
                   paneId: command.paneId,
                   issue

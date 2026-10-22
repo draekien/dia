@@ -1,4 +1,4 @@
-import { Either, Schema } from 'effect'
+import { Result, Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
 import {
   UpdateChecking,
@@ -10,7 +10,7 @@ import {
   UpdateUpToDate
 } from './update'
 
-const decode = Schema.decodeUnknownEither(UpdateStatus)
+const decode = Schema.decodeUnknownResult(UpdateStatus)
 const encode = Schema.encodeSync(UpdateStatus)
 
 describe('UpdateStatus', () => {
@@ -26,25 +26,25 @@ describe('UpdateStatus', () => {
 
     for (const variant of variants) {
       const round = decode(encode(variant))
-      expect(Either.isRight(round)).toBe(true)
-      if (Either.isRight(round)) expect(round.right).toStrictEqual(variant)
+      expect(Result.isSuccess(round)).toBe(true)
+      if (Result.isSuccess(round)) expect(round.success).toStrictEqual(variant)
     }
   })
 
   it('decodes a downloading payload preserving its percent', () => {
     const decoded = decode({ _tag: 'UpdateDownloading', percent: 87 })
-    expect(Either.isRight(decoded)).toBe(true)
-    if (Either.isRight(decoded)) {
-      expect(decoded.right._tag).toBe('UpdateDownloading')
-      if (decoded.right._tag === 'UpdateDownloading') expect(decoded.right.percent).toBe(87)
+    expect(Result.isSuccess(decoded)).toBe(true)
+    if (Result.isSuccess(decoded)) {
+      expect(decoded.success._tag).toBe('UpdateDownloading')
+      if (decoded.success._tag === 'UpdateDownloading') expect(decoded.success.percent).toBe(87)
     }
   })
 
   it('rejects a downloading payload missing its percent', () => {
-    expect(Either.isLeft(decode({ _tag: 'UpdateDownloading' }))).toBe(true)
+    expect(Result.isFailure(decode({ _tag: 'UpdateDownloading' }))).toBe(true)
   })
 
   it('rejects an unknown tag', () => {
-    expect(Either.isLeft(decode({ _tag: 'UpdateSideways' }))).toBe(true)
+    expect(Result.isFailure(decode({ _tag: 'UpdateSideways' }))).toBe(true)
   })
 })

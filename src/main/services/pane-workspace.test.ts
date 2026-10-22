@@ -1,10 +1,9 @@
-import { FileSystem } from '@effect/platform'
 import { NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import type { ConversationMessage } from '@shared/domain/pane'
 import type { PaneNode } from '@shared/domain/pane-tree'
 import type { IpcEvent } from '@shared/ipc/contract'
-import { type Context, Effect, Either, Layer, Option, Stream } from 'effect'
+import { Effect, FileSystem, Layer, Option, Result, Stream } from 'effect'
 import { WorktreeCreateError } from './git-ops-service'
 import { type PaneHandle, PaneSupervisor } from './pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
@@ -35,9 +34,8 @@ const fakeHandle: PaneHandle = {
 }
 
 function makeSupervisorLayer(
-  openPane: Context.Tag.Service<typeof PaneSupervisor>['openPane'],
-  getHandle: Context.Tag.Service<typeof PaneSupervisor>['getHandle'] = () =>
-    Effect.succeed(Option.none())
+  openPane: PaneSupervisor['Service']['openPane'],
+  getHandle: PaneSupervisor['Service']['getHandle'] = () => Effect.succeed(Option.none())
 ): Layer.Layer<PaneSupervisor> {
   return Layer.succeed(PaneSupervisor, {
     openPane,
@@ -53,7 +51,7 @@ function makePersistence(initial?: PersistedWorkspace): {
 } {
   const saves: Array<PersistedWorkspace> = []
   const layer = Layer.succeed(PersistenceService, {
-    loadWorkspace: () => Effect.succeed(Option.fromNullable(initial)),
+    loadWorkspace: () => Effect.succeed(Option.fromNullishOr(initial)),
     saveWorkspace: (workspace) =>
       Effect.sync(() => {
         saves.push(workspace)
@@ -78,10 +76,7 @@ function makeTranscriptReader(history: ReadonlyArray<ConversationMessage> = []):
 }
 
 function makeFileSystemLayer(cwdExists = true): Layer.Layer<FileSystem.FileSystem> {
-  return Layer.succeed(
-    FileSystem.FileSystem,
-    FileSystem.makeNoop({ exists: () => Effect.succeed(cwdExists) })
-  )
+  return FileSystem.layerNoop({ exists: () => Effect.succeed(cwdExists) })
 }
 
 function makeWorkspaceLayer(
@@ -103,7 +98,7 @@ function makeWorkspaceLayer(
 }
 
 const echoOpenPane = (
-  request: Parameters<Context.Tag.Service<typeof PaneSupervisor>['openPane']>[0]
+  request: Parameters<PaneSupervisor['Service']['openPane']>[0]
 ): Effect.Effect<{
   handle: PaneHandle
   config: {
@@ -431,12 +426,12 @@ describe('PaneWorkspace', () => {
         const newPaneId = secondLeafPaneId(split)
         return yield* workspace
           .createPane(newPaneId, '/other', 'm', 'adaptive', 'default', true, onEvent)
-          .pipe(Effect.either)
+          .pipe(Effect.result)
       }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
 
-      assert.isTrue(Either.isLeft(result))
-      if (Either.isLeft(result)) {
-        assert.instanceOf(result.left, WorktreeCreateError)
+      assert.isTrue(Result.isFailure(result))
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, WorktreeCreateError)
       }
     })
   )
@@ -574,8 +569,7 @@ describe('PaneWorkspace', () => {
 
   it.effect('resumePane opens the cold pane with its recorded sessionId threaded through', () =>
     Effect.gen(function* () {
-      const requests: Array<Parameters<Context.Tag.Service<typeof PaneSupervisor>['openPane']>[0]> =
-        []
+      const requests: Array<Parameters<PaneSupervisor['Service']['openPane']>[0]> = []
       const supervisorLayer = makeSupervisorLayer((request) => {
         requests.push(request)
         return echoOpenPane(request)
@@ -688,8 +682,7 @@ describe('PaneWorkspace', () => {
 
   it.effect('resumePane reattaches a worktree pane and skips the cwd existence check', () =>
     Effect.gen(function* () {
-      const requests: Array<Parameters<Context.Tag.Service<typeof PaneSupervisor>['openPane']>[0]> =
-        []
+      const requests: Array<Parameters<PaneSupervisor['Service']['openPane']>[0]> = []
       const supervisorLayer = makeSupervisorLayer((request) => {
         requests.push(request)
         return echoOpenPane(request)
@@ -757,10 +750,10 @@ describe('PaneWorkspace', () => {
 
       const result = yield* Effect.gen(function* () {
         const workspace = yield* PaneWorkspace
-        return yield* workspace.resumePane(INITIAL_PANE_ID, recordingOnEvent).pipe(Effect.either)
+        return yield* workspace.resumePane(INITIAL_PANE_ID, recordingOnEvent).pipe(Effect.result)
       }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
 
-      assert.isTrue(Either.isRight(result))
+      assert.isTrue(Result.isSuccess(result))
       assert.strictEqual(events.length, 1)
       const event = events[0]
       assert.strictEqual(event._tag, 'PaneAttentionChanged')

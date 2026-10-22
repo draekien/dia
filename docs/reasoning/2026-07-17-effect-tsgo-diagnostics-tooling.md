@@ -51,4 +51,4 @@ headless typecheck was the fork in the road.
 diagnostic-severity rule, edit the base map **and** restate it in `tsconfig.test.json` (arrays don't
 merge). When a diagnostics change seems not to take effect, suspect `.tsbuildinfo` before the config.
 See also [Vendored `.repos/effect` API drift](2026-07-12-effect-vendored-repo-api-drift.md) — the
-skill's vendored clone is now pinned to the installed `effect@3.21.4` tag so signatures match.
+skill's vendored clone is now pinned to the installed `effect@4.0.5` tag so signatures match.

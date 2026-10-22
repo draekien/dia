@@ -20,7 +20,7 @@ const READY_TREE: PaneNode = { _tag: 'Leaf', paneId: PANE_ID, status: 'ready', c
 // Mirrors the `flush` helper in pane-supervisor.test.ts -- runs the fiber scheduler forward
 // without touching the Clock, giving the forked wireCommands loop a chance to react to the
 // listener being invoked below.
-const flush = Effect.repeatN(Effect.yieldNow(), 50)
+const flush = Effect.repeat(Effect.yieldNow, { times: 50 })
 
 beforeEach(() => {
   vi.mocked(ipcMain.on).mockClear()
@@ -40,23 +40,23 @@ describe('wireCommands', () => {
       const webContents: EventSender = { send: (channel, payload) => sent.push([channel, payload]) }
       const paneWorkspace = {
         getTree: () => Effect.succeed(READY_TREE),
-        split: () => Effect.dieMessage('split should not be called'),
-        createPane: () => Effect.dieMessage('createPane should not be called'),
-        close: () => Effect.dieMessage('close should not be called'),
-        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
-        setThinkingLevel: () => Effect.dieMessage('setThinkingLevel should not be called'),
-        setPermissionMode: () => Effect.dieMessage('setPermissionMode should not be called'),
-        resumePane: () => Effect.dieMessage('resumePane should not be called')
+        split: () => Effect.die(new Error('split should not be called')),
+        createPane: () => Effect.die(new Error('createPane should not be called')),
+        close: () => Effect.die(new Error('close should not be called')),
+        getPaneHistory: () => Effect.die(new Error('getPaneHistory should not be called')),
+        setThinkingLevel: () => Effect.die(new Error('setThinkingLevel should not be called')),
+        setPermissionMode: () => Effect.die(new Error('setPermissionMode should not be called')),
+        resumePane: () => Effect.die(new Error('resumePane should not be called'))
       }
       const paneSupervisor = {
-        openPane: () => Effect.dieMessage('openPane should not be called'),
-        closePane: () => Effect.dieMessage('closePane should not be called'),
-        getHandle: () => Effect.dieMessage('getHandle should not be called'),
-        closeAll: () => Effect.dieMessage('closeAll should not be called')
+        openPane: () => Effect.die(new Error('openPane should not be called')),
+        closePane: () => Effect.die(new Error('closePane should not be called')),
+        getHandle: () => Effect.die(new Error('getHandle should not be called')),
+        closeAll: () => Effect.die(new Error('closeAll should not be called'))
       }
 
       yield* Effect.gen(function* () {
-        yield* Effect.fork(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
+        yield* Effect.forkChild(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
         yield* flush
 
         emitCommand({ _tag: 'SendMessage', paneId: 'not-a-uuid', text: 'hi' })
@@ -81,24 +81,24 @@ describe('wireCommands', () => {
         sizes: [0.5, 0.5]
       }
       const paneWorkspace = {
-        getTree: () => Effect.dieMessage('getTree should not be called'),
+        getTree: () => Effect.die(new Error('getTree should not be called')),
         split: () => Effect.succeed(splitTree),
-        createPane: () => Effect.dieMessage('createPane should not be called'),
-        close: () => Effect.dieMessage('close should not be called'),
-        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
-        setThinkingLevel: () => Effect.dieMessage('setThinkingLevel should not be called'),
-        setPermissionMode: () => Effect.dieMessage('setPermissionMode should not be called'),
-        resumePane: () => Effect.dieMessage('resumePane should not be called')
+        createPane: () => Effect.die(new Error('createPane should not be called')),
+        close: () => Effect.die(new Error('close should not be called')),
+        getPaneHistory: () => Effect.die(new Error('getPaneHistory should not be called')),
+        setThinkingLevel: () => Effect.die(new Error('setThinkingLevel should not be called')),
+        setPermissionMode: () => Effect.die(new Error('setPermissionMode should not be called')),
+        resumePane: () => Effect.die(new Error('resumePane should not be called'))
       }
       const paneSupervisor = {
-        openPane: () => Effect.dieMessage('openPane should not be called'),
-        closePane: () => Effect.dieMessage('closePane should not be called'),
-        getHandle: () => Effect.dieMessage('getHandle should not be called'),
-        closeAll: () => Effect.dieMessage('closeAll should not be called')
+        openPane: () => Effect.die(new Error('openPane should not be called')),
+        closePane: () => Effect.die(new Error('closePane should not be called')),
+        getHandle: () => Effect.die(new Error('getHandle should not be called')),
+        closeAll: () => Effect.die(new Error('closeAll should not be called'))
       }
 
       yield* Effect.gen(function* () {
-        yield* Effect.fork(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
+        yield* Effect.forkChild(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
         yield* flush
 
         emitCommand({ _tag: 'SplitPane', paneId: PANE_ID, direction: 'row' })
@@ -125,28 +125,28 @@ describe('wireCommands', () => {
       }
       const calls: Array<[string, string]> = []
       const paneWorkspace = {
-        getTree: () => Effect.dieMessage('getTree should not be called'),
-        split: () => Effect.dieMessage('split should not be called'),
-        createPane: () => Effect.dieMessage('createPane should not be called'),
-        close: () => Effect.dieMessage('close should not be called'),
-        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
+        getTree: () => Effect.die(new Error('getTree should not be called')),
+        split: () => Effect.die(new Error('split should not be called')),
+        createPane: () => Effect.die(new Error('createPane should not be called')),
+        close: () => Effect.die(new Error('close should not be called')),
+        getPaneHistory: () => Effect.die(new Error('getPaneHistory should not be called')),
         setThinkingLevel: (paneId: string, level: string) =>
           Effect.sync(() => {
             calls.push([paneId, level])
             return updatedTree
           }),
-        setPermissionMode: () => Effect.dieMessage('setPermissionMode should not be called'),
-        resumePane: () => Effect.dieMessage('resumePane should not be called')
+        setPermissionMode: () => Effect.die(new Error('setPermissionMode should not be called')),
+        resumePane: () => Effect.die(new Error('resumePane should not be called'))
       }
       const paneSupervisor = {
-        openPane: () => Effect.dieMessage('openPane should not be called'),
-        closePane: () => Effect.dieMessage('closePane should not be called'),
-        getHandle: () => Effect.dieMessage('getHandle should not be called'),
-        closeAll: () => Effect.dieMessage('closeAll should not be called')
+        openPane: () => Effect.die(new Error('openPane should not be called')),
+        closePane: () => Effect.die(new Error('closePane should not be called')),
+        getHandle: () => Effect.die(new Error('getHandle should not be called')),
+        closeAll: () => Effect.die(new Error('closeAll should not be called'))
       }
 
       yield* Effect.gen(function* () {
-        yield* Effect.fork(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
+        yield* Effect.forkChild(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
         yield* flush
 
         emitCommand({ _tag: 'SetThinkingLevel', paneId: PANE_ID, level: 'high' })
@@ -174,28 +174,28 @@ describe('wireCommands', () => {
       }
       const calls: Array<[string, string]> = []
       const paneWorkspace = {
-        getTree: () => Effect.dieMessage('getTree should not be called'),
-        split: () => Effect.dieMessage('split should not be called'),
-        createPane: () => Effect.dieMessage('createPane should not be called'),
-        close: () => Effect.dieMessage('close should not be called'),
-        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
-        setThinkingLevel: () => Effect.dieMessage('setThinkingLevel should not be called'),
+        getTree: () => Effect.die(new Error('getTree should not be called')),
+        split: () => Effect.die(new Error('split should not be called')),
+        createPane: () => Effect.die(new Error('createPane should not be called')),
+        close: () => Effect.die(new Error('close should not be called')),
+        getPaneHistory: () => Effect.die(new Error('getPaneHistory should not be called')),
+        setThinkingLevel: () => Effect.die(new Error('setThinkingLevel should not be called')),
         setPermissionMode: (paneId: string, mode: string) =>
           Effect.sync(() => {
             calls.push([paneId, mode])
             return updatedTree
           }),
-        resumePane: () => Effect.dieMessage('resumePane should not be called')
+        resumePane: () => Effect.die(new Error('resumePane should not be called'))
       }
       const paneSupervisor = {
-        openPane: () => Effect.dieMessage('openPane should not be called'),
-        closePane: () => Effect.dieMessage('closePane should not be called'),
-        getHandle: () => Effect.dieMessage('getHandle should not be called'),
-        closeAll: () => Effect.dieMessage('closeAll should not be called')
+        openPane: () => Effect.die(new Error('openPane should not be called')),
+        closePane: () => Effect.die(new Error('closePane should not be called')),
+        getHandle: () => Effect.die(new Error('getHandle should not be called')),
+        closeAll: () => Effect.die(new Error('closeAll should not be called'))
       }
 
       yield* Effect.gen(function* () {
-        yield* Effect.fork(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
+        yield* Effect.forkChild(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
         yield* flush
 
         emitCommand({ _tag: 'SetPermissionMode', paneId: PANE_ID, mode: 'acceptEdits' })
@@ -220,24 +220,24 @@ describe('wireCommands', () => {
         cause: 'boom'
       })
       const paneWorkspace = {
-        getTree: () => Effect.dieMessage('getTree should not be called'),
-        split: () => Effect.dieMessage('split should not be called'),
+        getTree: () => Effect.die(new Error('getTree should not be called')),
+        split: () => Effect.die(new Error('split should not be called')),
         createPane: () => Effect.fail(createError),
-        close: () => Effect.dieMessage('close should not be called'),
-        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
-        setThinkingLevel: () => Effect.dieMessage('setThinkingLevel should not be called'),
-        setPermissionMode: () => Effect.dieMessage('setPermissionMode should not be called'),
-        resumePane: () => Effect.dieMessage('resumePane should not be called')
+        close: () => Effect.die(new Error('close should not be called')),
+        getPaneHistory: () => Effect.die(new Error('getPaneHistory should not be called')),
+        setThinkingLevel: () => Effect.die(new Error('setThinkingLevel should not be called')),
+        setPermissionMode: () => Effect.die(new Error('setPermissionMode should not be called')),
+        resumePane: () => Effect.die(new Error('resumePane should not be called'))
       }
       const paneSupervisor = {
-        openPane: () => Effect.dieMessage('openPane should not be called'),
-        closePane: () => Effect.dieMessage('closePane should not be called'),
-        getHandle: () => Effect.dieMessage('getHandle should not be called'),
-        closeAll: () => Effect.dieMessage('closeAll should not be called')
+        openPane: () => Effect.die(new Error('openPane should not be called')),
+        closePane: () => Effect.die(new Error('closePane should not be called')),
+        getHandle: () => Effect.die(new Error('getHandle should not be called')),
+        closeAll: () => Effect.die(new Error('closeAll should not be called'))
       }
 
       yield* Effect.gen(function* () {
-        yield* Effect.fork(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
+        yield* Effect.forkChild(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
         yield* flush
 
         emitCommand({
@@ -268,24 +268,24 @@ describe('wireCommands', () => {
       const sent: Array<[string, unknown]> = []
       const webContents: EventSender = { send: (channel, payload) => sent.push([channel, payload]) }
       const paneWorkspace = {
-        getTree: () => Effect.dieMessage('getTree should not be called'),
-        split: () => Effect.dieMessage('split should not be called'),
-        createPane: () => Effect.dieMessage('createPane should not be called'),
-        close: () => Effect.dieMessage('close should not be called'),
-        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
-        setThinkingLevel: () => Effect.dieMessage('setThinkingLevel should not be called'),
-        setPermissionMode: () => Effect.dieMessage('setPermissionMode should not be called'),
-        resumePane: () => Effect.dieMessage('resumePane should not be called')
+        getTree: () => Effect.die(new Error('getTree should not be called')),
+        split: () => Effect.die(new Error('split should not be called')),
+        createPane: () => Effect.die(new Error('createPane should not be called')),
+        close: () => Effect.die(new Error('close should not be called')),
+        getPaneHistory: () => Effect.die(new Error('getPaneHistory should not be called')),
+        setThinkingLevel: () => Effect.die(new Error('setThinkingLevel should not be called')),
+        setPermissionMode: () => Effect.die(new Error('setPermissionMode should not be called')),
+        resumePane: () => Effect.die(new Error('resumePane should not be called'))
       }
       const paneSupervisor = {
-        openPane: () => Effect.dieMessage('openPane should not be called'),
-        closePane: () => Effect.dieMessage('closePane should not be called'),
+        openPane: () => Effect.die(new Error('openPane should not be called')),
+        closePane: () => Effect.die(new Error('closePane should not be called')),
         getHandle: () => Effect.succeed(Option.none<PaneHandle>()),
-        closeAll: () => Effect.dieMessage('closeAll should not be called')
+        closeAll: () => Effect.die(new Error('closeAll should not be called'))
       }
 
       yield* Effect.gen(function* () {
-        yield* Effect.fork(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
+        yield* Effect.forkChild(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
         yield* flush
 
         emitCommand({ _tag: 'SendMessage', paneId: PANE_ID, text: 'hi' })
@@ -302,24 +302,24 @@ describe('wireCommands', () => {
       const webContents: EventSender = { send: (channel, payload) => sent.push([channel, payload]) }
       const resumed: Array<string> = []
       const paneWorkspace = {
-        getTree: () => Effect.dieMessage('getTree should not be called'),
-        split: () => Effect.dieMessage('split should not be called'),
-        createPane: () => Effect.dieMessage('createPane should not be called'),
-        close: () => Effect.dieMessage('close should not be called'),
-        getPaneHistory: () => Effect.dieMessage('getPaneHistory should not be called'),
-        setThinkingLevel: () => Effect.dieMessage('setThinkingLevel should not be called'),
-        setPermissionMode: () => Effect.dieMessage('setPermissionMode should not be called'),
+        getTree: () => Effect.die(new Error('getTree should not be called')),
+        split: () => Effect.die(new Error('split should not be called')),
+        createPane: () => Effect.die(new Error('createPane should not be called')),
+        close: () => Effect.die(new Error('close should not be called')),
+        getPaneHistory: () => Effect.die(new Error('getPaneHistory should not be called')),
+        setThinkingLevel: () => Effect.die(new Error('setThinkingLevel should not be called')),
+        setPermissionMode: () => Effect.die(new Error('setPermissionMode should not be called')),
         resumePane: (paneId: string) => Effect.sync(() => resumed.push(paneId))
       }
       const paneSupervisor = {
-        openPane: () => Effect.dieMessage('openPane should not be called'),
-        closePane: () => Effect.dieMessage('closePane should not be called'),
-        getHandle: () => Effect.dieMessage('getHandle should not be called'),
-        closeAll: () => Effect.dieMessage('closeAll should not be called')
+        openPane: () => Effect.die(new Error('openPane should not be called')),
+        closePane: () => Effect.die(new Error('closePane should not be called')),
+        getHandle: () => Effect.die(new Error('getHandle should not be called')),
+        closeAll: () => Effect.die(new Error('closeAll should not be called'))
       }
 
       yield* Effect.gen(function* () {
-        yield* Effect.fork(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
+        yield* Effect.forkChild(wireCommands({ paneWorkspace, paneSupervisor, webContents }))
         yield* flush
 
         emitCommand({ _tag: 'FocusPane', paneId: PANE_ID })

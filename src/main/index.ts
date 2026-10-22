@@ -1,8 +1,8 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Electron main bootstrap composes filesystem paths outside any Effect (createWindow, whenReady).
 import { join } from 'node:path'
-import { NodeContext, NodeFileSystem, NodePath } from '@effect/platform-node'
+import { NodeFileSystem, NodePath, NodeServices } from '@effect/platform-node'
 import type { PaneId } from '@shared/domain/pane-tree'
-import { Config, Effect, Layer, Logger, LogLevel, Option, Runtime } from 'effect'
+import { Config, Effect, Layer, Option, References } from 'effect'
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import electronUpdater from 'electron-updater'
 import {
@@ -55,7 +55,7 @@ app.on('second-instance', () => {
   existing.focus()
 })
 
-const rendererDevUrl = Effect.runSync(Config.string('ELECTRON_RENDERER_URL').pipe(Config.option))
+const rendererDevUrl = Effect.runSync(Config.String('ELECTRON_RENDERER_URL').pipe(Config.option))
 
 const { autoUpdater } = electronUpdater
 
@@ -64,7 +64,7 @@ const { autoUpdater } = electronUpdater
 // reported to the renderer via the updater bridge's event listeners, not here. A
 // no-op-with-warning if the feed can't be reached, so a transient network failure never blocks.
 const runUpdateCheck = Effect.tryPromise(() => autoUpdater.checkForUpdates()).pipe(
-  Effect.tapErrorCause((cause) => Effect.logWarning('Update check failed', { cause })),
+  Effect.tapCause((cause) => Effect.logWarning('Update check failed', { cause })),
   Effect.ignore
 )
 
@@ -126,7 +126,7 @@ app.whenReady().then(async () => {
   await Effect.runPromise(
     pruneOldLogEntries(logFilePath, DEFAULT_LOG_RETENTION).pipe(
       Effect.provide(NodeFileSystem.layer),
-      Effect.catchAll(() => Effect.void)
+      Effect.ignore
     )
   )
 
@@ -137,7 +137,7 @@ app.whenReady().then(async () => {
   // @effect-diagnostics-next-line processEnv:off -- deliberate cross-process config channel handed to forked pane processes (read in agent-session.ts).
   process.env.DIA_IS_DEV = isDev ? '1' : '0'
 
-  const gitOpsLayer = Layer.provide(GitOpsServiceLive, NodeContext.layer)
+  const gitOpsLayer = Layer.provide(GitOpsServiceLive, NodeServices.layer)
   const supervisorLayer = Layer.provide(
     PaneSupervisorLive,
     Layer.merge(PaneProcessSpawnerLive, gitOpsLayer)
@@ -145,7 +145,7 @@ app.whenReady().then(async () => {
   const worktreesRoot = join(app.getPath('userData'), 'worktrees')
   const persistenceLayer = Layer.provide(
     makePersistenceServiceLive(app.getPath('userData')),
-    NodeContext.layer
+    NodeServices.layer
   )
   const workspaceLayer = Layer.provide(
     makePaneWorkspaceLive(INITIAL_PANE_ID, worktreesRoot),
@@ -159,7 +159,7 @@ app.whenReady().then(async () => {
   )
   const settingsStoreLayer = Layer.provide(
     makeSettingsStoreLive(app.getPath('userData')),
-    NodeContext.layer
+    NodeServices.layer
   )
   const appLayer = Layer.mergeAll(supervisorLayer, workspaceLayer, settingsStoreLayer)
 
@@ -171,7 +171,7 @@ app.whenReady().then(async () => {
         const paneWorkspace = yield* PaneWorkspace
         const paneSupervisor = yield* PaneSupervisor
         const settingsStore = yield* SettingsStore
-        const runtime = yield* Effect.runtime()
+        const services = yield* Effect.context<never>()
         wireGetInitialLayout(paneWorkspace)
         wireGetPaneHistory(paneWorkspace)
         wireChooseDirectory(settingsStore, mainWindow)
@@ -179,7 +179,7 @@ app.whenReady().then(async () => {
 
         const updaterBridge = yield* makeUpdaterBridge(mainWindow.webContents)
         const reportSignal = (signal: UpdaterSignal): void =>
-          void Runtime.runFork(runtime)(updaterBridge.report(signal))
+          void Effect.runForkWith(services)(updaterBridge.report(signal))
         autoUpdater.autoDownload = true
         autoUpdater.autoInstallOnAppQuit = true
         autoUpdater.on('checking-for-update', () => reportSignal({ _tag: 'Checking' }))
@@ -206,7 +206,7 @@ app.whenReady().then(async () => {
           if (shuttingDown) return
           shuttingDown = true
           event.preventDefault()
-          Runtime.runPromise(runtime)(paneSupervisor.closeAll()).finally(() => app.quit())
+          Effect.runPromiseWith(services)(paneSupervisor.closeAll()).finally(() => app.quit())
         })
 
         if (!isDev) yield* Effect.forkScoped(runUpdateCheck)
@@ -215,10 +215,13 @@ app.whenReady().then(async () => {
       })
     ).pipe(
       Effect.provide(
-        Layer.mergeAll(
-          appLayer,
-          LoggerLive,
-          Logger.minimumLogLevel(isDev ? LogLevel.Debug : LogLevel.Info)
+        appLayer.pipe(
+          Layer.provideMerge(
+            Layer.mergeAll(
+              LoggerLive,
+              Layer.succeed(References.MinimumLogLevel, isDev ? 'Debug' : 'Info')
+            )
+          )
         )
       )
     )

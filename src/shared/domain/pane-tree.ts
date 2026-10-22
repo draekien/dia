@@ -1,13 +1,14 @@
-import { Data, Either, Schema } from 'effect'
+import { Data, Result, Schema } from 'effect'
 import { PermissionMode, ThinkingLevel } from './pane'
+import { Uuid } from './uuid'
 
 /** Identifier for a single pane, unique within a window's pane tree. */
 export type PaneId = string
 
 /** Schema for a {@link PaneLeaf}. Use `PaneLeafSchema.make({...})` to construct a leaf so the `_tag` is set and fields are validated. */
 export const PaneLeafSchema = Schema.TaggedStruct('Leaf', {
-  paneId: Schema.UUID,
-  status: Schema.Literal('pending', 'ready'),
+  paneId: Uuid,
+  status: Schema.Literals(['pending', 'ready']),
   cwd: Schema.optional(Schema.String),
   sourceRepo: Schema.optional(Schema.String),
   thinkingLevel: Schema.optional(ThinkingLevel),
@@ -16,8 +17,8 @@ export const PaneLeafSchema = Schema.TaggedStruct('Leaf', {
 
 /** Schema for a {@link PaneSplit}. Use `PaneSplitSchema.make({...})` to construct a split so the `_tag` is set and fields are validated. */
 export const PaneSplitSchema = Schema.TaggedStruct('Split', {
-  direction: Schema.Literal('row', 'column'),
-  children: Schema.Array(Schema.suspend((): Schema.Schema<PaneNode> => PaneNode)),
+  direction: Schema.Literals(['row', 'column']),
+  children: Schema.Array(Schema.suspend((): Schema.Codec<PaneNode> => PaneNode)),
   sizes: Schema.Array(Schema.Number)
 })
 
@@ -39,7 +40,7 @@ export interface PaneSplit extends Schema.Schema.Type<typeof PaneSplitSchema> {}
 export type PaneNode = PaneLeaf | PaneSplit
 
 /** Schema for validating and decoding a {@link PaneNode} (e.g. when loading persisted state). */
-export const PaneNode: Schema.Schema<PaneNode> = Schema.Union(PaneLeafSchema, PaneSplitSchema)
+export const PaneNode: Schema.Codec<PaneNode> = Schema.Union([PaneLeafSchema, PaneSplitSchema])
 
 /** Raised when an operation targets a `paneId` that doesn't exist in the tree. */
 export class PaneNotFoundError extends Data.TaggedError('PaneNotFoundError')<{
@@ -61,12 +62,12 @@ function splitNode(
   targetPaneId: PaneId,
   direction: 'row' | 'column',
   newPaneId: PaneId
-): Either.Either<PaneNode, PaneNotFoundError> {
+): Result.Result<PaneNode, PaneNotFoundError> {
   if (node._tag === 'Leaf') {
     if (node.paneId !== targetPaneId) {
-      return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+      return Result.fail(new PaneNotFoundError({ paneId: targetPaneId }))
     }
-    return Either.right(
+    return Result.succeed(
       PaneSplitSchema.make({
         direction,
         children: [node, PaneLeafSchema.make({ paneId: newPaneId, status: 'pending' })],
@@ -77,13 +78,13 @@ function splitNode(
 
   for (let i = 0; i < node.children.length; i++) {
     const result = splitNode(node.children[i], targetPaneId, direction, newPaneId)
-    if (Either.isRight(result)) {
+    if (Result.isSuccess(result)) {
       const children = node.children.slice()
-      children[i] = result.right
-      return Either.right({ ...node, children })
+      children[i] = result.success
+      return Result.succeed({ ...node, children })
     }
   }
-  return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+  return Result.fail(new PaneNotFoundError({ paneId: targetPaneId }))
 }
 
 /**
@@ -97,7 +98,7 @@ export function splitPane(
   targetPaneId: PaneId,
   direction: 'row' | 'column',
   newPaneId: PaneId
-): Either.Either<PaneNode, PaneNotFoundError> {
+): Result.Result<PaneNode, PaneNotFoundError> {
   return splitNode(tree, targetPaneId, direction, newPaneId)
 }
 
@@ -108,12 +109,12 @@ function markReadyNode(
   sourceRepo: string | undefined,
   thinkingLevel: ThinkingLevel | undefined,
   permissionMode: PermissionMode | undefined
-): Either.Either<PaneNode, PaneNotFoundError> {
+): Result.Result<PaneNode, PaneNotFoundError> {
   if (node._tag === 'Leaf') {
     if (node.paneId !== targetPaneId) {
-      return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+      return Result.fail(new PaneNotFoundError({ paneId: targetPaneId }))
     }
-    return Either.right({
+    return Result.succeed({
       ...node,
       status: 'ready',
       cwd,
@@ -132,13 +133,13 @@ function markReadyNode(
       thinkingLevel,
       permissionMode
     )
-    if (Either.isRight(result)) {
+    if (Result.isSuccess(result)) {
       const children = node.children.slice()
-      children[i] = result.right
-      return Either.right({ ...node, children })
+      children[i] = result.success
+      return Result.succeed({ ...node, children })
     }
   }
-  return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+  return Result.fail(new PaneNotFoundError({ paneId: targetPaneId }))
 }
 
 /**
@@ -155,7 +156,7 @@ export function markPaneReady(
   sourceRepo?: string,
   thinkingLevel?: ThinkingLevel,
   permissionMode?: PermissionMode
-): Either.Either<PaneNode, PaneNotFoundError> {
+): Result.Result<PaneNode, PaneNotFoundError> {
   return markReadyNode(tree, targetPaneId, cwd, sourceRepo, thinkingLevel, permissionMode)
 }
 
@@ -163,23 +164,23 @@ function setThinkingLevelNode(
   node: PaneNode,
   targetPaneId: PaneId,
   thinkingLevel: ThinkingLevel
-): Either.Either<PaneNode, PaneNotFoundError> {
+): Result.Result<PaneNode, PaneNotFoundError> {
   if (node._tag === 'Leaf') {
     if (node.paneId !== targetPaneId) {
-      return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+      return Result.fail(new PaneNotFoundError({ paneId: targetPaneId }))
     }
-    return Either.right({ ...node, thinkingLevel })
+    return Result.succeed({ ...node, thinkingLevel })
   }
 
   for (let i = 0; i < node.children.length; i++) {
     const result = setThinkingLevelNode(node.children[i], targetPaneId, thinkingLevel)
-    if (Either.isRight(result)) {
+    if (Result.isSuccess(result)) {
       const children = node.children.slice()
-      children[i] = result.right
-      return Either.right({ ...node, children })
+      children[i] = result.success
+      return Result.succeed({ ...node, children })
     }
   }
-  return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+  return Result.fail(new PaneNotFoundError({ paneId: targetPaneId }))
 }
 
 /**
@@ -193,7 +194,7 @@ export function setPaneThinkingLevel(
   tree: PaneNode,
   targetPaneId: PaneId,
   thinkingLevel: ThinkingLevel
-): Either.Either<PaneNode, PaneNotFoundError> {
+): Result.Result<PaneNode, PaneNotFoundError> {
   return setThinkingLevelNode(tree, targetPaneId, thinkingLevel)
 }
 
@@ -201,23 +202,23 @@ function setPermissionModeNode(
   node: PaneNode,
   targetPaneId: PaneId,
   permissionMode: PermissionMode
-): Either.Either<PaneNode, PaneNotFoundError> {
+): Result.Result<PaneNode, PaneNotFoundError> {
   if (node._tag === 'Leaf') {
     if (node.paneId !== targetPaneId) {
-      return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+      return Result.fail(new PaneNotFoundError({ paneId: targetPaneId }))
     }
-    return Either.right({ ...node, permissionMode })
+    return Result.succeed({ ...node, permissionMode })
   }
 
   for (let i = 0; i < node.children.length; i++) {
     const result = setPermissionModeNode(node.children[i], targetPaneId, permissionMode)
-    if (Either.isRight(result)) {
+    if (Result.isSuccess(result)) {
       const children = node.children.slice()
-      children[i] = result.right
-      return Either.right({ ...node, children })
+      children[i] = result.success
+      return Result.succeed({ ...node, children })
     }
   }
-  return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+  return Result.fail(new PaneNotFoundError({ paneId: targetPaneId }))
 }
 
 /**
@@ -231,14 +232,14 @@ export function setPanePermissionMode(
   tree: PaneNode,
   targetPaneId: PaneId,
   permissionMode: PermissionMode
-): Either.Either<PaneNode, PaneNotFoundError> {
+): Result.Result<PaneNode, PaneNotFoundError> {
   return setPermissionModeNode(tree, targetPaneId, permissionMode)
 }
 
 function closeNode(
   node: PaneSplit,
   targetPaneId: PaneId
-): Either.Either<PaneNode, PaneNotFoundError> {
+): Result.Result<PaneNode, PaneNotFoundError> {
   const targetIndex = node.children.findIndex(
     (child) => child._tag === 'Leaf' && child.paneId === targetPaneId
   )
@@ -246,20 +247,20 @@ function closeNode(
     const remaining = node.children.filter((_, i) => i !== targetIndex)
     // Every Split is created with exactly 2 children (splitPane) and only ever loses one at a
     // time, so removing one child always collapses the Split into its sole remaining sibling.
-    return Either.right(remaining[0])
+    return Result.succeed(remaining[0])
   }
 
   for (let i = 0; i < node.children.length; i++) {
     const child = node.children[i]
     if (child._tag !== 'Split') continue
     const result = closeNode(child, targetPaneId)
-    if (Either.isRight(result)) {
+    if (Result.isSuccess(result)) {
       const children = node.children.slice()
-      children[i] = result.right
-      return Either.right({ ...node, children })
+      children[i] = result.success
+      return Result.succeed({ ...node, children })
     }
   }
-  return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+  return Result.fail(new PaneNotFoundError({ paneId: targetPaneId }))
 }
 
 /**
@@ -272,12 +273,12 @@ function closeNode(
 export function closePane(
   tree: PaneNode,
   targetPaneId: PaneId
-): Either.Either<PaneNode, PaneNotFoundError | LastPaneError> {
+): Result.Result<PaneNode, PaneNotFoundError | LastPaneError> {
   if (tree._tag === 'Leaf') {
     if (tree.paneId === targetPaneId) {
-      return Either.left(new LastPaneError({ paneId: targetPaneId }))
+      return Result.fail(new LastPaneError({ paneId: targetPaneId }))
     }
-    return Either.left(new PaneNotFoundError({ paneId: targetPaneId }))
+    return Result.fail(new PaneNotFoundError({ paneId: targetPaneId }))
   }
   return closeNode(tree, targetPaneId)
 }
@@ -293,34 +294,34 @@ export function resizeSplit(
   tree: PaneNode,
   path: ReadonlyArray<number>,
   sizes: ReadonlyArray<number>
-): Either.Either<PaneNode, InvalidResizeError> {
+): Result.Result<PaneNode, InvalidResizeError> {
   if (sizes.some((size) => size <= 0)) {
-    return Either.left(new InvalidResizeError({ reason: 'sizes must all be positive' }))
+    return Result.fail(new InvalidResizeError({ reason: 'sizes must all be positive' }))
   }
 
   if (path.length === 0) {
     if (tree._tag !== 'Split') {
-      return Either.left(new InvalidResizeError({ reason: 'root is not a Split' }))
+      return Result.fail(new InvalidResizeError({ reason: 'root is not a Split' }))
     }
     if (sizes.length !== tree.children.length) {
-      return Either.left(
+      return Result.fail(
         new InvalidResizeError({ reason: "sizes length must match the split's children count" })
       )
     }
-    return Either.right({ ...tree, sizes })
+    return Result.succeed({ ...tree, sizes })
   }
 
   if (tree._tag !== 'Split') {
-    return Either.left(new InvalidResizeError({ reason: 'path traverses into a Leaf' }))
+    return Result.fail(new InvalidResizeError({ reason: 'path traverses into a Leaf' }))
   }
 
   const [index, ...rest] = path
   const child = tree.children[index]
   if (child === undefined) {
-    return Either.left(new InvalidResizeError({ reason: 'path index out of bounds' }))
+    return Result.fail(new InvalidResizeError({ reason: 'path index out of bounds' }))
   }
 
-  return Either.map(resizeSplit(child, rest, sizes), (updatedChild) => {
+  return Result.map(resizeSplit(child, rest, sizes), (updatedChild) => {
     const children = tree.children.slice()
     children[index] = updatedChild
     return { ...tree, children }

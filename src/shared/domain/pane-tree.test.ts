@@ -1,4 +1,4 @@
-import { Either } from 'effect'
+import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
 import {
   closePane,
@@ -29,7 +29,7 @@ describe('splitPane', () => {
     const result = splitPane(tree, PANE_A, 'row', PANE_B)
 
     expect(result).toEqual(
-      Either.right({
+      Result.succeed({
         _tag: 'Split',
         direction: 'row',
         children: [leaf(PANE_A), leaf(PANE_B, 'pending')],
@@ -39,12 +39,12 @@ describe('splitPane', () => {
   })
 
   it('splits a nested leaf in a different direction, preserving the outer Split', () => {
-    const rowSplit = Either.getOrThrow(splitPane(leaf(PANE_A), PANE_A, 'row', PANE_B))
+    const rowSplit = Result.getOrThrow(splitPane(leaf(PANE_A), PANE_A, 'row', PANE_B))
 
     const result = splitPane(rowSplit, PANE_B, 'column', PANE_C)
 
     expect(result).toEqual(
-      Either.right({
+      Result.succeed({
         _tag: 'Split',
         direction: 'row',
         children: [
@@ -64,18 +64,18 @@ describe('splitPane', () => {
   it('returns PaneNotFoundError for an unknown paneId', () => {
     const result = splitPane(leaf(PANE_A), 'not-a-real-id', 'row', PANE_B)
 
-    expect(result).toEqual(Either.left(new PaneNotFoundError({ paneId: 'not-a-real-id' })))
+    expect(result).toEqual(Result.fail(new PaneNotFoundError({ paneId: 'not-a-real-id' })))
   })
 })
 
 describe('markPaneReady', () => {
   it('flips a pending leaf to ready', () => {
-    const split = Either.getOrThrow(splitPane(leaf(PANE_A), PANE_A, 'row', PANE_B))
+    const split = Result.getOrThrow(splitPane(leaf(PANE_A), PANE_A, 'row', PANE_B))
 
     const result = markPaneReady(split, PANE_B, '/repo')
 
     expect(result).toEqual(
-      Either.right({
+      Result.succeed({
         _tag: 'Split',
         direction: 'row',
         children: [leaf(PANE_A), { ...leaf(PANE_B, 'ready'), cwd: '/repo' }],
@@ -87,18 +87,18 @@ describe('markPaneReady', () => {
   it('returns PaneNotFoundError for an unknown paneId', () => {
     const result = markPaneReady(leaf(PANE_A), 'not-a-real-id', '/repo')
 
-    expect(result).toEqual(Either.left(new PaneNotFoundError({ paneId: 'not-a-real-id' })))
+    expect(result).toEqual(Result.fail(new PaneNotFoundError({ paneId: 'not-a-real-id' })))
   })
 })
 
 describe('setPanePermissionMode', () => {
   it('records the mode on the target leaf, leaving its sibling unchanged', () => {
-    const split = Either.getOrThrow(splitPane(leaf(PANE_A), PANE_A, 'row', PANE_B))
+    const split = Result.getOrThrow(splitPane(leaf(PANE_A), PANE_A, 'row', PANE_B))
 
     const result = setPanePermissionMode(split, PANE_B, 'acceptEdits')
 
     expect(result).toEqual(
-      Either.right({
+      Result.succeed({
         _tag: 'Split',
         direction: 'row',
         children: [leaf(PANE_A), { ...leaf(PANE_B, 'pending'), permissionMode: 'acceptEdits' }],
@@ -110,27 +110,27 @@ describe('setPanePermissionMode', () => {
   it('returns PaneNotFoundError for an unknown paneId', () => {
     const result = setPanePermissionMode(leaf(PANE_A), 'not-a-real-id', 'auto')
 
-    expect(result).toEqual(Either.left(new PaneNotFoundError({ paneId: 'not-a-real-id' })))
+    expect(result).toEqual(Result.fail(new PaneNotFoundError({ paneId: 'not-a-real-id' })))
   })
 })
 
 describe('closePane', () => {
   it('collapses a two-child Split back to the surviving sibling', () => {
-    const split = Either.getOrThrow(splitPane(leaf(PANE_A), PANE_A, 'row', PANE_B))
+    const split = Result.getOrThrow(splitPane(leaf(PANE_A), PANE_A, 'row', PANE_B))
 
     const result = closePane(split, PANE_B)
 
-    expect(result).toEqual(Either.right(leaf(PANE_A)))
+    expect(result).toEqual(Result.succeed(leaf(PANE_A)))
   })
 
   it('collapses the correct nested Split, leaving the outer Split intact', () => {
-    const rowSplit = Either.getOrThrow(splitPane(leaf(PANE_A), PANE_A, 'row', PANE_B))
-    const nested = Either.getOrThrow(splitPane(rowSplit, PANE_B, 'column', PANE_C))
+    const rowSplit = Result.getOrThrow(splitPane(leaf(PANE_A), PANE_A, 'row', PANE_B))
+    const nested = Result.getOrThrow(splitPane(rowSplit, PANE_B, 'column', PANE_C))
 
     const result = closePane(nested, PANE_C)
 
     expect(result).toEqual(
-      Either.right({
+      Result.succeed({
         _tag: 'Split',
         direction: 'row',
         children: [leaf(PANE_A), leaf(PANE_B, 'pending')],
@@ -142,13 +142,13 @@ describe('closePane', () => {
   it('returns PaneNotFoundError for an unknown paneId', () => {
     const result = closePane(leaf(PANE_A), 'not-a-real-id')
 
-    expect(result).toEqual(Either.left(new PaneNotFoundError({ paneId: 'not-a-real-id' })))
+    expect(result).toEqual(Result.fail(new PaneNotFoundError({ paneId: 'not-a-real-id' })))
   })
 
   it('returns LastPaneError when closing the sole remaining pane', () => {
     const result = closePane(leaf(PANE_A), PANE_A)
 
-    expect(result).toEqual(Either.left(new LastPaneError({ paneId: PANE_A })))
+    expect(result).toEqual(Result.fail(new LastPaneError({ paneId: PANE_A })))
   })
 })
 
@@ -172,7 +172,7 @@ describe('resizeSplit', () => {
     const result = resizeSplit(nestedTree, [], [0.3, 0.7])
 
     expect(result).toEqual(
-      Either.right({
+      Result.succeed({
         ...nestedTree,
         sizes: [0.3, 0.7]
       })
@@ -183,7 +183,7 @@ describe('resizeSplit', () => {
     const result = resizeSplit(nestedTree, [1], [0.2, 0.8])
 
     expect(result).toEqual(
-      Either.right({
+      Result.succeed({
         ...nestedTree,
         children: [
           leaf(PANE_A),
@@ -201,28 +201,28 @@ describe('resizeSplit', () => {
   it('returns InvalidResizeError for an out-of-bounds path index', () => {
     const result = resizeSplit(nestedTree, [5], [0.5, 0.5])
 
-    expect(Either.isLeft(result)).toBe(true)
-    expect(result).toEqual(Either.left(expect.any(InvalidResizeError)))
+    expect(Result.isFailure(result)).toBe(true)
+    expect(result).toEqual(Result.fail(expect.any(InvalidResizeError)))
   })
 
   it('returns InvalidResizeError when the path resolves to a Leaf', () => {
     const result = resizeSplit(nestedTree, [0], [0.5, 0.5])
 
-    expect(Either.isLeft(result)).toBe(true)
-    expect(result).toEqual(Either.left(expect.any(InvalidResizeError)))
+    expect(Result.isFailure(result)).toBe(true)
+    expect(result).toEqual(Result.fail(expect.any(InvalidResizeError)))
   })
 
   it('returns InvalidResizeError when sizes length does not match children count', () => {
     const result = resizeSplit(nestedTree, [], [0.3, 0.3, 0.4])
 
-    expect(Either.isLeft(result)).toBe(true)
-    expect(result).toEqual(Either.left(expect.any(InvalidResizeError)))
+    expect(Result.isFailure(result)).toBe(true)
+    expect(result).toEqual(Result.fail(expect.any(InvalidResizeError)))
   })
 
   it('returns InvalidResizeError for a non-positive size', () => {
     const result = resizeSplit(nestedTree, [], [0, 1])
 
-    expect(Either.isLeft(result)).toBe(true)
-    expect(result).toEqual(Either.left(expect.any(InvalidResizeError)))
+    expect(Result.isFailure(result)).toBe(true)
+    expect(result).toEqual(Result.fail(expect.any(InvalidResizeError)))
   })
 })

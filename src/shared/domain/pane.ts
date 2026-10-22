@@ -1,5 +1,6 @@
-import { Schema } from 'effect'
+import { Effect, Schema } from 'effect'
 import { AttentionState } from './attention'
+import { Uuid } from './uuid'
 
 /**
  * A single turn in a pane's conversation history, as exchanged with Claude.
@@ -12,7 +13,7 @@ import { AttentionState } from './attention'
  * turn of a conversation.
  */
 export const ConversationMessage = Schema.Struct({
-  role: Schema.Literal('user', 'assistant'),
+  role: Schema.Literals(['user', 'assistant']),
   content: Schema.String,
   checkpointUuid: Schema.optional(Schema.String),
   resumeAnchorUuid: Schema.optional(Schema.String)
@@ -37,7 +38,7 @@ export type WorktreeInfo = typeof WorktreeInfo.Type
  * `high` guide adaptive thinking's depth. Consumed by the pane process to
  * derive the Agent SDK `thinking`/`effort` query options.
  */
-export const ThinkingLevel = Schema.Literal('off', 'adaptive', 'low', 'medium', 'high')
+export const ThinkingLevel = Schema.Literals(['off', 'adaptive', 'low', 'medium', 'high'])
 export type ThinkingLevel = typeof ThinkingLevel.Type
 
 /**
@@ -54,7 +55,7 @@ export const DEFAULT_THINKING_LEVEL: ThinkingLevel = 'adaptive'
  * onto the Agent SDK's `permissionMode` query option and its live
  * `setPermissionMode`.
  */
-export const PermissionMode = Schema.Literal('default', 'plan', 'acceptEdits', 'auto', 'dontAsk')
+export const PermissionMode = Schema.Literals(['default', 'plan', 'acceptEdits', 'auto', 'dontAsk'])
 export type PermissionMode = typeof PermissionMode.Type
 
 /**
@@ -64,7 +65,7 @@ export type PermissionMode = typeof PermissionMode.Type
  * when a plan is approved. Use for pane-creation inputs; use the full
  * {@link PermissionMode} for a live pane's current mode.
  */
-export const StartupPermissionMode = Schema.Literal('default', 'acceptEdits', 'auto', 'dontAsk')
+export const StartupPermissionMode = Schema.Literals(['default', 'acceptEdits', 'auto', 'dontAsk'])
 export type StartupPermissionMode = typeof StartupPermissionMode.Type
 
 /**
@@ -82,11 +83,15 @@ export const DEFAULT_PERMISSION_MODE: PermissionMode = 'default'
  * so records persisted before they existed still decode.
  */
 export const PaneConfig = Schema.Struct({
-  paneId: Schema.UUID,
+  paneId: Uuid,
   cwd: Schema.String,
   model: Schema.String,
-  thinkingLevel: Schema.optionalWith(ThinkingLevel, { default: () => DEFAULT_THINKING_LEVEL }),
-  permissionMode: Schema.optionalWith(PermissionMode, { default: () => DEFAULT_PERMISSION_MODE }),
+  thinkingLevel: ThinkingLevel.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(DEFAULT_THINKING_LEVEL))
+  ),
+  permissionMode: PermissionMode.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(DEFAULT_PERMISSION_MODE))
+  ),
   worktree: Schema.optional(WorktreeInfo)
 })
 export type PaneConfig = typeof PaneConfig.Type

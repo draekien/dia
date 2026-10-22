@@ -1,6 +1,5 @@
-import { FileSystem } from '@effect/platform'
 import { assert, describe, it } from '@effect/vitest'
-import { Effect, Layer, Logger, Option } from 'effect'
+import { Effect, FileSystem, Layer, Logger, Option } from 'effect'
 import { makeSettingsStoreLive, SettingsStore } from './settings-store'
 
 function makeTestSetup(initialContent: string | undefined): {
@@ -27,9 +26,9 @@ function makeTestSetup(initialContent: string | undefined): {
     capturedLogs.push(...(Array.isArray(message) ? message : [message]))
   })
 
-  const fsLayer = Layer.succeed(FileSystem.FileSystem, fakeFs)
+  const fsLayer = Layer.succeed(FileSystem.FileSystem)(fakeFs)
   const testLayer = Layer.provide(makeSettingsStoreLive('/userData'), fsLayer)
-  const loggerLayer = Logger.add(captureLogger)
+  const loggerLayer = Logger.layer([captureLogger], { mergeWithExisting: true })
 
   return { writes, capturedLogs, testLayer, loggerLayer }
 }

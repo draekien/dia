@@ -15,8 +15,8 @@ streaming turn.
 
 - **The default registry is already a process-global singleton, so no
   `RegistryProvider` is needed for remount durability.**
-  `@effect-atom/atom-react`'s `RegistryContext` is
-  `React.createContext(Registry.make(...))` — the default value is created once at
+  `@effect/atom-react`'s `RegistryContext` is
+  `React.createContext(AtomRegistry.make(...))` — the default value is created once at
   module load, outside the React tree. `useAtomValue` reads it without any
   provider. A component remount (the split) re-attaches to the *same* atom, whose
   `SubscriptionRef` and forked IPC subscription never stopped. Mounting a

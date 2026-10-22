@@ -1,6 +1,6 @@
-import { FileSystem } from '@effect/platform'
 import { assert, describe, it } from '@effect/vitest'
-import { Duration, Effect, Layer, TestClock } from 'effect'
+import { Duration, Effect, FileSystem, Layer } from 'effect'
+import { TestClock } from 'effect/testing'
 import { pruneOldLogEntries } from './logger'
 
 const NOW = Date.parse('2026-07-16T00:00:00.000Z')
@@ -29,7 +29,7 @@ function makeFsLayer(initialContent: string | undefined): {
       })
   })
 
-  return { writes, fsLayer: Layer.succeed(FileSystem.FileSystem, fakeFs) }
+  return { writes, fsLayer: Layer.succeed(FileSystem.FileSystem)(fakeFs) }
 }
 
 describe('pruneOldLogEntries', () => {

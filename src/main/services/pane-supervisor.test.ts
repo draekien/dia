@@ -2,7 +2,8 @@ import { EventEmitter } from 'node:events'
 import { assert, describe, it } from '@effect/vitest'
 import type { PaneConfig, PermissionMode, WorktreeInfo } from '@shared/domain/pane'
 import type { IpcEvent } from '@shared/ipc/contract'
-import { Effect, Layer, Logger, Option, TestClock } from 'effect'
+import { Effect, Layer, Logger, Option } from 'effect'
+import { TestClock } from 'effect/testing'
 import { GitOpsService } from './git-ops-service'
 import {
   type PaneCreationRequest,
@@ -60,7 +61,7 @@ const configB: PaneConfig = {
 
 // Runs the fiber-scheduler forward without touching the (virtualized) Clock, so a
 // synchronous EventEmitter.emit has a chance to reach the fiber consuming the exits Stream.
-const flush = Effect.repeatN(Effect.yieldNow(), 50)
+const flush = Effect.repeat(Effect.yieldNow, { times: 50 })
 
 const ignoreSessionId = (_sessionId: string): Effect.Effect<void> => Effect.void
 const ignorePermissionMode = (_mode: PermissionMode): Effect.Effect<void> => Effect.void
@@ -72,7 +73,7 @@ function makeTestSetup(): {
   readonly loggerLayer: Layer.Layer<never>
 } {
   const processes: FakePaneProcess[] = []
-  const spawnerLayer = Layer.succeed(PaneProcessSpawner, {
+  const spawnerLayer = Layer.succeed(PaneProcessSpawner)({
     spawn: () =>
       Effect.sync(() => {
         const process = new FakePaneProcess()
@@ -81,11 +82,13 @@ function makeTestSetup(): {
       })
   })
 
-  const gitOpsLayer = Layer.succeed(GitOpsService, {
-    createWorktree: () => Effect.dieMessage('createWorktree should not be called in these tests'),
-    removeWorktree: () => Effect.dieMessage('removeWorktree should not be called in these tests'),
+  const gitOpsLayer = Layer.succeed(GitOpsService)({
+    createWorktree: () =>
+      Effect.die(new Error('createWorktree should not be called in these tests')),
+    removeWorktree: () =>
+      Effect.die(new Error('removeWorktree should not be called in these tests')),
     reattachWorktree: () =>
-      Effect.dieMessage('reattachWorktree should not be called in these tests')
+      Effect.die(new Error('reattachWorktree should not be called in these tests'))
   })
 
   const capturedLogs: unknown[] = []
@@ -94,7 +97,7 @@ function makeTestSetup(): {
   })
 
   const testLayer = Layer.provide(PaneSupervisorLive, Layer.merge(spawnerLayer, gitOpsLayer))
-  const loggerLayer = Logger.add(captureLogger)
+  const loggerLayer = Logger.layer([captureLogger], { mergeWithExisting: true })
 
   return { processes, capturedLogs, testLayer, loggerLayer }
 }
@@ -238,7 +241,7 @@ describe('PaneSupervisor', () => {
   it.effect('resuming a worktree pane reattaches its branch and threads resume into Init', () =>
     Effect.gen(function* () {
       const processes: FakePaneProcess[] = []
-      const spawnerLayer = Layer.succeed(PaneProcessSpawner, {
+      const spawnerLayer = Layer.succeed(PaneProcessSpawner)({
         spawn: () =>
           Effect.sync(() => {
             const process = new FakePaneProcess()
@@ -247,8 +250,9 @@ describe('PaneSupervisor', () => {
           })
       })
       const reattachCalls: Array<{ info: WorktreeInfo; paneId: string }> = []
-      const gitOpsLayer = Layer.succeed(GitOpsService, {
-        createWorktree: () => Effect.dieMessage('createWorktree must not be called when resuming'),
+      const gitOpsLayer = Layer.succeed(GitOpsService)({
+        createWorktree: () =>
+          Effect.die(new Error('createWorktree must not be called when resuming')),
         removeWorktree: () => Effect.void,
         reattachWorktree: (info, paneId) =>
           Effect.sync(() => {

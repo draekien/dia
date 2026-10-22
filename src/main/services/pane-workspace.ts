@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { FileSystem } from '@effect/platform'
 import { Errored } from '@shared/domain/attention'
 import type {
   ConversationMessage,
@@ -19,7 +18,7 @@ import {
   splitPane
 } from '@shared/domain/pane-tree'
 import { type IpcEvent, LayoutChanged, PaneAttentionChanged } from '@shared/ipc/contract'
-import { Context, Effect, Either, HashMap, Layer, Option, Ref } from 'effect'
+import { Context, Effect, FileSystem, HashMap, Layer, Option, Ref, Result } from 'effect'
 import type { WorktreeCreateError, WorktreeReattachError } from './git-ops-service'
 import { type PaneCreationRequest, PaneSupervisor, type ProcessSpawnError } from './pane-supervisor'
 import { type PersistedPaneEntry, PersistenceService } from './persistence'
@@ -30,7 +29,7 @@ import { TranscriptReader } from './transcript-reader'
  * coordinates splitting, creating, and closing panes against the {@link PaneSupervisor}.
  * Depend on this tag wherever pane layout or lifecycle needs to be read or mutated.
  */
-export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
+export class PaneWorkspace extends Context.Service<
   PaneWorkspace,
   {
     readonly getTree: () => Effect.Effect<PaneNode>
@@ -78,7 +77,7 @@ export class PaneWorkspace extends Context.Tag('PaneWorkspace')<
       onEvent: (event: IpcEvent) => Effect.Effect<void>
     ) => Effect.Effect<void>
   }
->() {}
+>()('PaneWorkspace') {}
 
 /**
  * Builds the live {@link PaneWorkspace} layer, requiring {@link PaneSupervisor} and
@@ -128,9 +127,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         }
         yield* persistence
           .saveWorkspace({ tree, panes })
-          .pipe(
-            Effect.catchAll((cause) => Effect.logError('Failed to persist workspace', { cause }))
-          )
+          .pipe(Effect.catch((cause) => Effect.logError('Failed to persist workspace', { cause })))
       })
 
       const recordSessionId = Effect.fn('PaneWorkspace.recordSessionId')(function* (
@@ -174,10 +171,10 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
 
         const tree = yield* Ref.get(treeRef)
         const updated = setPanePermissionMode(tree, paneId, mode)
-        if (Either.isRight(updated)) {
-          yield* Ref.set(treeRef, updated.right)
+        if (Result.isSuccess(updated)) {
+          yield* Ref.set(treeRef, updated.success)
           yield* save()
-          yield* onEvent(LayoutChanged.make({ tree: updated.right }))
+          yield* onEvent(LayoutChanged.make({ tree: updated.success }))
         } else {
           yield* save()
         }
@@ -192,13 +189,13 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         const newPaneId: PaneId = randomUUID()
         const tree = yield* Ref.get(treeRef)
         const updated = splitPane(tree, paneId, direction, newPaneId)
-        if (Either.isLeft(updated)) {
-          return yield* updated.left
+        if (Result.isFailure(updated)) {
+          return yield* updated.failure
         }
 
-        yield* Ref.set(treeRef, updated.right)
+        yield* Ref.set(treeRef, updated.success)
         yield* save()
-        return updated.right
+        return updated.success
       })
 
       const createPane = Effect.fn('PaneWorkspace.createPane')(function* (
@@ -214,8 +211,8 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         // Validate paneId is a pending leaf before spawning anything; the cwd here is a
         // placeholder discarded below once the real (possibly worktree) cwd is known.
         const precheck = markPaneReady(tree, paneId, sourceCwd)
-        if (Either.isLeft(precheck)) {
-          return yield* precheck.left
+        if (Result.isFailure(precheck)) {
+          return yield* precheck.failure
         }
 
         const worktree = useWorktree ? ({ _tag: 'Create', worktreesRoot } as const) : undefined
@@ -234,14 +231,14 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
           config.thinkingLevel,
           config.permissionMode
         )
-        if (Either.isLeft(readyTree)) {
-          return yield* readyTree.left
+        if (Result.isFailure(readyTree)) {
+          return yield* readyTree.failure
         }
 
-        yield* Ref.set(treeRef, readyTree.right)
+        yield* Ref.set(treeRef, readyTree.success)
         yield* Ref.update(configsRef, HashMap.set(paneId, { config }))
         yield* save()
-        return readyTree.right
+        return readyTree.success
       })
 
       const setThinkingLevel = Effect.fn('PaneWorkspace.setThinkingLevel')(function* (
@@ -265,8 +262,8 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
 
         const tree = yield* Ref.get(treeRef)
         const updated = setPaneThinkingLevel(tree, paneId, level)
-        const nextTree = Either.isRight(updated) ? updated.right : tree
-        if (Either.isRight(updated)) yield* Ref.set(treeRef, updated.right)
+        const nextTree = Result.isSuccess(updated) ? updated.success : tree
+        if (Result.isSuccess(updated)) yield* Ref.set(treeRef, updated.success)
         yield* save()
 
         const handle = yield* supervisor.getHandle(paneId)
@@ -298,8 +295,8 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
 
         const tree = yield* Ref.get(treeRef)
         const updated = setPanePermissionMode(tree, paneId, mode)
-        const nextTree = Either.isRight(updated) ? updated.right : tree
-        if (Either.isRight(updated)) yield* Ref.set(treeRef, updated.right)
+        const nextTree = Result.isSuccess(updated) ? updated.success : tree
+        if (Result.isSuccess(updated)) yield* Ref.set(treeRef, updated.success)
         yield* save()
 
         const handle = yield* supervisor.getHandle(paneId)
@@ -313,9 +310,9 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
       const close = Effect.fn('PaneWorkspace.close')(function* (paneId: PaneId) {
         const tree = yield* Ref.get(treeRef)
         const updated = closePane(tree, paneId)
-        if (Either.isLeft(updated)) {
-          if (updated.left._tag === 'PaneNotFoundError') {
-            return yield* updated.left
+        if (Result.isFailure(updated)) {
+          if (updated.failure._tag === 'PaneNotFoundError') {
+            return yield* updated.failure
           }
           // Closing the workspace's last remaining pane doesn't leave an empty workspace --
           // it tears down that pane and resets it to a fresh pending leaf, so the onboarding
@@ -329,10 +326,10 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         }
 
         yield* supervisor.closePane(paneId)
-        yield* Ref.set(treeRef, updated.right)
+        yield* Ref.set(treeRef, updated.success)
         yield* Ref.update(configsRef, HashMap.remove(paneId))
         yield* save()
-        return updated.right
+        return updated.success
       })
 
       const getPaneHistory = Effect.fn('PaneWorkspace.getPaneHistory')(function* (paneId: PaneId) {
@@ -406,11 +403,11 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
             (newSessionId) => recordSessionId(paneId, newSessionId),
             (mode) => recordPermissionMode(paneId, mode, onEvent)
           )
-          .pipe(Effect.either)
+          .pipe(Effect.result)
 
-        if (Either.isLeft(result)) {
-          yield* Effect.logError('Failed to resume pane', { paneId, cause: result.left })
-          yield* emitErrored(paneId, onEvent, `Failed to resume pane: ${String(result.left)}`)
+        if (Result.isFailure(result)) {
+          yield* Effect.logError('Failed to resume pane', { paneId, cause: result.failure })
+          yield* emitErrored(paneId, onEvent, `Failed to resume pane: ${String(result.failure)}`)
         }
       })
 

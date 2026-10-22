@@ -38,7 +38,7 @@ The kernel holds only:
 
 Everything else becomes a built-in plugin that uses the same API a user plugin uses, for example the logic now in `agent-session-reducer.ts`, `permission-mode-controller.ts`, `pending-user-input.ts`, `thinking-options.ts`, `pane-workspace.ts`, `git-ops-service.ts`, `pane-tree.ts`, `updater.ts` and the renderer chat and permission UI.
 
-The plugin lifecycle follows cordis's design, implemented with Effect 3.21.4 primitives:
+The plugin lifecycle follows cordis's design, implemented with Effect 4.0.5 primitives:
 
 | cordis concept | dia implementation |
 | --- | --- |

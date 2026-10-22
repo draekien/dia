@@ -12,12 +12,8 @@ describe('generateWorktreeSlug', () => {
 
   it.effect('is deterministic for a given Random seed', () =>
     Effect.gen(function* () {
-      const first = yield* generateWorktreeSlug().pipe(
-        Effect.withRandom(Random.make('seed-worktree'))
-      )
-      const second = yield* generateWorktreeSlug().pipe(
-        Effect.withRandom(Random.make('seed-worktree'))
-      )
+      const first = yield* generateWorktreeSlug().pipe(Random.withSeed('seed-worktree'))
+      const second = yield* generateWorktreeSlug().pipe(Random.withSeed('seed-worktree'))
       assert.strictEqual(first, second)
     })
   )
@@ -25,7 +21,7 @@ describe('generateWorktreeSlug', () => {
   it.effect('varies across different Random seeds', () =>
     Effect.gen(function* () {
       const slugs = yield* Effect.forEach([1, 2, 3, 4, 5, 6, 7, 8], (n) =>
-        generateWorktreeSlug().pipe(Effect.withRandom(Random.make(`seed-${n}`)))
+        generateWorktreeSlug().pipe(Random.withSeed(`seed-${n}`))
       )
       assert.isAbove(new Set(slugs).size, 1)
     })

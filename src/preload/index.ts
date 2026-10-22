@@ -21,7 +21,7 @@ import {
   SplitPane,
   TitleBarOverlayColors
 } from '@shared/ipc/contract'
-import { Either, Schema } from 'effect'
+import { Result, Schema } from 'effect'
 import { contextBridge, ipcRenderer } from 'electron'
 
 const encodeSendMessage = Schema.encodeSync(SendMessage)
@@ -36,7 +36,7 @@ const encodeResolvePlanReview = Schema.encodeSync(ResolvePlanReview)
 const encodeFocusPane = Schema.encodeSync(FocusPane)
 const encodeInterruptPane = Schema.encodeSync(InterruptPane)
 const encodeRewindToCheckpoint = Schema.encodeSync(RewindToCheckpoint)
-const decodeEvent = Schema.decodeUnknownEither(IpcEvent)
+const decodeEvent = Schema.decodeUnknownResult(IpcEvent)
 const decodeTree = Schema.decodeUnknownSync(PaneNode)
 const decodeHistory = Schema.decodeUnknownSync(Schema.Array(ConversationMessage))
 const decodeChooseDirectoryResult = Schema.decodeUnknownSync(ChooseDirectoryResult)
@@ -52,12 +52,12 @@ const subscribers = new Set<(event: IpcEvent) => void>()
 
 ipcRenderer.on(CHANNEL.event, (_electronEvent, raw: unknown) => {
   const decoded = decodeEvent(raw)
-  if (Either.isLeft(decoded)) {
+  if (Result.isFailure(decoded)) {
     // @effect-diagnostics-next-line globalConsole:off -- preload runs in Electron's isolated bridge context with no Effect runtime/logger available.
-    console.warn('Dropped malformed IPC event', decoded.left)
+    console.warn('Dropped malformed IPC event', decoded.failure)
     return
   }
-  for (const subscriber of subscribers) subscriber(decoded.right)
+  for (const subscriber of subscribers) subscriber(decoded.success)
 })
 
 function subscribeToEvents(onDecoded: (event: IpcEvent) => void): () => void {

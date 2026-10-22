@@ -9,8 +9,8 @@ const TextBlock = Schema.Struct({
 const decodeTextBlock = Schema.decodeUnknownOption(TextBlock)
 
 const MessageEnvelope = Schema.Struct({
-  role: Schema.Literal('user', 'assistant'),
-  content: Schema.Union(Schema.String, Schema.Array(Schema.Unknown))
+  role: Schema.Literals(['user', 'assistant']),
+  content: Schema.Union([Schema.String, Schema.Array(Schema.Unknown)])
 })
 const decodeEnvelope = Schema.decodeUnknownOption(MessageEnvelope)
 
@@ -68,7 +68,7 @@ export const sessionMessagesToConversation = (
  * store without spawning a live session. Depend on this to display a restored
  * pane's history on startup; provide it via {@link TranscriptReaderLive}.
  */
-export class TranscriptReader extends Context.Tag('TranscriptReader')<
+export class TranscriptReader extends Context.Service<
   TranscriptReader,
   {
     /**
@@ -82,7 +82,7 @@ export class TranscriptReader extends Context.Tag('TranscriptReader')<
       cwd: string
     ) => Effect.Effect<ReadonlyArray<ConversationMessage>>
   }
->() {}
+>()('TranscriptReader') {}
 
 /**
  * Live {@link TranscriptReader} backed by the Agent SDK's on-disk session store
@@ -96,7 +96,7 @@ export const TranscriptReaderLive = Layer.succeed(TranscriptReader, {
   ) {
     return yield* Effect.tryPromise(() => getSessionMessages(sessionId, { dir: cwd })).pipe(
       Effect.map(sessionMessagesToConversation),
-      Effect.catchAll((cause) =>
+      Effect.catch((cause) =>
         Effect.logWarning('Failed to read session transcript', { sessionId, cause }).pipe(
           Effect.as(emptyHistory)
         )
