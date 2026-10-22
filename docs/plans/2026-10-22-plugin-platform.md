@@ -34,6 +34,8 @@ Scope: topology change only, no plugin system yet.
 4. Serve the `src/shared/ipc/contract.ts` messages over the WebSocket (ADR-0022) and reimplement `window.dia` in `src/preload/index.ts` as its client.
 5. Move `pane-workspace.ts`, `persistence.ts`, `transcript-reader.ts`, `git-ops-service.ts` and `settings-store.ts` into the Host unchanged.
 
+When a pane's `Scope` closes because its session failed, every event the pane produced before the failure, including the `Crashed` attention state, reaches the renderer before the subscriber that forwards the pane's events is interrupted. Close the pane's event queue and wait for the subscriber to finish before closing the `Scope`; do not rely on fiber scheduling order. Today `src/main/services/pane-supervisor.ts` relies on an `Effect.yieldNow` between `markCrashed` and `teardown` for this (`docs/reasoning/2026-10-22-effect-v4-migration-runtime-gotchas.md`), and the test "removes a pane that crashes unexpectedly" covers it.
+
 Done when: every MVP success criterion in `docs/prds/mvp.md` that held before Phase 1 still holds.
 
 ## Phase 2 — Kernel registry and loader
