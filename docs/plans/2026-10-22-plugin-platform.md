@@ -30,15 +30,28 @@ Result (2026-10-22, issue #5): every check passed in a packaged build and no fal
 
 Scope: topology change only, no plugin system yet.
 
-1. Create the Host as a `utilityProcess` whose entry registers tsx with `register()` from `tsx/esm/api` (ADR-0021, Phase 0 result).
+1. Create the Host as a `utilityProcess` whose entry registers tsx with `register()` from `tsx/esm/api` (ADR-0021, Phase 0 result). Main and the Host exchange startup values (the WebSocket port and token) over `parentPort`, not argv or environment variables.
 2. Move the session logic from `src/main/pane-process/agent-session.ts` into the Host, one child `Scope` per pane.
 3. Move supervision from `src/main/services/pane-supervisor.ts` into the Host; main starts and restarts the Host only.
-4. Serve the `src/shared/ipc/contract.ts` messages over the WebSocket (ADR-0022) and reimplement `window.dia` in `src/preload/index.ts` as its client.
+4. Define the `src/shared/ipc/contract.ts` messages as an `effect/rpc` `RpcGroup`, serve it over the WebSocket with `RpcServer.makeProtocolWithHttpEffectWebsocket`, and reimplement `window.dia` in `src/preload/index.ts` as an `effect/rpc` client (ADR-0022).
 5. Move `pane-workspace.ts`, `persistence.ts`, `transcript-reader.ts`, `git-ops-service.ts` and `settings-store.ts` into the Host unchanged.
+6. Serve the packaged renderer from the custom scheme `dia://app` with Electron's `protocol.handle`. The Host refuses a WebSocket upgrade whose `Origin` header is not on its allowlist: `dia://app`, plus the electron-vite dev server origin in a dev build.
+7. Hand the WebSocket port and token to the renderer through the preload. The renderer sends the token as the subprotocol `dia.token.<hex>` (`docs/reasoning/2026-10-22-plugin-platform-phase-0-spike.md`).
+
+The renderer and the Host check that they speak the same protocol version when the WebSocket opens. A browser reports every refused upgrade as close code 1006 (Phase 0), so the Host accepts the upgrade and then closes the connection with an application close code (4000–4999) that names the mismatch, instead of answering HTTP 426.
+
+A dropped WebSocket must not lose or repeat work:
+
+- Each pane event carries a per-pane sequence number. The Host keeps each pane's recent events in memory. A renderer subscription carries the last sequence number it received; the Host sends the buffered events after it, or tells the renderer to reload the pane's history from the transcript when the buffer no longer holds them. The buffer is not persisted: a Host restart ends every query, and history then comes from the SDK transcript.
+- Each command from the renderer carries a client-generated `requestId`. The Host ignores a command whose `requestId` it has already accepted for that pane, so a renderer that resends after a reconnect does not, for example, send a prompt twice.
+
+When the Host process exits for any reason, every `claude` process its queries started also exits. It has not been checked whether the Agent SDK already ends its CLI child when the parent process dies on Windows; check that and choose the mechanism in this phase.
+
+A `SendMessage` to a pane with no live session must not be dropped: the Host creates the pane's `Scope` on demand. This replaces the dropped plan `docs/plans/2026-07-20-auto-recover-dead-pane-on-send.md`.
 
 When a pane's `Scope` closes because its session failed, every event the pane produced before the failure, including the `Crashed` attention state, reaches the renderer before the subscriber that forwards the pane's events is interrupted. Close the pane's event queue and wait for the subscriber to finish before closing the `Scope`; do not rely on fiber scheduling order. Today `src/main/services/pane-supervisor.ts` relies on an `Effect.yieldNow` between `markCrashed` and `teardown` for this (`docs/reasoning/2026-10-22-effect-v4-migration-runtime-gotchas.md`), and the test "removes a pane that crashes unexpectedly" covers it.
 
-Done when: every MVP success criterion in `docs/prds/mvp.md` that held before Phase 1 still holds.
+Done when: every MVP success criterion in `docs/prds/mvp.md` that held before Phase 1 still holds, and `pnpm typecheck`, `pnpm lint`, `pnpm test` and a manual run of the installed build pass.
 
 ## Phase 2 — Kernel registry and loader
 

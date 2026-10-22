@@ -28,8 +28,11 @@ Chosen option: "Authenticated localhost HTTP/WebSocket served by the Host", beca
 | Rule | Detail |
 | --- | --- |
 | Listener | The Host binds `127.0.0.1` only, on a port chosen at start |
-| Authentication | The Host generates a token at start. Main passes the port and token to the renderer; every connection presents the token |
-| Messages | The schemas in `src/shared/ipc/contract.ts` stay the message contract, decoded non-throwing at the boundary (`docs/reasoning/2026-07-12-decode-ipc-boundary-non-throwing.md`) |
+| Authentication | The Host generates a token at start and sends the port and token to main over `parentPort`. The preload hands them to the renderer. Every connection presents the token as the WebSocket subprotocol `dia.token.<hex>` |
+| Origin | The packaged renderer is served from `dia://app` through Electron's `protocol.handle`. The Host refuses an upgrade whose `Origin` is not `dia://app`, or the electron-vite dev server origin in a dev build |
+| Messages | The schemas in `src/shared/ipc/contract.ts` stay the message contract, defined as an `effect/rpc` `RpcGroup` and served with `RpcServer.makeProtocolWithHttpEffectWebsocket`; `window.dia` is an `effect/rpc` client. Decoding stays non-throwing at the boundary (`docs/reasoning/2026-07-12-decode-ipc-boundary-non-throwing.md`) |
+| Protocol version | Checked when the connection opens. On a mismatch the Host closes the connection with an application close code (4000–4999), because a browser reports every refused upgrade as close code 1006 |
+| Reconnect | Pane events carry a per-pane sequence number; a resubscription names the last one received and gets the events after it from an in-memory buffer, or is told to reload history from the transcript. Commands carry a client-generated `requestId`, and the Host ignores one it has already accepted |
 | Plugin messages | A plugin's `host` and `renderer` entries exchange messages over the same connection, namespaced by plugin name |
 
 ### Consequences
@@ -54,4 +57,6 @@ Chosen option: "Authenticated localhost HTTP/WebSocket served by the Host", beca
 
 ## More Information
 
+* Amended 2026-10-22 after comparing with T3 Code (`pingdotgg/t3code` at commit `8d3b061`), whose desktop app runs the same topology: `effect/rpc` over the WebSocket (`apps/server/src/ws.ts`), an `Origin` allowlist for a custom-scheme renderer (`apps/server/src/auth/EnvironmentAuth.ts`), protocol-version checks at the upgrade, and sequence-numbered replay on reconnect.
+* T3 Code also persists every event to SQLite with a transactional outbox (`docs/internals/overview.md`, "Durable intent and side effects"), because it serves several independently versioned clients, does work with no client connected, and drives providers with no shared transcript. dia does not: the Agent SDK session store holds the history (ADR-0011). Revisit with a durable event store if dia adds a second client, work that runs with no window open, or a provider other than Claude.
 * Related: ADR-0021 (Host process).
