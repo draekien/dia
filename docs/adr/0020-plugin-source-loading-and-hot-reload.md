@@ -48,7 +48,7 @@ Third-party plugins are out of scope for this decision and on the roadmap: a thi
 * Good, because an agent's edit hot-reloads with nothing besides dia running.
 * Good, because each refinement lives on its own worktree branch and becomes one pull request.
 * Bad, because the installer ships `tsx` and Vite, and the repo's path aliases (`tsconfig.base.json`, `electron.vite.config.ts`, `vitest.config.ts`) need a fourth declaration in the in-app loader and dev server.
-* Bad, because evicting ES modules depends on Node internals. cordis's HMR deletes from Node's internal `loadCache` and requires `--expose-internals` (`packages/hmr/src/index.ts` in `cordiverse/cordis`).
+* Bad, because Node has no public API that evicts an ES module, so a reload imports the plugin's modules again under new URLs and the previous instances stay in memory. cordis's HMR instead deletes from Node's internal `loadCache` with `--expose-internals` (`packages/hmr/src/index.ts` in `cordiverse/cordis`), which a packaged Electron 43 `utilityProcess` does not honour (`docs/reasoning/2026-10-22-plugin-platform-phase-0-spike.md`).
 
 ## Pros and Cons of the Options
 
@@ -56,7 +56,7 @@ Third-party plugins are out of scope for this decision and on the roadmap: a thi
 
 * Good, because no build process has to be running.
 * Good, because it matches cordis and deepseek-harness.
-* Bad, because it depends on loader flags being accepted in the Host process. <!-- unverified: not tested in a packaged Electron 43 build -->
+* Bad, because the Host must register the tsx loader itself: a packaged Electron 43 `utilityProcess` ignores `--import`, and the esbuild binary tsx spawns must be unpacked from `app.asar` (`docs/reasoning/2026-10-22-plugin-platform-phase-0-spike.md`).
 
 ### External watcher
 
@@ -71,6 +71,6 @@ Third-party plugins are out of scope for this decision and on the roadmap: a thi
 
 ## More Information
 
-* Phase 0 of `docs/plans/2026-10-22-plugin-platform.md` verifies that the Host process accepts `--import tsx` and the module-eviction mechanism under a packaged build. If it does not, the fallback is the external-watcher option above, which keeps every other rule in the table.
+* Phase 0 of `docs/plans/2026-10-22-plugin-platform.md` verified source loading and module eviction in a packaged build, so the external-watcher fallback is not used. The loader setup, the eviction method and the `"type": "module"` requirement for plugin directories are in `docs/reasoning/2026-10-22-plugin-platform-phase-0-spike.md`.
 * References: Koishi dev mode runs `koishi start -r esbuild-register` and production loads prebuilt `lib/` (`en-US/guide/develop/script.md` in `koishijs/docs`); Koishi's console runs a Vite dev server at runtime in dev mode (`plugins/console/src/node/index.ts` in `koishijs/webui`); deepseek-harness HMR watches loaded source files and does not restore the previous version on failure (`packages/boot/hmr/README.md`, branch `master`).
 * Related: ADR-0019 (kernel and lifecycle), ADR-0021 (Host process).

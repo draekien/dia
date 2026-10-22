@@ -33,7 +33,7 @@ Chosen option: "One Host process for all panes", because plugins then share one 
 | Renderer | The renderer plugin registry and UI plugins |
 | `claude` CLI | One per SDK `query()`, started by the SDK |
 
-Whether the Host is a `utilityProcess` or a `child_process` run with `ELECTRON_RUN_AS_NODE` is decided in Phase 0 of `docs/plans/2026-10-22-plugin-platform.md`, by which one accepts the loader flags ADR-0020 needs.
+The Host is a `utilityProcess`. Phase 0 of `docs/plans/2026-10-22-plugin-platform.md` found that both a `utilityProcess` and an `ELECTRON_RUN_AS_NODE` child can load plugin source in a packaged build: the `utilityProcess` ignores `--import`, so its entry registers the tsx loader itself. The `utilityProcess` was chosen because it does not depend on the `runAsNode` fuse (`docs/reasoning/2026-10-22-plugin-platform-phase-0-spike.md`).
 
 This decision supersedes ADR-0007 and ADR-0003. ADR-0003 named the trigger for this change in its "More Information": revisit "if dia later needs multi-window shared sessions or remote access". ADR-0022 makes remote access possible.
 

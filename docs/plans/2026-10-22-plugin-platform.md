@@ -24,11 +24,13 @@ Scope: throwaway code on a branch. Nothing merges except the findings, recorded 
 | Kernel-owned `query()` | A `query()` keeps streaming while a plugin `Scope` that subscribes to its events is closed and reopened | Redesign the kernel/plugin boundary in ADR-0019 before Phase 1 |
 | WebSocket handshake | The renderer connects to the Host on `127.0.0.1` with a token passed from main; a connection without the token is refused | Revisit ADR-0022 |
 
+Result (2026-10-22, issue #5): every check passed in a packaged build and no fallback is used. Results, setup requirements and open items are in `docs/reasoning/2026-10-22-plugin-platform-phase-0-spike.md`.
+
 ## Phase 1 — Host process with today's features
 
 Scope: topology change only, no plugin system yet.
 
-1. Create the Host process (type from Phase 0).
+1. Create the Host as a `utilityProcess` whose entry registers tsx with `register()` from `tsx/esm/api` (ADR-0021, Phase 0 result).
 2. Move the session logic from `src/main/pane-process/agent-session.ts` into the Host, one child `Scope` per pane.
 3. Move supervision from `src/main/services/pane-supervisor.ts` into the Host; main starts and restarts the Host only.
 4. Serve the `src/shared/ipc/contract.ts` messages over the WebSocket (ADR-0022) and reimplement `window.dia` in `src/preload/index.ts` as its client.
