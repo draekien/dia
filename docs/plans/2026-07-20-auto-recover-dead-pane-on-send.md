@@ -1,6 +1,6 @@
 # Plan: Auto-recover a dead pane on send/focus, and surface the recovery
 
-Status: **proposed**
+Status: **dropped** — superseded by `docs/plans/2026-10-22-plugin-platform.md` (ADR-0021 removes per-pane processes)
 Date: 2026-07-20
 Driven by: bug — a pane that exists in the layout but has no live session silently
 swallows the user's message. Observed logs:

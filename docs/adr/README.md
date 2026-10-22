@@ -11,11 +11,11 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | --- | --- | --- |
 | [0001](0001-electron-as-desktop-app-shell.md) | Use Electron as the desktop application shell | accepted |
 | [0002](0002-react-typescript-for-renderer.md) | Use React with TypeScript for the renderer | accepted |
-| [0003](0003-agent-sdk-runs-in-electron-utility-process.md) | Run the Claude Agent SDK in an Electron utilityProcess | accepted |
+| [0003](0003-agent-sdk-runs-in-electron-utility-process.md) | Run the Claude Agent SDK in an Electron utilityProcess | superseded by ADR-0021 |
 | [0004](0004-electron-vite-for-build-tooling.md) | Use electron-vite for build tooling | accepted |
 | [0005](0005-tailwind-and-shadcn-ui-for-styling.md) | Use Tailwind CSS and shadcn/ui for renderer styling | accepted |
 | [0006](0006-pnpm-single-package-repo-layout.md) | Use pnpm with a single-package repo layout | accepted |
-| [0007](0007-one-utility-process-per-pane.md) | Run one utilityProcess per pane for concurrent independent agent sessions | accepted |
+| [0007](0007-one-utility-process-per-pane.md) | Run one utilityProcess per pane for concurrent independent agent sessions | superseded by ADR-0021 |
 | [0008](0008-local-file-persistence-for-session-and-layout-state.md) | Use local file-based persistence for pane layout and session state | superseded by ADR-0011 |
 | [0009](0009-effect-ts-for-main-process-orchestration.md) | Use Effect TS for main-process orchestration logic | superseded by ADR-0010 |
 | [0010](0010-extend-effect-ts-to-pane-process-orchestration.md) | Extend Effect TS to pane-process orchestration | accepted |
@@ -27,6 +27,10 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0016](0016-electron-builder-distribution-and-auto-update.md) | Distribute dia as an electron-builder NSIS installer with GitHub-backed auto-update | accepted |
 | [0017](0017-frameless-window-with-native-overlay-controls.md) | Replace the native window frame with a custom titlebar and native overlay controls | accepted |
 | [0018](0018-transcript-anchored-file-checkpointing-with-conversation-fork.md) | Transcript-anchored file checkpointing that forks the conversation on rewind | accepted |
+| [0019](0019-thin-plugin-kernel-on-effect.md) | Build dia as a thin plugin kernel on Effect, with every feature as a plugin | accepted |
+| [0020](0020-plugin-source-loading-and-hot-reload.md) | Load first-party plugins from source in the dia repo, with per-plugin worktree overrides and hot reload | accepted |
+| [0021](0021-single-host-process-for-all-panes.md) | Run every pane's agent session and all non-UI plugins in one Host process | accepted |
+| [0022](0022-renderer-to-host-over-local-websocket.md) | Connect the renderer to the Host over an authenticated localhost WebSocket | accepted |
 
 ## Adding a new ADR
 
