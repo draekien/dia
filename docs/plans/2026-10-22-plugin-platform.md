@@ -53,6 +53,8 @@ When a pane's `Scope` closes because its session failed, every event the pane pr
 
 Done when: every MVP success criterion in `docs/prds/mvp.md` that held before Phase 1 still holds, and `pnpm typecheck`, `pnpm lint`, `pnpm test` and a manual run of the installed build pass.
 
+Result (2026-10-23, issue #6): the Host, the RPC WebSocket, the replay buffer, the `requestId` dedupe, the protocol-version close code and on-demand pane start are implemented, and `pnpm typecheck`, `pnpm lint` and `pnpm test` pass. A manual run of the unpackaged build and of the `electron-builder --dir` build (tsx in the Host, esbuild and `claude.exe` unpacked) streamed a reply, survived a Host kill with a window reload and history restore, started a cold pane on `SendMessage`, and shut down through the Host. `claude` processes end when the Host dies, so no extra mechanism was added. Details and the cases not covered are in `docs/reasoning/2026-10-23-host-process-phase-1-findings.md`. The NSIS installer was not built or installed.
+
 ## Phase 2 — Kernel registry and loader
 
 Scope: `host`-side plugin lifecycle. No hot reload yet.
