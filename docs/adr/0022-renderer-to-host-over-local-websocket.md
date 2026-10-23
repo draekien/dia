@@ -32,7 +32,7 @@ Chosen option: "Authenticated localhost HTTP/WebSocket served by the Host", beca
 | Origin | The packaged renderer is served from `dia://app` through Electron's `protocol.handle`. The Host refuses an upgrade whose `Origin` is not `dia://app`, or the electron-vite dev server origin in a dev build |
 | Messages | The schemas in `src/shared/ipc/contract.ts` stay the message contract, defined as an `effect/rpc` `RpcGroup` and served with `RpcServer.makeProtocolWithHttpEffectWebsocket`; `window.dia` is an `effect/rpc` client. Decoding stays non-throwing at the boundary (`docs/reasoning/2026-07-12-decode-ipc-boundary-non-throwing.md`) |
 | Protocol version | Checked when the connection opens. On a mismatch the Host closes the connection with an application close code (4000–4999), because a browser reports every refused upgrade as close code 1006 |
-| Reconnect | Pane events carry a per-pane sequence number; a resubscription names the last one received and gets the events after it from an in-memory buffer, or is told to reload history from the transcript. Commands carry a client-generated `requestId`, and the Host ignores one it has already accepted |
+| Reconnect | Pane events carry a per-pane sequence number; a resubscription names the last one received and gets the events after it from an in-memory buffer, or is told to reload history from the transcript. Commands carry a client-generated `commandId`, and the Host ignores one it has already accepted |
 | Plugin messages | A plugin's `host` and `renderer` entries exchange messages over the same connection, namespaced by plugin name |
 
 ### Consequences

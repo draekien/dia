@@ -4,7 +4,7 @@
 
 ## Context
 
-Phase 1 of `docs/plans/2026-10-22-plugin-platform.md` (issue #6) moved every pane's agent session into one Host `utilityProcess` behind an `effect/rpc` WebSocket. Building and running it produced six findings that are not visible from the code.
+Phase 1 of `docs/plans/2026-10-22-plugin-platform.md` (issue #6) moved every pane's agent session into one Host `utilityProcess` behind an `effect/rpc` WebSocket. Building and running it produced seven findings that are not visible from the code.
 
 Test setup for the manual runs: Windows 11, Electron 43.1.0, built with `pnpm build` and run with `electron .` (unpackaged), and built with `electron-builder --win --dir` and run as `dist/win-unpacked/dia.exe` (packaged). The app was driven over the Chrome DevTools Protocol with `--remote-debugging-port`, using `window.dia` calls in the renderer page.
 
@@ -56,3 +56,7 @@ Verification that needs no log file: main prints `Asking the Host to shut down` 
 - Keep the Host's shutdown order: close each pane's query, close the layer scope, then post `ShutdownComplete`.
 - Test any new WebSocket upgrade branch with a real client; a unit test of the handler alone cannot show that the writer is gated on the reader.
 - Re-run the orphan check (kill the Host, list descendants) whenever the Agent SDK or Claude Code is upgraded.
+
+### The command dedupe key must not share a field name with a command's own `requestId`
+
+`ResolvePermission`, `ResolveQuestion` and `ResolvePlanReview` already carry a `requestId` that names the pending SDK prompt. The first version of the RPC wrapper added a dedupe field with the same name, so the preload overwrote the prompt id with a fresh UUID and the handler resolved a prompt id that did not exist. The handler tests stubbed the resolve methods and did not catch it. The dedupe field is now `commandId` (protocol version 2), and tests assert that the prompt `requestId` reaches the session unchanged.

@@ -43,7 +43,7 @@ The renderer and the Host check that they speak the same protocol version when t
 A dropped WebSocket must not lose or repeat work:
 
 - Each pane event carries a per-pane sequence number. The Host keeps each pane's recent events in memory. A renderer subscription carries the last sequence number it received; the Host sends the buffered events after it, or tells the renderer to reload the pane's history from the transcript when the buffer no longer holds them. The buffer is not persisted: a Host restart ends every query, and history then comes from the SDK transcript.
-- Each command from the renderer carries a client-generated `requestId`. The Host ignores a command whose `requestId` it has already accepted for that pane, so a renderer that resends after a reconnect does not, for example, send a prompt twice.
+- Each command from the renderer carries a client-generated `commandId`. The Host ignores a command whose `commandId` it has already accepted for that pane, so a renderer that resends after a reconnect does not, for example, send a prompt twice.
 
 When the Host process exits for any reason, every `claude` process its queries started also exits. It has not been checked whether the Agent SDK already ends its CLI child when the parent process dies on Windows; check that and choose the mechanism in this phase.
 
@@ -53,7 +53,7 @@ When a pane's `Scope` closes because its session failed, every event the pane pr
 
 Done when: every MVP success criterion in `docs/prds/mvp.md` that held before Phase 1 still holds, and `pnpm typecheck`, `pnpm lint`, `pnpm test` and a manual run of the installed build pass.
 
-Result (2026-10-23, issue #6): the Host, the RPC WebSocket, the replay buffer, the `requestId` dedupe, the protocol-version close code and on-demand pane start are implemented, and `pnpm typecheck`, `pnpm lint` and `pnpm test` pass. A manual run of the unpackaged build and of the `electron-builder --dir` build (tsx in the Host, esbuild and `claude.exe` unpacked) streamed a reply, survived a Host kill with a window reload and history restore, started a cold pane on `SendMessage`, and shut down through the Host. `claude` processes end when the Host dies, so no extra mechanism was added. Details and the cases not covered are in `docs/reasoning/2026-10-23-host-process-phase-1-findings.md`. The NSIS installer was not built or installed.
+Result (2026-10-23, issue #6): the Host, the RPC WebSocket, the replay buffer, the `commandId` dedupe, the protocol-version close code and on-demand pane start are implemented, and `pnpm typecheck`, `pnpm lint` and `pnpm test` pass. A manual run of the unpackaged build and of the `electron-builder --dir` build (tsx in the Host, esbuild and `claude.exe` unpacked) streamed a reply, survived a Host kill with a window reload and history restore, started a cold pane on `SendMessage`, and shut down through the Host. `claude` processes end when the Host dies, so no extra mechanism was added. Details and the cases not covered are in `docs/reasoning/2026-10-23-host-process-phase-1-findings.md`. The NSIS installer was not built or installed.
 
 ## Phase 2 — Kernel registry and loader
 

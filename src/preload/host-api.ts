@@ -230,14 +230,11 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     getPaneHistory: (paneId): Promise<ReadonlyArray<ConversationMessage>> =>
       query((client) => client.GetPaneHistory({ paneId })),
     chooseDirectory: (): Promise<ChooseDirectoryResult> =>
-      query((client) =>
-        Effect.gen(function* () {
-          const last = yield* client.GetLastDirectory()
-          const chosen = yield* Effect.promise(() => deps.pickDirectory(last))
-          if (chosen === null) return null
-          return yield* client.RecordChosenDirectory({ path: chosen })
-        })
-      ),
+      query((client) => client.GetLastDirectory())
+        .then((last) => deps.pickDirectory(last))
+        .then((chosen) =>
+          chosen === null ? null : query((client) => client.RecordChosenDirectory({ path: chosen }))
+        ),
     getTheme: () => query((client) => client.GetTheme()),
     setTheme: (theme) => query((client) => client.SetTheme({ theme })),
     onHistoryReloadRequested: (listener) => {
