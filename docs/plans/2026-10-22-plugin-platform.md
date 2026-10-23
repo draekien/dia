@@ -97,4 +97,4 @@ Decide during step 6 what renderer plugins can replace: named slots only, or the
 * Third-party plugins: a third-party plugin is a GitHub repository, installed with `pnpm add` using a git specifier, following deepseek-harness's Plugin Manager (`packages/boot/plugin-manager/README.md`, branch `master`).
 * Trust model for third-party plugins. First-party plugins run with full Node access.
 * A browser or phone client of the Host's WebSocket (ADR-0022).
-* The agent OS features in `docs/prds/agent-os.md` (tray, notifications, agent overview, meta project) are built as built-in plugins once Phase 2 provides the loader; their plan is `docs/plans/2026-10-23-agent-os.md`.
+* The agent OS features in `docs/prds/agent-os.md` (projects and tabs, agent overview, notifications, meta project) are built as built-in plugins once Phase 2 provides the loader; their plan is `docs/plans/2026-10-23-agent-os.md`.

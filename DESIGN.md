@@ -38,7 +38,7 @@ A full-palette, cool-neutral strategy: several named roles, each with one delibe
 - **[to be resolved during implementation]** — cool-toned (graphite/slate) background, surface, text, and border ramp. Backgrounds sit at the dark-to-light ends depending on OS light/dark mode; body text and dividers are drawn from the same cool ramp, never warm-tinted.
 
 ### Named Rules
-**The One Voice Rule.** Amber/red/green are reserved exclusively for agent status, wherever it appears: a tab, an overview row, the tray icon. No other UI element — button, badge, link — may reuse them, or the status loses its meaning as the app's one urgent signal.
+**The One Voice Rule.** Amber/red/green are reserved exclusively for agent status, wherever it appears: an overview row, the collapsed rail. No other UI element — button, badge, link — may reuse them, or the status loses its meaning as the app's one urgent signal.
 
 ## 3. Typography
 
@@ -78,7 +78,7 @@ Responsive motion pairs with a mostly-flat surface: the sidebar and the visible 
 - **Secondary / Ghost:** neutral-bordered or text-only, for all non-primary actions (the majority of buttons in a dense UI like this).
 
 ### Status Indicator (signature component)
-The one component the whole system is built around. A small dot on an agent's tab, its overview row, and the tray icon: amber pulsing (needs input), red pulsing (failed), green steady (finished, until the user opens the tab). Only amber and red pulse, because only those states block on the user and also raise an OS notification. Motion is a gentle opacity/scale pulse that stops under reduced-motion settings, leaving the color. This is the system's single sanctioned "loud" element per the One Voice Rule.
+The one component the whole system is built around. A small dot on an agent's overview row and its place in the collapsed rail: amber pulsing (needs input), red pulsing (failed), green steady (finished, until the user opens the tab). Only amber and red pulse, because only those states block on the user and also raise an OS notification. Motion is a gentle opacity/scale pulse that stops under reduced-motion settings, leaving the color. This is the system's single sanctioned "loud" element per the One Voice Rule.
 
 ### Agent Overview
 - **Purpose:** the left sidebar. It lists every agent in every project, grouped by project, so the user knows which agents need them without opening a tab. It is also the only way to switch tabs: there is no tab strip.
@@ -93,7 +93,7 @@ The one component the whole system is built around. A small dot on an agent's ta
 ### Tabs
 - **One visible:** exactly one agent's tab fills the content area. There are no split panes.
 - **Selecting:** a tab is selected from its sidebar row; the content header names the project and the agent.
-- **Background tabs:** tabs that are not visible keep running and show their status in the sidebar, the collapsed rail and the tray icon only.
+- **Background tabs:** tabs that are not visible keep running and show their status in the sidebar and the collapsed rail only.
 
 ### Inputs / Fields
 - **Style:** [to be resolved] — flat, bordered, neutral background.

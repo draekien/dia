@@ -34,8 +34,8 @@ dia combines three things that Claude Desktop and the Claude Code CLI do not:
 
 - **Projects.** The user registers directories with dia. A directory does not have to be a git repo. Worktree features apply only to projects that are git repos.
 - **Tabs.** Each agent runs in its own tab inside a project. One tab is visible at a time. Agents in tabs that are not visible keep running.
-- **Window and tray.** Closing the window keeps dia and its agents running in the system tray. Quitting from the tray stops every agent; the agents resume from their saved sessions on the next start.
-- **Notifications.** An agent in a tab that is not visible, or in a hidden window, raises an OS notification when it requests a permission, asks a question, or fails. A finished turn only badges its tab. Clicking a notification opens that agent's tab.
+- **Window.** Agents keep running while the window is minimised or another app is focused. Closing the window quits dia and stops every agent; the agents resume from their saved sessions on the next start.
+- **Notifications.** An agent in a tab that is not visible, or in a window that is minimised or not focused, raises an OS notification when it requests a permission, asks a question, or fails. A finished turn only badges its tab. Clicking a notification opens that agent's tab.
 - **Agent overview.** A left sidebar listing every agent in every project, which is also how the user switches tabs. Each agent has its status and one activity line: the `in_progress` item of its latest `TodoWrite`, or its last tool call when it has no task list.
 - **Meta project.** A git repo that dia creates and loads into every agent it starts. A meta agent can read and write every registered project and its transcripts. The user starts meta agents. The user may push the meta repo to a remote; dia refuses a push that contains a secret.
 - **Daily use.** William runs dia's own development in dia, next to his other projects.
@@ -49,7 +49,7 @@ dia combines three things that Claude Desktop and the Claude Code CLI do not:
 - Changes from a meta agent are merged only after the user approves them.
 - Split panes are no longer a product feature. The tab layout replaces the split-pane workspace in `docs/prds/mvp.md`.
 - Out of scope: a notice board for agents to leave notes for each other. It was considered and dropped, because worktrees, meta proposals and the agent overview cover the same needs.
-- Roadmap: agents that keep running after dia quits; scheduled meta agent runs; an approval step that copies parts of the meta repo into the user's `~/.claude` configuration; other users.
+- Roadmap: keeping dia and its agents running in the system tray when the window closes; agents that keep running after dia quits; scheduled meta agent runs; an approval step that copies parts of the meta repo into the user's `~/.claude` configuration; other users.
 
 ## Brand Commitments
 

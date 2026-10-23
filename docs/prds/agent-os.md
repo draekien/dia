@@ -6,10 +6,10 @@ William is dia's developer and its first user. dia's MVP (`docs/prds/mvp.md`) is
 
 ## Goals / Success Criteria
 
-1. Every permission request, question and failure from an agent whose tab is not visible, or whose window is hidden, raises one OS notification, with zero missed and zero duplicate notifications observed during testing.
+1. Every permission request, question and failure from an agent whose tab is not visible, or whose window is minimised or not focused, raises one OS notification, with zero missed and zero duplicate notifications observed during testing.
 2. A finished turn in a tab that is not visible raises no OS notification and badges its tab.
-3. Clicking an OS notification shows dia's window on the agent's tab, in 100% of attempts during testing.
-4. Closing the window leaves every running agent running; across 20 close-and-reopen cycles during a streaming turn, zero turns are interrupted, dropped or duplicated.
+3. Clicking an OS notification focuses dia's window on the agent's tab, in 100% of attempts during testing.
+4. Switching tabs leaves every running agent running; across 20 tab switches away from and back to an agent during a streaming turn, zero turns are interrupted, dropped or duplicated.
 5. The agent overview shows, for every agent in every registered project, its status and an activity line that matches the agent's latest `TodoWrite` `in_progress` item, or its last tool call when it has none, with no stale line observed during testing.
 6. A proposal filed with `meta_propose` by an agent in one project, once combined by a meta agent and approved, is present in the next agent started in a different project.
 7. A rejected meta branch changes no agent's configuration.
@@ -22,8 +22,7 @@ William is dia's developer and its first user. dia's MVP (`docs/prds/mvp.md`) is
 2. As a user, I want to register a directory that is not a git repo so that non-code work can be a project too.
 3. As a user, I want each agent in its own tab within a project so that I can run several agents per project.
 4. As a user, I want agents in tabs I am not looking at to keep running so that I never have to watch an agent for it to make progress.
-5. As a user, I want closing the window to keep dia running in the tray so that closing the window does not stop my agents.
-6. As a user, I want to quit from the tray menu so that I can stop every agent deliberately.
+5. As a user, I want agents to keep running while dia's window is minimised or another app is focused so that I can work elsewhere while they progress.
 7. As a user, I want an OS notification when a background agent requests a permission or asks a question so that I know when I am blocking it.
 8. As a user, I want an OS notification when a background agent fails so that I can restart or redirect it.
 9. As a user, I want a finished agent to badge its tab without a notification so that notifications stay limited to agents that need me.
@@ -43,7 +42,7 @@ William is dia's developer and its first user. dia's MVP (`docs/prds/mvp.md`) is
 
 ## Testing Decisions
 
-**Approach:** Automated tests cover logic that can be checked in isolation: the project registry (registering a directory, detecting whether it is a git repo, persisting and restoring projects and tabs), the notification rule (which status changes in which visibility state raise a notification, a badge or nothing), the activity line derivation from `TodoWrite` and tool-use events, overview ordering, proposal storage and retrieval, construction of the `query()` options that load the meta repo, and the push refusal when the scanner reports a secret. Manual testing on the installed build covers OS notifications and clicking them, close-to-tray and quitting from the tray, background tabs streaming during tab switches, the overview during real runs, and a full meta loop: a proposal filed in one project, a meta agent's branch, approval, and the change present in a new agent in another project.
+**Approach:** Automated tests cover logic that can be checked in isolation: the project registry (registering a directory, detecting whether it is a git repo, persisting and restoring projects and tabs), the notification rule (which status changes in which visibility state raise a notification, a badge or nothing), the activity line derivation from `TodoWrite` and tool-use events, overview ordering, proposal storage and retrieval, construction of the `query()` options that load the meta repo, and the push refusal when the scanner reports a secret. Manual testing on the installed build covers OS notifications and clicking them, background tabs streaming during tab switches, the overview during real runs, and a full meta loop: a proposal filed in one project, a meta agent's branch, approval, and the change present in a new agent in another project.
 
 **Constraints:** No production or customer data is involved. Testing runs on the developer's machine against his local Claude Code installation. Transcripts used in testing can contain local paths and command output; the meta repo used in testing has no remote except a throwaway one for the push-refusal test.
 
@@ -51,6 +50,7 @@ William is dia's developer and its first user. dia's MVP (`docs/prds/mvp.md`) is
 
 - Split panes; one tab is visible at a time (ADR-0023)
 - A notice board for agents to leave notes for each other; considered and dropped, because worktrees, `meta_propose` and the agent overview cover its uses
+- Keeping dia and its agents running in the system tray when the window closes; closing the window quits dia, as today (roadmap, ADR-0024)
 - Agents that keep running after dia quits (roadmap)
 - Scheduled or automatic meta agent runs; the user starts meta agents (roadmap: scheduled runs)
 - Copying parts of the meta repo into `~/.claude` (roadmap)
@@ -61,10 +61,11 @@ William is dia's developer and its first user. dia's MVP (`docs/prds/mvp.md`) is
 
 ## Additional Notes
 
-This PRD builds on the plugin platform (`docs/prds/plugin-platform.md`, ADR-0019 to ADR-0022): its features are built as built-in plugins once Phase 2 of `docs/plans/2026-10-22-plugin-platform.md` provides the loader, and agents run in the Host from Phase 1. Its plan is `docs/plans/2026-10-23-agent-os.md`. Its decisions are ADR-0023 (tabs within registered projects), ADR-0024 (tray) and ADR-0025 (meta project). The product definition is `PRODUCT.md`; the visual rules for the overview, tabs and status indicator are in `DESIGN.md`.
+This PRD builds on the plugin platform (`docs/prds/plugin-platform.md`, ADR-0019 to ADR-0022): its features are built as built-in plugins once Phase 2 of `docs/plans/2026-10-22-plugin-platform.md` provides the loader, and agents run in the Host from Phase 1. Its plan is `docs/plans/2026-10-23-agent-os.md`. Its decisions are ADR-0023 (tabs within registered projects), ADR-0024 (background agents) and ADR-0025 (meta project). The product definition is `PRODUCT.md`; the visual rules for the overview, tabs and status indicator are in `DESIGN.md`.
 
 Roadmap, not in this PRD:
 
+* Keeping dia and its agents running in the system tray when the window closes.
 * Agents that keep running after dia quits, which needs a Host that runs without Electron and the durable event store that ADR-0022 deferred.
 * Scheduled meta agent runs while dia is running.
 * An approval step that copies chosen parts of the meta repo into the user's `~/.claude`.
@@ -75,6 +76,4 @@ Roadmap, not in this PRD:
 ## Open Questions
 
 - How the user reorders projects in the overview (dragging, or a menu) is decided during implementation.
-
-- How dia tells a user that closing the window leaves agents running (for example a notification on the first close) is decided during implementation.
 - Which secret scanner checks meta repo pushes is decided during implementation.

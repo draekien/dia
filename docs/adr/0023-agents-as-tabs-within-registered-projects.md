@@ -90,5 +90,5 @@ This ADR does not rename `pane` in code. The plugin platform's Phase 4 step 6 (`
 
 ## More Information
 
-* Related: ADR-0011 (persisted layout), ADR-0019 (layout as a built-in plugin), ADR-0024 (tray), ADR-0025 (meta project), `docs/prds/agent-os.md`.
+* Related: ADR-0011 (persisted layout), ADR-0019 (layout as a built-in plugin), ADR-0024 (background agents), ADR-0025 (meta project), `docs/prds/agent-os.md`.
 * Supersedes MVP user stories 1, 2 and 9 in `docs/prds/mvp.md`.
