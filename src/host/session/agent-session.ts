@@ -9,34 +9,41 @@ import {
   query,
   type SDKUserMessage
 } from '@anthropic-ai/claude-agent-sdk'
-import { PlanReviewResponse, Question, type QuestionResponse } from '@shared/domain/attention'
-import type { PaneConfig, ThinkingLevel } from '@shared/domain/pane'
+import {
+  type PermissionResponse,
+  PlanReviewResponse,
+  Question,
+  type QuestionResponse
+} from '@shared/domain/attention'
+import type { PaneConfig, PermissionMode, ThinkingLevel } from '@shared/domain/pane'
 import {
   Cause,
+  type Context,
   Data,
   Deferred,
   Effect,
   Fiber,
-  Layer,
   Match,
   Option,
   Queue,
   Ref,
-  References,
   Result,
   Schema,
+  Scope,
   Stream
 } from 'effect'
-import { makeLoggerLive } from '../logger'
 import { makeSessionEventReducer } from './agent-session-reducer'
-import { makePendingUserInput, type UserInputResolution } from './pending-user-input'
+import {
+  makePendingUserInput,
+  type PendingUserInput,
+  type UserInputResolution
+} from './pending-user-input'
 import {
   makePermissionModeController,
   type PermissionModeController
 } from './permission-mode-controller'
 import {
-  InboundMessage,
-  OutboundMessage,
+  type OutboundMessage,
   PermissionModeChanged,
   PermissionRequested,
   PlanReviewRequested,
@@ -57,16 +64,6 @@ import { thinkingOptions } from './thinking-options'
 export class SessionStreamError extends Data.TaggedError('SessionStreamError')<{
   readonly cause: unknown
 }> {}
-
-const decodeInbound = Schema.decodeUnknownResult(InboundMessage)
-const encodeOutbound = Schema.encodeSync(OutboundMessage)
-
-const port = process.parentPort
-
-const postOutbound = (message: OutboundMessage): Effect.Effect<void> =>
-  Effect.sync(() => port.postMessage(encodeOutbound(message)))
-
-const pendingUserInput = makePendingUserInput()
 
 const decodeQuestions = Schema.decodeUnknownResult(Schema.Array(Question))
 
@@ -143,50 +140,57 @@ const toPermissionResult = (
     Match.exhaustive
   )
 
-const canUseTool: CanUseTool = (toolName, input, options) =>
-  Effect.runPromise(
-    Effect.gen(function* () {
-      const deferred = yield* pendingUserInput.register(options.toolUseID)
+const makeCanUseTool =
+  (
+    pendingUserInput: PendingUserInput,
+    emit: (message: OutboundMessage) => Effect.Effect<void>,
+    services: Context.Context<never>
+  ): CanUseTool =>
+  (toolName, input, options) =>
+    Effect.runPromiseWith(services)(
+      Effect.gen(function* () {
+        const deferred = yield* pendingUserInput.register(options.toolUseID)
 
-      if (toolName === 'ExitPlanMode') {
-        const plan = typeof input.plan === 'string' ? input.plan : ''
-        yield* postOutbound(PlanReviewRequested.make({ requestId: options.toolUseID, plan }))
-        const resolution = yield* Deferred.await(deferred)
-        return toPermissionResult(resolution, options.suggestions)
-      }
+        if (toolName === 'ExitPlanMode') {
+          const plan = typeof input.plan === 'string' ? input.plan : ''
+          yield* emit(PlanReviewRequested.make({ requestId: options.toolUseID, plan }))
+          const resolution = yield* Deferred.await(deferred)
+          return toPermissionResult(resolution, options.suggestions)
+        }
 
-      const questions =
-        toolName === 'AskUserQuestion' ? decodeQuestions(input.questions) : undefined
-      if (questions !== undefined && Result.isSuccess(questions)) {
-        yield* postOutbound(
-          QuestionRequested.make({
-            requestId: options.toolUseID,
-            questions: questions.success
-          })
-        )
-      } else {
-        if (questions !== undefined) {
-          yield* Effect.logWarning(
-            'AskUserQuestion input did not match the Question schema; surfacing it as a permission request',
-            { requestId: options.toolUseID, issue: questions.failure }
+        const questions =
+          toolName === 'AskUserQuestion' ? decodeQuestions(input.questions) : undefined
+        if (questions !== undefined && Result.isSuccess(questions)) {
+          yield* emit(
+            QuestionRequested.make({
+              requestId: options.toolUseID,
+              questions: questions.success
+            })
+          )
+        } else {
+          if (questions !== undefined) {
+            yield* Effect.logWarning(
+              'AskUserQuestion input did not match the Question schema; surfacing it as a permission request',
+              { requestId: options.toolUseID, issue: questions.failure }
+            )
+          }
+          yield* emit(
+            PermissionRequested.make({
+              requestId: options.toolUseID,
+              toolName,
+              input,
+              suggestions: options.suggestions
+            })
           )
         }
-        yield* postOutbound(
-          PermissionRequested.make({
-            requestId: options.toolUseID,
-            toolName,
-            input,
-            suggestions: options.suggestions
-          })
-        )
-      }
 
-      const resolution = yield* Deferred.await(deferred)
-      return toPermissionResult(resolution, options.suggestions)
-    }).pipe(Effect.withSpan('AgentSession.canUseTool'))
-  )
+        const resolution = yield* Deferred.await(deferred)
+        return toPermissionResult(resolution, options.suggestions)
+      }).pipe(Effect.withSpan('AgentSession.canUseTool'))
+    )
 
 const resolveRequest = Effect.fn('AgentSession.resolveRequest')(function* (
+  pendingUserInput: PendingUserInput,
   requestId: string,
   resolution: UserInputResolution
 ) {
@@ -196,7 +200,9 @@ const resolveRequest = Effect.fn('AgentSession.resolveRequest')(function* (
   }
 })
 
-const dropPendingRequests = Effect.fn('AgentSession.dropPendingRequests')(function* () {
+const dropPendingRequests = Effect.fn('AgentSession.dropPendingRequests')(function* (
+  pendingUserInput: PendingUserInput
+) {
   const requestIds = yield* pendingUserInput.drop
   if (requestIds.length > 0) {
     yield* Effect.logInfo('Redirected pane; dropping pending user-input requests', { requestIds })
@@ -211,6 +217,7 @@ const dropPendingRequests = Effect.fn('AgentSession.dropPendingRequests')(functi
  * turn end rather than an error.
  */
 const supersedePendingRequests = Effect.fn('AgentSession.supersedePendingRequests')(function* (
+  pendingUserInput: PendingUserInput,
   abortExpectedRef: Ref.Ref<boolean>
 ) {
   const requestIds = yield* pendingUserInput.interruptAll
@@ -230,6 +237,7 @@ const supersedePendingRequests = Effect.fn('AgentSession.supersedePendingRequest
  * session is live.
  */
 const interruptSession = Effect.fn('AgentSession.interruptSession')(function* (
+  pendingUserInput: PendingUserInput,
   queryRef: Ref.Ref<Option.Option<LiveControlQuery>>,
   abortExpectedRef: Ref.Ref<boolean>
 ) {
@@ -293,6 +301,8 @@ const runSession = Effect.fn('AgentSession.runSession')(
     queryRef: Ref.Ref<Option.Option<LiveControlQuery>>,
     modeController: PermissionModeController,
     abortExpectedRef: Ref.Ref<boolean>,
+    canUseTool: CanUseTool,
+    emit: (message: OutboundMessage) => Effect.Effect<void>,
     resume: string | undefined,
     branchAt: string | undefined
   ) {
@@ -307,24 +317,32 @@ const runSession = Effect.fn('AgentSession.runSession')(
 
     const promptIterable = Stream.toAsyncIterable(Stream.fromQueue(promptQueue))
 
-    const session = query({
-      prompt: promptIterable,
-      options: {
-        cwd: config.cwd,
-        model: config.model,
-        includePartialMessages: true,
-        canUseTool,
-        permissionMode: config.permissionMode,
-        enableFileCheckpointing: true,
-        extraArgs: { 'replay-user-messages': null },
-        resume,
-        ...(branchAt !== undefined ? { resumeSessionAt: branchAt, forkSession: true } : {}),
-        ...thinkingOptions(config.thinkingLevel),
-        ...(claudeExecutablePath !== undefined
-          ? { pathToClaudeCodeExecutable: claudeExecutablePath }
-          : {})
-      }
-    })
+    const session = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        query({
+          prompt: promptIterable,
+          options: {
+            cwd: config.cwd,
+            model: config.model,
+            includePartialMessages: true,
+            canUseTool,
+            permissionMode: config.permissionMode,
+            enableFileCheckpointing: true,
+            extraArgs: { 'replay-user-messages': null },
+            resume,
+            ...(branchAt !== undefined ? { resumeSessionAt: branchAt, forkSession: true } : {}),
+            ...thinkingOptions(config.thinkingLevel),
+            ...(claudeExecutablePath !== undefined
+              ? { pathToClaudeCodeExecutable: claudeExecutablePath }
+              : {})
+          }
+        })
+      ),
+      (live) =>
+        Effect.logInfo('Closing query', { paneId: config.paneId }).pipe(
+          Effect.andThen(Effect.sync(() => live.close()))
+        )
+    )
     yield* modeController.attachQuery(session)
     yield* Ref.set(queryRef, Option.some(session))
 
@@ -337,7 +355,7 @@ const runSession = Effect.fn('AgentSession.runSession')(
     // brackets the await so the renderer can show a "loading commands" indicator; success
     // ends it via SlashCommandsAvailable, failure via SlashCommandsWarming(active: false).
     yield* Effect.forkChild(
-      postOutbound(SlashCommandsWarming.make({ active: true })).pipe(
+      emit(SlashCommandsWarming.make({ active: true })).pipe(
         Effect.andThen(
           Effect.tryPromise({
             try: () => session.supportedCommands(),
@@ -345,7 +363,7 @@ const runSession = Effect.fn('AgentSession.runSession')(
           })
         ),
         Effect.flatMap((commands) =>
-          postOutbound(
+          emit(
             SlashCommandsAvailable.make({
               commands: commands.map((command) => ({
                 name: command.name,
@@ -359,7 +377,7 @@ const runSession = Effect.fn('AgentSession.runSession')(
           Effect.logWarning('Failed to warm up slash commands', {
             paneId: config.paneId,
             error
-          }).pipe(Effect.andThen(postOutbound(SlashCommandsWarming.make({ active: false }))))
+          }).pipe(Effect.andThen(emit(SlashCommandsWarming.make({ active: false }))))
         )
       )
     )
@@ -398,18 +416,20 @@ const runSession = Effect.fn('AgentSession.runSession')(
               yield* Effect.logInfo('Suppressing expected turn abort as a clean turn end', {
                 paneId: config.paneId
               })
-              yield* postOutbound(TurnCompleted.make({}))
+              yield* emit(TurnCompleted.make({}))
               return
             }
           }
 
-          yield* postOutbound(outbound)
+          yield* emit(outbound)
         })
       )
     )
   },
   (effect, config) =>
     effect.pipe(
+      Effect.scoped,
+      Effect.as(Option.none<string>()),
       Effect.catchCause((cause) => {
         const failure = Cause.findErrorOption(cause)
         const underlying =
@@ -422,20 +442,69 @@ const runSession = Effect.fn('AgentSession.runSession')(
             : underlying !== undefined
               ? String(underlying)
               : Cause.pretty(cause)
-        return Effect.logError('Agent session failed', { paneId: config.paneId, rendered })
+        return Effect.logError('Agent session failed', { paneId: config.paneId, rendered }).pipe(
+          Effect.as(Option.some(rendered))
+        )
       })
     )
 )
 
-const program = Effect.gen(function* () {
+/**
+ * Live control surface of one pane's Agent SDK session, returned by {@link makeAgentSession}.
+ * Every method returns once the command has been applied to the session; none waits for the
+ * agent's reply, which arrives through the `emit` callback given at construction.
+ */
+export interface AgentSession {
+  readonly sendText: (text: string) => Effect.Effect<void>
+  readonly setThinkingLevel: (level: ThinkingLevel) => Effect.Effect<void>
+  readonly setPermissionMode: (mode: PermissionMode) => Effect.Effect<void>
+  readonly resolvePermission: (
+    requestId: string,
+    response: PermissionResponse
+  ) => Effect.Effect<void>
+  readonly resolveQuestion: (requestId: string, response: QuestionResponse) => Effect.Effect<void>
+  readonly resolvePlanReview: (requestId: string, approved: boolean) => Effect.Effect<void>
+  readonly interrupt: () => Effect.Effect<void>
+  readonly rewindToCheckpoint: (
+    messageUuid: string,
+    resumeAnchorUuid: string | undefined
+  ) => Effect.Effect<void>
+  /**
+   * Completes with a description of why the session ended on its own: its event stream failed
+   * or finished without the pane being closed. Never completes for a restart the session
+   * performs itself (thinking-level change, rewind) or for closing the scope it was made in.
+   */
+  readonly ended: Effect.Effect<string>
+}
+
+/**
+ * Starts the Agent SDK session for one pane and returns its {@link AgentSession} controls.
+ * `config` and `resume` choose the working directory, model, modes and, when `resume` is set,
+ * the prior session to continue. Every event the session produces is passed to `emit` in
+ * order. The session, its `claude` child process and its pending user-input requests live in
+ * the surrounding scope: closing that scope ends them.
+ */
+export const makeAgentSession = Effect.fn('AgentSession.make')(function* (options: {
+  readonly config: PaneConfig
+  readonly resume: string | undefined
+  readonly emit: (message: OutboundMessage) => Effect.Effect<void>
+}): Effect.fn.Return<AgentSession, never, Scope.Scope> {
+  const { emit } = options
+  const sessionScope = yield* Scope.Scope
+  const services = yield* Effect.context<never>()
+  const pendingUserInput = makePendingUserInput()
+  const canUseTool = makeCanUseTool(pendingUserInput, emit, services)
   const promptQueue = yield* Queue.unbounded<SDKUserMessage>()
   const sessionIdRef = yield* Ref.make<Option.Option<string>>(Option.none())
   const queryRef = yield* Ref.make<Option.Option<LiveControlQuery>>(Option.none())
   const abortExpectedRef = yield* Ref.make(false)
   const configRef = yield* Ref.make<Option.Option<PaneConfig>>(Option.none())
-  const desiredLevelRef = yield* Ref.make<Option.Option<ThinkingLevel>>(Option.none())
+  const desiredLevelRef = yield* Ref.make<Option.Option<ThinkingLevel>>(
+    Option.some(options.config.thinkingLevel)
+  )
   const fiberRef = yield* Ref.make<Option.Option<Fiber.Fiber<void>>>(Option.none())
   const modeController = yield* makePermissionModeController
+  const endedDeferred = yield* Deferred.make<string>()
 
   const startSession = Effect.fn('AgentSession.startSession')(function* (
     config: PaneConfig,
@@ -443,7 +512,7 @@ const program = Effect.gen(function* () {
     branchAt: string | undefined
   ) {
     yield* modeController.seed(config.permissionMode)
-    const fiber = yield* Effect.forkScoped(
+    const fiber = yield* Effect.forkIn(
       runSession(
         config,
         promptQueue,
@@ -451,18 +520,25 @@ const program = Effect.gen(function* () {
         queryRef,
         modeController,
         abortExpectedRef,
+        canUseTool,
+        emit,
         resume,
         branchAt
-      )
+      ).pipe(
+        Effect.flatMap((failure) =>
+          Deferred.succeed(
+            endedDeferred,
+            Option.getOrElse(failure, () => 'Agent session ended unexpectedly')
+          )
+        ),
+        Effect.asVoid
+      ),
+      sessionScope
     )
     yield* Ref.set(configRef, Option.some(config))
     yield* Ref.set(fiberRef, Option.some(fiber))
   })
 
-  // A running query's thinking/effort options are fixed for its lifetime, so a level change is
-  // deferred to the next user turn: we tear the current query down and resume it fresh with the
-  // new options before offering the pending prompt. Resuming (rather than a cold start) preserves
-  // the conversation. A no-op when the level is unchanged or no session has started yet.
   const restartForThinkingChange = Effect.fn('AgentSession.restartForThinkingChange')(function* () {
     const configOpt = yield* Ref.get(configRef)
     const desiredOpt = yield* Ref.get(desiredLevelRef)
@@ -497,15 +573,6 @@ const program = Effect.gen(function* () {
     )
   })
 
-  // Rewinds the pane to a prior user turn: restore the working tree to that turn's pre-edit state
-  // via the live query's rewindFiles(userMessageUuid), then tear the query down and resume it
-  // branched just before that turn so the conversation the agent sees matches the files on disk.
-  // The branch point is the *preceding assistant* turn's uuid (resumeAnchorUuid) -- the SDK's
-  // resumeSessionAt resumes up to and including an assistant message, so it excludes the rewound
-  // user turn and everything after. When there is no preceding assistant turn (rewinding the first
-  // turn) we start a fresh, unresumed session instead. A no-op (logged) when there is no live
-  // session, and aborted without a restart when the file rewind itself does not succeed, so a
-  // failed rewind never desyncs conversation from disk.
   const rewindToCheckpoint = Effect.fn('AgentSession.rewindToCheckpoint')(function* (
     messageUuid: string,
     resumeAnchorUuid: string | undefined
@@ -547,7 +614,7 @@ const program = Effect.gen(function* () {
 
     const fiberOpt = yield* Ref.get(fiberRef)
     if (Option.isSome(fiberOpt)) yield* Fiber.interrupt(fiberOpt.value)
-    yield* dropPendingRequests()
+    yield* dropPendingRequests(pendingUserInput)
 
     const currentModeOpt = yield* modeController.currentMode
     const permissionMode = Option.getOrElse(currentModeOpt, () => config.permissionMode)
@@ -556,69 +623,38 @@ const program = Effect.gen(function* () {
     } else {
       yield* startSession({ ...config, permissionMode }, undefined, undefined)
     }
-    yield* postOutbound(RewoundToCheckpoint.make({ messageUuid }))
+    yield* emit(RewoundToCheckpoint.make({ messageUuid }))
   })
 
-  const rawInbound = Stream.callback<unknown>((queue) =>
-    Effect.gen(function* () {
-      const listener = (event: { data: unknown }): void => void Queue.offerUnsafe(queue, event.data)
-      port.on('message', listener)
-      yield* Effect.addFinalizer(() => Effect.sync(() => port.off('message', listener)))
-    })
-  )
+  yield* startSession(options.config, options.resume, undefined)
 
-  yield* Stream.runForEach(rawInbound, (raw) =>
-    Effect.gen(function* () {
-      const decoded = decodeInbound(raw)
-      if (Result.isFailure(decoded)) {
-        yield* Effect.logWarning('Dropped malformed inbound message', { issue: decoded.failure })
-        return
-      }
+  const sendText = Effect.fn('AgentSession.sendText')(function* (text: string) {
+    yield* restartForThinkingChange()
+    yield* supersedePendingRequests(pendingUserInput, abortExpectedRef)
+    yield* Queue.offer(promptQueue, toSDKUserMessage(text))
+  })
 
-      const inbound = decoded.success
-      if (inbound._tag === 'Init') {
-        yield* Ref.set(desiredLevelRef, Option.some(inbound.config.thinkingLevel))
-        yield* startSession(inbound.config, inbound.resume, undefined)
-      } else if (inbound._tag === 'SetThinkingLevel') {
-        yield* Ref.set(desiredLevelRef, Option.some(inbound.level))
-      } else if (inbound._tag === 'SetPermissionMode') {
-        yield* modeController.applyMode(inbound.mode)
-      } else if (inbound._tag === 'ResolvePlanReview') {
-        const restored = yield* modeController.resolvePlan(inbound.approved)
-        if (Option.isSome(restored)) {
-          yield* postOutbound(PermissionModeChanged.make({ mode: restored.value }))
-        }
-        yield* resolveRequest(
-          inbound.requestId,
-          PlanReviewResponse.make({ approved: inbound.approved })
-        )
-      } else if (inbound._tag === 'SendText') {
-        yield* restartForThinkingChange()
-        yield* supersedePendingRequests(abortExpectedRef)
-        yield* Queue.offer(promptQueue, toSDKUserMessage(inbound.text))
-      } else if (inbound._tag === 'Interrupt') {
-        yield* interruptSession(queryRef, abortExpectedRef)
-      } else if (inbound._tag === 'RewindToCheckpoint') {
-        yield* rewindToCheckpoint(inbound.messageUuid, inbound.resumeAnchorUuid)
-      } else {
-        yield* resolveRequest(inbound.requestId, inbound.response)
-      }
-    })
-  )
+  const resolvePlanReview = Effect.fn('AgentSession.resolvePlanReview')(function* (
+    requestId: string,
+    approved: boolean
+  ) {
+    const restored = yield* modeController.resolvePlan(approved)
+    if (Option.isSome(restored)) {
+      yield* emit(PermissionModeChanged.make({ mode: restored.value }))
+    }
+    yield* resolveRequest(pendingUserInput, requestId, PlanReviewResponse.make({ approved }))
+  })
+
+  return {
+    sendText,
+    setThinkingLevel: (level) => Ref.set(desiredLevelRef, Option.some(level)),
+    setPermissionMode: (mode) => modeController.applyMode(mode),
+    resolvePermission: (requestId, response) =>
+      resolveRequest(pendingUserInput, requestId, response),
+    resolveQuestion: (requestId, response) => resolveRequest(pendingUserInput, requestId, response),
+    resolvePlanReview,
+    interrupt: () => interruptSession(pendingUserInput, queryRef, abortExpectedRef),
+    rewindToCheckpoint,
+    ended: Deferred.await(endedDeferred)
+  }
 })
-
-// @effect-diagnostics-next-line processEnv:off -- deliberate cross-process config channel; the parent main process sets DIA_IS_DEV (see src/main/index.ts).
-const isDev = process.env.DIA_IS_DEV === '1'
-// @effect-diagnostics-next-line processEnv:off -- deliberate cross-process config channel; the parent main process sets DIA_LOG_FILE (see src/main/index.ts).
-const LoggerLive = makeLoggerLive(isDev, process.env.DIA_LOG_FILE ?? 'main.log')
-
-Effect.runFork(
-  Effect.scoped(program).pipe(
-    Effect.provide(
-      Layer.mergeAll(
-        LoggerLive,
-        Layer.succeed(References.MinimumLogLevel, isDev ? 'Debug' : 'Info')
-      )
-    )
-  )
-)

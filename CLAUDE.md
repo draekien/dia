@@ -48,6 +48,8 @@ This repository uses Effect v4. Before writing any Effect code, first read `node
 - Effect diagnostics run inside `pnpm typecheck` and standalone via `pnpm diagnostics` (per-project: `diagnostics:{node,web,test}`). Bust stale `.tsbuildinfo` after changing a severity map. See `docs/reasoning/2026-07-17-effect-tsgo-diagnostics-tooling.md`.
 - Avoid excessive nesting from chained `.pipe`/`Effect.andThen` callbacks (see [effect.website/docs/code-style/do](https://effect.website/docs/code-style/do/)). Prefer `Effect.gen` for sequential logic — it reads top-to-bottom like imperative code instead of nesting a callback per step. Reach for the Do-simulation (`Effect.Do`/`Effect.bind`/`Effect.let`) only where `Effect.gen` doesn't fit.
 
+- An RPC wrapper field must not reuse a name a command payload already has. Add a test that the payload's own field reaches the handler unchanged. Bump `PROTOCOL_VERSION` in `src/shared/ipc/rpc.ts` whenever `DiaRpcs` changes shape.
+
 ### Mandatory skill invocation
 
 These are BLOCKING REQUIREMENTS, not suggestions. Before writing or editing any code matching a trigger below, invoke the listed skill via the Skill tool FIRST — before any other response, plan, or edit for that task. If a task matches more than one trigger, invoke all matching skills before starting. Do not skip a trigger because the change "looks small" or "is just a one-liner."
@@ -61,3 +63,19 @@ These are BLOCKING REQUIREMENTS, not suggestions. Before writing or editing any 
 Renderer-specific triggers (UI/UX work, shadcn/ui components) are in `src/renderer/CLAUDE.md`.
 
 If you realize partway through a task that a trigger applies and you skipped the skill, stop, invoke the skill, and reconcile your work against its guidance before continuing.
+
+## Before raising a PR
+
+BLOCKING, in this order, on the branch diff, before `gh pr create`:
+
+1. `/simplify`, then apply its verified fixes.
+2. `/code-review medium --fix`.
+3. Re-run `pnpm typecheck`, `pnpm lint`, `pnpm test`, and commit any fixes.
+4. The PR body must show proof the change works (test results and a run of the real app) and list what was not covered.
+5. Use a conventional-commit PR title, then register the PR with `link_pull_request`.
+
+## Manual verification
+
+- Launch Electron with `env -u ELECTRON_RUN_AS_NODE electron .`; otherwise it runs as plain Node.
+- A dev build reads and writes the real `%APPDATA%\dia-dev` profile (a packaged build uses `%APPDATA%\dia`). Back up `workspace.json` and `settings.json` first and restore them after.
+- Drive the window with `--remote-debugging-port` and CDP `Runtime.evaluate` on `window.dia`. See `docs/reasoning/2026-10-23-host-process-phase-1-findings.md`.

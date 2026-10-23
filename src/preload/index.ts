@@ -1,54 +1,56 @@
-import { ConversationMessage } from '@shared/domain/pane'
-import { PaneNode } from '@shared/domain/pane-tree'
-import { ThemePreference } from '@shared/domain/theme'
 import { UpdateStatus } from '@shared/domain/update'
 import {
   CHANNEL,
-  ChooseDirectoryResult,
-  ClosePane,
-  CreatePane,
   type DiaApi,
-  FocusPane,
-  InterruptPane,
+  HostConnection,
   IpcEvent,
-  ResolvePermission,
-  ResolvePlanReview,
-  ResolveQuestion,
-  RewindToCheckpoint,
-  SendMessage,
-  SetPermissionMode,
-  SetThinkingLevel,
-  SplitPane,
-  TitleBarOverlayColors
+  TitleBarOverlayColors,
+  type UpdateStatusChanged
 } from '@shared/ipc/contract'
-import { Result, Schema } from 'effect'
+import {
+  DiaRpcs,
+  PROTOCOL_VERSION,
+  TOKEN_SUBPROTOCOL_PREFIX,
+  VERSION_SUBPROTOCOL_PREFIX
+} from '@shared/ipc/rpc'
+import { Context, Effect, Layer, ManagedRuntime, Result, Schema } from 'effect'
+import { RpcClient, RpcSerialization } from 'effect/rpc'
+import { Socket } from 'effect/socket'
 import { contextBridge, ipcRenderer } from 'electron'
+import { type DiaRpcClient, makeHostApi } from './host-api'
 
-const encodeSendMessage = Schema.encodeSync(SendMessage)
-const encodeResolvePermission = Schema.encodeSync(ResolvePermission)
-const encodeResolveQuestion = Schema.encodeSync(ResolveQuestion)
-const encodeSplitPane = Schema.encodeSync(SplitPane)
-const encodeClosePane = Schema.encodeSync(ClosePane)
-const encodeCreatePane = Schema.encodeSync(CreatePane)
-const encodeSetThinkingLevel = Schema.encodeSync(SetThinkingLevel)
-const encodeSetPermissionMode = Schema.encodeSync(SetPermissionMode)
-const encodeResolvePlanReview = Schema.encodeSync(ResolvePlanReview)
-const encodeFocusPane = Schema.encodeSync(FocusPane)
-const encodeInterruptPane = Schema.encodeSync(InterruptPane)
-const encodeRewindToCheckpoint = Schema.encodeSync(RewindToCheckpoint)
+const decodeHostConnection = Schema.decodeUnknownSync(HostConnection)
 const decodeEvent = Schema.decodeUnknownResult(IpcEvent)
-const decodeTree = Schema.decodeUnknownSync(PaneNode)
-const decodeHistory = Schema.decodeUnknownSync(Schema.Array(ConversationMessage))
-const decodeChooseDirectoryResult = Schema.decodeUnknownSync(ChooseDirectoryResult)
-const decodeTheme = Schema.decodeUnknownSync(ThemePreference)
-const encodeTheme = Schema.encodeSync(ThemePreference)
 const encodeTitleBarOverlay = Schema.encodeSync(TitleBarOverlayColors)
 const decodeUpdateStatus = Schema.decodeUnknownSync(UpdateStatus)
 
-// A single raw ipcRenderer listener fans out to every subscriber below. Each subscriber
-// registering its own ipcRenderer.on would multiply with pane count and event-type count,
-// tripping Node's default 10-listener-per-emitter cap (MaxListenersExceededWarning).
-const subscribers = new Set<(event: IpcEvent) => void>()
+class DiaClient extends Context.Service<DiaClient, DiaRpcClient>()('preload/DiaClient') {}
+
+const hostClientLayer = Layer.unwrap(
+  Effect.promise(() => ipcRenderer.invoke(CHANNEL.getHostConnection)).pipe(
+    Effect.map(decodeHostConnection),
+    Effect.map((connection) =>
+      Layer.effect(DiaClient)(RpcClient.make(DiaRpcs)).pipe(
+        Layer.provide(RpcClient.layerProtocolSocket({ retryTransientErrors: true })),
+        Layer.provide(
+          Socket.layerWebSocket(`ws://127.0.0.1:${connection.port}`, {
+            protocols: [
+              `${TOKEN_SUBPROTOCOL_PREFIX}${connection.token}`,
+              `${VERSION_SUBPROTOCOL_PREFIX}${PROTOCOL_VERSION}`
+            ]
+          })
+        ),
+        Layer.provide(Socket.layerWebSocketConstructorGlobal),
+        Layer.provide(RpcSerialization.layerJson)
+      )
+    )
+  )
+)
+
+const runtime = ManagedRuntime.make(hostClientLayer)
+const clientPromise = runtime.runPromise(Effect.service(DiaClient))
+
+const updateListeners = new Set<(event: UpdateStatusChanged) => void>()
 
 ipcRenderer.on(CHANNEL.event, (_electronEvent, raw: unknown) => {
   const decoded = decodeEvent(raw)
@@ -57,97 +59,23 @@ ipcRenderer.on(CHANNEL.event, (_electronEvent, raw: unknown) => {
     console.warn('Dropped malformed IPC event', decoded.failure)
     return
   }
-  for (const subscriber of subscribers) subscriber(decoded.success)
+  if (decoded.success._tag !== 'UpdateStatusChanged') return
+  for (const listener of updateListeners) listener(decoded.success)
 })
 
-function subscribeToEvents(onDecoded: (event: IpcEvent) => void): () => void {
-  subscribers.add(onDecoded)
-  return () => subscribers.delete(onDecoded)
-}
+const hostApi = makeHostApi({
+  client: Effect.promise(() => clientPromise),
+  pickDirectory: (defaultPath) => ipcRenderer.invoke(CHANNEL.chooseDirectory, defaultPath),
+  // @effect-diagnostics-next-line cryptoRandomUUID:off -- preload runs in Electron's isolated bridge context with no Effect runtime.
+  newRequestId: () => crypto.randomUUID(),
+  warn: (message, detail) => {
+    // @effect-diagnostics-next-line globalConsole:off -- preload runs in Electron's isolated bridge context with no Effect runtime/logger available.
+    console.warn(message, detail)
+  }
+})
 
 const api: DiaApi = {
-  sendMessage(paneId, text) {
-    ipcRenderer.send(CHANNEL.command, encodeSendMessage(SendMessage.make({ paneId, text })))
-  },
-  resolvePermission(paneId, requestId, response) {
-    ipcRenderer.send(
-      CHANNEL.command,
-      encodeResolvePermission(ResolvePermission.make({ paneId, requestId, response }))
-    )
-  },
-  resolveQuestion(paneId, requestId, response) {
-    ipcRenderer.send(
-      CHANNEL.command,
-      encodeResolveQuestion(ResolveQuestion.make({ paneId, requestId, response }))
-    )
-  },
-  splitPane(paneId, direction) {
-    ipcRenderer.send(CHANNEL.command, encodeSplitPane(SplitPane.make({ paneId, direction })))
-  },
-  closePane(paneId) {
-    ipcRenderer.send(CHANNEL.command, encodeClosePane(ClosePane.make({ paneId })))
-  },
-  createPane(paneId, cwd, model, thinkingLevel, permissionMode, useWorktree) {
-    ipcRenderer.send(
-      CHANNEL.command,
-      encodeCreatePane(
-        CreatePane.make({ paneId, cwd, model, thinkingLevel, permissionMode, useWorktree })
-      )
-    )
-  },
-  setThinkingLevel(paneId, level) {
-    ipcRenderer.send(
-      CHANNEL.command,
-      encodeSetThinkingLevel(SetThinkingLevel.make({ paneId, level }))
-    )
-  },
-  setPermissionMode(paneId, mode) {
-    ipcRenderer.send(
-      CHANNEL.command,
-      encodeSetPermissionMode(SetPermissionMode.make({ paneId, mode }))
-    )
-  },
-  resolvePlanReview(paneId, requestId, approved) {
-    ipcRenderer.send(
-      CHANNEL.command,
-      encodeResolvePlanReview(ResolvePlanReview.make({ paneId, requestId, approved }))
-    )
-  },
-  focusPane(paneId) {
-    ipcRenderer.send(CHANNEL.command, encodeFocusPane(FocusPane.make({ paneId })))
-  },
-  interrupt(paneId) {
-    ipcRenderer.send(CHANNEL.command, encodeInterruptPane(InterruptPane.make({ paneId })))
-  },
-  rewindToCheckpoint(paneId, messageUuid, resumeAnchorUuid) {
-    ipcRenderer.send(
-      CHANNEL.command,
-      encodeRewindToCheckpoint(
-        RewindToCheckpoint.make({
-          paneId,
-          messageUuid,
-          ...(resumeAnchorUuid !== undefined ? { resumeAnchorUuid } : {})
-        })
-      )
-    )
-  },
-  getInitialLayout() {
-    return ipcRenderer.invoke(CHANNEL.getInitialLayout).then((raw) => decodeTree(raw))
-  },
-  getPaneHistory(paneId) {
-    return ipcRenderer.invoke(CHANNEL.getPaneHistory, paneId).then((raw) => decodeHistory(raw))
-  },
-  chooseDirectory() {
-    return ipcRenderer
-      .invoke(CHANNEL.chooseDirectory)
-      .then((raw) => decodeChooseDirectoryResult(raw))
-  },
-  getTheme() {
-    return ipcRenderer.invoke(CHANNEL.getTheme).then((raw) => decodeTheme(raw))
-  },
-  setTheme(theme) {
-    return ipcRenderer.invoke(CHANNEL.setTheme, encodeTheme(theme))
-  },
+  ...hostApi,
   setTitleBarOverlay(colors) {
     ipcRenderer.send(CHANNEL.setTitleBarOverlay, encodeTitleBarOverlay(colors))
   },
@@ -169,94 +97,8 @@ const api: DiaApi = {
     ipcRenderer.send(CHANNEL.toggleDevTools)
   },
   onUpdateStatusChanged(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'UpdateStatusChanged') listener(event)
-    })
-  },
-  onMessageAppended(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneMessageAppended') listener(event)
-    })
-  },
-  onLayoutChanged(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'LayoutChanged') listener(event)
-    })
-  },
-  onPaneCreateFailed(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneCreateFailed') listener(event)
-    })
-  },
-  onAttentionChanged(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneAttentionChanged') listener(event)
-    })
-  },
-  onPermissionRequested(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PanePermissionRequested') listener(event)
-    })
-  },
-  onQuestionRequested(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneQuestionRequested') listener(event)
-    })
-  },
-  onPlanReviewRequested(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PanePlanReviewRequested') listener(event)
-    })
-  },
-  onSlashCommandsWarming(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneSlashCommandsWarming') listener(event)
-    })
-  },
-  onSlashCommandsAvailable(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneSlashCommandsAvailable') listener(event)
-    })
-  },
-  onConversationCompacted(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneConversationCompacted') listener(event)
-    })
-  },
-  onConversationReset(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneConversationReset') listener(event)
-    })
-  },
-  onCheckpointAvailable(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneCheckpointAvailable') listener(event)
-    })
-  },
-  onRewoundToCheckpoint(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneRewoundToCheckpoint') listener(event)
-    })
-  },
-  onAssistantTextDelta(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneAssistantTextDelta') listener(event)
-    })
-  },
-  onAssistantThinkingDelta(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneAssistantThinkingDelta') listener(event)
-    })
-  },
-  onToolCallStarted(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneToolCallStarted') listener(event)
-    })
-  },
-  onToolCallCompleted(listener) {
-    return subscribeToEvents((event) => {
-      if (event._tag === 'PaneToolCallCompleted') listener(event)
-    })
+    updateListeners.add(listener)
+    return () => updateListeners.delete(listener)
   }
 }
 

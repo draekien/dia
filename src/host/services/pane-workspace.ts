@@ -18,9 +18,9 @@ import {
   splitPane
 } from '@shared/domain/pane-tree'
 import { type IpcEvent, LayoutChanged, PaneAttentionChanged } from '@shared/ipc/contract'
-import { Context, Effect, FileSystem, HashMap, Layer, Option, Ref, Result } from 'effect'
+import { Context, Effect, FileSystem, HashMap, Layer, Option, Ref, Result, Semaphore } from 'effect'
 import type { WorktreeCreateError, WorktreeReattachError } from './git-ops-service'
-import { type PaneCreationRequest, PaneSupervisor, type ProcessSpawnError } from './pane-supervisor'
+import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
 import { type PersistedPaneEntry, PersistenceService } from './persistence'
 import { TranscriptReader } from './transcript-reader'
 
@@ -45,10 +45,7 @@ export class PaneWorkspace extends Context.Service<
       permissionMode: StartupPermissionMode,
       useWorktree: boolean,
       onEvent: (event: IpcEvent) => Effect.Effect<void>
-    ) => Effect.Effect<
-      PaneNode,
-      PaneNotFoundError | ProcessSpawnError | WorktreeCreateError | WorktreeReattachError
-    >
+    ) => Effect.Effect<PaneNode, PaneNotFoundError | WorktreeCreateError | WorktreeReattachError>
     /**
      * Changes a pane's thinking level: persists it on the pane's config, records it on the layout
      * tree, and, when the pane is live, forwards it to the running process (which applies it on the
@@ -73,6 +70,18 @@ export class PaneWorkspace extends Context.Service<
      * `Errored` attention event rather than failing the effect.
      */
     readonly resumePane: (
+      paneId: PaneId,
+      onEvent: (event: IpcEvent) => Effect.Effect<void>
+    ) => Effect.Effect<void>
+    /**
+     * Guarantees a restored pane has a live session before a command that needs one, so the
+     * command is not dropped: starts the pane's session on demand when it has none. Continues the
+     * recorded Agent SDK session when the pane has one and starts a fresh conversation in the
+     * pane's working directory otherwise. A no-op when the pane is already live or is not in the
+     * index (a pane still pending its first configuration has nothing to start). Failures are
+     * handled as in {@link resumePane}.
+     */
+    readonly ensureLive: (
       paneId: PaneId,
       onEvent: (event: IpcEvent) => Effect.Effect<void>
     ) => Effect.Effect<void>
@@ -115,6 +124,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         })
       })
 
+      const sessionStartLock = yield* Semaphore.make(1)
       const treeRef = yield* Ref.make<PaneNode>(seed.tree)
       const configsRef = yield* Ref.make(seed.panes)
 
@@ -353,9 +363,10 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
           })
         )
 
-      const resumePane = Effect.fn('PaneWorkspace.resumePane')(function* (
+      const startPaneSession = Effect.fn('PaneWorkspace.startPaneSession')(function* (
         paneId: PaneId,
-        onEvent: (event: IpcEvent) => Effect.Effect<void>
+        onEvent: (event: IpcEvent) => Effect.Effect<void>,
+        startFresh: boolean
       ) {
         const existing = yield* supervisor.getHandle(paneId)
         if (Option.isSome(existing)) return
@@ -368,7 +379,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         }
 
         const { config, sessionId } = entry.value
-        if (sessionId === undefined) {
+        if (sessionId === undefined && !startFresh) {
           yield* Effect.logDebug('resumePane skipped; pane has no session to resume', { paneId })
           return
         }
@@ -411,6 +422,18 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         }
       })
 
+      const resumePane = (paneId: PaneId, onEvent: (event: IpcEvent) => Effect.Effect<void>) =>
+        sessionStartLock.withPermits(1)(startPaneSession(paneId, onEvent, false))
+
+      const ensureLive = Effect.fn('PaneWorkspace.ensureLive')(function* (
+        paneId: PaneId,
+        onEvent: (event: IpcEvent) => Effect.Effect<void>
+      ) {
+        const existing = yield* supervisor.getHandle(paneId)
+        if (Option.isSome(existing)) return
+        yield* sessionStartLock.withPermits(1)(startPaneSession(paneId, onEvent, true))
+      })
+
       return {
         getTree,
         split,
@@ -419,7 +442,8 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
         setPermissionMode,
         close,
         getPaneHistory,
-        resumePane
+        resumePane,
+        ensureLive
       }
     })
   )

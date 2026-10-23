@@ -1,33 +1,22 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Electron main bootstrap composes filesystem paths outside any Effect (createWindow, whenReady).
-import { join } from 'node:path'
-import { NodeFileSystem, NodePath, NodeServices } from '@effect/platform-node'
-import type { PaneId } from '@shared/domain/pane-tree'
+import { join, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { NodeFileSystem } from '@effect/platform-node'
+import { HostInit } from '@shared/ipc/host-process'
 import { Config, Effect, Layer, Option, References } from 'effect'
-import { app, BrowserWindow, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, nativeTheme, net, protocol, shell } from 'electron'
 import electronUpdater from 'electron-updater'
+import { resolveEsbuildBinaryPath, startHostProcess } from './host-process'
 import {
   wireChooseDirectory,
-  wireCommands,
   wireGetAppVersion,
-  wireGetInitialLayout,
-  wireGetPaneHistory,
+  wireGetHostConnection,
   wireGetUpdateStatus,
-  wireTheme,
   wireTitleBarOverlay,
   wireToggleDevTools,
   wireUpdaterCommands
-} from './ipc/gateway'
+} from './ipc/window-ipc'
 import { DEFAULT_LOG_RETENTION, makeLoggerLive, pruneOldLogEntries } from './logger'
-import { GitOpsServiceLive } from './services/git-ops-service'
-import {
-  PaneProcessSpawnerLive,
-  PaneSupervisor,
-  PaneSupervisorLive
-} from './services/pane-supervisor'
-import { makePaneWorkspaceLive, PaneWorkspace } from './services/pane-workspace'
-import { makePersistenceServiceLive } from './services/persistence'
-import { makeSettingsStoreLive, SettingsStore } from './services/settings-store'
-import { TranscriptReaderLive } from './services/transcript-reader'
 import { makeUpdaterBridge, type UpdaterSignal } from './services/updater'
 
 const isDev = !app.isPackaged
@@ -55,6 +44,29 @@ app.on('second-instance', () => {
   existing.focus()
 })
 
+const RENDERER_SCHEME = 'dia'
+const RENDERER_ORIGIN = `${RENDERER_SCHEME}://app`
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: RENDERER_SCHEME,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true }
+  }
+])
+
+const rendererRoot = resolve(import.meta.dirname, '../renderer')
+
+const serveRenderer = (request: Request): Promise<Response> | Response => {
+  const { pathname } = new URL(request.url)
+  const relative =
+    pathname === '/' ? 'index.html' : decodeURIComponent(pathname).replace(/^\/+/, '')
+  const target = resolve(rendererRoot, relative)
+  if (!target.startsWith(`${rendererRoot}${sep}`)) {
+    return new Response('forbidden', { status: 403 })
+  }
+  return net.fetch(pathToFileURL(target).toString())
+}
+
 const rendererDevUrl = Effect.runSync(Config.String('ELECTRON_RENDERER_URL').pipe(Config.option))
 
 const { autoUpdater } = electronUpdater
@@ -67,11 +79,6 @@ const runUpdateCheck = Effect.tryPromise(() => autoUpdater.checkForUpdates()).pi
   Effect.tapCause((cause) => Effect.logWarning('Update check failed', { cause })),
   Effect.ignore
 )
-
-// Seeds the workspace's initial (and initially only) pane; splitting from it creates the rest.
-// It starts pending, same as any freshly-split pane -- the user picks its working directory
-// through the same onboarding form rather than the app assuming one for them.
-const INITIAL_PANE_ID: PaneId = '00000000-0000-0000-0000-000000000001'
 
 // The dia app header is 40px tall; the native window-control overlay must match so the
 // OS-drawn buttons sit flush in it. These pre-mount overlay colours are a rough default
@@ -107,7 +114,7 @@ function createWindow(): BrowserWindow {
   if (isDev && Option.isSome(rendererDevUrl)) {
     mainWindow.loadURL(rendererDevUrl.value)
   } else {
-    mainWindow.loadFile(join(import.meta.dirname, '../renderer/index.html'))
+    mainWindow.loadURL(`${RENDERER_ORIGIN}/index.html`)
   }
 
   return mainWindow
@@ -116,6 +123,8 @@ function createWindow(): BrowserWindow {
 // @effect-diagnostics-next-line asyncFunction:off -- Electron's app.whenReady() imperative callback boundary; Effect programs run within it via runPromise/runFork.
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return
+
+  protocol.handle(RENDERER_SCHEME, serveRenderer)
 
   const mainWindow = createWindow()
 
@@ -132,50 +141,32 @@ app.whenReady().then(async () => {
 
   const LoggerLive = makeLoggerLive(isDev, logFilePath)
 
-  // @effect-diagnostics-next-line processEnv:off -- deliberate cross-process config channel handed to forked pane processes (read in agent-session.ts).
-  process.env.DIA_LOG_FILE = logFilePath
-  // @effect-diagnostics-next-line processEnv:off -- deliberate cross-process config channel handed to forked pane processes (read in agent-session.ts).
-  process.env.DIA_IS_DEV = isDev ? '1' : '0'
-
-  const gitOpsLayer = Layer.provide(GitOpsServiceLive, NodeServices.layer)
-  const supervisorLayer = Layer.provide(
-    PaneSupervisorLive,
-    Layer.merge(PaneProcessSpawnerLive, gitOpsLayer)
-  )
-  const worktreesRoot = join(app.getPath('userData'), 'worktrees')
-  const persistenceLayer = Layer.provide(
-    makePersistenceServiceLive(app.getPath('userData')),
-    NodeServices.layer
-  )
-  const workspaceLayer = Layer.provide(
-    makePaneWorkspaceLive(INITIAL_PANE_ID, worktreesRoot),
-    Layer.mergeAll(
-      supervisorLayer,
-      persistenceLayer,
-      TranscriptReaderLive,
-      NodeFileSystem.layer,
-      NodePath.layer
-    )
-  )
-  const settingsStoreLayer = Layer.provide(
-    makeSettingsStoreLive(app.getPath('userData')),
-    NodeServices.layer
-  )
-  const appLayer = Layer.mergeAll(supervisorLayer, workspaceLayer, settingsStoreLayer)
+  const allowedOrigins = [
+    RENDERER_ORIGIN,
+    ...(isDev && Option.isSome(rendererDevUrl) ? [new URL(rendererDevUrl.value).origin] : [])
+  ]
 
   let shuttingDown = false
 
   Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
-        const paneWorkspace = yield* PaneWorkspace
-        const paneSupervisor = yield* PaneSupervisor
-        const settingsStore = yield* SettingsStore
         const services = yield* Effect.context<never>()
-        wireGetInitialLayout(paneWorkspace)
-        wireGetPaneHistory(paneWorkspace)
-        wireChooseDirectory(settingsStore, mainWindow)
-        wireTheme(settingsStore)
+        const host = yield* startHostProcess({
+          hostEntry: join(import.meta.dirname, 'host.js'),
+          init: HostInit.make({
+            userDataPath: app.getPath('userData'),
+            worktreesRoot: join(app.getPath('userData'), 'worktrees'),
+            logFilePath,
+            isDev,
+            allowedOrigins
+          }),
+          esbuildBinaryPath: resolveEsbuildBinaryPath(app.isPackaged),
+          onRestarted: Effect.sync(() => mainWindow.webContents.reload())
+        })
+
+        wireGetHostConnection(host.connection)
+        wireChooseDirectory(mainWindow)
 
         const updaterBridge = yield* makeUpdaterBridge(mainWindow.webContents)
         const reportSignal = (signal: UpdaterSignal): void =>
@@ -206,22 +197,18 @@ app.whenReady().then(async () => {
           if (shuttingDown) return
           shuttingDown = true
           event.preventDefault()
-          Effect.runPromiseWith(services)(paneSupervisor.closeAll()).finally(() => app.quit())
+          Effect.runPromiseWith(services)(host.shutdown).finally(() => app.quit())
         })
 
         if (!isDev) yield* Effect.forkScoped(runUpdateCheck)
 
-        yield* wireCommands({ paneWorkspace, paneSupervisor, webContents: mainWindow.webContents })
+        return yield* Effect.never
       })
     ).pipe(
       Effect.provide(
-        appLayer.pipe(
-          Layer.provideMerge(
-            Layer.mergeAll(
-              LoggerLive,
-              Layer.succeed(References.MinimumLogLevel, isDev ? 'Debug' : 'Info')
-            )
-          )
+        Layer.mergeAll(
+          LoggerLive,
+          Layer.succeed(References.MinimumLogLevel, isDev ? 'Debug' : 'Info')
         )
       )
     )
