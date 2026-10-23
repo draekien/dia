@@ -159,6 +159,14 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
   }
 
   return {
+    plugins: {
+      list: () => query((client) => client.ListPlugins()),
+      load: (name) => query((client) => client.LoadPlugin({ name })),
+      unload: (name) => query((client) => client.UnloadPlugin({ name })),
+      setOverride: (name, directory) =>
+        query((client) => client.SetPluginOverride({ name, directory })),
+      clearOverride: (name) => query((client) => client.ClearPluginOverride({ name }))
+    },
     sendMessage: (paneId, text) =>
       command('SendMessage', (client, commandId) =>
         client.SendMessage({ ...SendMessage.make({ paneId, text }), commandId })

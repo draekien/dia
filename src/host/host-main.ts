@@ -27,6 +27,8 @@ import { HttpServer } from 'effect/http'
 import { makeLoggerLive } from '../main/logger'
 import { makeHostServerLive } from './ipc/host-server'
 import { DiaRpcHandlersLive } from './ipc/rpc-handlers'
+import { HostPlugins, HostPluginsLive } from './plugins/host-plugins'
+import { makePluginSourcesLive } from './plugins/plugin-sources'
 import { makeCommandDeduperLive } from './services/command-deduper'
 import { makeEventHubLive } from './services/event-hub'
 import { GitOpsServiceLive } from './services/git-ops-service'
@@ -83,11 +85,22 @@ const buildHostLayer = (init: HostInit, token: string) => {
     )
   )
   const settings = Layer.provide(makeSettingsStoreLive(init.userDataPath), NodeServices.layer)
+  const eventHub = makeEventHubLive()
+  const pluginSources = Layer.provide(
+    makePluginSourcesLive(init.pluginsRoot),
+    Layer.mergeAll(settings, NodeFileSystem.layer, NodePath.layer)
+  )
+  const hostPlugins = Layer.provide(
+    HostPluginsLive,
+    Layer.mergeAll(pluginSources, eventHub, NodeFileSystem.layer, NodePath.layer)
+  )
   const state = Layer.mergeAll(
     supervisor,
     workspace,
     settings,
-    makeEventHubLive(),
+    eventHub,
+    pluginSources,
+    hostPlugins,
     makeCommandDeduperLive(),
     NodeFileSystem.layer,
     NodePath.layer
@@ -145,7 +158,10 @@ export const runHost = Effect.scoped(
         )
       }
       const { port } = address
-      yield* Effect.logInfo('Host listening', { port })
+      const plugins = Context.get(context, HostPlugins)
+      const known = yield* plugins.list()
+      yield* Effect.forEach(known, (info) => plugins.load(info.name), { discard: true })
+      yield* Effect.logInfo('Host listening', { port, plugins: known.length })
       yield* post(HostReady.make({ port, token }))
 
       while (true) {

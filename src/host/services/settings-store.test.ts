@@ -183,3 +183,55 @@ describe('SettingsStore', () => {
     })
   )
 })
+
+describe('SettingsStore plugin overrides', () => {
+  const run = <A>(
+    initial: string | undefined,
+    use: (store: SettingsStore['Service']) => Effect.Effect<A>
+  ) => {
+    const { testLayer, loggerLayer } = makeTestSetup(initial)
+    return Effect.gen(function* () {
+      return yield* use(yield* SettingsStore)
+    }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+  }
+
+  it.effect('returns no overrides when none were stored', () =>
+    Effect.gen(function* () {
+      const overrides = yield* run(undefined, (store) => store.getPluginOverrides())
+
+      assert.deepStrictEqual(overrides, {})
+    })
+  )
+
+  it.effect('replaces the stored path when an override is set again for the same plugin', () =>
+    Effect.gen(function* () {
+      const overrides = yield* run(JSON.stringify({ pluginOverrides: { chat: '/old' } }), (store) =>
+        Effect.gen(function* () {
+          yield* store.setPluginOverride('chat', '/new')
+          yield* store.setPluginOverride('theme', '/other')
+          return yield* store.getPluginOverrides()
+        })
+      )
+
+      assert.deepStrictEqual(overrides, { chat: '/new', theme: '/other' })
+    })
+  )
+
+  it.effect('removes one plugin override and keeps the others and the other settings', () =>
+    Effect.gen(function* () {
+      const stored = JSON.stringify({
+        lastDirectory: '/repo',
+        pluginOverrides: { chat: '/a', theme: '/b' }
+      })
+
+      const result = yield* run(stored, (store) =>
+        Effect.gen(function* () {
+          yield* store.clearPluginOverride('chat')
+          return [yield* store.getPluginOverrides(), yield* store.getLastDirectory()] as const
+        })
+      )
+
+      assert.deepStrictEqual(result, [{ theme: '/b' }, Option.some('/repo')])
+    })
+  )
+})

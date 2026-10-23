@@ -46,6 +46,11 @@ const handlersLayer = Layer.unwrap(
       SetTheme: unused,
       GetLastDirectory: unused,
       RecordChosenDirectory: unused,
+      ListPlugins: unused,
+      LoadPlugin: unused,
+      UnloadPlugin: unused,
+      SetPluginOverride: unused,
+      ClearPluginOverride: unused,
       SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
     })
   })

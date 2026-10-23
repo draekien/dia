@@ -14,6 +14,8 @@ import {
   SplitPane
 } from '@shared/ipc/contract'
 import { Effect, FileSystem, Layer, Option, Stream } from 'effect'
+import { HostPlugins } from '../plugins/host-plugins'
+import { InvalidOverrideError, PluginSources } from '../plugins/plugin-sources'
 import { type CommandDeduper, makeCommandDeduperLive } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
@@ -35,6 +37,8 @@ interface Harness {
     | EventHub
     | FileSystem.FileSystem
     | CommandDeduper
+    | HostPlugins
+    | PluginSources
   >
 }
 
@@ -129,7 +133,45 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     getLastDirectory: () => Effect.succeed(Option.none()),
     setLastDirectory: () => Effect.void,
     getTheme: () => Effect.succeed(Option.none()),
-    setTheme: () => Effect.void
+    setTheme: () => Effect.void,
+    getPluginOverrides: () => Effect.succeed({}),
+    setPluginOverride: () => Effect.void,
+    clearPluginOverride: () => Effect.void
+  })
+
+  const pluginInfo = (name: string) => ({
+    name,
+    origin: 'default' as const,
+    status: { _tag: 'Loaded' as const }
+  })
+
+  const plugins = Layer.succeed(HostPlugins, {
+    list: () => Effect.succeed([pluginInfo('chat')]),
+    load: (name) =>
+      Effect.sync(() => {
+        calls.push(`loadPlugin:${name}`)
+        return pluginInfo(name)
+      }),
+    unload: (name) =>
+      Effect.sync(() => {
+        calls.push(`unloadPlugin:${name}`)
+        return { ...pluginInfo(name), status: { _tag: 'Unloaded' as const } }
+      })
+  })
+
+  const pluginSources = Layer.succeed(PluginSources, {
+    names: () => Effect.succeed(['chat']),
+    resolve: () => Effect.succeed(Option.none()),
+    setOverride: (name, directory) =>
+      directory === '/not-a-plugin'
+        ? Effect.fail(new InvalidOverrideError({ message: 'no plugin.json' }))
+        : Effect.sync(() => {
+            calls.push(`setOverride:${name}:${directory}`)
+          }),
+    clearOverride: (name) =>
+      Effect.sync(() => {
+        calls.push(`clearOverride:${name}`)
+      })
   })
 
   const hub = Layer.succeed(EventHub, {
@@ -149,7 +191,9 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       settings,
       hub,
       FileSystem.layerNoop({}),
-      makeCommandDeduperLive()
+      makeCommandDeduperLive(),
+      plugins,
+      pluginSources
     )
   }
 }
@@ -317,6 +361,60 @@ describe('Dia RPC handlers', () => {
       )
 
       assert.deepStrictEqual(harness.published, [])
+    })
+  )
+  it.effect(
+    'forwards LoadPlugin and UnloadPlugin to the plugin registry with the plugin name',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness()
+
+        const result = yield* withHandlers(harness, (handlers) =>
+          Effect.gen(function* () {
+            const loaded = yield* handlers.LoadPlugin({ name: 'chat' })
+            const unloaded = yield* handlers.UnloadPlugin({ name: 'chat' })
+            return [loaded.status._tag, unloaded.status._tag]
+          })
+        )
+
+        assert.deepStrictEqual(result, ['Loaded', 'Unloaded'])
+        assert.deepStrictEqual(harness.calls, ['loadPlugin:chat', 'unloadPlugin:chat'])
+      })
+  )
+
+  it.effect('reports an override the sources refuse as Rejected with the reason', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+
+      const result = yield* withHandlers(harness, (handlers) =>
+        Effect.gen(function* () {
+          const applied = yield* handlers.SetPluginOverride({
+            name: 'chat',
+            directory: '/tree/chat'
+          })
+          const rejected = yield* handlers.SetPluginOverride({
+            name: 'chat',
+            directory: '/not-a-plugin'
+          })
+          return [applied, rejected]
+        })
+      )
+
+      assert.deepStrictEqual(result, [
+        { _tag: 'Applied' },
+        { _tag: 'Rejected', message: 'no plugin.json' }
+      ])
+      assert.deepStrictEqual(harness.calls, ['setOverride:chat:/tree/chat'])
+    })
+  )
+
+  it.effect('clears a plugin override through the sources', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+
+      yield* withHandlers(harness, (handlers) => handlers.ClearPluginOverride({ name: 'chat' }))
+
+      assert.deepStrictEqual(harness.calls, ['clearOverride:chat'])
     })
   )
 })

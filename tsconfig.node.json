@@ -17,6 +17,7 @@
     "src/host/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
+    "plugins/**/host.ts",
     "electron.vite.config.ts"
   ],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]

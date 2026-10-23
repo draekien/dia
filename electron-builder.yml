@@ -8,6 +8,7 @@ directories:
 
 files:
   - out/**
+  - plugins/**
   - package.json
   - '!**/*.map'
 

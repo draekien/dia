@@ -1,0 +1,6 @@
+{
+  "name": "example",
+  "api": "1",
+  "host": "host.ts",
+  "renderer": "renderer.ts"
+}

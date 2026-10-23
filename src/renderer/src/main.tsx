@@ -4,9 +4,12 @@ import { createRoot } from 'react-dom/client'
 import App from './app'
 import { CommandPalette } from './components/command-palette'
 import { ThemeProvider } from './components/theme-provider'
+import { startRendererPlugins } from './plugins/built-in-renderer-plugins'
 import './index.css'
 
 const queryClient = new QueryClient()
+
+void startRendererPlugins()
 
 const rootElement = document.getElementById('root')
 if (!rootElement) throw new Error('Root element not found')
