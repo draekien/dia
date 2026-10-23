@@ -74,6 +74,12 @@ describe('processPluginModules', () => {
     assert.deepStrictEqual(results.afterFix?.evaluated, [])
   })
 
+  it('evaluates a module first imported by a failed load again once it is edited', () => {
+    assert.include(results.lateBrokenEntry?.failure?.message ?? '', 'broken entry')
+    assert.strictEqual(results.lateRepaired?.failure, null)
+    assert.deepStrictEqual(results.lateRepaired?.evaluated, ['entry', 'helper'])
+  })
+
   it('loads a plugin that imports a file outside its directory the first time', () => {
     assert.deepStrictEqual(results.outsideFirstLoad?.evaluated, ['entry', 'shared'])
   })

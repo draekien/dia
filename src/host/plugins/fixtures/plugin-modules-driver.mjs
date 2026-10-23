@@ -57,6 +57,20 @@ write(root, 'dep.mjs', moduleSource('dep', '// fixed again'))
 results.depFixed = await reload(root)
 results.afterFix = await reload(root)
 
+const lateRoot = join(base, 'plugin-late')
+write(lateRoot, 'entry.mjs', moduleSource('entry'))
+results.lateFirstLoad = await reload(lateRoot)
+write(lateRoot, 'helper.mjs', moduleSource('helper'))
+write(
+  lateRoot,
+  'entry.mjs',
+  moduleSource('entry', "import './helper.mjs'\nthrow new Error('broken entry')")
+)
+results.lateBrokenEntry = await reload(lateRoot)
+write(lateRoot, 'helper.mjs', moduleSource('helper', '// edited after the failed load'))
+write(lateRoot, 'entry.mjs', moduleSource('entry', "import './helper.mjs'"))
+results.lateRepaired = await reload(lateRoot)
+
 const outsideRoot = join(base, 'plugin-outside')
 write(base, 'shared.mjs', moduleSource('shared'))
 write(outsideRoot, 'entry.mjs', moduleSource('entry', "import '../shared.mjs'"))

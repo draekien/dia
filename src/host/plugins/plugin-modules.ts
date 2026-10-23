@@ -111,6 +111,9 @@ const makePluginModules = (): PluginModules => {
     )
     return () => {
       restoreGenerations()
+      for (const [url, signature] of signatures) {
+        if (!savedSignatures.has(url)) savedSignatures.set(url, signature)
+      }
       signatures = savedSignatures
       externals = savedExternals
     }
