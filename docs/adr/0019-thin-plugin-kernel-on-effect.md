@@ -80,5 +80,5 @@ The kernel also gives each pane session an in-process MCP server (Agent SDK cust
 
 * cordis design read from `cordiverse/cordis` at commit `34c8ac5`: `packages/core/src/fiber.ts`, `packages/core/src/registry.ts`, `packages/core/src/reflect.ts`.
 * deepseek-harness design read from `deepseek-ai/deepseek-harness` branch `master`: `docs/architecture.md`, `packages/boot/hmr/README.md`, `packages/core/agent-loop/README.md`. In deepseek-harness the agent loop is itself a plugin and turn survival across a reload is not stated; dia keeps `query()` in the kernel to guarantee it.
-* Plugin API versioning: a plugin manifest declares an API version (for example `"api": "1"`) and the loader refuses a plugin built for another version. The field and its rules are designed in Phase 2 of `docs/plans/2026-10-22-plugin-platform.md`.
+* Plugin API versioning: a plugin manifest declares an API version (for example `"api": "1"`) and the loader refuses a plugin built for another version. The field is `api` in `plugin.json` and the installed value is `PLUGIN_API_VERSION` in `src/shared/plugin/manifest.ts`; the registry refuses a plugin whose `api` differs (Phase 2 of `docs/plans/2026-10-22-plugin-platform.md`).
 * Related: ADR-0020 (plugin source and loading), ADR-0021 (Host process), ADR-0022 (transport).
