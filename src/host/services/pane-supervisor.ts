@@ -40,6 +40,11 @@ import {
   PaneToolCallStarted
 } from '@shared/ipc/contract'
 import {
+  PluginOverrideApplied,
+  PluginOverrideRejected,
+  type PluginOverrideResult
+} from '@shared/plugin/manifest'
+import {
   type Cause,
   Context,
   Data,
@@ -58,7 +63,10 @@ import {
   Scope,
   Stream
 } from 'effect'
+import { HostPlugins } from '../plugins/host-plugins'
+import { PluginSources } from '../plugins/plugin-sources'
 import { type AgentSession, makeAgentSession } from '../session/agent-session'
+import type { PluginToolHost } from '../session/plugin-tools'
 import type { OutboundMessage } from '../session/protocol'
 import {
   GitOpsService,
@@ -134,8 +142,30 @@ export class SessionFactory extends Context.Service<
   }
 >()('SessionFactory') {}
 
-/** Production {@link SessionFactory} that starts real Agent SDK sessions. */
-export const SessionFactoryLive = Layer.succeed(SessionFactory)({ start: makeAgentSession })
+/**
+ * Production {@link SessionFactory} that starts real Agent SDK sessions. Each session's agent
+ * gets the plugin tools, backed by `HostPlugins` and `PluginSources`, so it can point a plugin at
+ * a source folder and reload it after the user approves.
+ */
+export const SessionFactoryLive = Layer.effect(
+  SessionFactory,
+  Effect.gen(function* () {
+    const plugins = yield* HostPlugins
+    const sources = yield* PluginSources
+    const pluginToolHost: PluginToolHost = {
+      reload: (name) => plugins.load(name),
+      setOverride: (name, directory) =>
+        sources.setOverride(name, directory).pipe(
+          Effect.as(PluginOverrideApplied.make({}) as PluginOverrideResult),
+          Effect.catchTag('InvalidOverrideError', (error) =>
+            Effect.succeed(PluginOverrideRejected.make({ message: error.message }))
+          )
+        ),
+      clearOverride: (name) => sources.clearOverride(name)
+    }
+    return { start: (options) => makeAgentSession({ ...options, pluginToolHost }) }
+  })
+)
 
 function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<IpcEvent> {
   return Match.value(message).pipe(
