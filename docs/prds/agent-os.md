@@ -28,14 +28,18 @@ William is dia's developer and its first user. dia's MVP (`docs/prds/mvp.md`) is
 8. As a user, I want an OS notification when a background agent fails so that I can restart or redirect it.
 9. As a user, I want a finished agent to badge its tab without a notification so that notifications stay limited to agents that need me.
 10. As a user, I want to click a notification and land on that agent's tab so that I can answer it immediately.
-11. As a user, I want an overview of every agent in every project with its status and current activity so that I know what each agent is doing without opening it.
+11. As a user, I want an overview of every agent in every project with its status and current activity, which is also how I switch between agents, so that I know what each agent is doing without opening it.
 12. As a user, I want agents that need input or have failed sorted to the top of their project in the overview so that I see them first.
-13. As a user, I want agents to report waste they encounter with `meta_propose` so that improvements come from real runs.
-14. As a user, I want to start an agent in the meta project that reads every project and its transcripts and proposes changes so that waste found in one project is fixed for all of them.
-15. As a user, I want every meta change to arrive as a branch I approve so that nothing changes every agent without my review.
-16. As a user, I want a meta agent's change to a git-repo project to arrive on a branch in a worktree of that project so that it does not touch the working copy another tab is using.
-17. As a user, I want to push the meta repo to a remote I choose so that I can keep it backed up or share it between machines.
-18. As a user, I want dia to refuse a push of the meta repo that contains a secret so that a credential from a transcript never leaves my machine.
+13. As a user, I want to collapse project groups and filter the overview by agent or project name so that 10+ projects and 20+ agents stay usable.
+14. As a user, I want a finished agent to stay in the overview until I archive it so that nothing disappears without my action.
+15. As a user, I want archiving an agent to remove its worktree and keep its session transcripts, and deleting it to remove both, so that I can clean up without losing history I may want back.
+16. As a user, I want to collapse the overview to a rail of status indicators so that the conversation gets the full width while status stays visible.
+17. As a user, I want agents to report waste they encounter with `meta_propose` so that improvements come from real runs.
+18. As a user, I want to start an agent in the meta project that reads every project and its transcripts and proposes changes so that waste found in one project is fixed for all of them.
+19. As a user, I want every meta change to arrive as a branch I approve so that nothing changes every agent without my review.
+20. As a user, I want a meta agent's change to a git-repo project to arrive on a branch in a worktree of that project so that it does not touch the working copy another tab is using.
+21. As a user, I want to push the meta repo to a remote I choose so that I can keep it backed up or share it between machines.
+22. As a user, I want dia to refuse a push of the meta repo that contains a secret so that a credential from a transcript never leaves my machine.
 
 ## Testing Decisions
 
@@ -53,6 +57,7 @@ William is dia's developer and its first user. dia's MVP (`docs/prds/mvp.md`) is
 - Measuring task outcome quality; the meta project looks only at waste in the agent environment
 - Users other than William (roadmap); defaults must still not assume his machine or configuration
 - An inbox view of agents waiting for input (roadmap; the overview's ordering covers it for now)
+- Lifecycle rules that archive an agent automatically, for example when its pull request is merged or after a number of days without activity (roadmap)
 
 ## Additional Notes
 
@@ -64,11 +69,13 @@ Roadmap, not in this PRD:
 * Scheduled meta agent runs while dia is running.
 * An approval step that copies chosen parts of the meta repo into the user's `~/.claude`.
 * An inbox view.
+* Lifecycle rules that archive agents automatically.
 * Other Claude Code users.
 
 ## Open Questions
 
+- How the user reorders projects in the overview (dragging, or a menu) is decided during implementation.
+
 - How dia tells a user that closing the window leaves agents running (for example a notification on the first close) is decided during implementation.
 - Which secret scanner checks meta repo pushes is decided during implementation.
-- Whether the meta project appears in the overview and tab strip as an ordinary project, or separately, is decided when the overview is designed (`/impeccable shape`).
 - The order in which these features are built relative to Phases 2–4 of `docs/plans/2026-10-22-plugin-platform.md` is decided when this PRD gets its plan.

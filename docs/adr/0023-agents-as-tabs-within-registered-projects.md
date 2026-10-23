@@ -35,8 +35,10 @@ Chosen options: "tabs, one visible at a time" and "any directory the user regist
 | --- | --- |
 | Project | A directory the user registers with dia. Worktree features apply only when it is a git repo |
 | Tab | One agent in one project. The agent runs in the project directory or, for a git repo, in one of its worktrees |
-| Visible tab | Exactly one tab fills the content area at a time. There are no split panes |
-| Background tab | A tab that is not visible. Its agent keeps running, and its status shows in the tab strip, the agent overview and OS notifications (`docs/prds/agent-os.md`) |
+| Visible tab | Exactly one tab fills the content area at a time. There are no split panes. Tabs are selected from the agent overview, a left sidebar; there is no separate tab strip |
+| Background tab | A tab that is not visible. Its agent keeps running, and its status shows in the agent overview and OS notifications (`docs/prds/agent-os.md`) |
+| Archive | Removes the tab's worktree and keeps its session transcripts. The tab moves to its project's archived list |
+| Delete | Removes the tab's worktree and its session transcripts |
 
 The persisted state that ADR-0011 calls the layout tree becomes a list of projects, each with its tabs, plus the visible tab. Transcripts stay in the SDK session store (ADR-0011).
 

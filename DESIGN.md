@@ -29,7 +29,7 @@ A full-palette, cool-neutral strategy: several named roles, each with one delibe
 - **[to be resolved during implementation]** — a single restrained accent (deep blue/indigo family) for the selected tab, the selected overview row, primary actions, and focus rings. Used sparingly; never for status.
 
 ### Secondary
-- **[to be resolved during implementation]** — a secondary role reserved for structural chrome (the tab strip, the overview's dividers, panel borders) distinct from the primary accent.
+- **[to be resolved during implementation]** — a secondary role reserved for structural chrome (the sidebar's project group dividers, panel borders) distinct from the primary accent.
 
 ### Tertiary
 - **[to be resolved during implementation]** — reserved exclusively for the three agent status states: amber (needs input: a permission request or a question), red (failed), green (finished). This is the system's only "loud" color use.
@@ -61,13 +61,13 @@ A fixed `rem` scale (Tailwind v4 defaults, product-appropriate ~1.125–1.2 rati
 
 ## 4. Elevation
 
-Responsive motion pairs with a mostly-flat surface: the tab strip, the agent overview and the visible tab's content are separated by borders/dividers rather than drop shadows in their resting state. Elevation (a subtle lift) is reserved as a state response — an open dialog, a permission prompt, a command palette — never as ambient decoration.
+Responsive motion pairs with a mostly-flat surface: the sidebar and the visible tab's content are separated by borders/dividers rather than drop shadows in their resting state. Elevation (a subtle lift) is reserved as a state response — an open dialog, a permission prompt, a command palette — never as ambient decoration.
 
 ### Shadow Vocabulary
 - **Dialog lift** (`[value to be resolved]`): applied only to modal/dialog and overlay surfaces, to distinguish "what needs my answer now" from the flat resting surface.
 
 ### Named Rules
-**The Flat-Surface Rule.** At rest, the tab strip, the overview and the tab content sit on the same flat plane, separated only by dividers. Elevation appears only in direct response to an open dialog or overlay — never to decorate a resting surface.
+**The Flat-Surface Rule.** At rest, the sidebar and the tab content sit on the same flat plane, separated only by dividers. Elevation appears only in direct response to an open dialog or overlay — never to decorate a resting surface.
 
 ## 5. Components
 
@@ -81,15 +81,19 @@ Responsive motion pairs with a mostly-flat surface: the tab strip, the agent ove
 The one component the whole system is built around. A small dot on an agent's tab, its overview row, and the tray icon: amber pulsing (needs input), red pulsing (failed), green steady (finished, until the user opens the tab). Only amber and red pulse, because only those states block on the user and also raise an OS notification. Motion is a gentle opacity/scale pulse that stops under reduced-motion settings, leaving the color. This is the system's single sanctioned "loud" element per the One Voice Rule.
 
 ### Agent Overview
-- **Purpose:** every agent in every project in one list, grouped by project, so the user knows which agents need them without opening a tab.
+- **Purpose:** the left sidebar. It lists every agent in every project, grouped by project, so the user knows which agents need them without opening a tab. It is also the only way to switch tabs: there is no tab strip.
+- **Meta group:** pinned above all projects, with a count of open proposals. A meta branch waiting for approval is a row in this group.
 - **Row:** status indicator, tab name, and one caption-size activity line (the in-progress `TodoWrite` item, else the last tool call).
-- **Order:** agents that need input or have failed sort to the top of their project group.
+- **Order:** project order is fixed and set by the user; a status change never moves a project group. Inside a group, agents that need input or have failed sort to the top.
+- **Overflow:** project groups collapse. A collapsed group's header shows its most urgent status and a count of its agents. A filter at the top of the sidebar matches agent and project names.
+- **Archived:** archived agents sit in a collapsed "Archived" list at the bottom of their project group.
+- **Collapsed rail:** a shortcut collapses the sidebar to a narrow rail with one status indicator per agent, grouped by project, with the agent's name in a tooltip.
 - **Selection:** selecting a row shows that agent's tab; the selected row uses the primary accent, never a status color.
 
 ### Tabs
 - **One visible:** exactly one agent's tab fills the content area. There are no split panes.
-- **Tab strip:** each tab shows the status indicator and the tab name; tabs belong to the selected project.
-- **Background tabs:** tabs that are not visible keep running and show their status in the tab strip and the overview only.
+- **Selecting:** a tab is selected from its sidebar row; the content header names the project and the agent.
+- **Background tabs:** tabs that are not visible keep running and show their status in the sidebar, the collapsed rail and the tray icon only.
 
 ### Inputs / Fields
 - **Style:** [to be resolved] — flat, bordered, neutral background.
@@ -97,7 +101,7 @@ The one component the whole system is built around. A small dot on an agent's ta
 - **Error / Disabled:** error state may borrow the tertiary error red, muted rather than full pulse-intensity, to stay distinct from the status indicator's meaning.
 
 ### Navigation
-The agent overview and the tab strip are the primary navigation. Any command palette or agent switcher reads as an overlay (Raycast-style), not a further persistent chrome element.
+The sidebar is the primary navigation. Any command palette or agent switcher reads as an overlay (Raycast-style), not a further persistent chrome element.
 
 ## 6. Do's and Don'ts
 
