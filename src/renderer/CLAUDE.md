@@ -2,7 +2,7 @@
 
 ## Design Context
 
-`PRODUCT.md` and `DESIGN.md` at the repo root carry dia's design system — read before any UI/UX work. Register: **product** (design serves the tool, a single-user pane workspace). North star: **"The Control Room"** — calm, glanceable status across up to six concurrent panes, with amber/red/green pulse indicators as the app's one deliberate loud signal. Key principles: glanceability over detail, one voice for attention (pulse only), calm density, native-not-decorative craft, fast under real use. `DESIGN.md` is currently a seed (no code yet); re-run `/impeccable document` once components exist to capture real tokens.
+`PRODUCT.md` and `DESIGN.md` at the repo root carry dia's design system — read before any UI/UX work. Register: **product** (design serves the tool: agents for many projects running in the background, one tab visible at a time). North star: **"The Dispatch Desk"** — an agent overview that shows which agents need the user and what the others are doing, with amber/red/green status indicators as the app's one deliberate loud signal. Key principles: interrupt only when needed, status without opening, background by default, improvements are reviewed, fast under real use. `DESIGN.md` is currently a seed (no code yet); re-run `/impeccable document` once components exist to capture real tokens.
 
 ### Mandatory skill invocation
 

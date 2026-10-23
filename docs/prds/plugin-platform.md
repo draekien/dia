@@ -54,6 +54,8 @@ William is the sole user and developer of dia. Every dia feature (pane sessions,
 
 This PRD builds on four architecture decisions made for it: a thin plugin kernel on Effect (ADR-0019), source loading with per-plugin worktree overrides and hot reload (ADR-0020), one Host process for all panes (ADR-0021, superseding ADR-0003 and ADR-0007), and an authenticated localhost WebSocket between renderer and Host (ADR-0022). Delivery is phased in `docs/plans/2026-10-22-plugin-platform.md`, with dia usable after each phase. The design follows `deepseek-ai/deepseek-harness` and `cordiverse/cordis`, with one deliberate difference: the agent session is kernel-owned rather than a plugin, so that goal 3 holds.
 
+Since 2026-10-23 dia shows one agent per tab within registered projects instead of split panes (ADR-0023, `docs/prds/agent-os.md`). "Pane" in this PRD means a tab's agent session.
+
 ## Open Questions
 
 - Whether source loading works in the packaged app's Host process is unverified; Phase 0 of `docs/plans/2026-10-22-plugin-platform.md` checks it, and ADR-0020 names the external-watcher fallback.

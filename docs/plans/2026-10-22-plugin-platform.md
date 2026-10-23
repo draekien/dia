@@ -82,7 +82,7 @@ Scope: one feature per change, in this order. dia stays usable after each.
 3. Thinking level (`thinking-options.ts`)
 4. Worktrees (`git-ops-service.ts`, worktree parts of `pane-workspace.ts`)
 5. File checkpointing and rewind (ADR-0018)
-6. Split layout (`src/shared/domain/pane-tree.ts`) and its renderer
+6. Layout: replace the split layout (`src/shared/domain/pane-tree.ts`) and its renderer with the tab layout within registered projects (ADR-0023)
 7. Chat UI, permission card, question card
 8. Updater (`updater.ts`)
 
@@ -97,3 +97,4 @@ Decide during step 6 what renderer plugins can replace: named slots only, or the
 * Third-party plugins: a third-party plugin is a GitHub repository, installed with `pnpm add` using a git specifier, following deepseek-harness's Plugin Manager (`packages/boot/plugin-manager/README.md`, branch `master`).
 * Trust model for third-party plugins. First-party plugins run with full Node access.
 * A browser or phone client of the Host's WebSocket (ADR-0022).
+* The agent OS features in `docs/prds/agent-os.md` (tray, notifications, agent overview, meta project) are built as built-in plugins once Phase 2 provides the loader; their plan is written separately.

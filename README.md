@@ -2,8 +2,8 @@
 
 A personal desktop app that drives your local Claude installation via the
 [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) — a
-self-built alternative to Claude Desktop, built around running multiple agent
-sessions in parallel panes.
+self-built alternative to Claude Desktop, built around running agents for many
+projects in the background and notifying you when one needs your input.
 
 > [!IMPORTANT]
 > **This is an experimental personal project with no guaranteed support.**

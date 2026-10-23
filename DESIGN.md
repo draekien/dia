@@ -2,43 +2,43 @@
 
 ---
 name: dia
-description: A personal, multi-pane desktop workspace for running parallel Claude Agent SDK sessions.
+description: A desktop app that runs Claude Agent SDK agents for many projects in the background, notifies the user when an agent needs input, and shows what every agent is doing.
 ---
 
 # Design System: dia
 
 ## 1. Overview
 
-**Creative North Star: "The Control Room"**
+**Creative North Star: "The Dispatch Desk"**
 
-dia is a polished native desktop app in the lineage of Linear, Arc, and Raycast: crisp, cool-neutral surfaces; deliberate, sparing color; motion that responds to what the user just did rather than performing for its own sake. It exists to hold up to six independent, live agent sessions at once, so the UI's first job is calm legibility under real multitasking load — a control room, not a chatroom.
+dia is a polished native desktop app in the lineage of Linear, Arc, and Raycast: crisp, cool-neutral surfaces; deliberate, sparing color; motion that responds to what the user just did rather than performing for its own sake. The user sends agents out to work and does not watch them. The UI's first job is to show, in one list, which agents need the user and what the others are doing, and then to get out of the way: one agent's tab fills the window at a time, and the rest keep working out of view.
 
 This system explicitly rejects two adjacent aesthetics: the generic AI-chat-SaaS look (gradient hero treatments, bubbly chat-marketing polish, anything that reads as a hosted product's landing page) and the raw terminal-multiplexer look (bare ASCII borders, zero-chrome, tmux-default starkness). dia is a native app that happens to run agent sessions — not a wrapped terminal, and not a product being sold.
 
 **Key Characteristics:**
 - Cool-neutral, full-palette surface with each color role used deliberately
 - Sans + mono pairing: sans for chrome and UI copy, mono for session/code content
-- Pulse indicators (amber/red/green) are the one place the UI raises its voice
+- Status indicators (amber/red/green) are the one place the UI raises its voice
 - Responsive, non-choreographed motion: transitions confirm actions, they don't perform
 
 ## 2. Colors
 
-A full-palette, cool-neutral strategy: several named roles, each with one deliberate job, so a glance across six panes reads status correctly without any of them shouting.
+A full-palette, cool-neutral strategy: several named roles, each with one deliberate job, so a scan down the agent overview reads every agent's status correctly without any of them shouting.
 
 ### Primary
-- **[to be resolved during implementation]** — a single restrained accent (deep blue/indigo family) for active-pane focus rings, primary actions, and selection states. Used sparingly; never for status.
+- **[to be resolved during implementation]** — a single restrained accent (deep blue/indigo family) for the selected tab, the selected overview row, primary actions, and focus rings. Used sparingly; never for status.
 
 ### Secondary
-- **[to be resolved during implementation]** — a secondary role reserved for structural chrome (pane borders, dividers, split handles) distinct from the primary accent.
+- **[to be resolved during implementation]** — a secondary role reserved for structural chrome (the tab strip, the overview's dividers, panel borders) distinct from the primary accent.
 
 ### Tertiary
-- **[to be resolved during implementation]** — reserved exclusively for the three pulse states: amber (awaiting permission), red (errored), green (completed). This is the system's only "loud" color use.
+- **[to be resolved during implementation]** — reserved exclusively for the three agent status states: amber (needs input: a permission request or a question), red (failed), green (finished). This is the system's only "loud" color use.
 
 ### Neutral
 - **[to be resolved during implementation]** — cool-toned (graphite/slate) background, surface, text, and border ramp. Backgrounds sit at the dark-to-light ends depending on OS light/dark mode; body text and dividers are drawn from the same cool ramp, never warm-tinted.
 
 ### Named Rules
-**The One Voice Rule.** Amber/red/green pulse colors are reserved exclusively for pane attention state. No other UI element — button, badge, link — may reuse them, or the pulse loses its meaning as the app's one urgent signal.
+**The One Voice Rule.** Amber/red/green are reserved exclusively for agent status, wherever it appears: a tab, an overview row, the tray icon. No other UI element — button, badge, link — may reuse them, or the status loses its meaning as the app's one urgent signal.
 
 ## 3. Typography
 
@@ -52,22 +52,22 @@ A full-palette, cool-neutral strategy: several named roles, each with one delibe
 A fixed `rem` scale (Tailwind v4 defaults, product-appropriate ~1.125–1.2 ratio); no fluid `clamp()`. Hierarchy is carried by size **and** weight together, not size alone.
 
 - **Display** — `text-xl`+ / semibold: reserved for empty-state or first-run moments only; dia has no marketing headlines.
-- **Heading** — `text-base` (1rem) / semibold: card, section, and form titles (e.g. "Permission requested", "New pane"). This is the top of the shipped chrome hierarchy.
+- **Heading** — `text-base` (1rem) / semibold: card, section, and form titles (e.g. "Permission requested", "New agent"). This is the top of the shipped chrome hierarchy.
 - **Body** — `text-sm` (0.875rem): UI copy and chrome, and agent **prose** message bodies; all sans. Weight `font-medium` marks a label within body-size text.
-- **Caption** — `text-xs` (0.75rem): status labels, metadata, field hints, tool-event rows, path chips.
+- **Caption** — `text-xs` (0.75rem): status labels, overview activity lines, metadata, field hints, tool-event rows, path chips.
 
 ### Named Rules
-**The Content-Is-Mono Rule.** The agent's *literal output* — code, file paths, tool names, command strings, and other verbatim snippets — renders in the mono family. Everything else, including the agent's *prose* (paragraphs, lists, and headings inside a Markdown message) and all of dia's own chrome (buttons, labels, dialogs), renders in the sans family. The two are never mixed within one span of text: mono is a signal that "this is a literal string," so widening it to whole prose bodies would drain that signal.
+**The Content-Is-Mono Rule.** The agent's *literal output* — code, file paths, tool names, command strings, and other verbatim snippets — renders in the mono family. Everything else, including the agent's *prose* (paragraphs, lists, and headings inside a Markdown message) and all of dia's own chrome (buttons, labels, dialogs), renders in the sans family. The two are never mixed within one span of text: mono is a signal that "this is a literal string," so widening it to whole prose bodies would drain that signal. An overview activity line follows the same rule: a `TodoWrite` item is sans, a tool call such as `Edit src/main/index.ts` is mono.
 
 ## 4. Elevation
 
-Responsive motion pairs with a mostly-flat surface: panes are separated by borders/dividers rather than drop shadows in their resting state, since six adjacent panes with individual shadows would read as visual noise. Elevation (a subtle lift) is reserved as a state response — the focused pane, an open dialog, a permission prompt — never as ambient decoration.
+Responsive motion pairs with a mostly-flat surface: the tab strip, the agent overview and the visible tab's content are separated by borders/dividers rather than drop shadows in their resting state. Elevation (a subtle lift) is reserved as a state response — an open dialog, a permission prompt, a command palette — never as ambient decoration.
 
 ### Shadow Vocabulary
-- **Focus lift** (`[value to be resolved]`): applied only to the currently-focused pane and modal/dialog surfaces, to distinguish "what has my attention" from the flat resting grid.
+- **Dialog lift** (`[value to be resolved]`): applied only to modal/dialog and overlay surfaces, to distinguish "what needs my answer now" from the flat resting surface.
 
 ### Named Rules
-**The Flat-Grid Rule.** At rest, all panes sit on the same flat plane, separated only by dividers. Elevation appears only in direct response to focus or an open dialog — never to decorate an idle pane.
+**The Flat-Surface Rule.** At rest, the tab strip, the overview and the tab content sit on the same flat plane, separated only by dividers. Elevation appears only in direct response to an open dialog or overlay — never to decorate a resting surface.
 
 ## 5. Components
 
@@ -77,34 +77,38 @@ Responsive motion pairs with a mostly-flat surface: panes are separated by borde
 - **Hover / Focus:** subtle background shift + visible focus ring; no scale/bounce.
 - **Secondary / Ghost:** neutral-bordered or text-only, for all non-primary actions (the majority of buttons in a dense UI like this).
 
-### Pulse Indicator (signature component)
-The one component the whole system is built around. A small, animated dot or ring on a pane's tab/border: amber pulsing (awaiting permission), red pulsing (errored), green (completed, briefly, then settles to idle). Motion is a gentle opacity/scale pulse — deliberate but not distracting from adjacent panes. This is the system's single sanctioned "loud" element per the One Voice Rule.
+### Status Indicator (signature component)
+The one component the whole system is built around. A small dot on an agent's tab, its overview row, and the tray icon: amber pulsing (needs input), red pulsing (failed), green steady (finished, until the user opens the tab). Only amber and red pulse, because only those states block on the user and also raise an OS notification. Motion is a gentle opacity/scale pulse that stops under reduced-motion settings, leaving the color. This is the system's single sanctioned "loud" element per the One Voice Rule.
 
-### Panes / Containers
-- **Corner Style:** [to be resolved] — flat or minimally rounded, consistent with a native window-manager surface, not a card.
-- **Background:** neutral surface tone; focused pane distinguished via elevation + border, not a background color change.
-- **Shadow Strategy:** see Elevation — flat at rest, lift only on focus.
-- **Border:** thin divider between adjacent panes, from the secondary/structural role.
-- **Internal Padding:** [scale to be resolved].
+### Agent Overview
+- **Purpose:** every agent in every project in one list, grouped by project, so the user knows which agents need them without opening a tab.
+- **Row:** status indicator, tab name, and one caption-size activity line (the in-progress `TodoWrite` item, else the last tool call).
+- **Order:** agents that need input or have failed sort to the top of their project group.
+- **Selection:** selecting a row shows that agent's tab; the selected row uses the primary accent, never a status color.
+
+### Tabs
+- **One visible:** exactly one agent's tab fills the content area. There are no split panes.
+- **Tab strip:** each tab shows the status indicator and the tab name; tabs belong to the selected project.
+- **Background tabs:** tabs that are not visible keep running and show their status in the tab strip and the overview only.
 
 ### Inputs / Fields
 - **Style:** [to be resolved] — flat, bordered, neutral background.
 - **Focus:** border shift to primary accent + focus ring, matching button focus treatment.
-- **Error / Disabled:** error state may borrow the tertiary error red, muted rather than full pulse-intensity, to stay distinct from the pulse indicator's meaning.
+- **Error / Disabled:** error state may borrow the tertiary error red, muted rather than full pulse-intensity, to stay distinct from the status indicator's meaning.
 
 ### Navigation
-No traditional top/side nav; the pane grid itself is the primary surface. Any command palette or session switcher should read as an overlay (Raycast-style), not a persistent chrome element competing with pane content.
+The agent overview and the tab strip are the primary navigation. Any command palette or agent switcher reads as an overlay (Raycast-style), not a further persistent chrome element.
 
 ## 6. Do's and Don'ts
 
 ### Do:
-- **Do** keep color roles deliberate: primary for action/focus, secondary for structure, tertiary reserved for pulse state only, per the One Voice Rule.
+- **Do** keep color roles deliberate: primary for action/selection, secondary for structure, tertiary reserved for agent status only, per the One Voice Rule.
 - **Do** use mono for all literal agent/session content and sans for all dia chrome, per the Content-Is-Mono Rule.
-- **Do** keep panes flat at rest, reserving elevation for focus and dialogs, per the Flat-Grid Rule.
-- **Do** make motion responsive to real actions (focus, split, resize, pulse start) — confirm, don't choreograph.
+- **Do** keep resting surfaces flat, reserving elevation for dialogs and overlays, per the Flat-Surface Rule.
+- **Do** make motion responsive to real actions (tab switch, row selection, status change) — confirm, don't choreograph.
 
 ### Don't:
 - **Don't** build a generic AI-chat-SaaS look — no gradient hero treatments, no bubble-chat marketing polish, nothing that reads as a hosted product's landing page.
 - **Don't** default to a raw terminal-multiplexer aesthetic — no bare ASCII-art borders, no zero-chrome-for-its-own-sake tmux-default look.
-- **Don't** reuse amber/red/green outside the pulse indicator; that overloads the app's one urgent signal.
-- **Don't** add drop shadows to idle, unfocused panes — that's decorative noise at exactly the moment (many panes open) the UI most needs to stay calm.
+- **Don't** reuse amber/red/green outside the status indicator; that overloads the app's one urgent signal.
+- **Don't** pulse for a finished agent; a finished agent does not need the user, and a pulse there makes the needs-input pulse easier to ignore.

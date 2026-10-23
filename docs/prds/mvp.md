@@ -72,3 +72,5 @@ This revision supersedes the original PRD's blanket exclusion of auto-approval i
 ## Open Questions
 
 - What a pane should visually show while a permission or clarifying-question prompt is pending across an app restart (G-8, US-16) — e.g. whether it reads as "paused" versus its normal "awaiting permission" pulse — can be decided during implementation.
+
+> **Superseded in part (2026-10-23):** user stories 1, 2 and 9 (split panes and expanding a focused pane) are replaced by tabs within registered projects (ADR-0023, `docs/prds/agent-os.md`).
