@@ -70,10 +70,16 @@ Result (2026-10-23, issue #7): the manifest (`plugin.json`: `name`, `api`, `host
 
 ## Phase 3 — Hot reload and the creator loop
 
-1. Host HMR: watch imported files of overridden plugins, map changes to the owning plugin entry, evict, close and reopen the plugin's `Scope`.
-2. Renderer HMR: in-app Vite dev server while any renderer override is active; remount the rebuilt plugin.
-3. Plugin panel: list of plugins, the path each loads from, override and clear actions, last reload error.
-4. In-process MCP server per pane session with `dia_plugin_override`, `dia_plugin_reload` and `dia_plugin_clear_override`, each gated by `canUseTool`.
+1. Per-module generations: the loader's resolve hook gives each module under a plugin root its own generation, not one per root. A reload caused by a source change bumps the generation of the changed module and of its importers up to the plugin entry; every other module keeps its URL. A load or reload with no source change adds no module records. Node has no public API to evict an ES module (`docs/reasoning/2026-10-22-plugin-platform-phase-0-spike.md`), so records of old generations stay in memory until the Host restarts; growth is bounded by the number of source changes, not the number of reloads.
+2. Rollback: when a reload fails, the registry re-imports the previous generation's entry and reopens it, with status `Loaded` and the failure message reported, instead of leaving the plugin closed as `Failed`.
+3. Host HMR: watch the files of overridden plugins only; shipped plugins are not watched. Map each change to the owning plugin entry and reload it as in items 1 and 2. A change outside the plugin root (a Host or framework dependency) sets status `RestartRequired` and does not reload.
+4. Renderer HMR: in-app Vite dev server while any renderer override is active; remount the rebuilt plugin.
+5. Plugin panel: list of plugins, the path each loads from, override and clear actions, last reload error.
+6. In-process MCP server per pane session with `dia_plugin_override`, `dia_plugin_reload` and `dia_plugin_clear_override`, each gated by `canUseTool`.
+
+Design inputs: Vite replaces only the HMR boundary module, not its importers (https://vite.dev/guide/api-hmr). deepseek-harness evicts changed modules and their importers, rolls back a failed replacement and reports `restart-required` for dependency changes (`packages/boot/hmr/README.md` in https://github.com/deepseek-ai/deepseek-harness); its eviction uses Node loader internals, which a packaged `utilityProcess` does not expose, so Phase 3 does not copy it. Both were read through documentation lookups; the deepseek-harness behaviour is as documented in its notes, not checked in its source.
+
+Measure before Phase 3 is done: process memory after 200 source edits to `plugins/example`, to confirm that growth follows edits and not reloads.
 
 Done when: an agent in a pane, working in a worktree of dia, edits a plugin, loads it with `dia_plugin_override`, observes the change, and opens a pull request with `gh pr create`, without the user leaving the pane.
 
