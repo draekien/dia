@@ -3,7 +3,7 @@ import { assert, describe, it } from '@effect/vitest'
 import type { ConversationMessage } from '@shared/domain/pane'
 import type { PaneNode } from '@shared/domain/pane-tree'
 import type { IpcEvent } from '@shared/ipc/contract'
-import { Effect, FileSystem, Layer, Option, Result, Stream } from 'effect'
+import { Effect, FileSystem, Layer, Option, Result } from 'effect'
 import { WorktreeCreateError } from './git-ops-service'
 import { type PaneHandle, PaneSupervisor } from './pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
@@ -29,7 +29,6 @@ const fakeHandle: PaneHandle = {
   resolvePlanReview: () => Effect.void,
   rewindToCheckpoint: () => Effect.void,
   interrupt: () => Effect.void,
-  subscribe: () => Stream.empty,
   markCrashed: () => Effect.void
 }
 

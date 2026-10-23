@@ -21,26 +21,19 @@ import { Uuid } from '../domain/uuid'
 const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
 
 /**
- * Electron IPC channel names shared by main, preload, and renderer.
- * Use `command` to send an {@link IpcCommand} from renderer to main, `event` to
- * receive an {@link IpcEvent} pushed from main to renderer, `getInitialLayout` to
- * fetch the pane tree on renderer startup, `getPaneHistory` to fetch a restored
- * pane's past conversation, `chooseDirectory` to invoke the native directory
- * picker, `getTheme`/`setTheme` to read and persist the colour-theme choice,
- * `setTitleBarOverlay` to recolour the native window-control overlay when the
- * theme changes, `getAppVersion`/`checkForUpdates`/`installUpdate` to read the
- * running version and drive the self-updater, and `toggleDevTools` to open or
- * close the renderer's DevTools (dia's custom title bar has no native menu to do
- * so).
+ * Electron IPC channel names shared by main, preload, and renderer. Only window duties travel
+ * over Electron IPC; every pane and workspace operation goes to the Host over its WebSocket
+ * (see `DiaRpcs`). `event` carries updater status pushed from main; `getHostConnection` returns
+ * the Host's {@link HostConnection}; `chooseDirectory` opens the native directory picker given
+ * a default path; `setTitleBarOverlay` recolours the native window-control overlay when the
+ * theme changes; `getAppVersion`/`getUpdateStatus`/`checkForUpdates`/`installUpdate` read the
+ * running version and drive the self-updater; `toggleDevTools` opens or closes the renderer's
+ * DevTools (dia's custom title bar has no native menu to do so).
  */
 export const CHANNEL = {
-  command: 'dia:command',
   event: 'dia:event',
-  getInitialLayout: 'dia:getInitialLayout',
-  getPaneHistory: 'dia:getPaneHistory',
+  getHostConnection: 'dia:getHostConnection',
   chooseDirectory: 'dia:chooseDirectory',
-  getTheme: 'dia:getTheme',
-  setTheme: 'dia:setTheme',
   setTitleBarOverlay: 'dia:setTitleBarOverlay',
   getAppVersion: 'dia:getAppVersion',
   getUpdateStatus: 'dia:getUpdateStatus',
@@ -48,6 +41,17 @@ export const CHANNEL = {
   installUpdate: 'dia:installUpdate',
   toggleDevTools: 'dia:toggleDevTools'
 } as const
+
+/**
+ * Where and how the renderer reaches the Host: the loopback `port` its WebSocket listens on and
+ * the `token` the client presents as the subprotocol `dia.token.<token>`. Main obtains it from
+ * the Host at startup and hands it to the preload over {@link CHANNEL}.getHostConnection.
+ */
+export const HostConnection = Schema.Struct({
+  port: Schema.Number,
+  token: Schema.String
+})
+export type HostConnection = typeof HostConnection.Type
 
 /**
  * The colours the renderer pushes to the main process (over `setTitleBarOverlay`)
@@ -63,8 +67,8 @@ export const TitleBarOverlayColors = Schema.Struct({
 export type TitleBarOverlayColors = typeof TitleBarOverlayColors.Type
 
 /**
- * Result of the native directory picker invoked over the `chooseDirectory`
- * channel. `null` means the user cancelled the dialog; otherwise `path` is the
+ * Result of choosing a directory (native picker plus the Host's git check).
+ * `null` means the user cancelled the dialog; otherwise `path` is the
  * chosen directory and `isGitRepo` reports whether it contains a `.git` folder.
  */
 export const ChooseDirectoryResult = Schema.NullOr(
@@ -77,7 +81,7 @@ export type ChooseDirectoryResult = typeof ChooseDirectoryResult.Type
 
 /**
  * Command sent by the renderer to submit a user prompt to the pane identified
- * by `paneId`. Dispatched over the `command` channel and consumed by the pane
+ * by `paneId`. Consumed by the pane
  * supervisor to forward `text` into that pane's agent session.
  */
 export const SendMessage = Schema.TaggedStruct('SendMessage', {
@@ -199,8 +203,7 @@ export type FocusPane = typeof FocusPane.Type
  * Command sent by the renderer to interrupt the running turn of pane `paneId`.
  * The pane supersedes any pending permission/question/plan prompt and aborts
  * in-flight generation, so a turn that has stalled with no response can be
- * cancelled without sending a new message. Dispatched over the `command`
- * channel.
+ * cancelled without sending a new message.
  */
 export const InterruptPane = Schema.TaggedStruct('InterruptPane', {
   paneId: Uuid
@@ -226,27 +229,7 @@ export const RewindToCheckpoint = Schema.TaggedStruct('RewindToCheckpoint', {
 export type RewindToCheckpoint = typeof RewindToCheckpoint.Type
 
 /**
- * Union of every command the renderer may send over the `command` channel.
- * Main-process handlers should match on the `_tag` field to dispatch.
- */
-export const IpcCommand = Schema.Union([
-  SendMessage,
-  ResolvePermission,
-  ResolveQuestion,
-  SplitPane,
-  ClosePane,
-  CreatePane,
-  SetThinkingLevel,
-  SetPermissionMode,
-  ResolvePlanReview,
-  FocusPane,
-  InterruptPane,
-  RewindToCheckpoint
-])
-export type IpcCommand = typeof IpcCommand.Type
-
-/**
- * Event pushed to the renderer over the `event` channel when a new
+ * Event pushed to the renderer to the renderer when a new
  * conversation `message` (user, assistant, or system) has been appended to
  * the pane `paneId`. Renderer should append `message` to that pane's
  * conversation history.
@@ -476,8 +459,8 @@ export type UpdateStatusChanged = typeof UpdateStatusChanged.Type
 
 // Additional events (PaneClosed) join this union in later bullets.
 /**
- * Union of every event the main process may push to the renderer over the
- * `event` channel. Renderer handlers should match on the `_tag` field to
+ * Union of every event pushed to the renderer, by the Host's event stream or
+ * by main for updater status. Renderer handlers should match on the `_tag` field to
  * dispatch.
  */
 export const IpcEvent = Schema.Union([
@@ -540,6 +523,12 @@ export interface DiaApi {
   installUpdate(): void
   toggleDevTools(): void
   onUpdateStatusChanged(listener: (event: UpdateStatusChanged) => void): () => void
+  /**
+   * Subscribes to the Host telling the renderer it no longer holds the events the renderer
+   * missed for `paneId` while disconnected. The listener should reload that pane's history with
+   * `getPaneHistory` and replace the history it holds.
+   */
+  onHistoryReloadRequested(listener: (paneId: string) => void): () => void
   onMessageAppended(listener: (event: PaneMessageAppended) => void): () => void
   onLayoutChanged(listener: (event: LayoutChanged) => void): () => void
   onPaneCreateFailed(listener: (event: PaneCreateFailed) => void): () => void

@@ -16,10 +16,10 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        external: ['electron'],
+        external: ['electron', 'tsx', 'tsx/esm/api', 'esbuild'],
         input: {
           index: resolve('src/main/index.ts'),
-          'pane-process/agent-session': resolve('src/main/pane-process/agent-session.ts')
+          host: resolve('src/host/index.ts')
         }
       }
     }
