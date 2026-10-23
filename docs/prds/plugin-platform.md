@@ -60,4 +60,4 @@ Since 2026-10-23 dia shows one agent per tab within registered projects instead 
 
 - Whether source loading works in the packaged app's Host process is unverified; Phase 0 of `docs/plans/2026-10-22-plugin-platform.md` checks it, and ADR-0020 names the external-watcher fallback.
 - What renderer plugins can replace — named slots only, or the whole layout — is decided during the layout migration in Phase 4.
-- The exact plugin manifest fields and API-version rules are designed in Phase 2.
+- The plugin manifest fields and API-version rule were settled in Phase 2: `plugin.json` has `name`, `api`, `host`, `renderer` and `inject`, and a plugin whose `api` differs from the installed version fails to load.

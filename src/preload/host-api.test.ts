@@ -47,7 +47,19 @@ const makeClient = (script: ClientScript = {}) => {
     return next ?? Stream.never
   })
   const getInitialLayout = vi.fn(() => Effect.succeed(LAYOUT))
+  const loadPlugin = vi.fn((payload: { name: string }) =>
+    Effect.succeed({
+      name: payload.name,
+      origin: 'default' as const,
+      status: { _tag: 'Loaded' as const }
+    })
+  )
+  const setPluginOverride = vi.fn((_payload: { name: string; directory: string }) =>
+    Effect.succeed({ _tag: 'Rejected' as const, message: 'no plugin.json' })
+  )
   const client = {
+    LoadPlugin: loadPlugin,
+    SetPluginOverride: setPluginOverride,
     SendMessage: sendMessage,
     ResolvePermission: resolvePrompt,
     ResolveQuestion: resolvePrompt,
@@ -55,7 +67,15 @@ const makeClient = (script: ClientScript = {}) => {
     SubscribeEvents: subscribeEvents,
     GetInitialLayout: getInitialLayout
   } as unknown as DiaRpcClient
-  return { client, sendMessage, resolvePrompt, subscribeEvents, getInitialLayout }
+  return {
+    client,
+    sendMessage,
+    resolvePrompt,
+    subscribeEvents,
+    getInitialLayout,
+    loadPlugin,
+    setPluginOverride
+  }
 }
 
 const makeApi = (client: DiaRpcClient) => {
@@ -185,5 +205,30 @@ describe('makeHostApi', () => {
 
     expect(getInitialLayout).toHaveBeenCalledTimes(1)
     expect(layouts).toEqual([LAYOUT])
+  })
+  it('sends the plugin name to LoadPlugin and resolves with the plugin state the Host returned', async () => {
+    const { client, loadPlugin } = makeClient()
+    const { api } = makeApi(client)
+
+    const info = await api.plugins.load('example')
+
+    expect(loadPlugin.mock.calls.map(([payload]) => payload)).toEqual([{ name: 'example' }])
+    expect(info).toEqual({
+      name: 'example',
+      origin: 'default',
+      status: { _tag: 'Loaded' }
+    })
+  })
+
+  it('resolves a refused override as Rejected with the reason instead of throwing', async () => {
+    const { client, setPluginOverride } = makeClient()
+    const { api } = makeApi(client)
+
+    const result = await api.plugins.setOverride('example', '/tree/example')
+
+    expect(setPluginOverride.mock.calls.map(([payload]) => payload)).toEqual([
+      { name: 'example', directory: '/tree/example' }
+    ])
+    expect(result).toEqual({ _tag: 'Rejected', message: 'no plugin.json' })
   })
 })

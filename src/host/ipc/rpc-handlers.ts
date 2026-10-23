@@ -1,7 +1,10 @@
 import { DEFAULT_THEME } from '@shared/domain/theme'
 import { type IpcEvent, LayoutChanged, PaneCreateFailed } from '@shared/ipc/contract'
 import { DiaRpcs } from '@shared/ipc/rpc'
+import { PluginOverrideApplied, PluginOverrideRejected } from '@shared/plugin/manifest'
 import { Effect, FileSystem, Option, Path } from 'effect'
+import { HostPlugins } from '../plugins/host-plugins'
+import { PluginSources } from '../plugins/plugin-sources'
 import { CommandDeduper } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
@@ -10,8 +13,8 @@ import { SettingsStore } from '../services/settings-store'
 
 /**
  * Builds the implementation of {@link DiaRpcs} on top of the Host's services. Requires
- * `PaneWorkspace`, `PaneSupervisor`, `SettingsStore`, `EventHub`, `CommandDeduper`, and
- * `FileSystem`/`Path`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
+ * `PaneWorkspace`, `PaneSupervisor`, `SettingsStore`, `EventHub`, `CommandDeduper`,
+ * `HostPlugins`, `PluginSources`, and `FileSystem`/`Path`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
  * handlers without a transport.
  *
  * Every pane command is applied at most once per `commandId`, drops with a warning when its
@@ -25,6 +28,8 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
   const settings = yield* SettingsStore
   const hub = yield* EventHub
   const deduper = yield* CommandDeduper
+  const plugins = yield* HostPlugins
+  const pluginSources = yield* PluginSources
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
 
@@ -234,6 +239,17 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
           .pipe(Effect.orElseSucceed(() => false))
         return { path: chosenPath, isGitRepo }
       }),
+    ListPlugins: () => plugins.list(),
+    LoadPlugin: ({ name }) => plugins.load(name),
+    UnloadPlugin: ({ name }) => plugins.unload(name),
+    SetPluginOverride: ({ name, directory }) =>
+      pluginSources.setOverride(name, directory).pipe(
+        Effect.as(PluginOverrideApplied.make({})),
+        Effect.catchTag('InvalidOverrideError', (error) =>
+          Effect.succeed(PluginOverrideRejected.make({ message: error.message }))
+        )
+      ),
+    ClearPluginOverride: ({ name }) => pluginSources.clearOverride(name),
     SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
   })
 })

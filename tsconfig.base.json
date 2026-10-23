@@ -3,6 +3,7 @@
   "compilerOptions": {
     "paths": {
       "@shared/*": ["./src/shared/*"],
+      "@dia/plugin": ["./src/shared/plugin/api.ts"],
       "@preload/*": ["./src/preload/*"],
       "@renderer/*": ["./src/renderer/src/*"]
     },

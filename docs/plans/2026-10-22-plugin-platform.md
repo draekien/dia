@@ -66,6 +66,8 @@ Scope: `host`-side plugin lifecycle. No hot reload yet.
 
 Done when: a test plugin in `plugins/` loads, unloads and reloads by API call without interrupting a streaming turn in another pane.
 
+Result (2026-10-23, issue #7): the manifest (`plugin.json`: `name`, `api`, `host`, `renderer`, `inject`), the registry, the Host loader with persisted overrides, the `window.dia.plugins` calls (protocol version 3) and the renderer registry are implemented, and `pnpm typecheck`, `pnpm lint` and `pnpm test` pass. In a manual run of the unpackaged build, `plugins/example` loaded at startup; 20 reloads over 5.1 s during a 1500-line reply in another pane left the reply complete and contiguous; an override in a directory with no `node_modules` loaded, re-imported changed code, failed cleanly on a wrong API version and on a syntax error, and returned to the default copy when cleared. Details and the cases not covered are in `docs/reasoning/2026-10-23-plugin-kernel-phase-2-findings.md`. The renderer registry loads at renderer startup and is not yet driven by the Host's load calls (Phase 3). The NSIS installer was not built or installed.
+
 ## Phase 3 — Hot reload and the creator loop
 
 1. Host HMR: watch imported files of overridden plugins, map changes to the owning plugin entry, evict, close and reopen the plugin's `Scope`.

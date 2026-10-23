@@ -157,6 +157,7 @@ app.whenReady().then(async () => {
           init: HostInit.make({
             userDataPath: app.getPath('userData'),
             worktreesRoot: join(app.getPath('userData'), 'worktrees'),
+            pluginsRoot: join(app.getAppPath(), 'plugins'),
             logFilePath,
             isDev,
             allowedOrigins

@@ -3,7 +3,8 @@ import { Context, Effect, FileSystem, Layer, Option, Result, Schema } from 'effe
 
 const Settings = Schema.Struct({
   lastDirectory: Schema.optional(Schema.String),
-  theme: Schema.optional(ThemePreference)
+  theme: Schema.optional(ThemePreference),
+  pluginOverrides: Schema.optional(Schema.Record(Schema.String, Schema.String))
 })
 const parseJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
 const decodeSettings = Schema.decodeUnknownResult(Settings)
@@ -11,8 +12,9 @@ const encodeSettings = Schema.encodeSync(Schema.fromJsonString(Settings, { space
 
 /**
  * Effect Context.Service for the app's persisted settings store.
- * Depend on this to read or update the user's last-opened directory and
- * colour-theme choice. Provide it via {@link makeSettingsStoreLive}.
+ * Depend on this to read or update the user's last-opened directory, colour-theme choice and
+ * per-plugin source overrides (plugin name to source directory). Provide it via
+ * {@link makeSettingsStoreLive}.
  */
 export class SettingsStore extends Context.Service<
   SettingsStore,
@@ -21,6 +23,9 @@ export class SettingsStore extends Context.Service<
     readonly setLastDirectory: (path: string) => Effect.Effect<void>
     readonly getTheme: () => Effect.Effect<Option.Option<ThemePreference>>
     readonly setTheme: (theme: ThemePreference) => Effect.Effect<void>
+    readonly getPluginOverrides: () => Effect.Effect<Readonly<Record<string, string>>>
+    readonly setPluginOverride: (name: string, path: string) => Effect.Effect<void>
+    readonly clearPluginOverride: (name: string) => Effect.Effect<void>
   }
 >()('SettingsStore') {}
 
@@ -74,6 +79,32 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
       const setTheme = (theme: ThemePreference) =>
         read().pipe(Effect.flatMap((settings) => write({ ...settings, theme })))
 
-      return { getLastDirectory, setLastDirectory, getTheme, setTheme }
+      const getPluginOverrides = () =>
+        read().pipe(Effect.map((settings) => settings.pluginOverrides ?? {}))
+
+      const setPluginOverride = (name: string, path: string) =>
+        read().pipe(
+          Effect.flatMap((settings) =>
+            write({ ...settings, pluginOverrides: { ...settings.pluginOverrides, [name]: path } })
+          )
+        )
+
+      const clearPluginOverride = (name: string) =>
+        read().pipe(
+          Effect.flatMap((settings) => {
+            const { [name]: _removed, ...rest } = settings.pluginOverrides ?? {}
+            return write({ ...settings, pluginOverrides: rest })
+          })
+        )
+
+      return {
+        getLastDirectory,
+        setLastDirectory,
+        getTheme,
+        setTheme,
+        getPluginOverrides,
+        setPluginOverride,
+        clearPluginOverride
+      }
     })
   )

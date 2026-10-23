@@ -17,6 +17,7 @@ import { SlashCommandInfo } from '../domain/slash-command'
 import type { ThemePreference } from '../domain/theme'
 import { UpdateStatus } from '../domain/update'
 import { Uuid } from '../domain/uuid'
+import type { PluginInfo, PluginOverrideResult } from '../plugin/manifest'
 
 const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
 
@@ -486,12 +487,30 @@ export const IpcEvent = Schema.Union([
 export type IpcEvent = typeof IpcEvent.Type
 
 /**
+ * The plugin lifecycle calls of `window.dia.plugins`, served by the Host. Each call resolves
+ * with the plugin's resulting state; failures to load are reported in the state, not thrown.
+ */
+export interface PluginApi {
+  /** Every known plugin with where it loads from and its state. */
+  list(): Promise<ReadonlyArray<PluginInfo>>
+  /** Opens a plugin, or reloads it when it is already open. A failure is a `Failed` status in the result. */
+  load(name: string): Promise<PluginInfo>
+  /** Closes a plugin; plugins that depend on a service it provides wait until it is loaded again. */
+  unload(name: string): Promise<PluginInfo>
+  /** Points a plugin at a source directory; nothing is loaded until `load`. Resolves `Rejected` with the reason when the directory cannot be a plugin source. */
+  setOverride(name: string, directory: string): Promise<PluginOverrideResult>
+  /** Returns a plugin to the copy shipped with dia; nothing is loaded until `load`. */
+  clearOverride(name: string): Promise<void>
+}
+
+/**
  * Shape of the `window.dia` bridge the preload script exposes to the renderer.
  * The single source of truth for that surface: preload's implementation is
  * checked against this interface, and the renderer's ambient `Window.dia`
  * declaration imports it directly, so the two can't drift apart.
  */
 export interface DiaApi {
+  readonly plugins: PluginApi
   sendMessage(paneId: string, text: string): void
   resolvePermission(paneId: string, requestId: string, response: PermissionResponse): void
   resolveQuestion(paneId: string, requestId: string, response: QuestionResponse): void

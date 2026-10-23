@@ -3,6 +3,7 @@ import { Rpc, RpcGroup } from 'effect/rpc'
 import { ConversationMessage } from '../domain/pane'
 import { PaneNode } from '../domain/pane-tree'
 import { ThemePreference } from '../domain/theme'
+import { PluginInfo, PluginName, PluginOverrideResult } from '../plugin/manifest'
 import {
   ChooseDirectoryResult,
   ClosePane,
@@ -25,7 +26,7 @@ import {
  * `dia.protocol.<version>`; the Host closes the connection with {@link CLOSE_PROTOCOL_MISMATCH}
  * when it speaks a different version. Increment it whenever {@link DiaRpcs} changes shape.
  */
-export const PROTOCOL_VERSION = 2
+export const PROTOCOL_VERSION = 3
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -77,7 +78,8 @@ export const EventFrame = Schema.Union([PaneEventFrame, GlobalEventFrame, Reload
 export type EventFrame = typeof EventFrame.Type
 
 /**
- * The Host's RPC surface. Every pane command takes a `commandId`; `SubscribeEvents` takes the
+ * The Host's RPC surface. Every pane command takes a `commandId`; the plugin calls (`LoadPlugin`
+ * on a loaded plugin reloads it) are safe to repeat and take none; `SubscribeEvents` takes the
  * last sequence number received per pane (`cursors`) and streams {@link EventFrame}s. Serve it
  * with `RpcServer` in the Host and call it with `RpcClient` from the preload.
  */
@@ -106,6 +108,14 @@ export const DiaRpcs = RpcGroup.make(
     payload: { path: Schema.String },
     success: ChooseDirectoryResult
   }),
+  Rpc.make('ListPlugins', { success: Schema.Array(PluginInfo) }),
+  Rpc.make('LoadPlugin', { payload: { name: PluginName }, success: PluginInfo }),
+  Rpc.make('UnloadPlugin', { payload: { name: PluginName }, success: PluginInfo }),
+  Rpc.make('SetPluginOverride', {
+    payload: { name: PluginName, directory: Schema.String },
+    success: PluginOverrideResult
+  }),
+  Rpc.make('ClearPluginOverride', { payload: { name: PluginName } }),
   Rpc.make('SubscribeEvents', {
     payload: { cursors: Schema.Record(Schema.String, Schema.Finite) },
     success: EventFrame,
