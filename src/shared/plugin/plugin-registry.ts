@@ -29,13 +29,17 @@ export class PluginLoadError extends Data.TaggedError('PluginLoadError')<{
   readonly message: string
 }> {}
 
-/** A plugin's decoded manifest and, when it has an entry for this side, the setup effect that entry exports. */
+/**
+ * A plugin's decoded manifest and `resolveSetup`, the effect that imports the plugin's entry for
+ * this side and yields its setup function (none when the plugin has no such entry). Nothing is
+ * imported until `resolveSetup` runs; the registry runs it only after the manifest passed its checks.
+ */
 export interface LoadedPlugin<Context extends PluginServices> {
   readonly manifest: PluginManifest
-  readonly setup: Option.Option<PluginSetup<Context>>
+  readonly resolveSetup: Effect.Effect<Option.Option<PluginSetup<Context>>, PluginLoadError>
 }
 
-/** Turns a {@link PluginSource} root into a {@link LoadedPlugin}, importing fresh code on every call. */
+/** Reads the manifest at a {@link PluginSource} root into a {@link LoadedPlugin}. Importing the entry is deferred to `resolveSetup`. */
 export interface PluginLoader<Context extends PluginServices> {
   readonly load: (root: string) => Effect.Effect<LoadedPlugin<Context>, PluginLoadError>
 }
@@ -45,24 +49,28 @@ export interface PluginLoader<Context extends PluginServices> {
  * `load` opens a plugin, or replaces it when it is already open, and returns its resulting
  * state; a failure is reported as a `Failed` status and never as an error. `unload` closes it.
  * Plugins that inject a service the changed plugin provides are closed and wait until it is
- * provided again. `list` returns every known plugin.
+ * provided again. `list` returns every known plugin; `loadAll` loads each of them one after
+ * another and returns their resulting states.
  */
 export interface PluginRegistry {
   readonly list: () => Effect.Effect<ReadonlyArray<PluginInfo>>
+  readonly loadAll: () => Effect.Effect<ReadonlyArray<PluginInfo>>
   readonly load: (name: string) => Effect.Effect<PluginInfo>
   readonly unload: (name: string) => Effect.Effect<PluginInfo>
 }
 
-const describeCause = (cause: Cause.Cause<unknown>): string => {
-  const error = Cause.squash(cause)
-  return Predicate.hasProperty(error, 'message') && typeof error.message === 'string'
+/** The `message` of an error-like value, or its string form when it has none. */
+export const errorMessage = (error: unknown): string =>
+  Predicate.hasProperty(error, 'message') && typeof error.message === 'string'
     ? error.message
     : String(error)
-}
+
+const describeCause = (cause: Cause.Cause<unknown>): string => errorMessage(Cause.squash(cause))
 
 interface Entry<Context extends PluginServices> {
   origin: PluginOrigin
-  loaded: LoadedPlugin<Context> | undefined
+  manifest: PluginManifest | undefined
+  setup: Option.Option<PluginSetup<Context>> | undefined
   scope: Scope.Closeable | undefined
   status: PluginStatus
   readonly provided: Set<string>
@@ -123,20 +131,33 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
     })
 
     const injectedKeys = (entry: Entry<Context>): ReadonlyArray<string> =>
-      entry.loaded?.manifest.inject ?? []
+      entry.manifest?.inject ?? []
+
+    const dependantsOf = (name: string, keys: ReadonlySet<string>) => {
+      const dependants: Array<{
+        readonly name: string
+        readonly entry: Entry<Context>
+        readonly missing: ReadonlyArray<string>
+      }> = []
+      for (const [dependantName, entry] of entries) {
+        if (dependantName === name || entry.status._tag !== 'Loaded') continue
+        const missing = injectedKeys(entry).filter((key) => keys.has(key))
+        if (missing.length > 0) dependants.push({ name: dependantName, entry, missing })
+      }
+      return dependants
+    }
 
     const closeWithDependants = (name: string): Effect.Effect<void> =>
       Effect.gen(function* () {
         const entry = entries.get(name)
         if (entry === undefined) return
-        const keys = new Set(entry.provided)
-        for (const [dependantName, dependant] of entries) {
-          if (dependantName === name || dependant.status._tag !== 'Loaded') continue
-          const missing = injectedKeys(dependant).filter((key) => keys.has(key))
-          if (missing.length === 0) continue
-          yield* closeWithDependants(dependantName)
-          dependant.status = { _tag: 'Waiting', missing }
-          yield* Effect.logInfo('Plugin waiting for a service', { plugin: dependantName, missing })
+        for (const dependant of dependantsOf(name, new Set(entry.provided))) {
+          yield* closeWithDependants(dependant.name)
+          dependant.entry.status = { _tag: 'Waiting', missing: dependant.missing }
+          yield* Effect.logInfo('Plugin waiting for a service', {
+            plugin: dependant.name,
+            missing: dependant.missing
+          })
         }
         const scope = entry.scope
         entry.scope = undefined
@@ -145,23 +166,24 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
 
     const open = (name: string, entry: Entry<Context>): Effect.Effect<void> =>
       Effect.gen(function* () {
-        const loaded = entry.loaded
-        if (loaded === undefined) return
+        const setup = entry.setup
+        if (setup === undefined) return
         const missing = injectedKeys(entry).filter((key) => !slots.has(key))
         if (missing.length > 0) {
           entry.status = { _tag: 'Waiting', missing }
           return
         }
-        if (Option.isNone(loaded.setup)) {
+        if (Option.isNone(setup)) {
           entry.status = { _tag: 'Loaded' }
           return
         }
         const scope = yield* Scope.fork(parentScope)
         const context = deps.extend(servicesFor(name, entry))
-        const exit = yield* Effect.exit(Scope.provide(scope)(loaded.setup.value(context)))
+        const exit = yield* Effect.exit(Scope.provide(scope)(setup.value(context)))
         if (Exit.isFailure(exit)) {
           yield* Scope.close(scope, exit)
-          entry.loaded = undefined
+          entry.manifest = undefined
+          entry.setup = undefined
           entry.status = { _tag: 'Failed', message: describeCause(exit.cause) }
           yield* Effect.logError('Plugin setup failed', { plugin: name, cause: exit.cause })
           return
@@ -192,7 +214,8 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           yield* closeWithDependants(name)
           const entry: Entry<Context> = {
             origin: source.value.origin,
-            loaded: undefined,
+            manifest: undefined,
+            setup: undefined,
             scope: undefined,
             status: { _tag: 'Unloaded' },
             provided: new Set()
@@ -220,7 +243,11 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
             )
           }
 
-          entry.loaded = loaded
+          const setupExit = yield* Effect.exit(loaded.resolveSetup)
+          if (Exit.isFailure(setupExit)) return yield* fail(describeCause(setupExit.cause))
+
+          entry.manifest = loaded.manifest
+          entry.setup = setupExit.value
           yield* open(name, entry)
           yield* openWaiting
           return infoOf(name, entry)
@@ -241,7 +268,8 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
             } satisfies PluginInfo
           }
           yield* closeWithDependants(name)
-          entry.loaded = undefined
+          entry.manifest = undefined
+          entry.setup = undefined
           entry.status = { _tag: 'Unloaded' }
           yield* Effect.logInfo('Plugin unloaded', { plugin: name })
           return infoOf(name, entry)
@@ -252,22 +280,30 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       Effect.gen(function* () {
         const known = yield* deps.catalog.names()
         const names = [...new Set([...known, ...entries.keys()])].sort()
-        const infos: Array<PluginInfo> = []
-        for (const name of names) {
-          const entry = entries.get(name)
-          if (entry !== undefined) {
-            infos.push(infoOf(name, entry))
-            continue
-          }
-          const source = yield* deps.catalog.resolve(name)
-          infos.push({
-            name,
-            origin: Option.match(source, { onNone: () => 'default', onSome: (s) => s.origin }),
-            status: { _tag: 'Unloaded' }
-          })
-        }
-        return infos
+        return yield* Effect.forEach(
+          names,
+          (name) => {
+            const entry = entries.get(name)
+            if (entry !== undefined) return Effect.succeed(infoOf(name, entry))
+            return deps.catalog.resolve(name).pipe(
+              Effect.map(
+                (source): PluginInfo => ({
+                  name,
+                  origin: Option.match(source, {
+                    onNone: () => 'default',
+                    onSome: (found) => found.origin
+                  }),
+                  status: { _tag: 'Unloaded' }
+                })
+              )
+            )
+          },
+          { concurrency: 'unbounded' }
+        )
       })
 
-    return { list, load, unload }
+    const loadAll = (): Effect.Effect<ReadonlyArray<PluginInfo>> =>
+      list().pipe(Effect.flatMap((infos) => Effect.forEach(infos, (info) => load(info.name))))
+
+    return { list, load, unload, loadAll }
   })

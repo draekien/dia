@@ -1,5 +1,5 @@
-import type { RendererPluginContext } from '@shared/plugin/api'
-import { setupFromModule } from '@shared/plugin/entry'
+import type { PluginServices } from '@shared/plugin/api'
+import { importSetup } from '@shared/plugin/entry'
 import { PluginManifest } from '@shared/plugin/manifest'
 import {
   makePluginRegistry,
@@ -29,7 +29,7 @@ const decodeManifest = Schema.decodeUnknownResult(PluginManifest)
 export const makeRendererPlugins = (
   sources: RendererPluginSources
 ): Effect.Effect<PluginRegistry, never, Scope.Scope> =>
-  makePluginRegistry<RendererPluginContext>({
+  makePluginRegistry<PluginServices>({
     catalog: {
       names: () => Effect.succeed(Object.keys(sources.manifests)),
       resolve: (name) =>
@@ -46,7 +46,9 @@ export const makeRendererPlugins = (
           })
         }
         const manifest = decoded.success
-        if (manifest.renderer === undefined) return { manifest, setup: Option.none() }
+        if (manifest.renderer === undefined) {
+          return { manifest, resolveSetup: Effect.succeed(Option.none()) }
+        }
 
         const importEntry = sources.entries[name]
         if (importEntry === undefined) {
@@ -54,17 +56,10 @@ export const makeRendererPlugins = (
             message: `Plugin "${name}" declares a renderer entry but none was bundled`
           })
         }
-        const module = yield* Effect.tryPromise({
-          try: importEntry,
-          catch: (cause) =>
-            new PluginLoadError({
-              message: `Cannot import the renderer entry of "${name}": ${cause instanceof Error ? cause.message : String(cause)}`
-            })
-        })
         return {
           manifest,
-          setup: Option.some(
-            yield* setupFromModule<RendererPluginContext>(module, manifest.renderer)
+          resolveSetup: importSetup<PluginServices>(manifest.renderer, importEntry).pipe(
+            Effect.map(Option.some)
           )
         }
       })

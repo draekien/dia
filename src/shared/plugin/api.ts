@@ -36,12 +36,6 @@ export interface HostPluginContext extends PluginServices {
 }
 
 /**
- * The context a plugin's `renderer` entry receives. It carries {@link PluginServices} only; the
- * renderer reaches the Host through `window.dia`.
- */
-export type RendererPluginContext = PluginServices
-
-/**
  * The setup effect a plugin entry exports as its default export. It receives the plugin's
  * context, runs in the plugin's own scope, and registers everything through that scope (fibers
  * with `Effect.forkScoped`, resources with `Effect.acquireRelease`), so closing the scope

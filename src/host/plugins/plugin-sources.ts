@@ -62,10 +62,11 @@ export const makePluginSourcesLive = (defaultRoot: string) =>
 
       const names = Effect.fn('PluginSources.names')(function* () {
         const entries = yield* fs.readDirectory(defaultRoot).pipe(Effect.orElseSucceed(() => []))
-        const shipped: Array<string> = []
-        for (const entry of entries) {
-          if (yield* hasManifest(path.join(defaultRoot, entry))) shipped.push(entry)
-        }
+        const shipped = yield* Effect.filter(
+          entries,
+          (entry) => hasManifest(path.join(defaultRoot, entry)),
+          { concurrency: 'unbounded' }
+        )
         const overrides = yield* settings.getPluginOverrides()
         return [...new Set([...shipped, ...Object.keys(overrides)])]
       })

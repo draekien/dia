@@ -158,11 +158,14 @@ export const runHost = Effect.scoped(
         )
       }
       const { port } = address
-      const plugins = Context.get(context, HostPlugins)
-      const known = yield* plugins.list()
-      yield* Effect.forEach(known, (info) => plugins.load(info.name), { discard: true })
-      yield* Effect.logInfo('Host listening', { port, plugins: known.length })
+      yield* Effect.logInfo('Host listening', { port })
       yield* post(HostReady.make({ port, token }))
+      yield* Context.get(context, HostPlugins)
+        .loadAll()
+        .pipe(
+          Effect.flatMap((infos) => Effect.logInfo('Plugins loaded', { count: infos.length })),
+          Effect.forkScoped
+        )
 
       while (true) {
         const message = yield* Queue.take(inbox)

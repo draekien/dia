@@ -1,7 +1,7 @@
 import { registerHooks } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import type { HostPluginContext } from '@shared/plugin/api'
-import { setupFromModule } from '@shared/plugin/entry'
+import { importSetup } from '@shared/plugin/entry'
 import { PluginManifest } from '@shared/plugin/manifest'
 import { PluginLoadError, type PluginLoader } from '@shared/plugin/plugin-registry'
 import { Effect, FileSystem, Option, Path, Result, Schema } from 'effect'
@@ -90,19 +90,17 @@ export const makeHostPluginLoader = (
         })
       }
       const manifest = decoded.success
-      if (manifest.host === undefined) return { manifest, setup: Option.none() }
+      if (manifest.host === undefined)
+        return { manifest, resolveSetup: Effect.succeed(Option.none()) }
 
       const entry = path.resolve(root, manifest.host)
-      const module = yield* Effect.tryPromise({
-        try: () => importModule(root, entry),
-        catch: (cause) =>
-          new PluginLoadError({
-            message: `Cannot import "${entry}": ${cause instanceof Error ? cause.message : String(cause)}`
-          })
-      })
-      const setup = yield* setupFromModule<HostPluginContext>(module, entry)
-      yield* Effect.logDebug('Plugin entry imported', { plugin: manifest.name, entry })
-      return { manifest, setup: Option.some(setup) }
+      const resolveSetup = importSetup<HostPluginContext>(entry, () =>
+        importModule(root, entry)
+      ).pipe(
+        Effect.map(Option.some),
+        Effect.tap(() => Effect.logDebug('Plugin entry imported', { plugin: manifest.name, entry }))
+      )
+      return { manifest, resolveSetup }
     })
 
     return { load }

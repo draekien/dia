@@ -147,6 +147,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
 
   const plugins = Layer.succeed(HostPlugins, {
     list: () => Effect.succeed([pluginInfo('chat')]),
+    loadAll: () => Effect.succeed([pluginInfo('chat')]),
     load: (name) =>
       Effect.sync(() => {
         calls.push(`loadPlugin:${name}`)

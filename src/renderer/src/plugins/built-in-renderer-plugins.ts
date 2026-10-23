@@ -27,8 +27,7 @@ export const startRendererPlugins = (): Promise<PluginRegistry> =>
     Effect.gen(function* () {
       const scope = yield* Scope.make()
       const registry = yield* makeRendererPlugins(builtIn).pipe(Scope.provide(scope))
-      const known = yield* registry.list()
-      yield* Effect.forEach(known, (info) => registry.load(info.name), { discard: true })
+      yield* registry.loadAll()
       return registry
     })
   )

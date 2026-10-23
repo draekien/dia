@@ -17,7 +17,7 @@ const plugin = (
   setup?: PluginSetup<PluginServices>
 ): LoadedPlugin<PluginServices> => ({
   manifest: manifestFields,
-  setup: Option.fromNullishOr(setup)
+  resolveSetup: Effect.succeed(Option.fromNullishOr(setup))
 })
 
 const recording =
@@ -323,6 +323,60 @@ describe('plugin registry', () => {
       yield* TestClock.adjust(Duration.seconds(10))
 
       assert.strictEqual(yield* Fiber.join(turn), 'finished')
+    }).pipe(Effect.scoped)
+  )
+  it.effect('does not import the entry of a plugin built for another API version', () =>
+    Effect.gen(function* () {
+      let imports = 0
+      const registry = yield* makeRegistry({
+        old: {
+          manifest: manifest('old', { api: '0' }),
+          resolveSetup: Effect.sync(() => {
+            imports += 1
+            return Option.none()
+          })
+        }
+      })
+
+      yield* registry.load('old')
+
+      assert.strictEqual(imports, 0)
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('reports Failed with the import error when the entry cannot be imported', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        broken: {
+          manifest: manifest('broken'),
+          resolveSetup: Effect.fail(new PluginLoadError({ message: 'Cannot import "host.ts"' }))
+        }
+      })
+
+      const result = yield* registry.load('broken')
+
+      assert.deepStrictEqual(result.status, { _tag: 'Failed', message: 'Cannot import "host.ts"' })
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('loadAll loads every known plugin and returns their states', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({
+        alpha: plugin(manifest('alpha'), recording('alpha', log)),
+        beta: plugin(manifest('beta', { api: '0' }), recording('beta', log))
+      })
+
+      const infos = yield* registry.loadAll()
+
+      assert.deepStrictEqual(
+        infos.map((info) => [info.name, info.status._tag]),
+        [
+          ['alpha', 'Loaded'],
+          ['beta', 'Failed']
+        ]
+      )
+      assert.deepStrictEqual(log, ['alpha:open'])
     }).pipe(Effect.scoped)
   )
 })
