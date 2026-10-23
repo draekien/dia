@@ -8,7 +8,7 @@ import {
   type HostInit,
   HostReady,
   HostShutdownComplete,
-  type HostToMainMessage,
+  HostToMainMessage,
   MainToHostMessage
 } from '@shared/ipc/host-process'
 import {
@@ -38,7 +38,7 @@ import { TranscriptReaderLive } from './services/transcript-reader'
 
 const INITIAL_PANE_ID: PaneId = '00000000-0000-0000-0000-000000000001'
 
-const encodeToMain = Schema.encodeSync(Schema.Union([HostBooted, HostReady, HostShutdownComplete]))
+const encodeToMain = Schema.encodeSync(HostToMainMessage)
 const decodeFromMain = Schema.decodeUnknownResult(MainToHostMessage)
 
 const parentPort = process.parentPort

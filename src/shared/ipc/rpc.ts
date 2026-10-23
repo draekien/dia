@@ -25,7 +25,7 @@ import {
  * `dia.protocol.<version>`; the Host closes the connection with {@link CLOSE_PROTOCOL_MISMATCH}
  * when it speaks a different version. Increment it whenever {@link DiaRpcs} changes shape.
  */
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -41,14 +41,14 @@ export const VERSION_SUBPROTOCOL_PREFIX = 'dia.protocol.'
 export const CLOSE_PROTOCOL_MISMATCH = 4001
 
 /**
- * Client-generated identifier of one command. The Host ignores a command whose `requestId` it
+ * Client-generated identifier of one command. The Host ignores a command whose `commandId` it
  * already accepted for the same pane, so a client that resends after a reconnect does not
  * apply the command twice. Generate a fresh one per user action and reuse it across retries.
  */
-export const RequestId = Schema.String
+export const CommandId = Schema.String
 
 const withRequestId = <Fields extends Schema.Struct.Fields>(command: Schema.Struct<Fields>) =>
-  Schema.Struct({ ...command.fields, requestId: RequestId })
+  Schema.Struct({ ...command.fields, commandId: CommandId })
 
 /**
  * Event stream item for an event that belongs to a pane. `seq` is the pane's sequence number,
@@ -77,7 +77,7 @@ export const EventFrame = Schema.Union([PaneEventFrame, GlobalEventFrame, Reload
 export type EventFrame = typeof EventFrame.Type
 
 /**
- * The Host's RPC surface. Every pane command takes a `requestId`; `SubscribeEvents` takes the
+ * The Host's RPC surface. Every pane command takes a `commandId`; `SubscribeEvents` takes the
  * last sequence number received per pane (`cursors`) and streams {@link EventFrame}s. Serve it
  * with `RpcServer` in the Host and call it with `RpcClient` from the preload.
  */

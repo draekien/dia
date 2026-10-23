@@ -1,11 +1,15 @@
 import { NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
+import { Deny, FreeformResponse } from '@shared/domain/attention'
 import { type PaneNode, PaneNotFoundError } from '@shared/domain/pane-tree'
 import {
   CreatePane,
   type IpcEvent,
   LayoutChanged,
   type PaneCreateFailed,
+  ResolvePermission,
+  ResolvePlanReview,
+  ResolveQuestion,
   SendMessage,
   SplitPane
 } from '@shared/ipc/contract'
@@ -41,9 +45,9 @@ interface HarnessOptions {
   readonly createPaneFails?: boolean
 }
 
-const sendMessage = (paneId: string, text: string, requestId: string) => ({
+const sendMessage = (paneId: string, text: string, commandId: string) => ({
   ...SendMessage.make({ paneId, text }),
-  requestId
+  commandId
 })
 
 const createPane = () => ({
@@ -55,7 +59,7 @@ const createPane = () => ({
     permissionMode: 'default',
     useWorktree: false
   }),
-  requestId: 'req-1'
+  commandId: 'req-1'
 })
 
 const makeHarness = (options: HarnessOptions = {}): Harness => {
@@ -73,9 +77,18 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
           }),
     setThinkingLevel: () => Effect.void,
     setPermissionMode: () => Effect.void,
-    resolvePermission: () => Effect.void,
-    resolveQuestion: () => Effect.void,
-    resolvePlanReview: () => Effect.void,
+    resolvePermission: (requestId) =>
+      Effect.sync(() => {
+        calls.push(`resolvePermission:${requestId}`)
+      }),
+    resolveQuestion: (requestId) =>
+      Effect.sync(() => {
+        calls.push(`resolveQuestion:${requestId}`)
+      }),
+    resolvePlanReview: (requestId) =>
+      Effect.sync(() => {
+        calls.push(`resolvePlanReview:${requestId}`)
+      }),
     rewindToCheckpoint: () => Effect.void,
     interrupt: () => Effect.void,
     markCrashed: () => Effect.void
@@ -151,7 +164,7 @@ const withHandlers = <A>(
   }).pipe(Effect.provide(Layer.mergeAll(harness.layer, NodePath.layer)))
 
 describe('Dia RPC handlers', () => {
-  it.effect('applies a SendMessage once when the client resends it with the same requestId', () =>
+  it.effect('applies a SendMessage once when the client resends it with the same commandId', () =>
     Effect.gen(function* () {
       const harness = makeHarness({ livePanes: [PANE_ID] })
 
@@ -170,7 +183,7 @@ describe('Dia RPC handlers', () => {
     })
   )
 
-  it.effect('applies a SendMessage with a new requestId even when the text repeats', () =>
+  it.effect('applies a SendMessage with a new commandId even when the text repeats', () =>
     Effect.gen(function* () {
       const harness = makeHarness({ livePanes: [PANE_ID] })
 
@@ -249,6 +262,49 @@ describe('Dia RPC handlers', () => {
     })
   )
 
+  it.effect(
+    'resolves permission, question and plan review prompts by the prompt requestId, not the commandId',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({ livePanes: [PANE_ID] })
+
+        yield* withHandlers(harness, (handlers) =>
+          Effect.gen(function* () {
+            yield* handlers.ResolvePermission({
+              ...ResolvePermission.make({
+                paneId: PANE_ID,
+                requestId: 'prompt-permission',
+                response: Deny.make({ message: 'no' })
+              }),
+              commandId: 'cmd-1'
+            })
+            yield* handlers.ResolveQuestion({
+              ...ResolveQuestion.make({
+                paneId: PANE_ID,
+                requestId: 'prompt-question',
+                response: FreeformResponse.make({ questions: [], response: 'skip' })
+              }),
+              commandId: 'cmd-2'
+            })
+            yield* handlers.ResolvePlanReview({
+              ...ResolvePlanReview.make({
+                paneId: PANE_ID,
+                requestId: 'prompt-plan',
+                approved: true
+              }),
+              commandId: 'cmd-3'
+            })
+          })
+        )
+
+        assert.deepStrictEqual(harness.calls, [
+          'resolvePermission:prompt-permission',
+          'resolveQuestion:prompt-question',
+          'resolvePlanReview:prompt-plan'
+        ])
+      })
+  )
+
   it.effect('does not publish a layout when SplitPane targets an unknown pane', () =>
     Effect.gen(function* () {
       const harness = makeHarness({ knownPanes: [PANE_ID] })
@@ -256,7 +312,7 @@ describe('Dia RPC handlers', () => {
       yield* withHandlers(harness, (handlers) =>
         handlers.SplitPane({
           ...SplitPane.make({ paneId: OTHER_PANE_ID, direction: 'row' }),
-          requestId: 'req-1'
+          commandId: 'req-1'
         })
       )
 

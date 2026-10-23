@@ -137,16 +137,13 @@ export const startHostProcess = Effect.fn('HostProcess.start')(function* (option
   )
 
   const supervise = Effect.gen(function* () {
-    let restarts = 0
     while (!(yield* Ref.get(stoppingRef))) {
       const code = yield* runOnce
       yield* Ref.set(childRef, Option.none())
       if (yield* Ref.get(stoppingRef)) return
       yield* Effect.logError('Host exited unexpectedly; restarting', { code })
       yield* Effect.sleep(RESTART_DELAY)
-      restarts += 1
     }
-    return restarts
   })
 
   const restartWatcher = SubscriptionRef.changes(connectionRef).pipe(

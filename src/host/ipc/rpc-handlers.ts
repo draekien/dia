@@ -14,7 +14,7 @@ import { SettingsStore } from '../services/settings-store'
  * `FileSystem`/`Path`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
  * handlers without a transport.
  *
- * Every pane command is applied at most once per `requestId`, drops with a warning when its
+ * Every pane command is applied at most once per `commandId`, drops with a warning when its
  * target pane does not exist, and never fails the RPC: failures are logged. `SendMessage` starts
  * the pane's session on demand when the pane has none, so a message to a pane whose session
  * ended is not lost.
@@ -35,14 +35,14 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
 
   const once = (
     paneId: string,
-    requestId: string,
+    commandId: string,
     command: string,
     run: Effect.Effect<void>
   ): Effect.Effect<void> =>
     Effect.gen(function* () {
-      const accepted = yield* deduper.accept(paneId, requestId)
+      const accepted = yield* deduper.accept(paneId, commandId)
       if (!accepted) {
-        yield* Effect.logDebug('Ignored resent command', { command, paneId, requestId })
+        yield* Effect.logDebug('Ignored resent command', { command, paneId, commandId })
         return
       }
       yield* run
@@ -80,7 +80,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     SendMessage: (command) =>
       once(
         command.paneId,
-        command.requestId,
+        command.commandId,
         'SendMessage',
         withLiveHandle('SendMessage', command.paneId, 'Failed to send message to pane', (handle) =>
           handle.sendMessage(command.text)
@@ -89,7 +89,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     ResolvePermission: (command) =>
       once(
         command.paneId,
-        command.requestId,
+        command.commandId,
         'ResolvePermission',
         withHandle(
           'ResolvePermission',
@@ -101,7 +101,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     ResolveQuestion: (command) =>
       once(
         command.paneId,
-        command.requestId,
+        command.commandId,
         'ResolveQuestion',
         withHandle(
           'ResolveQuestion',
@@ -113,7 +113,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     ResolvePlanReview: (command) =>
       once(
         command.paneId,
-        command.requestId,
+        command.commandId,
         'ResolvePlanReview',
         withHandle(
           'ResolvePlanReview',
@@ -125,7 +125,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     SplitPane: (command) =>
       once(
         command.paneId,
-        command.requestId,
+        command.commandId,
         'SplitPane',
         workspace.split(command.paneId, command.direction).pipe(
           Effect.flatMap(publishLayout),
@@ -137,7 +137,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     ClosePane: (command) =>
       once(
         command.paneId,
-        command.requestId,
+        command.commandId,
         'ClosePane',
         workspace.close(command.paneId).pipe(
           Effect.flatMap(publishLayout),
@@ -149,7 +149,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     CreatePane: (command) =>
       once(
         command.paneId,
-        command.requestId,
+        command.commandId,
         'CreatePane',
         workspace
           .createPane(
@@ -178,7 +178,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     SetThinkingLevel: (command) =>
       once(
         command.paneId,
-        command.requestId,
+        command.commandId,
         'SetThinkingLevel',
         workspace
           .setThinkingLevel(command.paneId, command.level)
@@ -187,7 +187,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     SetPermissionMode: (command) =>
       once(
         command.paneId,
-        command.requestId,
+        command.commandId,
         'SetPermissionMode',
         workspace
           .setPermissionMode(command.paneId, command.mode)
@@ -196,14 +196,14 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     FocusPane: (command) =>
       once(
         command.paneId,
-        command.requestId,
+        command.commandId,
         'FocusPane',
         workspace.resumePane(command.paneId, publish)
       ),
     InterruptPane: (command) =>
       once(
         command.paneId,
-        command.requestId,
+        command.commandId,
         'InterruptPane',
         withHandle('InterruptPane', command.paneId, 'Failed to interrupt pane', (handle) =>
           handle.interrupt()
@@ -212,7 +212,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     RewindToCheckpoint: (command) =>
       once(
         command.paneId,
-        command.requestId,
+        command.commandId,
         'RewindToCheckpoint',
         withHandle(
           'RewindToCheckpoint',

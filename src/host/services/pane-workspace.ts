@@ -425,8 +425,14 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
       const resumePane = (paneId: PaneId, onEvent: (event: IpcEvent) => Effect.Effect<void>) =>
         sessionStartLock.withPermits(1)(startPaneSession(paneId, onEvent, false))
 
-      const ensureLive = (paneId: PaneId, onEvent: (event: IpcEvent) => Effect.Effect<void>) =>
-        sessionStartLock.withPermits(1)(startPaneSession(paneId, onEvent, true))
+      const ensureLive = Effect.fn('PaneWorkspace.ensureLive')(function* (
+        paneId: PaneId,
+        onEvent: (event: IpcEvent) => Effect.Effect<void>
+      ) {
+        const existing = yield* supervisor.getHandle(paneId)
+        if (Option.isSome(existing)) return
+        yield* sessionStartLock.withPermits(1)(startPaneSession(paneId, onEvent, true))
+      })
 
       return {
         getTree,

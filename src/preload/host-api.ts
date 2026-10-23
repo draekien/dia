@@ -68,8 +68,8 @@ const resendSchedule = Schedule.spaced(RESEND_INTERVAL).pipe(
  * Builds the Host-backed half of `window.dia` over an RPC client and starts consuming the Host's
  * event stream in the background.
  *
- * Commands return immediately and are resent with the same `requestId` while the connection is
- * down, for up to {@link RESEND_WINDOW}; the Host applies each `requestId` once. The event
+ * Commands return immediately and are resent with the same `commandId` while the connection is
+ * down, for up to {@link RESEND_WINDOW}; the Host applies each `commandId` once. The event
  * stream resumes after a dropped connection from the last sequence number received per pane;
  * when the Host cannot replay what was missed it asks the renderer to reload that pane's history
  * (`onHistoryReloadRequested`), and the layout is re-fetched after every reconnect because layout
@@ -85,12 +85,12 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
 
   const command = (
     name: string,
-    send: (client: DiaRpcClient, requestId: string) => Effect.Effect<unknown, unknown>
+    send: (client: DiaRpcClient, commandId: string) => Effect.Effect<unknown, unknown>
   ): void => {
-    const requestId = deps.newRequestId()
+    const commandId = deps.newRequestId()
     void Effect.runPromise(
       deps.client.pipe(
-        Effect.flatMap((client) => send(client, requestId)),
+        Effect.flatMap((client) => send(client, commandId)),
         Effect.retry(resendSchedule),
         Effect.catch((error) => Effect.sync(() => deps.warn(`Command ${name} failed`, error)))
       )
@@ -160,70 +160,70 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
 
   return {
     sendMessage: (paneId, text) =>
-      command('SendMessage', (client, requestId) =>
-        client.SendMessage({ ...SendMessage.make({ paneId, text }), requestId })
+      command('SendMessage', (client, commandId) =>
+        client.SendMessage({ ...SendMessage.make({ paneId, text }), commandId })
       ),
     resolvePermission: (paneId, requestId, response) =>
       command('ResolvePermission', (client, id) =>
         client.ResolvePermission({
           ...ResolvePermission.make({ paneId, requestId, response }),
-          requestId: id
+          commandId: id
         })
       ),
     resolveQuestion: (paneId, requestId, response) =>
       command('ResolveQuestion', (client, id) =>
         client.ResolveQuestion({
           ...ResolveQuestion.make({ paneId, requestId, response }),
-          requestId: id
+          commandId: id
         })
       ),
     splitPane: (paneId, direction) =>
-      command('SplitPane', (client, requestId) =>
-        client.SplitPane({ ...SplitPane.make({ paneId, direction }), requestId })
+      command('SplitPane', (client, commandId) =>
+        client.SplitPane({ ...SplitPane.make({ paneId, direction }), commandId })
       ),
     closePane: (paneId) =>
-      command('ClosePane', (client, requestId) =>
-        client.ClosePane({ ...ClosePane.make({ paneId }), requestId })
+      command('ClosePane', (client, commandId) =>
+        client.ClosePane({ ...ClosePane.make({ paneId }), commandId })
       ),
     createPane: (paneId, cwd, model, thinkingLevel, permissionMode, useWorktree) =>
-      command('CreatePane', (client, requestId) =>
+      command('CreatePane', (client, commandId) =>
         client.CreatePane({
           ...CreatePane.make({ paneId, cwd, model, thinkingLevel, permissionMode, useWorktree }),
-          requestId
+          commandId
         })
       ),
     setThinkingLevel: (paneId, level) =>
-      command('SetThinkingLevel', (client, requestId) =>
-        client.SetThinkingLevel({ ...SetThinkingLevel.make({ paneId, level }), requestId })
+      command('SetThinkingLevel', (client, commandId) =>
+        client.SetThinkingLevel({ ...SetThinkingLevel.make({ paneId, level }), commandId })
       ),
     setPermissionMode: (paneId, mode) =>
-      command('SetPermissionMode', (client, requestId) =>
-        client.SetPermissionMode({ ...SetPermissionMode.make({ paneId, mode }), requestId })
+      command('SetPermissionMode', (client, commandId) =>
+        client.SetPermissionMode({ ...SetPermissionMode.make({ paneId, mode }), commandId })
       ),
     resolvePlanReview: (paneId, requestId, approved) =>
       command('ResolvePlanReview', (client, id) =>
         client.ResolvePlanReview({
           ...ResolvePlanReview.make({ paneId, requestId, approved }),
-          requestId: id
+          commandId: id
         })
       ),
     focusPane: (paneId) =>
-      command('FocusPane', (client, requestId) =>
-        client.FocusPane({ ...FocusPane.make({ paneId }), requestId })
+      command('FocusPane', (client, commandId) =>
+        client.FocusPane({ ...FocusPane.make({ paneId }), commandId })
       ),
     interrupt: (paneId) =>
-      command('InterruptPane', (client, requestId) =>
-        client.InterruptPane({ ...InterruptPane.make({ paneId }), requestId })
+      command('InterruptPane', (client, commandId) =>
+        client.InterruptPane({ ...InterruptPane.make({ paneId }), commandId })
       ),
     rewindToCheckpoint: (paneId, messageUuid, resumeAnchorUuid) =>
-      command('RewindToCheckpoint', (client, requestId) =>
+      command('RewindToCheckpoint', (client, commandId) =>
         client.RewindToCheckpoint({
           ...RewindToCheckpoint.make({
             paneId,
             messageUuid,
             ...(resumeAnchorUuid !== undefined ? { resumeAnchorUuid } : {})
           }),
-          requestId
+          commandId
         })
       ),
     getInitialLayout: (): Promise<PaneNode> => query((client) => client.GetInitialLayout()),

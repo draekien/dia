@@ -1,3 +1,4 @@
+import { Deny, FreeformResponse } from '@shared/domain/attention'
 import type { PaneNode } from '@shared/domain/pane-tree'
 import { type IpcEvent, PaneAssistantTextDelta } from '@shared/ipc/contract'
 import type { EventFrame } from '@shared/ipc/rpc'
@@ -35,11 +36,12 @@ interface ClientScript {
 const makeClient = (script: ClientScript = {}) => {
   let sendAttempts = 0
   let subscribeAttempts = 0
-  const sendMessage = vi.fn((_payload: { requestId: string }) =>
+  const sendMessage = vi.fn((_payload: { commandId: string }) =>
     ++sendAttempts <= (script.sendMessageFailures ?? 0)
       ? Effect.fail(new ConnectionError({ reason: 'connection down' }))
       : Effect.void
   )
+  const resolvePrompt = vi.fn((_payload: { requestId: string; commandId: string }) => Effect.void)
   const subscribeEvents = vi.fn((_payload: { cursors: Record<string, number> }) => {
     const next = script.subscriptions?.[subscribeAttempts++]
     return next ?? Stream.never
@@ -47,10 +49,13 @@ const makeClient = (script: ClientScript = {}) => {
   const getInitialLayout = vi.fn(() => Effect.succeed(LAYOUT))
   const client = {
     SendMessage: sendMessage,
+    ResolvePermission: resolvePrompt,
+    ResolveQuestion: resolvePrompt,
+    ResolvePlanReview: resolvePrompt,
     SubscribeEvents: subscribeEvents,
     GetInitialLayout: getInitialLayout
   } as unknown as DiaRpcClient
-  return { client, sendMessage, subscribeEvents, getInitialLayout }
+  return { client, sendMessage, resolvePrompt, subscribeEvents, getInitialLayout }
 }
 
 const makeApi = (client: DiaRpcClient) => {
@@ -76,19 +81,41 @@ describe('makeHostApi', () => {
     vi.useRealTimers()
   })
 
-  it('resends a command that failed while the connection was down under the one requestId it was issued', async () => {
+  it('resends a command that failed while the connection was down under the one commandId it was issued', async () => {
     const { client, sendMessage } = makeClient({ sendMessageFailures: 2 })
     const { api, issuedRequestIds } = makeApi(client)
 
     api.sendMessage(PANE, 'hello')
     await advance(1200)
 
-    expect(sendMessage.mock.calls.map(([payload]) => payload.requestId)).toEqual([
+    expect(sendMessage.mock.calls.map(([payload]) => payload.commandId)).toEqual([
       'request-0',
       'request-0',
       'request-0'
     ])
     expect(issuedRequestIds()).toBe(1)
+  })
+
+  it('sends the pending prompt requestId separately from the commandId when resolving a prompt', async () => {
+    const { client, resolvePrompt } = makeClient()
+    const { api } = makeApi(client)
+
+    api.resolvePermission(PANE, 'prompt-permission', Deny.make({ message: 'no' }))
+    api.resolveQuestion(
+      PANE,
+      'prompt-question',
+      FreeformResponse.make({ questions: [], response: 'skip' })
+    )
+    api.resolvePlanReview(PANE, 'prompt-plan', true)
+    await advance(0)
+
+    expect(
+      resolvePrompt.mock.calls.map(([payload]) => [payload.requestId, payload.commandId])
+    ).toEqual([
+      ['prompt-permission', 'request-0'],
+      ['prompt-question', 'request-1'],
+      ['prompt-plan', 'request-2']
+    ])
   })
 
   it('stops resending a command once the resend window has passed and reports the failure', async () => {
