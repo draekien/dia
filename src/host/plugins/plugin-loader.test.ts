@@ -1,7 +1,9 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
+import { PluginRestartRequiredError } from '@shared/plugin/plugin-registry'
 import { Effect, FileSystem, Layer, Option, Path } from 'effect'
-import { type ModuleImporter, makeHostPluginLoader } from './plugin-loader'
+import { makeHostPluginLoader } from './plugin-loader'
+import type { PluginModules } from './plugin-modules'
 
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 
@@ -14,13 +16,18 @@ const pluginDirectory = (manifest: string | undefined) =>
     return { root, path }
   })
 
-const recordingImporter = (result: () => Promise<unknown>) => {
+const recordingModules = (result: () => Promise<unknown>) => {
   const calls: Array<{ root: string; entry: string }> = []
-  const importer: ModuleImporter = (root, entry) => {
-    calls.push({ root, entry })
-    return result()
+  const transactions: Array<string> = []
+  const modules: PluginModules = {
+    transact: (root, use) =>
+      Effect.sync(() => void transactions.push(root)).pipe(Effect.andThen(use)),
+    importEntry: (root, entry) => {
+      calls.push({ root, entry })
+      return result()
+    }
   }
-  return { importer, calls }
+  return { modules, calls, transactions }
 }
 
 const run = <A, E>(
@@ -35,10 +42,10 @@ describe('host plugin loader', () => {
         const { root, path } = yield* pluginDirectory(
           JSON.stringify({ name: 'chat', api: '1', host: 'src/host.ts' })
         )
-        const { importer, calls } = recordingImporter(() => Promise.resolve({ default: setup }))
-        const loader = yield* makeHostPluginLoader(importer)
+        const { modules, calls } = recordingModules(() => Promise.resolve({ default: setup }))
+        const loader = yield* makeHostPluginLoader(modules)
 
-        const loaded = yield* loader.load(root)
+        const loaded = yield* loader.load(root, Effect.succeed)
         const importedBeforeResolve = calls.length
         const resolved = yield* loaded.resolveSetup
 
@@ -56,10 +63,10 @@ describe('host plugin loader', () => {
         const { root } = yield* pluginDirectory(
           JSON.stringify({ name: 'theme', api: '1', renderer: 'renderer.tsx' })
         )
-        const { importer, calls } = recordingImporter(() => Promise.resolve({}))
-        const loader = yield* makeHostPluginLoader(importer)
+        const { modules, calls } = recordingModules(() => Promise.resolve({}))
+        const loader = yield* makeHostPluginLoader(modules)
 
-        const loaded = yield* loader.load(root)
+        const loaded = yield* loader.load(root, Effect.succeed)
         const resolved = yield* loaded.resolveSetup
 
         assert.isTrue(Option.isNone(resolved))
@@ -73,10 +80,10 @@ describe('host plugin loader', () => {
       Effect.gen(function* () {
         const { root, path } = yield* pluginDirectory(undefined)
         const loader = yield* makeHostPluginLoader(
-          recordingImporter(() => Promise.resolve({})).importer
+          recordingModules(() => Promise.resolve({})).modules
         )
 
-        const failure = yield* Effect.flip(loader.load(root))
+        const failure = yield* Effect.flip(loader.load(root, Effect.succeed))
 
         assert.include(failure.message, `Cannot read "${path.join(root, 'plugin.json')}"`)
       })
@@ -88,10 +95,10 @@ describe('host plugin loader', () => {
       Effect.gen(function* () {
         const { root, path } = yield* pluginDirectory(JSON.stringify({ name: 'Not Valid', api: 1 }))
         const loader = yield* makeHostPluginLoader(
-          recordingImporter(() => Promise.resolve({})).importer
+          recordingModules(() => Promise.resolve({})).modules
         )
 
-        const failure = yield* Effect.flip(loader.load(root))
+        const failure = yield* Effect.flip(loader.load(root, Effect.succeed))
 
         assert.include(failure.message, `Invalid "${path.join(root, 'plugin.json')}"`)
       })
@@ -104,12 +111,10 @@ describe('host plugin loader', () => {
         const { root } = yield* pluginDirectory(
           JSON.stringify({ name: 'chat', api: '1', host: 'host.ts' })
         )
-        const { importer } = recordingImporter(() => Promise.reject(new Error('Unexpected token')))
-        const loader = yield* makeHostPluginLoader(importer)
+        const { modules } = recordingModules(() => Promise.reject(new Error('Unexpected token')))
+        const loader = yield* makeHostPluginLoader(modules)
 
-        const failure = yield* Effect.flip(
-          loader.load(root).pipe(Effect.flatMap((loaded) => loaded.resolveSetup))
-        )
+        const failure = yield* Effect.flip(loader.load(root, (loaded) => loaded.resolveSetup))
 
         assert.include(failure.message, 'Unexpected token')
       })
@@ -122,14 +127,58 @@ describe('host plugin loader', () => {
         const { root } = yield* pluginDirectory(
           JSON.stringify({ name: 'chat', api: '1', host: 'host.ts' })
         )
-        const { importer } = recordingImporter(() => Promise.resolve({ default: 'nope' }))
-        const loader = yield* makeHostPluginLoader(importer)
+        const { modules } = recordingModules(() => Promise.resolve({ default: 'nope' }))
+        const loader = yield* makeHostPluginLoader(modules)
 
-        const failure = yield* Effect.flip(
-          loader.load(root).pipe(Effect.flatMap((loaded) => loaded.resolveSetup))
-        )
+        const failure = yield* Effect.flip(loader.load(root, (loaded) => loaded.resolveSetup))
 
         assert.include(failure.message, 'must export a setup function as its default export')
+      })
+    )
+  )
+
+  it.effect('runs the caller inside a module transaction for the plugin root', () =>
+    run(
+      Effect.gen(function* () {
+        const { root } = yield* pluginDirectory(
+          JSON.stringify({ name: 'chat', api: '1', host: 'host.ts' })
+        )
+        const { modules, transactions } = recordingModules(() => Promise.resolve({}))
+        const loader = yield* makeHostPluginLoader(modules)
+        const seen: Array<ReadonlyArray<string>> = []
+
+        yield* loader.load(root, () => Effect.sync(() => void seen.push([...transactions])))
+
+        assert.deepStrictEqual(transactions, [root])
+        assert.deepStrictEqual(seen, [[root]])
+      })
+    )
+  )
+
+  it.effect('does not run the caller when the module transaction refuses the load', () =>
+    run(
+      Effect.gen(function* () {
+        const { root } = yield* pluginDirectory(
+          JSON.stringify({ name: 'chat', api: '1', host: 'host.ts' })
+        )
+        const modules: PluginModules = {
+          transact: () =>
+            Effect.fail(new PluginRestartRequiredError({ reason: 'dependency', message: 'stale' })),
+          importEntry: () => Promise.resolve({})
+        }
+        const loader = yield* makeHostPluginLoader(modules)
+        let ran = false
+
+        const failure = yield* Effect.flip(
+          loader.load(root, () =>
+            Effect.sync(() => {
+              ran = true
+            })
+          )
+        )
+
+        assert.strictEqual(failure._tag, 'PluginRestartRequiredError')
+        assert.isFalse(ran)
       })
     )
   )

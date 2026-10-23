@@ -51,7 +51,9 @@ const makeClient = (script: ClientScript = {}) => {
     Effect.succeed({
       name: payload.name,
       origin: 'default' as const,
-      status: { _tag: 'Loaded' as const }
+      root: `plugins/${payload.name}`,
+      status: { _tag: 'Loaded' as const },
+      memoryBytes: 0
     })
   )
   const setPluginOverride = vi.fn((_payload: { name: string; directory: string }) =>
@@ -216,7 +218,9 @@ describe('makeHostApi', () => {
     expect(info).toEqual({
       name: 'example',
       origin: 'default',
-      status: { _tag: 'Loaded' }
+      root: 'plugins/example',
+      status: { _tag: 'Loaded' },
+      memoryBytes: 0
     })
   })
 
