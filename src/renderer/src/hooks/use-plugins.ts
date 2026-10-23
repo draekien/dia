@@ -54,10 +54,12 @@ export function usePlugins(): PluginsController {
       setRejection((current) => (current?.name === name ? undefined : current))
       try {
         await action()
+      } catch (error) {
+        setRejection({ name, message: error instanceof Error ? error.message : String(error) })
       } finally {
-        await refresh()
         inFlight.current.delete(name)
         setPending(new Set(inFlight.current))
+        await refresh().catch(() => undefined)
       }
     },
     [refresh]

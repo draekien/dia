@@ -169,8 +169,35 @@ describe('PluginsPage', () => {
 
     fireEvent.click(rowOf('chat').getByRole('button', { name: /Set folder/ }))
 
-    await screen.findByText('Folder not used: no plugin.json')
+    await screen.findByText('no plugin.json')
     expect(bridge.plugins.load).not.toHaveBeenCalled()
+  })
+
+  it('shows a failed bridge call on the plugin and lets the user retry it', async () => {
+    const { bridge } = installBridge([info('chat')])
+    bridge.plugins.load.mockRejectedValueOnce(new Error('bridge closed'))
+    render(<PluginsPage onClose={() => {}} />)
+    await screen.findByText('chat')
+
+    fireEvent.click(rowOf('chat').getByRole('button', { name: 'Reload' }))
+    await screen.findByText('bridge closed')
+
+    await waitFor(() =>
+      expect(
+        (rowOf('chat').getByRole('button', { name: 'Reload' }) as HTMLButtonElement).disabled
+      ).toBe(false)
+    )
+  })
+
+  it('keeps the page open when Escape was already handled by an overlay', () => {
+    const onClose = vi.fn()
+    render(<PluginsPage onClose={onClose} />)
+
+    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })
+    handled.preventDefault()
+    document.dispatchEvent(handled)
+
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('offers to return only an overridden plugin to the bundled copy, and reloads it', async () => {

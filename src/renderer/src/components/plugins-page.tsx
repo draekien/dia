@@ -89,7 +89,7 @@ function PluginRow({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <Button size="xs" variant="outline" disabled={busy} onClick={onReload}>
-            {busy ? <Loader2Icon className="animate-spin" /> : <RefreshCwIcon />}
+            {busy ? <Loader2Icon className="motion-safe:animate-spin" /> : <RefreshCwIcon />}
             {unloaded ? 'Load' : 'Reload'}
           </Button>
           {unloaded ? null : (
@@ -110,7 +110,7 @@ function PluginRow({
       </div>
       <p className="flex min-w-0 items-baseline gap-2 text-xs text-ink-muted">
         <span className="shrink-0">{overridden ? 'Folder' : 'Bundled'}</span>
-        <span className="truncate font-mono" title={plugin.root}>
+        <span className="min-w-0 font-mono break-all" title={plugin.root}>
           {plugin.root}
         </span>
       </p>
@@ -120,7 +120,9 @@ function PluginRow({
         </p>
       )}
       {rejection === undefined ? null : (
-        <p className="text-xs break-words text-ink">Folder not used: {rejection.message}</p>
+        <p className="max-h-32 overflow-y-auto text-xs break-words text-ink">
+          Not applied: <span className="font-mono whitespace-pre-wrap">{rejection.message}</span>
+        </p>
       )}
       {plugin.memoryBytes > 0 ? (
         <p className="text-xs text-ink-muted tabular-nums">
@@ -143,7 +145,7 @@ export function PluginsPage({ onClose }: { readonly onClose: () => void }) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape' && !event.defaultPrevented) onClose()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
