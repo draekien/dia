@@ -61,7 +61,7 @@ William is dia's developer and its first user. dia's MVP (`docs/prds/mvp.md`) is
 
 ## Additional Notes
 
-This PRD builds on the plugin platform (`docs/prds/plugin-platform.md`, ADR-0019 to ADR-0022): its features are built as built-in plugins once Phase 2 of `docs/plans/2026-10-22-plugin-platform.md` provides the loader, and agents run in the Host from Phase 1. Its decisions are ADR-0023 (tabs within registered projects), ADR-0024 (tray) and ADR-0025 (meta project). The product definition is `PRODUCT.md`; the visual rules for the overview, tabs and status indicator are in `DESIGN.md`.
+This PRD builds on the plugin platform (`docs/prds/plugin-platform.md`, ADR-0019 to ADR-0022): its features are built as built-in plugins once Phase 2 of `docs/plans/2026-10-22-plugin-platform.md` provides the loader, and agents run in the Host from Phase 1. Its plan is `docs/plans/2026-10-23-agent-os.md`. Its decisions are ADR-0023 (tabs within registered projects), ADR-0024 (tray) and ADR-0025 (meta project). The product definition is `PRODUCT.md`; the visual rules for the overview, tabs and status indicator are in `DESIGN.md`.
 
 Roadmap, not in this PRD:
 
@@ -78,4 +78,3 @@ Roadmap, not in this PRD:
 
 - How dia tells a user that closing the window leaves agents running (for example a notification on the first close) is decided during implementation.
 - Which secret scanner checks meta repo pushes is decided during implementation.
-- The order in which these features are built relative to Phases 2–4 of `docs/plans/2026-10-22-plugin-platform.md` is decided when this PRD gets its plan.
