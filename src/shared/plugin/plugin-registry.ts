@@ -115,6 +115,8 @@ interface Entry<Context extends PluginServices> {
   readonly provided: Set<string>
 }
 
+const megabytes = (bytes: number): string => `${(bytes / 1_000_000).toFixed(1)} MB`
+
 const makeEntry = <Context extends PluginServices>(source: PluginSource): Entry<Context> => ({
   origin: source.origin,
   root: source.root,
@@ -337,7 +339,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           if (deps.memory !== undefined) {
             const used = yield* deps.memory.used(name)
             if (used >= deps.memory.limit) {
-              const message = `Plugin "${name}" retained ${used} bytes across loads, over the limit of ${deps.memory.limit}. Restart dia to reload it.`
+              const message = `Plugin "${name}" retained ${megabytes(used)} across loads, over the limit of ${megabytes(deps.memory.limit)}. Restart dia to reload it.`
               entry.status = { _tag: 'RestartRequired', reason: 'memory', message }
               yield* Effect.logWarning('Plugin reload refused', { plugin: name, used })
               return yield* infoOf(name, entry)

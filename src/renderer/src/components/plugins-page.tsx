@@ -114,7 +114,11 @@ function PluginRow({
           {plugin.root}
         </span>
       </p>
-      {detail === undefined ? null : <p className="text-xs break-words text-ink">{detail}</p>}
+      {detail === undefined ? null : (
+        <p className="max-h-32 overflow-y-auto font-mono text-xs break-words whitespace-pre-wrap text-ink">
+          {detail}
+        </p>
+      )}
       {rejection === undefined ? null : (
         <p className="text-xs break-words text-ink">Folder not used: {rejection.message}</p>
       )}

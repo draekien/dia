@@ -34,6 +34,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0023](0023-agents-as-tabs-within-registered-projects.md) | Organise agents as tabs within registered projects, replacing the split-pane layout | accepted |
 | [0024](0024-background-agents-run-in-tabs-not-on-screen.md) | Run background agents in tabs that are not on screen; closing the window still quits dia | accepted |
 | [0025](0025-meta-project-as-a-dia-owned-git-repo.md) | Run a meta project: a dia-owned git repo loaded into every agent, changed through approved proposals | accepted |
+| [0026](0026-plugin-reload-as-a-transaction-with-rollback-and-a-memory-limit.md) | Reload a plugin as a transaction with rollback, per-module generations and a memory limit | accepted |
 
 ## Adding a new ADR
 

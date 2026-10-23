@@ -42,9 +42,9 @@ Generation: one process-wide counter. A module's generation is the counter value
 
 ## Registry load, in order
 
-All steps run inside `loader.load(root, ...)`, under the registry lock, inside `memory.track`.
+All steps hold the registry lock. Step 1 runs before the loader is called; steps 2 to 4 run inside `loader.load(root, ...)` inside `memory.track`.
 
-1. Refuse: when `memory.used(name) >= memory.limit`, the status is `RestartRequired('memory')`. Nothing is imported or changed.
+1. Refuse: when `memory.used(name) >= memory.limit`, the status is `RestartRequired('memory')`. Nothing is imported or changed, and `track` is not entered.
 2. Validate: manifest checks (API version, name), then `resolveSetup`. A failure leaves the running version running with `Loaded { reloadError }`. With no running version the status is `Failed`.
 3. Swap: close dependants and the running scope, then open the new setup. A setup failure reopens the previous setup with `Loaded { reloadError }`. With no previous setup the status is `Failed`.
 4. A failure in step 2 or 3 fails the transaction, so the loader restores its generations, importer edges and file signatures.
