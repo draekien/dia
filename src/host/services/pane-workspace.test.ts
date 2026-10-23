@@ -645,6 +645,104 @@ describe('PaneWorkspace', () => {
     })
   )
 
+  const restoredWithoutSession: PersistedWorkspace = {
+    tree: { _tag: 'Leaf', paneId: INITIAL_PANE_ID, status: 'ready', cwd: '/repo' },
+    panes: {
+      [INITIAL_PANE_ID]: {
+        config: {
+          paneId: INITIAL_PANE_ID,
+          cwd: '/repo',
+          model: 'm',
+          thinkingLevel: 'adaptive',
+          permissionMode: 'default'
+        }
+      }
+    }
+  }
+
+  it.effect('ensureLive opens a fresh session for a pane that has no recorded session', () =>
+    Effect.gen(function* () {
+      const requests: Array<Parameters<PaneSupervisor['Service']['openPane']>[0]> = []
+      const supervisorLayer = makeSupervisorLayer((request) => {
+        requests.push(request)
+        return echoOpenPane(request)
+      })
+      const { layer: persistenceLayer } = makePersistence(restoredWithoutSession)
+      const { events, onEvent: recordingOnEvent } = recordEvents()
+
+      yield* Effect.gen(function* () {
+        const workspace = yield* PaneWorkspace
+        yield* workspace.ensureLive(INITIAL_PANE_ID, recordingOnEvent)
+      }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
+
+      assert.strictEqual(requests.length, 1)
+      assert.strictEqual(requests[0].paneId, INITIAL_PANE_ID)
+      assert.strictEqual(requests[0].resume, undefined)
+      assert.strictEqual(requests[0].sourceCwd, '/repo')
+      assert.deepStrictEqual(events, [])
+    })
+  )
+
+  it.effect('ensureLive resumes the recorded session when the pane has one', () =>
+    Effect.gen(function* () {
+      const requests: Array<Parameters<PaneSupervisor['Service']['openPane']>[0]> = []
+      const supervisorLayer = makeSupervisorLayer((request) => {
+        requests.push(request)
+        return echoOpenPane(request)
+      })
+      const { layer: persistenceLayer } = makePersistence(restoredWithSession)
+
+      yield* Effect.gen(function* () {
+        const workspace = yield* PaneWorkspace
+        yield* workspace.ensureLive(INITIAL_PANE_ID, recordEvents().onEvent)
+      }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
+
+      assert.strictEqual(requests.length, 1)
+      assert.strictEqual(requests[0].resume, 'restored-session-1')
+    })
+  )
+
+  it.effect('ensureLive is a no-op when the pane already has a live handle', () =>
+    Effect.gen(function* () {
+      let openPaneCalls = 0
+      const supervisorLayer = makeSupervisorLayer(
+        (request) => {
+          openPaneCalls++
+          return echoOpenPane(request)
+        },
+        () => Effect.succeed(Option.some(fakeHandle))
+      )
+      const { layer: persistenceLayer } = makePersistence(restoredWithoutSession)
+
+      yield* Effect.gen(function* () {
+        const workspace = yield* PaneWorkspace
+        yield* workspace.ensureLive(INITIAL_PANE_ID, recordEvents().onEvent)
+      }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
+
+      assert.strictEqual(openPaneCalls, 0)
+    })
+  )
+
+  it.effect('ensureLive does nothing for a pane that is not in the workspace', () =>
+    Effect.gen(function* () {
+      let openPaneCalls = 0
+      const supervisorLayer = makeSupervisorLayer((request) => {
+        openPaneCalls++
+        return echoOpenPane(request)
+      })
+      const { layer: persistenceLayer } = makePersistence(restoredWithoutSession)
+      const { events, onEvent: recordingOnEvent } = recordEvents()
+
+      yield* Effect.gen(function* () {
+        const workspace = yield* PaneWorkspace
+        yield* workspace.ensureLive('ffffffff-0000-4000-8000-00000000ffff', recordingOnEvent)
+      }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
+
+      assert.strictEqual(openPaneCalls, 0)
+      assert.deepStrictEqual(events, [])
+    })
+  )
+
   it.effect('resumePane emits Errored without opening when a non-worktree cwd is gone', () =>
     Effect.gen(function* () {
       let openPaneCalls = 0

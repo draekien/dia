@@ -39,6 +39,18 @@ const paneStreamEvents = (paneId: string): Stream.Stream<PaneStreamEvent> =>
     )
   )
 
+const paneHistoryReloads = (paneId: string): Stream.Stream<void> =>
+  Stream.callback<void>((queue) =>
+    Effect.acquireRelease(
+      Effect.sync(() =>
+        window.dia.onHistoryReloadRequested((reloadedPaneId) => {
+          if (reloadedPaneId === paneId) Queue.offerUnsafe(queue, undefined)
+        })
+      ),
+      (unsubscribe) => Effect.sync(unsubscribe)
+    )
+  )
+
 /**
  * Per-pane conversation-state atom, keyed by `paneId`. Reading it yields a
  * `AsyncResult` of {@link PaneChatState}: pending until the pane's history loads,
@@ -58,6 +70,10 @@ const paneStreamEvents = (paneId: string): Stream.Stream<PaneStreamEvent> =>
  * already delivered. This closes a resume race: a freshly resumed pane warms up
  * its slash commands as soon as its process spawns, and that push would be lost
  * if it landed during the (async) history round-trip on a not-yet-subscribed atom.
+ *
+ * When the Host reports it can no longer replay what this pane missed while disconnected
+ * (`onHistoryReloadRequested`), the history is fetched again and replaces the pane's messages,
+ * again preserving slash-command state.
  */
 export const paneChatAtom = Atom.family((paneId: string) =>
   Atom.subscriptionRef(
@@ -72,12 +88,24 @@ export const paneChatAtom = Atom.family((paneId: string) =>
       yield* Effect.logDebug('pane chat subscription established').pipe(
         Effect.annotateLogs({ paneId })
       )
-      const history = yield* Effect.promise(() => window.dia.getPaneHistory(paneId))
-      yield* SubscriptionRef.update(ref, (state) => ({
-        ...paneChatStateFromHistory(paneId, history),
-        slashCommands: state.slashCommands,
-        warmingCommands: state.warmingCommands
-      }))
+      const loadHistory = Effect.gen(function* () {
+        const history = yield* Effect.promise(() => window.dia.getPaneHistory(paneId))
+        yield* SubscriptionRef.update(ref, (state) => ({
+          ...paneChatStateFromHistory(paneId, history),
+          slashCommands: state.slashCommands,
+          warmingCommands: state.warmingCommands
+        }))
+      })
+      yield* paneHistoryReloads(paneId).pipe(
+        Stream.runForEach(() =>
+          Effect.logInfo('pane history reload requested by the Host').pipe(
+            Effect.annotateLogs({ paneId }),
+            Effect.andThen(loadHistory)
+          )
+        ),
+        Effect.forkScoped
+      )
+      yield* loadHistory
       yield* Effect.addFinalizer(() =>
         Effect.logDebug('pane chat subscription released').pipe(Effect.annotateLogs({ paneId }))
       )

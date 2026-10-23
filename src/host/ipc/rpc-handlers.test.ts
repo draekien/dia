@@ -1,0 +1,266 @@
+import { NodePath } from '@effect/platform-node'
+import { assert, describe, it } from '@effect/vitest'
+import { type PaneNode, PaneNotFoundError } from '@shared/domain/pane-tree'
+import {
+  CreatePane,
+  type IpcEvent,
+  LayoutChanged,
+  type PaneCreateFailed,
+  SendMessage,
+  SplitPane
+} from '@shared/ipc/contract'
+import { Effect, FileSystem, Layer, Option, Stream } from 'effect'
+import { type CommandDeduper, makeCommandDeduperLive } from '../services/command-deduper'
+import { EventHub } from '../services/event-hub'
+import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
+import { PaneWorkspace } from '../services/pane-workspace'
+import { SettingsStore } from '../services/settings-store'
+import { makeDiaRpcHandlers } from './rpc-handlers'
+
+const PANE_ID = '00000000-0000-4000-8000-00000000000a'
+const OTHER_PANE_ID = '00000000-0000-4000-8000-00000000000b'
+const LAYOUT: PaneNode = { _tag: 'Leaf', paneId: PANE_ID, status: 'ready', cwd: '/repo' }
+
+interface Harness {
+  readonly calls: Array<string>
+  readonly published: Array<IpcEvent>
+  readonly layer: Layer.Layer<
+    | PaneWorkspace
+    | PaneSupervisor
+    | SettingsStore
+    | EventHub
+    | FileSystem.FileSystem
+    | CommandDeduper
+  >
+}
+
+interface HarnessOptions {
+  readonly livePanes?: ReadonlyArray<string>
+  readonly knownPanes?: ReadonlyArray<string>
+  readonly sendMessageFails?: boolean
+  readonly createPaneFails?: boolean
+}
+
+const sendMessage = (paneId: string, text: string, requestId: string) => ({
+  ...SendMessage.make({ paneId, text }),
+  requestId
+})
+
+const createPane = () => ({
+  ...CreatePane.make({
+    paneId: PANE_ID,
+    cwd: '/repo',
+    model: 'sonnet',
+    thinkingLevel: 'adaptive',
+    permissionMode: 'default',
+    useWorktree: false
+  }),
+  requestId: 'req-1'
+})
+
+const makeHarness = (options: HarnessOptions = {}): Harness => {
+  const calls: Array<string> = []
+  const published: Array<IpcEvent> = []
+  const live = new Set(options.livePanes ?? [])
+  const known = new Set(options.knownPanes ?? [...live])
+
+  const handle: PaneHandle = {
+    sendMessage: (text) =>
+      options.sendMessageFails
+        ? Effect.die(new Error('session is gone'))
+        : Effect.sync(() => {
+            calls.push(`sendMessage:${text}`)
+          }),
+    setThinkingLevel: () => Effect.void,
+    setPermissionMode: () => Effect.void,
+    resolvePermission: () => Effect.void,
+    resolveQuestion: () => Effect.void,
+    resolvePlanReview: () => Effect.void,
+    rewindToCheckpoint: () => Effect.void,
+    interrupt: () => Effect.void,
+    markCrashed: () => Effect.void
+  }
+
+  const supervisor = Layer.succeed(PaneSupervisor, {
+    openPane: () => Effect.die(new Error('openPane is not used by the handlers')),
+    closePane: () => Effect.void,
+    getHandle: (paneId) =>
+      Effect.sync(() => (live.has(paneId) ? Option.some(handle) : Option.none())),
+    closeAll: () => Effect.void
+  })
+
+  const workspace = Layer.succeed(PaneWorkspace, {
+    getTree: () => Effect.succeed(LAYOUT),
+    split: (paneId) =>
+      known.has(paneId) ? Effect.succeed(LAYOUT) : Effect.fail(new PaneNotFoundError({ paneId })),
+    createPane: (paneId) =>
+      options.createPaneFails
+        ? Effect.fail(new PaneNotFoundError({ paneId }))
+        : Effect.sync(() => {
+            calls.push(`createPane:${paneId}`)
+            return LAYOUT
+          }),
+    setThinkingLevel: () => Effect.succeed(LAYOUT),
+    setPermissionMode: () => Effect.succeed(LAYOUT),
+    close: () => Effect.succeed(LAYOUT),
+    getPaneHistory: () => Effect.succeed([]),
+    resumePane: () => Effect.void,
+    ensureLive: (paneId) =>
+      Effect.sync(() => {
+        calls.push(`ensureLive:${paneId}`)
+        if (known.has(paneId)) live.add(paneId)
+      })
+  })
+
+  const settings = Layer.succeed(SettingsStore, {
+    getLastDirectory: () => Effect.succeed(Option.none()),
+    setLastDirectory: () => Effect.void,
+    getTheme: () => Effect.succeed(Option.none()),
+    setTheme: () => Effect.void
+  })
+
+  const hub = Layer.succeed(EventHub, {
+    publish: (event) =>
+      Effect.sync(() => {
+        published.push(event)
+      }),
+    subscribe: () => Stream.empty
+  })
+
+  return {
+    calls,
+    published,
+    layer: Layer.mergeAll(
+      supervisor,
+      workspace,
+      settings,
+      hub,
+      FileSystem.layerNoop({}),
+      makeCommandDeduperLive()
+    )
+  }
+}
+
+const withHandlers = <A>(
+  harness: Harness,
+  use: (handlers: Effect.Success<typeof makeDiaRpcHandlers>) => Effect.Effect<A>
+) =>
+  Effect.gen(function* () {
+    const handlers = yield* makeDiaRpcHandlers
+    return yield* use(handlers)
+  }).pipe(Effect.provide(Layer.mergeAll(harness.layer, NodePath.layer)))
+
+describe('Dia RPC handlers', () => {
+  it.effect('applies a SendMessage once when the client resends it with the same requestId', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ livePanes: [PANE_ID] })
+
+      yield* withHandlers(harness, (handlers) =>
+        Effect.gen(function* () {
+          const command = sendMessage(PANE_ID, 'hello', 'req-1')
+          yield* handlers.SendMessage(command)
+          yield* handlers.SendMessage(command)
+        })
+      )
+
+      assert.deepStrictEqual(
+        harness.calls.filter((call) => call.startsWith('sendMessage')),
+        ['sendMessage:hello']
+      )
+    })
+  )
+
+  it.effect('applies a SendMessage with a new requestId even when the text repeats', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ livePanes: [PANE_ID] })
+
+      yield* withHandlers(harness, (handlers) =>
+        Effect.gen(function* () {
+          yield* handlers.SendMessage(sendMessage(PANE_ID, 'again', 'req-1'))
+          yield* handlers.SendMessage(sendMessage(PANE_ID, 'again', 'req-2'))
+        })
+      )
+
+      assert.deepStrictEqual(
+        harness.calls.filter((call) => call.startsWith('sendMessage')),
+        ['sendMessage:again', 'sendMessage:again']
+      )
+    })
+  )
+
+  it.effect(
+    'starts the pane session before delivering a SendMessage to a pane with no live session',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({ knownPanes: [PANE_ID] })
+
+        yield* withHandlers(harness, (handlers) =>
+          handlers.SendMessage(sendMessage(PANE_ID, 'wake up', 'req-1'))
+        )
+
+        assert.deepStrictEqual(harness.calls, [`ensureLive:${PANE_ID}`, 'sendMessage:wake up'])
+      })
+  )
+
+  it.effect('drops a SendMessage for a pane that does not exist without failing the RPC', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ knownPanes: [PANE_ID] })
+
+      yield* withHandlers(harness, (handlers) =>
+        handlers.SendMessage(sendMessage(OTHER_PANE_ID, 'lost', 'req-1'))
+      )
+
+      assert.deepStrictEqual(harness.calls, [`ensureLive:${OTHER_PANE_ID}`])
+    })
+  )
+
+  it.effect('does not fail the RPC when the session rejects the message', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ livePanes: [PANE_ID], sendMessageFails: true })
+
+      const exit = yield* withHandlers(harness, (handlers) =>
+        handlers.SendMessage(sendMessage(PANE_ID, 'boom', 'req-1')).pipe(Effect.exit)
+      )
+
+      assert.isTrue(exit._tag === 'Success')
+    })
+  )
+
+  it.effect('publishes the new layout after CreatePane succeeds', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+
+      yield* withHandlers(harness, (handlers) => handlers.CreatePane(createPane()))
+
+      assert.deepStrictEqual(harness.published, [LayoutChanged.make({ tree: LAYOUT })])
+    })
+  )
+
+  it.effect('publishes PaneCreateFailed when CreatePane fails', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ createPaneFails: true })
+
+      yield* withHandlers(harness, (handlers) => handlers.CreatePane(createPane()))
+
+      assert.strictEqual(harness.published.length, 1)
+      const event = harness.published[0]
+      assert.isTrue(event._tag === 'PaneCreateFailed')
+      assert.strictEqual((event as PaneCreateFailed).paneId, PANE_ID)
+    })
+  )
+
+  it.effect('does not publish a layout when SplitPane targets an unknown pane', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ knownPanes: [PANE_ID] })
+
+      yield* withHandlers(harness, (handlers) =>
+        handlers.SplitPane({
+          ...SplitPane.make({ paneId: OTHER_PANE_ID, direction: 'row' }),
+          requestId: 'req-1'
+        })
+      )
+
+      assert.deepStrictEqual(harness.published, [])
+    })
+  )
+})
