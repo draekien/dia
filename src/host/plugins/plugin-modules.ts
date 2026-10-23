@@ -131,14 +131,19 @@ const makePluginModules = (): PluginModules => {
     return changed
   }
 
+  const registerRoot = (root: string): string => {
+    installHooks()
+    const prefix = rootPrefix(root)
+    roots.add(prefix)
+    return prefix
+  }
+
   const transact = <A, E, R>(
     root: string,
     use: Effect.Effect<A, E, R>
   ): Effect.Effect<A, E | PluginRestartRequiredError, R> =>
     Effect.gen(function* () {
-      installHooks()
-      const prefix = rootPrefix(root)
-      roots.add(prefix)
+      const prefix = registerRoot(root)
 
       const staleDependencies = changedDependencies(prefix)
       if (staleDependencies.length > 0) {
@@ -175,8 +180,7 @@ const makePluginModules = (): PluginModules => {
     })
 
   const importEntry = (root: string, entry: string): Promise<unknown> => {
-    installHooks()
-    roots.add(rootPrefix(root))
+    registerRoot(root)
     return import(pathToFileURL(entry).href)
   }
 

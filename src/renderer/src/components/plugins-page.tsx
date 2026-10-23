@@ -1,4 +1,9 @@
-import { PLUGIN_MEMORY_LIMIT, type PluginInfo, type PluginStatus } from '@shared/plugin/manifest'
+import {
+  formatMegabytes,
+  PLUGIN_MEMORY_LIMIT,
+  type PluginInfo,
+  type PluginStatus
+} from '@shared/plugin/manifest'
 import { ByteSize } from 'effect'
 import { ArrowLeftIcon, FolderIcon, Loader2Icon, RefreshCwIcon } from 'lucide-react'
 import { useEffect } from 'react'
@@ -27,8 +32,6 @@ export function onPluginsPageRequested(listener: () => void): () => void {
 }
 
 const limitBytes = ByteSize.toNumberUnsafe(PLUGIN_MEMORY_LIMIT)
-
-const formatMegabytes = (bytes: number): string => `${(bytes / 1_000_000).toFixed(1)} MB`
 
 const statusLabel = (status: PluginStatus): string => {
   switch (status._tag) {

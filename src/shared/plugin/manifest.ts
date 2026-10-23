@@ -13,6 +13,9 @@ export const PLUGIN_API_VERSION = '1'
  */
 export const PLUGIN_MEMORY_LIMIT = ByteSize.megabytes(100)
 
+/** Formats a byte count in decimal megabytes with one decimal, for example `19.7 MB`. */
+export const formatMegabytes = (bytes: number): string => `${(bytes / 1_000_000).toFixed(1)} MB`
+
 /** Name of a plugin: lowercase letters, digits and hyphens, starting with a letter. */
 export const PluginName = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]*$/))
 export type PluginName = typeof PluginName.Type

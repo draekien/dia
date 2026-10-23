@@ -40,11 +40,6 @@ import {
   PaneToolCallStarted
 } from '@shared/ipc/contract'
 import {
-  PluginOverrideApplied,
-  PluginOverrideRejected,
-  type PluginOverrideResult
-} from '@shared/plugin/manifest'
-import {
   type Cause,
   Context,
   Data,
@@ -64,7 +59,7 @@ import {
   Stream
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import { PluginSources } from '../plugins/plugin-sources'
+import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { type AgentSession, makeAgentSession } from '../session/agent-session'
 import type { PluginToolHost } from '../session/plugin-tools'
 import type { OutboundMessage } from '../session/protocol'
@@ -154,13 +149,7 @@ export const SessionFactoryLive = Layer.effect(
     const sources = yield* PluginSources
     const pluginToolHost: PluginToolHost = {
       reload: (name) => plugins.load(name),
-      setOverride: (name, directory) =>
-        sources.setOverride(name, directory).pipe(
-          Effect.as(PluginOverrideApplied.make({}) as PluginOverrideResult),
-          Effect.catchTag('InvalidOverrideError', (error) =>
-            Effect.succeed(PluginOverrideRejected.make({ message: error.message }))
-          )
-        ),
+      setOverride: (name, directory) => applyOverride(sources, name, directory),
       clearOverride: (name) => sources.clearOverride(name)
     }
     return { start: (options) => makeAgentSession({ ...options, pluginToolHost }) }
