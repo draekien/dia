@@ -11,7 +11,18 @@ import {
   type HostToMainMessage,
   MainToHostMessage
 } from '@shared/ipc/host-process'
-import { Context, Effect, Layer, Queue, References, Result, Schema, Stream } from 'effect'
+import {
+  Context,
+  Effect,
+  Exit,
+  Layer,
+  Queue,
+  References,
+  Result,
+  Schema,
+  Scope,
+  Stream
+} from 'effect'
 import { HttpServer } from 'effect/http'
 import { makeLoggerLive } from '../main/logger'
 import { makeHostServerLive } from './ipc/host-server'
@@ -121,23 +132,30 @@ export const runHost = Effect.scoped(
     })
 
     const token = randomBytes(32).toString('hex')
-    const context = yield* Layer.build(buildHostLayer(init, token))
-    const server = Context.get(context, HttpServer.HttpServer)
-    const supervisor = Context.get(context, PaneSupervisor)
-    const address = server.address
-    if (!('port' in address)) {
-      return yield* Effect.die(new Error(`Host listener bound to ${address._tag}, not a TCP port`))
-    }
-    const { port } = address
-    yield* Effect.logInfo('Host listening', { port })
-    yield* post(HostReady.make({ port, token }))
+    const hostScope = yield* Scope.make()
+    yield* Effect.addFinalizer(() => Scope.close(hostScope, Exit.void))
+    const context = yield* Layer.buildWithScope(buildHostLayer(init, token), hostScope)
+    yield* Effect.gen(function* () {
+      const server = Context.get(context, HttpServer.HttpServer)
+      const supervisor = Context.get(context, PaneSupervisor)
+      const address = server.address
+      if (!('port' in address)) {
+        return yield* Effect.die(
+          new Error(`Host listener bound to ${address._tag}, not a TCP port`)
+        )
+      }
+      const { port } = address
+      yield* Effect.logInfo('Host listening', { port })
+      yield* post(HostReady.make({ port, token }))
 
-    while (true) {
-      const message = yield* Queue.take(inbox)
-      if (message._tag === 'Shutdown') break
-    }
-    yield* Effect.logInfo('Host shutting down')
-    yield* supervisor.closeAll()
-    yield* post(HostShutdownComplete.make({}))
+      while (true) {
+        const message = yield* Queue.take(inbox)
+        if (message._tag === 'Shutdown') break
+      }
+      yield* Effect.logInfo('Host shutting down')
+      yield* supervisor.closeAll()
+      yield* Scope.close(hostScope, Exit.void)
+      yield* post(HostShutdownComplete.make({}))
+    }).pipe(Effect.provideContext(context))
   })
 )

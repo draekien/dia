@@ -170,11 +170,16 @@ export const startHostProcess = Effect.fn('HostProcess.start')(function* (option
     yield* Ref.set(stoppingRef, true)
     const child = yield* Ref.get(childRef)
     if (Option.isNone(child)) return
+    yield* Effect.logInfo('Asking the Host to shut down')
     child.value.postMessage(encodeToHost(HostShutdown.make({})))
-    yield* Deferred.await(shutdownComplete).pipe(
+    const completedInTime = yield* Deferred.await(shutdownComplete).pipe(
       Effect.timeout(SHUTDOWN_TIMEOUT),
-      Effect.catch(() => Effect.logWarning('Host did not shut down in time; killing it'))
+      Effect.as(true),
+      Effect.catch(() =>
+        Effect.logWarning('Host did not shut down in time; killing it').pipe(Effect.as(false))
+      )
     )
+    if (completedInTime) yield* Effect.logInfo('Host shut down cleanly')
     child.value.kill()
   })
 
