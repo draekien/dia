@@ -56,7 +56,7 @@ const withRequestId = <Fields extends Schema.Struct.Fields>(command: Schema.Stru
  */
 export const PaneEventFrame = Schema.TaggedStruct('PaneEvent', {
   paneId: Schema.String,
-  seq: Schema.Number,
+  seq: Schema.Finite,
   event: IpcEvent
 })
 export type PaneEventFrame = typeof PaneEventFrame.Type
@@ -107,7 +107,7 @@ export const DiaRpcs = RpcGroup.make(
     success: ChooseDirectoryResult
   }),
   Rpc.make('SubscribeEvents', {
-    payload: { cursors: Schema.Record(Schema.String, Schema.Number) },
+    payload: { cursors: Schema.Record(Schema.String, Schema.Finite) },
     success: EventFrame,
     stream: true
   })

@@ -48,7 +48,7 @@ export const CHANNEL = {
  * the Host at startup and hands it to the preload over {@link CHANNEL}.getHostConnection.
  */
 export const HostConnection = Schema.Struct({
-  port: Schema.Number,
+  port: Schema.Finite,
   token: Schema.String
 })
 export type HostConnection = typeof HostConnection.Type

@@ -5,7 +5,7 @@ import {
   TOKEN_SUBPROTOCOL_PREFIX,
   VERSION_SUBPROTOCOL_PREFIX
 } from '@shared/ipc/rpc'
-import { Effect, Layer, type Scope } from 'effect'
+import { Effect, Fiber, Layer, type Scope } from 'effect'
 import { HttpServer, HttpServerRequest, HttpServerResponse } from 'effect/http'
 import { RpcSerialization, RpcServer } from 'effect/rpc'
 import { Socket } from 'effect/socket'
@@ -57,6 +57,12 @@ const handleUpgrade = (
         hostVersion: PROTOCOL_VERSION
       })
       const socket = yield* Effect.orDie(request.upgrade)
+      const reader = yield* Effect.forkScoped(
+        Effect.gen(function* () {
+          const { pull } = yield* socket.reader
+          while (true) yield* pull
+        }).pipe(Effect.ignore)
+      )
       const writer = yield* socket.writer
       yield* writer.write(
         new Socket.CloseEvent(
@@ -64,6 +70,7 @@ const handleUpgrade = (
           `protocol version mismatch: host ${PROTOCOL_VERSION}, client ${version ?? 'unknown'}`
         )
       )
+      yield* Fiber.join(reader)
       return HttpServerResponse.empty()
     }
 

@@ -41,7 +41,7 @@ export type MainToHostMessage = typeof MainToHostMessage.Type
  * `token` clients must present. Neither travels through argv or environment variables.
  */
 export const HostReady = Schema.TaggedStruct('Ready', {
-  port: Schema.Number,
+  port: Schema.Finite,
   token: Schema.String
 })
 export type HostReady = typeof HostReady.Type
