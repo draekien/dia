@@ -1,4 +1,4 @@
-import { Schema } from 'effect'
+import { ByteSize, Schema } from 'effect'
 
 /**
  * Version of the plugin API a dia build offers. A plugin manifest declares the version it was
@@ -6,6 +6,12 @@ import { Schema } from 'effect'
  * Increment it whenever the context a plugin receives changes in a way an older plugin cannot use.
  */
 export const PLUGIN_API_VERSION = '1'
+
+/**
+ * Host heap growth, summed over a plugin's loads, at which the Host refuses to reload that plugin
+ * until it restarts. `PluginInfo.memoryBytes` is measured against this value.
+ */
+export const PLUGIN_MEMORY_LIMIT = ByteSize.megabytes(100)
 
 /** Name of a plugin: lowercase letters, digits and hyphens, starting with a letter. */
 export const PluginName = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]*$/))

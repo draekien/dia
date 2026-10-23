@@ -1,16 +1,11 @@
 import type { HostPluginContext } from '@shared/plugin/api'
+import { PLUGIN_MEMORY_LIMIT } from '@shared/plugin/manifest'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
 import { ByteSize, Context, Effect, Layer } from 'effect'
 import { EventHub } from '../services/event-hub'
 import { makeHostPluginLoader } from './plugin-loader'
 import { heapUsedAfterGc, makePluginMemoryGuard } from './plugin-memory-guard'
 import { PluginSources } from './plugin-sources'
-
-/**
- * Host heap growth, summed over a plugin's loads, at which the Host refuses to reload that plugin
- * until it restarts.
- */
-export const PLUGIN_MEMORY_LIMIT = ByteSize.megabytes(100)
 
 /**
  * The Host's plugin lifecycle: `load` opens a plugin (or replaces it when open), `unload` closes
