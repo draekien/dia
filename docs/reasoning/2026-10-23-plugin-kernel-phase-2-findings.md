@@ -28,6 +28,7 @@ When plugin B provides `db` and plugin A injects it, loading B again closes A (A
 
 ## Implication
 
+- The loader reads the manifest and defers the entry import (`resolveSetup`) so the registry checks the API version and name first; a plugin built for another version never runs its top-level code.
 - Keep the plugin context free of kernel handles (`PaneSupervisor`, `query()`); a plugin that needs one gets a narrower service added to the context deliberately.
 - Add shared runtime libraries to the resolve hook's list when a plugin needs another one (`react` for renderer plugins in Phase 3).
 - A reload leaks module instances, as the Phase 0 entry records; the per-reload growth is still not measured.

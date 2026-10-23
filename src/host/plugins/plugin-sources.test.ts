@@ -171,4 +171,37 @@ describe('PluginSources', () => {
       })
     )
   )
+  it.effect('leaves out directory names and override keys that are not valid plugin names', () =>
+    withWorkspace((ws, sources) =>
+      Effect.gen(function* () {
+        yield* ws.writePlugin(ws.path.join(ws.defaultRoot, 'Bad_Name'), 'Bad_Name')
+        const overrideDirectory = ws.path.join(ws.base, 'worktree', 'theme')
+        yield* ws.writePlugin(overrideDirectory, 'theme')
+        yield* ws.writeModulePackage(ws.path.join(ws.base, 'worktree'), 'module')
+        yield* sources.setOverride('Not Valid', overrideDirectory)
+
+        const names = yield* sources.names()
+
+        assert.deepStrictEqual([...names], ['chat'])
+      })
+    )
+  )
+
+  it.effect('stores an override as an absolute normalised path', () =>
+    withWorkspace((ws, sources) =>
+      Effect.gen(function* () {
+        const directory = ws.path.join(ws.base, 'worktree', 'chat')
+        yield* ws.writePlugin(directory, 'chat')
+        yield* ws.writeModulePackage(ws.path.join(ws.base, 'worktree'), 'module')
+        const untidy = ws.path.join(ws.base, 'worktree', 'elsewhere', '..', 'chat')
+
+        yield* sources.setOverride('chat', untidy)
+
+        assert.deepStrictEqual(
+          yield* sources.resolve('chat'),
+          Option.some({ root: directory, origin: 'override' })
+        )
+      })
+    )
+  )
 })

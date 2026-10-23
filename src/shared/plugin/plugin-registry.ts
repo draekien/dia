@@ -179,7 +179,9 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         }
         const scope = yield* Scope.fork(parentScope)
         const context = deps.extend(servicesFor(name, entry))
-        const exit = yield* Effect.exit(Scope.provide(scope)(setup.value(context)))
+        const exit = yield* Effect.exit(
+          Scope.provide(scope)(Effect.suspend(() => setup.value(context)))
+        )
         if (Exit.isFailure(exit)) {
           yield* Scope.close(scope, exit)
           entry.manifest = undefined

@@ -379,4 +379,17 @@ describe('plugin registry', () => {
       assert.deepStrictEqual(log, ['alpha:open'])
     }).pipe(Effect.scoped)
   )
+  it.effect('reports Failed when a setup function throws before returning an effect', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        thrower: plugin(manifest('thrower'), () => {
+          throw new Error('sync boom')
+        })
+      })
+
+      const result = yield* registry.load('thrower')
+
+      assert.deepStrictEqual(result.status, { _tag: 'Failed', message: 'sync boom' })
+    }).pipe(Effect.scoped)
+  )
 })

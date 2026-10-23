@@ -1,3 +1,4 @@
+import { PluginName } from '@shared/plugin/manifest'
 import type { PluginCatalog } from '@shared/plugin/plugin-registry'
 import { Context, Data, Effect, FileSystem, Layer, Option, Path, Result, Schema } from 'effect'
 import { SettingsStore } from '../services/settings-store'
@@ -24,6 +25,8 @@ export class PluginSources extends Context.Service<
     readonly clearOverride: (name: string) => Effect.Effect<void>
   }
 >()('PluginSources') {}
+
+const isPluginName = Schema.is(PluginName)
 
 const PackageType = Schema.Struct({ type: Schema.optional(Schema.String) })
 const decodePackageType = Schema.decodeUnknownResult(Schema.fromJsonString(PackageType))
@@ -68,7 +71,7 @@ export const makePluginSourcesLive = (defaultRoot: string) =>
           { concurrency: 'unbounded' }
         )
         const overrides = yield* settings.getPluginOverrides()
-        return [...new Set([...shipped, ...Object.keys(overrides)])]
+        return [...new Set([...shipped, ...Object.keys(overrides)])].filter(isPluginName)
       })
 
       const resolve = Effect.fn('PluginSources.resolve')(function* (name: string) {
@@ -97,8 +100,9 @@ export const makePluginSourcesLive = (defaultRoot: string) =>
             message: `"${directory}" does not resolve to a package with "type": "module"`
           })
         }
-        yield* settings.setPluginOverride(name, directory)
-        yield* Effect.logInfo('Plugin override set', { plugin: name, directory })
+        const resolved = path.resolve(directory)
+        yield* settings.setPluginOverride(name, resolved)
+        yield* Effect.logInfo('Plugin override set', { plugin: name, directory: resolved })
       })
 
       const clearOverride = Effect.fn('PluginSources.clearOverride')(function* (name: string) {
