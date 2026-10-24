@@ -64,21 +64,7 @@ Renderer-specific triggers (UI/UX work, shadcn/ui components) are in `src/render
 
 If you realize partway through a task that a trigger applies and you skipped the skill, stop, invoke the skill, and reconcile your work against its guidance before continuing.
 
-## Before raising a PR
+## Workflow
 
-BLOCKING, in this order, on the branch diff, before `gh pr create`:
-
-1. `/simplify`, then apply its verified fixes.
-2. `/code-review medium --fix`.
-3. Re-run `pnpm typecheck`, `pnpm lint`, `pnpm test`, and commit any fixes.
-4. The PR body must show proof the change works (test results and a run of the real app) and list what was not covered.
-5. Use a conventional-commit PR title, then register the PR with `link_pull_request`.
-
-## Manual verification
-
-- Launch Electron with `env -u ELECTRON_RUN_AS_NODE electron .`; otherwise it runs as plain Node.
-- A dev build reads and writes the real `%APPDATA%\dia-dev` profile (a packaged build uses `%APPDATA%\dia`). Back up `workspace.json` and `settings.json` first and restore them after.
-- Drive the window with `--remote-debugging-port` and CDP `Runtime.evaluate` on `window.dia`. See `docs/reasoning/2026-10-23-host-process-phase-1-findings.md`.
-- In `Runtime.evaluate` strings write Windows paths with forward slashes (`'F:/Dev/dia'`); backslashes are lost between the shell and JS.
-- Packaged check: `pnpm exec electron-vite build`, then `pnpm exec electron-builder --win --dir --config.directories.output=<scratch> --config.win.signAndEditExecutable=false`, then run `<scratch>/win-unpacked/dia.exe --user-data-dir=<scratch-profile> --remote-debugging-port=<port>` (`env -u ELECTRON_RUN_AS_NODE`). It reads a scratch profile, so no backup is needed.
-- A restored `workspace.json` can hold a session id the SDK no longer has, which crashes the pane. After backing it up, move it aside: the initial pane `00000000-0000-0000-0000-000000000001` then has status `pending`. Drive a real turn with `window.dia.createPane(id, 'F:/Dev/dia', 'claude-sonnet-5', 'off', 'default', false)`, then `sendMessage`, and read `onMessageAppended` and `onAttentionChanged`.
+- Run a task from request to open PR with `/implement-task`.
+- Raise every PR through the `raise-pr` skill. Launch and drive the app for a manual check through the `verify-in-app` skill.
