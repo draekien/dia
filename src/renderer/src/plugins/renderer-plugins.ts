@@ -66,6 +66,7 @@ export const makeRendererPlugins = (
         )
     },
     loader: {
+      peek: (name) => read(name).pipe(Effect.map((loaded) => loaded.manifest)),
       load: <A, E, R>(
         name: string,
         use: (loaded: LoadedPlugin<PluginServices>) => Effect.Effect<A, E, R>

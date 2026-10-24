@@ -165,7 +165,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       unload: (name) => query((client) => client.UnloadPlugin({ name })),
       setOverride: (name, directory) =>
         query((client) => client.SetPluginOverride({ name, directory })),
-      clearOverride: (name) => query((client) => client.ClearPluginOverride({ name }))
+      clearOverride: (name) => query((client) => client.ClearPluginOverride({ name })),
+      onStatusChanged: (listener) => subscribeTo('PluginStatusChanged', listener)
     },
     sendMessage: (paneId, text) =>
       command('SendMessage', (client, commandId) =>

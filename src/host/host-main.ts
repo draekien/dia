@@ -160,8 +160,7 @@ export const runHost = Effect.scoped(
       }
       const { port } = address
       yield* Effect.logInfo('Host listening', { port })
-      const infos = yield* Context.get(context, HostPlugins).loadAll()
-      yield* Effect.logInfo('Plugins loaded', { count: infos.length })
+      yield* Context.get(context, HostPlugins).start()
       yield* post(HostReady.make({ port, token }))
 
       while (true) {

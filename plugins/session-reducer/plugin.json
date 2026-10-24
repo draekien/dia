@@ -1,5 +1,6 @@
 {
   "name": "session-reducer",
   "api": "1",
-  "host": "host.ts"
+  "host": "host.ts",
+  "load": "eager"
 }

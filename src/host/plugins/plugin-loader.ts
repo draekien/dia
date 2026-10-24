@@ -17,7 +17,8 @@ const decodeManifest = Schema.decodeUnknownResult(Schema.fromJsonString(PluginMa
  * `host` entry, `resolveSetup` imports that entry with `modules.importEntry` and takes its
  * default export as the setup function. Every failure (missing or invalid `plugin.json`, an
  * entry that does not import, a default export that is not a function) is a
- * {@link PluginLoadError} naming the cause. Requires `FileSystem` and `Path`.
+ * {@link PluginLoadError} naming the cause. `peek` does the same read and decode without importing
+ * or transacting anything. Requires `FileSystem` and `Path`.
  */
 export const makeHostPluginLoader = (
   modules: PluginModules = processPluginModules
@@ -64,5 +65,7 @@ export const makeHostPluginLoader = (
       return yield* modules.transact(root, use(loaded))
     })
 
-    return { load }
+    const peek = (root: string) => read(root).pipe(Effect.map((loaded) => loaded.manifest))
+
+    return { peek, load }
   })

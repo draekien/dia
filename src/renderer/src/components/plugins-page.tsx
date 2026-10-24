@@ -10,6 +10,7 @@ import { useEffect } from 'react'
 import { type OverrideRejection, usePlugins } from '../hooks/use-plugins'
 import { Button } from './ui/button'
 import { ScrollArea } from './ui/scroll-area'
+import { Skeleton } from './ui/skeleton'
 
 const OPEN_EVENT = 'dia:open-plugins-page'
 
@@ -37,6 +38,8 @@ const statusLabel = (status: PluginStatus): string => {
   switch (status._tag) {
     case 'Unloaded':
       return 'Not loaded'
+    case 'Loading':
+      return 'Loading…'
     case 'Loaded':
       return status.reloadError === undefined ? 'Loaded' : 'Loaded · last reload failed'
     case 'Failed':
@@ -80,7 +83,9 @@ function PluginRow({
   onClearOverride
 }: PluginRowProps) {
   const detail = statusDetail(plugin.status)
-  const unloaded = plugin.status._tag === 'Unloaded'
+  const loading = plugin.status._tag === 'Loading'
+  const unloaded = plugin.status._tag === 'Unloaded' || loading
+  const disabled = busy || loading
   const overridden = plugin.origin === 'override'
 
   return (
@@ -91,21 +96,21 @@ function PluginRow({
           <span className="text-xs text-ink-muted">{statusLabel(plugin.status)}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Button size="xs" variant="outline" disabled={busy} onClick={onReload}>
-            {busy ? <Loader2Icon className="motion-safe:animate-spin" /> : <RefreshCwIcon />}
+          <Button size="xs" variant="outline" disabled={disabled} onClick={onReload}>
+            {disabled ? <Loader2Icon className="motion-safe:animate-spin" /> : <RefreshCwIcon />}
             {unloaded ? 'Load' : 'Reload'}
           </Button>
           {unloaded ? null : (
-            <Button size="xs" variant="ghost" disabled={busy} onClick={onUnload}>
+            <Button size="xs" variant="ghost" disabled={disabled} onClick={onUnload}>
               Unload
             </Button>
           )}
-          <Button size="xs" variant="ghost" disabled={busy} onClick={onChooseOverride}>
+          <Button size="xs" variant="ghost" disabled={disabled} onClick={onChooseOverride}>
             <FolderIcon />
             Set folder…
           </Button>
           {overridden ? (
-            <Button size="xs" variant="ghost" disabled={busy} onClick={onClearOverride}>
+            <Button size="xs" variant="ghost" disabled={disabled} onClick={onClearOverride}>
               Use bundled
             </Button>
           ) : null}
@@ -127,12 +132,31 @@ function PluginRow({
           Not applied: <span className="font-mono whitespace-pre-wrap">{rejection.message}</span>
         </p>
       )}
+      {loading ? <Skeleton className="h-3 w-40" /> : null}
       {plugin.memoryBytes > 0 ? (
         <p className="text-xs text-ink-muted tabular-nums">
           Memory {formatMegabytes(plugin.memoryBytes)} of {formatMegabytes(limitBytes)}
         </p>
       ) : null}
     </li>
+  )
+}
+
+const SKELETON_ROWS = ['first', 'second', 'third']
+
+function PluginListSkeleton() {
+  return (
+    <ul className="divide-y" aria-busy="true" aria-label="Loading plugins">
+      {SKELETON_ROWS.map((row) => (
+        <li key={row} className="flex flex-col gap-1.5 px-4 py-3">
+          <div className="flex items-baseline gap-3">
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-3 w-16" />
+          </div>
+          <Skeleton className="h-3 w-64 max-w-full" />
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -166,7 +190,9 @@ export function PluginsPage({ onClose }: { readonly onClose: () => void }) {
         </h1>
       </div>
       <ScrollArea className="min-h-0 flex-1">
-        {plugins === undefined ? null : plugins.length === 0 ? (
+        {plugins === undefined ? (
+          <PluginListSkeleton />
+        ) : plugins.length === 0 ? (
           <p className="px-4 py-6 text-sm text-ink-muted">No plugins found.</p>
         ) : (
           <ul className="divide-y">

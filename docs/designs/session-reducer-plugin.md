@@ -42,7 +42,7 @@ src/shared/ipc/host-process.ts
 - `runSession` calls `makeSessionReducer` at every session start and restart, so a reload applies from the next start; a running turn keeps the reducer it started with.
 - The `step` it returns never fails. When the plugin's `step` throws it logs the error, replaces the reducer with a fresh fallback for the rest of that session, and returns the fallback's output for the message that threw. Tool-call state held by the plugin's reducer is lost.
 - `fallbackSessionEventReducer` emits `SessionStarted` for the `system` `init` message, `AssistantMessageReceived` for an `assistant` message with text, `TurnCompleted` for a successful `result`, and `TurnErrored` for any other `result`. It emits nothing else.
-- `host-main.ts` runs `loadAll` before it posts `HostReady`, so the first session finds the plugin. A plugin that fails to load is a status and does not stop startup.
+- `plugins/session-reducer` declares `load: "eager"`, and `host-main.ts` calls `PluginRegistry.start()` before it posts `HostReady`, so the first session finds the plugin while lazy plugins load afterwards (ADR-0027, `docs/designs/lazy-plugin-startup.md`). A plugin that fails to load is a status and does not stop startup.
 - The six messages the kernel builds itself (`PermissionRequested`, `QuestionRequested`, `PlanReviewRequested`, `PermissionModeChanged`, `SlashCommandsWarming`, `RewoundToCheckpoint`) are unchanged.
 - `PLUGIN_API_VERSION` stays `'1'`: the change adds exports and a service key, and a plugin that does not use them runs as before.
 
@@ -56,7 +56,7 @@ src/shared/ipc/host-process.ts
 
 | # | Finding | Rule | Tag | Outcome |
 | --- | --- | --- | --- | --- |
-| 1 | `loadAll` ran after `HostReady`, so the first session could start on the fallback. | Correctness | major | Applied: `loadAll` runs before `HostReady`. |
+| 1 | `loadAll` ran after `HostReady`, so the first session could start on the fallback. | Correctness | major | Applied: `loadAll` runs before `HostReady`. Later replaced by eager `start()` (ADR-0027). |
 | 2 | A reducer that throws mid-stream ended the turn stream. | Define errors out of existence | major | Applied: `makeSessionReducer` guards `step`. |
 | 3 | The seam's types reference `SDKMessage` and the host protocol, which `src/shared` must not import. | Project rules (ADR-0013) | major | Applied: host-only exports live in `src/host/plugin-api.ts`. |
 | 4 | `plugins/**/*.test.ts` was outside the vitest include. | Correctness | minor | Applied. |

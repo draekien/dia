@@ -9,18 +9,20 @@ import './index.css'
 
 const queryClient = new QueryClient()
 
-void startRendererPlugins()
-
 const rootElement = document.getElementById('root')
 if (!rootElement) throw new Error('Root element not found')
+const root = createRoot(rootElement)
 
-createRoot(rootElement).render(
-  <StrictMode>
-    <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <App />
-        <CommandPalette />
-      </QueryClientProvider>
-    </ThemeProvider>
-  </StrictMode>
-)
+const renderApp = () =>
+  root.render(
+    <StrictMode>
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <App />
+          <CommandPalette />
+        </QueryClientProvider>
+      </ThemeProvider>
+    </StrictMode>
+  )
+
+void startRendererPlugins().finally(renderApp)

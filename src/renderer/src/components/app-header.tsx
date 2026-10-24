@@ -2,6 +2,7 @@ import type { UpdateStatus } from '@shared/domain/update'
 import { Loader2Icon, RotateCwIcon } from 'lucide-react'
 import { useUpdateStatus } from '../hooks/use-update-status'
 import { openCommandPalette } from './command-palette'
+import { PluginLoadIndicator } from './plugin-load-indicator'
 import { Button } from './ui/button'
 
 function UpdateIndicator({ status }: { readonly status: UpdateStatus }) {
@@ -56,7 +57,8 @@ function CommandPaletteHint() {
  * The app's custom title bar, shown in place of the native window frame
  * (`titleBarStyle: 'hidden'`). Draggable and background-transparent so it reads
  * as one continuous surface with the app body and the OS-drawn window-control
- * overlay; hosts the dia wordmark, the background self-update state (downloading
+ * overlay; hosts the dia wordmark, the plugin loading progress while the Host loads
+ * plugins, the background self-update state (downloading
  * progress, a restart affordance when ready), and a hint for the command-palette
  * shortcut that opens it on click. Mount once at the top of the app shell, above
  * the pane grid.
@@ -72,6 +74,7 @@ export function AppHeader() {
       >
         <span className="select-none text-sm font-semibold tracking-tight text-ink">dia</span>
         <div className="titlebar-no-drag ml-auto flex items-center gap-2">
+          <PluginLoadIndicator />
           <UpdateIndicator status={status} />
           <CommandPaletteHint />
         </div>

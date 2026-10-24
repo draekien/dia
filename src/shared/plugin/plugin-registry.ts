@@ -1,10 +1,11 @@
-import { Cause, Data, Effect, Exit, Option, Predicate, Scope, Semaphore } from 'effect'
+import { Cause, Data, Effect, Exit, Option, Predicate, Schema, Scope, Semaphore } from 'effect'
 import type { PluginServices, PluginSetup } from './api'
 import { ServiceKeyTakenError } from './api'
 import {
   formatMegabytes,
   PLUGIN_API_VERSION,
-  type PluginInfo,
+  PluginInfo,
+  type PluginLoadMode,
   type PluginManifest,
   type PluginOrigin,
   type PluginRestartReason,
@@ -56,9 +57,11 @@ export class PluginRestartRequiredError extends Data.TaggedError('PluginRestartR
  * Importing the entry is deferred to `resolveSetup`. When `use` fails, everything the load changed
  * in the loader is restored, so a failed reload leaves later loads seeing the previous version.
  * Fails with {@link PluginRestartRequiredError} without running `use` when a dependency of the
- * plugin outside `root` changed.
+ * plugin outside `root` changed. `peek` reads and decodes the manifest at `root` without
+ * importing any entry and without changing loader state.
  */
 export interface PluginLoader<Context extends PluginServices> {
+  readonly peek: (root: string) => Effect.Effect<PluginManifest, PluginLoadError>
   readonly load: <A, E, R>(
     root: string,
     use: (loaded: LoadedPlugin<Context>) => Effect.Effect<A, E, R>
@@ -92,9 +95,15 @@ export interface PluginMemoryGuard {
  * another and returns their resulting states. `inject` reads the value a loaded plugin provides
  * under a service key, for code that is not a plugin; it is empty while no plugin provides the key
  * and is not reopened when the provider changes, so call it again each time the value is needed.
+ * `start` is the startup entry point: it marks every plugin `Loading`, loads the plugins whose
+ * manifest says `load: "eager"` one after another, and resolves once each of them has settled
+ * (loaded, waiting, failed or restart-required), which does not require it to be `Loaded`. The
+ * remaining plugins keep loading in the background, in the registry's scope, and a plugin the
+ * caller unloads before its turn is skipped. Call it once per registry.
  */
 export interface PluginRegistry {
   readonly list: () => Effect.Effect<ReadonlyArray<PluginInfo>>
+  readonly start: () => Effect.Effect<void>
   readonly loadAll: () => Effect.Effect<ReadonlyArray<PluginInfo>>
   readonly load: (name: string) => Effect.Effect<PluginInfo>
   readonly unload: (name: string) => Effect.Effect<PluginInfo>
@@ -108,6 +117,8 @@ export const errorMessage = (error: unknown): string =>
     : String(error)
 
 const describeCause = (cause: Cause.Cause<unknown>): string => errorMessage(Cause.squash(cause))
+
+const sameInfo = Schema.toEquivalence(PluginInfo)
 
 interface Entry<Context extends PluginServices> {
   origin: PluginOrigin
@@ -138,12 +149,15 @@ const isRunning = <Context extends PluginServices>(entry: Entry<Context>): boole
  * closing that scope closes every plugin. `extend` turns the shared services into the context
  * this side's plugins receive (for example by adding an event stream). `memory`, when given,
  * limits the memory each plugin's loads may retain and fills `PluginInfo.memoryBytes`.
+ * `onChange`, when given, runs after every operation with the plugins whose `PluginInfo` differs
+ * from the last one it reported (the first report covers every plugin the registry has seen).
  */
 export const makePluginRegistry = <Context extends PluginServices>(deps: {
   readonly catalog: PluginCatalog
   readonly loader: PluginLoader<Context>
   readonly extend: (services: PluginServices) => Context
   readonly memory?: PluginMemoryGuard
+  readonly onChange?: (changed: ReadonlyArray<PluginInfo>) => Effect.Effect<void>
 }): Effect.Effect<PluginRegistry, never, Scope.Scope> =>
   Effect.gen(function* () {
     const parentScope = yield* Scope.Scope
@@ -184,6 +198,36 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       entry.manifest = undefined
       entry.setup = undefined
       entry.status = { _tag: 'Failed', message }
+    }
+
+    const reported = new Map<string, PluginInfo>()
+    const queuedByStart = new Set<string>()
+
+    const publishChanges = Effect.fnUntraced(function* () {
+      if (deps.onChange === undefined) return
+      const changed: Array<PluginInfo> = []
+      for (const [name, entry] of entries) {
+        const info = yield* infoOf(name, entry)
+        const previous = reported.get(name)
+        if (previous !== undefined && sameInfo(previous, info)) continue
+        reported.set(name, info)
+        changed.push(info)
+      }
+      if (changed.length > 0) yield* deps.onChange(changed)
+    })
+
+    const entryFor = (name: string, source: PluginSource): Entry<Context> => {
+      const existing = entries.get(name)
+      if (existing !== undefined) return existing
+      const created = makeEntry<Context>(source)
+      entries.set(name, created)
+      return created
+    }
+
+    const markLoading = (entry: Entry<Context>): boolean => {
+      if (entry.status._tag !== 'Unloaded' && entry.status._tag !== 'Failed') return false
+      entry.status = { _tag: 'Loading' }
+      return true
     }
 
     const inject = (key: string): Effect.Effect<Option.Option<unknown>> =>
@@ -325,18 +369,19 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         return yield* Effect.failCause(opened.cause)
       })
 
-    const load = (name: string): Effect.Effect<PluginInfo> =>
+    const loadNamed = (name: string, fromStart: boolean): Effect.Effect<PluginInfo> =>
       lock.withPermits(1)(
         Effect.gen(function* () {
+          const current = entries.get(name)
+          if (fromStart && !queuedByStart.delete(name) && current !== undefined) {
+            return yield* infoOf(name, current)
+          }
           const found = yield* deps.catalog.resolve(name)
           if (Option.isNone(found)) return failedInfo(name, `No plugin named "${name}"`)
           const source = found.value
 
-          let entry = entries.get(name)
-          if (entry === undefined) {
-            entry = makeEntry<Context>(source)
-            entries.set(name, entry)
-          }
+          const entry = entryFor(name, source)
+          if (markLoading(entry)) yield* publishChanges()
 
           if (deps.memory !== undefined) {
             const used = yield* deps.memory.used(name)
@@ -367,10 +412,22 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           }
           yield* openWaiting
           return yield* infoOf(name, entry)
-        })
+        }).pipe(Effect.tap(publishChanges))
       )
 
+    const load = (name: string): Effect.Effect<PluginInfo> =>
+      Effect.suspend(() => {
+        queuedByStart.delete(name)
+        return loadNamed(name, false)
+      })
+
     const unload = (name: string): Effect.Effect<PluginInfo> =>
+      Effect.suspend(() => {
+        queuedByStart.delete(name)
+        return unloadLocked(name)
+      })
+
+    const unloadLocked = (name: string): Effect.Effect<PluginInfo> =>
       lock.withPermits(1)(
         Effect.gen(function* () {
           const entry = entries.get(name)
@@ -391,7 +448,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           entry.status = { _tag: 'Unloaded' }
           yield* Effect.logInfo('Plugin unloaded', { plugin: name })
           return yield* infoOf(name, entry)
-        })
+        }).pipe(Effect.tap(publishChanges))
       )
 
     const list = (): Effect.Effect<ReadonlyArray<PluginInfo>> =>
@@ -428,5 +485,49 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
     const loadAll = (): Effect.Effect<ReadonlyArray<PluginInfo>> =>
       list().pipe(Effect.flatMap((infos) => Effect.forEach(infos, (info) => load(info.name))))
 
-    return { list, load, unload, loadAll, inject }
+    const loadModeOf = (name: string): Effect.Effect<PluginLoadMode> =>
+      Effect.gen(function* () {
+        const source = yield* deps.catalog.resolve(name)
+        if (Option.isNone(source)) return 'lazy'
+        return yield* deps.loader.peek(source.value.root).pipe(
+          Effect.map((manifest): PluginLoadMode => manifest.load ?? 'lazy'),
+          Effect.catchTag('PluginLoadError', (error) =>
+            Effect.logDebug('Plugin manifest unreadable at startup; loading it lazily', {
+              plugin: name,
+              message: error.message
+            }).pipe(Effect.as<PluginLoadMode>('lazy'))
+          )
+        )
+      })
+
+    const markAllLoading = (names: ReadonlyArray<string>): Effect.Effect<void> =>
+      lock.withPermits(1)(
+        Effect.gen(function* () {
+          for (const name of names) {
+            const source = yield* deps.catalog.resolve(name)
+            if (Option.isSome(source) && markLoading(entryFor(name, source.value))) {
+              queuedByStart.add(name)
+            }
+          }
+        }).pipe(Effect.tap(publishChanges))
+      )
+
+    const loadIfQueued = (name: string): Effect.Effect<void> => Effect.asVoid(loadNamed(name, true))
+
+    const start = Effect.fn('PluginRegistry.start')(function* () {
+      const names = (yield* list()).map((info) => info.name)
+      yield* markAllLoading(names)
+      const modes = yield* Effect.forEach(names, loadModeOf, { concurrency: 'unbounded' })
+      const eager = names.filter((_, index) => modes[index] === 'eager')
+      const lazy = names.filter((_, index) => modes[index] !== 'eager')
+      yield* Effect.logInfo('Plugins starting', { eager, lazy })
+      yield* Effect.forEach(eager, loadIfQueued, { discard: true })
+      yield* Effect.logInfo('Eager plugins settled', { count: eager.length })
+      yield* Effect.forEach(lazy, loadIfQueued, { discard: true }).pipe(
+        Effect.tap(() => Effect.logInfo('Lazy plugins settled', { count: lazy.length })),
+        Effect.forkIn(parentScope)
+      )
+    })
+
+    return { list, start, load, unload, loadAll, inject }
   })

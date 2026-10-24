@@ -102,6 +102,15 @@ describe('plugin tools', () => {
     })
   })
 
+  it('reports a plugin that is still loading without calling it an error', async () => {
+    const { call } = harness({ reloadResult: (name) => info(name, { _tag: 'Loading' }) })
+
+    expect(await call('plugin_reload', { name: 'chat' })).toEqual({
+      text: 'Plugin "chat" is still loading.',
+      isError: false
+    })
+  })
+
   it('reports a plugin that failed to load as an error with the reason', async () => {
     const { call } = harness({
       reloadResult: (name) => info(name, { _tag: 'Failed', message: 'Cannot import "host.ts"' })

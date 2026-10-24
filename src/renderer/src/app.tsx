@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AppHeader } from './components/app-header'
 import PaneTreeView from './components/pane-tree-view'
 import { onPluginsPageRequested, PluginsPage } from './components/plugins-page'
+import { StartupSkeleton } from './components/startup-skeleton'
 
 function App() {
   const [tree, setTree] = useState<PaneNode | null>(null)
@@ -23,13 +24,15 @@ function App() {
     window.dia.focusPane(paneId)
   }, [])
 
-  if (tree === null) return null
-
   return (
     <div className="flex h-screen flex-col bg-background">
       <AppHeader />
       <div className="min-h-0 flex-1" hidden={pluginsOpen}>
-        <PaneTreeView node={tree} focusedPaneId={focusedPaneId} onFocusPane={handleFocusPane} />
+        {tree === null ? (
+          <StartupSkeleton />
+        ) : (
+          <PaneTreeView node={tree} focusedPaneId={focusedPaneId} onFocusPane={handleFocusPane} />
+        )}
       </div>
       {pluginsOpen ? (
         <div className="min-h-0 flex-1">

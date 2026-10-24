@@ -16,9 +16,14 @@ const info = (name: string, overrides: Partial<PluginInfo> = {}): PluginInfo => 
 
 const installBridge = (initial: ReadonlyArray<PluginInfo>) => {
   let current = initial
+  const listeners = new Set<(event: { readonly name: string }) => void>()
   const bridge = {
     pickDirectory: vi.fn(async () => '/work/chat' as string | null),
     plugins: {
+      onStatusChanged: vi.fn((listener: (event: { readonly name: string }) => void) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      }),
       list: vi.fn(async () => current),
       load: vi.fn(async (name: string) => info(name)),
       unload: vi.fn(async (name: string) => info(name, { status: { _tag: 'Unloaded' } })),
@@ -33,6 +38,9 @@ const installBridge = (initial: ReadonlyArray<PluginInfo>) => {
     bridge,
     replaceList: (next: ReadonlyArray<PluginInfo>) => {
       current = next
+    },
+    emitStatusChanged: (name: string) => {
+      for (const listener of listeners) listener({ name })
     }
   }
 }
@@ -258,5 +266,83 @@ describe('PluginsPage', () => {
     render(<PluginsPage onClose={() => {}} />)
 
     await screen.findByText('No plugins found.')
+  })
+
+  it('shows placeholder rows until the first list arrives, then the real rows', async () => {
+    const { bridge } = installBridge([])
+    let deliver: (plugins: ReadonlyArray<PluginInfo>) => void = () => {}
+    bridge.plugins.list.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          deliver = resolve
+        })
+    )
+
+    render(<PluginsPage onClose={() => {}} />)
+
+    expect(screen.getByLabelText('Loading plugins')).toBeTruthy()
+    expect(screen.queryByText('No plugins found.')).toBeNull()
+    deliver([info('chat')])
+    await screen.findByText('chat')
+    expect(screen.queryByLabelText('Loading plugins')).toBeNull()
+  })
+
+  it('shows a plugin the Host is still loading as Loading with its actions disabled', async () => {
+    installBridge([info('chat', { status: { _tag: 'Loading' } })])
+
+    render(<PluginsPage onClose={() => {}} />)
+
+    await screen.findByText('chat')
+    expect(rowOf('chat').getByText('Loading…')).toBeTruthy()
+    expect(
+      (rowOf('chat').getByRole('button', { name: 'Load' }) as HTMLButtonElement).disabled
+    ).toBe(true)
+    expect(rowOf('chat').queryByRole('button', { name: 'Unload' })).toBeNull()
+  })
+
+  it('updates a row when the Host reports that the plugin changed state', async () => {
+    const { replaceList, emitStatusChanged } = installBridge([
+      info('chat', { status: { _tag: 'Loading' } })
+    ])
+    render(<PluginsPage onClose={() => {}} />)
+    await screen.findByText('Loading…')
+
+    replaceList([info('chat', { status: { _tag: 'Loaded' } })])
+    emitStatusChanged('chat')
+
+    await waitFor(() => expect(rowOf('chat').getByText('Loaded')).toBeTruthy())
+    expect(rowOf('chat').queryByText('Loading…')).toBeNull()
+  })
+
+  it('keeps the newest list when an older list response arrives last', async () => {
+    const { bridge, emitStatusChanged } = installBridge([])
+    const deliveries: Array<(plugins: ReadonlyArray<PluginInfo>) => void> = []
+    const pendingList = () =>
+      new Promise<ReadonlyArray<PluginInfo>>((resolve) => {
+        deliveries.push(resolve)
+      })
+    bridge.plugins.list.mockImplementationOnce(pendingList).mockImplementationOnce(pendingList)
+    render(<PluginsPage onClose={() => {}} />)
+    emitStatusChanged('chat')
+    await waitFor(() => expect(deliveries).toHaveLength(2))
+
+    deliveries[1]?.([info('chat', { status: { _tag: 'Loaded' } })])
+    await screen.findByText('Loaded')
+    deliveries[0]?.([info('chat', { status: { _tag: 'Loading' } })])
+
+    await waitFor(() => expect(bridge.plugins.list).toHaveBeenCalledTimes(2))
+    expect(rowOf('chat').getByText('Loaded')).toBeTruthy()
+    expect(rowOf('chat').queryByText('Loading…')).toBeNull()
+  })
+
+  it('stops listening for status changes when the page closes', async () => {
+    const { bridge } = installBridge([info('chat')])
+    const { unmount } = render(<PluginsPage onClose={() => {}} />)
+    await screen.findByText('chat')
+    const unsubscribe = bridge.plugins.onStatusChanged.mock.results[0]?.value as () => boolean
+
+    unmount()
+
+    expect(unsubscribe()).toBe(false)
   })
 })

@@ -74,6 +74,8 @@ const report = (info: PluginInfo): ToolResult => {
       )
     case 'Unloaded':
       return text(`Plugin "${info.name}" is not loaded.`)
+    case 'Loading':
+      return text(`Plugin "${info.name}" is still loading.`)
   }
 }
 
