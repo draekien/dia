@@ -27,7 +27,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0016](0016-electron-builder-distribution-and-auto-update.md) | Distribute dia as an electron-builder NSIS installer with GitHub-backed auto-update | accepted |
 | [0017](0017-frameless-window-with-native-overlay-controls.md) | Replace the native window frame with a custom titlebar and native overlay controls | accepted |
 | [0018](0018-transcript-anchored-file-checkpointing-with-conversation-fork.md) | Transcript-anchored file checkpointing that forks the conversation on rewind | accepted |
-| [0019](0019-thin-plugin-kernel-on-effect.md) | Build dia as a thin plugin kernel on Effect, with every feature as a plugin | accepted |
+| [0019](0019-thin-plugin-kernel-on-effect.md) | Build dia as a thin plugin kernel on Effect, with every feature as a plugin | accepted, amended by ADR-0029 |
 | [0020](0020-plugin-source-loading-and-hot-reload.md) | Load first-party plugins from source in the dia repo, with per-plugin worktree overrides and hot reload | accepted |
 | [0021](0021-single-host-process-for-all-panes.md) | Run every pane's agent session and all non-UI plugins in one Host process | accepted |
 | [0022](0022-renderer-to-host-over-local-websocket.md) | Connect the renderer to the Host over an authenticated localhost WebSocket | accepted |
@@ -36,7 +36,8 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0025](0025-meta-project-as-a-dia-owned-git-repo.md) | Run a meta project: a dia-owned git repo loaded into every agent, changed through approved proposals | accepted |
 | [0026](0026-plugin-reload-as-a-transaction-with-rollback-and-a-memory-limit.md) | Reload a plugin as a transaction with rollback, per-module generations and a memory limit | accepted |
 | [0027](0027-eager-and-lazy-plugin-startup.md) | Load plugins as eager or lazy at startup, and report each plugin's progress to the renderer | accepted |
-| [0028](0028-essential-plugins-and-the-permissions-plugin.md) | Keep essential plugins loaded and un-overridable, and move permission handling into one | accepted |
+| [0028](0028-essential-plugins-and-the-permissions-plugin.md) | Keep essential plugins loaded and un-overridable, and move permission handling into one | superseded by ADR-0029 |
+| [0029](0029-plugin-categories-adapter-and-feature.md) | Split plugins into one adapter category and one feature category, and move the Agent SDK into a Claude Code adapter | accepted |
 
 ## Adding a new ADR
 

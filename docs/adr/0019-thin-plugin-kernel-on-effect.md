@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0029"
 date: 2026-10-22
 decision-makers: William Pei
 ---
@@ -82,3 +82,4 @@ The kernel also gives each pane session an in-process MCP server (Agent SDK cust
 * deepseek-harness design read from `deepseek-ai/deepseek-harness` branch `master`: `docs/architecture.md`, `packages/boot/hmr/README.md`, `packages/core/agent-loop/README.md`. In deepseek-harness the agent loop is itself a plugin and turn survival across a reload is not stated; dia keeps `query()` in the kernel to guarantee it.
 * Plugin API versioning: a plugin manifest declares an API version (for example `"api": "1"`) and the loader refuses a plugin built for another version. The field is `api` in `plugin.json` and the installed value is `PLUGIN_API_VERSION` in `src/shared/plugin/manifest.ts`; the registry refuses a plugin whose `api` differs (Phase 2 of `docs/plans/2026-10-22-plugin-platform.md`).
 * Related: ADR-0020 (plugin source and loading), ADR-0021 (Host process), ADR-0022 (transport).
+* Amended by ADR-0029: the Agent SDK `query()` lifetime moves from the kernel into the `plugins/claude-code` adapter, which cannot be hot reloaded, and plugins are split into an `adapter` category and a `feature` category.

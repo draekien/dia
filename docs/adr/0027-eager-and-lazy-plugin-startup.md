@@ -64,3 +64,5 @@ Chosen option: "Mark each plugin `eager` or `lazy` in its manifest", because it 
 ## More Information
 
 Spec: `docs/designs/lazy-plugin-startup.md`. Extends ADR-0019 and ADR-0026.
+
+ADR-0029 moves `session-reducer` into the `plugins/claude-code` adapter, which always loads before `HostReady`. `load: "eager" | "lazy"` now applies to feature plugins only.
