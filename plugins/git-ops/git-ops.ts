@@ -133,17 +133,57 @@ export const makeGitOps = Effect.gen(function* () {
     yield* Effect.logInfo('Pruned pane worktree', { paneId, path: info.path })
   })
 
+  const comparablePath = (value: string): string => {
+    const forward = value.replaceAll('\\', '/').replace(/\/+$/, '')
+    return /^[a-zA-Z]:/.test(forward) ? forward.toLowerCase() : forward
+  }
+
+  const isRegisteredWorktree = Effect.fn('GitOps.isRegisteredWorktree')(function* (
+    info: WorktreeInfo
+  ) {
+    const output = yield* spawner
+      .string(
+        ChildProcess.make('git', ['worktree', 'list', '--porcelain']).pipe(
+          ChildProcess.setCwd(info.sourceRepo)
+        )
+      )
+      .pipe(Effect.orElseSucceed(() => ''))
+    const target = comparablePath(info.path)
+    return output
+      .split(/\r?\n/)
+      .some((line) => line.startsWith('worktree ') && comparablePath(line.slice(9)) === target)
+  })
+
   const reattachWorktree = Effect.fn('GitOps.reattachWorktree')(function* (
     info: WorktreeInfo,
     paneId: PaneId
   ) {
-    const alreadyPresent = yield* fs.exists(info.path).pipe(Effect.orElseSucceed(() => false))
-    if (alreadyPresent) {
+    if (yield* isRegisteredWorktree(info)) {
       yield* Effect.logWarning(
-        'Worktree path already present; skipping reattach (crash-orphan recovery is out of scope)',
+        'Worktree path is already a registered worktree; skipping reattach (crash-orphan recovery is out of scope)',
         { paneId, path: info.path }
       )
       return info
+    }
+
+    const pathExists = yield* fs.exists(info.path).pipe(Effect.orElseSucceed(() => false))
+    if (pathExists) {
+      const entries = yield* fs
+        .readDirectory(info.path)
+        .pipe(
+          Effect.mapError((cause) => new WorktreeReattachError({ paneId, path: info.path, cause }))
+        )
+      if (entries.length > 0) {
+        return yield* new WorktreeReattachError({
+          paneId,
+          path: info.path,
+          cause: 'path exists, is not a registered worktree, and is not empty'
+        })
+      }
+      yield* Effect.logWarning('Reusing an empty unregistered worktree directory', {
+        paneId,
+        path: info.path
+      })
     }
 
     const command = ChildProcess.make('git', ['worktree', 'add', info.path, info.branch]).pipe(

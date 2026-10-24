@@ -16,4 +16,9 @@ While verifying Phase 4 step 4 (`git-ops` plugin), a packaged build created a wo
 
 ## Implication
 
-Fixing this means either waiting for the session process to exit before `removeWorktree`, or having `reattachWorktree` treat an existing path that is not a registered worktree (empty or not in `git worktree list`) as absent and re-adding it. Neither is done; a Windows-specific check is needed because the unpackaged and packaged runs on Windows both showed it.
+Fixed in `reattachWorktree` (`plugins/git-ops/git-ops.ts`): it lists the repository's worktrees with `git worktree list --porcelain`, skips only a path that is registered, re-adds into an existing empty directory, and fails for a non-empty unregistered directory. In a packaged build the relaunch then showed the pane's worktree registered again. The removal itself still exits 255 on Windows each time (also on `closePane`), so an empty directory stays under the worktrees root after every removal; the cause is not identified.
+
+Options considered before the fix:
+
+- Wait for the session process to exit before `removeWorktree`: not done. It needs an exit signal from `Query.close()`, which was not checked, and it would not repair a worktree left by a crash.
+- Make `reattachWorktree` treat an unregistered path as absent: done, as described above. It repairs a failed removal and a crash alike.
