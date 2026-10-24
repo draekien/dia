@@ -10,7 +10,8 @@ const info = (name: string, status: PluginInfo['status']): PluginInfo => ({
   origin: 'default',
   root: `plugins/${name}`,
   status,
-  memoryBytes: 0
+  memoryBytes: 0,
+  provides: []
 })
 
 const installBridge = (initial: ReadonlyArray<PluginInfo>) => {

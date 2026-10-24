@@ -26,7 +26,7 @@ import {
  * `dia.protocol.<version>`; the Host closes the connection with {@link CLOSE_PROTOCOL_MISMATCH}
  * when it speaks a different version. Increment it whenever {@link DiaRpcs} changes shape.
  */
-export const PROTOCOL_VERSION = 6
+export const PROTOCOL_VERSION = 7
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'

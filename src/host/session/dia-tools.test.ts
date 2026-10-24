@@ -9,7 +9,8 @@ const info = (name: string, status: PluginInfo['status'] = { _tag: 'Loaded' }): 
   origin: 'default',
   root: `plugins/${name}`,
   status,
-  memoryBytes: 0
+  memoryBytes: 0,
+  provides: []
 })
 
 const harness = (

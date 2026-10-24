@@ -12,6 +12,7 @@ const info = (name: string, overrides: Partial<PluginInfo> = {}): PluginInfo => 
   root: `plugins/${name}`,
   status: { _tag: 'Loaded' },
   memoryBytes: 0,
+  provides: [],
   ...overrides
 })
 

@@ -1,7 +1,8 @@
 import { assert, describe, it } from '@effect/vitest'
 import type { WorktreeInfo } from '@shared/domain/pane'
+import { WORKTREES_KEY } from '@shared/plugin/api'
 import { Effect, Option } from 'effect'
-import { type GitOps, resolveGitOps, WORKTREES_KEY } from './worktrees-seam'
+import { type GitOps, resolveGitOps } from './worktrees-seam'
 
 const info: WorktreeInfo = { path: '/wt/a', branch: 'dia/calm-fox', sourceRepo: '/repo' }
 
@@ -18,22 +19,22 @@ const providedGitOps: GitOps = {
 describe('resolveGitOps', () => {
   it.effect('returns the GitOps the plugin provides', () =>
     Effect.gen(function* () {
-      const gitOps = yield* resolveGitOps(registryProviding(Option.some(() => providedGitOps)))
+      const gitOps = yield* resolveGitOps(registryProviding(Option.some(providedGitOps)))
       assert.strictEqual(Option.getOrThrow(gitOps), providedGitOps)
     })
   )
 
   const unavailableCases: ReadonlyArray<readonly [string, Option.Option<unknown>]> = [
     ['no plugin provides the service', Option.none()],
-    ['the provided service is not a function', Option.some({ createWorktree: 1 })],
-    ['the factory returns an object without the three operations', Option.some(() => ({}))],
-    ['the factory returns null', Option.some(() => null)],
     [
-      'the factory throws',
-      Option.some(() => {
-        throw new Error('boom')
-      })
-    ]
+      'the service has a non-function operation',
+      Option.some({ ...providedGitOps, createWorktree: 1 })
+    ],
+    [
+      'the service lacks reattachWorktree',
+      Option.some({ createWorktree: () => {}, removeWorktree: () => {} })
+    ],
+    ['the service is null', Option.some(null)]
   ]
 
   for (const [name, provided] of unavailableCases) {

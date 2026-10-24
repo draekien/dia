@@ -1034,6 +1034,30 @@ describe('plugin registry', () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect('lists the keys a running plugin provides, sorted, and none after it unloads', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        alpha: plugin(manifest('alpha'), (ctx) =>
+          Effect.gen(function* () {
+            yield* ctx.provide('zeta', 1)
+            yield* ctx.provide('beta', 2)
+          })
+        )
+      })
+      const providesOfAlpha = registry
+        .list()
+        .pipe(Effect.map((infos) => infos.find((info) => info.name === 'alpha')?.provides))
+
+      yield* registry.load('alpha')
+      const whileLoaded = yield* providesOfAlpha
+      const unloaded = yield* registry.unload('alpha')
+
+      assert.deepStrictEqual(whileLoaded, ['beta', 'zeta'])
+      assert.deepStrictEqual(unloaded.provides, [])
+      assert.deepStrictEqual(yield* providesOfAlpha, [])
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('lists the category of a plugin that has not loaded', () =>
     Effect.gen(function* () {
       const registry = yield* makeRegistry({

@@ -219,7 +219,8 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           origin: entry.origin,
           root: entry.root,
           status: entry.status,
-          memoryBytes
+          memoryBytes,
+          provides: [...entry.provided].sort()
         }
       })
 
@@ -229,7 +230,8 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       origin: 'default',
       root: '',
       status: { _tag: 'Failed', message },
-      memoryBytes: 0
+      memoryBytes: 0,
+      provides: []
     })
 
     const markFailed = (entry: Entry<Context>, message: string) => {
@@ -525,7 +527,8 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
               origin: source.value.origin,
               root: source.value.root,
               status: { _tag: 'Unloaded' },
-              memoryBytes: 0
+              memoryBytes: 0,
+              provides: []
             } satisfies PluginInfo
           }
           yield* tracked(name, closeWithDependants(name))
@@ -562,7 +565,8 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
                   onSome: (found) => found.root
                 }),
                 status: { _tag: 'Unloaded' },
-                memoryBytes: 0
+                memoryBytes: 0,
+                provides: []
               } satisfies PluginInfo
             })
           },

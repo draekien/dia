@@ -3,8 +3,6 @@ export { SessionId } from '../shared/domain/pane'
 export * from '../shared/plugin/api'
 export {
   type GitOps,
-  type GitOpsFactory,
-  WORKTREES_KEY,
   WorktreeCreateError,
   WorktreeReattachError,
   WorktreeRemoveError

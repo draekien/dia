@@ -17,6 +17,7 @@ import {
   type ThinkingLevel
 } from '@shared/domain/pane'
 import type { ChooseDirectoryResult } from '@shared/ipc/contract'
+import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { useEffect, useState } from 'react'
 
@@ -27,14 +28,8 @@ const MODEL_OPTIONS = [
   { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' }
 ]
 
-const WORKTREES_PLUGIN = 'worktrees'
-
-const isWorktreesRunning = (plugins: ReadonlyArray<PluginInfo> | undefined): boolean =>
-  plugins?.some(
-    (plugin) =>
-      plugin.name === WORKTREES_PLUGIN &&
-      (plugin.status._tag === 'Loaded' || plugin.status._tag === 'RestartRequired')
-  ) ?? false
+const providesWorktrees = (plugins: ReadonlyArray<PluginInfo> | undefined): boolean =>
+  plugins?.some((plugin) => plugin.provides.includes(WORKTREES_KEY)) ?? false
 
 type FormState =
   | { readonly step: 'idle' }
@@ -60,7 +55,8 @@ function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL)
   const [permissionMode, setPermissionMode] = useState<StartupPermissionMode>('auto')
   const [useWorktree, setUseWorktree] = useState(false)
-  const worktreesAvailable = isWorktreesRunning(usePluginList().plugins)
+  const worktreesAvailable = providesWorktrees(usePluginList().plugins)
+  const worktreeOn = worktreesAvailable && useWorktree
 
   useEffect(() => {
     return window.dia.onPaneCreateFailed((event) => {
@@ -86,7 +82,7 @@ function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
       model,
       thinkingLevel,
       permissionMode,
-      state.isGitRepo && worktreesAvailable && useWorktree
+      state.isGitRepo && worktreeOn
     )
   }
 
@@ -192,7 +188,7 @@ function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
                   <label htmlFor="use-worktree">Use a git worktree</label>
                   <Switch
                     id="use-worktree"
-                    checked={worktreesAvailable && useWorktree}
+                    checked={worktreeOn}
                     onCheckedChange={setUseWorktree}
                     disabled={isBusy || !worktreesAvailable}
                     aria-describedby={worktreesAvailable ? undefined : 'use-worktree-hint'}

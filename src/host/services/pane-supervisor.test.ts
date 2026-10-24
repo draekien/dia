@@ -6,6 +6,7 @@ import {
   type WorktreeInfo
 } from '@shared/domain/pane'
 import type { IpcEvent } from '@shared/ipc/contract'
+import { WORKTREES_KEY } from '@shared/plugin/api'
 import { Deferred, Effect, Layer, Option, Result } from 'effect'
 import { TestClock } from 'effect/testing'
 import { HostPlugins } from '../plugins/host-plugins'
@@ -19,7 +20,7 @@ import {
   SessionFactory,
   SessionFactoryLive
 } from './pane-supervisor'
-import { type GitOps, WORKTREES_KEY, WorktreeReattachError } from './worktrees-seam'
+import { type GitOps, WorktreeReattachError } from './worktrees-seam'
 
 interface FakeSession {
   readonly config: PaneConfig
@@ -67,7 +68,7 @@ const pluginsWith = (inject: (key: string) => Option.Option<unknown>) =>
 const noPlugins = pluginsWith(() => Option.none())
 
 const pluginsProviding = (gitOps: GitOps) =>
-  pluginsWith((key) => (key === WORKTREES_KEY ? Option.some(() => gitOps) : Option.none()))
+  pluginsWith((key) => (key === WORKTREES_KEY ? Option.some(gitOps) : Option.none()))
 
 const unusedGitOps: GitOps = {
   createWorktree: () => Effect.die(new Error('createWorktree should not be called in these tests')),

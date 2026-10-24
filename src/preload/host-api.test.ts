@@ -53,7 +53,8 @@ const makeClient = (script: ClientScript = {}) => {
       origin: 'default' as const,
       root: `plugins/${payload.name}`,
       status: { _tag: 'Loaded' as const },
-      memoryBytes: 0
+      memoryBytes: 0,
+      provides: []
     })
   )
   const setPluginOverride = vi.fn((_payload: { name: string; directory: string }) =>
@@ -220,7 +221,8 @@ describe('makeHostApi', () => {
       origin: 'default',
       root: 'plugins/example',
       status: { _tag: 'Loaded' },
-      memoryBytes: 0
+      memoryBytes: 0,
+      provides: []
     })
   })
 

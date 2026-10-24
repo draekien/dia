@@ -139,8 +139,9 @@ export type PluginStatus = typeof PluginStatus.Type
 
 /**
  * One row of the plugin list: a plugin's name, its {@link PluginCategory}, where it loads from
- * (`origin` and `root`), its state, and `memoryBytes`, the estimated Host heap growth its loads have caused (0 on a side
- * without a memory limit).
+ * (`origin` and `root`), its state, `memoryBytes`, the estimated Host heap growth its loads have caused (0 on a side
+ * without a memory limit), and `provides`, the service keys this plugin currently provides in the registry that built
+ * the row, sorted; it is empty while the plugin is not running.
  */
 export const PluginInfo = Schema.Struct({
   name: PluginName,
@@ -148,7 +149,8 @@ export const PluginInfo = Schema.Struct({
   origin: PluginOrigin,
   root: Schema.String,
   status: PluginStatus,
-  memoryBytes: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
+  memoryBytes: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+  provides: Schema.Array(Schema.String)
 })
 export type PluginInfo = typeof PluginInfo.Type
 
