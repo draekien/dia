@@ -14,3 +14,8 @@ export {
   type SessionEventReducer,
   type SessionEventReducerFactory
 } from './session/session-reducer-seam'
+export {
+  THINKING_OPTIONS_KEY,
+  type ThinkingOptions,
+  type ThinkingOptionsFactory
+} from './session/thinking-seam'

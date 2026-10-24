@@ -59,7 +59,7 @@ import {
   TurnCompleted
 } from './protocol'
 import { makeSessionReducer } from './session-reducer-seam'
-import { thinkingOptions } from './thinking-options'
+import { resolveThinkingOptions } from './thinking-seam'
 
 /**
  * Wraps a failure surfaced while consuming the Agent SDK's event stream
@@ -371,6 +371,8 @@ const runSession = Effect.fn('AgentSession.runSession')(
       branchAt
     })
 
+    const thinking = yield* resolveThinkingOptions(pluginRegistry, config.thinkingLevel)
+
     const promptIterable = Stream.toAsyncIterable(Stream.fromQueue(promptQueue))
 
     const session = yield* Effect.acquireRelease(
@@ -390,7 +392,7 @@ const runSession = Effect.fn('AgentSession.runSession')(
             extraArgs: { 'replay-user-messages': null },
             resume,
             ...(branchAt !== undefined ? { resumeSessionAt: branchAt, forkSession: true } : {}),
-            ...thinkingOptions(config.thinkingLevel),
+            ...thinking,
             ...(claudeExecutablePath !== undefined
               ? { pathToClaudeCodeExecutable: claudeExecutablePath }
               : {})
