@@ -1,5 +1,5 @@
 import { PaneError, PermissionUpdate, Question } from '@shared/domain/attention'
-import { ConversationMessage, PermissionMode } from '@shared/domain/pane'
+import { ConversationMessage, PermissionMode, SessionId } from '@shared/domain/pane'
 import { SlashCommandInfo } from '@shared/domain/slash-command'
 import { Schema } from 'effect'
 
@@ -57,7 +57,7 @@ export const TurnCompleted = Schema.TaggedStruct('TurnCompleted', {})
 export const TurnErrored = Schema.TaggedStruct('TurnErrored', { error: PaneError })
 /** Emitted by a pane's agent session once the Agent SDK session has started (or resumed), carrying the `sessionId` the Host persists so the pane can later be resumed. */
 export const SessionStarted = Schema.TaggedStruct('SessionStarted', {
-  sessionId: Schema.String
+  sessionId: SessionId
 })
 /** Emitted by a pane's agent session when the slash-command warm-up begins (`active` true, emitted right after the session's `query()` is created, before the `supportedCommands()` result is known) and again if that warm-up fails without producing a list (`active` false, so the renderer can stop showing a warming indicator without wrongly clearing an already-known command list). A successful warm-up ends the warming state by emitting `SlashCommandsAvailable` instead. */
 export const SlashCommandsWarming = Schema.TaggedStruct('SlashCommandsWarming', {
@@ -75,7 +75,7 @@ export const ConversationCompacted = Schema.TaggedStruct('ConversationCompacted'
 })
 /** Emitted by a pane's agent session when the session's conversation was reset to empty (e.g. the user ran `/clear`), carrying the `newSessionId` the Host must persist in place of the prior one so a later resume continues the fresh conversation rather than the cleared transcript. */
 export const ConversationReset = Schema.TaggedStruct('ConversationReset', {
-  newSessionId: Schema.String
+  newSessionId: SessionId
 })
 /** Emitted by a pane's agent session once per user turn, carrying the turn's `messageUuid` (the file-checkpoint id for Agent SDK `rewindFiles`) and, when a prior assistant turn exists, `resumeAnchorUuid` — the *assistant* message uuid `resumeSessionAt` must branch at to resume the conversation up to and including that reply, excluding this turn and everything after it. `resumeAnchorUuid` is absent when this is the first turn of the conversation (rewinding it means starting a fresh, unresumed session). The Host forwards this so a "rewind to here" affordance can be anchored to the turn. Emitted only when file checkpointing is enabled (the UUID comes from replayed user messages). */
 export const CheckpointAvailable = Schema.TaggedStruct('CheckpointAvailable', {

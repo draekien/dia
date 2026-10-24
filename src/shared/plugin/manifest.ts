@@ -25,7 +25,7 @@ export type PluginName = typeof PluginName.Type
  * them and the plugin sources refuse to override them. The list is a kernel decision, not a
  * manifest field, so a plugin or an override cannot remove its own protection.
  */
-export const ESSENTIAL_PLUGINS: ReadonlyArray<string> = ['permissions', 'thinking', 'git-ops']
+export const ESSENTIAL_PLUGINS: ReadonlyArray<string> = ['claude-code', 'permissions', 'git-ops']
 
 /** Whether `name` is in {@link ESSENTIAL_PLUGINS}. */
 export const isEssentialPlugin = (name: string): boolean => ESSENTIAL_PLUGINS.includes(name)

@@ -1,4 +1,4 @@
-import { PaneConfig } from '@shared/domain/pane'
+import { PaneConfig, SessionId } from '@shared/domain/pane'
 import { PaneNode } from '@shared/domain/pane-tree'
 import { Context, Data, Effect, FileSystem, Layer, Option, Schema } from 'effect'
 
@@ -9,7 +9,7 @@ import { Context, Data, Effect, FileSystem, Layer, Option, Schema } from 'effect
  */
 export const PersistedPaneEntry = Schema.Struct({
   config: PaneConfig,
-  sessionId: Schema.optional(Schema.String)
+  sessionId: Schema.optional(SessionId)
 })
 export type PersistedPaneEntry = typeof PersistedPaneEntry.Type
 

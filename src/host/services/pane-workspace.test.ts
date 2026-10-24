@@ -1,6 +1,6 @@
 import { NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
-import type { ConversationMessage } from '@shared/domain/pane'
+import { type ConversationMessage, SessionId } from '@shared/domain/pane'
 import type { PaneNode } from '@shared/domain/pane-tree'
 import type { IpcEvent } from '@shared/ipc/contract'
 import { Effect, FileSystem, Layer, Option, Result } from 'effect'
@@ -256,7 +256,7 @@ describe('PaneWorkspace', () => {
 
   it.effect('records a sessionId reported after createPane into the index and re-saves', () =>
     Effect.gen(function* () {
-      let captured: ((sessionId: string) => Effect.Effect<void>) | undefined
+      let captured: ((sessionId: SessionId) => Effect.Effect<void>) | undefined
       const supervisorLayer = makeSupervisorLayer((request, _onEvent, onSessionId) => {
         captured = onSessionId
         return echoOpenPane(request)
@@ -277,7 +277,7 @@ describe('PaneWorkspace', () => {
           onEvent
         )
         if (captured === undefined) throw new Error('onSessionId was not provided to openPane')
-        yield* captured('session-async-1')
+        yield* captured(SessionId.make('session-async-1'))
       }).pipe(Effect.provide(makeWorkspaceLayer(supervisorLayer, persistenceLayer)))
 
       assert.strictEqual(saves.length, 2)
@@ -299,7 +299,7 @@ describe('PaneWorkspace', () => {
               thinkingLevel: 'adaptive',
               permissionMode: 'default'
             },
-            sessionId: 'restored-session-1'
+            sessionId: SessionId.make('restored-session-1')
           }
         }
       })
@@ -520,7 +520,7 @@ describe('PaneWorkspace', () => {
               thinkingLevel: 'adaptive',
               permissionMode: 'default'
             },
-            sessionId: 'restored-session-1'
+            sessionId: SessionId.make('restored-session-1')
           }
         }
       })
@@ -538,7 +538,9 @@ describe('PaneWorkspace', () => {
       )
 
       assert.deepStrictEqual(history, restored)
-      assert.deepStrictEqual(reads, [{ sessionId: 'restored-session-1', cwd: '/repo' }])
+      assert.deepStrictEqual(reads, [
+        { sessionId: SessionId.make('restored-session-1'), cwd: '/repo' }
+      ])
     })
   )
 
@@ -553,7 +555,7 @@ describe('PaneWorkspace', () => {
           thinkingLevel: 'adaptive',
           permissionMode: 'default'
         },
-        sessionId: 'restored-session-1'
+        sessionId: SessionId.make('restored-session-1')
       }
     }
   }
@@ -802,7 +804,7 @@ describe('PaneWorkspace', () => {
               permissionMode: 'default',
               worktree: { path: '/wt/x', branch: 'dia/silver-heron', sourceRepo: '/repo' }
             },
-            sessionId: 'restored-session-1'
+            sessionId: SessionId.make('restored-session-1')
           }
         }
       })

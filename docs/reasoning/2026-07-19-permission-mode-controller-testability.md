@@ -40,9 +40,10 @@ it, rather than the stale `config.permissionMode` the pane was created with.
 
 ## Implication
 
-When something in the pane subprocess needs a unit test, extract it as a pure /
-Ref-only factory alongside the existing ones and keep `agent-session.ts` as the
-thin side-effecting shell that wires them to `port` and the SDK. Don't try to test
-`agent-session.ts` directly. When adding SDK-live controls, check
+The controller now lives in the `claude-code` adapter
+(`plugins/claude-code/permission-mode-controller.ts`), and the session that wires it to the SDK
+is `plugins/claude-code/session.ts`, which has no import-time side effects and is tested
+directly. Keep per-session state logic in small Ref-only factories next to it so each piece is
+testable with a fake `Query`. When adding SDK-live controls, check
 `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts` for a live setter on `Query`
 before assuming a change requires a session restart.

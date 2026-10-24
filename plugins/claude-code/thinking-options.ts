@@ -1,5 +1,14 @@
-import type { ThinkingOptions } from '@dia/plugin'
+import type { EffortLevel, ThinkingConfig } from '@anthropic-ai/claude-agent-sdk'
 import type { ThinkingLevel } from '@shared/domain/pane'
+
+/**
+ * The Agent SDK query options that enact a thinking level. Spread the result into a query's
+ * `options`; an absent field leaves the SDK's own default in effect.
+ */
+export interface ThinkingOptions {
+  readonly thinking?: ThinkingConfig
+  readonly effort?: EffortLevel
+}
 
 /**
  * Maps a user-facing {@link ThinkingLevel} to the Agent SDK query options that

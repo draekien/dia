@@ -7,7 +7,7 @@ import {
   ConversationCompacted,
   ConversationReset,
   type OutboundMessage,
-  type SessionEventReducer,
+  SessionId,
   SessionStarted,
   SlashCommandsAvailable,
   ToolCallCompleted,
@@ -38,6 +38,15 @@ const flattenToolResultContent = (content: ToolResultBlock['content']): string =
   if (content === undefined) return ''
   if (typeof content === 'string') return content
   return content.map((block) => (block.type === 'text' ? block.text : `[${block.type}]`)).join('')
+}
+
+/**
+ * Folds the Agent SDK's raw message stream into {@link OutboundMessage}s for one agent session.
+ * `step` takes one SDK message, in arrival order, and returns the protocol messages it produces
+ * in emission order; it returns an empty array for a message with no protocol effect.
+ */
+export interface SessionEventReducer {
+  readonly step: (message: SDKMessage) => ReadonlyArray<OutboundMessage>
 }
 
 /**
@@ -86,12 +95,12 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
     if (message.type === 'system' && message.subtype === 'init') {
       // The streamed init message lists command names only (no descriptions). The
       // full list -- with descriptions and argument hints -- is fetched once at
-      // session start via query.supportedCommands() in agent-session.ts, so this
+      // session start via query.supportedCommands() in session.ts, so this
       // branch deliberately emits only SessionStarted and leaves the command list
       // to that warm-up (and to later commands_changed messages). Emitting the
       // names-only list here too would race the warm-up and could clobber the
       // enriched list with empty descriptions.
-      return [SessionStarted.make({ sessionId: message.session_id })]
+      return [SessionStarted.make({ sessionId: SessionId.make(message.session_id) })]
     }
 
     if (message.type === 'system' && message.subtype === 'commands_changed') {
@@ -118,7 +127,7 @@ export const makeSessionEventReducer = (): SessionEventReducer => {
     }
 
     if (message.type === 'conversation_reset') {
-      return [ConversationReset.make({ newSessionId: message.new_conversation_id })]
+      return [ConversationReset.make({ newSessionId: SessionId.make(message.new_conversation_id) })]
     }
 
     if (message.type === 'assistant') {

@@ -1,5 +1,7 @@
 # Session reducer plugin and the kernel seam
 
+Status: superseded by `docs/designs/claude-code-adapter.md` (ADR-0029). The seam and plugin described here were removed; the code lives in the `claude-code` adapter.
+
 ## Purpose
 
 The mapping from Agent SDK messages to the Host's `OutboundMessage` protocol (`agent-session-reducer.ts`) becomes the built-in plugin `session-reducer`. The kernel keeps `query()`, its input queue and its `sessionId` (ADR-0019), looks the mapping up by the service key `sessionReducer`, and keeps a minimal fallback so a streaming turn survives the plugin being unloaded, failing, or throwing.

@@ -1,8 +1,7 @@
 import type { PluginInfo, PluginOverrideResult } from '@shared/plugin/manifest'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
-import { z } from 'zod'
-import { isPluginToolName, makePluginTools, type PluginToolOptions } from './plugin-tools'
+import { type DiaToolResult, makePluginTools } from './dia-tools'
 
 const info = (name: string, status: PluginInfo['status'] = { _tag: 'Loaded' }): PluginInfo => ({
   name,
@@ -14,49 +13,32 @@ const info = (name: string, status: PluginInfo['status'] = { _tag: 'Loaded' }): 
 
 const harness = (
   script: {
-    readonly approved?: boolean
     readonly reloadResult?: (name: string) => PluginInfo
     readonly overrideResult?: PluginOverrideResult
   } = {}
 ) => {
   const log: Array<string> = []
-  const options: PluginToolOptions = {
-    host: {
-      reload: (name) =>
-        Effect.sync(() => {
-          log.push(`reload:${name}`)
-          return (script.reloadResult ?? info)(name)
-        }),
-      setOverride: (name, directory) =>
-        Effect.sync(() => {
-          log.push(`setOverride:${name}:${directory}`)
-          return script.overrideResult ?? { _tag: 'Applied' }
-        }),
-      clearOverride: (name) => Effect.sync(() => void log.push(`clearOverride:${name}`))
-    },
-    approve: (toolName, input) =>
+  const tools = makePluginTools({
+    reload: (name) =>
       Effect.sync(() => {
-        log.push(`approve:${toolName}:${JSON.stringify(input)}`)
-        return script.approved ?? true
+        log.push(`reload:${name}`)
+        return (script.reloadResult ?? info)(name)
       }),
-    run: (effect) => Effect.runPromise(effect)
-  }
-  const tools = makePluginTools(options)
-  const call = async (name: string, args: Record<string, string>) => {
+    setOverride: (name, directory) =>
+      Effect.sync(() => {
+        log.push(`setOverride:${name}:${directory}`)
+        return script.overrideResult ?? { _tag: 'Applied' }
+      }),
+    clearOverride: (name) => Effect.sync(() => void log.push(`clearOverride:${name}`))
+  })
+  const tool = (name: string) => {
     const found = tools.find((candidate) => candidate.name === name)
     if (found === undefined) throw new Error(`no tool ${name}`)
-    const result = await (
-      found.handler as (
-        a: unknown,
-        e: unknown
-      ) => Promise<{
-        content: Array<{ text: string }>
-        isError?: boolean
-      }>
-    )(args, {})
-    return { text: result.content[0]?.text ?? '', isError: result.isError === true }
+    return found
   }
-  return { log, call, tools }
+  const call = (name: string, args: Record<string, string>): Promise<DiaToolResult> =>
+    Effect.runPromise(tool(name).run(args))
+  return { log, call, tool, tools }
 }
 
 describe('plugin tools', () => {
@@ -66,31 +48,6 @@ describe('plugin tools', () => {
         .tools.map((tool) => tool.name)
         .sort()
     ).toEqual(['plugin_clear_override', 'plugin_override', 'plugin_reload'])
-  })
-
-  it('asks for approval under the full tool name before it touches a plugin', async () => {
-    const { log, call } = harness()
-
-    await call('plugin_reload', { name: 'chat' })
-
-    expect(log).toEqual(['approve:mcp__dia__plugin_reload:{"name":"chat"}', 'reload:chat'])
-  })
-
-  it.each([
-    ['plugin_reload', { name: 'chat' }],
-    ['plugin_override', { name: 'chat', directory: '/work/chat' }],
-    ['plugin_clear_override', { name: 'chat' }]
-  ])('does nothing and tells the agent when the user declines %s', async (tool, args) => {
-    const { log, call } = harness({ approved: false })
-
-    const result = await call(tool, args)
-
-    expect(log).toHaveLength(1)
-    expect(log[0]).toContain(`approve:mcp__dia__${tool}`)
-    expect(result).toEqual({
-      text: 'The user did not approve this plugin change.',
-      isError: true
-    })
   })
 
   it('reports a plugin that loaded cleanly as a success', async () => {
@@ -151,7 +108,7 @@ describe('plugin tools', () => {
 
     await call('plugin_override', { name: 'chat', directory: '/work/chat' })
 
-    expect(log.slice(1)).toEqual(['setOverride:chat:/work/chat', 'reload:chat'])
+    expect(log).toEqual(['setOverride:chat:/work/chat', 'reload:chat'])
   })
 
   it('does not reload when the override is refused and says why', async () => {
@@ -170,48 +127,27 @@ describe('plugin tools', () => {
 
     await call('plugin_clear_override', { name: 'chat' })
 
-    expect(log.slice(1)).toEqual(['clearOverride:chat', 'reload:chat'])
+    expect(log).toEqual(['clearOverride:chat', 'reload:chat'])
   })
 
-  describe('input schema', () => {
-    const schemaOf = (tool: string) => {
-      const found = harness().tools.find((candidate) => candidate.name === tool)
-      if (found === undefined) throw new Error(`no tool ${tool}`)
-      return z.object(found.inputSchema as z.ZodRawShape)
+  describe('input patterns', () => {
+    const pattern = (tool: string, field: string) => {
+      const found = harness().tool(tool).input[field]
+      if (found === undefined) throw new Error(`no field ${field}`)
+      return found.pattern
     }
 
     it.each(['chat', 'theme-2'])('accepts the plugin name %s', (name) => {
-      expect(schemaOf('plugin_reload').safeParse({ name }).success).toBe(true)
+      expect(pattern('plugin_reload', 'name').test(name)).toBe(true)
     })
 
     it.each(['../etc', 'Chat', '', '2fast', 'a b'])('rejects the plugin name "%s"', (name) => {
-      expect(schemaOf('plugin_reload').safeParse({ name }).success).toBe(false)
+      expect(pattern('plugin_reload', 'name').test(name)).toBe(false)
     })
 
-    it('requires a directory for an override', () => {
-      expect(schemaOf('plugin_override').safeParse({ name: 'chat' }).success).toBe(false)
-      expect(schemaOf('plugin_override').safeParse({ name: 'chat', directory: '' }).success).toBe(
-        false
-      )
+    it('rejects an empty override directory and accepts any non-empty one', () => {
+      expect(pattern('plugin_override', 'directory').test('')).toBe(false)
+      expect(pattern('plugin_override', 'directory').test(' ')).toBe(true)
     })
-  })
-})
-
-describe('isPluginToolName', () => {
-  it.each([
-    'mcp__dia__plugin_override',
-    'mcp__dia__plugin_reload',
-    'mcp__dia__plugin_clear_override'
-  ])('recognises %s', (name) => {
-    expect(isPluginToolName(name)).toBe(true)
-  })
-
-  it.each([
-    'Bash',
-    'mcp__dia__other',
-    'mcp__other__plugin_reload',
-    'plugin_reload'
-  ])('does not recognise %s', (name) => {
-    expect(isPluginToolName(name)).toBe(false)
   })
 })

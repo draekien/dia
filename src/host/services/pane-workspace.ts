@@ -3,6 +3,7 @@ import { Errored } from '@shared/domain/attention'
 import type {
   ConversationMessage,
   PermissionMode,
+  SessionId,
   StartupPermissionMode,
   ThinkingLevel
 } from '@shared/domain/pane'
@@ -142,7 +143,7 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
 
       const recordSessionId = Effect.fn('PaneWorkspace.recordSessionId')(function* (
         paneId: PaneId,
-        sessionId: string
+        sessionId: SessionId
       ) {
         const configs = yield* Ref.get(configsRef)
         const entry = HashMap.get(configs, paneId)

@@ -88,7 +88,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     Layer.mergeAll(
       supervisor,
       persistence,
-      TranscriptReaderLive,
+      Layer.provide(TranscriptReaderLive, hostPlugins),
       NodeFileSystem.layer,
       NodePath.layer
     )

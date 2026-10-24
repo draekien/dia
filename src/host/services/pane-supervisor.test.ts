@@ -1,22 +1,29 @@
 import { assert, describe, it } from '@effect/vitest'
-import type { PaneConfig, PermissionMode, WorktreeInfo } from '@shared/domain/pane'
+import {
+  type PaneConfig,
+  type PermissionMode,
+  SessionId,
+  type WorktreeInfo
+} from '@shared/domain/pane'
 import type { IpcEvent } from '@shared/ipc/contract'
 import { Deferred, Effect, Layer, Option, Result } from 'effect'
 import { TestClock } from 'effect/testing'
 import { HostPlugins } from '../plugins/host-plugins'
-import type { AgentSession } from '../session/agent-session'
-import type { OutboundMessage } from '../session/protocol'
+import { PluginSources } from '../plugins/plugin-sources'
+import type { AgentSession } from '../session/agent-backend'
+import { type OutboundMessage, SessionStarted } from '../session/protocol'
 import { GIT_OPS_KEY, type GitOps, WorktreeCreateError } from './git-ops-seam'
 import {
   type PaneCreationRequest,
   PaneSupervisor,
   PaneSupervisorLive,
-  SessionFactory
+  SessionFactory,
+  SessionFactoryLive
 } from './pane-supervisor'
 
 interface FakeSession {
   readonly config: PaneConfig
-  readonly resume: string | undefined
+  readonly resume: Option.Option<SessionId>
   readonly calls: Array<string>
   readonly emit: (message: OutboundMessage) => Effect.Effect<void>
   readonly end: (reason: string) => Effect.Effect<void>
@@ -42,7 +49,7 @@ const requestB: PaneCreationRequest = {
 
 const flush = Effect.repeat(Effect.yieldNow, { times: 50 })
 
-const ignoreSessionId = (_sessionId: string): Effect.Effect<void> => Effect.void
+const ignoreSessionId = (_sessionId: SessionId): Effect.Effect<void> => Effect.void
 const ignorePermissionMode = (_mode: PermissionMode): Effect.Effect<void> => Effect.void
 
 const attentionTags = (events: ReadonlyArray<IpcEvent>): ReadonlyArray<string> =>
@@ -118,6 +125,37 @@ function makeTestSetup(
   const testLayer = Layer.provide(PaneSupervisorLive, Layer.merge(factoryLayer, plugins))
   return { sessions, testLayer }
 }
+
+const unusedPluginSources = Layer.succeed(PluginSources)({
+  names: () => Effect.succeed([]),
+  resolve: () => Effect.succeed(Option.none()),
+  setOverride: () => Effect.die(new Error('setOverride should not be called in these tests')),
+  clearOverride: () => Effect.die(new Error('clearOverride should not be called in these tests'))
+})
+
+describe('SessionFactoryLive without the claude-code adapter', () => {
+  it.effect('marks the pane Crashed once and removes it', () =>
+    Effect.gen(function* () {
+      const factory = Layer.provide(SessionFactoryLive, Layer.merge(noPlugins, unusedPluginSources))
+      const testLayer = Layer.provide(PaneSupervisorLive, Layer.merge(factory, noPlugins))
+      const events: Array<IpcEvent> = []
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        yield* supervisor.openPane(
+          requestA,
+          (event) => Effect.sync(() => void events.push(event)),
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+        yield* flush
+
+        assert.isTrue(Option.isNone(yield* supervisor.getHandle(requestA.paneId)))
+        assert.deepStrictEqual(attentionTags(events), ['Crashed'])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+})
 
 describe('PaneSupervisor', () => {
   it.effect('removes a pane whose session ends on its own, leaving its sibling alive', () =>
@@ -280,7 +318,7 @@ describe('PaneSupervisor', () => {
           ignorePermissionMode
         )
 
-        yield* sessions[0].emit({ _tag: 'SessionStarted', sessionId: 'session-xyz' })
+        yield* sessions[0].emit(SessionStarted.make({ sessionId: SessionId.make('session-xyz') }))
 
         assert.deepStrictEqual(sessionIds, ['session-xyz'])
       }).pipe(Effect.scoped, Effect.provide(testLayer))
@@ -316,7 +354,7 @@ describe('PaneSupervisor', () => {
           thinkingLevel: 'adaptive',
           permissionMode: 'default',
           worktree: { _tag: 'Reattach', info: expectedInfo },
-          resume: 'session-resume-1'
+          resume: SessionId.make('session-resume-1')
         }
 
         yield* Effect.gen(function* () {
@@ -340,7 +378,10 @@ describe('PaneSupervisor', () => {
             permissionMode: 'default',
             worktree: expectedInfo
           })
-          assert.strictEqual(sessions[0].resume, 'session-resume-1')
+          assert.deepStrictEqual(
+            sessions[0].resume,
+            Option.some(SessionId.make('session-resume-1'))
+          )
         }).pipe(Effect.scoped, Effect.provide(testLayer))
       })
   )

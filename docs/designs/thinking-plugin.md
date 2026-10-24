@@ -1,5 +1,7 @@
 # Thinking plugin
 
+Status: superseded by `docs/designs/claude-code-adapter.md` (ADR-0029). The seam and plugin described here were removed; the code lives in the `claude-code` adapter.
+
 ## Purpose
 
 The mapping from a pane's `ThinkingLevel` to Agent SDK query options (`thinkingOptions`) becomes the built-in plugin `thinking`. The kernel keeps `query()` and looks the mapping up by service key once per session start. `thinking` is an essential plugin (ADR-0028): the Host refuses to unload it or to load an override of it.

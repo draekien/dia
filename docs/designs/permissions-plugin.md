@@ -1,5 +1,7 @@
 # Essential plugins and the permissions plugin
 
+Status: partly superseded by `docs/designs/claude-code-adapter.md` (ADR-0029). `permission-mode-controller` and `permissions-seam.ts` were removed; the plugin now provides only `pendingUserInput`, which the kernel reads through `src/host/session/pending-user-input-resolver.ts`.
+
 ## Purpose
 
 The permission-mode state (`PermissionModeController`) and the registry of pending tool-permission, question and plan-review requests (`PendingUserInput`) become the built-in plugin `permissions`. The kernel keeps `canUseTool` and the Agent SDK `query()`, looks both services up by service key, and denies every tool call when the plugin is not available. `permissions` is the first essential plugin: the Host refuses to unload it or to load an override of it.

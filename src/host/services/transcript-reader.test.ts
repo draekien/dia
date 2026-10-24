@@ -1,130 +1,54 @@
-import type { SessionMessage } from '@anthropic-ai/claude-agent-sdk'
 import { assert, describe, it } from '@effect/vitest'
-import { sessionMessagesToConversation } from './transcript-reader'
+import { type ConversationMessage, SessionId } from '@shared/domain/pane'
+import { Effect, Layer, Option } from 'effect'
+import { HostPlugins } from '../plugins/host-plugins'
+import { AGENT_BACKEND_KEY, type AgentBackend } from '../session/agent-backend'
+import { TranscriptReader, TranscriptReaderLive } from './transcript-reader'
 
-function sessionMessage(
-  type: SessionMessage['type'],
-  message: unknown,
-  uuid = 'uuid'
-): SessionMessage {
-  return {
-    type,
-    uuid,
-    session_id: 'session',
-    message,
-    parent_tool_use_id: null,
-    parent_agent_id: null
-  }
-}
-
-describe('sessionMessagesToConversation', () => {
-  it('anchors a checkpoint uuid onto a user turn with string content', () => {
-    const result = sessionMessagesToConversation([
-      sessionMessage('user', { role: 'user', content: 'hello there' }, 'turn-1')
-    ])
-
-    assert.deepStrictEqual(result, [
-      { role: 'user', content: 'hello there', checkpointUuid: 'turn-1' }
-    ])
+const pluginsProviding = (backend: Option.Option<AgentBackend>) =>
+  Layer.succeed(HostPlugins)({
+    list: () => Effect.succeed([]),
+    start: () => Effect.void,
+    load: () => Effect.die(new Error('load should not be called in these tests')),
+    unload: () => Effect.die(new Error('unload should not be called in these tests')),
+    inject: (key) => Effect.succeed(key === AGENT_BACKEND_KEY ? backend : Option.none())
   })
 
-  it('joins an assistant turn’s text blocks into one message', () => {
-    const result = sessionMessagesToConversation([
-      sessionMessage('assistant', {
-        role: 'assistant',
-        content: [
-          { type: 'text', text: 'part one ' },
-          { type: 'text', text: 'part two' }
-        ]
-      })
-    ])
+const readerWith = (backend: Option.Option<AgentBackend>) =>
+  Layer.provide(TranscriptReaderLive, pluginsProviding(backend))
 
-    assert.deepStrictEqual(result, [{ role: 'assistant', content: 'part one part two' }])
-  })
+describe('TranscriptReaderLive', () => {
+  it.effect('reads the history through the loaded agent backend', () =>
+    Effect.gen(function* () {
+      const reads: Array<string> = []
+      const history: ReadonlyArray<ConversationMessage> = [{ role: 'user', content: 'hello' }]
+      const backend: AgentBackend = {
+        openSession: () => Effect.die('not called'),
+        readHistory: (sessionId, cwd) =>
+          Effect.sync(() => {
+            reads.push(`${sessionId}@${cwd}`)
+            return history
+          })
+      }
 
-  it('keeps only the text blocks of an assistant turn that also calls a tool', () => {
-    const result = sessionMessagesToConversation([
-      sessionMessage('assistant', {
-        role: 'assistant',
-        content: [
-          { type: 'text', text: 'let me check' },
-          { type: 'tool_use', id: 't1', name: 'Read', input: { path: '/x' } }
-        ]
-      })
-    ])
+      const read = yield* Effect.gen(function* () {
+        const reader = yield* TranscriptReader
+        return yield* reader.readHistory(SessionId.make('s-1'), '/work')
+      }).pipe(Effect.provide(readerWith(Option.some(backend))))
 
-    assert.deepStrictEqual(result, [{ role: 'assistant', content: 'let me check' }])
-  })
+      assert.deepStrictEqual(read, history)
+      assert.deepStrictEqual(reads, ['s-1@/work'])
+    })
+  )
 
-  it('drops a tool-result turn that carries no displayable text', () => {
-    const result = sessionMessagesToConversation([
-      sessionMessage('user', {
-        role: 'user',
-        content: [{ type: 'tool_result', tool_use_id: 't1', content: 'file contents' }]
-      })
-    ])
+  it.effect('returns an empty history when no agent backend is loaded', () =>
+    Effect.gen(function* () {
+      const read = yield* Effect.gen(function* () {
+        const reader = yield* TranscriptReader
+        return yield* reader.readHistory(SessionId.make('s-1'), '/work')
+      }).pipe(Effect.provide(readerWith(Option.none())))
 
-    assert.deepStrictEqual(result, [])
-  })
-
-  it('drops a message whose shape cannot be decoded', () => {
-    const result = sessionMessagesToConversation([
-      sessionMessage('system', { note: 'compact boundary' }),
-      sessionMessage('user', null)
-    ])
-
-    assert.deepStrictEqual(result, [])
-  })
-
-  it('preserves chronological order and anchors each user turn to its own uuid', () => {
-    const result = sessionMessagesToConversation([
-      sessionMessage('user', { role: 'user', content: 'first' }, 'turn-1'),
-      sessionMessage(
-        'assistant',
-        { role: 'assistant', content: [{ type: 'text', text: 'second' }] },
-        'turn-2'
-      ),
-      sessionMessage(
-        'user',
-        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ignored' }] },
-        'turn-3'
-      ),
-      sessionMessage('user', { role: 'user', content: 'third' }, 'turn-4')
-    ])
-
-    assert.deepStrictEqual(result, [
-      { role: 'user', content: 'first', checkpointUuid: 'turn-1' },
-      { role: 'assistant', content: 'second' },
-      { role: 'user', content: 'third', checkpointUuid: 'turn-4', resumeAnchorUuid: 'turn-2' }
-    ])
-  })
-
-  it('anchors the resume uuid to the most recent assistant turn, including tool-only ones', () => {
-    const result = sessionMessagesToConversation([
-      sessionMessage('user', { role: 'user', content: 'first' }, 'turn-1'),
-      sessionMessage(
-        'assistant',
-        {
-          role: 'assistant',
-          content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { path: '/x' } }]
-        },
-        'turn-2'
-      ),
-      sessionMessage(
-        'user',
-        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] },
-        'turn-3'
-      ),
-      sessionMessage('user', { role: 'user', content: 'second' }, 'turn-4')
-    ])
-
-    assert.deepStrictEqual(result, [
-      { role: 'user', content: 'first', checkpointUuid: 'turn-1' },
-      { role: 'user', content: 'second', checkpointUuid: 'turn-4', resumeAnchorUuid: 'turn-2' }
-    ])
-  })
-
-  it('returns an empty list for no messages', () => {
-    assert.deepStrictEqual(sessionMessagesToConversation([]), [])
-  })
+      assert.deepStrictEqual(read, [])
+    })
+  )
 })

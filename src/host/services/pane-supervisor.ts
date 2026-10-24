@@ -17,6 +17,7 @@ import type {
   PaneConfig,
   PaneRecord,
   PermissionMode,
+  SessionId,
   ThinkingLevel,
   WorktreeInfo
 } from '@shared/domain/pane'
@@ -60,8 +61,9 @@ import {
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { applyOverride, PluginSources } from '../plugins/plugin-sources'
-import { type AgentSession, makeAgentSession } from '../session/agent-session'
-import type { PluginToolHost } from '../session/plugin-tools'
+import { type AgentSession, resolveAgentBackend, ToolGate } from '../session/agent-backend'
+import { makePluginTools } from '../session/dia-tools'
+import { resolvePendingUserInput } from '../session/pending-user-input-resolver'
 import type { OutboundMessage } from '../session/protocol'
 import { resolveGitOps, type WorktreeCreateError, type WorktreeReattachError } from './git-ops-seam'
 
@@ -90,7 +92,7 @@ export interface PaneCreationRequest {
   readonly thinkingLevel: ThinkingLevel
   readonly permissionMode: PermissionMode
   readonly worktree: WorktreeRequest | undefined
-  readonly resume?: string
+  readonly resume?: SessionId
 }
 
 /** Failure logged when a pane's agent session ends on its own (not as part of a requested teardown). */
@@ -120,37 +122,48 @@ export interface PaneHandle {
 
 /**
  * Service that starts a pane's {@link AgentSession} inside the scope it is called in. The live
- * layer starts a real Agent SDK session; tests substitute a fake session.
+ * layer starts a session on the loaded agent backend; tests substitute a fake session.
  */
 export class SessionFactory extends Context.Service<
   SessionFactory,
   {
     readonly start: (options: {
       readonly config: PaneConfig
-      readonly resume: string | undefined
+      readonly resume: Option.Option<SessionId>
       readonly emit: (message: OutboundMessage) => Effect.Effect<void>
     }) => Effect.Effect<AgentSession, never, Scope.Scope>
   }
 >()('SessionFactory') {}
 
 /**
- * Production {@link SessionFactory} that starts real Agent SDK sessions. Each session's agent
- * gets the plugin tools, backed by `HostPlugins` and `PluginSources`, so it can point a plugin at
- * a source folder and reload it after the user approves.
+ * Production {@link SessionFactory}. Each start resolves the agent backend and the
+ * pending-user-input registry from the loaded plugins, so a plugin reload applies from the next
+ * session. When the registry is available the agent gets the plugin tools, backed by
+ * `HostPlugins` and `PluginSources`, so it can point a plugin at a source folder and reload it
+ * after the user approves; otherwise every tool call is denied.
  */
 export const SessionFactoryLive = Layer.effect(
   SessionFactory,
   Effect.gen(function* () {
     const plugins = yield* HostPlugins
     const sources = yield* PluginSources
-    const pluginToolHost: PluginToolHost = {
+    const pluginTools = makePluginTools({
       reload: (name) => plugins.load(name),
       setOverride: (name, directory) => applyOverride(sources, name, directory),
       clearOverride: (name) => sources.clearOverride(name)
-    }
-    return {
-      start: (options) => makeAgentSession({ ...options, pluginToolHost, pluginRegistry: plugins })
-    }
+    })
+    const start = Effect.fn('SessionFactory.start')(function* (
+      options: Parameters<SessionFactory['Service']['start']>[0]
+    ) {
+      const backend = yield* resolveAgentBackend(plugins)
+      const userInput = yield* resolvePendingUserInput(plugins)
+      const toolGate = Option.match(userInput, {
+        onNone: () => ToolGate.DenyAll(),
+        onSome: (registry) => ToolGate.AskUser({ userInput: registry, tools: pluginTools })
+      })
+      return yield* backend.openSession({ ...options, toolGate })
+    })
+    return { start }
   })
 )
 
@@ -299,9 +312,9 @@ function toAttentionTarget(message: OutboundMessage): Option.Option<AttentionSta
 const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
   config: PaneConfig,
   factory: SessionFactory['Service'],
-  onSessionId: (sessionId: string) => Effect.Effect<void>,
+  onSessionId: (sessionId: SessionId) => Effect.Effect<void>,
   onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>,
-  resume: string | undefined
+  resume: Option.Option<SessionId>
 ) {
   const paneScope = yield* Scope.Scope
   const outbound = yield* Queue.unbounded<IpcEvent, Cause.Done>()
@@ -479,7 +492,7 @@ export class PaneSupervisor extends Context.Service<
     readonly openPane: (
       request: PaneCreationRequest,
       onEvent: (event: IpcEvent) => Effect.Effect<void>,
-      onSessionId: (sessionId: string) => Effect.Effect<void>,
+      onSessionId: (sessionId: SessionId) => Effect.Effect<void>,
       onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>
     ) => Effect.Effect<
       { readonly handle: PaneHandle; readonly config: PaneConfig },
@@ -520,7 +533,7 @@ export const PaneSupervisorLive = Layer.effect(
     const openPane = Effect.fn('PaneSupervisor.openPane')(function* (
       request: PaneCreationRequest,
       onEvent: (event: IpcEvent) => Effect.Effect<void>,
-      onSessionId: (sessionId: string) => Effect.Effect<void>,
+      onSessionId: (sessionId: SessionId) => Effect.Effect<void>,
       onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>
     ) {
       const scope = yield* Scope.make()
@@ -583,7 +596,7 @@ export const PaneSupervisorLive = Layer.effect(
         factory,
         onSessionId,
         onPermissionModeChanged,
-        request.resume
+        Option.fromUndefinedOr(request.resume)
       ).pipe(Effect.provideService(Scope.Scope, scope))
 
       const subscriber = yield* Effect.forkDetach(

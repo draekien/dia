@@ -19,7 +19,7 @@ relying on it left the popover empty (and description-less) until the user's
 first turn. The SDK runs its control-protocol `initialize()` eagerly when
 `query()` is constructed; `query.supportedCommands()` awaits that and returns
 the full `SlashCommand[]` (name, description, argumentHint) *before any prompt*.
-So `agent-session.ts` fires a forked `supportedCommands()` warm-up right after
+So the adapter's `session.ts` fires a forked `supportedCommands()` warm-up right after
 `query()` on every session start/resume and emits `SlashCommandsAvailable` from
 it; the reducer's `init` branch emits only `SessionStarted`. A later
 `system/commands_changed` still overwrites the list for mid-session changes

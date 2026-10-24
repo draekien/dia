@@ -1,3 +1,5 @@
+export { PlanReviewResponse, Question } from '../shared/domain/attention'
+export { SessionId } from '../shared/domain/pane'
 export * from '../shared/plugin/api'
 export {
   GIT_OPS_KEY,
@@ -8,22 +10,17 @@ export {
   WorktreeRemoveError
 } from './services/git-ops-seam'
 export {
-  type LivePermissionQuery,
+  AGENT_BACKEND_KEY,
+  type AgentBackend,
+  type AgentSession,
+  type AgentSessionOptions,
+  ToolGate
+} from './session/agent-backend'
+export type { DiaTool, DiaToolField, DiaToolResult } from './session/dia-tools'
+export {
   PENDING_USER_INPUT_KEY,
-  PERMISSION_MODE_CONTROLLER_KEY,
   type PendingUserInput,
-  type PermissionModeController,
   Superseded,
   type UserInputResolution
-} from './session/permissions-seam'
+} from './session/pending-user-input-resolver'
 export * from './session/protocol'
-export {
-  SESSION_REDUCER_KEY,
-  type SessionEventReducer,
-  type SessionEventReducerFactory
-} from './session/session-reducer-seam'
-export {
-  THINKING_OPTIONS_KEY,
-  type ThinkingOptions,
-  type ThinkingOptionsFactory
-} from './session/thinking-seam'

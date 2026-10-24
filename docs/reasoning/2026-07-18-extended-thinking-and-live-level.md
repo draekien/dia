@@ -26,8 +26,7 @@ or no session has started yet.
 `{ thinking: { type: 'disabled' } }`; `adaptive` → `{ thinking: { type: 'adaptive' } }`;
 `low`/`medium`/`high` → `{ thinking: { type: 'adaptive' }, effort: <level> }` (adaptive
 thinking *capped* at that effort, not `thinking: { type: 'enabled' }`). Extracted to the
-pure `plugins/thinking/thinking-options.ts` (provided to the kernel by the essential `thinking` plugin through `thinking-seam.ts`) so it's unit-testable — `agent-session.ts` runs `Effect.runFork`
-and touches `process.parentPort` at import, so nothing in it can be imported from a test.
+pure `plugins/claude-code/thinking-options.ts` (part of the `claude-code` adapter, `docs/designs/claude-code-adapter.md`) so the mapping is unit-tested on its own, without starting an SDK query.
 
 **Thinking always precedes the answer in one turn, so the reasoning→text transition is a
 one-way close.** In the IPC→AG-UI adapter, a `thinking_delta` opens a

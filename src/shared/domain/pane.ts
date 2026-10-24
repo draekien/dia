@@ -3,6 +3,14 @@ import { AttentionState } from './attention'
 import { Uuid } from './uuid'
 
 /**
+ * Id of an agent conversation, as the agent backend reports it. Persist it to resume the
+ * conversation later; create one only by decoding a persisted value or with `SessionId.make`
+ * where the agent reports a new id.
+ */
+export const SessionId = Schema.String.pipe(Schema.brand('SessionId'))
+export type SessionId = typeof SessionId.Type
+
+/**
  * A single turn in a pane's conversation history, as exchanged with Claude.
  * Use to append to or read `PaneRecord.history`. `checkpointUuid`, when present,
  * is the Agent SDK message id anchoring a rewindable file checkpoint to this

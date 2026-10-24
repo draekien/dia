@@ -1,4 +1,5 @@
 import { assert, describe, it } from '@effect/vitest'
+import { SessionId } from '@shared/domain/pane'
 import type { PaneNode } from '@shared/domain/pane-tree'
 import { Effect, FileSystem, Layer, Logger, Option, PlatformError } from 'effect'
 import {
@@ -46,7 +47,7 @@ const workspace: PersistedWorkspace = {
         permissionMode: 'auto',
         worktree: { path: '/wt/b', branch: 'dia/pane-b', sourceRepo: '/repo' }
       },
-      sessionId: 'session-b-123'
+      sessionId: SessionId.make('session-b-123')
     }
   }
 }

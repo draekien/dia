@@ -1,7 +1,9 @@
-import type { LivePermissionQuery } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import { Effect, Option } from 'effect'
-import { makePermissionModeController } from './permission-mode-controller'
+import {
+  type LivePermissionQuery,
+  makePermissionModeController
+} from './permission-mode-controller'
 
 const makeFakeQuery = (): { readonly query: LivePermissionQuery; readonly calls: string[] } => {
   const calls: string[] = []
