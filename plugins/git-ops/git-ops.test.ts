@@ -1,7 +1,17 @@
 import { type GitOps, WorktreeCreateError, WorktreeReattachError } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import type { WorktreeInfo } from '@shared/domain/pane'
-import { Context, Effect, FileSystem, Layer, Logger, Path, Result, Stream } from 'effect'
+import {
+  Context,
+  Effect,
+  FileSystem,
+  Layer,
+  Logger,
+  Path,
+  PlatformError,
+  Result,
+  Stream
+} from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { makeGitOps } from './git-ops'
 
@@ -10,14 +20,27 @@ class TestGitOps extends Context.Service<TestGitOps, GitOps>()('TestGitOps') {}
 const PANE_ID = 'aaaaaaaa-0000-4000-8000-000000000001'
 
 function makeFakeSpawner(
-  exitCodeFor: (command: ChildProcess.Command) => number
+  exitCodeFor: (command: ChildProcess.Command) => number,
+  registeredWorktrees: ReadonlyArray<string> | 'unavailable'
 ): ChildProcessSpawner.ChildProcessSpawner['Service'] {
   const notImplemented = () => Effect.die('not implemented in fake spawner')
   const streamNotImplemented = () => Stream.die('not implemented in fake spawner')
   return ChildProcessSpawner.ChildProcessSpawner.of({
     spawn: notImplemented,
     exitCode: (command) => Effect.succeed(ChildProcessSpawner.ExitCode(exitCodeFor(command))),
-    string: notImplemented,
+    string: () =>
+      registeredWorktrees === 'unavailable'
+        ? Effect.fail(
+            PlatformError.systemError({
+              _tag: 'NotFound',
+              module: 'ChildProcess',
+              method: 'string',
+              description: 'git is not available'
+            })
+          )
+        : Effect.succeed(
+            registeredWorktrees.map((path) => `worktree ${path}\nHEAD abc\n`).join('\n')
+          ),
     lines: notImplemented,
     streamString: streamNotImplemented,
     streamLines: streamNotImplemented
@@ -29,9 +52,15 @@ function argsOf(command: ChildProcess.Command): ReadonlyArray<string> {
   return command.args
 }
 
+interface TestSetupOptions {
+  readonly worktreeExists?: boolean
+  readonly registeredWorktrees?: ReadonlyArray<string> | 'unavailable'
+  readonly directoryEntries?: ReadonlyArray<string>
+}
+
 function makeTestSetup(
   exitCodeFor: (command: ChildProcess.Command) => number,
-  worktreeExists = false
+  { worktreeExists = false, registeredWorktrees = [], directoryEntries = [] }: TestSetupOptions = {}
 ): {
   readonly capturedLogs: ReadonlyArray<unknown>
   readonly testLayer: Layer.Layer<TestGitOps>
@@ -39,9 +68,12 @@ function makeTestSetup(
 } {
   const spawnerLayer = Layer.succeed(
     ChildProcessSpawner.ChildProcessSpawner,
-    makeFakeSpawner(exitCodeFor)
+    makeFakeSpawner(exitCodeFor, registeredWorktrees)
   )
-  const fsLayer = FileSystem.layerNoop({ exists: () => Effect.succeed(worktreeExists) })
+  const fsLayer = FileSystem.layerNoop({
+    exists: () => Effect.succeed(worktreeExists),
+    readDirectory: () => Effect.succeed([...directoryEntries])
+  })
 
   const capturedLogs: unknown[] = []
   const captureLogger = Logger.make(({ message }) => {
@@ -132,14 +164,17 @@ describe('makeGitOps', () => {
       // so each candidate is still rejected on the directory clash before its branch is checked.
       let revParseCalls = 0
       const commands: ChildProcess.Command[] = []
-      const { testLayer, loggerLayer } = makeTestSetup((command) => {
-        commands.push(command)
-        if (isRevParse(command)) {
-          revParseCalls++
-          return 1
-        }
-        return 0
-      }, true)
+      const { testLayer, loggerLayer } = makeTestSetup(
+        (command) => {
+          commands.push(command)
+          if (isRevParse(command)) {
+            revParseCalls++
+            return 1
+          }
+          return 0
+        },
+        { worktreeExists: true }
+      )
 
       yield* Effect.gen(function* () {
         const gitOps = yield* TestGitOps
@@ -230,22 +265,26 @@ describe('makeGitOps', () => {
     })
   )
 
+  const reattach = (setup: ReturnType<typeof makeTestSetup>, info: WorktreeInfo = WORKTREE_INFO) =>
+    Effect.gen(function* () {
+      const gitOps = yield* TestGitOps
+      return yield* gitOps.reattachWorktree(info, PANE_ID)
+    }).pipe(Effect.provide(setup.testLayer), Effect.provide(setup.loggerLayer))
+
   it.effect('reattachWorktree checks out the existing branch without -b or -B', () =>
     Effect.gen(function* () {
       const commands: ChildProcess.Command[] = []
-      const { testLayer, loggerLayer } = makeTestSetup((command) => {
+      const setup = makeTestSetup((command) => {
         commands.push(command)
         return 0
       })
 
-      const info = yield* Effect.gen(function* () {
-        const gitOps = yield* TestGitOps
-        return yield* gitOps.reattachWorktree(WORKTREE_INFO, PANE_ID)
-      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+      const info = yield* reattach(setup)
 
       assert.deepStrictEqual(info, WORKTREE_INFO)
-      assert.strictEqual(commands.length, 1)
-      assert.deepStrictEqual(argsOf(commands[0]), [
+      const addCommands = commands.filter(isWorktreeAdd)
+      assert.strictEqual(addCommands.length, 1)
+      assert.deepStrictEqual(argsOf(addCommands[0]), [
         'worktree',
         'add',
         WORKTREE_INFO.path,
@@ -256,12 +295,7 @@ describe('makeGitOps', () => {
 
   it.effect('reattachWorktree fails with WorktreeReattachError on a non-zero exit', () =>
     Effect.gen(function* () {
-      const { testLayer, loggerLayer } = makeTestSetup(() => 1)
-
-      const result = yield* Effect.gen(function* () {
-        const gitOps = yield* TestGitOps
-        return yield* gitOps.reattachWorktree(WORKTREE_INFO, PANE_ID)
-      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer), Effect.result)
+      const result = yield* Effect.result(reattach(makeTestSetup(() => 1)))
 
       assert.isTrue(Result.isFailure(result))
       if (Result.isFailure(result)) {
@@ -270,23 +304,121 @@ describe('makeGitOps', () => {
     })
   )
 
-  it.effect('reattachWorktree no-ops when the worktree path already exists', () =>
+  it.effect('reattachWorktree no-ops when the path is a registered worktree', () =>
     Effect.gen(function* () {
       const commands: ChildProcess.Command[] = []
-      const { capturedLogs, testLayer, loggerLayer } = makeTestSetup((command) => {
-        commands.push(command)
-        return 0
-      }, true)
+      const setup = makeTestSetup(
+        (command) => {
+          commands.push(command)
+          return 0
+        },
+        {
+          worktreeExists: true,
+          registeredWorktrees: ['/repo', WORKTREE_INFO.path],
+          directoryEntries: ['file.ts']
+        }
+      )
 
-      const info = yield* Effect.gen(function* () {
-        const gitOps = yield* TestGitOps
-        return yield* gitOps.reattachWorktree(WORKTREE_INFO, PANE_ID)
-      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+      const info = yield* reattach(setup)
 
       assert.deepStrictEqual(info, WORKTREE_INFO)
-      assert.strictEqual(commands.length, 0)
-      const logs = capturedLogs.map((log) => String(log))
-      assert.isTrue(logs.some((log) => log.includes('already present')))
+      assert.strictEqual(commands.filter(isWorktreeAdd).length, 0)
+      const logs = setup.capturedLogs.map((log) => String(log))
+      assert.isTrue(logs.some((log) => log.includes('already a registered worktree')))
+    })
+  )
+
+  it.effect('reattachWorktree matches a registered path written with backslashes', () =>
+    Effect.gen(function* () {
+      const commands: ChildProcess.Command[] = []
+      const windowsInfo: WorktreeInfo = {
+        ...WORKTREE_INFO,
+        path: String.raw`C:\dia\worktrees\pane-1`
+      }
+      const setup = makeTestSetup(
+        (command) => {
+          commands.push(command)
+          return 0
+        },
+        { worktreeExists: true, registeredWorktrees: ['c:/dia/worktrees/pane-1'] }
+      )
+
+      yield* reattach(setup, windowsInfo)
+
+      assert.strictEqual(commands.filter(isWorktreeAdd).length, 0)
+    })
+  )
+
+  it.effect(
+    'reattachWorktree re-adds the worktree into an existing empty unregistered directory',
+    () =>
+      Effect.gen(function* () {
+        const commands: ChildProcess.Command[] = []
+        const setup = makeTestSetup(
+          (command) => {
+            commands.push(command)
+            return 0
+          },
+          { worktreeExists: true, registeredWorktrees: ['/repo'] }
+        )
+
+        const info = yield* reattach(setup)
+
+        assert.deepStrictEqual(info, WORKTREE_INFO)
+        const addCommands = commands.filter(isWorktreeAdd)
+        assert.strictEqual(addCommands.length, 1)
+        assert.deepStrictEqual(argsOf(addCommands[0]).slice(0, 4), [
+          'worktree',
+          'add',
+          WORKTREE_INFO.path,
+          WORKTREE_INFO.branch
+        ])
+      })
+  )
+
+  it.effect('reattachWorktree refuses to reuse a non-empty unregistered directory', () =>
+    Effect.gen(function* () {
+      const commands: ChildProcess.Command[] = []
+      const setup = makeTestSetup(
+        (command) => {
+          commands.push(command)
+          return 0
+        },
+        {
+          worktreeExists: true,
+          registeredWorktrees: ['/repo'],
+          directoryEntries: ['notes.txt']
+        }
+      )
+
+      const result = yield* Effect.result(reattach(setup))
+
+      assert.isTrue(Result.isFailure(result))
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, WorktreeReattachError)
+      }
+      assert.strictEqual(commands.filter(isWorktreeAdd).length, 0)
+    })
+  )
+
+  it.effect('reattachWorktree fails without adding when the worktree list cannot be read', () =>
+    Effect.gen(function* () {
+      const commands: ChildProcess.Command[] = []
+      const setup = makeTestSetup(
+        (command) => {
+          commands.push(command)
+          return 0
+        },
+        { worktreeExists: true, registeredWorktrees: 'unavailable', directoryEntries: ['a.ts'] }
+      )
+
+      const result = yield* Effect.result(reattach(setup))
+
+      assert.isTrue(Result.isFailure(result))
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, WorktreeReattachError)
+      }
+      assert.strictEqual(commands.filter(isWorktreeAdd).length, 0)
     })
   )
 })

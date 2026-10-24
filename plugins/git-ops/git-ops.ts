@@ -10,6 +10,8 @@ import { Effect, FileSystem, Path, Random } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { generateWorktreeSlug } from './worktree-slug'
 
+const PORCELAIN_WORKTREE_PREFIX = 'worktree '
+
 /**
  * Builds the {@link GitOps} the `git-ops` plugin provides, shelling out to the `git` CLI through
  * the platform `ChildProcessSpawner`. Run it once in the plugin's setup with the Node platform
@@ -133,17 +135,67 @@ export const makeGitOps = Effect.gen(function* () {
     yield* Effect.logInfo('Pruned pane worktree', { paneId, path: info.path })
   })
 
+  const comparablePath = (value: string): string => {
+    const forward = value.replaceAll('\\', '/').replace(/\/+$/, '')
+    return /^[a-zA-Z]:/.test(forward) ? forward.toLowerCase() : forward
+  }
+
+  const isRegisteredWorktree = Effect.fn('GitOps.isRegisteredWorktree')(function* (
+    info: WorktreeInfo,
+    paneId: PaneId
+  ) {
+    const output = yield* spawner
+      .string(
+        ChildProcess.make('git', ['worktree', 'list', '--porcelain']).pipe(
+          ChildProcess.setCwd(info.sourceRepo)
+        )
+      )
+      .pipe(
+        Effect.mapError((cause) => new WorktreeReattachError({ paneId, path: info.path, cause }))
+      )
+    const target = comparablePath(info.path)
+    return output
+      .split(/\r?\n/)
+      .some(
+        (line) =>
+          line.startsWith(PORCELAIN_WORKTREE_PREFIX) &&
+          comparablePath(line.slice(PORCELAIN_WORKTREE_PREFIX.length)) === target
+      )
+  })
+
   const reattachWorktree = Effect.fn('GitOps.reattachWorktree')(function* (
     info: WorktreeInfo,
     paneId: PaneId
   ) {
-    const alreadyPresent = yield* fs.exists(info.path).pipe(Effect.orElseSucceed(() => false))
-    if (alreadyPresent) {
-      yield* Effect.logWarning(
-        'Worktree path already present; skipping reattach (crash-orphan recovery is out of scope)',
-        { paneId, path: info.path }
-      )
-      return info
+    const pathExists = yield* fs.exists(info.path).pipe(Effect.orElseSucceed(() => false))
+    if (pathExists) {
+      if (yield* isRegisteredWorktree(info, paneId)) {
+        yield* Effect.logWarning(
+          'Worktree path is already a registered worktree; skipping reattach',
+          {
+            paneId,
+            path: info.path
+          }
+        )
+        return info
+      }
+
+      const entries = yield* fs
+        .readDirectory(info.path)
+        .pipe(
+          Effect.mapError((cause) => new WorktreeReattachError({ paneId, path: info.path, cause }))
+        )
+      if (entries.length > 0) {
+        return yield* new WorktreeReattachError({
+          paneId,
+          path: info.path,
+          cause: 'path exists, is not a registered worktree, and is not empty'
+        })
+      }
+      yield* Effect.logWarning('Reusing an empty unregistered worktree directory', {
+        paneId,
+        path: info.path
+      })
     }
 
     const command = ChildProcess.make('git', ['worktree', 'add', info.path, info.branch]).pipe(
