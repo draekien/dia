@@ -1,0 +1,19 @@
+# A worktree removed at quit leaves an empty directory, and resume then skips the reattach
+
+**Date:** 2026-10-24
+
+## Context
+
+While verifying Phase 4 step 4 (`git-ops` plugin), a packaged build created a worktree pane, completed a turn, and was quit gracefully (`Browser.close` over CDP). The next launch resumed the pane's session and the agent remembered the earlier prompt, but `git worktree list` showed no worktree for the pane.
+
+## Reasoning / Learning
+
+- At quit, `GitOps.removeWorktree` ran 135 ms after `Closing query`, and `git worktree remove --force` exited 255. The warning `Standard worktree remove failed, trying with --prune` followed, then `Pruned pane worktree`. The worktree directory had lost its contents but remained on disk as an empty directory; I did not identify which process held it (the likely holder is the exiting `claude` process, whose working directory is the worktree).
+- `git worktree prune` removed the registration of the now-incomplete worktree, so the branch `dia/<slug>` exists with no worktree.
+- On the next launch `reattachWorktree` found the path present and logged `Worktree path already present; skipping reattach (crash-orphan recovery is out of scope)`. The resumed session started with `cwd` set to the empty directory, so the agent resumed with its transcript but without the repository's files.
+- The same sequence occurred on `main` at `a2502a8` (before `git-ops` became a plugin), with identical log lines and exit code 255, so the plugin move did not cause it.
+- A `reload` of `git-ops` with a worktree pane open did not break teardown: `closePane` afterwards ran the real removal (`Standard worktree remove failed … exitCode 128`, then prune, 128 because the registration was already gone), not the inert `Left a pane worktree on disk` path.
+
+## Implication
+
+Fixing this means either waiting for the session process to exit before `removeWorktree`, or having `reattachWorktree` treat an existing path that is not a registered worktree (empty or not in `git worktree list`) as absent and re-adding it. Neither is done; a Windows-specific check is needed because the unpackaged and packaged runs on Windows both showed it.
