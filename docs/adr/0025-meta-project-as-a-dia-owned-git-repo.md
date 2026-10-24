@@ -69,7 +69,7 @@ query({
 | 3 | The meta agent | Reads the open proposals and the SDK transcripts of every registered project, looks for no-ops, tool errors and expensive tool calls, and combines its findings into changes on a branch |
 | 4 | The user | Approves or rejects each branch. An approved branch is merged, and agents started after the merge receive the change |
 
-`meta_propose` is served by the Host's in-process MCP server, the same mechanism as the `dia_plugin_*` tools in Phase 3 of `docs/plans/2026-10-22-plugin-platform.md`.
+`meta_propose` is served by the Host's in-process MCP server, the same mechanism as the `plugin_*` tools in Phase 3 of `docs/plans/2026-10-22-plugin-platform.md`.
 
 ### Meta agent access
 

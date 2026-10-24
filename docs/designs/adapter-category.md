@@ -1,5 +1,7 @@
 # Adapter category and kernel pending user input
 
+Status: implemented (aca6b31, ef2051a; ADR-0029).
+
 Issue #9, the step after `docs/designs/claude-code-adapter.md`. Implements the parts of ADR-0029 that the adapter step left: the `adapter` category, the removal of `ESSENTIAL_PLUGINS`, and `pending-user-input` in the kernel.
 
 ## Scope
@@ -16,7 +18,7 @@ Issue #9, the step after `docs/designs/claude-code-adapter.md`. Implements the p
 | `makePendingUserInput` moves to the kernel; `plugins/permissions`, `PENDING_USER_INPUT_KEY` and `resolvePendingUserInput` are deleted | `src/host/session/pending-user-input.ts` (new), `pending-user-input-resolver.ts` (deleted) |
 | `ToolGate` is deleted; `AgentSessionOptions` takes `tools`, and the adapter creates one `PendingUserInput` per session | `agent-backend.ts`, `pane-supervisor.ts`, `plugins/claude-code/session.ts` |
 
-Out of scope: renaming `git-ops` to `worktrees` and the project-directory fallback when it is unloaded (next item of #9). Unloading `git-ops` after this change makes new worktree panes fail with `WorktreeCreateError`, as `resolveGitOps` already does when the plugin is missing.
+Out of scope: renaming `git-ops` to `worktrees` and the project-directory fallback when it is unloaded (next item of #9; done in 329d824 and 5004cc8, see `docs/designs/git-ops-plugin.md`). Unloading `git-ops` after this change makes new worktree panes fail with `WorktreeCreateError`, as `resolveGitOps` already does when the plugin is missing.
 
 ## Interfaces
 
@@ -195,7 +197,7 @@ For `category === 'adapter'`: Unload and Set folder… are disabled, Reload is d
 - adapter session: existing `canUseTool` tests drop the `DenyAll` case and construct options with `tools`.
 - plugins page: an adapter row has Unload and Set folder… disabled and shows the adapter note; a `Failed` adapter row has Reload enabled.
 - pane supervisor: the existing tests keep passing with `tools` in place of `toolGate`.
-- rpc: `PROTOCOL_VERSION` is 6.
+- rpc: `PROTOCOL_VERSION` is 6 (now 7).
 
 ## Docs
 

@@ -4,7 +4,7 @@
 
 ## Context
 
-Phase 0 of `docs/plans/2026-10-22-plugin-platform.md` (issue #5) verifies four assumptions behind ADR-0019 to ADR-0022 before Phase 1 builds the Host. The spike ran on branch `spike/plugin-platform-phase-0`. That branch is not merged; only this entry is.
+Phase 0 of `docs/plans/2026-10-22-plugin-platform.md` (issue #5) verifies four assumptions behind ADR-0019 to ADR-0022 before Phase 1 builds the Host. The spike ran on branch `spike/plugin-platform-phase-0`.
 
 Test setup:
 - Electron 43.1.0, which bundles Node 24.18.0; tsx 4.23.15; esbuild 0.28.2; Windows 11.
@@ -64,7 +64,7 @@ Test setup:
 
 ## Implication
 
-- **Phase 1 Host:** run it as a `utilityProcess`. Its entry calls `register()` from `tsx/esm/api` before loading any override. Pass the Host no Node flags, and set `ESBUILD_BINARY_PATH` to the unpacked esbuild binary when `app.isPackaged`. This keeps the Host independent of the `runAsNode` fuse: Electron's `docs/tutorial/fuses.md` (v43.1.0) says `child_process.fork` stops working when that fuse is disabled, and recommends `utilityProcess`.
+- **Host process:** run it as a `utilityProcess`. Its entry calls `register()` from `tsx/esm/api` before loading any override. Pass the Host no Node flags, and set `ESBUILD_BINARY_PATH` to the unpacked esbuild binary when `app.isPackaged`. This keeps the Host independent of the `runAsNode` fuse: Electron's `docs/tutorial/fuses.md` (v43.1.0) says `child_process.fork` stops working when that fuse is disabled, and recommends `utilityProcess`.
 - **ADR-0020 does not need its external-watcher fallback.** Its HMR row ("evicts those modules") is implemented as a per-plugin generation counter in a `module.registerHooks` resolve hook, not as cordis's `loadCache` deletion: `--expose-internals` is unavailable in a packaged `utilityProcess`. A long session leaks one set of module instances per reload.
-- **Phase 2 loader:** refuse an override whose directory does not resolve to `"type": "module"`.
-- **Phase 1 transport:** send the token in the `Sec-WebSocket-Protocol` subprotocol, and expect the renderer to see a refused connection as close code 1006. The items listed as not tested under "WebSocket handshake" in this entry are still open.
+- **Plugin loader:** refuse an override whose directory does not resolve to `"type": "module"`.
+- **Host transport:** send the token in the `Sec-WebSocket-Protocol` subprotocol, and expect the renderer to see a refused connection as close code 1006. The items listed as not tested under "WebSocket handshake" in this entry are still open.

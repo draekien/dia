@@ -8,11 +8,10 @@ Adding the `select` and `switch` components via `npx shadcn@latest add` (bullet 
 
 ## Reasoning / Learning
 
-The repo's root `tsconfig.json` is a solution file (`"files": []`, only `references` to `tsconfig.node.json`/`tsconfig.web.json`) with no `compilerOptions.paths` of its own. The shadcn CLI reads the root `tsconfig.json` directly to resolve `components.json`'s aliases — it does not follow TS project references into `tsconfig.web.json` to find the actual path mapping. Adding `compilerOptions.paths` for `@renderer/*` to the root `tsconfig.json` (duplicating what's in `tsconfig.web.json`) fixed it; the root file's `"files": []` means this addition is inert for compilation itself; it only feeds tooling that reads the root config directly.
+The repo's root `tsconfig.json` is a solution file (`"files": []`, only `references` to the four project configs). It had no `compilerOptions.paths` of its own, and the shadcn CLI reads the root `tsconfig.json` to resolve `components.json`'s aliases; it did not follow TS project references into `tsconfig.web.json` to find the path mapping. Adding `compilerOptions.paths` for `@renderer/*` to the root `tsconfig.json` fixed it. The root file's `"files": []` makes that addition inert for compilation; it only feeds tooling that reads the root config directly.
 
-Separately, `pnpm add`/`shadcn add` (which shells out to `pnpm add`) failed on this machine with `. prepare: '.' is not recognized as an internal or external command` — pnpm's `prepare` lifecycle script (`./scripts/prepare-effect.sh`, a POSIX shell script) doesn't run under the Windows shell pnpm invokes it with. Since `.repos/effect/.git` already existed (the script's actual job is a one-time idempotent clone), `pnpm add <pkg> --ignore-scripts` was safe to use as a workaround for that one install.
+Current configuration: the root `tsconfig.json` extends `tsconfig.base.json`, and `@renderer/*` is declared in `tsconfig.base.json`. Whether the shadcn CLI resolves paths through `extends` was not re-verified.
 
 ## Implication
 
-- Keep root `tsconfig.json`'s `paths` in sync with `tsconfig.web.json`'s `@renderer/*` mapping — it's now load-bearing for the shadcn CLI, not just decorative.
-- If a `pnpm add`/`pnpm install` fails with a `prepare` script error mentioning `'.' is not recognized`, that's this repo's `prepare-effect.sh` failing under Windows' default shell, not a dependency problem — retry with `--ignore-scripts` (safe since the script only clones `.repos/effect` once, idempotently).
+- Keep `@renderer/*` in `tsconfig.base.json`, which the root `tsconfig.json` extends and which the shadcn CLI needed to find through the root config.

@@ -35,9 +35,9 @@ streaming turn.
   reset reuses an id, behind a multi-second recreate flow. Revisit with explicit
   close-eviction if it bites.
 
-- **`Atom.subscriptionRef(effect)` gives `Writable<Result<A,E>, A>`: read is a
-  `Result`, write is a bare `A`.** So `useAtomValue` yields `Result<PaneChatState>`
-  (pending until history loads) — unwrap with `Result.getOrElse(..., () =>
+- **`Atom.subscriptionRef(effect)` gives `Writable<AsyncResult<A,E>, A>`: read is an
+  `AsyncResult`, write is a bare `A`.** So `useAtomValue` yields `AsyncResult<PaneChatState>`
+  (pending until history loads) — unwrap with `AsyncResult.getOrElse(..., () =>
   emptyPaneChatState)` at the component and in the send action. Writing sets the
   underlying ref directly, and the forked fold fiber's subsequent
   `SubscriptionRef.update`s build on the written value — this is what makes the
@@ -52,16 +52,16 @@ streaming turn.
   terminal attention (`Completed`/`Errored`) clears it — so the trailing-assistant
   window is exactly one turn. This keeps every field of the state view-meaningful
   (nothing to hide from `MessageView`) and the reducer pure/total, mirroring the
-  main-process `agent-session-reducer.ts`. `PaneMessageAppended{assistant}` is only
+  session reducer `plugins/claude-code/reducer.ts`. `PaneMessageAppended{assistant}` is only
   a backstop: it appends the final text *only* when no deltas built the turn (i.e.
   not currently streaming an assistant message).
 
-- **The `Stream.asyncPush` scoped subscribe/unsubscribe survived the rewrite; the
+- **The `Stream.callback` scoped subscribe/unsubscribe survived the rewrite; the
   AG-UI translation did not.** The IPC fold reuses the exact
-  `Stream.asyncPush((emit) => Effect.acquireRelease(subscribe, unsubscribe))`
-  pattern from the deleted adapter (a single `push` typed over the
+  `Stream.callback((queue) => Effect.acquireRelease(subscribe, unsubscribe))`
+  pattern (originally written with `Stream.asyncPush`, which Effect v4 renamed) from the deleted adapter (a single `push` typed over the
   `PaneStreamEvent` union, relying on parameter contravariance so one handler
-  satisfies all six `on*` listener types). What's gone: `mapAccum` +
+  satisfies every `on*` listener type). What's gone: `mapAccum` +
   `StreamChunk` emission + `toAsyncIterable`. Instead the stream is run for its
   effects — `Stream.runForEach` folding each event into the `SubscriptionRef` via
   the pure `reducePaneChat` — forked with `Effect.forkScoped` so it lives for the
@@ -75,7 +75,7 @@ streaming turn.
 - When modelling a streaming/append log, prefer deriving "what's open" from the
   already-public state over a private cursor field — it keeps the state fully
   view-meaningful and the reducer total.
-- The `asyncPush` IPC-subscription pattern is the renderer's canonical way to turn
+- The `Stream.callback` IPC-subscription pattern is the renderer's canonical way to turn
   `window.dia.on*` callbacks into an Effect `Stream`; new pane-event consumers
   should fold with a pure reducer into a `SubscriptionRef`, not translate to a
   foreign protocol.

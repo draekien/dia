@@ -17,7 +17,7 @@ to the next turn boundary: on the next `SendText`, if the desired level differs 
 active one and a `sessionId` exists, the pane process interrupts the current query fiber
 and forks a fresh `query({ resume: sessionId, ...resolveThinkingOptions(...) })`. Resuming (not
 a cold start) preserves the conversation. This lives entirely in the pane process
-(`agent-session.ts` `restartForThinkingChange`), driven by three `Ref`s: `desiredLevelRef`
+(`plugins/claude-code/session.ts` `restartForThinkingChange`), driven by three `Ref`s: `desiredLevelRef`
 (set by `Init` and `SetThinkingLevel`), `configRef` (the active config, level included),
 and `fiberRef` (the current query fiber to interrupt). A no-op when the level is unchanged
 or no session has started yet.
@@ -29,11 +29,11 @@ thinking *capped* at that effort, not `thinking: { type: 'enabled' }`). Extracte
 pure `plugins/claude-code/thinking-options.ts` (part of the `claude-code` adapter, `docs/designs/claude-code-adapter.md`) so the mapping is unit-tested on its own, without starting an SDK query.
 
 **Thinking always precedes the answer in one turn, so the reasoning→text transition is a
-one-way close.** In the IPC→AG-UI adapter, a `thinking_delta` opens a
-`REASONING_MESSAGE_*` stream; the first subsequent `text_delta` closes the open reasoning
-message before opening the answer text. Any turn-boundary event (tool call, appended
-assistant message, `Completed`/`Errored`) closes reasoning then text, in that order, so
-neither is ever left dangling. The reducer keeps thinking and text on separate outbound
+one-way close.** In the renderer reducer `reducePaneChat`
+(`src/renderer/src/lib/pane-chat.ts`), `PaneAssistantThinkingDelta` extends the trailing
+`thinking` part of the streaming assistant message; the first subsequent
+`PaneAssistantTextDelta` finds a non-text trailing part and starts a separate `text` part, so
+thinking text is never appended to the answer. The session reducer keeps thinking and text on separate outbound
 tags (`AssistantThinkingDelta` vs `AssistantTextDelta`) — they must never be conflated
 into one accumulated string.
 
@@ -52,6 +52,6 @@ via `ThinkingLevel.pipe(Schema.withDecodingDefaultType(Effect.succeed(DEFAULT_TH
 - The dropdown is intentionally *not* disabled while the pane is working: the
   restart-at-next-turn design makes an anytime change safe, and no "streaming/working"
   attention state exists to gate on (attention is only Idle/AwaitingPermission/Errored/
-  Completed).
+  Crashed/Completed).
 - The UI thinking disclosure is a plain collapsed `<details>` (no elapsed timer, no
   auto-collapse, no reveal animation) — matches the tool-output disclosure pattern.

@@ -15,7 +15,7 @@ William is the sole user and developer of dia, a personal desktop alternative to
 7. All four permission-response types (allow as-is, allow with modified input, deny with a message, allow-and-remember) are each exercised at least once during manual testing and correctly change the tool's execution or Claude's next action, with zero incorrect behavior observed.
 8. A permission or clarifying-question prompt left unanswered when dia is closed is still present and answerable after dia is reopened, verified across at least 3 manual restart-while-pending test runs with zero lost requests.
 9. Assistant responses appear in a pane incrementally as they're generated, and the tool currently running (if any) is visible, with no dropped, out-of-order, or batched-until-the-end chunks observed during testing.
-10. Every supported permission mode (default, plan, accept-edits, bypass, don't-ask) is selectable at pane creation and changeable mid-session, and each produces the tool-approval behavior documented for that mode, with zero incorrect approvals or denials observed during testing.
+10. Every supported permission mode (default, plan, accept-edits, auto, don't-ask) is selectable at pane creation and changeable mid-session, and each produces the tool-approval behavior documented for that mode, with zero incorrect approvals or denials observed during testing.
 
 ## User Stories
 
@@ -37,7 +37,7 @@ William is the sole user and developer of dia, a personal desktop alternative to
 16. As a user, I want a permission or clarifying-question prompt that's still pending when I close dia to still be there when I reopen it, so an interrupted response doesn't lose Claude's request.
 17. As a user, I want to see an agent's response appear incrementally as it's generated so that I can start reading before it finishes, rather than waiting on a blank pane.
 18. As a user, I want to see which tool a pane's agent is currently running so that I understand what's happening while I wait, instead of a pane looking idle mid-task.
-19. As a user, I want to choose a pane's permission mode (e.g. always ask, auto-accept edits, plan-only, bypass entirely) when I create it so that I can set how much autonomy that pane's agent starts with.
+19. As a user, I want to choose a pane's permission mode (e.g. always ask, auto-accept edits, plan-only, model-classified auto) when I create it so that I can set how much autonomy that pane's agent starts with.
 20. As a user, I want to change a pane's permission mode while it's running so that I can loosen or tighten its autonomy as I build trust in what it's doing, without closing and recreating the pane.
 
 ## Testing Decisions
@@ -53,7 +53,7 @@ William is the sole user and developer of dia, a personal desktop alternative to
 - User-configurable theming or appearance settings beyond the OS default light/dark look
 - Per-pane MCP server selection or configuration UI (panes use whatever MCP servers are already configured in the user's existing Claude Code setup)
 - Viewing, editing, or removing a previously remembered "always allow" rule, or hand-editing declarative allow/deny/ask rules, from within dia's UI (the underlying rule file is managed directly, outside the app) — permission mode selection (US-19, US-20) is the only in-app lever over automatic approval
-- The `auto` (model-classified) permission mode, since its availability is plan-gated and unconfirmed for dia's local/personal use
+- The `bypassPermissions` permission mode
 - Rendering visual mockups (previews) alongside a clarifying question's options — options are shown as label and description only
 - Structured input beyond `AskUserQuestion` (custom domain-specific approval UIs, external ticketing/workflow integrations)
 - Clarifying questions from subagents (not available for subagent use per the underlying SDK)
@@ -65,9 +65,9 @@ William is the sole user and developer of dia, a personal desktop alternative to
 
 ## Additional Notes
 
-This MVP builds on dia's existing architecture decisions (see `docs/adr/`), including two made specifically to support this scope: running each pane as its own isolated Electron `utilityProcess` (ADR-0007), and persisting pane layout and session state as local JSON files rather than a database (ADR-0008).
+This MVP builds on dia's existing architecture decisions (see `docs/adr/`), including two made specifically to support this scope: running each pane as its own isolated Electron `utilityProcess` (ADR-0007; ADR-0007 is superseded by ADR-0021, one Host process), and persisting pane layout and session state as local JSON files rather than a database (ADR-0008).
 
-This revision supersedes the original PRD's blanket exclusion of auto-approval in two steps: first, an explicit "always allow" action taken from the permission dialog itself (US-13) was brought into scope; second, user-selected permission modes — including accept-edits and bypass, which the first step still excluded — are now in scope via explicit mode selection at pane creation and mid-session (US-19, US-20), since that selection is a deliberate user choice rather than an ambient bypass.
+This revision supersedes the original PRD's blanket exclusion of auto-approval in two steps: first, an explicit "always allow" action taken from the permission dialog itself (US-13) was brought into scope; second, user-selected permission modes — including accept-edits and bypass, which the first step still excluded — are now in scope via explicit mode selection at pane creation and mid-session (US-19, US-20), since that selection is a deliberate user choice rather than an ambient bypass. dia later replaced bypass with `auto` and does not offer `bypassPermissions`.
 
 ## Open Questions
 

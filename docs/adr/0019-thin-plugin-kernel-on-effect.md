@@ -47,7 +47,7 @@ The plugin lifecycle follows cordis's design, implemented with Effect 4.0.5 prim
 | `ctx.provide(service)` swapped live | Registry-held service slot; the replacement is published to dependants |
 | `inject: [service]` restarts dependants when the service changes | Built in dia: the registry closes and reopens the scope of every plugin that depends on a changed service tag |
 
-The kernel also gives each pane session an in-process MCP server (Agent SDK custom tools, `docs/llms/agent-sdk.txt` "Give Claude custom tools") with `dia_plugin_override`, `dia_plugin_reload` and `dia_plugin_clear_override`. Each call goes through the pane's `canUseTool` permission flow, because a plugin change affects every pane. A plugin panel in the renderer performs the same operations by hand. Pull requests are not a dia feature: the pane's agent runs `gh` from the worktree.
+The kernel also gives each pane session an in-process MCP server (Agent SDK custom tools, `docs/llms/agent-sdk.txt` "Give Claude custom tools") with `plugin_override`, `plugin_reload` and `plugin_clear_override`. Each call goes through the pane's `canUseTool` permission flow, because a plugin change affects every pane. A plugin panel in the renderer performs the same operations by hand. Pull requests are not a dia feature: the pane's agent runs `gh` from the worktree.
 
 ### Consequences
 

@@ -1,5 +1,7 @@
 # Phase 3 plugin loader, rollback and memory safeguard
 
+Status: implemented (d6d37ed, ADR-0026).
+
 ## Purpose
 
 A plugin reload imports only the modules whose source changed, validates the new version before the running one stops, restores the previous version when the new one fails, and refuses further reloads of a plugin once its loads have grown the Host's heap by 100 MB.
@@ -35,7 +37,7 @@ src/host/plugins/plugin-memory-guard.ts
 
 ```
 PluginStatus: Unloaded | Loaded { reloadError?: string } | Failed { message } | Waiting { missing } | RestartRequired { reason: 'dependency' | 'memory'; message }
-PluginInfo { name; origin; root; status; memoryBytes (number >= 0) }
+PluginInfo { name; category; origin; root; status; memoryBytes (number >= 0); provides (service keys) }
 ```
 
 Generation: one process-wide counter. A module's generation is the counter value when it was last invalidated. An unseen module has generation 0. The versioned URL is `<url>?gen=<generation>`.
@@ -44,6 +46,7 @@ Generation: one process-wide counter. A module's generation is the counter value
 
 All steps hold the registry lock. Step 1 runs before the loader is called; steps 2 to 4 run inside `loader.load(root, ...)` inside `memory.track`.
 
+0. Refuse an adapter: `load` of a running adapter plugin returns its `PluginInfo` unchanged and logs `Refused to reload an adapter plugin` (`docs/designs/adapter-category.md`). Nothing is imported.
 1. Refuse: when `memory.used(name) >= memory.limit`, the status is `RestartRequired('memory')`. Nothing is imported or changed, and `track` is not entered.
 2. Validate: manifest checks (API version, name), then `resolveSetup`. A failure leaves the running version running with `Loaded { reloadError }`. With no running version the status is `Failed`.
 3. Swap: close dependants and the running scope, then open the new setup. A setup failure reopens the previous setup with `Loaded { reloadError }`. With no previous setup the status is `Failed`.

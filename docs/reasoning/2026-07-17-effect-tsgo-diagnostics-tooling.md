@@ -26,8 +26,9 @@ headless typecheck was the fork in the road.
   suppressions or touching every call site.** Test files legitimately trip `globalDateInEffect`
   (fixture `new Date()`s), `multipleEffectProvide` (layered `Effect.provide` chains where a later
   layer satisfies an earlier one's requirement — parallel `Layer.mergeAll` would not compile there),
-  and `preferSchemaOverJson`. A test config that `extends` the base but overrides those three to
-  `"off"` in its own `diagnosticSeverity`, and whose `include` is only `*.test.ts(x)` + `*.d.ts`,
+  and `preferSchemaOverJson`; test components also trip `asyncFunction`. A test config that
+  `extends` the base but overrides those four to `"off"` in its own `diagnosticSeverity`, and whose
+  `include` is only `src/**/*.test.ts(x)`, `src/**/*.d.ts` and `plugins/**/*.test.ts`,
   keeps production strict while dropping the 24-site churn. (Miss the `*.d.ts` and ambient globals
   like `Window.dia` vanish under the narrow include.)
 - **`.tsbuildinfo` caching masks severity/plugin changes.** After changing a `diagnosticSeverity`
@@ -46,8 +47,8 @@ headless typecheck was the fork in the road.
 
 ## Implication
 
-`pnpm typecheck` now runs three configs (`tsconfig.node.json`, `tsconfig.web.json`,
-`tsconfig.test.json`) and is the single source of truth for Effect diagnostics. When adding a new
+`pnpm typecheck` runs four configs (`tsconfig.shared.json`, `tsconfig.node.json`,
+`tsconfig.web.json`, `tsconfig.test.json`) and is the single source of truth for Effect diagnostics. When adding a new
 diagnostic-severity rule, edit the base map **and** restate it in `tsconfig.test.json` (arrays don't
 merge). When a diagnostics change seems not to take effect, suspect `.tsbuildinfo` before the config.
 See also [Vendored `.repos/effect` API drift](2026-07-12-effect-vendored-repo-api-drift.md) — the

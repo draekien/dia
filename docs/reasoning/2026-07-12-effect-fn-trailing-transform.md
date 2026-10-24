@@ -4,11 +4,11 @@
 
 ## Context
 
-Rewriting `agent-session.ts`'s `runSession` needed to wrap the entire generator body in `Effect.catchAllCause` (to log-and-swallow session failures, matching the original code's `.catch(cause => console.error(...))` behavior) without breaking `Effect.fn`'s single-declaration style into a separate `.pipe()` at every call site.
+Writing `runSession` (now in `plugins/claude-code/session.ts`) needed to wrap the entire generator body in `Effect.catchCause` (named `Effect.catchAllCause` in Effect v3) (to log-and-swallow session failures, matching the original code's `.catch(cause => console.error(...))` behavior) without breaking `Effect.fn`'s single-declaration style into a separate `.pipe()` at every call site.
 
 ## Reasoning / Learning
 
-`Effect.fn(name)(body, a, b, ...)` isn't limited to `(body)` — it accepts additional positional functions after the generator body, each of the form `(effect, ...originalArgs) => Effect<...>`, applied left to right to the produced effect. Confirmed from `node_modules/effect/dist/dts/Effect.d.ts` (`namespace fn`, the `Gen` overloads). Passing `(effect, config) => effect.pipe(Effect.catchAllCause(...))` as the second argument lets `runSession(config, promptQueue)` return an already-recovered effect, so every call site doesn't need to remember to attach its own catch-all.
+`Effect.fn(name)(body, a, b, ...)` isn't limited to `(body)` — it accepts additional positional functions after the generator body, each of the form `(effect, ...originalArgs) => Effect<...>`, applied left to right to the produced effect. Confirmed from `node_modules/effect/dist/Effect.d.ts` (`namespace fn`, the `Gen` overloads); `runSession` still passes a trailing `(effect, config) => ...` transform. Passing `(effect, config) => effect.pipe(Effect.catchCause(...))` as the second argument lets `runSession(config, promptQueue)` return an already-recovered effect, so every call site doesn't need to remember to attach its own catch-all.
 
 ## Implication
 

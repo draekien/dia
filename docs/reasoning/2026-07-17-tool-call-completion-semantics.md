@@ -4,7 +4,7 @@
 
 ## Context
 
-Bullet 07 needed a "which tool is currently running" indicator per pane (US-18: a pane shouldn't "look idle mid-task"). `agent-session.ts` already emitted `ToolCallStarted`/`ToolCallCompleted`, so the work looked like pure plumbing (bridge + UI). The question was when `ToolCallCompleted` should fire.
+Bullet 07 needed a "which tool is currently running" indicator per pane (US-18: a pane shouldn't "look idle mid-task"). `plugins/claude-code/session.ts` already emitted `ToolCallStarted`/`ToolCallCompleted`, so the work looked like pure plumbing (bridge + UI). The question was when `ToolCallCompleted` should fire.
 
 ## Reasoning / Learning
 
@@ -14,11 +14,11 @@ So a `content_block_stop`-based indicator flashes during the brief input-generat
 
 Fix: re-map completion to real execution. `ToolCallStarted` still fires at `content_block_start` (indicator appears as input streams); the accumulated input is stashed at `content_block_stop`; `ToolCallCompleted` is emitted only when the matching `tool_result` arrives, correlated by `tool_use_id`. A denied tool still produces a `tool_result` (the rejection message), so the indicator clears on every path; pending calls are also flushed on turn end (`result` message) so an aborted turn can't leave it stuck.
 
-The event-folding logic was extracted into a pure `agent-session-reducer.ts` (`makeSessionEventReducer`) so this correlation is unit-testable — `agent-session.ts` self-executes `Effect.runFork` at import and `runSession` was unexported, so the mapping had no test seam otherwise.
+The event-folding logic was extracted into a pure `plugins/claude-code/reducer.ts` (`makeSessionEventReducer`) so this correlation is unit-testable.
 
 ## Implication
 
 - `ToolCallCompleted` means "the tool finished executing," keyed off the `user`/`tool_result` message — not "input finished streaming." Don't revert it to `content_block_stop`; the reducer test `defers completion until the tool result arrives` guards this.
-- The `tool_result` block also carries the tool's output (`content`, flattened to text — non-text blocks become `[type]`) and an `is_error` flag; both are captured onto `ToolCallCompleted` (`output`/`isError`) and threaded through to `PaneToolCallCompleted` for the renderer (the TanStack AI adapter emits them as the AG-UI `TOOL_CALL_RESULT`, per ADR-0014). Turn-end flushes have no result, so they complete with empty `output` and `isError: false`.
+- The `tool_result` block also carries the tool's output (`content`, flattened to text — non-text blocks become `[type]`) and an `is_error` flag; both are captured onto `ToolCallCompleted` (`output`/`isError`) and threaded through to `PaneToolCallCompleted` for the renderer, whose reducer `reducePaneChat` (`src/renderer/src/lib/pane-chat.ts`) stores them on the matching tool-call part. Turn-end flushes have no result, so they complete with empty `output` and `isError: false`.
 - Correlation is by `tool_use_id`, never by arrival order or block index — subagent tool results (with `parent_tool_use_id` set) whose ids were never registered via stream events are naturally ignored.
-- New per-event SDK→protocol mapping belongs in `agent-session-reducer.ts` (pure, tested), not inline in the effectful shell.
+- New per-event SDK→protocol mapping belongs in `plugins/claude-code/reducer.ts` (pure, tested), not inline in the effectful shell.

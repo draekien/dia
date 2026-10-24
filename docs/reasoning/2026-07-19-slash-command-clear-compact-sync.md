@@ -80,7 +80,7 @@ locale/ICU-dependent formatting would make the pure reducer test non-determinist
 
 ## Implication
 
-- Keep the SDK→protocol mapping in the pure `agent-session-reducer.ts` and the
+- Keep the SDK→protocol mapping in the pure `plugins/claude-code/reducer.ts` and the
   protocol→IPC mapping in `pane-supervisor.ts`; both are unit-tested without a
   live session.
 - If `showClearContextOnPlanAccept` is ever turned on, revisit the

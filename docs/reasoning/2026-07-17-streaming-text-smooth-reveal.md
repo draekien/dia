@@ -2,6 +2,10 @@
 
 **Date:** 2026-07-17
 
+> **Superseded (2026-07-18) by commit 4282227 (`refactor(renderer): remove streaming reveal animation`).**
+> The reveal loop, `StreamingMessage` and `nextRevealLength` were deleted, and the renderer
+> now renders streamed text directly. The reasoning below records why the reveal was built.
+
 ## Context
 
 Animating the assistant's streaming text inside a pane. The first attempt

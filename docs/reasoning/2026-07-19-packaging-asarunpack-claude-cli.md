@@ -43,8 +43,8 @@ app. Each is a runtime-only failure invisible to `pnpm build`, typecheck, and th
    with no `app.asar` segment, so the rewrite is a no-op and the SDK behaves normally.
 
 Two adjacent facts worth keeping:
-- The pane subprocess itself (`utilityProcess.fork(join(import.meta.dirname,
-  'pane-process/agent-session.js'))`, `pane-supervisor.ts`) is *dia's own* bundled JS and runs
+- The Host process itself (`utilityProcess.fork(join(import.meta.dirname, 'host.js'))` in
+  `src/main/index.ts` via `src/main/host-process.ts`, ADR-0021) is *dia's own* bundled JS and runs
   fine from inside asar — only the SDK's spawned binaries need unpacking + redirecting.
 - electron-builder's dependency collection can miss packages under pnpm's *symlinked* store,
   but dia already sets `nodeLinker: hoisted` in `pnpm-workspace.yaml`, so `node_modules` is a

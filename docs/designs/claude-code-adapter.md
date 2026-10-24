@@ -1,10 +1,10 @@
 # Claude Code adapter and the agent backend interface
 
+Status: implemented (480e181); partly superseded by `docs/designs/adapter-category.md`, which deleted `ToolGate`, `resolvePendingUserInput`, `pending-user-input-resolver.ts`, `plugins/permissions` and `ESSENTIAL_PLUGINS`. After it, `AgentSessionOptions` takes `tools`, and the adapter creates its own `PendingUserInput` with the kernel's `makePendingUserInput`. The sections below describe the adapter step as built.
+
 ## Purpose
 
 Phase 4, adapter step (issue #9, ADR-0029). Every use of `@anthropic-ai/claude-agent-sdk` moves into the shipped plugin `plugins/claude-code`, which provides one kernel-defined `AgentBackend`. The kernel keeps the pane lifecycle (`PaneSupervisor`), the hand-off of the pending-request registry, the dia tool definitions and the protocol (`OutboundMessage`), and imports no SDK module. The seams `session-reducer-seam.ts`, `thinking-seam.ts` and `permissions-seam.ts` are deleted, and the plugins `session-reducer` and `thinking` are deleted; their code moves into the adapter. `permission-mode-controller` moves from `plugins/permissions` into the adapter.
-
-Status: the follow-up step is `docs/designs/adapter-category.md`. It deleted `ToolGate`, `resolvePendingUserInput`, `pending-user-input-resolver.ts`, `plugins/permissions` and `ESSENTIAL_PLUGINS`: `AgentSessionOptions` takes `tools`, and the adapter creates its own `PendingUserInput` with the kernel's `makePendingUserInput`. The sections below describe the adapter step as it was built.
 
 Not in this step (the next #9 item): moving `pending-user-input` into the kernel, the `adapter`/`feature` category, and deleting `ESSENTIAL_PLUGINS`. Until then `plugins/permissions` still provides `PendingUserInput`. Until the category step, `ESSENTIAL_PLUGINS` stops the adapter being unloaded or overridden; it does not stop `plugin_reload claude-code`, which stays user-approved.
 

@@ -16,7 +16,7 @@ While verifying Phase 4 step 4 (`git-ops` plugin), a packaged build created a wo
 
 ## Implication
 
-Fixed in `reattachWorktree` (`plugins/git-ops/git-ops.ts`): it lists the repository's worktrees with `git worktree list --porcelain`, skips only a path that is registered, re-adds into an existing empty directory, and fails for a non-empty unregistered directory. In a packaged build the relaunch then showed the pane's worktree registered again. The removal itself still exits 255 on Windows each time (also on `closePane`), so an empty directory stays under the worktrees root after every removal; the cause is not identified.
+Fixed in `reattachWorktree` (`plugins/worktrees/git-ops.ts`; the plugin was then named `git-ops`): it lists the repository's worktrees with `git worktree list --porcelain`, skips only a path that is registered, re-adds into an existing empty directory, and fails for a non-empty unregistered directory. In a packaged build the relaunch then showed the pane's worktree registered again. The removal itself still exits 255 on Windows each time (also on `closePane`), so an empty directory stays under the worktrees root after every removal; the cause is not identified.
 
 Options considered before the fix:
 

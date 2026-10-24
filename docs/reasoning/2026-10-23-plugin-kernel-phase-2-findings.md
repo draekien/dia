@@ -12,7 +12,7 @@ Test setup for the manual run: Windows 11, Electron 43.1.0, built with `pnpm bui
 
 ### A plugin entry exports a function, not a `Context.Service` tag
 
-The context a plugin receives (`PluginContext`) is passed as the argument of the plugin's default export: `export default (ctx) => Effect.gen(...)`. The first design had plugins `yield*` a service tag imported from dia. That would need the tag's module to exist at runtime for a plugin that lives outside the app, and a second copy of the module would be a second tag. A function argument needs no import: `import type { HostPluginContext } from '@dia/plugin'` is erased when tsx compiles the plugin, so the alias `@dia/plugin` exists only in `tsconfig.base.json`.
+The context a plugin receives (`PluginContext`) is passed as the argument of the plugin's default export: `export default (ctx) => Effect.gen(...)`. The first design had plugins `yield*` a service tag imported from dia. That would need the tag's module to exist at runtime for a plugin that lives outside the app, and a second copy of the module would be a second tag. A function argument needs no import: `import type { HostPluginContext } from '@dia/plugin'` is erased when tsx compiles the plugin, so the type-only alias `@dia/plugin` in `tsconfig.base.json` suffices for it. `tsconfig.node.json`, `tsconfig.test.json` and `vitest.config.ts` now also map `@dia/plugin` to `src/host/plugin-api.ts`, which exports host runtime values.
 
 ### `effect` imported from an override resolves to the Host's copy
 
@@ -32,5 +32,4 @@ When plugin B provides `db` and plugin A injects it, loading B again closes A (A
 - Keep the plugin context free of kernel handles (`PaneSupervisor`, `query()`); a plugin that needs one gets a narrower service added to the context deliberately.
 - Add shared runtime libraries to the resolve hook's list when a plugin needs another one (`react` for renderer plugins in Phase 3).
 - A reload leaks module instances, as the Phase 0 entry records; the per-reload growth is still not measured.
-- The Host auto-loads every known plugin at startup. Whether a plugin the user unloaded stays unloaded after a restart is not persisted.
-- The renderer registry is not driven by the Host's `LoadPlugin` calls; connecting them is part of Phase 3.
+- The Host loads every known plugin at startup (`PluginRegistry.start`). The unloaded state is not persisted, so a plugin the user unloaded loads again after a restart.

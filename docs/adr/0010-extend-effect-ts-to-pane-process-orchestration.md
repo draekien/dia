@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0015"
 date: 2026-07-12
 decision-makers: William Pei
 ---
@@ -50,5 +50,7 @@ Chosen option: "Extend Effect TS into `agent-session.ts`", because `Deferred` is
 ## More Information
 
 This supersedes ADR-0009's stated scope ("main-process orchestration layer only... renderer remains plain React... does not itself use Effect TS"). ADR-0009's decision to use Effect TS at all, and its exemption of the renderer (ADR-0002), still stand — only the process-level boundary changes: Effect TS now governs main **and** the per-pane `utilityProcess` (`agent-session.ts`); the renderer remains the sole Effect-free process.
+
+Amended by ADR-0015: the renderer uses Effect for chat state through effect-atom, so it is no longer Effect-free.
 
 Scope of what actually shipped alongside this ADR: `agent-session.ts` rewritten in Effect (`Stream.async` over `parentPort`, `Effect.fn` for the session workflow, `Deferred` for `canUseTool` suspension), plus the enriched `protocol.ts`/`contract.ts` schemas needed to carry partial-text, tool-call-lifecycle, and permission-request/resolution messages end-to-end. Renderer UI for tool-call status and a permission dialog is deliberately out of scope here — those events flow through and are decoded, but not yet displayed; that UI work belongs to Bullet 03 (`.draekien/break-down-prd/dia-mvp/03-attention-state-pulse.md`), which also owns the `AttentionState` state machine these permission-request events will eventually drive.

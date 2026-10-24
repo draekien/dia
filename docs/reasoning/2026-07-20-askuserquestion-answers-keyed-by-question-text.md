@@ -6,8 +6,7 @@
 
 `AskUserQuestion` prompts rendered in the clarifying-question card, the user
 selected answers and submitted, but the tool result came back "The user did not
-answer the questions." Bullet 06 T8 had previously recorded header-keying as
-"confirmed correct against the real SDK."
+answer the questions."
 
 ## Reasoning / Learning
 
@@ -36,5 +35,3 @@ value-based selection are unaffected.)
 The answer key is an SDK contract, not a free choice — keep it equal to
 `question.question`. This is only truly verifiable against a live CLI, not a
 unit test (the CLI, not dia, does the matching); verify in a real dev session.
-The historical "header keying confirmed" note in the Bullet 06 breakdown is
-superseded by this entry.

@@ -45,5 +45,5 @@ The documented evaluation order is hooks, deny rules, ask rules, permission mode
 ## Implication
 
 - The registry validates the new version before closing the running one (plan item 3). A setup failure after the old scope closed reopens the previous setup, which cordis does not do.
-- The `dia_plugin_*` tools must not rely on `canUseTool` alone. A test must run each tool in a `bypassPermissions` pane and check that the user is still asked.
+- The `plugin_*` tools (`src/host/session/dia-tools.ts`) must not rely on `canUseTool` alone, because the SDK's `bypassPermissions` mode does not call it. dia does not offer that mode yet (issue #29); when it does, a test must run each tool in a `bypassPermissions` pane and check that the user is still asked.
 - Create the MCP server inside each `query()` call, not once per pane.

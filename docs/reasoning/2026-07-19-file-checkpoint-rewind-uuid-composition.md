@@ -21,9 +21,9 @@ what identifier ties them together, or in what order to invoke them.
   next prompt goes nowhere). Each rewindable user turn now carries two uuids —
   its own `checkpointUuid` (→ `rewindFiles`) and the *preceding assistant* turn's
   `resumeAnchorUuid` (→ `resumeSessionAt`). Rewinding the first turn (no
-  preceding assistant) starts a fresh, unresumed session. Both live (reducer
-  tracks the last assistant uuid seen) and restored (`transcript-reader` tracks
-  it while projecting history) paths compute `resumeAnchorUuid` the same way, and
+  preceding assistant) starts a fresh, unresumed session. Both live (`plugins/claude-code/reducer.ts`
+  tracks the last assistant uuid seen) and restored (`plugins/claude-code/transcript.ts` tracks
+  it while projecting history, read through `src/host/services/transcript-reader.ts`) paths compute `resumeAnchorUuid` the same way, and
   it is threaded alongside `checkpointUuid` through protocol/IPC to the renderer
   and back in the rewind command.
 - **`replay-user-messages` is mandatory, not optional.** Those user-turn uuids
@@ -65,8 +65,8 @@ what identifier ties them together, or in what order to invoke them.
    that checkpoint no longer belongs to the session now driving the pane. Expect
    edge cases around repeated rewinds after a fork.
 
-Everything above the renderer boundary (`agent-session.ts` rewind sequencing) is
+Everything above the renderer boundary (`plugins/claude-code/session.ts` rewind sequencing) is
 untested by unit tests because that module can't be imported in tests (import-time
 `Effect.runFork` + `port.on`); the pure pieces — reducer checkpoint emission
-(`agent-session-reducer.ts`), transcript uuid surfacing (`transcript-reader.ts`),
+(`plugins/claude-code/reducer.ts`), transcript uuid surfacing (`plugins/claude-code/transcript.ts`),
 and renderer anchoring/truncation (`pane-chat.ts`) — are covered.

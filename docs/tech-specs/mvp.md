@@ -1,5 +1,7 @@
 # dia MVP — Technical Specification
 
+Status: implemented for the MVP; superseded in part by ADR-0021 (one Host process), ADR-0022 (WebSocket RPC) and ADR-0029 (adapter plugins). Component locations below describe the MVP as built.
+
 Implements: [`docs/prds/mvp.md`](../prds/mvp.md)
 Builds on: [ADR-0003](../adr/0003-agent-sdk-runs-in-electron-utility-process.md), [ADR-0007](../adr/0007-one-utility-process-per-pane.md), [ADR-0008](../adr/0008-local-file-persistence-for-session-and-layout-state.md), [ADR-0009](../adr/0009-effect-ts-for-main-process-orchestration.md)
 
@@ -71,7 +73,7 @@ type WorktreeInfo = {
   sourceRepo: string  // the repo directory the worktree was created from
 }
 
-type PermissionMode = "default" | "plan" | "acceptEdits" | "bypassPermissions" | "dontAsk"
+type PermissionMode = "default" | "plan" | "acceptEdits" | "auto" | "dontAsk"
 
 type PaneConfig = {
   paneId: PaneId
@@ -189,7 +191,7 @@ Mirrors the PRD's Out of Scope, plus technical exclusions specific to this spec:
 - No database or query layer over persisted state (per ADR-0008).
 - No dynamic reconfiguration of a running pane's `cwd`, `model`, or worktree — changing any of these requires closing and reopening the pane. `permissionMode` is the one exception (§4.3).
 - No UI for viewing/editing declarative allow/deny/ask rules or previously remembered "always allow" rules — `PermissionMode` selection (§3, §4.2) is the only in-app lever over automatic approval.
-- No support for the SDK's `auto` (model-classified) permission mode — `PermissionMode` is limited to `default`, `plan`, `acceptEdits`, `bypassPermissions`, `dontAsk`.
+- No support for the SDK's `bypassPermissions` mode — `PermissionMode` is limited to `default`, `plan`, `acceptEdits`, `auto`, `dontAsk`.
 - No worktree creation for a `cwd` that isn't a git repository — `GitOpsService.createWorktree` is simply not invoked, no fallback or detection UI.
 - No confirmation dialog or dirty-worktree check before `GitOpsService.removeWorktree` runs on pane close.
 - No merge/rebase tooling for reconciling a worktree's branch — out of scope per the PRD; the user does this with their own git tooling.

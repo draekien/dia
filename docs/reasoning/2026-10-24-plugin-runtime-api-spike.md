@@ -4,7 +4,7 @@
 
 ## Context
 
-Phase 4 step 1 moves the SDK message → protocol mapping (`agent-session-reducer.ts`) into a built-in plugin. The reducer builds `SessionStarted.make(...)`, `TurnErrored.make(...)` and the other protocol messages, which are runtime schema values in `src/host/session/protocol.ts`. A plugin shipped under `plugins/` cannot import them: `electron-builder.yml` packages `out/**` and `plugins/**` only, and `@dia/plugin` resolved only through `tsconfig.base.json` `paths` (a type-only alias with no runtime alias in `electron.vite.config.ts` or `vitest.config.ts`). The options were `ctx.protocol`, a runtime `@dia/plugin`, or building built-in plugins into `out/`.
+The SDK message → protocol mapping moved into a built-in plugin (now `plugins/claude-code/reducer.ts`). The reducer builds `SessionStarted.make(...)`, `TurnErrored.make(...)` and the other protocol messages, which are runtime schema values in `src/host/session/protocol.ts`. A plugin shipped under `plugins/` cannot import them: `electron-builder.yml` packages `out/**` and `plugins/**` only, and `@dia/plugin` resolved only through `tsconfig.base.json` `paths` (a type-only alias with no runtime alias in `electron.vite.config.ts` or `vitest.config.ts`). The options were `ctx.protocol`, a runtime `@dia/plugin`, or building built-in plugins into `out/`.
 
 ## Reasoning / Learning
 
@@ -32,8 +32,8 @@ Results:
 | Unpackaged app (`electron .`) | An override folder `host.ts` that imports `SessionStarted` and `TurnCompleted` from `@dia/plugin` loaded (`Loaded`), and its own log line printed `started: "SessionStarted"`. |
 | Packaged app (`electron-builder --win --dir`, `dia.exe --user-data-dir=<scratch>`) | The same override folder reported `Loaded` with `plugin-api.js` read from `app.asar`. The packaged log stopped after startup and had no probe lines, so the plugin's own log line is unconfirmed there. `.make` on an undefined import throws, which would have reported `Failed`. |
 
-The location of `plugin-api.js` was derived from `import.meta.url` of the bundled host chunk (`new URL('../plugin-api.js', import.meta.url)`), which holds only while the chunk sits one directory below the entry. A real implementation needs an explicit location, for example one supplied through `HostInit`.
+The spike derived the location of `plugin-api.js` from `import.meta.url` of the bundled host chunk (`new URL('../plugin-api.js', import.meta.url)`), which holds only while the chunk sits one directory below the entry. The Host now receives the location explicitly as `pluginApiPath` (`src/main/index.ts` passes `out/main/plugin-api.js`; `src/host/plugins/host-plugins.ts` converts it to the URL the resolve hook returns).
 
 ## Implication
 
-Runtime `@dia/plugin` is viable for override folders and built-in plugins in both builds. Building built-in plugins into `out/` would not remove the need for it, because an override folder is source and still needs the protocol values. A real implementation must pass the `plugin-api.js` location explicitly instead of deriving it from a chunk path, decide what `@dia/plugin` exports at runtime, and bump `PLUGIN_API_VERSION` to `'2'` when it does. Not checked: a Windows NSIS install, and a Host started with the built-in `session-reducer` plugin present.
+Runtime `@dia/plugin` works for override folders and built-in plugins in both builds, and the Host passes its location through `pluginApiPath`. Building built-in plugins into `out/` would not remove the need for it, because an override folder is source and still needs the protocol values. Not checked: a Windows NSIS install.

@@ -4,7 +4,7 @@
 
 ## Context
 
-Phase 4 step 4 moved the git operations into `plugins/git-ops`, whose `host.ts` provides `NodeServices.layer` to the git code. With `import { NodeServices } from '@effect/platform-node'` the plugin loaded in the unpackaged app, but in an `electron-builder --dir` build it ended `git-ops:Failed` with `Cannot find package 'redis' imported from …\app.asar\node_modules\@effect\platform-node\dist\NodeRedis.js`.
+Phase 4 step 4 moved the git operations into `plugins/worktrees` (then named `git-ops`), whose `host.ts` provides `NodeServices.layer` to the git code. With `import { NodeServices } from '@effect/platform-node'` the plugin loaded in the unpackaged app, but in an `electron-builder --dir` build it ended `git-ops:Failed` with `Cannot find package 'redis' imported from …\app.asar\node_modules\@effect\platform-node\dist\NodeRedis.js`.
 
 ## Reasoning / Learning
 
