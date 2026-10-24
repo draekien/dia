@@ -1,7 +1,8 @@
+import type { UserInputResolution } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import type { PermissionResponse } from '@shared/domain/attention'
 import { Deferred, Effect } from 'effect'
-import { makePendingUserInput, type UserInputResolution } from './pending-user-input'
+import { makePendingUserInput } from './pending-user-input'
 
 const allow: PermissionResponse = { _tag: 'Allow' }
 const deny: PermissionResponse = { _tag: 'Deny', message: 'no' }

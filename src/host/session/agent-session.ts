@@ -36,14 +36,11 @@ import {
   Stream
 } from 'effect'
 import {
-  makePendingUserInput,
+  makeSessionPermissions,
   type PendingUserInput,
+  type PermissionModeController,
   type UserInputResolution
-} from './pending-user-input'
-import {
-  makePermissionModeController,
-  type PermissionModeController
-} from './permission-mode-controller'
+} from './permissions-seam'
 import {
   isPluginToolName,
   makePluginToolServer,
@@ -152,6 +149,7 @@ const toPermissionResult = (
 const makeCanUseTool =
   (
     pendingUserInput: PendingUserInput,
+    permissionsAvailable: boolean,
     emit: (message: OutboundMessage) => Effect.Effect<void>,
     services: Context.Context<never>
   ): CanUseTool =>
@@ -159,6 +157,15 @@ const makeCanUseTool =
     Effect.runPromiseWith(services)(
       Effect.gen(function* () {
         if (isPluginToolName(toolName)) return { behavior: 'allow' } satisfies PermissionResult
+        if (!permissionsAvailable) {
+          yield* Effect.logWarning('Denied a tool call; the permissions plugin is not loaded', {
+            toolName
+          })
+          return {
+            behavior: 'deny',
+            message: 'Permission handling is unavailable: the permissions plugin is not loaded.'
+          } satisfies PermissionResult
+        }
 
         const deferred = yield* pendingUserInput.register(options.toolUseID)
 
@@ -332,7 +339,7 @@ const runSession = Effect.fn('AgentSession.runSession')(
     abortExpectedRef: Ref.Ref<boolean>,
     canUseTool: CanUseTool,
     newPluginToolServer: (() => McpSdkServerConfigWithInstance) | undefined,
-    reducerRegistry: Pick<PluginRegistry, 'inject'>,
+    pluginRegistry: Pick<PluginRegistry, 'inject'>,
     emit: (message: OutboundMessage) => Effect.Effect<void>,
     resume: string | undefined,
     branchAt: string | undefined
@@ -417,7 +424,7 @@ const runSession = Effect.fn('AgentSession.runSession')(
     )
 
     const events = Stream.fromAsyncIterable(session, (cause) => new SessionStreamError({ cause }))
-    const reducer = yield* makeSessionReducer(reducerRegistry)
+    const reducer = yield* makeSessionReducer(pluginRegistry)
 
     yield* Stream.runForEach(events, (event) =>
       Effect.flatMap(reducer.step(event), (outbounds) =>
@@ -525,13 +532,15 @@ export const makeAgentSession = Effect.fn('AgentSession.make')(function* (option
   readonly resume: string | undefined
   readonly emit: (message: OutboundMessage) => Effect.Effect<void>
   readonly pluginToolHost?: PluginToolHost
-  readonly reducerRegistry: Pick<PluginRegistry, 'inject'>
+  readonly pluginRegistry: Pick<PluginRegistry, 'inject'>
 }): Effect.fn.Return<AgentSession, never, Scope.Scope> {
   const { emit } = options
   const sessionScope = yield* Scope.Scope
   const services = yield* Effect.context<never>()
-  const pendingUserInput = makePendingUserInput()
-  const canUseTool = makeCanUseTool(pendingUserInput, emit, services)
+  const { pendingUserInput, modeController, available } = yield* makeSessionPermissions(
+    options.pluginRegistry
+  )
+  const canUseTool = makeCanUseTool(pendingUserInput, available, emit, services)
   const approvalCounter = yield* Ref.make(0)
   const approvePluginTool = makeApprovePluginTool(pendingUserInput, emit, approvalCounter)
   const pluginToolHost = options.pluginToolHost
@@ -553,7 +562,6 @@ export const makeAgentSession = Effect.fn('AgentSession.make')(function* (option
     Option.some(options.config.thinkingLevel)
   )
   const fiberRef = yield* Ref.make<Option.Option<Fiber.Fiber<void>>>(Option.none())
-  const modeController = yield* makePermissionModeController
   const endedDeferred = yield* Deferred.make<string>()
 
   const startSession = Effect.fn('AgentSession.startSession')(function* (
@@ -572,7 +580,7 @@ export const makeAgentSession = Effect.fn('AgentSession.make')(function* (option
         abortExpectedRef,
         canUseTool,
         newPluginToolServer,
-        options.reducerRegistry,
+        options.pluginRegistry,
         emit,
         resume,
         branchAt

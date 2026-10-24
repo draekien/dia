@@ -1,4 +1,5 @@
 import {
+  isEssentialPlugin,
   PluginName,
   PluginOverrideApplied,
   PluginOverrideRejected,
@@ -100,7 +101,14 @@ export const makePluginSourcesLive = (defaultRoot: string) =>
         const overrides = yield* settings.getPluginOverrides()
         const override = overrides[name]
         if (override !== undefined) {
-          return Option.some({ root: override, origin: 'override' as const })
+          if (isEssentialPlugin(name)) {
+            yield* Effect.logWarning('Ignoring a saved override of an essential plugin', {
+              plugin: name,
+              directory: override
+            })
+          } else {
+            return Option.some({ root: override, origin: 'override' as const })
+          }
         }
         const root = path.join(defaultRoot, name)
         return (yield* hasManifest(root))
@@ -112,6 +120,11 @@ export const makePluginSourcesLive = (defaultRoot: string) =>
         name: string,
         directory: string
       ) {
+        if (isEssentialPlugin(name)) {
+          return yield* new InvalidOverrideError({
+            message: `"${name}" is essential and cannot be overridden`
+          })
+        }
         if (!(yield* hasManifest(directory))) {
           return yield* new InvalidOverrideError({
             message: `"${directory}" has no plugin.json`

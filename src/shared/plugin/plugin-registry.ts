@@ -3,6 +3,7 @@ import type { PluginServices, PluginSetup } from './api'
 import { ServiceKeyTakenError } from './api'
 import {
   formatMegabytes,
+  isEssentialPlugin,
   PLUGIN_API_VERSION,
   PluginInfo,
   type PluginLoadMode,
@@ -89,7 +90,8 @@ export interface PluginMemoryGuard {
  * before the running one stops. When it fails, the previous version keeps running (or is
  * reopened) with the failure in `Loaded.reloadError`; a plugin with no previous version is
  * `Failed`. A plugin whose loads reached the memory limit, or whose dependency outside its
- * directory changed, reports `RestartRequired`. `unload` closes it.
+ * directory changed, reports `RestartRequired`. `unload` closes it, except an essential plugin
+ * (`ESSENTIAL_PLUGINS`), which stays loaded and is returned unchanged.
  * Plugins that inject a service the changed plugin provides are closed and wait until it is
  * provided again. `list` returns every known plugin. `inject` reads the value a loaded plugin provides
  * under a service key, for code that is not a plugin; it is empty while no plugin provides the key
@@ -419,8 +421,18 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         return loadNamed(name, false)
       })
 
+    const refuseUnload = (name: string): Effect.Effect<PluginInfo> =>
+      Effect.gen(function* () {
+        yield* Effect.logWarning('Refused to unload an essential plugin', { plugin: name })
+        const infos = yield* list()
+        return (
+          infos.find((info) => info.name === name) ?? failedInfo(name, `No plugin named "${name}"`)
+        )
+      })
+
     const unload = (name: string): Effect.Effect<PluginInfo> =>
       Effect.suspend(() => {
+        if (isEssentialPlugin(name)) return refuseUnload(name)
         queuedByStart.delete(name)
         return unloadLocked(name)
       })

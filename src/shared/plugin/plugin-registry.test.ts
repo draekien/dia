@@ -877,4 +877,38 @@ describe('plugin registry', () => {
       assert.strictEqual(loaded.root, 'alpha')
     }).pipe(Effect.scoped)
   )
+
+  it.effect('keeps an essential plugin loaded when it is asked to unload', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({
+        permissions: plugin(manifest('permissions'), recording('permissions', log)),
+        alpha: plugin(manifest('alpha'), recording('alpha', log))
+      })
+      yield* registry.load('permissions')
+      yield* registry.load('alpha')
+
+      const refused = yield* registry.unload('permissions')
+      const allowed = yield* registry.unload('alpha')
+
+      assert.deepStrictEqual(refused.status, { _tag: 'Loaded' })
+      assert.deepStrictEqual(allowed.status, { _tag: 'Unloaded' })
+      assert.deepStrictEqual(log, ['permissions:open', 'alpha:open', 'alpha:close'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('reloads an essential plugin', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({
+        permissions: plugin(manifest('permissions'), recording('permissions', log))
+      })
+      yield* registry.load('permissions')
+
+      const reloaded = yield* registry.load('permissions')
+
+      assert.deepStrictEqual(reloaded.status, { _tag: 'Loaded' })
+      assert.deepStrictEqual(log, ['permissions:open', 'permissions:close', 'permissions:open'])
+    }).pipe(Effect.scoped)
+  )
 })

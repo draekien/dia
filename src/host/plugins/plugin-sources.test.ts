@@ -4,8 +4,8 @@ import { Effect, FileSystem, Layer, Option, Path } from 'effect'
 import { SettingsStore } from '../services/settings-store'
 import { makePluginSourcesLive, PluginSources } from './plugin-sources'
 
-const memorySettings = () => {
-  let overrides: Record<string, string> = {}
+const memorySettings = (initial: Record<string, string> = {}) => {
+  let overrides: Record<string, string> = initial
   return Layer.succeed(SettingsStore)({
     getLastDirectory: () => Effect.succeed(Option.none()),
     setLastDirectory: () => Effect.void,
@@ -46,10 +46,10 @@ const workspace = Effect.gen(function* () {
   return { base, defaultRoot, path, fs, writePlugin, writeModulePackage }
 })
 
-const sourcesLayer = (defaultRoot: string) =>
+const sourcesLayer = (defaultRoot: string, initialOverrides: Record<string, string> = {}) =>
   Layer.provide(
     makePluginSourcesLive(defaultRoot),
-    Layer.mergeAll(memorySettings(), NodeFileSystem.layer, NodePath.layer)
+    Layer.mergeAll(memorySettings(initialOverrides), NodeFileSystem.layer, NodePath.layer)
   )
 
 const withWorkspace = <A, E>(
@@ -203,5 +203,41 @@ describe('PluginSources', () => {
         )
       })
     )
+  )
+
+  it.effect('rejects an override of an essential plugin and saves nothing', () =>
+    withWorkspace((ws, sources) =>
+      Effect.gen(function* () {
+        yield* ws.writePlugin(ws.path.join(ws.defaultRoot, 'permissions'), 'permissions')
+        const directory = ws.path.join(ws.base, 'worktree', 'permissions')
+        yield* ws.writePlugin(directory, 'permissions')
+        yield* ws.writeModulePackage(ws.path.join(ws.base, 'worktree'), 'module')
+
+        const result = yield* Effect.flip(sources.setOverride('permissions', directory))
+
+        assert.strictEqual(result.message, '"permissions" is essential and cannot be overridden')
+        assert.deepStrictEqual(
+          yield* sources.resolve('permissions'),
+          Option.some({ root: ws.path.join(ws.defaultRoot, 'permissions'), origin: 'default' })
+        )
+      })
+    )
+  )
+
+  it.effect('resolves an essential plugin to its shipped copy when settings hold an override', () =>
+    Effect.gen(function* () {
+      const ws = yield* workspace
+      yield* ws.writePlugin(ws.path.join(ws.defaultRoot, 'permissions'), 'permissions')
+      const saved = ws.path.join(ws.base, 'worktree', 'permissions')
+
+      const resolved = yield* Effect.gen(function* () {
+        return yield* (yield* PluginSources).resolve('permissions')
+      }).pipe(Effect.provide(sourcesLayer(ws.defaultRoot, { permissions: saved })))
+
+      assert.deepStrictEqual(
+        resolved,
+        Option.some({ root: ws.path.join(ws.defaultRoot, 'permissions'), origin: 'default' })
+      )
+    }).pipe(Effect.scoped, Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
   )
 })
