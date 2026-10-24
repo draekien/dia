@@ -442,26 +442,6 @@ describe('plugin registry', () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect('loadAll loads every known plugin and returns their states', () =>
-    Effect.gen(function* () {
-      const log: Array<string> = []
-      const registry = yield* makeRegistry({
-        alpha: plugin(manifest('alpha'), recording('alpha', log)),
-        beta: plugin(manifest('beta', { api: '0' }), recording('beta', log))
-      })
-
-      const infos = yield* registry.loadAll()
-
-      assert.deepStrictEqual(
-        infos.map((info) => [info.name, info.status._tag]),
-        [
-          ['alpha', 'Loaded'],
-          ['beta', 'Failed']
-        ]
-      )
-      assert.deepStrictEqual(log, ['alpha:open'])
-    }).pipe(Effect.scoped)
-  )
   it.effect('reports Failed when a setup function throws before returning an effect', () =>
     Effect.gen(function* () {
       const registry = yield* makeRegistry({
@@ -740,7 +720,8 @@ describe('plugin registry', () => {
           { alpha: plugin(manifest('alpha')), beta: plugin(manifest('beta')) },
           { memory: memoryGuard(100, { alpha: 40, beta: 7 }) }
         )
-        yield* registry.loadAll()
+        yield* registry.load('alpha')
+        yield* registry.load('beta')
 
         const infos = yield* registry.list()
 

@@ -91,8 +91,7 @@ export interface PluginMemoryGuard {
  * `Failed`. A plugin whose loads reached the memory limit, or whose dependency outside its
  * directory changed, reports `RestartRequired`. `unload` closes it.
  * Plugins that inject a service the changed plugin provides are closed and wait until it is
- * provided again. `list` returns every known plugin; `loadAll` loads each of them one after
- * another and returns their resulting states. `inject` reads the value a loaded plugin provides
+ * provided again. `list` returns every known plugin. `inject` reads the value a loaded plugin provides
  * under a service key, for code that is not a plugin; it is empty while no plugin provides the key
  * and is not reopened when the provider changes, so call it again each time the value is needed.
  * `start` is the startup entry point: it marks every plugin `Loading`, loads the plugins whose
@@ -104,7 +103,6 @@ export interface PluginMemoryGuard {
 export interface PluginRegistry {
   readonly list: () => Effect.Effect<ReadonlyArray<PluginInfo>>
   readonly start: () => Effect.Effect<void>
-  readonly loadAll: () => Effect.Effect<ReadonlyArray<PluginInfo>>
   readonly load: (name: string) => Effect.Effect<PluginInfo>
   readonly unload: (name: string) => Effect.Effect<PluginInfo>
   readonly inject: (key: string) => Effect.Effect<Option.Option<unknown>>
@@ -482,9 +480,6 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         )
       })
 
-    const loadAll = (): Effect.Effect<ReadonlyArray<PluginInfo>> =>
-      list().pipe(Effect.flatMap((infos) => Effect.forEach(infos, (info) => load(info.name))))
-
     const loadModeOf = (name: string): Effect.Effect<PluginLoadMode> =>
       Effect.gen(function* () {
         const source = yield* deps.catalog.resolve(name)
@@ -529,5 +524,5 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       )
     })
 
-    return { list, start, load, unload, loadAll, inject }
+    return { list, start, load, unload, inject }
   })
