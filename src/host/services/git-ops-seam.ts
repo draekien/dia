@@ -48,7 +48,9 @@ export const GIT_OPS_KEY = 'gitOps'
  * `sourceRepo` under `worktreesRoot`, using a name that clashes with no existing branch or
  * directory, and returns where it put them. `reattachWorktree` re-adds the worktree described by
  * `info` on resume, checking out its existing branch so committed work is preserved; it returns
- * `info` and does nothing when the path already exists. `removeWorktree` tears one down and does
+ * `info` and does nothing when the path is already a registered worktree, reuses a path that
+ * exists but is an empty, unregistered directory, and fails with `WorktreeReattachError` when
+ * that directory is not empty. `removeWorktree` tears one down and does
  * not fail when git cannot prune it, because pane teardown must not block on that.
  */
 export interface GitOps {

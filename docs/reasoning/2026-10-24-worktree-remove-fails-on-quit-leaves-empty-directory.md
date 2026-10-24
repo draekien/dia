@@ -22,3 +22,5 @@ Options considered before the fix:
 
 - Wait for the session process to exit before `removeWorktree`: not done. It needs an exit signal from `Query.close()`, which was not checked, and it would not repair a worktree left by a crash.
 - Make `reattachWorktree` treat an unregistered path as absent: done, as described above. It repairs a failed removal and a crash alike.
+
+Follow-ups on the removal side, not done: skip removal on a quit that will resume (remove only on a permanent `closePane`), or finish the removal before pruning (retry, then delete the directory, and prune only when the directory is gone) so a failed removal does not leave a registered-then-pruned worktree. The reattach fix stays as the backstop for a crash.

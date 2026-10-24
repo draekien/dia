@@ -1,18 +1,27 @@
 import { type GitOps, WorktreeCreateError, WorktreeReattachError } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import type { WorktreeInfo } from '@shared/domain/pane'
-import { Context, Effect, FileSystem, Layer, Logger, Path, Result, Stream } from 'effect'
+import {
+  Context,
+  Effect,
+  FileSystem,
+  Layer,
+  Logger,
+  Path,
+  PlatformError,
+  Result,
+  Stream
+} from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { makeGitOps } from './git-ops'
 
 class TestGitOps extends Context.Service<TestGitOps, GitOps>()('TestGitOps') {}
 
-const NL = String.fromCharCode(10)
 const PANE_ID = 'aaaaaaaa-0000-4000-8000-000000000001'
 
 function makeFakeSpawner(
   exitCodeFor: (command: ChildProcess.Command) => number,
-  registeredWorktrees: ReadonlyArray<string>
+  registeredWorktrees: ReadonlyArray<string> | 'unavailable'
 ): ChildProcessSpawner.ChildProcessSpawner['Service'] {
   const notImplemented = () => Effect.die('not implemented in fake spawner')
   const streamNotImplemented = () => Stream.die('not implemented in fake spawner')
@@ -20,9 +29,18 @@ function makeFakeSpawner(
     spawn: notImplemented,
     exitCode: (command) => Effect.succeed(ChildProcessSpawner.ExitCode(exitCodeFor(command))),
     string: () =>
-      Effect.succeed(
-        registeredWorktrees.map((path) => `worktree ${path}${NL}HEAD abc${NL}`).join(NL)
-      ),
+      registeredWorktrees === 'unavailable'
+        ? Effect.fail(
+            PlatformError.systemError({
+              _tag: 'NotFound',
+              module: 'ChildProcess',
+              method: 'string',
+              description: 'git is not available'
+            })
+          )
+        : Effect.succeed(
+            registeredWorktrees.map((path) => `worktree ${path}\nHEAD abc\n`).join('\n')
+          ),
     lines: notImplemented,
     streamString: streamNotImplemented,
     streamLines: streamNotImplemented
@@ -36,7 +54,7 @@ function argsOf(command: ChildProcess.Command): ReadonlyArray<string> {
 
 interface TestSetupOptions {
   readonly worktreeExists?: boolean
-  readonly registeredWorktrees?: ReadonlyArray<string>
+  readonly registeredWorktrees?: ReadonlyArray<string> | 'unavailable'
   readonly directoryEntries?: ReadonlyArray<string>
 }
 
@@ -247,10 +265,10 @@ describe('makeGitOps', () => {
     })
   )
 
-  const reattach = (setup: ReturnType<typeof makeTestSetup>) =>
+  const reattach = (setup: ReturnType<typeof makeTestSetup>, info: WorktreeInfo = WORKTREE_INFO) =>
     Effect.gen(function* () {
       const gitOps = yield* TestGitOps
-      return yield* gitOps.reattachWorktree(WORKTREE_INFO, PANE_ID)
+      return yield* gitOps.reattachWorktree(info, PANE_ID)
     }).pipe(Effect.provide(setup.testLayer), Effect.provide(setup.loggerLayer))
 
   it.effect('reattachWorktree checks out the existing branch without -b or -B', () =>
@@ -325,10 +343,7 @@ describe('makeGitOps', () => {
         { worktreeExists: true, registeredWorktrees: ['c:/dia/worktrees/pane-1'] }
       )
 
-      yield* Effect.gen(function* () {
-        const gitOps = yield* TestGitOps
-        return yield* gitOps.reattachWorktree(windowsInfo, PANE_ID)
-      }).pipe(Effect.provide(setup.testLayer), Effect.provide(setup.loggerLayer))
+      yield* reattach(setup, windowsInfo)
 
       assert.strictEqual(commands.filter(isWorktreeAdd).length, 0)
     })
@@ -344,7 +359,7 @@ describe('makeGitOps', () => {
             commands.push(command)
             return 0
           },
-          { worktreeExists: true, registeredWorktrees: ['/repo'], directoryEntries: [] }
+          { worktreeExists: true, registeredWorktrees: ['/repo'] }
         )
 
         const info = yield* reattach(setup)
@@ -374,6 +389,27 @@ describe('makeGitOps', () => {
           registeredWorktrees: ['/repo'],
           directoryEntries: ['notes.txt']
         }
+      )
+
+      const result = yield* Effect.result(reattach(setup))
+
+      assert.isTrue(Result.isFailure(result))
+      if (Result.isFailure(result)) {
+        assert.instanceOf(result.failure, WorktreeReattachError)
+      }
+      assert.strictEqual(commands.filter(isWorktreeAdd).length, 0)
+    })
+  )
+
+  it.effect('reattachWorktree fails without adding when the worktree list cannot be read', () =>
+    Effect.gen(function* () {
+      const commands: ChildProcess.Command[] = []
+      const setup = makeTestSetup(
+        (command) => {
+          commands.push(command)
+          return 0
+        },
+        { worktreeExists: true, registeredWorktrees: 'unavailable', directoryEntries: ['a.ts'] }
       )
 
       const result = yield* Effect.result(reattach(setup))

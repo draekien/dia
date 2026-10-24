@@ -10,6 +10,8 @@ import { Effect, FileSystem, Path, Random } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { generateWorktreeSlug } from './worktree-slug'
 
+const PORCELAIN_WORKTREE_PREFIX = 'worktree '
+
 /**
  * Builds the {@link GitOps} the `git-ops` plugin provides, shelling out to the `git` CLI through
  * the platform `ChildProcessSpawner`. Run it once in the plugin's setup with the Node platform
@@ -139,7 +141,8 @@ export const makeGitOps = Effect.gen(function* () {
   }
 
   const isRegisteredWorktree = Effect.fn('GitOps.isRegisteredWorktree')(function* (
-    info: WorktreeInfo
+    info: WorktreeInfo,
+    paneId: PaneId
   ) {
     const output = yield* spawner
       .string(
@@ -147,27 +150,36 @@ export const makeGitOps = Effect.gen(function* () {
           ChildProcess.setCwd(info.sourceRepo)
         )
       )
-      .pipe(Effect.orElseSucceed(() => ''))
+      .pipe(
+        Effect.mapError((cause) => new WorktreeReattachError({ paneId, path: info.path, cause }))
+      )
     const target = comparablePath(info.path)
     return output
       .split(/\r?\n/)
-      .some((line) => line.startsWith('worktree ') && comparablePath(line.slice(9)) === target)
+      .some(
+        (line) =>
+          line.startsWith(PORCELAIN_WORKTREE_PREFIX) &&
+          comparablePath(line.slice(PORCELAIN_WORKTREE_PREFIX.length)) === target
+      )
   })
 
   const reattachWorktree = Effect.fn('GitOps.reattachWorktree')(function* (
     info: WorktreeInfo,
     paneId: PaneId
   ) {
-    if (yield* isRegisteredWorktree(info)) {
-      yield* Effect.logWarning(
-        'Worktree path is already a registered worktree; skipping reattach (crash-orphan recovery is out of scope)',
-        { paneId, path: info.path }
-      )
-      return info
-    }
-
     const pathExists = yield* fs.exists(info.path).pipe(Effect.orElseSucceed(() => false))
     if (pathExists) {
+      if (yield* isRegisteredWorktree(info, paneId)) {
+        yield* Effect.logWarning(
+          'Worktree path is already a registered worktree; skipping reattach',
+          {
+            paneId,
+            path: info.path
+          }
+        )
+        return info
+      }
+
       const entries = yield* fs
         .readDirectory(info.path)
         .pipe(
