@@ -37,7 +37,7 @@ Chosen option: "Source loading", because it is the model cordis and deepseek-har
 | Two overrides for one plugin | The most recent override wins. The plugin panel shows the path every plugin is loaded from |
 | Host plugins under an override | Loaded through a TypeScript loader hook (`tsx`) in the Host process (ADR-0021). The Host watches the files it has imported, follows the import graph to the owning plugin entry, evicts those modules, closes the plugin's `Scope` and loads it again (ADR-0019) |
 | Renderer plugins under an override | Served by a Vite dev server the installed app runs while any renderer override is active. The rebuilt plugin is remounted with fresh state |
-| Failed reload | The plugin stays unloaded until the next change. The failure is logged and shown in the plugin panel |
+| Failed reload | The plugin stays unloaded until the next change. The failure is logged and shown in the plugin panel. Superseded by ADR-0026: a failed reload keeps the previous version running and reports the failure as its last reload error |
 | Shared runtime libraries | `react`, `effect` and the dia plugin API are provided by the host and never bundled into a plugin, so only one copy of each exists at runtime |
 | Clearing an override | The plugin returns to its default copy. Done after the refinement ships in a release |
 

@@ -3,6 +3,7 @@ import { createRequire } from 'node:module'
 import { sep } from 'node:path'
 import {
   type CanUseTool,
+  type McpSdkServerConfigWithInstance,
   type PermissionResult,
   type PermissionUpdate,
   type Query,
@@ -18,6 +19,7 @@ import {
 import type { PaneConfig, PermissionMode, ThinkingLevel } from '@shared/domain/pane'
 import {
   Cause,
+  Clock,
   type Context,
   Data,
   Deferred,
@@ -42,6 +44,12 @@ import {
   makePermissionModeController,
   type PermissionModeController
 } from './permission-mode-controller'
+import {
+  isPluginToolName,
+  makePluginToolServer,
+  PLUGIN_TOOL_SERVER_KEY,
+  type PluginToolHost
+} from './plugin-tools'
 import {
   type OutboundMessage,
   PermissionModeChanged,
@@ -149,6 +157,8 @@ const makeCanUseTool =
   (toolName, input, options) =>
     Effect.runPromiseWith(services)(
       Effect.gen(function* () {
+        if (isPluginToolName(toolName)) return { behavior: 'allow' } satisfies PermissionResult
+
         const deferred = yield* pendingUserInput.register(options.toolUseID)
 
         if (toolName === 'ExitPlanMode') {
@@ -188,6 +198,24 @@ const makeCanUseTool =
         return toPermissionResult(resolution, options.suggestions)
       }).pipe(Effect.withSpan('AgentSession.canUseTool'))
     )
+
+const makeApprovePluginTool = (
+  pendingUserInput: PendingUserInput,
+  emit: (message: OutboundMessage) => Effect.Effect<void>,
+  counter: Ref.Ref<number>
+) =>
+  Effect.fn('AgentSession.approvePluginTool')(function* (
+    toolName: string,
+    input: Record<string, string>
+  ) {
+    const sequence = yield* Ref.updateAndGet(counter, (value) => value + 1)
+    const now = yield* Clock.currentTimeMillis
+    const requestId = `plugin-tool-${now}-${sequence}`
+    const deferred = yield* pendingUserInput.register(requestId)
+    yield* emit(PermissionRequested.make({ requestId, toolName, input }))
+    const resolution = yield* Deferred.await(deferred)
+    return resolution._tag === 'Allow'
+  })
 
 const resolveRequest = Effect.fn('AgentSession.resolveRequest')(function* (
   pendingUserInput: PendingUserInput,
@@ -302,6 +330,7 @@ const runSession = Effect.fn('AgentSession.runSession')(
     modeController: PermissionModeController,
     abortExpectedRef: Ref.Ref<boolean>,
     canUseTool: CanUseTool,
+    newPluginToolServer: (() => McpSdkServerConfigWithInstance) | undefined,
     emit: (message: OutboundMessage) => Effect.Effect<void>,
     resume: string | undefined,
     branchAt: string | undefined
@@ -326,6 +355,9 @@ const runSession = Effect.fn('AgentSession.runSession')(
             model: config.model,
             includePartialMessages: true,
             canUseTool,
+            ...(newPluginToolServer !== undefined
+              ? { mcpServers: { [PLUGIN_TOOL_SERVER_KEY]: newPluginToolServer() } }
+              : {}),
             permissionMode: config.permissionMode,
             enableFileCheckpointing: true,
             extraArgs: { 'replay-user-messages': null },
@@ -488,12 +520,25 @@ export const makeAgentSession = Effect.fn('AgentSession.make')(function* (option
   readonly config: PaneConfig
   readonly resume: string | undefined
   readonly emit: (message: OutboundMessage) => Effect.Effect<void>
+  readonly pluginToolHost?: PluginToolHost
 }): Effect.fn.Return<AgentSession, never, Scope.Scope> {
   const { emit } = options
   const sessionScope = yield* Scope.Scope
   const services = yield* Effect.context<never>()
   const pendingUserInput = makePendingUserInput()
   const canUseTool = makeCanUseTool(pendingUserInput, emit, services)
+  const approvalCounter = yield* Ref.make(0)
+  const approvePluginTool = makeApprovePluginTool(pendingUserInput, emit, approvalCounter)
+  const pluginToolHost = options.pluginToolHost
+  const newPluginToolServer =
+    pluginToolHost === undefined
+      ? undefined
+      : () =>
+          makePluginToolServer({
+            host: pluginToolHost,
+            approve: approvePluginTool,
+            run: (effect) => Effect.runPromiseWith(services)(effect)
+          })
   const promptQueue = yield* Queue.unbounded<SDKUserMessage>()
   const sessionIdRef = yield* Ref.make<Option.Option<string>>(Option.none())
   const queryRef = yield* Ref.make<Option.Option<LiveControlQuery>>(Option.none())
@@ -521,6 +566,7 @@ export const makeAgentSession = Effect.fn('AgentSession.make')(function* (option
         modeController,
         abortExpectedRef,
         canUseTool,
+        newPluginToolServer,
         emit,
         resume,
         branchAt

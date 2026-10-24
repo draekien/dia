@@ -69,7 +69,18 @@ const mainMessages = Stream.callback<unknown>((queue) =>
 
 const buildHostLayer = (init: HostInit, token: string) => {
   const gitOps = Layer.provide(GitOpsServiceLive, NodeServices.layer)
-  const supervisor = Layer.provide(PaneSupervisorLive, Layer.merge(SessionFactoryLive, gitOps))
+  const settings = Layer.provide(makeSettingsStoreLive(init.userDataPath), NodeServices.layer)
+  const eventHub = makeEventHubLive()
+  const pluginSources = Layer.provide(
+    makePluginSourcesLive(init.pluginsRoot),
+    Layer.mergeAll(settings, NodeFileSystem.layer, NodePath.layer)
+  )
+  const hostPlugins = Layer.provide(
+    HostPluginsLive,
+    Layer.mergeAll(pluginSources, eventHub, NodeFileSystem.layer, NodePath.layer)
+  )
+  const sessionFactory = Layer.provide(SessionFactoryLive, Layer.merge(hostPlugins, pluginSources))
+  const supervisor = Layer.provide(PaneSupervisorLive, Layer.merge(sessionFactory, gitOps))
   const persistence = Layer.provide(
     makePersistenceServiceLive(init.userDataPath),
     NodeServices.layer
@@ -83,16 +94,6 @@ const buildHostLayer = (init: HostInit, token: string) => {
       NodeFileSystem.layer,
       NodePath.layer
     )
-  )
-  const settings = Layer.provide(makeSettingsStoreLive(init.userDataPath), NodeServices.layer)
-  const eventHub = makeEventHubLive()
-  const pluginSources = Layer.provide(
-    makePluginSourcesLive(init.pluginsRoot),
-    Layer.mergeAll(settings, NodeFileSystem.layer, NodePath.layer)
-  )
-  const hostPlugins = Layer.provide(
-    HostPluginsLive,
-    Layer.mergeAll(pluginSources, eventHub, NodeFileSystem.layer, NodePath.layer)
   )
   const state = Layer.mergeAll(
     supervisor,

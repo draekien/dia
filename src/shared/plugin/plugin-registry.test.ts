@@ -3,7 +3,14 @@ import { Duration, Effect, Fiber, Option, type Scope } from 'effect'
 import { TestClock } from 'effect/testing'
 import type { PluginServices, PluginSetup } from './api'
 import { PLUGIN_API_VERSION, type PluginManifest } from './manifest'
-import { type LoadedPlugin, makePluginRegistry, PluginLoadError } from './plugin-registry'
+import {
+  type LoadedPlugin,
+  makePluginRegistry,
+  PluginLoadError,
+  type PluginLoader,
+  type PluginMemoryGuard,
+  PluginRestartRequiredError
+} from './plugin-registry'
 
 const manifest = (name: string, overrides: Partial<PluginManifest> = {}): PluginManifest => ({
   name,
@@ -33,7 +40,13 @@ const recording =
       yield* body(ctx)
     })
 
-const makeRegistry = (plugins: Record<string, LoadedPlugin<PluginServices>>) =>
+const makeRegistry = (
+  plugins: Record<string, LoadedPlugin<PluginServices>>,
+  options: {
+    readonly memory?: PluginMemoryGuard
+    readonly loader?: PluginLoader<PluginServices>
+  } = {}
+) =>
   makePluginRegistry<PluginServices>({
     catalog: {
       names: () => Effect.succeed(Object.keys(plugins)),
@@ -44,16 +57,28 @@ const makeRegistry = (plugins: Record<string, LoadedPlugin<PluginServices>>) =>
           )
         )
     },
-    loader: {
-      load: (root) => {
+    loader: options.loader ?? {
+      load: (root, use) => {
         const found = plugins[root]
         return found === undefined
           ? Effect.fail(new PluginLoadError({ message: `missing ${root}` }))
-          : Effect.succeed(found)
+          : use(found)
       }
     },
-    extend: (services) => services
+    extend: (services) => services,
+    ...(options.memory === undefined ? {} : { memory: options.memory })
   })
+
+const memoryGuard = (
+  limit: number,
+  totals: Record<string, number>,
+  tracked: Array<string> = []
+): PluginMemoryGuard => ({
+  limit,
+  used: (plugin) => Effect.succeed(totals[plugin] ?? 0),
+  track: (plugin, effect) =>
+    Effect.sync(() => void tracked.push(plugin)).pipe(Effect.andThen(effect))
+})
 
 const statusOf = (
   registry: {
@@ -390,6 +415,292 @@ describe('plugin registry', () => {
       const result = yield* registry.load('thrower')
 
       assert.deepStrictEqual(result.status, { _tag: 'Failed', message: 'sync boom' })
+    }).pipe(Effect.scoped)
+  )
+
+  describe('reloading with a failing new version', () => {
+    it.effect('keeps the running version open and reports the validation failure', () =>
+      Effect.gen(function* () {
+        const log: Array<string> = []
+        const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', log)) }
+        const registry = yield* makeRegistry(plugins)
+        yield* registry.load('alpha')
+        plugins.alpha = plugin(manifest('alpha', { api: '0' }), recording('alpha-v2', log))
+
+        const reloaded = yield* registry.load('alpha')
+
+        assert.deepStrictEqual(reloaded.status, {
+          _tag: 'Loaded',
+          reloadError: `Plugin API version "0" does not match the installed version "${PLUGIN_API_VERSION}"`
+        })
+        assert.deepStrictEqual(log, ['alpha:open'])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('keeps the running version open when the new entry cannot be imported', () =>
+      Effect.gen(function* () {
+        const log: Array<string> = []
+        const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', log)) }
+        const registry = yield* makeRegistry(plugins)
+        yield* registry.load('alpha')
+        plugins.alpha = {
+          manifest: manifest('alpha'),
+          resolveSetup: Effect.fail(new PluginLoadError({ message: 'Cannot import "host.ts"' }))
+        }
+
+        const reloaded = yield* registry.load('alpha')
+
+        assert.deepStrictEqual(reloaded.status, {
+          _tag: 'Loaded',
+          reloadError: 'Cannot import "host.ts"'
+        })
+        assert.deepStrictEqual(log, ['alpha:open'])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect(
+      'reopens the previous setup when the new setup fails after the old scope closed',
+      () =>
+        Effect.gen(function* () {
+          const log: Array<string> = []
+          const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', log)) }
+          const registry = yield* makeRegistry(plugins)
+          yield* registry.load('alpha')
+          plugins.alpha = plugin(
+            manifest('alpha'),
+            recording('alpha-v2', log, () => Effect.fail('boom'))
+          )
+
+          const reloaded = yield* registry.load('alpha')
+
+          assert.deepStrictEqual(reloaded.status, { _tag: 'Loaded', reloadError: 'boom' })
+          assert.deepStrictEqual(log, [
+            'alpha:open',
+            'alpha:close',
+            'alpha-v2:open',
+            'alpha-v2:close',
+            'alpha:open'
+          ])
+        }).pipe(Effect.scoped)
+    )
+
+    it.effect('clears the reload error once a later reload succeeds', () =>
+      Effect.gen(function* () {
+        const log: Array<string> = []
+        const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', log)) }
+        const registry = yield* makeRegistry(plugins)
+        yield* registry.load('alpha')
+        plugins.alpha = plugin(manifest('alpha', { api: '0' }))
+        yield* registry.load('alpha')
+        plugins.alpha = plugin(manifest('alpha'), recording('alpha-v3', log))
+
+        const reloaded = yield* registry.load('alpha')
+
+        assert.deepStrictEqual(reloaded.status, { _tag: 'Loaded' })
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('reports Failed when the first version of a plugin fails to open', () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry({
+          alpha: plugin(
+            manifest('alpha'),
+            recording('alpha', [], () => Effect.fail('boom'))
+          )
+        })
+
+        const result = yield* registry.load('alpha')
+
+        assert.deepStrictEqual(result.status, { _tag: 'Failed', message: 'boom' })
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('reopens dependants after the previous provider setup comes back', () =>
+      Effect.gen(function* () {
+        const log: Array<string> = []
+        const plugins = {
+          provider: plugin(
+            manifest('provider'),
+            recording('provider', log, (ctx) => ctx.provide('db', 1))
+          ),
+          consumer: plugin(manifest('consumer', { inject: ['db'] }), recording('consumer', log))
+        }
+        const registry = yield* makeRegistry(plugins)
+        yield* registry.load('provider')
+        yield* registry.load('consumer')
+        plugins.provider = plugin(
+          manifest('provider'),
+          recording('provider-v2', log, () => Effect.fail('boom'))
+        )
+
+        yield* registry.load('provider')
+
+        assert.strictEqual(yield* statusOf(registry, 'provider'), 'Loaded')
+        assert.strictEqual(yield* statusOf(registry, 'consumer'), 'Loaded')
+        assert.deepStrictEqual(log.slice(-3), [
+          'provider-v2:close',
+          'provider:open',
+          'consumer:open'
+        ])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('tells the loader the load failed so it restores its own state', () =>
+      Effect.gen(function* () {
+        const outcomes: Array<string> = []
+        const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', [])) }
+        const loader: PluginLoader<PluginServices> = {
+          load: (root, use) =>
+            use(plugins.alpha).pipe(
+              Effect.tapCause(() => Effect.sync(() => void outcomes.push(`${root}:rolled-back`))),
+              Effect.tap(() => Effect.sync(() => void outcomes.push(`${root}:committed`)))
+            )
+        }
+        const registry = yield* makeRegistry(plugins, { loader })
+
+        yield* registry.load('alpha')
+        plugins.alpha = plugin(manifest('alpha', { api: '0' }))
+        yield* registry.load('alpha')
+
+        assert.deepStrictEqual(outcomes, ['alpha:committed', 'alpha:rolled-back'])
+      }).pipe(Effect.scoped)
+    )
+  })
+
+  describe('restart required', () => {
+    it.effect('reports a changed dependency and keeps the running version open', () =>
+      Effect.gen(function* () {
+        const log: Array<string> = []
+        const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', log)) }
+        let changedDependency = false
+        const loader: PluginLoader<PluginServices> = {
+          load: (_root, use) =>
+            changedDependency
+              ? Effect.fail(
+                  new PluginRestartRequiredError({
+                    reason: 'dependency',
+                    message: 'shared.ts changed'
+                  })
+                )
+              : use(plugins.alpha)
+        }
+        const registry = yield* makeRegistry(plugins, { loader })
+        yield* registry.load('alpha')
+        changedDependency = true
+
+        const reloaded = yield* registry.load('alpha')
+
+        assert.deepStrictEqual(reloaded.status, {
+          _tag: 'RestartRequired',
+          reason: 'dependency',
+          message: 'shared.ts changed'
+        })
+        assert.deepStrictEqual(log, ['alpha:open'])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('refuses a load at the memory limit without calling the loader', () =>
+      Effect.gen(function* () {
+        let loaderCalls = 0
+        const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', [])) }
+        const loader: PluginLoader<PluginServices> = {
+          load: (_root, use) => {
+            loaderCalls += 1
+            return use(plugins.alpha)
+          }
+        }
+        const registry = yield* makeRegistry(plugins, {
+          loader,
+          memory: memoryGuard(100, { alpha: 100 })
+        })
+
+        const result = yield* registry.load('alpha')
+
+        assert.strictEqual(result.status._tag, 'RestartRequired')
+        assert.strictEqual(
+          result.status._tag === 'RestartRequired' ? result.status.reason : undefined,
+          'memory'
+        )
+        assert.strictEqual(loaderCalls, 0)
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('still loads a plugin one byte under the memory limit', () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry(
+          { alpha: plugin(manifest('alpha'), recording('alpha', [])) },
+          { memory: memoryGuard(100, { alpha: 99 }) }
+        )
+
+        const result = yield* registry.load('alpha')
+
+        assert.strictEqual(result.status._tag, 'Loaded')
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('unloads a plugin that is at the memory limit', () =>
+      Effect.gen(function* () {
+        const log: Array<string> = []
+        const totals: Record<string, number> = { alpha: 0 }
+        const registry = yield* makeRegistry(
+          { alpha: plugin(manifest('alpha'), recording('alpha', log)) },
+          { memory: memoryGuard(100, totals) }
+        )
+        yield* registry.load('alpha')
+        totals.alpha = 100
+        yield* registry.load('alpha')
+
+        const unloaded = yield* registry.unload('alpha')
+
+        assert.strictEqual(unloaded.status._tag, 'Unloaded')
+        assert.deepStrictEqual(log, ['alpha:open', 'alpha:close'])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('tracks the memory of each load and unload under the plugin name', () =>
+      Effect.gen(function* () {
+        const tracked: Array<string> = []
+        const registry = yield* makeRegistry(
+          { alpha: plugin(manifest('alpha')), beta: plugin(manifest('beta')) },
+          { memory: memoryGuard(100, {}, tracked) }
+        )
+
+        yield* registry.load('alpha')
+        yield* registry.load('beta')
+        yield* registry.unload('alpha')
+
+        assert.deepStrictEqual(tracked, ['alpha', 'beta', 'alpha'])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('reports each plugin memory total in its info', () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry(
+          { alpha: plugin(manifest('alpha')), beta: plugin(manifest('beta')) },
+          { memory: memoryGuard(100, { alpha: 40, beta: 7 }) }
+        )
+        yield* registry.loadAll()
+
+        const infos = yield* registry.list()
+
+        assert.deepStrictEqual(
+          infos.map((info) => [info.name, info.memoryBytes]),
+          [
+            ['alpha', 40],
+            ['beta', 7]
+          ]
+        )
+      }).pipe(Effect.scoped)
+    )
+  })
+
+  it.effect('reports the root a plugin loaded from', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({ alpha: plugin(manifest('alpha')) })
+
+      const loaded = yield* registry.load('alpha')
+
+      assert.strictEqual(loaded.root, 'alpha')
     }).pipe(Effect.scoped)
   )
 })

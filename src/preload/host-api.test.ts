@@ -51,7 +51,9 @@ const makeClient = (script: ClientScript = {}) => {
     Effect.succeed({
       name: payload.name,
       origin: 'default' as const,
-      status: { _tag: 'Loaded' as const }
+      root: `plugins/${payload.name}`,
+      status: { _tag: 'Loaded' as const },
+      memoryBytes: 0
     })
   )
   const setPluginOverride = vi.fn((_payload: { name: string; directory: string }) =>
@@ -216,7 +218,9 @@ describe('makeHostApi', () => {
     expect(info).toEqual({
       name: 'example',
       origin: 'default',
-      status: { _tag: 'Loaded' }
+      root: 'plugins/example',
+      status: { _tag: 'Loaded' },
+      memoryBytes: 0
     })
   })
 
@@ -230,5 +234,38 @@ describe('makeHostApi', () => {
       { name: 'example', directory: '/tree/example' }
     ])
     expect(result).toEqual({ _tag: 'Rejected', message: 'no plugin.json' })
+  })
+})
+
+describe('pickDirectory', () => {
+  const apiPicking = (chosen: string | null) => {
+    const recordChosenDirectory = vi.fn(() => Effect.succeed(null))
+    const client = {
+      GetLastDirectory: () => Effect.succeed('/last'),
+      RecordChosenDirectory: recordChosenDirectory
+    } as unknown as DiaRpcClient
+    const pickDirectory = vi.fn(async (_defaultPath: string | null) => chosen)
+    const api = makeHostApi({
+      client: Effect.succeed(client),
+      pickDirectory,
+      newRequestId: () => 'request-0',
+      warn: vi.fn()
+    })
+    return { api, pickDirectory, recordChosenDirectory }
+  }
+
+  it('resolves the path the user chose without recording it as the last pane directory', async () => {
+    const { api, recordChosenDirectory } = apiPicking('/tree/example')
+
+    const chosen = await api.pickDirectory()
+
+    expect(chosen).toBe('/tree/example')
+    expect(recordChosenDirectory).not.toHaveBeenCalled()
+  })
+
+  it('resolves null when the user cancels the picker', async () => {
+    const { api } = apiPicking(null)
+
+    expect(await api.pickDirectory()).toBeNull()
   })
 })

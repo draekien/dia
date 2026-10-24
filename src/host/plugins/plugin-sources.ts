@@ -1,4 +1,9 @@
-import { PluginName } from '@shared/plugin/manifest'
+import {
+  PluginName,
+  PluginOverrideApplied,
+  PluginOverrideRejected,
+  type PluginOverrideResult
+} from '@shared/plugin/manifest'
 import type { PluginCatalog } from '@shared/plugin/plugin-registry'
 import { Context, Data, Effect, FileSystem, Layer, Option, Path, Result, Schema } from 'effect'
 import { SettingsStore } from '../services/settings-store'
@@ -25,6 +30,23 @@ export class PluginSources extends Context.Service<
     readonly clearOverride: (name: string) => Effect.Effect<void>
   }
 >()('PluginSources') {}
+
+/**
+ * Runs `setOverride` and reports its outcome as a {@link PluginOverrideResult}: `Applied` on
+ * success, `Rejected` with the reason when the directory cannot be a plugin source. Use it where
+ * the outcome is returned to a caller instead of failing.
+ */
+export const applyOverride = (
+  sources: PluginSources['Service'],
+  name: string,
+  directory: string
+): Effect.Effect<PluginOverrideResult> =>
+  sources.setOverride(name, directory).pipe(
+    Effect.as<PluginOverrideResult>(PluginOverrideApplied.make({})),
+    Effect.catchTag('InvalidOverrideError', (error) =>
+      Effect.succeed<PluginOverrideResult>(PluginOverrideRejected.make({ message: error.message }))
+    )
+  )
 
 const isPluginName = Schema.is(PluginName)
 

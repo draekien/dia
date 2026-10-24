@@ -1,4 +1,4 @@
-import { Schema } from 'effect'
+import { ByteSize, Schema } from 'effect'
 
 /**
  * Version of the plugin API a dia build offers. A plugin manifest declares the version it was
@@ -6,6 +6,15 @@ import { Schema } from 'effect'
  * Increment it whenever the context a plugin receives changes in a way an older plugin cannot use.
  */
 export const PLUGIN_API_VERSION = '1'
+
+/**
+ * Host heap growth, summed over a plugin's loads, at which the Host refuses to reload that plugin
+ * until it restarts. `PluginInfo.memoryBytes` is measured against this value.
+ */
+export const PLUGIN_MEMORY_LIMIT = ByteSize.megabytes(100)
+
+/** Formats a byte count in decimal megabytes with one decimal, for example `19.7 MB`. */
+export const formatMegabytes = (bytes: number): string => `${(bytes / 1_000_000).toFixed(1)} MB`
 
 /** Name of a plugin: lowercase letters, digits and hyphens, starting with a letter. */
 export const PluginName = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]*$/))
@@ -33,8 +42,13 @@ export type PluginOrigin = typeof PluginOrigin.Type
 /** Plugin that is not loaded and has no recorded failure. */
 export const PluginUnloaded = Schema.TaggedStruct('Unloaded', {})
 
-/** Plugin whose scope is open. */
-export const PluginLoaded = Schema.TaggedStruct('Loaded', {})
+/**
+ * Plugin whose scope is open. `reloadError` is set when the latest reload failed and the previous
+ * version kept running; it is absent after a reload that succeeded.
+ */
+export const PluginLoaded = Schema.TaggedStruct('Loaded', {
+  reloadError: Schema.optional(Schema.String)
+})
 
 /** Plugin whose last load failed; `message` is the reason. It stays unloaded until loaded again. */
 export const PluginFailed = Schema.TaggedStruct('Failed', { message: Schema.String })
@@ -44,20 +58,40 @@ export const PluginWaiting = Schema.TaggedStruct('Waiting', {
   missing: Schema.Array(Schema.String)
 })
 
-/** State of one plugin: {@link PluginUnloaded}, {@link PluginLoaded}, {@link PluginFailed} or {@link PluginWaiting}. */
+/** Why a plugin cannot reload until the Host restarts: a changed dependency outside its directory, or its memory limit. */
+export const PluginRestartReason = Schema.Literals(['dependency', 'memory'])
+export type PluginRestartReason = typeof PluginRestartReason.Type
+
+/**
+ * Plugin that cannot reload in this Host process for `reason`; `message` explains it. A version
+ * that was running keeps running, and the plugin can still be unloaded.
+ */
+export const PluginRestartRequired = Schema.TaggedStruct('RestartRequired', {
+  reason: PluginRestartReason,
+  message: Schema.String
+})
+
+/** State of one plugin: {@link PluginUnloaded}, {@link PluginLoaded}, {@link PluginFailed}, {@link PluginWaiting} or {@link PluginRestartRequired}. */
 export const PluginStatus = Schema.Union([
   PluginUnloaded,
   PluginLoaded,
   PluginFailed,
-  PluginWaiting
+  PluginWaiting,
+  PluginRestartRequired
 ])
 export type PluginStatus = typeof PluginStatus.Type
 
-/** One row of the plugin list: a plugin's name, where it loads from, and its state. */
+/**
+ * One row of the plugin list: a plugin's name, where it loads from (`origin` and `root`), its
+ * state, and `memoryBytes`, the estimated Host heap growth its loads have caused (0 on a side
+ * without a memory limit).
+ */
 export const PluginInfo = Schema.Struct({
   name: PluginName,
   origin: PluginOrigin,
-  status: PluginStatus
+  root: Schema.String,
+  status: PluginStatus,
+  memoryBytes: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 })
 export type PluginInfo = typeof PluginInfo.Type
 

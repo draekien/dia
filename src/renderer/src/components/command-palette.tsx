@@ -1,7 +1,8 @@
 import type { ThemePreference } from '@shared/domain/theme'
-import { CodeIcon, InfoIcon, MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
+import { CodeIcon, InfoIcon, MonitorIcon, MoonIcon, PuzzleIcon, SunIcon } from 'lucide-react'
 import { type ComponentType, useEffect, useState } from 'react'
 import { AboutDialog } from './about-dialog'
+import { openPluginsPage } from './plugins-page'
 import { useTheme } from './theme-provider'
 import {
   CommandDialog,
@@ -69,6 +70,11 @@ export function CommandPalette() {
     setAboutOpen(true)
   }
 
+  const openPlugins = () => {
+    setOpen(false)
+    openPluginsPage()
+  }
+
   const toggleDevTools = () => {
     setOpen(false)
     window.dia.toggleDevTools()
@@ -90,6 +96,12 @@ export function CommandPalette() {
         <CommandInput placeholder="Type a command or search…" />
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
+          <CommandGroup heading="Plugins">
+            <CommandItem value="Manage plugins" onSelect={openPlugins}>
+              <PuzzleIcon />
+              <span>Manage plugins</span>
+            </CommandItem>
+          </CommandGroup>
           <CommandGroup heading="Help">
             <CommandItem value="About dia" onSelect={openAbout}>
               <InfoIcon />

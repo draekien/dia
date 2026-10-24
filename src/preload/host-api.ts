@@ -243,6 +243,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         .then((chosen) =>
           chosen === null ? null : query((client) => client.RecordChosenDirectory({ path: chosen }))
         ),
+    pickDirectory: () => deps.pickDirectory(null),
     getTheme: () => query((client) => client.GetTheme()),
     setTheme: (theme) => query((client) => client.SetTheme({ theme })),
     onHistoryReloadRequested: (listener) => {

@@ -142,7 +142,9 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const pluginInfo = (name: string) => ({
     name,
     origin: 'default' as const,
-    status: { _tag: 'Loaded' as const }
+    root: `plugins/${name}`,
+    status: { _tag: 'Loaded' as const },
+    memoryBytes: 0
   })
 
   const plugins = Layer.succeed(HostPlugins, {

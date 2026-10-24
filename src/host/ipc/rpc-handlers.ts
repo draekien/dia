@@ -1,10 +1,9 @@
 import { DEFAULT_THEME } from '@shared/domain/theme'
 import { type IpcEvent, LayoutChanged, PaneCreateFailed } from '@shared/ipc/contract'
 import { DiaRpcs } from '@shared/ipc/rpc'
-import { PluginOverrideApplied, PluginOverrideRejected } from '@shared/plugin/manifest'
 import { Effect, FileSystem, Option, Path } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import { PluginSources } from '../plugins/plugin-sources'
+import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { CommandDeduper } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
@@ -242,13 +241,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     ListPlugins: () => plugins.list(),
     LoadPlugin: ({ name }) => plugins.load(name),
     UnloadPlugin: ({ name }) => plugins.unload(name),
-    SetPluginOverride: ({ name, directory }) =>
-      pluginSources.setOverride(name, directory).pipe(
-        Effect.as(PluginOverrideApplied.make({})),
-        Effect.catchTag('InvalidOverrideError', (error) =>
-          Effect.succeed(PluginOverrideRejected.make({ message: error.message }))
-        )
-      ),
+    SetPluginOverride: ({ name, directory }) => applyOverride(pluginSources, name, directory),
     ClearPluginOverride: ({ name }) => pluginSources.clearOverride(name),
     SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
   })

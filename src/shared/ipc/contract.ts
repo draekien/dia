@@ -533,6 +533,8 @@ export interface DiaApi {
   getInitialLayout(): Promise<PaneNode>
   getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>
   chooseDirectory(): Promise<ChooseDirectoryResult>
+  /** Opens the native folder picker and resolves the chosen path, or `null` when the user cancels. Unlike `chooseDirectory`, the choice is not recorded as the last pane directory. */
+  pickDirectory(): Promise<string | null>
   getTheme(): Promise<ThemePreference>
   setTheme(theme: ThemePreference): Promise<void>
   setTitleBarOverlay(colors: TitleBarOverlayColors): void
