@@ -1,8 +1,8 @@
 import type { UUID } from 'node:crypto'
 import type { SDKMessage, SlashCommand } from '@anthropic-ai/claude-agent-sdk'
+import type { OutboundMessage } from '@dia/plugin'
 import { describe, expect, it } from 'vitest'
-import { makeSessionEventReducer } from './agent-session-reducer'
-import type { OutboundMessage } from './protocol'
+import { makeSessionEventReducer } from './reducer'
 
 type StreamEvent = Extract<SDKMessage, { type: 'stream_event' }>['event']
 type AssistantContent = Extract<SDKMessage, { type: 'assistant' }>['message']['content']

@@ -90,7 +90,9 @@ Done when: an agent in a pane, working in a worktree of dia, edits a plugin, loa
 
 Scope: one feature per change, in this order. dia stays usable after each.
 
-1. SDK message → protocol mapping (`agent-session-reducer.ts`)
+Mechanism, decided in step 1 (`docs/designs/session-reducer-plugin.md`, `docs/reasoning/2026-10-24-plugin-runtime-api-spike.md`): a built-in plugin imports host runtime values (protocol schemas, service keys) from `@dia/plugin`, which the loader's resolve hook maps to the built `out/main/plugin-api.js`; the kernel reads a plugin's service with `PluginRegistry.inject` and keeps a minimal fallback for when none is provided.
+
+1. SDK message → protocol mapping (`agent-session-reducer.ts`). Result (2026-10-24): moved to `plugins/session-reducer`; the kernel creates each session's reducer with `makeSessionReducer`. In the unpackaged app and in an `electron-builder --dir` build, `session-reducer` loaded at startup and a real prompt produced 3 text deltas, the assistant reply, 1 checkpoint and `Idle` → `Completed` → `Idle`; with the plugin unloaded and the session restarted, the same prompt produced 0 deltas, 0 checkpoints, the full reply, a completed turn and a logged warning. Not covered: the NSIS installer, a plugin reducer that throws in the running app (unit tests only), and reloading `session-reducer` while a turn streams. Follow-up: #23 (decide how to display every SDK message type).
 2. Permission mode (`permission-mode-controller.ts`) and pending user input (`pending-user-input.ts`)
 3. Thinking level (`thinking-options.ts`)
 4. Worktrees (`git-ops-service.ts`, worktree parts of `pane-workspace.ts`)

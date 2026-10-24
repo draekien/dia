@@ -80,6 +80,11 @@ describe('processPluginModules', () => {
     assert.deepStrictEqual(results.lateRepaired?.evaluated, ['entry', 'helper'])
   })
 
+  it('resolves @dia/plugin inside a plugin to the module the Host was given', () => {
+    assert.strictEqual(results.pluginApi?.failure, null)
+    assert.deepStrictEqual(results.pluginApi?.evaluated, ['entry', 'saw:api'])
+  })
+
   it('loads a plugin that imports a file outside its directory the first time', () => {
     assert.deepStrictEqual(results.outsideFirstLoad?.evaluated, ['entry', 'shared'])
   })

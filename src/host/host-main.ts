@@ -27,7 +27,7 @@ import { HttpServer } from 'effect/http'
 import { makeLoggerLive } from '../main/logger'
 import { makeHostServerLive } from './ipc/host-server'
 import { DiaRpcHandlersLive } from './ipc/rpc-handlers'
-import { HostPlugins, HostPluginsLive } from './plugins/host-plugins'
+import { HostPlugins, makeHostPluginsLive } from './plugins/host-plugins'
 import { makePluginSourcesLive } from './plugins/plugin-sources'
 import { makeCommandDeduperLive } from './services/command-deduper'
 import { makeEventHubLive } from './services/event-hub'
@@ -76,7 +76,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     Layer.mergeAll(settings, NodeFileSystem.layer, NodePath.layer)
   )
   const hostPlugins = Layer.provide(
-    HostPluginsLive,
+    makeHostPluginsLive(init.pluginApiPath),
     Layer.mergeAll(pluginSources, eventHub, NodeFileSystem.layer, NodePath.layer)
   )
   const sessionFactory = Layer.provide(SessionFactoryLive, Layer.merge(hostPlugins, pluginSources))
@@ -160,13 +160,9 @@ export const runHost = Effect.scoped(
       }
       const { port } = address
       yield* Effect.logInfo('Host listening', { port })
+      const infos = yield* Context.get(context, HostPlugins).loadAll()
+      yield* Effect.logInfo('Plugins loaded', { count: infos.length })
       yield* post(HostReady.make({ port, token }))
-      yield* Context.get(context, HostPlugins)
-        .loadAll()
-        .pipe(
-          Effect.flatMap((infos) => Effect.logInfo('Plugins loaded', { count: infos.length })),
-          Effect.forkScoped
-        )
 
       while (true) {
         const message = yield* Queue.take(inbox)

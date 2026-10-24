@@ -89,13 +89,16 @@ export interface PluginMemoryGuard {
  * directory changed, reports `RestartRequired`. `unload` closes it.
  * Plugins that inject a service the changed plugin provides are closed and wait until it is
  * provided again. `list` returns every known plugin; `loadAll` loads each of them one after
- * another and returns their resulting states.
+ * another and returns their resulting states. `inject` reads the value a loaded plugin provides
+ * under a service key, for code that is not a plugin; it is empty while no plugin provides the key
+ * and is not reopened when the provider changes, so call it again each time the value is needed.
  */
 export interface PluginRegistry {
   readonly list: () => Effect.Effect<ReadonlyArray<PluginInfo>>
   readonly loadAll: () => Effect.Effect<ReadonlyArray<PluginInfo>>
   readonly load: (name: string) => Effect.Effect<PluginInfo>
   readonly unload: (name: string) => Effect.Effect<PluginInfo>
+  readonly inject: (key: string) => Effect.Effect<Option.Option<unknown>>
 }
 
 /** The `message` of an error-like value, or its string form when it has none. */
@@ -183,6 +186,9 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       entry.status = { _tag: 'Failed', message }
     }
 
+    const inject = (key: string): Effect.Effect<Option.Option<unknown>> =>
+      Effect.sync(() => Option.fromNullishOr(slots.get(key)).pipe(Option.map((slot) => slot.value)))
+
     const servicesFor = (name: string, entry: Entry<Context>): PluginServices => ({
       name,
       provide: (key, value) =>
@@ -203,10 +209,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
               })
           )
         }),
-      inject: (key) =>
-        Effect.sync(() =>
-          Option.fromNullishOr(slots.get(key)).pipe(Option.map((slot) => slot.value))
-        )
+      inject
     })
 
     const injectedKeys = (entry: Entry<Context>): ReadonlyArray<string> =>
@@ -425,5 +428,5 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
     const loadAll = (): Effect.Effect<ReadonlyArray<PluginInfo>> =>
       list().pipe(Effect.flatMap((infos) => Effect.forEach(infos, (info) => load(info.name))))
 
-    return { list, load, unload, loadAll }
+    return { list, load, unload, loadAll, inject }
   })

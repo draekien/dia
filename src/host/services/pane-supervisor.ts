@@ -152,7 +152,9 @@ export const SessionFactoryLive = Layer.effect(
       setOverride: (name, directory) => applyOverride(sources, name, directory),
       clearOverride: (name) => sources.clearOverride(name)
     }
-    return { start: (options) => makeAgentSession({ ...options, pluginToolHost }) }
+    return {
+      start: (options) => makeAgentSession({ ...options, pluginToolHost, reducerRegistry: plugins })
+    }
   })
 )
 

@@ -17,6 +17,7 @@ import {
   type QuestionResponse
 } from '@shared/domain/attention'
 import type { PaneConfig, PermissionMode, ThinkingLevel } from '@shared/domain/pane'
+import type { PluginRegistry } from '@shared/plugin/plugin-registry'
 import {
   Cause,
   Clock,
@@ -34,7 +35,6 @@ import {
   Scope,
   Stream
 } from 'effect'
-import { makeSessionEventReducer } from './agent-session-reducer'
 import {
   makePendingUserInput,
   type PendingUserInput,
@@ -61,6 +61,7 @@ import {
   SlashCommandsWarming,
   TurnCompleted
 } from './protocol'
+import { makeSessionReducer } from './session-reducer-seam'
 import { thinkingOptions } from './thinking-options'
 
 /**
@@ -331,6 +332,7 @@ const runSession = Effect.fn('AgentSession.runSession')(
     abortExpectedRef: Ref.Ref<boolean>,
     canUseTool: CanUseTool,
     newPluginToolServer: (() => McpSdkServerConfigWithInstance) | undefined,
+    reducerRegistry: Pick<PluginRegistry, 'inject'>,
     emit: (message: OutboundMessage) => Effect.Effect<void>,
     resume: string | undefined,
     branchAt: string | undefined
@@ -415,46 +417,48 @@ const runSession = Effect.fn('AgentSession.runSession')(
     )
 
     const events = Stream.fromAsyncIterable(session, (cause) => new SessionStreamError({ cause }))
-    const reducer = makeSessionEventReducer()
+    const reducer = yield* makeSessionReducer(reducerRegistry)
 
     yield* Stream.runForEach(events, (event) =>
-      Effect.forEach(reducer.step(event), (outbound) =>
-        Effect.gen(function* () {
-          if (outbound._tag === 'SessionStarted') {
-            yield* Ref.set(sessionIdRef, Option.some(outbound.sessionId))
-          } else if (outbound._tag === 'ToolCallStarted') {
-            yield* Effect.logDebug('Tool call started', {
-              toolCallId: outbound.toolCallId,
-              toolName: outbound.toolName
-            })
-          } else if (outbound._tag === 'ToolCallCompleted') {
-            yield* Effect.logDebug('Tool call completed', {
-              toolCallId: outbound.toolCallId,
-              toolName: outbound.toolName
-            })
-          }
-
-          // A turn aborted by a supersede/interrupt returns an error-subtype result the reducer
-          // maps to TurnErrored; the abort was deliberate, so present it as a clean turn end
-          // rather than lighting the pane's error pulse. The flag is armed for exactly one
-          // terminal outcome and cleared once one arrives.
-          const abortExpected = yield* Ref.get(abortExpectedRef)
-          if (
-            abortExpected &&
-            (outbound._tag === 'TurnErrored' || outbound._tag === 'TurnCompleted')
-          ) {
-            yield* Ref.set(abortExpectedRef, false)
-            if (outbound._tag === 'TurnErrored') {
-              yield* Effect.logInfo('Suppressing expected turn abort as a clean turn end', {
-                paneId: config.paneId
+      Effect.flatMap(reducer.step(event), (outbounds) =>
+        Effect.forEach(outbounds, (outbound) =>
+          Effect.gen(function* () {
+            if (outbound._tag === 'SessionStarted') {
+              yield* Ref.set(sessionIdRef, Option.some(outbound.sessionId))
+            } else if (outbound._tag === 'ToolCallStarted') {
+              yield* Effect.logDebug('Tool call started', {
+                toolCallId: outbound.toolCallId,
+                toolName: outbound.toolName
               })
-              yield* emit(TurnCompleted.make({}))
-              return
+            } else if (outbound._tag === 'ToolCallCompleted') {
+              yield* Effect.logDebug('Tool call completed', {
+                toolCallId: outbound.toolCallId,
+                toolName: outbound.toolName
+              })
             }
-          }
 
-          yield* emit(outbound)
-        })
+            // A turn aborted by a supersede/interrupt returns an error-subtype result the reducer
+            // maps to TurnErrored; the abort was deliberate, so present it as a clean turn end
+            // rather than lighting the pane's error pulse. The flag is armed for exactly one
+            // terminal outcome and cleared once one arrives.
+            const abortExpected = yield* Ref.get(abortExpectedRef)
+            if (
+              abortExpected &&
+              (outbound._tag === 'TurnErrored' || outbound._tag === 'TurnCompleted')
+            ) {
+              yield* Ref.set(abortExpectedRef, false)
+              if (outbound._tag === 'TurnErrored') {
+                yield* Effect.logInfo('Suppressing expected turn abort as a clean turn end', {
+                  paneId: config.paneId
+                })
+                yield* emit(TurnCompleted.make({}))
+                return
+              }
+            }
+
+            yield* emit(outbound)
+          })
+        )
       )
     )
   },
@@ -521,6 +525,7 @@ export const makeAgentSession = Effect.fn('AgentSession.make')(function* (option
   readonly resume: string | undefined
   readonly emit: (message: OutboundMessage) => Effect.Effect<void>
   readonly pluginToolHost?: PluginToolHost
+  readonly reducerRegistry: Pick<PluginRegistry, 'inject'>
 }): Effect.fn.Return<AgentSession, never, Scope.Scope> {
   const { emit } = options
   const sessionScope = yield* Scope.Scope
@@ -567,6 +572,7 @@ export const makeAgentSession = Effect.fn('AgentSession.make')(function* (option
         abortExpectedRef,
         canUseTool,
         newPluginToolServer,
+        options.reducerRegistry,
         emit,
         resume,
         branchAt

@@ -11,7 +11,7 @@ export type HostBooted = typeof HostBooted.Type
 /**
  * Message main sends to the Host over `parentPort`, carrying everything the Host needs
  * that main alone knows: where to keep state (`userDataPath`), where per-pane git worktrees live
- * (`worktreesRoot`), where the plugins shipped with dia live (`pluginsRoot`), where to write logs (`logFilePath`), whether this is a development build,
+ * (`worktreesRoot`), where the plugins shipped with dia live (`pluginsRoot`), the built module plugins import as `@dia/plugin` (`pluginApiPath`), where to write logs (`logFilePath`), whether this is a development build,
  * and which `Origin` values its WebSocket accepts (`allowedOrigins`). The Host starts listening
  * only after it receives this.
  */
@@ -19,6 +19,7 @@ export const HostInit = Schema.TaggedStruct('Init', {
   userDataPath: Schema.String,
   worktreesRoot: Schema.String,
   pluginsRoot: Schema.String,
+  pluginApiPath: Schema.String,
   logFilePath: Schema.String,
   isDev: Schema.Boolean,
   allowedOrigins: Schema.Array(Schema.String)

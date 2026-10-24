@@ -289,6 +289,37 @@ describe('plugin registry', () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect('lets the caller of the registry read a service a loaded plugin provides', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        provider: plugin(manifest('provider'), (ctx) => ctx.provide('db', 'connection'))
+      })
+      assert.deepStrictEqual(yield* registry.inject('db'), Option.none())
+
+      yield* registry.load('provider')
+      assert.deepStrictEqual(yield* registry.inject('db'), Option.some('connection'))
+
+      yield* registry.unload('provider')
+      assert.deepStrictEqual(yield* registry.inject('db'), Option.none())
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('returns the replacement value after the provider reloads', () =>
+    Effect.gen(function* () {
+      let generation = 0
+      const registry = yield* makeRegistry({
+        provider: plugin(manifest('provider'), (ctx) => {
+          generation += 1
+          return ctx.provide('db', `connection-${generation}`)
+        })
+      })
+      yield* registry.load('provider')
+      yield* registry.load('provider')
+
+      assert.deepStrictEqual(yield* registry.inject('db'), Option.some('connection-2'))
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('fails a plugin that provides a service key another plugin already provides', () =>
     Effect.gen(function* () {
       const registry = yield* makeRegistry({

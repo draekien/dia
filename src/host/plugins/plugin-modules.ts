@@ -1,5 +1,5 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the resolve hook Node calls is synchronous, so it cannot run an Effect FileSystem call.
-import { existsSync, statSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { PluginRestartRequiredError } from '@shared/plugin/plugin-registry'
@@ -34,11 +34,6 @@ const SHARED_LIBRARY = /^effect(\/|$)/
 
 const PLUGIN_API = '@dia/plugin'
 
-const builtPluginApiUrl = (): string | undefined => {
-  const url = new URL('../plugin-api.js', import.meta.url)
-  return existsSync(fileURLToPath(url)) ? url.href : undefined
-}
-
 const withoutQuery = (url: string): string => {
   const query = url.indexOf('?')
   return query === -1 ? url : url.slice(0, query)
@@ -58,7 +53,13 @@ const signatureOf = (url: string): Signature | undefined => {
 const differs = (recorded: Signature, current: Signature | undefined): boolean =>
   current === undefined || current.size !== recorded.size || current.mtimeMs !== recorded.mtimeMs
 
-const makePluginModules = (pluginApiUrl: string | undefined): PluginModules => {
+/**
+ * Builds a {@link PluginModules}. Each instance installs a process-wide resolution hook on first
+ * use, so create one per process. When `pluginApiUrl` is a file URL, an `import '@dia/plugin'`
+ * made from inside a plugin resolves to that module, which gives plugin code the Host's runtime
+ * values (the protocol schemas); without it the specifier resolves as Node would resolve it.
+ */
+export const makePluginModules = (pluginApiUrl: string | undefined): PluginModules => {
   const generations = new ModuleGenerations()
   const roots = new Set<string>()
   let signatures = new Map<string, Signature>()
@@ -201,11 +202,11 @@ const makePluginModules = (pluginApiUrl: string | undefined): PluginModules => {
 }
 
 /**
- * The {@link PluginModules} the Host uses. One instance serves the whole process because the
- * resolution hook it installs on first use is process-wide. Imports of `effect` made from inside
- * a plugin resolve to the Host's own copy, so one copy of the library exists at runtime. Module
- * instances that were replaced stay in memory (Node has no public eviction API). A change that
- * keeps both the size and the modification time of a file is not detected. Requires the Host to
- * have registered tsx for `.ts` entries.
+ * A {@link PluginModules} that does not resolve `@dia/plugin`, which a loader uses when it is
+ * given none. The Host builds its own with {@link makePluginModules}. Imports of `effect` made
+ * from inside a plugin resolve to the Host's own copy, so one copy of the library exists at
+ * runtime. Module instances that were replaced stay in memory (Node has no public eviction API).
+ * A change that keeps both the size and the modification time of a file is not detected.
+ * Requires the Host to have registered tsx for `.ts` entries.
  */
-export const processPluginModules: PluginModules = makePluginModules(builtPluginApiUrl())
+export const processPluginModules: PluginModules = makePluginModules(undefined)
