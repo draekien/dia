@@ -4,8 +4,9 @@ import { Effect, Option } from 'effect'
 import {
   AGENT_BACKEND_KEY,
   type AgentBackend,
-  resolveAgentBackend,
-  ToolGate
+  agentBackendProblems,
+  checkAdapterContract,
+  resolveAgentBackend
 } from './agent-backend'
 
 const registryProviding = (value: Option.Option<unknown>) => ({
@@ -24,7 +25,7 @@ const openOptions = {
   config,
   resume: Option.none(),
   emit: () => Effect.void,
-  toolGate: ToolGate.DenyAll()
+  tools: []
 }
 
 describe('resolveAgentBackend', () => {
@@ -73,4 +74,53 @@ describe('resolveAgentBackend', () => {
       })
     )
   }
+})
+
+describe('agentBackendProblems', () => {
+  const validBackend = { openSession: () => Effect.void, readHistory: () => Effect.succeed([]) }
+
+  it('reports no problem for a value with both backend methods', () => {
+    assert.deepStrictEqual(agentBackendProblems(Option.some(validBackend)), [])
+  })
+
+  const problemCases: ReadonlyArray<
+    readonly [string, Option.Option<unknown>, ReadonlyArray<string>]
+  > = [
+    ['nothing was provided', Option.none(), ['setup did not provide "agentBackend"']],
+    [
+      'openSession is missing',
+      Option.some({ readHistory: validBackend.readHistory }),
+      ['"agentBackend.openSession" is not a function']
+    ],
+    [
+      'readHistory is not a function',
+      Option.some({ openSession: validBackend.openSession, readHistory: 'history' }),
+      ['"agentBackend.readHistory" is not a function']
+    ],
+    [
+      'the value is not an object',
+      Option.some(42),
+      [
+        '"agentBackend.openSession" is not a function',
+        '"agentBackend.readHistory" is not a function'
+      ]
+    ]
+  ]
+
+  for (const [name, provided, expected] of problemCases) {
+    it(`reports each missing method when ${name}`, () => {
+      assert.deepStrictEqual(agentBackendProblems(provided), expected)
+    })
+  }
+})
+
+describe('checkAdapterContract', () => {
+  it('checks the value the adapter provided under agentBackend', () => {
+    const provided = (key: string) =>
+      key === AGENT_BACKEND_KEY ? Option.some({ openSession: () => Effect.void }) : Option.none()
+
+    assert.deepStrictEqual(checkAdapterContract(provided), [
+      '"agentBackend.readHistory" is not a function'
+    ])
+  })
 })

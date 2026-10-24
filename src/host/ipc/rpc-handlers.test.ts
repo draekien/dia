@@ -141,6 +141,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
 
   const pluginInfo = (name: string) => ({
     name,
+    category: 'feature' as const,
     origin: 'default' as const,
     root: `plugins/${name}`,
     status: { _tag: 'Loaded' as const },

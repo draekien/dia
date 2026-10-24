@@ -5,6 +5,7 @@ import { type DiaToolResult, makePluginTools } from './dia-tools'
 
 const info = (name: string, status: PluginInfo['status'] = { _tag: 'Loaded' }): PluginInfo => ({
   name,
+  category: 'feature',
   origin: 'default',
   root: `plugins/${name}`,
   status,

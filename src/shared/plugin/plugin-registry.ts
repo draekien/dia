@@ -3,8 +3,8 @@ import type { PluginServices, PluginSetup } from './api'
 import { ServiceKeyTakenError } from './api'
 import {
   formatMegabytes,
-  isEssentialPlugin,
   PLUGIN_API_VERSION,
+  type PluginCategory,
   PluginInfo,
   type PluginLoadMode,
   type PluginManifest,
@@ -90,16 +90,17 @@ export interface PluginMemoryGuard {
  * before the running one stops. When it fails, the previous version keeps running (or is
  * reopened) with the failure in `Loaded.reloadError`; a plugin with no previous version is
  * `Failed`. A plugin whose loads reached the memory limit, or whose dependency outside its
- * directory changed, reports `RestartRequired`. `unload` closes it, except an essential plugin
- * (`ESSENTIAL_PLUGINS`), which stays loaded and is returned unchanged.
+ * directory changed, reports `RestartRequired`. An adapter plugin loads only once: `load` of a
+ * running adapter and every `unload` of an adapter return its state unchanged. An adapter whose
+ * setup does not meet the adapter contract fails to load. `unload` closes a feature plugin.
  * Plugins that inject a service the changed plugin provides are closed and wait until it is
  * provided again. `list` returns every known plugin. `inject` reads the value a loaded plugin provides
  * under a service key, for code that is not a plugin; it is empty while no plugin provides the key
  * and is not reopened when the provider changes, so call it again each time the value is needed.
- * `start` is the startup entry point: it marks every plugin `Loading`, loads the plugins whose
- * manifest says `load: "eager"` one after another, and resolves once each of them has settled
- * (loaded, waiting, failed or restart-required), which does not require it to be `Loaded`. The
- * remaining plugins keep loading in the background, in the registry's scope, and a plugin the
+ * `start` is the startup entry point: it marks every plugin `Loading`, loads every adapter and
+ * every plugin whose manifest says `load: "eager"` one after another, and resolves once each of
+ * them has settled (loaded, waiting, failed or restart-required), which does not require it to be
+ * `Loaded`. The remaining plugins keep loading in the background, in the registry's scope, and a plugin the
  * caller unloads before its turn is skipped. Call it once per registry.
  */
 export interface PluginRegistry {
@@ -123,6 +124,7 @@ const sameInfo = Schema.toEquivalence(PluginInfo)
 interface Entry<Context extends PluginServices> {
   origin: PluginOrigin
   root: string
+  category: PluginCategory | undefined
   manifest: PluginManifest | undefined
   setup: Option.Option<PluginSetup<Context>> | undefined
   scope: Scope.Closeable | undefined
@@ -133,6 +135,7 @@ interface Entry<Context extends PluginServices> {
 const makeEntry = <Context extends PluginServices>(source: PluginSource): Entry<Context> => ({
   origin: source.origin,
   root: source.root,
+  category: undefined,
   manifest: undefined,
   setup: undefined,
   scope: undefined,
@@ -151,6 +154,9 @@ const isRunning = <Context extends PluginServices>(entry: Entry<Context>): boole
  * limits the memory each plugin's loads may retain and fills `PluginInfo.memoryBytes`.
  * `onChange`, when given, runs after every operation with the plugins whose `PluginInfo` differs
  * from the last one it reported (the first report covers every plugin the registry has seen).
+ * `adapterContract` checks what an adapter plugin's setup provided, through `provided`, which reads
+ * the value the plugin provided under a service key; it returns one sentence per problem, and an
+ * empty list lets the adapter load.
  */
 export const makePluginRegistry = <Context extends PluginServices>(deps: {
   readonly catalog: PluginCatalog
@@ -158,6 +164,9 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
   readonly extend: (services: PluginServices) => Context
   readonly memory?: PluginMemoryGuard
   readonly onChange?: (changed: ReadonlyArray<PluginInfo>) => Effect.Effect<void>
+  readonly adapterContract: (
+    provided: (key: string) => Option.Option<unknown>
+  ) => ReadonlyArray<string>
 }): Effect.Effect<PluginRegistry, never, Scope.Scope> =>
   Effect.gen(function* () {
     const parentScope = yield* Scope.Scope
@@ -174,11 +183,31 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
     ): Effect.Effect<A, E, R> =>
       deps.memory === undefined ? effect : deps.memory.track(name, effect)
 
+    const peekCategory = (root: string): Effect.Effect<PluginCategory> =>
+      deps.loader.peek(root).pipe(
+        Effect.map((manifest) => manifest.category),
+        Effect.orElseSucceed((): PluginCategory => 'feature')
+      )
+
+    const categoryOfEntry = (entry: Entry<Context>): Effect.Effect<PluginCategory> =>
+      entry.category === undefined ? peekCategory(entry.root) : Effect.succeed(entry.category)
+
+    const categoryOf = (name: string): Effect.Effect<PluginCategory> =>
+      Effect.gen(function* () {
+        const entry = entries.get(name)
+        if (entry !== undefined) return yield* categoryOfEntry(entry)
+        const source = yield* deps.catalog.resolve(name)
+        if (Option.isNone(source)) return 'feature'
+        return yield* peekCategory(source.value.root)
+      })
+
     const infoOf = (name: string, entry: Entry<Context>): Effect.Effect<PluginInfo> =>
       Effect.gen(function* () {
         const memoryBytes = yield* memoryOf(name)
+        const category = yield* categoryOfEntry(entry)
         return {
           name,
+          category,
           origin: entry.origin,
           root: entry.root,
           status: entry.status,
@@ -188,6 +217,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
 
     const failedInfo = (name: string, message: string): PluginInfo => ({
       name,
+      category: 'feature',
       origin: 'default',
       root: '',
       status: { _tag: 'Failed', message },
@@ -256,6 +286,11 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       inject
     })
 
+    const providedBy = (entry: Entry<Context>, key: string): Option.Option<unknown> =>
+      entry.provided.has(key)
+        ? Option.fromNullishOr(slots.get(key)).pipe(Option.map((slot) => slot.value))
+        : Option.none()
+
     const injectedKeys = (entry: Entry<Context>): ReadonlyArray<string> =>
       entry.manifest?.inject ?? []
 
@@ -313,6 +348,22 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           yield* Effect.logError('Plugin setup failed', { plugin: name, cause: exit.cause })
           return yield* new PluginLoadError({ message: describeCause(exit.cause) })
         }
+        if (entry.manifest?.category === 'adapter') {
+          const problems = deps.adapterContract((key) => providedBy(entry, key))
+          if (problems.length > 0) {
+            yield* Scope.close(scope, Exit.void)
+            yield* Effect.logError('Adapter plugin does not meet the adapter contract', {
+              plugin: name,
+              problems
+            })
+            return yield* new PluginLoadError({
+              message: [
+                `Plugin "${name}" does not meet the adapter contract:`,
+                ...problems.map((problem) => `- ${problem}`)
+              ].join('\n')
+            })
+          }
+        }
         entry.scope = scope
         entry.status = { _tag: 'Loaded' }
         yield* Effect.logInfo('Plugin loaded', { plugin: name, origin: entry.origin })
@@ -354,12 +405,14 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         const previous = {
           origin: entry.origin,
           root: entry.root,
+          category: entry.category,
           manifest: entry.manifest,
           setup: entry.setup
         }
         yield* closeWithDependants(name)
         entry.origin = source.origin
         entry.root = source.root
+        entry.category = loaded.manifest.category
         entry.manifest = loaded.manifest
         entry.setup = setup
         const opened = yield* Effect.exit(open(name, entry))
@@ -374,6 +427,10 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         Effect.gen(function* () {
           const current = entries.get(name)
           if (fromStart && !queuedByStart.delete(name) && current !== undefined) {
+            return yield* infoOf(name, current)
+          }
+          if (current?.category === 'adapter' && isRunning(current)) {
+            yield* Effect.logWarning('Refused to reload an adapter plugin', { plugin: name })
             return yield* infoOf(name, current)
           }
           const found = yield* deps.catalog.resolve(name)
@@ -423,7 +480,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
 
     const refuseUnload = (name: string): Effect.Effect<PluginInfo> =>
       Effect.gen(function* () {
-        yield* Effect.logWarning('Refused to unload an essential plugin', { plugin: name })
+        yield* Effect.logWarning('Refused to unload an adapter plugin', { plugin: name })
         const infos = yield* list()
         return (
           infos.find((info) => info.name === name) ?? failedInfo(name, `No plugin named "${name}"`)
@@ -431,10 +488,10 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       })
 
     const unload = (name: string): Effect.Effect<PluginInfo> =>
-      Effect.suspend(() => {
-        if (isEssentialPlugin(name)) return refuseUnload(name)
+      Effect.gen(function* () {
+        if ((yield* categoryOf(name)) === 'adapter') return yield* refuseUnload(name)
         queuedByStart.delete(name)
-        return unloadLocked(name)
+        return yield* unloadLocked(name)
       })
 
     const unloadLocked = (name: string): Effect.Effect<PluginInfo> =>
@@ -446,6 +503,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
             if (Option.isNone(source)) return failedInfo(name, `No plugin named "${name}"`)
             return {
               name,
+              category: yield* peekCategory(source.value.root),
               origin: source.value.origin,
               root: source.value.root,
               status: { _tag: 'Unloaded' },
@@ -470,23 +528,25 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           (name) => {
             const entry = entries.get(name)
             if (entry !== undefined) return infoOf(name, entry)
-            return deps.catalog.resolve(name).pipe(
-              Effect.map(
-                (source): PluginInfo => ({
-                  name,
-                  origin: Option.match(source, {
-                    onNone: () => 'default',
-                    onSome: (found) => found.origin
-                  }),
-                  root: Option.match(source, {
-                    onNone: () => '',
-                    onSome: (found) => found.root
-                  }),
-                  status: { _tag: 'Unloaded' },
-                  memoryBytes: 0
-                })
-              )
-            )
+            return Effect.gen(function* () {
+              const source = yield* deps.catalog.resolve(name)
+              return {
+                name,
+                category: Option.isSome(source)
+                  ? yield* peekCategory(source.value.root)
+                  : 'feature',
+                origin: Option.match(source, {
+                  onNone: () => 'default',
+                  onSome: (found) => found.origin
+                }),
+                root: Option.match(source, {
+                  onNone: () => '',
+                  onSome: (found) => found.root
+                }),
+                status: { _tag: 'Unloaded' },
+                memoryBytes: 0
+              } satisfies PluginInfo
+            })
           },
           { concurrency: 'unbounded' }
         )
@@ -497,7 +557,10 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         const source = yield* deps.catalog.resolve(name)
         if (Option.isNone(source)) return 'lazy'
         return yield* deps.loader.peek(source.value.root).pipe(
-          Effect.map((manifest): PluginLoadMode => manifest.load ?? 'lazy'),
+          Effect.map(
+            (manifest): PluginLoadMode =>
+              manifest.category === 'adapter' ? 'eager' : (manifest.load ?? 'lazy')
+          ),
           Effect.catchTag('PluginLoadError', (error) =>
             Effect.logDebug('Plugin manifest unreadable at startup; loading it lazily', {
               plugin: name,

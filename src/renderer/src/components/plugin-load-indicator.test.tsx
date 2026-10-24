@@ -6,6 +6,7 @@ import { PluginLoadIndicator } from './plugin-load-indicator'
 
 const info = (name: string, status: PluginInfo['status']): PluginInfo => ({
   name,
+  category: 'feature',
   origin: 'default',
   root: `plugins/${name}`,
   status,

@@ -1,8 +1,7 @@
-import { type DiaTool, type OutboundMessage, ToolGate } from '@dia/plugin'
+import { type DiaTool, makePendingUserInput, type OutboundMessage } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import { Allow, Deny } from '@shared/domain/attention'
 import { Deferred, Effect, Fiber, Ref } from 'effect'
-import { makePendingUserInput } from '../permissions/pending-user-input'
 import { makeApproveDiaTool, makeCanUseTool } from './session'
 
 const options = (toolUseID: string) =>
@@ -27,32 +26,11 @@ const reloadTool: DiaTool = {
 }
 
 describe('canUseTool', () => {
-  it.effect('denies a tool call without a request when nobody can answer', () =>
-    Effect.gen(function* () {
-      const { emitted, emit } = yield* recordingEmit
-      const canUseTool = makeCanUseTool(ToolGate.DenyAll(), emit, yield* Effect.context<never>())
-
-      const result = yield* Effect.promise(() =>
-        canUseTool('Bash', { command: 'ls' }, options('t1'))
-      )
-
-      assert.deepStrictEqual(result, {
-        behavior: 'deny',
-        message: 'Permission handling is unavailable: the permissions plugin is not loaded.'
-      })
-      assert.deepStrictEqual(emitted, [])
-    })
-  )
-
   it.effect('allows a dia tool without asking, because the tool asks the user itself', () =>
     Effect.gen(function* () {
       const { emitted, emit } = yield* recordingEmit
       const pending = makePendingUserInput()
-      const canUseTool = makeCanUseTool(
-        ToolGate.AskUser({ userInput: pending, tools: [reloadTool] }),
-        emit,
-        yield* Effect.context<never>()
-      )
+      const canUseTool = makeCanUseTool([reloadTool], pending, emit, yield* Effect.context<never>())
 
       const result = yield* Effect.promise(() =>
         canUseTool('mcp__dia__plugin_reload', { name: 'x' }, options('t2'))
@@ -68,11 +46,7 @@ describe('canUseTool', () => {
     Effect.gen(function* () {
       const { first, emit } = yield* recordingEmit
       const pending = makePendingUserInput()
-      const canUseTool = makeCanUseTool(
-        ToolGate.AskUser({ userInput: pending, tools: [reloadTool] }),
-        emit,
-        yield* Effect.context<never>()
-      )
+      const canUseTool = makeCanUseTool([reloadTool], pending, emit, yield* Effect.context<never>())
 
       const answer = yield* Effect.forkChild(
         Effect.promise(() => canUseTool('Bash', { command: 'ls' }, options('t3')))
@@ -91,7 +65,8 @@ describe('canUseTool', () => {
     Effect.gen(function* () {
       const { first, emit } = yield* recordingEmit
       const canUseTool = makeCanUseTool(
-        ToolGate.AskUser({ userInput: makePendingUserInput(), tools: [] }),
+        [],
+        makePendingUserInput(),
         emit,
         yield* Effect.context<never>()
       )

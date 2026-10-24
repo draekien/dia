@@ -10,6 +10,8 @@ import {
 import {
   type AgentSession,
   type AgentSessionOptions,
+  type DiaTool,
+  makePendingUserInput,
   type OutboundMessage,
   type PendingUserInput,
   PermissionModeChanged,
@@ -21,7 +23,6 @@ import {
   RewoundToCheckpoint,
   SlashCommandsAvailable,
   SlashCommandsWarming,
-  ToolGate,
   TurnCompleted,
   type UserInputResolution
 } from '@dia/plugin'
@@ -181,36 +182,25 @@ const askUser = Effect.fn('ClaudeCodeSession.askUser')(function* (
   return toPermissionResult(resolution, options.suggestions)
 })
 
-const deniedForNoPermissions: PermissionResult = {
-  behavior: 'deny',
-  message: 'Permission handling is unavailable: the permissions plugin is not loaded.'
-}
-
 /**
- * Creates the SDK `canUseTool` callback for one agent session. Under `ToolGate.DenyAll` every
- * call is denied and no request is emitted. Under `ToolGate.AskUser` a dia tool is allowed
- * (it asks the user itself), and every other call is registered in the gate's `userInput`,
- * emitted as a permission, question or plan-review request through `emit`, and answered with
- * the user's resolution.
+ * Creates the SDK `canUseTool` callback for one agent session. A call to one of the dia `tools`
+ * is allowed, because the tool asks the user itself. Every other call is registered in
+ * `pendingUserInput`, emitted as a permission, question or plan-review request through `emit`,
+ * and answered with the user's resolution.
  */
 export const makeCanUseTool =
   (
-    toolGate: ToolGate,
+    tools: ReadonlyArray<DiaTool>,
+    pendingUserInput: PendingUserInput,
     emit: (message: OutboundMessage) => Effect.Effect<void>,
     services: Context.Context<never>
   ): CanUseTool =>
   (toolName, input, options) =>
     Effect.runPromiseWith(services)(
-      ToolGate.$match(toolGate, {
-        DenyAll: () =>
-          Effect.logWarning('Denied a tool call; the permissions plugin is not loaded', {
-            toolName
-          }).pipe(Effect.as(deniedForNoPermissions)),
-        AskUser: (gate) =>
-          isDiaToolName(gate.tools, toolName)
-            ? Effect.succeed<PermissionResult>({ behavior: 'allow' })
-            : askUser(gate.userInput, emit, toolName, input, options)
-      }).pipe(Effect.withSpan('ClaudeCodeSession.canUseTool'))
+      (isDiaToolName(tools, toolName)
+        ? Effect.succeed<PermissionResult>({ behavior: 'allow' })
+        : askUser(pendingUserInput, emit, toolName, input, options)
+      ).pipe(Effect.withSpan('ClaudeCodeSession.canUseTool'))
     )
 
 /**
@@ -233,20 +223,6 @@ export const makeApproveDiaTool = (
     yield* emit(PermissionRequested.make({ requestId, toolName, input }))
     const resolution = yield* Deferred.await(deferred)
     return resolution._tag === 'Allow'
-  })
-
-const inertPendingUserInput: PendingUserInput = {
-  register: () => Deferred.make<UserInputResolution>(),
-  resolve: () => Effect.succeed(false),
-  interruptAll: Effect.succeed([]),
-  drop: Effect.succeed([]),
-  isPending: () => Effect.succeed(false)
-}
-
-const pendingUserInputOf = (toolGate: ToolGate): PendingUserInput =>
-  ToolGate.$match(toolGate, {
-    AskUser: (gate) => gate.userInput,
-    DenyAll: () => inertPendingUserInput
   })
 
 const resolveRequest = Effect.fn('ClaudeCodeSession.resolveRequest')(function* (
@@ -487,23 +463,20 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
 )
 
 const diaToolServerFactory = (
-  toolGate: ToolGate,
+  tools: ReadonlyArray<DiaTool>,
+  pendingUserInput: PendingUserInput,
   emit: (message: OutboundMessage) => Effect.Effect<void>,
   counter: Ref.Ref<number>,
   services: Context.Context<never>
-): Option.Option<() => McpSdkServerConfigWithInstance> =>
-  ToolGate.$match(toolGate, {
-    DenyAll: () => Option.none(),
-    AskUser: (gate) => {
-      if (gate.tools.length === 0) return Option.none()
-      const serverOptions = {
-        tools: gate.tools,
-        approve: makeApproveDiaTool(gate.userInput, emit, counter),
-        run: <A>(effect: Effect.Effect<A>) => Effect.runPromiseWith(services)(effect)
-      }
-      return Option.some(() => makeDiaToolServer(serverOptions))
-    }
-  })
+): Option.Option<() => McpSdkServerConfigWithInstance> => {
+  if (tools.length === 0) return Option.none()
+  const serverOptions = {
+    tools,
+    approve: makeApproveDiaTool(pendingUserInput, emit, counter),
+    run: <A>(effect: Effect.Effect<A>) => Effect.runPromiseWith(services)(effect)
+  }
+  return Option.some(() => makeDiaToolServer(serverOptions))
+}
 
 /**
  * Starts the Agent SDK session for one pane and returns its {@link AgentSession} controls.
@@ -515,13 +488,19 @@ const diaToolServerFactory = (
 export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(function* (
   options: AgentSessionOptions
 ): Effect.fn.Return<AgentSession, never, Scope.Scope> {
-  const { emit, toolGate } = options
+  const { emit, tools } = options
   const sessionScope = yield* Scope.Scope
   const services = yield* Effect.context<never>()
-  const pendingUserInput = pendingUserInputOf(toolGate)
+  const pendingUserInput = makePendingUserInput()
   const modeController = yield* makePermissionModeController
-  const canUseTool = makeCanUseTool(toolGate, emit, services)
-  const newDiaToolServer = diaToolServerFactory(toolGate, emit, yield* Ref.make(0), services)
+  const canUseTool = makeCanUseTool(tools, pendingUserInput, emit, services)
+  const newDiaToolServer = diaToolServerFactory(
+    tools,
+    pendingUserInput,
+    emit,
+    yield* Ref.make(0),
+    services
+  )
   const promptQueue = yield* Queue.unbounded<SDKUserMessage>()
   const sessionIdRef = yield* Ref.make<Option.Option<SessionId>>(Option.none())
   const queryRef = yield* Ref.make<Option.Option<LiveControlQuery>>(Option.none())

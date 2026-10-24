@@ -3,14 +3,7 @@ import type {
   PlanReviewResponse,
   QuestionResponse
 } from '@shared/domain/attention'
-import type { PluginRegistry } from '@shared/plugin/plugin-registry'
-import { Data, type Deferred, Effect, Option, Predicate, Schema } from 'effect'
-
-/**
- * Service key under which the essential `permissions` plugin provides a
- * `() => PendingUserInput` factory.
- */
-export const PENDING_USER_INPUT_KEY = 'pendingUserInput'
+import { Deferred, Effect, Schema } from 'effect'
 
 /**
  * A pane-local marker that a pending request was abandoned because the user sent
@@ -77,42 +70,42 @@ export interface PendingUserInput {
   readonly isPending: (requestId: string) => Effect.Effect<boolean>
 }
 
-class PendingUserInputPluginError extends Data.TaggedError('PendingUserInputPluginError')<{
-  readonly cause: unknown
-}> {}
-
 /**
- * Creates a fresh {@link PendingUserInput} for one agent session from the factory the loaded
- * `permissions` plugin provides under {@link PENDING_USER_INPUT_KEY}. Returns `None`, after
- * logging why, when no plugin provides the key, the value is not a function, or the factory
- * throws; the caller must then deny every tool call. Call it once per session; each call creates
- * a new registry, and a plugin reload applies from the next call.
+ * Creates an empty {@link PendingUserInput} registry. Each call returns an independent registry;
+ * an agent session creates one when it opens and uses it for its whole lifetime, sharing it
+ * between its tool-permission callback and the handlers that apply the user's answers.
  */
-export const resolvePendingUserInput = Effect.fn('PendingUserInput.resolve')(function* (
-  registry: Pick<PluginRegistry, 'inject'>
-) {
-  const provided = yield* registry.inject(PENDING_USER_INPUT_KEY)
-  if (Option.isNone(provided)) {
-    yield* Effect.logError(
-      'The permissions plugin is not loaded; every tool call in this session will be denied'
-    )
-    return Option.none<PendingUserInput>()
+export const makePendingUserInput = (): PendingUserInput => {
+  const pending = new Map<string, Deferred.Deferred<UserInputResolution>>()
+
+  return {
+    register: (requestId) =>
+      Effect.map(Deferred.make<UserInputResolution>(), (deferred) => {
+        pending.set(requestId, deferred)
+        return deferred
+      }),
+    resolve: Effect.fn('PendingUserInput.resolve')(function* (
+      requestId: string,
+      resolution: UserInputResolution
+    ) {
+      const deferred = pending.get(requestId)
+      if (deferred === undefined) return false
+      pending.delete(requestId)
+      yield* Deferred.succeed(deferred, resolution)
+      return true
+    }),
+    interruptAll: Effect.gen(function* () {
+      const entries = [...pending.entries()]
+      pending.clear()
+      const superseded = Superseded.make({})
+      for (const [, deferred] of entries) yield* Deferred.succeed(deferred, superseded)
+      return entries.map(([requestId]) => requestId)
+    }),
+    drop: Effect.sync(() => {
+      const requestIds = [...pending.keys()]
+      pending.clear()
+      return requestIds
+    }),
+    isPending: (requestId) => Effect.sync(() => pending.has(requestId))
   }
-  if (!Predicate.isFunction(provided.value)) {
-    yield* Effect.logError('The pendingUserInput service is not a function; denying tool calls', {
-      received: typeof provided.value
-    })
-    return Option.none<PendingUserInput>()
-  }
-  const factory = provided.value as () => PendingUserInput
-  return yield* Effect.try({
-    try: () => Option.some(factory()),
-    catch: (cause) => new PendingUserInputPluginError({ cause })
-  }).pipe(
-    Effect.catch((error) =>
-      Effect.logError('The pendingUserInput factory threw; denying tool calls', {
-        cause: error.cause
-      }).pipe(Effect.as(Option.none<PendingUserInput>()))
-    )
-  )
-})
+}

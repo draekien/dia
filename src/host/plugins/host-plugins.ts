@@ -4,6 +4,7 @@ import { PLUGIN_MEMORY_LIMIT } from '@shared/plugin/manifest'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
 import { ByteSize, Context, Effect, Layer, Path } from 'effect'
 import { EventHub } from '../services/event-hub'
+import { checkAdapterContract } from '../session/agent-backend'
 import { makeHostPluginLoader } from './plugin-loader'
 import { heapUsedAfterGc, makePluginMemoryGuard } from './plugin-memory-guard'
 import { makePluginModules } from './plugin-modules'
@@ -42,6 +43,7 @@ export const makeHostPluginsLive = (pluginApiPath: string) =>
           heapUsed: heapUsedAfterGc
         }),
         extend: (services) => ({ ...services, events: hub.subscribe({}) }),
+        adapterContract: checkAdapterContract,
         onChange: (changed) =>
           Effect.forEach(
             changed,

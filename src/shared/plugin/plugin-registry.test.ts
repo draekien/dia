@@ -2,7 +2,13 @@ import { assert, describe, it } from '@effect/vitest'
 import { Deferred, Duration, Effect, Fiber, Option, type Scope } from 'effect'
 import { TestClock } from 'effect/testing'
 import type { PluginServices, PluginSetup } from './api'
-import { PLUGIN_API_VERSION, type PluginInfo, type PluginManifest } from './manifest'
+import {
+  type AdapterManifest,
+  type FeatureManifest,
+  PLUGIN_API_VERSION,
+  type PluginInfo,
+  type PluginManifest
+} from './manifest'
 import {
   type LoadedPlugin,
   makePluginRegistry,
@@ -12,12 +18,25 @@ import {
   PluginRestartRequiredError
 } from './plugin-registry'
 
-const manifest = (name: string, overrides: Partial<PluginManifest> = {}): PluginManifest => ({
+const manifest = (name: string, overrides: Partial<FeatureManifest> = {}): FeatureManifest => ({
   name,
   api: PLUGIN_API_VERSION,
+  category: 'feature',
   host: 'host.ts',
   ...overrides
 })
+
+const adapterManifest = (name: string): AdapterManifest => ({
+  name,
+  api: PLUGIN_API_VERSION,
+  category: 'adapter',
+  host: 'host.ts'
+})
+
+const BACKEND_KEY = 'backend'
+
+const requiresBackend = (provided: (key: string) => Option.Option<unknown>) =>
+  Option.isSome(provided(BACKEND_KEY)) ? [] : [`setup did not provide "${BACKEND_KEY}"`]
 
 const plugin = (
   manifestFields: PluginManifest,
@@ -73,6 +92,7 @@ const makeRegistry = (
       }
     },
     extend: (services) => services,
+    adapterContract: requiresBackend,
     ...(options.memory === undefined ? {} : { memory: options.memory }),
     ...(options.onChange === undefined ? {} : { onChange: options.onChange })
   })
@@ -218,7 +238,8 @@ describe('plugin registry', () => {
           peek: peekNotUsed,
           load: () => Effect.fail(new PluginLoadError({ message: 'unreadable plugin.json' }))
         },
-        extend: (services) => services
+        extend: (services) => services,
+        adapterContract: requiresBackend
       })
 
       const unreadable = yield* registry.load('alpha')
@@ -878,59 +899,139 @@ describe('plugin registry', () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect('keeps an essential plugin loaded when it is asked to unload', () =>
+  const providesBackend =
+    (name: string, log: Array<string>): PluginSetup<PluginServices> =>
+    (ctx) =>
+      recording(name, log, () => ctx.provide(BACKEND_KEY, name))(ctx)
+
+  it.effect('keeps a loaded adapter open when it is asked to unload', () =>
     Effect.gen(function* () {
       const log: Array<string> = []
       const registry = yield* makeRegistry({
-        permissions: plugin(manifest('permissions'), recording('permissions', log)),
+        agent: plugin(adapterManifest('agent'), providesBackend('agent', log)),
         alpha: plugin(manifest('alpha'), recording('alpha', log))
       })
-      yield* registry.load('permissions')
+      yield* registry.load('agent')
       yield* registry.load('alpha')
 
-      const refused = yield* registry.unload('permissions')
+      const refused = yield* registry.unload('agent')
       const allowed = yield* registry.unload('alpha')
 
       assert.deepStrictEqual(refused.status, { _tag: 'Loaded' })
       assert.deepStrictEqual(allowed.status, { _tag: 'Unloaded' })
-      assert.deepStrictEqual(log, ['permissions:open', 'alpha:open', 'alpha:close'])
+      assert.deepStrictEqual(log, ['agent:open', 'alpha:open', 'alpha:close'])
+      assert.deepStrictEqual(yield* registry.inject(BACKEND_KEY), Option.some('agent'))
     }).pipe(Effect.scoped)
   )
 
-  it.effect('reloads an essential plugin', () =>
+  it.effect('refuses to unload an adapter that has not loaded yet', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        agent: plugin(adapterManifest('agent'), providesBackend('agent', []))
+      })
+
+      const refused = yield* registry.unload('agent')
+
+      assert.strictEqual(refused.category, 'adapter')
+      assert.deepStrictEqual(refused.status, { _tag: 'Unloaded' })
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('does not run the setup of a running adapter again when it is loaded again', () =>
     Effect.gen(function* () {
       const log: Array<string> = []
       const registry = yield* makeRegistry({
-        permissions: plugin(manifest('permissions'), recording('permissions', log))
+        agent: plugin(adapterManifest('agent'), providesBackend('agent', log))
       })
-      yield* registry.load('permissions')
+      yield* registry.load('agent')
 
-      const reloaded = yield* registry.load('permissions')
+      const reloaded = yield* registry.load('agent')
 
       assert.deepStrictEqual(reloaded.status, { _tag: 'Loaded' })
-      assert.deepStrictEqual(log, ['permissions:open', 'permissions:close', 'permissions:open'])
+      assert.deepStrictEqual(log, ['agent:open'])
     }).pipe(Effect.scoped)
   )
 
-  it.effect('keeps an essential plugin provided when a reload of it fails', () =>
+  it.effect('loads an adapter whose previous load failed', () =>
     Effect.gen(function* () {
+      const log: Array<string> = []
       const plugins = {
-        permissions: plugin(manifest('permissions'), (ctx) => ctx.provide('gate', 'v1'))
+        agent: plugin(adapterManifest('agent'), () => Effect.fail('boom'))
       }
       const registry = yield* makeRegistry(plugins)
-      yield* registry.load('permissions')
-      plugins.permissions = plugin(manifest('permissions'), (ctx) =>
-        Effect.gen(function* () {
-          yield* ctx.provide('gate', 'v2')
-          return yield* Effect.fail('boom')
-        })
+      const failed = yield* registry.load('agent')
+      plugins.agent = plugin(adapterManifest('agent'), providesBackend('agent', log))
+
+      const retried = yield* registry.load('agent')
+
+      assert.strictEqual(failed.status._tag, 'Failed')
+      assert.strictEqual(failed.category, 'adapter')
+      assert.deepStrictEqual(retried.status, { _tag: 'Loaded' })
+      assert.deepStrictEqual(log, ['agent:open'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('fails an adapter whose setup does not meet the adapter contract and closes it', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({
+        agent: plugin(
+          adapterManifest('agent'),
+          recording('agent', log, (ctx) => ctx.provide('other', 1))
+        )
+      })
+
+      const result = yield* registry.load('agent')
+
+      assert.deepStrictEqual(result.status, {
+        _tag: 'Failed',
+        message: `Plugin "agent" does not meet the adapter contract:\n- setup did not provide "${BACKEND_KEY}"`
+      })
+      assert.deepStrictEqual(log, ['agent:open', 'agent:close'])
+      assert.deepStrictEqual(yield* registry.inject('other'), Option.none())
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('does not apply the adapter contract to a feature plugin', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        alpha: plugin(manifest('alpha'), recording('alpha', []))
+      })
+
+      const result = yield* registry.load('alpha')
+
+      assert.deepStrictEqual(result.status, { _tag: 'Loaded' })
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('lists the category of a plugin that has not loaded', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        agent: plugin(adapterManifest('agent')),
+        alpha: plugin(manifest('alpha'))
+      })
+
+      const infos = yield* registry.list()
+
+      assert.deepStrictEqual(
+        infos.map((info) => [info.name, info.category]),
+        [
+          ['agent', 'adapter'],
+          ['alpha', 'feature']
+        ]
       )
+    }).pipe(Effect.scoped)
+  )
 
-      const reloaded = yield* registry.load('permissions')
-      const provided = yield* registry.inject('gate')
+  it.effect('loads an adapter before start resolves', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        agent: plugin(adapterManifest('agent'), providesBackend('agent', []))
+      })
 
-      assert.strictEqual(reloaded.status._tag, 'Loaded')
-      assert.deepStrictEqual(provided, Option.some('v1'))
+      yield* registry.start()
+
+      assert.strictEqual(yield* statusOf(registry, 'agent'), 'Loaded')
     }).pipe(Effect.scoped)
   )
 })

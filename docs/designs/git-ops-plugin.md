@@ -1,5 +1,7 @@
 # Git operations plugin
 
+Status: partly superseded by `docs/designs/adapter-category.md` (ADR-0029). `ESSENTIAL_PLUGINS` was deleted, so `git-ops` is a feature plugin that can be unloaded and overridden. While it is unloaded, `resolveGitOps` refuses worktree panes as described below.
+
 ## Purpose
 
 The git operations behind a pane's worktree (`createWorktree`, `removeWorktree`, `reattachWorktree`) and the worktree name generator become the built-in plugin `git-ops`. The kernel keeps the pane lifecycle in `PaneSupervisor` and resolves the operations by service key each time a pane opens. `git-ops` is essential (ADR-0028): `removeWorktree` runs at pane teardown, so the plugin cannot be unloaded or replaced while worktree panes can exist.

@@ -9,7 +9,9 @@ import {
 import { Effect, FileSystem, Option, Path, Result, Schema } from 'effect'
 import { type PluginModules, processPluginModules } from './plugin-modules'
 
-const decodeManifest = Schema.decodeUnknownResult(Schema.fromJsonString(PluginManifest))
+const decodeManifest = Schema.decodeUnknownResult(Schema.fromJsonString(PluginManifest), {
+  errors: 'all'
+})
 
 /**
  * Builds the Host's {@link PluginLoader}. A load reads `plugin.json` from the plugin directory,

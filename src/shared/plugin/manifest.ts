@@ -21,16 +21,6 @@ export const PluginName = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]*
 export type PluginName = typeof PluginName.Type
 
 /**
- * Plugins the Host must keep loaded and running its shipped code: the registry refuses to unload
- * them and the plugin sources refuse to override them. The list is a kernel decision, not a
- * manifest field, so a plugin or an override cannot remove its own protection.
- */
-export const ESSENTIAL_PLUGINS: ReadonlyArray<string> = ['claude-code', 'permissions', 'git-ops']
-
-/** Whether `name` is in {@link ESSENTIAL_PLUGINS}. */
-export const isEssentialPlugin = (name: string): boolean => ESSENTIAL_PLUGINS.includes(name)
-
-/**
  * When a plugin loads at startup: `eager` plugins finish loading before the Host reports ready,
  * so the first agent session can use what they provide; `lazy` plugins load in the background
  * after that.
@@ -39,18 +29,61 @@ export const PluginLoadMode = Schema.Literals(['eager', 'lazy'])
 export type PluginLoadMode = typeof PluginLoadMode.Type
 
 /**
- * Contents of a plugin's `plugin.json`. `host` and `renderer` are entry paths relative to the
+ * What a plugin is. An `adapter` translates between dia and one agent: it loads at startup from
+ * the shipped copy only and is never unloaded, reloaded or overridden. A `feature` is one
+ * user-facing feature and can be reloaded, unloaded and overridden.
+ */
+export const PluginCategory = Schema.Literals(['feature', 'adapter'])
+export type PluginCategory = typeof PluginCategory.Type
+
+/**
+ * `plugin.json` of a feature plugin. `host` and `renderer` are entry paths relative to the
  * plugin directory; a plugin may declare either or both. `inject` lists the service keys the
  * plugin reads with `ctx.inject`, so the registry reopens the plugin when a provider of one of
  * them changes. `load` is the {@link PluginLoadMode} at startup; it defaults to `lazy`.
  */
-export const PluginManifest = Schema.Struct({
+export const FeatureManifest = Schema.Struct({
   name: PluginName,
   api: Schema.String,
+  category: Schema.Literal('feature'),
   host: Schema.optional(Schema.String),
   renderer: Schema.optional(Schema.String),
   inject: Schema.optional(Schema.Array(Schema.String)),
   load: Schema.optional(PluginLoadMode)
+})
+export type FeatureManifest = typeof FeatureManifest.Type
+
+const forbidden = (message: string) => Schema.optionalKey(Schema.Never.annotate({ message }))
+
+/**
+ * `plugin.json` of an adapter plugin. `host` is its required Host entry path; an adapter has no
+ * `renderer`, `inject` or `load`, and decoding a manifest that declares one fails with a message
+ * that says why.
+ */
+export const AdapterManifest = Schema.Struct({
+  name: PluginName,
+  api: Schema.String,
+  category: Schema.Literal('adapter'),
+  host: Schema.String.pipe(
+    Schema.annotateKey({
+      messageMissingKey: 'an adapter needs a "host" entry, because it runs in the Host'
+    })
+  ),
+  renderer: forbidden('an adapter has no UI, so it cannot declare "renderer"'),
+  inject: forbidden(
+    'an adapter cannot declare "inject": a reload of the plugin it injects from would close the adapter'
+  ),
+  load: forbidden('an adapter always loads at startup, so it cannot declare "load"')
+})
+export type AdapterManifest = typeof AdapterManifest.Type
+
+/**
+ * Contents of a plugin's `plugin.json`: a {@link FeatureManifest} or an {@link AdapterManifest},
+ * chosen by the required `category`. Decode it with `{ errors: 'all' }` so every problem in the
+ * manifest is reported at once.
+ */
+export const PluginManifest = Schema.Union([FeatureManifest, AdapterManifest]).annotate({
+  message: 'plugin.json must declare "category" as "feature" or "adapter"'
 })
 export type PluginManifest = typeof PluginManifest.Type
 
@@ -105,12 +138,13 @@ export const PluginStatus = Schema.Union([
 export type PluginStatus = typeof PluginStatus.Type
 
 /**
- * One row of the plugin list: a plugin's name, where it loads from (`origin` and `root`), its
- * state, and `memoryBytes`, the estimated Host heap growth its loads have caused (0 on a side
+ * One row of the plugin list: a plugin's name, its {@link PluginCategory}, where it loads from
+ * (`origin` and `root`), its state, and `memoryBytes`, the estimated Host heap growth its loads have caused (0 on a side
  * without a memory limit).
  */
 export const PluginInfo = Schema.Struct({
   name: PluginName,
+  category: PluginCategory,
   origin: PluginOrigin,
   root: Schema.String,
   status: PluginStatus,

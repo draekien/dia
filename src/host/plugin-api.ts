@@ -13,14 +13,13 @@ export {
   AGENT_BACKEND_KEY,
   type AgentBackend,
   type AgentSession,
-  type AgentSessionOptions,
-  ToolGate
+  type AgentSessionOptions
 } from './session/agent-backend'
 export type { DiaTool, DiaToolField, DiaToolResult } from './session/dia-tools'
 export {
-  PENDING_USER_INPUT_KEY,
+  makePendingUserInput,
   type PendingUserInput,
   Superseded,
   type UserInputResolution
-} from './session/pending-user-input-resolver'
+} from './session/pending-user-input'
 export * from './session/protocol'

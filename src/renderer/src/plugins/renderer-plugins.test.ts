@@ -5,6 +5,7 @@ import { makeRendererPlugins } from './renderer-plugins'
 const manifest = (name: string, extra: Record<string, unknown> = {}) => ({
   name,
   api: '1',
+  category: 'feature',
   renderer: 'renderer.tsx',
   ...extra
 })
@@ -54,7 +55,9 @@ describe('renderer plugins', () => {
   it.effect('loads a plugin that has no renderer entry without importing anything', () =>
     Effect.gen(function* () {
       const plugins = yield* makeRendererPlugins({
-        manifests: { hostonly: { name: 'hostonly', api: '1', host: 'host.ts' } },
+        manifests: {
+          hostonly: { name: 'hostonly', api: '1', category: 'feature', host: 'host.ts' }
+        },
         entries: {}
       })
 

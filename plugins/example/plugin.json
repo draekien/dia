@@ -1,6 +1,7 @@
 {
   "name": "example",
   "api": "1",
+  "category": "feature",
   "host": "host.ts",
   "renderer": "renderer.ts"
 }

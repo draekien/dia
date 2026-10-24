@@ -19,7 +19,7 @@ export interface RendererPluginSources {
   readonly entries: Readonly<Record<string, () => Promise<unknown>>>
 }
 
-const decodeManifest = Schema.decodeUnknownResult(PluginManifest)
+const decodeManifest = Schema.decodeUnknownResult(PluginManifest, { errors: 'all' })
 
 /**
  * Builds the renderer's plugin registry over `sources`, with the same lifecycle as the Host's:
@@ -72,6 +72,7 @@ export const makeRendererPlugins = (
         use: (loaded: LoadedPlugin<PluginServices>) => Effect.Effect<A, E, R>
       ) => read(name).pipe(Effect.flatMap(use))
     },
-    extend: (services) => services
+    extend: (services) => services,
+    adapterContract: () => []
   })
 }

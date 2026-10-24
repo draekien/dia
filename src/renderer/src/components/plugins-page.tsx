@@ -1,6 +1,5 @@
 import {
   formatMegabytes,
-  isEssentialPlugin,
   PLUGIN_MEMORY_LIMIT,
   type PluginInfo,
   type PluginStatus
@@ -88,7 +87,8 @@ function PluginRow({
   const unloaded = plugin.status._tag === 'Unloaded' || loading
   const disabled = busy || loading
   const overridden = plugin.origin === 'override'
-  const essential = isEssentialPlugin(plugin.name)
+  const adapter = plugin.category === 'adapter'
+  const reloadLocked = adapter && plugin.status._tag !== 'Failed'
 
   return (
     <li className="flex flex-col gap-1.5 px-4 py-3" data-plugin={plugin.name}>
@@ -98,19 +98,24 @@ function PluginRow({
           <span className="text-xs text-ink-muted">{statusLabel(plugin.status)}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Button size="xs" variant="outline" disabled={disabled} onClick={onReload}>
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={disabled || reloadLocked}
+            onClick={onReload}
+          >
             {disabled ? <Loader2Icon className="motion-safe:animate-spin" /> : <RefreshCwIcon />}
             {unloaded ? 'Load' : 'Reload'}
           </Button>
           {unloaded ? null : (
-            <Button size="xs" variant="ghost" disabled={disabled || essential} onClick={onUnload}>
+            <Button size="xs" variant="ghost" disabled={disabled || adapter} onClick={onUnload}>
               Unload
             </Button>
           )}
           <Button
             size="xs"
             variant="ghost"
-            disabled={disabled || essential}
+            disabled={disabled || adapter}
             onClick={onChooseOverride}
           >
             <FolderIcon />
@@ -129,9 +134,9 @@ function PluginRow({
           {plugin.root}
         </span>
       </p>
-      {essential ? (
+      {adapter ? (
         <p className="text-xs text-ink-muted">
-          Essential: it stays loaded and always runs the bundled copy.
+          Adapter: it loads at startup from the bundled copy. Restart dia to apply a change.
         </p>
       ) : null}
       {detail === undefined ? null : (

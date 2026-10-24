@@ -7,9 +7,8 @@ import type {
   ThinkingLevel
 } from '@shared/domain/pane'
 import type { PluginRegistry } from '@shared/plugin/plugin-registry'
-import { Data, Effect, Option, Predicate, type Scope } from 'effect'
+import { Effect, Option, Predicate, type Scope } from 'effect'
 import type { DiaTool } from './dia-tools'
-import type { PendingUserInput } from './pending-user-input-resolver'
 import type { OutboundMessage } from './protocol'
 
 /** Service key under which the agent adapter plugin provides its {@link AgentBackend}. */
@@ -44,29 +43,16 @@ export interface AgentSession {
 }
 
 /**
- * How a session gates the agent's tool calls. `AskUser` asks the user through `userInput` and
- * offers the agent `tools`, each asked about before it runs. `DenyAll` is used when nobody can
- * answer: every tool call is denied and no dia tool is offered. Construct with
- * `ToolGate.AskUser({...})` or `ToolGate.DenyAll()`.
- */
-export type ToolGate = Data.TaggedEnum<{
-  AskUser: { readonly userInput: PendingUserInput; readonly tools: ReadonlyArray<DiaTool> }
-  DenyAll: Record<never, never>
-}>
-
-/** Constructors and matchers for {@link ToolGate}. */
-export const ToolGate = Data.taggedEnum<ToolGate>()
-
-/**
  * What a session opens with. `config` chooses the working directory, model and modes; `resume`
  * names the conversation to continue, or is none for a new one; `emit` receives every event the
- * session produces, in order; `toolGate` decides how tool calls are answered.
+ * session produces, in order; `tools` are the dia tools offered to the agent, each asked about
+ * before it runs.
  */
 export interface AgentSessionOptions {
   readonly config: PaneConfig
   readonly resume: Option.Option<SessionId>
   readonly emit: (message: OutboundMessage) => Effect.Effect<void>
-  readonly toolGate: ToolGate
+  readonly tools: ReadonlyArray<DiaTool>
 }
 
 /**
@@ -120,29 +106,51 @@ const unavailableBackend: AgentBackend = {
     }).pipe(Effect.as([]))
 }
 
-const isAgentBackend = (value: unknown): value is AgentBackend =>
-  Predicate.hasProperty(value, 'openSession') &&
-  Predicate.isFunction(value.openSession) &&
-  Predicate.hasProperty(value, 'readHistory') &&
-  Predicate.isFunction(value.readHistory)
+const backendMethods = ['openSession', 'readHistory'] as const
+
+/**
+ * Lists what keeps `provided`, a value read under {@link AGENT_BACKEND_KEY}, from being an
+ * {@link AgentBackend}, one sentence per problem. Returns an empty list when it is one.
+ */
+export const agentBackendProblems = (provided: Option.Option<unknown>): ReadonlyArray<string> => {
+  if (Option.isNone(provided)) return [`setup did not provide "${AGENT_BACKEND_KEY}"`]
+  const value = provided.value
+  return backendMethods
+    .filter(
+      (method) => !(Predicate.hasProperty(value, method) && Predicate.isFunction(value[method]))
+    )
+    .map((method) => `"${AGENT_BACKEND_KEY}.${method}" is not a function`)
+}
+
+const isAgentBackend = (provided: Option.Option<unknown>): provided is Option.Some<AgentBackend> =>
+  agentBackendProblems(provided).length === 0
+
+/**
+ * The Host's adapter contract: what an adapter plugin's setup must provide. `provided` reads the
+ * value the plugin provided under a service key. Returns one sentence per problem, or an empty
+ * list when the plugin meets the contract. Pass it to the Host plugin registry.
+ */
+export const checkAdapterContract = (
+  provided: (key: string) => Option.Option<unknown>
+): ReadonlyArray<string> => agentBackendProblems(provided(AGENT_BACKEND_KEY))
 
 /**
  * Reads the {@link AgentBackend} the adapter plugin provides under {@link AGENT_BACKEND_KEY}.
- * It never fails: when no plugin provides one, or the value is not a backend, it logs an error
- * and returns a backend whose sessions end at once with `The claude-code adapter is not loaded`
- * and whose `readHistory` returns an empty list. Call it each time a session starts or a
- * transcript is read; a plugin reload applies from the next call.
+ * It never fails: when no plugin provides one, or the value is not a backend, it logs the
+ * problems and returns a backend whose sessions end at once with
+ * `The claude-code adapter is not loaded` and whose `readHistory` returns an empty list. Call it
+ * each time a session starts or a transcript is read; a plugin reload applies from the next call.
  */
 export const resolveAgentBackend = Effect.fn('AgentBackend.resolve')(function* (
   registry: Pick<PluginRegistry, 'inject'>
 ) {
   const provided = yield* registry.inject(AGENT_BACKEND_KEY)
-  if (Option.isSome(provided) && isAgentBackend(provided.value)) {
+  if (isAgentBackend(provided)) {
     yield* Effect.logDebug('Resolved the agent backend')
     return provided.value
   }
   yield* Effect.logError('No valid agent backend is provided', {
-    provided: Option.isSome(provided),
+    problems: agentBackendProblems(provided),
     reason: ADAPTER_NOT_LOADED
   })
   return unavailableBackend

@@ -1,6 +1,6 @@
 # Essential plugins and the permissions plugin
 
-Status: partly superseded by `docs/designs/claude-code-adapter.md` (ADR-0029). `permission-mode-controller` and `permissions-seam.ts` were removed; the plugin now provides only `pendingUserInput`, which the kernel reads through `src/host/session/pending-user-input-resolver.ts`.
+Status: superseded by `docs/designs/claude-code-adapter.md` and `docs/designs/adapter-category.md` (ADR-0029). `permission-mode-controller` moved into the `claude-code` adapter, `PendingUserInput` moved into the kernel (`src/host/session/pending-user-input.ts`), and `plugins/permissions`, `ESSENTIAL_PLUGINS` and the essential-plugin rules were deleted.
 
 ## Purpose
 

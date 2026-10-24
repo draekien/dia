@@ -61,9 +61,8 @@ import {
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { applyOverride, PluginSources } from '../plugins/plugin-sources'
-import { type AgentSession, resolveAgentBackend, ToolGate } from '../session/agent-backend'
+import { type AgentSession, resolveAgentBackend } from '../session/agent-backend'
 import { makePluginTools } from '../session/dia-tools'
-import { resolvePendingUserInput } from '../session/pending-user-input-resolver'
 import type { OutboundMessage } from '../session/protocol'
 import { resolveGitOps, type WorktreeCreateError, type WorktreeReattachError } from './git-ops-seam'
 
@@ -156,12 +155,7 @@ export const SessionFactoryLive = Layer.effect(
       options: Parameters<SessionFactory['Service']['start']>[0]
     ) {
       const backend = yield* resolveAgentBackend(plugins)
-      const userInput = yield* resolvePendingUserInput(plugins)
-      const toolGate = Option.match(userInput, {
-        onNone: () => ToolGate.DenyAll(),
-        onSome: (registry) => ToolGate.AskUser({ userInput: registry, tools: pluginTools })
-      })
-      return yield* backend.openSession({ ...options, toolGate })
+      return yield* backend.openSession({ ...options, tools: pluginTools })
     })
     return { start }
   })

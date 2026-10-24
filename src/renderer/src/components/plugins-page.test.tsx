@@ -7,6 +7,7 @@ import { PluginsPage } from './plugins-page'
 
 const info = (name: string, overrides: Partial<PluginInfo> = {}): PluginInfo => ({
   name,
+  category: 'feature',
   origin: 'default',
   root: `plugins/${name}`,
   status: { _tag: 'Loaded' },
@@ -285,6 +286,38 @@ describe('PluginsPage', () => {
     deliver([info('chat')])
     await screen.findByText('chat')
     expect(screen.queryByLabelText('Loading plugins')).toBeNull()
+  })
+
+  it('keeps a loaded adapter from being reloaded, unloaded or pointed at a folder', async () => {
+    installBridge([info('claude-code', { category: 'adapter' })])
+
+    render(<PluginsPage onClose={() => {}} />)
+
+    await screen.findByText('claude-code')
+    const row = rowOf('claude-code')
+    const disabledOf = (name: string) =>
+      (row.getByRole('button', { name }) as HTMLButtonElement).disabled
+    expect(disabledOf('Reload')).toBe(true)
+    expect(disabledOf('Unload')).toBe(true)
+    expect(disabledOf('Set folder…')).toBe(true)
+    expect(
+      row.getByText(
+        'Adapter: it loads at startup from the bundled copy. Restart dia to apply a change.'
+      )
+    ).toBeTruthy()
+  })
+
+  it('lets the user load an adapter again after its load failed', async () => {
+    installBridge([
+      info('claude-code', { category: 'adapter', status: { _tag: 'Failed', message: 'boom' } })
+    ])
+
+    render(<PluginsPage onClose={() => {}} />)
+
+    await screen.findByText('claude-code')
+    expect(
+      (rowOf('claude-code').getByRole('button', { name: 'Reload' }) as HTMLButtonElement).disabled
+    ).toBe(false)
   })
 
   it('shows a plugin the Host is still loading as Loading with its actions disabled', async () => {

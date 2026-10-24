@@ -1,5 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
+import type { PluginCategory } from '@shared/plugin/manifest'
 import { Effect, FileSystem, Layer, Option, Path } from 'effect'
 import { SettingsStore } from '../services/settings-store'
 import { makePluginSourcesLive, PluginSources } from './plugin-sources'
@@ -24,16 +25,17 @@ const memorySettings = (initial: Record<string, string> = {}) => {
   })
 }
 
-const manifestJson = (name: string) => JSON.stringify({ name, api: '1', host: 'host.ts' })
+const manifestJson = (name: string, category: PluginCategory) =>
+  JSON.stringify({ name, api: '1', category, host: 'host.ts' })
 
 const workspace = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const base = yield* fs.makeTempDirectoryScoped()
-  const writePlugin = (directory: string, name: string) =>
+  const writePlugin = (directory: string, name: string, category: PluginCategory = 'feature') =>
     Effect.gen(function* () {
       yield* fs.makeDirectory(directory, { recursive: true })
-      yield* fs.writeFileString(path.join(directory, 'plugin.json'), manifestJson(name))
+      yield* fs.writeFileString(path.join(directory, 'plugin.json'), manifestJson(name, category))
     })
   const writeModulePackage = (directory: string, type: string | undefined) =>
     fs.writeFileString(
@@ -205,38 +207,75 @@ describe('PluginSources', () => {
     )
   )
 
-  it.effect('rejects an override of an essential plugin and saves nothing', () =>
+  it.effect('rejects an override of a shipped adapter and saves nothing', () =>
     withWorkspace((ws, sources) =>
       Effect.gen(function* () {
-        yield* ws.writePlugin(ws.path.join(ws.defaultRoot, 'permissions'), 'permissions')
-        const directory = ws.path.join(ws.base, 'worktree', 'permissions')
-        yield* ws.writePlugin(directory, 'permissions')
+        yield* ws.writePlugin(ws.path.join(ws.defaultRoot, 'agent'), 'agent', 'adapter')
+        const directory = ws.path.join(ws.base, 'worktree', 'agent')
+        yield* ws.writePlugin(directory, 'agent', 'adapter')
         yield* ws.writeModulePackage(ws.path.join(ws.base, 'worktree'), 'module')
 
-        const result = yield* Effect.flip(sources.setOverride('permissions', directory))
+        const result = yield* Effect.flip(sources.setOverride('agent', directory))
 
-        assert.strictEqual(result.message, '"permissions" is essential and cannot be overridden')
+        assert.strictEqual(result.message, '"agent" is an adapter and cannot be overridden')
         assert.deepStrictEqual(
-          yield* sources.resolve('permissions'),
-          Option.some({ root: ws.path.join(ws.defaultRoot, 'permissions'), origin: 'default' })
+          yield* sources.resolve('agent'),
+          Option.some({ root: ws.path.join(ws.defaultRoot, 'agent'), origin: 'default' })
         )
       })
     )
   )
 
-  it.effect('resolves an essential plugin to its shipped copy when settings hold an override', () =>
+  it.effect('rejects an override whose manifest declares an adapter', () =>
+    withWorkspace((ws, sources) =>
+      Effect.gen(function* () {
+        yield* ws.writePlugin(ws.path.join(ws.defaultRoot, 'chat'), 'chat')
+        const directory = ws.path.join(ws.base, 'worktree', 'chat')
+        yield* ws.writePlugin(directory, 'chat', 'adapter')
+        yield* ws.writeModulePackage(ws.path.join(ws.base, 'worktree'), 'module')
+
+        const result = yield* Effect.flip(sources.setOverride('chat', directory))
+
+        assert.strictEqual(
+          result.message,
+          `"${directory}" declares an adapter, and adapters load only from the shipped copy`
+        )
+      })
+    )
+  )
+
+  it.effect('resolves a shipped adapter to its shipped copy when settings hold an override', () =>
     Effect.gen(function* () {
       const ws = yield* workspace
-      yield* ws.writePlugin(ws.path.join(ws.defaultRoot, 'permissions'), 'permissions')
-      const saved = ws.path.join(ws.base, 'worktree', 'permissions')
+      yield* ws.writePlugin(ws.path.join(ws.defaultRoot, 'agent'), 'agent', 'adapter')
+      const saved = ws.path.join(ws.base, 'worktree', 'agent')
+      yield* ws.writePlugin(saved, 'agent')
 
       const resolved = yield* Effect.gen(function* () {
-        return yield* (yield* PluginSources).resolve('permissions')
-      }).pipe(Effect.provide(sourcesLayer(ws.defaultRoot, { permissions: saved })))
+        return yield* (yield* PluginSources).resolve('agent')
+      }).pipe(Effect.provide(sourcesLayer(ws.defaultRoot, { agent: saved })))
 
       assert.deepStrictEqual(
         resolved,
-        Option.some({ root: ws.path.join(ws.defaultRoot, 'permissions'), origin: 'default' })
+        Option.some({ root: ws.path.join(ws.defaultRoot, 'agent'), origin: 'default' })
+      )
+    }).pipe(Effect.scoped, Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
+  )
+
+  it.effect('ignores a saved override whose manifest declares an adapter', () =>
+    Effect.gen(function* () {
+      const ws = yield* workspace
+      yield* ws.writePlugin(ws.path.join(ws.defaultRoot, 'chat'), 'chat')
+      const saved = ws.path.join(ws.base, 'worktree', 'chat')
+      yield* ws.writePlugin(saved, 'chat', 'adapter')
+
+      const resolved = yield* Effect.gen(function* () {
+        return yield* (yield* PluginSources).resolve('chat')
+      }).pipe(Effect.provide(sourcesLayer(ws.defaultRoot, { chat: saved })))
+
+      assert.deepStrictEqual(
+        resolved,
+        Option.some({ root: ws.path.join(ws.defaultRoot, 'chat'), origin: 'default' })
       )
     }).pipe(Effect.scoped, Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
   )
