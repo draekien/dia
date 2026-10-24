@@ -1,4 +1,4 @@
-import type { EffortLevel, ThinkingConfig } from '@anthropic-ai/claude-agent-sdk'
+import type { ThinkingOptions } from '@dia/plugin'
 import type { ThinkingLevel } from '@shared/domain/pane'
 
 /**
@@ -7,9 +7,7 @@ import type { ThinkingLevel } from '@shared/domain/pane'
  * and `low`/`medium`/`high` run adaptive thinking capped at that reasoning
  * effort. Spread the result into a query's `options`.
  */
-export const thinkingOptions = (
-  level: ThinkingLevel
-): { readonly thinking: ThinkingConfig; readonly effort?: EffortLevel } => {
+export const thinkingOptions = (level: ThinkingLevel): ThinkingOptions => {
   switch (level) {
     case 'off':
       return { thinking: { type: 'disabled' } }

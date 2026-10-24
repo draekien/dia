@@ -15,7 +15,7 @@ running pane's header.
 cannot mutate `thinking`/`effort` on a live `query()`. So a live level change is deferred
 to the next turn boundary: on the next `SendText`, if the desired level differs from the
 active one and a `sessionId` exists, the pane process interrupts the current query fiber
-and forks a fresh `query({ resume: sessionId, ...thinkingOptions(next) })`. Resuming (not
+and forks a fresh `query({ resume: sessionId, ...resolveThinkingOptions(...) })`. Resuming (not
 a cold start) preserves the conversation. This lives entirely in the pane process
 (`agent-session.ts` `restartForThinkingChange`), driven by three `Ref`s: `desiredLevelRef`
 (set by `Init` and `SetThinkingLevel`), `configRef` (the active config, level included),
@@ -26,7 +26,7 @@ or no session has started yet.
 `{ thinking: { type: 'disabled' } }`; `adaptive` → `{ thinking: { type: 'adaptive' } }`;
 `low`/`medium`/`high` → `{ thinking: { type: 'adaptive' }, effort: <level> }` (adaptive
 thinking *capped* at that effort, not `thinking: { type: 'enabled' }`). Extracted to the
-pure `thinking-options.ts` so it's unit-testable — `agent-session.ts` runs `Effect.runFork`
+pure `plugins/thinking/thinking-options.ts` (provided to the kernel by the essential `thinking` plugin through `thinking-seam.ts`) so it's unit-testable — `agent-session.ts` runs `Effect.runFork`
 and touches `process.parentPort` at import, so nothing in it can be imported from a test.
 
 **Thinking always precedes the answer in one turn, so the reasoning→text transition is a
