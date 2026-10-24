@@ -26,7 +26,7 @@ Phase 4 of the plugin platform (`docs/plans/2026-10-22-plugin-platform.md`) move
 
 Chosen option: "A list of essential plugin names owned by the kernel", because an override's manifest cannot remove a protection the kernel holds.
 
-* `ESSENTIAL_PLUGINS` in `src/shared/plugin/manifest.ts` lists `permissions` and `thinking` (added in Phase 4 step 3, `docs/designs/thinking-plugin.md`). `session-reducer` is not essential.
+* `ESSENTIAL_PLUGINS` in `src/shared/plugin/manifest.ts` lists `permissions`, `thinking` (Phase 4 step 3, `docs/designs/thinking-plugin.md`) and `git-ops` (Phase 4 step 4, `docs/designs/git-ops-plugin.md`). `session-reducer` is not essential.
 * `PluginRegistry.unload` refuses an essential plugin. `PluginSources.setOverride` rejects one, and `PluginSources.resolve` ignores an override saved for one. Reload of the shipped copy stays allowed and keeps the reload transaction.
 * `plugins/permissions` provides `pendingUserInput` and `permissionModeController`. The kernel creates both per agent session through `makeSessionPermissions`.
 * When the plugin is unavailable (failed to load, or a factory is missing or throws), `canUseTool` denies every tool call except dia's own plugin tools, and emits no request.

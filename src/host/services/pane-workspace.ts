@@ -19,7 +19,7 @@ import {
 } from '@shared/domain/pane-tree'
 import { type IpcEvent, LayoutChanged, PaneAttentionChanged } from '@shared/ipc/contract'
 import { Context, Effect, FileSystem, HashMap, Layer, Option, Ref, Result, Semaphore } from 'effect'
-import type { WorktreeCreateError, WorktreeReattachError } from './git-ops-service'
+import type { WorktreeCreateError, WorktreeReattachError } from './git-ops-seam'
 import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
 import { type PersistedPaneEntry, PersistenceService } from './persistence'
 import { TranscriptReader } from './transcript-reader'
@@ -101,7 +101,7 @@ export class PaneWorkspace extends Context.Service<
  * `useWorktree: true`. Also requires {@link TranscriptReader} to serve `getPaneHistory`
  * for restored panes without spawning a live session, and `FileSystem` to detect a resumed
  * non-worktree pane whose working directory has since been deleted. The per-pane worktree
- * directory and branch names are composed by {@link GitOpsService.createWorktree} itself.
+ * directory and branch names are composed by {@link GitOps.createWorktree} itself.
  */
 export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: string) =>
   Layer.effect(

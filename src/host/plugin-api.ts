@@ -1,5 +1,13 @@
 export * from '../shared/plugin/api'
 export {
+  GIT_OPS_KEY,
+  type GitOps,
+  type GitOpsFactory,
+  WorktreeCreateError,
+  WorktreeReattachError,
+  WorktreeRemoveError
+} from './services/git-ops-seam'
+export {
   type LivePermissionQuery,
   PENDING_USER_INPUT_KEY,
   PERMISSION_MODE_CONTROLLER_KEY,

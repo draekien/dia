@@ -63,11 +63,7 @@ import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { type AgentSession, makeAgentSession } from '../session/agent-session'
 import type { PluginToolHost } from '../session/plugin-tools'
 import type { OutboundMessage } from '../session/protocol'
-import {
-  GitOpsService,
-  type WorktreeCreateError,
-  type WorktreeReattachError
-} from './git-ops-service'
+import { resolveGitOps, type WorktreeCreateError, type WorktreeReattachError } from './git-ops-seam'
 
 /**
  * How a pane's worktree should be obtained. `Create` provisions a brand-new worktree
@@ -507,7 +503,7 @@ export const PaneSupervisorLive = Layer.effect(
   PaneSupervisor,
   Effect.gen(function* () {
     const factory = yield* SessionFactory
-    const gitOps = yield* GitOpsService
+    const plugins = yield* HostPlugins
     const entriesRef = yield* Ref.make(HashMap.empty<PaneId, PaneEntry>())
 
     const teardown = Effect.fn('PaneSupervisor.teardown')(function* (paneId: PaneId) {
@@ -541,6 +537,8 @@ export const PaneSupervisorLive = Layer.effect(
           }
           return config
         }
+
+        const gitOps = yield* resolveGitOps(plugins)
 
         const acquire: Effect.Effect<WorktreeInfo, WorktreeCreateError | WorktreeReattachError> =
           worktreeRequest._tag === 'Create'

@@ -31,7 +31,6 @@ import { HostPlugins, makeHostPluginsLive } from './plugins/host-plugins'
 import { makePluginSourcesLive } from './plugins/plugin-sources'
 import { makeCommandDeduperLive } from './services/command-deduper'
 import { makeEventHubLive } from './services/event-hub'
-import { GitOpsServiceLive } from './services/git-ops-service'
 import { PaneSupervisor, PaneSupervisorLive, SessionFactoryLive } from './services/pane-supervisor'
 import { makePaneWorkspaceLive } from './services/pane-workspace'
 import { makePersistenceServiceLive } from './services/persistence'
@@ -68,7 +67,6 @@ const mainMessages = Stream.callback<unknown>((queue) =>
 )
 
 const buildHostLayer = (init: HostInit, token: string) => {
-  const gitOps = Layer.provide(GitOpsServiceLive, NodeServices.layer)
   const settings = Layer.provide(makeSettingsStoreLive(init.userDataPath), NodeServices.layer)
   const eventHub = makeEventHubLive()
   const pluginSources = Layer.provide(
@@ -80,7 +78,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     Layer.mergeAll(pluginSources, eventHub, NodeFileSystem.layer, NodePath.layer)
   )
   const sessionFactory = Layer.provide(SessionFactoryLive, Layer.merge(hostPlugins, pluginSources))
-  const supervisor = Layer.provide(PaneSupervisorLive, Layer.merge(sessionFactory, gitOps))
+  const supervisor = Layer.provide(PaneSupervisorLive, Layer.merge(sessionFactory, hostPlugins))
   const persistence = Layer.provide(
     makePersistenceServiceLive(init.userDataPath),
     NodeServices.layer
