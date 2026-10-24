@@ -19,7 +19,8 @@ export default defineConfig({
         external: ['electron', 'tsx', 'tsx/esm/api', 'esbuild'],
         input: {
           index: resolve('src/main/index.ts'),
-          host: resolve('src/host/index.ts')
+          host: resolve('src/host/index.ts'),
+          'plugin-api': resolve('src/host/plugin-api.ts')
         }
       }
     }

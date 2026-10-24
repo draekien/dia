@@ -1,5 +1,5 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the resolve hook Node calls is synchronous, so it cannot run an Effect FileSystem call.
-import { statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { PluginRestartRequiredError } from '@shared/plugin/plugin-registry'
@@ -32,6 +32,13 @@ interface Signature {
 
 const SHARED_LIBRARY = /^effect(\/|$)/
 
+const PLUGIN_API = '@dia/plugin'
+
+const builtPluginApiUrl = (): string | undefined => {
+  const url = new URL('../plugin-api.js', import.meta.url)
+  return existsSync(fileURLToPath(url)) ? url.href : undefined
+}
+
 const withoutQuery = (url: string): string => {
   const query = url.indexOf('?')
   return query === -1 ? url : url.slice(0, query)
@@ -51,7 +58,7 @@ const signatureOf = (url: string): Signature | undefined => {
 const differs = (recorded: Signature, current: Signature | undefined): boolean =>
   current === undefined || current.size !== recorded.size || current.mtimeMs !== recorded.mtimeMs
 
-const makePluginModules = (): PluginModules => {
+const makePluginModules = (pluginApiUrl: string | undefined): PluginModules => {
   const generations = new ModuleGenerations()
   const roots = new Set<string>()
   let signatures = new Map<string, Signature>()
@@ -77,6 +84,9 @@ const makePluginModules = (): PluginModules => {
       resolve(specifier, context, nextResolve) {
         const parent = context.parentURL === undefined ? undefined : withoutQuery(context.parentURL)
         const parentRoot = rootOf(parent)
+        if (specifier === PLUGIN_API && pluginApiUrl !== undefined && parentRoot !== undefined) {
+          return { url: pluginApiUrl, format: 'module', shortCircuit: true }
+        }
         const fromHost =
           SHARED_LIBRARY.test(specifier) && parentRoot !== undefined
             ? { ...context, parentURL: import.meta.url }
@@ -198,4 +208,4 @@ const makePluginModules = (): PluginModules => {
  * keeps both the size and the modification time of a file is not detected. Requires the Host to
  * have registered tsx for `.ts` entries.
  */
-export const processPluginModules: PluginModules = makePluginModules()
+export const processPluginModules: PluginModules = makePluginModules(builtPluginApiUrl())
