@@ -1,11 +1,12 @@
 import { assert, describe, it } from '@effect/vitest'
 import type { PaneConfig, PermissionMode, WorktreeInfo } from '@shared/domain/pane'
 import type { IpcEvent } from '@shared/ipc/contract'
-import { Deferred, Effect, Layer, Option } from 'effect'
+import { Deferred, Effect, Layer, Option, Result } from 'effect'
 import { TestClock } from 'effect/testing'
+import { HostPlugins } from '../plugins/host-plugins'
 import type { AgentSession } from '../session/agent-session'
 import type { OutboundMessage } from '../session/protocol'
-import { GitOpsService } from './git-ops-service'
+import { GIT_OPS_KEY, type GitOps, WorktreeCreateError } from './git-ops-seam'
 import {
   type PaneCreationRequest,
   PaneSupervisor,
@@ -47,16 +48,31 @@ const ignorePermissionMode = (_mode: PermissionMode): Effect.Effect<void> => Eff
 const attentionTags = (events: ReadonlyArray<IpcEvent>): ReadonlyArray<string> =>
   events.flatMap((event) => (event._tag === 'PaneAttentionChanged' ? [event.attention._tag] : []))
 
-const unusedGitOps = Layer.succeed(GitOpsService)({
+const pluginsWith = (inject: (key: string) => Option.Option<unknown>) =>
+  Layer.succeed(HostPlugins)({
+    list: () => Effect.succeed([]),
+    start: () => Effect.void,
+    load: () => Effect.die(new Error('load should not be called in these tests')),
+    unload: () => Effect.die(new Error('unload should not be called in these tests')),
+    inject: (key) => Effect.succeed(inject(key))
+  })
+
+const noPlugins = pluginsWith(() => Option.none())
+
+const pluginsProviding = (gitOps: GitOps) =>
+  pluginsWith((key) => (key === GIT_OPS_KEY ? Option.some(() => gitOps) : Option.none()))
+
+const unusedGitOps: GitOps = {
   createWorktree: () => Effect.die(new Error('createWorktree should not be called in these tests')),
   removeWorktree: () => Effect.die(new Error('removeWorktree should not be called in these tests')),
   reattachWorktree: () =>
     Effect.die(new Error('reattachWorktree should not be called in these tests'))
-})
+}
 
 function makeTestSetup(
-  gitOps: Layer.Layer<GitOpsService> = unusedGitOps,
-  lifecycleLog: Array<string> = []
+  gitOps: GitOps = unusedGitOps,
+  lifecycleLog: Array<string> = [],
+  plugins: Layer.Layer<HostPlugins> = pluginsProviding(gitOps)
 ) {
   const sessions: Array<FakeSession> = []
 
@@ -99,7 +115,7 @@ function makeTestSetup(
       })
   })
 
-  const testLayer = Layer.provide(PaneSupervisorLive, Layer.merge(factoryLayer, gitOps))
+  const testLayer = Layer.provide(PaneSupervisorLive, Layer.merge(factoryLayer, plugins))
   return { sessions, testLayer }
 }
 
@@ -276,7 +292,7 @@ describe('PaneSupervisor', () => {
     () =>
       Effect.gen(function* () {
         const reattachCalls: Array<{ info: WorktreeInfo; paneId: string }> = []
-        const gitOps = Layer.succeed(GitOpsService)({
+        const gitOps: GitOps = {
           createWorktree: () =>
             Effect.die(new Error('createWorktree must not be called when resuming')),
           removeWorktree: () => Effect.void,
@@ -285,7 +301,7 @@ describe('PaneSupervisor', () => {
               reattachCalls.push({ info, paneId })
               return info
             })
-        })
+        }
         const { sessions, testLayer } = makeTestSetup(gitOps)
 
         const expectedInfo: WorktreeInfo = {
@@ -333,11 +349,11 @@ describe('PaneSupervisor', () => {
     Effect.gen(function* () {
       const lifecycleLog: Array<string> = []
       const info: WorktreeInfo = { path: '/wt/d', branch: 'dia/calm-fox', sourceRepo: '/repo' }
-      const gitOps = Layer.succeed(GitOpsService)({
+      const gitOps: GitOps = {
         createWorktree: () => Effect.succeed(info),
         removeWorktree: () => Effect.sync(() => void lifecycleLog.push('worktree removed')),
         reattachWorktree: () => Effect.die(new Error('reattachWorktree should not be called'))
-      })
+      }
       const { testLayer } = makeTestSetup(gitOps, lifecycleLog)
 
       yield* Effect.gen(function* () {
@@ -352,6 +368,28 @@ describe('PaneSupervisor', () => {
         yield* supervisor.closePane(requestA.paneId)
 
         assert.deepStrictEqual(lifecycleLog, ['session closed', 'worktree removed'])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('refuses a worktree pane without starting a session when git-ops is unavailable', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup(unusedGitOps, [], noPlugins)
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        const result = yield* supervisor
+          .openPane(
+            { ...requestA, worktree: { _tag: 'Create', worktreesRoot: '/wt' } },
+            () => Effect.void,
+            ignoreSessionId,
+            ignorePermissionMode
+          )
+          .pipe(Effect.result)
+
+        assert.isTrue(Result.isFailure(result))
+        if (Result.isFailure(result)) assert.instanceOf(result.failure, WorktreeCreateError)
+        assert.strictEqual(sessions.length, 0)
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })
   )

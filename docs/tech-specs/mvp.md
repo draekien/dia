@@ -150,6 +150,8 @@ Every message is decoded with its `Schema` on receipt; a decode failure is a typ
 
 ### 4.6 GitOpsService
 
+> Superseded in part (2026-10-24): `GitOpsService` no longer exists. The same operations are the `GitOps` value the built-in `git-ops` plugin provides, resolved by `PaneSupervisor` with `resolveGitOps` (`docs/designs/git-ops-plugin.md`).
+
 Wraps git CLI invocations (via `@effect/platform`'s `Command` executor). Named generally rather than after its first use, since further git operations beyond worktree management are expected to join this service in later bullets:
 
 - `createWorktree(sourceRepo: string, paneId: PaneId): Effect<WorktreeInfo, WorktreeCreateError>` — runs `git worktree add` for a new branch under a dia-managed directory (Electron's `userData/worktrees/<paneId>`), returning the resulting `WorktreeInfo`.

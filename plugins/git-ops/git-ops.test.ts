@@ -1,13 +1,11 @@
+import { type GitOps, WorktreeCreateError, WorktreeReattachError } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import type { WorktreeInfo } from '@shared/domain/pane'
-import { Effect, FileSystem, Layer, Logger, Path, Result, Stream } from 'effect'
+import { Context, Effect, FileSystem, Layer, Logger, Path, Result, Stream } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
-import {
-  GitOpsService,
-  GitOpsServiceLive,
-  WorktreeCreateError,
-  WorktreeReattachError
-} from './git-ops-service'
+import { makeGitOps } from './git-ops'
+
+class TestGitOps extends Context.Service<TestGitOps, GitOps>()('TestGitOps') {}
 
 const PANE_ID = 'aaaaaaaa-0000-4000-8000-000000000001'
 
@@ -36,7 +34,7 @@ function makeTestSetup(
   worktreeExists = false
 ): {
   readonly capturedLogs: ReadonlyArray<unknown>
-  readonly testLayer: Layer.Layer<GitOpsService>
+  readonly testLayer: Layer.Layer<TestGitOps>
   readonly loggerLayer: Layer.Layer<never>
 } {
   const spawnerLayer = Layer.succeed(
@@ -51,7 +49,7 @@ function makeTestSetup(
   })
 
   const testLayer = Layer.provide(
-    GitOpsServiceLive,
+    Layer.effect(TestGitOps, makeGitOps),
     Layer.mergeAll(spawnerLayer, fsLayer, Path.layer)
   )
   const loggerLayer = Logger.layer([captureLogger], { mergeWithExisting: true })
@@ -70,7 +68,7 @@ const isRevParse = (command: ChildProcess.Command): boolean => argsOf(command)[0
 const isWorktreeAdd = (command: ChildProcess.Command): boolean =>
   argsOf(command)[0] === 'worktree' && argsOf(command)[1] === 'add'
 
-describe('GitOpsService', () => {
+describe('makeGitOps', () => {
   it.effect('createWorktree provisions a friendly dia/<slug> branch and matching directory', () =>
     Effect.gen(function* () {
       const commands: ChildProcess.Command[] = []
@@ -81,7 +79,7 @@ describe('GitOpsService', () => {
       })
 
       const info = yield* Effect.gen(function* () {
-        const gitOps = yield* GitOpsService
+        const gitOps = yield* TestGitOps
         return yield* gitOps.createWorktree('/repo', PANE_ID, WORKTREES_ROOT)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
@@ -116,7 +114,7 @@ describe('GitOpsService', () => {
       })
 
       const info = yield* Effect.gen(function* () {
-        const gitOps = yield* GitOpsService
+        const gitOps = yield* TestGitOps
         return yield* gitOps.createWorktree('/repo', PANE_ID, WORKTREES_ROOT)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
@@ -144,7 +142,7 @@ describe('GitOpsService', () => {
       }, true)
 
       yield* Effect.gen(function* () {
-        const gitOps = yield* GitOpsService
+        const gitOps = yield* TestGitOps
         return yield* gitOps.createWorktree('/repo', PANE_ID, WORKTREES_ROOT)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
@@ -161,7 +159,7 @@ describe('GitOpsService', () => {
       const { testLayer, loggerLayer } = makeTestSetup((command) => (isRevParse(command) ? 1 : 1))
 
       const result = yield* Effect.gen(function* () {
-        const gitOps = yield* GitOpsService
+        const gitOps = yield* TestGitOps
         return yield* gitOps.createWorktree('/repo', PANE_ID, WORKTREES_ROOT)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer), Effect.result)
 
@@ -182,7 +180,7 @@ describe('GitOpsService', () => {
       }
 
       yield* Effect.gen(function* () {
-        const gitOps = yield* GitOpsService
+        const gitOps = yield* TestGitOps
         yield* gitOps.removeWorktree(info, PANE_ID)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
     })
@@ -202,7 +200,7 @@ describe('GitOpsService', () => {
       }
 
       yield* Effect.gen(function* () {
-        const gitOps = yield* GitOpsService
+        const gitOps = yield* TestGitOps
         yield* gitOps.removeWorktree(info, PANE_ID)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
@@ -222,7 +220,7 @@ describe('GitOpsService', () => {
       }
 
       yield* Effect.gen(function* () {
-        const gitOps = yield* GitOpsService
+        const gitOps = yield* TestGitOps
         yield* gitOps.removeWorktree(info, PANE_ID)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
@@ -241,7 +239,7 @@ describe('GitOpsService', () => {
       })
 
       const info = yield* Effect.gen(function* () {
-        const gitOps = yield* GitOpsService
+        const gitOps = yield* TestGitOps
         return yield* gitOps.reattachWorktree(WORKTREE_INFO, PANE_ID)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
@@ -261,7 +259,7 @@ describe('GitOpsService', () => {
       const { testLayer, loggerLayer } = makeTestSetup(() => 1)
 
       const result = yield* Effect.gen(function* () {
-        const gitOps = yield* GitOpsService
+        const gitOps = yield* TestGitOps
         return yield* gitOps.reattachWorktree(WORKTREE_INFO, PANE_ID)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer), Effect.result)
 
@@ -281,7 +279,7 @@ describe('GitOpsService', () => {
       }, true)
 
       const info = yield* Effect.gen(function* () {
-        const gitOps = yield* GitOpsService
+        const gitOps = yield* TestGitOps
         return yield* gitOps.reattachWorktree(WORKTREE_INFO, PANE_ID)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 

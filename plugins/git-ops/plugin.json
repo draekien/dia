@@ -1,0 +1,6 @@
+{
+  "name": "git-ops",
+  "api": "1",
+  "host": "host.ts",
+  "load": "eager"
+}
