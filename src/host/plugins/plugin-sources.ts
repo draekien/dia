@@ -100,15 +100,13 @@ export const makePluginSourcesLive = (defaultRoot: string) =>
       const resolve = Effect.fn('PluginSources.resolve')(function* (name: string) {
         const overrides = yield* settings.getPluginOverrides()
         const override = overrides[name]
-        if (override !== undefined) {
-          if (isEssentialPlugin(name)) {
-            yield* Effect.logWarning('Ignoring a saved override of an essential plugin', {
-              plugin: name,
-              directory: override
-            })
-          } else {
-            return Option.some({ root: override, origin: 'override' as const })
-          }
+        if (override !== undefined && isEssentialPlugin(name)) {
+          yield* Effect.logWarning('Ignoring a saved override of an essential plugin', {
+            plugin: name,
+            directory: override
+          })
+        } else if (override !== undefined) {
+          return Option.some({ root: override, origin: 'override' as const })
         }
         const root = path.join(defaultRoot, name)
         return (yield* hasManifest(root))

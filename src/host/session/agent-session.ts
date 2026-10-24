@@ -209,6 +209,7 @@ const makeCanUseTool =
 
 const makeApprovePluginTool = (
   pendingUserInput: PendingUserInput,
+  permissionsAvailable: boolean,
   emit: (message: OutboundMessage) => Effect.Effect<void>,
   counter: Ref.Ref<number>
 ) =>
@@ -216,6 +217,12 @@ const makeApprovePluginTool = (
     toolName: string,
     input: Record<string, string>
   ) {
+    if (!permissionsAvailable) {
+      yield* Effect.logWarning('Denied a plugin tool; the permissions plugin is not loaded', {
+        toolName
+      })
+      return false
+    }
     const sequence = yield* Ref.updateAndGet(counter, (value) => value + 1)
     const now = yield* Clock.currentTimeMillis
     const requestId = `plugin-tool-${now}-${sequence}`
@@ -542,7 +549,12 @@ export const makeAgentSession = Effect.fn('AgentSession.make')(function* (option
   )
   const canUseTool = makeCanUseTool(pendingUserInput, available, emit, services)
   const approvalCounter = yield* Ref.make(0)
-  const approvePluginTool = makeApprovePluginTool(pendingUserInput, emit, approvalCounter)
+  const approvePluginTool = makeApprovePluginTool(
+    pendingUserInput,
+    available,
+    emit,
+    approvalCounter
+  )
   const pluginToolHost = options.pluginToolHost
   const newPluginToolServer =
     pluginToolHost === undefined
