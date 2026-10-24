@@ -35,8 +35,11 @@ const adapterManifest = (name: string): AdapterManifest => ({
 
 const BACKEND_KEY = 'backend'
 
-const requiresBackend = (provided: (key: string) => Option.Option<unknown>) =>
-  Option.isSome(provided(BACKEND_KEY)) ? [] : [`setup did not provide "${BACKEND_KEY}"`]
+const requiresBackend = {
+  keys: [BACKEND_KEY],
+  problems: (provided: (key: string) => Option.Option<unknown>) =>
+    Option.isSome(provided(BACKEND_KEY)) ? [] : [`setup did not provide "${BACKEND_KEY}"`]
+}
 
 const plugin = (
   manifestFields: PluginManifest,
@@ -988,6 +991,33 @@ describe('plugin registry', () => {
         message: `Plugin "agent" does not meet the adapter contract:\n- setup did not provide "${BACKEND_KEY}"`
       })
       assert.deepStrictEqual(log, ['agent:open', 'agent:close'])
+      assert.deepStrictEqual(yield* registry.inject('other'), Option.none())
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('fails a feature plugin that provides a key reserved for adapters', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({
+        impostor: plugin(
+          manifest('impostor'),
+          recording('impostor', log, (ctx) =>
+            Effect.gen(function* () {
+              yield* ctx.provide('other', 1)
+              yield* ctx.provide(BACKEND_KEY, 'fake')
+            })
+          )
+        )
+      })
+
+      const result = yield* registry.load('impostor')
+
+      assert.deepStrictEqual(result.status, {
+        _tag: 'Failed',
+        message: `"${BACKEND_KEY}" can be provided only by an adapter plugin`
+      })
+      assert.deepStrictEqual(log, ['impostor:open', 'impostor:close'])
+      assert.deepStrictEqual(yield* registry.inject(BACKEND_KEY), Option.none())
       assert.deepStrictEqual(yield* registry.inject('other'), Option.none())
     }).pipe(Effect.scoped)
   )

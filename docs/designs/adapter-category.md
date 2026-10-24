@@ -151,6 +151,23 @@ export const checkAdapterContract: (provided: (key: string) => Option.Option<unk
 
 `host-plugins.ts` passes `checkAdapterContract`. `renderer-plugins.ts` passes `() => []`, because an adapter has no renderer entry. `resolveAgentBackend` logs `agentBackendProblems` when it falls back to the unavailable backend.
 
+### Keys reserved for adapters
+
+Follow-up after aca6b31: before this, a feature plugin could provide `agentBackend` whenever no adapter held the key, for example after the adapter failed to load. Such a plugin would then answer `canUseTool` in place of the shipped adapter, which ADR-0029 rules out. `adapterContract` is now an object:
+
+```ts
+// src/shared/plugin/plugin-registry.ts
+export interface AdapterContract {
+  readonly keys: ReadonlyArray<string>   // service keys only an adapter may provide
+  readonly problems: (provided: (key: string) => Option.Option<unknown>) => ReadonlyArray<string>
+}
+
+// src/host/session/agent-backend.ts
+export const adapterContract: AdapterContract = { keys: [AGENT_BACKEND_KEY], problems: ... }
+```
+
+`ctx.provide(key, ...)` from a feature plugin, with `key` in `keys`, fails with `ServiceKeyReservedError` (`src/shared/plugin/api.ts`). The plugin's setup fails, its scope closes, and it is `Failed` with `"agentBackend" can be provided only by an adapter plugin`. The renderer registry passes `{ keys: [], problems: () => [] }`.
+
 ### Plugin sources
 
 `PluginSources` decodes `plugin.json` with `PluginManifest` to read the category. `setOverride(name, directory)` fails with `InvalidOverrideError`:

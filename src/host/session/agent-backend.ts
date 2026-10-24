@@ -6,7 +6,7 @@ import type {
   SessionId,
   ThinkingLevel
 } from '@shared/domain/pane'
-import type { PluginRegistry } from '@shared/plugin/plugin-registry'
+import type { AdapterContract, PluginRegistry } from '@shared/plugin/plugin-registry'
 import { Effect, Option, Predicate, type Scope } from 'effect'
 import type { DiaTool } from './dia-tools'
 import type { OutboundMessage } from './protocol'
@@ -126,13 +126,14 @@ const isAgentBackend = (provided: Option.Option<unknown>): provided is Option.So
   agentBackendProblems(provided).length === 0
 
 /**
- * The Host's adapter contract: what an adapter plugin's setup must provide. `provided` reads the
- * value the plugin provided under a service key. Returns one sentence per problem, or an empty
- * list when the plugin meets the contract. Pass it to the Host plugin registry.
+ * The Host's {@link AdapterContract}: only an adapter plugin may provide
+ * {@link AGENT_BACKEND_KEY}, and an adapter must provide a valid {@link AgentBackend} under it.
+ * Pass it to the Host plugin registry.
  */
-export const checkAdapterContract = (
-  provided: (key: string) => Option.Option<unknown>
-): ReadonlyArray<string> => agentBackendProblems(provided(AGENT_BACKEND_KEY))
+export const adapterContract: AdapterContract = {
+  keys: [AGENT_BACKEND_KEY],
+  problems: (provided) => agentBackendProblems(provided(AGENT_BACKEND_KEY))
+}
 
 /**
  * Reads the {@link AgentBackend} the adapter plugin provides under {@link AGENT_BACKEND_KEY}.

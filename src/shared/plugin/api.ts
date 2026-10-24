@@ -11,9 +11,19 @@ export class ServiceKeyTakenError extends Data.TaggedError('ServiceKeyTakenError
 }> {}
 
 /**
+ * Failure of `ctx.provide` when a feature plugin provides `key`, a service key that only an
+ * adapter plugin may provide. `message` names the key. The plugin that hit it fails to load and
+ * keeps no registrations.
+ */
+export class ServiceKeyReservedError extends Data.TaggedError('ServiceKeyReservedError')<{
+  readonly key: string
+  readonly message: string
+}> {}
+
+/**
  * What every plugin context offers, on the host and in the renderer. `provide` publishes `value`
- * under `key` for the lifetime of the scope it runs in and fails when another plugin provides
- * `key`; `inject` reads the value for `key` and is empty when no loaded plugin provides it. A
+ * under `key` for the lifetime of the scope it runs in, and fails when another plugin provides
+ * `key` or when a feature plugin provides a key reserved for adapter plugins; `inject` reads the value for `key` and is empty when no loaded plugin provides it. A
  * plugin that lists a key in its manifest `inject` is reopened whenever that key's provider
  * changes.
  */
@@ -22,7 +32,7 @@ export interface PluginServices {
   readonly provide: (
     key: string,
     value: unknown
-  ) => Effect.Effect<void, ServiceKeyTakenError, Scope.Scope>
+  ) => Effect.Effect<void, ServiceKeyTakenError | ServiceKeyReservedError, Scope.Scope>
   readonly inject: (key: string) => Effect.Effect<Option.Option<unknown>>
 }
 

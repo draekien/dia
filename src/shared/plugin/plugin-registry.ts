@@ -1,6 +1,6 @@
 import { Cause, Data, Effect, Exit, Option, Predicate, Schema, Scope, Semaphore } from 'effect'
 import type { PluginServices, PluginSetup } from './api'
-import { ServiceKeyTakenError } from './api'
+import { ServiceKeyReservedError, ServiceKeyTakenError } from './api'
 import {
   formatMegabytes,
   PLUGIN_API_VERSION,
@@ -12,6 +12,18 @@ import {
   type PluginRestartReason,
   type PluginStatus
 } from './manifest'
+
+/**
+ * What the registry requires of adapter plugins. `keys` are the service keys only an adapter may
+ * provide: a feature plugin that provides one fails to load with {@link ServiceKeyReservedError}.
+ * `problems` checks what an adapter's setup provided, through `provided`, which reads the value the
+ * plugin provided under a service key; it returns one sentence per problem, and an empty list lets
+ * the adapter load.
+ */
+export interface AdapterContract {
+  readonly keys: ReadonlyArray<string>
+  readonly problems: (provided: (key: string) => Option.Option<unknown>) => ReadonlyArray<string>
+}
 
 /** A plugin's code location: `root` is what the {@link PluginLoader} receives, `origin` is shown in the plugin list. */
 export interface PluginSource {
@@ -154,9 +166,7 @@ const isRunning = <Context extends PluginServices>(entry: Entry<Context>): boole
  * limits the memory each plugin's loads may retain and fills `PluginInfo.memoryBytes`.
  * `onChange`, when given, runs after every operation with the plugins whose `PluginInfo` differs
  * from the last one it reported (the first report covers every plugin the registry has seen).
- * `adapterContract` checks what an adapter plugin's setup provided, through `provided`, which reads
- * the value the plugin provided under a service key; it returns one sentence per problem, and an
- * empty list lets the adapter load.
+ * `adapterContract` is the {@link AdapterContract} adapter plugins are held to.
  */
 export const makePluginRegistry = <Context extends PluginServices>(deps: {
   readonly catalog: PluginCatalog
@@ -164,9 +174,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
   readonly extend: (services: PluginServices) => Context
   readonly memory?: PluginMemoryGuard
   readonly onChange?: (changed: ReadonlyArray<PluginInfo>) => Effect.Effect<void>
-  readonly adapterContract: (
-    provided: (key: string) => Option.Option<unknown>
-  ) => ReadonlyArray<string>
+  readonly adapterContract: AdapterContract
 }): Effect.Effect<PluginRegistry, never, Scope.Scope> =>
   Effect.gen(function* () {
     const parentScope = yield* Scope.Scope
@@ -267,6 +275,16 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       name,
       provide: (key, value) =>
         Effect.gen(function* () {
+          if (entry.category !== 'adapter' && deps.adapterContract.keys.includes(key)) {
+            yield* Effect.logError('A feature plugin provided a key reserved for adapters', {
+              plugin: name,
+              key
+            })
+            return yield* new ServiceKeyReservedError({
+              key,
+              message: `"${key}" can be provided only by an adapter plugin`
+            })
+          }
           const current = slots.get(key)
           if (current !== undefined && current.owner !== name) {
             return yield* new ServiceKeyTakenError({ key, owner: current.owner })
@@ -349,7 +367,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           return yield* new PluginLoadError({ message: describeCause(exit.cause) })
         }
         if (entry.manifest?.category === 'adapter') {
-          const problems = deps.adapterContract((key) => providedBy(entry, key))
+          const problems = deps.adapterContract.problems((key) => providedBy(entry, key))
           if (problems.length > 0) {
             yield* Scope.close(scope, Exit.void)
             yield* Effect.logError('Adapter plugin does not meet the adapter contract', {

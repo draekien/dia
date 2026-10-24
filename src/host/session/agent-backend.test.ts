@@ -4,8 +4,8 @@ import { Effect, Option } from 'effect'
 import {
   AGENT_BACKEND_KEY,
   type AgentBackend,
+  adapterContract,
   agentBackendProblems,
-  checkAdapterContract,
   resolveAgentBackend
 } from './agent-backend'
 
@@ -114,12 +114,16 @@ describe('agentBackendProblems', () => {
   }
 })
 
-describe('checkAdapterContract', () => {
+describe('adapterContract', () => {
+  it('reserves agentBackend for adapter plugins', () => {
+    assert.deepStrictEqual(adapterContract.keys, ['agentBackend'])
+  })
+
   it('checks the value the adapter provided under agentBackend', () => {
     const provided = (key: string) =>
       key === AGENT_BACKEND_KEY ? Option.some({ openSession: () => Effect.void }) : Option.none()
 
-    assert.deepStrictEqual(checkAdapterContract(provided), [
+    assert.deepStrictEqual(adapterContract.problems(provided), [
       '"agentBackend.readHistory" is not a function'
     ])
   })

@@ -73,6 +73,6 @@ export const makeRendererPlugins = (
       ) => read(name).pipe(Effect.flatMap(use))
     },
     extend: (services) => services,
-    adapterContract: () => []
+    adapterContract: { keys: [], problems: () => [] }
   })
 }
