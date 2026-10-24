@@ -1,6 +1,6 @@
 # Git operations plugin
 
-Status: partly superseded by `docs/designs/adapter-category.md` (ADR-0029). `ESSENTIAL_PLUGINS` was deleted, so `git-ops` is a feature plugin that can be unloaded and overridden. While it is unloaded, `resolveGitOps` refuses worktree panes as described below.
+Status: partly superseded (ADR-0029). `docs/designs/adapter-category.md` deleted `ESSENTIAL_PLUGINS`, so the plugin is a feature that can be unloaded and overridden. It was then renamed `plugins/worktrees`: the service key is `worktrees` (`WORKTREES_KEY` in `src/host/services/worktrees-seam.ts`), and `resolveGitOps` returns `Option<GitOps>`. While the plugin is not loaded, a new pane that asks for a worktree opens in the project directory, the pane creation form disables its worktree switch with `Load the worktrees plugin to use worktrees`, and resuming a pane that has a worktree fails with `WorktreeReattachError` (`Load the worktrees plugin to resume this pane`) and leaves the worktree on disk. The rest of this document describes the plugin as first built.
 
 ## Purpose
 

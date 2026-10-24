@@ -20,10 +20,10 @@ import {
 } from '@shared/domain/pane-tree'
 import { type IpcEvent, LayoutChanged, PaneAttentionChanged } from '@shared/ipc/contract'
 import { Context, Effect, FileSystem, HashMap, Layer, Option, Ref, Result, Semaphore } from 'effect'
-import type { WorktreeCreateError, WorktreeReattachError } from './git-ops-seam'
 import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
 import { type PersistedPaneEntry, PersistenceService } from './persistence'
 import { TranscriptReader } from './transcript-reader'
+import type { WorktreeCreateError, WorktreeReattachError } from './worktrees-seam'
 
 /**
  * Service tag for the pane workspace: owns the pane tree and per-pane configs, and

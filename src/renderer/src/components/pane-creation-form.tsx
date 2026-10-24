@@ -1,3 +1,4 @@
+// @effect-diagnostics asyncFunction:off -- React event handlers await the Promise-based window.dia bridge; no Effect runtime exists in the renderer.
 import { Button } from '@renderer/components/ui/button'
 import {
   Select,
@@ -7,6 +8,7 @@ import {
   SelectValue
 } from '@renderer/components/ui/select'
 import { Switch } from '@renderer/components/ui/switch'
+import { usePluginList } from '@renderer/hooks/use-plugin-list'
 import { CREATE_PERMISSION_MODE_OPTIONS } from '@renderer/lib/permission-modes'
 import { THINKING_LEVEL_OPTIONS } from '@renderer/lib/thinking-levels'
 import {
@@ -15,6 +17,7 @@ import {
   type ThinkingLevel
 } from '@shared/domain/pane'
 import type { ChooseDirectoryResult } from '@shared/ipc/contract'
+import type { PluginInfo } from '@shared/plugin/manifest'
 import { useEffect, useState } from 'react'
 
 // Placeholder list pending a confirmed source for available models.
@@ -23,6 +26,15 @@ const MODEL_OPTIONS = [
   { value: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
   { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' }
 ]
+
+const WORKTREES_PLUGIN = 'worktrees'
+
+const isWorktreesRunning = (plugins: ReadonlyArray<PluginInfo> | undefined): boolean =>
+  plugins?.some(
+    (plugin) =>
+      plugin.name === WORKTREES_PLUGIN &&
+      (plugin.status._tag === 'Loaded' || plugin.status._tag === 'RestartRequired')
+  ) ?? false
 
 type FormState =
   | { readonly step: 'idle' }
@@ -48,6 +60,7 @@ function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL)
   const [permissionMode, setPermissionMode] = useState<StartupPermissionMode>('auto')
   const [useWorktree, setUseWorktree] = useState(false)
+  const worktreesAvailable = isWorktreesRunning(usePluginList().plugins)
 
   useEffect(() => {
     return window.dia.onPaneCreateFailed((event) => {
@@ -58,7 +71,6 @@ function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
     })
   }, [paneId])
 
-  // @effect-diagnostics-next-line asyncFunction:off -- React event handler awaiting an IPC call; the renderer is React, not Effect-orchestrated.
   async function handleChooseDirectory() {
     const result: ChooseDirectoryResult = await window.dia.chooseDirectory()
     if (result === null) return
@@ -74,7 +86,7 @@ function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
       model,
       thinkingLevel,
       permissionMode,
-      state.isGitRepo && useWorktree
+      state.isGitRepo && worktreesAvailable && useWorktree
     )
   }
 
@@ -175,14 +187,22 @@ function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
             </div>
 
             {state.isGitRepo && (
-              <div className="flex items-center justify-between gap-2 text-sm">
-                <label htmlFor="use-worktree">Use a git worktree</label>
-                <Switch
-                  id="use-worktree"
-                  checked={useWorktree}
-                  onCheckedChange={setUseWorktree}
-                  disabled={isBusy}
-                />
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <label htmlFor="use-worktree">Use a git worktree</label>
+                  <Switch
+                    id="use-worktree"
+                    checked={worktreesAvailable && useWorktree}
+                    onCheckedChange={setUseWorktree}
+                    disabled={isBusy || !worktreesAvailable}
+                    aria-describedby={worktreesAvailable ? undefined : 'use-worktree-hint'}
+                  />
+                </div>
+                {!worktreesAvailable && (
+                  <p id="use-worktree-hint" className="text-xs text-ink-muted">
+                    Load the worktrees plugin to use worktrees
+                  </p>
+                )}
               </div>
             )}
 

@@ -13,7 +13,7 @@ import { generateWorktreeSlug } from './worktree-slug'
 const PORCELAIN_WORKTREE_PREFIX = 'worktree '
 
 /**
- * Builds the {@link GitOps} the `git-ops` plugin provides, shelling out to the `git` CLI through
+ * Builds the {@link GitOps} the `worktrees` plugin provides, shelling out to the `git` CLI through
  * the platform `ChildProcessSpawner`. Run it once in the plugin's setup with the Node platform
  * services provided.
  */

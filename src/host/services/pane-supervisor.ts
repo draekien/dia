@@ -64,7 +64,7 @@ import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { type AgentSession, resolveAgentBackend } from '../session/agent-backend'
 import { makePluginTools } from '../session/dia-tools'
 import type { OutboundMessage } from '../session/protocol'
-import { resolveGitOps, type WorktreeCreateError, type WorktreeReattachError } from './git-ops-seam'
+import { resolveGitOps, type WorktreeCreateError, WorktreeReattachError } from './worktrees-seam'
 
 /**
  * How a pane's worktree should be obtained. `Create` provisions a brand-new worktree
@@ -533,19 +533,32 @@ export const PaneSupervisorLive = Layer.effect(
       const scope = yield* Scope.make()
 
       const prepared = yield* Effect.gen(function* () {
-        const worktreeRequest = request.worktree
-        if (worktreeRequest === undefined) {
-          const config: PaneConfig = {
-            paneId: request.paneId,
-            cwd: request.sourceCwd,
-            model: request.model,
-            thinkingLevel: request.thinkingLevel,
-            permissionMode: request.permissionMode
-          }
-          return config
+        const projectConfig: PaneConfig = {
+          paneId: request.paneId,
+          cwd: request.sourceCwd,
+          model: request.model,
+          thinkingLevel: request.thinkingLevel,
+          permissionMode: request.permissionMode
         }
+        const worktreeRequest = request.worktree
+        if (worktreeRequest === undefined) return projectConfig
 
-        const gitOps = yield* resolveGitOps(plugins)
+        const resolved = yield* resolveGitOps(plugins)
+        if (Option.isNone(resolved)) {
+          if (worktreeRequest._tag === 'Reattach') {
+            return yield* new WorktreeReattachError({
+              paneId: request.paneId,
+              path: worktreeRequest.info.path,
+              cause: 'Load the worktrees plugin to resume this pane'
+            })
+          }
+          yield* Effect.logWarning(
+            'Opening the pane in the project directory because the worktrees plugin is not loaded',
+            { paneId: request.paneId, cwd: request.sourceCwd }
+          )
+          return projectConfig
+        }
+        const gitOps = resolved.value
 
         const acquire: Effect.Effect<WorktreeInfo, WorktreeCreateError | WorktreeReattachError> =
           worktreeRequest._tag === 'Create'
@@ -567,14 +580,7 @@ export const PaneSupervisorLive = Layer.effect(
           )
         )
 
-        const config: PaneConfig = {
-          paneId: request.paneId,
-          cwd: worktree.path,
-          model: request.model,
-          thinkingLevel: request.thinkingLevel,
-          permissionMode: request.permissionMode,
-          worktree
-        }
+        const config: PaneConfig = { ...projectConfig, cwd: worktree.path, worktree }
         return config
       }).pipe(Effect.provideService(Scope.Scope, scope), Effect.result)
 

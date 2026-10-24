@@ -36,10 +36,8 @@ export class WorktreeReattachError extends Data.TaggedError('WorktreeReattachErr
   readonly cause: unknown
 }> {}
 
-/**
- * Service key under which the `git-ops` plugin provides a {@link GitOpsFactory}.
- */
-export const GIT_OPS_KEY = 'gitOps'
+/** Service key under which the `worktrees` plugin provides a {@link GitOpsFactory}. */
+export const WORKTREES_KEY = 'worktrees'
 
 /**
  * The git operations behind a pane's worktree lifecycle.
@@ -69,77 +67,58 @@ export interface GitOps {
   ) => Effect.Effect<WorktreeInfo, WorktreeReattachError>
 }
 
-/** Creates the {@link GitOps} a pane uses; the value a plugin provides under {@link GIT_OPS_KEY}. */
+/** Creates the {@link GitOps} a pane uses; the value a plugin provides under {@link WORKTREES_KEY}. */
 export type GitOpsFactory = () => GitOps
-
-const unavailableReason = 'The git-ops plugin is not loaded'
-
-const unavailableGitOps: GitOps = {
-  createWorktree: (sourceRepo, paneId) =>
-    Effect.fail(new WorktreeCreateError({ paneId, sourceRepo, cause: unavailableReason })),
-  reattachWorktree: (info, paneId) =>
-    Effect.fail(new WorktreeReattachError({ paneId, path: info.path, cause: unavailableReason })),
-  removeWorktree: (info, paneId) =>
-    Effect.logWarning('Left a pane worktree on disk because the git-ops plugin is not loaded', {
-      paneId,
-      path: info.path
-    })
-}
 
 class GitOpsPluginError extends Data.TaggedError('GitOpsPluginError')<{
   readonly cause: unknown
 }> {}
 
+const hasGitOperations = (value: unknown): value is GitOps =>
+  Predicate.hasProperty(value, 'createWorktree') &&
+  Predicate.isFunction(value.createWorktree) &&
+  Predicate.hasProperty(value, 'removeWorktree') &&
+  Predicate.isFunction(value.removeWorktree) &&
+  Predicate.hasProperty(value, 'reattachWorktree') &&
+  Predicate.isFunction(value.reattachWorktree)
+
 /**
- * Resolves the {@link GitOps} for one pane from the factory the `git-ops` plugin provides under
- * {@link GIT_OPS_KEY}. It never fails. When the plugin is not loaded, provides a non-function, or
- * its factory throws, the problem is logged and the result refuses to create or reattach a
- * worktree (so no pane runs un-isolated) and leaves an existing worktree on disk at removal.
- * Call it once per pane open; a plugin reload applies from the next call.
+ * Resolves the {@link GitOps} for one pane from the factory the `worktrees` plugin provides under
+ * {@link WORKTREES_KEY}. It never fails. Returns `None`, after logging why, when the plugin is not
+ * loaded, provides a non-function, or its factory throws or returns something without the three
+ * operations; the caller then opens a new pane without a worktree and refuses to resume a pane
+ * that has one. Call it once per pane open; a plugin reload applies from the next call.
  */
 export const resolveGitOps = Effect.fn('GitOps.resolve')(function* (
   registry: Pick<PluginRegistry, 'inject'>
 ) {
-  const provided = yield* registry.inject(GIT_OPS_KEY)
+  const provided = yield* registry.inject(WORKTREES_KEY)
   if (Option.isNone(provided)) {
-    yield* Effect.logWarning('The git-ops plugin is not loaded; worktree operations are refused')
-    return unavailableGitOps
+    yield* Effect.logWarning('The worktrees plugin is not loaded')
+    return Option.none<GitOps>()
   }
-  if (!Predicate.isFunction(provided.value)) {
-    yield* Effect.logWarning(
-      'The gitOps service is not a function; worktree operations are refused',
-      {
-        received: typeof provided.value
-      }
-    )
-    return unavailableGitOps
+  const factory = provided.value
+  if (!Predicate.isFunction(factory)) {
+    yield* Effect.logWarning('The worktrees service is not a function', {
+      received: typeof factory
+    })
+    return Option.none<GitOps>()
   }
-  const factory = provided.value as GitOpsFactory
   return yield* Effect.try({
-    try: () => {
-      const created = factory() as Partial<GitOps> | null | undefined
-      if (
-        created === null ||
-        created === undefined ||
-        !Predicate.isFunction(created.createWorktree) ||
-        !Predicate.isFunction(created.removeWorktree) ||
-        !Predicate.isFunction(created.reattachWorktree)
-      ) {
-        throw new TypeError(
-          'The gitOps factory did not return createWorktree, removeWorktree and reattachWorktree'
-        )
-      }
-      return created as GitOps
-    },
+    try: () => factory(),
     catch: (cause) => new GitOpsPluginError({ cause })
   }).pipe(
+    Effect.flatMap((created) =>
+      hasGitOperations(created)
+        ? Effect.succeed(Option.some(created))
+        : Effect.logError(
+            'The worktrees factory did not return createWorktree, removeWorktree and reattachWorktree'
+          ).pipe(Effect.as(Option.none<GitOps>()))
+    ),
     Effect.catch((error) =>
-      Effect.logError(
-        'The git-ops plugin failed to create its service; worktree operations are refused',
-        {
-          cause: error.cause
-        }
-      ).pipe(Effect.as(unavailableGitOps))
+      Effect.logError('The worktrees plugin failed to create its service', {
+        cause: error.cause
+      }).pipe(Effect.as(Option.none<GitOps>()))
     )
   )
 })

@@ -2,13 +2,13 @@ export { PlanReviewResponse, Question } from '../shared/domain/attention'
 export { SessionId } from '../shared/domain/pane'
 export * from '../shared/plugin/api'
 export {
-  GIT_OPS_KEY,
   type GitOps,
   type GitOpsFactory,
+  WORKTREES_KEY,
   WorktreeCreateError,
   WorktreeReattachError,
   WorktreeRemoveError
-} from './services/git-ops-seam'
+} from './services/worktrees-seam'
 export {
   AGENT_BACKEND_KEY,
   type AgentBackend,

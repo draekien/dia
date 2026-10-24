@@ -12,7 +12,6 @@ import { HostPlugins } from '../plugins/host-plugins'
 import { PluginSources } from '../plugins/plugin-sources'
 import type { AgentSession } from '../session/agent-backend'
 import { type OutboundMessage, SessionStarted } from '../session/protocol'
-import { GIT_OPS_KEY, type GitOps, WorktreeCreateError } from './git-ops-seam'
 import {
   type PaneCreationRequest,
   PaneSupervisor,
@@ -20,6 +19,7 @@ import {
   SessionFactory,
   SessionFactoryLive
 } from './pane-supervisor'
+import { type GitOps, WORKTREES_KEY, WorktreeReattachError } from './worktrees-seam'
 
 interface FakeSession {
   readonly config: PaneConfig
@@ -67,7 +67,7 @@ const pluginsWith = (inject: (key: string) => Option.Option<unknown>) =>
 const noPlugins = pluginsWith(() => Option.none())
 
 const pluginsProviding = (gitOps: GitOps) =>
-  pluginsWith((key) => (key === GIT_OPS_KEY ? Option.some(() => gitOps) : Option.none()))
+  pluginsWith((key) => (key === WORKTREES_KEY ? Option.some(() => gitOps) : Option.none()))
 
 const unusedGitOps: GitOps = {
   createWorktree: () => Effect.die(new Error('createWorktree should not be called in these tests')),
@@ -413,26 +413,60 @@ describe('PaneSupervisor', () => {
     })
   )
 
-  it.effect('refuses a worktree pane without starting a session when git-ops is unavailable', () =>
+  it.effect('opens a new worktree pane in the project directory when worktrees is not loaded', () =>
     Effect.gen(function* () {
       const { sessions, testLayer } = makeTestSetup(unusedGitOps, [], noPlugins)
 
       yield* Effect.gen(function* () {
         const supervisor = yield* PaneSupervisor
-        const result = yield* supervisor
-          .openPane(
-            { ...requestA, worktree: { _tag: 'Create', worktreesRoot: '/wt' } },
-            () => Effect.void,
-            ignoreSessionId,
-            ignorePermissionMode
-          )
-          .pipe(Effect.result)
+        yield* supervisor.openPane(
+          { ...requestA, worktree: { _tag: 'Create', worktreesRoot: '/wt' } },
+          () => Effect.void,
+          ignoreSessionId,
+          ignorePermissionMode
+        )
 
-        assert.isTrue(Result.isFailure(result))
-        if (Result.isFailure(result)) assert.instanceOf(result.failure, WorktreeCreateError)
-        assert.strictEqual(sessions.length, 0)
+        assert.strictEqual(sessions.length, 1)
+        assert.strictEqual(sessions[0].config.cwd, requestA.sourceCwd)
+        assert.isUndefined(sessions[0].config.worktree)
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })
+  )
+
+  it.effect(
+    'refuses to resume a worktree pane without starting a session when worktrees is not loaded',
+    () =>
+      Effect.gen(function* () {
+        const { sessions, testLayer } = makeTestSetup(unusedGitOps, [], noPlugins)
+        const info: WorktreeInfo = {
+          path: '/wt/dia-calm-fox',
+          branch: 'dia/calm-fox',
+          sourceRepo: requestA.sourceCwd
+        }
+
+        yield* Effect.gen(function* () {
+          const supervisor = yield* PaneSupervisor
+          const result = yield* supervisor
+            .openPane(
+              { ...requestA, worktree: { _tag: 'Reattach', info } },
+              () => Effect.void,
+              ignoreSessionId,
+              ignorePermissionMode
+            )
+            .pipe(Effect.result)
+
+          assert.isTrue(Result.isFailure(result))
+          if (Result.isFailure(result)) {
+            assert.instanceOf(result.failure, WorktreeReattachError)
+            assert.strictEqual(result.failure.path, info.path)
+            assert.strictEqual(
+              result.failure.cause,
+              'Load the worktrees plugin to resume this pane'
+            )
+          }
+          assert.strictEqual(sessions.length, 0)
+        }).pipe(Effect.scoped, Effect.provide(testLayer))
+      })
   )
 
   it.effect('auto-settles Completed back to Idle after 3 seconds', () =>

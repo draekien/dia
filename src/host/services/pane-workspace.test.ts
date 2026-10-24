@@ -4,11 +4,11 @@ import { type ConversationMessage, SessionId } from '@shared/domain/pane'
 import type { PaneNode } from '@shared/domain/pane-tree'
 import type { IpcEvent } from '@shared/ipc/contract'
 import { Effect, FileSystem, Layer, Option, Result } from 'effect'
-import { WorktreeCreateError } from './git-ops-seam'
 import { type PaneHandle, PaneSupervisor } from './pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
 import { type PersistedWorkspace, PersistenceService } from './persistence'
 import { TranscriptReader } from './transcript-reader'
+import { WorktreeCreateError } from './worktrees-seam'
 
 function secondLeafPaneId(tree: PaneNode): string {
   if (tree._tag !== 'Split') throw new Error('expected a Split')

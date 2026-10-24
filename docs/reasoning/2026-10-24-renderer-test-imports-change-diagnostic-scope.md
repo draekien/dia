@@ -12,4 +12,4 @@ An `app.test.tsx` rendered `<App />` to check that the startup placeholder shows
 
 ## Implication
 
-A renderer test that imports an app root or a pane component pulls every transitive source file into the test project's diagnostics. Test leaf components (`StartupSkeleton`, `PluginLoadIndicator`) and leave the `App` wiring to a run of the real app, or give the affected file a directive that is valid in both projects.
+A renderer test that imports an app root or a pane component pulls every transitive source file into the test project's diagnostics. Test leaf components (`StartupSkeleton`, `PluginLoadIndicator`) and leave the `App` wiring to a run of the real app, or give the affected file a directive that is valid in both projects. A file-level `// @effect-diagnostics asyncFunction:off` is valid in both: `pane-creation-form.tsx` moved to one when `pane-creation-form.test.tsx` was added (2026-10-25), and `use-plugin-list.ts` already used one.
