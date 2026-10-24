@@ -1,5 +1,6 @@
 import {
   formatMegabytes,
+  isEssentialPlugin,
   PLUGIN_MEMORY_LIMIT,
   type PluginInfo,
   type PluginStatus
@@ -87,6 +88,7 @@ function PluginRow({
   const unloaded = plugin.status._tag === 'Unloaded' || loading
   const disabled = busy || loading
   const overridden = plugin.origin === 'override'
+  const essential = isEssentialPlugin(plugin.name)
 
   return (
     <li className="flex flex-col gap-1.5 px-4 py-3" data-plugin={plugin.name}>
@@ -101,11 +103,16 @@ function PluginRow({
             {unloaded ? 'Load' : 'Reload'}
           </Button>
           {unloaded ? null : (
-            <Button size="xs" variant="ghost" disabled={disabled} onClick={onUnload}>
+            <Button size="xs" variant="ghost" disabled={disabled || essential} onClick={onUnload}>
               Unload
             </Button>
           )}
-          <Button size="xs" variant="ghost" disabled={disabled} onClick={onChooseOverride}>
+          <Button
+            size="xs"
+            variant="ghost"
+            disabled={disabled || essential}
+            onClick={onChooseOverride}
+          >
             <FolderIcon />
             Set folder…
           </Button>
@@ -122,6 +129,11 @@ function PluginRow({
           {plugin.root}
         </span>
       </p>
+      {essential ? (
+        <p className="text-xs text-ink-muted">
+          Essential: it stays loaded and always runs the bundled copy.
+        </p>
+      ) : null}
       {detail === undefined ? null : (
         <p className="max-h-32 overflow-y-auto font-mono text-xs break-words whitespace-pre-wrap text-ink">
           {detail}

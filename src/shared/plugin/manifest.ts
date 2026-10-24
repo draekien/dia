@@ -21,6 +21,16 @@ export const PluginName = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]*
 export type PluginName = typeof PluginName.Type
 
 /**
+ * Plugins the Host must keep loaded and running its shipped code: the registry refuses to unload
+ * them and the plugin sources refuse to override them. The list is a kernel decision, not a
+ * manifest field, so a plugin or an override cannot remove its own protection.
+ */
+export const ESSENTIAL_PLUGINS: ReadonlyArray<string> = ['permissions']
+
+/** Whether `name` is in {@link ESSENTIAL_PLUGINS}. */
+export const isEssentialPlugin = (name: string): boolean => ESSENTIAL_PLUGINS.includes(name)
+
+/**
  * When a plugin loads at startup: `eager` plugins finish loading before the Host reports ready,
  * so the first agent session can use what they provide; `lazy` plugins load in the background
  * after that.
