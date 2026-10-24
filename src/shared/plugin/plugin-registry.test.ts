@@ -911,4 +911,26 @@ describe('plugin registry', () => {
       assert.deepStrictEqual(log, ['permissions:open', 'permissions:close', 'permissions:open'])
     }).pipe(Effect.scoped)
   )
+
+  it.effect('keeps an essential plugin provided when a reload of it fails', () =>
+    Effect.gen(function* () {
+      const plugins = {
+        permissions: plugin(manifest('permissions'), (ctx) => ctx.provide('gate', 'v1'))
+      }
+      const registry = yield* makeRegistry(plugins)
+      yield* registry.load('permissions')
+      plugins.permissions = plugin(manifest('permissions'), (ctx) =>
+        Effect.gen(function* () {
+          yield* ctx.provide('gate', 'v2')
+          return yield* Effect.fail('boom')
+        })
+      )
+
+      const reloaded = yield* registry.load('permissions')
+      const provided = yield* registry.inject('gate')
+
+      assert.strictEqual(reloaded.status._tag, 'Loaded')
+      assert.deepStrictEqual(provided, Option.some('v1'))
+    }).pipe(Effect.scoped)
+  )
 })

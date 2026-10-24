@@ -1,5 +1,11 @@
 import { assert, describe, it } from '@effect/vitest'
-import { Effect, Option } from 'effect'
+import { Allow } from '@shared/domain/attention'
+import type { PluginServices, PluginSetup } from '@shared/plugin/api'
+import { PLUGIN_API_VERSION } from '@shared/plugin/manifest'
+import { type LoadedPlugin, makePluginRegistry } from '@shared/plugin/plugin-registry'
+import { Deferred, Effect, Option } from 'effect'
+import { makePendingUserInput } from '../../../plugins/permissions/pending-user-input'
+import { makePermissionModeController } from '../../../plugins/permissions/permission-mode-controller'
 import {
   makeSessionPermissions,
   PENDING_USER_INPUT_KEY,
@@ -98,5 +104,52 @@ describe('makeSessionPermissions', () => {
 
       assert.deepStrictEqual(yield* permissions.modeController.currentMode, Option.none())
     })
+  )
+})
+
+const reloadableRegistry = Effect.gen(function* () {
+  const plugin = (setup: PluginSetup<PluginServices>): LoadedPlugin<PluginServices> => ({
+    manifest: { name: 'permissions', api: PLUGIN_API_VERSION, host: 'host.ts' },
+    resolveSetup: Effect.succeed(Option.some(setup))
+  })
+  const setup: PluginSetup<PluginServices> = (ctx) =>
+    Effect.gen(function* () {
+      yield* ctx.provide(PENDING_USER_INPUT_KEY, makePendingUserInput)
+      yield* ctx.provide(PERMISSION_MODE_CONTROLLER_KEY, () => makePermissionModeController)
+    })
+  return yield* makePluginRegistry<PluginServices>({
+    catalog: {
+      names: () => Effect.succeed(['permissions']),
+      resolve: () =>
+        Effect.succeed(Option.some({ root: 'permissions', origin: 'default' as const }))
+    },
+    loader: {
+      peek: () => Effect.succeed(plugin(setup).manifest),
+      load: (_root, use) => use(plugin(setup))
+    },
+    extend: (services) => services
+  })
+})
+
+describe('a permissions plugin reload while a request is pending', () => {
+  it.effect(
+    'lets the running session resolve the request and gives the next session new state',
+    () =>
+      Effect.gen(function* () {
+        const registry = yield* reloadableRegistry
+        yield* registry.load('permissions')
+        const running = yield* makeSessionPermissions(registry)
+        const deferred = yield* running.pendingUserInput.register('req-1')
+
+        yield* registry.load('permissions')
+        const matched = yield* running.pendingUserInput.resolve('req-1', Allow.make({}))
+        const resolution = yield* Deferred.await(deferred)
+        const next = yield* makeSessionPermissions(registry)
+
+        assert.isTrue(matched)
+        assert.deepStrictEqual(resolution, { _tag: 'Allow' })
+        assert.isTrue(next.available)
+        assert.isFalse(yield* next.pendingUserInput.isPending('req-1'))
+      }).pipe(Effect.scoped)
   )
 })

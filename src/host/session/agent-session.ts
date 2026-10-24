@@ -146,7 +146,13 @@ const toPermissionResult = (
     Match.exhaustive
   )
 
-const makeCanUseTool =
+/**
+ * Creates the SDK `canUseTool` callback for one agent session. Plugin tools are allowed. When
+ * `permissionsAvailable` is `false` every other tool call is denied and no request is emitted;
+ * otherwise each call is registered in `pendingUserInput`, emitted as a permission, question or
+ * plan-review request through `emit`, and answered with the user's resolution.
+ */
+export const makeCanUseTool =
   (
     pendingUserInput: PendingUserInput,
     permissionsAvailable: boolean,
@@ -207,7 +213,12 @@ const makeCanUseTool =
       }).pipe(Effect.withSpan('AgentSession.canUseTool'))
     )
 
-const makeApprovePluginTool = (
+/**
+ * Creates the approval step for a plugin tool that asks first. It resolves `true` when the user
+ * allows the call. When `permissionsAvailable` is `false` it resolves `false` at once, without
+ * emitting a request nobody can answer.
+ */
+export const makeApprovePluginTool = (
   pendingUserInput: PendingUserInput,
   permissionsAvailable: boolean,
   emit: (message: OutboundMessage) => Effect.Effect<void>,
