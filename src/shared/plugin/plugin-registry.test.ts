@@ -1,8 +1,8 @@
 import { assert, describe, it } from '@effect/vitest'
-import { Duration, Effect, Fiber, Option, type Scope } from 'effect'
+import { Deferred, Duration, Effect, Fiber, Option, type Scope } from 'effect'
 import { TestClock } from 'effect/testing'
 import type { PluginServices, PluginSetup } from './api'
-import { PLUGIN_API_VERSION, type PluginManifest } from './manifest'
+import { PLUGIN_API_VERSION, type PluginInfo, type PluginManifest } from './manifest'
 import {
   type LoadedPlugin,
   makePluginRegistry,
@@ -45,6 +45,7 @@ const makeRegistry = (
   options: {
     readonly memory?: PluginMemoryGuard
     readonly loader?: PluginLoader<PluginServices>
+    readonly onChange?: (changed: ReadonlyArray<PluginInfo>) => Effect.Effect<void>
   } = {}
 ) =>
   makePluginRegistry<PluginServices>({
@@ -58,6 +59,12 @@ const makeRegistry = (
         )
     },
     loader: options.loader ?? {
+      peek: (root) => {
+        const found = plugins[root]
+        return found === undefined
+          ? Effect.fail(new PluginLoadError({ message: `missing ${root}` }))
+          : Effect.succeed(found.manifest)
+      },
       load: (root, use) => {
         const found = plugins[root]
         return found === undefined
@@ -66,8 +73,27 @@ const makeRegistry = (
       }
     },
     extend: (services) => services,
-    ...(options.memory === undefined ? {} : { memory: options.memory })
+    ...(options.memory === undefined ? {} : { memory: options.memory }),
+    ...(options.onChange === undefined ? {} : { onChange: options.onChange })
   })
+
+const recordChanges = (until: string) =>
+  Effect.gen(function* () {
+    const seen: Array<string> = []
+    const reached = yield* Deferred.make<void>()
+    const onChange = (changed: ReadonlyArray<PluginInfo>) =>
+      Effect.gen(function* () {
+        for (const info of changed) {
+          const entry = `${info.name}:${info.status._tag}`
+          seen.push(entry)
+          if (entry === until) yield* Deferred.succeed(reached, undefined)
+        }
+      })
+    return { seen, onChange, reached }
+  })
+
+const peekNotUsed: PluginLoader<PluginServices>['peek'] = () =>
+  Effect.fail(new PluginLoadError({ message: 'peek is not used by this test' }))
 
 const memoryGuard = (
   limit: number,
@@ -189,6 +215,7 @@ describe('plugin registry', () => {
             )
         },
         loader: {
+          peek: peekNotUsed,
           load: () => Effect.fail(new PluginLoadError({ message: 'unreadable plugin.json' }))
         },
         extend: (services) => services
@@ -289,6 +316,37 @@ describe('plugin registry', () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect('lets the caller of the registry read a service a loaded plugin provides', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        provider: plugin(manifest('provider'), (ctx) => ctx.provide('db', 'connection'))
+      })
+      assert.deepStrictEqual(yield* registry.inject('db'), Option.none())
+
+      yield* registry.load('provider')
+      assert.deepStrictEqual(yield* registry.inject('db'), Option.some('connection'))
+
+      yield* registry.unload('provider')
+      assert.deepStrictEqual(yield* registry.inject('db'), Option.none())
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('returns the replacement value after the provider reloads', () =>
+    Effect.gen(function* () {
+      let generation = 0
+      const registry = yield* makeRegistry({
+        provider: plugin(manifest('provider'), (ctx) => {
+          generation += 1
+          return ctx.provide('db', `connection-${generation}`)
+        })
+      })
+      yield* registry.load('provider')
+      yield* registry.load('provider')
+
+      assert.deepStrictEqual(yield* registry.inject('db'), Option.some('connection-2'))
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('fails a plugin that provides a service key another plugin already provides', () =>
     Effect.gen(function* () {
       const registry = yield* makeRegistry({
@@ -384,26 +442,6 @@ describe('plugin registry', () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect('loadAll loads every known plugin and returns their states', () =>
-    Effect.gen(function* () {
-      const log: Array<string> = []
-      const registry = yield* makeRegistry({
-        alpha: plugin(manifest('alpha'), recording('alpha', log)),
-        beta: plugin(manifest('beta', { api: '0' }), recording('beta', log))
-      })
-
-      const infos = yield* registry.loadAll()
-
-      assert.deepStrictEqual(
-        infos.map((info) => [info.name, info.status._tag]),
-        [
-          ['alpha', 'Loaded'],
-          ['beta', 'Failed']
-        ]
-      )
-      assert.deepStrictEqual(log, ['alpha:open'])
-    }).pipe(Effect.scoped)
-  )
   it.effect('reports Failed when a setup function throws before returning an effect', () =>
     Effect.gen(function* () {
       const registry = yield* makeRegistry({
@@ -550,6 +588,7 @@ describe('plugin registry', () => {
         const outcomes: Array<string> = []
         const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', [])) }
         const loader: PluginLoader<PluginServices> = {
+          peek: peekNotUsed,
           load: (root, use) =>
             use(plugins.alpha).pipe(
               Effect.tapCause(() => Effect.sync(() => void outcomes.push(`${root}:rolled-back`))),
@@ -574,6 +613,7 @@ describe('plugin registry', () => {
         const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', log)) }
         let changedDependency = false
         const loader: PluginLoader<PluginServices> = {
+          peek: peekNotUsed,
           load: (_root, use) =>
             changedDependency
               ? Effect.fail(
@@ -604,6 +644,7 @@ describe('plugin registry', () => {
         let loaderCalls = 0
         const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', [])) }
         const loader: PluginLoader<PluginServices> = {
+          peek: peekNotUsed,
           load: (_root, use) => {
             loaderCalls += 1
             return use(plugins.alpha)
@@ -679,7 +720,8 @@ describe('plugin registry', () => {
           { alpha: plugin(manifest('alpha')), beta: plugin(manifest('beta')) },
           { memory: memoryGuard(100, { alpha: 40, beta: 7 }) }
         )
-        yield* registry.loadAll()
+        yield* registry.load('alpha')
+        yield* registry.load('beta')
 
         const infos = yield* registry.list()
 
@@ -691,6 +733,138 @@ describe('plugin registry', () => {
           ]
         )
       }).pipe(Effect.scoped)
+    )
+  })
+
+  describe('startup', () => {
+    it.effect('resolves once the eager plugins settle while a lazy plugin is still loading', () =>
+      Effect.gen(function* () {
+        const gate = yield* Deferred.make<void>()
+        const changes = yield* recordChanges('slow:Loaded')
+        const registry = yield* makeRegistry(
+          {
+            core: plugin(manifest('core', { load: 'eager' }), recording('core', [])),
+            slow: plugin(manifest('slow'), () => Deferred.await(gate))
+          },
+          { onChange: changes.onChange }
+        )
+
+        yield* registry.start()
+
+        assert.strictEqual(yield* statusOf(registry, 'core'), 'Loaded')
+        assert.strictEqual(yield* statusOf(registry, 'slow'), 'Loading')
+        yield* Deferred.succeed(gate, undefined)
+        yield* Deferred.await(changes.reached)
+        assert.strictEqual(yield* statusOf(registry, 'slow'), 'Loaded')
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('reports every plugin as Loading first, then each as it settles, eager first', () =>
+      Effect.gen(function* () {
+        const changes = yield* recordChanges('alpha:Loaded')
+        const registry = yield* makeRegistry(
+          {
+            alpha: plugin(manifest('alpha'), recording('alpha', [])),
+            core: plugin(manifest('core', { load: 'eager' }), recording('core', []))
+          },
+          { onChange: changes.onChange }
+        )
+
+        yield* registry.start()
+        yield* Deferred.await(changes.reached)
+
+        assert.deepStrictEqual(changes.seen, [
+          'alpha:Loading',
+          'core:Loading',
+          'core:Loaded',
+          'alpha:Loaded'
+        ])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('does not stop the other eager plugins when one eager plugin fails', () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry({
+          'a-core': plugin(
+            manifest('a-core', { load: 'eager' }),
+            recording('a-core', [], () => Effect.fail('boom'))
+          ),
+          'b-core': plugin(manifest('b-core', { load: 'eager' }), recording('b-core', []))
+        })
+
+        yield* registry.start()
+
+        assert.strictEqual(yield* statusOf(registry, 'a-core'), 'Failed')
+        assert.strictEqual(yield* statusOf(registry, 'b-core'), 'Loaded')
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect(
+      'loads a plugin lazily when its manifest cannot be read, and reports the failure',
+      () =>
+        Effect.gen(function* () {
+          const changes = yield* recordChanges('broken:Failed')
+          const registry = yield* makeRegistry(
+            { broken: plugin(manifest('broken')) },
+            {
+              onChange: changes.onChange,
+              loader: {
+                peek: () => Effect.fail(new PluginLoadError({ message: 'unreadable plugin.json' })),
+                load: () => Effect.fail(new PluginLoadError({ message: 'unreadable plugin.json' }))
+              }
+            }
+          )
+
+          yield* registry.start()
+          yield* Deferred.await(changes.reached)
+
+          assert.strictEqual(yield* statusOf(registry, 'broken'), 'Failed')
+        }).pipe(Effect.scoped)
+    )
+
+    it.effect('skips a queued plugin that was unloaded before its turn', () =>
+      Effect.gen(function* () {
+        const gate = yield* Deferred.make<void>()
+        const log: Array<string> = []
+        const changes = yield* recordChanges('c-last:Loaded')
+        const registry = yield* makeRegistry(
+          {
+            'a-slow': plugin(manifest('a-slow'), () => Deferred.await(gate)),
+            'b-late': plugin(manifest('b-late'), recording('b-late', log)),
+            'c-last': plugin(manifest('c-last'))
+          },
+          { onChange: changes.onChange }
+        )
+        yield* registry.start()
+        const unloading = yield* Effect.forkChild(registry.unload('b-late'))
+        yield* Effect.yieldNow
+
+        yield* Deferred.succeed(gate, undefined)
+        yield* Fiber.join(unloading)
+        yield* Deferred.await(changes.reached)
+
+        assert.strictEqual(yield* statusOf(registry, 'b-late'), 'Unloaded')
+        assert.deepStrictEqual(log, [])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect(
+      'reports Loading then Loaded for a plugin loaded on request, and nothing for a reload',
+      () =>
+        Effect.gen(function* () {
+          const changes = yield* recordChanges('alpha:Loaded')
+          const registry = yield* makeRegistry(
+            { alpha: plugin(manifest('alpha'), recording('alpha', [])) },
+            { onChange: changes.onChange }
+          )
+
+          yield* registry.load('alpha')
+          const afterFirstLoad = [...changes.seen]
+          yield* registry.load('alpha')
+
+          assert.deepStrictEqual(afterFirstLoad, ['alpha:Loading', 'alpha:Loaded'])
+          assert.deepStrictEqual(changes.seen, afterFirstLoad)
+        }).pipe(Effect.scoped)
     )
   })
 

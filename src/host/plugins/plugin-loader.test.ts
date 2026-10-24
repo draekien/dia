@@ -57,6 +57,62 @@ describe('host plugin loader', () => {
     )
   )
 
+  it.effect(
+    'peeks at the manifest, including its load mode, without importing or transacting',
+    () =>
+      run(
+        Effect.gen(function* () {
+          const { root } = yield* pluginDirectory(
+            JSON.stringify({ name: 'chat', api: '1', host: 'host.ts', load: 'eager' })
+          )
+          const { modules, calls, transactions } = recordingModules(() => Promise.resolve({}))
+          const loader = yield* makeHostPluginLoader(modules)
+
+          const manifest = yield* loader.peek(root)
+
+          assert.deepStrictEqual(manifest, {
+            name: 'chat',
+            api: '1',
+            host: 'host.ts',
+            load: 'eager'
+          })
+          assert.deepStrictEqual(calls, [])
+          assert.deepStrictEqual(transactions, [])
+        })
+      )
+  )
+
+  it.effect('refuses a load mode other than eager or lazy when peeking', () =>
+    run(
+      Effect.gen(function* () {
+        const { root } = yield* pluginDirectory(
+          JSON.stringify({ name: 'chat', api: '1', load: 'sometimes' })
+        )
+        const { modules } = recordingModules(() => Promise.resolve({}))
+        const loader = yield* makeHostPluginLoader(modules)
+
+        const error = yield* Effect.flip(loader.peek(root))
+
+        assert.strictEqual(error._tag, 'PluginLoadError')
+        assert.include(error.message, 'plugin.json')
+      })
+    )
+  )
+
+  it.effect('fails a peek when plugin.json is missing', () =>
+    run(
+      Effect.gen(function* () {
+        const { root } = yield* pluginDirectory(undefined)
+        const { modules } = recordingModules(() => Promise.resolve({}))
+        const loader = yield* makeHostPluginLoader(modules)
+
+        const error = yield* Effect.flip(loader.peek(root))
+
+        assert.strictEqual(error._tag, 'PluginLoadError')
+      })
+    )
+  )
+
   it.effect('returns no setup and imports nothing for a manifest without a host entry', () =>
     run(
       Effect.gen(function* () {

@@ -1,6 +1,7 @@
 // @effect-diagnostics asyncFunction:off -- React callbacks await the Promise-based window.dia bridge; no Effect runtime exists in the renderer.
 import type { PluginInfo } from '@shared/plugin/manifest'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
+import { usePluginList } from './use-plugin-list'
 
 /** An override the Host refused, kept until the user acts on that plugin again. */
 export interface OverrideRejection {
@@ -27,24 +28,17 @@ export interface PluginsController {
 }
 
 /**
- * Drives the plugin management page through `window.dia.plugins`. The list is read on mount and
- * again after every action, because unloading or reloading one plugin can change the state of
- * the plugins that depend on it. Actions on one plugin never overlap; a second request for a
- * plugin with an action in flight is ignored.
+ * Drives the plugin management page through `window.dia.plugins`. The list follows the Host's
+ * state changes (see {@link usePluginList}) and is read again after every action, because
+ * unloading or reloading one plugin can change the state of the plugins that depend on it.
+ * Actions on one plugin never overlap; a second request for a plugin with an action in flight is
+ * ignored.
  */
 export function usePlugins(): PluginsController {
-  const [plugins, setPlugins] = useState<ReadonlyArray<PluginInfo> | undefined>(undefined)
+  const { plugins, refresh } = usePluginList()
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set())
   const [rejection, setRejection] = useState<OverrideRejection | undefined>(undefined)
   const inFlight = useRef(new Set<string>())
-
-  const refresh = useCallback(async () => {
-    setPlugins(await window.dia.plugins.list())
-  }, [])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
 
   const run = useCallback(
     async (name: string, action: () => Promise<void>) => {

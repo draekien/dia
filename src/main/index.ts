@@ -158,6 +158,7 @@ app.whenReady().then(async () => {
             userDataPath: app.getPath('userData'),
             worktreesRoot: join(app.getPath('userData'), 'worktrees'),
             pluginsRoot: join(app.getAppPath(), 'plugins'),
+            pluginApiPath: join(app.getAppPath(), 'out', 'main', 'plugin-api.js'),
             logFilePath,
             isDev,
             allowedOrigins

@@ -21,17 +21,26 @@ export const PluginName = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]*
 export type PluginName = typeof PluginName.Type
 
 /**
+ * When a plugin loads at startup: `eager` plugins finish loading before the Host reports ready,
+ * so the first agent session can use what they provide; `lazy` plugins load in the background
+ * after that.
+ */
+export const PluginLoadMode = Schema.Literals(['eager', 'lazy'])
+export type PluginLoadMode = typeof PluginLoadMode.Type
+
+/**
  * Contents of a plugin's `plugin.json`. `host` and `renderer` are entry paths relative to the
  * plugin directory; a plugin may declare either or both. `inject` lists the service keys the
  * plugin reads with `ctx.inject`, so the registry reopens the plugin when a provider of one of
- * them changes.
+ * them changes. `load` is the {@link PluginLoadMode} at startup; it defaults to `lazy`.
  */
 export const PluginManifest = Schema.Struct({
   name: PluginName,
   api: Schema.String,
   host: Schema.optional(Schema.String),
   renderer: Schema.optional(Schema.String),
-  inject: Schema.optional(Schema.Array(Schema.String))
+  inject: Schema.optional(Schema.Array(Schema.String)),
+  load: Schema.optional(PluginLoadMode)
 })
 export type PluginManifest = typeof PluginManifest.Type
 
@@ -71,9 +80,13 @@ export const PluginRestartRequired = Schema.TaggedStruct('RestartRequired', {
   message: Schema.String
 })
 
-/** State of one plugin: {@link PluginUnloaded}, {@link PluginLoaded}, {@link PluginFailed}, {@link PluginWaiting} or {@link PluginRestartRequired}. */
+/** Plugin queued or running its first load in this Host process, with no version running yet. */
+export const PluginLoading = Schema.TaggedStruct('Loading', {})
+
+/** State of one plugin: {@link PluginUnloaded}, {@link PluginLoading}, {@link PluginLoaded}, {@link PluginFailed}, {@link PluginWaiting} or {@link PluginRestartRequired}. */
 export const PluginStatus = Schema.Union([
   PluginUnloaded,
+  PluginLoading,
   PluginLoaded,
   PluginFailed,
   PluginWaiting,

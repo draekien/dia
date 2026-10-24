@@ -1,5 +1,4 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { ConversationMessage } from '@shared/domain/pane'
 import {
   AssistantMessageReceived,
   AssistantTextDelta,
@@ -8,31 +7,15 @@ import {
   ConversationCompacted,
   ConversationReset,
   type OutboundMessage,
+  type SessionEventReducer,
   SessionStarted,
   SlashCommandsAvailable,
   ToolCallCompleted,
   ToolCallStarted,
   TurnCompleted,
   TurnErrored
-} from './protocol'
-
-/**
- * Folds the Agent SDK's raw message/event stream into the {@link OutboundMessage}
- * protocol the pane subprocess sends to main. Create one per agent session with
- * {@link makeSessionEventReducer} and feed every SDK message to {@link SessionEventReducer.step}
- * in arrival order; the reducer owns all cross-event correlation state
- * (in-flight content blocks, accumulated tool input, and tool calls awaiting
- * their result) so callers only deal in complete protocol messages.
- */
-export interface SessionEventReducer {
-  /**
-   * Advances the reducer with one SDK message and returns the protocol messages
-   * it produces, in emission order. Returns an empty array for messages that
-   * carry no externally visible protocol effect (e.g. intermediate
-   * `input_json_delta` chunks, which are accumulated internally).
-   */
-  readonly step: (message: SDKMessage) => ReadonlyArray<OutboundMessage>
-}
+} from '@dia/plugin'
+import type { ConversationMessage } from '@shared/domain/pane'
 
 const parseToolInput = (partialJson: string): Record<string, unknown> => {
   if (!partialJson) return {}

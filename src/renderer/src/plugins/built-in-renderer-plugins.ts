@@ -18,16 +18,18 @@ const builtIn: RendererPluginSources = {
 }
 
 /**
- * Starts the renderer's plugin registry over the plugins bundled with dia and loads every one of
- * them. Call it once when the renderer starts; the returned registry lives for the lifetime of
- * the page, and its `load`, `unload` and `list` operate on the bundled plugins' renderer entries.
+ * Starts the renderer's plugin registry over the plugins bundled with dia. It resolves once the
+ * plugins whose manifest says `load: "eager"` have settled; the others keep loading in the
+ * background. Call it once when the renderer starts; the returned registry lives for the lifetime
+ * of the page, and its `load`, `unload` and `list` operate on the bundled plugins' renderer
+ * entries.
  */
 export const startRendererPlugins = (): Promise<PluginRegistry> =>
   Effect.runPromise(
     Effect.gen(function* () {
       const scope = yield* Scope.make()
       const registry = yield* makeRendererPlugins(builtIn).pipe(Scope.provide(scope))
-      yield* registry.loadAll()
+      yield* registry.start()
       return registry
     })
   )

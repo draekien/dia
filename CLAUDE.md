@@ -49,6 +49,8 @@ This repository uses Effect v4. Before writing any Effect code, first read `node
 - Avoid excessive nesting from chained `.pipe`/`Effect.andThen` callbacks (see [effect.website/docs/code-style/do](https://effect.website/docs/code-style/do/)). Prefer `Effect.gen` for sequential logic — it reads top-to-bottom like imperative code instead of nesting a callback per step. Reach for the Do-simulation (`Effect.Do`/`Effect.bind`/`Effect.let`) only where `Effect.gen` doesn't fit.
 
 - An RPC wrapper field must not reuse a name a command payload already has. Add a test that the payload's own field reaches the handler unchanged. Bump `PROTOCOL_VERSION` in `src/shared/ipc/rpc.ts` whenever `DiaRpcs` changes shape.
+- `pnpm typecheck` exits 1 on Effect *warning* diagnostics (suggestions exit 0). Check its exit code, not `grep "error TS"`: lefthook's pre-commit runs it. Example: `unknownInEffectCatch` on `Effect.try({ catch: (cause) => cause })`; return a `Data.TaggedError` instead.
+- A shipped plugin cannot import `src/` (the installer packages only `out/**` and `plugins/**`). It imports host runtime values from `@dia/plugin`: `tsconfig.node.json`, `tsconfig.test.json` and `vitest.config.ts` map it to `src/host/plugin-api.ts`; at runtime the loader's resolve hook maps it to `out/main/plugin-api.js`. Export a new host value from `plugin-api.ts`. vitest never runs that hook; `plugin-modules.test.ts` covers it through a child Node process.
 
 ### Mandatory skill invocation
 
@@ -79,3 +81,6 @@ BLOCKING, in this order, on the branch diff, before `gh pr create`:
 - Launch Electron with `env -u ELECTRON_RUN_AS_NODE electron .`; otherwise it runs as plain Node.
 - A dev build reads and writes the real `%APPDATA%\dia-dev` profile (a packaged build uses `%APPDATA%\dia`). Back up `workspace.json` and `settings.json` first and restore them after.
 - Drive the window with `--remote-debugging-port` and CDP `Runtime.evaluate` on `window.dia`. See `docs/reasoning/2026-10-23-host-process-phase-1-findings.md`.
+- In `Runtime.evaluate` strings write Windows paths with forward slashes (`'F:/Dev/dia'`); backslashes are lost between the shell and JS.
+- Packaged check: `pnpm exec electron-vite build`, then `pnpm exec electron-builder --win --dir --config.directories.output=<scratch> --config.win.signAndEditExecutable=false`, then run `<scratch>/win-unpacked/dia.exe --user-data-dir=<scratch-profile> --remote-debugging-port=<port>` (`env -u ELECTRON_RUN_AS_NODE`). It reads a scratch profile, so no backup is needed.
+- A restored `workspace.json` can hold a session id the SDK no longer has, which crashes the pane. After backing it up, move it aside: the initial pane `00000000-0000-0000-0000-000000000001` then has status `pending`. Drive a real turn with `window.dia.createPane(id, 'F:/Dev/dia', 'claude-sonnet-5', 'off', 'default', false)`, then `sendMessage`, and read `onMessageAppended` and `onAttentionChanged`.

@@ -8,6 +8,12 @@
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "types": ["node", "vite/client"],
+    "paths": {
+      "@shared/*": ["./src/shared/*"],
+      "@dia/plugin": ["./src/host/plugin-api.ts"],
+      "@preload/*": ["./src/preload/*"],
+      "@renderer/*": ["./src/renderer/src/*"]
+    },
     "skipLibCheck": true,
     "strict": true,
     "esModuleInterop": true,
@@ -43,5 +49,5 @@
       }
     ]
   },
-  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.d.ts"]
+  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.d.ts", "plugins/**/*.test.ts"]
 }

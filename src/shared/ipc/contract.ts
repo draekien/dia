@@ -17,7 +17,7 @@ import { SlashCommandInfo } from '../domain/slash-command'
 import type { ThemePreference } from '../domain/theme'
 import { UpdateStatus } from '../domain/update'
 import { Uuid } from '../domain/uuid'
-import type { PluginInfo, PluginOverrideResult } from '../plugin/manifest'
+import { type PluginInfo, PluginName, type PluginOverrideResult } from '../plugin/manifest'
 
 const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
 
@@ -458,6 +458,17 @@ export const UpdateStatusChanged = Schema.TaggedStruct('UpdateStatusChanged', {
 })
 export type UpdateStatusChanged = typeof UpdateStatusChanged.Type
 
+/**
+ * Event pushed to the renderer whenever the state of plugin `name` changes (it started loading,
+ * finished loading, failed, was unloaded, or began waiting for a service). It carries no state:
+ * read the current one with `window.dia.plugins.list`. Never replayed after a reconnect, so
+ * re-read the list when the connection returns.
+ */
+export const PluginStatusChanged = Schema.TaggedStruct('PluginStatusChanged', {
+  name: PluginName
+})
+export type PluginStatusChanged = typeof PluginStatusChanged.Type
+
 // Additional events (PaneClosed) join this union in later bullets.
 /**
  * Union of every event pushed to the renderer, by the Host's event stream or
@@ -482,6 +493,7 @@ export const IpcEvent = Schema.Union([
   LayoutChanged,
   PaneCreateFailed,
   PaneAttentionChanged,
+  PluginStatusChanged,
   UpdateStatusChanged
 ])
 export type IpcEvent = typeof IpcEvent.Type
@@ -501,6 +513,12 @@ export interface PluginApi {
   setOverride(name: string, directory: string): Promise<PluginOverrideResult>
   /** Returns a plugin to the copy shipped with dia; nothing is loaded until `load`. */
   clearOverride(name: string): Promise<void>
+  /**
+   * Subscribes to plugin state changes, including each plugin finishing its load while the Host
+   * starts. The listener receives the plugin's name; call `list` for the new state. Returns a
+   * function that stops listening.
+   */
+  onStatusChanged(listener: (event: PluginStatusChanged) => void): () => void
 }
 
 /**

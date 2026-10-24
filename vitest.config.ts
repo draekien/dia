@@ -6,11 +6,12 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@dia/plugin': resolve('src/host/plugin-api.ts'),
       '@renderer': resolve('src/renderer/src'),
       '@shared': resolve('src/shared')
     }
   },
   test: {
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx']
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'plugins/**/*.test.ts']
   }
 })

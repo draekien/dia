@@ -1,9 +1,12 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { Cause, Effect } from 'effect'
-import { processPluginModules } from '../plugin-modules.ts'
+import { makePluginModules } from '../plugin-modules.ts'
 
 const [base] = process.argv.slice(2)
+const pluginApiFile = join(base, 'plugin-api.mjs')
+const processPluginModules = makePluginModules(pathToFileURL(pluginApiFile).href)
 globalThis.__evals = []
 
 const moduleSource = (name, extra = '') =>
@@ -77,5 +80,17 @@ write(outsideRoot, 'entry.mjs', moduleSource('entry', "import '../shared.mjs'"))
 results.outsideFirstLoad = await reload(outsideRoot)
 write(base, 'shared.mjs', moduleSource('shared', '// edited outside the plugin'))
 results.outsideEdited = await reload(outsideRoot)
+
+write(base, 'plugin-api.mjs', "export const marker = 'api'\n")
+const apiRoot = join(base, 'plugin-api')
+write(
+  apiRoot,
+  'entry.mjs',
+  moduleSource(
+    'entry',
+    "import { marker } from '@dia/plugin'\nglobalThis.__evals.push('saw:' + marker)"
+  )
+)
+results.pluginApi = await reload(apiRoot)
 
 process.stdout.write(`RESULT ${JSON.stringify(results)}\n`)
