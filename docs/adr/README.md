@@ -39,6 +39,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0028](0028-essential-plugins-and-the-permissions-plugin.md) | Keep essential plugins loaded and un-overridable, and move permission handling into one | superseded by ADR-0029 |
 | [0029](0029-plugin-categories-adapter-and-feature.md) | Split plugins into one adapter category and one feature category, and move the Agent SDK into a Claude Code adapter | accepted |
 | [0030](0030-user-turns-appear-when-the-host-reports-them-sent.md) | Show a user turn in the transcript when the Host reports it sent, not when the composer submits it | accepted |
+| [0031](0031-renderer-plugins-fill-slots.md) | Renderer plugins draw the UI by filling slots: one root slot, and child slots declared by the plugin that fills it | accepted |
 
 ## Adding a new ADR
 
