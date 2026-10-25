@@ -22,8 +22,10 @@ what identifier ties them together, or in what order to invoke them.
   its own `checkpointUuid` (→ `rewindFiles`) and the *preceding assistant* turn's
   `resumeAnchorUuid` (→ `resumeSessionAt`). Rewinding the first turn (no
   preceding assistant) starts a fresh, unresumed session. Both live (`plugins/claude-code/reducer.ts`
-  tracks the last assistant uuid seen) and restored (`plugins/claude-code/transcript.ts` tracks
-  it while projecting history, read through `src/host/services/transcript-reader.ts`) paths compute `resumeAnchorUuid` the same way, and
+  tracks the last assistant uuid seen, seeded at each restart with `continuesFrom`; see
+  `docs/reasoning/2026-10-25-closed-sdk-query-takes-prompts.md`) and restored
+  (`plugins/claude-code/transcript.ts` tracks it while projecting history in `readHistory`)
+  paths compute `resumeAnchorUuid` the same way, and
   it is threaded alongside `checkpointUuid` through protocol/IPC to the renderer
   and back in the rewind command.
 - **`replay-user-messages` is mandatory, not optional.** Those user-turn uuids
@@ -44,8 +46,9 @@ what identifier ties them together, or in what order to invoke them.
   user turn's `SessionMessage.uuid` is surfaced as `checkpointUuid` so a restored
   pane can still offer rewind on turns it never saw stream live. This relies on
   the replay-stream uuid and the transcript `SessionMessage.uuid` being the *same*
-  message-uuid namespace — assumed, not yet verified against a real restarted
-  session.
+  message-uuid namespace. Verified 2026-10-25 in the unpackaged app: the live
+  `CheckpointAvailable` uuids (`messageUuid` and `resumeAnchorUuid`) were the uuids
+  of the same user and assistant records in the session's `.jsonl` transcript.
 - **Correlate checkpoints FIFO, not "last".** A `CheckpointAvailable` arrives
   *after* its turn is already optimistically rendered, in submission order, so the
   reducer binds each uuid to the *earliest* user turn still lacking one. Turns
@@ -59,14 +62,15 @@ what identifier ties them together, or in what order to invoke them.
    *assistant* uuid, not the user uuid. Fixed by threading `resumeAnchorUuid`
    (the preceding assistant turn) alongside `checkpointUuid`; see the corrected
    first bullet above.
-2. **Fork-vs-checkpoint ownership on repeat/earlier rewinds — still unverified.**
-   After a fork, the checkpoints belong to the *superseded* session. Rewinding
-   again — especially to a turn earlier than the last rewind — may fail because
-   that checkpoint no longer belongs to the session now driving the pane. Expect
-   edge cases around repeated rewinds after a fork.
+2. **Fork-vs-checkpoint ownership on repeat/earlier rewinds — partly verified.**
+   Verified 2026-10-25: a second rewind, to a turn sent in the forked session,
+   forked again and kept the earlier history. Still unverified: a rewind to a
+   turn earlier than the last rewind, whose checkpoint belongs to the
+   *superseded* session, and whether its `rewindFiles` succeeds.
 
-Everything above the renderer boundary (`plugins/claude-code/session.ts` rewind sequencing) is
-untested by unit tests because that module can't be imported in tests (import-time
-`Effect.runFork` + `port.on`); the pure pieces — reducer checkpoint emission
-(`plugins/claude-code/reducer.ts`), transcript uuid surfacing (`plugins/claude-code/transcript.ts`),
-and renderer anchoring/truncation (`pane-chat.ts`) — are covered.
+The rewind sequencing in `plugins/claude-code/session.ts` (`rewindToCheckpoint`,
+`startQuery`) has no unit test, because it calls the SDK's `query()` directly and
+no fake `query()` exists. `openPromptInput` in that module is unit-tested, as are
+reducer checkpoint emission (`plugins/claude-code/reducer.ts`), transcript uuid
+surfacing (`plugins/claude-code/transcript.ts`) and renderer anchoring/truncation
+(`pane-chat.ts`).
