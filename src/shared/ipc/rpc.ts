@@ -9,7 +9,6 @@ import { ThemePreference } from '../domain/theme'
 import { TranscriptWidth } from '../domain/transcript-width'
 import { PluginInfo, PluginName, PluginOverrideResult } from '../plugin/manifest'
 import {
-  ChooseDirectoryResult,
   CreateTab,
   EditQueuedMessage,
   InterruptPane,
@@ -132,11 +131,6 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('SetTheme', { payload: { theme: ThemePreference } }),
   Rpc.make('GetSendMode', { success: SendMode }),
   Rpc.make('SetSendMode', { payload: { mode: SendMode } }),
-  Rpc.make('GetLastDirectory', { success: Schema.NullOr(Schema.String) }),
-  Rpc.make('RecordChosenDirectory', {
-    payload: { path: Schema.String },
-    success: ChooseDirectoryResult
-  }),
   Rpc.make('ListPlugins', { success: Schema.Array(PluginInfo) }),
   Rpc.make('LoadPlugin', { payload: { name: PluginName }, success: PluginInfo }),
   Rpc.make('UnloadPlugin', { payload: { name: PluginName }, success: PluginInfo }),

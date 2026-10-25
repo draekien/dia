@@ -4,7 +4,6 @@ import { TranscriptWidth } from '@shared/domain/transcript-width'
 import { Context, Effect, FileSystem, Layer, Option, Result, Schema } from 'effect'
 
 const Settings = Schema.Struct({
-  lastDirectory: Schema.optional(Schema.String),
   theme: Schema.optional(ThemePreference),
   sendMode: Schema.optional(SendMode),
   transcriptWidth: Schema.optional(TranscriptWidth),
@@ -24,8 +23,6 @@ const encodeSettings = Schema.encodeSync(Schema.fromJsonString(Settings, { space
 export class SettingsStore extends Context.Service<
   SettingsStore,
   {
-    readonly getLastDirectory: () => Effect.Effect<Option.Option<string>>
-    readonly setLastDirectory: (path: string) => Effect.Effect<void>
     readonly getTheme: () => Effect.Effect<Option.Option<ThemePreference>>
     readonly setTheme: (theme: ThemePreference) => Effect.Effect<void>
     readonly getSendMode: () => Effect.Effect<Option.Option<SendMode>>
@@ -76,12 +73,6 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
           .pipe(Effect.catch((cause) => Effect.logError('Failed to persist settings', { cause })))
       })
 
-      const getLastDirectory = () =>
-        read().pipe(Effect.map((settings) => Option.fromNullishOr(settings.lastDirectory)))
-
-      const setLastDirectory = (path: string) =>
-        read().pipe(Effect.flatMap((settings) => write({ ...settings, lastDirectory: path })))
-
       const getTheme = () =>
         read().pipe(Effect.map((settings) => Option.fromNullishOr(settings.theme)))
 
@@ -119,8 +110,6 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
         )
 
       return {
-        getLastDirectory,
-        setLastDirectory,
         getTheme,
         setTheme,
         getSendMode,

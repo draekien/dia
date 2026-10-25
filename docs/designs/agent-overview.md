@@ -206,7 +206,7 @@ A migrated file always yields a valid `Workspace`. A file that decodes as neithe
 
 | Removed | Added |
 |---|---|
-| `SplitPane`, `ClosePane`, `CreatePane`, `FocusPane`, `GetInitialLayout`; event `LayoutChanged` | Queries (typed `success` and `error`, `Rpc.make(name, { payload, success, error })`): `GetWorkspace`, `RegisterProject { projectId, directory }` (error `RegisterProjectError`), `RemoveProject { projectId, force }` (streaming success `RemovalProgress`), `GetAgentSummaries`, `GetTranscriptWidth` |
+| `SplitPane`, `ClosePane`, `CreatePane`, `FocusPane`, `GetInitialLayout`, and `GetLastDirectory` and `RecordChosenDirectory` (their only caller was the old form's directory picker; `SettingsStore` loses `lastDirectory`); event `LayoutChanged` | Queries (typed `success` and `error`, `Rpc.make(name, { payload, success, error })`): `GetWorkspace`, `RegisterProject { projectId, directory }` (error `RegisterProjectError`), `RemoveProject { projectId, force }` (streaming success `RemovalProgress`), `GetAgentSummaries`, `GetTranscriptWidth` |
 | | Commands (`withRequestId`): `MoveProject { projectId, toIndex }`, `CreateTab`, `RenameTab { paneId, name }`, `SelectTab { paneId: Schema.NullOr(Uuid) }`, `SetTranscriptWidth { width }` |
 | | Events: `WorkspaceChanged { workspace }`, `AgentSummaryChanged { summary }` (global, never replayed) |
 
@@ -216,7 +216,7 @@ Main gains `CHANNEL.revealPath` (`shell.showItemInFolder`); the handler reveals 
 
 ### Preload and `DiaApi`
 
-`DiaApi` (`contract.ts`) and `makeHostApi` gain `getWorkspace`, `registerProject`, `moveProject`, `removeProject`, `createTab`, `renameTab`, `selectTab`, `getAgentSummaries`, `getTranscriptWidth`, `setTranscriptWidth`, `onWorkspaceChanged`, `onAgentSummaryChanged` and `onAgentSummariesReplaced`. They lose `splitPane`, `closePane`, `createPane`, `focusPane`, `getInitialLayout` and `onLayoutChanged`.
+`DiaApi` (`contract.ts`) and `makeHostApi` gain `getWorkspace`, `registerProject`, `moveProject`, `removeProject`, `createTab`, `renameTab`, `selectTab`, `getAgentSummaries`, `getTranscriptWidth`, `setTranscriptWidth`, `onWorkspaceChanged`, `onAgentSummaryChanged` and `onAgentSummariesReplaced`. They lose `splitPane`, `closePane`, `createPane`, `focusPane`, `getInitialLayout`, `chooseDirectory` and `onLayoutChanged`.
 
 - Every value that crosses `contextBridge` is plain data: the bridge drops prototypes, so an `Option` or `Result` arrives without its `_tag` and a typed-error instance loses its fields (`docs/reasoning/2026-10-25-context-bridge-drops-option-and-result.md`). Optional fields are therefore `Schema.NullOr`, not `Option`.
 - `registerProject(projectId, directory): Promise<RegisterProjectRefusal | null>` resolves `null` once registered. `catchTags` turns each typed refusal into its encoded form (`RegisterProjectRefusal = typeof RegisterProjectError.Encoded`) in the success channel, so `query`'s retry and `orDie` (`host-api.ts`, `query`) apply only to transport errors.
@@ -242,7 +242,7 @@ export const actions: {
 }
 /** Kernel UI a plugin renders; a plugin file imports no `@renderer/*` path. */
 export { StatusIndicator, statusLabel }   // the renamed PulseIndicator, taking an AgentStatus
-export * from './components/ui/...'       // alert-dialog, button, checkbox, context-menu, dialog, dropdown-menu, input, popover, scroll-area, separator, tooltip
+export * from './components/ui/...'       // button, checkbox, context-menu, dialog, input, popover, scroll-area, separator, tooltip
 export { cn }
 ```
 

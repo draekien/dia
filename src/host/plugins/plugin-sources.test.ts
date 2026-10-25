@@ -8,8 +8,6 @@ import { makePluginSourcesLive, PluginSources } from './plugin-sources'
 const memorySettings = (initial: Record<string, string> = {}) => {
   let overrides: Record<string, string> = initial
   return Layer.succeed(SettingsStore)({
-    getLastDirectory: () => Effect.succeed(Option.none()),
-    setLastDirectory: () => Effect.void,
     getTheme: () => Effect.succeed(Option.none()),
     setTheme: () => Effect.void,
     getSendMode: () => Effect.succeed(Option.none()),

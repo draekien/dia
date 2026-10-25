@@ -3,7 +3,7 @@ import { DEFAULT_THEME } from '@shared/domain/theme'
 import { DEFAULT_TRANSCRIPT_WIDTH } from '@shared/domain/transcript-width'
 import { type IpcEvent, PaneCreateFailed } from '@shared/ipc/contract'
 import { DiaRpcs } from '@shared/ipc/rpc'
-import { Effect, FileSystem, Option, Path } from 'effect'
+import { Effect, Option } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { AgentSummaries } from '../services/agent-summaries'
@@ -16,7 +16,7 @@ import { SettingsStore } from '../services/settings-store'
 /**
  * Builds the implementation of {@link DiaRpcs} on top of the Host's services. Requires
  * `PaneWorkspace`, `AgentSummaries`, `PaneSupervisor`, `SettingsStore`, `EventHub`, `CommandDeduper`,
- * `HostPlugins`, `PluginSources`, and `FileSystem`/`Path`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
+ * `HostPlugins` and `PluginSources`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
  * handlers without a transport.
  *
  * Every command is applied at most once per `commandId` within its target (pane, project, or
@@ -34,8 +34,6 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
   const deduper = yield* CommandDeduper
   const plugins = yield* HostPlugins
   const pluginSources = yield* PluginSources
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
 
   const publish = (event: IpcEvent): Effect.Effect<void> => hub.publish(event)
 
@@ -274,15 +272,6 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     GetSendMode: () =>
       settings.getSendMode().pipe(Effect.map(Option.getOrElse(() => DEFAULT_SEND_MODE))),
     SetSendMode: ({ mode }) => settings.setSendMode(mode),
-    GetLastDirectory: () => settings.getLastDirectory().pipe(Effect.map(Option.getOrNull)),
-    RecordChosenDirectory: ({ path: chosenPath }) =>
-      Effect.gen(function* () {
-        yield* settings.setLastDirectory(chosenPath)
-        const isGitRepo = yield* fs
-          .exists(path.join(chosenPath, '.git'))
-          .pipe(Effect.orElseSucceed(() => false))
-        return { path: chosenPath, isGitRepo }
-      }),
     ListPlugins: () => plugins.list(),
     LoadPlugin: ({ name }) => plugins.load(name),
     UnloadPlugin: ({ name }) => plugins.unload(name),

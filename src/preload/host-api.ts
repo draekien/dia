@@ -2,7 +2,6 @@ import type { ConversationMessage } from '@shared/domain/pane'
 import { RegisterProjectError, type RegisterProjectRefusal } from '@shared/domain/project'
 import {
   AgentSummariesReplaced,
-  type ChooseDirectoryResult,
   type DiaApi,
   EditQueuedMessage,
   InterruptPane,
@@ -296,12 +295,6 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       ),
     getPaneHistory: (paneId): Promise<ReadonlyArray<ConversationMessage>> =>
       query((client) => client.GetPaneHistory({ paneId })),
-    chooseDirectory: (): Promise<ChooseDirectoryResult> =>
-      query((client) => client.GetLastDirectory())
-        .then((last) => deps.pickDirectory(last))
-        .then((chosen) =>
-          chosen === null ? null : query((client) => client.RecordChosenDirectory({ path: chosen }))
-        ),
     pickDirectory: () => deps.pickDirectory(null),
     getTheme: () => query((client) => client.GetTheme()),
     setTheme: (theme) => query((client) => client.SetTheme({ theme })),

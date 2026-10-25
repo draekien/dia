@@ -34,78 +34,19 @@ function makeTestSetup(initialContent: string | undefined): {
 }
 
 describe('SettingsStore', () => {
-  it.effect('getLastDirectory returns None when no settings file exists', () =>
-    Effect.gen(function* () {
-      const { testLayer, loggerLayer } = makeTestSetup(undefined)
-
-      const result = yield* Effect.gen(function* () {
-        const store = yield* SettingsStore
-        return yield* store.getLastDirectory()
-      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
-
-      assert.isTrue(Option.isNone(result))
-    })
-  )
-
-  it.effect('getLastDirectory returns the stored path when the file is valid', () =>
-    Effect.gen(function* () {
-      const { testLayer, loggerLayer } = makeTestSetup(JSON.stringify({ lastDirectory: '/repo' }))
-
-      const result = yield* Effect.gen(function* () {
-        const store = yield* SettingsStore
-        return yield* store.getLastDirectory()
-      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
-
-      assert.deepStrictEqual(result, Option.some('/repo'))
-    })
-  )
-
-  it.effect('getLastDirectory returns None and warns when the file is not valid JSON', () =>
+  it.effect('getTheme returns None and warns when the file is not valid JSON', () =>
     Effect.gen(function* () {
       const { capturedLogs, testLayer, loggerLayer } = makeTestSetup('not json')
 
       const result = yield* Effect.gen(function* () {
         const store = yield* SettingsStore
-        return yield* store.getLastDirectory()
+        return yield* store.getTheme()
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
       assert.isTrue(Option.isNone(result))
       assert.isTrue(
         capturedLogs.some((log) => String(log).includes('Ignoring unparseable settings file'))
       )
-    })
-  )
-
-  it.effect('getLastDirectory returns None and warns when JSON does not match the schema', () =>
-    Effect.gen(function* () {
-      const { capturedLogs, testLayer, loggerLayer } = makeTestSetup(
-        JSON.stringify({ lastDirectory: 42 })
-      )
-
-      const result = yield* Effect.gen(function* () {
-        const store = yield* SettingsStore
-        return yield* store.getLastDirectory()
-      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
-
-      assert.isTrue(Option.isNone(result))
-      assert.isTrue(
-        capturedLogs.some((log) => String(log).includes('Ignoring malformed settings file'))
-      )
-    })
-  )
-
-  it.effect('setLastDirectory persists the path, then getLastDirectory reflects it', () =>
-    Effect.gen(function* () {
-      const { writes, testLayer, loggerLayer } = makeTestSetup(undefined)
-
-      const result = yield* Effect.gen(function* () {
-        const store = yield* SettingsStore
-        yield* store.setLastDirectory('/repo-a')
-        return yield* store.getLastDirectory()
-      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
-
-      assert.deepStrictEqual(result, Option.some('/repo-a'))
-      assert.deepStrictEqual(JSON.parse(writes[0]), { lastDirectory: '/repo-a' })
     })
   )
 
@@ -168,10 +109,10 @@ describe('SettingsStore', () => {
     })
   )
 
-  it.effect('setTheme preserves an already-stored lastDirectory', () =>
+  it.effect('setTheme preserves an already-stored transcript width', () =>
     Effect.gen(function* () {
       const { writes, testLayer, loggerLayer } = makeTestSetup(
-        JSON.stringify({ lastDirectory: '/repo' })
+        JSON.stringify({ transcriptWidth: 'wide' })
       )
 
       yield* Effect.gen(function* () {
@@ -179,7 +120,7 @@ describe('SettingsStore', () => {
         yield* store.setTheme('system')
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
-      assert.deepStrictEqual(JSON.parse(writes[0]), { lastDirectory: '/repo', theme: 'system' })
+      assert.deepStrictEqual(JSON.parse(writes[0]), { transcriptWidth: 'wide', theme: 'system' })
     })
   )
 
@@ -248,18 +189,18 @@ describe('SettingsStore plugin overrides', () => {
   it.effect('removes one plugin override and keeps the others and the other settings', () =>
     Effect.gen(function* () {
       const stored = JSON.stringify({
-        lastDirectory: '/repo',
+        theme: 'dark',
         pluginOverrides: { chat: '/a', theme: '/b' }
       })
 
       const result = yield* run(stored, (store) =>
         Effect.gen(function* () {
           yield* store.clearPluginOverride('chat')
-          return [yield* store.getPluginOverrides(), yield* store.getLastDirectory()] as const
+          return [yield* store.getPluginOverrides(), yield* store.getTheme()] as const
         })
       )
 
-      assert.deepStrictEqual(result, [{ theme: '/b' }, Option.some('/repo')])
+      assert.deepStrictEqual(result, [{ theme: '/b' }, Option.some('dark' as const)])
     })
   )
 })

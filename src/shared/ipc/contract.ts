@@ -74,14 +74,6 @@ export type TitleBarOverlayColors = typeof TitleBarOverlayColors.Type
  * `null` means the user cancelled the dialog; otherwise `path` is the
  * chosen directory and `isGitRepo` reports whether it contains a `.git` folder.
  */
-export const ChooseDirectoryResult = Schema.NullOr(
-  Schema.Struct({
-    path: Schema.String,
-    isGitRepo: Schema.Boolean
-  })
-)
-export type ChooseDirectoryResult = typeof ChooseDirectoryResult.Type
-
 /**
  * Command sent by the renderer to submit a user prompt to the pane identified
  * by `paneId`. Consumed by the pane
@@ -632,8 +624,7 @@ export interface DiaApi {
   /** Shows `directory` in the system file manager; does nothing when it is not a directory. */
   revealPath(directory: string): Promise<void>
   getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>
-  chooseDirectory(): Promise<ChooseDirectoryResult>
-  /** Opens the native folder picker and resolves the chosen path, or `null` when the user cancels. Unlike `chooseDirectory`, the choice is not recorded as the last pane directory. */
+  /** Opens the native folder picker and resolves the chosen path, or `null` when the user cancels. */
   pickDirectory(): Promise<string | null>
   getTheme(): Promise<ThemePreference>
   setTheme(theme: ThemePreference): Promise<void>

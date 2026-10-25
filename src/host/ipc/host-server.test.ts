@@ -54,8 +54,6 @@ const handlersLayer = Layer.unwrap(
       GetPaneHistory: unused,
       GetTheme: () => Effect.succeed('dark' as const),
       SetTheme: unused,
-      GetLastDirectory: unused,
-      RecordChosenDirectory: unused,
       ListPlugins: unused,
       LoadPlugin: unused,
       UnloadPlugin: unused,

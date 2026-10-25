@@ -7,8 +7,6 @@ import { HostPlugins, makeHostPluginsLive } from './host-plugins'
 import { makePluginSourcesLive } from './plugin-sources'
 
 const settings = Layer.succeed(SettingsStore)({
-  getLastDirectory: () => Effect.succeed(Option.none()),
-  setLastDirectory: () => Effect.void,
   getTheme: () => Effect.succeed(Option.none()),
   setTheme: () => Effect.void,
   getSendMode: () => Effect.succeed(Option.none()),
