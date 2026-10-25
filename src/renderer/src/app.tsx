@@ -1,38 +1,41 @@
-import type { PaneNode } from '@shared/domain/pane-tree'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppHeader } from './components/app-header'
-import PaneTreeView from './components/pane-tree-view'
 import { onPluginsPageRequested, PluginsPage } from './components/plugins-page'
-import { StartupSkeleton } from './components/startup-skeleton'
+import { NoLayoutPlugin } from './components/tab-content'
+import { ROOT, Slot } from './lib/slots'
+import { useWorkspace } from './plugin-api'
 
 function App() {
-  const [tree, setTree] = useState<PaneNode | null>(null)
-  const [focusedPaneId, setFocusedPaneId] = useState<string | null>(null)
   const [pluginsOpen, setPluginsOpen] = useState(false)
+  const workspace = useWorkspace()
+  const visibleTab = useRef<string | null>(null)
+  const shownBeforePlugins = useRef<string | null>(null)
+  const pluginsOpenRef = useRef(false)
+  visibleTab.current = workspace?.visibleTab ?? null
 
-  useEffect(() => {
-    window.dia.getInitialLayout().then(setTree)
-    return window.dia.onLayoutChanged((event) => setTree(event.tree))
-  }, [])
+  useEffect(
+    () =>
+      onPluginsPageRequested(() => {
+        if (pluginsOpenRef.current) return
+        pluginsOpenRef.current = true
+        shownBeforePlugins.current = visibleTab.current
+        window.dia.selectTab(null)
+        setPluginsOpen(true)
+      }),
+    []
+  )
 
-  useEffect(() => onPluginsPageRequested(() => setPluginsOpen(true)), [])
-
-  const closePlugins = useCallback(() => setPluginsOpen(false), [])
-
-  const handleFocusPane = useCallback((paneId: string) => {
-    setFocusedPaneId(paneId)
-    window.dia.focusPane(paneId)
+  const closePlugins = useCallback(() => {
+    pluginsOpenRef.current = false
+    setPluginsOpen(false)
+    if (shownBeforePlugins.current !== null) window.dia.selectTab(shownBeforePlugins.current)
   }, [])
 
   return (
     <div className="flex h-screen flex-col bg-background">
       <AppHeader />
       <div className="min-h-0 flex-1" hidden={pluginsOpen}>
-        {tree === null ? (
-          <StartupSkeleton />
-        ) : (
-          <PaneTreeView node={tree} focusedPaneId={focusedPaneId} onFocusPane={handleFocusPane} />
-        )}
+        <Slot name={ROOT} empty={<NoLayoutPlugin />} />
       </div>
       {pluginsOpen ? (
         <div className="min-h-0 flex-1">

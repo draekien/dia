@@ -1,53 +1,31 @@
-import { PaneConfig, SessionId } from '@shared/domain/pane'
-import { PaneNode } from '@shared/domain/pane-tree'
-import { Context, Data, Effect, FileSystem, Layer, Option, Schema } from 'effect'
+import { Activity } from '@shared/domain/agent-summary'
+import { Workspace } from '@shared/domain/project'
+import { Context, Data, Effect, FileSystem, Layer, Option, Path, Result, Schema } from 'effect'
+import { LegacyWorkspace, migrateLegacyWorkspace } from './workspace-migration'
 
 /**
- * A single pane's persisted entry: the config needed to restore it plus the
- * optional Agent SDK `sessionId` used to resume its live conversation. Absence
- * of `sessionId` means the pane never started a session (e.g. still pending).
- */
-export const PersistedPaneEntry = Schema.Struct({
-  config: PaneConfig,
-  sessionId: Schema.optional(SessionId)
-})
-export type PersistedPaneEntry = typeof PersistedPaneEntry.Type
-
-/**
- * The complete persisted workspace: the pane layout `tree` and a `panes` index
- * keyed by pane id. This is the single atomic unit dia writes to disk so the
- * tree and its per-pane index can never tear apart across two writes. Consume it
- * via {@link PersistenceService.loadWorkspace} and produce it for
- * {@link PersistenceService.saveWorkspace}.
+ * The workspace file's contents (version 2): every project with its tabs, the project order and
+ * the visible tab. Written and read only through {@link PersistenceService}.
  */
 export const PersistedWorkspace = Schema.Struct({
-  tree: PaneNode,
-  panes: Schema.Record(Schema.String, PersistedPaneEntry)
+  version: Schema.Literal(2),
+  workspace: Workspace
 })
 export type PersistedWorkspace = typeof PersistedWorkspace.Type
 
-/** Failure raised when the workspace file cannot be written to disk. Carries the target path and underlying cause. */
+/** Each tab's last activity line, keyed by pane id. Written and read through {@link PersistenceService}. */
+export const PersistedActivity = Schema.Record(Schema.String, Activity)
+export type PersistedActivity = typeof PersistedActivity.Type
+
+/** Failure raised when the workspace or activity file cannot be written to disk. Carries the target path and underlying cause. */
 export class PersistenceWriteError extends Data.TaggedError('PersistenceWriteError')<{
   readonly path: string
   readonly cause: unknown
 }> {}
 
-/** Failure raised when the workspace file exists but cannot be read from disk. Caught internally by `loadWorkspace` and logged. */
-export class PersistenceReadError extends Data.TaggedError('PersistenceReadError')<{
-  readonly path: string
-  readonly cause: unknown
-}> {}
-
-/** Failure raised when the workspace file's contents are not valid JSON or do not match the schema. Caught internally by `loadWorkspace` and logged. */
-export class PersistenceDecodeError extends Data.TaggedError('PersistenceDecodeError')<{
-  readonly path: string
-  readonly cause: unknown
-}> {}
-
 /**
- * Service tag for persisting and restoring the workspace ({@link PersistedWorkspace}).
- * Depend on this to save the current layout + pane index after a layout change, or
- * to load it on startup. Provide it via {@link makePersistenceServiceLive}.
+ * Service tag for persisting and restoring the workspace and each tab's last activity line.
+ * Provide it via {@link makePersistenceServiceLive}.
  */
 export class PersistenceService extends Context.Service<
   PersistenceService,
@@ -57,80 +35,135 @@ export class PersistenceService extends Context.Service<
      * can never leave a partially-written file. Fails with {@link PersistenceWriteError}
      * if encoding or the underlying file operations fail.
      */
-    readonly saveWorkspace: (
-      workspace: PersistedWorkspace
-    ) => Effect.Effect<void, PersistenceWriteError>
+    readonly saveWorkspace: (workspace: Workspace) => Effect.Effect<void, PersistenceWriteError>
     /**
-     * Reads the persisted workspace. Returns `None` when no workspace file exists yet
-     * (first launch) and, tolerantly, also when the file is unreadable or malformed --
-     * those cases are logged (with {@link PersistenceReadError}/{@link PersistenceDecodeError})
-     * so the caller can fall back to a default layout without handling an error channel.
+     * Reads the persisted workspace. A file written before projects existed is converted to
+     * projects and tabs, after a copy of it is kept as `workspace.v1.json`. Returns `None` when
+     * no workspace file exists yet (first launch) and, tolerantly, also when the file is
+     * unreadable or malformed; those cases are logged.
      */
-    readonly loadWorkspace: () => Effect.Effect<Option.Option<PersistedWorkspace>>
+    readonly loadWorkspace: Effect.Effect<Option.Option<Workspace>>
+    /** Atomically writes every tab's last activity line. Fails with {@link PersistenceWriteError}. */
+    readonly saveActivity: (
+      activity: PersistedActivity
+    ) => Effect.Effect<void, PersistenceWriteError>
+    /** Reads the saved activity lines; empty when the file is missing, unreadable or malformed (logged). */
+    readonly loadActivity: Effect.Effect<PersistedActivity>
   }
 >()('PersistenceService') {}
 
-const WorkspaceJson = Schema.fromJsonString(PersistedWorkspace, { space: 2 })
-const decodeWorkspace = Schema.decodeUnknownEffect(WorkspaceJson)
-const encodeWorkspace = Schema.encodeEffect(WorkspaceJson)
+const parseJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
+const decodeCurrent = Schema.decodeUnknownResult(PersistedWorkspace)
+const decodeLegacy = Schema.decodeUnknownResult(LegacyWorkspace)
+const decodeActivity = Schema.decodeUnknownResult(PersistedActivity)
+const encodeWorkspace = Schema.encodeEffect(Schema.fromJsonString(PersistedWorkspace, { space: 2 }))
+const encodeActivity = Schema.encodeEffect(Schema.fromJsonString(PersistedActivity))
 
 /**
- * Builds the live {@link PersistenceService} layer, persisting the workspace as JSON
- * at `<userDataPath>/workspace.json`. Requires `FileSystem.FileSystem` in the
- * environment. Provide this at the composition root wherever `PersistenceService`
- * is required.
+ * Builds the live {@link PersistenceService} layer, persisting the workspace as JSON at
+ * `<userDataPath>/workspace.json` and activity lines at `<userDataPath>/activity.json`. Requires
+ * `FileSystem.FileSystem` and `Path.Path` in the environment.
  */
 export const makePersistenceServiceLive = (userDataPath: string) =>
   Layer.effect(
     PersistenceService,
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
-      const filePath = `${userDataPath}/workspace.json`
-      const tempPath = `${filePath}.tmp`
+      const path = yield* Path.Path
+      const workspacePath = `${userDataPath}/workspace.json`
+      const legacyCopyPath = `${userDataPath}/workspace.v1.json`
+      const activityPath = `${userDataPath}/activity.json`
 
-      const saveWorkspace = Effect.fn('PersistenceService.saveWorkspace')(function* (
-        workspace: PersistedWorkspace
+      const writeAtomically = Effect.fn('PersistenceService.writeAtomically')(function* (
+        filePath: string,
+        serialized: string
       ) {
-        const serialized = yield* encodeWorkspace(workspace).pipe(
-          Effect.mapError((cause) => new PersistenceWriteError({ path: filePath, cause }))
-        )
-
+        const tempPath = `${filePath}.tmp`
         yield* fs
           .writeFileString(tempPath, serialized)
           .pipe(Effect.mapError((cause) => new PersistenceWriteError({ path: tempPath, cause })))
         yield* fs
           .rename(tempPath, filePath)
           .pipe(Effect.mapError((cause) => new PersistenceWriteError({ path: filePath, cause })))
-
-        yield* Effect.logInfo('Persisted workspace', { path: filePath })
       })
 
-      const loadWorkspace = Effect.fn('PersistenceService.loadWorkspace')(function* () {
+      const readJson = Effect.fn('PersistenceService.readJson')(function* (filePath: string) {
         const exists = yield* fs.exists(filePath).pipe(Effect.orElseSucceed(() => false))
-        if (!exists) return Option.none<PersistedWorkspace>()
+        if (!exists) return Option.none<unknown>()
+        const raw = yield* fs.readFileString(filePath).pipe(Effect.option)
+        if (Option.isNone(raw)) {
+          yield* Effect.logWarning('Failed to read file; ignoring it', { path: filePath })
+          return Option.none<unknown>()
+        }
+        const parsed = parseJson(raw.value)
+        if (Result.isFailure(parsed)) {
+          yield* Effect.logWarning('File is not JSON; ignoring it', { path: filePath })
+          return Option.none<unknown>()
+        }
+        return Option.some(parsed.success)
+      })
 
-        return yield* Effect.gen(function* () {
-          const raw = yield* fs
-            .readFileString(filePath)
-            .pipe(Effect.mapError((cause) => new PersistenceReadError({ path: filePath, cause })))
-          const workspace = yield* decodeWorkspace(raw).pipe(
-            Effect.mapError((cause) => new PersistenceDecodeError({ path: filePath, cause }))
+      const saveWorkspace = Effect.fn('PersistenceService.saveWorkspace')(function* (
+        workspace: Workspace
+      ) {
+        const serialized = yield* encodeWorkspace({ version: 2, workspace }).pipe(
+          Effect.mapError((cause) => new PersistenceWriteError({ path: workspacePath, cause }))
+        )
+        yield* writeAtomically(workspacePath, serialized)
+        yield* Effect.logInfo('Persisted workspace', { path: workspacePath })
+      })
+
+      const migrate = Effect.fn('PersistenceService.migrate')(function* (legacy: LegacyWorkspace) {
+        yield* fs
+          .copyFile(workspacePath, legacyCopyPath)
+          .pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning('Failed to keep a copy of the version 1 workspace', { cause })
+            )
           )
-          return Option.some(workspace)
-        }).pipe(
-          Effect.catchTags({
-            PersistenceReadError: (error) =>
-              Effect.logWarning('Failed to read workspace file; falling back to default', {
-                error
-              }).pipe(Effect.as(Option.none<PersistedWorkspace>())),
-            PersistenceDecodeError: (error) =>
-              Effect.logWarning('Workspace file is malformed; falling back to default', {
-                error
-              }).pipe(Effect.as(Option.none<PersistedWorkspace>()))
-          })
+        return yield* migrateLegacyWorkspace(legacy).pipe(
+          Effect.provideService(Path.Path, path),
+          Effect.provideService(FileSystem.FileSystem, fs)
         )
       })
 
-      return { saveWorkspace, loadWorkspace }
+      const loadWorkspace = Effect.gen(function* () {
+        const json = yield* readJson(workspacePath)
+        if (Option.isNone(json)) return Option.none<Workspace>()
+        const current = decodeCurrent(json.value)
+        if (Result.isSuccess(current)) return Option.some(current.success.workspace)
+        const legacy = decodeLegacy(json.value)
+        if (Result.isSuccess(legacy)) return Option.some(yield* migrate(legacy.success))
+        yield* Effect.logWarning('Workspace file is malformed; starting empty', {
+          path: workspacePath,
+          issue: current.failure
+        })
+        return Option.none<Workspace>()
+      }).pipe(Effect.withSpan('PersistenceService.loadWorkspace'))
+
+      const saveActivity = Effect.fn('PersistenceService.saveActivity')(function* (
+        activity: PersistedActivity
+      ) {
+        const serialized = yield* encodeActivity(activity).pipe(
+          Effect.mapError((cause) => new PersistenceWriteError({ path: activityPath, cause }))
+        )
+        yield* writeAtomically(activityPath, serialized)
+        yield* Effect.logDebug('Persisted activity', { path: activityPath })
+      })
+
+      const loadActivity = Effect.gen(function* () {
+        const json = yield* readJson(activityPath)
+        if (Option.isNone(json)) return {}
+        const decoded = decodeActivity(json.value)
+        if (Result.isFailure(decoded)) {
+          yield* Effect.logWarning('Activity file is malformed; ignoring it', {
+            path: activityPath
+          })
+          return {}
+        }
+        return decoded.success
+      }).pipe(Effect.withSpan('PersistenceService.loadActivity'))
+
+      return { saveWorkspace, loadWorkspace, saveActivity, loadActivity }
     })
   )

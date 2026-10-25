@@ -75,13 +75,13 @@ describe('foldSummary activity', () => {
     })
 
     expect(foldSummary(withTodo('Doing'), event).activity).toEqual(
-      ToolUse.make({ tool: 'TodoWrite', target: Option.none() })
+      ToolUse.make({ tool: 'TodoWrite', target: null })
     )
   })
 
   it('shows a started tool call without a target', () => {
     expect(foldSummary(idle, started('Read')).activity).toEqual(
-      ToolUse.make({ tool: 'Read', target: Option.none() })
+      ToolUse.make({ tool: 'Read', target: null })
     )
   })
 
@@ -89,7 +89,7 @@ describe('foldSummary activity', () => {
     const event = completed('Edit', { file_path: 'src/app.tsx', old_string: 'a' })
 
     expect(foldSummary(idle, event).activity).toEqual(
-      ToolUse.make({ tool: 'Edit', target: Option.some('src/app.tsx') })
+      ToolUse.make({ tool: 'Edit', target: 'src/app.tsx' })
     )
   })
 
@@ -97,16 +97,14 @@ describe('foldSummary activity', () => {
     const event = completed('Custom', { pattern: '*.ts', command: 'pnpm test' })
 
     expect(foldSummary(idle, event).activity).toEqual(
-      ToolUse.make({ tool: 'Custom', target: Option.some('pnpm test') })
+      ToolUse.make({ tool: 'Custom', target: 'pnpm test' })
     )
   })
 
   it('shows no target when the input has none of the target fields', () => {
     const event = completed('Task', { description: 'explore' })
 
-    expect(foldSummary(idle, event).activity).toEqual(
-      ToolUse.make({ tool: 'Task', target: Option.none() })
-    )
+    expect(foldSummary(idle, event).activity).toEqual(ToolUse.make({ tool: 'Task', target: null }))
   })
 
   it('keeps a todo line when another tool starts', () => {

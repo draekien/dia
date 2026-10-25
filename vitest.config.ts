@@ -7,11 +7,17 @@ export default defineConfig({
   resolve: {
     alias: {
       '@dia/plugin': resolve('src/host/plugin-api.ts'),
+      '@dia/renderer-plugin': resolve('src/renderer/src/plugin-api.ts'),
       '@renderer': resolve('src/renderer/src'),
       '@shared': resolve('src/shared')
     }
   },
   test: {
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'plugins/**/*.test.ts']
+    include: [
+      'src/**/*.test.ts',
+      'src/**/*.test.tsx',
+      'plugins/**/*.test.ts',
+      'plugins/**/*.test.tsx'
+    ]
   }
 })

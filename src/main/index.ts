@@ -12,6 +12,7 @@ import {
   wireGetAppVersion,
   wireGetHostConnection,
   wireGetUpdateStatus,
+  wireRevealPath,
   wireTitleBarOverlay,
   wireToggleDevTools,
   wireUpdaterCommands
@@ -169,6 +170,7 @@ app.whenReady().then(async () => {
 
         wireGetHostConnection(host.connection)
         wireChooseDirectory(mainWindow)
+        wireRevealPath()
 
         const updaterBridge = yield* makeUpdaterBridge(mainWindow.webContents)
         const reportSignal = (signal: UpdaterSignal): void =>

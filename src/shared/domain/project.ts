@@ -1,5 +1,5 @@
-import { Option, Schema } from 'effect'
-import { PaneConfig, SessionId } from './pane'
+import { Schema } from 'effect'
+import { PaneConfig, SessionId, StartupPermissionMode, ThinkingLevel } from './pane'
 import { Uuid } from './uuid'
 
 /** Id of a registered project. Create one with `crypto.randomUUID()` on the client that registers it. */
@@ -58,12 +58,13 @@ const hasDuplicates = (values: ReadonlyArray<string>): boolean =>
 /**
  * Every registered project with its tabs, in the user's project order, and the tab the content
  * area shows. Decoding rejects two projects with one `directoryKey`, two tabs with one pane id,
- * and a `visibleTab` that names no tab or an archived one. `visibleTab` is `none` while the
- * content area shows no tab.
+ * and a `visibleTab` that names no tab or an archived one. `visibleTab` is `null` while the
+ * content area shows no tab. Every field is plain data, so a workspace crosses `contextBridge`
+ * unchanged.
  */
 export const Workspace = Schema.Struct({
   projects: Schema.Array(ProjectEntry),
-  visibleTab: Schema.OptionFromNullOr(Uuid)
+  visibleTab: Schema.NullOr(Uuid)
 }).check(
   Schema.makeFilter((workspace) =>
     hasDuplicates(workspace.projects.map((entry) => entry.project.directoryKey))
@@ -74,8 +75,8 @@ export const Workspace = Schema.Struct({
     hasDuplicates(paneIdsOf(workspace.projects)) ? 'two tabs share a pane id' : undefined
   ),
   Schema.makeFilter((workspace) => {
-    if (workspace.visibleTab._tag === 'None') return undefined
-    const paneId = workspace.visibleTab.value
+    const paneId = workspace.visibleTab
+    if (paneId === null) return undefined
     const tab = workspace.projects
       .flatMap((entry) => entry.tabs)
       .find((candidate) => candidate.config.paneId === paneId)
@@ -88,7 +89,7 @@ export type Workspace = typeof Workspace.Type
 /** The workspace before the user registers any project. */
 export const EMPTY_WORKSPACE: Workspace = Workspace.make({
   projects: [],
-  visibleTab: Option.none()
+  visibleTab: null
 })
 
 /** `registerProject` refused a directory whose `directoryKey` another project already has. */
@@ -102,6 +103,19 @@ export class DirectoryNotFoundError extends Schema.TaggedError<DirectoryNotFound
   'DirectoryNotFoundError',
   { directory: Schema.String }
 ) {}
+
+/** Why `registerProject` refused a directory. */
+export const RegisterProjectError = Schema.Union([
+  ProjectAlreadyRegisteredError,
+  DirectoryNotFoundError
+])
+export type RegisterProjectError = typeof RegisterProjectError.Type
+
+/**
+ * A {@link RegisterProjectError} as plain data (`{ _tag, directory }`), the form in which it
+ * crosses `contextBridge` to the renderer. Switch on `_tag`.
+ */
+export type RegisterProjectRefusal = typeof RegisterProjectError.Encoded
 
 /** An operation named a project that is not registered, or is being removed. */
 export class ProjectNotFoundError extends Schema.TaggedError<ProjectNotFoundError>()(
@@ -119,3 +133,19 @@ export class WorktreeUnavailableError extends Schema.TaggedError<WorktreeUnavail
   'WorktreeUnavailableError',
   { projectId: Schema.String }
 ) {}
+
+/**
+ * What `createTab` needs to start an agent in a project. `name` is `null` for a generated name
+ * (the worktree slug when `useWorktree` is set). `useWorktree` is refused for a project that is
+ * not a git repo.
+ */
+export const CreateTabRequest = Schema.Struct({
+  projectId: ProjectId,
+  paneId: Uuid,
+  name: Schema.NullOr(AgentName),
+  model: Schema.String,
+  thinkingLevel: ThinkingLevel,
+  permissionMode: StartupPermissionMode,
+  useWorktree: Schema.Boolean
+})
+export type CreateTabRequest = typeof CreateTabRequest.Type

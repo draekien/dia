@@ -1,394 +1,528 @@
-import { randomUUID } from 'node:crypto'
+import { generateAgentName } from '@shared/domain/agent-name'
 import { Errored } from '@shared/domain/attention'
 import type {
   ConversationMessage,
+  PaneId,
   PermissionMode,
   SessionId,
-  StartupPermissionMode,
   ThinkingLevel
 } from '@shared/domain/pane'
 import {
-  closePane,
-  markPaneReady,
-  type PaneId,
-  PaneLeafSchema,
-  type PaneNode,
-  type PaneNotFoundError,
-  setPanePermissionMode,
-  setPaneThinkingLevel,
-  splitPane
-} from '@shared/domain/pane-tree'
-import { type IpcEvent, LayoutChanged, PaneAttentionChanged } from '@shared/ipc/contract'
-import { Context, Effect, FileSystem, HashMap, Layer, Option, Ref, Result, Semaphore } from 'effect'
+  AgentName,
+  type CreateTabRequest,
+  DirectoryNotFoundError,
+  EMPTY_WORKSPACE,
+  type ProjectAlreadyRegisteredError,
+  type ProjectId,
+  ProjectNotFoundError,
+  type Tab,
+  TabNotFoundError,
+  type Workspace,
+  WorktreeUnavailableError
+} from '@shared/domain/project'
+import {
+  AgentItem,
+  ProjectRemoved,
+  type RemovalItem,
+  type RemovalProgress,
+  Removed,
+  RemoveFailed,
+  Removing,
+  TranscriptItem,
+  WorktreeItem
+} from '@shared/domain/project-removal'
+import * as WorkspaceOps from '@shared/domain/workspace'
+import { type IpcEvent, PaneAttentionChanged, WorkspaceChanged } from '@shared/ipc/contract'
+import {
+  Context,
+  Effect,
+  FileSystem,
+  Layer,
+  Option,
+  Path,
+  Queue,
+  Ref,
+  Result,
+  Schema,
+  Semaphore,
+  Stream
+} from 'effect'
+import { HostPlugins } from '../plugins/host-plugins'
+import { resolveAgentBackend } from '../session/agent-backend'
+import { EventHub } from './event-hub'
 import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
-import { type PersistedPaneEntry, PersistenceService } from './persistence'
+import { PersistenceService } from './persistence'
+import { probeProject } from './project-directory'
 import { TranscriptReader } from './transcript-reader'
-import type { WorktreeCreateError, WorktreeReattachError } from './worktrees-seam'
+import {
+  resolveGitOps,
+  type WorktreeCreateError,
+  type WorktreeReattachError
+} from './worktrees-seam'
+
+type OnEvent = (event: IpcEvent) => Effect.Effect<void>
 
 /**
- * Service tag for the pane workspace: owns the pane tree and per-pane configs, and
- * coordinates splitting, creating, and closing panes against the {@link PaneSupervisor}.
- * Depend on this tag wherever pane layout or lifecycle needs to be read or mutated.
+ * Service tag for the pane workspace: owns the registered projects, their tabs, the project
+ * order and the visible tab, persists them, and starts and stops the agent session behind each
+ * tab through the {@link PaneSupervisor}. Every change it makes is published as
+ * `WorkspaceChanged` on the {@link EventHub} before the call returns, so clients read workspace
+ * state only from `getWorkspace` and that event.
  */
 export class PaneWorkspace extends Context.Service<
   PaneWorkspace,
   {
-    readonly getTree: () => Effect.Effect<PaneNode>
-    readonly split: (
-      paneId: PaneId,
-      direction: 'row' | 'column'
-    ) => Effect.Effect<PaneNode, PaneNotFoundError>
-    readonly createPane: (
-      paneId: PaneId,
-      sourceCwd: string,
-      model: string,
-      thinkingLevel: ThinkingLevel,
-      permissionMode: StartupPermissionMode,
-      useWorktree: boolean,
-      onEvent: (event: IpcEvent) => Effect.Effect<void>
-    ) => Effect.Effect<PaneNode, PaneNotFoundError | WorktreeCreateError | WorktreeReattachError>
+    readonly getWorkspace: Effect.Effect<Workspace>
     /**
-     * Changes a pane's thinking level: persists it on the pane's config, records it on the layout
-     * tree, and, when the pane is live, forwards it to the running process (which applies it on the
-     * next user turn). Returns the resulting layout tree so the caller can broadcast it. Leaves the
-     * tree unchanged (and still returns it) for an unknown pane.
+     * Registers `directory` as project `projectId` at the end of the project order. Succeeds
+     * unchanged when the same id already registered it. Fails when another project registered
+     * the directory, or when it is not an existing directory.
      */
-    readonly setThinkingLevel: (paneId: PaneId, level: ThinkingLevel) => Effect.Effect<PaneNode>
+    readonly registerProject: (
+      projectId: ProjectId,
+      directory: string
+    ) => Effect.Effect<void, ProjectAlreadyRegisteredError | DirectoryNotFoundError>
+    /** Moves a project to `toIndex` in the project order. */
+    readonly moveProject: (
+      projectId: ProjectId,
+      toIndex: number
+    ) => Effect.Effect<void, ProjectNotFoundError>
     /**
-     * Changes a pane's permission mode: persists it on the pane's config, records it on the layout
-     * tree, and, when the pane is live, forwards it to the running process (which applies it to the
-     * live session immediately). Returns the resulting layout tree so the caller can broadcast it.
-     * Leaves the tree unchanged (and still returns it) for an unknown pane.
+     * Removes a project, streaming each step: every agent's session is stopped, then its
+     * worktree and transcripts are deleted. The project is dropped once every item is removed;
+     * when an item fails it stays, and a later call retries. With `force` the project is dropped
+     * after its agents stop, and worktrees and transcripts are left on disk. The project
+     * directory is never touched. While it runs, the project's tabs cannot be created, shown or
+     * started.
      */
-    readonly setPermissionMode: (paneId: PaneId, mode: PermissionMode) => Effect.Effect<PaneNode>
-    readonly close: (paneId: PaneId) => Effect.Effect<PaneNode, PaneNotFoundError>
+    readonly removeProject: (
+      projectId: ProjectId,
+      force: boolean
+    ) => Stream.Stream<RemovalProgress, ProjectNotFoundError>
+    /**
+     * Starts an agent as a new tab of a project and shows it. A tab without a name is named
+     * after its worktree branch, else gets a generated name. Fails before starting anything when
+     * the project is unknown or being removed, or when a worktree is asked of a project that is
+     * not a git repo.
+     */
+    readonly createTab: (
+      request: CreateTabRequest,
+      onEvent: OnEvent
+    ) => Effect.Effect<
+      void,
+      ProjectNotFoundError | WorktreeUnavailableError | WorktreeCreateError | WorktreeReattachError
+    >
+    readonly renameTab: (paneId: PaneId, name: AgentName) => Effect.Effect<void, TabNotFoundError>
+    /**
+     * Shows the tab of `paneId`, or no tab for `null`, and resumes the shown tab's recorded
+     * session when it is not running. Fails for an unknown or archived tab, or one whose project
+     * is being removed.
+     */
+    readonly selectTab: (
+      paneId: PaneId | null,
+      onEvent: OnEvent
+    ) => Effect.Effect<void, TabNotFoundError>
+    /** Stores a tab's thinking level and, when its session runs, applies it from the next turn. */
+    readonly setThinkingLevel: (
+      paneId: PaneId,
+      level: ThinkingLevel
+    ) => Effect.Effect<void, TabNotFoundError>
+    /** Stores a tab's permission mode and, when its session runs, applies it at once. */
+    readonly setPermissionMode: (
+      paneId: PaneId,
+      mode: PermissionMode
+    ) => Effect.Effect<void, TabNotFoundError>
     readonly getPaneHistory: (paneId: PaneId) => Effect.Effect<ReadonlyArray<ConversationMessage>>
     /**
-     * Resumes a cold (restored-but-not-live) pane's Agent SDK session, streaming its events
-     * through `onEvent`. Idempotent: a no-op when the pane already has a live handle, when it is
-     * unknown, or when it has no recorded session to resume. Handles its own failures -- a gone
-     * non-worktree working directory, or a spawn/reattach failure -- by logging and emitting an
-     * `Errored` attention event rather than failing the effect.
+     * Resumes a cold tab's Agent SDK session, streaming its events through `onEvent`. A no-op
+     * when the session already runs, when the tab is unknown or its project is being removed, or
+     * when it has no recorded session. Handles its own failures -- a gone non-worktree working
+     * directory, or a spawn/reattach failure -- by logging and emitting an `Errored` attention
+     * event rather than failing the effect.
      */
-    readonly resumePane: (
-      paneId: PaneId,
-      onEvent: (event: IpcEvent) => Effect.Effect<void>
-    ) => Effect.Effect<void>
+    readonly resumePane: (paneId: PaneId, onEvent: OnEvent) => Effect.Effect<void>
     /**
-     * Guarantees a restored pane has a live session before a command that needs one, so the
-     * command is not dropped: starts the pane's session on demand when it has none. Continues the
-     * recorded Agent SDK session when the pane has one and starts a fresh conversation in the
-     * pane's working directory otherwise. A no-op when the pane is already live or is not in the
-     * index (a pane still pending its first configuration has nothing to start). Failures are
-     * handled as in {@link resumePane}.
+     * Guarantees a tab has a running session before a command that needs one, so the command is
+     * not dropped: continues the recorded session, or starts a fresh conversation in the tab's
+     * working directory. A no-op when the session already runs, or the tab is unknown or its
+     * project is being removed. Failures are handled as in {@link resumePane}.
      */
-    readonly ensureLive: (
-      paneId: PaneId,
-      onEvent: (event: IpcEvent) => Effect.Effect<void>
-    ) => Effect.Effect<void>
+    readonly ensureLive: (paneId: PaneId, onEvent: OnEvent) => Effect.Effect<void>
   }
 >()('PaneWorkspace') {}
 
+const WORKTREES_PLUGIN_NOT_LOADED = 'Load the worktrees plugin to remove this worktree'
+
+const nameFromBranch = (branch: string): Option.Option<AgentName> =>
+  Schema.decodeUnknownOption(AgentName)(branch.replace(/^dia\//, ''))
+
 /**
- * Builds the live {@link PaneWorkspace} layer, requiring {@link PaneSupervisor} and
- * {@link PersistenceService} from context. On construction it hydrates from the persisted
- * workspace (tree + per-pane index): if one exists it is restored as-is (panes stay cold --
- * no processes are spawned here); otherwise the workspace is seeded with a single pending
- * leaf pane (`initialPaneId`), since there is no valid `PaneNode` representing zero panes --
- * the user fills in its working directory through the same onboarding form used for any
- * freshly-split pane. Thereafter this is the single writer of the persisted workspace,
- * re-saving after every `split`/`createPane`/`close`. `worktreesRoot` is the base directory
- * under which per-pane git worktrees are created when `createPane` is called with
- * `useWorktree: true`. Also requires {@link TranscriptReader} to serve `getPaneHistory`
- * for restored panes without spawning a live session, and `FileSystem` to detect a resumed
- * non-worktree pane whose working directory has since been deleted. The per-pane worktree
- * directory and branch names are composed by {@link GitOps.createWorktree} itself.
+ * Builds the live {@link PaneWorkspace} layer. On construction it loads the persisted workspace
+ * (sessions stay cold -- no processes are spawned here) and shows the first tab when none is
+ * visible; with nothing persisted it starts empty. `worktreesRoot` is the base directory under
+ * which tab worktrees are created. Requires {@link PaneSupervisor}, {@link PersistenceService},
+ * {@link TranscriptReader}, {@link EventHub}, {@link HostPlugins} (for the worktree and agent
+ * backend services used to remove a project), `FileSystem` and `Path`.
  */
-export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: string) =>
+export const makePaneWorkspaceLive = (worktreesRoot: string) =>
   Layer.effect(
     PaneWorkspace,
     Effect.gen(function* () {
       const supervisor = yield* PaneSupervisor
       const persistence = yield* PersistenceService
       const transcriptReader = yield* TranscriptReader
+      const hub = yield* EventHub
+      const plugins = yield* HostPlugins
       const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
 
-      const persisted = yield* persistence.loadWorkspace()
-      const seed = Option.match(persisted, {
-        onNone: () => ({
-          tree: PaneLeafSchema.make({ paneId: initialPaneId, status: 'pending' }),
-          panes: HashMap.empty<PaneId, PersistedPaneEntry>()
-        }),
-        onSome: (workspace) => ({
-          tree: workspace.tree,
-          panes: HashMap.fromIterable(Object.entries(workspace.panes))
-        })
+      const persisted = yield* persistence.loadWorkspace
+      const initial = Option.match(persisted, {
+        onNone: () => EMPTY_WORKSPACE,
+        onSome: WorkspaceOps.withDefaultVisibleTab
       })
 
+      const workspaceRef = yield* Ref.make(initial)
+      const removingRef = yield* Ref.make<ReadonlySet<ProjectId>>(new Set())
+      const pendingSessions = new Map<PaneId, SessionId>()
+      const mutationLock = yield* Semaphore.make(1)
       const sessionStartLock = yield* Semaphore.make(1)
-      const treeRef = yield* Ref.make<PaneNode>(seed.tree)
-      const configsRef = yield* Ref.make(seed.panes)
 
-      const save = Effect.fn('PaneWorkspace.save')(function* () {
-        const tree = yield* Ref.get(treeRef)
-        const configs = yield* Ref.get(configsRef)
-        const panes: Record<string, PersistedPaneEntry> = {}
-        for (const [paneId, entry] of configs) {
-          panes[paneId] = entry
-        }
-        yield* persistence
-          .saveWorkspace({ tree, panes })
+      const save = (workspace: Workspace) =>
+        persistence
+          .saveWorkspace(workspace)
           .pipe(Effect.catch((cause) => Effect.logError('Failed to persist workspace', { cause })))
+
+      const mutate = <E>(
+        operation: string,
+        apply: (
+          workspace: Workspace,
+          removing: ReadonlySet<ProjectId>
+        ) => Result.Result<Workspace, E>
+      ): Effect.Effect<void, E> =>
+        mutationLock.withPermits(1)(
+          Effect.gen(function* () {
+            const current = yield* Ref.get(workspaceRef)
+            const next = apply(current, yield* Ref.get(removingRef))
+            if (Result.isFailure(next)) {
+              yield* Effect.logDebug('Workspace change refused', { operation, error: next.failure })
+              return yield* Effect.fail(next.failure)
+            }
+            if (next.success === current) return
+            yield* Ref.set(workspaceRef, next.success)
+            yield* save(next.success)
+            yield* hub.publish(WorkspaceChanged.make({ workspace: next.success }))
+            yield* Effect.logDebug('Workspace changed', { operation })
+          })
+        )
+
+      const projectOfTab = (paneId: PaneId) =>
+        Effect.map(Ref.get(workspaceRef), (workspace) =>
+          Result.map(WorkspaceOps.tabOf(workspace, paneId), (found) => found.project.projectId)
+        )
+
+      const isRemovingTab = (paneId: PaneId) =>
+        Effect.gen(function* () {
+          const projectId = yield* projectOfTab(paneId)
+          const removing = yield* Ref.get(removingRef)
+          return Result.isSuccess(projectId) && removing.has(projectId.success)
+        })
+
+      const recordSessionId = (paneId: PaneId, sessionId: SessionId) =>
+        mutate('recordSession', (workspace) =>
+          WorkspaceOps.recordSession(workspace, paneId, sessionId)
+        ).pipe(
+          Effect.catchTag('TabNotFoundError', () =>
+            Effect.sync(() => pendingSessions.set(paneId, sessionId)).pipe(
+              Effect.andThen(
+                Effect.logDebug('Held a session id for a tab not added yet', { paneId })
+              )
+            )
+          )
+        )
+
+      const recordPermissionMode = (paneId: PaneId, mode: PermissionMode) =>
+        mutate('recordPermissionMode', (workspace) =>
+          WorkspaceOps.updateTabConfig(workspace, paneId, { permissionMode: mode })
+        ).pipe(
+          Effect.catchTag('TabNotFoundError', () =>
+            Effect.logWarning('Received permission mode for an unknown tab', { paneId })
+          )
+        )
+
+      const getWorkspace = Ref.get(workspaceRef)
+
+      const registerProject = Effect.fn('PaneWorkspace.registerProject')(function* (
+        projectId: ProjectId,
+        directory: string
+      ) {
+        const info = yield* fs.stat(directory).pipe(Effect.option)
+        if (Option.isNone(info) || info.value.type !== 'Directory') {
+          return yield* new DirectoryNotFoundError({ directory })
+        }
+        const project = yield* probeProject(projectId, directory).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path)
+        )
+        yield* mutate('registerProject', (workspace) => WorkspaceOps.addProject(workspace, project))
+        yield* Effect.logInfo('Registered project', { projectId, directory })
       })
 
-      const recordSessionId = Effect.fn('PaneWorkspace.recordSessionId')(function* (
+      const moveProject = (projectId: ProjectId, toIndex: number) =>
+        mutate('moveProject', (workspace) =>
+          WorkspaceOps.moveProject(workspace, projectId, toIndex)
+        )
+
+      const removeWorktree = Effect.fn('PaneWorkspace.removeWorktree')(function* (
         paneId: PaneId,
+        worktree: NonNullable<Tab['config']['worktree']>
+      ) {
+        const stillThere = () => fs.exists(worktree.path).pipe(Effect.orElseSucceed(() => true))
+        if (!(yield* stillThere())) return Option.none<string>()
+        const gitOps = yield* resolveGitOps(plugins)
+        if (Option.isNone(gitOps)) return Option.some(WORKTREES_PLUGIN_NOT_LOADED)
+        const removal = yield* gitOps.value.removeWorktree(worktree, paneId).pipe(Effect.result)
+        if (!(yield* stillThere())) return Option.none<string>()
+        return Option.some(
+          Result.isFailure(removal)
+            ? `Could not remove the worktree: ${String(removal.failure.cause)}`
+            : 'The worktree directory is still on disk'
+        )
+      })
+
+      const deleteTranscript = Effect.fn('PaneWorkspace.deleteTranscript')(function* (
         sessionId: SessionId
       ) {
-        const configs = yield* Ref.get(configsRef)
-        const entry = HashMap.get(configs, paneId)
-        if (Option.isNone(entry)) {
-          yield* Effect.logWarning('Received sessionId for a pane not in the index', { paneId })
-          return
-        }
-        yield* Ref.set(configsRef, HashMap.set(configs, paneId, { ...entry.value, sessionId }))
-        yield* save()
+        const backend = yield* resolveAgentBackend(plugins)
+        const deletion = yield* backend.deleteSession(sessionId).pipe(Effect.result)
+        return Result.isFailure(deletion)
+          ? Option.some(deletion.failure.reason)
+          : Option.none<string>()
       })
 
-      // Persists a permission-mode change the pane made on its own (a plan was approved, restoring
-      // the pre-plan mode) onto its config and the layout tree, then broadcasts the updated tree so
-      // the renderer's mode selector reflects it. User-initiated changes go through setPermissionMode
-      // instead; this is only for changes originating in the pane process.
-      const recordPermissionMode = Effect.fn('PaneWorkspace.recordPermissionMode')(function* (
-        paneId: PaneId,
-        mode: PermissionMode,
-        onEvent: (event: IpcEvent) => Effect.Effect<void>
+      const removeProjectItems = Effect.fn('PaneWorkspace.removeProjectItems')(function* (
+        tabs: ReadonlyArray<Tab>,
+        force: boolean,
+        emit: (progress: RemovalProgress) => Effect.Effect<void>
       ) {
-        const configs = yield* Ref.get(configsRef)
-        const entry = HashMap.get(configs, paneId)
-        if (Option.isNone(entry)) {
-          yield* Effect.logWarning('Received permission mode for a pane not in the index', {
-            paneId
+        let failures = 0
+        const removeItem = (item: RemovalItem, run: Effect.Effect<Option.Option<string>>) =>
+          Effect.gen(function* () {
+            yield* emit(Removing.make({ item }))
+            const failure = yield* run
+            if (Option.isSome(failure)) {
+              failures += 1
+              yield* Effect.logWarning('Failed to remove a project item', {
+                item,
+                reason: failure.value
+              })
+              yield* emit(RemoveFailed.make({ item, reason: failure.value }))
+            } else {
+              yield* emit(Removed.make({ item }))
+            }
           })
-          return
+
+        for (const tab of tabs) {
+          const paneId = tab.config.paneId
+          yield* removeItem(
+            AgentItem.make({ paneId, name: tab.name }),
+            supervisor.closePane(paneId).pipe(Effect.as(Option.none<string>()))
+          )
+          if (force) continue
+          const worktree = tab.config.worktree
+          if (worktree !== undefined) {
+            yield* removeItem(
+              WorktreeItem.make({ path: worktree.path }),
+              removeWorktree(paneId, worktree)
+            )
+          }
+          if (tab.sessionId !== undefined) {
+            yield* removeItem(
+              TranscriptItem.make({ sessionId: tab.sessionId }),
+              deleteTranscript(tab.sessionId)
+            )
+          }
         }
-        yield* Ref.set(
-          configsRef,
-          HashMap.set(configs, paneId, {
-            ...entry.value,
-            config: { ...entry.value.config, permissionMode: mode }
+        return failures
+      })
+
+      const markRemoving = (projectId: ProjectId) =>
+        mutationLock.withPermits(1)(
+          Effect.gen(function* () {
+            const workspace = yield* Ref.get(workspaceRef)
+            const removing = yield* Ref.get(removingRef)
+            const entry = workspace.projects.find(
+              (candidate) => candidate.project.projectId === projectId
+            )
+            if (entry === undefined || removing.has(projectId)) {
+              return yield* new ProjectNotFoundError({ projectId })
+            }
+            yield* Ref.set(removingRef, new Set([...removing, projectId]))
+            return entry
           })
         )
 
-        const tree = yield* Ref.get(treeRef)
-        const updated = setPanePermissionMode(tree, paneId, mode)
-        if (Result.isSuccess(updated)) {
-          yield* Ref.set(treeRef, updated.success)
-          yield* save()
-          yield* onEvent(LayoutChanged.make({ tree: updated.success }))
-        } else {
-          yield* save()
-        }
+      const clearRemoving = (projectId: ProjectId) =>
+        Ref.update(removingRef, (removing) => {
+          const next = new Set(removing)
+          next.delete(projectId)
+          return next
+        })
+
+      const runRemoval = Effect.fn('PaneWorkspace.runRemoval')(function* (
+        projectId: ProjectId,
+        force: boolean,
+        emit: (progress: RemovalProgress) => Effect.Effect<void>
+      ) {
+        const entry = yield* markRemoving(projectId)
+        yield* Effect.gen(function* () {
+          yield* mutate('moveVisibleTabOff', (workspace) =>
+            WorkspaceOps.moveVisibleTabOff(workspace, projectId)
+          )
+          const failures = yield* removeProjectItems(entry.tabs, force, emit)
+          if (failures > 0 && !force) {
+            yield* Effect.logWarning('Project removal left items on disk', { projectId, failures })
+            return
+          }
+          yield* mutate('removeProject', (workspace) =>
+            WorkspaceOps.removeProject(workspace, projectId)
+          )
+          yield* emit(ProjectRemoved.make({}))
+          yield* Effect.logInfo('Removed project', { projectId, force })
+        }).pipe(Effect.ensuring(clearRemoving(projectId)))
       })
 
-      const getTree = () => Ref.get(treeRef)
+      const removeProject = (projectId: ProjectId, force: boolean) =>
+        Stream.callback<RemovalProgress, ProjectNotFoundError>((queue) =>
+          runRemoval(projectId, force, (progress) =>
+            Queue.offer(queue, progress).pipe(Effect.asVoid)
+          ).pipe(
+            Effect.matchEffect({
+              onFailure: (error) => Queue.fail(queue, error),
+              onSuccess: () => Queue.end(queue)
+            })
+          )
+        )
 
-      const split = Effect.fn('PaneWorkspace.split')(function* (
-        paneId: PaneId,
-        direction: 'row' | 'column'
+      const nameForTab = (request: CreateTabRequest, branch: string | undefined) =>
+        request.name !== null
+          ? Effect.succeed(request.name)
+          : Option.match(branch === undefined ? Option.none<AgentName>() : nameFromBranch(branch), {
+              onSome: Effect.succeed,
+              onNone: () => generateAgentName
+            })
+
+      const createTab = Effect.fn('PaneWorkspace.createTab')(function* (
+        request: CreateTabRequest,
+        onEvent: OnEvent
       ) {
-        const newPaneId: PaneId = randomUUID()
-        const tree = yield* Ref.get(treeRef)
-        const updated = splitPane(tree, paneId, direction, newPaneId)
-        if (Result.isFailure(updated)) {
-          return yield* updated.failure
+        const { projectId, paneId } = request
+        const workspace = yield* Ref.get(workspaceRef)
+        const entry = workspace.projects.find(
+          (candidate) => candidate.project.projectId === projectId
+        )
+        if (entry === undefined || (yield* Ref.get(removingRef)).has(projectId)) {
+          return yield* new ProjectNotFoundError({ projectId })
+        }
+        if (request.useWorktree && !entry.project.isGitRepo) {
+          return yield* new WorktreeUnavailableError({ projectId })
         }
 
-        yield* Ref.set(treeRef, updated.success)
-        yield* save()
-        return updated.success
-      })
-
-      const createPane = Effect.fn('PaneWorkspace.createPane')(function* (
-        paneId: PaneId,
-        sourceCwd: string,
-        model: string,
-        thinkingLevel: ThinkingLevel,
-        permissionMode: StartupPermissionMode,
-        useWorktree: boolean,
-        onCreateEvent: (event: IpcEvent) => Effect.Effect<void>
-      ) {
-        const tree = yield* Ref.get(treeRef)
-        // Validate paneId is a pending leaf before spawning anything; the cwd here is a
-        // placeholder discarded below once the real (possibly worktree) cwd is known.
-        const precheck = markPaneReady(tree, paneId, sourceCwd)
-        if (Result.isFailure(precheck)) {
-          return yield* precheck.failure
-        }
-
-        const worktree = useWorktree ? ({ _tag: 'Create', worktreesRoot } as const) : undefined
         const { config } = yield* supervisor.openPane(
-          { paneId, sourceCwd, model, thinkingLevel, permissionMode, worktree },
-          onCreateEvent,
+          {
+            paneId,
+            sourceCwd: entry.project.directory,
+            model: request.model,
+            thinkingLevel: request.thinkingLevel,
+            permissionMode: request.permissionMode,
+            worktree: request.useWorktree ? { _tag: 'Create', worktreesRoot } : undefined
+          },
+          onEvent,
           (sessionId) => recordSessionId(paneId, sessionId),
-          (mode) => recordPermissionMode(paneId, mode, onCreateEvent)
+          (mode) => recordPermissionMode(paneId, mode)
         )
 
-        const readyTree = markPaneReady(
-          tree,
-          paneId,
-          config.cwd,
-          config.worktree?.sourceRepo,
-          config.thinkingLevel,
-          config.permissionMode
-        )
-        if (Result.isFailure(readyTree)) {
-          return yield* readyTree.failure
-        }
-
-        yield* Ref.set(treeRef, readyTree.success)
-        yield* Ref.update(configsRef, HashMap.set(paneId, { config }))
-        yield* save()
-        return readyTree.success
+        const name = yield* nameForTab(request, config.worktree?.branch)
+        const sessionId = pendingSessions.get(paneId)
+        pendingSessions.delete(paneId)
+        const tab: Tab =
+          sessionId === undefined
+            ? { name, config, archived: false }
+            : { name, config, sessionId, archived: false }
+        yield* mutate('addTab', (current, removing) =>
+          removing.has(projectId)
+            ? Result.fail(new ProjectNotFoundError({ projectId }))
+            : WorkspaceOps.addTab(current, projectId, tab)
+        ).pipe(Effect.tapError(() => supervisor.closePane(paneId)))
+        yield* Effect.logInfo('Created tab', { projectId, paneId, name })
       })
+
+      const renameTab = (paneId: PaneId, name: AgentName) =>
+        mutate('renameTab', (workspace) => WorkspaceOps.renameTab(workspace, paneId, name))
 
       const setThinkingLevel = Effect.fn('PaneWorkspace.setThinkingLevel')(function* (
         paneId: PaneId,
         level: ThinkingLevel
       ) {
-        const configs = yield* Ref.get(configsRef)
-        const entry = HashMap.get(configs, paneId)
-        if (Option.isNone(entry)) {
-          yield* Effect.logWarning('setThinkingLevel for a pane not in the index', { paneId })
-          return yield* Ref.get(treeRef)
-        }
-
-        yield* Ref.set(
-          configsRef,
-          HashMap.set(configs, paneId, {
-            ...entry.value,
-            config: { ...entry.value.config, thinkingLevel: level }
-          })
+        yield* mutate('setThinkingLevel', (workspace) =>
+          WorkspaceOps.updateTabConfig(workspace, paneId, { thinkingLevel: level })
         )
-
-        const tree = yield* Ref.get(treeRef)
-        const updated = setPaneThinkingLevel(tree, paneId, level)
-        const nextTree = Result.isSuccess(updated) ? updated.success : tree
-        if (Result.isSuccess(updated)) yield* Ref.set(treeRef, updated.success)
-        yield* save()
-
         const handle = yield* supervisor.getHandle(paneId)
-        if (Option.isSome(handle)) {
-          yield* handle.value.setThinkingLevel(level)
-        }
-
-        return nextTree
+        if (Option.isSome(handle)) yield* handle.value.setThinkingLevel(level)
       })
 
       const setPermissionMode = Effect.fn('PaneWorkspace.setPermissionMode')(function* (
         paneId: PaneId,
         mode: PermissionMode
       ) {
-        const configs = yield* Ref.get(configsRef)
-        const entry = HashMap.get(configs, paneId)
-        if (Option.isNone(entry)) {
-          yield* Effect.logWarning('setPermissionMode for a pane not in the index', { paneId })
-          return yield* Ref.get(treeRef)
-        }
-
-        yield* Ref.set(
-          configsRef,
-          HashMap.set(configs, paneId, {
-            ...entry.value,
-            config: { ...entry.value.config, permissionMode: mode }
-          })
+        yield* mutate('setPermissionMode', (workspace) =>
+          WorkspaceOps.updateTabConfig(workspace, paneId, { permissionMode: mode })
         )
-
-        const tree = yield* Ref.get(treeRef)
-        const updated = setPanePermissionMode(tree, paneId, mode)
-        const nextTree = Result.isSuccess(updated) ? updated.success : tree
-        if (Result.isSuccess(updated)) yield* Ref.set(treeRef, updated.success)
-        yield* save()
-
         const handle = yield* supervisor.getHandle(paneId)
-        if (Option.isSome(handle)) {
-          yield* handle.value.setPermissionMode(mode)
-        }
-
-        return nextTree
-      })
-
-      const close = Effect.fn('PaneWorkspace.close')(function* (paneId: PaneId) {
-        const tree = yield* Ref.get(treeRef)
-        const updated = closePane(tree, paneId)
-        if (Result.isFailure(updated)) {
-          if (updated.failure._tag === 'PaneNotFoundError') {
-            return yield* updated.failure
-          }
-          // Closing the workspace's last remaining pane doesn't leave an empty workspace --
-          // it tears down that pane and resets it to a fresh pending leaf, so the onboarding
-          // form reappears instead of the app being left with nothing to show.
-          yield* supervisor.closePane(paneId)
-          const resetTree: PaneNode = PaneLeafSchema.make({ paneId, status: 'pending' })
-          yield* Ref.set(treeRef, resetTree)
-          yield* Ref.update(configsRef, HashMap.remove(paneId))
-          yield* save()
-          return resetTree
-        }
-
-        yield* supervisor.closePane(paneId)
-        yield* Ref.set(treeRef, updated.success)
-        yield* Ref.update(configsRef, HashMap.remove(paneId))
-        yield* save()
-        return updated.success
+        if (Option.isSome(handle)) yield* handle.value.setPermissionMode(mode)
       })
 
       const getPaneHistory = Effect.fn('PaneWorkspace.getPaneHistory')(function* (paneId: PaneId) {
-        const configs = yield* Ref.get(configsRef)
-        const entry = HashMap.get(configs, paneId)
-        if (Option.isNone(entry) || entry.value.sessionId === undefined) {
-          return []
-        }
-        return yield* transcriptReader.readHistory(entry.value.sessionId, entry.value.config.cwd)
+        const found = WorkspaceOps.tabOf(yield* Ref.get(workspaceRef), paneId)
+        if (Result.isFailure(found)) return []
+        const { sessionId, config } = found.success.tab
+        if (sessionId === undefined) return []
+        return yield* transcriptReader.readHistory(sessionId, config.cwd)
       })
 
-      const emitErrored = (
-        paneId: PaneId,
-        onEvent: (event: IpcEvent) => Effect.Effect<void>,
-        message: string
-      ): Effect.Effect<void> =>
+      const emitErrored = (paneId: PaneId, onEvent: OnEvent, message: string) =>
         onEvent(
-          PaneAttentionChanged.make({
-            paneId,
-            attention: Errored.make({ error: { message } })
-          })
+          PaneAttentionChanged.make({ paneId, attention: Errored.make({ error: { message } }) })
         )
 
       const startPaneSession = Effect.fn('PaneWorkspace.startPaneSession')(function* (
         paneId: PaneId,
-        onEvent: (event: IpcEvent) => Effect.Effect<void>,
+        onEvent: OnEvent,
         startFresh: boolean
       ) {
         const existing = yield* supervisor.getHandle(paneId)
         if (Option.isSome(existing)) return
 
-        const configs = yield* Ref.get(configsRef)
-        const entry = HashMap.get(configs, paneId)
-        if (Option.isNone(entry)) {
-          yield* Effect.logWarning('resumePane for a pane not in the index', { paneId })
+        if (yield* isRemovingTab(paneId)) {
+          yield* Effect.logWarning('Did not start a tab whose project is being removed', { paneId })
+          return
+        }
+        const found = WorkspaceOps.tabOf(yield* Ref.get(workspaceRef), paneId)
+        if (Result.isFailure(found)) {
+          yield* Effect.logWarning('Did not start an unknown tab', { paneId })
           return
         }
 
-        const { config, sessionId } = entry.value
+        const { config, sessionId } = found.success.tab
         if (sessionId === undefined && !startFresh) {
-          yield* Effect.logDebug('resumePane skipped; pane has no session to resume', { paneId })
+          yield* Effect.logDebug('resumePane skipped; tab has no session to resume', { paneId })
           return
         }
 
         if (config.worktree === undefined) {
           const exists = yield* fs.exists(config.cwd).pipe(Effect.orElseSucceed(() => false))
           if (!exists) {
-            yield* Effect.logWarning('resumePane: pane working directory no longer exists', {
+            yield* Effect.logWarning('resumePane: tab working directory no longer exists', {
               paneId,
               cwd: config.cwd
             })
@@ -413,35 +547,49 @@ export const makePaneWorkspaceLive = (initialPaneId: PaneId, worktreesRoot: stri
             request,
             onEvent,
             (newSessionId) => recordSessionId(paneId, newSessionId),
-            (mode) => recordPermissionMode(paneId, mode, onEvent)
+            (mode) => recordPermissionMode(paneId, mode)
           )
           .pipe(Effect.result)
 
         if (Result.isFailure(result)) {
-          yield* Effect.logError('Failed to resume pane', { paneId, cause: result.failure })
+          yield* Effect.logError('Failed to resume tab', { paneId, cause: result.failure })
           yield* emitErrored(paneId, onEvent, `Failed to resume pane: ${String(result.failure)}`)
         }
       })
 
-      const resumePane = (paneId: PaneId, onEvent: (event: IpcEvent) => Effect.Effect<void>) =>
+      const resumePane = (paneId: PaneId, onEvent: OnEvent) =>
         sessionStartLock.withPermits(1)(startPaneSession(paneId, onEvent, false))
 
       const ensureLive = Effect.fn('PaneWorkspace.ensureLive')(function* (
         paneId: PaneId,
-        onEvent: (event: IpcEvent) => Effect.Effect<void>
+        onEvent: OnEvent
       ) {
         const existing = yield* supervisor.getHandle(paneId)
         if (Option.isSome(existing)) return
         yield* sessionStartLock.withPermits(1)(startPaneSession(paneId, onEvent, true))
       })
 
+      const selectTab = Effect.fn('PaneWorkspace.selectTab')(function* (
+        paneId: PaneId | null,
+        onEvent: OnEvent
+      ) {
+        if (paneId !== null && (yield* isRemovingTab(paneId))) {
+          return yield* new TabNotFoundError({ paneId })
+        }
+        yield* mutate('selectTab', (workspace) => WorkspaceOps.selectTab(workspace, paneId))
+        if (paneId !== null) yield* resumePane(paneId, onEvent)
+      })
+
       return {
-        getTree,
-        split,
-        createPane,
+        getWorkspace,
+        registerProject,
+        moveProject,
+        removeProject,
+        createTab,
+        renameTab,
+        selectTab,
         setThinkingLevel,
         setPermissionMode,
-        close,
         getPaneHistory,
         resumePane,
         ensureLive

@@ -8,7 +8,7 @@ import {
 } from '@shared/domain/pane'
 import type { IpcEvent } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
-import { Deferred, Effect, Layer, Option, Result } from 'effect'
+import { Deferred, Effect, Layer, Option, Result, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
 import { HostPlugins } from '../plugins/host-plugins'
 import { PluginSources } from '../plugins/plugin-sources'
@@ -66,6 +66,7 @@ const pluginsWith = (inject: (key: string) => Option.Option<unknown>) =>
   Layer.succeed(HostPlugins)({
     list: () => Effect.succeed([]),
     start: () => Effect.void,
+    changes: Stream.empty,
     load: () => Effect.die(new Error('load should not be called in these tests')),
     unload: () => Effect.die(new Error('unload should not be called in these tests')),
     inject: (key) => Effect.succeed(inject(key))

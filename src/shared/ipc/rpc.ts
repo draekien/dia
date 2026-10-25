@@ -1,27 +1,31 @@
 import { Schema } from 'effect'
 import { Rpc, RpcGroup } from 'effect/rpc'
+import { AgentSummary } from '../domain/agent-summary'
 import { MessageQueueSnapshot, SendMode } from '../domain/message-queue'
 import { ConversationMessage } from '../domain/pane'
-import { PaneNode } from '../domain/pane-tree'
+import { ProjectId, ProjectNotFoundError, RegisterProjectError, Workspace } from '../domain/project'
+import { RemovalProgress } from '../domain/project-removal'
 import { ThemePreference } from '../domain/theme'
+import { TranscriptWidth } from '../domain/transcript-width'
 import { PluginInfo, PluginName, PluginOverrideResult } from '../plugin/manifest'
 import {
   ChooseDirectoryResult,
-  ClosePane,
-  CreatePane,
+  CreateTab,
   EditQueuedMessage,
-  FocusPane,
   InterruptPane,
   IpcEvent,
+  MoveProject,
   RemoveQueuedMessage,
+  RenameTab,
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
   RewindToCheckpoint,
+  SelectTab,
   SendMessage,
   SetPermissionMode,
   SetThinkingLevel,
-  SplitPane
+  SetTranscriptWidth
 } from './contract'
 
 /**
@@ -29,7 +33,7 @@ import {
  * `dia.protocol.<version>`; the Host closes the connection with {@link CLOSE_PROTOCOL_MISMATCH}
  * when it speaks a different version. Increment it whenever {@link DiaRpcs} changes shape.
  */
-export const PROTOCOL_VERSION = 7
+export const PROTOCOL_VERSION = 8
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -46,7 +50,7 @@ export const CLOSE_PROTOCOL_MISMATCH = 4001
 
 /**
  * Client-generated identifier of one command. The Host ignores a command whose `commandId` it
- * already accepted for the same pane, so a client that resends after a reconnect does not
+ * already accepted for the same target (pane, project, or app setting), so a client that resends after a reconnect does not
  * apply the command twice. Generate a fresh one per user action and reuse it across retries.
  */
 export const CommandId = Schema.String
@@ -65,7 +69,7 @@ export const PaneEventFrame = Schema.TaggedStruct('PaneEvent', {
 })
 export type PaneEventFrame = typeof PaneEventFrame.Type
 
-/** Event stream item for an event with no pane (such as a layout change). Never replayed. */
+/** Event stream item for an event with no pane (such as a workspace change). Never replayed. */
 export const GlobalEventFrame = Schema.TaggedStruct('GlobalEvent', { event: IpcEvent })
 export type GlobalEventFrame = typeof GlobalEventFrame.Type
 
@@ -81,7 +85,8 @@ export const EventFrame = Schema.Union([PaneEventFrame, GlobalEventFrame, Reload
 export type EventFrame = typeof EventFrame.Type
 
 /**
- * The Host's RPC surface. Every pane command takes a `commandId`; the plugin calls (`LoadPlugin`
+ * The Host's RPC surface. Every command takes a `commandId`; `RegisterProject` and
+ * `RemoveProject` are queries so their typed errors reach the caller; the plugin calls (`LoadPlugin`
  * on a loaded plugin reloads it) are safe to repeat and take none; `SubscribeEvents` takes the
  * last sequence number received per pane (`cursors`) and streams {@link EventFrame}s. Serve it
  * with `RpcServer` in the Host and call it with `RpcClient` from the preload.
@@ -91,12 +96,13 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('ResolvePermission', { payload: withRequestId(ResolvePermission) }),
   Rpc.make('ResolveQuestion', { payload: withRequestId(ResolveQuestion) }),
   Rpc.make('ResolvePlanReview', { payload: withRequestId(ResolvePlanReview) }),
-  Rpc.make('SplitPane', { payload: withRequestId(SplitPane) }),
-  Rpc.make('ClosePane', { payload: withRequestId(ClosePane) }),
-  Rpc.make('CreatePane', { payload: withRequestId(CreatePane) }),
+  Rpc.make('CreateTab', { payload: withRequestId(CreateTab) }),
+  Rpc.make('MoveProject', { payload: withRequestId(MoveProject) }),
+  Rpc.make('RenameTab', { payload: withRequestId(RenameTab) }),
+  Rpc.make('SelectTab', { payload: withRequestId(SelectTab) }),
+  Rpc.make('SetTranscriptWidth', { payload: withRequestId(SetTranscriptWidth) }),
   Rpc.make('SetThinkingLevel', { payload: withRequestId(SetThinkingLevel) }),
   Rpc.make('SetPermissionMode', { payload: withRequestId(SetPermissionMode) }),
-  Rpc.make('FocusPane', { payload: withRequestId(FocusPane) }),
   Rpc.make('InterruptPane', { payload: withRequestId(InterruptPane) }),
   Rpc.make('RewindToCheckpoint', { payload: withRequestId(RewindToCheckpoint) }),
   Rpc.make('EditQueuedMessage', { payload: withRequestId(EditQueuedMessage) }),
@@ -105,7 +111,19 @@ export const DiaRpcs = RpcGroup.make(
     payload: { paneId: Schema.String },
     success: MessageQueueSnapshot
   }),
-  Rpc.make('GetInitialLayout', { success: PaneNode }),
+  Rpc.make('GetWorkspace', { success: Workspace }),
+  Rpc.make('RegisterProject', {
+    payload: { projectId: ProjectId, directory: Schema.String },
+    error: RegisterProjectError
+  }),
+  Rpc.make('RemoveProject', {
+    payload: { projectId: ProjectId, force: Schema.Boolean },
+    success: RemovalProgress,
+    error: ProjectNotFoundError,
+    stream: true
+  }),
+  Rpc.make('GetAgentSummaries', { success: Schema.Array(AgentSummary) }),
+  Rpc.make('GetTranscriptWidth', { success: TranscriptWidth }),
   Rpc.make('GetPaneHistory', {
     payload: { paneId: Schema.String },
     success: Schema.Array(ConversationMessage)

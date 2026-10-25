@@ -182,6 +182,34 @@ describe('SettingsStore', () => {
       assert.deepStrictEqual(JSON.parse(writes[0]), { lastDirectory: '/repo', theme: 'system' })
     })
   )
+
+  it.effect('getTranscriptWidth returns None when no width was stored', () =>
+    Effect.gen(function* () {
+      const { testLayer, loggerLayer } = makeTestSetup(JSON.stringify({ theme: 'dark' }))
+
+      const result = yield* Effect.gen(function* () {
+        const store = yield* SettingsStore
+        return yield* store.getTranscriptWidth()
+      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+
+      assert.isTrue(Option.isNone(result))
+    })
+  )
+
+  it.effect('setTranscriptWidth persists the width beside other settings', () =>
+    Effect.gen(function* () {
+      const { writes, testLayer, loggerLayer } = makeTestSetup(JSON.stringify({ theme: 'dark' }))
+
+      const result = yield* Effect.gen(function* () {
+        const store = yield* SettingsStore
+        yield* store.setTranscriptWidth('narrow')
+        return yield* store.getTranscriptWidth()
+      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+
+      assert.deepStrictEqual(result, Option.some('narrow'))
+      assert.deepStrictEqual(JSON.parse(writes[0]), { theme: 'dark', transcriptWidth: 'narrow' })
+    })
+  )
 })
 
 describe('SettingsStore plugin overrides', () => {

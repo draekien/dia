@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import { AgentSummary } from '../domain/agent-summary'
 import {
   AttentionState,
   PermissionResponse,
@@ -7,15 +8,13 @@ import {
   QuestionResponse
 } from '../domain/attention'
 import { MessageQueueSnapshot, OutgoingMessage, SendMode } from '../domain/message-queue'
-import {
-  ConversationMessage,
-  PermissionMode,
-  StartupPermissionMode,
-  ThinkingLevel
-} from '../domain/pane'
-import { PaneNode } from '../domain/pane-tree'
+import { ConversationMessage, PermissionMode, ThinkingLevel } from '../domain/pane'
+import type { RegisterProjectRefusal } from '../domain/project'
+import { AgentName, CreateTabRequest, ProjectId, Workspace } from '../domain/project'
+import type { RemovalProgress } from '../domain/project-removal'
 import { SlashCommandInfo } from '../domain/slash-command'
 import type { ThemePreference } from '../domain/theme'
+import { TranscriptWidth } from '../domain/transcript-width'
 import { UpdateStatus } from '../domain/update'
 import { Uuid } from '../domain/uuid'
 import { type PluginInfo, PluginName, type PluginOverrideResult } from '../plugin/manifest'
@@ -30,7 +29,8 @@ const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
  * a default path; `setTitleBarOverlay` recolours the native window-control overlay when the
  * theme changes; `getAppVersion`/`getUpdateStatus`/`checkForUpdates`/`installUpdate` read the
  * running version and drive the self-updater; `toggleDevTools` opens or closes the renderer's
- * DevTools (dia's custom title bar has no native menu to do so).
+ * DevTools (dia's custom title bar has no native menu to do so); `revealPath` shows a directory
+ * in the system file manager.
  */
 export const CHANNEL = {
   event: 'dia:event',
@@ -41,7 +41,8 @@ export const CHANNEL = {
   getUpdateStatus: 'dia:getUpdateStatus',
   checkForUpdates: 'dia:checkForUpdates',
   installUpdate: 'dia:installUpdate',
-  toggleDevTools: 'dia:toggleDevTools'
+  toggleDevTools: 'dia:toggleDevTools',
+  revealPath: 'dia:revealPath'
 } as const
 
 /**
@@ -143,40 +144,45 @@ export const ResolveQuestion = Schema.TaggedStruct('ResolveQuestion', {
 export type ResolveQuestion = typeof ResolveQuestion.Type
 
 /**
- * Command sent by the renderer to split the pane `paneId` into two panes
- * arranged along `direction` (`row` for side-by-side, `column` for stacked).
+ * Command sent by the renderer to start a new agent as a tab of a project; see
+ * {@link CreateTabRequest}. The new tab becomes the visible tab. On failure the Host sends
+ * {@link PaneCreateFailed} for `paneId`.
  */
-export const SplitPane = Schema.TaggedStruct('SplitPane', {
-  paneId: Uuid,
-  direction: Schema.Literals(['row', 'column'])
-})
-export type SplitPane = typeof SplitPane.Type
+export const CreateTab = Schema.TaggedStruct('CreateTab', CreateTabRequest.fields)
+export type CreateTab = typeof CreateTab.Type
 
 /**
- * Command sent by the renderer to close the pane `paneId` and remove it from
- * the layout tree.
+ * Command sent by the renderer to move project `projectId` to position `toIndex` in the project
+ * order. An index past either end moves it to that end.
  */
-export const ClosePane = Schema.TaggedStruct('ClosePane', {
-  paneId: Uuid
+export const MoveProject = Schema.TaggedStruct('MoveProject', {
+  projectId: ProjectId,
+  toIndex: Schema.Int
 })
-export type ClosePane = typeof ClosePane.Type
+export type MoveProject = typeof MoveProject.Type
+
+/** Command sent by the renderer to rename the tab of pane `paneId`. */
+export const RenameTab = Schema.TaggedStruct('RenameTab', {
+  paneId: Uuid,
+  name: AgentName
+})
+export type RenameTab = typeof RenameTab.Type
 
 /**
- * Command sent by the renderer to create a new pane with id `paneId`, rooted
- * at `cwd`, running the given `model` under the chosen `permissionMode` (a
- * {@link StartupPermissionMode} — `plan` is never a starting mode). Set
- * `useWorktree` to have the pane operate on a dedicated git worktree instead of
- * `cwd` directly.
+ * Command sent by the renderer to show the tab of pane `paneId`, or no tab when `paneId` is
+ * `null` (the New agent form or the plugins page is shown). Showing a tab whose session is not
+ * running resumes it.
  */
-export const CreatePane = Schema.TaggedStruct('CreatePane', {
-  paneId: Uuid,
-  cwd: Schema.String,
-  model: Schema.String,
-  thinkingLevel: ThinkingLevel,
-  permissionMode: StartupPermissionMode,
-  useWorktree: Schema.Boolean
+export const SelectTab = Schema.TaggedStruct('SelectTab', {
+  paneId: Schema.NullOr(Uuid)
 })
-export type CreatePane = typeof CreatePane.Type
+export type SelectTab = typeof SelectTab.Type
+
+/** Command sent by the renderer to change the app-wide transcript width. */
+export const SetTranscriptWidth = Schema.TaggedStruct('SetTranscriptWidth', {
+  width: TranscriptWidth
+})
+export type SetTranscriptWidth = typeof SetTranscriptWidth.Type
 
 /**
  * Command sent by the renderer to change the thinking level of the live pane
@@ -214,16 +220,6 @@ export const ResolvePlanReview = Schema.TaggedStruct('ResolvePlanReview', {
   approved: Schema.Boolean
 })
 export type ResolvePlanReview = typeof ResolvePlanReview.Type
-
-/**
- * Command sent by the renderer when the user focuses the pane `paneId`. A cold
- * (restored-but-not-yet-live) pane resumes its Agent SDK session on receipt; a
- * pane that is already live is left untouched (the command is idempotent).
- */
-export const FocusPane = Schema.TaggedStruct('FocusPane', {
-  paneId: Uuid
-})
-export type FocusPane = typeof FocusPane.Type
 
 /**
  * Command sent by the renderer to interrupt the running turn of pane `paneId`.
@@ -461,17 +457,35 @@ export const PaneUserMessagesSent = Schema.TaggedStruct('PaneUserMessagesSent', 
 export type PaneUserMessagesSent = typeof PaneUserMessagesSent.Type
 
 /**
- * Event pushed to the renderer whenever the pane layout tree changes (pane
- * created, split, closed, or resized). `tree` is the full, current layout and
- * should replace the renderer's local copy rather than being merged.
+ * Event pushed to the renderer whenever the workspace changes: a project was registered, moved
+ * or removed, a tab was created, renamed or changed, or the visible tab changed. `workspace` is
+ * the full current workspace and replaces the renderer's copy. Never replayed.
  */
-export const LayoutChanged = Schema.TaggedStruct('LayoutChanged', {
-  tree: PaneNode
+export const WorkspaceChanged = Schema.TaggedStruct('WorkspaceChanged', {
+  workspace: Workspace
 })
-export type LayoutChanged = typeof LayoutChanged.Type
+export type WorkspaceChanged = typeof WorkspaceChanged.Type
 
 /**
- * Event pushed to the renderer when a {@link CreatePane} command for pane
+ * Event pushed to the renderer when one tab's status or activity line changes. `summary`
+ * replaces the renderer's summary for `summary.paneId`. Never replayed.
+ */
+export const AgentSummaryChanged = Schema.TaggedStruct('AgentSummaryChanged', {
+  summary: AgentSummary
+})
+export type AgentSummaryChanged = typeof AgentSummaryChanged.Type
+
+/**
+ * Event the preload raises (the Host never sends it) after reconnecting, carrying every tab's
+ * summary as the Host now holds it. Replaces all of the renderer's summaries.
+ */
+export const AgentSummariesReplaced = Schema.TaggedStruct('AgentSummariesReplaced', {
+  summaries: Schema.Array(AgentSummary)
+})
+export type AgentSummariesReplaced = typeof AgentSummariesReplaced.Type
+
+/**
+ * Event pushed to the renderer when a {@link CreateTab} command for pane
  * `paneId` could not be completed, with `reason` describing what went wrong
  * so the renderer can surface it and roll back any optimistic UI state.
  */
@@ -538,7 +552,9 @@ export const IpcEvent = Schema.Union([
   PaneRewoundToCheckpoint,
   PaneMessageQueueChanged,
   PaneUserMessagesSent,
-  LayoutChanged,
+  WorkspaceChanged,
+  AgentSummaryChanged,
+  AgentSummariesReplaced,
   PaneCreateFailed,
   PaneAttentionChanged,
   PluginStatusChanged,
@@ -583,23 +599,38 @@ export interface DiaApi {
   getMessageQueue(paneId: string): Promise<MessageQueueSnapshot>
   resolvePermission(paneId: string, requestId: string, response: PermissionResponse): void
   resolveQuestion(paneId: string, requestId: string, response: QuestionResponse): void
-  splitPane(paneId: string, direction: 'row' | 'column'): void
-  closePane(paneId: string): void
-  createPane(
-    paneId: string,
-    cwd: string,
-    model: string,
-    thinkingLevel: ThinkingLevel,
-    permissionMode: StartupPermissionMode,
-    useWorktree: boolean
-  ): void
   setThinkingLevel(paneId: string, level: ThinkingLevel): void
   setPermissionMode(paneId: string, mode: PermissionMode): void
   resolvePlanReview(paneId: string, requestId: string, approved: boolean): void
-  focusPane(paneId: string): void
   interrupt(paneId: string): void
   rewindToCheckpoint(paneId: string, messageUuid: string, resumeAnchorUuid?: string): void
-  getInitialLayout(): Promise<PaneNode>
+  getWorkspace(): Promise<Workspace>
+  /**
+   * Registers `directory` as project `projectId`; generate the id once per user action so a
+   * resend is harmless. Resolves `null` once registered, or the refusal when the directory is
+   * already registered or does not exist.
+   */
+  registerProject(projectId: ProjectId, directory: string): Promise<RegisterProjectRefusal | null>
+  moveProject(projectId: ProjectId, toIndex: number): void
+  /**
+   * Removes project `projectId`, reporting each step to `onProgress`. With `force`, drops the
+   * project after stopping its agents and leaves worktrees and transcripts on disk. Rejects when
+   * the connection drops; read `getWorkspace` to learn whether the project is gone. Resolves
+   * when the stream ends, also when the project was already gone.
+   */
+  removeProject(
+    projectId: ProjectId,
+    force: boolean,
+    onProgress: (progress: RemovalProgress) => void
+  ): Promise<void>
+  createTab(request: CreateTab): void
+  renameTab(paneId: string, name: AgentName): void
+  selectTab(paneId: string | null): void
+  getAgentSummaries(): Promise<ReadonlyArray<AgentSummary>>
+  getTranscriptWidth(): Promise<TranscriptWidth>
+  setTranscriptWidth(width: TranscriptWidth): void
+  /** Shows `directory` in the system file manager; does nothing when it is not a directory. */
+  revealPath(directory: string): Promise<void>
   getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>
   chooseDirectory(): Promise<ChooseDirectoryResult>
   /** Opens the native folder picker and resolves the chosen path, or `null` when the user cancels. Unlike `chooseDirectory`, the choice is not recorded as the last pane directory. */
@@ -622,7 +653,9 @@ export interface DiaApi {
    */
   onHistoryReloadRequested(listener: (paneId: string) => void): () => void
   onMessageAppended(listener: (event: PaneMessageAppended) => void): () => void
-  onLayoutChanged(listener: (event: LayoutChanged) => void): () => void
+  onWorkspaceChanged(listener: (event: WorkspaceChanged) => void): () => void
+  onAgentSummaryChanged(listener: (event: AgentSummaryChanged) => void): () => void
+  onAgentSummariesReplaced(listener: (event: AgentSummariesReplaced) => void): () => void
   onPaneCreateFailed(listener: (event: PaneCreateFailed) => void): () => void
   onAttentionChanged(listener: (event: PaneAttentionChanged) => void): () => void
   onPermissionRequested(listener: (event: PanePermissionRequested) => void): () => void

@@ -1,4 +1,16 @@
-import { Cause, Data, Effect, Exit, Option, Predicate, Schema, Scope, Semaphore } from 'effect'
+import {
+  Cause,
+  Data,
+  Effect,
+  Exit,
+  Option,
+  Predicate,
+  PubSub,
+  Schema,
+  Scope,
+  Semaphore,
+  Stream
+} from 'effect'
 import type { PluginServices, PluginSetup } from './api'
 import { ServiceKeyReservedError, ServiceKeyTakenError } from './api'
 import {
@@ -109,6 +121,8 @@ export interface PluginMemoryGuard {
  * provided again. `list` returns every known plugin. `inject` reads the value a loaded plugin provides
  * under a service key, for code that is not a plugin; it is empty while no plugin provides the key
  * and is not reopened when the provider changes, so call it again each time the value is needed.
+ * `changes` emits a service key each time a plugin starts or stops providing it, from the moment
+ * it is subscribed; read the new value with `inject`.
  * `start` is the startup entry point: it marks every plugin `Loading`, loads every adapter and
  * every plugin whose manifest says `load: "eager"` one after another, and resolves once each of
  * them has settled (loaded, waiting, failed or restart-required), which does not require it to be
@@ -121,6 +135,7 @@ export interface PluginRegistry {
   readonly load: (name: string) => Effect.Effect<PluginInfo>
   readonly unload: (name: string) => Effect.Effect<PluginInfo>
   readonly inject: (key: string) => Effect.Effect<Option.Option<unknown>>
+  readonly changes: Stream.Stream<string>
 }
 
 /** The `message` of an error-like value, or its string form when it has none. */
@@ -181,6 +196,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
     const lock = yield* Semaphore.make(1)
     const entries = new Map<string, Entry<Context>>()
     const slots = new Map<string, { readonly owner: string; readonly value: unknown }>()
+    const providedKeys = yield* PubSub.unbounded<string>()
 
     const memoryOf = (name: string): Effect.Effect<number> =>
       deps.memory === undefined ? Effect.succeed(0) : deps.memory.used(name)
@@ -295,12 +311,12 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
             Effect.sync(() => {
               slots.set(key, { owner: name, value })
               entry.provided.add(key)
-            }),
+            }).pipe(Effect.andThen(PubSub.publish(providedKeys, key))),
             () =>
               Effect.sync(() => {
                 if (slots.get(key)?.owner === name) slots.delete(key)
                 entry.provided.delete(key)
-              })
+              }).pipe(Effect.andThen(PubSub.publish(providedKeys, key)))
           )
         }),
       inject
@@ -621,5 +637,5 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       )
     })
 
-    return { list, start, load, unload, inject }
+    return { list, start, load, unload, inject, changes: Stream.fromPubSub(providedKeys) }
   })

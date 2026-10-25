@@ -96,6 +96,9 @@ const api: DiaApi = {
   toggleDevTools() {
     ipcRenderer.send(CHANNEL.toggleDevTools)
   },
+  revealPath(directory) {
+    return ipcRenderer.invoke(CHANNEL.revealPath, directory).then(() => undefined)
+  },
   onUpdateStatusChanged(listener) {
     updateListeners.add(listener)
     return () => updateListeners.delete(listener)

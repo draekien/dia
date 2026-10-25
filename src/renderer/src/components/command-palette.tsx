@@ -1,7 +1,9 @@
 import { useAtomSet, useAtomValue } from '@effect/atom-react'
 import { sendModeAtom } from '@renderer/lib/send-mode-atom'
+import { transcriptWidthAtom } from '@renderer/lib/workspace-atoms'
 import type { SendMode } from '@shared/domain/message-queue'
 import type { ThemePreference } from '@shared/domain/theme'
+import { TRANSCRIPT_WIDTHS } from '@shared/domain/transcript-width'
 import {
   CodeIcon,
   CornerDownRightIcon,
@@ -64,7 +66,7 @@ export function openCommandPalette(): void {
  * The app-wide command palette, opened with Cmd/Ctrl+K or {@link
  * openCommandPalette}. Hosts the About action, a persistent theme switcher
  * (light / dark / system) and the default send mode switcher (queue / steer:
- * what Enter does while a turn runs) as segmented rows; mount it once near the app
+ * what Enter does while a turn runs) and the app-wide transcript width as segmented rows; mount it once near the app
  * root, inside a {@link ThemeProvider}. It renders as an overlay dialog, so its
  * position in the tree only needs to be within the provider, not any layout.
  */
@@ -74,6 +76,8 @@ export function CommandPalette() {
   const { theme, setTheme } = useTheme()
   const sendMode = useAtomValue(sendModeAtom)
   const setSendMode = useAtomSet(sendModeAtom)
+  const transcriptWidth = useAtomValue(transcriptWidthAtom)
+  const setTranscriptWidth = useAtomSet(transcriptWidthAtom)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -114,6 +118,11 @@ export function CommandPalette() {
   const chooseSendMode = (value: string) => {
     if (value === '') return
     setSendMode(value as SendMode)
+  }
+
+  const chooseTranscriptWidth = (value: string) => {
+    const width = TRANSCRIPT_WIDTHS.find((candidate) => candidate === value)
+    if (width !== undefined) setTranscriptWidth(width)
   }
 
   return (
@@ -177,6 +186,23 @@ export function CommandPalette() {
               <ToggleGroupItem key={item.value} value={item.value} aria-label={item.label}>
                 <item.icon />
                 <span>{item.label}</span>
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </div>
+        <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
+          <span className="text-xs font-medium text-muted-foreground">Transcript width</span>
+          <ToggleGroup
+            type="single"
+            value={transcriptWidth}
+            onValueChange={chooseTranscriptWidth}
+            variant="outline"
+            size="sm"
+            aria-label="Transcript width"
+          >
+            {TRANSCRIPT_WIDTHS.map((width) => (
+              <ToggleGroupItem key={width} value={width}>
+                <span className="capitalize">{width}</span>
               </ToggleGroupItem>
             ))}
           </ToggleGroup>

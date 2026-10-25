@@ -1,4 +1,4 @@
-import { Option, Result } from 'effect'
+import { Result } from 'effect'
 import type { PaneConfig, PaneId, SessionId } from './pane'
 import {
   type AgentName,
@@ -12,8 +12,8 @@ import {
   type Workspace
 } from './project'
 
-const firstShowableTab = (entry: ProjectEntry | undefined): Option.Option<PaneId> =>
-  Option.fromNullishOr(entry?.tabs.find((tab) => !tab.archived)?.config.paneId)
+const firstShowableTab = (entry: ProjectEntry | undefined): PaneId | null =>
+  entry?.tabs.find((tab) => !tab.archived)?.config.paneId ?? null
 
 const indexOfProject = (workspace: Workspace, projectId: ProjectId): number =>
   workspace.projects.findIndex((entry) => entry.project.projectId === projectId)
@@ -80,7 +80,7 @@ export const moveProject = (
 
 /**
  * Moves `visibleTab` off a project that is about to be removed: to the first non-archived tab of
- * the next project, else of the previous one, else `none`. Unchanged when the visible tab is in
+ * the next project, else of the previous one, else `null`. Unchanged when the visible tab is in
  * another project. Call before closing the project's panes; {@link removeProject} applies it too.
  */
 export const moveVisibleTabOff = (
@@ -90,14 +90,13 @@ export const moveVisibleTabOff = (
   const index = indexOfProject(workspace, projectId)
   if (index === -1) return Result.fail(new ProjectNotFoundError({ projectId }))
   const visible = workspace.visibleTab
-  const holdsVisible =
-    Option.isSome(visible) &&
-    workspace.projects[index].tabs.some((tab) => tab.config.paneId === visible.value)
+  const holdsVisible = workspace.projects[index].tabs.some((tab) => tab.config.paneId === visible)
   if (!holdsVisible) return Result.succeed(workspace)
-  const next = firstShowableTab(workspace.projects[index + 1])
   return Result.succeed({
     ...workspace,
-    visibleTab: Option.isSome(next) ? next : firstShowableTab(workspace.projects[index - 1])
+    visibleTab:
+      firstShowableTab(workspace.projects[index + 1]) ??
+      firstShowableTab(workspace.projects[index - 1])
   })
 }
 
@@ -123,7 +122,7 @@ export const addTab = (
   if (indexOfProject(workspace, projectId) === -1) {
     return Result.fail(new ProjectNotFoundError({ projectId }))
   }
-  const visibleTab = tab.archived ? workspace.visibleTab : Option.some(tab.config.paneId)
+  const visibleTab = tab.archived ? workspace.visibleTab : tab.config.paneId
   if (findTab(workspace, tab.config.paneId) !== undefined) {
     return Result.succeed({ ...workspace, visibleTab })
   }
@@ -144,17 +143,17 @@ export const renameTab = (
   mapTab(workspace, paneId, (tab) => ({ ...tab, name }))
 
 /**
- * Sets the visible tab; `none` shows no tab. Fails for a pane id that no tab has, or an archived
+ * Sets the visible tab; `null` shows no tab. Fails for a pane id that no tab has, or an archived
  * tab.
  */
 export const selectTab = (
   workspace: Workspace,
-  paneId: Option.Option<PaneId>
+  paneId: PaneId | null
 ): Result.Result<Workspace, TabNotFoundError> => {
-  if (Option.isNone(paneId)) return Result.succeed({ ...workspace, visibleTab: paneId })
-  const tab = findTab(workspace, paneId.value)
+  if (paneId === null) return Result.succeed({ ...workspace, visibleTab: null })
+  const tab = findTab(workspace, paneId)
   return tab === undefined || tab.archived
-    ? Result.fail(new TabNotFoundError({ paneId: paneId.value }))
+    ? Result.fail(new TabNotFoundError({ paneId }))
     : Result.succeed({ ...workspace, visibleTab: paneId })
 }
 
@@ -191,8 +190,8 @@ export const tabOf = (
  * becomes visible. Unchanged when a tab is visible or there is no tab to show.
  */
 export const withDefaultVisibleTab = (workspace: Workspace): Workspace => {
-  if (Option.isSome(workspace.visibleTab)) return workspace
+  if (workspace.visibleTab !== null) return workspace
   const first = workspace.projects.flatMap((entry) => entry.tabs).find((tab) => !tab.archived)
     ?.config.paneId
-  return first === undefined ? workspace : { ...workspace, visibleTab: Option.some(first) }
+  return first === undefined ? workspace : { ...workspace, visibleTab: first }
 }

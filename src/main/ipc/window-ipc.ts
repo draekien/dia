@@ -1,7 +1,8 @@
+import { NodeFileSystem } from '@effect/platform-node'
 import { UpdateStatus } from '@shared/domain/update'
 import { CHANNEL, HostConnection, TitleBarOverlayColors } from '@shared/ipc/contract'
-import { Effect, Option, Result, Schema } from 'effect'
-import { type BrowserWindow, dialog, ipcMain } from 'electron'
+import { Effect, FileSystem, Option, Result, Schema } from 'effect'
+import { type BrowserWindow, dialog, ipcMain, shell } from 'electron'
 
 const decodeTitleBarOverlay = Schema.decodeUnknownResult(TitleBarOverlayColors)
 const encodeUpdateStatus = Schema.encodeSync(UpdateStatus)
@@ -54,6 +55,28 @@ export function wireChooseDirectory(ownerWindow: BrowserWindow): void {
 
       return pending
     }
+  )
+}
+
+/**
+ * Registers the IPC handler that shows a directory in the system file manager. The handler does
+ * nothing when the path the renderer sends is not an existing directory. Call once during
+ * main-process startup.
+ */
+export function wireRevealPath(): void {
+  ipcMain.handle(CHANNEL.revealPath, (_event, directory: unknown) =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        if (typeof directory !== 'string') return
+        const fs = yield* FileSystem.FileSystem
+        const info = yield* fs.stat(directory).pipe(Effect.option)
+        if (Option.isNone(info) || info.value.type !== 'Directory') {
+          yield* Effect.logWarning('Did not reveal a path that is not a directory', { directory })
+          return
+        }
+        shell.showItemInFolder(directory)
+      }).pipe(Effect.provide(NodeFileSystem.layer))
+    )
   )
 }
 

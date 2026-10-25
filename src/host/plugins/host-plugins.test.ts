@@ -15,7 +15,9 @@ const settings = Layer.succeed(SettingsStore)({
   setSendMode: () => Effect.void,
   getPluginOverrides: () => Effect.succeed({}),
   setPluginOverride: () => Effect.void,
-  clearPluginOverride: () => Effect.void
+  clearPluginOverride: () => Effect.void,
+  getTranscriptWidth: () => Effect.succeed(Option.none()),
+  setTranscriptWidth: () => Effect.void
 })
 
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)

@@ -42,7 +42,7 @@ const tab = (n: number, archived = false): Tab => ({
 
 const workspaceOf = (
   entries: ReadonlyArray<readonly [number, ReadonlyArray<Tab>]>,
-  visible: Option.Option<PaneId> = Option.none()
+  visible: PaneId | null = null
 ): Workspace => ({
   projects: entries.map(([n, tabs]) => ({ project: project(n), tabs })),
   visibleTab: visible
@@ -65,7 +65,7 @@ describe('Workspace schema', () => {
         [2, [tab(1)]],
         [1, [tab(2), tab(3, true)]]
       ],
-      Option.some(paneId(2))
+      paneId(2)
     )
 
     const decoded = Schema.decodeUnknownSync(Workspace)(Schema.encodeSync(Workspace)(workspace))
@@ -213,13 +213,13 @@ describe('removeProject', () => {
             [1, [tab(1)]],
             [2, [tab(2)]]
           ],
-          Option.some(paneId(2))
+          paneId(2)
         ),
         projectId(1)
       )
     )
 
-    expect(result).toEqual(workspaceOf([[2, [tab(2)]]], Option.some(paneId(2))))
+    expect(result).toEqual(workspaceOf([[2, [tab(2)]]], paneId(2)))
   })
 
   it('shows the first non-archived tab of the next project when the removed project held the visible tab', () => {
@@ -229,10 +229,10 @@ describe('removeProject', () => {
         [2, [tab(2, true), tab(3)]],
         [3, [tab(4)]]
       ],
-      Option.some(paneId(1))
+      paneId(1)
     )
 
-    expect(ok(removeProject(workspace, projectId(1))).visibleTab).toEqual(Option.some(paneId(3)))
+    expect(ok(removeProject(workspace, projectId(1))).visibleTab).toEqual(paneId(3))
   })
 
   it('shows the first tab of the previous project when the next project has no tab to show', () => {
@@ -242,16 +242,16 @@ describe('removeProject', () => {
         [2, [tab(2)]],
         [3, [tab(3, true)]]
       ],
-      Option.some(paneId(2))
+      paneId(2)
     )
 
-    expect(ok(removeProject(workspace, projectId(2))).visibleTab).toEqual(Option.some(paneId(1)))
+    expect(ok(removeProject(workspace, projectId(2))).visibleTab).toEqual(paneId(1))
   })
 
   it('shows no tab when no neighbouring project has a tab to show', () => {
-    const workspace = workspaceOf([[1, [tab(1)]]], Option.some(paneId(1)))
+    const workspace = workspaceOf([[1, [tab(1)]]], paneId(1))
 
-    expect(ok(removeProject(workspace, projectId(1))).visibleTab).toEqual(Option.none())
+    expect(ok(removeProject(workspace, projectId(1))).visibleTab).toEqual(null)
   })
 
   it('keeps the visible tab when it is in another project', () => {
@@ -261,10 +261,10 @@ describe('removeProject', () => {
         [2, [tab(2)]],
         [3, [tab(3)]]
       ],
-      Option.some(paneId(3))
+      paneId(3)
     )
 
-    expect(ok(removeProject(workspace, projectId(1))).visibleTab).toEqual(Option.some(paneId(3)))
+    expect(ok(removeProject(workspace, projectId(1))).visibleTab).toEqual(paneId(3))
   })
 
   it('fails for a project that is not registered', () => {
@@ -279,7 +279,7 @@ describe('moveVisibleTabOff', () => {
         [1, [tab(1)]],
         [2, [tab(2)]]
       ],
-      Option.some(paneId(1))
+      paneId(1)
     )
 
     expect(ok(moveVisibleTabOff(workspace, projectId(1)))).toEqual(
@@ -288,7 +288,7 @@ describe('moveVisibleTabOff', () => {
           [1, [tab(1)]],
           [2, [tab(2)]]
         ],
-        Option.some(paneId(2))
+        paneId(2)
       )
     )
   })
@@ -296,19 +296,15 @@ describe('moveVisibleTabOff', () => {
 
 describe('addTab', () => {
   it('appends the tab to its project and makes it visible', () => {
-    const result = ok(
-      addTab(workspaceOf([[1, [tab(1)]]], Option.some(paneId(1))), projectId(1), tab(2))
-    )
+    const result = ok(addTab(workspaceOf([[1, [tab(1)]]], paneId(1)), projectId(1), tab(2)))
 
-    expect(result).toEqual(workspaceOf([[1, [tab(1), tab(2)]]], Option.some(paneId(2))))
+    expect(result).toEqual(workspaceOf([[1, [tab(1), tab(2)]]], paneId(2)))
   })
 
   it('adds nothing when the pane id already has a tab, and makes that tab visible', () => {
-    const result = ok(
-      addTab(workspaceOf([[1, [tab(1), tab(2)]]], Option.some(paneId(1))), projectId(1), tab(2))
-    )
+    const result = ok(addTab(workspaceOf([[1, [tab(1), tab(2)]]], paneId(1)), projectId(1), tab(2)))
 
-    expect(result).toEqual(workspaceOf([[1, [tab(1), tab(2)]]], Option.some(paneId(2))))
+    expect(result).toEqual(workspaceOf([[1, [tab(1), tab(2)]]], paneId(2)))
   })
 
   it('fails for a project that is not registered', () => {
@@ -317,18 +313,18 @@ describe('addTab', () => {
 })
 
 describe('selectTab', () => {
-  const workspace = workspaceOf([[1, [tab(1), tab(2, true)]]], Option.some(paneId(1)))
+  const workspace = workspaceOf([[1, [tab(1), tab(2, true)]]], paneId(1))
 
   it('shows no tab when given none', () => {
-    expect(ok(selectTab(workspace, Option.none())).visibleTab).toEqual(Option.none())
+    expect(ok(selectTab(workspace, null)).visibleTab).toEqual(null)
   })
 
   it('fails for an archived tab', () => {
-    expect(failureTag(selectTab(workspace, Option.some(paneId(2))))).toBe('TabNotFoundError')
+    expect(failureTag(selectTab(workspace, paneId(2)))).toBe('TabNotFoundError')
   })
 
   it('fails for a pane id no tab has', () => {
-    expect(failureTag(selectTab(workspace, Option.some(paneId(9))))).toBe('TabNotFoundError')
+    expect(failureTag(selectTab(workspace, paneId(9)))).toBe('TabNotFoundError')
   })
 })
 
@@ -376,11 +372,11 @@ describe('withDefaultVisibleTab', () => {
       [2, [tab(2)]]
     ])
 
-    expect(withDefaultVisibleTab(workspace).visibleTab).toEqual(Option.some(paneId(2)))
+    expect(withDefaultVisibleTab(workspace).visibleTab).toEqual(paneId(2))
   })
 
   it('keeps an already visible tab', () => {
-    const workspace = workspaceOf([[1, [tab(1), tab(2)]]], Option.some(paneId(2)))
+    const workspace = workspaceOf([[1, [tab(1), tab(2)]]], paneId(2))
 
     expect(withDefaultVisibleTab(workspace)).toBe(workspace)
   })

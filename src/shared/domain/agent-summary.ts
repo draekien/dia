@@ -1,4 +1,4 @@
-import { Option, Schema } from 'effect'
+import { Schema } from 'effect'
 import type { IpcEvent } from '../ipc/contract'
 import type { UserInputRequest } from './attention'
 import { Uuid } from './uuid'
@@ -10,7 +10,7 @@ export type Todo = typeof Todo.Type
 /** Activity line from the agent's last tool call; `target` is the file, command or URL it acted on. */
 export const ToolUse = Schema.TaggedStruct('ToolUse', {
   tool: Schema.String,
-  target: Schema.OptionFromNullOr(Schema.String)
+  target: Schema.NullOr(Schema.String)
 })
 export type ToolUse = typeof ToolUse.Type
 
@@ -62,15 +62,12 @@ export type AgentSummary = typeof AgentSummary.Type
 
 const TARGET_FIELDS = ['file_path', 'command', 'pattern', 'url', 'path'] as const
 
-const toolTarget = (input: Readonly<Record<string, unknown>>): Option.Option<string> =>
-  Option.fromNullishOr(
-    TARGET_FIELDS.map((field) => input[field]).find(
-      (value): value is string => typeof value === 'string' && value.length > 0
-    )
-  )
+const toolTarget = (input: Readonly<Record<string, unknown>>): string | null =>
+  TARGET_FIELDS.map((field) => input[field]).find(
+    (value): value is string => typeof value === 'string' && value.length > 0
+  ) ?? null
 
-const describeTarget = (target: Option.Option<string>): string =>
-  Option.match(target, { onNone: () => '', onSome: (value) => ` ${value}` })
+const describeTarget = (target: string | null): string => (target === null ? '' : ` ${target}`)
 
 const needsInputReason = (request: UserInputRequest): string => {
   switch (request._tag) {
@@ -95,7 +92,7 @@ const todoActivity = (input: Readonly<Record<string, unknown>>): Activity => {
     (value): value is string => typeof value === 'string' && value.length > 0
   )
   return text === undefined
-    ? ToolUse.make({ tool: 'TodoWrite', target: Option.none() })
+    ? ToolUse.make({ tool: 'TodoWrite', target: null })
     : Todo.make({ text })
 }
 
@@ -116,7 +113,7 @@ export const foldSummary = (summary: AgentSummary, event: IpcEvent): AgentSummar
     case 'PaneUserMessagesSent':
       return { ...summary, status: StatusWorking.make({}) }
     case 'PaneToolCallStarted':
-      return withActivity(summary, ToolUse.make({ tool: event.toolName, target: Option.none() }))
+      return withActivity(summary, ToolUse.make({ tool: event.toolName, target: null }))
     case 'PaneToolCallCompleted':
       return event.toolName === 'TodoWrite'
         ? { ...summary, activity: todoActivity(event.input) }

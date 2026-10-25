@@ -57,6 +57,7 @@ import type {
 } from '@shared/ipc/contract'
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { cva } from 'class-variance-authority'
 import { AsyncResult } from 'effect/reactivity'
 import {
   AlertTriangle,
@@ -81,11 +82,11 @@ import {
 } from '../lib/pane-chat-atoms'
 import { sendModeAtom, sendModeForEnter } from '../lib/send-mode-atom'
 import { turnActivity } from '../lib/turn-activity'
+import { transcriptWidthAtom } from '../lib/workspace-atoms'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import { Markdown } from './markdown'
 import { PermissionRequestCard } from './permission-request-card'
 import { PlanReviewCard } from './plan-review-card'
-import { PulseIndicator } from './pulse-indicator'
 import { QueuedMessages } from './queued-messages'
 import { SlashCommandMenu, slashMenuListboxId, slashMenuOptionId } from './slash-command-menu'
 import { TurnActivityLine } from './turn-activity-line'
@@ -95,14 +96,19 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } fro
 
 interface PaneProps {
   paneId: string
-  cwd?: string
-  sourceRepo?: string
   thinkingLevel?: ThinkingLevel
   permissionMode?: PermissionMode
-  isFocused?: boolean
-  isDimmed?: boolean
-  onFocus?: () => void
 }
+
+const transcriptColumn = cva('mx-auto w-full', {
+  variants: {
+    width: {
+      narrow: 'max-w-2xl',
+      default: 'max-w-3xl',
+      wide: 'max-w-5xl'
+    }
+  }
+})
 
 /**
  * Returns the final path segment of a filesystem path, tolerating either
@@ -370,13 +376,15 @@ function PaneChat({
   thinkingLevel,
   onThinkingLevelChange,
   permissionMode,
-  onPermissionModeChange
+  onPermissionModeChange,
+  column
 }: {
   paneId: string
   attention: AttentionState
   thinkingLevel: ThinkingLevel
   onThinkingLevelChange: (level: ThinkingLevel) => void
   permissionMode: PermissionMode
+  column: string
   onPermissionModeChange: (mode: PermissionMode) => void
 }): React.JSX.Element {
   const queryClient = useQueryClient()
@@ -515,7 +523,7 @@ function PaneChat({
       <MessageScrollerProvider autoScroll>
         <MessageScroller className="flex-1">
           <MessageScrollerViewport>
-            <MessageScrollerContent className="gap-2 py-2">
+            <MessageScrollerContent className={cn('gap-2 py-2', column)}>
               {chat.messages.map((message) => (
                 <MessageScrollerItem
                   key={message.id}
@@ -551,171 +559,175 @@ function PaneChat({
           <MessageScrollerButton />
         </MessageScroller>
       </MessageScrollerProvider>
-      {pendingPermission !== null && (
-        <PermissionRequestCard request={pendingPermission} onResolve={respondToPermission} />
-      )}
-      {pendingQuestion !== null && (
-        <ClarifyingQuestionCard request={pendingQuestion} onResolve={respondToQuestion} />
-      )}
-      {pendingPlanReview !== null && (
-        <PlanReviewCard request={pendingPlanReview} onResolve={respondToPlanReview} />
-      )}
-      <form
-        className="mt-2"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void form.handleSubmit({ mode: defaultSendMode })
-        }}
-      >
-        <form.Field name="text">
-          {(field) => {
-            const token = activeSlashToken(field.state.value, caret)
-            const matches =
-              token === null ? [] : filterSlashCommands(chat.slashCommands, token.query)
-            const isMenuOpen = matches.length > 0 && !slashDismissed
-            const highlight = wrapHighlight(slashHighlight, 0, matches.length)
+      <div className={column}>
+        {pendingPermission !== null && (
+          <PermissionRequestCard request={pendingPermission} onResolve={respondToPermission} />
+        )}
+        {pendingQuestion !== null && (
+          <ClarifyingQuestionCard request={pendingQuestion} onResolve={respondToQuestion} />
+        )}
+        {pendingPlanReview !== null && (
+          <PlanReviewCard request={pendingPlanReview} onResolve={respondToPlanReview} />
+        )}
+        <form
+          className="mt-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void form.handleSubmit({ mode: defaultSendMode })
+          }}
+        >
+          <form.Field name="text">
+            {(field) => {
+              const token = activeSlashToken(field.state.value, caret)
+              const matches =
+                token === null ? [] : filterSlashCommands(chat.slashCommands, token.query)
+              const isMenuOpen = matches.length > 0 && !slashDismissed
+              const highlight = wrapHighlight(slashHighlight, 0, matches.length)
 
-            const changeText = (value: string, nextCaret: number): void => {
-              field.handleChange(value)
-              setCaret(nextCaret)
-              setSlashDismissed(false)
-              setSlashHighlight(0)
-            }
-            const selectCommand = (command: SlashCommandInfo, at: ActiveSlashToken): void => {
-              const completion = slashCommandCompletion(command)
-              const value =
-                field.state.value.slice(0, at.start) + completion + field.state.value.slice(at.end)
-              const nextCaret = at.start + completion.length
-              field.handleChange(value)
-              setSlashHighlight(0)
-              requestAnimationFrame(() => {
-                const element = textareaRef.current
-                if (element === null) return
-                element.selectionStart = nextCaret
-                element.selectionEnd = nextCaret
+              const changeText = (value: string, nextCaret: number): void => {
+                field.handleChange(value)
                 setCaret(nextCaret)
-              })
-            }
+                setSlashDismissed(false)
+                setSlashHighlight(0)
+              }
+              const selectCommand = (command: SlashCommandInfo, at: ActiveSlashToken): void => {
+                const completion = slashCommandCompletion(command)
+                const value =
+                  field.state.value.slice(0, at.start) +
+                  completion +
+                  field.state.value.slice(at.end)
+                const nextCaret = at.start + completion.length
+                field.handleChange(value)
+                setSlashHighlight(0)
+                requestAnimationFrame(() => {
+                  const element = textareaRef.current
+                  if (element === null) return
+                  element.selectionStart = nextCaret
+                  element.selectionEnd = nextCaret
+                  setCaret(nextCaret)
+                })
+              }
 
-            return (
-              <div className="relative">
-                {chat.warmingCommands && (
-                  <div className="mb-1.5 flex items-center gap-2 px-1 text-muted-foreground text-xs">
-                    <Loader2Icon className="size-3.5 animate-spin motion-reduce:animate-none" />
-                    Loading commands…
-                  </div>
-                )}
-                <QueuedMessages
-                  queued={chat.queued}
-                  held={chat.queueHeld}
-                  onEdit={(messageId, text) => editQueued({ messageId, text })}
-                  onRemove={removeQueued}
-                />
-                {isMenuOpen && token !== null && (
-                  <SlashCommandMenu
-                    paneId={paneId}
-                    commands={matches}
-                    highlightedIndex={highlight}
-                    onSelect={(command) => selectCommand(command, token)}
-                    onHighlight={setSlashHighlight}
+              return (
+                <div className="relative">
+                  {chat.warmingCommands && (
+                    <div className="mb-1.5 flex items-center gap-2 px-1 text-muted-foreground text-xs">
+                      <Loader2Icon className="size-3.5 animate-spin motion-reduce:animate-none" />
+                      Loading commands…
+                    </div>
+                  )}
+                  <QueuedMessages
+                    queued={chat.queued}
+                    held={chat.queueHeld}
+                    onEdit={(messageId, text) => editQueued({ messageId, text })}
+                    onRemove={removeQueued}
                   />
-                )}
-                <InputGroup>
-                  <InputGroupTextarea
-                    ref={textareaRef}
-                    className="min-h-14"
-                    value={field.state.value}
-                    onChange={(event) =>
-                      changeText(event.target.value, event.target.selectionStart)
-                    }
-                    onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
-                    onKeyDown={(event) => {
-                      if (isMenuOpen) {
-                        if (event.key === 'ArrowDown') {
-                          event.preventDefault()
-                          setSlashHighlight(wrapHighlight(highlight, 1, matches.length))
-                          return
-                        }
-                        if (event.key === 'ArrowUp') {
-                          event.preventDefault()
-                          setSlashHighlight(wrapHighlight(highlight, -1, matches.length))
-                          return
-                        }
-                        if (event.key === 'Escape') {
-                          event.preventDefault()
-                          setSlashDismissed(true)
-                          return
+                  {isMenuOpen && token !== null && (
+                    <SlashCommandMenu
+                      paneId={paneId}
+                      commands={matches}
+                      highlightedIndex={highlight}
+                      onSelect={(command) => selectCommand(command, token)}
+                      onHighlight={setSlashHighlight}
+                    />
+                  )}
+                  <InputGroup>
+                    <InputGroupTextarea
+                      ref={textareaRef}
+                      className="min-h-14"
+                      value={field.state.value}
+                      onChange={(event) =>
+                        changeText(event.target.value, event.target.selectionStart)
+                      }
+                      onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+                      onKeyDown={(event) => {
+                        if (isMenuOpen) {
+                          if (event.key === 'ArrowDown') {
+                            event.preventDefault()
+                            setSlashHighlight(wrapHighlight(highlight, 1, matches.length))
+                            return
+                          }
+                          if (event.key === 'ArrowUp') {
+                            event.preventDefault()
+                            setSlashHighlight(wrapHighlight(highlight, -1, matches.length))
+                            return
+                          }
+                          if (event.key === 'Escape') {
+                            event.preventDefault()
+                            setSlashDismissed(true)
+                            return
+                          }
+                          if (
+                            (event.key === 'Enter' || event.key === 'Tab') &&
+                            !event.shiftKey &&
+                            !event.nativeEvent.isComposing
+                          ) {
+                            event.preventDefault()
+                            const command = matches[highlight]
+                            if (command !== undefined && token !== null) {
+                              selectCommand(command, token)
+                            }
+                            return
+                          }
                         }
                         if (
-                          (event.key === 'Enter' || event.key === 'Tab') &&
+                          event.key === 'Enter' &&
                           !event.shiftKey &&
                           !event.nativeEvent.isComposing
                         ) {
                           event.preventDefault()
-                          const command = matches[highlight]
-                          if (command !== undefined && token !== null) {
-                            selectCommand(command, token)
-                          }
-                          return
+                          void form.handleSubmit({
+                            mode: sendModeForEnter(defaultSendMode, event)
+                          })
                         }
+                      }}
+                      role="combobox"
+                      aria-expanded={isMenuOpen}
+                      aria-controls={slashMenuListboxId(paneId)}
+                      aria-autocomplete="list"
+                      aria-activedescendant={
+                        isMenuOpen ? slashMenuOptionId(paneId, highlight) : undefined
                       }
-                      if (
-                        event.key === 'Enter' &&
-                        !event.shiftKey &&
-                        !event.nativeEvent.isComposing
-                      ) {
-                        event.preventDefault()
-                        void form.handleSubmit({
-                          mode: sendModeForEnter(defaultSendMode, event)
-                        })
-                      }
-                    }}
-                    role="combobox"
-                    aria-expanded={isMenuOpen}
-                    aria-controls={slashMenuListboxId(paneId)}
-                    aria-autocomplete="list"
-                    aria-activedescendant={
-                      isMenuOpen ? slashMenuOptionId(paneId, highlight) : undefined
-                    }
-                    placeholder="Message dia..."
-                    aria-label="Message dia"
-                  />
-                  <InputGroupAddon align="block-end">
-                    <ThinkingLevelSelect value={thinkingLevel} onChange={onThinkingLevelChange} />
-                    <PermissionModeSelect
-                      value={permissionMode}
-                      onChange={onPermissionModeChange}
+                      placeholder="Message dia..."
+                      aria-label="Message dia"
                     />
-                    {isLoading && (
+                    <InputGroupAddon align="block-end">
+                      <ThinkingLevelSelect value={thinkingLevel} onChange={onThinkingLevelChange} />
+                      <PermissionModeSelect
+                        value={permissionMode}
+                        onChange={onPermissionModeChange}
+                      />
+                      {isLoading && (
+                        <InputGroupButton
+                          type="button"
+                          variant="outline"
+                          size="icon-sm"
+                          className="ml-auto"
+                          aria-label="Stop"
+                          title="Stop"
+                          onClick={() => stop()}
+                        >
+                          <SquareIcon />
+                        </InputGroupButton>
+                      )}
                       <InputGroupButton
-                        type="button"
-                        variant="outline"
+                        type="submit"
+                        variant="default"
                         size="icon-sm"
-                        className="ml-auto"
-                        aria-label="Stop"
-                        title="Stop"
-                        onClick={() => stop()}
+                        className={cn(!isLoading && 'ml-auto')}
+                        aria-label="Send message"
+                        disabled={field.state.value.trim() === ''}
                       >
-                        <SquareIcon />
+                        <ArrowUp />
                       </InputGroupButton>
-                    )}
-                    <InputGroupButton
-                      type="submit"
-                      variant="default"
-                      size="icon-sm"
-                      className={cn(!isLoading && 'ml-auto')}
-                      aria-label="Send message"
-                      disabled={field.state.value.trim() === ''}
-                    >
-                      <ArrowUp />
-                    </InputGroupButton>
-                  </InputGroupAddon>
-                </InputGroup>
-              </div>
-            )
-          }}
-        </form.Field>
-      </form>
+                    </InputGroupAddon>
+                  </InputGroup>
+                </div>
+              )
+            }}
+          </form.Field>
+        </form>
+      </div>
       <AlertDialog
         open={rewindTarget !== null}
         onOpenChange={(open) => {
@@ -754,17 +766,9 @@ function PaneChat({
   )
 }
 
-function Pane({
-  paneId,
-  cwd,
-  sourceRepo,
-  thinkingLevel,
-  permissionMode,
-  isFocused = false,
-  isDimmed = false,
-  onFocus
-}: PaneProps) {
+function Pane({ paneId, thinkingLevel, permissionMode }: PaneProps) {
   const queryClient = useQueryClient()
+  const width = useAtomValue(transcriptWidthAtom)
   const attentionQueryKey = ['pane', paneId, 'attention'] as const
 
   const [level, setLevel] = useState<ThinkingLevel>(thinkingLevel ?? DEFAULT_THINKING_LEVEL)
@@ -798,76 +802,17 @@ function Pane({
   }, [queryClient, paneId, attentionQueryKey])
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: tracks focus bubbling up from any descendant control to mark this pane active
-    <div
-      // biome-ignore lint/a11y/noNoninteractiveTabindex: must itself be focusable so clicking empty pane space still activates it
-      tabIndex={0}
-      onFocus={onFocus}
-      className={cn(
-        'relative flex h-full flex-col bg-background p-4 text-ink outline-none transition-shadow',
-        isFocused && 'ring-2 ring-ring ring-inset'
-      )}
-    >
-      <div
-        className={cn(
-          'flex h-full min-h-0 flex-1 flex-col transition-opacity duration-200 ease-out motion-reduce:transition-none',
-          isDimmed ? 'opacity-50' : 'opacity-100'
-        )}
-      >
-        <div className="flex items-center justify-between gap-2 pb-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <PulseIndicator attention={attention} />
-            {cwd !== undefined && (
-              <span
-                title={sourceRepo !== undefined ? `${sourceRepo} (worktree at ${cwd})` : cwd}
-                className="flex min-w-0 items-center gap-1.5 rounded border border-border bg-surface px-2 py-1 font-mono text-xs text-ink-muted"
-              >
-                <span className="truncate">{dirName(sourceRepo ?? cwd)}</span>
-                {sourceRepo !== undefined && (
-                  <span className="shrink-0 rounded-sm bg-background px-1 text-xs text-ink-muted">
-                    worktree
-                  </span>
-                )}
-              </span>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              onClick={() => window.dia.splitPane(paneId, 'row')}
-            >
-              Split ↔
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              onClick={() => window.dia.splitPane(paneId, 'column')}
-            >
-              Split ↕
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              onClick={() => window.dia.closePane(paneId)}
-            >
-              Close
-            </Button>
-          </div>
-        </div>
-        <PaneChat
-          key={paneId}
-          paneId={paneId}
-          attention={attention}
-          thinkingLevel={level}
-          onThinkingLevelChange={changeThinkingLevel}
-          permissionMode={mode}
-          onPermissionModeChange={changePermissionMode}
-        />
-      </div>
+    <div className="flex h-full flex-col bg-background px-4 pb-4 text-ink">
+      <PaneChat
+        key={paneId}
+        paneId={paneId}
+        attention={attention}
+        thinkingLevel={level}
+        onThinkingLevelChange={changeThinkingLevel}
+        permissionMode={mode}
+        onPermissionModeChange={changePermissionMode}
+        column={transcriptColumn({ width })}
+      />
     </div>
   )
 }

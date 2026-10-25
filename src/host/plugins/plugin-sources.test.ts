@@ -14,6 +14,8 @@ const memorySettings = (initial: Record<string, string> = {}) => {
     setTheme: () => Effect.void,
     getSendMode: () => Effect.succeed(Option.none()),
     setSendMode: () => Effect.void,
+    getTranscriptWidth: () => Effect.succeed(Option.none()),
+    setTranscriptWidth: () => Effect.void,
     getPluginOverrides: () => Effect.sync(() => overrides),
     setPluginOverride: (name, path) =>
       Effect.sync(() => {
