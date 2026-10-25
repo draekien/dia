@@ -1,6 +1,6 @@
 # Message queue and steer
 
-Status: accepted, not yet implemented.
+Status: accepted, implemented.
 
 The claude-code adapter session decides, for each user message sent while a turn runs, whether it waits in a per-pane queue (`queue`) or interrupts the turn and runs next (`steer`). It owns the queue's contents and reports them to the renderer, which shows and edits them.
 
@@ -81,7 +81,7 @@ interface PaneHandle {
 }
 ```
 
-`OutboundMessage` (`src/host/session/protocol.ts`, re-exported to plugins by `src/host/plugin-api.ts`) gains `MessageQueueChanged { queued, held }` and `UserMessagesSent { messages }`. `toIpcEvent` maps them to the two events above.
+`OutboundMessage` (`src/host/session/protocol.ts`, re-exported to plugins by `src/host/plugin-api.ts`) gains `MessageQueueChanged { queued, held }` and `UserMessagesSent { messages }`. `plugin-api.ts` also exports the `OutgoingMessage` schema, because `plugins/claude-code/message-queue.ts` uses it as a value in its own schemas. `toIpcEvent` maps them to the two events above.
 
 Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermission` and no `AwaitingPermission->Completed` transition):
 
@@ -93,7 +93,7 @@ Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermissio
 
 ### Settings (`src/host/services/settings-store.ts`)
 
-`settings.json` gains `sendMode: Schema.optional(SendMode)`. `getSendMode` returns `'queue'` when the field is absent. `setSendMode` writes it.
+`settings.json` gains `sendMode: Schema.optional(SendMode)`. `getSendMode` returns `Option<SendMode>`, `None` when the field is absent, as `getTheme` does; the `GetSendMode` handler returns `DEFAULT_SEND_MODE` (`'queue'`) for `None`. `setSendMode` writes the field.
 
 ## Behaviour
 
@@ -160,8 +160,8 @@ Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermissio
 - The composer shows `queued` above the textarea: each item's text with an edit control (inline textarea; Enter saves, Escape cancels; save is disabled for blank text) and a remove control. A held queue shows the label `Sends with your next message`.
 - `onKeyDown`: Enter without Shift sends in the default mode; Enter with `event.metaKey || event.ctrlKey` sends in the other mode. The slash-menu handling keeps precedence. The handler passes the mode through `form.handleSubmit({ mode })` (TanStack Form `onSubmitMeta`); the send button uses the default mode.
 - `onSubmit` clears the pending permission, question and plan-review cards only when the mode is `steer` or no turn is running.
-- `interruptAndRetry` sends `retryText` with mode `steer` and does not call `interrupt()`. `resend` uses the default mode. `lastUserText` returns the last message of the last batch.
-- `sendModeAtom` holds the default, read with `getSendMode` at startup and written with `setSendMode`. The command palette has the entries `Send mode: Queue` and `Send mode: Steer`, the current one marked, as the theme entries are.
+- `resend` sends `retryText` with mode `steer`, and the error turn's interrupt-and-retry action calls `resend`; neither calls `interrupt()`. `paneInterruptAtom` is removed, because interrupt-and-retry was its only caller. `lastUserText` returns the last message of the last batch.
+- `sendModeAtom` holds the default, read with `getSendMode` at startup and written with `setSendMode`. The command palette has a `Send mode` `ToggleGroup` row with `Queue` and `Steer` items under its `Theme` row, built the same way as the `Theme` row.
 
 ## Key Data Structures
 
@@ -266,7 +266,7 @@ Queue persistence across a Host restart; per-pane mode; queueing while idle.
 
 **Rejected**
 - *Project rules* — an ADR for the adapter-owned queue. Rejected: ADR-0029 already places the session's input queue in the adapter; this change follows it.
-- *Project rules* — export `SendMode` and `OutgoingMessage` from `src/host/plugin-api.ts`. Rejected: the plugin imports them as types only, which resolve without the runtime alias; the new `OutboundMessage` members are already re-exported through `export * from './session/protocol'`.
+- *Project rules* — export `SendMode` and `OutgoingMessage` from `src/host/plugin-api.ts`. Rejected: the plugin imports them as types only, which resolve without the runtime alias; the new `OutboundMessage` members are already re-exported through `export * from './session/protocol'`. Revised during implementation: `message-queue.ts` uses `OutgoingMessage` as a schema value, so `plugin-api.ts` exports it.
 - *Correctness* — `editQueuedText` with blank text removes the message. Rejected: the renderer disables save for blank text; removal has its own control.
 
 ### Round 2

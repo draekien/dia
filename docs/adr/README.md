@@ -23,7 +23,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0012](0012-effect-tsgo-for-effect-aware-typechecking.md) | Use @effect/tsgo for Effect-aware type checking | accepted |
 | [0013](0013-shared-schema-module-for-cross-process-code.md) | Extract cross-process schemas into a platform-neutral `src/shared` module | accepted |
 | [0014](0014-tanstack-ai-usechat-for-renderer-chat-state.md) | Use TanStack AI `useChat` with a custom IPC ConnectionAdapter for renderer chat state | superseded by ADR-0015 |
-| [0015](0015-effect-atom-and-direct-ipc-reducer-for-renderer-chat-state.md) | Use effect-atom and a direct IPC-event reducer for renderer chat state | accepted |
+| [0015](0015-effect-atom-and-direct-ipc-reducer-for-renderer-chat-state.md) | Use effect-atom and a direct IPC-event reducer for renderer chat state | accepted, amended by ADR-0030 |
 | [0016](0016-electron-builder-distribution-and-auto-update.md) | Distribute dia as an electron-builder NSIS installer with GitHub-backed auto-update | accepted |
 | [0017](0017-frameless-window-with-native-overlay-controls.md) | Replace the native window frame with a custom titlebar and native overlay controls | accepted |
 | [0018](0018-transcript-anchored-file-checkpointing-with-conversation-fork.md) | Transcript-anchored file checkpointing that forks the conversation on rewind | accepted |
@@ -38,6 +38,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0027](0027-eager-and-lazy-plugin-startup.md) | Load plugins as eager or lazy at startup, and report each plugin's progress to the renderer | accepted |
 | [0028](0028-essential-plugins-and-the-permissions-plugin.md) | Keep essential plugins loaded and un-overridable, and move permission handling into one | superseded by ADR-0029 |
 | [0029](0029-plugin-categories-adapter-and-feature.md) | Split plugins into one adapter category and one feature category, and move the Agent SDK into a Claude Code adapter | accepted |
+| [0030](0030-user-turns-appear-when-the-host-reports-them-sent.md) | Show a user turn in the transcript when the Host reports it sent, not when the composer submits it | accepted |
 
 ## Adding a new ADR
 

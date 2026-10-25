@@ -21,12 +21,16 @@ every pending `Deferred` with a pane-local `Superseded` tagged value, which
 `toPermissionResult` maps to `{ behavior: 'deny', message, interrupt: true }`.
 The deny **with `interrupt: true`** is the single mechanism that both releases
 the callback and aborts the stale turn; `query.interrupt()` alone would leak the
-`Deferred`-blocked promise. Queued async user messages survive the interrupt
-(`still_queued`), so the superseding message runs as the next turn.
+`Deferred`-blocked promise. Since the message queue
+(`docs/designs/message-queue-and-steer.md`), only a steer supersedes: the
+claude-code adapter holds the steer message and offers it to the SDK after the
+aborted turn ends, so it runs as the next turn. A queued message supersedes
+nothing and leaves the pending prompt open.
 
 **Two abort paths, one suppression.** Supersede (deny+interrupt) covers aborts
 where a request is pending. A *silent* stall has no pending `Deferred`, so the
-stall UI's "Interrupt & retry" calls `query.interrupt()` directly. Both aborts
+stall UI's "Interrupt & retry" sends the last user message as a steer, and the
+steer calls `query.interrupt()` when no request is pending. Both aborts
 surface from the SDK as an **error-subtype turn result** (there is no
 `'interrupt'` result subtype), which would otherwise map to `TurnErrored` → red
 `Errored` pulse. `abortExpectedRef` (a `Ref<boolean>` armed when we initiate an
