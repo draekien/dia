@@ -175,6 +175,25 @@ export const paneRemoveQueuedAtom = Atom.family((paneId: string) =>
   )
 )
 
+/**
+ * Per-pane stop action, keyed by `paneId`. Set it (with no argument) to abort
+ * the pane's in-flight turn: it dispatches `window.dia.interrupt`, which
+ * supersedes any pending prompt, cancels generation in the pane process and
+ * holds the pane's queued messages until the next send. The turn end and the
+ * held queue arrive back through {@link paneChatAtom}'s IPC fold, so this
+ * performs no optimistic state change. Bind with
+ * `useAtomSet(paneInterruptAtom(paneId))`.
+ */
+export const paneInterruptAtom = Atom.family((paneId: string) =>
+  Atom.writable(
+    (): null => null,
+    // biome-ignore lint/suspicious/noConfusingVoidType: no-argument trigger — void lets callers invoke the setter as interrupt() with no value
+    (_ctx, _trigger: void) => {
+      window.dia.interrupt(paneId)
+    }
+  )
+)
+
 /** The pair of uuids identifying a rewind target: the user turn's checkpoint id and, when a prior assistant turn exists, the branch point to resume from. */
 export interface RewindTarget {
   readonly checkpointUuid: string

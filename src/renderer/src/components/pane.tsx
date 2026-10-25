@@ -65,7 +65,8 @@ import {
   Check,
   Loader2Icon,
   RotateCcw,
-  ShieldCheck
+  ShieldCheck,
+  SquareIcon
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { PaneChatState, PaneMessage, ToolCallPart } from '../lib/pane-chat'
@@ -73,6 +74,7 @@ import { emptyPaneChatState, lastUserText } from '../lib/pane-chat'
 import {
   paneChatAtom,
   paneEditQueuedAtom,
+  paneInterruptAtom,
   paneRemoveQueuedAtom,
   paneRewindAtom,
   paneSendAtom
@@ -386,6 +388,7 @@ function PaneChat({
   const sendMessage = useAtomSet(paneSendAtom(paneId))
   const editQueued = useAtomSet(paneEditQueuedAtom(paneId))
   const removeQueued = useAtomSet(paneRemoveQueuedAtom(paneId))
+  const stop = useAtomSet(paneInterruptAtom(paneId))
   const defaultSendMode = useAtomValue(sendModeAtom)
   const rewind = useAtomSet(paneRewindAtom(paneId))
   const [rewindTarget, setRewindTarget] = useState<PaneMessage | null>(null)
@@ -683,11 +686,24 @@ function PaneChat({
                       value={permissionMode}
                       onChange={onPermissionModeChange}
                     />
+                    {isLoading && (
+                      <InputGroupButton
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        className="ml-auto"
+                        aria-label="Stop"
+                        title="Stop"
+                        onClick={() => stop()}
+                      >
+                        <SquareIcon />
+                      </InputGroupButton>
+                    )}
                     <InputGroupButton
                       type="submit"
                       variant="default"
                       size="icon-sm"
-                      className="ml-auto"
+                      className={cn(!isLoading && 'ml-auto')}
                       aria-label="Send message"
                       disabled={field.state.value.trim() === ''}
                     >
