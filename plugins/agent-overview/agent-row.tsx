@@ -80,6 +80,7 @@ interface AgentRowProps {
   readonly projectName: string
   readonly selected: boolean
   readonly renaming: boolean
+  readonly tabbable: boolean
   readonly onRename: (renaming: boolean) => void
 }
 
@@ -87,54 +88,63 @@ interface AgentRowProps {
  * One agent in the overview: its status dot, name and second line. Clicking it or pressing
  * `Enter` shows the agent's tab; `F2` or the row menu renames it.
  */
-export function AgentRow({ row, projectName, selected, renaming, onRename }: AgentRowProps) {
+export function AgentRow({
+  row,
+  projectName,
+  selected,
+  renaming,
+  tabbable,
+  onRename
+}: AgentRowProps) {
   const line = secondLine(row.summary)
   const label = `${row.name}, ${statusLabel(row.summary.status)}. ${line.text}`
+  const body = (name: React.ReactNode) => (
+    <>
+      <StatusIndicator status={row.summary.status} className="mt-1.5" />
+      <span className="flex min-w-0 flex-1 flex-col">
+        {name}
+        <span className={cn('truncate text-xs text-ink-muted', line.mono && 'font-mono')}>
+          {line.text}
+        </span>
+      </span>
+    </>
+  )
+  const rowClass = cn(
+    'group/row flex w-full cursor-default items-start gap-2.5 rounded-md py-1.5 pr-2 pl-7 text-left outline-none transition-colors duration-150 ease-out hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none',
+    selected && 'bg-primary/10 hover:bg-primary/15'
+  )
+  if (renaming) {
+    return (
+      <div data-nav={`row:${row.paneId}`} className={rowClass}>
+        {body(<RenameField row={row} onDone={() => onRename(false)} />)}
+      </div>
+    )
+  }
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        {/* biome-ignore lint/a11y/useSemanticElements: the row holds the rename input, which a <button> cannot contain */}
-        <div
+        <button
+          type="button"
           data-nav={`row:${row.paneId}`}
-          role="button"
-          tabIndex={0}
+          tabIndex={tabbable ? 0 : -1}
           aria-label={label}
           aria-current={selected ? 'page' : undefined}
           title={`${projectName} / ${row.name}`}
-          onClick={() => {
-            if (!renaming) actions.selectTab(row.paneId)
-          }}
+          onClick={() => actions.selectTab(row.paneId)}
           onKeyDown={(event) => {
-            if (renaming) return
-            if (event.key === 'Enter') {
-              event.preventDefault()
-              actions.selectTab(row.paneId)
-            }
             if (event.key === 'F2') {
               event.preventDefault()
               onRename(true)
             }
           }}
-          className={cn(
-            'group/row flex cursor-default items-start gap-2.5 rounded-md py-1.5 pr-2 pl-7 outline-none transition-colors duration-150 ease-out hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none',
-            selected &&
-              'bg-primary/10 shadow-[inset_2px_0_0_var(--color-primary)] hover:bg-primary/15'
-          )}
+          className={rowClass}
         >
-          <StatusIndicator status={row.summary.status} className="mt-1.5" />
-          <div className="flex min-w-0 flex-1 flex-col">
-            {renaming ? (
-              <RenameField row={row} onDone={() => onRename(false)} />
-            ) : (
-              <span className={cn('truncate text-sm text-ink', selected && 'font-medium')}>
-                {row.name}
-              </span>
-            )}
-            <span className={cn('truncate text-xs text-ink-muted', line.mono && 'font-mono')}>
-              {line.text}
+          {body(
+            <span className={cn('truncate text-sm text-ink', selected && 'font-medium')}>
+              {row.name}
             </span>
-          </div>
-        </div>
+          )}
+        </button>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
         <ContextMenuGroup>

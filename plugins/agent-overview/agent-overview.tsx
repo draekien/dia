@@ -46,7 +46,7 @@ import {
   type StatusTag
 } from './overview'
 import { ProjectGroup } from './project-group'
-import { Rail } from './rail'
+import { MetaMarker, Rail } from './rail'
 import { RemoveProjectDialog } from './remove-project-dialog'
 
 const COLLAPSED_KEY = 'dia.agent-overview.collapsed'
@@ -121,7 +121,7 @@ function Kbd({ children }: { readonly children: React.ReactNode }) {
 function MetaGroup() {
   return (
     <div className="flex h-8 items-center gap-1.5 pr-1 pl-1.5">
-      <span aria-hidden className="size-2 shrink-0 rounded-[2px] bg-primary/60" />
+      <MetaMarker />
       <span className="text-sm font-medium text-ink">Meta</span>
       <span className="ml-auto text-xs text-ink-muted">No open proposals</span>
     </div>
@@ -181,6 +181,7 @@ export function AgentOverview() {
   const [renaming, setRenaming] = useState<PaneId | null>(null)
   const [removing, setRemoving] = useState<ProjectId | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [tabStop, setTabStop] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLElement>(null)
 
@@ -272,7 +273,6 @@ export function AgentOverview() {
     if (dragging || renaming !== null || listRef.current === null) return
     const current = (event.target as HTMLElement).closest<HTMLElement>('[data-nav]')?.dataset.nav
     if (current === undefined) return
-    const targets = navigationOrder(groups, effectiveCollapsed)
     const index = targets.findIndex((target) => navKey(target) === current)
     const target = targets[index]
     if (target === undefined) return
@@ -311,6 +311,33 @@ export function AgentOverview() {
     }
   }
 
+  const targets = navigationOrder(groups, effectiveCollapsed)
+  const currentStop =
+    tabStop !== null && targets.some((target) => navKey(target) === tabStop)
+      ? tabStop
+      : targets[0] === undefined
+        ? null
+        : navKey(targets[0])
+
+  const onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape' && filters.query !== '') {
+      event.preventDefault()
+      setFilters({ ...filters, query: '' })
+      return
+    }
+    if (listRef.current === null) return
+    if (event.key === 'ArrowDown' && targets[0] !== undefined) {
+      event.preventDefault()
+      focusNav(listRef.current, navKey(targets[0]))
+    }
+    const firstRow = targets.find((target) => target._tag === 'RowTarget')
+    if (event.key === 'Enter' && filters.query.trim() !== '' && firstRow !== undefined) {
+      event.preventDefault()
+      actions.selectTab(firstRow.paneId)
+      focusNav(listRef.current, navKey(firstRow))
+    }
+  }
+
   const removingEntry =
     removing === null
       ? undefined
@@ -331,12 +358,7 @@ export function AgentOverview() {
             placeholder="Search"
             value={filters.query}
             onChange={(event) => setFilters({ ...filters, query: event.target.value })}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape' && filters.query !== '') {
-                event.preventDefault()
-                setFilters({ ...filters, query: '' })
-              }
-            }}
+            onKeyDown={onSearchKeyDown}
             className="h-8 pr-12 pl-7 text-sm [&::-webkit-search-cancel-button]:hidden"
           />
           <span className="absolute top-1/2 right-2 -translate-y-1/2">
@@ -369,6 +391,10 @@ export function AgentOverview() {
           aria-label="Projects and agents"
           className="flex flex-col px-2 pb-2"
           onKeyDown={onListKeyDown}
+          onFocus={(event) => {
+            const key = event.target.closest<HTMLElement>('[data-nav]')?.dataset.nav
+            if (key !== undefined) setTabStop(key)
+          }}
         >
           {!narrowing && (
             <>
@@ -412,6 +438,7 @@ export function AgentOverview() {
                       dragging={dragging}
                       visibleTab={workspace.visibleTab}
                       renaming={renaming}
+                      tabStop={currentStop}
                       onToggle={() => toggle(group.project.projectId)}
                       onRename={setRenaming}
                       onRemove={() => setRemoving(group.project.projectId)}

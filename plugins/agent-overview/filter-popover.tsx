@@ -94,7 +94,7 @@ export function FilterPopover({ filters, counts, onChange }: FilterPopoverProps)
             checked={filters.statuses.includes(tag)}
             onChange={(checked) => toggleStatus(tag, checked)}
           >
-            <StatusIndicator status={SAMPLE_STATUS[tag]} />
+            <StatusIndicator status={SAMPLE_STATUS[tag]} still />
             <span className="flex-1">{statusLabel(SAMPLE_STATUS[tag])}</span>
             <span className="text-xs tabular-nums text-ink-muted">{counts[tag]}</span>
           </CheckRow>

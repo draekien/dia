@@ -65,7 +65,7 @@ export function TabHeader() {
   if (Result.isFailure(found)) return null
   const { project, tab } = found.success
   return (
-    <div className="flex h-10 shrink-0 items-center gap-2 px-4">
+    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4">
       <h1 className="flex min-w-0 items-center gap-1.5 text-sm">
         <span className="truncate text-ink-muted">{project.displayName}</span>
         <span className="text-ink-muted" aria-hidden>

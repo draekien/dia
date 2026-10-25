@@ -146,7 +146,8 @@ export function RemoveProjectDialog({ entry, onClose }: RemoveProjectDialogProps
           <DialogTitle>Remove {project.displayName}?</DialogTitle>
           <DialogDescription>
             dia stops these agents and deletes their worktrees and transcripts. The project
-            directory <span className="font-mono">{project.directory}</span> stays on disk.
+            directory <span className="font-mono break-all">{project.directory}</span> stays on
+            disk.
           </DialogDescription>
         </DialogHeader>
 
@@ -162,7 +163,10 @@ export function RemoveProjectDialog({ entry, onClose }: RemoveProjectDialogProps
                   <div className="flex items-center gap-2 text-sm">
                     {phase !== 'confirm' && <ItemStateIcon state={state} />}
                     <span className="w-20 shrink-0 text-xs text-ink-muted">{kind}</span>
-                    <span className={cn('truncate text-ink', mono && 'font-mono text-xs')}>
+                    <span
+                      title={text}
+                      className={cn('truncate text-ink', mono && 'font-mono text-xs')}
+                    >
                       {text}
                     </span>
                   </div>

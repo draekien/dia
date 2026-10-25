@@ -40,19 +40,26 @@ export const statusLabel = (status: AgentStatus): string => STATUS_LABELS[status
 interface StatusIndicatorProps {
   readonly status: AgentStatus
   readonly className?: string
+  readonly still?: boolean
 }
 
 /**
  * The status dot of one agent: amber and pulsing when it needs input, red and pulsing when it
  * failed, a slow neutral pulse while it works, steady green when it finished, a hollow ring when
- * idle. Decorative: put {@link statusLabel} in the accessible name of the row it sits in.
+ * idle. Pass `still` for a legend or sample that must not animate, because it stands for a
+ * status rather than reporting one. Decorative: put {@link statusLabel} in the accessible name
+ * of the row it sits in.
  */
-export function StatusIndicator({ status, className }: StatusIndicatorProps): React.JSX.Element {
-  const pulses = status._tag === 'StatusNeedsInput' || status._tag === 'StatusFailed'
+export function StatusIndicator({
+  status,
+  className,
+  still = false
+}: StatusIndicatorProps): React.JSX.Element {
+  const pulses = !still && (status._tag === 'StatusNeedsInput' || status._tag === 'StatusFailed')
   return (
     <span aria-hidden className={cn('relative flex size-2 shrink-0', className)}>
       {pulses && <span className={statusRing({ status: status._tag })} />}
-      <span className={statusDot({ status: status._tag })} />
+      <span className={cn(statusDot({ status: status._tag }), still && 'animate-none')} />
     </span>
   )
 }

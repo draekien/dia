@@ -25,6 +25,7 @@ interface ProjectGroupProps {
   readonly dragging: boolean
   readonly visibleTab: PaneId | null
   readonly renaming: PaneId | null
+  readonly tabStop: string | null
   readonly onToggle: () => void
   readonly onRename: (paneId: PaneId | null) => void
   readonly onRemove: () => void
@@ -41,6 +42,7 @@ export function ProjectGroup({
   dragging,
   visibleTab,
   renaming,
+  tabStop,
   onToggle,
   onRename,
   onRemove
@@ -68,7 +70,7 @@ export function ProjectGroup({
             data-nav={`header:${project.projectId}`}
             {...sortable.attributes}
             role="button"
-            tabIndex={0}
+            tabIndex={tabStop === `header:${project.projectId}` ? 0 : -1}
             {...sortable.listeners}
             aria-roledescription="sortable project"
             aria-expanded={open}
@@ -148,6 +150,7 @@ export function ProjectGroup({
               projectName={project.displayName}
               selected={row.paneId === visibleTab}
               renaming={row.paneId === renaming}
+              tabbable={tabStop === `row:${row.paneId}`}
               onRename={(next) => onRename(next ? row.paneId : null)}
             />
           ))}
@@ -161,6 +164,7 @@ export function ProjectGroup({
                   projectName={project.displayName}
                   selected={false}
                   renaming={row.paneId === renaming}
+                  tabbable={tabStop === `row:${row.paneId}`}
                   onRename={(next) => onRename(next ? row.paneId : null)}
                 />
               ))}
