@@ -75,7 +75,8 @@ export interface PaneMessage {
  * available in the pane's live session (for the `/` command popover; empty
  * until the session reports them), and `warmingCommands` — true while the
  * session is still discovering that list, so the input can show a "loading
- * commands" indicator. This is the sole contract consumers depend on — how
+ * commands" indicator. `messagesBeforeRewind`, set by {@link requestRewind}, is the
+ * number of messages present when the latest rewind was requested. This is the sole contract consumers depend on — how
  * streaming deltas are assembled into it is private to {@link reducePaneChat}.
  */
 export interface PaneChatState {
@@ -83,6 +84,7 @@ export interface PaneChatState {
   readonly isLoading: boolean
   readonly slashCommands: ReadonlyArray<SlashCommandInfo>
   readonly warmingCommands: boolean
+  readonly messagesBeforeRewind?: number
 }
 
 /**
@@ -148,6 +150,17 @@ export const appendUserMessage = (
   ...state,
   messages: [...state.messages, { id, role: 'user', parts: [{ type: 'text', content: text }] }],
   isLoading: true
+})
+
+/**
+ * Records that a rewind of this pane was requested. Call it when the rewind is sent to the pane
+ * process. A user turn appended after this call, through {@link appendUserMessage}, is queued in
+ * the pane process until the rewind finishes and is kept when `PaneRewoundToCheckpoint` truncates
+ * the transcript.
+ */
+export const requestRewind = (state: PaneChatState): PaneChatState => ({
+  ...state,
+  messagesBeforeRewind: state.messages.length
 })
 
 const lastMessage = (state: PaneChatState): PaneMessage | undefined => state.messages.at(-1)
@@ -267,12 +280,21 @@ const anchorCheckpoint = (
 
 // Rewind branches the conversation just before the anchored turn, so the displayed
 // transcript drops that turn and everything after it (slice ends at, not past, the anchor).
-const truncateToCheckpoint = (
-  messages: ReadonlyArray<PaneMessage>,
-  messageUuid: string
-): ReadonlyArray<PaneMessage> => {
-  const anchor = messages.findIndex((message) => message.checkpointUuid === messageUuid)
-  return anchor === -1 ? messages : messages.slice(0, anchor)
+const rewindToCheckpoint = (state: PaneChatState, messageUuid: string): PaneChatState => {
+  const { messagesBeforeRewind, ...rest } = state
+  const anchor = state.messages.findIndex((message) => message.checkpointUuid === messageUuid)
+  if (anchor === -1) return { ...rest, isLoading: false }
+  const queued =
+    messagesBeforeRewind === undefined
+      ? []
+      : state.messages
+          .slice(Math.max(anchor, messagesBeforeRewind))
+          .filter((message) => message.role === 'user')
+  return {
+    ...rest,
+    messages: [...state.messages.slice(0, anchor), ...queued],
+    isLoading: queued.length > 0
+  }
 }
 
 const compactionNotice = (event: PaneConversationCompacted): string =>
@@ -295,7 +317,8 @@ const compactionNotice = (event: PaneConversationCompacted): string =>
  * `PaneCheckpointAvailable` anchors a rewindable checkpoint uuid (and its resume
  * anchor) onto the earliest user turn still lacking one, and
  * `PaneRewoundToCheckpoint` truncates the transcript back to (and excluding) the
- * turn holding that uuid, ending any in-flight turn. Pure and total — drive a
+ * turn holding that uuid, ending any in-flight turn, and then appends the user turns sent since
+ * {@link requestRewind}. Pure and total — drive a
  * pane's state atom by scanning the IPC stream with it.
  */
 export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): PaneChatState => {
@@ -358,10 +381,6 @@ export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): Pa
         messages: anchorCheckpoint(state.messages, event.messageUuid, event.resumeAnchorUuid)
       }
     case 'PaneRewoundToCheckpoint':
-      return {
-        ...state,
-        messages: truncateToCheckpoint(state.messages, event.messageUuid),
-        isLoading: false
-      }
+      return rewindToCheckpoint(state, event.messageUuid)
   }
 }

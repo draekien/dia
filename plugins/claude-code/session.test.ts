@@ -1,8 +1,10 @@
+import { setImmediate } from 'node:timers/promises'
+import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { type DiaTool, makePendingUserInput, type OutboundMessage } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import { Allow, Deny } from '@shared/domain/attention'
-import { Deferred, Effect, Fiber, Ref } from 'effect'
-import { makeApproveDiaTool, makeCanUseTool } from './session'
+import { Deferred, Effect, Fiber, Queue, Ref } from 'effect'
+import { makeApproveDiaTool, makeCanUseTool, openPromptInput, type PromptInput } from './session'
 
 const options = (toolUseID: string) =>
   ({ toolUseID, signal: new AbortController().signal, suggestions: undefined }) as never
@@ -114,6 +116,87 @@ describe('approveDiaTool', () => {
       )
 
       assert.isFalse(yield* Fiber.join(approval))
+    })
+  )
+})
+
+const prompt = (text: string): SDKUserMessage => ({
+  type: 'user',
+  message: { role: 'user', content: text },
+  parent_tool_use_id: null
+})
+
+const ended = { done: true, value: undefined } as const
+
+const read = (input: PromptInput) => input.prompts[Symbol.asyncIterator]().next()
+
+const settle = Effect.promise(() => setImmediate())
+
+describe('openPromptInput', () => {
+  it.effect('a prompt offered after a query input ends reaches the next query input', () =>
+    Effect.gen(function* () {
+      const queue = yield* Queue.unbounded<SDKUserMessage>()
+      const closedQuery = yield* openPromptInput(queue)
+      const pendingRead = read(closedQuery)
+      yield* settle
+      yield* closedQuery.end
+      const nextQuery = yield* openPromptInput(queue)
+      const nextRead = read(nextQuery)
+      yield* settle
+
+      yield* Queue.offer(queue, prompt('turn 3'))
+
+      assert.deepStrictEqual(yield* Effect.promise(() => pendingRead), ended)
+      assert.deepStrictEqual(yield* Effect.promise(() => nextRead), {
+        done: false,
+        value: prompt('turn 3')
+      })
+    })
+  )
+
+  it.effect('a first read after end finishes as done and leaves the queued prompt', () =>
+    Effect.gen(function* () {
+      const queue = yield* Queue.unbounded<SDKUserMessage>()
+      const input = yield* openPromptInput(queue)
+      yield* Queue.offer(queue, prompt('queued'))
+      yield* input.end
+
+      const result = yield* Effect.promise(() => read(input))
+
+      assert.deepStrictEqual(result, ended)
+      assert.strictEqual(yield* Queue.size(queue), 1)
+    })
+  )
+
+  it.effect('every read after end finishes as done', () =>
+    Effect.gen(function* () {
+      const queue = yield* Queue.unbounded<SDKUserMessage>()
+      const input = yield* openPromptInput(queue)
+      const iterator = input.prompts[Symbol.asyncIterator]()
+      yield* input.end
+      yield* input.end
+
+      const first = yield* Effect.promise(() => iterator.next())
+      const second = yield* Effect.promise(() => iterator.next())
+
+      assert.deepStrictEqual([first, second], [ended, ended])
+    })
+  )
+
+  it.effect('does not take a prompt offered between reads, so end leaves it queued', () =>
+    Effect.gen(function* () {
+      const queue = yield* Queue.unbounded<SDKUserMessage>()
+      const input = yield* openPromptInput(queue)
+      const iterator = input.prompts[Symbol.asyncIterator]()
+      yield* Queue.offer(queue, prompt('a'))
+      const first = yield* Effect.promise(() => iterator.next())
+      yield* Queue.offer(queue, prompt('b'))
+      yield* settle
+
+      yield* input.end
+
+      assert.deepStrictEqual(first, { done: false, value: prompt('a') })
+      assert.strictEqual(yield* Queue.size(queue), 1)
     })
   )
 })

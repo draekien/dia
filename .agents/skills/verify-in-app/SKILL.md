@@ -59,11 +59,11 @@ Call `window.dia` through the script. Register listeners on `window` first, act,
 ```sh
 node scripts/cdp-eval.mjs --port 9333 "window.__events = []; window.dia.onMessageAppended((...args) => window.__events.push(args)); true"
 node scripts/cdp-eval.mjs --port 9333 "window.dia.createPane('00000000-0000-0000-0000-000000000001', 'F:/Dev/dia', 'claude-sonnet-5', 'off', 'default', false)"
-node scripts/cdp-eval.mjs --port 9333 "window.dia.sendMessage('00000000-0000-0000-0000-000000000001', 'Reply with the word ready')"
+node scripts/cdp-eval.mjs --port 9333 "const box = document.querySelector('textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'Reply with the word ready'); box.dispatchEvent(new Event('input', { bubbles: true })); setTimeout(() => document.querySelector('button[aria-label=\"Send message\"]').click(), 100); true"
 node scripts/cdp-eval.mjs --port 9333 "window.__events.length"
 ```
 
-The pane id `00000000-0000-0000-0000-000000000001` is the initial pane only with `workspace.json` moved away (dev) or on a fresh scratch profile (packaged). `sendMessage` returns before the turn ends: re-read the collected value until it reaches the expected state, up to a stated limit such as 60 s, and record a timeout as a failed observation. `--timeout-ms` does not bound the expression itself.
+The pane id `00000000-0000-0000-0000-000000000001` is the initial pane only with `workspace.json` moved away (dev) or on a fresh scratch profile (packaged). The third command sends the prompt through the composer: it fills the `textarea` and clicks `Send message`. The click returns before the turn ends: re-read the collected value until it reaches the expected state, up to a stated limit such as 60 s, and record a timeout as a failed observation. `--timeout-ms` does not bound the expression itself.
 
 Read `src/preload` for the current `window.dia` surface rather than guessing a method's arguments. For a change in a git-backed feature, run it against a throwaway git repo, not this one.
 
@@ -84,6 +84,7 @@ Return this to the caller (or to the user when run on its own):
 - **`ELECTRON_RUN_AS_NODE` is set in shells started from an Electron-based app.** `electron .` then runs `out/main/index.js` as plain Node and fails with `The requested module 'electron' does not provide an export named 'BrowserWindow'`. Always launch with `env -u ELECTRON_RUN_AS_NODE`.
 - **Overriding `APPDATA` does not isolate a dev build.** Electron resolves `appData` from the Windows known-folder API. Only a packaged build honours `--user-data-dir`.
 - **Write Windows paths with forward slashes in expressions** (`'F:/Dev/dia'`); backslashes are lost between the shell and JavaScript.
+- **Send prompts through the composer, not `window.dia.sendMessage`.** The renderer adds the user turn to the pane's transcript in `paneSendAtom` (`src/renderer/src/lib/pane-chat-atoms.ts`) before it calls `window.dia.sendMessage`. A direct `window.dia.sendMessage` call reaches the agent, but the user turn never appears in the pane, and a later rewind cannot truncate the transcript at that turn.
 - **Events published before a listener registers are not replayed** on the first connection. Register listeners before the action that emits them.
 - **`kill $!` does not stop the app.** Electron's main, renderer, GPU and Host processes outlive the shell job. Find the main process by its command line (this run's `--remote-debugging-port` or scratch path) and stop its whole tree: `taskkill //PID <pid> //T //F`. Never stop all `dia.exe` or `electron.exe` processes, which ends the user's own dia window.
 - **`electron .` runs the last build.** Rebuild after every source change, or the run proves the old code.

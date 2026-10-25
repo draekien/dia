@@ -5,7 +5,8 @@ import {
   appendUserMessage,
   emptyPaneChatState,
   paneChatStateFromHistory,
-  reducePaneChat
+  reducePaneChat,
+  requestRewind
 } from './pane-chat'
 
 const IDLE_TTL = Duration.seconds(30)
@@ -114,8 +115,9 @@ export const paneChatAtom = Atom.family((paneId: string) =>
   ).pipe(Atom.setIdleTTL(IDLE_TTL))
 )
 
-const nextUserMessageId = (paneId: string, state: PaneChatState): string =>
-  `${paneId}:user:${state.messages.length}`
+let sentUserMessages = 0
+
+const nextUserMessageId = (paneId: string): string => `${paneId}:user:${++sentUserMessages}`
 
 /**
  * Per-pane send action, keyed by `paneId`. Set it with the prompt `text` to
@@ -129,10 +131,7 @@ export const paneSendAtom = Atom.family((paneId: string) =>
     (): null => null,
     (ctx, text: string) => {
       const current = AsyncResult.getOrElse(ctx.get(paneChatAtom(paneId)), () => emptyPaneChatState)
-      ctx.set(
-        paneChatAtom(paneId),
-        appendUserMessage(current, nextUserMessageId(paneId, current), text)
-      )
+      ctx.set(paneChatAtom(paneId), appendUserMessage(current, nextUserMessageId(paneId), text))
       window.dia.sendMessage(paneId, text)
     }
   )
@@ -165,15 +164,19 @@ export interface RewindTarget {
 /**
  * Per-pane rewind action, keyed by `paneId`. Set it with a {@link RewindTarget}
  * (a user turn's `checkpointUuid` and optional `resumeAnchorUuid`) to rewind that
- * pane's files and conversation back to that point (ADR-0018). It dispatches the
- * request to the pane process; the resulting transcript truncation arrives back
- * through {@link paneChatAtom}'s IPC fold on `PaneRewoundToCheckpoint`, so this
- * performs no optimistic state change. Bind with `useAtomSet(paneRewindAtom(paneId))`.
+ * pane's files and conversation back to that point (ADR-0018). It records the request
+ * in {@link paneChatAtom} with {@link requestRewind} and dispatches it to the pane
+ * process; the resulting transcript truncation arrives back through the IPC fold on
+ * `PaneRewoundToCheckpoint`. A prompt sent through {@link paneSendAtom} before that
+ * event arrives is sent to the conversation the rewind leaves. Bind with
+ * `useAtomSet(paneRewindAtom(paneId))`.
  */
 export const paneRewindAtom = Atom.family((paneId: string) =>
   Atom.writable(
     (): null => null,
-    (_ctx, target: RewindTarget) => {
+    (ctx, target: RewindTarget) => {
+      const current = AsyncResult.getOrElse(ctx.get(paneChatAtom(paneId)), () => emptyPaneChatState)
+      ctx.set(paneChatAtom(paneId), requestRewind(current))
       window.dia.rewindToCheckpoint(paneId, target.checkpointUuid, target.resumeAnchorUuid)
     }
   )

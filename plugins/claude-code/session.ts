@@ -34,6 +34,7 @@ import {
   type Context,
   Data,
   Deferred,
+  Duration,
   Effect,
   Fiber,
   Match,
@@ -43,6 +44,7 @@ import {
   Result,
   Schema,
   Scope,
+  Semaphore,
   Stream
 } from 'effect'
 import { resolveClaudeExecutable } from './claude-executable'
@@ -53,6 +55,7 @@ import {
 import { makeSessionEventReducer } from './reducer'
 import { thinkingOptions } from './thinking-options'
 import { DIA_TOOL_SERVER_KEY, isDiaToolName, makeDiaToolServer } from './tool-server'
+import { readLastAssistantUuid, readTurnResumeAnchor } from './transcript'
 
 /**
  * Wraps a failure surfaced while consuming the Agent SDK's event stream
@@ -303,6 +306,46 @@ const toSDKUserMessage = (text: string): SDKUserMessage => ({
 })
 
 /**
+ * The prompt input of one SDK query, read from the session's prompt queue. `prompts` is
+ * passed to `query()` as its `prompt`. After `end` runs, no prompt is taken from the queue by
+ * this input: a read of `prompts` pending at that moment finishes as done, and every later read
+ * finishes as done, including a first read made after `end`. `end` can run more than once.
+ */
+export interface PromptInput {
+  readonly prompts: AsyncIterable<SDKUserMessage>
+  readonly end: Effect.Effect<void>
+}
+
+/**
+ * Opens a {@link PromptInput} over `queue`. Call it once per SDK query, and run `end` before
+ * that query is closed, so that a prompt offered after the query closes reaches the next query.
+ */
+export const openPromptInput = Effect.fnUntraced(function* (
+  queue: Queue.Dequeue<SDKUserMessage>
+): Effect.fn.Return<PromptInput> {
+  const ended = yield* Deferred.make<void>()
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>())
+  const done: IteratorReturnResult<undefined> = { done: true, value: undefined }
+
+  const readOne = Effect.gen(function* () {
+    if (yield* Deferred.isDone(ended)) return done
+    return yield* Effect.raceFirst(
+      Queue.take(queue).pipe(
+        Effect.map((value): IteratorYieldResult<SDKUserMessage> => ({ done: false, value }))
+      ),
+      Deferred.await(ended).pipe(Effect.as(done))
+    )
+  })
+
+  return {
+    prompts: { [Symbol.asyncIterator]: () => ({ next: () => runPromise(readOne) }) },
+    end: Deferred.succeed(ended, undefined).pipe(
+      Effect.andThen(Effect.logDebug('Prompt input ended'))
+    )
+  }
+})
+
+/**
  * The slice of the live Agent SDK `Query` the session drives directly: restoring
  * files on disk to a checkpoint (`rewindFiles`) and aborting an in-flight turn
  * (`interrupt`). Narrowed so the current query can be held in a `Ref`.
@@ -312,11 +355,34 @@ type LiveControlQuery = Pick<Query, 'rewindFiles' | 'interrupt'>
 const isTurnEnd = (message: OutboundMessage): boolean =>
   message._tag === 'TurnErrored' || message._tag === 'TurnCompleted'
 
+const resolveContinuesFrom = Effect.fn('ClaudeCodeSession.resolveContinuesFrom')(function* (
+  resume: Option.Option<SessionId>,
+  branchAt: string | undefined,
+  cwd: string
+) {
+  if (branchAt !== undefined) return Option.some(branchAt)
+  if (Option.isNone(resume)) return Option.none<string>()
+  return yield* readLastAssistantUuid(resume.value, cwd)
+})
+
+const REWIND_FILES_TIMEOUT = Duration.seconds(30)
+
+const resolveRewindAnchor = (
+  sessionId: SessionId,
+  cwd: string,
+  messageUuid: string,
+  resumeAnchorUuid: string | undefined
+) =>
+  resumeAnchorUuid !== undefined
+    ? Effect.succeed(Option.some(resumeAnchorUuid))
+    : readTurnResumeAnchor(sessionId, cwd, messageUuid)
+
 const runSession = Effect.fn('ClaudeCodeSession.runSession')(
   function* (
     config: PaneConfig,
     promptQueue: Queue.Queue<SDKUserMessage>,
     sessionIdRef: Ref.Ref<Option.Option<SessionId>>,
+    branchAtRef: Ref.Ref<Option.Option<string>>,
     queryRef: Ref.Ref<Option.Option<LiveControlQuery>>,
     modeController: PermissionModeController,
     abortExpectedRef: Ref.Ref<boolean>,
@@ -324,15 +390,18 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     newDiaToolServer: Option.Option<() => McpSdkServerConfigWithInstance>,
     emit: (message: OutboundMessage) => Effect.Effect<void>,
     resume: Option.Option<SessionId>,
-    branchAt: string | undefined
+    branchAt: string | undefined,
+    queryOpened: Deferred.Deferred<void>
   ) {
+    const continuesFrom = yield* resolveContinuesFrom(resume, branchAt, config.cwd)
     yield* Effect.logInfo('Starting query session', {
       paneId: config.paneId,
       cwd: config.cwd,
       thinkingLevel: config.thinkingLevel,
       permissionMode: config.permissionMode,
       resume: Option.getOrUndefined(resume),
-      branchAt
+      branchAt,
+      continuesFrom: Option.getOrUndefined(continuesFrom)
     })
 
     const thinking = thinkingOptions(config.thinkingLevel)
@@ -341,12 +410,12 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       options: thinking
     })
 
-    const promptIterable = Stream.toAsyncIterable(Stream.fromQueue(promptQueue))
+    const input = yield* openPromptInput(promptQueue)
 
     const session = yield* Effect.acquireRelease(
       Effect.sync(() =>
         query({
-          prompt: promptIterable,
+          prompt: input.prompts,
           options: {
             cwd: config.cwd,
             model: config.model,
@@ -370,11 +439,13 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       ),
       (live) =>
         Effect.logInfo('Closing query', { paneId: config.paneId }).pipe(
+          Effect.andThen(input.end),
           Effect.andThen(Effect.sync(() => live.close()))
         )
     )
     yield* modeController.attachQuery(session)
     yield* Ref.set(queryRef, Option.some(session))
+    yield* Deferred.succeed(queryOpened, undefined)
 
     yield* Effect.forkChild(
       emit(SlashCommandsWarming.make({ active: true })).pipe(
@@ -405,11 +476,12 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     )
 
     const events = Stream.fromAsyncIterable(session, (cause) => new SessionStreamError({ cause }))
-    const reducer = makeSessionEventReducer()
+    const reducer = makeSessionEventReducer(continuesFrom)
 
     const forward = Effect.fnUntraced(function* (outbound: OutboundMessage) {
       if (outbound._tag === 'SessionStarted') {
         yield* Ref.set(sessionIdRef, Option.some(outbound.sessionId))
+        yield* Ref.set(branchAtRef, Option.none())
       } else if (outbound._tag === 'ToolCallStarted' || outbound._tag === 'ToolCallCompleted') {
         yield* Effect.logDebug(
           `Tool call ${outbound._tag === 'ToolCallStarted' ? 'started' : 'completed'}`,
@@ -503,6 +575,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
   )
   const promptQueue = yield* Queue.unbounded<SDKUserMessage>()
   const sessionIdRef = yield* Ref.make<Option.Option<SessionId>>(Option.none())
+  const branchAtRef = yield* Ref.make<Option.Option<string>>(Option.none())
   const queryRef = yield* Ref.make<Option.Option<LiveControlQuery>>(Option.none())
   const abortExpectedRef = yield* Ref.make(false)
   const configRef = yield* Ref.make<Option.Option<PaneConfig>>(Option.none())
@@ -511,6 +584,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
   )
   const fiberRef = yield* Ref.make<Option.Option<Fiber.Fiber<void>>>(Option.none())
   const endedDeferred = yield* Deferred.make<string>()
+  const restartLock = yield* Semaphore.make(1)
 
   const startQuery = Effect.fn('ClaudeCodeSession.startQuery')(function* (
     config: PaneConfig,
@@ -518,11 +592,15 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     branchAt: string | undefined
   ) {
     yield* modeController.seed(config.permissionMode)
+    yield* Ref.set(sessionIdRef, resume)
+    yield* Ref.set(branchAtRef, Option.fromUndefinedOr(branchAt))
+    const queryOpened = yield* Deferred.make<void>()
     const fiber = yield* Effect.forkIn(
       runSession(
         config,
         promptQueue,
         sessionIdRef,
+        branchAtRef,
         queryRef,
         modeController,
         abortExpectedRef,
@@ -530,8 +608,10 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
         newDiaToolServer,
         emit,
         resume,
-        branchAt
+        branchAt,
+        queryOpened
       ).pipe(
+        Effect.ensuring(Deferred.succeed(queryOpened, undefined)),
         Effect.flatMap((failure) =>
           Deferred.succeed(
             endedDeferred,
@@ -544,6 +624,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     )
     yield* Ref.set(configRef, Option.some(config))
     yield* Ref.set(fiberRef, Option.some(fiber))
+    yield* Deferred.await(queryOpened)
   })
 
   const restartForThinkingChange = Effect.fn('ClaudeCodeSession.restartForThinkingChange')(
@@ -574,7 +655,12 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
 
       const currentModeOpt = yield* modeController.currentMode
       const permissionMode = Option.getOrElse(currentModeOpt, () => config.permissionMode)
-      yield* startQuery({ ...config, thinkingLevel: desired, permissionMode }, sessionId, undefined)
+      const branchAt = yield* Ref.get(branchAtRef)
+      yield* startQuery(
+        { ...config, thinkingLevel: desired, permissionMode },
+        sessionId,
+        Option.getOrUndefined(branchAt)
+      )
     }
   )
 
@@ -591,10 +677,23 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     }
     const config = configOpt.value
 
+    const anchor = yield* Effect.result(
+      resolveRewindAnchor(sessionIdOpt.value, config.cwd, messageUuid, resumeAnchorUuid)
+    )
+    if (Result.isFailure(anchor)) {
+      yield* Effect.logWarning('Rewind aborted; the turn is not in the session transcript', {
+        paneId: config.paneId,
+        sessionId: sessionIdOpt.value,
+        messageUuid
+      })
+      return
+    }
+
     const result = yield* Effect.tryPromise({
       try: () => queryOpt.value.rewindFiles(messageUuid),
       catch: (cause) => new SessionStreamError({ cause })
     }).pipe(
+      Effect.timeout(REWIND_FILES_TIMEOUT),
       Effect.tapCause((cause) =>
         Effect.logError('rewindFiles failed', { paneId: config.paneId, messageUuid, cause })
       ),
@@ -612,7 +711,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     yield* Effect.logInfo('Rewound files to checkpoint; forking conversation', {
       paneId: config.paneId,
       messageUuid,
-      resumeAnchorUuid,
+      resumeAnchorUuid: Option.getOrUndefined(anchor.success),
       filesChanged: result.value.filesChanged?.length ?? 0
     })
 
@@ -622,13 +721,13 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
 
     const currentModeOpt = yield* modeController.currentMode
     const permissionMode = Option.getOrElse(currentModeOpt, () => config.permissionMode)
-    if (resumeAnchorUuid !== undefined) {
-      yield* startQuery({ ...config, permissionMode }, sessionIdOpt, resumeAnchorUuid)
+    if (Option.isSome(anchor.success)) {
+      yield* startQuery({ ...config, permissionMode }, sessionIdOpt, anchor.success.value)
     } else {
       yield* startQuery({ ...config, permissionMode }, Option.none(), undefined)
     }
     yield* emit(RewoundToCheckpoint.make({ messageUuid }))
-  })
+  }, restartLock.withPermits(1))
 
   yield* startQuery(options.config, options.resume, undefined)
 
@@ -636,7 +735,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     yield* restartForThinkingChange()
     yield* supersedePendingRequests(pendingUserInput, abortExpectedRef)
     yield* Queue.offer(promptQueue, toSDKUserMessage(text))
-  })
+  }, restartLock.withPermits(1))
 
   const resolvePlanReview = Effect.fn('ClaudeCodeSession.resolvePlanReview')(function* (
     requestId: string,

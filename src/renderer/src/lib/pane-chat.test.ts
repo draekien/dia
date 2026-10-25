@@ -30,7 +30,8 @@ import {
   emptyPaneChatState,
   lastUserText,
   paneChatStateFromHistory,
-  reducePaneChat
+  reducePaneChat,
+  requestRewind
 } from './pane-chat'
 
 const PANE = '00000000-0000-4000-8000-000000000000'
@@ -631,5 +632,50 @@ describe('reducePaneChat: rewind to checkpoint', () => {
     const result = reducePaneChat(branched, rewoundToCheckpoint('missing'))
 
     expect(result.messages).toBe(branched.messages)
+  })
+
+  it('keeps a prompt sent after the rewind was requested, after the truncated transcript', () => {
+    const queued = appendUserMessage(requestRewind(branched), 'queued', 'sent during rewind')
+
+    const result = reducePaneChat(queued, rewoundToCheckpoint('b'))
+
+    expect(result.messages).toEqual([...branched.messages.slice(0, 2), queued.messages[4]])
+  })
+
+  it('keeps the turn in flight when a prompt sent during the rewind was kept', () => {
+    const queued = appendUserMessage(requestRewind(branched), 'queued', 'sent during rewind')
+
+    const result = reducePaneChat(queued, rewoundToCheckpoint('b'))
+
+    expect(result.isLoading).toBe(true)
+  })
+
+  it('drops an assistant reply that streamed in after the rewind was requested', () => {
+    const streamed = reducePaneChat(requestRewind(loadingWith(branched)), textDelta('late reply'))
+
+    const result = reducePaneChat(streamed, rewoundToCheckpoint('b'))
+
+    expect(result.messages).toEqual(branched.messages.slice(0, 2))
+  })
+
+  it('drops a prompt sent before the rewind was requested along with the turns after the anchor', () => {
+    const sentBefore = requestRewind(appendUserMessage(branched, 'before', 'sent before rewind'))
+
+    const result = reducePaneChat(sentBefore, rewoundToCheckpoint('b'))
+
+    expect(result.messages).toEqual(branched.messages.slice(0, 2))
+  })
+
+  it('keeps nothing extra on a later rewind once a rewind has completed', () => {
+    const first = reducePaneChat(
+      appendUserMessage(requestRewind(branched), 'queued', 'sent during rewind'),
+      rewoundToCheckpoint('b')
+    )
+    const anchored = reducePaneChat(first, checkpointAvailable('c', 'reply one'))
+    const later = appendUserMessage(anchored, 'later', 'sent after the rewind finished')
+
+    const result = reducePaneChat(later, rewoundToCheckpoint('c'))
+
+    expect(result.messages).toEqual(branched.messages.slice(0, 2))
   })
 })
