@@ -16,6 +16,7 @@ import { type ComponentType, useEffect, useState } from 'react'
 import { AboutDialog } from './about-dialog'
 import { openPluginsPage } from './plugins-page'
 import { useTheme } from './theme-provider'
+import { TranscriptWidthToggle } from './transcript-width-toggle'
 import {
   CommandDialog,
   CommandEmpty,
@@ -64,7 +65,7 @@ export function openCommandPalette(): void {
  * The app-wide command palette, opened with Cmd/Ctrl+K or {@link
  * openCommandPalette}. Hosts the About action, a persistent theme switcher
  * (light / dark / system) and the default send mode switcher (queue / steer:
- * what Enter does while a turn runs) as segmented rows; mount it once near the app
+ * what Enter does while a turn runs) and the app-wide transcript width as segmented rows; mount it once near the app
  * root, inside a {@link ThemeProvider}. It renders as an overlay dialog, so its
  * position in the tree only needs to be within the provider, not any layout.
  */
@@ -180,6 +181,10 @@ export function CommandPalette() {
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
+        </div>
+        <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
+          <span className="text-xs font-medium text-muted-foreground">Transcript width</span>
+          <TranscriptWidthToggle />
         </div>
       </CommandDialog>
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />

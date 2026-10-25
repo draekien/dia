@@ -1,3 +1,4 @@
+export { AGENT_NAME_ADJECTIVES, AGENT_NAME_NOUNS } from '../shared/domain/agent-name'
 export { PlanReviewResponse, Question } from '../shared/domain/attention'
 export { OutgoingMessage } from '../shared/domain/message-queue'
 export { SessionId } from '../shared/domain/pane'
@@ -12,7 +13,8 @@ export {
   AGENT_BACKEND_KEY,
   type AgentBackend,
   type AgentSession,
-  type AgentSessionOptions
+  type AgentSessionOptions,
+  SessionDeleteError
 } from './session/agent-backend'
 export type { DiaTool, DiaToolField, DiaToolResult } from './session/dia-tools'
 export {

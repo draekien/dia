@@ -11,6 +11,7 @@
     "paths": {
       "@shared/*": ["./src/shared/*"],
       "@dia/plugin": ["./src/host/plugin-api.ts"],
+      "@dia/renderer-plugin": ["./src/renderer/src/plugin-api.ts"],
       "@preload/*": ["./src/preload/*"],
       "@renderer/*": ["./src/renderer/src/*"]
     },
@@ -49,5 +50,11 @@
       }
     ]
   },
-  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.d.ts", "plugins/**/*.test.ts"]
+  "include": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.d.ts",
+    "plugins/**/*.test.ts",
+    "plugins/**/*.test.tsx"
+  ]
 }

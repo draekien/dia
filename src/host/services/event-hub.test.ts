@@ -1,6 +1,6 @@
 import { assert, describe, it } from '@effect/vitest'
-import { PaneLeafSchema } from '@shared/domain/pane-tree'
-import { LayoutChanged, PaneAssistantTextDelta } from '@shared/ipc/contract'
+import { EMPTY_WORKSPACE } from '@shared/domain/project'
+import { PaneAssistantTextDelta, WorkspaceChanged } from '@shared/ipc/contract'
 import type { EventFrame } from '@shared/ipc/rpc'
 import { Effect, Fiber, Stream } from 'effect'
 import { EventHub, makeEventHubLive } from './event-hub'
@@ -135,9 +135,7 @@ describe('EventHub', () => {
   it.effect('delivers events with no pane live but never replays them', () =>
     Effect.gen(function* () {
       const hub = yield* EventHub
-      const layoutEvent = LayoutChanged.make({
-        tree: PaneLeafSchema.make({ paneId: paneA, status: 'pending' })
-      })
+      const layoutEvent = WorkspaceChanged.make({ workspace: EMPTY_WORKSPACE })
       yield* hub.publish(layoutEvent)
 
       const subscriber = yield* hub

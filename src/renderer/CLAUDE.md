@@ -15,4 +15,4 @@ These triggers extend the table in the root `CLAUDE.md` and follow its rule.
 
 ## Styling
 
-- Use `class-variance-authority` (`cva`) for any component with style variants driven by props or state (e.g. a status/tag union, `variant`/`size` props) — see `components/ui/button.tsx` and `components/pulse-indicator.tsx`. Don't hand-roll a lookup object plus template-literal class strings for this.
+- Use `class-variance-authority` (`cva`) for any component with style variants driven by props or state (e.g. a status/tag union, `variant`/`size` props) — see `components/ui/button.tsx` and `components/status-indicator.tsx`. Don't hand-roll a lookup object plus template-literal class strings for this.

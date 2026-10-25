@@ -1,5 +1,5 @@
 import { assert, describe, it } from '@effect/vitest'
-import { Deferred, Duration, Effect, Fiber, Option, type Scope } from 'effect'
+import { Deferred, Duration, Effect, Fiber, Option, type Scope, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
 import type { PluginServices, PluginSetup } from './api'
 import {
@@ -316,6 +316,27 @@ describe('plugin registry', () => {
         ])
         assert.deepStrictEqual(seen, ['connection-1', 'connection-2'])
       }).pipe(Effect.scoped)
+  )
+
+  it.effect('emits a service key each time a plugin starts or stops providing it', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        provider: plugin(manifest('provider'), (ctx) => ctx.provide('db', 1)),
+        other: plugin(manifest('other'), (ctx) => ctx.provide('cache', 2))
+      })
+      const collected = yield* registry.changes.pipe(
+        Stream.take(3),
+        Stream.runCollect,
+        Effect.forkScoped({ startImmediately: true })
+      )
+      yield* Effect.yieldNow
+
+      yield* registry.load('provider')
+      yield* registry.load('other')
+      yield* registry.unload('provider')
+
+      assert.deepStrictEqual(yield* Fiber.join(collected), ['db', 'cache', 'db'])
+    }).pipe(Effect.scoped)
   )
 
   it.effect('sends dependants back to Waiting when their provider unloads', () =>

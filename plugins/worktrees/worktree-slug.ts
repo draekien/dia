@@ -1,62 +1,5 @@
+import { AGENT_NAME_ADJECTIVES, AGENT_NAME_NOUNS } from '@dia/plugin'
 import { Effect, Random } from 'effect'
-
-const ADJECTIVES = [
-  'amber',
-  'brave',
-  'bright',
-  'calm',
-  'clever',
-  'crimson',
-  'dapper',
-  'eager',
-  'fuzzy',
-  'gentle',
-  'golden',
-  'happy',
-  'jolly',
-  'keen',
-  'lively',
-  'lucky',
-  'mellow',
-  'nimble',
-  'plucky',
-  'quiet',
-  'rapid',
-  'shiny',
-  'silver',
-  'swift',
-  'tidy',
-  'witty'
-] as const
-
-const NOUNS = [
-  'otter',
-  'falcon',
-  'maple',
-  'harbor',
-  'comet',
-  'willow',
-  'ember',
-  'pebble',
-  'meadow',
-  'lantern',
-  'badger',
-  'cedar',
-  'ferret',
-  'glacier',
-  'heron',
-  'jasper',
-  'koala',
-  'lynx',
-  'marmot',
-  'newt',
-  'osprey',
-  'panda',
-  'quail',
-  'raven',
-  'sparrow',
-  'thistle'
-] as const
 
 /**
  * Produces a friendly, human-readable worktree slug of the form
@@ -68,7 +11,7 @@ const NOUNS = [
  * already exists and call again to regenerate on a clash.
  */
 export const generateWorktreeSlug = Effect.fn('generateWorktreeSlug')(function* () {
-  const adjective = yield* Random.choice(ADJECTIVES)
-  const noun = yield* Random.choice(NOUNS)
+  const adjective = yield* Random.choice(AGENT_NAME_ADJECTIVES)
+  const noun = yield* Random.choice(AGENT_NAME_NOUNS)
   return `${adjective}-${noun}`
 })

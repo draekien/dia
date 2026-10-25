@@ -1,11 +1,12 @@
 import { SendMode } from '@shared/domain/message-queue'
 import { ThemePreference } from '@shared/domain/theme'
+import { TranscriptWidth } from '@shared/domain/transcript-width'
 import { Context, Effect, FileSystem, Layer, Option, Result, Schema } from 'effect'
 
 const Settings = Schema.Struct({
-  lastDirectory: Schema.optional(Schema.String),
   theme: Schema.optional(ThemePreference),
   sendMode: Schema.optional(SendMode),
+  transcriptWidth: Schema.optional(TranscriptWidth),
   pluginOverrides: Schema.optional(Schema.Record(Schema.String, Schema.String))
 })
 const parseJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
@@ -14,19 +15,19 @@ const encodeSettings = Schema.encodeSync(Schema.fromJsonString(Settings, { space
 
 /**
  * Effect Context.Service for the app's persisted settings store.
- * Depend on this to read or update the user's last-opened directory, colour-theme choice, default send mode and
- * per-plugin source overrides (plugin name to source directory). Provide it via
+ * Depend on this to read or update the user's colour-theme choice, default send mode, transcript
+ * width and per-plugin source overrides (plugin name to source directory). Provide it via
  * {@link makeSettingsStoreLive}.
  */
 export class SettingsStore extends Context.Service<
   SettingsStore,
   {
-    readonly getLastDirectory: () => Effect.Effect<Option.Option<string>>
-    readonly setLastDirectory: (path: string) => Effect.Effect<void>
     readonly getTheme: () => Effect.Effect<Option.Option<ThemePreference>>
     readonly setTheme: (theme: ThemePreference) => Effect.Effect<void>
     readonly getSendMode: () => Effect.Effect<Option.Option<SendMode>>
     readonly setSendMode: (mode: SendMode) => Effect.Effect<void>
+    readonly getTranscriptWidth: () => Effect.Effect<Option.Option<TranscriptWidth>>
+    readonly setTranscriptWidth: (width: TranscriptWidth) => Effect.Effect<void>
     readonly getPluginOverrides: () => Effect.Effect<Readonly<Record<string, string>>>
     readonly setPluginOverride: (name: string, path: string) => Effect.Effect<void>
     readonly clearPluginOverride: (name: string) => Effect.Effect<void>
@@ -71,12 +72,6 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
           .pipe(Effect.catch((cause) => Effect.logError('Failed to persist settings', { cause })))
       })
 
-      const getLastDirectory = () =>
-        read().pipe(Effect.map((settings) => Option.fromNullishOr(settings.lastDirectory)))
-
-      const setLastDirectory = (path: string) =>
-        read().pipe(Effect.flatMap((settings) => write({ ...settings, lastDirectory: path })))
-
       const getTheme = () =>
         read().pipe(Effect.map((settings) => Option.fromNullishOr(settings.theme)))
 
@@ -88,6 +83,12 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
 
       const setSendMode = (sendMode: SendMode) =>
         read().pipe(Effect.flatMap((settings) => write({ ...settings, sendMode })))
+
+      const getTranscriptWidth = () =>
+        read().pipe(Effect.map((settings) => Option.fromNullishOr(settings.transcriptWidth)))
+
+      const setTranscriptWidth = (transcriptWidth: TranscriptWidth) =>
+        read().pipe(Effect.flatMap((settings) => write({ ...settings, transcriptWidth })))
 
       const getPluginOverrides = () =>
         read().pipe(Effect.map((settings) => settings.pluginOverrides ?? {}))
@@ -108,12 +109,12 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
         )
 
       return {
-        getLastDirectory,
-        setLastDirectory,
         getTheme,
         setTheme,
         getSendMode,
         setSendMode,
+        getTranscriptWidth,
+        setTranscriptWidth,
         getPluginOverrides,
         setPluginOverride,
         clearPluginOverride

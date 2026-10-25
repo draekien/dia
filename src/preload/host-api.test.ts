@@ -1,13 +1,37 @@
+import { type AgentSummary, NoActivity, StatusIdle } from '@shared/domain/agent-summary'
 import { Deny, FreeformResponse } from '@shared/domain/attention'
-import type { PaneNode } from '@shared/domain/pane-tree'
-import { type IpcEvent, PaneAssistantTextDelta } from '@shared/ipc/contract'
+import {
+  AgentName,
+  DirectoryNotFoundError,
+  EMPTY_WORKSPACE,
+  ProjectId,
+  ProjectNotFoundError
+} from '@shared/domain/project'
+import {
+  AgentItem,
+  ProjectRemoved,
+  type RemovalProgress,
+  Removed,
+  Removing
+} from '@shared/domain/project-removal'
+import {
+  type AgentSummariesReplaced,
+  type IpcEvent,
+  PaneAssistantTextDelta,
+  type WorkspaceChanged
+} from '@shared/ipc/contract'
 import type { EventFrame } from '@shared/ipc/rpc'
 import { Data, Effect, Stream } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type DiaRpcClient, makeHostApi } from './host-api'
 
 const PANE = '00000000-0000-4000-8000-00000000000a'
-const LAYOUT: PaneNode = { _tag: 'Leaf', paneId: PANE, status: 'ready', cwd: '/repo' }
+const PROJECT = ProjectId.make('00000000-0000-4000-8000-000000000001')
+const SUMMARY: AgentSummary = {
+  paneId: PANE,
+  status: StatusIdle.make({}),
+  activity: NoActivity.make({})
+}
 
 const textDelta = (text: string): IpcEvent => PaneAssistantTextDelta.make({ paneId: PANE, text })
 const paneFrame = (seq: number, text: string): EventFrame => ({
@@ -31,6 +55,8 @@ const afterListenersAttach = (stream: Stream.Stream<EventFrame, ConnectionError>
 interface ClientScript {
   readonly sendMessageFailures?: number
   readonly subscriptions?: ReadonlyArray<Stream.Stream<EventFrame, ConnectionError>>
+  readonly registerProject?: Effect.Effect<void, DirectoryNotFoundError>
+  readonly removeProject?: Stream.Stream<RemovalProgress, ProjectNotFoundError>
 }
 
 const makeClient = (script: ClientScript = {}) => {
@@ -46,7 +72,14 @@ const makeClient = (script: ClientScript = {}) => {
     const next = script.subscriptions?.[subscribeAttempts++]
     return next ?? Stream.never
   })
-  const getInitialLayout = vi.fn(() => Effect.succeed(LAYOUT))
+  const getWorkspace = vi.fn(() => Effect.succeed(EMPTY_WORKSPACE))
+  const getAgentSummaries = vi.fn(() => Effect.succeed([SUMMARY]))
+  const registerProject = vi.fn(
+    (_payload: { projectId: string; directory: string }) => script.registerProject ?? Effect.void
+  )
+  const removeProject = vi.fn(
+    (_payload: { projectId: string; force: boolean }) => script.removeProject ?? Stream.empty
+  )
   const loadPlugin = vi.fn((payload: { name: string }) =>
     Effect.succeed({
       name: payload.name,
@@ -68,14 +101,20 @@ const makeClient = (script: ClientScript = {}) => {
     ResolveQuestion: resolvePrompt,
     ResolvePlanReview: resolvePrompt,
     SubscribeEvents: subscribeEvents,
-    GetInitialLayout: getInitialLayout
+    GetWorkspace: getWorkspace,
+    GetAgentSummaries: getAgentSummaries,
+    RegisterProject: registerProject,
+    RemoveProject: removeProject
   } as unknown as DiaRpcClient
   return {
     client,
     sendMessage,
     resolvePrompt,
     subscribeEvents,
-    getInitialLayout,
+    getWorkspace,
+    getAgentSummaries,
+    registerProject,
+    removeProject,
     loadPlugin,
     setPluginOverride
   }
@@ -207,20 +246,72 @@ describe('makeHostApi', () => {
     expect(subscribeEvents.mock.calls[1][0].cursors).toEqual({})
   })
 
-  it('re-fetches the layout after a reconnect but not on the first connection', async () => {
-    const { client, getInitialLayout } = makeClient({ subscriptions: [dropped] })
+  it('re-reads the workspace and every agent summary after a reconnect but not on the first connection', async () => {
+    const { client, getWorkspace } = makeClient({ subscriptions: [dropped] })
     const { api } = makeApi(client)
-    const layouts: Array<PaneNode> = []
-    api.onLayoutChanged((event) => layouts.push(event.tree))
+    const workspaces: Array<WorkspaceChanged> = []
+    const replaced: Array<AgentSummariesReplaced> = []
+    api.onWorkspaceChanged((event) => workspaces.push(event))
+    api.onAgentSummariesReplaced((event) => replaced.push(event))
 
     await advance(10)
-    expect(getInitialLayout).not.toHaveBeenCalled()
+    expect(getWorkspace).not.toHaveBeenCalled()
 
     await advance(1500)
 
-    expect(getInitialLayout).toHaveBeenCalledTimes(1)
-    expect(layouts).toEqual([LAYOUT])
+    expect(workspaces.map((event) => event.workspace)).toEqual([EMPTY_WORKSPACE])
+    expect(replaced.map((event) => event.summaries)).toEqual([[SUMMARY]])
   })
+
+  it('sends the project id and directory to RegisterProject and resolves null once registered', async () => {
+    const { client, registerProject } = makeClient()
+    const { api } = makeApi(client)
+
+    const result = await api.registerProject(PROJECT, '/repo')
+
+    expect(registerProject.mock.calls.map(([payload]) => payload)).toEqual([
+      { projectId: PROJECT, directory: '/repo' }
+    ])
+    expect(result).toBeNull()
+  })
+
+  it('resolves a refused registration as the plain refusal, so it survives contextBridge', async () => {
+    const error = new DirectoryNotFoundError({ directory: '/missing' })
+    const { client } = makeClient({ registerProject: Effect.fail(error) })
+    const { api } = makeApi(client)
+
+    const result = await api.registerProject(PROJECT, '/missing')
+
+    expect(result).toStrictEqual({ _tag: 'DirectoryNotFoundError', directory: '/missing' })
+  })
+
+  it('forwards every removal progress step in order and sends the force flag unchanged', async () => {
+    const item = AgentItem.make({ paneId: PANE, name: AgentName.make('heron') })
+    const steps: Array<RemovalProgress> = [
+      Removing.make({ item }),
+      Removed.make({ item }),
+      ProjectRemoved.make({})
+    ]
+    const { client, removeProject } = makeClient({ removeProject: Stream.fromIterable(steps) })
+    const { api } = makeApi(client)
+    const received: Array<RemovalProgress> = []
+
+    await api.removeProject(PROJECT, true, (progress) => received.push(progress))
+
+    expect(removeProject.mock.calls.map(([payload]) => payload)).toEqual([
+      { projectId: PROJECT, force: true }
+    ])
+    expect(received).toEqual(steps)
+  })
+
+  it('resolves removing a project that is already gone instead of rejecting', async () => {
+    const error = new ProjectNotFoundError({ projectId: PROJECT })
+    const { client } = makeClient({ removeProject: Stream.fail(error) })
+    const { api } = makeApi(client)
+
+    await expect(api.removeProject(PROJECT, false, () => undefined)).resolves.toBeUndefined()
+  })
+
   it('sends the plugin name to LoadPlugin and resolves with the plugin state the Host returned', async () => {
     const { client, loadPlugin } = makeClient()
     const { api } = makeApi(client)
@@ -253,11 +344,7 @@ describe('makeHostApi', () => {
 
 describe('pickDirectory', () => {
   const apiPicking = (chosen: string | null) => {
-    const recordChosenDirectory = vi.fn(() => Effect.succeed(null))
-    const client = {
-      GetLastDirectory: () => Effect.succeed('/last'),
-      RecordChosenDirectory: recordChosenDirectory
-    } as unknown as DiaRpcClient
+    const client = {} as unknown as DiaRpcClient
     const pickDirectory = vi.fn(async (_defaultPath: string | null) => chosen)
     const api = makeHostApi({
       client: Effect.succeed(client),
@@ -265,16 +352,13 @@ describe('pickDirectory', () => {
       newRequestId: () => 'request-0',
       warn: vi.fn()
     })
-    return { api, pickDirectory, recordChosenDirectory }
+    return { api, pickDirectory }
   }
 
-  it('resolves the path the user chose without recording it as the last pane directory', async () => {
-    const { api, recordChosenDirectory } = apiPicking('/tree/example')
+  it('resolves the path the user chose', async () => {
+    const { api } = apiPicking('/tree/example')
 
-    const chosen = await api.pickDirectory()
-
-    expect(chosen).toBe('/tree/example')
-    expect(recordChosenDirectory).not.toHaveBeenCalled()
+    expect(await api.pickDirectory()).toBe('/tree/example')
   })
 
   it('resolves null when the user cancels the picker', async () => {

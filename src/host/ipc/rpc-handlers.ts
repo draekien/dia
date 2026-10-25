@@ -1,10 +1,12 @@
 import { DEFAULT_SEND_MODE, EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
 import { DEFAULT_THEME } from '@shared/domain/theme'
-import { type IpcEvent, LayoutChanged, PaneCreateFailed } from '@shared/ipc/contract'
+import { DEFAULT_TRANSCRIPT_WIDTH } from '@shared/domain/transcript-width'
+import { type IpcEvent, PaneCreateFailed } from '@shared/ipc/contract'
 import { DiaRpcs } from '@shared/ipc/rpc'
-import { Effect, FileSystem, Option, Path } from 'effect'
+import { Effect, Option } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { applyOverride, PluginSources } from '../plugins/plugin-sources'
+import { AgentSummaries } from '../services/agent-summaries'
 import { CommandDeduper } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
@@ -13,45 +15,51 @@ import { SettingsStore } from '../services/settings-store'
 
 /**
  * Builds the implementation of {@link DiaRpcs} on top of the Host's services. Requires
- * `PaneWorkspace`, `PaneSupervisor`, `SettingsStore`, `EventHub`, `CommandDeduper`,
- * `HostPlugins`, `PluginSources`, and `FileSystem`/`Path`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
+ * `PaneWorkspace`, `AgentSummaries`, `PaneSupervisor`, `SettingsStore`, `EventHub`, `CommandDeduper`,
+ * `HostPlugins` and `PluginSources`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
  * handlers without a transport.
  *
- * Every pane command is applied at most once per `commandId`, drops with a warning when its
- * target pane does not exist, and never fails the RPC: failures are logged. `SendMessage` starts
+ * Every command is applied at most once per `commandId` within its target (pane, project, or
+ * `'app'`), drops with a warning when its target does not exist, and never fails the RPC:
+ * failures are logged. `RegisterProject` and `RemoveProject` return their typed errors. `SendMessage` starts
  * the pane's session on demand when the pane has none, so a message to a pane whose session
  * ended is not lost.
  */
 export const makeDiaRpcHandlers = Effect.gen(function* () {
   const workspace = yield* PaneWorkspace
+  const summaries = yield* AgentSummaries
   const supervisor = yield* PaneSupervisor
   const settings = yield* SettingsStore
   const hub = yield* EventHub
   const deduper = yield* CommandDeduper
   const plugins = yield* HostPlugins
   const pluginSources = yield* PluginSources
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
 
   const publish = (event: IpcEvent): Effect.Effect<void> => hub.publish(event)
 
-  const publishLayout = (tree: LayoutChanged['tree']): Effect.Effect<void> =>
-    publish(LayoutChanged.make({ tree }))
-
   const once = (
-    paneId: string,
+    scopeId: string,
     commandId: string,
     command: string,
     run: Effect.Effect<void>
   ): Effect.Effect<void> =>
     Effect.gen(function* () {
-      const accepted = yield* deduper.accept(paneId, commandId)
+      const accepted = yield* deduper.accept(scopeId, commandId)
       if (!accepted) {
-        yield* Effect.logDebug('Ignored resent command', { command, paneId, commandId })
+        yield* Effect.logDebug('Ignored resent command', { command, scopeId, commandId })
         return
       }
       yield* run
     })
+
+  const warnOnFailure =
+    (command: string, target: Record<string, unknown>) =>
+    <E>(effect: Effect.Effect<void, E>): Effect.Effect<void> =>
+      effect.pipe(
+        Effect.catch((issue) =>
+          Effect.logWarning(`Failed to apply ${command}`, { ...target, issue })
+        )
+      )
 
   const withHandle = (
     command: string,
@@ -127,58 +135,56 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
           (handle) => handle.resolvePlanReview(command.requestId, command.approved)
         )
       ),
-    SplitPane: (command) =>
+    CreateTab: ({ commandId, _tag, ...request }) =>
       once(
-        command.paneId,
-        command.commandId,
-        'SplitPane',
-        workspace.split(command.paneId, command.direction).pipe(
-          Effect.flatMap(publishLayout),
-          Effect.catch((issue) =>
-            Effect.logWarning('Failed to split pane', { paneId: command.paneId, issue })
-          )
-        )
-      ),
-    ClosePane: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'ClosePane',
-        workspace.close(command.paneId).pipe(
-          Effect.flatMap(publishLayout),
-          Effect.catch((issue) =>
-            Effect.logWarning('Failed to close pane', { paneId: command.paneId, issue })
-          )
-        )
-      ),
-    CreatePane: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'CreatePane',
+        request.paneId,
+        commandId,
+        'CreateTab',
         workspace
-          .createPane(
-            command.paneId,
-            command.cwd,
-            command.model,
-            command.thinkingLevel,
-            command.permissionMode,
-            command.useWorktree,
-            publish
-          )
+          .createTab(request, publish)
           .pipe(
-            Effect.flatMap(publishLayout),
             Effect.catch((issue) =>
-              Effect.logWarning('Failed to create pane', {
-                paneId: command.paneId,
-                issue
-              }).pipe(
+              Effect.logWarning('Failed to create tab', { paneId: request.paneId, issue }).pipe(
                 Effect.andThen(
-                  publish(PaneCreateFailed.make({ paneId: command.paneId, reason: String(issue) }))
+                  publish(PaneCreateFailed.make({ paneId: request.paneId, reason: String(issue) }))
                 )
               )
             )
           )
+      ),
+    MoveProject: (command) =>
+      once(
+        command.projectId,
+        command.commandId,
+        'MoveProject',
+        workspace
+          .moveProject(command.projectId, command.toIndex)
+          .pipe(warnOnFailure('MoveProject', { projectId: command.projectId }))
+      ),
+    RenameTab: (command) =>
+      once(
+        command.paneId,
+        command.commandId,
+        'RenameTab',
+        workspace
+          .renameTab(command.paneId, command.name)
+          .pipe(warnOnFailure('RenameTab', { paneId: command.paneId }))
+      ),
+    SelectTab: (command) =>
+      once(
+        'app',
+        command.commandId,
+        'SelectTab',
+        workspace
+          .selectTab(command.paneId, publish)
+          .pipe(warnOnFailure('SelectTab', { paneId: command.paneId }))
+      ),
+    SetTranscriptWidth: (command) =>
+      once(
+        'app',
+        command.commandId,
+        'SetTranscriptWidth',
+        settings.setTranscriptWidth(command.width)
       ),
     SetThinkingLevel: (command) =>
       once(
@@ -187,7 +193,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
         'SetThinkingLevel',
         workspace
           .setThinkingLevel(command.paneId, command.level)
-          .pipe(Effect.flatMap(publishLayout))
+          .pipe(warnOnFailure('SetThinkingLevel', { paneId: command.paneId }))
       ),
     SetPermissionMode: (command) =>
       once(
@@ -196,14 +202,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
         'SetPermissionMode',
         workspace
           .setPermissionMode(command.paneId, command.mode)
-          .pipe(Effect.flatMap(publishLayout))
-      ),
-    FocusPane: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'FocusPane',
-        workspace.resumePane(command.paneId, publish)
+          .pipe(warnOnFailure('SetPermissionMode', { paneId: command.paneId }))
       ),
     InterruptPane: (command) =>
       once(
@@ -259,22 +258,20 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
           })
         )
       ),
-    GetInitialLayout: () => workspace.getTree(),
+    GetWorkspace: () => workspace.getWorkspace,
+    RegisterProject: ({ projectId, directory }) => workspace.registerProject(projectId, directory),
+    RemoveProject: ({ projectId, force }) => workspace.removeProject(projectId, force),
+    GetAgentSummaries: () => summaries.getAll,
+    GetTranscriptWidth: () =>
+      settings
+        .getTranscriptWidth()
+        .pipe(Effect.map(Option.getOrElse(() => DEFAULT_TRANSCRIPT_WIDTH))),
     GetPaneHistory: ({ paneId }) => workspace.getPaneHistory(paneId),
     GetTheme: () => settings.getTheme().pipe(Effect.map(Option.getOrElse(() => DEFAULT_THEME))),
     SetTheme: ({ theme }) => settings.setTheme(theme),
     GetSendMode: () =>
       settings.getSendMode().pipe(Effect.map(Option.getOrElse(() => DEFAULT_SEND_MODE))),
     SetSendMode: ({ mode }) => settings.setSendMode(mode),
-    GetLastDirectory: () => settings.getLastDirectory().pipe(Effect.map(Option.getOrNull)),
-    RecordChosenDirectory: ({ path: chosenPath }) =>
-      Effect.gen(function* () {
-        yield* settings.setLastDirectory(chosenPath)
-        const isGitRepo = yield* fs
-          .exists(path.join(chosenPath, '.git'))
-          .pipe(Effect.orElseSucceed(() => false))
-        return { path: chosenPath, isGitRepo }
-      }),
     ListPlugins: () => plugins.list(),
     LoadPlugin: ({ name }) => plugins.load(name),
     UnloadPlugin: ({ name }) => plugins.unload(name),

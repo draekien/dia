@@ -1,6 +1,6 @@
 import { assert, describe, it } from '@effect/vitest'
 import { type ConversationMessage, SessionId } from '@shared/domain/pane'
-import { Effect, Layer, Option } from 'effect'
+import { Effect, Layer, Option, Stream } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { AGENT_BACKEND_KEY, type AgentBackend } from '../session/agent-backend'
 import { TranscriptReader, TranscriptReaderLive } from './transcript-reader'
@@ -9,6 +9,7 @@ const pluginsProviding = (backend: Option.Option<AgentBackend>) =>
   Layer.succeed(HostPlugins)({
     list: () => Effect.succeed([]),
     start: () => Effect.void,
+    changes: Stream.empty,
     load: () => Effect.die(new Error('load should not be called in these tests')),
     unload: () => Effect.die(new Error('unload should not be called in these tests')),
     inject: (key) => Effect.succeed(key === AGENT_BACKEND_KEY ? backend : Option.none())
@@ -28,7 +29,8 @@ describe('TranscriptReaderLive', () => {
           Effect.sync(() => {
             reads.push(`${sessionId}@${cwd}`)
             return history
-          })
+          }),
+        deleteSession: () => Effect.die('not called')
       }
 
       const read = yield* Effect.gen(function* () {

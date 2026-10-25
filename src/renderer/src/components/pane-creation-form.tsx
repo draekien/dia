@@ -1,5 +1,5 @@
-// @effect-diagnostics asyncFunction:off -- React event handlers await the Promise-based window.dia bridge; no Effect runtime exists in the renderer.
 import { Button } from '@renderer/components/ui/button'
+import { Input } from '@renderer/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -9,6 +9,7 @@ import {
 } from '@renderer/components/ui/select'
 import { Switch } from '@renderer/components/ui/switch'
 import { usePluginList } from '@renderer/hooks/use-plugin-list'
+import { cancelNewAgent } from '@renderer/lib/actions'
 import { CREATE_PERMISSION_MODE_OPTIONS } from '@renderer/lib/permission-modes'
 import { THINKING_LEVEL_OPTIONS } from '@renderer/lib/thinking-levels'
 import {
@@ -16,9 +17,11 @@ import {
   type StartupPermissionMode,
   type ThinkingLevel
 } from '@shared/domain/pane'
-import type { ChooseDirectoryResult } from '@shared/ipc/contract'
+import { AgentName, type Project } from '@shared/domain/project'
+import { CreateTab } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
+import { Option, Schema } from 'effect'
 import { useEffect, useState } from 'react'
 
 // Placeholder list pending a confirmed source for available models.
@@ -32,187 +35,162 @@ const providesWorktrees = (plugins: ReadonlyArray<PluginInfo> | undefined): bool
   plugins?.some((plugin) => plugin.provides.includes(WORKTREES_KEY)) ?? false
 
 type FormState =
-  | { readonly step: 'idle' }
-  | { readonly step: 'chosen'; readonly path: string; readonly isGitRepo: boolean }
-  | { readonly step: 'creating'; readonly path: string; readonly isGitRepo: boolean }
-  | {
-      readonly step: 'error'
-      readonly path: string
-      readonly isGitRepo: boolean
-      readonly reason: string
-    }
+  | { readonly step: 'editing' }
+  | { readonly step: 'creating' }
+  | { readonly step: 'error'; readonly reason: string }
+
+const decodeName = Schema.decodeUnknownOption(AgentName)
 
 interface PaneCreationFormProps {
-  paneId: string
-  // Hides Cancel when this is the workspace's only pane -- there's no other pane or session to
-  // return to, so canceling would just reopen this same form.
-  isOnlyPane: boolean
+  readonly project: Project
 }
 
-function PaneCreationForm({ paneId, isOnlyPane }: PaneCreationFormProps) {
-  const [state, setState] = useState<FormState>({ step: 'idle' })
+/**
+ * The New agent form for `project`: an optional name, the model, thinking level, permission mode
+ * and, for a git project, the worktree switch. "Start agent" asks the Host to create the tab,
+ * which then becomes the visible tab; Cancel returns to the tab shown before the form opened.
+ */
+function PaneCreationForm({ project }: PaneCreationFormProps) {
+  // @effect-diagnostics-next-line cryptoRandomUUID:off -- React state initialiser outside any Effect; the id only has to be unique.
+  const [paneId] = useState(() => crypto.randomUUID())
+  const [state, setState] = useState<FormState>({ step: 'editing' })
+  const [name, setName] = useState('')
   const [model, setModel] = useState(MODEL_OPTIONS[0].value)
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL)
   const [permissionMode, setPermissionMode] = useState<StartupPermissionMode>('auto')
   const [useWorktree, setUseWorktree] = useState(false)
   const worktreesAvailable = providesWorktrees(usePluginList().plugins)
-  const worktreeOn = worktreesAvailable && useWorktree
+  const worktreeOn = project.isGitRepo && worktreesAvailable && useWorktree
 
   useEffect(() => {
     return window.dia.onPaneCreateFailed((event) => {
       if (event.paneId !== paneId) return
-      setState((prev) =>
-        prev.step === 'idle' ? prev : { ...prev, step: 'error', reason: event.reason }
-      )
+      setState({ step: 'error', reason: event.reason })
     })
   }, [paneId])
 
-  async function handleChooseDirectory() {
-    const result: ChooseDirectoryResult = await window.dia.chooseDirectory()
-    if (result === null) return
-    setState({ step: 'chosen', path: result.path, isGitRepo: result.isGitRepo })
-  }
-
   function handleStart() {
-    if (state.step !== 'chosen') return
-    setState({ step: 'creating', path: state.path, isGitRepo: state.isGitRepo })
-    window.dia.createPane(
-      paneId,
-      state.path,
-      model,
-      thinkingLevel,
-      permissionMode,
-      state.isGitRepo && worktreeOn
+    setState({ step: 'creating' })
+    window.dia.createTab(
+      CreateTab.make({
+        projectId: project.projectId,
+        paneId,
+        name: Option.getOrNull(decodeName(name.trim())),
+        model,
+        thinkingLevel,
+        permissionMode,
+        useWorktree: worktreeOn
+      })
     )
-  }
-
-  function handleRetry() {
-    if (state.step !== 'error') return
-    setState({ step: 'chosen', path: state.path, isGitRepo: state.isGitRepo })
   }
 
   const isBusy = state.step === 'creating'
 
   return (
     <div className="relative flex h-full flex-col items-center justify-center gap-4 bg-background p-6 text-ink">
-      {!isOnlyPane && (
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          onClick={() => window.dia.closePane(paneId)}
-          className="absolute top-4 right-4 text-ink-muted hover:text-ink"
-        >
-          Cancel
-        </Button>
-      )}
       <div className="flex w-full max-w-sm flex-col gap-4">
+        <span className="text-base font-semibold">New agent in {project.displayName}</span>
+
         <div className="flex flex-col gap-1">
-          <span className="text-base font-semibold">New pane</span>
-          <span className="text-sm text-ink-muted">
-            Choose a working directory to start this session.
-          </span>
+          <label htmlFor="agent-name" className="text-xs text-ink-muted">
+            Name · optional
+          </label>
+          <Input
+            id="agent-name"
+            value={name}
+            maxLength={64}
+            placeholder="A two-word name is generated when blank"
+            onChange={(event) => setName(event.target.value)}
+            disabled={isBusy}
+          />
         </div>
 
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleChooseDirectory}
-          disabled={isBusy}
-          className="w-full justify-start bg-surface font-normal"
-        >
-          {state.step === 'idle' ? 'Choose directory…' : state.path}
-        </Button>
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-ink-muted">Model</span>
+          <Select value={model} onValueChange={setModel} disabled={isBusy}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MODEL_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-        {state.step !== 'idle' && (
-          <>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-ink-muted">Model</span>
-              <Select value={model} onValueChange={setModel} disabled={isBusy}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MODEL_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-ink-muted">Thinking</span>
+          <Select
+            value={thinkingLevel}
+            onValueChange={(value: ThinkingLevel) => setThinkingLevel(value)}
+            disabled={isBusy}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {THINKING_LEVEL_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-ink-muted">Permissions</span>
+          <Select
+            value={permissionMode}
+            onValueChange={(value: StartupPermissionMode) => setPermissionMode(value)}
+            disabled={isBusy}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CREATE_PERMISSION_MODE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {project.isGitRepo && (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <label htmlFor="use-worktree">Use a git worktree</label>
+              <Switch
+                id="use-worktree"
+                checked={worktreeOn}
+                onCheckedChange={setUseWorktree}
+                disabled={isBusy || !worktreesAvailable}
+                aria-describedby={worktreesAvailable ? undefined : 'use-worktree-hint'}
+              />
             </div>
-
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-ink-muted">Thinking</span>
-              <Select
-                value={thinkingLevel}
-                onValueChange={(value: ThinkingLevel) => setThinkingLevel(value)}
-                disabled={isBusy}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {THINKING_LEVEL_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-ink-muted">Permissions</span>
-              <Select
-                value={permissionMode}
-                onValueChange={(value: StartupPermissionMode) => setPermissionMode(value)}
-                disabled={isBusy}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CREATE_PERMISSION_MODE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {state.isGitRepo && (
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center justify-between gap-2 text-sm">
-                  <label htmlFor="use-worktree">Use a git worktree</label>
-                  <Switch
-                    id="use-worktree"
-                    checked={worktreeOn}
-                    onCheckedChange={setUseWorktree}
-                    disabled={isBusy || !worktreesAvailable}
-                    aria-describedby={worktreesAvailable ? undefined : 'use-worktree-hint'}
-                  />
-                </div>
-                {!worktreesAvailable && (
-                  <p id="use-worktree-hint" className="text-xs text-ink-muted">
-                    Load the worktrees plugin to use worktrees
-                  </p>
-                )}
-              </div>
+            {!worktreesAvailable && (
+              <p id="use-worktree-hint" className="text-xs text-ink-muted">
+                Load the worktrees plugin to use worktrees
+              </p>
             )}
-
-            {state.step === 'error' && <p className="text-sm text-destructive">{state.reason}</p>}
-
-            <Button
-              type="button"
-              onClick={state.step === 'error' ? handleRetry : handleStart}
-              disabled={isBusy}
-            >
-              {isBusy ? 'Creating…' : state.step === 'error' ? 'Try again' : 'Start'}
-            </Button>
-          </>
+          </div>
         )}
+
+        {state.step === 'error' && <p className="text-sm text-destructive">{state.reason}</p>}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={cancelNewAgent} disabled={isBusy}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={handleStart} disabled={isBusy}>
+            {isBusy ? 'Starting…' : state.step === 'error' ? 'Try again' : 'Start agent'}
+          </Button>
+        </div>
       </div>
     </div>
   )

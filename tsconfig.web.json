@@ -14,6 +14,12 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["src/renderer/src/**/*", "src/shared/**/*", "plugins/**/renderer.ts"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+  "include": [
+    "src/renderer/src/**/*",
+    "src/shared/**/*",
+    "plugins/**/renderer.ts",
+    "plugins/**/*.tsx",
+    "plugins/agent-overview/overview.ts"
+  ],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "plugins/**/*.test.tsx"]
 }

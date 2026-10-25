@@ -7,15 +7,15 @@ import { HostPlugins, makeHostPluginsLive } from './host-plugins'
 import { makePluginSourcesLive } from './plugin-sources'
 
 const settings = Layer.succeed(SettingsStore)({
-  getLastDirectory: () => Effect.succeed(Option.none()),
-  setLastDirectory: () => Effect.void,
   getTheme: () => Effect.succeed(Option.none()),
   setTheme: () => Effect.void,
   getSendMode: () => Effect.succeed(Option.none()),
   setSendMode: () => Effect.void,
   getPluginOverrides: () => Effect.succeed({}),
   setPluginOverride: () => Effect.void,
-  clearPluginOverride: () => Effect.void
+  clearPluginOverride: () => Effect.void,
+  getTranscriptWidth: () => Effect.succeed(Option.none()),
+  setTranscriptWidth: () => Effect.void
 })
 
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)

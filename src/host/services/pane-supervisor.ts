@@ -16,13 +16,13 @@ import {
 import type { MessageQueueSnapshot, SendMode } from '@shared/domain/message-queue'
 import type {
   PaneConfig,
+  PaneId,
   PaneRecord,
   PermissionMode,
   SessionId,
   ThinkingLevel,
   WorktreeInfo
 } from '@shared/domain/pane'
-import type { PaneId } from '@shared/domain/pane-tree'
 import {
   type IpcEvent,
   PaneAssistantTextDelta,

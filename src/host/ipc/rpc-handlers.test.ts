@@ -1,25 +1,37 @@
 import { NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
+import { NoActivity, StatusIdle } from '@shared/domain/agent-summary'
 import { Deny, FreeformResponse } from '@shared/domain/attention'
 import type { SendMode } from '@shared/domain/message-queue'
-import { type PaneNode, PaneNotFoundError } from '@shared/domain/pane-tree'
 import {
-  CreatePane,
+  AgentName,
+  DirectoryNotFoundError,
+  EMPTY_WORKSPACE,
+  ProjectId,
+  ProjectNotFoundError
+} from '@shared/domain/project'
+import { AgentItem, ProjectRemoved, Removed } from '@shared/domain/project-removal'
+import type { TranscriptWidth } from '@shared/domain/transcript-width'
+import {
+  CreateTab,
   EditQueuedMessage,
   type IpcEvent,
-  LayoutChanged,
+  MoveProject,
   type PaneCreateFailed,
   RemoveQueuedMessage,
+  RenameTab,
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
   RewindToCheckpoint,
+  SelectTab,
   SendMessage,
-  SplitPane
+  SetTranscriptWidth
 } from '@shared/ipc/contract'
 import { Effect, FileSystem, Layer, Option, Stream } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { InvalidOverrideError, PluginSources } from '../plugins/plugin-sources'
+import { AgentSummaries } from '../services/agent-summaries'
 import { type CommandDeduper, makeCommandDeduperLive } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
@@ -29,13 +41,14 @@ import { makeDiaRpcHandlers } from './rpc-handlers'
 
 const PANE_ID = '00000000-0000-4000-8000-00000000000a'
 const OTHER_PANE_ID = '00000000-0000-4000-8000-00000000000b'
-const LAYOUT: PaneNode = { _tag: 'Leaf', paneId: PANE_ID, status: 'ready', cwd: '/repo' }
+const PROJECT_ID = ProjectId.make('00000000-0000-4000-8000-0000000000aa')
 
 interface Harness {
   readonly calls: Array<string>
   readonly published: Array<IpcEvent>
   readonly layer: Layer.Layer<
     | PaneWorkspace
+    | AgentSummaries
     | PaneSupervisor
     | SettingsStore
     | EventHub
@@ -50,8 +63,9 @@ interface HarnessOptions {
   readonly livePanes?: ReadonlyArray<string>
   readonly knownPanes?: ReadonlyArray<string>
   readonly sendMessageFails?: boolean
-  readonly createPaneFails?: boolean
+  readonly createTabFails?: boolean
   readonly storedSendMode?: SendMode
+  readonly storedTranscriptWidth?: TranscriptWidth
 }
 
 const sendMessage = (
@@ -64,16 +78,17 @@ const sendMessage = (
   commandId
 })
 
-const createPane = () => ({
-  ...CreatePane.make({
+const createTab = (commandId = 'req-1') => ({
+  ...CreateTab.make({
+    projectId: PROJECT_ID,
     paneId: PANE_ID,
-    cwd: '/repo',
+    name: AgentName.make('heron'),
     model: 'sonnet',
-    thinkingLevel: 'adaptive',
-    permissionMode: 'default',
-    useWorktree: false
+    thinkingLevel: 'high',
+    permissionMode: 'acceptEdits',
+    useWorktree: true
   }),
-  commandId: 'req-1'
+  commandId
 })
 
 const makeHarness = (options: HarnessOptions = {}): Harness => {
@@ -129,19 +144,33 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   })
 
   const workspace = Layer.succeed(PaneWorkspace, {
-    getTree: () => Effect.succeed(LAYOUT),
-    split: (paneId) =>
-      known.has(paneId) ? Effect.succeed(LAYOUT) : Effect.fail(new PaneNotFoundError({ paneId })),
-    createPane: (paneId) =>
-      options.createPaneFails
-        ? Effect.fail(new PaneNotFoundError({ paneId }))
-        : Effect.sync(() => {
-            calls.push(`createPane:${paneId}`)
-            return LAYOUT
-          }),
-    setThinkingLevel: () => Effect.succeed(LAYOUT),
-    setPermissionMode: () => Effect.succeed(LAYOUT),
-    close: () => Effect.succeed(LAYOUT),
+    getWorkspace: Effect.succeed(EMPTY_WORKSPACE),
+    registerProject: (projectId, directory) =>
+      directory === '/missing'
+        ? Effect.fail(new DirectoryNotFoundError({ directory }))
+        : Effect.sync(() => void calls.push(`registerProject:${projectId}:${directory}`)),
+    moveProject: (projectId, toIndex) =>
+      Effect.sync(() => void calls.push(`moveProject:${projectId}:${toIndex}`)),
+    removeProject: (projectId, force) =>
+      projectId === PROJECT_ID
+        ? Stream.fromIterable([
+            Removed.make({
+              item: AgentItem.make({
+                paneId: PANE_ID,
+                name: AgentName.make(force ? 'forced' : 'heron')
+              })
+            }),
+            ProjectRemoved.make({})
+          ])
+        : Stream.fail(new ProjectNotFoundError({ projectId })),
+    createTab: (request) =>
+      options.createTabFails
+        ? Effect.fail(new ProjectNotFoundError({ projectId: request.projectId }))
+        : Effect.sync(() => void calls.push(`createTab:${JSON.stringify(request)}`)),
+    renameTab: (paneId, name) => Effect.sync(() => void calls.push(`renameTab:${paneId}:${name}`)),
+    selectTab: (paneId) => Effect.sync(() => void calls.push(`selectTab:${paneId ?? 'none'}`)),
+    setThinkingLevel: () => Effect.void,
+    setPermissionMode: () => Effect.void,
     getPaneHistory: () => Effect.succeed([]),
     resumePane: () => Effect.void,
     ensureLive: (paneId) =>
@@ -151,15 +180,24 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       })
   })
 
+  const summaries = Layer.succeed(AgentSummaries, {
+    getAll: Effect.succeed([
+      { paneId: PANE_ID, status: StatusIdle.make({}), activity: NoActivity.make({}) }
+    ])
+  })
+
   const settings = Layer.succeed(SettingsStore, {
-    getLastDirectory: () => Effect.succeed(Option.none()),
-    setLastDirectory: () => Effect.void,
     getTheme: () => Effect.succeed(Option.none()),
     setTheme: () => Effect.void,
     getSendMode: () => Effect.succeed(Option.fromNullishOr(options.storedSendMode)),
     setSendMode: (mode) =>
       Effect.sync(() => {
         calls.push(`setSendMode:${mode}`)
+      }),
+    getTranscriptWidth: () => Effect.succeed(Option.fromNullishOr(options.storedTranscriptWidth)),
+    setTranscriptWidth: (width) =>
+      Effect.sync(() => {
+        calls.push(`setTranscriptWidth:${width}`)
       }),
     getPluginOverrides: () => Effect.succeed({}),
     setPluginOverride: () => Effect.void,
@@ -180,6 +218,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     list: () => Effect.succeed([pluginInfo('chat')]),
     start: () => Effect.void,
     inject: () => Effect.succeed(Option.none()),
+    changes: Stream.empty,
     load: (name) =>
       Effect.sync(() => {
         calls.push(`loadPlugin:${name}`)
@@ -221,6 +260,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     layer: Layer.mergeAll(
       supervisor,
       workspace,
+      summaries,
       settings,
       hub,
       FileSystem.layerNoop({}),
@@ -231,9 +271,9 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   }
 }
 
-const withHandlers = <A>(
+const withHandlers = <A, E>(
   harness: Harness,
-  use: (handlers: Effect.Success<typeof makeDiaRpcHandlers>) => Effect.Effect<A>
+  use: (handlers: Effect.Success<typeof makeDiaRpcHandlers>) => Effect.Effect<A, E>
 ) =>
   Effect.gen(function* () {
     const handlers = yield* makeDiaRpcHandlers
@@ -343,26 +383,162 @@ describe('Dia RPC handlers', () => {
     })
   )
 
-  it.effect('publishes the new layout after CreatePane succeeds', () =>
+  it.effect('delivers every CreateTab payload field to the workspace unchanged', () =>
     Effect.gen(function* () {
       const harness = makeHarness()
 
-      yield* withHandlers(harness, (handlers) => handlers.CreatePane(createPane()))
+      yield* withHandlers(harness, (handlers) => handlers.CreateTab(createTab()))
 
-      assert.deepStrictEqual(harness.published, [LayoutChanged.make({ tree: LAYOUT })])
+      assert.deepStrictEqual(harness.calls, [
+        `createTab:${JSON.stringify({
+          projectId: PROJECT_ID,
+          paneId: PANE_ID,
+          name: 'heron',
+          model: 'sonnet',
+          thinkingLevel: 'high',
+          permissionMode: 'acceptEdits',
+          useWorktree: true
+        })}`
+      ])
     })
   )
 
-  it.effect('publishes PaneCreateFailed when CreatePane fails', () =>
+  it.effect('applies a CreateTab once when the client resends it with the same commandId', () =>
     Effect.gen(function* () {
-      const harness = makeHarness({ createPaneFails: true })
+      const harness = makeHarness()
 
-      yield* withHandlers(harness, (handlers) => handlers.CreatePane(createPane()))
+      yield* withHandlers(harness, (handlers) =>
+        Effect.gen(function* () {
+          yield* handlers.CreateTab(createTab())
+          yield* handlers.CreateTab(createTab())
+        })
+      )
+
+      assert.strictEqual(harness.calls.length, 1)
+    })
+  )
+
+  it.effect('publishes PaneCreateFailed when CreateTab fails', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ createTabFails: true })
+
+      yield* withHandlers(harness, (handlers) => handlers.CreateTab(createTab()))
 
       assert.strictEqual(harness.published.length, 1)
       const event = harness.published[0]
       assert.isTrue(event._tag === 'PaneCreateFailed')
       assert.strictEqual((event as PaneCreateFailed).paneId, PANE_ID)
+    })
+  )
+
+  it.effect('delivers the project id and index of a MoveProject unchanged', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+
+      yield* withHandlers(harness, (handlers) =>
+        handlers.MoveProject({
+          ...MoveProject.make({ projectId: PROJECT_ID, toIndex: 2 }),
+          commandId: 'c-1'
+        })
+      )
+
+      assert.deepStrictEqual(harness.calls, [`moveProject:${PROJECT_ID}:2`])
+    })
+  )
+
+  it.effect('delivers the pane id and name of a RenameTab unchanged', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+
+      yield* withHandlers(harness, (handlers) =>
+        handlers.RenameTab({
+          ...RenameTab.make({ paneId: PANE_ID, name: AgentName.make('quiet-heron') }),
+          commandId: 'c-1'
+        })
+      )
+
+      assert.deepStrictEqual(harness.calls, [`renameTab:${PANE_ID}:quiet-heron`])
+    })
+  )
+
+  it.effect('delivers the pane id of a SelectTab, and no tab for none, unchanged', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+
+      yield* withHandlers(harness, (handlers) =>
+        Effect.gen(function* () {
+          yield* handlers.SelectTab({
+            ...SelectTab.make({ paneId: PANE_ID }),
+            commandId: 'c-1'
+          })
+          yield* handlers.SelectTab({
+            ...SelectTab.make({ paneId: null }),
+            commandId: 'c-2'
+          })
+        })
+      )
+
+      assert.deepStrictEqual(harness.calls, [`selectTab:${PANE_ID}`, 'selectTab:none'])
+    })
+  )
+
+  it.effect('stores the width of a SetTranscriptWidth once per commandId', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+      const command = { ...SetTranscriptWidth.make({ width: 'wide' }), commandId: 'c-1' }
+
+      yield* withHandlers(harness, (handlers) =>
+        Effect.gen(function* () {
+          yield* handlers.SetTranscriptWidth(command)
+          yield* handlers.SetTranscriptWidth(command)
+        })
+      )
+
+      assert.deepStrictEqual(harness.calls, ['setTranscriptWidth:wide'])
+    })
+  )
+
+  it.effect('reports the default transcript width when none is stored', () =>
+    Effect.gen(function* () {
+      const width = yield* withHandlers(makeHarness(), (handlers) => handlers.GetTranscriptWidth())
+
+      assert.strictEqual(width, 'default')
+    })
+  )
+
+  it.effect('returns the reason RegisterProject refused a directory as a typed error', () =>
+    Effect.gen(function* () {
+      const error = yield* withHandlers(makeHarness(), (handlers) =>
+        Effect.flip(handlers.RegisterProject({ projectId: PROJECT_ID, directory: '/missing' }))
+      )
+
+      assert.strictEqual(error._tag, 'DirectoryNotFoundError')
+    })
+  )
+
+  it.effect('streams the removal progress of RemoveProject with its force flag', () =>
+    Effect.gen(function* () {
+      const progress = yield* withHandlers(makeHarness(), (handlers) =>
+        Stream.runCollect(handlers.RemoveProject({ projectId: PROJECT_ID, force: true }))
+      )
+
+      assert.deepStrictEqual(progress, [
+        Removed.make({
+          item: AgentItem.make({ paneId: PANE_ID, name: AgentName.make('forced') })
+        }),
+        ProjectRemoved.make({})
+      ])
+    })
+  )
+
+  it.effect('returns the agent summaries the Host holds', () =>
+    Effect.gen(function* () {
+      const all = yield* withHandlers(makeHarness(), (handlers) => handlers.GetAgentSummaries())
+
+      assert.deepStrictEqual(
+        all.map((summary) => summary.paneId),
+        [PANE_ID]
+      )
     })
   )
 
@@ -409,20 +585,6 @@ describe('Dia RPC handlers', () => {
       })
   )
 
-  it.effect('does not publish a layout when SplitPane targets an unknown pane', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ knownPanes: [PANE_ID] })
-
-      yield* withHandlers(harness, (handlers) =>
-        handlers.SplitPane({
-          ...SplitPane.make({ paneId: OTHER_PANE_ID, direction: 'row' }),
-          commandId: 'req-1'
-        })
-      )
-
-      assert.deepStrictEqual(harness.published, [])
-    })
-  )
   it.effect(
     'forwards LoadPlugin and UnloadPlugin to the plugin registry with the plugin name',
     () =>

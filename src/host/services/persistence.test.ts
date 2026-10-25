@@ -1,246 +1,266 @@
+import { NodeServices } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
+import { NoActivity, Todo } from '@shared/domain/agent-summary'
 import { SessionId } from '@shared/domain/pane'
-import type { PaneNode } from '@shared/domain/pane-tree'
-import { Effect, FileSystem, Layer, Logger, Option, PlatformError } from 'effect'
-import {
-  makePersistenceServiceLive,
-  type PersistedWorkspace,
-  PersistenceService,
-  PersistenceWriteError
-} from './persistence'
-
-const USER_DATA = '/userData'
-const FILE = `${USER_DATA}/workspace.json`
-const TEMP = `${FILE}.tmp`
+import { AgentName, ProjectId, type Workspace } from '@shared/domain/project'
+import { Effect, FileSystem, Option, Path } from 'effect'
+import { makePersistenceServiceLive, PersistenceService } from './persistence'
+import { directoryKey } from './project-directory'
 
 const PANE_A = '11111111-1111-4111-8111-111111111111'
 const PANE_B = '22222222-2222-4222-8222-222222222222'
+const PANE_C = '33333333-3333-4333-8333-333333333333'
+const PANE_PENDING = '44444444-4444-4444-8444-444444444444'
 
-const tree: PaneNode = {
-  _tag: 'Split',
-  direction: 'row',
-  children: [
-    { _tag: 'Leaf', paneId: PANE_A, status: 'ready', cwd: '/repo/a' },
-    { _tag: 'Leaf', paneId: PANE_B, status: 'ready', cwd: '/wt/b', sourceRepo: '/repo' }
-  ],
-  sizes: [0.5, 0.5]
-}
+const config = (paneId: string, cwd: string) => ({
+  paneId,
+  cwd,
+  model: 'claude-sonnet-5-5',
+  thinkingLevel: 'adaptive' as const,
+  permissionMode: 'default' as const
+})
 
-const workspace: PersistedWorkspace = {
-  tree,
-  panes: {
-    [PANE_A]: {
-      config: {
-        paneId: PANE_A,
-        cwd: '/repo/a',
-        model: 'claude-sonnet-5',
-        thinkingLevel: 'adaptive',
-        permissionMode: 'default'
+const withPersistence = <A, E>(
+  body: (dir: string) => Effect.Effect<A, E, PersistenceService | FileSystem.FileSystem | Path.Path>
+) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem
+    const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-persistence-' })
+    return yield* body(dir).pipe(Effect.provide(makePersistenceServiceLive(dir)))
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
+
+const load = Effect.flatMap(PersistenceService, (service) => service.loadWorkspace)
+
+describe('PersistenceService workspace', () => {
+  it.effect('loads the projects, tabs, order and visible tab it saved', () =>
+    withPersistence(() =>
+      Effect.gen(function* () {
+        const service = yield* PersistenceService
+        const workspace: Workspace = {
+          projects: [
+            {
+              project: {
+                projectId: ProjectId.make(PANE_C),
+                directory: 'F:\\b',
+                directoryKey: 'f:\\b',
+                displayName: 'b',
+                isGitRepo: false
+              },
+              tabs: [
+                {
+                  name: AgentName.make('heron'),
+                  config: config(PANE_A, 'F:\\b'),
+                  sessionId: SessionId.make('s-1'),
+                  archived: false
+                }
+              ]
+            },
+            {
+              project: {
+                projectId: ProjectId.make(PANE_PENDING),
+                directory: 'F:\\a',
+                directoryKey: 'f:\\a',
+                displayName: 'a',
+                isGitRepo: true
+              },
+              tabs: [
+                { name: AgentName.make('otter'), config: config(PANE_B, 'F:\\a'), archived: true }
+              ]
+            }
+          ],
+          visibleTab: PANE_A
+        }
+
+        yield* service.saveWorkspace(workspace)
+
+        assert.deepStrictEqual(yield* load, Option.some(workspace))
+      })
+    )
+  )
+
+  it.effect('loads nothing when no workspace file exists', () =>
+    withPersistence(() => Effect.map(load, (loaded) => assert.isTrue(Option.isNone(loaded))))
+  )
+
+  it.effect('loads nothing when the workspace file is malformed', () =>
+    withPersistence((dir) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem
+        yield* fs.writeFileString(`${dir}/workspace.json`, '{"version":2,"workspace":{}}')
+
+        assert.isTrue(Option.isNone(yield* load))
+      })
+    )
+  )
+})
+
+describe('PersistenceService version 1 migration', () => {
+  const writeLegacy = (dir: string) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const repo = path.join(dir, 'repo')
+      const plain = path.join(dir, 'plain')
+      const gone = path.join(dir, 'gone')
+      yield* fs.makeDirectory(path.join(repo, '.git'), { recursive: true })
+      yield* fs.makeDirectory(plain)
+      const legacy = {
+        tree: {
+          _tag: 'Split',
+          direction: 'row',
+          sizes: [0.25, 0.25, 0.25, 0.25],
+          children: [
+            { _tag: 'Leaf', paneId: PANE_A, status: 'ready', cwd: plain },
+            { _tag: 'Leaf', paneId: PANE_PENDING, status: 'pending' },
+            {
+              _tag: 'Leaf',
+              paneId: PANE_B,
+              status: 'ready',
+              cwd: path.join(dir, 'wt'),
+              sourceRepo: repo
+            },
+            { _tag: 'Leaf', paneId: PANE_C, status: 'ready', cwd: gone }
+          ]
+        },
+        panes: {
+          [PANE_A]: { config: config(PANE_A, plain), sessionId: 'session-a' },
+          [PANE_B]: {
+            config: {
+              ...config(PANE_B, path.join(dir, 'wt')),
+              worktree: { path: path.join(dir, 'wt'), branch: 'dia/brave-otter', sourceRepo: repo }
+            }
+          },
+          [PANE_C]: { config: config(PANE_C, gone) }
+        }
       }
-    },
-    [PANE_B]: {
-      config: {
-        paneId: PANE_B,
-        cwd: '/wt/b',
-        model: 'claude-opus-4-8',
-        thinkingLevel: 'high',
-        permissionMode: 'auto',
-        worktree: { path: '/wt/b', branch: 'dia/pane-b', sourceRepo: '/repo' }
-      },
-      sessionId: SessionId.make('session-b-123')
-    }
-  }
-}
-
-function missingFile(path: string): PlatformError.PlatformError {
-  return PlatformError.systemError({
-    _tag: 'NotFound',
-    module: 'FileSystem',
-    method: 'readFileString',
-    pathOrDescriptor: path
-  })
-}
-
-function makeInMemoryFs(overrides: Partial<FileSystem.FileSystem> = {}): {
-  readonly files: Map<string, string>
-  readonly ops: Array<string>
-  readonly fsLayer: Layer.Layer<FileSystem.FileSystem>
-} {
-  const files = new Map<string, string>()
-  const ops: Array<string> = []
-
-  const fs = FileSystem.makeNoop({
-    exists: (path) => Effect.succeed(files.has(String(path))),
-    readFileString: (path) => {
-      const content = files.get(String(path))
-      return content === undefined
-        ? Effect.fail(missingFile(String(path)))
-        : Effect.succeed(content)
-    },
-    writeFileString: (path, data) =>
-      Effect.sync(() => {
-        files.set(String(path), String(data))
-        ops.push(`write:${String(path)}`)
-      }),
-    rename: (oldPath, newPath) =>
-      Effect.sync(() => {
-        const content = files.get(oldPath)
-        if (content !== undefined) files.set(newPath, content)
-        files.delete(oldPath)
-        ops.push(`rename:${oldPath}->${newPath}`)
-      }),
-    ...overrides
-  })
-
-  return { files, ops, fsLayer: Layer.succeed(FileSystem.FileSystem)(fs) }
-}
-
-function makeLogCapture(): {
-  readonly logs: Array<unknown>
-  readonly loggerLayer: Layer.Layer<never>
-} {
-  const logs: unknown[] = []
-  const logger = Logger.make(({ message }) => {
-    logs.push(...(Array.isArray(message) ? message : [message]))
-  })
-  return { logs, loggerLayer: Logger.layer([logger], { mergeWithExisting: true }) }
-}
-
-describe('PersistenceService', () => {
-  it.effect('round-trips a workspace through save then load without loss', () =>
-    Effect.gen(function* () {
-      const { fsLayer } = makeInMemoryFs()
-      const { loggerLayer } = makeLogCapture()
-
-      const loaded = yield* Effect.gen(function* () {
-        const service = yield* PersistenceService
-        yield* service.saveWorkspace(workspace)
-        return yield* service.loadWorkspace()
-      }).pipe(
-        Effect.provide(makePersistenceServiceLive(USER_DATA)),
-        Effect.provide(fsLayer),
-        Effect.provide(loggerLayer)
-      )
-
-      assert.deepStrictEqual(loaded, Option.some(workspace))
+      const raw = JSON.stringify(legacy)
+      yield* fs.writeFileString(path.join(dir, 'workspace.json'), raw)
+      return { repo, plain, gone, raw }
     })
-  )
 
-  it.effect('writes to a temp file then renames it onto the final path (atomic write)', () =>
-    Effect.gen(function* () {
-      const { files, ops, fsLayer } = makeInMemoryFs()
+  it.effect('creates one project per source directory, in the order of their first pane', () =>
+    withPersistence((dir) =>
+      Effect.gen(function* () {
+        const { repo, plain, gone } = yield* writeLegacy(dir)
 
-      yield* Effect.gen(function* () {
-        const service = yield* PersistenceService
-        yield* service.saveWorkspace(workspace)
-      }).pipe(Effect.provide(makePersistenceServiceLive(USER_DATA)), Effect.provide(fsLayer))
+        const workspace = Option.getOrThrow(yield* load)
 
-      assert.deepStrictEqual(ops, [`write:${TEMP}`, `rename:${TEMP}->${FILE}`])
-      assert.isTrue(files.has(FILE))
-      assert.isFalse(files.has(TEMP))
-    })
-  )
-
-  it.effect('load returns None when no workspace file exists yet', () =>
-    Effect.gen(function* () {
-      const { fsLayer } = makeInMemoryFs()
-
-      const loaded = yield* Effect.gen(function* () {
-        const service = yield* PersistenceService
-        return yield* service.loadWorkspace()
-      }).pipe(Effect.provide(makePersistenceServiceLive(USER_DATA)), Effect.provide(fsLayer))
-
-      assert.isTrue(Option.isNone(loaded))
-    })
-  )
-
-  it.effect('load returns None and warns when the file is not valid JSON', () =>
-    Effect.gen(function* () {
-      const { files, fsLayer } = makeInMemoryFs()
-      files.set(FILE, 'not json at all')
-      const { logs, loggerLayer } = makeLogCapture()
-
-      const loaded = yield* Effect.gen(function* () {
-        const service = yield* PersistenceService
-        return yield* service.loadWorkspace()
-      }).pipe(
-        Effect.provide(makePersistenceServiceLive(USER_DATA)),
-        Effect.provide(fsLayer),
-        Effect.provide(loggerLayer)
-      )
-
-      assert.isTrue(Option.isNone(loaded))
-      assert.isTrue(logs.some((log) => String(log).includes('Workspace file is malformed')))
-    })
-  )
-
-  it.effect('load returns None and warns when JSON does not match the schema', () =>
-    Effect.gen(function* () {
-      const { files, fsLayer } = makeInMemoryFs()
-      files.set(FILE, JSON.stringify({ tree: { _tag: 'Nonsense' }, panes: {} }))
-      const { logs, loggerLayer } = makeLogCapture()
-
-      const loaded = yield* Effect.gen(function* () {
-        const service = yield* PersistenceService
-        return yield* service.loadWorkspace()
-      }).pipe(
-        Effect.provide(makePersistenceServiceLive(USER_DATA)),
-        Effect.provide(fsLayer),
-        Effect.provide(loggerLayer)
-      )
-
-      assert.isTrue(Option.isNone(loaded))
-      assert.isTrue(logs.some((log) => String(log).includes('Workspace file is malformed')))
-    })
-  )
-
-  it.effect('load returns None and warns when the existing file cannot be read', () =>
-    Effect.gen(function* () {
-      const { fsLayer } = makeInMemoryFs({
-        exists: () => Effect.succeed(true),
-        readFileString: (path) => Effect.fail(missingFile(String(path)))
+        assert.deepStrictEqual(
+          workspace.projects.map((entry) => entry.project.directory),
+          [plain, repo, gone]
+        )
       })
-      const { logs, loggerLayer } = makeLogCapture()
-
-      const loaded = yield* Effect.gen(function* () {
-        const service = yield* PersistenceService
-        return yield* service.loadWorkspace()
-      }).pipe(
-        Effect.provide(makePersistenceServiceLive(USER_DATA)),
-        Effect.provide(fsLayer),
-        Effect.provide(loggerLayer)
-      )
-
-      assert.isTrue(Option.isNone(loaded))
-      assert.isTrue(logs.some((log) => String(log).includes('Failed to read workspace file')))
-    })
+    )
   )
 
-  it.effect('save fails with PersistenceWriteError when the underlying write fails', () =>
-    Effect.gen(function* () {
-      const { fsLayer } = makeInMemoryFs({
-        writeFileString: (path) =>
-          Effect.fail(
-            PlatformError.systemError({
-              _tag: 'PermissionDenied',
-              module: 'FileSystem',
-              method: 'writeFileString',
-              pathOrDescriptor: String(path)
-            })
-          )
+  it.effect('keeps every configured pane as a tab with its session and drops pending panes', () =>
+    withPersistence((dir) =>
+      Effect.gen(function* () {
+        yield* writeLegacy(dir)
+
+        const workspace = Option.getOrThrow(yield* load)
+        const tabs = workspace.projects.flatMap((entry) => entry.tabs)
+
+        assert.deepStrictEqual(
+          tabs.map((tab) => tab.config.paneId),
+          [PANE_A, PANE_B, PANE_C]
+        )
+        assert.strictEqual(tabs[0].sessionId, 'session-a')
       })
+    )
+  )
 
-      const result = yield* Effect.gen(function* () {
+  it.effect('names a worktree tab after its dia/ branch', () =>
+    withPersistence((dir) =>
+      Effect.gen(function* () {
+        yield* writeLegacy(dir)
+
+        const workspace = Option.getOrThrow(yield* load)
+
+        assert.strictEqual(workspace.projects[1].tabs[0].name, 'brave-otter')
+      })
+    )
+  )
+
+  it.effect('detects git repos and keeps a project whose directory no longer exists', () =>
+    withPersistence((dir) =>
+      Effect.gen(function* () {
+        const { gone } = yield* writeLegacy(dir)
+
+        const workspace = Option.getOrThrow(yield* load)
+
+        assert.deepStrictEqual(
+          workspace.projects.map((entry) => entry.project.isGitRepo),
+          [false, true, false]
+        )
+        assert.strictEqual(workspace.projects[2].project.directoryKey, yield* directoryKey(gone))
+      })
+    )
+  )
+
+  it.effect('shows the first migrated tab', () =>
+    withPersistence((dir) =>
+      Effect.gen(function* () {
+        yield* writeLegacy(dir)
+
+        const workspace = Option.getOrThrow(yield* load)
+
+        assert.deepStrictEqual(workspace.visibleTab, PANE_A)
+      })
+    )
+  )
+
+  it.effect('saves the migration, so a second load returns the same projects and names', () =>
+    withPersistence((dir) =>
+      Effect.gen(function* () {
+        yield* writeLegacy(dir)
+
+        const first = Option.getOrThrow(yield* load)
+        const second = Option.getOrThrow(yield* load)
+
+        assert.deepStrictEqual(second, first)
+      })
+    )
+  )
+
+  it.effect('keeps the version 1 file as workspace.v1.json', () =>
+    withPersistence((dir) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem
+        const { raw } = yield* writeLegacy(dir)
+
+        yield* load
+
+        assert.strictEqual(yield* fs.readFileString(`${dir}/workspace.v1.json`), raw)
+      })
+    )
+  )
+})
+
+describe('PersistenceService activity', () => {
+  it.effect('loads the activity lines it saved', () =>
+    withPersistence(() =>
+      Effect.gen(function* () {
         const service = yield* PersistenceService
-        return yield* service.saveWorkspace(workspace)
-      }).pipe(
-        Effect.provide(makePersistenceServiceLive(USER_DATA)),
-        Effect.provide(fsLayer),
-        Effect.flip
-      )
+        const activity = {
+          [PANE_A]: Todo.make({ text: 'Fixing the bug' }),
+          [PANE_B]: NoActivity.make({})
+        }
 
-      assert.instanceOf(result, PersistenceWriteError)
-      assert.strictEqual(result.path, TEMP)
-    })
+        yield* service.saveActivity(activity)
+
+        assert.deepStrictEqual(yield* service.loadActivity, activity)
+      })
+    )
+  )
+
+  it.effect('loads no activity when the file is missing', () =>
+    withPersistence(() =>
+      Effect.gen(function* () {
+        const service = yield* PersistenceService
+
+        assert.deepStrictEqual(yield* service.loadActivity, {})
+      })
+    )
   )
 })

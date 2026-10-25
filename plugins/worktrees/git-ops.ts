@@ -4,8 +4,7 @@ import {
   WorktreeReattachError,
   WorktreeRemoveError
 } from '@dia/plugin'
-import type { WorktreeInfo } from '@shared/domain/pane'
-import type { PaneId } from '@shared/domain/pane-tree'
+import type { PaneId, WorktreeInfo } from '@shared/domain/pane'
 import { Effect, FileSystem, Path, Random } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { generateWorktreeSlug } from './worktree-slug'

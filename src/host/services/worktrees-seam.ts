@@ -1,5 +1,4 @@
-import type { WorktreeInfo } from '@shared/domain/pane'
-import type { PaneId } from '@shared/domain/pane-tree'
+import type { PaneId, WorktreeInfo } from '@shared/domain/pane'
 import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginRegistry } from '@shared/plugin/plugin-registry'
 import { Data, Effect, Option, Predicate } from 'effect'

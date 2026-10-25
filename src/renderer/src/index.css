@@ -3,6 +3,7 @@
 @import '@fontsource-variable/geist-mono';
 @import './typeset.css';
 @import 'shadcn/tailwind.css';
+@source '../../../plugins';
 
 /* Class-based dark mode: the theme provider toggles `.dark` on <html>, and the
    `.dark { ... }` block below re-points every role var. Enables `dark:` utilities

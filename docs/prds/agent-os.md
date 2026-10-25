@@ -75,5 +75,4 @@ Roadmap, not in this PRD:
 
 ## Open Questions
 
-- How the user reorders projects in the overview (dragging, or a menu) is decided during implementation.
 - Which secret scanner checks meta repo pushes is decided during implementation.

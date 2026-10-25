@@ -1,27 +1,27 @@
 import type { ConversationMessage } from '@shared/domain/pane'
-import type { PaneNode } from '@shared/domain/pane-tree'
+import { RegisterProjectError, type RegisterProjectRefusal } from '@shared/domain/project'
 import {
-  type ChooseDirectoryResult,
-  ClosePane,
-  CreatePane,
+  AgentSummariesReplaced,
   type DiaApi,
   EditQueuedMessage,
-  FocusPane,
   InterruptPane,
   type IpcEvent,
-  LayoutChanged,
+  MoveProject,
   RemoveQueuedMessage,
+  RenameTab,
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
   RewindToCheckpoint,
+  SelectTab,
   SendMessage,
   SetPermissionMode,
   SetThinkingLevel,
-  SplitPane
+  SetTranscriptWidth,
+  WorkspaceChanged
 } from '@shared/ipc/contract'
 import type { DiaRpcs, EventFrame } from '@shared/ipc/rpc'
-import { Duration, Effect, Ref, Schedule, Stream } from 'effect'
+import { Duration, Effect, Ref, Schedule, Schema, Stream } from 'effect'
 import type { RpcClient, RpcClientError } from 'effect/rpc'
 
 /** The typed client of the Host's RPC surface. */
@@ -40,6 +40,7 @@ export type HostApi = Omit<
   | 'installUpdate'
   | 'toggleDevTools'
   | 'onUpdateStatusChanged'
+  | 'revealPath'
 >
 
 /**
@@ -74,9 +75,15 @@ const resendSchedule = Schedule.spaced(RESEND_INTERVAL).pipe(
  * down, for up to {@link RESEND_WINDOW}; the Host applies each `commandId` once. The event
  * stream resumes after a dropped connection from the last sequence number received per pane;
  * when the Host cannot replay what was missed it asks the renderer to reload that pane's history
- * (`onHistoryReloadRequested`), and the layout is re-fetched after every reconnect because layout
- * changes are never replayed.
+ * (`onHistoryReloadRequested`). Workspace and agent-summary changes are never replayed, so after
+ * every reconnect the workspace and all summaries are read again and delivered as
+ * `WorkspaceChanged` and `AgentSummariesReplaced`.
+ *
+ * Values cross `contextBridge`, which drops prototypes, so every result is plain data: a typed
+ * error (`registerProject`) resolves in its encoded form, and only a lost connection is retried. `removeProject` is not retried: it rejects when the connection drops.
  */
+const encodeRefusal = Schema.encodeSync(RegisterProjectError)
+
 export const makeHostApi = (deps: HostApiDeps): HostApi => {
   const reloadListeners = new Set<(paneId: string) => void>()
   const eventListeners = new Set<(event: IpcEvent) => void>()
@@ -124,17 +131,23 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         }
       })
 
-    const refreshLayoutAfterReconnect = Effect.gen(function* () {
+    const refreshAfterReconnect = Effect.gen(function* () {
       const reconnecting = yield* Ref.getAndSet(connectedBefore, true)
       if (!reconnecting) return
       const client = yield* deps.client
-      const tree = yield* client.GetInitialLayout()
-      dispatch(LayoutChanged.make({ tree }))
-    }).pipe(Effect.catch((error) => Effect.sync(() => deps.warn('Layout refresh failed', error))))
+      const [workspace, summaries] = yield* Effect.all(
+        [client.GetWorkspace(), client.GetAgentSummaries()],
+        { concurrency: 'unbounded' }
+      )
+      dispatch(WorkspaceChanged.make({ workspace }))
+      dispatch(AgentSummariesReplaced.make({ summaries }))
+    }).pipe(
+      Effect.catch((error) => Effect.sync(() => deps.warn('Workspace refresh failed', error)))
+    )
 
     const subscribeOnce = Effect.gen(function* () {
       const client = yield* deps.client
-      yield* refreshLayoutAfterReconnect
+      yield* refreshAfterReconnect
       const current = yield* Ref.get(cursors)
       yield* client.SubscribeEvents({ cursors: current }).pipe(Stream.runForEach(handleFrame))
     })
@@ -203,21 +216,6 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
           commandId: id
         })
       ),
-    splitPane: (paneId, direction) =>
-      command('SplitPane', (client, commandId) =>
-        client.SplitPane({ ...SplitPane.make({ paneId, direction }), commandId })
-      ),
-    closePane: (paneId) =>
-      command('ClosePane', (client, commandId) =>
-        client.ClosePane({ ...ClosePane.make({ paneId }), commandId })
-      ),
-    createPane: (paneId, cwd, model, thinkingLevel, permissionMode, useWorktree) =>
-      command('CreatePane', (client, commandId) =>
-        client.CreatePane({
-          ...CreatePane.make({ paneId, cwd, model, thinkingLevel, permissionMode, useWorktree }),
-          commandId
-        })
-      ),
     setThinkingLevel: (paneId, level) =>
       command('SetThinkingLevel', (client, commandId) =>
         client.SetThinkingLevel({ ...SetThinkingLevel.make({ paneId, level }), commandId })
@@ -232,10 +230,6 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
           ...ResolvePlanReview.make({ paneId, requestId, approved }),
           commandId: id
         })
-      ),
-    focusPane: (paneId) =>
-      command('FocusPane', (client, commandId) =>
-        client.FocusPane({ ...FocusPane.make({ paneId }), commandId })
       ),
     interrupt: (paneId) =>
       command('InterruptPane', (client, commandId) =>
@@ -252,15 +246,57 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
           commandId
         })
       ),
-    getInitialLayout: (): Promise<PaneNode> => query((client) => client.GetInitialLayout()),
+    getWorkspace: () => query((client) => client.GetWorkspace()),
+    registerProject: (projectId, directory) =>
+      query((client) =>
+        client.RegisterProject({ projectId, directory }).pipe(
+          Effect.as<RegisterProjectRefusal | null>(null),
+          Effect.catchTags({
+            ProjectAlreadyRegisteredError: (error) => Effect.succeed(encodeRefusal(error)),
+            DirectoryNotFoundError: (error) => Effect.succeed(encodeRefusal(error))
+          })
+        )
+      ),
+    moveProject: (projectId, toIndex) =>
+      command('MoveProject', (client, commandId) =>
+        client.MoveProject({ ...MoveProject.make({ projectId, toIndex }), commandId })
+      ),
+    removeProject: (projectId, force, onProgress) =>
+      Effect.runPromise(
+        deps.client.pipe(
+          Effect.flatMap((client) =>
+            client
+              .RemoveProject({ projectId, force })
+              .pipe(Stream.runForEach((progress) => Effect.sync(() => onProgress(progress))))
+          ),
+          Effect.catchTag('ProjectNotFoundError', (error) =>
+            Effect.logInfo('The project to remove was already gone', {
+              projectId: error.projectId
+            })
+          )
+        )
+      ),
+    createTab: (request) =>
+      command('CreateTab', (client, commandId) => client.CreateTab({ ...request, commandId })),
+    renameTab: (paneId, name) =>
+      command('RenameTab', (client, commandId) =>
+        client.RenameTab({ ...RenameTab.make({ paneId, name }), commandId })
+      ),
+    selectTab: (paneId) =>
+      command('SelectTab', (client, commandId) =>
+        client.SelectTab({
+          ...SelectTab.make({ paneId }),
+          commandId
+        })
+      ),
+    getAgentSummaries: () => query((client) => client.GetAgentSummaries()),
+    getTranscriptWidth: () => query((client) => client.GetTranscriptWidth()),
+    setTranscriptWidth: (width) =>
+      command('SetTranscriptWidth', (client, commandId) =>
+        client.SetTranscriptWidth({ ...SetTranscriptWidth.make({ width }), commandId })
+      ),
     getPaneHistory: (paneId): Promise<ReadonlyArray<ConversationMessage>> =>
       query((client) => client.GetPaneHistory({ paneId })),
-    chooseDirectory: (): Promise<ChooseDirectoryResult> =>
-      query((client) => client.GetLastDirectory())
-        .then((last) => deps.pickDirectory(last))
-        .then((chosen) =>
-          chosen === null ? null : query((client) => client.RecordChosenDirectory({ path: chosen }))
-        ),
     pickDirectory: () => deps.pickDirectory(null),
     getTheme: () => query((client) => client.GetTheme()),
     setTheme: (theme) => query((client) => client.SetTheme({ theme })),
@@ -271,7 +307,9 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       return () => reloadListeners.delete(listener)
     },
     onMessageAppended: (listener) => subscribeTo('PaneMessageAppended', listener),
-    onLayoutChanged: (listener) => subscribeTo('LayoutChanged', listener),
+    onWorkspaceChanged: (listener) => subscribeTo('WorkspaceChanged', listener),
+    onAgentSummaryChanged: (listener) => subscribeTo('AgentSummaryChanged', listener),
+    onAgentSummariesReplaced: (listener) => subscribeTo('AgentSummariesReplaced', listener),
     onPaneCreateFailed: (listener) => subscribeTo('PaneCreateFailed', listener),
     onAttentionChanged: (listener) => subscribeTo('PaneAttentionChanged', listener),
     onPermissionRequested: (listener) => subscribeTo('PanePermissionRequested', listener),

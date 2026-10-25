@@ -2,7 +2,6 @@ import { randomBytes } from 'node:crypto'
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Node's http server is what NodeHttpServer wraps.
 import { createServer } from 'node:http'
 import { NodeFileSystem, NodeHttpServer, NodePath, NodeServices } from '@effect/platform-node'
-import type { PaneId } from '@shared/domain/pane-tree'
 import {
   HostBooted,
   type HostInit,
@@ -29,6 +28,7 @@ import { makeHostServerLive } from './ipc/host-server'
 import { DiaRpcHandlersLive } from './ipc/rpc-handlers'
 import { HostPlugins, makeHostPluginsLive } from './plugins/host-plugins'
 import { makePluginSourcesLive } from './plugins/plugin-sources'
+import { AgentSummariesLive } from './services/agent-summaries'
 import { makeCommandDeduperLive } from './services/command-deduper'
 import { makeEventHubLive } from './services/event-hub'
 import { PaneSupervisor, PaneSupervisorLive, SessionFactoryLive } from './services/pane-supervisor'
@@ -36,8 +36,6 @@ import { makePaneWorkspaceLive } from './services/pane-workspace'
 import { makePersistenceServiceLive } from './services/persistence'
 import { makeSettingsStoreLive } from './services/settings-store'
 import { TranscriptReaderLive } from './services/transcript-reader'
-
-const INITIAL_PANE_ID: PaneId = '00000000-0000-0000-0000-000000000001'
 
 const encodeToMain = Schema.encodeSync(HostToMainMessage)
 const decodeFromMain = Schema.decodeUnknownResult(MainToHostMessage)
@@ -84,18 +82,25 @@ const buildHostLayer = (init: HostInit, token: string) => {
     NodeServices.layer
   )
   const workspace = Layer.provide(
-    makePaneWorkspaceLive(INITIAL_PANE_ID, init.worktreesRoot),
+    makePaneWorkspaceLive(init.worktreesRoot),
     Layer.mergeAll(
       supervisor,
       persistence,
       Layer.provide(TranscriptReaderLive, hostPlugins),
+      eventHub,
+      hostPlugins,
       NodeFileSystem.layer,
       NodePath.layer
     )
   )
+  const summaries = Layer.provide(
+    AgentSummariesLive,
+    Layer.mergeAll(workspace, persistence, eventHub)
+  )
   const state = Layer.mergeAll(
     supervisor,
     workspace,
+    summaries,
     settings,
     eventHub,
     pluginSources,
