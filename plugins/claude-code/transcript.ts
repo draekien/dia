@@ -44,12 +44,12 @@ export const sessionMessagesToConversation = (
   messages: ReadonlyArray<SessionMessage>
 ): ReadonlyArray<ConversationMessage> => {
   const conversation: ConversationMessage[] = []
-  let lastAssistantUuid: string | undefined
+  let anchorUuid: string | undefined
   for (const message of messages) {
     const envelopeOpt = decodeEnvelope(message.message)
     if (Option.isNone(envelopeOpt)) continue
     const envelope = envelopeOpt.value
-    if (isAssistantMessage(message)) lastAssistantUuid = message.uuid
+    if (envelope.role === 'assistant') anchorUuid = message.uuid
     const content = extractText(envelope.content)
     if (content.length === 0) continue
     if (envelope.role === 'user' && typeof envelope.content === 'string') {
@@ -57,7 +57,7 @@ export const sessionMessagesToConversation = (
         role: 'user',
         content,
         checkpointUuid: message.uuid,
-        ...(lastAssistantUuid !== undefined ? { resumeAnchorUuid: lastAssistantUuid } : {})
+        ...(anchorUuid !== undefined ? { resumeAnchorUuid: anchorUuid } : {})
       })
     } else {
       conversation.push({ role: envelope.role, content })
