@@ -151,6 +151,25 @@ describe('rewindToCheckpoint', () => {
     })
   )
 
+  it.effect('rewinds a session as soon as it has opened', () =>
+    Effect.gen(function* () {
+      sdk.queries.length = 0
+      sdk.transcript.messages = [...twoTurns]
+      sdk.transcript.fails = false
+      sdk.rewindGate = () => Promise.resolve()
+      const session = yield* openClaudeCodeSession({
+        config,
+        resume: Option.some(SESSION),
+        emit: () => Effect.void,
+        tools: []
+      })
+
+      yield* session.rewindToCheckpoint('turn-2', 'reply-1')
+
+      assert.deepStrictEqual(queryAt(0).rewound, ['turn-2'])
+    })
+  )
+
   it.effect('holds a prompt sent while files rewind until the forked query reads it', () =>
     Effect.gen(function* () {
       const { session } = yield* openResumed(twoTurns)

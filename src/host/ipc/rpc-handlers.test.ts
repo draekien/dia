@@ -10,6 +10,7 @@ import {
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
+  RewindToCheckpoint,
   SendMessage,
   SplitPane
 } from '@shared/ipc/contract'
@@ -93,7 +94,10 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       Effect.sync(() => {
         calls.push(`resolvePlanReview:${requestId}`)
       }),
-    rewindToCheckpoint: () => Effect.void,
+    rewindToCheckpoint: (messageUuid, resumeAnchorUuid) =>
+      Effect.sync(() => {
+        calls.push(`rewindToCheckpoint:${messageUuid}:${resumeAnchorUuid}`)
+      }),
     interrupt: () => Effect.void,
     markCrashed: () => Effect.void
   }
@@ -262,6 +266,30 @@ describe('Dia RPC handlers', () => {
         )
 
         assert.deepStrictEqual(harness.calls, [`ensureLive:${PANE_ID}`, 'sendMessage:wake up'])
+      })
+  )
+
+  it.effect(
+    'starts the pane session before delivering a RewindToCheckpoint to a pane with no live session',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({ knownPanes: [PANE_ID] })
+
+        yield* withHandlers(harness, (handlers) =>
+          handlers.RewindToCheckpoint({
+            ...RewindToCheckpoint.make({
+              paneId: PANE_ID,
+              messageUuid: 'turn-2',
+              resumeAnchorUuid: 'reply-1'
+            }),
+            commandId: 'req-1'
+          })
+        )
+
+        assert.deepStrictEqual(harness.calls, [
+          `ensureLive:${PANE_ID}`,
+          'rewindToCheckpoint:turn-2:reply-1'
+        ])
       })
   )
 

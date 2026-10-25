@@ -386,7 +386,8 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     newDiaToolServer: Option.Option<() => McpSdkServerConfigWithInstance>,
     emit: (message: OutboundMessage) => Effect.Effect<void>,
     resume: Option.Option<SessionId>,
-    branchAt: string | undefined
+    branchAt: string | undefined,
+    queryOpened: Deferred.Deferred<void>
   ) {
     const continuesFrom = yield* resolveContinuesFrom(resume, branchAt, config.cwd)
     yield* Effect.logInfo('Starting query session', {
@@ -440,6 +441,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     )
     yield* modeController.attachQuery(session)
     yield* Ref.set(queryRef, Option.some(session))
+    yield* Deferred.succeed(queryOpened, undefined)
 
     yield* Effect.forkChild(
       emit(SlashCommandsWarming.make({ active: true })).pipe(
@@ -585,6 +587,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
   ) {
     yield* modeController.seed(config.permissionMode)
     yield* Ref.set(sessionIdRef, resume)
+    const queryOpened = yield* Deferred.make<void>()
     const fiber = yield* Effect.forkIn(
       runSession(
         config,
@@ -597,8 +600,10 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
         newDiaToolServer,
         emit,
         resume,
-        branchAt
+        branchAt,
+        queryOpened
       ).pipe(
+        Effect.ensuring(Deferred.succeed(queryOpened, undefined)),
         Effect.flatMap((failure) =>
           Deferred.succeed(
             endedDeferred,
@@ -611,6 +616,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     )
     yield* Ref.set(configRef, Option.some(config))
     yield* Ref.set(fiberRef, Option.some(fiber))
+    yield* Deferred.await(queryOpened)
   })
 
   const restartForThinkingChange = Effect.fn('ClaudeCodeSession.restartForThinkingChange')(

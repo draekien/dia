@@ -218,7 +218,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
         command.paneId,
         command.commandId,
         'RewindToCheckpoint',
-        withHandle(
+        withLiveHandle(
           'RewindToCheckpoint',
           command.paneId,
           'Failed to rewind pane to checkpoint',
