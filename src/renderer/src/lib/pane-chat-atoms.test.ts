@@ -1,3 +1,4 @@
+import { EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
 import { AsyncResult, AtomRegistry } from 'effect/reactivity'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { paneChatAtom } from './pane-chat-atoms'
@@ -21,6 +22,7 @@ const installFakeDia = (
   const dia = new Proxy(
     {
       getPaneHistory,
+      getMessageQueue: async () => EMPTY_MESSAGE_QUEUE,
       onHistoryReloadRequested: (listener: (paneId: string) => void) => {
         reloadListeners.add(listener)
         return () => reloadListeners.delete(listener)

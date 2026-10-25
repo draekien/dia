@@ -17,21 +17,21 @@ import {
   PaneConversationCompacted,
   PaneConversationReset,
   PaneMessageAppended,
+  PaneMessageQueueChanged,
   PaneRewoundToCheckpoint,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
   PaneToolCallCompleted,
-  PaneToolCallStarted
+  PaneToolCallStarted,
+  PaneUserMessagesSent
 } from '@shared/ipc/contract'
 import { describe, expect, it } from 'vitest'
 import type { PaneChatState } from './pane-chat'
 import {
-  appendUserMessage,
   emptyPaneChatState,
   lastUserText,
   paneChatStateFromHistory,
-  reducePaneChat,
-  requestRewind
+  reducePaneChat
 } from './pane-chat'
 
 const PANE = '00000000-0000-4000-8000-000000000000'
@@ -77,6 +77,16 @@ const rewoundToCheckpoint = (messageUuid: string) =>
   PaneRewoundToCheckpoint.make({ paneId: PANE, messageUuid })
 
 const loadingWith = (state: PaneChatState): PaneChatState => ({ ...state, isLoading: true })
+const userMessagesSent = (messages: ReadonlyArray<{ id: string; text: string }>) =>
+  PaneUserMessagesSent.make({ paneId: PANE, messages })
+const sendUser = (state: PaneChatState, id: string, text: string): PaneChatState =>
+  reducePaneChat(state, userMessagesSent([{ id, text }]))
+const queueChanged = (texts: ReadonlyArray<string>, held: boolean) =>
+  PaneMessageQueueChanged.make({
+    paneId: PANE,
+    queued: texts.map((text, index) => ({ id: `q-${index}`, text })),
+    held
+  })
 
 describe('paneChatStateFromHistory', () => {
   it('maps each turn to a message with a stable pane-scoped id and one text part', () => {
@@ -89,6 +99,8 @@ describe('paneChatStateFromHistory', () => {
       isLoading: false,
       slashCommands: [],
       warmingCommands: false,
+      queued: [],
+      queueHeld: false,
       messages: [
         { id: `${PANE}:history:0`, role: 'user', parts: [{ type: 'text', content: 'hi' }] },
         { id: `${PANE}:history:1`, role: 'assistant', parts: [{ type: 'text', content: 'hello' }] }
@@ -101,7 +113,9 @@ describe('paneChatStateFromHistory', () => {
       messages: [],
       isLoading: false,
       slashCommands: [],
-      warmingCommands: false
+      warmingCommands: false,
+      queued: [],
+      queueHeld: false
     })
   })
 
@@ -116,32 +130,71 @@ describe('paneChatStateFromHistory', () => {
   })
 })
 
-describe('appendUserMessage', () => {
-  it('appends a user turn after existing messages and marks the pane loading', () => {
+describe('reducePaneChat: user messages sent', () => {
+  it('appends a user turn with a pane-scoped id after existing messages and marks the pane loading', () => {
     const seeded = paneChatStateFromHistory(PANE, [{ role: 'assistant', content: 'earlier' }])
 
-    const result = appendUserMessage(seeded, 'u-1', 'do the thing')
+    const result = sendUser(seeded, 'u-1', 'do the thing')
 
     expect(result.isLoading).toBe(true)
     expect(result.messages).toEqual([
       seeded.messages[0],
-      { id: 'u-1', role: 'user', parts: [{ type: 'text', content: 'do the thing' }] }
+      { id: `${PANE}:user:u-1`, role: 'user', parts: [{ type: 'text', content: 'do the thing' }] }
     ])
   })
 
-  it('preserves the available slash commands across an optimistic append', () => {
-    const command: SlashCommandInfo = { name: 'compact', description: '', argumentHint: '' }
-    const seeded: PaneChatState = { ...emptyPaneChatState, slashCommands: [command] }
+  it('appends one user turn per message of a batch, in order, marking all but the first not rewindable', () => {
+    const result = reducePaneChat(
+      emptyPaneChatState,
+      userMessagesSent([
+        { id: 'u-1', text: 'first' },
+        { id: 'u-2', text: 'second' },
+        { id: 'u-3', text: 'third' }
+      ])
+    )
 
-    const result = appendUserMessage(seeded, 'u-1', 'hi')
+    expect(result.messages).toEqual([
+      { id: `${PANE}:user:u-1`, role: 'user', parts: [{ type: 'text', content: 'first' }] },
+      {
+        id: `${PANE}:user:u-2`,
+        role: 'user',
+        parts: [{ type: 'text', content: 'second' }],
+        rewindable: false
+      },
+      {
+        id: `${PANE}:user:u-3`,
+        role: 'user',
+        parts: [{ type: 'text', content: 'third' }],
+        rewindable: false
+      }
+    ])
+  })
+
+  it('does not append a message a second time when its event is delivered again', () => {
+    const once = sendUser(emptyPaneChatState, 'u-1', 'hi')
+
+    const twice = sendUser(once, 'u-1', 'hi')
+
+    expect(twice.messages).toEqual(once.messages)
+  })
+
+  it('preserves the available slash commands and the queue', () => {
+    const command: SlashCommandInfo = { name: 'compact', description: '', argumentHint: '' }
+    const seeded = reducePaneChat(
+      { ...emptyPaneChatState, slashCommands: [command] },
+      queueChanged(['later'], false)
+    )
+
+    const result = sendUser(seeded, 'u-1', 'hi')
 
     expect(result.slashCommands).toEqual([command])
+    expect(result.queued).toEqual(seeded.queued)
   })
 })
 
 describe('reducePaneChat: text deltas', () => {
   it('opens a new assistant message when the last turn is the user prompt', () => {
-    const afterSend = appendUserMessage(emptyPaneChatState, 'u-1', 'question')
+    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
     const result = reducePaneChat(afterSend, textDelta('Hel'))
 
@@ -153,7 +206,7 @@ describe('reducePaneChat: text deltas', () => {
   })
 
   it('concatenates consecutive text deltas into a single text part', () => {
-    const afterSend = appendUserMessage(emptyPaneChatState, 'u-1', 'question')
+    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
     const result = [textDelta('Hel'), textDelta('lo')].reduce(reducePaneChat, afterSend)
 
@@ -161,7 +214,7 @@ describe('reducePaneChat: text deltas', () => {
   })
 
   it('keeps the same assistant message id across successive deltas', () => {
-    const afterSend = appendUserMessage(emptyPaneChatState, 'u-1', 'question')
+    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
     const first = reducePaneChat(afterSend, textDelta('a'))
     const second = reducePaneChat(first, textDelta('b'))
@@ -175,6 +228,8 @@ describe('reducePaneChat: text deltas', () => {
       isLoading: false,
       slashCommands: [],
       warmingCommands: false,
+      queued: [],
+      queueHeld: false,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'done' }] }
       ]
@@ -195,7 +250,7 @@ describe('reducePaneChat: text deltas', () => {
 
 describe('reducePaneChat: thinking deltas', () => {
   it('concatenates consecutive thinking deltas into a single thinking part', () => {
-    const afterSend = appendUserMessage(emptyPaneChatState, 'u-1', 'question')
+    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
     const result = [thinkingDelta('weigh'), thinkingDelta('ing')].reduce(reducePaneChat, afterSend)
 
@@ -203,7 +258,7 @@ describe('reducePaneChat: thinking deltas', () => {
   })
 
   it('keeps thinking and text as distinct ordered parts of one message', () => {
-    const afterSend = appendUserMessage(emptyPaneChatState, 'u-1', 'question')
+    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
     const result = [thinkingDelta('hmm'), textDelta('answer')].reduce(reducePaneChat, afterSend)
 
@@ -220,6 +275,8 @@ describe('reducePaneChat: tool calls', () => {
       isLoading: true,
       slashCommands: [],
       warmingCommands: false,
+      queued: [],
+      queueHeld: false,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'let me look' }] }
       ]
@@ -238,6 +295,8 @@ describe('reducePaneChat: tool calls', () => {
       isLoading: true,
       slashCommands: [],
       warmingCommands: false,
+      queued: [],
+      queueHeld: false,
       messages: [
         {
           id: '0:assistant',
@@ -270,6 +329,8 @@ describe('reducePaneChat: tool calls', () => {
       isLoading: true,
       slashCommands: [],
       warmingCommands: false,
+      queued: [],
+      queueHeld: false,
       messages: [
         {
           id: '0:assistant',
@@ -298,7 +359,7 @@ describe('reducePaneChat: tool calls', () => {
   })
 
   it('preserves part order across interleaved text and tool calls in one turn', () => {
-    const afterSend = appendUserMessage(emptyPaneChatState, 'u-1', 'question')
+    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
     const result = [
       textDelta('A'),
@@ -343,6 +404,8 @@ describe('reducePaneChat: PaneMessageAppended backstop', () => {
       isLoading: true,
       slashCommands: [],
       warmingCommands: false,
+      queued: [],
+      queueHeld: false,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'streamed' }] }
       ]
@@ -353,8 +416,8 @@ describe('reducePaneChat: PaneMessageAppended backstop', () => {
     expect(result).toBe(streaming)
   })
 
-  it('ignores an appended user turn (the optimistic append already added it)', () => {
-    const afterSend = appendUserMessage(emptyPaneChatState, 'u-1', 'hi')
+  it('ignores an appended user turn (PaneUserMessagesSent already added it)', () => {
+    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'hi')
 
     const result = reducePaneChat(afterSend, messageAppended('user', 'hi'))
 
@@ -431,15 +494,23 @@ describe('lastUserText', () => {
 
   it('returns the most recent user turn text, ignoring later assistant/error turns', () => {
     const withTurns = reducePaneChat(
-      appendUserMessage(
-        appendUserMessage(emptyPaneChatState, 'u-1', 'first question'),
-        'u-2',
-        'second question'
-      ),
+      sendUser(sendUser(emptyPaneChatState, 'u-1', 'first question'), 'u-2', 'second question'),
       attentionChanged(Errored.make({ error: { message: 'boom' } }))
     )
 
     expect(lastUserText(withTurns)).toBe('second question')
+  })
+
+  it('returns the last message of a batch sent as one turn', () => {
+    const batch = reducePaneChat(
+      emptyPaneChatState,
+      userMessagesSent([
+        { id: 'u-1', text: 'first' },
+        { id: 'u-2', text: 'last' }
+      ])
+    )
+
+    expect(lastUserText(batch)).toBe('last')
   })
 })
 
@@ -539,8 +610,8 @@ describe('reducePaneChat: conversation reset', () => {
 })
 
 describe('reducePaneChat: checkpoint availability', () => {
-  it('anchors the uuid onto the optimistic user turn that had none', () => {
-    const afterSend = appendUserMessage(emptyPaneChatState, 'u-1', 'deploy')
+  it('anchors the uuid onto the sent user turn that had none', () => {
+    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'deploy')
 
     const result = reducePaneChat(afterSend, checkpointAvailable('turn-1'))
 
@@ -548,11 +619,7 @@ describe('reducePaneChat: checkpoint availability', () => {
   })
 
   it('binds to the earliest un-anchored user turn when several await one', () => {
-    const twoPending = appendUserMessage(
-      appendUserMessage(emptyPaneChatState, 'u-1', 'first'),
-      'u-2',
-      'second'
-    )
+    const twoPending = sendUser(sendUser(emptyPaneChatState, 'u-1', 'first'), 'u-2', 'second')
 
     const result = reducePaneChat(twoPending, checkpointAvailable('turn-1'))
 
@@ -561,7 +628,7 @@ describe('reducePaneChat: checkpoint availability', () => {
   })
 
   it('skips a user turn already anchored and binds the next un-anchored one', () => {
-    const restoredThenSent = appendUserMessage(
+    const restoredThenSent = sendUser(
       paneChatStateFromHistory(PANE, [{ role: 'user', content: 'earlier', checkpointUuid: 'a' }]),
       'u-2',
       'later'
@@ -584,7 +651,7 @@ describe('reducePaneChat: checkpoint availability', () => {
   })
 
   it('anchors the resume uuid alongside the checkpoint uuid when present', () => {
-    const afterSend = appendUserMessage(emptyPaneChatState, 'u-1', 'deploy')
+    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'deploy')
 
     const result = reducePaneChat(afterSend, checkpointAvailable('turn-1', 'assistant-0'))
 
@@ -593,12 +660,29 @@ describe('reducePaneChat: checkpoint availability', () => {
   })
 
   it('leaves the resume uuid absent when the checkpoint carries none (first turn)', () => {
-    const afterSend = appendUserMessage(emptyPaneChatState, 'u-1', 'deploy')
+    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'deploy')
 
     const result = reducePaneChat(afterSend, checkpointAvailable('turn-1'))
 
     expect(result.messages[0].checkpointUuid).toBe('turn-1')
     expect(result.messages[0].resumeAnchorUuid).toBeUndefined()
+  })
+
+  it('binds the checkpoints of a batch to its user turns in send order', () => {
+    const batch = reducePaneChat(
+      emptyPaneChatState,
+      userMessagesSent([
+        { id: 'u-1', text: 'first' },
+        { id: 'u-2', text: 'second' }
+      ])
+    )
+
+    const result = [checkpointAvailable('turn-1'), checkpointAvailable('turn-2')].reduce(
+      reducePaneChat,
+      batch
+    )
+
+    expect(result.messages.map((message) => message.checkpointUuid)).toEqual(['turn-1', 'turn-2'])
   })
 })
 
@@ -634,48 +718,79 @@ describe('reducePaneChat: rewind to checkpoint', () => {
     expect(result.messages).toBe(branched.messages)
   })
 
-  it('keeps a prompt sent after the rewind was requested, after the truncated transcript', () => {
-    const queued = appendUserMessage(requestRewind(branched), 'queued', 'sent during rewind')
+  it('places a user turn reported after the rewind after the truncated transcript', () => {
+    const rewound = reducePaneChat(branched, rewoundToCheckpoint('b'))
 
-    const result = reducePaneChat(queued, rewoundToCheckpoint('b'))
+    const result = sendUser(rewound, 'u-1', 'sent during rewind')
 
-    expect(result.messages).toEqual([...branched.messages.slice(0, 2), queued.messages[4]])
-  })
-
-  it('keeps the turn in flight when a prompt sent during the rewind was kept', () => {
-    const queued = appendUserMessage(requestRewind(branched), 'queued', 'sent during rewind')
-
-    const result = reducePaneChat(queued, rewoundToCheckpoint('b'))
-
+    expect(result.messages).toEqual([
+      ...branched.messages.slice(0, 2),
+      {
+        id: `${PANE}:user:u-1`,
+        role: 'user',
+        parts: [{ type: 'text', content: 'sent during rewind' }]
+      }
+    ])
     expect(result.isLoading).toBe(true)
   })
 
-  it('drops an assistant reply that streamed in after the rewind was requested', () => {
-    const streamed = reducePaneChat(requestRewind(loadingWith(branched)), textDelta('late reply'))
+  it('drops an assistant reply that streamed in after the anchored turn', () => {
+    const streamed = reducePaneChat(loadingWith(branched), textDelta('late reply'))
 
     const result = reducePaneChat(streamed, rewoundToCheckpoint('b'))
 
     expect(result.messages).toEqual(branched.messages.slice(0, 2))
   })
 
-  it('drops a prompt sent before the rewind was requested along with the turns after the anchor', () => {
-    const sentBefore = requestRewind(appendUserMessage(branched, 'before', 'sent before rewind'))
+  it('drops a user turn reported before the rewind along with the turns after the anchor', () => {
+    const sentBefore = sendUser(branched, 'u-1', 'sent before rewind')
 
     const result = reducePaneChat(sentBefore, rewoundToCheckpoint('b'))
 
     expect(result.messages).toEqual(branched.messages.slice(0, 2))
   })
+})
 
-  it('keeps nothing extra on a later rewind once a rewind has completed', () => {
-    const first = reducePaneChat(
-      appendUserMessage(requestRewind(branched), 'queued', 'sent during rewind'),
-      rewoundToCheckpoint('b')
+describe('reducePaneChat: message queue', () => {
+  it('replaces the queue and its held flag with the reported ones', () => {
+    const first = reducePaneChat(emptyPaneChatState, queueChanged(['one', 'two'], false))
+
+    const result = reducePaneChat(first, queueChanged(['two'], true))
+
+    expect(result.queued).toEqual([{ id: 'q-0', text: 'two' }])
+    expect(result.queueHeld).toBe(true)
+    expect(result.messages).toBe(first.messages)
+  })
+
+  it('empties the queue when the pane crashes', () => {
+    const queued = reducePaneChat(loadingWith(emptyPaneChatState), queueChanged(['later'], true))
+
+    const result = reducePaneChat(
+      queued,
+      attentionChanged(Crashed.make({ error: { message: 'process exited' } }))
     )
-    const anchored = reducePaneChat(first, checkpointAvailable('c', 'reply one'))
-    const later = appendUserMessage(anchored, 'later', 'sent after the rewind finished')
 
-    const result = reducePaneChat(later, rewoundToCheckpoint('c'))
+    expect(result.queued).toEqual([])
+    expect(result.queueHeld).toBe(false)
+  })
 
-    expect(result.messages).toEqual(branched.messages.slice(0, 2))
+  it('keeps the queue when a turn errors', () => {
+    const queued = reducePaneChat(loadingWith(emptyPaneChatState), queueChanged(['later'], true))
+
+    const result = reducePaneChat(
+      queued,
+      attentionChanged(Errored.make({ error: { message: 'boom' } }))
+    )
+
+    expect(result.queued).toEqual(queued.queued)
+    expect(result.queueHeld).toBe(true)
+  })
+
+  it('keeps the queue across a conversation reset', () => {
+    const queued = reducePaneChat(emptyPaneChatState, queueChanged(['later'], false))
+
+    const result = reducePaneChat(queued, conversationReset())
+
+    expect(result.queued).toEqual(queued.queued)
   })
 })

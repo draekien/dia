@@ -1,4 +1,5 @@
 import type { AttentionState, PaneError } from '@shared/domain/attention'
+import type { OutgoingMessage } from '@shared/domain/message-queue'
 import type { ConversationMessage } from '@shared/domain/pane'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import type {
@@ -9,11 +10,13 @@ import type {
   PaneConversationCompacted,
   PaneConversationReset,
   PaneMessageAppended,
+  PaneMessageQueueChanged,
   PaneRewoundToCheckpoint,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
   PaneToolCallCompleted,
-  PaneToolCallStarted
+  PaneToolCallStarted,
+  PaneUserMessagesSent
 } from '@shared/ipc/contract'
 
 /** A streamed span of assistant answer text within a turn. */
@@ -59,7 +62,9 @@ export type MessagePart = TextPart | ThinkingPart | ToolCallPart
  * `window.dia.rewindToCheckpoint` to restore files and conversation to that
  * point (see ADR-0018). `resumeAnchorUuid`, present alongside it when a prior
  * assistant turn exists, is the branch point that rewind resumes from; absent
- * for the first turn.
+ * for the first turn. `rewindable` is `false` on the second and later user turns of a batch sent
+ * as one turn: a rewind there would also drop the earlier turns of the batch, so the rewind
+ * control is hidden for them.
  */
 export interface PaneMessage {
   readonly id: string
@@ -67,6 +72,7 @@ export interface PaneMessage {
   readonly parts: ReadonlyArray<MessagePart>
   readonly checkpointUuid?: string
   readonly resumeAnchorUuid?: string
+  readonly rewindable?: false
 }
 
 /**
@@ -75,8 +81,9 @@ export interface PaneMessage {
  * available in the pane's live session (for the `/` command popover; empty
  * until the session reports them), and `warmingCommands` — true while the
  * session is still discovering that list, so the input can show a "loading
- * commands" indicator. `messagesBeforeRewind`, set by {@link requestRewind}, is the
- * number of messages present when the latest rewind was requested. This is the sole contract consumers depend on — how
+ * commands" indicator. `queued` is the pane's message queue as the Host last reported it, in send
+ * order, and `queueHeld` is true when that queue waits for the next user send instead of the next
+ * turn end. This is the sole contract consumers depend on — how
  * streaming deltas are assembled into it is private to {@link reducePaneChat}.
  */
 export interface PaneChatState {
@@ -84,7 +91,8 @@ export interface PaneChatState {
   readonly isLoading: boolean
   readonly slashCommands: ReadonlyArray<SlashCommandInfo>
   readonly warmingCommands: boolean
-  readonly messagesBeforeRewind?: number
+  readonly queued: ReadonlyArray<OutgoingMessage>
+  readonly queueHeld: boolean
 }
 
 /**
@@ -105,13 +113,17 @@ export type PaneStreamEvent =
   | PaneConversationReset
   | PaneCheckpointAvailable
   | PaneRewoundToCheckpoint
+  | PaneMessageQueueChanged
+  | PaneUserMessagesSent
 
 /** The empty conversation state a pane starts from before history loads. */
 export const emptyPaneChatState: PaneChatState = {
   messages: [],
   isLoading: false,
   slashCommands: [],
-  warmingCommands: false
+  warmingCommands: false,
+  queued: [],
+  queueHeld: false
 }
 
 /**
@@ -134,40 +146,32 @@ export const paneChatStateFromHistory = (
   })),
   isLoading: false,
   slashCommands: [],
-  warmingCommands: false
+  warmingCommands: false,
+  queued: [],
+  queueHeld: false
 })
 
-/**
- * Optimistically appends a user turn and marks the pane loading. Call on submit
- * before dispatching the send to the pane process; the assistant reply arrives
- * back through {@link reducePaneChat}. `id` must be stable across re-renders.
- */
-export const appendUserMessage = (
-  state: PaneChatState,
-  id: string,
-  text: string
-): PaneChatState => ({
-  ...state,
-  messages: [...state.messages, { id, role: 'user', parts: [{ type: 'text', content: text }] }],
-  isLoading: true
-})
-
-/**
- * Records that a rewind of this pane was requested. Call it when the rewind is sent to the pane
- * process. A user turn appended after this call, through {@link appendUserMessage}, is queued in
- * the pane process until the rewind finishes and is kept when `PaneRewoundToCheckpoint` truncates
- * the transcript.
- */
-export const requestRewind = (state: PaneChatState): PaneChatState => ({
-  ...state,
-  messagesBeforeRewind: state.messages.length
-})
+const appendSentMessages = (state: PaneChatState, event: PaneUserMessagesSent): PaneChatState => {
+  const present = new Set(state.messages.map((message) => message.id))
+  const sent = event.messages
+    .map(
+      (message, index): PaneMessage => ({
+        id: `${event.paneId}:user:${message.id}`,
+        role: 'user',
+        parts: [{ type: 'text', content: message.text }],
+        ...(index > 0 ? { rewindable: false as const } : {})
+      })
+    )
+    .filter((message) => !present.has(message.id))
+  return { ...state, messages: [...state.messages, ...sent], isLoading: true }
+}
 
 const lastMessage = (state: PaneChatState): PaneMessage | undefined => state.messages.at(-1)
 
 /**
  * The text of the most recent user turn, or `undefined` when the pane has no
- * user turn yet. Used to populate a resend/retry action after an error.
+ * user turn yet. Used to populate a resend/retry action after an error. After a
+ * batch sent as one turn, it is the text of the batch's last message.
  */
 export const lastUserText = (state: PaneChatState): string | undefined => {
   for (let index = state.messages.length - 1; index >= 0; index--) {
@@ -254,7 +258,7 @@ const completeToolCall = (
 const isTurnOver = (attention: AttentionState): boolean =>
   attention._tag === 'Completed' || attention._tag === 'Errored' || attention._tag === 'Crashed'
 
-// Checkpoint uuids arrive after their optimistic user turn is already rendered, in the
+// Checkpoint uuids arrive after their user turn is already rendered, in the
 // same order the turns were submitted, so bind each to the earliest user turn still
 // lacking one. Turns restored from history already carry their uuid and are skipped.
 // resumeAnchorUuid (the preceding assistant turn) rides along, absent for the first turn.
@@ -281,20 +285,9 @@ const anchorCheckpoint = (
 // Rewind branches the conversation just before the anchored turn, so the displayed
 // transcript drops that turn and everything after it (slice ends at, not past, the anchor).
 const rewindToCheckpoint = (state: PaneChatState, messageUuid: string): PaneChatState => {
-  const { messagesBeforeRewind, ...rest } = state
   const anchor = state.messages.findIndex((message) => message.checkpointUuid === messageUuid)
-  if (anchor === -1) return { ...rest, isLoading: false }
-  const queued =
-    messagesBeforeRewind === undefined
-      ? []
-      : state.messages
-          .slice(Math.max(anchor, messagesBeforeRewind))
-          .filter((message) => message.role === 'user')
-  return {
-    ...rest,
-    messages: [...state.messages.slice(0, anchor), ...queued],
-    isLoading: queued.length > 0
-  }
+  if (anchor === -1) return { ...state, isLoading: false }
+  return { ...state, messages: state.messages.slice(0, anchor), isLoading: false }
 }
 
 const compactionNotice = (event: PaneConversationCompacted): string =>
@@ -309,16 +302,17 @@ const compactionNotice = (event: PaneConversationCompacted): string =>
  * turn — `Completed` silently, `Errored`/`Crashed` by appending an `error` turn
  * carrying the failure message so the transcript records it. `PaneMessageAppended` is a backstop that only
  * adds a turn's final text when no deltas built it, and user appends are
- * ignored (the optimistic {@link appendUserMessage} already added them).
+ * ignored (`PaneUserMessagesSent` adds user turns, one per sent message, and
+ * marks the pane loading; a message id already in the transcript is skipped).
+ * `PaneMessageQueueChanged` replaces `queued` and `queueHeld`; `Crashed` empties them.
  * `PaneSlashCommandsWarming` toggles the `warmingCommands` indicator, and
  * `PaneSlashCommandsAvailable` replaces the available command list (ending any
  * warming state); a compaction appends a `notice` divider; a conversation reset
- * clears the transcript while keeping the available commands.
+ * clears the transcript while keeping the available commands and the queue.
  * `PaneCheckpointAvailable` anchors a rewindable checkpoint uuid (and its resume
  * anchor) onto the earliest user turn still lacking one, and
  * `PaneRewoundToCheckpoint` truncates the transcript back to (and excluding) the
- * turn holding that uuid, ending any in-flight turn, and then appends the user turns sent since
- * {@link requestRewind}. Pure and total — drive a
+ * turn holding that uuid, ending any in-flight turn. Pure and total — drive a
  * pane's state atom by scanning the IPC stream with it.
  */
 export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): PaneChatState => {
@@ -349,7 +343,16 @@ export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): Pa
       }
     }
     case 'PaneAttentionChanged':
-      if (event.attention._tag === 'Errored' || event.attention._tag === 'Crashed') {
+      if (event.attention._tag === 'Crashed') {
+        return {
+          ...state,
+          messages: [...state.messages, errorMessage(state, event.attention.error)],
+          isLoading: false,
+          queued: [],
+          queueHeld: false
+        }
+      }
+      if (event.attention._tag === 'Errored') {
         return {
           ...state,
           messages: [...state.messages, errorMessage(state, event.attention.error)],
@@ -374,7 +377,12 @@ export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): Pa
         ]
       }
     case 'PaneConversationReset':
-      return { ...emptyPaneChatState, slashCommands: state.slashCommands }
+      return {
+        ...emptyPaneChatState,
+        slashCommands: state.slashCommands,
+        queued: state.queued,
+        queueHeld: state.queueHeld
+      }
     case 'PaneCheckpointAvailable':
       return {
         ...state,
@@ -382,5 +390,9 @@ export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): Pa
       }
     case 'PaneRewoundToCheckpoint':
       return rewindToCheckpoint(state, event.messageUuid)
+    case 'PaneMessageQueueChanged':
+      return { ...state, queued: event.queued, queueHeld: event.held }
+    case 'PaneUserMessagesSent':
+      return appendSentMessages(state, event)
   }
 }
