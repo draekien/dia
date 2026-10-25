@@ -54,6 +54,7 @@ This is an index of non-obvious decisions, gotchas, and learnings recorded durin
 | 2026-10-25 | [`shouldQuery: false` batches one turn](reasoning/2026-10-25-should-query-false-batches-one-turn.md) | Offering n−1 messages with `shouldQuery: false` and the last normally gives one assistant turn with one user record each; plain offers are coalesced by the CLI with `
 `. Each silent message yields a `num_turns: 0` result that must not end the visible turn; a locally answered slash command yields the same result, so count silent messages instead of matching `num_turns`. |
 | 2026-10-25 | [`contextBridge` turns an Effect `Option` or `Result` into a different object](reasoning/2026-10-25-context-bridge-drops-option-and-result.md) | `Option`/`Result` keep `_tag` on the prototype, so a bridged `Option.some(x)` arrives as `{ value: x }` and `Option.none()` as `{}`; typed-error instances lose their fields. Schemas whose values cross the bridge use `Schema.NullOr`; `DiaApi` methods resolve plain data (`registerProject` resolves `null` or `RegisterProjectRefusal`). |
+| 2026-10-25 | [Radix ScrollArea content grows to its widest row, so `truncate` inside it does nothing](reasoning/2026-10-25-scroll-area-table-display-defeats-truncate.md) | The viewport wraps children in an inline `display: table` element; a vertical-only list with truncated rows overrides it with `[&_[data-slot=scroll-area-viewport]>div]:block!`. jsdom cannot show this; check it in the running app. |
 
 ## Adding a new entry
 
