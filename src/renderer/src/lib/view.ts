@@ -33,6 +33,23 @@ export interface NewAgentForm {
 }
 
 /**
+ * The New agent form to show when the user asks for one in project `projectId`. A form opened
+ * over another open form keeps the earlier form's `shownBefore`, because the earlier form already
+ * hid that tab and `visibleTab` is `null` while any form is open.
+ */
+export const openNewAgentForm = (
+  current: Option.Option<NewAgentForm>,
+  projectId: ProjectId,
+  visibleTab: PaneId | null
+): NewAgentForm => ({
+  projectId,
+  shownBefore: Option.match(current, {
+    onNone: () => visibleTab,
+    onSome: (form) => form.shownBefore
+  })
+})
+
+/**
  * Whether a workspace change closes the open New agent form: true when the workspace now shows a
  * tab other than the one visible when the form opened.
  */

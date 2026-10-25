@@ -3,6 +3,7 @@ import { type AgentName, ProjectId, type RegisterProjectRefusal } from '@shared/
 import type { RemovalProgress } from '@shared/domain/project-removal'
 import { Effect, Option } from 'effect'
 import { openPluginsPage } from '../components/plugins-page'
+import { openNewAgentForm } from './view'
 import { appRegistry, newAgentFormAtom, workspaceAtom } from './workspace-atoms'
 
 const log = (message: string, annotations: Record<string, unknown>): void =>
@@ -24,7 +25,8 @@ export const selectTab = (paneId: PaneId): void => {
 /** Opens the New agent form for project `projectId` in the content area. */
 export const newAgent = (projectId: ProjectId): void => {
   log('Opening the New agent form', { projectId })
-  appRegistry.set(newAgentFormAtom, Option.some({ projectId, shownBefore: visibleTab() }))
+  const form = openNewAgentForm(appRegistry.get(newAgentFormAtom), projectId, visibleTab())
+  appRegistry.set(newAgentFormAtom, Option.some(form))
   window.dia.selectTab(null)
 }
 

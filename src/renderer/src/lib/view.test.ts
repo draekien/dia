@@ -7,6 +7,7 @@ import {
   FirstRunView,
   type NewAgentForm,
   NewAgentView,
+  openNewAgentForm,
   TabView,
   viewOf
 } from './view'
@@ -78,6 +79,24 @@ describe('viewOf', () => {
     expect(viewOf(Option.some(workspace([PANE_A], null)), Option.none())).toEqual(
       EmptyProjectView.make({})
     )
+  })
+})
+
+describe('openNewAgentForm', () => {
+  const OTHER = ProjectId.make('00000000-0000-4000-8000-000000000002')
+
+  it('remembers the visible tab when no form is open', () => {
+    expect(openNewAgentForm(Option.none(), PROJECT, PANE_A)).toEqual({
+      projectId: PROJECT,
+      shownBefore: PANE_A
+    })
+  })
+
+  it('keeps the tab the open form hid when a form for another project replaces it', () => {
+    expect(openNewAgentForm(Option.some(formOpenedOver(PANE_A)), OTHER, null)).toEqual({
+      projectId: OTHER,
+      shownBefore: PANE_A
+    })
   })
 })
 
