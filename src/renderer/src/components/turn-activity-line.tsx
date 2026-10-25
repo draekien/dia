@@ -13,8 +13,8 @@ interface TurnActivityLineProps {
  * {@link TurnActivity} label, and the elapsed-seconds counter once past the
  * short delay. When the turn has stalled, reveals manual `Resend` and
  * `Interrupt & retry` actions so the user is never stuck on a silent session —
- * `onResend` submits the last prompt again (superseding any pending request),
- * `onInterruptAndRetry` aborts the in-flight turn first. Deliberately uses a
+ * `onResend` submits the last prompt again in the default send mode,
+ * `onInterruptAndRetry` sends it as a steer, which aborts the in-flight turn first. Deliberately uses a
  * neutral dot, not a coloured pulse: attention colour is reserved for the pane
  * pulse indicator (the app's one loud signal).
  */

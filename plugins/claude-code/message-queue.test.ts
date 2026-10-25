@@ -47,6 +47,12 @@ describe('send', () => {
     expect(next).toEqual(runningWith({ queued: [a, b] }))
   })
 
+  it('releases a held queue when queueing during a turn, so it drains when the turn ends', () => {
+    const [actions, next] = send(b, 'queue')(runningWith({ queued: [a], held: true }))
+    expect(actions).toEqual([QueueChangedAction.make({ queued: [a, b], held: false })])
+    expect(next).toEqual(runningWith({ queued: [a, b] }))
+  })
+
   it('interrupts the turn and keeps the queue when steering', () => {
     const [actions, next] = send(b, 'steer')(runningWith({ queued: [a] }))
     expect(actions).toEqual([InterruptAction.make({})])

@@ -187,8 +187,10 @@ export interface RewindTarget {
  * pane's files and conversation back to that point (ADR-0018). It dispatches the
  * request to the pane process; the resulting transcript truncation arrives back
  * through the IPC fold on `PaneRewoundToCheckpoint`. A prompt sent through
- * {@link paneSendAtom} before that event arrives is sent to the conversation the
- * rewind leaves, and its user turn arrives after the truncation. Bind with
+ * {@link paneSendAtom} while the rewind runs waits for it, is sent to the
+ * conversation the rewind leaves, and its user turn arrives after the truncation.
+ * A prompt the pane reported sent before the rewind started is dropped with the
+ * turns after the checkpoint. Bind with
  * `useAtomSet(paneRewindAtom(paneId))`.
  */
 export const paneRewindAtom = Atom.family((paneId: string) =>

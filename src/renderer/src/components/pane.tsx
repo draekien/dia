@@ -467,6 +467,9 @@ function PaneChat({
   const retryText = lastUserText(chat)
 
   const resend = (): void => {
+    if (retryText !== undefined) sendMessage({ text: retryText, mode: defaultSendMode })
+  }
+  const interruptAndRetry = (): void => {
     if (retryText !== undefined) sendMessage({ text: retryText, mode: 'steer' })
   }
 
@@ -523,7 +526,7 @@ function PaneChat({
                 <TurnActivityLine
                   activity={activity}
                   onResend={resend}
-                  onInterruptAndRetry={resend}
+                  onInterruptAndRetry={interruptAndRetry}
                 />
               )}
               {attention._tag === 'Errored' && retryText !== undefined && (

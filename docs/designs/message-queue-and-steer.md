@@ -114,7 +114,7 @@ Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermissio
 | Transition | From | To and actions |
 | --- | --- | --- |
 | `send(m, mode)` | `Idle` | `Running`, `queued` empty, `held` false, `steered` empty; `Dispatch(queued ++ [m])`; `QueueChanged` when `queued` was non-empty |
-| `send(m, 'queue')` | `Running` | append `m` to `queued`; `QueueChanged` |
+| `send(m, 'queue')` | `Running` | append `m` to `queued`, `held` false; `QueueChanged` |
 | `send(m, 'steer')` | `Running`, `steered` empty | `steered = [m]`, `held` false; `Interrupt`; `QueueChanged` when `held` changed |
 | `send(m, 'steer')` | `Running`, `steered` non-empty | append `m` to `steered`; no second `Interrupt` |
 | `turnEnded(ok)` | `Running`, `steered` non-empty | `Running`, `steered` empty; `Dispatch(steered)` |
@@ -160,7 +160,7 @@ Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermissio
 - The composer shows `queued` above the textarea: each item's text with an edit control (inline textarea; Enter saves, Escape cancels; save is disabled for blank text) and a remove control. A held queue shows the label `Sends with your next message`.
 - `onKeyDown`: Enter without Shift sends in the default mode; Enter with `event.metaKey || event.ctrlKey` sends in the other mode. The slash-menu handling keeps precedence. The handler passes the mode through `form.handleSubmit({ mode })` (TanStack Form `onSubmitMeta`); the send button uses the default mode.
 - `onSubmit` clears the pending permission, question and plan-review cards only when the mode is `steer` or no turn is running.
-- `resend` sends `retryText` with mode `steer`, and the error turn's interrupt-and-retry action calls `resend`; neither calls `interrupt()`. `paneInterruptAtom` is removed, because interrupt-and-retry was its only caller. `lastUserText` returns the last message of the last batch.
+- `resend` sends `retryText` in the default mode. `interruptAndRetry` sends `retryText` with mode `steer`. Neither calls `interrupt()`. `paneInterruptAtom` is removed, because interrupt-and-retry was its only caller. `lastUserText` returns the last message of the last batch.
 - `sendModeAtom` holds the default, read with `getSendMode` at startup and written with `setSendMode`. The command palette has a `Send mode` `ToggleGroup` row with `Queue` and `Steer` items under its `Theme` row, built the same way as the `Theme` row.
 
 ## Key Data Structures
