@@ -1,9 +1,8 @@
 import { Data, Result, Schema } from 'effect'
-import { PermissionMode, ThinkingLevel } from './pane'
+import { type PaneId, PermissionMode, ThinkingLevel } from './pane'
 import { Uuid } from './uuid'
 
-/** Identifier for a single pane, unique within a window's pane tree. */
-export type PaneId = string
+export type { PaneId } from './pane'
 
 /** Schema for a {@link PaneLeaf}. Use `PaneLeafSchema.make({...})` to construct a leaf so the `_tag` is set and fields are validated. */
 export const PaneLeafSchema = Schema.TaggedStruct('Leaf', {

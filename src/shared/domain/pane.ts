@@ -2,6 +2,9 @@ import { Effect, Schema } from 'effect'
 import { AttentionState } from './attention'
 import { Uuid } from './uuid'
 
+/** Identifier for a pane: the `paneId` of its `PaneConfig`, unique across the workspace. */
+export type PaneId = string
+
 /**
  * Id of an agent conversation, as the agent backend reports it. Persist it to resume the
  * conversation later; create one only by decoding a persisted value or with `SessionId.make`
