@@ -16,6 +16,7 @@ import {
   TurnErrored
 } from '@dia/plugin'
 import type { ConversationMessage } from '@shared/domain/pane'
+import { Option } from 'effect'
 
 const parseToolInput = (partialJson: string): Record<string, unknown> => {
   if (!partialJson) return {}
@@ -58,13 +59,18 @@ export interface SessionEventReducer {
  * remembers the uuid of the most recent assistant message seen, so each
  * `CheckpointAvailable` it emits for a user turn carries that uuid as
  * `resumeAnchorUuid` — the point `resumeSessionAt` must branch at to resume
- * up to but excluding that user turn.
+ * up to but excluding that user turn. `continuesFrom` is the uuid of the last
+ * assistant message of the conversation this stream continues, or none for a new
+ * conversation; until the stream delivers an assistant message of its own, user
+ * turns carry it as `resumeAnchorUuid`.
  */
-export const makeSessionEventReducer = (): SessionEventReducer => {
+export const makeSessionEventReducer = (
+  continuesFrom: Option.Option<string>
+): SessionEventReducer => {
   const toolCallsByBlockIndex = new Map<number, { id: string; name: string }>()
   const partialJsonByBlockIndex = new Map<number, string>()
   const pendingToolCalls = new Map<string, { name: string; input: Record<string, unknown> }>()
-  let lastAssistantUuid: string | undefined
+  let lastAssistantUuid = Option.getOrUndefined(continuesFrom)
 
   const completeToolCall = (
     toolCallId: string,

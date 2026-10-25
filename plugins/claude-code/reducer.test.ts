@@ -1,6 +1,7 @@
 import type { UUID } from 'node:crypto'
 import type { SDKMessage, SlashCommand } from '@anthropic-ai/claude-agent-sdk'
 import type { OutboundMessage } from '@dia/plugin'
+import { Option } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { makeSessionEventReducer } from './reducer'
 
@@ -161,10 +162,16 @@ const conversationReset = (newConversationId: UUID): SDKMessage => ({
   session_id: 'test-session'
 })
 
-const run = (messages: ReadonlyArray<SDKMessage>): OutboundMessage[] => {
-  const reducer = makeSessionEventReducer()
+const runContinuing = (
+  continuesFrom: Option.Option<string>,
+  messages: ReadonlyArray<SDKMessage>
+): OutboundMessage[] => {
+  const reducer = makeSessionEventReducer(continuesFrom)
   return messages.flatMap((message) => [...reducer.step(message)])
 }
+
+const run = (messages: ReadonlyArray<SDKMessage>): OutboundMessage[] =>
+  runContinuing(Option.none(), messages)
 
 const textDeltas = (emitted: ReadonlyArray<OutboundMessage>): string[] =>
   emitted.flatMap((message) => (message._tag === 'AssistantTextDelta' ? [message.text] : []))
@@ -461,6 +468,34 @@ describe('makeSessionEventReducer — file-checkpoint anchoring', () => {
     const emitted = run([replayedUserPrompt('first prompt', uuid)])
 
     expect(emitted).toEqual([{ _tag: 'CheckpointAvailable', messageUuid: uuid }])
+  })
+
+  it('anchors the first turn of a continued conversation to the message it continues from', () => {
+    const continuesFrom = 'asst-9999-4999-8999-999999999999'
+    const uuid = 'ckpt-1111-4111-8111-111111111111'
+
+    const emitted = runContinuing(Option.some(continuesFrom), [
+      replayedUserPrompt('first prompt after a restart', uuid)
+    ])
+
+    expect(emitted).toEqual([
+      { _tag: 'CheckpointAvailable', messageUuid: uuid, resumeAnchorUuid: continuesFrom }
+    ])
+  })
+
+  it('anchors a later turn of a continued conversation to the newest assistant message', () => {
+    const uuid = 'ckpt-1111-4111-8111-111111111111'
+
+    const emitted = runContinuing(Option.some('asst-9999-4999-8999-999999999999'), [
+      assistantMessage([{ type: 'text', text: 'a reply', citations: null }]),
+      replayedUserPrompt('second prompt after a restart', uuid)
+    ])
+
+    expect(emitted).toContainEqual({
+      _tag: 'CheckpointAvailable',
+      messageUuid: uuid,
+      resumeAnchorUuid: '00000000-0000-0000-0000-000000000000'
+    })
   })
 
   it('does not treat a tool-result user message as a checkpoint even when it carries a uuid', () => {

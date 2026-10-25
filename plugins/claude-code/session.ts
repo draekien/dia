@@ -53,6 +53,7 @@ import {
 import { makeSessionEventReducer } from './reducer'
 import { thinkingOptions } from './thinking-options'
 import { DIA_TOOL_SERVER_KEY, isDiaToolName, makeDiaToolServer } from './tool-server'
+import { readLastAssistantUuid } from './transcript'
 
 /**
  * Wraps a failure surfaced while consuming the Agent SDK's event stream
@@ -303,6 +304,46 @@ const toSDKUserMessage = (text: string): SDKUserMessage => ({
 })
 
 /**
+ * The prompt input of one SDK query, read from the session's prompt queue. `prompts` is
+ * passed to `query()` as its `prompt`. After `end` runs, no prompt is taken from the queue by
+ * this input: a read of `prompts` pending at that moment finishes as done, and every later read
+ * finishes as done, including a first read made after `end`. `end` can run more than once.
+ */
+export interface PromptInput {
+  readonly prompts: AsyncIterable<SDKUserMessage>
+  readonly end: Effect.Effect<void>
+}
+
+/**
+ * Opens a {@link PromptInput} over `queue`. Call it once per SDK query, and run `end` before
+ * that query is closed, so that a prompt offered after the query closes reaches the next query.
+ */
+export const openPromptInput = Effect.fnUntraced(function* (
+  queue: Queue.Dequeue<SDKUserMessage>
+): Effect.fn.Return<PromptInput> {
+  const ended = yield* Deferred.make<void>()
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>())
+  const done: IteratorReturnResult<undefined> = { done: true, value: undefined }
+
+  const readOne = Effect.gen(function* () {
+    if (yield* Deferred.isDone(ended)) return done
+    return yield* Effect.raceFirst(
+      Queue.take(queue).pipe(
+        Effect.map((value): IteratorYieldResult<SDKUserMessage> => ({ done: false, value }))
+      ),
+      Deferred.await(ended).pipe(Effect.as(done))
+    )
+  })
+
+  return {
+    prompts: { [Symbol.asyncIterator]: () => ({ next: () => runPromise(readOne) }) },
+    end: Deferred.succeed(ended, undefined).pipe(
+      Effect.andThen(Effect.logDebug('Prompt input ended'))
+    )
+  }
+})
+
+/**
  * The slice of the live Agent SDK `Query` the session drives directly: restoring
  * files on disk to a checkpoint (`rewindFiles`) and aborting an in-flight turn
  * (`interrupt`). Narrowed so the current query can be held in a `Ref`.
@@ -311,6 +352,16 @@ type LiveControlQuery = Pick<Query, 'rewindFiles' | 'interrupt'>
 
 const isTurnEnd = (message: OutboundMessage): boolean =>
   message._tag === 'TurnErrored' || message._tag === 'TurnCompleted'
+
+const resolveContinuesFrom = Effect.fn('ClaudeCodeSession.resolveContinuesFrom')(function* (
+  resume: Option.Option<SessionId>,
+  branchAt: string | undefined,
+  cwd: string
+) {
+  if (branchAt !== undefined) return Option.some(branchAt)
+  if (Option.isNone(resume)) return Option.none<string>()
+  return yield* readLastAssistantUuid(resume.value, cwd)
+})
 
 const runSession = Effect.fn('ClaudeCodeSession.runSession')(
   function* (
@@ -326,13 +377,15 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     resume: Option.Option<SessionId>,
     branchAt: string | undefined
   ) {
+    const continuesFrom = yield* resolveContinuesFrom(resume, branchAt, config.cwd)
     yield* Effect.logInfo('Starting query session', {
       paneId: config.paneId,
       cwd: config.cwd,
       thinkingLevel: config.thinkingLevel,
       permissionMode: config.permissionMode,
       resume: Option.getOrUndefined(resume),
-      branchAt
+      branchAt,
+      continuesFrom: Option.getOrUndefined(continuesFrom)
     })
 
     const thinking = thinkingOptions(config.thinkingLevel)
@@ -341,12 +394,12 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       options: thinking
     })
 
-    const promptIterable = Stream.toAsyncIterable(Stream.fromQueue(promptQueue))
+    const input = yield* openPromptInput(promptQueue)
 
     const session = yield* Effect.acquireRelease(
       Effect.sync(() =>
         query({
-          prompt: promptIterable,
+          prompt: input.prompts,
           options: {
             cwd: config.cwd,
             model: config.model,
@@ -370,6 +423,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       ),
       (live) =>
         Effect.logInfo('Closing query', { paneId: config.paneId }).pipe(
+          Effect.andThen(input.end),
           Effect.andThen(Effect.sync(() => live.close()))
         )
     )
@@ -405,7 +459,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     )
 
     const events = Stream.fromAsyncIterable(session, (cause) => new SessionStreamError({ cause }))
-    const reducer = makeSessionEventReducer()
+    const reducer = makeSessionEventReducer(continuesFrom)
 
     const forward = Effect.fnUntraced(function* (outbound: OutboundMessage) {
       if (outbound._tag === 'SessionStarted') {

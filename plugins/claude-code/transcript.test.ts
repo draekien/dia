@@ -1,6 +1,7 @@
 import type { SessionMessage } from '@anthropic-ai/claude-agent-sdk'
 import { assert, describe, it } from '@effect/vitest'
-import { sessionMessagesToConversation } from './transcript'
+import { Option } from 'effect'
+import { lastAssistantUuid, sessionMessagesToConversation } from './transcript'
 
 function sessionMessage(
   type: SessionMessage['type'],
@@ -126,5 +127,59 @@ describe('sessionMessagesToConversation', () => {
 
   it('returns an empty list for no messages', () => {
     assert.deepStrictEqual(sessionMessagesToConversation([]), [])
+  })
+})
+
+describe('lastAssistantUuid', () => {
+  it('returns the uuid of the newest assistant message', () => {
+    const result = lastAssistantUuid([
+      sessionMessage(
+        'assistant',
+        { role: 'assistant', content: [{ type: 'text', text: 'a' }] },
+        'turn-2'
+      ),
+      sessionMessage('user', { role: 'user', content: 'next' }, 'turn-3'),
+      sessionMessage(
+        'assistant',
+        { role: 'assistant', content: [{ type: 'text', text: 'b' }] },
+        'turn-4'
+      ),
+      sessionMessage('user', { role: 'user', content: 'last' }, 'turn-5')
+    ])
+
+    assert.deepStrictEqual(result, Option.some('turn-4'))
+  })
+
+  it('counts a tool-only assistant message, as the resume anchor rule does', () => {
+    const result = lastAssistantUuid([
+      sessionMessage('user', { role: 'user', content: 'first' }, 'turn-1'),
+      sessionMessage(
+        'assistant',
+        {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { path: '/x' } }]
+        },
+        'turn-2'
+      ),
+      sessionMessage(
+        'user',
+        { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] },
+        'turn-3'
+      )
+    ])
+
+    assert.deepStrictEqual(result, Option.some('turn-2'))
+  })
+
+  it('returns none for a transcript with no assistant message', () => {
+    const result = lastAssistantUuid([
+      sessionMessage('user', { role: 'user', content: 'only a prompt' }, 'turn-1')
+    ])
+
+    assert.deepStrictEqual(result, Option.none())
+  })
+
+  it('returns none for an empty transcript', () => {
+    assert.deepStrictEqual(lastAssistantUuid([]), Option.none())
   })
 })

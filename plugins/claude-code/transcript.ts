@@ -1,6 +1,6 @@
 import { getSessionMessages, type SessionMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { ConversationMessage, SessionId } from '@shared/domain/pane'
-import { Effect, Option, Schema } from 'effect'
+import { Array as Arr, Effect, Option, Schema } from 'effect'
 
 const TextBlock = Schema.Struct({
   type: Schema.Literal('text'),
@@ -14,7 +14,10 @@ const MessageEnvelope = Schema.Struct({
 })
 const decodeEnvelope = Schema.decodeUnknownOption(MessageEnvelope)
 
-const emptyHistory: ReadonlyArray<ConversationMessage> = []
+const emptyMessages: ReadonlyArray<SessionMessage> = []
+
+const isAssistantMessage = (message: SessionMessage): boolean =>
+  Option.exists(decodeEnvelope(message.message), (envelope) => envelope.role === 'assistant')
 
 const extractText = (content: string | ReadonlyArray<unknown>): string =>
   typeof content === 'string'
@@ -46,7 +49,7 @@ export const sessionMessagesToConversation = (
     const envelopeOpt = decodeEnvelope(message.message)
     if (Option.isNone(envelopeOpt)) continue
     const envelope = envelopeOpt.value
-    if (envelope.role === 'assistant') lastAssistantUuid = message.uuid
+    if (isAssistantMessage(message)) lastAssistantUuid = message.uuid
     const content = extractText(envelope.content)
     if (content.length === 0) continue
     if (envelope.role === 'user' && typeof envelope.content === 'string') {
@@ -64,6 +67,27 @@ export const sessionMessagesToConversation = (
 }
 
 /**
+ * The uuid of the last assistant message in `messages`, or none when there is none. A user turn
+ * sent after these messages branches from this uuid when it is rewound. Applies the same rule
+ * {@link sessionMessagesToConversation} uses for `resumeAnchorUuid`.
+ */
+export const lastAssistantUuid = (messages: ReadonlyArray<SessionMessage>): Option.Option<string> =>
+  Option.map(Arr.findLast(messages, isAssistantMessage), (message) => message.uuid)
+
+const readSessionMessages = Effect.fn('ClaudeCode.readSessionMessages')(function* (
+  sessionId: SessionId,
+  cwd: string
+) {
+  return yield* Effect.tryPromise(() => getSessionMessages(sessionId, { dir: cwd })).pipe(
+    Effect.catch((cause) =>
+      Effect.logWarning('Failed to read session transcript', { sessionId, cause }).pipe(
+        Effect.as(emptyMessages)
+      )
+    )
+  )
+})
+
+/**
  * Reads the transcript for `sessionId` located under `cwd` (the pane's working directory, which
  * the SDK keys sessions by) and projects it with {@link sessionMessagesToConversation}. Returns an
  * empty list, logging a warning, when the session file is missing or unreadable.
@@ -72,12 +96,21 @@ export const readHistory = Effect.fn('ClaudeCode.readHistory')(function* (
   sessionId: SessionId,
   cwd: string
 ) {
-  return yield* Effect.tryPromise(() => getSessionMessages(sessionId, { dir: cwd })).pipe(
-    Effect.map(sessionMessagesToConversation),
-    Effect.catch((cause) =>
-      Effect.logWarning('Failed to read session transcript', { sessionId, cause }).pipe(
-        Effect.as(emptyHistory)
-      )
-    )
-  )
+  return sessionMessagesToConversation(yield* readSessionMessages(sessionId, cwd))
+})
+
+/**
+ * Reads the transcript of `sessionId` under `cwd` and returns {@link lastAssistantUuid} of it.
+ * Returns none, logging a warning, when the transcript is missing or unreadable.
+ */
+export const readLastAssistantUuid = Effect.fn('ClaudeCode.readLastAssistantUuid')(function* (
+  sessionId: SessionId,
+  cwd: string
+) {
+  const uuid = lastAssistantUuid(yield* readSessionMessages(sessionId, cwd))
+  yield* Effect.logDebug('Read the last assistant message of a transcript', {
+    sessionId,
+    uuid: Option.getOrUndefined(uuid)
+  })
+  return uuid
 })
