@@ -62,15 +62,13 @@ what identifier ties them together, or in what order to invoke them.
    *assistant* uuid, not the user uuid. Fixed by threading `resumeAnchorUuid`
    (the preceding assistant turn) alongside `checkpointUuid`; see the corrected
    first bullet above.
-2. **Fork-vs-checkpoint ownership on repeat/earlier rewinds — partly verified.**
-   Verified 2026-10-25: a second rewind, to a turn sent in the forked session,
-   forked again and kept the earlier history. Still unverified: a rewind to a
-   turn earlier than the last rewind, whose checkpoint belongs to the
-   *superseded* session, and whether its `rewindFiles` succeeds.
+2. **Fork-vs-checkpoint ownership on repeat/earlier rewinds — RESOLVED 2026-10-25.**
+   A second rewind, to a turn sent in the forked session, forked again and kept
+   the earlier history. A rewind to a turn earlier than the last rewind, whose
+   checkpoint belongs to the superseded session, also succeeds: the forked query's
+   `rewindFiles` restores the file. One CLI defect remains, recorded in
+   `docs/reasoning/2026-10-25-rewound-file-loses-next-checkpoint.md`.
 
 The rewind sequencing in `plugins/claude-code/session.ts` (`rewindToCheckpoint`,
-`startQuery`) has no unit test, because it calls the SDK's `query()` directly and
-no fake `query()` exists. `openPromptInput` in that module is unit-tested, as are
-reducer checkpoint emission (`plugins/claude-code/reducer.ts`), transcript uuid
-surfacing (`plugins/claude-code/transcript.ts`) and renderer anchoring/truncation
-(`pane-chat.ts`).
+`startQuery`) is tested in `plugins/claude-code/session-rewind.test.ts` against a
+fake `query()` that reads prompts the way the SDK's `streamInput` does.
