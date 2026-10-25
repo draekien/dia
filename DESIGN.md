@@ -78,21 +78,24 @@ Responsive motion pairs with a mostly-flat surface: the sidebar and the visible 
 - **Secondary / Ghost:** neutral-bordered or text-only, for all non-primary actions (the majority of buttons in a dense UI like this).
 
 ### Status Indicator (signature component)
-The one component the whole system is built around. A small dot on an agent's overview row and its place in the collapsed rail: amber pulsing (needs input), red pulsing (failed), green steady (finished, until the user opens the tab). Only amber and red pulse, because only those states block on the user and also raise an OS notification. Motion is a gentle opacity/scale pulse that stops under reduced-motion settings, leaving the color. This is the system's single sanctioned "loud" element per the One Voice Rule.
+The one component the whole system is built around. A small dot on an agent's overview row and its place in the collapsed rail, in five states: amber with a pulsing ring (needs input), red with a pulsing ring (failed), a neutral dot with a slow opacity pulse (working), green steady (finished, until the user shows the tab), and a hollow neutral ring (idle). Only amber and red get the ring, because only those states block on the user and also raise an OS notification; the working pulse is slow and neutral so it reads as activity, not as a call for attention. All motion stops under reduced-motion settings, leaving the color. A legend or filter sample renders the dot still (`still`), because it stands for a status rather than reporting one. This is the system's single sanctioned "loud" element per the One Voice Rule.
 
 ### Agent Overview
 - **Purpose:** the left sidebar. It lists every agent in every project, grouped by project, so the user knows which agents need them without opening a tab. It is also the only way to switch tabs: there is no tab strip.
-- **Meta group:** pinned above all projects, with a count of open proposals. A meta branch waiting for approval is a row in this group.
-- **Row:** status indicator, tab name, and one caption-size activity line (the in-progress `TodoWrite` item, else the last tool call).
-- **Order:** project order is fixed and set by the user; a status change never moves a project group. Inside a group, agents that need input or have failed sort to the top.
-- **Overflow:** project groups collapse. A collapsed group's header shows its most urgent status and a count of its agents. A filter at the top of the sidebar matches agent and project names.
+- **Header:** a search input (`Ctrl P` focuses it; `↓` moves into the list; `Enter` with a query shows the first matching agent; `Esc` clears it), a filter icon button whose popover holds one checkbox per status with its count, "Show archived agents", "Hide projects with no matches" and "Clear filters" (a dot on the button marks an active filter), and an add-project icon button that opens the directory picker.
+- **Meta group:** pinned above all projects, with a count of open proposals, and hidden while a search or filter applies. A meta branch waiting for approval is a row in this group.
+- **Row:** status indicator, tab name, and one caption-size second line: the reason for an agent that needs input or failed, else the activity line (the in-progress `TodoWrite` item in sans, else the last tool call in mono). `F2` or the row menu renames the agent in place.
+- **Order:** project order is fixed and set by the user by dragging a project header, or from the keyboard (`Space` lifts, `↑`/`↓` move, `Space` drops, `Esc` cancels, with the new position announced); a status change never moves a project group. Inside a group, agents sort needs input, failed, working, finished, idle, then by creation.
+- **Overflow:** project groups collapse. A collapsed group's header shows its most urgent status and a count of its agents; while a search or filter applies, every group is open and counts read `n of total`. Groups are separated by a hairline divider. `↑`/`↓` move between headers and rows, `→`/`←` open and close a group, and the list has one tab stop.
+- **Project menu:** New agent, Reveal in Explorer, Remove project…. Removing a project opens a dialog that lists every agent, worktree and transcript to be removed, enables "Remove" once the project name is typed, and then shows each item's progress.
 - **Archived:** archived agents sit in a collapsed "Archived" list at the bottom of their project group.
-- **Collapsed rail:** a shortcut collapses the sidebar to a narrow rail with one status indicator per agent, grouped by project, with the agent's name in a tooltip.
-- **Selection:** selecting a row shows that agent's tab; the selected row uses the primary accent, never a status color.
+- **Collapsed rail:** `Ctrl B` collapses the sidebar to a narrow rail: the Meta marker first, then one status indicator per agent, with a hairline between projects and a tooltip naming project, agent, status and activity.
+- **Selection:** selecting a row shows that agent's tab; the selected row uses a primary-tinted fill and a medium-weight name, never a status color and never an edge stripe.
 
 ### Tabs
 - **One visible:** exactly one agent's tab fills the content area. There are no split panes.
-- **Selecting:** a tab is selected from its sidebar row; the content header names the project and the agent.
+- **Selecting:** a tab is selected from its sidebar row; the content header names `project / agent`, shows the worktree branch when there is one, and holds the transcript width control. A divider separates the header from the transcript.
+- **Transcript width:** the transcript and composer sit in one centred column, capped at one of three widths (Narrow, Default, Wide) chosen app-wide from the content header or the command palette; a narrower content area fills the column.
 - **Background tabs:** tabs that are not visible keep running and show their status in the sidebar and the collapsed rail only.
 
 ### Inputs / Fields
