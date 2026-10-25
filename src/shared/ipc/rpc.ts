@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
 import { Rpc, RpcGroup } from 'effect/rpc'
+import { MessageQueueSnapshot, SendMode } from '../domain/message-queue'
 import { ConversationMessage } from '../domain/pane'
 import { PaneNode } from '../domain/pane-tree'
 import { ThemePreference } from '../domain/theme'
@@ -8,9 +9,11 @@ import {
   ChooseDirectoryResult,
   ClosePane,
   CreatePane,
+  EditQueuedMessage,
   FocusPane,
   InterruptPane,
   IpcEvent,
+  RemoveQueuedMessage,
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
@@ -96,6 +99,12 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('FocusPane', { payload: withRequestId(FocusPane) }),
   Rpc.make('InterruptPane', { payload: withRequestId(InterruptPane) }),
   Rpc.make('RewindToCheckpoint', { payload: withRequestId(RewindToCheckpoint) }),
+  Rpc.make('EditQueuedMessage', { payload: withRequestId(EditQueuedMessage) }),
+  Rpc.make('RemoveQueuedMessage', { payload: withRequestId(RemoveQueuedMessage) }),
+  Rpc.make('GetMessageQueue', {
+    payload: { paneId: Schema.String },
+    success: MessageQueueSnapshot
+  }),
   Rpc.make('GetInitialLayout', { success: PaneNode }),
   Rpc.make('GetPaneHistory', {
     payload: { paneId: Schema.String },
@@ -103,6 +112,8 @@ export const DiaRpcs = RpcGroup.make(
   }),
   Rpc.make('GetTheme', { success: ThemePreference }),
   Rpc.make('SetTheme', { payload: { theme: ThemePreference } }),
+  Rpc.make('GetSendMode', { success: SendMode }),
+  Rpc.make('SetSendMode', { payload: { mode: SendMode } }),
   Rpc.make('GetLastDirectory', { success: Schema.NullOr(Schema.String) }),
   Rpc.make('RecordChosenDirectory', {
     payload: { path: Schema.String },

@@ -1,5 +1,17 @@
+import { useAtomSet, useAtomValue } from '@effect/atom-react'
+import { sendModeAtom } from '@renderer/lib/send-mode-atom'
+import type { SendMode } from '@shared/domain/message-queue'
 import type { ThemePreference } from '@shared/domain/theme'
-import { CodeIcon, InfoIcon, MonitorIcon, MoonIcon, PuzzleIcon, SunIcon } from 'lucide-react'
+import {
+  CodeIcon,
+  CornerDownRightIcon,
+  InfoIcon,
+  ListEndIcon,
+  MonitorIcon,
+  MoonIcon,
+  PuzzleIcon,
+  SunIcon
+} from 'lucide-react'
 import { type ComponentType, useEffect, useState } from 'react'
 import { AboutDialog } from './about-dialog'
 import { openPluginsPage } from './plugins-page'
@@ -26,6 +38,17 @@ const THEME_ITEMS: ReadonlyArray<ThemeItem> = [
   { value: 'system', label: 'System', icon: MonitorIcon }
 ]
 
+interface SendModeItem {
+  readonly value: SendMode
+  readonly label: string
+  readonly icon: ComponentType
+}
+
+const SEND_MODE_ITEMS: ReadonlyArray<SendModeItem> = [
+  { value: 'queue', label: 'Queue', icon: ListEndIcon },
+  { value: 'steer', label: 'Steer', icon: CornerDownRightIcon }
+]
+
 const OPEN_EVENT = 'dia:open-command-palette'
 
 /**
@@ -39,8 +62,9 @@ export function openCommandPalette(): void {
 
 /**
  * The app-wide command palette, opened with Cmd/Ctrl+K or {@link
- * openCommandPalette}. Hosts the About action and a persistent theme switcher
- * (light / dark / system) as a single segmented row; mount it once near the app
+ * openCommandPalette}. Hosts the About action, a persistent theme switcher
+ * (light / dark / system) and the default send mode switcher (queue / steer:
+ * what Enter does while a turn runs) as segmented rows; mount it once near the app
  * root, inside a {@link ThemeProvider}. It renders as an overlay dialog, so its
  * position in the tree only needs to be within the provider, not any layout.
  */
@@ -48,6 +72,8 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
   const { theme, setTheme } = useTheme()
+  const sendMode = useAtomValue(sendModeAtom)
+  const setSendMode = useAtomSet(sendModeAtom)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -83,6 +109,11 @@ export function CommandPalette() {
   const chooseTheme = (value: string) => {
     if (value === '') return
     setTheme(value as ThemePreference)
+  }
+
+  const chooseSendMode = (value: string) => {
+    if (value === '') return
+    setSendMode(value as SendMode)
   }
 
   return (
@@ -125,6 +156,24 @@ export function CommandPalette() {
             size="sm"
           >
             {THEME_ITEMS.map((item) => (
+              <ToggleGroupItem key={item.value} value={item.value} aria-label={item.label}>
+                <item.icon />
+                <span>{item.label}</span>
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </div>
+        <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
+          <span className="text-xs font-medium text-muted-foreground">Send mode</span>
+          <ToggleGroup
+            type="single"
+            value={sendMode}
+            onValueChange={chooseSendMode}
+            variant="outline"
+            size="sm"
+            aria-label="Send mode"
+          >
+            {SEND_MODE_ITEMS.map((item) => (
               <ToggleGroupItem key={item.value} value={item.value} aria-label={item.label}>
                 <item.icon />
                 <span>{item.label}</span>

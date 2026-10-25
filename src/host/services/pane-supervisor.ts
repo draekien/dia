@@ -13,6 +13,7 @@ import {
   type QuestionResponse,
   transitionAttention
 } from '@shared/domain/attention'
+import type { MessageQueueSnapshot, SendMode } from '@shared/domain/message-queue'
 import type {
   PaneConfig,
   PaneRecord,
@@ -31,6 +32,7 @@ import {
   PaneConversationCompacted,
   PaneConversationReset,
   PaneMessageAppended,
+  PaneMessageQueueChanged,
   PanePermissionRequested,
   PanePlanReviewRequested,
   PaneQuestionRequested,
@@ -38,7 +40,8 @@ import {
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
   PaneToolCallCompleted,
-  PaneToolCallStarted
+  PaneToolCallStarted,
+  PaneUserMessagesSent
 } from '@shared/ipc/contract'
 import {
   type Cause,
@@ -102,7 +105,10 @@ export class SessionEndedError extends Data.TaggedError('SessionEndedError')<{
 
 /** Live control surface for an open pane, returned by {@link PaneSupervisor.openPane} and {@link PaneSupervisor.getHandle}. */
 export interface PaneHandle {
-  readonly sendMessage: (text: string) => Effect.Effect<void>
+  readonly sendMessage: (text: string, mode: SendMode) => Effect.Effect<void>
+  readonly editQueuedMessage: (messageId: string, text: string) => Effect.Effect<void>
+  readonly removeQueuedMessage: (messageId: string) => Effect.Effect<void>
+  readonly messageQueue: Effect.Effect<MessageQueueSnapshot>
   readonly setThinkingLevel: (level: ThinkingLevel) => Effect.Effect<void>
   readonly setPermissionMode: (mode: PermissionMode) => Effect.Effect<void>
   readonly resolvePermission: (
@@ -253,6 +259,14 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
     Match.tag('RewoundToCheckpoint', (m) =>
       Option.some<IpcEvent>(PaneRewoundToCheckpoint.make({ paneId, messageUuid: m.messageUuid }))
     ),
+    Match.tag('MessageQueueChanged', (m) =>
+      Option.some<IpcEvent>(
+        PaneMessageQueueChanged.make({ paneId, queued: m.queued, held: m.held })
+      )
+    ),
+    Match.tag('UserMessagesSent', (m) =>
+      Option.some<IpcEvent>(PaneUserMessagesSent.make({ paneId, messages: m.messages }))
+    ),
     // TurnCompleted/TurnErrored/SessionStarted carry no renderer-facing content of their own --
     // they only drive AttentionState (see toAttentionTarget below) -- so they have no IpcEvent.
     // PermissionModeChanged is handled out of band by onPermissionModeChanged (it updates the
@@ -298,6 +312,7 @@ function toAttentionTarget(message: OutboundMessage): Option.Option<AttentionSta
       )
     ),
     Match.tag('TurnCompleted', () => Option.some<AttentionState>(Completed.make({}))),
+    Match.tag('UserMessagesSent', () => Option.some<AttentionState>(Idle.make({}))),
     Match.tag('TurnErrored', (m) => Option.some<AttentionState>(Errored.make({ error: m.error }))),
     Match.orElse(() => Option.none<AttentionState>())
   )
@@ -403,11 +418,20 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
   yield* Effect.logInfo('Pane agent session created', { paneId: config.paneId, resume })
 
   const handle: PaneHandle = {
-    sendMessage: (text) =>
-      Effect.logDebug('Sending text to pane session', { paneId: config.paneId, text }).pipe(
-        Effect.andThen(session.sendText(text)),
-        Effect.andThen(applyAttention(Idle.make({})))
+    sendMessage: (text, mode) =>
+      Effect.logDebug('Sending text to pane session', { paneId: config.paneId, text, mode }).pipe(
+        Effect.andThen(mode === 'steer' ? applyAttention(Idle.make({})) : Effect.void),
+        Effect.andThen(session.sendText(text, mode))
       ),
+    editQueuedMessage: (messageId, text) =>
+      Effect.logDebug('Editing a queued message', { paneId: config.paneId, messageId }).pipe(
+        Effect.andThen(session.editQueuedText(messageId, text))
+      ),
+    removeQueuedMessage: (messageId) =>
+      Effect.logDebug('Removing a queued message', { paneId: config.paneId, messageId }).pipe(
+        Effect.andThen(session.removeQueuedText(messageId))
+      ),
+    messageQueue: session.messageQueue,
     setThinkingLevel: (level) =>
       Effect.logDebug('Setting pane thinking level', { paneId: config.paneId, level }).pipe(
         Effect.andThen(session.setThinkingLevel(level))

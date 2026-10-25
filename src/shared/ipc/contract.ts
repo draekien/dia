@@ -6,6 +6,7 @@ import {
   Question,
   QuestionResponse
 } from '../domain/attention'
+import { MessageQueueSnapshot, OutgoingMessage, SendMode } from '../domain/message-queue'
 import {
   ConversationMessage,
   PermissionMode,
@@ -83,13 +84,37 @@ export type ChooseDirectoryResult = typeof ChooseDirectoryResult.Type
 /**
  * Command sent by the renderer to submit a user prompt to the pane identified
  * by `paneId`. Consumed by the pane
- * supervisor to forward `text` into that pane's agent session.
+ * supervisor to forward `text` into that pane's agent session. `mode` decides
+ * what happens while a turn runs: `queue` holds the message until the turn
+ * ends, `steer` interrupts the turn so the message runs next.
  */
 export const SendMessage = Schema.TaggedStruct('SendMessage', {
   paneId: Uuid,
-  text: Schema.String
+  text: Schema.String,
+  mode: SendMode
 })
 export type SendMessage = typeof SendMessage.Type
+
+/**
+ * Command sent by the renderer to replace the text of queued message
+ * `messageId` in pane `paneId`. A message already sent is left alone.
+ */
+export const EditQueuedMessage = Schema.TaggedStruct('EditQueuedMessage', {
+  paneId: Uuid,
+  messageId: Schema.String,
+  text: Schema.String
+})
+export type EditQueuedMessage = typeof EditQueuedMessage.Type
+
+/**
+ * Command sent by the renderer to remove queued message `messageId` from pane
+ * `paneId`, so the agent never receives it. A message already sent is left alone.
+ */
+export const RemoveQueuedMessage = Schema.TaggedStruct('RemoveQueuedMessage', {
+  paneId: Uuid,
+  messageId: Schema.String
+})
+export type RemoveQueuedMessage = typeof RemoveQueuedMessage.Type
 
 /**
  * Command sent by the renderer to answer a pending tool-permission prompt
@@ -415,6 +440,27 @@ export const PaneRewoundToCheckpoint = Schema.TaggedStruct('PaneRewoundToCheckpo
 export type PaneRewoundToCheckpoint = typeof PaneRewoundToCheckpoint.Type
 
 /**
+ * Event pushed to the renderer whenever the message queue of pane `paneId`
+ * changes, carrying the whole queue in send order. Replaces the queue the
+ * renderer shows.
+ */
+export const PaneMessageQueueChanged = Schema.TaggedStruct('PaneMessageQueueChanged', {
+  paneId: Uuid,
+  ...MessageQueueSnapshot.fields
+})
+export type PaneMessageQueueChanged = typeof PaneMessageQueueChanged.Type
+
+/**
+ * Event pushed to the renderer when pane `paneId` gives `messages` to the agent
+ * as one turn, in order. The renderer adds each to the transcript as a user turn.
+ */
+export const PaneUserMessagesSent = Schema.TaggedStruct('PaneUserMessagesSent', {
+  paneId: Uuid,
+  messages: Schema.Array(OutgoingMessage)
+})
+export type PaneUserMessagesSent = typeof PaneUserMessagesSent.Type
+
+/**
  * Event pushed to the renderer whenever the pane layout tree changes (pane
  * created, split, closed, or resized). `tree` is the full, current layout and
  * should replace the renderer's local copy rather than being merged.
@@ -490,6 +536,8 @@ export const IpcEvent = Schema.Union([
   PaneConversationReset,
   PaneCheckpointAvailable,
   PaneRewoundToCheckpoint,
+  PaneMessageQueueChanged,
+  PaneUserMessagesSent,
   LayoutChanged,
   PaneCreateFailed,
   PaneAttentionChanged,
@@ -529,7 +577,10 @@ export interface PluginApi {
  */
 export interface DiaApi {
   readonly plugins: PluginApi
-  sendMessage(paneId: string, text: string): void
+  sendMessage(paneId: string, text: string, mode: SendMode): void
+  editQueuedMessage(paneId: string, messageId: string, text: string): void
+  removeQueuedMessage(paneId: string, messageId: string): void
+  getMessageQueue(paneId: string): Promise<MessageQueueSnapshot>
   resolvePermission(paneId: string, requestId: string, response: PermissionResponse): void
   resolveQuestion(paneId: string, requestId: string, response: QuestionResponse): void
   splitPane(paneId: string, direction: 'row' | 'column'): void
@@ -555,6 +606,8 @@ export interface DiaApi {
   pickDirectory(): Promise<string | null>
   getTheme(): Promise<ThemePreference>
   setTheme(theme: ThemePreference): Promise<void>
+  getSendMode(): Promise<SendMode>
+  setSendMode(mode: SendMode): Promise<void>
   setTitleBarOverlay(colors: TitleBarOverlayColors): void
   getAppVersion(): Promise<string>
   getUpdateStatus(): Promise<UpdateStatus>
@@ -581,6 +634,8 @@ export interface DiaApi {
   onConversationReset(listener: (event: PaneConversationReset) => void): () => void
   onCheckpointAvailable(listener: (event: PaneCheckpointAvailable) => void): () => void
   onRewoundToCheckpoint(listener: (event: PaneRewoundToCheckpoint) => void): () => void
+  onMessageQueueChanged(listener: (event: PaneMessageQueueChanged) => void): () => void
+  onUserMessagesSent(listener: (event: PaneUserMessagesSent) => void): () => void
   onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void
   onAssistantThinkingDelta(listener: (event: PaneAssistantThinkingDelta) => void): () => void
   onToolCallStarted(listener: (event: PaneToolCallStarted) => void): () => void

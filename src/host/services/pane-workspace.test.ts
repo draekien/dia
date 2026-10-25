@@ -1,5 +1,6 @@
 import { NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
+import { EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
 import { type ConversationMessage, SessionId } from '@shared/domain/pane'
 import type { PaneNode } from '@shared/domain/pane-tree'
 import type { IpcEvent } from '@shared/ipc/contract'
@@ -22,6 +23,9 @@ const WORKTREES_ROOT = '/worktrees'
 
 const fakeHandle: PaneHandle = {
   sendMessage: () => Effect.void,
+  editQueuedMessage: () => Effect.void,
+  removeQueuedMessage: () => Effect.void,
+  messageQueue: Effect.succeed(EMPTY_MESSAGE_QUEUE),
   setThinkingLevel: () => Effect.void,
   setPermissionMode: () => Effect.void,
   resolvePermission: () => Effect.void,

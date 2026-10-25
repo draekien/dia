@@ -38,17 +38,17 @@ streaming turn.
 - **`Atom.subscriptionRef(effect)` gives `Writable<AsyncResult<A,E>, A>`: read is an
   `AsyncResult`, write is a bare `A`.** So `useAtomValue` yields `AsyncResult<PaneChatState>`
   (pending until history loads) — unwrap with `AsyncResult.getOrElse(..., () =>
-  emptyPaneChatState)` at the component and in the send action. Writing sets the
+  emptyPaneChatState)` at the component. Writing sets the
   underlying ref directly, and the forked fold fiber's subsequent
-  `SubscriptionRef.update`s build on the written value — this is what makes the
-  optimistic user-message append persist and later deltas fold on top of it.
+  `SubscriptionRef.update`s build on the written value, so later deltas fold on
+  top of it.
 
 - **The "current streaming turn" needs no stored id — it's derivable from the
   public state.** The reducer folds into `{ messages, isLoading }` with *no*
   hidden `streamingId` field (contrast the removed adapter's `TranslationState`
   with its open-message ids). The rule: a delta extends the trailing message iff
   it is an assistant message *and* `isLoading` is true; otherwise it opens a new
-  assistant message. `appendUserMessage` sets `isLoading` true, and only a
+  assistant message. `PaneUserMessagesSent` sets `isLoading` true, and only a
   terminal attention (`Completed`/`Errored`) clears it — so the trailing-assistant
   window is exactly one turn. This keeps every field of the state view-meaningful
   (nothing to hide from `MessageView`) and the reducer pure/total, mirroring the

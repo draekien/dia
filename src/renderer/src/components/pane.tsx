@@ -42,6 +42,7 @@ import {
   type PermissionResponse,
   type QuestionResponse
 } from '@shared/domain/attention'
+import type { SendMode } from '@shared/domain/message-queue'
 import {
   DEFAULT_PERMISSION_MODE,
   DEFAULT_THINKING_LEVEL,
@@ -64,23 +65,28 @@ import {
   Check,
   Loader2Icon,
   RotateCcw,
-  ShieldCheck
+  ShieldCheck,
+  SquareIcon
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { PaneChatState, PaneMessage, ToolCallPart } from '../lib/pane-chat'
 import { emptyPaneChatState, lastUserText } from '../lib/pane-chat'
 import {
   paneChatAtom,
+  paneEditQueuedAtom,
   paneInterruptAtom,
+  paneRemoveQueuedAtom,
   paneRewindAtom,
   paneSendAtom
 } from '../lib/pane-chat-atoms'
+import { sendModeAtom, sendModeForEnter } from '../lib/send-mode-atom'
 import { turnActivity } from '../lib/turn-activity'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import { Markdown } from './markdown'
 import { PermissionRequestCard } from './permission-request-card'
 import { PlanReviewCard } from './plan-review-card'
 import { PulseIndicator } from './pulse-indicator'
+import { QueuedMessages } from './queued-messages'
 import { SlashCommandMenu, slashMenuListboxId, slashMenuOptionId } from './slash-command-menu'
 import { TurnActivityLine } from './turn-activity-line'
 import { Bubble, BubbleContent } from './ui/bubble'
@@ -200,7 +206,7 @@ function ThinkingDisclosure({ content }: { content: string }): React.JSX.Element
  * Thinking parts render as a collapsed `Thinking` disclosure, click to expand.
  * Text parts render markdown directly with no reveal animation. When `onRewind`
  * is provided and the turn is a rewindable user turn (carries a
- * `checkpointUuid`), a hover-revealed separator marker is shown above the
+ * `checkpointUuid` and is not marked `rewindable: false`), a hover-revealed separator marker is shown above the
  * message — the branch point rewind restores to, just before this turn — with a
  * rewind action that invokes `onRewind` with this message.
  * Pass a message from a pane's chat state ({@link paneChatAtom}).
@@ -232,7 +238,11 @@ export function MessageView({
     )
   }
   const isUser = message.role === 'user'
-  const canRewind = isUser && message.checkpointUuid !== undefined && onRewind !== undefined
+  const canRewind =
+    isUser &&
+    message.checkpointUuid !== undefined &&
+    message.rewindable !== false &&
+    onRewind !== undefined
   return (
     <div className={canRewind ? 'group/turn' : undefined}>
       {canRewind && (
@@ -376,7 +386,10 @@ function PaneChat({
 
   const chat = AsyncResult.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
   const sendMessage = useAtomSet(paneSendAtom(paneId))
-  const interrupt = useAtomSet(paneInterruptAtom(paneId))
+  const editQueued = useAtomSet(paneEditQueuedAtom(paneId))
+  const removeQueued = useAtomSet(paneRemoveQueuedAtom(paneId))
+  const stop = useAtomSet(paneInterruptAtom(paneId))
+  const defaultSendMode = useAtomValue(sendModeAtom)
   const rewind = useAtomSet(paneRewindAtom(paneId))
   const [rewindTarget, setRewindTarget] = useState<PaneMessage | null>(null)
 
@@ -457,22 +470,24 @@ function PaneChat({
   const retryText = lastUserText(chat)
 
   const resend = (): void => {
-    if (retryText !== undefined) sendMessage(retryText)
+    if (retryText !== undefined) sendMessage({ text: retryText, mode: defaultSendMode })
   }
   const interruptAndRetry = (): void => {
-    interrupt()
-    resend()
+    if (retryText !== undefined) sendMessage({ text: retryText, mode: 'steer' })
   }
 
   const form = useForm({
     defaultValues: { text: '' },
-    onSubmit: ({ value, formApi }) => {
+    onSubmitMeta: { mode: defaultSendMode } as { readonly mode: SendMode },
+    onSubmit: ({ value, formApi, meta }) => {
       const text = value.text.trim()
       if (!text) return
-      sendMessage(text)
-      queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
-      queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, null)
-      queryClient.setQueryData<PanePlanReviewRequested | null>(pendingPlanReviewQueryKey, null)
+      sendMessage({ text, mode: meta.mode })
+      if (meta.mode === 'steer' || !isLoading) {
+        queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
+        queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, null)
+        queryClient.setQueryData<PanePlanReviewRequested | null>(pendingPlanReviewQueryKey, null)
+      }
       formApi.reset()
     }
   })
@@ -549,7 +564,7 @@ function PaneChat({
         className="mt-2"
         onSubmit={(event) => {
           event.preventDefault()
-          void form.handleSubmit()
+          void form.handleSubmit({ mode: defaultSendMode })
         }}
       >
         <form.Field name="text">
@@ -590,6 +605,12 @@ function PaneChat({
                     Loading commands…
                   </div>
                 )}
+                <QueuedMessages
+                  queued={chat.queued}
+                  held={chat.queueHeld}
+                  onEdit={(messageId, text) => editQueued({ messageId, text })}
+                  onRemove={removeQueued}
+                />
                 {isMenuOpen && token !== null && (
                   <SlashCommandMenu
                     paneId={paneId}
@@ -644,7 +665,9 @@ function PaneChat({
                         !event.nativeEvent.isComposing
                       ) {
                         event.preventDefault()
-                        void form.handleSubmit()
+                        void form.handleSubmit({
+                          mode: sendModeForEnter(defaultSendMode, event)
+                        })
                       }
                     }}
                     role="combobox"
@@ -663,11 +686,24 @@ function PaneChat({
                       value={permissionMode}
                       onChange={onPermissionModeChange}
                     />
+                    {isLoading && (
+                      <InputGroupButton
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        className="ml-auto"
+                        aria-label="Stop"
+                        title="Stop"
+                        onClick={() => stop()}
+                      >
+                        <SquareIcon />
+                      </InputGroupButton>
+                    )}
                     <InputGroupButton
                       type="submit"
                       variant="default"
                       size="icon-sm"
-                      className="ml-auto"
+                      className={cn(!isLoading && 'ml-auto')}
                       aria-label="Send message"
                       disabled={field.state.value.trim() === ''}
                     >

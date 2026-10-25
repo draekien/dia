@@ -1,7 +1,7 @@
-import { PaneAssistantTextDelta } from '@shared/ipc/contract'
+import { PaneAssistantTextDelta, PaneUserMessagesSent } from '@shared/ipc/contract'
 import { Duration } from 'effect'
 import { describe, expect, it } from 'vitest'
-import { appendUserMessage, emptyPaneChatState, reducePaneChat } from './pane-chat'
+import { emptyPaneChatState, reducePaneChat } from './pane-chat'
 import {
   ELAPSED_DELAY,
   formatElapsed,
@@ -12,7 +12,10 @@ import {
 
 const PANE = '00000000-0000-4000-8000-000000000000'
 
-const loadingNoAssistant = appendUserMessage(emptyPaneChatState, 'u-1', 'hi')
+const loadingNoAssistant = reducePaneChat(
+  emptyPaneChatState,
+  PaneUserMessagesSent.make({ paneId: PANE, messages: [{ id: 'u-1', text: 'hi' }] })
+)
 const loadingWithAssistant = reducePaneChat(
   loadingNoAssistant,
   PaneAssistantTextDelta.make({ paneId: PANE, text: 'on it' })

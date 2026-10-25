@@ -1,12 +1,15 @@
 import { NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import { Deny, FreeformResponse } from '@shared/domain/attention'
+import type { SendMode } from '@shared/domain/message-queue'
 import { type PaneNode, PaneNotFoundError } from '@shared/domain/pane-tree'
 import {
   CreatePane,
+  EditQueuedMessage,
   type IpcEvent,
   LayoutChanged,
   type PaneCreateFailed,
+  RemoveQueuedMessage,
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
@@ -48,10 +51,16 @@ interface HarnessOptions {
   readonly knownPanes?: ReadonlyArray<string>
   readonly sendMessageFails?: boolean
   readonly createPaneFails?: boolean
+  readonly storedSendMode?: SendMode
 }
 
-const sendMessage = (paneId: string, text: string, commandId: string) => ({
-  ...SendMessage.make({ paneId, text }),
+const sendMessage = (
+  paneId: string,
+  text: string,
+  commandId: string,
+  mode: SendMode = 'queue'
+) => ({
+  ...SendMessage.make({ paneId, text, mode }),
   commandId
 })
 
@@ -74,12 +83,21 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const known = new Set(options.knownPanes ?? [...live])
 
   const handle: PaneHandle = {
-    sendMessage: (text) =>
+    sendMessage: (text, mode) =>
       options.sendMessageFails
         ? Effect.die(new Error('session is gone'))
         : Effect.sync(() => {
-            calls.push(`sendMessage:${text}`)
+            calls.push(`sendMessage:${text}:${mode}`)
           }),
+    editQueuedMessage: (messageId, text) =>
+      Effect.sync(() => {
+        calls.push(`editQueuedMessage:${messageId}:${text}`)
+      }),
+    removeQueuedMessage: (messageId) =>
+      Effect.sync(() => {
+        calls.push(`removeQueuedMessage:${messageId}`)
+      }),
+    messageQueue: Effect.succeed({ queued: [{ id: 'm-1', text: 'later' }], held: true }),
     setThinkingLevel: () => Effect.void,
     setPermissionMode: () => Effect.void,
     resolvePermission: (requestId) =>
@@ -138,6 +156,11 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     setLastDirectory: () => Effect.void,
     getTheme: () => Effect.succeed(Option.none()),
     setTheme: () => Effect.void,
+    getSendMode: () => Effect.succeed(Option.fromNullishOr(options.storedSendMode)),
+    setSendMode: (mode) =>
+      Effect.sync(() => {
+        calls.push(`setSendMode:${mode}`)
+      }),
     getPluginOverrides: () => Effect.succeed({}),
     setPluginOverride: () => Effect.void,
     clearPluginOverride: () => Effect.void
@@ -232,7 +255,7 @@ describe('Dia RPC handlers', () => {
 
       assert.deepStrictEqual(
         harness.calls.filter((call) => call.startsWith('sendMessage')),
-        ['sendMessage:hello']
+        ['sendMessage:hello:queue']
       )
     })
   )
@@ -250,7 +273,7 @@ describe('Dia RPC handlers', () => {
 
       assert.deepStrictEqual(
         harness.calls.filter((call) => call.startsWith('sendMessage')),
-        ['sendMessage:again', 'sendMessage:again']
+        ['sendMessage:again:queue', 'sendMessage:again:queue']
       )
     })
   )
@@ -265,7 +288,10 @@ describe('Dia RPC handlers', () => {
           handlers.SendMessage(sendMessage(PANE_ID, 'wake up', 'req-1'))
         )
 
-        assert.deepStrictEqual(harness.calls, [`ensureLive:${PANE_ID}`, 'sendMessage:wake up'])
+        assert.deepStrictEqual(harness.calls, [
+          `ensureLive:${PANE_ID}`,
+          'sendMessage:wake up:queue'
+        ])
       })
   )
 
@@ -449,6 +475,88 @@ describe('Dia RPC handlers', () => {
       yield* withHandlers(harness, (handlers) => handlers.ClearPluginOverride({ name: 'chat' }))
 
       assert.deepStrictEqual(harness.calls, ['clearOverride:chat'])
+    })
+  )
+
+  it.effect('delivers the send mode a SendMessage names to the pane unchanged', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ livePanes: [PANE_ID] })
+
+      yield* withHandlers(harness, (handlers) =>
+        handlers.SendMessage(sendMessage(PANE_ID, 'change course', 'req-1', 'steer'))
+      )
+
+      assert.deepStrictEqual(
+        harness.calls.filter((call) => call.startsWith('sendMessage')),
+        ['sendMessage:change course:steer']
+      )
+    })
+  )
+
+  it.effect('delivers the message id and text of an EditQueuedMessage to the pane unchanged', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ livePanes: [PANE_ID] })
+
+      yield* withHandlers(harness, (handlers) =>
+        handlers.EditQueuedMessage({
+          ...EditQueuedMessage.make({ paneId: PANE_ID, messageId: 'm-7', text: 'edited text' }),
+          commandId: 'req-1'
+        })
+      )
+
+      assert.deepStrictEqual(harness.calls, ['editQueuedMessage:m-7:edited text'])
+    })
+  )
+
+  it.effect('delivers the message id of a RemoveQueuedMessage to the pane unchanged', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ livePanes: [PANE_ID] })
+
+      yield* withHandlers(harness, (handlers) =>
+        handlers.RemoveQueuedMessage({
+          ...RemoveQueuedMessage.make({ paneId: PANE_ID, messageId: 'm-7' }),
+          commandId: 'req-1'
+        })
+      )
+
+      assert.deepStrictEqual(harness.calls, ['removeQueuedMessage:m-7'])
+    })
+  )
+
+  it.effect('returns the live pane queue, and an empty queue for a pane with no session', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ livePanes: [PANE_ID] })
+
+      const [live, absent] = yield* withHandlers(harness, (handlers) =>
+        Effect.all([
+          handlers.GetMessageQueue({ paneId: PANE_ID }),
+          handlers.GetMessageQueue({ paneId: OTHER_PANE_ID })
+        ])
+      )
+
+      assert.deepStrictEqual(live, { queued: [{ id: 'm-1', text: 'later' }], held: true })
+      assert.deepStrictEqual(absent, { queued: [], held: false })
+    })
+  )
+
+  it.effect('reports queue as the send mode when none is stored', () =>
+    Effect.gen(function* () {
+      const mode = yield* withHandlers(makeHarness(), (handlers) => handlers.GetSendMode())
+
+      assert.strictEqual(mode, 'queue')
+    })
+  )
+
+  it.effect('reports the stored send mode and stores a new one', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ storedSendMode: 'steer' })
+
+      const mode = yield* withHandlers(harness, (handlers) =>
+        handlers.GetSendMode().pipe(Effect.tap(handlers.SetSendMode({ mode: 'queue' })))
+      )
+
+      assert.strictEqual(mode, 'steer')
+      assert.deepStrictEqual(harness.calls, ['setSendMode:queue'])
     })
   )
 })

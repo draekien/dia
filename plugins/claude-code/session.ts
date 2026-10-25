@@ -11,6 +11,7 @@ import {
   type AgentSession,
   type AgentSessionOptions,
   type DiaTool,
+  MessageQueueChanged,
   makePendingUserInput,
   type OutboundMessage,
   type PendingUserInput,
@@ -24,9 +25,11 @@ import {
   SlashCommandsAvailable,
   SlashCommandsWarming,
   TurnCompleted,
-  type UserInputResolution
+  type UserInputResolution,
+  UserMessagesSent
 } from '@dia/plugin'
 import type { QuestionResponse } from '@shared/domain/attention'
+import type { OutgoingMessage, SendMode } from '@shared/domain/message-queue'
 import type { PaneConfig, SessionId, ThinkingLevel } from '@shared/domain/pane'
 import {
   Cause,
@@ -39,6 +42,7 @@ import {
   Fiber,
   Match,
   Option,
+  Predicate,
   Queue,
   Ref,
   Result,
@@ -48,6 +52,21 @@ import {
   Stream
 } from 'effect'
 import { resolveClaudeExecutable } from './claude-executable'
+import {
+  dispatchEnded,
+  edit,
+  initialQueueState,
+  type QueueAction,
+  type QueueState,
+  type QueueTransition,
+  remove,
+  rewound,
+  send,
+  sessionEnded,
+  snapshotOf,
+  stopRequested,
+  turnEnded
+} from './message-queue'
 import {
   makePermissionModeController,
   type PermissionModeController
@@ -299,10 +318,11 @@ const interruptSession = Effect.fn('ClaudeCodeSession.interruptSession')(functio
 
 const claudeExecutablePath = resolveClaudeExecutable()
 
-const toSDKUserMessage = (text: string): SDKUserMessage => ({
+const toSDKUserMessage = (text: string, startsTurn = true): SDKUserMessage => ({
   type: 'user',
   message: { role: 'user', content: text },
-  parent_tool_use_id: null
+  parent_tool_use_id: null,
+  ...(startsTurn ? {} : { shouldQuery: false })
 })
 
 /**
@@ -391,7 +411,9 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     emit: (message: OutboundMessage) => Effect.Effect<void>,
     resume: Option.Option<SessionId>,
     branchAt: string | undefined,
-    queryOpened: Deferred.Deferred<void>
+    queryOpened: Deferred.Deferred<void>,
+    silentResultsRef: Ref.Ref<number>,
+    onTurnEnded: (ok: boolean) => Effect.Effect<void>
   ) {
     const continuesFrom = yield* resolveContinuesFrom(resume, branchAt, config.cwd)
     yield* Effect.logInfo('Starting query session', {
@@ -492,6 +514,20 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
         )
       }
 
+      if (outbound._tag === 'TurnErrored') {
+        yield* Ref.set(silentResultsRef, 0)
+      } else if (outbound._tag === 'TurnCompleted') {
+        const silent = yield* Ref.modify(silentResultsRef, (pending) =>
+          pending > 0 ? [true, pending - 1] : [false, pending]
+        )
+        if (silent) {
+          yield* Effect.logDebug('Dropped the result of a message that starts no turn', {
+            paneId: config.paneId
+          })
+          return
+        }
+      }
+
       const abortExpected = yield* Ref.get(abortExpectedRef)
       if (abortExpected && isTurnEnd(outbound)) {
         yield* Ref.set(abortExpectedRef, false)
@@ -500,11 +536,13 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
             paneId: config.paneId
           })
           yield* emit(TurnCompleted.make({}))
+          yield* onTurnEnded(true)
           return
         }
       }
 
       yield* emit(outbound)
+      if (isTurnEnd(outbound)) yield* onTurnEnded(outbound._tag === 'TurnCompleted')
     })
 
     yield* Stream.runForEach(events, (event) =>
@@ -585,6 +623,31 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
   const fiberRef = yield* Ref.make<Option.Option<Fiber.Fiber<void>>>(Option.none())
   const endedDeferred = yield* Deferred.make<string>()
   const restartLock = yield* Semaphore.make(1)
+  const queueRef = yield* Ref.make<QueueState>(initialQueueState)
+  const silentResultsRef = yield* Ref.make(0)
+  const messageCountRef = yield* Ref.make(0)
+  const openedAtMillis = yield* Clock.currentTimeMillis
+
+  const offerBatch = Effect.fnUntraced(function* (messages: ReadonlyArray<OutgoingMessage>) {
+    yield* Ref.update(silentResultsRef, (pending) => pending + messages.length - 1)
+    yield* Effect.forEach(
+      messages,
+      (message, index) =>
+        Queue.offer(promptQueue, toSDKUserMessage(message.text, index === messages.length - 1)),
+      { discard: true }
+    )
+  })
+
+  const transition = (step: (state: QueueState) => QueueTransition) => Ref.modify(queueRef, step)
+
+  const steerInterrupt = Effect.gen(function* () {
+    const state = yield* Ref.get(queueRef)
+    if (state._tag !== 'QueueRunning' || state.steered.length === 0) {
+      yield* Effect.logInfo('Skipped a steer interrupt; the turn it targeted already ended')
+      return
+    }
+    yield* interruptSession(pendingUserInput, queryRef, abortExpectedRef)
+  }).pipe(restartLock.withPermits(1))
 
   const startQuery = Effect.fn('ClaudeCodeSession.startQuery')(function* (
     config: PaneConfig,
@@ -609,7 +672,13 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
         emit,
         resume,
         branchAt,
-        queryOpened
+        queryOpened,
+        silentResultsRef,
+        (ok) =>
+          transition(turnEnded(ok)).pipe(
+            Effect.flatMap((actions) => performActions(actions)),
+            Effect.asVoid
+          )
       ).pipe(
         Effect.ensuring(Deferred.succeed(queryOpened, undefined)),
         Effect.flatMap((failure) =>
@@ -618,6 +687,8 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
             Option.getOrElse(failure, () => 'Agent session ended unexpectedly')
           )
         ),
+        Effect.andThen(transition(sessionEnded)),
+        Effect.flatMap((actions) => performActions(actions)),
         Effect.asVoid
       ),
       sessionScope
@@ -652,6 +723,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
 
       const fiberOpt = yield* Ref.get(fiberRef)
       if (Option.isSome(fiberOpt)) yield* Fiber.interrupt(fiberOpt.value)
+      yield* Ref.set(silentResultsRef, 0)
 
       const currentModeOpt = yield* modeController.currentMode
       const permissionMode = Option.getOrElse(currentModeOpt, () => config.permissionMode)
@@ -663,6 +735,44 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
       )
     }
   )
+
+  const dispatch = Effect.fn('ClaudeCodeSession.dispatch')(
+    function* (messages: ReadonlyArray<OutgoingMessage>) {
+      const messageIds = messages.map((message) => message.id)
+      if (yield* Deferred.isDone(endedDeferred)) {
+        yield* Effect.logWarning('Dropped a dispatch; the session has ended', { messageIds })
+        return
+      }
+      yield* restartForThinkingChange()
+      yield* supersedePendingRequests(pendingUserInput, abortExpectedRef)
+      yield* emit(UserMessagesSent.make({ messages }))
+      yield* offerBatch(messages)
+      yield* Effect.logInfo('Sent user messages as one turn', { messageIds })
+    },
+    restartLock.withPermits(1),
+    Effect.ensuring(transition(dispatchEnded))
+  )
+
+  function performActions(
+    actions: ReadonlyArray<QueueAction>,
+    interrupt: Effect.Effect<void> = interruptSession(pendingUserInput, queryRef, abortExpectedRef)
+  ): Effect.Effect<ReadonlyArray<Fiber.Fiber<void>>> {
+    return Effect.forEach(actions, (action) =>
+      Match.valueTags(action, {
+        DispatchAction: ({ messages }) => Effect.forkIn(dispatch(messages), sessionScope),
+        InterruptAction: () =>
+          Effect.logInfo('Interrupting the running turn').pipe(
+            Effect.andThen(interrupt),
+            Effect.as(undefined)
+          ),
+        QueueChangedAction: ({ queued, held }) =>
+          Effect.logDebug('Message queue changed', { queued: queued.length, held }).pipe(
+            Effect.andThen(emit(MessageQueueChanged.make({ queued, held }))),
+            Effect.as(undefined)
+          )
+      })
+    ).pipe(Effect.map((results) => results.filter(Predicate.isNotUndefined)))
+  }
 
   const rewindToCheckpoint = Effect.fn('ClaudeCodeSession.rewindToCheckpoint')(function* (
     messageUuid: string,
@@ -726,16 +836,30 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     } else {
       yield* startQuery({ ...config, permissionMode }, Option.none(), undefined)
     }
+    yield* Ref.set(silentResultsRef, 0)
+    yield* Ref.set(abortExpectedRef, false)
     yield* emit(RewoundToCheckpoint.make({ messageUuid }))
+    yield* performActions(yield* transition(rewound))
   }, restartLock.withPermits(1))
 
   yield* startQuery(options.config, options.resume, undefined)
 
-  const sendText = Effect.fn('ClaudeCodeSession.sendText')(function* (text: string) {
-    yield* restartForThinkingChange()
-    yield* supersedePendingRequests(pendingUserInput, abortExpectedRef)
-    yield* Queue.offer(promptQueue, toSDKUserMessage(text))
-  }, restartLock.withPermits(1))
+  const sendText = Effect.fn('ClaudeCodeSession.sendText')(function* (
+    text: string,
+    mode: SendMode
+  ) {
+    const count = yield* Ref.updateAndGet(messageCountRef, (sent) => sent + 1)
+    const message = { id: `${openedAtMillis}-${count}`, text }
+    yield* Effect.logDebug('Accepted a user message', { messageId: message.id, mode })
+    const dispatches = yield* performActions(yield* transition(send(message, mode)), steerInterrupt)
+    yield* Effect.forEach(dispatches, Fiber.join, { discard: true })
+  })
+
+  const changeQueue = Effect.fn('ClaudeCodeSession.changeQueue')(function* (
+    step: (state: QueueState) => QueueTransition
+  ) {
+    yield* performActions(yield* transition(step))
+  })
 
   const resolvePlanReview = Effect.fn('ClaudeCodeSession.resolvePlanReview')(function* (
     requestId: string,
@@ -750,13 +874,16 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
 
   return {
     sendText,
+    editQueuedText: (messageId, text) => changeQueue(edit(messageId, text)),
+    removeQueuedText: (messageId) => changeQueue(remove(messageId)),
+    messageQueue: Ref.get(queueRef).pipe(Effect.map(snapshotOf)),
     setThinkingLevel: (level) => Ref.set(desiredLevelRef, Option.some(level)),
     setPermissionMode: (mode) => modeController.applyMode(mode),
     resolvePermission: (requestId, response) =>
       resolveRequest(pendingUserInput, requestId, response),
     resolveQuestion: (requestId, response) => resolveRequest(pendingUserInput, requestId, response),
     resolvePlanReview,
-    interrupt: () => interruptSession(pendingUserInput, queryRef, abortExpectedRef),
+    interrupt: () => changeQueue(stopRequested),
     rewindToCheckpoint,
     ended: Deferred.await(endedDeferred)
   }

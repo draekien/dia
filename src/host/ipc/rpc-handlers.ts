@@ -1,3 +1,4 @@
+import { DEFAULT_SEND_MODE, EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
 import { DEFAULT_THEME } from '@shared/domain/theme'
 import { type IpcEvent, LayoutChanged, PaneCreateFailed } from '@shared/ipc/contract'
 import { DiaRpcs } from '@shared/ipc/rpc'
@@ -87,7 +88,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
         command.commandId,
         'SendMessage',
         withLiveHandle('SendMessage', command.paneId, 'Failed to send message to pane', (handle) =>
-          handle.sendMessage(command.text)
+          handle.sendMessage(command.text, command.mode)
         )
       ),
     ResolvePermission: (command) =>
@@ -225,10 +226,46 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
           (handle) => handle.rewindToCheckpoint(command.messageUuid, command.resumeAnchorUuid)
         )
       ),
+    EditQueuedMessage: (command) =>
+      once(
+        command.paneId,
+        command.commandId,
+        'EditQueuedMessage',
+        withHandle(
+          'EditQueuedMessage',
+          command.paneId,
+          'Failed to edit a queued message',
+          (handle) => handle.editQueuedMessage(command.messageId, command.text)
+        )
+      ),
+    RemoveQueuedMessage: (command) =>
+      once(
+        command.paneId,
+        command.commandId,
+        'RemoveQueuedMessage',
+        withHandle(
+          'RemoveQueuedMessage',
+          command.paneId,
+          'Failed to remove a queued message',
+          (handle) => handle.removeQueuedMessage(command.messageId)
+        )
+      ),
+    GetMessageQueue: ({ paneId }) =>
+      supervisor.getHandle(paneId).pipe(
+        Effect.flatMap(
+          Option.match({
+            onNone: () => Effect.succeed(EMPTY_MESSAGE_QUEUE),
+            onSome: (handle) => handle.messageQueue
+          })
+        )
+      ),
     GetInitialLayout: () => workspace.getTree(),
     GetPaneHistory: ({ paneId }) => workspace.getPaneHistory(paneId),
     GetTheme: () => settings.getTheme().pipe(Effect.map(Option.getOrElse(() => DEFAULT_THEME))),
     SetTheme: ({ theme }) => settings.setTheme(theme),
+    GetSendMode: () =>
+      settings.getSendMode().pipe(Effect.map(Option.getOrElse(() => DEFAULT_SEND_MODE))),
+    SetSendMode: ({ mode }) => settings.setSendMode(mode),
     GetLastDirectory: () => settings.getLastDirectory().pipe(Effect.map(Option.getOrNull)),
     RecordChosenDirectory: ({ path: chosenPath }) =>
       Effect.gen(function* () {

@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0030"
 date: 2026-07-18
 decision-makers: William Pei
 ---
@@ -32,7 +32,7 @@ The state lives in a per-pane `Atom.family` (`effect/reactivity` + `@effect/atom
 
 1. **Remount durability without a snapshot dance.** The atom lives in the effect-atom `Registry`, which is outside the React tree, so a split remount re-attaches to the *same* atom — its `SubscriptionRef` and forked IPC subscription never stopped. This removes the `resolveInitialMessages`/messages-mirror workaround ADR-0014 needed, and closes the mid-turn gap entirely: the subscription is continuous (not gated on `sendMessage`), so nothing is dropped across a remount.
 2. **Lifetime is idle-TTL-managed.** `Atom.setIdleTTL` keeps a pane's atom alive across the brief zero-subscriber window a remount creates, then disposes it (interrupting the forked fiber → releasing IPC subscriptions) once the pane is truly gone (closed). There is no per-node registry removal API; idle-TTL is the disposal mechanism.
-3. **Sending is a separate, explicit action.** The renderer never routed user turns through the observer stream. On submit, the pane optimistically appends a user message to the atom (a pure `appendUserMessage`) and calls `window.dia.sendMessage`; the assistant reply arrives back through the same IPC fold. `PaneMessageAppended{role:"user"}` stays ignored (no duplication), and the reducer derives `isLoading` from attention exactly as ADR-0014 did (`Completed`/`Errored` end the turn; `AwaitingPermission` keeps it loading).
+3. **Sending is a separate, explicit action.** The renderer never routed user turns through the observer stream. On submit, the pane optimistically appends a user message to the atom (a pure `appendUserMessage`) and calls `window.dia.sendMessage`; the assistant reply arrives back through the same IPC fold. `PaneMessageAppended{role:"user"}` stays ignored (no duplication), and the reducer derives `isLoading` from attention exactly as ADR-0014 did (`Completed`/`Errored` end the turn; `AwaitingPermission` keeps it loading). Amended by ADR-0030: the user turn is appended when the Host reports it sent (`PaneUserMessagesSent`), not on submit.
 
 Permission, clarifying-question, and attention state stay on TanStack Query with their existing `on*` IPC effects, unchanged — the conversation/control-affordance split from ADR-0014 is preserved. shadcn's `Message`/`Bubble`/`MessageScroller` primitives are presentational and stay; only the message *type* they render changes from `@tanstack/ai-client`'s `UIMessage` to dia's local parts model.
 

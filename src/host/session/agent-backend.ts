@@ -1,4 +1,9 @@
 import type { PermissionResponse, QuestionResponse } from '@shared/domain/attention'
+import {
+  EMPTY_MESSAGE_QUEUE,
+  type MessageQueueSnapshot,
+  type SendMode
+} from '@shared/domain/message-queue'
 import type {
   ConversationMessage,
   PaneConfig,
@@ -20,7 +25,17 @@ export const AGENT_BACKEND_KEY = 'agentBackend'
  * agent's reply, which arrives through the `emit` callback given when the session opened.
  */
 export interface AgentSession {
-  readonly sendText: (text: string) => Effect.Effect<void>
+  /**
+   * Sends a user message. With no turn running it is sent at once in either mode; during a turn
+   * `queue` holds it until the turn ends and `steer` interrupts the turn so it runs next.
+   */
+  readonly sendText: (text: string, mode: SendMode) => Effect.Effect<void>
+  /** Replaces the text of queued message `messageId`; a message already sent is left alone. */
+  readonly editQueuedText: (messageId: string, text: string) => Effect.Effect<void>
+  /** Removes queued message `messageId`; a message already sent is left alone. */
+  readonly removeQueuedText: (messageId: string) => Effect.Effect<void>
+  /** The messages waiting to be sent, in send order. */
+  readonly messageQueue: Effect.Effect<MessageQueueSnapshot>
   readonly setThinkingLevel: (level: ThinkingLevel) => Effect.Effect<void>
   readonly setPermissionMode: (mode: PermissionMode) => Effect.Effect<void>
   readonly resolvePermission: (
@@ -83,6 +98,9 @@ const ignored =
 
 const unavailableSession: AgentSession = {
   sendText: ignored('sendText'),
+  editQueuedText: ignored('editQueuedText'),
+  removeQueuedText: ignored('removeQueuedText'),
+  messageQueue: Effect.succeed(EMPTY_MESSAGE_QUEUE),
   setThinkingLevel: ignored('setThinkingLevel'),
   setPermissionMode: ignored('setPermissionMode'),
   resolvePermission: ignored('resolvePermission'),

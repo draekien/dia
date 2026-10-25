@@ -50,7 +50,8 @@ what identifier ties them together, or in what order to invoke them.
   `CheckpointAvailable` uuids (`messageUuid` and `resumeAnchorUuid`) were the uuids
   of the same user and assistant records in the session's `.jsonl` transcript.
 - **Correlate checkpoints FIFO, not "last".** A `CheckpointAvailable` arrives
-  *after* its turn is already optimistically rendered, in submission order, so the
+  *after* its turn is already rendered from `PaneUserMessagesSent` (the adapter
+  emits it before offering the batch to the SDK), in submission order, so the
   reducer binds each uuid to the *earliest* user turn still lacking one. Turns
   restored from history already carry a uuid and are skipped, which also makes
   replayed uuids on a resumed session idempotent (they match already-anchored
