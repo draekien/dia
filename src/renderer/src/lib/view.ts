@@ -51,10 +51,11 @@ export const openNewAgentForm = (
 
 /**
  * Whether a workspace change closes the open New agent form: true when the workspace now shows a
- * tab other than the one visible when the form opened.
+ * tab other than the one visible when the form opened, or the form's project is gone.
  */
 export const closesNewAgentForm = (form: NewAgentForm, workspace: Workspace): boolean =>
-  workspace.visibleTab !== null && workspace.visibleTab !== form.shownBefore
+  (workspace.visibleTab !== null && workspace.visibleTab !== form.shownBefore) ||
+  !workspace.projects.some((entry) => entry.project.projectId === form.projectId)
 
 /**
  * The {@link View} for a workspace and the open New agent form, in priority order: the form while

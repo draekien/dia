@@ -135,8 +135,10 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       const reconnecting = yield* Ref.getAndSet(connectedBefore, true)
       if (!reconnecting) return
       const client = yield* deps.client
-      const workspace = yield* client.GetWorkspace()
-      const summaries = yield* client.GetAgentSummaries()
+      const [workspace, summaries] = yield* Effect.all(
+        [client.GetWorkspace(), client.GetAgentSummaries()],
+        { concurrency: 'unbounded' }
+      )
       dispatch(WorkspaceChanged.make({ workspace }))
       dispatch(AgentSummariesReplaced.make({ summaries }))
     }).pipe(

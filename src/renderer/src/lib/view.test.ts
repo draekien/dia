@@ -118,4 +118,10 @@ describe('closesNewAgentForm', () => {
   it('keeps the form open while no tab is shown', () => {
     expect(closesNewAgentForm(formOpenedOver(PANE_A), workspace([PANE_A], null))).toBe(false)
   })
+
+  it('closes the form when its project is removed while no tab is shown', () => {
+    const removed: Workspace = { projects: [], visibleTab: null }
+
+    expect(closesNewAgentForm(formOpenedOver(null), removed)).toBe(true)
+  })
 })

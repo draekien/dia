@@ -210,6 +210,19 @@ describe('PersistenceService version 1 migration', () => {
     )
   )
 
+  it.effect('saves the migration, so a second load returns the same projects and names', () =>
+    withPersistence((dir) =>
+      Effect.gen(function* () {
+        yield* writeLegacy(dir)
+
+        const first = Option.getOrThrow(yield* load)
+        const second = Option.getOrThrow(yield* load)
+
+        assert.deepStrictEqual(second, first)
+      })
+    )
+  )
+
   it.effect('keeps the version 1 file as workspace.v1.json', () =>
     withPersistence((dir) =>
       Effect.gen(function* () {

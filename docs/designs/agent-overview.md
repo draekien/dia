@@ -196,7 +196,7 @@ It persists each pane's `activity` to `<userData>/activity.json` through `Persis
 - panes are grouped by `directoryKey(config.worktree?.sourceRepo ?? config.cwd)`; each group becomes a project, in the order its first pane appears in the tree, keeping the first spelling as `directory`; `isGitRepo` is detected when the project is created;
 - the tab name is the worktree slug when `config.worktree.branch` is `dia/<slug>`, else `generateAgentName`;
 - pending leaves are dropped; `visibleTab` is the first migrated tab;
-- the version 1 file is copied to `workspace.v1.json` before the first version 2 save.
+- the version 1 file is copied to `workspace.v1.json`, then the migrated workspace is saved as version 2 at once, so the next launch does not migrate again with new project ids and agent names.
 
 A migrated file always yields a valid `Workspace`. A file that decodes as neither version is handled as today: logged, and the workspace starts empty.
 

@@ -70,11 +70,6 @@ export const TitleBarOverlayColors = Schema.Struct({
 export type TitleBarOverlayColors = typeof TitleBarOverlayColors.Type
 
 /**
- * Result of choosing a directory (native picker plus the Host's git check).
- * `null` means the user cancelled the dialog; otherwise `path` is the
- * chosen directory and `isGitRepo` reports whether it contains a `.git` folder.
- */
-/**
  * Command sent by the renderer to submit a user prompt to the pane identified
  * by `paneId`. Consumed by the pane
  * supervisor to forward `text` into that pane's agent session. `mode` decides

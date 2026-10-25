@@ -15,9 +15,8 @@ const encodeSettings = Schema.encodeSync(Schema.fromJsonString(Settings, { space
 
 /**
  * Effect Context.Service for the app's persisted settings store.
- * Depend on this to read or update the user's last-opened directory, colour-theme choice, default send mode,
- * transcript width and
- * per-plugin source overrides (plugin name to source directory). Provide it via
+ * Depend on this to read or update the user's colour-theme choice, default send mode, transcript
+ * width and per-plugin source overrides (plugin name to source directory). Provide it via
  * {@link makeSettingsStoreLive}.
  */
 export class SettingsStore extends Context.Service<

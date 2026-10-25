@@ -223,15 +223,16 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         })
 
       const recordSessionId = (paneId: PaneId, sessionId: SessionId) =>
-        mutate('recordSession', (workspace) =>
-          WorkspaceOps.recordSession(workspace, paneId, sessionId)
-        ).pipe(
-          Effect.catchTag('TabNotFoundError', () =>
-            Effect.sync(() => pendingSessions.set(paneId, sessionId)).pipe(
-              Effect.andThen(
-                Effect.logDebug('Held a session id for a tab not added yet', { paneId })
-              )
-            )
+        mutate<never>('recordSession', (workspace) => {
+          const next = WorkspaceOps.recordSession(workspace, paneId, sessionId)
+          if (Result.isSuccess(next)) return Result.succeed(next.success)
+          pendingSessions.set(paneId, sessionId)
+          return Result.succeed(workspace)
+        }).pipe(
+          Effect.andThen(
+            Effect.logDebug('Recorded a session id, or held it for a tab not added yet', {
+              paneId
+            })
           )
         )
 
@@ -435,17 +436,16 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         )
 
         const name = yield* nameForTab(request, config.worktree?.branch)
-        const sessionId = pendingSessions.get(paneId)
-        pendingSessions.delete(paneId)
-        const tab: Tab =
-          sessionId === undefined
-            ? { name, config, archived: false }
-            : { name, config, sessionId, archived: false }
-        yield* mutate('addTab', (current, removing) =>
-          removing.has(projectId)
-            ? Result.fail(new ProjectNotFoundError({ projectId }))
-            : WorkspaceOps.addTab(current, projectId, tab)
-        ).pipe(Effect.tapError(() => supervisor.closePane(paneId)))
+        yield* mutate('addTab', (current, removing) => {
+          if (removing.has(projectId)) return Result.fail(new ProjectNotFoundError({ projectId }))
+          const sessionId = pendingSessions.get(paneId)
+          pendingSessions.delete(paneId)
+          const tab: Tab =
+            sessionId === undefined
+              ? { name, config, archived: false }
+              : { name, config, sessionId, archived: false }
+          return WorkspaceOps.addTab(current, projectId, tab)
+        }).pipe(Effect.tapError(() => supervisor.closePane(paneId)))
         yield* Effect.logInfo('Created tab', { projectId, paneId, name })
       })
 

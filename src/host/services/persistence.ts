@@ -38,9 +38,9 @@ export class PersistenceService extends Context.Service<
     readonly saveWorkspace: (workspace: Workspace) => Effect.Effect<void, PersistenceWriteError>
     /**
      * Reads the persisted workspace. A file written before projects existed is converted to
-     * projects and tabs, after a copy of it is kept as `workspace.v1.json`. Returns `None` when
-     * no workspace file exists yet (first launch) and, tolerantly, also when the file is
-     * unreadable or malformed; those cases are logged.
+     * projects and tabs and saved in the current format, after a copy of it is kept as
+     * `workspace.v1.json`. Returns `None` when no workspace file exists yet (first launch) and,
+     * tolerantly, also when the file is unreadable or malformed; those cases are logged.
      */
     readonly loadWorkspace: Effect.Effect<Option.Option<Workspace>>
     /** Atomically writes every tab's last activity line. Fails with {@link PersistenceWriteError}. */
@@ -121,10 +121,16 @@ export const makePersistenceServiceLive = (userDataPath: string) =>
               Effect.logWarning('Failed to keep a copy of the version 1 workspace', { cause })
             )
           )
-        return yield* migrateLegacyWorkspace(legacy).pipe(
+        const migrated = yield* migrateLegacyWorkspace(legacy).pipe(
           Effect.provideService(Path.Path, path),
           Effect.provideService(FileSystem.FileSystem, fs)
         )
+        yield* saveWorkspace(migrated).pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning('Failed to save the migrated workspace', { cause })
+          )
+        )
+        return migrated
       })
 
       const loadWorkspace = Effect.gen(function* () {
