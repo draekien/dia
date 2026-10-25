@@ -13,7 +13,8 @@ export {
   AGENT_BACKEND_KEY,
   type AgentBackend,
   type AgentSession,
-  type AgentSessionOptions
+  type AgentSessionOptions,
+  SessionDeleteError
 } from './session/agent-backend'
 export type { DiaTool, DiaToolField, DiaToolResult } from './session/dia-tools'
 export {

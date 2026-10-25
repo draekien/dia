@@ -1,4 +1,5 @@
 import type { AgentBackend } from '@dia/plugin'
+import { deleteSession } from './delete-session'
 import { openClaudeCodeSession } from './session'
 import { readHistory } from './transcript'
 
@@ -8,5 +9,6 @@ import { readHistory } from './transcript'
  */
 export const makeClaudeCodeBackend = (): AgentBackend => ({
   openSession: openClaudeCodeSession,
-  readHistory
+  readHistory,
+  deleteSession
 })

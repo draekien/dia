@@ -33,7 +33,8 @@ describe('resolveAgentBackend', () => {
     Effect.gen(function* () {
       const backend: AgentBackend = {
         openSession: () => Effect.die('not called'),
-        readHistory: () => Effect.succeed([{ role: 'user', content: 'hi' }])
+        readHistory: () => Effect.succeed([{ role: 'user', content: 'hi' }]),
+        deleteSession: () => Effect.void
       }
 
       const resolved = yield* resolveAgentBackend(registryProviding(Option.some(backend)))
@@ -73,13 +74,27 @@ describe('resolveAgentBackend', () => {
         assert.deepStrictEqual(history, [])
       })
     )
+
+    it.effect(`returns a backend whose deleteSession fails when ${name}`, () =>
+      Effect.gen(function* () {
+        const backend = yield* resolveAgentBackend(registryProviding(provided))
+
+        const error = yield* Effect.flip(backend.deleteSession(SessionId.make('s-1')))
+
+        assert.strictEqual(error.reason, 'The claude-code adapter is not loaded')
+      })
+    )
   }
 })
 
 describe('agentBackendProblems', () => {
-  const validBackend = { openSession: () => Effect.void, readHistory: () => Effect.succeed([]) }
+  const validBackend = {
+    openSession: () => Effect.void,
+    readHistory: () => Effect.succeed([]),
+    deleteSession: () => Effect.void
+  }
 
-  it('reports no problem for a value with both backend methods', () => {
+  it('reports no problem for a value with every backend method', () => {
     assert.deepStrictEqual(agentBackendProblems(Option.some(validBackend)), [])
   })
 
@@ -89,12 +104,12 @@ describe('agentBackendProblems', () => {
     ['nothing was provided', Option.none(), ['setup did not provide "agentBackend"']],
     [
       'openSession is missing',
-      Option.some({ readHistory: validBackend.readHistory }),
+      Option.some({ ...validBackend, openSession: undefined }),
       ['"agentBackend.openSession" is not a function']
     ],
     [
       'readHistory is not a function',
-      Option.some({ openSession: validBackend.openSession, readHistory: 'history' }),
+      Option.some({ ...validBackend, readHistory: 'history' }),
       ['"agentBackend.readHistory" is not a function']
     ],
     [
@@ -102,8 +117,14 @@ describe('agentBackendProblems', () => {
       Option.some(42),
       [
         '"agentBackend.openSession" is not a function',
-        '"agentBackend.readHistory" is not a function'
+        '"agentBackend.readHistory" is not a function',
+        '"agentBackend.deleteSession" is not a function'
       ]
+    ],
+    [
+      'deleteSession is missing',
+      Option.some({ ...validBackend, deleteSession: undefined }),
+      ['"agentBackend.deleteSession" is not a function']
     ]
   ]
 
@@ -124,7 +145,8 @@ describe('adapterContract', () => {
       key === AGENT_BACKEND_KEY ? Option.some({ openSession: () => Effect.void }) : Option.none()
 
     assert.deepStrictEqual(adapterContract.problems(provided), [
-      '"agentBackend.readHistory" is not a function'
+      '"agentBackend.readHistory" is not a function',
+      '"agentBackend.deleteSession" is not a function'
     ])
   })
 })
