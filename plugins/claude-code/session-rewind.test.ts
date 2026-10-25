@@ -3,7 +3,8 @@ import type { Options, SDKUserMessage, SessionMessage } from '@anthropic-ai/clau
 import type { OutboundMessage } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import type { PaneConfig, SessionId } from '@shared/domain/pane'
-import { Deferred, Effect, Fiber, Option } from 'effect'
+import { Deferred, Duration, Effect, Fiber, Option } from 'effect'
+import { TestClock } from 'effect/testing'
 import { vi } from 'vitest'
 import { openClaudeCodeSession } from './session'
 
@@ -187,6 +188,41 @@ describe('rewindToCheckpoint', () => {
 
       assert.deepStrictEqual(sdk.log, ['rewound turn-2', 'query 1 received sent during rewind'])
     })
+  )
+
+  it.effect('keeps the fork point when the thinking level changes before the fork is used', () =>
+    Effect.gen(function* () {
+      const { session } = yield* openResumed(twoTurns)
+      yield* session.rewindToCheckpoint('turn-2', 'reply-1')
+
+      yield* session.setThinkingLevel('high')
+      yield* session.sendText('after thinking change')
+      yield* settle
+
+      assert.strictEqual(queryAt(2).options.resume, SESSION)
+      assert.strictEqual(queryAt(2).options.resumeSessionAt, 'reply-1')
+      assert.isTrue(queryAt(2).options.forkSession)
+    })
+  )
+
+  it.effect(
+    'gives up a rewind whose files never finish rewinding, so prompts reach the session',
+    () =>
+      Effect.gen(function* () {
+        const { session, emitted } = yield* openResumed(twoTurns)
+        sdk.rewindGate = () => Effect.runPromise(Effect.never)
+
+        const rewind = yield* Effect.forkChild(session.rewindToCheckpoint('turn-2', 'reply-1'))
+        yield* settle
+        yield* TestClock.adjust(Duration.seconds(30))
+        yield* Fiber.join(rewind)
+        yield* session.sendText('after timeout')
+        yield* settle
+
+        assert.deepStrictEqual(queryAt(0).delivered, ['after timeout'])
+        assert.strictEqual(sdk.queries.length, 1)
+        assert.isFalse(emitted.some((message) => message._tag === 'RewoundToCheckpoint'))
+      })
   )
 
   it.effect('resumes from the assistant message before an anchorless turn', () =>

@@ -34,6 +34,7 @@ import {
   type Context,
   Data,
   Deferred,
+  Duration,
   Effect,
   Fiber,
   Match,
@@ -364,6 +365,8 @@ const resolveContinuesFrom = Effect.fn('ClaudeCodeSession.resolveContinuesFrom')
   return yield* readLastAssistantUuid(resume.value, cwd)
 })
 
+const REWIND_FILES_TIMEOUT = Duration.seconds(30)
+
 const resolveRewindAnchor = (
   sessionId: SessionId,
   cwd: string,
@@ -379,6 +382,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     config: PaneConfig,
     promptQueue: Queue.Queue<SDKUserMessage>,
     sessionIdRef: Ref.Ref<Option.Option<SessionId>>,
+    branchAtRef: Ref.Ref<Option.Option<string>>,
     queryRef: Ref.Ref<Option.Option<LiveControlQuery>>,
     modeController: PermissionModeController,
     abortExpectedRef: Ref.Ref<boolean>,
@@ -477,6 +481,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     const forward = Effect.fnUntraced(function* (outbound: OutboundMessage) {
       if (outbound._tag === 'SessionStarted') {
         yield* Ref.set(sessionIdRef, Option.some(outbound.sessionId))
+        yield* Ref.set(branchAtRef, Option.none())
       } else if (outbound._tag === 'ToolCallStarted' || outbound._tag === 'ToolCallCompleted') {
         yield* Effect.logDebug(
           `Tool call ${outbound._tag === 'ToolCallStarted' ? 'started' : 'completed'}`,
@@ -570,6 +575,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
   )
   const promptQueue = yield* Queue.unbounded<SDKUserMessage>()
   const sessionIdRef = yield* Ref.make<Option.Option<SessionId>>(Option.none())
+  const branchAtRef = yield* Ref.make<Option.Option<string>>(Option.none())
   const queryRef = yield* Ref.make<Option.Option<LiveControlQuery>>(Option.none())
   const abortExpectedRef = yield* Ref.make(false)
   const configRef = yield* Ref.make<Option.Option<PaneConfig>>(Option.none())
@@ -587,12 +593,14 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
   ) {
     yield* modeController.seed(config.permissionMode)
     yield* Ref.set(sessionIdRef, resume)
+    yield* Ref.set(branchAtRef, Option.fromUndefinedOr(branchAt))
     const queryOpened = yield* Deferred.make<void>()
     const fiber = yield* Effect.forkIn(
       runSession(
         config,
         promptQueue,
         sessionIdRef,
+        branchAtRef,
         queryRef,
         modeController,
         abortExpectedRef,
@@ -647,7 +655,12 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
 
       const currentModeOpt = yield* modeController.currentMode
       const permissionMode = Option.getOrElse(currentModeOpt, () => config.permissionMode)
-      yield* startQuery({ ...config, thinkingLevel: desired, permissionMode }, sessionId, undefined)
+      const branchAt = yield* Ref.get(branchAtRef)
+      yield* startQuery(
+        { ...config, thinkingLevel: desired, permissionMode },
+        sessionId,
+        Option.getOrUndefined(branchAt)
+      )
     }
   )
 
@@ -680,6 +693,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
       try: () => queryOpt.value.rewindFiles(messageUuid),
       catch: (cause) => new SessionStreamError({ cause })
     }).pipe(
+      Effect.timeout(REWIND_FILES_TIMEOUT),
       Effect.tapCause((cause) =>
         Effect.logError('rewindFiles failed', { paneId: config.paneId, messageUuid, cause })
       ),

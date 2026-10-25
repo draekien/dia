@@ -115,8 +115,9 @@ export const paneChatAtom = Atom.family((paneId: string) =>
   ).pipe(Atom.setIdleTTL(IDLE_TTL))
 )
 
-const nextUserMessageId = (paneId: string, state: PaneChatState): string =>
-  `${paneId}:user:${state.messages.length}`
+let sentUserMessages = 0
+
+const nextUserMessageId = (paneId: string): string => `${paneId}:user:${++sentUserMessages}`
 
 /**
  * Per-pane send action, keyed by `paneId`. Set it with the prompt `text` to
@@ -130,10 +131,7 @@ export const paneSendAtom = Atom.family((paneId: string) =>
     (): null => null,
     (ctx, text: string) => {
       const current = AsyncResult.getOrElse(ctx.get(paneChatAtom(paneId)), () => emptyPaneChatState)
-      ctx.set(
-        paneChatAtom(paneId),
-        appendUserMessage(current, nextUserMessageId(paneId, current), text)
-      )
+      ctx.set(paneChatAtom(paneId), appendUserMessage(current, nextUserMessageId(paneId), text))
       window.dia.sendMessage(paneId, text)
     }
   )
