@@ -1,4 +1,5 @@
 export { PlanReviewResponse, Question } from '../shared/domain/attention'
+export { OutgoingMessage } from '../shared/domain/message-queue'
 export { SessionId } from '../shared/domain/pane'
 export * from '../shared/plugin/api'
 export {

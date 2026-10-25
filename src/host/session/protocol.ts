@@ -1,4 +1,5 @@
 import { PaneError, PermissionUpdate, Question } from '@shared/domain/attention'
+import { OutgoingMessage } from '@shared/domain/message-queue'
 import { ConversationMessage, PermissionMode, SessionId } from '@shared/domain/pane'
 import { SlashCommandInfo } from '@shared/domain/slash-command'
 import { Schema } from 'effect'
@@ -86,6 +87,15 @@ export const CheckpointAvailable = Schema.TaggedStruct('CheckpointAvailable', {
 export const RewoundToCheckpoint = Schema.TaggedStruct('RewoundToCheckpoint', {
   messageUuid: Schema.String
 })
+/** Emitted by a pane's agent session whenever its message queue changes, carrying the whole queue in send order. `held` is true when the queue waits for the next user send instead of the next turn end. */
+export const MessageQueueChanged = Schema.TaggedStruct('MessageQueueChanged', {
+  queued: Schema.Array(OutgoingMessage),
+  held: Schema.Boolean
+})
+/** Emitted by a pane's agent session when it gives `messages` to the agent as one turn, in order. The renderer adds each to the transcript as a user turn; the Host clears the pane's attention. */
+export const UserMessagesSent = Schema.TaggedStruct('UserMessagesSent', {
+  messages: Schema.Array(OutgoingMessage)
+})
 
 /** The full set of events a pane's agent session may emit. Match on `_tag` to translate each into renderer events and attention transitions. */
 export const OutboundMessage = Schema.Union([
@@ -106,6 +116,8 @@ export const OutboundMessage = Schema.Union([
   ConversationCompacted,
   ConversationReset,
   CheckpointAvailable,
-  RewoundToCheckpoint
+  RewoundToCheckpoint,
+  MessageQueueChanged,
+  UserMessagesSent
 ])
 export type OutboundMessage = typeof OutboundMessage.Type

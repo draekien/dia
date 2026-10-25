@@ -5,10 +5,12 @@ import {
   ClosePane,
   CreatePane,
   type DiaApi,
+  EditQueuedMessage,
   FocusPane,
   InterruptPane,
   type IpcEvent,
   LayoutChanged,
+  RemoveQueuedMessage,
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
@@ -168,10 +170,25 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       clearOverride: (name) => query((client) => client.ClearPluginOverride({ name })),
       onStatusChanged: (listener) => subscribeTo('PluginStatusChanged', listener)
     },
-    sendMessage: (paneId, text) =>
+    sendMessage: (paneId, text, mode) =>
       command('SendMessage', (client, commandId) =>
-        client.SendMessage({ ...SendMessage.make({ paneId, text }), commandId })
+        client.SendMessage({ ...SendMessage.make({ paneId, text, mode }), commandId })
       ),
+    editQueuedMessage: (paneId, messageId, text) =>
+      command('EditQueuedMessage', (client, commandId) =>
+        client.EditQueuedMessage({
+          ...EditQueuedMessage.make({ paneId, messageId, text }),
+          commandId
+        })
+      ),
+    removeQueuedMessage: (paneId, messageId) =>
+      command('RemoveQueuedMessage', (client, commandId) =>
+        client.RemoveQueuedMessage({
+          ...RemoveQueuedMessage.make({ paneId, messageId }),
+          commandId
+        })
+      ),
+    getMessageQueue: (paneId) => query((client) => client.GetMessageQueue({ paneId })),
     resolvePermission: (paneId, requestId, response) =>
       command('ResolvePermission', (client, id) =>
         client.ResolvePermission({
@@ -247,6 +264,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     pickDirectory: () => deps.pickDirectory(null),
     getTheme: () => query((client) => client.GetTheme()),
     setTheme: (theme) => query((client) => client.SetTheme({ theme })),
+    getSendMode: () => query((client) => client.GetSendMode()),
+    setSendMode: (mode) => query((client) => client.SetSendMode({ mode })),
     onHistoryReloadRequested: (listener) => {
       reloadListeners.add(listener)
       return () => reloadListeners.delete(listener)
@@ -264,6 +283,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     onConversationReset: (listener) => subscribeTo('PaneConversationReset', listener),
     onCheckpointAvailable: (listener) => subscribeTo('PaneCheckpointAvailable', listener),
     onRewoundToCheckpoint: (listener) => subscribeTo('PaneRewoundToCheckpoint', listener),
+    onMessageQueueChanged: (listener) => subscribeTo('PaneMessageQueueChanged', listener),
+    onUserMessagesSent: (listener) => subscribeTo('PaneUserMessagesSent', listener),
     onAssistantTextDelta: (listener) => subscribeTo('PaneAssistantTextDelta', listener),
     onAssistantThinkingDelta: (listener) => subscribeTo('PaneAssistantThinkingDelta', listener),
     onToolCallStarted: (listener) => subscribeTo('PaneToolCallStarted', listener),

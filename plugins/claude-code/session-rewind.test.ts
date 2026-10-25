@@ -179,7 +179,7 @@ describe('rewindToCheckpoint', () => {
 
       const rewind = yield* Effect.forkChild(session.rewindToCheckpoint('turn-2', 'reply-1'))
       yield* settle
-      const send = yield* Effect.forkChild(session.sendText('sent during rewind'))
+      const send = yield* Effect.forkChild(session.sendText('sent during rewind', 'queue'))
       yield* settle
       yield* Deferred.succeed(rewindReleased, undefined)
       yield* Fiber.join(rewind)
@@ -196,7 +196,7 @@ describe('rewindToCheckpoint', () => {
       yield* session.rewindToCheckpoint('turn-2', 'reply-1')
 
       yield* session.setThinkingLevel('high')
-      yield* session.sendText('after thinking change')
+      yield* session.sendText('after thinking change', 'queue')
       yield* settle
 
       assert.strictEqual(queryAt(2).options.resume, SESSION)
@@ -216,7 +216,7 @@ describe('rewindToCheckpoint', () => {
         yield* settle
         yield* TestClock.adjust(Duration.seconds(30))
         yield* Fiber.join(rewind)
-        yield* session.sendText('after timeout')
+        yield* session.sendText('after timeout', 'queue')
         yield* settle
 
         assert.deepStrictEqual(queryAt(0).delivered, ['after timeout'])

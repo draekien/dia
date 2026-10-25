@@ -1,4 +1,5 @@
 import { assert, describe, it } from '@effect/vitest'
+import { EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
 import {
   type PaneConfig,
   type PermissionMode,
@@ -12,7 +13,12 @@ import { TestClock } from 'effect/testing'
 import { HostPlugins } from '../plugins/host-plugins'
 import { PluginSources } from '../plugins/plugin-sources'
 import type { AgentSession } from '../session/agent-backend'
-import { type OutboundMessage, SessionStarted } from '../session/protocol'
+import {
+  MessageQueueChanged,
+  type OutboundMessage,
+  SessionStarted,
+  UserMessagesSent
+} from '../session/protocol'
 import {
   type PaneCreationRequest,
   PaneSupervisor,
@@ -110,6 +116,9 @@ function makeTestSetup(
             Effect.sync(() => void calls.push([name, ...args.map(String)].join(':')))
         const session: AgentSession = {
           sendText: record('sendText'),
+          editQueuedText: record('editQueuedText'),
+          removeQueuedText: record('removeQueuedText'),
+          messageQueue: Effect.succeed(EMPTY_MESSAGE_QUEUE),
           setThinkingLevel: record('setThinkingLevel'),
           setPermissionMode: record('setPermissionMode'),
           resolvePermission: record('resolvePermission'),
@@ -193,8 +202,8 @@ describe('PaneSupervisor', () => {
         assert.isTrue(sessions[0].closed)
         assert.isFalse(sessions[1].closed)
 
-        yield* openedB.handle.sendMessage('ping')
-        assert.deepStrictEqual(sessions[1].calls, ['sendText:ping'])
+        yield* openedB.handle.sendMessage('ping', 'queue')
+        assert.deepStrictEqual(sessions[1].calls, ['sendText:ping:queue'])
 
         assert.deepStrictEqual(
           eventsA.map((event) => event._tag),
@@ -525,7 +534,7 @@ describe('PaneSupervisor', () => {
   )
 
   it.effect(
-    'sending while AwaitingPermission clears attention so a later TurnCompleted lands',
+    'steering while AwaitingPermission clears attention so a later TurnCompleted lands',
     () =>
       Effect.gen(function* () {
         const { sessions, testLayer } = makeTestSetup()
@@ -547,12 +556,12 @@ describe('PaneSupervisor', () => {
             toolName: 'Bash',
             input: {}
           })
-          yield* opened.handle.sendMessage('take this instead')
+          yield* opened.handle.sendMessage('take this instead', 'steer')
           yield* sessions[0].emit({ _tag: 'TurnCompleted' })
           yield* flush
 
           assert.deepStrictEqual(attentionTags(events), ['AwaitingPermission', 'Idle', 'Completed'])
-          assert.deepStrictEqual(sessions[0].calls, ['sendText:take this instead'])
+          assert.deepStrictEqual(sessions[0].calls, ['sendText:take this instead:steer'])
         }).pipe(Effect.scoped, Effect.provide(testLayer))
       })
   )
@@ -583,6 +592,100 @@ describe('PaneSupervisor', () => {
 
         assert.deepStrictEqual(attentionTags(events), ['AwaitingPermission', 'Idle'])
         assert.deepStrictEqual(sessions[0].calls, ['interrupt'])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('queueing while AwaitingPermission leaves the permission pending', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        const events: Array<IpcEvent> = []
+
+        const opened = yield* supervisor.openPane(
+          requestA,
+          (event) => Effect.sync(() => void events.push(event)),
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+
+        yield* sessions[0].emit({
+          _tag: 'PermissionRequested',
+          requestId: 'req-1',
+          toolName: 'Bash',
+          input: {}
+        })
+        yield* opened.handle.sendMessage('after you finish', 'queue')
+        yield* flush
+
+        assert.deepStrictEqual(attentionTags(events), ['AwaitingPermission'])
+        assert.deepStrictEqual(sessions[0].calls, ['sendText:after you finish:queue'])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('a batch of sent user messages moves a Completed pane back to Idle', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        const events: Array<IpcEvent> = []
+
+        yield* supervisor.openPane(
+          requestA,
+          (event) => Effect.sync(() => void events.push(event)),
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+
+        yield* sessions[0].emit({ _tag: 'TurnCompleted' })
+        yield* sessions[0].emit(UserMessagesSent.make({ messages: [{ id: 'm-1', text: 'next' }] }))
+        yield* flush
+
+        assert.deepStrictEqual(attentionTags(events), ['Completed', 'Idle'])
+        assert.deepStrictEqual(
+          events.find((event) => event._tag === 'PaneUserMessagesSent'),
+          {
+            _tag: 'PaneUserMessagesSent',
+            paneId: requestA.paneId,
+            messages: [{ id: 'm-1', text: 'next' }]
+          }
+        )
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('publishes a session queue change as a pane event carrying the queue', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        const events: Array<IpcEvent> = []
+
+        yield* supervisor.openPane(
+          requestA,
+          (event) => Effect.sync(() => void events.push(event)),
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+
+        yield* sessions[0].emit(
+          MessageQueueChanged.make({ queued: [{ id: 'm-2', text: 'later' }], held: true })
+        )
+        yield* flush
+
+        assert.deepStrictEqual(events, [
+          {
+            _tag: 'PaneMessageQueueChanged',
+            paneId: requestA.paneId,
+            queued: [{ id: 'm-2', text: 'later' }],
+            held: true
+          }
+        ])
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })
   )

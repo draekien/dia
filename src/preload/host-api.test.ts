@@ -36,7 +36,7 @@ interface ClientScript {
 const makeClient = (script: ClientScript = {}) => {
   let sendAttempts = 0
   let subscribeAttempts = 0
-  const sendMessage = vi.fn((_payload: { commandId: string }) =>
+  const sendMessage = vi.fn((_payload: { commandId: string; text: string; mode: string }) =>
     ++sendAttempts <= (script.sendMessageFailures ?? 0)
       ? Effect.fail(new ConnectionError({ reason: 'connection down' }))
       : Effect.void
@@ -108,7 +108,7 @@ describe('makeHostApi', () => {
     const { client, sendMessage } = makeClient({ sendMessageFailures: 2 })
     const { api, issuedRequestIds } = makeApi(client)
 
-    api.sendMessage(PANE, 'hello')
+    api.sendMessage(PANE, 'hello', 'queue')
     await advance(1200)
 
     expect(sendMessage.mock.calls.map(([payload]) => payload.commandId)).toEqual([
@@ -117,6 +117,18 @@ describe('makeHostApi', () => {
       'request-0'
     ])
     expect(issuedRequestIds()).toBe(1)
+  })
+
+  it('sends the prompt text and send mode in the SendMessage payload unchanged', async () => {
+    const { client, sendMessage } = makeClient()
+    const { api } = makeApi(client)
+
+    api.sendMessage(PANE, 'change course', 'steer')
+    await advance(0)
+
+    expect(sendMessage.mock.calls.map(([payload]) => [payload.text, payload.mode])).toEqual([
+      ['change course', 'steer']
+    ])
   })
 
   it('sends the pending prompt requestId separately from the commandId when resolving a prompt', async () => {
@@ -145,7 +157,7 @@ describe('makeHostApi', () => {
     const { client, sendMessage } = makeClient({ sendMessageFailures: Number.MAX_SAFE_INTEGER })
     const { api, warn } = makeApi(client)
 
-    api.sendMessage(PANE, 'hello')
+    api.sendMessage(PANE, 'hello', 'queue')
     await advance(31_000)
     const attemptsAtWindowEnd = sendMessage.mock.calls.length
     await advance(5_000)
