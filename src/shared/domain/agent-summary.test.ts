@@ -1,4 +1,3 @@
-import { Option } from 'effect'
 import { describe, expect, it } from 'vitest'
 import type { IpcEvent } from '../ipc/contract'
 import {

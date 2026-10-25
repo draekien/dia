@@ -1,4 +1,4 @@
-import { Option, Result, Schema } from 'effect'
+import { Result, Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
 import type { PaneId } from './pane'
 import { SessionId } from './pane'

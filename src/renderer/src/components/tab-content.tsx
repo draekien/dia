@@ -3,6 +3,7 @@ import { TRANSCRIPT_WIDTHS, type TranscriptWidth } from '@shared/domain/transcri
 import { tabOf } from '@shared/domain/workspace'
 import { Result } from 'effect'
 import { FolderPlusIcon, PlusIcon, RulerIcon } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { newAgent, registerProject } from '../lib/actions'
 import { MAIN_HEADER, Slot } from '../lib/slots'
 import { useTranscriptWidth, useView, useWorkspace } from '../plugin-api'
@@ -124,10 +125,12 @@ function EmptyProject({ project }: { readonly project: Project }) {
 
 function VisibleTab({
   workspace,
-  paneId
+  paneId,
+  focusComposer
 }: {
   readonly workspace: Workspace
   readonly paneId: string
+  readonly focusComposer: boolean
 }) {
   const found = tabOf(workspace, paneId)
   if (Result.isFailure(found)) return null
@@ -141,6 +144,7 @@ function VisibleTab({
           paneId={config.paneId}
           thinkingLevel={config.thinkingLevel}
           permissionMode={config.permissionMode}
+          focusComposer={focusComposer}
         />
       </div>
     </div>
@@ -155,10 +159,17 @@ function VisibleTab({
 export function TabContent() {
   const view = useView()
   const workspace = useWorkspace()
+  const previousView = useRef(view)
+  const cameFromNewAgent = previousView.current?._tag === 'NewAgentView'
+  useEffect(() => {
+    previousView.current = view
+  }, [view])
   if (view === undefined || workspace === undefined) return <StartupSkeleton />
   switch (view._tag) {
     case 'TabView':
-      return <VisibleTab workspace={workspace} paneId={view.paneId} />
+      return (
+        <VisibleTab workspace={workspace} paneId={view.paneId} focusComposer={cameFromNewAgent} />
+      )
     case 'NewAgentView': {
       const entry = workspace.projects.find(
         (candidate) => candidate.project.projectId === view.projectId

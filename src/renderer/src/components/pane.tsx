@@ -98,6 +98,7 @@ interface PaneProps {
   paneId: string
   thinkingLevel?: ThinkingLevel
   permissionMode?: PermissionMode
+  focusComposer?: boolean
 }
 
 const transcriptColumn = cva('mx-auto w-full', {
@@ -377,7 +378,8 @@ function PaneChat({
   onThinkingLevelChange,
   permissionMode,
   onPermissionModeChange,
-  column
+  column,
+  focusComposer
 }: {
   paneId: string
   attention: AttentionState
@@ -386,6 +388,7 @@ function PaneChat({
   permissionMode: PermissionMode
   column: string
   onPermissionModeChange: (mode: PermissionMode) => void
+  focusComposer: boolean
 }): React.JSX.Element {
   const queryClient = useQueryClient()
   const pendingPermissionQueryKey = ['pane', paneId, 'pendingPermission'] as const
@@ -405,6 +408,11 @@ function PaneChat({
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [caret, setCaret] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: focuses once, when the composer first mounts
+  useEffect(() => {
+    if (focusComposer) textareaRef.current?.focus()
+  }, [])
 
   const { data: pendingPermission = null } = useQuery<PanePermissionRequested | null>({
     queryKey: pendingPermissionQueryKey,
@@ -766,7 +774,7 @@ function PaneChat({
   )
 }
 
-function Pane({ paneId, thinkingLevel, permissionMode }: PaneProps) {
+function Pane({ paneId, thinkingLevel, permissionMode, focusComposer = false }: PaneProps) {
   const queryClient = useQueryClient()
   const width = useAtomValue(transcriptWidthAtom)
   const attentionQueryKey = ['pane', paneId, 'attention'] as const
@@ -812,6 +820,7 @@ function Pane({ paneId, thinkingLevel, permissionMode }: PaneProps) {
         permissionMode={mode}
         onPermissionModeChange={changePermissionMode}
         column={transcriptColumn({ width })}
+        focusComposer={focusComposer}
       />
     </div>
   )
