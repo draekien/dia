@@ -74,7 +74,7 @@ export function ProjectGroup({
             {...sortable.listeners}
             aria-roledescription="sortable project"
             aria-expanded={open}
-            aria-label={`${project.displayName}, ${count} agents${urgent === null || open ? '' : `, ${statusLabel(urgent)}`}`}
+            aria-label={`${project.displayName}, ${count} ${group.total === 1 ? 'agent' : 'agents'}${urgent === null || open ? '' : `, ${statusLabel(urgent)}`}`}
             onClick={onToggle}
             onKeyDown={(event) => {
               sortable.listeners?.onKeyDown?.(event)

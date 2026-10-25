@@ -385,7 +385,7 @@ export function AgentOverview() {
         </p>
       )}
 
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
         <nav
           ref={listRef}
           aria-label="Projects and agents"
