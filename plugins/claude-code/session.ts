@@ -649,8 +649,6 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     yield* interruptSession(pendingUserInput, queryRef, abortExpectedRef)
   }).pipe(restartLock.withPermits(1))
 
-  const stopInterrupt = interruptSession(pendingUserInput, queryRef, abortExpectedRef)
-
   const startQuery = Effect.fn('ClaudeCodeSession.startQuery')(function* (
     config: PaneConfig,
     resume: Option.Option<SessionId>,
@@ -678,7 +676,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
         silentResultsRef,
         (ok) =>
           transition(turnEnded(ok)).pipe(
-            Effect.flatMap((actions) => performActions(actions, stopInterrupt)),
+            Effect.flatMap((actions) => performActions(actions)),
             Effect.asVoid
           )
       ).pipe(
@@ -690,7 +688,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
           )
         ),
         Effect.andThen(transition(sessionEnded)),
-        Effect.flatMap((actions) => performActions(actions, stopInterrupt)),
+        Effect.flatMap((actions) => performActions(actions)),
         Effect.asVoid
       ),
       sessionScope
@@ -757,7 +755,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
 
   function performActions(
     actions: ReadonlyArray<QueueAction>,
-    interrupt: Effect.Effect<void>
+    interrupt: Effect.Effect<void> = interruptSession(pendingUserInput, queryRef, abortExpectedRef)
   ): Effect.Effect<ReadonlyArray<Fiber.Fiber<void>>> {
     return Effect.forEach(actions, (action) =>
       Match.valueTags(action, {
@@ -841,7 +839,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     yield* Ref.set(silentResultsRef, 0)
     yield* Ref.set(abortExpectedRef, false)
     yield* emit(RewoundToCheckpoint.make({ messageUuid }))
-    yield* performActions(yield* transition(rewound), stopInterrupt)
+    yield* performActions(yield* transition(rewound))
   }, restartLock.withPermits(1))
 
   yield* startQuery(options.config, options.resume, undefined)
@@ -860,7 +858,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
   const changeQueue = Effect.fn('ClaudeCodeSession.changeQueue')(function* (
     step: (state: QueueState) => QueueTransition
   ) {
-    yield* performActions(yield* transition(step), stopInterrupt)
+    yield* performActions(yield* transition(step))
   })
 
   const resolvePlanReview = Effect.fn('ClaudeCodeSession.resolvePlanReview')(function* (

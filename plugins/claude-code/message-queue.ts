@@ -52,11 +52,13 @@ export const initialQueueState: QueueState = QueueIdle.make({ queued: [], held: 
 
 type Queued = ReadonlyArray<OutgoingMessage>
 
+const heldFor = (queued: Queued, held: boolean) => held && queued.length > 0
+
 const queueChanged = (queued: Queued, held: boolean) =>
-  QueueChangedAction.make({ queued, held: held && queued.length > 0 })
+  QueueChangedAction.make({ queued, held: heldFor(queued, held) })
 
 const idle = (queued: Queued, held: boolean) =>
-  QueueIdle.make({ queued, held: held && queued.length > 0 })
+  QueueIdle.make({ queued, held: heldFor(queued, held) })
 
 const running = (state: typeof QueueRunning.Type, changes: Partial<typeof QueueRunning.Type>) =>
   QueueRunning.make({ ...state, ...changes })
@@ -85,11 +87,8 @@ export const send =
     if (state.steered.length > 0) {
       return [[], running(state, { steered: [...state.steered, message] })]
     }
-    const releasesHold = state.held
     return [
-      releasesHold
-        ? [InterruptAction.make({}), queueChanged(state.queued, false)]
-        : [InterruptAction.make({})],
+      [InterruptAction.make({}), ...(state.held ? [queueChanged(state.queued, false)] : [])],
       running(state, { steered: [message], held: false })
     ]
   }
@@ -130,7 +129,7 @@ export const stopRequested = (state: QueueState): QueueTransition => {
   const held = queued.length > 0
   const changed = state.steered.length > 0 || held !== state.held
   return [
-    changed ? [InterruptAction.make({}), queueChanged(queued, held)] : [InterruptAction.make({})],
+    [InterruptAction.make({}), ...(changed ? [queueChanged(queued, held)] : [])],
     running(state, { queued, held, steered: [] })
   ]
 }
@@ -141,10 +140,12 @@ export const dispatchEnded = (state: QueueState): QueueTransition =>
     ? [[], state]
     : [[], running(state, { dispatching: Math.max(0, state.dispatching - 1) })]
 
-const withQueued = (state: QueueState, queued: Queued): QueueState =>
+const replaceQueued = (state: QueueState, queued: Queued): QueueTransition => [
+  [queueChanged(queued, state.held)],
   state._tag === 'QueueIdle'
     ? idle(queued, state.held)
-    : running(state, { queued, held: state.held && queued.length > 0 })
+    : running(state, { queued, held: heldFor(queued, state.held) })
+]
 
 /**
  * The user changed the text of queued message `id`. A message no longer queued is left alone, and
@@ -152,10 +153,11 @@ const withQueued = (state: QueueState, queued: Queued): QueueState =>
  */
 export const edit =
   (id: string, text: string) =>
-  (state: QueueState): QueueTransition => {
-    const queued = state.queued.map((message) => (message.id === id ? { id, text } : message))
-    return [[queueChanged(queued, state.held)], withQueued(state, queued)]
-  }
+  (state: QueueState): QueueTransition =>
+    replaceQueued(
+      state,
+      state.queued.map((message) => (message.id === id ? { id, text } : message))
+    )
 
 /**
  * The user removed queued message `id`. A message no longer queued is left alone, and the current
@@ -163,10 +165,11 @@ export const edit =
  */
 export const remove =
   (id: string) =>
-  (state: QueueState): QueueTransition => {
-    const queued = state.queued.filter((message) => message.id !== id)
-    return [[queueChanged(queued, state.held)], withQueued(state, queued)]
-  }
+  (state: QueueState): QueueTransition =>
+    replaceQueued(
+      state,
+      state.queued.filter((message) => message.id !== id)
+    )
 
 /**
  * The session rewound to a checkpoint and its query was replaced; the turn that was running is
@@ -192,5 +195,5 @@ export const sessionEnded = (_state: QueueState): QueueTransition => [
 /** The queue as the renderer shows it. */
 export const snapshotOf = (state: QueueState) => ({
   queued: state.queued,
-  held: state.held && state.queued.length > 0
+  held: heldFor(state.queued, state.held)
 })

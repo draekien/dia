@@ -343,20 +343,12 @@ export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): Pa
       }
     }
     case 'PaneAttentionChanged':
-      if (event.attention._tag === 'Crashed') {
+      if (event.attention._tag === 'Crashed' || event.attention._tag === 'Errored') {
         return {
           ...state,
           messages: [...state.messages, errorMessage(state, event.attention.error)],
           isLoading: false,
-          queued: [],
-          queueHeld: false
-        }
-      }
-      if (event.attention._tag === 'Errored') {
-        return {
-          ...state,
-          messages: [...state.messages, errorMessage(state, event.attention.error)],
-          isLoading: false
+          ...(event.attention._tag === 'Crashed' ? { queued: [], queueHeld: false } : {})
         }
       }
       return isTurnOver(event.attention) ? { ...state, isLoading: false } : state
