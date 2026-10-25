@@ -59,6 +59,12 @@ describe('send', () => {
     expect(next).toEqual(runningWith({ queued: [a], steered: [b] }))
   })
 
+  it('queues a steer that arrives after the turn ended but before the next batch is offered', () => {
+    const [actions, next] = send(b, 'steer')(runningWith({ queued: [a], dispatching: 1 }))
+    expect(actions).toEqual([QueueChangedAction.make({ queued: [a, b], held: false })])
+    expect(next).toEqual(runningWith({ queued: [a, b], dispatching: 1 }))
+  })
+
   it('does not interrupt twice when a second steer arrives before the turn ends', () => {
     const [actions, next] = send(c, 'steer')(runningWith({ steered: [b] }))
     expect(actions).toEqual([])

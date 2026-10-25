@@ -71,7 +71,8 @@ const dispatchNow = (messages: Queued, queued: Queued = [], held = false): Queue
 /**
  * A user sends `message` in `mode`. With no turn running it is dispatched at once, after any held
  * queue; during a turn `queue` appends it to the queue and `steer` interrupts the turn so the
- * message runs next. Either send during a turn releases a held queue.
+ * message runs next. Either send during a turn releases a held queue. A steer that arrives after a
+ * turn ended but before the next batch is offered has no turn to interrupt and is queued.
  */
 export const send =
   (message: OutgoingMessage, mode: 'queue' | 'steer') =>
@@ -80,7 +81,7 @@ export const send =
       const [actions, next] = dispatchNow([...state.queued, message])
       return [state.queued.length > 0 ? [queueChanged([], false), ...actions] : actions, next]
     }
-    if (mode === 'queue') {
+    if (mode === 'queue' || state.dispatching > 0) {
       const queued = [...state.queued, message]
       return [[queueChanged(queued, false)], running(state, { queued, held: false })]
     }
