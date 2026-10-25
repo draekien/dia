@@ -1,27 +1,19 @@
 import type { Project, Workspace } from '@shared/domain/project'
-import { TRANSCRIPT_WIDTHS, type TranscriptWidth } from '@shared/domain/transcript-width'
 import { tabOf } from '@shared/domain/workspace'
 import { Result } from 'effect'
 import { FolderPlusIcon, PlusIcon, RulerIcon } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { newAgent, registerProject } from '../lib/actions'
 import { MAIN_HEADER, Slot } from '../lib/slots'
-import { useTranscriptWidth, useView, useWorkspace } from '../plugin-api'
+import { useView, useWorkspace } from '../plugin-api'
 import Pane from './pane'
 import PaneCreationForm from './pane-creation-form'
 import { StartupSkeleton } from './startup-skeleton'
+import { TranscriptWidthToggle } from './transcript-width-toggle'
 import { Button } from './ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
-import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
-
-const WIDTH_LABELS: Record<TranscriptWidth, string> = {
-  narrow: 'Narrow',
-  default: 'Default',
-  wide: 'Wide'
-}
 
 function TranscriptWidthButton() {
-  const [width, setWidth] = useTranscriptWidth()
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -31,21 +23,7 @@ function TranscriptWidthButton() {
       </PopoverTrigger>
       <PopoverContent align="end" className="flex w-64 flex-col gap-2">
         <span className="text-xs font-medium text-ink">Transcript width</span>
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          size="sm"
-          value={width}
-          onValueChange={(value: TranscriptWidth | '') => {
-            if (value !== '') setWidth(value)
-          }}
-        >
-          {TRANSCRIPT_WIDTHS.map((option) => (
-            <ToggleGroupItem key={option} value={option} className="flex-1">
-              {WIDTH_LABELS[option]}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+        <TranscriptWidthToggle />
         <span className="text-xs text-ink-muted">Applies to every tab.</span>
       </PopoverContent>
     </Popover>

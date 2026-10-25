@@ -37,11 +37,13 @@ import { FilterPopover } from './filter-popover'
 import {
   buildOverview,
   filtersApply,
+  headerKey,
   type NavigationTarget,
   NO_FILTERS,
   navigationOrder,
   type OverviewFilters,
   type OverviewGroup,
+  rowKey,
   STATUS_TAGS,
   type StatusTag
 } from './overview'
@@ -58,7 +60,9 @@ const readCollapsed = (): ReadonlySet<ProjectId> =>
   new Set(Option.getOrElse(decodeCollapsed(localStorage.getItem(COLLAPSED_KEY) ?? '[]'), () => []))
 
 const navKey = (target: NavigationTarget): string =>
-  target._tag === 'HeaderTarget' ? `header:${target.projectId}` : `row:${target.paneId}`
+  target._tag === 'HeaderTarget' ? headerKey(target.projectId) : rowKey(target.paneId)
+
+const NO_COLLAPSED: ReadonlySet<ProjectId> = new Set()
 
 const focusNav = (container: HTMLElement, key: string): void =>
   container.querySelector<HTMLElement>(`[data-nav="${key}"]`)?.focus()
@@ -204,7 +208,15 @@ export function AgentOverview() {
         : orderGroups(buildOverview(workspace, summaries, filters), order),
     [workspace, summaries, filters, order]
   )
-  const effectiveCollapsed = narrowing ? new Set<ProjectId>() : collapsed
+  const effectiveCollapsed = narrowing ? NO_COLLAPSED : collapsed
+  const targets = useMemo(
+    () => navigationOrder(groups, effectiveCollapsed),
+    [groups, effectiveCollapsed]
+  )
+  const railGroups = useMemo(
+    () => (workspace === undefined || !rail ? [] : buildOverview(workspace, summaries, NO_FILTERS)),
+    [workspace, summaries, rail]
+  )
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, {
@@ -216,9 +228,8 @@ export function AgentOverview() {
   if (workspace === undefined) return <aside aria-label="Agents" className="w-72 shrink-0" />
 
   if (rail) {
-    const allGroups = buildOverview(workspace, summaries, NO_FILTERS)
     return (
-      <Rail groups={allGroups} visibleTab={workspace.visibleTab} onExpand={() => setRail(false)} />
+      <Rail groups={railGroups} visibleTab={workspace.visibleTab} onExpand={() => setRail(false)} />
     )
   }
 
@@ -311,7 +322,6 @@ export function AgentOverview() {
     }
   }
 
-  const targets = navigationOrder(groups, effectiveCollapsed)
   const currentStop =
     tabStop !== null && targets.some((target) => navKey(target) === tabStop)
       ? tabStop

@@ -82,6 +82,15 @@ const byUrgency = (rows: ReadonlyArray<OverviewRow>): ReadonlyArray<OverviewRow>
     )
     .map(({ row }) => row)
 
+const mostUrgentOf = (rows: ReadonlyArray<OverviewRow>): AgentStatus | null =>
+  rows.reduce<AgentStatus | null>(
+    (best, row) =>
+      best === null || statusRank(row.summary.status) < statusRank(best)
+        ? row.summary.status
+        : best,
+    null
+  )
+
 const contains = (text: string, query: string): boolean => text.toLocaleLowerCase().includes(query)
 
 /**
@@ -124,13 +133,19 @@ export const buildOverview = (
         project: entry.project,
         rows,
         archived,
-        mostUrgent: byUrgency(active)[0]?.summary.status ?? null,
+        mostUrgent: mostUrgentOf(active),
         shown: rows.length,
         total: active.length
       })
     ]
   })
 }
+
+/** The `data-nav` key of the header of project `projectId`, which keyboard navigation focuses. */
+export const headerKey = (projectId: ProjectId): string => `header:${projectId}`
+
+/** The `data-nav` key of the row of tab `paneId`, which keyboard navigation focuses. */
+export const rowKey = (paneId: PaneId): string => `row:${paneId}`
 
 /** Keyboard focus on a project group header. */
 export const HeaderTarget = Schema.TaggedStruct('HeaderTarget', { projectId: ProjectId })

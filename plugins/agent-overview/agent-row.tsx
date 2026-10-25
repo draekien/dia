@@ -14,7 +14,7 @@ import type { AgentSummary } from '@shared/domain/agent-summary'
 import { AgentName } from '@shared/domain/project'
 import { Option, Schema } from 'effect'
 import { useState } from 'react'
-import type { OverviewRow } from './overview'
+import { type OverviewRow, rowKey } from './overview'
 
 const decodeName = Schema.decodeUnknownOption(AgentName)
 
@@ -115,7 +115,7 @@ export function AgentRow({
   )
   if (renaming) {
     return (
-      <div data-nav={`row:${row.paneId}`} className={rowClass}>
+      <div data-nav={rowKey(row.paneId)} className={rowClass}>
         {body(<RenameField row={row} onDone={() => onRename(false)} />)}
       </div>
     )
@@ -125,7 +125,7 @@ export function AgentRow({
       <ContextMenuTrigger asChild>
         <button
           type="button"
-          data-nav={`row:${row.paneId}`}
+          data-nav={rowKey(row.paneId)}
           tabIndex={tabbable ? 0 : -1}
           aria-label={label}
           aria-current={selected ? 'page' : undefined}

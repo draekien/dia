@@ -1,13 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { generateAgentName } from '@shared/domain/agent-name'
+import { agentNameFromBranch, generateAgentName } from '@shared/domain/agent-name'
 import { PaneConfig, SessionId } from '@shared/domain/pane'
-import {
-  AgentName,
-  type ProjectEntry,
-  ProjectId,
-  type Tab,
-  type Workspace
-} from '@shared/domain/project'
+import { type ProjectEntry, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
 import { withDefaultVisibleTab } from '@shared/domain/workspace'
 import { Effect, Option, Schema } from 'effect'
 import { directoryKey, probeProject } from './project-directory'
@@ -54,11 +48,6 @@ const readyLeavesInOrder = (node: LegacyNode): ReadonlyArray<string> =>
       : []
     : node.children.flatMap(readyLeavesInOrder)
 
-const nameFromBranch = (branch: string | undefined): Option.Option<AgentName> =>
-  branch?.startsWith('dia/') === true
-    ? Schema.decodeUnknownOption(AgentName)(branch.slice('dia/'.length))
-    : Option.none()
-
 /**
  * Converts a version 1 workspace into projects and tabs. Each pane becomes a tab in the project
  * of its source directory (the worktree's source repo, else its working directory); projects are
@@ -81,7 +70,7 @@ export const migrateLegacyWorkspace = Effect.fn('migrateLegacyWorkspace')(functi
     const { config, sessionId } = legacy.panes[paneId]
     const directory = config.worktree?.sourceRepo ?? config.cwd
     const key = yield* directoryKey(directory)
-    const name = yield* Option.match(nameFromBranch(config.worktree?.branch), {
+    const name = yield* Option.match(agentNameFromBranch(config.worktree?.branch), {
       onNone: () => generateAgentName,
       onSome: Effect.succeed
     })

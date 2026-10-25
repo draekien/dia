@@ -12,11 +12,9 @@ import {
 } from '@dia/renderer-plugin'
 import type { ProjectEntry } from '@shared/domain/project'
 import {
-  AgentItem,
   type RemovalItem,
   type RemovalProgress,
-  TranscriptItem,
-  WorktreeItem
+  removalItemsOf
 } from '@shared/domain/project-removal'
 import { CheckIcon, CircleAlertIcon, Loader2Icon } from 'lucide-react'
 import { useState } from 'react'
@@ -31,13 +29,7 @@ type Phase = 'confirm' | 'removing' | 'failed' | 'lost'
 
 /** Everything removing `entry` deletes, in the order the Host removes it. */
 export const removalItems = (entry: ProjectEntry): ReadonlyArray<RemovalItem> =>
-  entry.tabs.flatMap((tab) => [
-    AgentItem.make({ paneId: tab.config.paneId, name: tab.name }),
-    ...(tab.config.worktree === undefined
-      ? []
-      : [WorktreeItem.make({ path: tab.config.worktree.path })]),
-    ...(tab.sessionId === undefined ? [] : [TranscriptItem.make({ sessionId: tab.sessionId })])
-  ])
+  entry.tabs.flatMap(removalItemsOf)
 
 const itemKey = (item: RemovalItem): string => {
   switch (item._tag) {

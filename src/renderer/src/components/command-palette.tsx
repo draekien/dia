@@ -1,9 +1,7 @@
 import { useAtomSet, useAtomValue } from '@effect/atom-react'
 import { sendModeAtom } from '@renderer/lib/send-mode-atom'
-import { transcriptWidthAtom } from '@renderer/lib/workspace-atoms'
 import type { SendMode } from '@shared/domain/message-queue'
 import type { ThemePreference } from '@shared/domain/theme'
-import { TRANSCRIPT_WIDTHS } from '@shared/domain/transcript-width'
 import {
   CodeIcon,
   CornerDownRightIcon,
@@ -18,6 +16,7 @@ import { type ComponentType, useEffect, useState } from 'react'
 import { AboutDialog } from './about-dialog'
 import { openPluginsPage } from './plugins-page'
 import { useTheme } from './theme-provider'
+import { TranscriptWidthToggle } from './transcript-width-toggle'
 import {
   CommandDialog,
   CommandEmpty,
@@ -76,8 +75,6 @@ export function CommandPalette() {
   const { theme, setTheme } = useTheme()
   const sendMode = useAtomValue(sendModeAtom)
   const setSendMode = useAtomSet(sendModeAtom)
-  const transcriptWidth = useAtomValue(transcriptWidthAtom)
-  const setTranscriptWidth = useAtomSet(transcriptWidthAtom)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -118,11 +115,6 @@ export function CommandPalette() {
   const chooseSendMode = (value: string) => {
     if (value === '') return
     setSendMode(value as SendMode)
-  }
-
-  const chooseTranscriptWidth = (value: string) => {
-    const width = TRANSCRIPT_WIDTHS.find((candidate) => candidate === value)
-    if (width !== undefined) setTranscriptWidth(width)
   }
 
   return (
@@ -192,20 +184,7 @@ export function CommandPalette() {
         </div>
         <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
           <span className="text-xs font-medium text-muted-foreground">Transcript width</span>
-          <ToggleGroup
-            type="single"
-            value={transcriptWidth}
-            onValueChange={chooseTranscriptWidth}
-            variant="outline"
-            size="sm"
-            aria-label="Transcript width"
-          >
-            {TRANSCRIPT_WIDTHS.map((width) => (
-              <ToggleGroupItem key={width} value={width}>
-                <span className="capitalize">{width}</span>
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+          <TranscriptWidthToggle />
         </div>
       </CommandDialog>
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />

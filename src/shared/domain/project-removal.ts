@@ -1,6 +1,6 @@
 import { Schema } from 'effect'
 import { SessionId } from './pane'
-import { AgentName } from './project'
+import { AgentName, type Tab } from './project'
 import { Uuid } from './uuid'
 
 /** An agent of the project being removed; removing it stops its session. */
@@ -18,6 +18,18 @@ export type TranscriptItem = typeof TranscriptItem.Type
 /** One thing removing a project removes. The project directory itself is never one. */
 export const RemovalItem = Schema.Union([AgentItem, WorktreeItem, TranscriptItem])
 export type RemovalItem = typeof RemovalItem.Type
+
+/**
+ * Everything removing the project of `tab` deletes for that tab, in the order the Host removes
+ * it: the agent, then its worktree and transcript when it has them.
+ */
+export const removalItemsOf = (tab: Tab): ReadonlyArray<RemovalItem> => [
+  AgentItem.make({ paneId: tab.config.paneId, name: tab.name }),
+  ...(tab.config.worktree === undefined
+    ? []
+    : [WorktreeItem.make({ path: tab.config.worktree.path })]),
+  ...(tab.sessionId === undefined ? [] : [TranscriptItem.make({ sessionId: tab.sessionId })])
+]
 
 /** Removal of `item` has started. */
 export const Removing = Schema.TaggedStruct('Removing', { item: RemovalItem })

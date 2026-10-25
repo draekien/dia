@@ -1,4 +1,4 @@
-import { generateAgentName } from '@shared/domain/agent-name'
+import { agentNameFromBranch, generateAgentName } from '@shared/domain/agent-name'
 import { Errored } from '@shared/domain/attention'
 import type {
   ConversationMessage,
@@ -8,7 +8,7 @@ import type {
   ThinkingLevel
 } from '@shared/domain/pane'
 import {
-  AgentName,
+  type AgentName,
   type CreateTabRequest,
   DirectoryNotFoundError,
   EMPTY_WORKSPACE,
@@ -21,15 +21,13 @@ import {
   WorktreeUnavailableError
 } from '@shared/domain/project'
 import {
-  AgentItem,
   ProjectRemoved,
   type RemovalItem,
   type RemovalProgress,
   Removed,
   RemoveFailed,
   Removing,
-  TranscriptItem,
-  WorktreeItem
+  removalItemsOf
 } from '@shared/domain/project-removal'
 import * as WorkspaceOps from '@shared/domain/workspace'
 import { type IpcEvent, PaneAttentionChanged, WorkspaceChanged } from '@shared/ipc/contract'
@@ -43,7 +41,6 @@ import {
   Queue,
   Ref,
   Result,
-  Schema,
   Semaphore,
   Stream
 } from 'effect'
@@ -152,9 +149,6 @@ export class PaneWorkspace extends Context.Service<
 >()('PaneWorkspace') {}
 
 const WORKTREES_PLUGIN_NOT_LOADED = 'Load the worktrees plugin to remove this worktree'
-
-const nameFromBranch = (branch: string): Option.Option<AgentName> =>
-  Schema.decodeUnknownOption(AgentName)(branch.replace(/^dia\//, ''))
 
 /**
  * Builds the live {@link PaneWorkspace} layer. On construction it loads the persisted workspace
@@ -322,25 +316,23 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
             }
           })
 
-        for (const tab of tabs) {
-          const paneId = tab.config.paneId
-          yield* removeItem(
-            AgentItem.make({ paneId, name: tab.name }),
-            supervisor.closePane(paneId).pipe(Effect.as(Option.none<string>()))
-          )
-          if (force) continue
-          const worktree = tab.config.worktree
-          if (worktree !== undefined) {
-            yield* removeItem(
-              WorktreeItem.make({ path: worktree.path }),
-              removeWorktree(paneId, worktree)
-            )
+        const removalOf = (tab: Tab, item: RemovalItem): Effect.Effect<Option.Option<string>> => {
+          switch (item._tag) {
+            case 'AgentItem':
+              return supervisor.closePane(item.paneId).pipe(Effect.as(Option.none<string>()))
+            case 'WorktreeItem':
+              return tab.config.worktree === undefined
+                ? Effect.succeed(Option.none<string>())
+                : removeWorktree(tab.config.paneId, tab.config.worktree)
+            case 'TranscriptItem':
+              return deleteTranscript(item.sessionId)
           }
-          if (tab.sessionId !== undefined) {
-            yield* removeItem(
-              TranscriptItem.make({ sessionId: tab.sessionId }),
-              deleteTranscript(tab.sessionId)
-            )
+        }
+
+        for (const tab of tabs) {
+          for (const item of removalItemsOf(tab)) {
+            if (force && item._tag !== 'AgentItem') continue
+            yield* removeItem(item, removalOf(tab, item))
           }
         }
         return failures
@@ -407,7 +399,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       const nameForTab = (request: CreateTabRequest, branch: string | undefined) =>
         request.name !== null
           ? Effect.succeed(request.name)
-          : Option.match(branch === undefined ? Option.none<AgentName>() : nameFromBranch(branch), {
+          : Option.match(agentNameFromBranch(branch), {
               onSome: Effect.succeed,
               onNone: () => generateAgentName
             })

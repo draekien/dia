@@ -16,7 +16,7 @@ import { CSS } from '@dnd-kit/utilities'
 import type { PaneId } from '@shared/domain/pane'
 import { ChevronRightIcon, PlusIcon } from 'lucide-react'
 import { AgentRow } from './agent-row'
-import type { OverviewGroup } from './overview'
+import { headerKey, type OverviewGroup, type OverviewRow, rowKey } from './overview'
 
 interface ProjectGroupProps {
   readonly group: OverviewGroup
@@ -52,6 +52,17 @@ export function ProjectGroup({
   const count = narrowing ? `${group.shown} of ${group.total}` : String(group.total)
   const showRows = open && !dragging
   const urgent = group.mostUrgent
+  const renderRow = (row: OverviewRow, selected: boolean) => (
+    <AgentRow
+      key={row.paneId}
+      row={row}
+      projectName={project.displayName}
+      selected={selected}
+      renaming={row.paneId === renaming}
+      tabbable={tabStop === rowKey(row.paneId)}
+      onRename={(next) => onRename(next ? row.paneId : null)}
+    />
+  )
   return (
     <section
       ref={sortable.setNodeRef}
@@ -67,10 +78,10 @@ export function ProjectGroup({
           {/* biome-ignore lint/a11y/useSemanticElements: the header holds the New agent button, which a <button> cannot contain */}
           <div
             ref={sortable.setActivatorNodeRef}
-            data-nav={`header:${project.projectId}`}
+            data-nav={headerKey(project.projectId)}
             {...sortable.attributes}
             role="button"
-            tabIndex={tabStop === `header:${project.projectId}` ? 0 : -1}
+            tabIndex={tabStop === headerKey(project.projectId) ? 0 : -1}
             {...sortable.listeners}
             aria-roledescription="sortable project"
             aria-expanded={open}
@@ -143,31 +154,11 @@ export function ProjectGroup({
       </ContextMenu>
       {showRows && (
         <div className="flex flex-col pb-1">
-          {group.rows.map((row) => (
-            <AgentRow
-              key={row.paneId}
-              row={row}
-              projectName={project.displayName}
-              selected={row.paneId === visibleTab}
-              renaming={row.paneId === renaming}
-              tabbable={tabStop === `row:${row.paneId}`}
-              onRename={(next) => onRename(next ? row.paneId : null)}
-            />
-          ))}
+          {group.rows.map((row) => renderRow(row, row.paneId === visibleTab))}
           {group.archived.length > 0 && (
             <>
               <p className="pt-1 pl-7 text-xs text-ink-muted">Archived · {group.archived.length}</p>
-              {group.archived.map((row) => (
-                <AgentRow
-                  key={row.paneId}
-                  row={row}
-                  projectName={project.displayName}
-                  selected={false}
-                  renaming={row.paneId === renaming}
-                  tabbable={tabStop === `row:${row.paneId}`}
-                  onRename={(next) => onRename(next ? row.paneId : null)}
-                />
-              ))}
+              {group.archived.map((row) => renderRow(row, false))}
             </>
           )}
           {group.total === 0 && !narrowing && (

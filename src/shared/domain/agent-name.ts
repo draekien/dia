@@ -1,4 +1,4 @@
-import { Effect, Random } from 'effect'
+import { Effect, Option, Random, Schema } from 'effect'
 import { AgentName } from './project'
 
 /** The first words of generated agent names and worktree slugs. */
@@ -70,3 +70,13 @@ export const generateAgentName: Effect.Effect<AgentName> = Effect.gen(function* 
   const noun = yield* Random.choice(AGENT_NAME_NOUNS)
   return AgentName.make(`${adjective}-${noun}`)
 })
+
+/**
+ * The agent name a `dia/<name>` worktree branch carries, for example `brave-otter` from
+ * `dia/brave-otter`. `None` when `branch` is absent, lacks the `dia/` prefix, or the rest is not a
+ * valid {@link AgentName}.
+ */
+export const agentNameFromBranch = (branch: string | undefined): Option.Option<AgentName> =>
+  branch?.startsWith('dia/') === true
+    ? Schema.decodeUnknownOption(AgentName)(branch.slice('dia/'.length))
+    : Option.none()
