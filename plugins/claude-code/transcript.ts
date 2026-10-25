@@ -1,6 +1,6 @@
 import { getSessionMessages, type SessionMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { ConversationMessage, SessionId } from '@shared/domain/pane'
-import { Array as Arr, Effect, Option, Schema } from 'effect'
+import { Array as Arr, Data, Effect, Option, Schema } from 'effect'
 
 const TextBlock = Schema.Struct({
   type: Schema.Literal('text'),
@@ -113,4 +113,36 @@ export const readLastAssistantUuid = Effect.fn('ClaudeCode.readLastAssistantUuid
     uuid: Option.getOrUndefined(uuid)
   })
   return uuid
+})
+
+/**
+ * Failure of {@link readTurnResumeAnchor}: the user turn `messageUuid` is not in the transcript of
+ * `sessionId`, which includes a transcript that is missing or unreadable.
+ */
+export class TurnNotInTranscriptError extends Data.TaggedError('TurnNotInTranscriptError')<{
+  readonly sessionId: SessionId
+  readonly messageUuid: string
+}> {}
+
+/**
+ * Reads the transcript of `sessionId` under `cwd` and returns the uuid a rewind of the user turn
+ * `messageUuid` resumes from: the last assistant message before that turn, or none when the turn
+ * is the first of the conversation. Fails with {@link TurnNotInTranscriptError} when the turn is
+ * not in the transcript.
+ */
+export const readTurnResumeAnchor = Effect.fn('ClaudeCode.readTurnResumeAnchor')(function* (
+  sessionId: SessionId,
+  cwd: string,
+  messageUuid: string
+) {
+  const messages = yield* readSessionMessages(sessionId, cwd)
+  const turn = messages.findIndex((message) => message.uuid === messageUuid)
+  if (turn === -1) return yield* new TurnNotInTranscriptError({ sessionId, messageUuid })
+  const anchor = lastAssistantUuid(messages.slice(0, turn))
+  yield* Effect.logDebug('Read the resume anchor of a user turn', {
+    sessionId,
+    messageUuid,
+    anchor: Option.getOrUndefined(anchor)
+  })
+  return anchor
 })

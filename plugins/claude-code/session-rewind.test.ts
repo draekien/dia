@@ -1,0 +1,210 @@
+import { setImmediate } from 'node:timers/promises'
+import type { Options, SDKUserMessage, SessionMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { OutboundMessage } from '@dia/plugin'
+import { assert, describe, it } from '@effect/vitest'
+import type { PaneConfig, SessionId } from '@shared/domain/pane'
+import { Deferred, Effect, Fiber, Option } from 'effect'
+import { vi } from 'vitest'
+import { openClaudeCodeSession } from './session'
+
+interface FakeQuery {
+  readonly options: Options
+  readonly delivered: Array<string>
+  readonly rewound: Array<string>
+  closed: boolean
+}
+
+const sdk = vi.hoisted(() => ({
+  queries: [] as Array<FakeQuery>,
+  log: [] as Array<string>,
+  transcript: { messages: [] as Array<SessionMessage>, fails: false },
+  rewindGate: (): Promise<void> => Promise.resolve()
+}))
+
+vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@anthropic-ai/claude-agent-sdk')>()
+  const { Deferred, Effect } = await import('effect')
+  const fakeQuery = ({
+    prompt,
+    options
+  }: {
+    prompt: AsyncIterable<SDKUserMessage>
+    options: Options
+  }) => {
+    const index = sdk.queries.length
+    const record: FakeQuery = { options, delivered: [], rewound: [], closed: false }
+    sdk.queries.push(record)
+    const closedSignal = Effect.runSync(Deferred.make<void>())
+    void (async () => {
+      for await (const message of prompt) {
+        if (record.closed) break
+        const text = String(message.message.content)
+        record.delivered.push(text)
+        sdk.log.push(`query ${index} received ${text}`)
+      }
+    })()
+    return {
+      [Symbol.asyncIterator]: () => ({
+        next: () =>
+          Effect.runPromise(
+            Deferred.await(closedSignal).pipe(Effect.as({ done: true as const, value: undefined }))
+          ),
+        return: () => Promise.resolve({ done: true as const, value: undefined })
+      }),
+      close: () => {
+        record.closed = true
+        Effect.runSync(Deferred.succeed(closedSignal, undefined))
+      },
+      supportedCommands: () => Promise.resolve([]),
+      rewindFiles: async (messageUuid: string) => {
+        record.rewound.push(messageUuid)
+        await sdk.rewindGate()
+        return { canRewind: true, filesChanged: [] }
+      },
+      interrupt: () => Promise.resolve(),
+      setPermissionMode: () => Promise.resolve()
+    }
+  }
+  return {
+    ...original,
+    query: fakeQuery,
+    getSessionMessages: () =>
+      sdk.transcript.fails
+        ? Promise.reject(new Error('transcript unreadable'))
+        : Promise.resolve(sdk.transcript.messages)
+  }
+})
+
+const SESSION = 'a1b2c3d4-0000-4000-8000-000000000001' as SessionId
+const config: PaneConfig = {
+  paneId: '00000000-0000-0000-0000-000000000001',
+  cwd: 'F:/Dev/dia-verify/rewind',
+  model: 'claude-sonnet-5',
+  thinkingLevel: 'off',
+  permissionMode: 'default'
+}
+
+const transcriptMessage = (role: 'user' | 'assistant', uuid: string): SessionMessage => ({
+  type: role,
+  uuid,
+  session_id: SESSION,
+  message:
+    role === 'user'
+      ? { role, content: `${uuid} prompt` }
+      : { role, content: [{ type: 'text', text: `${uuid} reply` }] },
+  parent_tool_use_id: null,
+  parent_agent_id: null
+})
+
+const twoTurns = [
+  transcriptMessage('user', 'turn-1'),
+  transcriptMessage('assistant', 'reply-1'),
+  transcriptMessage('user', 'turn-2'),
+  transcriptMessage('assistant', 'reply-2')
+]
+
+const settle = Effect.gen(function* () {
+  for (let tick = 0; tick < 5; tick++) yield* Effect.promise(() => setImmediate())
+})
+
+const openResumed = (transcript: ReadonlyArray<SessionMessage>, transcriptFails = false) =>
+  Effect.gen(function* () {
+    sdk.queries.length = 0
+    sdk.log.length = 0
+    sdk.transcript.messages = [...transcript]
+    sdk.transcript.fails = transcriptFails
+    sdk.rewindGate = () => Promise.resolve()
+    const emitted: Array<OutboundMessage> = []
+    const emit = (message: OutboundMessage) =>
+      Effect.sync(() => {
+        emitted.push(message)
+        if (message._tag === 'RewoundToCheckpoint') sdk.log.push(`rewound ${message.messageUuid}`)
+      })
+    const session = yield* openClaudeCodeSession({
+      config,
+      resume: Option.some(SESSION),
+      emit,
+      tools: []
+    })
+    yield* settle
+    return { session, emitted }
+  })
+
+const queryAt = (index: number): FakeQuery => {
+  const query = sdk.queries[index]
+  assert.isDefined(query)
+  return query
+}
+
+describe('rewindToCheckpoint', () => {
+  it.effect('rewinds a resumed session before any prompt is sent to it', () =>
+    Effect.gen(function* () {
+      const { session } = yield* openResumed(twoTurns)
+
+      yield* session.rewindToCheckpoint('turn-2', 'reply-1')
+      yield* settle
+
+      assert.deepStrictEqual(queryAt(0).rewound, ['turn-2'])
+      assert.strictEqual(queryAt(1).options.resume, SESSION)
+      assert.strictEqual(queryAt(1).options.resumeSessionAt, 'reply-1')
+      assert.isTrue(queryAt(1).options.forkSession)
+    })
+  )
+
+  it.effect('holds a prompt sent while files rewind until the forked query reads it', () =>
+    Effect.gen(function* () {
+      const { session } = yield* openResumed(twoTurns)
+      const rewindReleased = yield* Deferred.make<void>()
+      sdk.rewindGate = () => Effect.runPromise(Deferred.await(rewindReleased))
+
+      const rewind = yield* Effect.forkChild(session.rewindToCheckpoint('turn-2', 'reply-1'))
+      yield* settle
+      const send = yield* Effect.forkChild(session.sendText('sent during rewind'))
+      yield* settle
+      yield* Deferred.succeed(rewindReleased, undefined)
+      yield* Fiber.join(rewind)
+      yield* Fiber.join(send)
+      yield* settle
+
+      assert.deepStrictEqual(sdk.log, ['rewound turn-2', 'query 1 received sent during rewind'])
+    })
+  )
+
+  it.effect('resumes from the assistant message before an anchorless turn', () =>
+    Effect.gen(function* () {
+      const { session } = yield* openResumed(twoTurns)
+
+      yield* session.rewindToCheckpoint('turn-2', undefined)
+      yield* settle
+
+      assert.strictEqual(queryAt(1).options.resume, SESSION)
+      assert.strictEqual(queryAt(1).options.resumeSessionAt, 'reply-1')
+    })
+  )
+
+  it.effect('starts a new conversation when the anchorless turn is the first', () =>
+    Effect.gen(function* () {
+      const { session, emitted } = yield* openResumed(twoTurns)
+
+      yield* session.rewindToCheckpoint('turn-1', undefined)
+      yield* settle
+
+      assert.deepStrictEqual(queryAt(0).rewound, ['turn-1'])
+      assert.isUndefined(queryAt(1).options.resume)
+      assert.isTrue(emitted.some((message) => message._tag === 'RewoundToCheckpoint'))
+    })
+  )
+
+  it.effect('keeps the files and the session when an anchorless turn cannot be found', () =>
+    Effect.gen(function* () {
+      const { session, emitted } = yield* openResumed(twoTurns, true)
+
+      yield* session.rewindToCheckpoint('turn-2', undefined)
+      yield* settle
+
+      assert.deepStrictEqual(queryAt(0).rewound, [])
+      assert.strictEqual(sdk.queries.length, 1)
+      assert.isFalse(emitted.some((message) => message._tag === 'RewoundToCheckpoint'))
+    })
+  )
+})

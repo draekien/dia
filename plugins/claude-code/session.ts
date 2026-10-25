@@ -43,6 +43,7 @@ import {
   Result,
   Schema,
   Scope,
+  Semaphore,
   Stream
 } from 'effect'
 import { resolveClaudeExecutable } from './claude-executable'
@@ -53,7 +54,7 @@ import {
 import { makeSessionEventReducer } from './reducer'
 import { thinkingOptions } from './thinking-options'
 import { DIA_TOOL_SERVER_KEY, isDiaToolName, makeDiaToolServer } from './tool-server'
-import { readLastAssistantUuid } from './transcript'
+import { readLastAssistantUuid, readTurnResumeAnchor } from './transcript'
 
 /**
  * Wraps a failure surfaced while consuming the Agent SDK's event stream
@@ -363,6 +364,16 @@ const resolveContinuesFrom = Effect.fn('ClaudeCodeSession.resolveContinuesFrom')
   return yield* readLastAssistantUuid(resume.value, cwd)
 })
 
+const resolveRewindAnchor = (
+  sessionId: SessionId,
+  cwd: string,
+  messageUuid: string,
+  resumeAnchorUuid: string | undefined
+) =>
+  resumeAnchorUuid !== undefined
+    ? Effect.succeed(Option.some(resumeAnchorUuid))
+    : readTurnResumeAnchor(sessionId, cwd, messageUuid)
+
 const runSession = Effect.fn('ClaudeCodeSession.runSession')(
   function* (
     config: PaneConfig,
@@ -565,6 +576,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
   )
   const fiberRef = yield* Ref.make<Option.Option<Fiber.Fiber<void>>>(Option.none())
   const endedDeferred = yield* Deferred.make<string>()
+  const restartLock = yield* Semaphore.make(1)
 
   const startQuery = Effect.fn('ClaudeCodeSession.startQuery')(function* (
     config: PaneConfig,
@@ -572,6 +584,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     branchAt: string | undefined
   ) {
     yield* modeController.seed(config.permissionMode)
+    yield* Ref.set(sessionIdRef, resume)
     const fiber = yield* Effect.forkIn(
       runSession(
         config,
@@ -645,6 +658,18 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     }
     const config = configOpt.value
 
+    const anchor = yield* Effect.result(
+      resolveRewindAnchor(sessionIdOpt.value, config.cwd, messageUuid, resumeAnchorUuid)
+    )
+    if (Result.isFailure(anchor)) {
+      yield* Effect.logWarning('Rewind aborted; the turn is not in the session transcript', {
+        paneId: config.paneId,
+        sessionId: sessionIdOpt.value,
+        messageUuid
+      })
+      return
+    }
+
     const result = yield* Effect.tryPromise({
       try: () => queryOpt.value.rewindFiles(messageUuid),
       catch: (cause) => new SessionStreamError({ cause })
@@ -666,7 +691,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     yield* Effect.logInfo('Rewound files to checkpoint; forking conversation', {
       paneId: config.paneId,
       messageUuid,
-      resumeAnchorUuid,
+      resumeAnchorUuid: Option.getOrUndefined(anchor.success),
       filesChanged: result.value.filesChanged?.length ?? 0
     })
 
@@ -676,13 +701,13 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
 
     const currentModeOpt = yield* modeController.currentMode
     const permissionMode = Option.getOrElse(currentModeOpt, () => config.permissionMode)
-    if (resumeAnchorUuid !== undefined) {
-      yield* startQuery({ ...config, permissionMode }, sessionIdOpt, resumeAnchorUuid)
+    if (Option.isSome(anchor.success)) {
+      yield* startQuery({ ...config, permissionMode }, sessionIdOpt, anchor.success.value)
     } else {
       yield* startQuery({ ...config, permissionMode }, Option.none(), undefined)
     }
     yield* emit(RewoundToCheckpoint.make({ messageUuid }))
-  })
+  }, restartLock.withPermits(1))
 
   yield* startQuery(options.config, options.resume, undefined)
 
@@ -690,7 +715,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     yield* restartForThinkingChange()
     yield* supersedePendingRequests(pendingUserInput, abortExpectedRef)
     yield* Queue.offer(promptQueue, toSDKUserMessage(text))
-  })
+  }, restartLock.withPermits(1))
 
   const resolvePlanReview = Effect.fn('ClaudeCodeSession.resolvePlanReview')(function* (
     requestId: string,
