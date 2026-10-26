@@ -1,0 +1,6 @@
+{
+  "module-design": {
+    "specsDir": "docs/designs",
+    "subagentModel": "sonnet"
+  }
+}
