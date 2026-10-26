@@ -189,6 +189,21 @@ describe('makeModelCatalog', () => {
     }).pipe(Effect.scoped, Effect.provide(platform))
   )
 
+  it.effect('a run whose probe throws shows Unavailable with the thrown message', () =>
+    Effect.gen(function* () {
+      const { spec, state } = yield* openCatalog({
+        probe: () => Effect.die(new Error('Claude Code executable not found'))
+      })
+
+      yield* Effect.flip(spec.run)
+
+      assert.deepStrictEqual(
+        yield* state,
+        ModelsUnavailable.make({ message: 'Claude Code executable not found', refreshing: false })
+      )
+    }).pipe(Effect.scoped, Effect.provide(platform))
+  )
+
   it.effect('a failed run keeps the cached list and records the reason', () =>
     Effect.gen(function* () {
       const { spec, state } = yield* openCatalog({

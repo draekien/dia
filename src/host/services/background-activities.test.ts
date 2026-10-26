@@ -187,6 +187,28 @@ describe('BackgroundActivities', () => {
     }).pipe(Effect.provide(layer))
   )
 
+  it.effect('completes runNow without running when the scope has already closed', () =>
+    Effect.gen(function* () {
+      const activities = yield* BackgroundActivities
+      const scope = yield* Scope.make()
+      const { counter, run } = counting(IN_A_DAY)
+      const handle = yield* activities
+        .register('claude-code', spec({ firstRunAt: IN_A_DAY, run }))
+        .pipe(Scope.provide(scope))
+      yield* Scope.close(scope, Exit.void)
+
+      const ran = yield* handle.runNow.pipe(
+        Effect.timeoutOption(Duration.seconds(1)),
+        Effect.forkChild
+      )
+      yield* TestClock.adjust(Duration.seconds(1))
+      const outcome = yield* Fiber.join(ran)
+
+      assert.isTrue(outcome._tag === 'Some')
+      assert.strictEqual(counter.runs, 0)
+    }).pipe(Effect.provide(layer))
+  )
+
   it.effect('fails runNow with ActivityNotFound for an activity no plugin registered', () =>
     Effect.gen(function* () {
       const activities = yield* BackgroundActivities

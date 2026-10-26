@@ -204,7 +204,13 @@ export const makeModelCatalog = Effect.fnUntraced(function* (
 
   const run = Effect.gen(function* () {
     yield* markRefreshing
-    const outcome = yield* Effect.result(probe(ctx.dataDir))
+    const outcome = yield* Effect.result(
+      probe(ctx.dataDir).pipe(
+        Effect.catchDefect((defect) =>
+          Effect.fail(new ModelProbeFailed({ message: messageOf(defect) }))
+        )
+      )
+    )
     const now = yield* DateTime.now
     if (Result.isSuccess(outcome)) {
       const models = outcome.success

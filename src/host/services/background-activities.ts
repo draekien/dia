@@ -156,6 +156,7 @@ export const BackgroundActivitiesLive = Layer.effect(
       ): Effect.Effect<Option.Option<Deferred.Deferred<void>>> =>
         lock.withPermits(1)(
           Effect.gen(function* () {
+            if (scope.state._tag === 'Closed') return Option.none()
             const running = yield* Ref.get(current)
             if (Option.isSome(running)) return running
             const now = yield* DateTime.now
