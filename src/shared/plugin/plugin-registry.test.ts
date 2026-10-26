@@ -68,6 +68,7 @@ const makeRegistry = (
     readonly memory?: PluginMemoryGuard
     readonly loader?: PluginLoader<PluginServices>
     readonly onChange?: (changed: ReadonlyArray<PluginInfo>) => Effect.Effect<void>
+    readonly extend?: (services: PluginServices) => Effect.Effect<PluginServices, PluginLoadError>
   } = {}
 ) =>
   makePluginRegistry<PluginServices>({
@@ -94,7 +95,7 @@ const makeRegistry = (
           : use(found)
       }
     },
-    extend: (services) => services,
+    extend: options.extend ?? ((services) => Effect.succeed(services)),
     adapterContract: requiresBackend,
     ...(options.memory === undefined ? {} : { memory: options.memory }),
     ...(options.onChange === undefined ? {} : { onChange: options.onChange })
@@ -195,6 +196,21 @@ describe('plugin registry', () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect('fails a first load without running setup when preparing its context fails', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry(
+        { alpha: plugin(manifest('alpha'), recording('alpha', log)) },
+        { extend: () => Effect.fail(new PluginLoadError({ message: 'no data directory' })) }
+      )
+
+      const loaded = yield* registry.load('alpha')
+
+      assert.deepStrictEqual(loaded.status, { _tag: 'Failed', message: 'no data directory' })
+      assert.deepStrictEqual(log, [])
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('refuses a manifest whose name differs from its plugin name', () =>
     Effect.gen(function* () {
       const registry = yield* makeRegistry({ alpha: plugin(manifest('beta')) })
@@ -241,7 +257,7 @@ describe('plugin registry', () => {
           peek: peekNotUsed,
           load: () => Effect.fail(new PluginLoadError({ message: 'unreadable plugin.json' }))
         },
-        extend: (services) => services,
+        extend: (services) => Effect.succeed(services),
         adapterContract: requiresBackend
       })
 
@@ -538,6 +554,33 @@ describe('plugin registry', () => {
           reloadError: 'Cannot import "host.ts"'
         })
         assert.deepStrictEqual(log, ['alpha:open'])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('keeps the previous version when preparing the new context fails', () =>
+      Effect.gen(function* () {
+        const log: Array<string> = []
+        let extensions = 0
+        const registry = yield* makeRegistry(
+          { alpha: plugin(manifest('alpha'), recording('alpha', log)) },
+          {
+            extend: (services) => {
+              extensions += 1
+              return extensions === 2
+                ? Effect.fail(new PluginLoadError({ message: 'no data directory' }))
+                : Effect.succeed(services)
+            }
+          }
+        )
+        yield* registry.load('alpha')
+
+        const reloaded = yield* registry.load('alpha')
+
+        assert.deepStrictEqual(reloaded.status, {
+          _tag: 'Loaded',
+          reloadError: 'no data directory'
+        })
+        assert.deepStrictEqual(log, ['alpha:open', 'alpha:close', 'alpha:open'])
       }).pipe(Effect.scoped)
     )
 

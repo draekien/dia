@@ -516,6 +516,14 @@ export const PluginStatusChanged = Schema.TaggedStruct('PluginStatusChanged', {
 })
 export type PluginStatusChanged = typeof PluginStatusChanged.Type
 
+/**
+ * Event pushed to the renderer whenever a background activity is registered, removed, or changes
+ * state. It carries no state: read the current list with `window.dia.activities.list`. Never
+ * replayed; the preload raises it itself after a reconnect so listeners re-read the list.
+ */
+export const ActivitiesChanged = Schema.TaggedStruct('ActivitiesChanged', {})
+export type ActivitiesChanged = typeof ActivitiesChanged.Type
+
 // Additional events (PaneClosed) join this union in later bullets.
 /**
  * Union of every event pushed to the renderer, by the Host's event stream or
@@ -545,6 +553,7 @@ export const IpcEvent = Schema.Union([
   PaneCreateFailed,
   PaneAttentionChanged,
   PluginStatusChanged,
+  ActivitiesChanged,
   UpdateStatusChanged
 ])
 export type IpcEvent = typeof IpcEvent.Type

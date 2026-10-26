@@ -29,6 +29,7 @@ import { DiaRpcHandlersLive } from './ipc/rpc-handlers'
 import { HostPlugins, makeHostPluginsLive } from './plugins/host-plugins'
 import { makePluginSourcesLive } from './plugins/plugin-sources'
 import { AgentSummariesLive } from './services/agent-summaries'
+import { BackgroundActivitiesLive } from './services/background-activities'
 import { makeCommandDeduperLive } from './services/command-deduper'
 import { makeEventHubLive } from './services/event-hub'
 import { PaneSupervisor, PaneSupervisorLive, SessionFactoryLive } from './services/pane-supervisor'
@@ -71,9 +72,16 @@ const buildHostLayer = (init: HostInit, token: string) => {
     makePluginSourcesLive(init.pluginsRoot),
     Layer.mergeAll(settings, NodeFileSystem.layer, NodePath.layer)
   )
+  const backgroundActivities = Layer.provide(BackgroundActivitiesLive, eventHub)
   const hostPlugins = Layer.provide(
-    makeHostPluginsLive(init.pluginApiPath),
-    Layer.mergeAll(pluginSources, eventHub, NodeFileSystem.layer, NodePath.layer)
+    makeHostPluginsLive(init.pluginApiPath, init.userDataPath),
+    Layer.mergeAll(
+      pluginSources,
+      eventHub,
+      backgroundActivities,
+      NodeFileSystem.layer,
+      NodePath.layer
+    )
   )
   const sessionFactory = Layer.provide(SessionFactoryLive, Layer.merge(hostPlugins, pluginSources))
   const supervisor = Layer.provide(PaneSupervisorLive, Layer.merge(sessionFactory, hostPlugins))
@@ -105,6 +113,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     eventHub,
     pluginSources,
     hostPlugins,
+    backgroundActivities,
     makeCommandDeduperLive(),
     NodeFileSystem.layer,
     NodePath.layer

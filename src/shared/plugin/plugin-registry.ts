@@ -178,7 +178,8 @@ const isRunning = <Context extends PluginServices>(entry: Entry<Context>): boole
 /**
  * Builds a {@link PluginRegistry} whose plugin scopes are forks of the scope it runs in, so
  * closing that scope closes every plugin. `extend` turns the shared services into the context
- * this side's plugins receive (for example by adding an event stream). `memory`, when given,
+ * this side's plugins receive (for example by adding an event stream); it runs before each setup,
+ * and its failure fails that load like a failing setup. `memory`, when given,
  * limits the memory each plugin's loads may retain and fills `PluginInfo.memoryBytes`.
  * `onChange`, when given, runs after every operation with the plugins whose `PluginInfo` differs
  * from the last one it reported (the first report covers every plugin the registry has seen).
@@ -187,7 +188,7 @@ const isRunning = <Context extends PluginServices>(entry: Entry<Context>): boole
 export const makePluginRegistry = <Context extends PluginServices>(deps: {
   readonly catalog: PluginCatalog
   readonly loader: PluginLoader<Context>
-  readonly extend: (services: PluginServices) => Context
+  readonly extend: (services: PluginServices) => Effect.Effect<Context, PluginLoadError>
   readonly memory?: PluginMemoryGuard
   readonly onChange?: (changed: ReadonlyArray<PluginInfo>) => Effect.Effect<void>
   readonly adapterContract: AdapterContract
@@ -375,8 +376,15 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           entry.status = { _tag: 'Loaded' }
           return
         }
+        const context = yield* deps.extend(servicesFor(name, entry)).pipe(
+          Effect.tapError((error) =>
+            Effect.logError('Plugin context could not be prepared', {
+              plugin: name,
+              message: error.message
+            })
+          )
+        )
         const scope = yield* Scope.fork(parentScope)
-        const context = deps.extend(servicesFor(name, entry))
         const exit = yield* Effect.exit(
           Scope.provide(scope)(Effect.suspend(() => setup.value(context)))
         )

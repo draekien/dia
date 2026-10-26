@@ -1,6 +1,7 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import { Effect, Fiber, FileSystem, Layer, Option, Path, Stream } from 'effect'
+import { BackgroundActivitiesLive } from '../services/background-activities'
 import { EventHub, makeEventHubLive } from '../services/event-hub'
 import { SettingsStore } from '../services/settings-store'
 import { HostPlugins, makeHostPluginsLive } from './host-plugins'
@@ -36,11 +37,12 @@ const hostPluginsFor = (root: string) => {
     makePluginSourcesLive(root),
     Layer.mergeAll(settings, NodeFileSystem.layer, NodePath.layer)
   )
+  const hub = makeEventHubLive()
   const plugins = Layer.provide(
-    makeHostPluginsLive('/not-used/plugin-api.js'),
-    Layer.merge(sources, platform)
+    makeHostPluginsLive('/not-used/plugin-api.js', root),
+    Layer.mergeAll(sources, platform, Layer.provide(BackgroundActivitiesLive, hub))
   )
-  return Layer.provideMerge(plugins, makeEventHubLive())
+  return Layer.provideMerge(plugins, hub)
 }
 
 describe('HostPlugins', () => {
