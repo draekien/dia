@@ -30,11 +30,12 @@ import {
 } from './contract'
 
 /**
- * Version of the renderer-to-Host protocol. The renderer offers it as the WebSocket subprotocol
- * `dia.protocol.<version>`; the Host closes the connection with {@link CLOSE_PROTOCOL_MISMATCH}
- * when it speaks a different version. Increment it whenever {@link DiaRpcs} changes shape.
+ * Version of the renderer-to-Host protocol, `MAJOR.MINOR.PATCH`. The renderer offers it as the
+ * WebSocket subprotocol `dia.protocol.<version>`; the Host closes the connection with
+ * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
+ * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = 9
+export const PROTOCOL_VERSION = '0.0.1'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'

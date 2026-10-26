@@ -16,10 +16,12 @@ export type PluginApiVersion = typeof PluginApiVersion.Type
 /**
  * Version of the plugin API a dia build offers. A plugin manifest declares the version it was
  * written for in `api`; the loader refuses a plugin for which {@link isApiCompatible} is false.
- * Increment the minor version when the plugin context gains something, and the major version when
+ * While dia is in development the version stays below 0.1.0: increment the patch version on every
+ * change to the plugin context, which refuses every plugin declaring an older version. From 1.0.0,
+ * increment the minor version when the plugin context gains something, and the major version when
  * it changes in a way an older plugin cannot use.
  */
-export const PLUGIN_API_VERSION: PluginApiVersion = '1.1.0'
+export const PLUGIN_API_VERSION: PluginApiVersion = '0.0.1'
 
 const versionParts = (version: string): ReadonlyArray<number> | undefined => {
   const match = SEMVER.exec(version)
@@ -27,15 +29,22 @@ const versionParts = (version: string): ReadonlyArray<number> | undefined => {
 }
 
 /**
- * Whether a plugin whose manifest declares `plugin` can load on a host that implements `host`:
- * the major versions are equal and the plugin's minor version is at most the host's. The patch
- * version is ignored. A value that is not `MAJOR.MINOR.PATCH` is never compatible.
+ * Whether a plugin whose manifest declares `plugin` can load on a host that implements `host`,
+ * following npm's caret rule. From 1.0.0 the major versions are equal and the plugin's minor
+ * version is at most the host's. Below 1.0.0 the minor versions are equal, and below 0.1.0 the
+ * patch versions are equal too. Otherwise the patch version is ignored. A value that is not
+ * `MAJOR.MINOR.PATCH` is never compatible.
  */
 export const isApiCompatible = (host: string, plugin: string): boolean => {
   const provided = versionParts(host)
   const required = versionParts(plugin)
   if (provided === undefined || required === undefined) return false
-  return provided[0] === required[0] && required[1] <= provided[1]
+  const [hostMajor, hostMinor, hostPatch] = provided
+  const [pluginMajor, pluginMinor, pluginPatch] = required
+  if (hostMajor !== pluginMajor) return false
+  if (hostMajor > 0) return pluginMinor <= hostMinor
+  if (hostMinor !== pluginMinor) return false
+  return hostMinor > 0 || hostPatch === pluginPatch
 }
 
 /**

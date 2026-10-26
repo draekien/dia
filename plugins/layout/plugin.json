@@ -1,6 +1,6 @@
 {
   "name": "layout",
-  "api": "1.0.0",
+  "api": "0.0.1",
   "category": "feature",
   "renderer": "renderer.ts",
   "load": "eager"

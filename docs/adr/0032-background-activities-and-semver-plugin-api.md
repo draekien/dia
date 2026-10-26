@@ -28,12 +28,13 @@ Chosen option: "Background activities registered by plugins and run by a kernel 
 
 * `HostPluginContext.activities.register(spec)` registers an activity in the plugin's setup scope. The kernel (`src/host/services/background-activities.ts`) runs `spec.run` when it is due; `run` returns the next due time or fails with `ActivityRunFailed { retryAt }`. The kernel persists nothing; an activity is removed when its plugin's scope closes.
 * `HostPluginContext.dataDir` is `<userData>/plugins/<name>`, created before setup runs. The plugin owns its files.
-* `PLUGIN_API_VERSION` is a semver string (`1.1.0`). A plugin loads when its `api` has the host's major version and a minor version no higher than the host's. A bare `"1"` is refused. This replaces the equality rule in ADR-0019's "Plugin API versioning" bullet.
+* `PLUGIN_API_VERSION` is a semver string, `0.0.1` while dia is in development. A plugin loads when the host satisfies npm's caret range of its `api`: from 1.0.0, the same major version and a minor version no higher than the host's; below 1.0.0, the same minor version; below 0.1.0, the same patch version. A bare `"1"` is refused. This replaces the equality rule in ADR-0019's "Plugin API versioning" bullet.
+* `PROTOCOL_VERSION` (`src/shared/ipc/rpc.ts`), the renderer-to-Host protocol version, is also a semver string, `0.0.1`. The Host accepts a client only when it offers exactly that version.
 
 ### Consequences
 
 * Good, because a plugin adds scheduled work without kernel changes, and the Plugins page lists it with a Run now button.
-* Good, because a host can add context members in a minor version without refusing older plugins.
+* Good, because from 1.0.0 a host can add context members in a minor version without refusing older plugins. Below 0.1.0 every API change refuses older plugins, which suits development, when the plugin context changes often.
 * Bad, because every shipped `plugin.json` had to change its `api` value to a semver string.
 * Bad, because the kernel holds no due times across restarts; each plugin derives its first due time from its own files at setup.
 

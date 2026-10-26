@@ -31,16 +31,16 @@ The New agent form lists the models the local Claude Code install supports, read
 export const PluginApiVersion = Schema.String.check(Schema.isPattern(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/))
 export type PluginApiVersion = typeof PluginApiVersion.Type
 
-/** The plugin API version this build of dia implements: 1.1.0. */
+/** The plugin API version this build of dia implements: 0.0.1 while dia is in development. */
 export const PLUGIN_API_VERSION: PluginApiVersion
 
-/** True when a plugin whose manifest declares `plugin` can load on a host implementing `host`: same major and plugin.minor <= host.minor. Patch is ignored. */
+/** True when `host` satisfies npm's caret range of `plugin`: from 1.0.0, same major and plugin.minor <= host.minor; below 1.0.0, same minor; below 0.1.0, same patch. Otherwise patch is ignored. */
 export const isApiCompatible: (host: string, plugin: string) => boolean
 ```
 
 - `PluginManifest.api` changes from `Schema.String` (`manifest.ts:47`, `65`) to `PluginApiVersion`. `PLUGIN_API_VERSION` changes from the string `'1'` (`manifest.ts:8`). A manifest with `"api": "1"` fails manifest decoding.
 - The check at `plugin-registry.ts:429` becomes `isApiCompatible(PLUGIN_API_VERSION, loaded.manifest.api)` and fails with `Plugin API version "2.0.0" is not supported; this dia implements "1.1.0"`. `isApiCompatible` returns false for a string that is not `MAJOR.MINOR.PATCH`.
-- Shipped manifests: `agent-overview`, `layout`, `example`, `worktrees` become `"1.0.0"`; `claude-code` becomes `"1.1.0"`. Every `api: '1'` fixture in `manifest.test.ts`, `plugin-registry.test.ts`, `plugin-loader.test.ts`, `host-plugins.test.ts`, `plugin-sources.test.ts`, `renderer-plugins.test.ts` becomes `'1.0.0'`; new tests cover `1.0.0` and `1.1.0` loading on `1.1.0`, and `1.2.0`, `2.0.0`, `1` being refused.
+- Shipped manifests all become `"0.0.1"`, the version of `PLUGIN_API_VERSION`. Every `api: '1'` fixture in `manifest.test.ts`, `plugin-registry.test.ts`, `plugin-loader.test.ts`, `host-plugins.test.ts`, `plugin-sources.test.ts`, `renderer-plugins.test.ts` becomes `'1.0.0'`; new tests cover `1.0.0` and `1.1.0` loading on `1.1.0`, and `1.2.0`, `2.0.0`, `1` being refused.
 
 ### Plugin context (`src/shared/plugin/api.ts`, `src/host/plugins/host-plugins.ts`)
 
@@ -208,7 +208,7 @@ Rpc.make('RunActivity', { payload: { plugin: PluginName, id: ActivityId }, error
 ```
 
 - Events `ModelsChanged { snapshot: ModelCatalogSnapshot }` and `ActivitiesChanged {}` join `IpcEvent`.
-- `PROTOCOL_VERSION` goes from 8 to 9 (`rpc.ts:35`).
+- `PROTOCOL_VERSION` (`rpc.ts`) changes from the number 8 to the semver string `'0.0.1'`; the Host accepts only a client offering exactly that version.
 - The `DiaRpcs` JSDoc (`rpc.ts:86-92`) states that these four are safe to repeat and take no `commandId`; no payload field collides with a wrapper field. A test asserts `RunActivity`'s `plugin` and `id` reach the handler unchanged.
 - `activities.run` resolves `undefined` on success and the encoded `ActivityNotFound` as plain data on refusal, as `registerProject` does (`host-api.ts:250-258`); it rejects only on a lost connection.
 - After a reconnect the preload dispatches `ModelsChanged.make({ snapshot })` from `GetModels`, and `ActivitiesChanged.make({})` without calling `ListActivities` (the hook re-reads on that event). This runs as a separate effect from `refreshAfterReconnect`'s existing `Effect.all` (`host-api.ts:134-147`), with its own `Effect.catch` warning, so a failure here does not skip the workspace and summary dispatch.
@@ -334,7 +334,7 @@ Model list   Not run yet · due 26 Oct         [Run now]
 
 ## Tests named by the rounds
 
-- `isApiCompatible`: `1.0.0`, `1.1.0` load on `1.1.0`; `1.2.0`, `2.0.0`, `1` refused.
+- `isApiCompatible`: `1.0.0`, `1.1.0` load on `1.1.0`; `1.2.0`, `2.0.0`, `1` refused. `0.0.1` loads only on `0.0.1`; `0.2.5` loads on `0.2.0`; `0.1.0` is refused on `0.2.0`.
 - A failing `extend` on first load marks the plugin `Failed` and opens no scope; on reload it keeps the previous version with `reloadError`.
 - `register` with a duplicate or invalid id dies with a message naming the plugin and id.
 - A `ModelsChanged` frame carrying a `DateTime.Utc` reaches a `models.onChanged` listener as an ISO string and survives `structuredClone`.

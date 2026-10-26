@@ -23,9 +23,9 @@ export interface HostServerOptions {
 const offeredSubprotocols = (header: string | undefined): ReadonlyArray<string> =>
   (header ?? '').split(',').map((protocol) => protocol.trim())
 
-const offeredVersion = (offered: ReadonlyArray<string>): number | undefined => {
+const offeredVersion = (offered: ReadonlyArray<string>): string | undefined => {
   const entry = offered.find((protocol) => protocol.startsWith(VERSION_SUBPROTOCOL_PREFIX))
-  return entry === undefined ? undefined : Number(entry.slice(VERSION_SUBPROTOCOL_PREFIX.length))
+  return entry === undefined ? undefined : entry.slice(VERSION_SUBPROTOCOL_PREFIX.length)
 }
 
 const handleUpgrade = (

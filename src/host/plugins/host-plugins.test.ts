@@ -28,7 +28,7 @@ const writePlugin = (root: string, name: string, extra: Record<string, unknown>)
     yield* fs.makeDirectory(path.join(root, name), { recursive: true })
     yield* fs.writeFileString(
       path.join(root, name, 'plugin.json'),
-      JSON.stringify({ name, api: '1.0.0', category: 'feature', ...extra })
+      JSON.stringify({ name, api: '0.0.1', category: 'feature', ...extra })
     )
   })
 
