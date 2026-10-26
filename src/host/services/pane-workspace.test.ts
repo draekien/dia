@@ -134,7 +134,9 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     readHistory: () => Effect.succeed([]),
     deleteSession:
       options.deleteSession ??
-      ((sessionId) => Effect.sync(() => void deletedSessions.push(sessionId)))
+      ((sessionId) => Effect.sync(() => void deletedSessions.push(sessionId))),
+    models: () => Stream.empty,
+    refreshModels: () => Effect.die('not called')
   }
   const provided = new Map<string, unknown>([[AGENT_BACKEND_KEY, backend]])
   if (options.gitOps !== undefined) provided.set(WORKTREES_KEY, options.gitOps(existing))

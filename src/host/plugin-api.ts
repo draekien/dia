@@ -1,6 +1,13 @@
 export { AGENT_NAME_ADJECTIVES, AGENT_NAME_NOUNS } from '../shared/domain/agent-name'
 export { PlanReviewResponse, Question } from '../shared/domain/attention'
 export { OutgoingMessage } from '../shared/domain/message-queue'
+export {
+  type ModelCatalogState,
+  ModelOption,
+  ModelsLoading,
+  ModelsReady,
+  ModelsUnavailable
+} from '../shared/domain/model'
 export { SessionId } from '../shared/domain/pane'
 export * from '../shared/plugin/api'
 export {

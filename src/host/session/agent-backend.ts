@@ -4,6 +4,7 @@ import {
   type MessageQueueSnapshot,
   type SendMode
 } from '@shared/domain/message-queue'
+import { type ModelCatalogState, ModelsUnavailable } from '@shared/domain/model'
 import type {
   ConversationMessage,
   PaneConfig,
@@ -12,7 +13,7 @@ import type {
   ThinkingLevel
 } from '@shared/domain/pane'
 import type { AdapterContract, PluginRegistry } from '@shared/plugin/plugin-registry'
-import { Data, Effect, Option, Predicate, type Scope } from 'effect'
+import { Data, Effect, Option, Predicate, type Scope, Stream } from 'effect'
 import type { DiaTool } from './dia-tools'
 import type { OutboundMessage } from './protocol'
 
@@ -76,7 +77,9 @@ export interface AgentSessionOptions {
  * surrounding scope, and closing that scope ends them. `readHistory` reads a past conversation
  * without starting a session and returns an empty list when it cannot be read. `deleteSession`
  * deletes a past conversation's transcript; it succeeds when the transcript does not exist, so
- * calling it again after a success or a failure is safe.
+ * calling it again after a success or a failure is safe. `models` streams the models a new
+ * session can use, starting with the current state; `refreshModels` re-reads that list from the
+ * agent and completes when the read ends, whatever its outcome, which arrives through `models`.
  */
 export interface AgentBackend {
   readonly openSession: (
@@ -87,6 +90,8 @@ export interface AgentBackend {
     cwd: string
   ) => Effect.Effect<ReadonlyArray<ConversationMessage>>
   readonly deleteSession: (sessionId: SessionId) => Effect.Effect<void, SessionDeleteError>
+  readonly models: () => Stream.Stream<ModelCatalogState>
+  readonly refreshModels: () => Effect.Effect<void>
 }
 
 /** {@link AgentBackend.deleteSession} could not delete the transcript of `sessionId`; `reason` says why. */
@@ -132,10 +137,19 @@ const unavailableBackend: AgentBackend = {
       reason: ADAPTER_NOT_LOADED
     }).pipe(Effect.as([])),
   deleteSession: (sessionId) =>
-    Effect.fail(new SessionDeleteError({ sessionId, reason: ADAPTER_NOT_LOADED }))
+    Effect.fail(new SessionDeleteError({ sessionId, reason: ADAPTER_NOT_LOADED })),
+  models: () =>
+    Stream.make(ModelsUnavailable.make({ message: ADAPTER_NOT_LOADED, refreshing: false })),
+  refreshModels: ignored('refreshModels')
 }
 
-const backendMethods = ['openSession', 'readHistory', 'deleteSession'] as const
+const backendMethods = [
+  'openSession',
+  'readHistory',
+  'deleteSession',
+  'models',
+  'refreshModels'
+] as const
 
 /**
  * Lists what keeps `provided`, a value read under {@link AGENT_BACKEND_KEY}, from being an

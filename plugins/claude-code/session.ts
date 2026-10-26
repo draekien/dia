@@ -316,7 +316,8 @@ const interruptSession = Effect.fn('ClaudeCodeSession.interruptSession')(functio
   yield* Effect.logInfo('Interrupted session', { superseded: requestIds })
 })
 
-const claudeExecutablePath = resolveClaudeExecutable()
+/** Path of the Claude Code binary passed to every `query()` this plugin starts, or `undefined` to let the SDK find it. */
+export const claudeExecutablePath = resolveClaudeExecutable()
 
 const toSDKUserMessage = (text: string, startsTurn = true): SDKUserMessage => ({
   type: 'user',

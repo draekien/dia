@@ -30,7 +30,9 @@ describe('TranscriptReaderLive', () => {
             reads.push(`${sessionId}@${cwd}`)
             return history
           }),
-        deleteSession: () => Effect.die('not called')
+        deleteSession: () => Effect.die('not called'),
+        models: () => Stream.empty,
+        refreshModels: () => Effect.die('not called')
       }
 
       const read = yield* Effect.gen(function* () {

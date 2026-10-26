@@ -59,6 +59,10 @@ const handlersLayer = Layer.unwrap(
       UnloadPlugin: unused,
       SetPluginOverride: unused,
       ClearPluginOverride: unused,
+      GetModels: unused,
+      RefreshModels: unused,
+      ListActivities: unused,
+      RunActivity: unused,
       SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
     })
   })
@@ -162,7 +166,7 @@ describe('Host server', () => {
           `ws://127.0.0.1:${address.port}`,
           [
             `${TOKEN_SUBPROTOCOL_PREFIX}${TOKEN}`,
-            `${VERSION_SUBPROTOCOL_PREFIX}${PROTOCOL_VERSION + 1}`
+            `${VERSION_SUBPROTOCOL_PREFIX}${PROTOCOL_VERSION}.1`
           ],
           { headers: { Origin: ORIGIN } }
         )
