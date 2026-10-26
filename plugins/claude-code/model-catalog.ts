@@ -145,13 +145,13 @@ export const makeModelCatalog = Effect.fnUntraced(function* (
   const fixedZone = yield* Effect.serviceOption(DateTime.CurrentTimeZone)
   const zone = (): DateTime.TimeZone => Option.getOrElse(fixedZone, () => DateTime.zoneMakeLocal())
 
-  const startOfToday = (now: DateTime.Utc): DateTime.Utc =>
-    DateTime.toUtc(DateTime.startOf(DateTime.setZone(now, zone()), 'day'))
+  const dayStart = (now: DateTime.Utc): DateTime.Zoned =>
+    DateTime.startOf(DateTime.setZone(now, zone()), 'day')
+
+  const startOfToday = (now: DateTime.Utc): DateTime.Utc => DateTime.toUtc(dayStart(now))
 
   const startOfTomorrow = (now: DateTime.Utc): DateTime.Utc =>
-    DateTime.toUtc(
-      DateTime.add(DateTime.startOf(DateTime.setZone(now, zone()), 'day'), { days: 1 })
-    )
+    DateTime.toUtc(DateTime.add(dayStart(now), { days: 1 }))
 
   const readToday = (fetchedAt: DateTime.Utc, now: DateTime.Utc): boolean =>
     !DateTime.isLessThan(fetchedAt, startOfToday(now)) && !DateTime.isGreaterThan(fetchedAt, now)
@@ -196,16 +196,9 @@ export const makeModelCatalog = Effect.fnUntraced(function* (
       case 'Loading':
         return current
       case 'Unavailable':
-        return ModelsUnavailable.make({ message: current.message, refreshing: true })
+        return ModelsUnavailable.make({ ...current, refreshing: true })
       case 'Ready':
-        return ModelsReady.make({
-          models: current.models,
-          fetchedAt: current.fetchedAt,
-          refreshing: true,
-          ...(current.lastRefreshError !== undefined
-            ? { lastRefreshError: current.lastRefreshError }
-            : {})
-        })
+        return ModelsReady.make({ ...current, refreshing: true })
     }
   })
 
@@ -226,12 +219,7 @@ export const makeModelCatalog = Effect.fnUntraced(function* (
     const message = outcome.failure.message
     yield* SubscriptionRef.update(state, (current) =>
       current._tag === 'Ready'
-        ? ModelsReady.make({
-            models: current.models,
-            fetchedAt: current.fetchedAt,
-            refreshing: false,
-            lastRefreshError: message
-          })
+        ? ModelsReady.make({ ...current, refreshing: false, lastRefreshError: message })
         : ModelsUnavailable.make({ message, refreshing: false })
     )
     return yield* new ActivityRunFailed({

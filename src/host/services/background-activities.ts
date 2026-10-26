@@ -75,8 +75,6 @@ const keyOf = (plugin: string, id: string): string => `${plugin}/${id}`
 const truncate = (message: string): string =>
   message.length > ACTIVITY_MESSAGE_LIMIT ? message.slice(0, ACTIVITY_MESSAGE_LIMIT) : message
 
-const lastRunOf = (status: ActivityStatus): LastRun | undefined => status.lastRun
-
 /** Live {@link BackgroundActivities}. Requires `EventHub`. */
 export const BackgroundActivitiesLive = Layer.effect(
   BackgroundActivities,
@@ -146,9 +144,12 @@ export const BackgroundActivitiesLive = Layer.effect(
           const at = yield* DateTime.now
           const outcome = yield* recordedOutcome(exit, at)
           yield* Ref.set(status, ActivityScheduled.make(outcome))
-          yield* Ref.set(current, Option.none())
           yield* changed
-        }).pipe(Effect.ensuring(Deferred.done(done, Exit.void)))
+        }).pipe(
+          Effect.ensuring(
+            Ref.set(current, Option.none()).pipe(Effect.andThen(Deferred.done(done, Exit.void)))
+          )
+        )
 
       const startRun = (
         onlyIfDue: boolean
@@ -168,7 +169,7 @@ export const BackgroundActivitiesLive = Layer.effect(
             }
             const done = yield* Deferred.make<void>()
             yield* Ref.set(current, Option.some(done))
-            yield* Ref.set(status, ActivityRunning.make({ lastRun: lastRunOf(state) }))
+            yield* Ref.set(status, ActivityRunning.make({ lastRun: state.lastRun }))
             yield* changed
             yield* Effect.forkIn(execute(done), scope)
             return Option.some(done)
@@ -183,12 +184,8 @@ export const BackgroundActivitiesLive = Layer.effect(
       const scheduler = Effect.gen(function* () {
         while (true) {
           const state = yield* Ref.get(status)
-          if (state._tag === 'Running') {
-            yield* awaitRun(yield* Ref.get(current))
-            continue
-          }
           const now = yield* DateTime.now
-          if (DateTime.isLessThan(now, state.nextRunAt)) {
+          if (state._tag === 'Scheduled' && DateTime.isLessThan(now, state.nextRunAt)) {
             yield* Effect.sleep(
               Duration.min(DateTime.distance(now, state.nextRunAt), ACTIVITY_RECHECK)
             )

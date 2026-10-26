@@ -1,11 +1,13 @@
 import { ByteSize, Schema } from 'effect'
 
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+
 /**
  * A plugin API version as `plugin.json` declares it: `MAJOR.MINOR.PATCH`, each a non-negative
  * integer without leading zeros. Compare two versions with {@link isApiCompatible}.
  */
 export const PluginApiVersion = Schema.String.check(
-  Schema.isPattern(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/, {
+  Schema.isPattern(SEMVER, {
     message: 'expected a plugin API version such as "1.0.0"'
   })
 )
@@ -20,7 +22,7 @@ export type PluginApiVersion = typeof PluginApiVersion.Type
 export const PLUGIN_API_VERSION: PluginApiVersion = '1.1.0'
 
 const versionParts = (version: string): ReadonlyArray<number> | undefined => {
-  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version)
+  const match = SEMVER.exec(version)
   return match === null ? undefined : match.slice(1).map(Number)
 }
 

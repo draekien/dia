@@ -89,6 +89,8 @@ describe('isApiCompatible', () => {
     ['1.0.0', true, 'an older minor version on the same major'],
     ['1.1.0', true, 'the same version'],
     ['1.1.9', true, 'a different patch version'],
+    ['1.1.12', true, 'a patch version of two digits'],
+    ['1x1x0', false, 'parts separated by something other than dots'],
     ['1.2.0', false, 'a newer minor version'],
     ['2.0.0', false, 'a newer major version'],
     ['0.1.0', false, 'an older major version'],

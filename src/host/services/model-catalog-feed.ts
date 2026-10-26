@@ -6,7 +6,6 @@ import {
   Deferred,
   Effect,
   Layer,
-  Ref,
   type Scope,
   Stream,
   SubscriptionRef
@@ -43,7 +42,6 @@ export const ModelCatalogFeedLive = Layer.effect(
       revision: 0,
       state: ModelsLoading.make({})
     })
-    const refreshModels = yield* Ref.make<Effect.Effect<void>>(Effect.void)
 
     const publish = (state: ModelCatalogSnapshot['state']) =>
       Effect.gen(function* () {
@@ -61,7 +59,6 @@ export const ModelCatalogFeedLive = Layer.effect(
 
     const start = Effect.gen(function* () {
       const backend = yield* resolveAgentBackend(plugins)
-      yield* Ref.set(refreshModels, backend.refreshModels())
       const firstPublished = yield* Deferred.make<void>()
       yield* backend.models().pipe(
         Stream.runForEach((state) =>
@@ -76,7 +73,9 @@ export const ModelCatalogFeedLive = Layer.effect(
     return ModelCatalogFeed.of({
       start,
       current: SubscriptionRef.get(snapshot),
-      refresh: Effect.flatten(Ref.get(refreshModels))
+      refresh: resolveAgentBackend(plugins).pipe(
+        Effect.flatMap((backend) => backend.refreshModels())
+      )
     })
   })
 )

@@ -153,7 +153,6 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
 
     const refreshCatalogs = Effect.gen(function* () {
       const client = yield* deps.client
-      dispatch(ActivitiesChanged.make({}))
       const snapshot = yield* client.GetModels()
       dispatch(ModelsChanged.make({ snapshot }))
     }).pipe(
@@ -163,8 +162,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     const refreshAfterReconnect = Effect.gen(function* () {
       const reconnecting = yield* Ref.getAndSet(connectedBefore, true)
       if (!reconnecting) return
-      yield* refreshWorkspace
-      yield* refreshCatalogs
+      dispatch(ActivitiesChanged.make({}))
+      yield* Effect.all([refreshWorkspace, refreshCatalogs], { concurrency: 'unbounded' })
     })
 
     const subscribeOnce = Effect.gen(function* () {
