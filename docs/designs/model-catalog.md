@@ -27,20 +27,19 @@ The New agent form lists the models the local Claude Code install supports, read
 ### PluginApiVersion (`src/shared/plugin/manifest.ts`)
 
 ```ts
-/** A plugin API version, `MAJOR.MINOR.PATCH` in plugin.json, decoded to its three numbers. Use it to read manifests and to compare versions with isApiCompatible. */
-export const PluginApiVersion = Schema.String.pipe(Schema.decodeTo(Schema.Struct({ major: Schema.Int, minor: Schema.Int, patch: Schema.Int }), /* parse/format transformation */))
+/** A plugin API version as plugin.json declares it: a `MAJOR.MINOR.PATCH` string such as "1.0.0". */
+export const PluginApiVersion = Schema.String.check(Schema.isPattern(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/))
 export type PluginApiVersion = typeof PluginApiVersion.Type
 
 /** The plugin API version this build of dia implements: 1.1.0. */
 export const PLUGIN_API_VERSION: PluginApiVersion
 
 /** True when a plugin whose manifest declares `plugin` can load on a host implementing `host`: same major and plugin.minor <= host.minor. Patch is ignored. */
-export const isApiCompatible: (host: PluginApiVersion, plugin: PluginApiVersion) => boolean
+export const isApiCompatible: (host: string, plugin: string) => boolean
 ```
 
 - `PluginManifest.api` changes from `Schema.String` (`manifest.ts:47`, `65`) to `PluginApiVersion`. `PLUGIN_API_VERSION` changes from the string `'1'` (`manifest.ts:8`). A manifest with `"api": "1"` fails manifest decoding.
-- The check at `plugin-registry.ts:429` becomes `isApiCompatible(PLUGIN_API_VERSION, loaded.manifest.api)` and fails with `Plugin API version 2.0.0 is not supported; this dia implements 1.1.0`.
-- The exact `Schema.decodeTo` transformation API is unverified; follow an existing `decodeTo` use in `node_modules/effect/src/Schema.ts`.
+- The check at `plugin-registry.ts:429` becomes `isApiCompatible(PLUGIN_API_VERSION, loaded.manifest.api)` and fails with `Plugin API version "2.0.0" is not supported; this dia implements "1.1.0"`. `isApiCompatible` returns false for a string that is not `MAJOR.MINOR.PATCH`.
 - Shipped manifests: `agent-overview`, `layout`, `example`, `worktrees` become `"1.0.0"`; `claude-code` becomes `"1.1.0"`. Every `api: '1'` fixture in `manifest.test.ts`, `plugin-registry.test.ts`, `plugin-loader.test.ts`, `host-plugins.test.ts`, `plugin-sources.test.ts`, `renderer-plugins.test.ts` becomes `'1.0.0'`; new tests cover `1.0.0` and `1.1.0` loading on `1.1.0`, and `1.2.0`, `2.0.0`, `1` being refused.
 
 ### Plugin context (`src/shared/plugin/api.ts`, `src/host/plugins/host-plugins.ts`)
@@ -97,6 +96,8 @@ Kernel-facing:
 ```ts
 /** Every registered activity, for the RPC handlers. Provided once in host-main.ts. */
 export class BackgroundActivities extends Context.Service<BackgroundActivities, {
+  /** PluginActivities.register for `plugin`; the Host's `extend` binds it to each plugin's name. */
+  readonly register: (plugin: PluginName, spec: ActivitySpec) => Effect.Effect<ActivityHandle, never, Scope.Scope>
   /** Every registered activity of every loaded plugin, grouped by plugin in load order, each plugin's in registration order. */
   readonly list: Effect.Effect<ReadonlyArray<ActivityInfo>>
   /** Same as ActivityHandle.runNow. Fails with ActivityNotFound when no loaded plugin owns `id`. */
@@ -109,7 +110,7 @@ Scheduling contract:
 - The scheduler sleeps in slices of at most `ACTIVITY_RECHECK` (`Duration.minutes(5)`) and reads `Clock` after each slice, so a system suspend or clock change delays a due run by at most that.
 - A run that dies (defect) is recorded as `RunFailed` with message `Unexpected error; see the log` and rescheduled after `ACTIVITY_DEFECT_RETRY` (`Duration.hours(1)`).
 - The kernel imposes no timeout; each `run` bounds its own duration.
-- Closing the registering scope (unload, reload, failed reload rollback, host shutdown) interrupts the activity's fiber and removes it from `list`. Registering on a closed scope registers nothing and logs a warning. Finalizer behaviour on a closed scope in Effect v4 is unverified; a test covers it.
+- Closing the registering scope (unload, reload, failed reload rollback, host shutdown) interrupts the activity's fiber and removes it from `list`. A `runNow` waiting on the activity returns normally.
 - `BackgroundActivities` publishes `ActivitiesChanged.make({})` to `EventHub` on registration, removal and every status change.
 - Logging: each run logs start, outcome and next due time at `Info` with `plugin` and `id`; a failed run at `Warning`; a defect at `Error` with its cause.
 - `ACTIVITY_RECHECK` and `ACTIVITY_DEFECT_RETRY` are exported `Duration` constants with JSDoc.
@@ -122,13 +123,13 @@ Scheduling contract:
 /** Id of an activity, unique within its plugin: lowercase letters, digits and hyphens. */
 export const ActivityId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]*$/))
 /** A run that succeeded at `at`. */
-export const RunSucceeded = Schema.TaggedStruct('RunSucceeded', { at: Schema.DateTimeUtc })
+export const RunSucceeded = Schema.TaggedStruct('RunSucceeded', { at: Schema.DateTimeUtcFromString })
 /** A run that failed at `at`, with the message to show. */
-export const RunFailed = Schema.TaggedStruct('RunFailed', { at: Schema.DateTimeUtc, message: Schema.String })
+export const RunFailed = Schema.TaggedStruct('RunFailed', { at: Schema.DateTimeUtcFromString, message: Schema.String })
 /** The outcome of an activity's most recent run. */
 export const LastRun = Schema.Union([RunSucceeded, RunFailed])
 /** Waiting for `nextRunAt`. */
-export const ActivityScheduled = Schema.TaggedStruct('Scheduled', { nextRunAt: Schema.DateTimeUtc, lastRun: Schema.optional(LastRun) })
+export const ActivityScheduled = Schema.TaggedStruct('Scheduled', { nextRunAt: Schema.DateTimeUtcFromString, lastRun: Schema.optional(LastRun) })
 /** A run is in progress; the next due time is known only when it ends. */
 export const ActivityRunning = Schema.TaggedStruct('Running', { lastRun: Schema.optional(LastRun) })
 /** An activity's state as the Plugins page shows it. */
@@ -151,7 +152,7 @@ export const ModelsLoading = Schema.TaggedStruct('Loading', {})
 /** No list is known; `message` says why the last read failed; `refreshing` is true while a new read runs. */
 export const ModelsUnavailable = Schema.TaggedStruct('Unavailable', { message: Schema.String, refreshing: Schema.Boolean })
 /** A non-empty list read at `fetchedAt`; `lastRefreshError` is set when the latest read failed and this list is older. */
-export const ModelsReady = Schema.TaggedStruct('Ready', { models: Schema.NonEmptyArray(ModelOption), fetchedAt: Schema.DateTimeUtc, refreshing: Schema.Boolean, lastRefreshError: Schema.optional(Schema.String) })
+export const ModelsReady = Schema.TaggedStruct('Ready', { models: Schema.NonEmptyArray(ModelOption), fetchedAt: Schema.DateTimeUtcFromString, refreshing: Schema.Boolean, lastRefreshError: Schema.optional(Schema.String) })
 /** The model list as the adapter reports it. */
 export const ModelCatalogState = Schema.Union([ModelsLoading, ModelsUnavailable, ModelsReady])
 /** A ModelCatalogState as the renderer receives it from GetModels and ModelsChanged. A higher `revision` is newer, also across Host restarts. */
@@ -230,7 +231,7 @@ export const MODEL_PROBE_RETRY = Duration.hours(1)
 
 Behaviour:
 
-1. Reads `<dataDir>/models.json` with `JSON.parse` and `Schema.decodeUnknownEffect(Schema.toCodecJson(ModelCache))`, where `ModelCache = Schema.Struct({ version: Schema.Literal(1), fetchedAt: Schema.DateTimeUtc, models: Schema.NonEmptyArray(ModelOption) })` is local to the adapter. A missing file is no cache; a file that fails to parse or decode is no cache and logs a `Warning`.
+1. Reads `<dataDir>/models.json` with `Schema.decodeUnknownEffect(ModelCache)`, where `ModelCache = Schema.fromJsonString(Schema.Struct({ version: Schema.Literal(1), fetchedAt: Schema.DateTimeUtcFromString, models: Schema.NonEmptyArray(ModelOption) }))` is local to the adapter. A missing file is no cache; a file that fails to parse or decode is no cache and logs a `Warning`.
 2. Initial state: `Ready` from the cache (`refreshing: false`), or `Loading` with no cache. A hung first probe leaves `Loading` after at most `MODEL_PROBE_TIMEOUT`.
 3. Registers activity `models`, label `Model list`. `firstRunAt` is now when there is no cache or `fetchedAt` is not in today's local day (including a `fetchedAt` later than now); otherwise the start of the next local day.
 4. `run`:
@@ -239,7 +240,7 @@ Behaviour:
    - on success publishes `Ready { refreshing: false }` with no `lastRefreshError`, writes `models.json` through `models.json.tmp` and a rename (a failed write logs a `Warning` and does not fail the run), and returns the start of the next local day;
    - on failure publishes `Ready { refreshing: false, lastRefreshError }` when a list is known, else `Unavailable { message, refreshing: false }`, and fails with `ActivityRunFailed { message, retryAt: now + MODEL_PROBE_RETRY }`.
 5. `refreshModels` is the handle's `runNow`.
-6. Day boundaries are computed inside `DateTime.withCurrentZoneLocal`, read on each call so a system time zone change applies at the next run. Tests use `DateTime.withCurrentZone(zone)` and `TestClock`.
+6. Day boundaries use the `DateTime.CurrentTimeZone` service when one is provided, otherwise `DateTime.zoneMakeLocal()` read on each call, so a system time zone change applies at the next run. Tests provide `DateTime.layerCurrentZone(zone)` and use `TestClock`.
 
 The probe (pseudo-code; the acquire step is an `Effect.gen` returning `{ input, q }`):
 
@@ -247,7 +248,7 @@ The probe (pseudo-code; the acquire step is an `Effect.gen` returning `{ input, 
 Effect.acquireUseRelease(
   acquire: input = openPromptInput(Queue.unbounded<SDKUserMessage>()); q = query({ prompt: input.prompts, options: { cwd: dataDir, persistSession: false, strictMcpConfig: true, ...(claudeExecutablePath !== undefined ? { pathToClaudeCodeExecutable: claudeExecutablePath } : {}) } }),
   use: Effect.tryPromise({ try: () => q.supportedModels(), catch: (cause) => new ModelProbeFailed({ message: errorMessage(cause) }) })
-         .pipe(Effect.timeout(MODEL_PROBE_TIMEOUT), Effect.catchTag('TimeoutError', () => Effect.fail(new ModelProbeFailed({ message: 'Claude Code did not report models within 60 seconds' })))),
+         .pipe(Effect.timeout(MODEL_PROBE_TIMEOUT), Effect.catchTag('TimeoutError', () => Effect.fail(new ModelProbeFailed({ message: `Claude Code did not report models within ${Duration.format(MODEL_PROBE_TIMEOUT)}` (renders `1m`) })))),
   release: input.end, then q.close()
 )
 ```
@@ -276,16 +277,16 @@ Effect.acquireUseRelease(
 - The Select trigger truncates a long `displayName` (`min-w-0 truncate`); the item list scrolls (existing `SelectContent` behaviour).
 - The icon button has `aria-label="Refresh models"` and a tooltip. While refreshing, it and `Retry` use `aria-disabled="true"`, ignore activation and keep focus; neither is unmounted between `Unavailable` and `Unavailable { refreshing }`.
 - One `role="status"` region announces `Refreshing models`, `Model list updated`, `Couldn't refresh models`, and `Model changed to {displayName}` when the selection was reset.
-- Dates use `Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })` for today and `{ day: 'numeric', month: 'short' }` otherwise.
+- Dates use `Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })` for today and `{ day: 'numeric', month: 'short' }` otherwise. Both the form and the Plugins page format through `formatWhen` (`src/renderer/src/lib/format-when.ts`).
 
 **Plugins page** (`plugins-page.tsx`): under a plugin row with activities, a nested `ul` with one row per activity:
 
 ```
-Model list   Ran today 09:12                  [Run now]
+Model list   Ran 09:12 · next 26 Oct          [Run now]
 Model list   Running…                         [Run now, aria-disabled]
 Model list   Failed 09:12 · retries 10:12     [Run now]
              spawn claude ENOENT              ← mono, text-xs, same overflow rules as statusDetail
-Model list   Not run yet · due 00:00          [Run now]
+Model list   Not run yet · due 26 Oct         [Run now]
 ```
 
 - `Run now` has `aria-label="Run {label} for {plugin}"`, calls `activities.run`, and is `aria-disabled` while the status is `Running`.
@@ -327,9 +328,8 @@ Model list   Not run yet · due 00:00          [Run now]
 
 ## Open Assumptions
 
-- `supportedModels()` on a `query()` whose prompt has not yielded resolves without starting a turn. Unverified; the first implementation step tests it.
-- `close()` ends the `claude` child process and its children on Windows. Unverified; the first step checks no `claude.exe` remains after `close()`.
-- With `settingSources` unset, user `SessionStart` hooks may run for the probe. Unverified; the first step checks the probe's hook activity.
+- Verified on 2026-10-26 (`docs/reasoning/2026-10-26-supported-models-probe.md`): `supportedModels()` on a `query()` whose prompt has not yielded resolves without starting a turn, and `close()` leaves no `claude.exe` running on Windows. The SDK's first row is `default` ("Default (recommended)"), so the default selection is the SDK default.
+- With `settingSources` unset, user `SessionStart` hooks may run for the probe. Unverified.
 - The list reflects user and managed settings only. A project's `.claude/settings.json` can accept or hide a model differently from the list. Accepted: the list is one per app, not per project.
 
 ## Tests named by the rounds
@@ -344,16 +344,16 @@ Model list   Not run yet · due 00:00          [Run now]
 - A defect in `run` is recorded as `RunFailed` and retried after `ACTIVITY_DEFECT_RETRY`.
 - `ActivitiesChanged` is published on registration, removal and each status change.
 - An `ActivityRunFailed.message` longer than 500 characters is truncated.
-- A probe timeout fails with the `did not report models within 60 seconds` message.
+- A probe timeout fails with the `did not report models within 1m` message.
 - `agentBackendProblems` reports a backend without `models` or `refreshModels`.
 - `RunActivity`'s `plugin` and `id` reach the handler unchanged.
 - `RefreshModels` during a run joins it; one probe runs.
 - The revision after a simulated Host restart is higher than the revision before.
 - The probe's `close()` runs after success, failure and timeout.
-- A scheduled run fires within `ACTIVITY_RECHECK` after `TestClock` jumps past its due time.
+- A scheduled run fires once `TestClock` is set past its due time. (`TestClock` cannot show the `ACTIVITY_RECHECK` slicing, because a test clock jump wakes every sleeper.)
 - Closing the plugin scope while `runNow` waits returns normally and removes the activity.
 - `firstRunAt` for a cache from yesterday, today, and the future, in a fixed zone.
-- `plugin-modules.test.ts` imports a new re-export through `@dia/plugin`.
+- The `claude-code` adapter importing `ModelsReady` and the other new re-exports through `@dia/plugin` is checked in the running app: `plugin-modules.test.ts` resolves `@dia/plugin` to a fixture, not to `out/main/plugin-api.js`.
 
 ## Refinement Record
 
