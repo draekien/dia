@@ -1,3 +1,4 @@
+import { ModelField } from '@renderer/components/model-field'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import {
@@ -8,6 +9,7 @@ import {
   SelectValue
 } from '@renderer/components/ui/select'
 import { Switch } from '@renderer/components/ui/switch'
+import { useModelCatalog } from '@renderer/hooks/use-model-catalog'
 import { usePluginList } from '@renderer/hooks/use-plugin-list'
 import { cancelNewAgent } from '@renderer/lib/actions'
 import { CREATE_PERMISSION_MODE_OPTIONS } from '@renderer/lib/permission-modes'
@@ -23,13 +25,6 @@ import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { Option, Schema } from 'effect'
 import { useEffect, useState } from 'react'
-
-// Placeholder list pending a confirmed source for available models.
-const MODEL_OPTIONS = [
-  { value: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
-  { value: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
-  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' }
-]
 
 const providesWorktrees = (plugins: ReadonlyArray<PluginInfo> | undefined): boolean =>
   plugins?.some((plugin) => plugin.provides.includes(WORKTREES_KEY)) ?? false
@@ -55,7 +50,8 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
   const [paneId] = useState(() => crypto.randomUUID())
   const [state, setState] = useState<FormState>({ step: 'editing' })
   const [name, setName] = useState('')
-  const [model, setModel] = useState(MODEL_OPTIONS[0].value)
+  const catalog = useModelCatalog()
+  const [model, setModel] = useState<string | undefined>(undefined)
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL)
   const [permissionMode, setPermissionMode] = useState<StartupPermissionMode>('auto')
   const [useWorktree, setUseWorktree] = useState(false)
@@ -70,6 +66,7 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
   }, [paneId])
 
   function handleStart() {
+    if (model === undefined) return
     setState({ step: 'creating' })
     window.dia.createTab(
       CreateTab.make({
@@ -105,21 +102,7 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
           />
         </div>
 
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-ink-muted">Model</span>
-          <Select value={model} onValueChange={setModel} disabled={isBusy}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MODEL_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <ModelField catalog={catalog} value={model} onValueChange={setModel} disabled={isBusy} />
 
         <div className="flex flex-col gap-1">
           <span className="text-xs text-ink-muted">Thinking</span>
@@ -187,7 +170,7 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
           <Button type="button" variant="ghost" onClick={cancelNewAgent} disabled={isBusy}>
             Cancel
           </Button>
-          <Button type="button" onClick={handleStart} disabled={isBusy}>
+          <Button type="button" onClick={handleStart} disabled={isBusy || model === undefined}>
             {isBusy ? 'Starting…' : state.step === 'error' ? 'Try again' : 'Start agent'}
           </Button>
         </div>

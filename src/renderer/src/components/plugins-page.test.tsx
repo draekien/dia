@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 // @effect-diagnostics newPromise:off -- the test holds a bridge call open with a manually resolved Promise.
+import type { ActivityInfoJson } from '@shared/ipc/contract'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -16,10 +17,32 @@ const info = (name: string, overrides: Partial<PluginInfo> = {}): PluginInfo => 
   ...overrides
 })
 
-const installBridge = (initial: ReadonlyArray<PluginInfo>) => {
+const DUE_AT = '2026-10-26T14:00:00.000Z'
+
+const modelList = (status: ActivityInfoJson['status']): ActivityInfoJson => ({
+  plugin: 'claude-code',
+  id: 'models',
+  label: 'Model list',
+  status
+})
+
+const installBridge = (
+  initial: ReadonlyArray<PluginInfo>,
+  initialActivities: ReadonlyArray<ActivityInfoJson> = []
+) => {
   let current = initial
+  let currentActivities = initialActivities
   const listeners = new Set<(event: { readonly name: string }) => void>()
+  const activityListeners = new Set<() => void>()
   const bridge = {
+    activities: {
+      list: vi.fn(async () => currentActivities),
+      run: vi.fn(async (_plugin: string, _id: string) => null),
+      onChanged: vi.fn((listener: () => void) => {
+        activityListeners.add(listener)
+        return () => activityListeners.delete(listener)
+      })
+    },
     pickDirectory: vi.fn(async () => '/work/chat' as string | null),
     plugins: {
       onStatusChanged: vi.fn((listener: (event: { readonly name: string }) => void) => {
@@ -43,6 +66,10 @@ const installBridge = (initial: ReadonlyArray<PluginInfo>) => {
     },
     emitStatusChanged: (name: string) => {
       for (const listener of listeners) listener({ name })
+    },
+    changeActivities: (next: ReadonlyArray<ActivityInfoJson>) => {
+      currentActivities = next
+      for (const listener of activityListeners) listener()
     }
   }
 }
@@ -378,5 +405,66 @@ describe('PluginsPage', () => {
     unmount()
 
     expect(unsubscribe()).toBe(false)
+  })
+
+  it('shows a failed background activity under its plugin with the reason', async () => {
+    installBridge(
+      [info('claude-code')],
+      [
+        modelList({
+          _tag: 'Scheduled',
+          nextRunAt: DUE_AT,
+          lastRun: { _tag: 'RunFailed', at: '2026-10-25T15:00:00.000Z', message: 'spawn ENOENT' }
+        })
+      ]
+    )
+
+    render(<PluginsPage onClose={() => {}} />)
+
+    await screen.findByText('Model list')
+    expect(rowOf('claude-code').getByText(/^Failed .+ · retries .+$/)).toBeTruthy()
+    expect(rowOf('claude-code').getByText('spawn ENOENT')).toBeTruthy()
+  })
+
+  it('runs a background activity of its plugin from Run now', async () => {
+    const { bridge } = installBridge(
+      [info('claude-code')],
+      [modelList({ _tag: 'Scheduled', nextRunAt: DUE_AT })]
+    )
+    render(<PluginsPage onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Run Model list for claude-code' }))
+
+    expect(bridge.activities.run).toHaveBeenCalledWith('claude-code', 'models')
+  })
+
+  it('ignores Run now while the activity is running', async () => {
+    const { bridge } = installBridge([info('claude-code')], [modelList({ _tag: 'Running' })])
+    render(<PluginsPage onClose={() => {}} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Run Model list for claude-code' }))
+
+    expect(bridge.activities.run).not.toHaveBeenCalled()
+  })
+
+  it('announces that an activity failed once its run ends', async () => {
+    const { changeActivities } = installBridge(
+      [info('claude-code')],
+      [modelList({ _tag: 'Scheduled', nextRunAt: DUE_AT })]
+    )
+    render(<PluginsPage onClose={() => {}} />)
+    await screen.findByText('Model list')
+
+    changeActivities([modelList({ _tag: 'Running' })])
+    await screen.findByText('Running…')
+    changeActivities([
+      modelList({
+        _tag: 'Scheduled',
+        nextRunAt: DUE_AT,
+        lastRun: { _tag: 'RunFailed', at: '2026-10-25T15:00:00.000Z', message: 'spawn ENOENT' }
+      })
+    ])
+
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Model list failed'))
   })
 })
