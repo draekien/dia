@@ -59,6 +59,10 @@ const handlersLayer = Layer.unwrap(
       UnloadPlugin: unused,
       SetPluginOverride: unused,
       ClearPluginOverride: unused,
+      GetModels: unused,
+      RefreshModels: unused,
+      ListActivities: unused,
+      RunActivity: unused,
       SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
     })
   })

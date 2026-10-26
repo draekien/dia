@@ -1,5 +1,7 @@
 import { type AgentSummary, NoActivity, StatusIdle } from '@shared/domain/agent-summary'
 import { Deny, FreeformResponse } from '@shared/domain/attention'
+import { ActivityNotFound } from '@shared/domain/background-activity'
+import { type ModelCatalogSnapshot, ModelsReady } from '@shared/domain/model'
 import {
   AgentName,
   DirectoryNotFoundError,
@@ -17,11 +19,13 @@ import {
 import {
   type AgentSummariesReplaced,
   type IpcEvent,
+  type ModelCatalogSnapshotJson,
+  ModelsChanged,
   PaneAssistantTextDelta,
   type WorkspaceChanged
 } from '@shared/ipc/contract'
 import type { EventFrame } from '@shared/ipc/rpc'
-import { Data, Effect, Stream } from 'effect'
+import { Data, DateTime, Effect, Stream } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type DiaRpcClient, makeHostApi } from './host-api'
 
@@ -42,6 +46,24 @@ const paneFrame = (seq: number, text: string): EventFrame => ({
 })
 const reloadFrame: EventFrame = { _tag: 'ReloadHistory', paneId: PANE }
 
+const SNAPSHOT: ModelCatalogSnapshot = {
+  revision: 7,
+  state: ModelsReady.make({
+    models: [{ value: 'sonnet', displayName: 'Sonnet', description: 'Everyday tasks' }],
+    fetchedAt: DateTime.makeUnsafe('2026-10-25T15:00:00Z'),
+    refreshing: false
+  })
+}
+const SNAPSHOT_JSON: ModelCatalogSnapshotJson = {
+  revision: 7,
+  state: {
+    _tag: 'Ready',
+    models: [{ value: 'sonnet', displayName: 'Sonnet', description: 'Everyday tasks' }],
+    fetchedAt: '2026-10-25T15:00:00.000Z',
+    refreshing: false
+  }
+}
+
 class ConnectionError extends Data.TaggedError('ConnectionError')<{ readonly reason: string }> {}
 
 const dropped = Stream.fail(new ConnectionError({ reason: 'connection dropped' }))
@@ -57,6 +79,8 @@ interface ClientScript {
   readonly subscriptions?: ReadonlyArray<Stream.Stream<EventFrame, ConnectionError>>
   readonly registerProject?: Effect.Effect<void, DirectoryNotFoundError>
   readonly removeProject?: Stream.Stream<RemovalProgress, ProjectNotFoundError>
+  readonly getModels?: Effect.Effect<ModelCatalogSnapshot, ConnectionError>
+  readonly runActivity?: Effect.Effect<void, ActivityNotFound>
 }
 
 const makeClient = (script: ClientScript = {}) => {
@@ -90,6 +114,10 @@ const makeClient = (script: ClientScript = {}) => {
       provides: []
     })
   )
+  const getModels = vi.fn(() => script.getModels ?? Effect.succeed(SNAPSHOT))
+  const runActivity = vi.fn(
+    (_payload: { plugin: string; id: string }) => script.runActivity ?? Effect.void
+  )
   const setPluginOverride = vi.fn((_payload: { name: string; directory: string }) =>
     Effect.succeed({ _tag: 'Rejected' as const, message: 'no plugin.json' })
   )
@@ -104,7 +132,9 @@ const makeClient = (script: ClientScript = {}) => {
     GetWorkspace: getWorkspace,
     GetAgentSummaries: getAgentSummaries,
     RegisterProject: registerProject,
-    RemoveProject: removeProject
+    RemoveProject: removeProject,
+    GetModels: getModels,
+    RunActivity: runActivity
   } as unknown as DiaRpcClient
   return {
     client,
@@ -116,7 +146,9 @@ const makeClient = (script: ClientScript = {}) => {
     registerProject,
     removeProject,
     loadPlugin,
-    setPluginOverride
+    setPluginOverride,
+    getModels,
+    runActivity
   }
 }
 
@@ -261,6 +293,75 @@ describe('makeHostApi', () => {
 
     expect(workspaces.map((event) => event.workspace)).toEqual([EMPTY_WORKSPACE])
     expect(replaced.map((event) => event.summaries)).toEqual([[SUMMARY]])
+  })
+
+  it('hands a ModelsChanged event to the renderer as plain JSON with an ISO fetchedAt', async () => {
+    const frame: EventFrame = {
+      _tag: 'GlobalEvent',
+      event: ModelsChanged.make({ snapshot: SNAPSHOT })
+    }
+    const { client } = makeClient({ subscriptions: [afterListenersAttach(Stream.make(frame))] })
+    const { api } = makeApi(client)
+    const received: Array<ModelCatalogSnapshotJson> = []
+    api.models.onChanged((snapshot) => received.push(structuredClone(snapshot)))
+
+    await advance(10)
+
+    expect(received).toEqual([SNAPSHOT_JSON])
+  })
+
+  it('re-reads the model list and the activities after a reconnect', async () => {
+    const { client } = makeClient({ subscriptions: [dropped] })
+    const { api } = makeApi(client)
+    const models: Array<ModelCatalogSnapshotJson> = []
+    let activityChanges = 0
+    api.models.onChanged((snapshot) => models.push(snapshot))
+    api.activities.onChanged(() => {
+      activityChanges += 1
+    })
+
+    await advance(1500)
+
+    expect(models).toEqual([SNAPSHOT_JSON])
+    expect(activityChanges).toBe(1)
+  })
+
+  it('still re-reads the workspace after a reconnect when the model list cannot be read', async () => {
+    const { client } = makeClient({
+      subscriptions: [dropped],
+      getModels: Effect.fail(new ConnectionError({ reason: 'connection down' }))
+    })
+    const { api, warn } = makeApi(client)
+    const workspaces: Array<WorkspaceChanged> = []
+    api.onWorkspaceChanged((event) => workspaces.push(event))
+
+    await advance(1500)
+
+    expect(workspaces.map((event) => event.workspace)).toEqual([EMPTY_WORKSPACE])
+    expect(warn.mock.calls.map(([message]) => message)).toContain('Model list refresh failed')
+  })
+
+  it('sends the plugin and activity id to RunActivity and resolves null once it ran', async () => {
+    const { client, runActivity } = makeClient()
+    const { api } = makeApi(client)
+
+    const result = await api.activities.run('claude-code', 'models')
+
+    expect(runActivity.mock.calls.map(([payload]) => payload)).toEqual([
+      { plugin: 'claude-code', id: 'models' }
+    ])
+    expect(result).toBeNull()
+  })
+
+  it('resolves running an unknown activity as the plain refusal', async () => {
+    const { client } = makeClient({
+      runActivity: Effect.fail(new ActivityNotFound({ plugin: 'claude-code', id: 'gone' }))
+    })
+    const { api } = makeApi(client)
+
+    const result = await api.activities.run('claude-code', 'gone')
+
+    expect(result).toStrictEqual({ _tag: 'ActivityNotFound', plugin: 'claude-code', id: 'gone' })
   })
 
   it('sends the project id and directory to RegisterProject and resolves null once registered', async () => {

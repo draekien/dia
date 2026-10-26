@@ -32,6 +32,7 @@ import { AgentSummariesLive } from './services/agent-summaries'
 import { BackgroundActivitiesLive } from './services/background-activities'
 import { makeCommandDeduperLive } from './services/command-deduper'
 import { makeEventHubLive } from './services/event-hub'
+import { ModelCatalogFeed, ModelCatalogFeedLive } from './services/model-catalog-feed'
 import { PaneSupervisor, PaneSupervisorLive, SessionFactoryLive } from './services/pane-supervisor'
 import { makePaneWorkspaceLive } from './services/pane-workspace'
 import { makePersistenceServiceLive } from './services/persistence'
@@ -105,6 +106,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     AgentSummariesLive,
     Layer.mergeAll(workspace, persistence, eventHub)
   )
+  const modelCatalog = Layer.provide(ModelCatalogFeedLive, Layer.merge(hostPlugins, eventHub))
   const state = Layer.mergeAll(
     supervisor,
     workspace,
@@ -114,6 +116,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     pluginSources,
     hostPlugins,
     backgroundActivities,
+    modelCatalog,
     makeCommandDeduperLive(),
     NodeFileSystem.layer,
     NodePath.layer
@@ -173,6 +176,7 @@ export const runHost = Effect.scoped(
       const { port } = address
       yield* Effect.logInfo('Host listening', { port })
       yield* Context.get(context, HostPlugins).start()
+      yield* Context.get(context, ModelCatalogFeed).start
       yield* post(HostReady.make({ port, token }))
 
       while (true) {

@@ -6,12 +6,14 @@ export const ActivityId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]*
 export type ActivityId = typeof ActivityId.Type
 
 /** The most recent run of an activity succeeded at `at`. */
-export const RunSucceeded = Schema.TaggedStruct('RunSucceeded', { at: Schema.DateTimeUtc })
+export const RunSucceeded = Schema.TaggedStruct('RunSucceeded', {
+  at: Schema.DateTimeUtcFromString
+})
 export type RunSucceeded = typeof RunSucceeded.Type
 
 /** The most recent run of an activity failed at `at`; `message` is the reason shown to the user. */
 export const RunFailed = Schema.TaggedStruct('RunFailed', {
-  at: Schema.DateTimeUtc,
+  at: Schema.DateTimeUtcFromString,
   message: Schema.String
 })
 export type RunFailed = typeof RunFailed.Type
@@ -22,7 +24,7 @@ export type LastRun = typeof LastRun.Type
 
 /** The activity is waiting until `nextRunAt`; `lastRun` is absent before its first run. */
 export const ActivityScheduled = Schema.TaggedStruct('Scheduled', {
-  nextRunAt: Schema.DateTimeUtc,
+  nextRunAt: Schema.DateTimeUtcFromString,
   lastRun: Schema.optional(LastRun)
 })
 export type ActivityScheduled = typeof ActivityScheduled.Type

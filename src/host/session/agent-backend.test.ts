@@ -1,6 +1,6 @@
 import { assert, describe, it } from '@effect/vitest'
 import { type PaneConfig, SessionId } from '@shared/domain/pane'
-import { Effect, Option } from 'effect'
+import { Effect, Option, Stream } from 'effect'
 import {
   AGENT_BACKEND_KEY,
   type AgentBackend,
@@ -34,7 +34,9 @@ describe('resolveAgentBackend', () => {
       const backend: AgentBackend = {
         openSession: () => Effect.die('not called'),
         readHistory: () => Effect.succeed([{ role: 'user', content: 'hi' }]),
-        deleteSession: () => Effect.void
+        deleteSession: () => Effect.void,
+        models: () => Stream.empty,
+        refreshModels: () => Effect.void
       }
 
       const resolved = yield* resolveAgentBackend(registryProviding(Option.some(backend)))
@@ -84,6 +86,22 @@ describe('resolveAgentBackend', () => {
         assert.strictEqual(error.reason, 'The claude-code adapter is not loaded')
       })
     )
+
+    it.effect(`returns a backend whose model list is unavailable when ${name}`, () =>
+      Effect.gen(function* () {
+        const backend = yield* resolveAgentBackend(registryProviding(provided))
+
+        const states = yield* Stream.runCollect(backend.models())
+
+        assert.deepStrictEqual(states, [
+          {
+            _tag: 'Unavailable',
+            message: 'The claude-code adapter is not loaded',
+            refreshing: false
+          }
+        ])
+      })
+    )
   }
 })
 
@@ -91,7 +109,9 @@ describe('agentBackendProblems', () => {
   const validBackend = {
     openSession: () => Effect.void,
     readHistory: () => Effect.succeed([]),
-    deleteSession: () => Effect.void
+    deleteSession: () => Effect.void,
+    models: () => Stream.empty,
+    refreshModels: () => Effect.void
   }
 
   it('reports no problem for a value with every backend method', () => {
@@ -118,13 +138,25 @@ describe('agentBackendProblems', () => {
       [
         '"agentBackend.openSession" is not a function',
         '"agentBackend.readHistory" is not a function',
-        '"agentBackend.deleteSession" is not a function'
+        '"agentBackend.deleteSession" is not a function',
+        '"agentBackend.models" is not a function',
+        '"agentBackend.refreshModels" is not a function'
       ]
     ],
     [
       'deleteSession is missing',
       Option.some({ ...validBackend, deleteSession: undefined }),
       ['"agentBackend.deleteSession" is not a function']
+    ],
+    [
+      'models is missing',
+      Option.some({ ...validBackend, models: undefined }),
+      ['"agentBackend.models" is not a function']
+    ],
+    [
+      'refreshModels is an effect rather than a function',
+      Option.some({ ...validBackend, refreshModels: Effect.void }),
+      ['"agentBackend.refreshModels" is not a function']
     ]
   ]
 
@@ -146,7 +178,9 @@ describe('adapterContract', () => {
 
     assert.deepStrictEqual(adapterContract.problems(provided), [
       '"agentBackend.readHistory" is not a function',
-      '"agentBackend.deleteSession" is not a function'
+      '"agentBackend.deleteSession" is not a function',
+      '"agentBackend.models" is not a function',
+      '"agentBackend.refreshModels" is not a function'
     ])
   })
 })

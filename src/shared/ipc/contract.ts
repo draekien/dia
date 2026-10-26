@@ -7,7 +7,9 @@ import {
   Question,
   QuestionResponse
 } from '../domain/attention'
+import type { ActivityInfo, ActivityNotFound } from '../domain/background-activity'
 import { MessageQueueSnapshot, OutgoingMessage, SendMode } from '../domain/message-queue'
+import { ModelCatalogSnapshot } from '../domain/model'
 import { ConversationMessage, PermissionMode, ThinkingLevel } from '../domain/pane'
 import type { RegisterProjectRefusal } from '../domain/project'
 import { AgentName, CreateTabRequest, ProjectId, Workspace } from '../domain/project'
@@ -524,6 +526,16 @@ export type PluginStatusChanged = typeof PluginStatusChanged.Type
 export const ActivitiesChanged = Schema.TaggedStruct('ActivitiesChanged', {})
 export type ActivitiesChanged = typeof ActivitiesChanged.Type
 
+/**
+ * Event pushed to the renderer whenever the model list changes; `snapshot` is the full current
+ * list state. Never replayed; the preload raises it itself after a reconnect with the state read
+ * from `GetModels`. Keep the snapshot with the highest `revision`.
+ */
+export const ModelsChanged = Schema.TaggedStruct('ModelsChanged', {
+  snapshot: ModelCatalogSnapshot
+})
+export type ModelsChanged = typeof ModelsChanged.Type
+
 // Additional events (PaneClosed) join this union in later bullets.
 /**
  * Union of every event pushed to the renderer, by the Host's event stream or
@@ -554,6 +566,7 @@ export const IpcEvent = Schema.Union([
   PaneAttentionChanged,
   PluginStatusChanged,
   ActivitiesChanged,
+  ModelsChanged,
   UpdateStatusChanged
 ])
 export type IpcEvent = typeof IpcEvent.Type
@@ -581,6 +594,46 @@ export interface PluginApi {
   onStatusChanged(listener: (event: PluginStatusChanged) => void): () => void
 }
 
+/** A {@link ModelCatalogSnapshot} as plain data, with dates as ISO strings, as `window.dia.models` delivers it. */
+export type ModelCatalogSnapshotJson = typeof ModelCatalogSnapshot.Encoded
+
+/** An `ActivityInfo` as plain data, with dates as ISO strings, as `window.dia.activities` delivers it. */
+export type ActivityInfoJson = typeof ActivityInfo.Encoded
+
+/** An `ActivityNotFound` refusal as plain data, as `window.dia.activities.run` resolves it. */
+export type ActivityNotFoundJson = typeof ActivityNotFound.Encoded
+
+/** The model list calls of `window.dia.models`, served by the Host. */
+export interface ModelApi {
+  /** The current model list. Keep it only if its `revision` is higher than the one you hold. */
+  get(): Promise<ModelCatalogSnapshotJson>
+  /** Re-reads the model list from the agent; resolves when the read ends, whatever its outcome, which arrives through `onChanged`. */
+  refresh(): Promise<void>
+  /**
+   * Subscribes to model list changes, including the state read again after a reconnect. Subscribe
+   * before calling `get`, and keep the snapshot with the highest `revision`. Returns a function
+   * that stops listening.
+   */
+  onChanged(listener: (snapshot: ModelCatalogSnapshotJson) => void): () => void
+}
+
+/** The background activity calls of `window.dia.activities`, served by the Host. */
+export interface ActivityApi {
+  /** Every registered background activity of every loaded plugin. */
+  list(): Promise<ReadonlyArray<ActivityInfoJson>>
+  /**
+   * Runs activity `id` of `plugin` now, or waits for its run in progress. Resolves `null` when the
+   * run has ended, or the refusal when no loaded plugin registered that activity.
+   */
+  run(plugin: string, id: string): Promise<ActivityNotFoundJson | null>
+  /**
+   * Subscribes to activity changes (registered, removed, started, finished), including after a
+   * reconnect. The listener receives nothing; call `list` for the new state. Returns a function
+   * that stops listening.
+   */
+  onChanged(listener: () => void): () => void
+}
+
 /**
  * Shape of the `window.dia` bridge the preload script exposes to the renderer.
  * The single source of truth for that surface: preload's implementation is
@@ -589,6 +642,8 @@ export interface PluginApi {
  */
 export interface DiaApi {
   readonly plugins: PluginApi
+  readonly models: ModelApi
+  readonly activities: ActivityApi
   sendMessage(paneId: string, text: string, mode: SendMode): void
   editQueuedMessage(paneId: string, messageId: string, text: string): void
   removeQueuedMessage(paneId: string, messageId: string): void
