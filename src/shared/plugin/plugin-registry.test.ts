@@ -180,7 +180,7 @@ describe('plugin registry', () => {
       const log: Array<string> = []
       const registry = yield* makeRegistry({
         good: plugin(manifest('good'), recording('good', log)),
-        old: plugin(manifest('old', { api: '0' }), recording('old', log))
+        old: plugin(manifest('old', { api: '2.0.0' }), recording('old', log))
       })
       yield* registry.load('good')
 
@@ -188,7 +188,7 @@ describe('plugin registry', () => {
 
       assert.deepStrictEqual(refused.status, {
         _tag: 'Failed',
-        message: `Plugin API version "0" does not match the installed version "${PLUGIN_API_VERSION}"`
+        message: `Plugin API version "2.0.0" is not supported; this dia implements "${PLUGIN_API_VERSION}"`
       })
       assert.strictEqual(yield* statusOf(registry, 'good'), 'Loaded')
       assert.deepStrictEqual(log, ['good:open'])
@@ -458,7 +458,7 @@ describe('plugin registry', () => {
       let imports = 0
       const registry = yield* makeRegistry({
         old: {
-          manifest: manifest('old', { api: '0' }),
+          manifest: manifest('old', { api: '2.0.0' }),
           resolveSetup: Effect.sync(() => {
             imports += 1
             return Option.none()
@@ -508,13 +508,13 @@ describe('plugin registry', () => {
         const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', log)) }
         const registry = yield* makeRegistry(plugins)
         yield* registry.load('alpha')
-        plugins.alpha = plugin(manifest('alpha', { api: '0' }), recording('alpha-v2', log))
+        plugins.alpha = plugin(manifest('alpha', { api: '2.0.0' }), recording('alpha-v2', log))
 
         const reloaded = yield* registry.load('alpha')
 
         assert.deepStrictEqual(reloaded.status, {
           _tag: 'Loaded',
-          reloadError: `Plugin API version "0" does not match the installed version "${PLUGIN_API_VERSION}"`
+          reloadError: `Plugin API version "2.0.0" is not supported; this dia implements "${PLUGIN_API_VERSION}"`
         })
         assert.deepStrictEqual(log, ['alpha:open'])
       }).pipe(Effect.scoped)
@@ -573,7 +573,7 @@ describe('plugin registry', () => {
         const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', log)) }
         const registry = yield* makeRegistry(plugins)
         yield* registry.load('alpha')
-        plugins.alpha = plugin(manifest('alpha', { api: '0' }))
+        plugins.alpha = plugin(manifest('alpha', { api: '2.0.0' }))
         yield* registry.load('alpha')
         plugins.alpha = plugin(manifest('alpha'), recording('alpha-v3', log))
 
@@ -643,7 +643,7 @@ describe('plugin registry', () => {
         const registry = yield* makeRegistry(plugins, { loader })
 
         yield* registry.load('alpha')
-        plugins.alpha = plugin(manifest('alpha', { api: '0' }))
+        plugins.alpha = plugin(manifest('alpha', { api: '2.0.0' }))
         yield* registry.load('alpha')
 
         assert.deepStrictEqual(outcomes, ['alpha:committed', 'alpha:rolled-back'])

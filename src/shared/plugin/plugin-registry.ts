@@ -15,6 +15,7 @@ import type { PluginServices, PluginSetup } from './api'
 import { ServiceKeyReservedError, ServiceKeyTakenError } from './api'
 import {
   formatMegabytes,
+  isApiCompatible,
   PLUGIN_API_VERSION,
   type PluginCategory,
   PluginInfo,
@@ -426,9 +427,9 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
 
     const swap = (name: string, source: PluginSource, entry: Entry<Context>) =>
       Effect.fnUntraced(function* (loaded: LoadedPlugin<Context>) {
-        if (loaded.manifest.api !== PLUGIN_API_VERSION) {
+        if (!isApiCompatible(PLUGIN_API_VERSION, loaded.manifest.api)) {
           return yield* new PluginLoadError({
-            message: `Plugin API version "${loaded.manifest.api}" does not match the installed version "${PLUGIN_API_VERSION}"`
+            message: `Plugin API version "${loaded.manifest.api}" is not supported; this dia implements "${PLUGIN_API_VERSION}"`
           })
         }
         if (loaded.manifest.name !== name) {
