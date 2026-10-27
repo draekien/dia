@@ -67,7 +67,7 @@ William is dia's developer and its first user. dia runs agents for his registere
 
 ## Agent tools
 
-dia serves these tools from the adapter's in-process MCP server (`src/host/session/dia-tools.ts`). A role's allow/ask/deny list applies to them as to any tool. A plugin can register more.
+dia serves these tools from the Host's in-process MCP server (`src/host/session/dia-tools.ts`). A role's allow/ask/deny list applies to them as to any tool. A plugin can register more.
 
 | Tool | Purpose | Called by |
 | --- | --- | --- |
