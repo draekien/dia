@@ -63,6 +63,8 @@ William is dia's developer and its first user. dia's MVP (`docs/prds/mvp.md`) is
 
 This PRD builds on the plugin platform (`docs/prds/plugin-platform.md`, ADR-0019 to ADR-0022): its features are built as built-in plugins once Phase 2 of `docs/plans/2026-10-22-plugin-platform.md` provides the loader, and agents run in the Host from Phase 1. Its plan is `docs/plans/2026-10-23-agent-os.md`. Its decisions are ADR-0023 (tabs within registered projects), ADR-0024 (background agents) and ADR-0025 (meta project). The product definition is `PRODUCT.md`; the visual rules for the overview, tabs and status indicator are in `DESIGN.md`.
 
+`docs/prds/org.md` extends this PRD (2026-10-28). It replaces `meta_propose` with `propose_change`, called by the retro after every task (ADR-0035); goals 6 and 7 and user story 17 are read with that change. It also adds outcome measurement through KPIs, so "Measuring task outcome quality" in Out of Scope applies to this PRD only.
+
 Roadmap, not in this PRD:
 
 * Keeping dia and its agents running in the system tray when the window closes.

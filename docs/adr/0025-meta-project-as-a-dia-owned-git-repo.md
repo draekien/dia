@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0035"
 date: 2026-10-23
 decision-makers: William Pei
 ---
@@ -131,3 +131,4 @@ The user may add a remote to the meta repo and push to it. dia scans the commits
 
 * Related: ADR-0019 (kernel), ADR-0023 (projects), `docs/prds/agent-os.md`.
 * Roadmap: scheduled meta agent runs; an approval step that copies parts of the meta repo into `~/.claude`.
+* Amended by ADR-0035: the retro calls `propose_change` in place of project agents calling `meta_propose`; only change types in the decision queue tier wait for the user's approval; a routine can start a meta agent.
