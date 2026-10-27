@@ -33,7 +33,7 @@
           "processEnv": "warning",
           "processEnvInEffect": "warning",
           "unsafeEffectTypeAssertion": "warning",
-          "unstableApiUsage": "suggestion"
+          "unstableApiUsage": "off"
         }
       }
     ]
