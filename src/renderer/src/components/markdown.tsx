@@ -33,6 +33,7 @@ import { ts } from '@tanstack/highlight/languages/ts'
 import { tsx } from '@tanstack/highlight/languages/tsx'
 import { yaml } from '@tanstack/highlight/languages/yaml'
 import { createTanStackMarkdownHighlighter } from '@tanstack/highlight/markdown'
+import type { LinkNode, MarkdownExtension } from '@tanstack/markdown'
 import { streamingMarkdownExtension } from '@tanstack/markdown/extensions/streaming'
 import { type MarkdownComponents, Markdown as TanStackMarkdown } from '@tanstack/markdown/react'
 import { memo } from 'react'
@@ -78,7 +79,54 @@ const highlighter = createTanStackMarkdownHighlighter(
   })
 )
 
-const extensions = [streamingMarkdownExtension()]
+const bareUrlPattern = /^https?:\/\/[^\s<]+/
+const angleUrlPattern = /^<(https?:\/\/[^\s<>]+)>/
+const trailingPunctuation = '.,:;!?\'"*_~'
+
+function count(text: string, character: string): number {
+  return text.split(character).length - 1
+}
+
+function trimTrailingPunctuation(url: string): string {
+  let end = url.length
+  while (end > 0) {
+    const last = url[end - 1] as string
+    const unbalancedParen =
+      last === ')' && count(url.slice(0, end), ')') > count(url.slice(0, end), '(')
+    if (!trailingPunctuation.includes(last) && !unbalancedParen) break
+    end--
+  }
+  return url.slice(0, end)
+}
+
+function hasHost(url: string): boolean {
+  return url.length > url.indexOf('//') + 2
+}
+
+function urlLink(url: string): LinkNode {
+  return { type: 'link', href: url, children: [{ type: 'text', value: url }] }
+}
+
+const autolinkExtension: MarkdownExtension = {
+  name: 'autolink',
+  inlineParser: {
+    markers: 'h<',
+    parse({ source, index, inLink }) {
+      if (inLink) return undefined
+      const rest = source.slice(index)
+      const angle = angleUrlPattern.exec(rest)
+      if (angle) return { node: urlLink(angle[1] as string), length: angle[0].length }
+      if (/[\p{L}\p{N}]/u.test(source[index - 1] ?? '')) return undefined
+      const bare = bareUrlPattern.exec(rest)
+      if (!bare) return undefined
+      const url = trimTrailingPunctuation(bare[0])
+      if (!hasHost(url)) return undefined
+      return { node: urlLink(url), length: url.length }
+    }
+  }
+}
+
+const extensions = [streamingMarkdownExtension(), autolinkExtension]
 
 const components = {
   a: (props) => <a {...props} target="_blank" rel="noreferrer" />

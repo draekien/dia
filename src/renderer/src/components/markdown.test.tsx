@@ -53,3 +53,74 @@ describe('Markdown', () => {
     expect(link.getAttribute('rel')).toBe('noreferrer')
   })
 })
+
+describe('Markdown autolinks', () => {
+  function links(content: string): Array<[string | null, string | null]> {
+    const { container } = render(<Markdown content={content} />)
+    return [...container.querySelectorAll('a')].map((a) => [a.getAttribute('href'), a.textContent])
+  }
+
+  it('links a bare URL', () => {
+    expect(links('see https://example.com/docs now')).toEqual([
+      ['https://example.com/docs', 'https://example.com/docs']
+    ])
+  })
+
+  it('opens a bare URL in a new tab', () => {
+    render(<Markdown content="see https://example.com" />)
+
+    expect(screen.getByRole('link').getAttribute('target')).toBe('_blank')
+  })
+
+  it('links a URL in angle brackets without showing the brackets', () => {
+    const { container } = render(<Markdown content="see <https://example.com>" />)
+
+    expect(container.querySelector('a')?.getAttribute('href')).toBe('https://example.com')
+    expect(container.textContent).toBe('see https://example.com')
+  })
+
+  it('leaves trailing sentence punctuation out of the link', () => {
+    const { container } = render(
+      <Markdown content="Read https://example.com/a, then https://example.com/b." />
+    )
+
+    expect([...container.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual([
+      'https://example.com/a',
+      'https://example.com/b'
+    ])
+    expect(container.textContent).toBe('Read https://example.com/a, then https://example.com/b.')
+  })
+
+  it('leaves a closing parenthesis out unless the URL opened one', () => {
+    expect(
+      links('(see https://example.com/a) and https://en.wikipedia.org/wiki/Set_(mathematics)')
+    ).toEqual([
+      ['https://example.com/a', 'https://example.com/a'],
+      [
+        'https://en.wikipedia.org/wiki/Set_(mathematics)',
+        'https://en.wikipedia.org/wiki/Set_(mathematics)'
+      ]
+    ])
+  })
+
+  it('keeps underscores and asterisks in a URL instead of reading them as emphasis', () => {
+    expect(links('https://example.com/a_b_c and https://example.com/*x*/y')).toEqual([
+      ['https://example.com/a_b_c', 'https://example.com/a_b_c'],
+      ['https://example.com/*x*/y', 'https://example.com/*x*/y']
+    ])
+  })
+
+  it('does not link a URL inside an explicit link label', () => {
+    expect(links('[https://a.example](https://b.example)')).toEqual([
+      ['https://b.example', 'https://a.example']
+    ])
+  })
+
+  it('does not link a URL inside inline code or a code fence', () => {
+    expect(links('`https://example.com`\n\n```\nhttps://example.com\n```')).toEqual([])
+  })
+
+  it('does not link a scheme with no host, or a URL joined to a preceding word', () => {
+    expect(links('https:// and xhttps://example.com')).toEqual([])
+  })
+})
