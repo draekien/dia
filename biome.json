@@ -18,7 +18,17 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              "@effect/platform-node": "Import a subpath such as '@effect/platform-node/NodeServices'. The package index loads NodeRedis.js, which needs the optional peer 'redis' that the packaged app does not contain."
+            }
+          }
+        }
+      }
     },
     "domains": {
       "react": "recommended",
@@ -51,6 +61,16 @@
     }
   },
   "overrides": [
+    {
+      "includes": ["**/*.test.ts", "**/*.test.tsx"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": "off"
+          }
+        }
+      }
+    },
     {
       "includes": ["src/host/**", "src/preload/**", "plugins/claude-code/**"],
       "linter": {

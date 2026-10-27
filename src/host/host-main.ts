@@ -1,7 +1,6 @@
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- the host token is minted before any layer is built.
-import { randomBytes } from 'node:crypto'
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Node's http server is what NodeHttpServer wraps.
 import { createServer } from 'node:http'
+import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem'
 import * as NodeHttpServer from '@effect/platform-node/NodeHttpServer'
 import * as NodePath from '@effect/platform-node/NodePath'
@@ -16,6 +15,7 @@ import {
 } from '@shared/ipc/host-process'
 import {
   Context,
+  Crypto,
   Effect,
   Exit,
   Layer,
@@ -26,6 +26,7 @@ import {
   Scope,
   Stream
 } from 'effect'
+import { Hex } from 'effect/encoding'
 import { HttpServer } from 'effect/http'
 import { makeLoggerLive } from '../main/logger'
 import { makeHostServerLive } from './ipc/host-server'
@@ -164,7 +165,11 @@ export const runHost = Effect.scoped(
       }
     })
 
-    const token = randomBytes(32).toString('hex')
+    const token = yield* Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomBytes(32)).pipe(
+      Effect.map(Hex.encode),
+      Effect.orDie,
+      Effect.provide(NodeCrypto.layer)
+    )
     const hostScope = yield* Scope.make()
     yield* Effect.addFinalizer(() => Scope.close(hostScope, Exit.void))
     const context = yield* Layer.buildWithScope(buildHostLayer(init, token), hostScope)

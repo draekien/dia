@@ -14,4 +14,4 @@ The package index (`dist/index.js`) re-exports every module, including `NodeRedi
 
 ## Implication
 
-Plugins, `src/main` and `src/host` import each `@effect/platform-node` module by its subpath, for example `import * as NodeServices from '@effect/platform-node/NodeServices'`. Tests may import the index, because vitest resolves `redis` from `node_modules`. Check any change that adds a package-index import to runtime code in a packaged build, because the unpackaged run can hide a missing optional peer.
+Plugins, `src/main` and `src/host` import each `@effect/platform-node` module by its subpath, for example `import * as NodeServices from '@effect/platform-node/NodeServices'`. Tests may import the index, because vitest resolves `redis` from `node_modules`. The `style/noRestrictedImports` rule in `biome.json` rejects the index import outside `*.test.ts(x)` files. Check a change that adds a package-index import of another dependency to runtime code in a packaged build, because the unpackaged run can hide a missing optional peer.
