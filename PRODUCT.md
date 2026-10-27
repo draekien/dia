@@ -56,9 +56,9 @@ dia combines four things that Claude Desktop and the Claude Code CLI do not:
 
 - The agent session is owned by the plugin kernel, and every other feature is a plugin (ADR-0019).
 - Agents stop when dia quits. Keeping them running after quit is on the roadmap.
-- dia measures outcomes and waste. Org KPIs are computed by dia (tasks done, cost per task, decisions cut, time waiting on the user, waste per task). Objective KPIs are written by the user and measured by the agent assigned to the objective. Waste is no-op tool calls, tool calls that return errors, and expensive tool calls.
+- dia measures outcomes and waste. Org KPIs are computed by dia (`docs/prds/org.md`, user story 22). Objective KPIs are written by the user and measured by the agent assigned to the objective. Waste is no-op tool calls, tool calls that return errors, and expensive tool calls.
 - The meta project's changes reach agents through the Agent SDK's `plugins` option (skills, agents, hooks, commands, MCP servers) and appended system prompt instructions.
-- Harness changes from agents apply by risk tier, which the user configures per change type. By default, text that agents read (memory, skills, role instructions) applies at once and can be reverted from a change log; changes to what runs (workflows, tools, plugins, hooks, role permissions) wait in the decision queue (ADR-0035).
+- Harness changes from agents apply at once or wait in the decision queue by a risk tier the user sets per change type; ADR-0035 lists the change types and default tiers.
 - Split panes are no longer a product feature. The tab layout replaces the split-pane workspace in `docs/prds/mvp.md`.
 - Out of scope: a notice board for agents to leave notes for each other. It was considered and dropped, because worktrees, task scratchpads, the decision path and the agent overview cover the same needs.
 - Roadmap: keeping dia and its agents running in the system tray when the window closes; agents that keep running after dia quits; adapters for agent harnesses other than Claude Code; an approval step that copies parts of the meta repo into the user's `~/.claude` configuration; other users.
