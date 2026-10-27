@@ -424,6 +424,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       cwd: config.cwd,
       thinkingLevel: config.thinkingLevel,
       permissionMode: config.permissionMode,
+      allowedTools: TASK_TRACKING_TOOLS,
       resume: Option.getOrUndefined(resume),
       branchAt,
       continuesFrom: Option.getOrUndefined(continuesFrom)

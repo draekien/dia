@@ -11,7 +11,9 @@ After the upgrade from `@anthropic-ai/claude-agent-sdk` 0.3.207 to 0.3.311, a pa
 - SDK 0.3.142 replaced `TodoWrite` with `TaskCreate`, `TaskGet`, `TaskUpdate` and `TaskList` in SDK sessions.
 - SDK 0.3.233 removed these tools from the default tool set on Opus 4.8, Sonnet 5, Fable 5, Mythos 5 and newer models. 0.3.268 restated this as: they are default only on Claude 3.x, Opus 4.0–4.7, Sonnet 4.0–4.6 and Haiku 4.5. The changelog gives three ways to keep them: name them in `tools`, reference them in `allowedTools`, or set `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`.
 - Source: https://github.com/anthropics/claude-agent-sdk-typescript/blob/main/CHANGELOG.md (sections 0.3.142, 0.3.233 and 0.3.268).
-- `tools` was ruled out because it restricts the session to the listed tools. The environment variable was ruled out because `options.env` replaces the child process environment. `allowedTools` keeps the tools available and also auto-approves them, which is safe because they only change the session's own task list.
+- `tools` was ruled out because it restricts the session to the listed tools.
+- The environment variable was ruled out because setting it means passing `env: { ...process.env, CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' }` from Effect code, which the `processEnvInEffect` diagnostic reports as a warning.
+- `allowedTools` keeps the tools available and also auto-approves them, so they bypass `canUseTool`. This does not change behaviour. On `main`, in `default` permission mode, a `TaskCreate` turn completed without a `PermissionRequested` event, so the CLI never asked permission for these tools.
 
 ## Implication
 
