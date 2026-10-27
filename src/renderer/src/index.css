@@ -241,7 +241,7 @@
    exist: (1) typeset maps inline code and `pre` onto `--color-muted`, which in
    this project resolves to `--surface` -- the same color as the message bubble
    -- so both need a distinct tint to stay legible; (2) typeset has no concept
-   of the highlight.js line-number gutter this pane renders. */
+   of the TanStack Highlight line-number gutter this pane renders. */
 .typeset :not(pre) > code {
   background-color: color-mix(in oklch, var(--ink) 9%, transparent);
 }
@@ -250,22 +250,35 @@
   background-color: var(--background);
 }
 
-.typeset pre code.hljs {
+.typeset pre code {
   display: block;
   padding: 0;
   background: transparent;
 }
 
-.typeset pre .code-line {
-  display: block;
+.typeset pre .th-line {
+  display: inline-block;
   position: relative;
+  width: 100%;
   padding-left: 3rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.typeset pre .numbered-code-line::before {
-  content: attr(data-line-number);
+.typeset pre .th-line--highlighted {
+  background-color: color-mix(in oklch, var(--ink) 7%, transparent);
+}
+
+.typeset pre .th-line--inserted {
+  background-color: color-mix(in oklch, var(--syntax-addition) 14%, transparent);
+}
+
+.typeset pre .th-line--deleted {
+  background-color: color-mix(in oklch, var(--syntax-deletion) 14%, transparent);
+}
+
+.typeset pre.tm-code--line-numbers .th-line::before {
+  content: attr(data-line);
   position: absolute;
   left: 0;
   width: 2rem;
@@ -325,73 +338,53 @@
   }
 }
 
-/* Theme-aware syntax highlighting. Replaces the dark-only highlight.js theme
-   stylesheet: each highlight.js token class maps to a `--syntax-*` role that
-   flips between github-light (:root) and github-dark (.dark) values above. */
-.hljs {
+/* Theme-aware syntax highlighting: each TanStack Highlight semantic token class
+   maps to a `--syntax-*` role that flips between github-light (:root) and
+   github-dark (.dark) values above. */
+.typeset pre {
   color: var(--syntax-fg);
 }
 
-.hljs-comment,
-.hljs-code,
-.hljs-formula {
+.th-comment,
+.th-meta {
   color: var(--syntax-comment);
 }
 
-.hljs-keyword,
-.hljs-doctag,
-.hljs-template-tag,
-.hljs-template-variable,
-.hljs-type,
-.hljs-variable.language_ {
+.th-keyword,
+.th-type,
+.th-tag {
   color: var(--syntax-keyword);
 }
 
-.hljs-title,
-.hljs-title.class_,
-.hljs-title.function_,
-.hljs-section {
+.th-function,
+.th-heading {
   color: var(--syntax-title);
 }
 
-.hljs-attr,
-.hljs-attribute,
-.hljs-literal,
-.hljs-meta,
-.hljs-number,
-.hljs-operator,
-.hljs-variable,
-.hljs-selector-attr,
-.hljs-selector-class,
-.hljs-selector-id {
+.th-attr,
+.th-literal,
+.th-number,
+.th-operator,
+.th-property,
+.th-selector,
+.th-variable {
   color: var(--syntax-entity);
 }
 
-.hljs-regexp,
-.hljs-string,
-.hljs-meta .hljs-string {
+.th-string {
   color: var(--syntax-string);
 }
 
-.hljs-built_in,
-.hljs-symbol,
-.hljs-bullet,
-.hljs-link {
+.th-command,
+.th-link,
+.th-code-inline {
   color: var(--syntax-builtin);
 }
 
-.hljs-addition {
+.th-inserted {
   color: var(--syntax-addition);
 }
 
-.hljs-deletion {
+.th-deleted {
   color: var(--syntax-deletion);
-}
-
-.hljs-emphasis {
-  font-style: italic;
-}
-
-.hljs-strong {
-  font-weight: 600;
 }
