@@ -7,8 +7,10 @@ import { Effect, Option } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { AgentSummaries } from '../services/agent-summaries'
+import { BackgroundActivities } from '../services/background-activities'
 import { CommandDeduper } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
+import { ModelCatalogFeed } from '../services/model-catalog-feed'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { SettingsStore } from '../services/settings-store'
@@ -34,6 +36,8 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
   const deduper = yield* CommandDeduper
   const plugins = yield* HostPlugins
   const pluginSources = yield* PluginSources
+  const models = yield* ModelCatalogFeed
+  const activities = yield* BackgroundActivities
 
   const publish = (event: IpcEvent): Effect.Effect<void> => hub.publish(event)
 
@@ -277,6 +281,10 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     UnloadPlugin: ({ name }) => plugins.unload(name),
     SetPluginOverride: ({ name, directory }) => applyOverride(pluginSources, name, directory),
     ClearPluginOverride: ({ name }) => pluginSources.clearOverride(name),
+    GetModels: () => models.current,
+    RefreshModels: () => models.refresh,
+    ListActivities: () => activities.list,
+    RunActivity: ({ plugin, id }) => activities.runNow(plugin, id),
     SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
   })
 })

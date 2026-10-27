@@ -12,7 +12,7 @@ export default defineConfig({
       }
     },
     ssr: {
-      external: ['@anthropic-ai/claude-agent-sdk']
+      external: ['@anthropic-ai/claude-agent-sdk', 'effect']
     },
     build: {
       rollupOptions: {

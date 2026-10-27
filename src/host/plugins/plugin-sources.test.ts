@@ -28,7 +28,7 @@ const memorySettings = (initial: Record<string, string> = {}) => {
 }
 
 const manifestJson = (name: string, category: PluginCategory) =>
-  JSON.stringify({ name, api: '1', category, host: 'host.ts' })
+  JSON.stringify({ name, api: '0.0.1', category, host: 'host.ts' })
 
 const workspace = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem

@@ -1,11 +1,51 @@
 import { ByteSize, Schema } from 'effect'
 
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+
+/**
+ * A plugin API version as `plugin.json` declares it: `MAJOR.MINOR.PATCH`, each a non-negative
+ * integer without leading zeros. Compare two versions with {@link isApiCompatible}.
+ */
+export const PluginApiVersion = Schema.String.check(
+  Schema.isPattern(SEMVER, {
+    message: 'expected a plugin API version such as "1.0.0"'
+  })
+)
+export type PluginApiVersion = typeof PluginApiVersion.Type
+
 /**
  * Version of the plugin API a dia build offers. A plugin manifest declares the version it was
- * written for in `api`; the loader refuses a plugin whose `api` differs from this value.
- * Increment it whenever the context a plugin receives changes in a way an older plugin cannot use.
+ * written for in `api`; the loader refuses a plugin for which {@link isApiCompatible} is false.
+ * While dia is in development the version stays below 0.1.0: increment the patch version on every
+ * change to the plugin context, which refuses every plugin declaring an older version. From 1.0.0,
+ * increment the minor version when the plugin context gains something, and the major version when
+ * it changes in a way an older plugin cannot use.
  */
-export const PLUGIN_API_VERSION = '1'
+export const PLUGIN_API_VERSION: PluginApiVersion = '0.0.1'
+
+const versionParts = (version: string): ReadonlyArray<number> | undefined => {
+  const match = SEMVER.exec(version)
+  return match === null ? undefined : match.slice(1).map(Number)
+}
+
+/**
+ * Whether a plugin whose manifest declares `plugin` can load on a host that implements `host`,
+ * following npm's caret rule. From 1.0.0 the major versions are equal and the plugin's minor
+ * version is at most the host's. Below 1.0.0 the minor versions are equal, and below 0.1.0 the
+ * patch versions are equal too. Otherwise the patch version is ignored. A value that is not
+ * `MAJOR.MINOR.PATCH` is never compatible.
+ */
+export const isApiCompatible = (host: string, plugin: string): boolean => {
+  const provided = versionParts(host)
+  const required = versionParts(plugin)
+  if (provided === undefined || required === undefined) return false
+  const [hostMajor, hostMinor, hostPatch] = provided
+  const [pluginMajor, pluginMinor, pluginPatch] = required
+  if (hostMajor !== pluginMajor) return false
+  if (hostMajor > 0) return pluginMinor <= hostMinor
+  if (hostMinor !== pluginMinor) return false
+  return hostMinor > 0 || hostPatch === pluginPatch
+}
 
 /**
  * Host heap growth, summed over a plugin's loads, at which the Host refuses to reload that plugin
@@ -44,7 +84,7 @@ export type PluginCategory = typeof PluginCategory.Type
  */
 export const FeatureManifest = Schema.Struct({
   name: PluginName,
-  api: Schema.String,
+  api: PluginApiVersion,
   category: Schema.Literal('feature'),
   host: Schema.optional(Schema.String),
   renderer: Schema.optional(Schema.String),
@@ -62,7 +102,7 @@ const forbidden = (message: string) => Schema.optionalKey(Schema.Never.annotate(
  */
 export const AdapterManifest = Schema.Struct({
   name: PluginName,
-  api: Schema.String,
+  api: PluginApiVersion,
   category: Schema.Literal('adapter'),
   host: Schema.String.pipe(
     Schema.annotateKey({

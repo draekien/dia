@@ -1,6 +1,6 @@
 {
   "name": "worktrees",
-  "api": "1",
+  "api": "0.0.1",
   "category": "feature",
   "host": "host.ts",
   "load": "eager"

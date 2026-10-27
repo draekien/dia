@@ -8,7 +8,7 @@ decision-makers: William Pei
 
 ## Context and Problem Statement
 
-ADR-0025 lets project agents file proposals with `meta_propose`; a meta agent combines them into branches, and the user approves every merge. `docs/prds/org.md` widens what agents may change (memory, skills, roles, workflows, tools and plugins) and adds a retro after every task (ADR-0034) that finds improvements from the task's transcripts. Approving every change makes the user the bottleneck, and applying every change at once lets a wrong plugin reach every agent. Which changes apply at once, and who decides?
+ADR-0025 lets project agents file proposals with `meta_propose`; a meta agent combines them into branches, and the user approves every merge. `docs/prds/org.md` widens what agents may change (memory, skills, roles, workflows, tools and plugins) and adds a retro after every task (ADR-0035) that finds improvements from the task's transcripts. Approving every change makes the user the bottleneck, and applying every change at once lets a wrong plugin reach every agent. Which changes apply at once, and who decides?
 
 ## Decision Drivers
 
@@ -32,7 +32,7 @@ Chosen option: "tiers the user configures per change type, with fixed tiers as t
 
 | Change type | Default tier |
 | --- | --- |
-| Long-term memory | Apply at once (written by the retro with `memory_write`, ADR-0034) |
+| Long-term memory | Apply at once (written by the retro with `memory_write`, ADR-0035) |
 | Skills, including scripts bundled in a skill | Apply at once |
 | Role instructions | Apply at once |
 | Workflows | Decision queue |
@@ -42,7 +42,7 @@ Chosen option: "tiers the user configures per change type, with fixed tiers as t
 | Role permissions, model and concurrency | Decision queue |
 
 * Apply at once: the change is committed and listed in a change log, from which the user can revert it.
-* Decision queue: the change waits in the decision queue (ADR-0033) with the transcripts that motivated it, and applies when the user approves it.
+* Decision queue: the change waits in the decision queue (ADR-0034) with the transcripts that motivated it, and applies when the user approves it.
 * The user sets the tier of each change type in settings. `memory_write` and `propose_change` both follow the tier of the change type they carry.
 
 ### `propose_change`
@@ -91,4 +91,4 @@ A tool an agent builds is a plugin that registers a dia tool, so it follows the 
 ## More Information
 
 * Amends: ADR-0025.
-* Related: ADR-0020 (plugin overrides), ADR-0033 (decision queue), ADR-0034 (retro), `docs/prds/org.md`.
+* Related: ADR-0020 (plugin overrides), ADR-0034 (decision queue), ADR-0035 (retro), `docs/prds/org.md`.

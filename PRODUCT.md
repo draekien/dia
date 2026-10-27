@@ -30,7 +30,7 @@ dia combines four things that Claude Desktop and the Claude Code CLI do not:
 
 - Agents for many projects run in one app, keep running while out of view, and report back when they are blocked.
 - An org of hired agents works toward the user's objectives. The user reviews each objective's plan as a path of decisions, and cuts the path at a wrong decision to have the team re-plan from there (`docs/prds/org.md`).
-- The harness improves itself. Every completed task ends with a retro that writes long-term memory, and agents propose changes to roles, workflows, tools and plugins (ADR-0034, ADR-0035).
+- The harness improves itself. Every completed task ends with a retro that writes long-term memory, and agents propose changes to roles, workflows, tools and plugins (ADR-0035, ADR-0036).
 - Every dia feature is a plugin that can be changed while dia runs (ADR-0019, `docs/prds/plugin-platform.md`). Agent harnesses are adapter plugins (ADR-0029). Claude Code is the only adapter.
 
 ## Operating Context
@@ -38,16 +38,16 @@ dia combines four things that Claude Desktop and the Claude Code CLI do not:
 - **Projects.** The user registers directories with dia. A directory does not have to be a git repo. Worktree features apply only to projects that are git repos.
 - **Tabs.** Each agent runs in its own tab inside a project. One tab is visible at a time. Agents in tabs that are not visible keep running.
 - **Ad-hoc tabs.** The user can open a tab and chat with an agent directly, as before the org existed. An ad-hoc tab does not count toward any concurrency cap.
-- **Org.** One org spans every registered project. The user hires agents: each hired agent has a role and an optional name. Hiring another agent of a role lets one more agent of that role run at once. An overall cap, set by the user, limits how many hired agents run at once (ADR-0032).
+- **Org.** One org spans every registered project. The user hires agents: each hired agent has a role and an optional name. Hiring another agent of a role lets one more agent of that role run at once. An overall cap, set by the user, limits how many hired agents run at once (ADR-0033).
 - **Roles.** dia ships the roles planner, engineer, reviewer, researcher and retro. The user can disable, copy and edit them, and create new roles. A role has instructions, skills, MCP servers and an optional allow/ask/deny permission list; an empty list allows every tool.
 - **Objectives and tasks.** An objective belongs to a project and has objective KPIs. The user assigns an objective to a hired agent, or leaves it unassigned for the agent the user set to watch objectives (by default a planner). Agents break objectives into tasks and sub-tasks.
-- **Decision path.** Agents record each choice they make about how to reach an objective. The user reviews the path before work starts, and can cut it at a wrong decision and add guidance; the team re-plans from that decision. A new decision made during the work pauses its agent until the user accepts it or cuts there (ADR-0033).
+- **Decision path.** Agents record each choice they make about how to reach an objective. The user reviews the path before work starts, and can cut it at a wrong decision and add guidance; the team re-plans from that decision. A new decision made during the work pauses its agent until the user accepts it or cuts there (ADR-0034).
 - **Steering tasks.** The user can open any hired agent's active session from the agent overview, read its live transcript, and send it a message that waits for the turn to end (`queue`) or interrupts it (`steer`), as in an ad-hoc tab.
 - **Decision queue.** One list of everything that waits on the user: plans to review, new decisions, `ask` permissions and harness changes.
-- **Memory.** Each task has a scratchpad its sessions share. Long-term memory has project, environment and role scopes. dia records each read of a memory entry, so stale entries can be found (ADR-0034).
+- **Memory.** Each task has a scratchpad its sessions share. Long-term memory has project, environment and role scopes. dia records each read of a memory entry, so stale entries can be found (ADR-0035).
 - **Routines and workflows.** A routine is a recurring task the user creates, for example "every day at 06:00, send me a summary of project status". A workflow is a sequence of steps with a role per step. dia ships built-in workflows that the user can disable or copy, and ships no routines.
 - **Window.** Agents keep running while the window is minimised or another app is focused. Closing the window quits dia and stops every agent; the agents resume from their saved sessions on the next start.
-- **Notifications.** An agent in a tab that is not visible, or in a window that is minimised or not focused, raises an OS notification when it requests a permission, asks a question, or fails. An item added to the decision queue raises the same notification (ADR-0033). A finished turn only badges its tab. Clicking a notification opens that agent's tab.
+- **Notifications.** An agent in a tab that is not visible, or in a window that is minimised or not focused, raises an OS notification when it requests a permission, asks a question, or fails. An item added to the decision queue raises the same notification (ADR-0034). A finished turn only badges its tab. Clicking a notification opens that agent's tab.
 - **Agent overview.** A left sidebar listing every agent in every project, which is also how the user switches tabs. Each agent has its status and one activity line: the `in_progress` item of its latest `TodoWrite`, or its last tool call when it has no task list.
 - **Meta project.** A git repo that dia creates and loads into every agent it starts. A meta agent can read and write every registered project and its transcripts. The user starts meta agents, or runs them from a routine. The user may push the meta repo to a remote; dia refuses a push that contains a secret.
 - **Daily use.** William runs dia's own development in dia, next to his other projects.
@@ -58,7 +58,7 @@ dia combines four things that Claude Desktop and the Claude Code CLI do not:
 - Agents stop when dia quits. Keeping them running after quit is on the roadmap.
 - dia measures outcomes and waste. Org KPIs are computed by dia (`docs/prds/org.md`, user story 22). Objective KPIs are written by the user and measured by the agent assigned to the objective. Waste is no-op tool calls, tool calls that return errors, and expensive tool calls.
 - The meta project's changes reach agents through the Agent SDK's `plugins` option (skills, agents, hooks, commands, MCP servers) and appended system prompt instructions.
-- Harness changes from agents apply at once or wait in the decision queue by a risk tier the user sets per change type; ADR-0035 lists the change types and default tiers.
+- Harness changes from agents apply at once or wait in the decision queue by a risk tier the user sets per change type; ADR-0036 lists the change types and default tiers.
 - Split panes are no longer a product feature. The tab layout replaces the split-pane workspace in `docs/prds/mvp.md`.
 - Out of scope: a notice board for agents to leave notes for each other. It was considered and dropped, because worktrees, task scratchpads, the decision path and the agent overview cover the same needs.
 - Roadmap: keeping dia and its agents running in the system tray when the window closes; agents that keep running after dia quits; adapters for agent harnesses other than Claude Code; an approval step that copies parts of the meta repo into the user's `~/.claude` configuration; other users.
@@ -81,7 +81,7 @@ dia combines four things that Claude Desktop and the Claude Code CLI do not:
 2. **Status without opening.** The user can tell what any agent is doing, and whether it needs them, from the agent overview, without opening its tab.
 3. **Background by default.** An agent that is not on screen keeps working, and nothing in dia requires watching it.
 4. **Steer decisions, not tasks.** The user reviews the decisions an objective's plan depends on, not its task list, and corrects a plan by cutting it at the first wrong decision.
-5. **Improvements are reviewable.** Every change that affects every agent, from an agent, the meta project or a plugin, is recorded and can be reverted. Each change type applies at once or waits for the user's approval by a tier the user sets; ADR-0035 lists the defaults.
+5. **Improvements are reviewable.** Every change that affects every agent, from an agent, the meta project or a plugin, is recorded and can be reverted. Each change type applies at once or waits for the user's approval by a tier the user sets; ADR-0036 lists the defaults.
 6. **Fast under real use.** dia drives real development work, including its own, so latency is part of the design.
 
 ## Accessibility & Inclusion

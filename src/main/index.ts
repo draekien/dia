@@ -1,7 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Electron main bootstrap composes filesystem paths outside any Effect (createWindow, whenReady).
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { NodeFileSystem } from '@effect/platform-node'
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem'
 import { HostInit } from '@shared/ipc/host-process'
 import { Config, Effect, Layer, Option, References } from 'effect'
 import { app, BrowserWindow, nativeTheme, net, protocol, shell } from 'electron'

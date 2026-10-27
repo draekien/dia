@@ -14,7 +14,7 @@ headless typecheck was the fork in the road.
 
 - **`typescript@7` is the native Go compiler (tsgo), and the classic language-service patch does
   not apply to it.** The native path is `@effect/tsgo`: its `prepare` step runs `effect-tsgo patch`,
-  which patches the installed `tsc` binary in place (`7.0.2+effect-tsgo.0.22.0`). After patching, a
+  which patches the installed `tsc` binary in place (`7.0.2+effect-tsgo.0.59.0`). After patching, a
   normal `tsc --noEmit -p <config>` emits Effect diagnostics — but **only for the files that config
   includes, and only per that config's own plugin severity map.**
 - **Severity is per-tsconfig, via `plugins[0].diagnosticSeverity`, and the array REPLACES across
@@ -52,4 +52,4 @@ headless typecheck was the fork in the road.
 diagnostic-severity rule, edit the base map **and** restate it in `tsconfig.test.json` (arrays don't
 merge). When a diagnostics change seems not to take effect, suspect `.tsbuildinfo` before the config.
 See also [Vendored `.repos/effect` API drift](2026-07-12-effect-vendored-repo-api-drift.md) — the
-skill's vendored clone is now pinned to the installed `effect@4.0.5` tag so signatures match.
+skill's vendored clone is now pinned to the installed `effect@4.0.6` tag so signatures match.

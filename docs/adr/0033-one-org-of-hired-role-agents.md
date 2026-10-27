@@ -13,7 +13,7 @@ decision-makers: William Pei
 ## Decision Drivers
 
 * Work arrives in many registered projects; an agent that is idle in one project should be able to take work in another.
-* Memory must be shared by project, environment and role (ADR-0034), not split per agent.
+* Memory must be shared by project, environment and role (ADR-0035), not split per agent.
 * The user must be able to limit concurrency per kind of work and overall.
 * A quick question in a tab must never wait behind org work.
 
@@ -97,5 +97,5 @@ Example: with an overall cap of 4 and hired agents `Ada` and `Ben` (engineer), `
 
 ## More Information
 
-* Related: ADR-0023 (tabs within projects), ADR-0033 (decision path), ADR-0034 (memory), `docs/prds/org.md`.
+* Related: ADR-0023 (tabs within projects), ADR-0034 (decision path), ADR-0035 (memory), `docs/prds/org.md`.
 * Open: whether a hired agent holds a slot only while a turn runs, or for the whole time it is assigned an open task (`docs/prds/org.md`, Open Questions).

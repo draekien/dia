@@ -1,11 +1,16 @@
+import { ActivityInfo, ActivityNotFound } from '@shared/domain/background-activity'
+import { ModelCatalogSnapshot } from '@shared/domain/model'
 import type { ConversationMessage } from '@shared/domain/pane'
 import { RegisterProjectError, type RegisterProjectRefusal } from '@shared/domain/project'
 import {
+  ActivitiesChanged,
+  type ActivityNotFoundJson,
   AgentSummariesReplaced,
   type DiaApi,
   EditQueuedMessage,
   InterruptPane,
   type IpcEvent,
+  ModelsChanged,
   MoveProject,
   RemoveQueuedMessage,
   RenameTab,
@@ -83,6 +88,9 @@ const resendSchedule = Schedule.spaced(RESEND_INTERVAL).pipe(
  * error (`registerProject`) resolves in its encoded form, and only a lost connection is retried. `removeProject` is not retried: it rejects when the connection drops.
  */
 const encodeRefusal = Schema.encodeSync(RegisterProjectError)
+const encodeSnapshot = Schema.encodeSync(ModelCatalogSnapshot)
+const encodeActivities = Schema.encodeSync(Schema.Array(ActivityInfo))
+const encodeActivityNotFound = Schema.encodeSync(ActivityNotFound)
 
 export const makeHostApi = (deps: HostApiDeps): HostApi => {
   const reloadListeners = new Set<(paneId: string) => void>()
@@ -131,9 +139,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         }
       })
 
-    const refreshAfterReconnect = Effect.gen(function* () {
-      const reconnecting = yield* Ref.getAndSet(connectedBefore, true)
-      if (!reconnecting) return
+    const refreshWorkspace = Effect.gen(function* () {
       const client = yield* deps.client
       const [workspace, summaries] = yield* Effect.all(
         [client.GetWorkspace(), client.GetAgentSummaries()],
@@ -144,6 +150,21 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     }).pipe(
       Effect.catch((error) => Effect.sync(() => deps.warn('Workspace refresh failed', error)))
     )
+
+    const refreshCatalogs = Effect.gen(function* () {
+      const client = yield* deps.client
+      const snapshot = yield* client.GetModels()
+      dispatch(ModelsChanged.make({ snapshot }))
+    }).pipe(
+      Effect.catch((error) => Effect.sync(() => deps.warn('Model list refresh failed', error)))
+    )
+
+    const refreshAfterReconnect = Effect.gen(function* () {
+      const reconnecting = yield* Ref.getAndSet(connectedBefore, true)
+      if (!reconnecting) return
+      dispatch(ActivitiesChanged.make({}))
+      yield* Effect.all([refreshWorkspace, refreshCatalogs], { concurrency: 'unbounded' })
+    })
 
     const subscribeOnce = Effect.gen(function* () {
       const client = yield* deps.client
@@ -182,6 +203,25 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         query((client) => client.SetPluginOverride({ name, directory })),
       clearOverride: (name) => query((client) => client.ClearPluginOverride({ name })),
       onStatusChanged: (listener) => subscribeTo('PluginStatusChanged', listener)
+    },
+    models: {
+      get: () => query((client) => client.GetModels().pipe(Effect.map(encodeSnapshot))),
+      refresh: () => query((client) => client.RefreshModels()),
+      onChanged: (listener) =>
+        subscribeTo('ModelsChanged', (event) => listener(encodeSnapshot(event.snapshot)))
+    },
+    activities: {
+      list: () => query((client) => client.ListActivities().pipe(Effect.map(encodeActivities))),
+      run: (plugin, id) =>
+        query((client) =>
+          client.RunActivity({ plugin, id }).pipe(
+            Effect.as<ActivityNotFoundJson | null>(null),
+            Effect.catchTag('ActivityNotFound', (error) =>
+              Effect.succeed(encodeActivityNotFound(error))
+            )
+          )
+        ),
+      onChanged: (listener) => subscribeTo('ActivitiesChanged', () => listener())
     },
     sendMessage: (paneId, text, mode) =>
       command('SendMessage', (client, commandId) =>

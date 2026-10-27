@@ -1,7 +1,10 @@
-import { randomBytes } from 'node:crypto'
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Node's http server is what NodeHttpServer wraps.
 import { createServer } from 'node:http'
-import { NodeFileSystem, NodeHttpServer, NodePath, NodeServices } from '@effect/platform-node'
+import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem'
+import * as NodeHttpServer from '@effect/platform-node/NodeHttpServer'
+import * as NodePath from '@effect/platform-node/NodePath'
+import * as NodeServices from '@effect/platform-node/NodeServices'
 import {
   HostBooted,
   type HostInit,
@@ -12,6 +15,7 @@ import {
 } from '@shared/ipc/host-process'
 import {
   Context,
+  Crypto,
   Effect,
   Exit,
   Layer,
@@ -22,6 +26,7 @@ import {
   Scope,
   Stream
 } from 'effect'
+import { Hex } from 'effect/encoding'
 import { HttpServer } from 'effect/http'
 import { makeLoggerLive } from '../main/logger'
 import { makeHostServerLive } from './ipc/host-server'
@@ -29,8 +34,10 @@ import { DiaRpcHandlersLive } from './ipc/rpc-handlers'
 import { HostPlugins, makeHostPluginsLive } from './plugins/host-plugins'
 import { makePluginSourcesLive } from './plugins/plugin-sources'
 import { AgentSummariesLive } from './services/agent-summaries'
+import { BackgroundActivitiesLive } from './services/background-activities'
 import { makeCommandDeduperLive } from './services/command-deduper'
 import { makeEventHubLive } from './services/event-hub'
+import { ModelCatalogFeed, ModelCatalogFeedLive } from './services/model-catalog-feed'
 import { PaneSupervisor, PaneSupervisorLive, SessionFactoryLive } from './services/pane-supervisor'
 import { makePaneWorkspaceLive } from './services/pane-workspace'
 import { makePersistenceServiceLive } from './services/persistence'
@@ -71,9 +78,16 @@ const buildHostLayer = (init: HostInit, token: string) => {
     makePluginSourcesLive(init.pluginsRoot),
     Layer.mergeAll(settings, NodeFileSystem.layer, NodePath.layer)
   )
+  const backgroundActivities = Layer.provide(BackgroundActivitiesLive, eventHub)
   const hostPlugins = Layer.provide(
-    makeHostPluginsLive(init.pluginApiPath),
-    Layer.mergeAll(pluginSources, eventHub, NodeFileSystem.layer, NodePath.layer)
+    makeHostPluginsLive(init.pluginApiPath, init.userDataPath),
+    Layer.mergeAll(
+      pluginSources,
+      eventHub,
+      backgroundActivities,
+      NodeFileSystem.layer,
+      NodePath.layer
+    )
   )
   const sessionFactory = Layer.provide(SessionFactoryLive, Layer.merge(hostPlugins, pluginSources))
   const supervisor = Layer.provide(PaneSupervisorLive, Layer.merge(sessionFactory, hostPlugins))
@@ -97,6 +111,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     AgentSummariesLive,
     Layer.mergeAll(workspace, persistence, eventHub)
   )
+  const modelCatalog = Layer.provide(ModelCatalogFeedLive, Layer.merge(hostPlugins, eventHub))
   const state = Layer.mergeAll(
     supervisor,
     workspace,
@@ -105,6 +120,8 @@ const buildHostLayer = (init: HostInit, token: string) => {
     eventHub,
     pluginSources,
     hostPlugins,
+    backgroundActivities,
+    modelCatalog,
     makeCommandDeduperLive(),
     NodeFileSystem.layer,
     NodePath.layer
@@ -148,7 +165,11 @@ export const runHost = Effect.scoped(
       }
     })
 
-    const token = randomBytes(32).toString('hex')
+    const token = yield* Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomBytes(32)).pipe(
+      Effect.map(Hex.encode),
+      Effect.orDie,
+      Effect.provide(NodeCrypto.layer)
+    )
     const hostScope = yield* Scope.make()
     yield* Effect.addFinalizer(() => Scope.close(hostScope, Exit.void))
     const context = yield* Layer.buildWithScope(buildHostLayer(init, token), hostScope)
@@ -164,6 +185,7 @@ export const runHost = Effect.scoped(
       const { port } = address
       yield* Effect.logInfo('Host listening', { port })
       yield* Context.get(context, HostPlugins).start()
+      yield* Context.get(context, ModelCatalogFeed).start
       yield* post(HostReady.make({ port, token }))
 
       while (true) {

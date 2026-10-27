@@ -11,7 +11,7 @@ William is dia's developer and its first user. dia's MVP (`docs/prds/mvp.md`) is
 3. Clicking an OS notification focuses dia's window on the agent's tab, in 100% of attempts during testing.
 4. Switching tabs leaves every running agent running; across 20 tab switches away from and back to an agent during a streaming turn, zero turns are interrupted, dropped or duplicated.
 5. The agent overview shows, for every agent in every registered project, its status and an activity line that matches the agent's latest `TodoWrite` `in_progress` item, or its last tool call when it has none, with no stale line observed during testing.
-6. A change proposed with `propose_change` by a retro in one project, once applied by its tier (ADR-0035), is present in the next agent started in a different project.
+6. A change proposed with `propose_change` by a retro in one project, once applied by its tier (ADR-0036), is present in the next agent started in a different project.
 7. A rejected meta branch changes no agent's configuration.
 8. A push of the meta repo that contains a test secret is refused, in 100% of attempts during testing.
 9. All `docs/prds/mvp.md` success criteria still hold, reading "pane" as "tab" and "pane layout" as the list of projects and their tabs. MVP user stories 1, 2 and 9 (splitting panes, and expanding a focused pane) no longer apply (ADR-0023).
@@ -63,7 +63,7 @@ William is dia's developer and its first user. dia's MVP (`docs/prds/mvp.md`) is
 
 This PRD builds on the plugin platform (`docs/prds/plugin-platform.md`, ADR-0019 to ADR-0022): its features are built as built-in plugins once Phase 2 of `docs/plans/2026-10-22-plugin-platform.md` provides the loader, and agents run in the Host from Phase 1. Its plan is `docs/plans/2026-10-23-agent-os.md`. Its decisions are ADR-0023 (tabs within registered projects), ADR-0024 (background agents) and ADR-0025 (meta project). The product definition is `PRODUCT.md`; the visual rules for the overview, tabs and status indicator are in `DESIGN.md`.
 
-`docs/prds/org.md` extends this PRD (2026-10-28). It replaces `meta_propose` with `propose_change`, called by the retro after every task (ADR-0035); goals 6 and 7 and user story 17 are read with that change. It also adds outcome measurement through KPIs, so "Measuring task outcome quality" in Out of Scope applies to this PRD only. Routines can start meta agents (ADR-0035), so "Scheduled or automatic meta agent runs" in Out of Scope also applies to this PRD only.
+`docs/prds/org.md` extends this PRD (2026-10-28). It replaces `meta_propose` with `propose_change`, called by the retro after every task (ADR-0036); goals 6 and 7 and user story 17 are read with that change. It also adds outcome measurement through KPIs, so "Measuring task outcome quality" in Out of Scope applies to this PRD only. Routines can start meta agents (ADR-0036), so "Scheduled or automatic meta agent runs" in Out of Scope also applies to this PRD only.
 
 Roadmap, not in this PRD:
 

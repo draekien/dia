@@ -32,8 +32,10 @@ import { Effect, FileSystem, Layer, Option, Stream } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { InvalidOverrideError, PluginSources } from '../plugins/plugin-sources'
 import { AgentSummaries } from '../services/agent-summaries'
+import { BackgroundActivities } from '../services/background-activities'
 import { type CommandDeduper, makeCommandDeduperLive } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
+import { ModelCatalogFeed } from '../services/model-catalog-feed'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { SettingsStore } from '../services/settings-store'
@@ -56,6 +58,8 @@ interface Harness {
     | CommandDeduper
     | HostPlugins
     | PluginSources
+    | BackgroundActivities
+    | ModelCatalogFeed
   >
 }
 
@@ -246,6 +250,23 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       })
   })
 
+  const activities = Layer.succeed(BackgroundActivities, {
+    register: () => Effect.die(new Error('register not used by these tests')),
+    list: Effect.succeed([]),
+    runNow: (plugin, id) =>
+      Effect.sync(() => {
+        calls.push(`runActivity:${plugin}:${id}`)
+      })
+  })
+
+  const models = Layer.succeed(ModelCatalogFeed, {
+    start: Effect.void,
+    current: Effect.die(new Error('current not used by these tests')),
+    refresh: Effect.sync(() => {
+      calls.push('refreshModels')
+    })
+  })
+
   const hub = Layer.succeed(EventHub, {
     publish: (event) =>
       Effect.sync(() => {
@@ -266,7 +287,9 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       FileSystem.layerNoop({}),
       makeCommandDeduperLive(),
       plugins,
-      pluginSources
+      pluginSources,
+      activities,
+      models
     )
   }
 }
@@ -602,6 +625,18 @@ describe('Dia RPC handlers', () => {
         assert.deepStrictEqual(result, ['Loaded', 'Unloaded'])
         assert.deepStrictEqual(harness.calls, ['loadPlugin:chat', 'unloadPlugin:chat'])
       })
+  )
+
+  it.effect('passes the RunActivity plugin and id to the background activities unchanged', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+
+      yield* withHandlers(harness, (handlers) =>
+        handlers.RunActivity({ plugin: 'claude-code', id: 'models' })
+      )
+
+      assert.deepStrictEqual(harness.calls, ['runActivity:claude-code:models'])
+    })
   )
 
   it.effect('reports an override the sources refuse as Rejected with the reason', () =>

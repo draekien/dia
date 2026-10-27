@@ -8,11 +8,11 @@ decision-makers: William Pei
 
 ## Context and Problem Statement
 
-Hired agents work on tasks across many projects (ADR-0032). What one agent learns, for example "in dia, `pnpm typecheck` exits 1 on Effect warnings", is lost when its session ends, and the next agent repeats the mistake. dia needs short-term memory for sessions working on the same task, long-term memory for later agents, a way to decide what enters long-term memory, and a way to find entries that are no longer used.
+Hired agents work on tasks across many projects (ADR-0033). What one agent learns, for example "in dia, `pnpm typecheck` exits 1 on Effect warnings", is lost when its session ends, and the next agent repeats the mistake. dia needs short-term memory for sessions working on the same task, long-term memory for later agents, a way to decide what enters long-term memory, and a way to find entries that are no longer used.
 
 ## Decision Drivers
 
-* Long-term memory must be shared, not owned by one hired agent (ADR-0032).
+* Long-term memory must be shared, not owned by one hired agent (ADR-0033).
 * What enters memory must come from evidence: the transcripts of the work.
 * Reviewing every memory entry before it applies would make the user a bottleneck.
 * Stale entries cost input tokens in every session that loads them.
@@ -33,7 +33,7 @@ Chosen options: "a scratchpad per task" and "a retro agent writes from the task'
 
 ### Retro
 
-A task cannot move to `completed` until a retro has run. The retro is a session of the `retro` role. It reads every transcript saved against the task and the task's scratchpad, and writes long-term memory with `memory_write`. A write applies at once or waits in the decision queue according to the tier the user sets for long-term memory (ADR-0035); the default applies it at once. The retro also cites the memory entries the task's sessions acted on, and can call `propose_change` (ADR-0035).
+A task cannot move to `completed` until a retro has run. The retro is a session of the `retro` role. It reads every transcript saved against the task and the task's scratchpad, and writes long-term memory with `memory_write`. A write applies at once or waits in the decision queue according to the tier the user sets for long-term memory (ADR-0036); the default applies it at once. The retro also cites the memory entries the task's sessions acted on, and can call `propose_change` (ADR-0036).
 
 ### Long-term memory
 
@@ -50,7 +50,7 @@ A task cannot move to `completed` until a retro has run. The retro is a session 
 
 * Good, because every completed task leaves memory behind for the next agent.
 * Good, because read telemetry shows which entries are used.
-* Bad, because under the default tier a wrong entry written by a retro reaches agents in its scope before anyone reviews it; the change log makes it revertible (ADR-0035).
+* Bad, because under the default tier a wrong entry written by a retro reaches agents in its scope before anyone reviews it; the change log makes it revertible (ADR-0036).
 * Bad, because staleness depends on the retro citing every entry a task used; an entry the retro misses looks unused.
 * Bad, because every task runs one more session, which costs tokens and counts toward the caps.
 
@@ -83,5 +83,5 @@ A task cannot move to `completed` until a retro has run. The retro is a session 
 
 ## More Information
 
-* Related: ADR-0025 (meta project), ADR-0032 (org), ADR-0035 (self-improvement), `docs/prds/org.md`.
+* Related: ADR-0025 (meta project), ADR-0033 (org), ADR-0036 (self-improvement), `docs/prds/org.md`.
 * Open: whether long-term memory is stored in the meta repo or under `userData`, and the staleness period (`docs/prds/org.md`, Open Questions).

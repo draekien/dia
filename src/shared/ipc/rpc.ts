@@ -1,7 +1,9 @@
 import { Schema } from 'effect'
 import { Rpc, RpcGroup } from 'effect/rpc'
 import { AgentSummary } from '../domain/agent-summary'
+import { ActivityId, ActivityInfo, ActivityNotFound } from '../domain/background-activity'
 import { MessageQueueSnapshot, SendMode } from '../domain/message-queue'
+import { ModelCatalogSnapshot } from '../domain/model'
 import { ConversationMessage } from '../domain/pane'
 import { ProjectId, ProjectNotFoundError, RegisterProjectError, Workspace } from '../domain/project'
 import { RemovalProgress } from '../domain/project-removal'
@@ -28,11 +30,12 @@ import {
 } from './contract'
 
 /**
- * Version of the renderer-to-Host protocol. The renderer offers it as the WebSocket subprotocol
- * `dia.protocol.<version>`; the Host closes the connection with {@link CLOSE_PROTOCOL_MISMATCH}
- * when it speaks a different version. Increment it whenever {@link DiaRpcs} changes shape.
+ * Version of the renderer-to-Host protocol, `MAJOR.MINOR.PATCH`. The renderer offers it as the
+ * WebSocket subprotocol `dia.protocol.<version>`; the Host closes the connection with
+ * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
+ * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = 8
+export const PROTOCOL_VERSION = '0.0.1'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -86,7 +89,10 @@ export type EventFrame = typeof EventFrame.Type
 /**
  * The Host's RPC surface. Every command takes a `commandId`; `RegisterProject` and
  * `RemoveProject` are queries so their typed errors reach the caller; the plugin calls (`LoadPlugin`
- * on a loaded plugin reloads it) are safe to repeat and take none; `SubscribeEvents` takes the
+ * on a loaded plugin reloads it), the model calls (`GetModels`, `RefreshModels`) and the activity
+ * calls (`ListActivities`, `RunActivity`) are safe to repeat and take none; a `RefreshModels` or
+ * `RunActivity` sent while that run is in progress waits for it instead of starting another;
+ * `SubscribeEvents` takes the
  * last sequence number received per pane (`cursors`) and streams {@link EventFrame}s. Serve it
  * with `RpcServer` in the Host and call it with `RpcClient` from the preload.
  */
@@ -139,6 +145,13 @@ export const DiaRpcs = RpcGroup.make(
     success: PluginOverrideResult
   }),
   Rpc.make('ClearPluginOverride', { payload: { name: PluginName } }),
+  Rpc.make('GetModels', { success: ModelCatalogSnapshot }),
+  Rpc.make('RefreshModels', {}),
+  Rpc.make('ListActivities', { success: Schema.Array(ActivityInfo) }),
+  Rpc.make('RunActivity', {
+    payload: { plugin: PluginName, id: ActivityId },
+    error: ActivityNotFound
+  }),
   Rpc.make('SubscribeEvents', {
     payload: { cursors: Schema.Record(Schema.String, Schema.Finite) },
     success: EventFrame,

@@ -14,7 +14,7 @@ dia's main and pane processes are built on Effect TS (ADR-0009, ADR-0010). Effec
 
 * The installed `typescript@7` is the native tsgo build; its `tsc` is a shim that execs a Go binary, so there is no JavaScript `tsc`/`typescript.js` to patch.
 * Diagnostics must surface both in-editor and from a headless `pnpm typecheck` (the lefthook pre-commit runs it), not only in one place.
-* Whatever we adopt must track the installed Effect major version (currently `effect@4.0.5`), not a divergent line.
+* Whatever we adopt must track the installed Effect major version (currently `effect@4.0.6`), not a divergent line.
 
 ## Considered Options
 
@@ -53,6 +53,6 @@ Chosen option: "`@effect/tsgo`", because it is the Effect team's supported path 
 
 ## More Information
 
-- `scripts/prepare-effect.sh` pins the vendored Effect source (`.repos/effect`) to the `effect@4.0.5` tag so the `effect-ts` skill researches the version actually installed.
+- `scripts/prepare-effect.sh` pins the vendored Effect source (`.repos/effect`) to the `effect@4.0.6` tag so the `effect-ts` skill researches the version actually installed.
 - Diagnostics can also be run explicitly: `effect-tsgo diagnostics --project tsconfig.node.json --format text`.
 - Severity tuning lives in `tsconfig.base.json` under the plugin's `diagnosticSeverity` map.

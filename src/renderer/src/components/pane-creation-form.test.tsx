@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { type Project, ProjectId } from '@shared/domain/project'
-import { PaneCreateFailed } from '@shared/ipc/contract'
+import { type ModelCatalogSnapshotJson, PaneCreateFailed } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import PaneCreationForm from './pane-creation-form'
+import { TooltipProvider } from './ui/tooltip'
 
 const HINT = 'Load the worktrees plugin to use worktrees'
 
@@ -27,8 +28,41 @@ const plugin = (name: string, provides: ReadonlyArray<string>): PluginInfo => ({
   provides
 })
 
-const installBridge = (plugins: ReadonlyArray<PluginInfo>) => {
+const DEFAULT_MODEL = { value: 'default', displayName: 'Default (recommended)', description: '' }
+const HAIKU = { value: 'haiku', displayName: 'Haiku', description: '' }
+const SONNET = { value: 'sonnet', displayName: 'Sonnet', description: '' }
+
+const ready = (
+  revision: number,
+  models: ReadonlyArray<typeof DEFAULT_MODEL>,
+  extra: { readonly refreshing?: boolean; readonly lastRefreshError?: string } = {}
+): ModelCatalogSnapshotJson => ({
+  revision,
+  state: {
+    _tag: 'Ready',
+    models: [models[0], ...models.slice(1)],
+    fetchedAt: '2026-10-25T15:00:00.000Z',
+    refreshing: extra.refreshing ?? false,
+    ...(extra.lastRefreshError === undefined ? {} : { lastRefreshError: extra.lastRefreshError })
+  }
+})
+
+const READY = ready(1, [DEFAULT_MODEL, HAIKU])
+
+const installBridge = (
+  plugins: ReadonlyArray<PluginInfo>,
+  snapshot: ModelCatalogSnapshotJson = READY
+) => {
+  const modelListeners = new Set<(snapshot: ModelCatalogSnapshotJson) => void>()
   const bridge = {
+    models: {
+      get: vi.fn(async () => snapshot),
+      refresh: vi.fn(async () => undefined),
+      onChanged: vi.fn((listener: (snapshot: ModelCatalogSnapshotJson) => void) => {
+        modelListeners.add(listener)
+        return () => modelListeners.delete(listener)
+      })
+    },
     createTab: vi.fn((_request: { readonly paneId: string }) => undefined),
     selectTab: vi.fn(),
     onPaneCreateFailed: vi.fn((_listener: (event: PaneCreateFailed) => void) => () => undefined),
@@ -38,10 +72,26 @@ const installBridge = (plugins: ReadonlyArray<PluginInfo>) => {
     }
   }
   Object.assign(window, { dia: bridge })
-  return bridge
+  return Object.assign(bridge, {
+    emitModels: (next: ModelCatalogSnapshotJson) => {
+      for (const listener of modelListeners) listener(next)
+    }
+  })
 }
 
-const start = () => fireEvent.click(screen.getByRole('button', { name: 'Start agent' }))
+const renderForm = (formProject: Project) =>
+  render(
+    <TooltipProvider>
+      <PaneCreationForm project={formProject} />
+    </TooltipProvider>
+  )
+
+const startButton = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Start agent' })
+
+const start = async () => {
+  await waitFor(() => expect(startButton().disabled).toBe(false))
+  fireEvent.click(startButton())
+}
 
 afterEach(() => {
   cleanup()
@@ -49,19 +99,19 @@ afterEach(() => {
 })
 
 describe('PaneCreationForm', () => {
-  it('offers no worktree option for a project that is not a git repo', () => {
+  it('offers no worktree option for a project that is not a git repo', async () => {
     installBridge([plugin('worktrees', [WORKTREES_KEY])])
-    render(<PaneCreationForm project={project(false)} />)
+    renderForm(project(false))
 
     expect(screen.queryByRole('switch')).toBeNull()
   })
 
-  it('creates the tab in the form project with the trimmed name', () => {
+  it('creates the tab in the form project with the trimmed name', async () => {
     const bridge = installBridge([])
-    render(<PaneCreationForm project={project(false)} />)
+    renderForm(project(false))
 
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: '  heron  ' } })
-    start()
+    await start()
 
     expect(bridge.createTab).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -72,33 +122,119 @@ describe('PaneCreationForm', () => {
     )
   })
 
-  it('sends no name when the name field is blank, so the Host generates one', () => {
+  it('sends no name when the name field is blank, so the Host generates one', async () => {
     const bridge = installBridge([])
-    render(<PaneCreationForm project={project(false)} />)
+    renderForm(project(false))
 
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: '   ' } })
-    start()
+    await start()
 
     expect(bridge.createTab).toHaveBeenCalledWith(expect.objectContaining({ name: null }))
   })
 
-  it('shows the reason the Host gave when creating the tab failed', () => {
+  it('shows the reason the Host gave when creating the tab failed', async () => {
     const bridge = installBridge([])
-    render(<PaneCreationForm project={project(false)} />)
-    start()
+    renderForm(project(false))
+    await start()
     const paneId = bridge.createTab.mock.calls[0][0].paneId
     const listener = bridge.onPaneCreateFailed.mock.calls[0][0]
 
     listener(PaneCreateFailed.make({ paneId, reason: 'The directory is gone' }))
 
-    return waitFor(() => expect(screen.getByText('The directory is gone')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('The directory is gone')).toBeTruthy())
+  })
+})
+
+describe('PaneCreationForm model choice', () => {
+  it('creates the tab with the first model the agent reported', async () => {
+    const bridge = installBridge([])
+    renderForm(project(false))
+
+    await start()
+
+    expect(bridge.createTab).toHaveBeenCalledWith(expect.objectContaining({ model: 'default' }))
+  })
+
+  it('keeps Start agent disabled while the model list is loading', async () => {
+    const bridge = installBridge([], { revision: 0, state: { _tag: 'Loading' } })
+    renderForm(project(false))
+    await waitFor(() => expect(bridge.models.get).toHaveBeenCalled())
+
+    expect(startButton().disabled).toBe(true)
+  })
+
+  it('shows why no model list could be read and keeps Start agent disabled', async () => {
+    installBridge([], {
+      revision: 1,
+      state: { _tag: 'Unavailable', message: 'spawn claude ENOENT', refreshing: false }
+    })
+    renderForm(project(false))
+
+    expect(await screen.findByText("Couldn't load models")).toBeTruthy()
+    expect(screen.getByText('spawn claude ENOENT')).toBeTruthy()
+    expect(startButton().disabled).toBe(true)
+  })
+
+  it('asks the agent to read the model list again from Retry', async () => {
+    const bridge = installBridge([], {
+      revision: 1,
+      state: { _tag: 'Unavailable', message: 'spawn claude ENOENT', refreshing: false }
+    })
+    renderForm(project(false))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry' }))
+
+    expect(bridge.models.refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores Refresh models while a refresh is running', async () => {
+    const bridge = installBridge([], ready(1, [DEFAULT_MODEL], { refreshing: true }))
+    renderForm(project(false))
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Refresh models' }))
+
+    expect(bridge.models.refresh).not.toHaveBeenCalled()
+  })
+
+  it('keeps a newer list that arrived before the reply to the first read', async () => {
+    const bridge = installBridge([], ready(1, [DEFAULT_MODEL]))
+    bridge.models.onChanged.mockImplementation((listener) => {
+      listener(ready(2, [SONNET]))
+      return () => true
+    })
+    renderForm(project(false))
+    await waitFor(() => expect(bridge.models.get).toHaveBeenCalled())
+
+    await start()
+
+    expect(bridge.createTab).toHaveBeenCalledWith(expect.objectContaining({ model: 'sonnet' }))
+  })
+
+  it('selects the first model and says so when a refresh removes the chosen one', async () => {
+    const bridge = installBridge([])
+    renderForm(project(false))
+    await waitFor(() => expect(startButton().disabled).toBe(false))
+
+    act(() => bridge.emitModels(ready(2, [HAIKU, SONNET])))
+    await start()
+
+    expect(bridge.createTab).toHaveBeenCalledWith(expect.objectContaining({ model: 'haiku' }))
+    expect(screen.getByRole('status').textContent).toBe('Model changed to Haiku')
+  })
+
+  it('says when the latest refresh failed and keeps the older list usable', async () => {
+    installBridge([], ready(1, [DEFAULT_MODEL], { lastRefreshError: 'not signed in' }))
+    renderForm(project(false))
+
+    expect(await screen.findByText(/^Couldn't refresh · list from /)).toBeTruthy()
+    await waitFor(() => expect(startButton().disabled).toBe(false))
   })
 })
 
 describe('PaneCreationForm worktree option', () => {
   it('disables the worktree switch and explains why when no plugin provides worktrees', async () => {
     installBridge([plugin('worktrees', []), plugin('example', ['example'])])
-    render(<PaneCreationForm project={project(true)} />)
+    renderForm(project(true))
 
     const toggle = await screen.findByRole('switch')
 
@@ -108,7 +244,7 @@ describe('PaneCreationForm worktree option', () => {
 
   it('enables the worktree switch without the hint once the worktrees plugin provides worktrees', async () => {
     installBridge([plugin('worktrees', [WORKTREES_KEY])])
-    render(<PaneCreationForm project={project(true)} />)
+    renderForm(project(true))
 
     const toggle = await screen.findByRole('switch')
 
@@ -118,7 +254,7 @@ describe('PaneCreationForm worktree option', () => {
 
   it('enables the worktree switch when a plugin with another name provides worktrees', async () => {
     installBridge([plugin('worktrees', []), plugin('my-worktrees', [WORKTREES_KEY])])
-    render(<PaneCreationForm project={project(true)} />)
+    renderForm(project(true))
 
     const toggle = await screen.findByRole('switch')
 
@@ -127,12 +263,12 @@ describe('PaneCreationForm worktree option', () => {
 
   it('creates the tab with a worktree when the user turns the switch on', async () => {
     const bridge = installBridge([plugin('worktrees', [WORKTREES_KEY])])
-    render(<PaneCreationForm project={project(true)} />)
+    renderForm(project(true))
     const toggle = await screen.findByRole('switch')
     await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false))
 
     fireEvent.click(toggle)
-    start()
+    await start()
 
     expect(bridge.createTab).toHaveBeenCalledWith(expect.objectContaining({ useWorktree: true }))
   })

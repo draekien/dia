@@ -61,7 +61,7 @@ Every objective's plan goes through review, whether the user assigned it or the 
 
 ### Decision queue
 
-One list of items that block an agent on the user: plans to review, unreviewed decisions, permission requests from a role's `ask` list, and harness changes that wait for approval (ADR-0035). An item in the queue raises the same notification as a permission request.
+One list of items that block an agent on the user: plans to review, unreviewed decisions, permission requests from a role's `ask` list, and harness changes that wait for approval (ADR-0036). An item in the queue raises the same notification as a permission request.
 
 ### Consequences
 
@@ -100,5 +100,5 @@ One list of items that block an agent on the user: plans to review, unreviewed d
 
 ## More Information
 
-* Related: ADR-0032 (org), ADR-0035 (harness changes in the queue), `docs/prds/org.md`.
+* Related: ADR-0033 (org), ADR-0036 (harness changes in the queue), `docs/prds/org.md`.
 * The decision path and decision queue screens are designed with `/impeccable` against `DESIGN.md` before they are wired to real data.

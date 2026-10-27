@@ -5,10 +5,15 @@ import { readHistory } from './transcript'
 
 /**
  * The {@link AgentBackend} that drives the local Claude Code install through the Agent SDK.
- * It holds no state of its own; each session it opens lives in the scope it is opened in.
+ * Each session it opens lives in the scope it is opened in; `catalog` is the model list from
+ * `makeModelCatalog`, the only state the backend exposes.
  */
-export const makeClaudeCodeBackend = (): AgentBackend => ({
+export const makeClaudeCodeBackend = (
+  catalog: Pick<AgentBackend, 'models' | 'refreshModels'>
+): AgentBackend => ({
   openSession: openClaudeCodeSession,
   readHistory,
-  deleteSession
+  deleteSession,
+  models: catalog.models,
+  refreshModels: catalog.refreshModels
 })

@@ -78,12 +78,10 @@ describe('isDiaToolName', () => {
     expect(isDiaToolName(tools, 'mcp__dia__plugin_reload')).toBe(true)
   })
 
-  it.each([
-    'Bash',
-    'plugin_reload',
-    'mcp__dia__plugin_override',
-    'mcp__other__plugin_reload'
-  ])('does not recognise %s', (name) => {
-    expect(isDiaToolName(tools, name)).toBe(false)
-  })
+  it.each(['Bash', 'plugin_reload', 'mcp__dia__plugin_override', 'mcp__other__plugin_reload'])(
+    'does not recognise %s',
+    (name) => {
+      expect(isDiaToolName(tools, name)).toBe(false)
+    }
+  )
 })

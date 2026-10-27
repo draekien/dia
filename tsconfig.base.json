@@ -32,7 +32,8 @@
           "preferSchemaOverJson": "warning",
           "processEnv": "warning",
           "processEnvInEffect": "warning",
-          "unsafeEffectTypeAssertion": "warning"
+          "unsafeEffectTypeAssertion": "warning",
+          "unstableApiUsage": "off"
         }
       }
     ]

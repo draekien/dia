@@ -316,7 +316,8 @@ const interruptSession = Effect.fn('ClaudeCodeSession.interruptSession')(functio
   yield* Effect.logInfo('Interrupted session', { superseded: requestIds })
 })
 
-const claudeExecutablePath = resolveClaudeExecutable()
+/** Path of the Claude Code binary passed to every `query()` this plugin starts, or `undefined` to let the SDK find it. */
+export const claudeExecutablePath = resolveClaudeExecutable()
 
 const toSDKUserMessage = (text: string, startsTurn = true): SDKUserMessage => ({
   type: 'user',
@@ -387,6 +388,8 @@ const resolveContinuesFrom = Effect.fn('ClaudeCodeSession.resolveContinuesFrom')
 
 const REWIND_FILES_TIMEOUT = Duration.seconds(30)
 
+const TASK_TRACKING_TOOLS = ['TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList']
+
 const resolveRewindAnchor = (
   sessionId: SessionId,
   cwd: string,
@@ -421,6 +424,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       cwd: config.cwd,
       thinkingLevel: config.thinkingLevel,
       permissionMode: config.permissionMode,
+      allowedTools: TASK_TRACKING_TOOLS,
       resume: Option.getOrUndefined(resume),
       branchAt,
       continuesFrom: Option.getOrUndefined(continuesFrom)
@@ -442,6 +446,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
             cwd: config.cwd,
             model: config.model,
             includePartialMessages: true,
+            allowedTools: TASK_TRACKING_TOOLS,
             canUseTool,
             ...Option.match(newDiaToolServer, {
               onNone: () => ({}),

@@ -17,7 +17,7 @@ William is dia's developer and its first user. dia runs agents for his registere
 9. A harness change from an agent applies at once or waits in the decision queue according to the user's tier for its change type, with zero exceptions during testing, and every change that applied at once can be reverted from the change log.
 10. A routine runs at its configured time while dia is running, in 100% of scheduled runs during testing.
 11. Every active session of a hired agent can be opened from the agent overview, and a `steer` message sent to it interrupts the turn and runs next, in 100% of attempts during testing.
-12. All `docs/prds/agent-os.md` success criteria still hold. Its goals 6 and 7 are read with `propose_change` in place of `meta_propose` (ADR-0035).
+12. All `docs/prds/agent-os.md` success criteria still hold. Its goals 6 and 7 are read with `propose_change` in place of `meta_propose` (ADR-0036).
 
 ## User Stories
 
@@ -53,19 +53,19 @@ William is dia's developer and its first user. dia runs agents for his registere
 
 | Area | Decision | Recorded in |
 | --- | --- | --- |
-| Org scope | One org across every registered project; objectives belong to a project | ADR-0032 |
-| Hiring | A hired agent has a role and an optional name; hiring another agent of a role raises that role's concurrency by one | ADR-0032 |
-| Caps | The overall cap is set by the user. Retro and planner sessions count toward the caps. Ad-hoc tabs never count | ADR-0032 |
-| Queue order | When a cap is full, waiting tasks start by objective priority, then oldest first | ADR-0032 |
-| Unassigned objectives | Picked up by the role the user sets to watch objectives; the default is the built-in planner | ADR-0032 |
-| Plan review | Every objective's plan, assigned or not, goes through decision path review before work starts. Tasks created by a routine skip it | ADR-0033 |
-| Cutting | A completed decision cannot be cut; cutting an in-progress decision requires confirming its work is discarded. Dependent tasks reset to the commit recorded with the decision, tasks that depend only on later decisions are discarded, others are untouched; discarded commits stay on a backup ref | ADR-0033 |
-| Steering against a decision | When a message contradicts a recorded decision, the agent records a new decision marked as made by the user | ADR-0033 |
-| Required roles | On first run dia hires one objective watcher and one `retro`; the user can dismiss them, and work then waits with a warning | ADR-0032 |
-| Steering tasks | A hired agent's active session opens like a tab: live transcript and the composer with `queue` and `steer` (`docs/designs/message-queue-and-steer.md`) | ADR-0032 |
-| Live decisions | A decision recorded during the work pauses its agent until the user accepts it or cuts there | ADR-0033 |
-| Memory | Scratchpad per task; long-term memory in project, environment and role scopes; the retro writes long-term memory by the memory tier and cites the entries each task used; staleness counts citations | ADR-0034 |
-| Self-improvement | Change types are tiered; the user sets each tier. Agents change workflows and roles through `propose_change` like any other harness change | ADR-0035 |
+| Org scope | One org across every registered project; objectives belong to a project | ADR-0033 |
+| Hiring | A hired agent has a role and an optional name; hiring another agent of a role raises that role's concurrency by one | ADR-0033 |
+| Caps | The overall cap is set by the user. Retro and planner sessions count toward the caps. Ad-hoc tabs never count | ADR-0033 |
+| Queue order | When a cap is full, waiting tasks start by objective priority, then oldest first | ADR-0033 |
+| Unassigned objectives | Picked up by the role the user sets to watch objectives; the default is the built-in planner | ADR-0033 |
+| Plan review | Every objective's plan, assigned or not, goes through decision path review before work starts. Tasks created by a routine skip it | ADR-0034 |
+| Cutting | A completed decision cannot be cut; cutting an in-progress decision requires confirming its work is discarded. Dependent tasks reset to the commit recorded with the decision, tasks that depend only on later decisions are discarded, others are untouched; discarded commits stay on a backup ref | ADR-0034 |
+| Steering against a decision | When a message contradicts a recorded decision, the agent records a new decision marked as made by the user | ADR-0034 |
+| Required roles | On first run dia hires one objective watcher and one `retro`; the user can dismiss them, and work then waits with a warning | ADR-0033 |
+| Steering tasks | A hired agent's active session opens like a tab: live transcript and the composer with `queue` and `steer` (`docs/designs/message-queue-and-steer.md`) | ADR-0033 |
+| Live decisions | A decision recorded during the work pauses its agent until the user accepts it or cuts there | ADR-0034 |
+| Memory | Scratchpad per task; long-term memory in project, environment and role scopes; the retro writes long-term memory by the memory tier and cites the entries each task used; staleness counts citations | ADR-0035 |
+| Self-improvement | Change types are tiered; the user sets each tier. Agents change workflows and roles through `propose_change` like any other harness change | ADR-0036 |
 
 ## Agent tools
 
@@ -98,7 +98,7 @@ dia serves these tools from the Host's in-process MCP server (`src/host/session/
 
 ## Additional Notes
 
-This PRD extends `docs/prds/agent-os.md` and builds on the plugin platform (`docs/prds/plugin-platform.md`). Every feature in it is a built-in plugin (ADR-0019). Its plan is `docs/plans/2026-10-28-org.md`. Its decisions are ADR-0032 (org of hired role agents), ADR-0033 (decision path and decision queue), ADR-0034 (task memory and retros) and ADR-0035 (tiered self-improvement, which amends ADR-0025). The decision path and decision queue screens are designed with `/impeccable` against `DESIGN.md` before they are wired to real data.
+This PRD extends `docs/prds/agent-os.md` and builds on the plugin platform (`docs/prds/plugin-platform.md`). Every feature in it is a built-in plugin (ADR-0019). Its plan is `docs/plans/2026-10-28-org.md`. Its decisions are ADR-0033 (org of hired role agents), ADR-0034 (decision path and decision queue), ADR-0035 (task memory and retros) and ADR-0036 (tiered self-improvement, which amends ADR-0025). The decision path and decision queue screens are designed with `/impeccable` against `DESIGN.md` before they are wired to real data.
 
 ## Open Questions
 
