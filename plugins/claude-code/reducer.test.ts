@@ -1,3 +1,4 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- the SDK types session UUIDs with Node's UUID template type.
 import type { UUID } from 'node:crypto'
 import type { SDKMessage, SlashCommand } from '@anthropic-ai/claude-agent-sdk'
 import type { OutboundMessage } from '@dia/plugin'
@@ -71,7 +72,8 @@ const assistantMessage = (content: AssistantContent): SDKMessage => ({
       output_tokens_details: null,
       server_tool_use: null,
       service_tier: null,
-      speed: null
+      speed: null,
+      fallback_credit: null
     }
   }
 })

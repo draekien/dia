@@ -1,4 +1,4 @@
-import { NodeFileSystem } from '@effect/platform-node'
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem'
 import { UpdateStatus } from '@shared/domain/update'
 import { CHANNEL, HostConnection, TitleBarOverlayColors } from '@shared/ipc/contract'
 import { Effect, FileSystem, Option, Result, Schema } from 'effect'

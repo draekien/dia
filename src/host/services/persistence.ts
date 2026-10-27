@@ -1,6 +1,17 @@
 import { Activity } from '@shared/domain/agent-summary'
 import { Workspace } from '@shared/domain/project'
-import { Context, Data, Effect, FileSystem, Layer, Option, Path, Result, Schema } from 'effect'
+import {
+  Context,
+  Crypto,
+  Data,
+  Effect,
+  FileSystem,
+  Layer,
+  Option,
+  Path,
+  Result,
+  Schema
+} from 'effect'
 import { LegacyWorkspace, migrateLegacyWorkspace } from './workspace-migration'
 
 /**
@@ -62,7 +73,7 @@ const encodeActivity = Schema.encodeEffect(Schema.fromJsonString(PersistedActivi
 /**
  * Builds the live {@link PersistenceService} layer, persisting the workspace as JSON at
  * `<userDataPath>/workspace.json` and activity lines at `<userDataPath>/activity.json`. Requires
- * `FileSystem.FileSystem` and `Path.Path` in the environment.
+ * `FileSystem.FileSystem`, `Path.Path` and `Crypto.Crypto` in the environment.
  */
 export const makePersistenceServiceLive = (userDataPath: string) =>
   Layer.effect(
@@ -70,6 +81,7 @@ export const makePersistenceServiceLive = (userDataPath: string) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
+      const crypto = yield* Crypto.Crypto
       const workspacePath = `${userDataPath}/workspace.json`
       const legacyCopyPath = `${userDataPath}/workspace.v1.json`
       const activityPath = `${userDataPath}/activity.json`
@@ -123,7 +135,8 @@ export const makePersistenceServiceLive = (userDataPath: string) =>
           )
         const migrated = yield* migrateLegacyWorkspace(legacy).pipe(
           Effect.provideService(Path.Path, path),
-          Effect.provideService(FileSystem.FileSystem, fs)
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Crypto.Crypto, crypto)
         )
         yield* saveWorkspace(migrated).pipe(
           Effect.catch((cause) =>

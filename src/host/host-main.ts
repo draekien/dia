@@ -1,7 +1,11 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- the host token is minted before any layer is built.
 import { randomBytes } from 'node:crypto'
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Node's http server is what NodeHttpServer wraps.
 import { createServer } from 'node:http'
-import { NodeFileSystem, NodeHttpServer, NodePath, NodeServices } from '@effect/platform-node'
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem'
+import * as NodeHttpServer from '@effect/platform-node/NodeHttpServer'
+import * as NodePath from '@effect/platform-node/NodePath'
+import * as NodeServices from '@effect/platform-node/NodeServices'
 import {
   HostBooted,
   type HostInit,
