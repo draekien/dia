@@ -1,0 +1,10 @@
+<svg width="702" height="736" viewBox="182 144 702 736" xmlns="http://www.w3.org/2000/svg">
+  <title>dia logo mark, monochrome</title>
+  <defs>
+  </defs>
+  <g fill="#5A6275">
+    <ellipse cx="437" cy="404" rx="255" ry="260"/><ellipse cx="437" cy="620" rx="255" ry="260"/>
+  </g>
+  <path d="M437 144H520C721 144 884 309 884 512C884 715 721 880 520 880H437Z" fill="#0F1424"/>
+  <path d="M205 512C250 412 380 305 501 305A207 207 0 0 1 501 719C380 719 250 612 205 512Z" fill="#A9AFBD"/>
+</svg>

@@ -1,6 +1,8 @@
 import type { UpdateStatus } from '@shared/domain/update'
 import { useQuery } from '@tanstack/react-query'
 import { RotateCwIcon } from 'lucide-react'
+import markOnDark from '../../../../brand/mark-on-dark.svg'
+import markOnLight from '../../../../brand/mark-on-light.svg'
 import { useUpdateStatus } from '../hooks/use-update-status'
 import { Button } from './ui/button'
 import {
@@ -59,6 +61,8 @@ export function AboutDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
+          <img src={markOnLight} alt="" className="mb-2 h-10 w-auto self-start dark:hidden" />
+          <img src={markOnDark} alt="" className="mb-2 hidden h-10 w-auto self-start dark:block" />
           <DialogTitle>About dia</DialogTitle>
           <DialogDescription>
             A personal desktop app that drives your local Claude installation via the Agent SDK.
