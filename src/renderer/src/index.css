@@ -269,6 +269,14 @@
   background-color: color-mix(in oklch, var(--ink) 7%, transparent);
 }
 
+.typeset pre .th-line--inserted {
+  background-color: color-mix(in oklch, var(--syntax-addition) 14%, transparent);
+}
+
+.typeset pre .th-line--deleted {
+  background-color: color-mix(in oklch, var(--syntax-deletion) 14%, transparent);
+}
+
 .typeset pre.tm-code--line-numbers .th-line::before {
   content: attr(data-line);
   position: absolute;
