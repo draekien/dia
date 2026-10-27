@@ -18,14 +18,13 @@ choices here are non-obvious and were deliberate.
   `prefers-color-scheme` unless you add `@custom-variant dark (&:is(.dark *))`.
   This matters because the prose bodies use `dark:prose-invert` — without the
   custom variant, prose text wouldn't follow the class toggle.
-- **Syntax highlighting is hand-authored `--syntax-*` role vars, not an imported
-  hljs theme.** highlight.js theme stylesheets (e.g. `github-dark.css`) all target
-  bare `.hljs`/`.hljs-*` selectors, so you can't scope two of them under `:root`
-  vs `.dark` via `@import` (an import can't prefix the file's selectors). Instead,
-  `main.tsx` no longer imports any hljs theme; `index.css` maps the hljs token
-  classes to ~9 `--syntax-*` role vars that flip between github-light and
-  github-dark values in the `:root`/`.dark` blocks. Self-contained, theme-aware,
-  and no vendored-CSS drift.
+- **Syntax highlighting is hand-authored `--syntax-*` role vars, not a packaged
+  theme.** TanStack Highlight emits theme-independent semantic classes
+  (`.th-keyword`, `.th-string`, ...). `index.css` maps those classes to ~9
+  `--syntax-*` role vars that flip between github-light and github-dark values in
+  the `:root`/`.dark` blocks. `createThemeCss` from `@tanstack/highlight/theme` is
+  not used: its themes are hex palettes outside dia's oklch tokens, and it would
+  need a runtime `<style>` injection.
 - **No-flash is an accepted tradeoff, not solved.** The preference persists in the
   main-process `SettingsStore` (per the user's choice) and is read over async IPC,
   so it isn't known at first paint. `index.html` hard-codes `class="dark"` as the
