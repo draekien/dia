@@ -4,7 +4,7 @@ set -eu
 
 repo_dir=".repos/effect"
 repo_url="https://github.com/Effect-TS/effect"
-repo_tag="effect@4.0.5"
+repo_tag="effect@4.0.6"
 
 if [ -d "$repo_dir/.git" ]; then
   exit 0

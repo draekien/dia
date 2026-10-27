@@ -59,7 +59,7 @@ Call `window.dia` through the script. Register listeners on `window` first, act,
 ```sh
 node scripts/cdp-eval.mjs --port 9333 "window.__events = []; window.dia.onMessageAppended((...args) => window.__events.push(args)); true"
 node scripts/cdp-eval.mjs --port 9333 "window.dia.createPane('00000000-0000-0000-0000-000000000001', 'F:/Dev/dia', 'claude-sonnet-5', 'off', 'default', false)"
-node scripts/cdp-eval.mjs --port 9333 "const box = document.querySelector('textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'Reply with the word ready'); box.dispatchEvent(new Event('input', { bubbles: true })); setTimeout(() => document.querySelector('button[aria-label=\"Send message\"]').click(), 100); true"
+node scripts/cdp-eval.mjs --port 9333 "{ const box = document.querySelector('textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'Reply with the word ready'); box.dispatchEvent(new Event('input', { bubbles: true })); setTimeout(() => document.querySelector('button[aria-label=\"Send message\"]').click(), 100); true }"
 node scripts/cdp-eval.mjs --port 9333 "window.__events.length"
 ```
 
@@ -85,6 +85,7 @@ Return this to the caller (or to the user when run on its own):
 - **Overriding `APPDATA` does not isolate a dev build.** Electron resolves `appData` from the Windows known-folder API. Only a packaged build honours `--user-data-dir`.
 - **Write Windows paths with forward slashes in expressions** (`'F:/Dev/dia'`); backslashes are lost between the shell and JavaScript.
 - **Send prompts through the composer, not `window.dia.sendMessage`.** The composer chooses the send mode (Enter sends in the default mode from `settings.json`, Cmd/Ctrl+Enter in the other) and shows the pane's message queue. A direct `window.dia.sendMessage(paneId, text, mode)` call takes the mode as an argument, so it does not exercise either. To press Cmd/Ctrl+Enter, dispatch a `keydown` with `key: 'Enter'` and `ctrlKey: true` on the `textarea[aria-label="Message dia"]`.
+- **Wrap an expression that declares `const` or `let` in a block (`{ ... }`).** `cdp-eval.mjs` evaluates in the page's global scope, so a second run of the same top-level declaration fails with `SyntaxError: Identifier 'box' has already been declared` and the expression does nothing.
 - **Events published before a listener registers are not replayed** on the first connection. Register listeners before the action that emits them.
 - **`kill $!` does not stop the app.** Electron's main, renderer, GPU and Host processes outlive the shell job. Find the main process by its command line (this run's `--remote-debugging-port` or scratch path) and stop its whole tree: `taskkill //PID <pid> //T //F`. Never stop all `dia.exe` or `electron.exe` processes, which ends the user's own dia window.
 - **`electron .` runs the last build.** Rebuild after every source change, or the run proves the old code.

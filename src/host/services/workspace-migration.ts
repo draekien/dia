@@ -1,9 +1,8 @@
-import { randomUUID } from 'node:crypto'
 import { agentNameFromBranch, generateAgentName } from '@shared/domain/agent-name'
 import { PaneConfig, SessionId } from '@shared/domain/pane'
 import { type ProjectEntry, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
 import { withDefaultVisibleTab } from '@shared/domain/workspace'
-import { Effect, Option, Schema } from 'effect'
+import { Crypto, Effect, Option, Schema } from 'effect'
 import { directoryKey, probeProject } from './project-directory'
 
 const LegacyLeaf = Schema.Struct({
@@ -83,9 +82,11 @@ export const migrateLegacyWorkspace = Effect.fn('migrateLegacyWorkspace')(functi
     groups.set(key, group)
   }
 
+  const crypto = yield* Crypto.Crypto
   const projects: Array<ProjectEntry> = []
   for (const { directory, tabs } of groups.values()) {
-    const project = yield* probeProject(ProjectId.make(randomUUID()), directory)
+    const id = yield* crypto.randomUUIDv4().pipe(Effect.orDie)
+    const project = yield* probeProject(ProjectId.make(id), directory)
     projects.push({ project, tabs })
   }
 
