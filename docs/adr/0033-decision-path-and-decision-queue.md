@@ -32,7 +32,9 @@ Chosen option: "a decision path that stays live after approval, pausing the agen
 
 ### Decision path
 
-Agents call `record_decision` for each choice the plan depends on. A decision has a question, the chosen answer, the rejected alternatives, a confidence, the tasks that depend on it, and the commit of each affected task branch when it was recorded.
+Agents call `record_decision` for each choice the plan depends on. A decision has a question, the chosen answer, the rejected alternatives, a confidence, the tasks that depend on it, and the head commit of each dependent task branch when it was recorded.
+
+A decision is `not started` while no dependent task has started, `in progress` while any dependent task is open, and `completed` when every dependent task is completed.
 
 ```text
 Ship plugin marketplace                      3 agents · 14 tasks
@@ -50,8 +52,10 @@ Ship plugin marketplace                      3 agents · 14 tasks
 | Action | Effect |
 | --- | --- |
 | Approve | Work starts on the tasks |
-| Cut at a decision, with guidance or a rejected alternative | Decisions before it are kept. Tasks that depend on it or on later decisions are discarded. Each affected task branch is reset to the commit recorded with the decision, and the discarded commits are kept on a backup ref. The planner re-plans from the decision with the guidance |
+| Cut at a decision, with guidance or a rejected alternative | Allowed for a `not started` or `in progress` decision; a `completed` decision cannot be cut. Cutting an `in progress` decision requires the user to confirm that its work is discarded. Each task that depends on the decision is reset to the commit recorded with the decision. Each task that depends only on later decisions is discarded. Tasks that depend on neither are untouched. Discarded commits are kept on a backup ref. The planner re-plans from the decision with the guidance |
 | A new decision during the work | The agent pauses. The decision appears on the path as unreviewed and in the decision queue. Accept continues the agent; cut applies the cut action |
+
+When a message the user sends to an agent (`queue` or `steer`) contradicts a recorded decision, the agent calls `record_decision` with the new choice. The new decision replaces the old one on the path, is marked as made by the user, and needs no review. Work done under the old decision is not discarded; the agent changes it as it continues.
 
 Every objective's plan goes through review, whether the user assigned it or the objective watcher picked it up. Tasks created by a routine skip review.
 

@@ -33,7 +33,7 @@ Chosen options: "a scratchpad per task" and "a retro agent writes from the task'
 
 ### Retro
 
-A task cannot move to `completed` until a retro has run. The retro is a session of the `retro` role. It reads every transcript saved against the task and the task's scratchpad, and writes long-term memory with `memory_write` without review. It can also call `propose_change` (ADR-0035).
+A task cannot move to `completed` until a retro has run. The retro is a session of the `retro` role. It reads every transcript saved against the task and the task's scratchpad, and writes long-term memory with `memory_write`. A write applies at once or waits in the decision queue according to the tier the user sets for long-term memory (ADR-0035); the default applies it at once. The retro also cites the memory entries the task's sessions acted on, and can call `propose_change` (ADR-0035).
 
 ### Long-term memory
 
@@ -43,14 +43,15 @@ A task cannot move to `completed` until a retro has run. The retro is a session 
 | Environment | Every agent on this machine | "The Bash tool is Git Bash; Python is Windows Python" |
 | Role | Agents of that role | "engineer: check the exit code of `pnpm typecheck`" |
 
-* dia records each read of an entry by `memory_search`: the count, the last read time and the task that read it. An entry unread for a configurable period is marked stale.
+* dia records each citation of an entry by a retro: the count, the last citation time and the cited task. Loading an entry into a session and returning it from `memory_search` are not citations. An entry not cited for a configurable period is marked stale.
 * The user can browse memory, edit it by hand, or ask a meta agent to edit it. A routine can run a meta agent to merge duplicates and remove stale entries.
 
 ### Consequences
 
 * Good, because every completed task leaves memory behind for the next agent.
 * Good, because read telemetry shows which entries are used.
-* Bad, because a wrong entry written by a retro reaches agents in its scope before anyone reviews it; the change log makes it revertible (ADR-0035).
+* Bad, because under the default tier a wrong entry written by a retro reaches agents in its scope before anyone reviews it; the change log makes it revertible (ADR-0035).
+* Bad, because staleness depends on the retro citing every entry a task used; an entry the retro misses looks unused.
 * Bad, because every task runs one more session, which costs tokens and counts toward the caps.
 
 ## Pros and Cons of the Options

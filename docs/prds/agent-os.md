@@ -11,7 +11,7 @@ William is dia's developer and its first user. dia's MVP (`docs/prds/mvp.md`) is
 3. Clicking an OS notification focuses dia's window on the agent's tab, in 100% of attempts during testing.
 4. Switching tabs leaves every running agent running; across 20 tab switches away from and back to an agent during a streaming turn, zero turns are interrupted, dropped or duplicated.
 5. The agent overview shows, for every agent in every registered project, its status and an activity line that matches the agent's latest `TodoWrite` `in_progress` item, or its last tool call when it has none, with no stale line observed during testing.
-6. A proposal filed with `meta_propose` by an agent in one project, once combined by a meta agent and approved, is present in the next agent started in a different project.
+6. A change proposed with `propose_change` by a retro in one project, once applied by its tier (ADR-0035), is present in the next agent started in a different project.
 7. A rejected meta branch changes no agent's configuration.
 8. A push of the meta repo that contains a test secret is refused, in 100% of attempts during testing.
 9. All `docs/prds/mvp.md` success criteria still hold, reading "pane" as "tab" and "pane layout" as the list of projects and their tabs. MVP user stories 1, 2 and 9 (splitting panes, and expanding a focused pane) no longer apply (ADR-0023).

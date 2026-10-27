@@ -8,12 +8,12 @@ William is dia's developer and its first user. dia runs agents for his registere
 
 1. An objective left unassigned is picked up by the agent set to watch objectives and broken into tasks, with no action from the user other than reviewing the decision path.
 2. The decision path of an objective lists every decision its tasks depend on. In testing, each task in an approved plan traces to at least one decision on the path.
-3. Cutting the decision path at a decision discards every task and commit after that decision and produces a new plan from it that follows the user's guidance, in 100% of cuts during testing.
+3. Cutting the decision path at a decision resets the tasks that depend on it, discards the tasks that depend only on later decisions, leaves other tasks untouched, and produces a new plan from it that follows the user's guidance, in 100% of cuts during testing. A completed decision cannot be cut.
 4. A decision an agent records during the work pauses that agent until the user accepts it or cuts there, with zero agents continuing past an unreviewed decision during testing.
 5. With an overall cap of N and a role with M hired agents, no more than N hired agents and no more than M agents of that role run at once, across at least 50 tasks in testing. Ad-hoc tabs are never queued or counted.
 6. No task reaches `completed` without a retro that read every transcript saved against it.
 7. A long-term memory entry written by a retro in one task is available to the next agent that starts in that entry's scope.
-8. Each memory entry shows its read count and last read time, and an entry unread for a configurable period is marked stale.
+8. Each memory entry shows how often and how recently retros cited it, and an entry not cited for a configurable period is marked stale.
 9. A harness change from an agent applies at once or waits in the decision queue according to the user's tier for its change type, with zero exceptions during testing, and every change that applied at once can be reverted from the change log.
 10. A routine runs at its configured time while dia is running, in 100% of scheduled runs during testing.
 11. Every active session of a hired agent can be opened from the agent overview, and a `steer` message sent to it interrupts the turn and runs next, in 100% of attempts during testing.
@@ -38,7 +38,7 @@ William is dia's developer and its first user. dia runs agents for his registere
 15. As a user, I want each task's sessions to share a scratchpad so that a resumed session or a reviewer sees what the earlier session found.
 16. As a user, I want a retro to run before a task completes, read the task's transcripts and write long-term memory, so that what one agent learns reaches the next.
 17. As a user, I want long-term memory scoped to a project, the environment, or a role so that each agent loads only what applies to it.
-18. As a user, I want to see how often and how recently each memory entry was read so that I can find stale entries.
+18. As a user, I want to see how often and how recently each memory entry was cited by a retro so that I can find stale entries.
 19. As a user, I want to browse memory, edit it by hand, or ask the meta agent to edit it, and to run the meta agent from a routine to tidy it, so that memory stays correct.
 20. As a user, I want to create routines, such as a daily status summary at 06:00, so that recurring work happens without me starting it.
 21. As a user, I want workflows that set a sequence of steps with a role per step, with built-ins I can disable or copy, so that work follows the process I choose.
@@ -59,10 +59,12 @@ William is dia's developer and its first user. dia runs agents for his registere
 | Queue order | When a cap is full, waiting tasks start by objective priority, then oldest first | ADR-0032 |
 | Unassigned objectives | Picked up by the role the user sets to watch objectives; the default is the built-in planner | ADR-0032 |
 | Plan review | Every objective's plan, assigned or not, goes through decision path review before work starts. Tasks created by a routine skip it | ADR-0033 |
-| Cutting | Cutting at a decision resets each affected task branch to the commit recorded with that decision and keeps the discarded commits on a backup ref | ADR-0033 |
+| Cutting | A completed decision cannot be cut; cutting an in-progress decision requires confirming its work is discarded. Dependent tasks reset to the commit recorded with the decision, tasks that depend only on later decisions are discarded, others are untouched; discarded commits stay on a backup ref | ADR-0033 |
+| Steering against a decision | When a message contradicts a recorded decision, the agent records a new decision marked as made by the user | ADR-0033 |
+| Required roles | On first run dia hires one objective watcher and one `retro`; the user can dismiss them, and work then waits with a warning | ADR-0032 |
 | Steering tasks | A hired agent's active session opens like a tab: live transcript and the composer with `queue` and `steer` (`docs/designs/message-queue-and-steer.md`) | ADR-0032 |
 | Live decisions | A decision recorded during the work pauses its agent until the user accepts it or cuts there | ADR-0033 |
-| Memory | Scratchpad per task; long-term memory in project, environment and role scopes; the retro writes long-term memory without review; reads are recorded | ADR-0034 |
+| Memory | Scratchpad per task; long-term memory in project, environment and role scopes; the retro writes long-term memory by the memory tier and cites the entries each task used; staleness counts citations | ADR-0034 |
 | Self-improvement | Change types are tiered; the user sets each tier. Agents change workflows and roles through `propose_change` like any other harness change | ADR-0035 |
 
 ## Agent tools
@@ -81,7 +83,7 @@ dia serves these tools from the Host's in-process MCP server (`src/host/session/
 
 ## Testing Decisions
 
-**Approach:** Automated tests cover logic that can be checked in isolation: the scheduler (overall cap, per-role caps, queue order, ad-hoc tabs ignored), task and objective state transitions (a task cannot complete before its retro), decision path construction and cutting (which tasks and commits are discarded), memory scope selection for a new session, memory read telemetry and staleness, the tier rule that routes a harness change to apply or to the queue, routine schedule evaluation with Effect's `TestClock`, and permission list evaluation for a role. Manual testing on the installed build covers a full objective: an unassigned objective planned by the planner, a cut with guidance, a live decision that pauses an agent, a retro that writes memory, and that memory loaded into an agent in a later task.
+**Approach:** Automated tests cover logic that can be checked in isolation: the scheduler (overall cap, per-role caps, queue order, ad-hoc tabs ignored), task and objective state transitions (a task cannot complete before its retro), decision path construction and cutting (which tasks and commits are discarded), memory scope selection for a new session, memory citation counts and staleness, the tier rule that routes a harness change to apply or to the queue, routine schedule evaluation with Effect's `TestClock`, and permission list evaluation for a role. Manual testing on the installed build covers a full objective: an unassigned objective planned by the planner, a cut with guidance, a live decision that pauses an agent, a retro that writes memory, and that memory loaded into an agent in a later task.
 
 **Constraints:** No production or customer data is involved. Testing runs on the developer's machine against his local Claude Code installation. Transcripts used in testing can contain local paths and command output.
 
@@ -103,6 +105,5 @@ This PRD extends `docs/prds/agent-os.md` and builds on the plugin platform (`doc
 - When a hired agent holds a slot: only while a session of its task is running a turn, or for the whole time it is assigned an open task, including time waiting in the decision queue.
 - How a hired agent's sessions appear in the agent overview: as tabs in the task's project labelled with the agent's name, or in a separate org group.
 - Where long-term memory is stored: in the meta repo, so that each write is a git commit, or in a store under `userData`.
-- The period after which an unread memory entry is marked stale, and whether it differs by scope.
-- Whether a `steer` message that contradicts a recorded decision updates the decision path, and how: the agent records a new decision marked as made by the user, or the message is shown on the path without changing it.
+- The period after which an uncited memory entry is marked stale, and whether it differs by scope.
 - How a role selects a model, and whether the model is a role setting or a hire setting.

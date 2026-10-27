@@ -32,8 +32,8 @@ Chosen option: "tiers the user configures per change type, with fixed tiers as t
 
 | Change type | Default tier |
 | --- | --- |
-| Long-term memory | Apply at once (written by the retro, ADR-0034) |
-| Skills | Apply at once |
+| Long-term memory | Apply at once (written by the retro with `memory_write`, ADR-0034) |
+| Skills, including scripts bundled in a skill | Apply at once |
 | Role instructions | Apply at once |
 | Workflows | Decision queue |
 | Tools | Decision queue |
@@ -43,7 +43,7 @@ Chosen option: "tiers the user configures per change type, with fixed tiers as t
 
 * Apply at once: the change is committed and listed in a change log, from which the user can revert it.
 * Decision queue: the change waits in the decision queue (ADR-0033) with the transcripts that motivated it, and applies when the user approves it.
-* The user sets the tier of each change type in settings.
+* The user sets the tier of each change type in settings. `memory_write` and `propose_change` both follow the tier of the change type they carry.
 
 ### `propose_change`
 
@@ -54,6 +54,7 @@ A tool an agent builds is a plugin that registers a dia tool, so it follows the 
 ### Amendment to ADR-0025
 
 * Step 1 of ADR-0025's improvement loop ("an agent in a project calls `meta_propose`") is replaced by the retro, which reads the task's transcripts and calls `propose_change`.
+* Step 3 of ADR-0025's improvement loop (a meta agent combines open proposals into a branch) is replaced: proposals apply by their tier with no meta agent between the retro and the user. A meta agent, started by the user or by a routine, reads the change log and the decision queue, merges duplicate changes, resolves conflicting ones and reverts changes that did not reduce waste. Its own changes follow the tiers.
 * "The user approves or rejects each branch" now applies only to change types in the decision queue tier.
 * Meta agents can be started by a routine as well as by the user.
 
@@ -62,6 +63,7 @@ A tool an agent builds is a plugin that registers a dia tool, so it follows the 
 * Good, because most improvements (memory, skills, instructions) reach agents without waiting for the user.
 * Good, because each change type can be trusted separately.
 * Bad, because a user who sets plugins to apply at once lets an agent-written plugin run before review.
+* Bad, because a skill can bundle scripts, and under the default tier a skill script written by an agent runs before review. The user accepted this risk; moving skills to the decision queue tier removes it.
 * Bad, because the change log and revert must work for every change type in the apply-at-once tier.
 
 ## Pros and Cons of the Options

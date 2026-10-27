@@ -46,6 +46,7 @@ Example: with an overall cap of 4 and hired agents `Ada` and `Ben` (engineer), `
 ### Scheduling
 
 * Retro and planner sessions are hired agents and count toward the caps.
+* On first run, dia hires one agent of the objective watcher role and one `retro`. The user can dismiss them. While the objective watcher role or `retro` has no hired agent, the org screen shows a warning, unassigned objectives wait for an objective watcher, and finished tasks wait for a retro.
 * When a cap is full, waiting tasks start by objective priority, then oldest first.
 * A hired agent that finishes a task takes the next waiting task its role can do, in any project.
 

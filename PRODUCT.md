@@ -81,7 +81,7 @@ dia combines four things that Claude Desktop and the Claude Code CLI do not:
 2. **Status without opening.** The user can tell what any agent is doing, and whether it needs them, from the agent overview, without opening its tab.
 3. **Background by default.** An agent that is not on screen keeps working, and nothing in dia requires watching it.
 4. **Steer decisions, not tasks.** The user reviews the decisions an objective's plan depends on, not its task list, and corrects a plan by cutting it at the first wrong decision.
-5. **Improvements are reviewable.** Every change that affects every agent, from an agent, the meta project or a plugin, is recorded and can be reverted. Changes to what runs wait for the user's approval unless the user has set that change type to apply at once.
+5. **Improvements are reviewable.** Every change that affects every agent, from an agent, the meta project or a plugin, is recorded and can be reverted. Each change type applies at once or waits for the user's approval by a tier the user sets; ADR-0035 lists the defaults.
 6. **Fast under real use.** dia drives real development work, including its own, so latency is part of the design.
 
 ## Accessibility & Inclusion
