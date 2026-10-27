@@ -388,6 +388,8 @@ const resolveContinuesFrom = Effect.fn('ClaudeCodeSession.resolveContinuesFrom')
 
 const REWIND_FILES_TIMEOUT = Duration.seconds(30)
 
+const TASK_TRACKING_TOOLS = ['TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList']
+
 const resolveRewindAnchor = (
   sessionId: SessionId,
   cwd: string,
@@ -443,6 +445,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
             cwd: config.cwd,
             model: config.model,
             includePartialMessages: true,
+            allowedTools: TASK_TRACKING_TOOLS,
             canUseTool,
             ...Option.match(newDiaToolServer, {
               onNone: () => ({}),

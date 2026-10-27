@@ -138,6 +138,29 @@ const queryAt = (index: number): FakeQuery => {
   return query
 }
 
+const TASK_TRACKING_TOOLS = ['TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList']
+
+describe('task-tracking tools', () => {
+  it.effect('names the task tools in the first query so newer models keep them', () =>
+    Effect.gen(function* () {
+      yield* openResumed(twoTurns)
+
+      assert.includeMembers(queryAt(0).options.allowedTools ?? [], TASK_TRACKING_TOOLS)
+    })
+  )
+
+  it.effect('names the task tools in the query a rewind forks', () =>
+    Effect.gen(function* () {
+      const { session } = yield* openResumed(twoTurns)
+
+      yield* session.rewindToCheckpoint('turn-2', 'reply-1')
+      yield* settle
+
+      assert.includeMembers(queryAt(1).options.allowedTools ?? [], TASK_TRACKING_TOOLS)
+    })
+  )
+})
+
 describe('rewindToCheckpoint', () => {
   it.effect('rewinds a resumed session before any prompt is sent to it', () =>
     Effect.gen(function* () {
