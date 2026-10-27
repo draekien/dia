@@ -23,6 +23,7 @@ import { yaml } from '@tanstack/highlight/languages/yaml'
 import { createTanStackMarkdownHighlighter } from '@tanstack/highlight/markdown'
 import { streamingMarkdownExtension } from '@tanstack/markdown/extensions/streaming'
 import { type MarkdownComponents, Markdown as TanStackMarkdown } from '@tanstack/markdown/react'
+import { memo } from 'react'
 
 const typesetClassName = 'typeset typeset-docs max-w-[75ch]'
 
@@ -66,7 +67,7 @@ const components = {
  * partially streamed response; `className` appends to the typeset wrapper for
  * context-specific spacing or colour.
  */
-export function Markdown({
+export const Markdown = memo(function Markdown({
   content,
   className
 }: {
@@ -87,4 +88,4 @@ export function Markdown({
       </TanStackMarkdown>
     </div>
   )
-}
+})
