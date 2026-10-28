@@ -313,9 +313,9 @@
 
 /* App scrollbar pill mirroring the shadcn ScrollArea thumb (`rounded-full
    bg-border`): same `--border` token, an 8px pill inset 1px inside a 10px bar via
-   a transparent border + `background-clip: padding-box`, hidden during autoscroll
-   with the gutter reserved so visibility toggles never shift layout. Chromium-only
-   (Electron).
+   a transparent border + `background-clip: padding-box`. The thumb stays visible
+   during autoscroll: hiding it on `data-autoscrolling` flickers while a reply
+   streams. Chromium-only (Electron).
 
    Deliberately NOT named `scrollbar-thin`/`scrollbar-*`: the `shadcn/tailwind.css`
    scrollbar plugin owns those names and styles via the standard `scrollbar-width`/
@@ -324,7 +324,7 @@
    any element that carries them. A distinct name keeps this element free of a
    standard `scrollbar-width` so the webkit styling actually applies. */
 @utility scrollbar-app {
-  scrollbar-gutter: stable;
+  scrollbar-gutter: stable both-edges;
   &::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -340,9 +340,6 @@
   }
   &::-webkit-scrollbar-track {
     background: transparent;
-  }
-  &[data-autoscrolling]::-webkit-scrollbar {
-    display: none;
   }
 }
 

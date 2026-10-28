@@ -538,7 +538,7 @@ function PaneChat({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <MessageScrollerProvider autoScroll>
-        <MessageScroller className="flex-1">
+        <MessageScroller className="-mx-2.5 w-auto flex-1">
           <MessageScrollerViewport>
             <MessageScrollerContent className={cn('gap-2 py-2', column)}>
               {chat.messages.map((message) => (

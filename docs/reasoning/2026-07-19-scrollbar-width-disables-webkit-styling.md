@@ -39,8 +39,13 @@ grepping the output for `scrollbar-width` surfaced the competing `.scrollbar-thi
 Fix: give the custom webkit scrollbar a name the shadcn plugin doesn't own
 (`scrollbar-app`), styled purely via `::-webkit-scrollbar` (8px `--border` pill,
 inset 1px via a transparent border + `background-clip: padding-box`,
-`scrollbar-gutter: stable`, hidden during autoscroll with
-`&[data-autoscrolling]::-webkit-scrollbar { display: none }`). Because that class
+`scrollbar-gutter: stable both-edges`). Do not hide the scrollbar or its thumb
+on `data-autoscrolling`. `MessageScroller` sets and clears that attribute many
+times while a reply streams, so any style keyed on it flickers. Hiding with
+`::-webkit-scrollbar { display: none }` also removes the gutter, so the
+transcript column re-centres by 5px each time.
+`both-edges` makes the viewport's content box symmetric, so its centred column
+lines up with the composer column below it. Because that class
 sets no standard `scrollbar-width`, Chromium applies the pill. The shadcn
 scrollbar utilities can *never* reproduce a rounded inset pill — they only expose
 width + color — so a native-scroll element that must match `ScrollArea` has to
