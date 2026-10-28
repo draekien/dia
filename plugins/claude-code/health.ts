@@ -113,6 +113,11 @@ export interface ClaudeHealth {
    */
   readonly check: Effect.Effect<void>
   /**
+   * Waits for a running check, then checks again, so the result reflects state changed since that
+   * check started (such as a new install path). Completes when the new check ends.
+   */
+  readonly recheck: Effect.Effect<void>
+  /**
    * Records why a session's query refused to start. `cli_version_too_old` sets health to
    * `HealthError` {@link UPDATE_CLAUDE_CODE}; other reasons leave health unchanged.
    */
@@ -259,6 +264,12 @@ export const makeClaudeHealth = Effect.fnUntraced(function* (
     )
   })
 
+  const recheck = Effect.gen(function* () {
+    const held = yield* Ref.get(running)
+    if (Option.isSome(held)) yield* Deferred.await(held.value)
+    yield* check
+  })
+
   const reportStartupFailure = (reason: SDKStartupFailureReason) =>
     Effect.gen(function* () {
       yield* Effect.logWarning('A Claude Code session refused to start', { reason })
@@ -275,5 +286,5 @@ export const makeClaudeHealth = Effect.fnUntraced(function* (
       }))
     })
 
-  return { status: () => SubscriptionRef.changes(status), check, reportStartupFailure }
+  return { status: () => SubscriptionRef.changes(status), check, recheck, reportStartupFailure }
 })

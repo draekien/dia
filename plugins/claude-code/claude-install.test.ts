@@ -73,6 +73,25 @@ describe('resolveSpawnablePath on Windows', () => {
     )
   })
 
+  it('skips the extensionless sh script npm writes beside claude.cmd', () => {
+    const resolved = resolveSpawnablePath(
+      'claude',
+      'win32',
+      env,
+      filesAt(
+        'C:\\Users\\me\\AppData\\Roaming\\npm\\claude',
+        'C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd',
+        'C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe'
+      )
+    )
+    assert.deepStrictEqual(
+      resolved,
+      Option.some(
+        'C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe'
+      )
+    )
+  })
+
   it('falls back to cli.js for an older package without bin/claude.exe', () => {
     const resolved = resolveSpawnablePath(
       'claude',

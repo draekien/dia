@@ -300,6 +300,31 @@ describe('makeClaudeHealth', () => {
       }).pipe(Effect.scoped, Effect.provide(spawning(versionProcess('2.1.3 (Claude Code)', 0))))
   )
 
+  it.effect('a recheck during a running check runs a fresh check after it', () =>
+    Effect.gen(function* () {
+      const probes = yield* Ref.make(0)
+      const release = yield* Deferred.make<void>()
+      const health = yield* makeClaudeHealth(
+        installAt(Option.some(INSTALL_PATH)),
+        '/data',
+        noRefresh,
+        () =>
+          Ref.update(probes, (count) => count + 1).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.as(SIGNED_IN)
+          )
+      )
+      const first = yield* Effect.forkChild(health.check)
+      yield* Effect.yieldNow
+      const second = yield* Effect.forkChild(health.recheck)
+      yield* Effect.yieldNow
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(first)
+      yield* Fiber.join(second)
+      assert.strictEqual(yield* Ref.get(probes), 2)
+    }).pipe(Effect.scoped, Effect.provide(spawning(versionProcess('2.1.3 (Claude Code)', 0))))
+  )
+
   it.effect('a too-old CLI at session start sets health to Update Claude Code', () =>
     Effect.gen(function* () {
       const health = yield* makeClaudeHealth(

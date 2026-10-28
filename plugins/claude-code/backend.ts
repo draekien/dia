@@ -25,5 +25,5 @@ export const makeClaudeCodeBackend = (deps: {
   refreshModels: deps.catalog.refreshModels,
   status: deps.health.status,
   checkHealth: () => deps.health.check,
-  setInstallPath: (path) => deps.install.setOverride(path).pipe(Effect.andThen(deps.health.check))
+  setInstallPath: (path) => deps.install.setOverride(path).pipe(Effect.andThen(deps.health.recheck))
 })

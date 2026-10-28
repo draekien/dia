@@ -46,7 +46,7 @@ const withWindowsExtensions = (
   const extensions = (envValue(env, 'PATHEXT', 'win32') ?? '.COM;.EXE;.BAT;.CMD')
     .split(';')
     .filter((extension) => extension.length > 0)
-  return [file, ...extensions.map((extension) => `${file}${extension.toLowerCase()}`)]
+  return extensions.map((extension) => `${file}${extension.toLowerCase()}`)
 }
 
 const shimTarget = (shim: string, isFile: (path: string) => boolean): Option.Option<string> => {
