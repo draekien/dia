@@ -8,6 +8,8 @@ import { makePluginSourcesLive, PluginSources } from './plugin-sources'
 const memorySettings = (initial: Record<string, string> = {}) => {
   let overrides: Record<string, string> = initial
   return Layer.succeed(SettingsStore)({
+    getAdapterPreferences: () => Effect.succeed({ models: {}, defaults: {} }),
+    setAdapterPreferences: () => Effect.void,
     getTheme: () => Effect.succeed(Option.none()),
     setTheme: () => Effect.void,
     getSendMode: () => Effect.succeed(Option.none()),
@@ -28,7 +30,7 @@ const memorySettings = (initial: Record<string, string> = {}) => {
 }
 
 const manifestJson = (name: string, category: PluginCategory) =>
-  JSON.stringify({ name, api: '0.0.1', category, host: 'host.ts' })
+  JSON.stringify({ name, api: '0.0.2', category, host: 'host.ts' })
 
 const workspace = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem

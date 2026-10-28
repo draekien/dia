@@ -2,7 +2,9 @@ import { Button } from '@renderer/components/ui/button'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
@@ -10,8 +12,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui
 import type { ModelCatalog } from '@renderer/hooks/use-model-catalog'
 import { formatWhen } from '@renderer/lib/format-when'
 import { cn } from '@renderer/lib/utils'
+import { type AdapterPreferences, pickerModels } from '@shared/domain/model-preferences'
 import { Loader2Icon, RefreshCwIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 type CatalogState = NonNullable<ModelCatalog['state']>
 
@@ -23,33 +26,69 @@ const refreshOutcome = (state: CatalogState): string =>
     ? 'Model list updated'
     : "Couldn't refresh models"
 
+/**
+ * Whether `model` is one the New agent form offers with `catalog` and `preferences`: a favourite
+ * or visible model of a ready list. Disable Start while it is false.
+ */
+export const isOfferedModel = (
+  catalog: ModelCatalog,
+  preferences: AdapterPreferences | undefined,
+  model: string | undefined
+): boolean => {
+  if (catalog.state?._tag !== 'Ready' || preferences === undefined || model === undefined) {
+    return false
+  }
+  const { favourites, others } = pickerModels(catalog.state.models, preferences)
+  return [...favourites, ...others].some((option) => option.value === model)
+}
+
 interface ModelFieldProps {
   readonly catalog: ModelCatalog
+  readonly preferences: AdapterPreferences | undefined
   readonly value: string | undefined
   readonly onValueChange: (value: string) => void
   readonly disabled: boolean
 }
 
 /**
- * The New agent form's model choice, fed by {@link ModelCatalog}. It selects the first model
- * whenever `value` is not in the list (on first load, or after a refresh dropped the chosen
- * model) and reports that through `onValueChange`; `value` stays `undefined` while no list is
- * known, so the form cannot start an agent. It offers a refresh, and a retry when no list could
- * be read, and announces refresh outcomes to screen readers.
+ * The New agent form's model choice: the favourite models, then the other visible models, from
+ * {@link ModelCatalog} and the adapter's `preferences`. While `value` is `undefined` and both are
+ * known, it reports the default model through `onValueChange` (`preferences.defaults.model` when
+ * offered, else the first offered model). A `value` that stops being offered stays selected and is
+ * marked "No longer offered"; check {@link isOfferedModel} before starting an agent. It offers a
+ * refresh, and a retry when no list could be read, and announces refresh outcomes to screen
+ * readers.
  */
-export function ModelField({ catalog, value, onValueChange, disabled }: ModelFieldProps) {
+export function ModelField({
+  catalog,
+  preferences,
+  value,
+  onValueChange,
+  disabled
+}: ModelFieldProps) {
   const { state, refresh } = catalog
   const [announcement, setAnnouncement] = useState('')
   const wasRefreshing = useRef(false)
   const refreshing = isRefreshing(state)
-  const models = state?._tag === 'Ready' ? state.models : undefined
+  const picked = useMemo(
+    () =>
+      state?._tag === 'Ready' && preferences !== undefined
+        ? pickerModels(state.models, preferences)
+        : undefined,
+    [state, preferences]
+  )
+  const offered = useMemo(
+    () => (picked === undefined ? undefined : [...picked.favourites, ...picked.others]),
+    [picked]
+  )
+  const defaultModel = preferences?.defaults.model
+  const offeredValue = offered?.some((model) => model.value === value) ?? true
 
   useEffect(() => {
-    if (models === undefined || models.some((model) => model.value === value)) return
-    const first = models[0]
-    if (value !== undefined) setAnnouncement(`Model changed to ${first.displayName}`)
-    onValueChange(first.value)
-  }, [models, value, onValueChange])
+    if (value !== undefined || offered === undefined || offered.length === 0) return
+    const preferred = offered.find((model) => model.value === defaultModel) ?? offered[0]
+    onValueChange(preferred.value)
+  }, [offered, defaultModel, value, onValueChange])
 
   useEffect(() => {
     if (state === undefined) return
@@ -95,20 +134,47 @@ export function ModelField({ catalog, value, onValueChange, disabled }: ModelFie
           <Select
             value={value ?? ''}
             onValueChange={onValueChange}
-            disabled={disabled || models === undefined}
+            disabled={disabled || offered === undefined}
           >
-            <SelectTrigger className="min-w-0 flex-1" aria-labelledby="model-label">
+            <SelectTrigger
+              className="min-w-0 flex-1"
+              aria-labelledby="model-label"
+              aria-describedby={offeredValue ? undefined : 'model-not-offered'}
+            >
               <SelectValue placeholder="Loading models…" />
             </SelectTrigger>
             <SelectContent>
-              {models?.map((model) => (
-                <SelectItem key={model.value} value={model.value}>
-                  {model.displayName}
-                </SelectItem>
-              ))}
+              {offeredValue || value === undefined ? null : (
+                <SelectGroup>
+                  <SelectItem value={value} className="font-mono">
+                    {value}
+                  </SelectItem>
+                </SelectGroup>
+              )}
+              {picked === undefined || picked.favourites.length === 0 ? null : (
+                <SelectGroup aria-label="Favourite models">
+                  {picked.favourites.map((model) => (
+                    <SelectItem key={model.value} value={model.value}>
+                      {model.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )}
+              {picked === undefined ||
+              picked.favourites.length === 0 ||
+              picked.others.length === 0 ? null : (
+                <SelectSeparator />
+              )}
+              <SelectGroup>
+                {picked?.others.map((model) => (
+                  <SelectItem key={model.value} value={model.value}>
+                    {model.displayName}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
-          {models === undefined ? null : (
+          {offered === undefined ? null : (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -126,6 +192,11 @@ export function ModelField({ catalog, value, onValueChange, disabled }: ModelFie
             </Tooltip>
           )}
         </div>
+      )}
+      {offeredValue ? null : (
+        <p id="model-not-offered" className="text-xs text-ink-muted">
+          No longer offered · choose another model
+        </p>
       )}
       {state?._tag === 'Ready' && state.lastRefreshError !== undefined ? (
         <p className="text-xs text-ink-muted" title={state.lastRefreshError}>

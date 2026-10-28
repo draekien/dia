@@ -120,6 +120,7 @@ function VisibleTab({
         <Pane
           key={config.paneId}
           paneId={config.paneId}
+          model={config.model}
           thinkingLevel={config.thinkingLevel}
           permissionMode={config.permissionMode}
           focusComposer={focusComposer}

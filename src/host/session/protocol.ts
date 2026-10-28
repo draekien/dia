@@ -97,6 +97,11 @@ export const UserMessagesSent = Schema.TaggedStruct('UserMessagesSent', {
   messages: Schema.Array(OutgoingMessage)
 })
 
+/** Emitted by a pane's agent session when the turn it is about to send is the first to use `model`, before that turn's `UserMessagesSent`. The renderer marks the switch in the transcript. */
+export const ModelChanged = Schema.TaggedStruct('ModelChanged', {
+  model: Schema.NonEmptyString
+})
+
 /** The full set of events a pane's agent session may emit. Match on `_tag` to translate each into renderer events and attention transitions. */
 export const OutboundMessage = Schema.Union([
   AssistantMessageReceived,
@@ -118,6 +123,7 @@ export const OutboundMessage = Schema.Union([
   CheckpointAvailable,
   RewoundToCheckpoint,
   MessageQueueChanged,
-  UserMessagesSent
+  UserMessagesSent,
+  ModelChanged
 ])
 export type OutboundMessage = typeof OutboundMessage.Type

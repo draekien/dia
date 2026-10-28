@@ -1,3 +1,4 @@
+import { type AdapterStatus, HealthError } from '@shared/domain/adapter-status'
 import type { PermissionResponse, QuestionResponse } from '@shared/domain/attention'
 import {
   EMPTY_MESSAGE_QUEUE,
@@ -13,7 +14,7 @@ import type {
   ThinkingLevel
 } from '@shared/domain/pane'
 import type { AdapterContract, PluginRegistry } from '@shared/plugin/plugin-registry'
-import { Data, Effect, Option, Predicate, type Scope, Stream } from 'effect'
+import { Data, DateTime, Effect, Option, Predicate, type Scope, Stream } from 'effect'
 import type { DiaTool } from './dia-tools'
 import type { OutboundMessage } from './protocol'
 
@@ -39,6 +40,12 @@ export interface AgentSession {
   readonly messageQueue: Effect.Effect<MessageQueueSnapshot>
   readonly setThinkingLevel: (level: ThinkingLevel) => Effect.Effect<void>
   readonly setPermissionMode: (mode: PermissionMode) => Effect.Effect<void>
+  /**
+   * Makes the turns dispatched from now on use `model`; a running turn finishes on its model.
+   * Choosing the model in use does nothing. The first turn on a new model is preceded by a
+   * `ModelChanged` event.
+   */
+  readonly setModel: (model: string) => Effect.Effect<void>
   readonly resolvePermission: (
     requestId: string,
     response: PermissionResponse
@@ -80,6 +87,10 @@ export interface AgentSessionOptions {
  * calling it again after a success or a failure is safe. `models` streams the models a new
  * session can use, starting with the current state; `refreshModels` re-reads that list from the
  * agent and completes when the read ends, whatever its outcome, which arrives through `models`.
+ * `status` streams whether the agent install works, starting with the current status;
+ * `checkHealth` re-checks it and completes when the check ends; `setInstallPath` stores (`Some`)
+ * or clears (`None`) where the adapter finds its agent install, then re-checks, and sessions
+ * started afterwards use it.
  */
 export interface AgentBackend {
   readonly openSession: (
@@ -92,6 +103,9 @@ export interface AgentBackend {
   readonly deleteSession: (sessionId: SessionId) => Effect.Effect<void, SessionDeleteError>
   readonly models: () => Stream.Stream<ModelCatalogState>
   readonly refreshModels: () => Effect.Effect<void>
+  readonly status: () => Stream.Stream<AdapterStatus>
+  readonly checkHealth: () => Effect.Effect<void>
+  readonly setInstallPath: (path: Option.Option<string>) => Effect.Effect<void>
 }
 
 /** {@link AgentBackend.deleteSession} could not delete the transcript of `sessionId`; `reason` says why. */
@@ -117,6 +131,7 @@ const unavailableSession: AgentSession = {
   messageQueue: Effect.succeed(EMPTY_MESSAGE_QUEUE),
   setThinkingLevel: ignored('setThinkingLevel'),
   setPermissionMode: ignored('setPermissionMode'),
+  setModel: ignored('setModel'),
   resolvePermission: ignored('resolvePermission'),
   resolveQuestion: ignored('resolveQuestion'),
   resolvePlanReview: ignored('resolvePlanReview'),
@@ -140,7 +155,21 @@ const unavailableBackend: AgentBackend = {
     Effect.fail(new SessionDeleteError({ sessionId, reason: ADAPTER_NOT_LOADED })),
   models: () =>
     Stream.make(ModelsUnavailable.make({ message: ADAPTER_NOT_LOADED, refreshing: false })),
-  refreshModels: ignored('refreshModels')
+  refreshModels: ignored('refreshModels'),
+  status: () =>
+    Stream.fromEffect(
+      DateTime.now.pipe(
+        Effect.map(
+          (checkedAt): AdapterStatus => ({
+            health: HealthError.make({ message: ADAPTER_NOT_LOADED, checkedAt }),
+            checking: false,
+            installPathOverride: null
+          })
+        )
+      )
+    ),
+  checkHealth: ignored('checkHealth'),
+  setInstallPath: ignored('setInstallPath')
 }
 
 const backendMethods = [
@@ -148,7 +177,10 @@ const backendMethods = [
   'readHistory',
   'deleteSession',
   'models',
-  'refreshModels'
+  'refreshModels',
+  'status',
+  'checkHealth',
+  'setInstallPath'
 ] as const
 
 /**

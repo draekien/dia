@@ -1,13 +1,23 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the test yields to Node's event loop so the plugin's non-Effect callbacks run.
 import { setImmediate } from 'node:timers/promises'
 import type { Options, SDKUserMessage, SessionMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { OutboundMessage } from '@dia/plugin'
+import type { AgentSessionOptions, OutboundMessage } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import type { PaneConfig, SessionId } from '@shared/domain/pane'
 import { Deferred, Duration, Effect, Fiber, Option } from 'effect'
 import { TestClock } from 'effect/testing'
 import { vi } from 'vitest'
+import type { ClaudeInstall } from './claude-install'
 import { openClaudeCodeSession } from './session'
+
+const installed: ClaudeInstall = {
+  resolve: Effect.succeed(Option.some('/usr/local/bin/claude')),
+  override: Effect.succeed(Option.none()),
+  setOverride: () => Effect.void
+}
+
+const openSession = (options: AgentSessionOptions) =>
+  openClaudeCodeSession(options, installed, () => Effect.void)
 
 interface FakeQuery {
   readonly options: Options
@@ -122,7 +132,7 @@ const openResumed = (transcript: ReadonlyArray<SessionMessage>, transcriptFails 
         emitted.push(message)
         if (message._tag === 'RewoundToCheckpoint') sdk.log.push(`rewound ${message.messageUuid}`)
       })
-    const session = yield* openClaudeCodeSession({
+    const session = yield* openSession({
       config,
       resume: Option.some(SESSION),
       emit,
@@ -182,7 +192,7 @@ describe('rewindToCheckpoint', () => {
       sdk.transcript.messages = [...twoTurns]
       sdk.transcript.fails = false
       sdk.rewindGate = () => Promise.resolve()
-      const session = yield* openClaudeCodeSession({
+      const session = yield* openSession({
         config,
         resume: Option.some(SESSION),
         emit: () => Effect.void,

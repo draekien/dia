@@ -4,7 +4,7 @@ import { makeRendererPlugins } from './renderer-plugins'
 
 const manifest = (name: string, extra: Record<string, unknown> = {}) => ({
   name,
-  api: '0.0.1',
+  api: '0.0.2',
   category: 'feature',
   renderer: 'renderer.tsx',
   ...extra
@@ -56,7 +56,7 @@ describe('renderer plugins', () => {
     Effect.gen(function* () {
       const plugins = yield* makeRendererPlugins({
         manifests: {
-          hostonly: { name: 'hostonly', api: '0.0.1', category: 'feature', host: 'host.ts' }
+          hostonly: { name: 'hostonly', api: '0.0.2', category: 'feature', host: 'host.ts' }
         },
         entries: {}
       })

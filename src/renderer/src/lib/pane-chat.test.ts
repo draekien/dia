@@ -18,6 +18,7 @@ import {
   PaneConversationReset,
   PaneMessageAppended,
   PaneMessageQueueChanged,
+  PaneModelChanged,
   PaneRewoundToCheckpoint,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
@@ -590,6 +591,34 @@ describe('reducePaneChat: conversation compaction', () => {
     const result = reducePaneChat(emptyPaneChatState, conversationCompacted('auto', 900))
 
     expect(result.messages.at(-1)?.parts).toEqual([{ type: 'text', content: 'Context compacted' }])
+  })
+})
+
+describe('reducePaneChat: model change', () => {
+  it('appends a notice naming the new model by its display name', () => {
+    const history = paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }])
+
+    const result = reducePaneChat(history, {
+      ...PaneModelChanged.make({ paneId: PANE, model: 'claude-opus-5' }),
+      displayName: 'Opus'
+    })
+
+    expect(result.messages.at(-1)).toEqual({
+      id: '1:notice',
+      role: 'notice',
+      parts: [{ type: 'text', content: 'Model → Opus' }]
+    })
+  })
+
+  it('names the model by its raw id when the model list does not have it', () => {
+    const result = reducePaneChat(
+      emptyPaneChatState,
+      PaneModelChanged.make({ paneId: PANE, model: 'claude-opus-5' })
+    )
+
+    expect(result.messages.at(-1)?.parts).toEqual([
+      { type: 'text', content: 'Model → claude-opus-5' }
+    ])
   })
 })
 

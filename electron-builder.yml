@@ -11,13 +11,15 @@ files:
   - plugins/**
   - package.json
   - '!**/*.map'
+  # dia runs the user's own Claude Code install (ADR-0037), so the SDK's bundled platform
+  # binary, which the SDK still installs as an optional dependency, is left out of the app.
+  - '!node_modules/@anthropic-ai/claude-agent-sdk-*/**'
 
-# The Agent SDK ships the Claude Code CLI and its native helper binaries (ripgrep, etc.),
-# which the SDK spawns as child processes. Binaries cannot be executed from inside an asar
-# archive, so this package must be unpacked to app.asar.unpacked at install time.
+# The Agent SDK ships native helper binaries (ripgrep, etc.) that it spawns as child
+# processes. Binaries cannot be executed from inside an asar archive, so this package must be
+# unpacked to app.asar.unpacked at install time.
 asarUnpack:
   - node_modules/@anthropic-ai/claude-agent-sdk/**
-  - node_modules/@anthropic-ai/claude-agent-sdk-*/**
   - node_modules/esbuild/**
   - node_modules/@esbuild/**
 

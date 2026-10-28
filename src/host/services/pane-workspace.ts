@@ -129,6 +129,8 @@ export class PaneWorkspace extends Context.Service<
       paneId: PaneId,
       mode: PermissionMode
     ) => Effect.Effect<void, TabNotFoundError>
+    /** Stores a tab's model and, when its session runs, makes its next turn use it. */
+    readonly setModel: (paneId: PaneId, model: string) => Effect.Effect<void, TabNotFoundError>
     readonly getPaneHistory: (paneId: PaneId) => Effect.Effect<ReadonlyArray<ConversationMessage>>
     /**
      * Resumes a cold tab's Agent SDK session, streaming its events through `onEvent`. A no-op
@@ -474,6 +476,17 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         if (Option.isSome(handle)) yield* handle.value.setPermissionMode(mode)
       })
 
+      const setModel = Effect.fn('PaneWorkspace.setModel')(function* (
+        paneId: PaneId,
+        model: string
+      ) {
+        yield* mutate('setModel', (workspace) =>
+          WorkspaceOps.updateTabConfig(workspace, paneId, { model })
+        )
+        const handle = yield* supervisor.getHandle(paneId)
+        if (Option.isSome(handle)) yield* handle.value.setModel(model)
+      })
+
       const getPaneHistory = Effect.fn('PaneWorkspace.getPaneHistory')(function* (paneId: PaneId) {
         const found = WorkspaceOps.tabOf(yield* Ref.get(workspaceRef), paneId)
         if (Result.isFailure(found)) return []
@@ -582,6 +595,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         selectTab,
         setThinkingLevel,
         setPermissionMode,
+        setModel,
         getPaneHistory,
         resumePane,
         ensureLive

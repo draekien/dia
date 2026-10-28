@@ -5,6 +5,7 @@ import type { ActivitySpec } from '@shared/plugin/api'
 import { DateTime, Duration, Effect, Fiber, FileSystem, Layer, Option, Path, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
 import { beforeEach, vi } from 'vitest'
+import { type ClaudeInstall, NOT_INSTALLED_REASON } from './claude-install'
 import {
   MODEL_PROBE_RETRY,
   MODEL_PROBE_TIMEOUT,
@@ -237,11 +238,28 @@ describe('makeModelCatalog', () => {
   )
 })
 
+const installAt = (path: Option.Option<string>): ClaudeInstall => ({
+  resolve: Effect.succeed(path),
+  override: Effect.succeed(Option.none()),
+  setOverride: () => Effect.void
+})
+
+const installed = installAt(Option.some('/usr/local/bin/claude'))
+
 describe('probeModels', () => {
   beforeEach(() => {
     sdk.supportedModels.mockReset()
     sdk.close.mockReset()
   })
+
+  it.effect('fails without starting a query when no install is found', () =>
+    Effect.gen(function* () {
+      const failure = yield* Effect.flip(probeModels(installAt(Option.none()))('/data'))
+
+      assert.strictEqual(failure.message, NOT_INSTALLED_REASON)
+      assert.strictEqual(sdk.close.mock.calls.length, 0)
+    })
+  )
 
   it.effect('returns the reported models and closes the query', () =>
     Effect.gen(function* () {
@@ -249,7 +267,7 @@ describe('probeModels', () => {
         { value: 'sonnet', displayName: 'Sonnet', description: 'Everyday tasks', extra: 'x' }
       ])
 
-      const models = yield* probeModels('/data')
+      const models = yield* probeModels(installed)('/data')
 
       assert.deepStrictEqual(models, [CACHED_MODELS[0]])
       assert.strictEqual(sdk.close.mock.calls.length, 1)
@@ -260,7 +278,7 @@ describe('probeModels', () => {
     Effect.gen(function* () {
       sdk.supportedModels.mockRejectedValue(new Error('spawn ENOENT'))
 
-      const failure = yield* Effect.flip(probeModels('/data'))
+      const failure = yield* Effect.flip(probeModels(installed)('/data'))
 
       assert.strictEqual(failure.message, 'spawn ENOENT')
       assert.strictEqual(sdk.close.mock.calls.length, 1)
@@ -271,7 +289,7 @@ describe('probeModels', () => {
     Effect.gen(function* () {
       sdk.supportedModels.mockResolvedValue([])
 
-      const failure = yield* Effect.flip(probeModels('/data'))
+      const failure = yield* Effect.flip(probeModels(installed)('/data'))
 
       assert.strictEqual(failure.message, 'Claude Code reported no models')
     })
@@ -281,7 +299,7 @@ describe('probeModels', () => {
     Effect.gen(function* () {
       sdk.supportedModels.mockResolvedValue([{ value: '', displayName: 'Sonnet', description: '' }])
 
-      const failure = yield* Effect.flip(probeModels('/data'))
+      const failure = yield* Effect.flip(probeModels(installed)('/data'))
 
       assert.match(failure.message, /^Claude Code reported a model list dia cannot read: /)
     })
@@ -291,7 +309,7 @@ describe('probeModels', () => {
     Effect.gen(function* () {
       sdk.supportedModels.mockReturnValue(Effect.runPromise(Effect.never))
 
-      const fiber = yield* Effect.forkChild(Effect.flip(probeModels('/data')))
+      const fiber = yield* Effect.forkChild(Effect.flip(probeModels(installed)('/data')))
       yield* TestClock.adjust(MODEL_PROBE_TIMEOUT)
       const failure = yield* Fiber.join(fiber)
 

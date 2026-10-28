@@ -1,9 +1,16 @@
 import { Schema } from 'effect'
 import { Rpc, RpcGroup } from 'effect/rpc'
+import { AdapterStatusSnapshot } from '../domain/adapter-status'
 import { AgentSummary } from '../domain/agent-summary'
 import { ActivityId, ActivityInfo, ActivityNotFound } from '../domain/background-activity'
 import { MessageQueueSnapshot, SendMode } from '../domain/message-queue'
 import { ModelCatalogSnapshot } from '../domain/model'
+import {
+  AgentDefaults,
+  LastVisibleModel,
+  ModelPreference,
+  ModelPreferencesSnapshot
+} from '../domain/model-preferences'
 import { ConversationMessage } from '../domain/pane'
 import { ProjectId, ProjectNotFoundError, RegisterProjectError, Workspace } from '../domain/project'
 import { RemovalProgress } from '../domain/project-removal'
@@ -24,6 +31,7 @@ import {
   RewindToCheckpoint,
   SelectTab,
   SendMessage,
+  SetModel,
   SetPermissionMode,
   SetThinkingLevel,
   SetTranscriptWidth
@@ -35,7 +43,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.1'
+export const PROTOCOL_VERSION = '0.0.2'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -89,9 +97,12 @@ export type EventFrame = typeof EventFrame.Type
 /**
  * The Host's RPC surface. Every command takes a `commandId`; `RegisterProject` and
  * `RemoveProject` are queries so their typed errors reach the caller; the plugin calls (`LoadPlugin`
- * on a loaded plugin reloads it), the model calls (`GetModels`, `RefreshModels`) and the activity
- * calls (`ListActivities`, `RunActivity`) are safe to repeat and take none; a `RefreshModels` or
- * `RunActivity` sent while that run is in progress waits for it instead of starting another;
+ * on a loaded plugin reloads it), the model calls (`GetModels`, `RefreshModels`), the adapter calls
+ * (`GetAdapterStatus`, `CheckAdapterHealth`, `SetInstallPath`, `GetModelPreferences`,
+ * `SetModelPreference`, `SetAgentDefaults`, each setting a value, so repeating one is harmless) and
+ * the activity calls (`ListActivities`, `RunActivity`) are safe to repeat and take none; a
+ * `RefreshModels`, `CheckAdapterHealth` or `RunActivity` sent while that run is in progress waits
+ * for it instead of starting another;
  * `SubscribeEvents` takes the
  * last sequence number received per pane (`cursors`) and streams {@link EventFrame}s. Serve it
  * with `RpcServer` in the Host and call it with `RpcClient` from the preload.
@@ -108,6 +119,7 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('SetTranscriptWidth', { payload: withRequestId(SetTranscriptWidth) }),
   Rpc.make('SetThinkingLevel', { payload: withRequestId(SetThinkingLevel) }),
   Rpc.make('SetPermissionMode', { payload: withRequestId(SetPermissionMode) }),
+  Rpc.make('SetModel', { payload: withRequestId(SetModel) }),
   Rpc.make('InterruptPane', { payload: withRequestId(InterruptPane) }),
   Rpc.make('RewindToCheckpoint', { payload: withRequestId(RewindToCheckpoint) }),
   Rpc.make('EditQueuedMessage', { payload: withRequestId(EditQueuedMessage) }),
@@ -147,6 +159,15 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('ClearPluginOverride', { payload: { name: PluginName } }),
   Rpc.make('GetModels', { success: ModelCatalogSnapshot }),
   Rpc.make('RefreshModels', {}),
+  Rpc.make('GetAdapterStatus', { success: AdapterStatusSnapshot }),
+  Rpc.make('CheckAdapterHealth', {}),
+  Rpc.make('SetInstallPath', { payload: { path: Schema.NullOr(Schema.NonEmptyString) } }),
+  Rpc.make('GetModelPreferences', { success: ModelPreferencesSnapshot }),
+  Rpc.make('SetModelPreference', {
+    payload: { model: Schema.NonEmptyString, preference: Schema.NullOr(ModelPreference) },
+    error: LastVisibleModel
+  }),
+  Rpc.make('SetAgentDefaults', { payload: { defaults: AgentDefaults } }),
   Rpc.make('ListActivities', { success: Schema.Array(ActivityInfo) }),
   Rpc.make('RunActivity', {
     payload: { plugin: PluginName, id: ActivityId },

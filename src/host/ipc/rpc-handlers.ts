@@ -6,11 +6,13 @@ import { DiaRpcs } from '@shared/ipc/rpc'
 import { Effect, Option } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { applyOverride, PluginSources } from '../plugins/plugin-sources'
+import { AdapterStatusFeed } from '../services/adapter-status-feed'
 import { AgentSummaries } from '../services/agent-summaries'
 import { BackgroundActivities } from '../services/background-activities'
 import { CommandDeduper } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
 import { ModelCatalogFeed } from '../services/model-catalog-feed'
+import { ModelPreferences } from '../services/model-preferences'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { SettingsStore } from '../services/settings-store'
@@ -18,12 +20,13 @@ import { SettingsStore } from '../services/settings-store'
 /**
  * Builds the implementation of {@link DiaRpcs} on top of the Host's services. Requires
  * `PaneWorkspace`, `AgentSummaries`, `PaneSupervisor`, `SettingsStore`, `EventHub`, `CommandDeduper`,
- * `HostPlugins` and `PluginSources`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
+ * `HostPlugins`, `PluginSources`, `ModelCatalogFeed`, `AdapterStatusFeed`, `ModelPreferences` and
+ * `BackgroundActivities`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
  * handlers without a transport.
  *
  * Every command is applied at most once per `commandId` within its target (pane, project, or
  * `'app'`), drops with a warning when its target does not exist, and never fails the RPC:
- * failures are logged. `RegisterProject` and `RemoveProject` return their typed errors. `SendMessage` starts
+ * failures are logged. `RegisterProject`, `RemoveProject` and `SetModelPreference` return their typed errors. `SendMessage` starts
  * the pane's session on demand when the pane has none, so a message to a pane whose session
  * ended is not lost.
  */
@@ -37,6 +40,8 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
   const plugins = yield* HostPlugins
   const pluginSources = yield* PluginSources
   const models = yield* ModelCatalogFeed
+  const adapterStatus = yield* AdapterStatusFeed
+  const modelPreferences = yield* ModelPreferences
   const activities = yield* BackgroundActivities
 
   const publish = (event: IpcEvent): Effect.Effect<void> => hub.publish(event)
@@ -208,6 +213,15 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
           .setPermissionMode(command.paneId, command.mode)
           .pipe(warnOnFailure('SetPermissionMode', { paneId: command.paneId }))
       ),
+    SetModel: (command) =>
+      once(
+        command.paneId,
+        command.commandId,
+        'SetModel',
+        workspace
+          .setModel(command.paneId, command.model)
+          .pipe(warnOnFailure('SetModel', { paneId: command.paneId }))
+      ),
     InterruptPane: (command) =>
       once(
         command.paneId,
@@ -283,6 +297,13 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     ClearPluginOverride: ({ name }) => pluginSources.clearOverride(name),
     GetModels: () => models.current,
     RefreshModels: () => models.refresh,
+    GetAdapterStatus: () => adapterStatus.current,
+    CheckAdapterHealth: () => adapterStatus.check,
+    SetInstallPath: ({ path }) => adapterStatus.setInstallPath(path),
+    GetModelPreferences: () => modelPreferences.current,
+    SetModelPreference: ({ model, preference }) =>
+      modelPreferences.set(model, Option.fromNullishOr(preference)),
+    SetAgentDefaults: ({ defaults }) => modelPreferences.setDefaults(defaults),
     ListActivities: () => activities.list,
     RunActivity: ({ plugin, id }) => activities.runNow(plugin, id),
     SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)

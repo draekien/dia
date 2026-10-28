@@ -5,6 +5,8 @@ import {
   type PermissionUpdate,
   type Query,
   query,
+  type SDKMessage,
+  type SDKStartupFailureReason,
   type SDKUserMessage
 } from '@anthropic-ai/claude-agent-sdk'
 import {
@@ -12,6 +14,7 @@ import {
   type AgentSessionOptions,
   type DiaTool,
   MessageQueueChanged,
+  ModelChanged,
   makePendingUserInput,
   type OutboundMessage,
   type PendingUserInput,
@@ -51,7 +54,12 @@ import {
   Semaphore,
   Stream
 } from 'effect'
-import { resolveClaudeExecutable } from './claude-executable'
+import {
+  type ClaudeInstall,
+  installQueryOptions,
+  NOT_INSTALLED_REASON,
+  overrideUnrunnableReason
+} from './claude-install'
 import {
   dispatchEnded,
   edit,
@@ -316,9 +324,6 @@ const interruptSession = Effect.fn('ClaudeCodeSession.interruptSession')(functio
   yield* Effect.logInfo('Interrupted session', { superseded: requestIds })
 })
 
-/** Path of the Claude Code binary passed to every `query()` this plugin starts, or `undefined` to let the SDK find it. */
-export const claudeExecutablePath = resolveClaudeExecutable()
-
 const toSDKUserMessage = (text: string, startsTurn = true): SDKUserMessage => ({
   type: 'user',
   message: { role: 'user', content: text },
@@ -368,10 +373,10 @@ export const openPromptInput = Effect.fnUntraced(function* (
 
 /**
  * The slice of the live Agent SDK `Query` the session drives directly: restoring
- * files on disk to a checkpoint (`rewindFiles`) and aborting an in-flight turn
- * (`interrupt`). Narrowed so the current query can be held in a `Ref`.
+ * files on disk to a checkpoint (`rewindFiles`), aborting an in-flight turn
+ * (`interrupt`) and changing the model of later turns (`setModel`). Narrowed so the current query can be held in a `Ref`.
  */
-type LiveControlQuery = Pick<Query, 'rewindFiles' | 'interrupt'>
+type LiveControlQuery = Pick<Query, 'rewindFiles' | 'interrupt' | 'setModel'>
 
 const isTurnEnd = (message: OutboundMessage): boolean =>
   message._tag === 'TurnErrored' || message._tag === 'TurnCompleted'
@@ -387,6 +392,22 @@ const resolveContinuesFrom = Effect.fn('ClaudeCodeSession.resolveContinuesFrom')
 })
 
 const REWIND_FILES_TIMEOUT = Duration.seconds(30)
+
+/**
+ * What a session needs to start its queries: the install `path` to run, and where to report a
+ * query that refused to start with a known `startup_failure_reason`.
+ */
+export interface SessionLaunch {
+  readonly path: string
+  readonly reportStartupFailure: (reason: SDKStartupFailureReason) => Effect.Effect<void>
+}
+
+const reportStartupFailure = (message: SDKMessage, launch: SessionLaunch): Effect.Effect<void> =>
+  message.type === 'result' &&
+  message.subtype !== 'success' &&
+  message.startup_failure_reason !== undefined
+    ? launch.reportStartupFailure(message.startup_failure_reason)
+    : Effect.void
 
 const TASK_TRACKING_TOOLS = ['TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList']
 
@@ -416,7 +437,8 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     branchAt: string | undefined,
     queryOpened: Deferred.Deferred<void>,
     silentResultsRef: Ref.Ref<number>,
-    onTurnEnded: (ok: boolean) => Effect.Effect<void>
+    onTurnEnded: (ok: boolean) => Effect.Effect<void>,
+    launch: SessionLaunch
   ) {
     const continuesFrom = yield* resolveContinuesFrom(resume, branchAt, config.cwd)
     yield* Effect.logInfo('Starting query session', {
@@ -458,9 +480,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
             resume: Option.getOrUndefined(resume),
             ...(branchAt !== undefined ? { resumeSessionAt: branchAt, forkSession: true } : {}),
             ...thinking,
-            ...(claudeExecutablePath !== undefined
-              ? { pathToClaudeCodeExecutable: claudeExecutablePath }
-              : {})
+            ...installQueryOptions(launch.path)
           }
         })
       ),
@@ -551,7 +571,9 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     })
 
     yield* Stream.runForEach(events, (event) =>
-      Effect.forEach(reducer.step(event), forward, { discard: true })
+      reportStartupFailure(event, launch).pipe(
+        Effect.andThen(Effect.forEach(reducer.step(event), forward, { discard: true }))
+      )
     )
   },
   (effect, config) =>
@@ -593,6 +615,27 @@ const diaToolServerFactory = (
   return Option.some(() => makeDiaToolServer(serverOptions))
 }
 
+const ignoredUnstarted =
+  (command: string, reason: string) =>
+  (..._args: ReadonlyArray<unknown>): Effect.Effect<void> =>
+    Effect.logWarning('Ignored a command; the agent session never started', { command, reason })
+
+const unstartedSession = (reason: string): AgentSession => ({
+  sendText: ignoredUnstarted('sendText', reason),
+  editQueuedText: ignoredUnstarted('editQueuedText', reason),
+  removeQueuedText: ignoredUnstarted('removeQueuedText', reason),
+  messageQueue: Effect.succeed({ queued: [], held: false }),
+  setThinkingLevel: ignoredUnstarted('setThinkingLevel', reason),
+  setPermissionMode: ignoredUnstarted('setPermissionMode', reason),
+  setModel: ignoredUnstarted('setModel', reason),
+  resolvePermission: ignoredUnstarted('resolvePermission', reason),
+  resolveQuestion: ignoredUnstarted('resolveQuestion', reason),
+  resolvePlanReview: ignoredUnstarted('resolvePlanReview', reason),
+  interrupt: ignoredUnstarted('interrupt', reason),
+  rewindToCheckpoint: ignoredUnstarted('rewindToCheckpoint', reason),
+  ended: Effect.succeed(reason)
+})
+
 /**
  * Starts the Agent SDK session for one pane and returns its {@link AgentSession} controls.
  * `options.config` and `options.resume` choose the working directory, model, modes and, when
@@ -601,8 +644,23 @@ const diaToolServerFactory = (
  * user-input requests live in the surrounding scope: closing that scope ends them.
  */
 export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(function* (
-  options: AgentSessionOptions
+  options: AgentSessionOptions,
+  install: ClaudeInstall,
+  reportStartupFailure: SessionLaunch['reportStartupFailure']
 ): Effect.fn.Return<AgentSession, never, Scope.Scope> {
+  const path = yield* install.resolve
+  if (Option.isNone(path)) {
+    const reason = Option.match(yield* install.override, {
+      onNone: () => NOT_INSTALLED_REASON,
+      onSome: overrideUnrunnableReason
+    })
+    yield* Effect.logError('Cannot start an agent session', {
+      paneId: options.config.paneId,
+      reason
+    })
+    return unstartedSession(reason)
+  }
+  const launch: SessionLaunch = { path: path.value, reportStartupFailure }
   const { emit, tools } = options
   const sessionScope = yield* Scope.Scope
   const services = yield* Effect.context<never>()
@@ -625,6 +683,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
   const desiredLevelRef = yield* Ref.make<Option.Option<ThinkingLevel>>(
     Option.some(options.config.thinkingLevel)
   )
+  const desiredModelRef = yield* Ref.make(options.config.model)
   const fiberRef = yield* Ref.make<Option.Option<Fiber.Fiber<void>>>(Option.none())
   const endedDeferred = yield* Deferred.make<string>()
   const restartLock = yield* Semaphore.make(1)
@@ -683,7 +742,8 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
           transition(turnEnded(ok)).pipe(
             Effect.flatMap((actions) => performActions(actions)),
             Effect.asVoid
-          )
+          ),
+        launch
       ).pipe(
         Effect.ensuring(Deferred.succeed(queryOpened, undefined)),
         Effect.flatMap((failure) =>
@@ -707,17 +767,17 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     function* () {
       const configOpt = yield* Ref.get(configRef)
       const desiredOpt = yield* Ref.get(desiredLevelRef)
-      if (Option.isNone(configOpt) || Option.isNone(desiredOpt)) return
+      if (Option.isNone(configOpt) || Option.isNone(desiredOpt)) return false
       const config = configOpt.value
       const desired = desiredOpt.value
-      if (desired === config.thinkingLevel) return
+      if (desired === config.thinkingLevel) return false
 
       const sessionId = yield* Ref.get(sessionIdRef)
       if (Option.isNone(sessionId)) {
         yield* Effect.logWarning('Cannot apply new thinking level yet; no session to resume', {
           paneId: config.paneId
         })
-        return
+        return false
       }
 
       yield* Effect.logInfo('Restarting session to apply new thinking level', {
@@ -733,13 +793,51 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
       const currentModeOpt = yield* modeController.currentMode
       const permissionMode = Option.getOrElse(currentModeOpt, () => config.permissionMode)
       const branchAt = yield* Ref.get(branchAtRef)
+      const model = yield* Ref.get(desiredModelRef)
       yield* startQuery(
-        { ...config, thinkingLevel: desired, permissionMode },
+        { ...config, thinkingLevel: desired, permissionMode, model },
         sessionId,
         Option.getOrUndefined(branchAt)
       )
+      return true
     }
   )
+
+  const applyDesiredModel = Effect.fn('ClaudeCodeSession.applyDesiredModel')(function* (
+    configBefore: Option.Option<PaneConfig>,
+    restarted: boolean
+  ) {
+    if (Option.isNone(configBefore)) return
+    const model = yield* Ref.get(desiredModelRef)
+    if (model === configBefore.value.model) return
+    if (!restarted) {
+      const live = yield* Ref.get(queryRef)
+      if (Option.isNone(live)) {
+        yield* Effect.logWarning('Cannot change the model yet; no live query', { model })
+        return
+      }
+      const changed = yield* Effect.tryPromise({
+        try: () => live.value.setModel(model),
+        catch: (cause) => new SessionStreamError({ cause })
+      }).pipe(
+        Effect.as(true),
+        Effect.catch((error) =>
+          Effect.logError('Could not change the model', { model, error }).pipe(Effect.as(false))
+        )
+      )
+      if (!changed) return
+      yield* Ref.update(
+        configRef,
+        Option.map((config) => ({ ...config, model }))
+      )
+    }
+    yield* Effect.logInfo('Changed the model for the next turn', {
+      paneId: configBefore.value.paneId,
+      from: configBefore.value.model,
+      to: model
+    })
+    yield* emit(ModelChanged.make({ model }))
+  })
 
   const dispatch = Effect.fn('ClaudeCodeSession.dispatch')(
     function* (messages: ReadonlyArray<OutgoingMessage>) {
@@ -748,7 +846,9 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
         yield* Effect.logWarning('Dropped a dispatch; the session has ended', { messageIds })
         return
       }
-      yield* restartForThinkingChange()
+      const configBefore = yield* Ref.get(configRef)
+      const restarted = yield* restartForThinkingChange()
+      yield* applyDesiredModel(configBefore, restarted)
       yield* supersedePendingRequests(pendingUserInput, abortExpectedRef)
       yield* emit(UserMessagesSent.make({ messages }))
       yield* offerBatch(messages)
@@ -883,6 +983,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     removeQueuedText: (messageId) => changeQueue(remove(messageId)),
     messageQueue: Ref.get(queueRef).pipe(Effect.map(snapshotOf)),
     setThinkingLevel: (level) => Ref.set(desiredLevelRef, Option.some(level)),
+    setModel: (model) => Ref.set(desiredModelRef, model),
     setPermissionMode: (mode) => modeController.applyMode(mode),
     resolvePermission: (requestId, response) =>
       resolveRequest(pendingUserInput, requestId, response),

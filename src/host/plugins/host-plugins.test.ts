@@ -8,6 +8,8 @@ import { HostPlugins, makeHostPluginsLive } from './host-plugins'
 import { makePluginSourcesLive } from './plugin-sources'
 
 const settings = Layer.succeed(SettingsStore)({
+  getAdapterPreferences: () => Effect.succeed({ models: {}, defaults: {} }),
+  setAdapterPreferences: () => Effect.void,
   getTheme: () => Effect.succeed(Option.none()),
   setTheme: () => Effect.void,
   getSendMode: () => Effect.succeed(Option.none()),
@@ -28,7 +30,7 @@ const writePlugin = (root: string, name: string, extra: Record<string, unknown>)
     yield* fs.makeDirectory(path.join(root, name), { recursive: true })
     yield* fs.writeFileString(
       path.join(root, name, 'plugin.json'),
-      JSON.stringify({ name, api: '0.0.1', category: 'feature', ...extra })
+      JSON.stringify({ name, api: '0.0.2', category: 'feature', ...extra })
     )
   })
 

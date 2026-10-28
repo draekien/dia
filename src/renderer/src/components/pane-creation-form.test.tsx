@@ -1,6 +1,14 @@
 // @vitest-environment jsdom
+import {
+  type AdapterPreferences,
+  EMPTY_ADAPTER_PREFERENCES
+} from '@shared/domain/model-preferences'
 import { type Project, ProjectId } from '@shared/domain/project'
-import { type ModelCatalogSnapshotJson, PaneCreateFailed } from '@shared/ipc/contract'
+import {
+  type AdapterStatusSnapshotJson,
+  type ModelCatalogSnapshotJson,
+  PaneCreateFailed
+} from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -49,9 +57,22 @@ const ready = (
 
 const READY = ready(1, [DEFAULT_MODEL, HAIKU])
 
+const READY_STATUS: AdapterStatusSnapshotJson['status'] = {
+  health: {
+    _tag: 'HealthReady',
+    version: '2.1.0',
+    installPath: 'C:/Users/me/.local/bin/claude.exe',
+    checkedAt: '2026-10-25T15:00:00.000Z'
+  },
+  checking: false,
+  installPathOverride: null
+}
+
 const installBridge = (
   plugins: ReadonlyArray<PluginInfo>,
-  snapshot: ModelCatalogSnapshotJson = READY
+  snapshot: ModelCatalogSnapshotJson = READY,
+  preferences: AdapterPreferences = EMPTY_ADAPTER_PREFERENCES,
+  status: AdapterStatusSnapshotJson['status'] = READY_STATUS
 ) => {
   const modelListeners = new Set<(snapshot: ModelCatalogSnapshotJson) => void>()
   const bridge = {
@@ -62,6 +83,12 @@ const installBridge = (
         modelListeners.add(listener)
         return () => modelListeners.delete(listener)
       })
+    },
+    adapter: {
+      getStatus: vi.fn(async () => ({ revision: 1, status })),
+      onStatusChanged: vi.fn(() => () => undefined),
+      getPreferences: vi.fn(async () => ({ revision: 1, preferences })),
+      onPreferencesChanged: vi.fn(() => () => undefined)
     },
     createTab: vi.fn((_request: { readonly paneId: string }) => undefined),
     selectTab: vi.fn(),
@@ -210,16 +237,48 @@ describe('PaneCreationForm model choice', () => {
     expect(bridge.createTab).toHaveBeenCalledWith(expect.objectContaining({ model: 'sonnet' }))
   })
 
-  it('selects the first model and says so when a refresh removes the chosen one', async () => {
+  it('keeps a chosen model a refresh removed, marks it no longer offered and disables Start', async () => {
     const bridge = installBridge([])
     renderForm(project(false))
     await waitFor(() => expect(startButton().disabled).toBe(false))
 
     act(() => bridge.emitModels(ready(2, [HAIKU, SONNET])))
+
+    expect(await screen.findByText('No longer offered · choose another model')).toBeTruthy()
+    expect(startButton().disabled).toBe(true)
+  })
+
+  it('starts with the default model set for new agents', async () => {
+    const bridge = installBridge([], READY, { models: {}, defaults: { model: 'haiku' } })
+    renderForm(project(false))
+
     await start()
 
     expect(bridge.createTab).toHaveBeenCalledWith(expect.objectContaining({ model: 'haiku' }))
-    expect(screen.getByRole('status').textContent).toBe('Model changed to Haiku')
+  })
+
+  it('starts with the first visible model when the first listed one is hidden', async () => {
+    const bridge = installBridge([], READY, { models: { default: 'hidden' }, defaults: {} })
+    renderForm(project(false))
+
+    await start()
+
+    expect(bridge.createTab).toHaveBeenCalledWith(expect.objectContaining({ model: 'haiku' }))
+  })
+
+  it('starts with the thinking level and permission mode set for new agents', async () => {
+    const bridge = installBridge([], READY, {
+      models: {},
+      defaults: { thinkingLevel: 'high', permissionMode: 'acceptEdits' }
+    })
+    renderForm(project(false))
+    await waitFor(() => expect(bridge.adapter.getPreferences).toHaveBeenCalled())
+
+    await start()
+
+    expect(bridge.createTab).toHaveBeenCalledWith(
+      expect.objectContaining({ thinkingLevel: 'high', permissionMode: 'acceptEdits' })
+    )
   })
 
   it('says when the latest refresh failed and keeps the older list usable', async () => {
@@ -228,6 +287,40 @@ describe('PaneCreationForm model choice', () => {
 
     expect(await screen.findByText(/^Couldn't refresh · list from /)).toBeTruthy()
     await waitFor(() => expect(startButton().disabled).toBe(false))
+  })
+})
+
+describe('PaneCreationForm install notice', () => {
+  it('says Claude Code is not installed and keeps Start agent disabled', async () => {
+    installBridge([], READY, EMPTY_ADAPTER_PREFERENCES, {
+      health: { _tag: 'HealthNotInstalled', checkedAt: '2026-10-25T15:00:00.000Z' },
+      checking: false,
+      installPathOverride: null
+    })
+    renderForm(project(false))
+
+    expect(await screen.findByText('Claude Code is not installed.')).toBeTruthy()
+    expect(startButton().disabled).toBe(true)
+  })
+
+  it('tells the user to sign in when Claude Code is not signed in', async () => {
+    installBridge([], READY, EMPTY_ADAPTER_PREFERENCES, {
+      health: {
+        _tag: 'HealthNotSignedIn',
+        version: '2.1.0',
+        installPath: 'C:/Users/me/.local/bin/claude.exe',
+        checkedAt: '2026-10-25T15:00:00.000Z'
+      },
+      checking: false,
+      installPathOverride: null
+    })
+    renderForm(project(false))
+
+    expect(
+      await screen.findByText(
+        'Claude Code is not signed in. Run `claude auth login` and try again.'
+      )
+    ).toBeTruthy()
   })
 })
 

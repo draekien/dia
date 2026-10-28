@@ -33,11 +33,13 @@ import { makeHostServerLive } from './ipc/host-server'
 import { DiaRpcHandlersLive } from './ipc/rpc-handlers'
 import { HostPlugins, makeHostPluginsLive } from './plugins/host-plugins'
 import { makePluginSourcesLive } from './plugins/plugin-sources'
+import { AdapterStatusFeed, AdapterStatusFeedLive } from './services/adapter-status-feed'
 import { AgentSummariesLive } from './services/agent-summaries'
 import { BackgroundActivitiesLive } from './services/background-activities'
 import { makeCommandDeduperLive } from './services/command-deduper'
 import { makeEventHubLive } from './services/event-hub'
 import { ModelCatalogFeed, ModelCatalogFeedLive } from './services/model-catalog-feed'
+import { ModelPreferencesLive } from './services/model-preferences'
 import { PaneSupervisor, PaneSupervisorLive, SessionFactoryLive } from './services/pane-supervisor'
 import { makePaneWorkspaceLive } from './services/pane-workspace'
 import { makePersistenceServiceLive } from './services/persistence'
@@ -112,6 +114,11 @@ const buildHostLayer = (init: HostInit, token: string) => {
     Layer.mergeAll(workspace, persistence, eventHub)
   )
   const modelCatalog = Layer.provide(ModelCatalogFeedLive, Layer.merge(hostPlugins, eventHub))
+  const adapterStatus = Layer.provide(AdapterStatusFeedLive, Layer.merge(hostPlugins, eventHub))
+  const modelPreferences = Layer.provide(
+    ModelPreferencesLive,
+    Layer.mergeAll(settings, modelCatalog, hostPlugins, eventHub)
+  )
   const state = Layer.mergeAll(
     supervisor,
     workspace,
@@ -122,6 +129,8 @@ const buildHostLayer = (init: HostInit, token: string) => {
     hostPlugins,
     backgroundActivities,
     modelCatalog,
+    adapterStatus,
+    modelPreferences,
     makeCommandDeduperLive(),
     NodeFileSystem.layer,
     NodePath.layer
@@ -186,6 +195,7 @@ export const runHost = Effect.scoped(
       yield* Effect.logInfo('Host listening', { port })
       yield* Context.get(context, HostPlugins).start()
       yield* Context.get(context, ModelCatalogFeed).start
+      yield* Context.get(context, AdapterStatusFeed).start
       yield* post(HostReady.make({ port, token }))
 
       while (true) {

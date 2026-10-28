@@ -33,7 +33,10 @@ const backendWith = (
   readHistory: () => Effect.die('not called'),
   deleteSession: () => Effect.die('not called'),
   models,
-  refreshModels
+  refreshModels,
+  status: () => Stream.empty,
+  checkHealth: () => Effect.void,
+  setInstallPath: () => Effect.void
 })
 
 const feedWith = (backend: Option.Option<AgentBackend>, published: Array<IpcEvent>) =>

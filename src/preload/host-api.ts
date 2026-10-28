@@ -1,15 +1,20 @@
+import { AdapterStatusSnapshot } from '@shared/domain/adapter-status'
 import { ActivityInfo, ActivityNotFound } from '@shared/domain/background-activity'
 import { ModelCatalogSnapshot } from '@shared/domain/model'
+import { LastVisibleModel } from '@shared/domain/model-preferences'
 import type { ConversationMessage } from '@shared/domain/pane'
 import { RegisterProjectError, type RegisterProjectRefusal } from '@shared/domain/project'
 import {
   ActivitiesChanged,
   type ActivityNotFoundJson,
+  AdapterStatusChanged,
   AgentSummariesReplaced,
   type DiaApi,
   EditQueuedMessage,
   InterruptPane,
   type IpcEvent,
+  type LastVisibleModelJson,
+  ModelPreferencesChanged,
   ModelsChanged,
   MoveProject,
   RemoveQueuedMessage,
@@ -20,6 +25,7 @@ import {
   RewindToCheckpoint,
   SelectTab,
   SendMessage,
+  SetModel,
   SetPermissionMode,
   SetThinkingLevel,
   SetTranscriptWidth,
@@ -46,6 +52,7 @@ export type HostApi = Omit<
   | 'toggleDevTools'
   | 'onUpdateStatusChanged'
   | 'revealPath'
+  | 'pickFile'
 >
 
 /**
@@ -91,6 +98,8 @@ const encodeRefusal = Schema.encodeSync(RegisterProjectError)
 const encodeSnapshot = Schema.encodeSync(ModelCatalogSnapshot)
 const encodeActivities = Schema.encodeSync(Schema.Array(ActivityInfo))
 const encodeActivityNotFound = Schema.encodeSync(ActivityNotFound)
+const encodeAdapterStatus = Schema.encodeSync(AdapterStatusSnapshot)
+const encodeLastVisibleModel = Schema.encodeSync(LastVisibleModel)
 
 export const makeHostApi = (deps: HostApiDeps): HostApi => {
   const reloadListeners = new Set<(paneId: string) => void>()
@@ -153,8 +162,13 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
 
     const refreshCatalogs = Effect.gen(function* () {
       const client = yield* deps.client
-      const snapshot = yield* client.GetModels()
+      const [snapshot, status, preferences] = yield* Effect.all(
+        [client.GetModels(), client.GetAdapterStatus(), client.GetModelPreferences()],
+        { concurrency: 'unbounded' }
+      )
       dispatch(ModelsChanged.make({ snapshot }))
+      dispatch(AdapterStatusChanged.make({ snapshot: status }))
+      dispatch(ModelPreferencesChanged.make({ snapshot: preferences }))
     }).pipe(
       Effect.catch((error) => Effect.sync(() => deps.warn('Model list refresh failed', error)))
     )
@@ -210,6 +224,29 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       onChanged: (listener) =>
         subscribeTo('ModelsChanged', (event) => listener(encodeSnapshot(event.snapshot)))
     },
+    adapter: {
+      getStatus: () =>
+        query((client) => client.GetAdapterStatus().pipe(Effect.map(encodeAdapterStatus))),
+      checkHealth: () => query((client) => client.CheckAdapterHealth()),
+      setInstallPath: (path) => query((client) => client.SetInstallPath({ path })),
+      onStatusChanged: (listener) =>
+        subscribeTo('AdapterStatusChanged', (event) =>
+          listener(encodeAdapterStatus(event.snapshot))
+        ),
+      getPreferences: () => query((client) => client.GetModelPreferences()),
+      setModelPreference: (model, preference) =>
+        query((client) =>
+          client.SetModelPreference({ model, preference }).pipe(
+            Effect.as<LastVisibleModelJson | null>(null),
+            Effect.catchTag('LastVisibleModel', (error) =>
+              Effect.succeed(encodeLastVisibleModel(error))
+            )
+          )
+        ),
+      setDefaults: (defaults) => query((client) => client.SetAgentDefaults({ defaults })),
+      onPreferencesChanged: (listener) =>
+        subscribeTo('ModelPreferencesChanged', (event) => listener(event.snapshot))
+    },
     activities: {
       list: () => query((client) => client.ListActivities().pipe(Effect.map(encodeActivities))),
       run: (plugin, id) =>
@@ -263,6 +300,10 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     setPermissionMode: (paneId, mode) =>
       command('SetPermissionMode', (client, commandId) =>
         client.SetPermissionMode({ ...SetPermissionMode.make({ paneId, mode }), commandId })
+      ),
+    setModel: (paneId, model) =>
+      command('SetModel', (client, commandId) =>
+        client.SetModel({ ...SetModel.make({ paneId, model }), commandId })
       ),
     resolvePlanReview: (paneId, requestId, approved) =>
       command('ResolvePlanReview', (client, id) =>
@@ -358,6 +399,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     onSlashCommandsWarming: (listener) => subscribeTo('PaneSlashCommandsWarming', listener),
     onSlashCommandsAvailable: (listener) => subscribeTo('PaneSlashCommandsAvailable', listener),
     onConversationCompacted: (listener) => subscribeTo('PaneConversationCompacted', listener),
+    onModelChanged: (listener) => subscribeTo('PaneModelChanged', listener),
     onConversationReset: (listener) => subscribeTo('PaneConversationReset', listener),
     onCheckpointAvailable: (listener) => subscribeTo('PaneCheckpointAvailable', listener),
     onRewoundToCheckpoint: (listener) => subscribeTo('PaneRewoundToCheckpoint', listener),

@@ -122,6 +122,7 @@ function makeTestSetup(
           messageQueue: Effect.succeed(EMPTY_MESSAGE_QUEUE),
           setThinkingLevel: record('setThinkingLevel'),
           setPermissionMode: record('setPermissionMode'),
+          setModel: record('setModel'),
           resolvePermission: record('resolvePermission'),
           resolveQuestion: record('resolveQuestion'),
           resolvePlanReview: record('resolvePlanReview'),
