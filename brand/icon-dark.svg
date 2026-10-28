@@ -17,12 +17,11 @@
       <stop offset="1" stop-color="#D3D9E3"/>
     </linearGradient>
     <clipPath id="left"><rect width="437" height="1024"/></clipPath>
-    <path id="tear" d="M205 512C250 412 380 305 501 305A207 207 0 0 1 501 719C380 719 250 612 205 512Z"/>
   </defs>
   <path d="M512 0C1018 0 1024 6 1024 512C1024 1018 1018 1024 512 1024C6 1024 0 1018 0 512C0 6 6 0 512 0Z" fill="#0F1424"/>
   <g fill="url(#lobes)">
     <ellipse cx="437" cy="404" rx="255" ry="260"/><ellipse cx="437" cy="620" rx="255" ry="260"/>
   </g>
   <path d="M437 144H520C721 144 884 309 884 512C884 715 721 880 520 880H437Z" fill="url(#paper)"/>
-  <use href="#tear" fill="url(#orbLeft)" clip-path="url(#left)"/>
+  <path d="M205 512C250 412 380 305 501 305A207 207 0 0 1 501 719C380 719 250 612 205 512Z" fill="url(#orbLeft)" clip-path="url(#left)"/>
 </svg>
