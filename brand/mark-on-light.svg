@@ -12,12 +12,12 @@
       <stop offset="0.3" stop-color="#9468E8"/>
       <stop offset="1" stop-color="#C872C4"/>
     </linearGradient>
-    <linearGradient id="orbRight" x1="437" y1="0" x2="708" y2="0" gradientUnits="userSpaceOnUse">
+    <linearGradient id="orbRight" x1="437" y1="0" x2="632.55" y2="0" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FDA48B"/>
       <stop offset="0.5" stop-color="#FEBC8C"/>
       <stop offset="1" stop-color="#FFD29A"/>
     </linearGradient>
-    <linearGradient id="orbBlush" x1="0" y1="305" x2="0" y2="719" gradientUnits="userSpaceOnUse">
+    <linearGradient id="orbBlush" x1="0" y1="336.05" x2="0" y2="687.95" gradientUnits="userSpaceOnUse">
       <stop offset="0.45" stop-color="#F06FA0" stop-opacity="0"/>
       <stop offset="1" stop-color="#F06FA0" stop-opacity="0.55"/>
     </linearGradient>
@@ -27,7 +27,7 @@
     </linearGradient>
     <clipPath id="left"><rect width="437" height="1024"/></clipPath>
     <clipPath id="right"><rect x="437" width="587" height="1024"/></clipPath>
-    <path id="tear" d="M205 512C250 412 380 305 501 305A207 207 0 0 1 501 719C380 719 250 612 205 512Z"/>
+    <path id="tear" d="M205 512C243.25 427 353.75 336.05 456.6 336.05A175.95 175.95 0 0 1 456.6 687.95C353.75 687.95 243.25 597 205 512Z"/>
   </defs>
   <g fill="url(#lobes)">
     <ellipse cx="437" cy="404" rx="255" ry="260"/><ellipse cx="437" cy="620" rx="255" ry="260"/>
