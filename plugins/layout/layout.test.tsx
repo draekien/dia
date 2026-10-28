@@ -82,6 +82,13 @@ describe('Layout', () => {
       expect(localStorage.getItem('dia.sidebar.open')).toBe('0')
     })
 
+    it.each(['shiftKey', 'altKey'])('ignores Ctrl B with %s held', (modifier) => {
+      render(<Layout />)
+      fireEvent.keyDown(window, { key: 'b', ctrlKey: true, [modifier]: true })
+
+      expect(screen.getByText('sidebar is expanded')).toBeTruthy()
+    })
+
     it('persists the state when the header toggle is clicked', () => {
       render(<Layout />)
       fireEvent.click(within(screen.getByRole('banner')).getByRole('button'))

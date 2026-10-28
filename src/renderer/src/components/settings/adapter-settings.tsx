@@ -58,8 +58,9 @@ function AdapterRow({
 /**
  * The Adapters settings page: one row per adapter plugin with its status line, and the settings
  * of the selected adapter. The selected adapter is `requested` when it is loaded, else
- * `lastViewed` when it is still loaded, else the first adapter. `onView` receives the selected
- * adapter whenever it differs from `lastViewed`; `onSelect` receives the adapter a user clicks.
+ * `lastViewed` when it is still loaded, else the first adapter. Once the plugin list loads, `onView`
+ * receives the selected adapter (`undefined` when none is loaded) whenever it differs from
+ * `lastViewed`; `onSelect` receives the adapter a user clicks.
  * `onOpenPlugins` runs from the button shown when no adapter plugin is installed. Render it inside
  * a scrolling container.
  */
@@ -72,7 +73,7 @@ export function AdapterSettings({
 }: {
   readonly requested: string | undefined
   readonly lastViewed: string | undefined
-  readonly onView: (adapter: string) => void
+  readonly onView: (adapter: string | undefined) => void
   readonly onSelect: (adapter: string) => void
   readonly onOpenPlugins: () => void
 }) {
@@ -83,8 +84,8 @@ export function AdapterSettings({
     [requested, lastViewed].find((name) => name !== undefined && names.includes(name)) ?? names[0]
 
   useEffect(() => {
-    if (selected !== undefined && selected !== lastViewed) onView(selected)
-  }, [selected, lastViewed, onView])
+    if (plugins !== undefined && selected !== lastViewed) onView(selected)
+  }, [plugins, selected, lastViewed, onView])
 
   if (adapters === undefined) {
     return (

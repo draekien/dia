@@ -493,7 +493,7 @@ export function AgentOverview() {
             )}
           </nav>
         </SidebarContent>
-        <SidebarRail />
+        <SidebarRail className="titlebar-no-drag" />
       </Sidebar>
 
       {removingEntry !== undefined && (

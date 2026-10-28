@@ -38,7 +38,10 @@ const OTHER_ADAPTER = info('other-adapter', { status: { _tag: 'Failed', message:
 
 const installBridge = (list: Promise<ReadonlyArray<PluginInfo>>) => {
   const bridge = {
-    plugins: { list: vi.fn(() => list), onStatusChanged: vi.fn(() => () => undefined) },
+    plugins: {
+      list: vi.fn(() => list),
+      onStatusChanged: vi.fn((_listener: () => void) => () => undefined)
+    },
     getSendMode: vi.fn(async () => 'queue'),
     setSendMode: vi.fn(),
     getTranscriptWidth: vi.fn(async () => 'default'),
@@ -190,6 +193,19 @@ describe('SettingsDialog Adapters page', () => {
     await open({ page: 'adapters', adapter: 'missing' })
 
     expect(screen.getByText('This adapter has no settings.')).toBeTruthy()
+  })
+
+  it('drops the adapter from the breadcrumb once that adapter is no longer loaded', async () => {
+    const bridge = renderDialog([CLAUDE_CODE])
+    await open({ page: 'adapters', adapter: 'claude-code' })
+    await screen.findByText('Health, Defaults and Models')
+    const notifyStatusChanged = bridge.plugins.onStatusChanged.mock.calls[0]?.[0]
+
+    bridge.plugins.list.mockImplementation(() => Promise.resolve([]))
+    await act(async () => notifyStatusChanged?.())
+
+    expect(await screen.findByText('No adapter plugin is installed')).toBeTruthy()
+    expect(within(breadcrumb()).queryByText('Claude Code')).toBeNull()
   })
 
   it('shows a loading placeholder and selects nothing while the plugin list loads', async () => {

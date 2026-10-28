@@ -86,9 +86,11 @@ const runUpdateCheck = Effect.tryPromise(() => autoUpdater.checkForUpdates()).pi
 // centre the controls on that row.
 // These pre-mount glyph colours are a rough default; the renderer pushes the exact one on mount.
 const TITLE_BAR_HEIGHT = 48
-const initialOverlay = nativeTheme.shouldUseDarkColors
-  ? { color: TITLE_BAR_OVERLAY_COLOR, symbolColor: '#ededef', height: TITLE_BAR_HEIGHT }
-  : { color: TITLE_BAR_OVERLAY_COLOR, symbolColor: '#3b3f45', height: TITLE_BAR_HEIGHT }
+const initialOverlay = {
+  color: TITLE_BAR_OVERLAY_COLOR,
+  symbolColor: nativeTheme.shouldUseDarkColors ? '#ededef' : '#3b3f45',
+  height: TITLE_BAR_HEIGHT
+}
 
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
