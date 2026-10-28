@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Markdown } from './markdown'
 
@@ -51,6 +51,45 @@ describe('Markdown', () => {
     const link = screen.getByRole('link', { name: 'the docs' })
     expect(link.getAttribute('target')).toBe('_blank')
     expect(link.getAttribute('rel')).toBe('noreferrer')
+  })
+})
+
+describe('Markdown images', () => {
+  it('shows a load button naming the host instead of requesting a remote image', () => {
+    const { container } = render(<Markdown content="![chart](https://example.com/chart.png)" />)
+
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Load image from example.com' })).toBeTruthy()
+  })
+
+  it('renders the remote image once the user clicks the load button', () => {
+    const { container } = render(<Markdown content="![chart](https://example.com/chart.png)" />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load image from example.com' }))
+
+    const image = container.querySelector('img')
+    expect(image?.getAttribute('src')).toBe('https://example.com/chart.png')
+    expect(image?.getAttribute('alt')).toBe('chart')
+  })
+
+  it.each([
+    ['protocol-relative', '//attacker/share/chart.png'],
+    ['relative', '../../chart.png'],
+    ['hostless', 'https://']
+  ])('shows only the alt text for a %s image source', (_kind, source) => {
+    const { container } = render(<Markdown content={`![chart](${source})`} />)
+
+    expect(container.querySelector('img, button')).toBeNull()
+    expect(container.textContent).toBe('chart')
+  })
+
+  it('applies the same policy to a reference-style image', () => {
+    const { container } = render(
+      <Markdown content={'![chart][c]\n\n[c]: //attacker/share/chart.png'} />
+    )
+
+    expect(container.querySelector('img, button')).toBeNull()
+    expect(container.textContent).toBe('chart')
   })
 })
 

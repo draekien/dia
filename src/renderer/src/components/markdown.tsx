@@ -1,3 +1,4 @@
+import { Button } from '@renderer/components/ui/button'
 import { cn } from '@renderer/lib/utils'
 import { createHighlighter } from '@tanstack/highlight/core'
 import { c } from '@tanstack/highlight/languages/c'
@@ -33,10 +34,15 @@ import { ts } from '@tanstack/highlight/languages/ts'
 import { tsx } from '@tanstack/highlight/languages/tsx'
 import { yaml } from '@tanstack/highlight/languages/yaml'
 import { createTanStackMarkdownHighlighter } from '@tanstack/highlight/markdown'
-import type { LinkNode, MarkdownExtension } from '@tanstack/markdown'
+import type { LinkNode, MarkdownExtension, UrlTransform } from '@tanstack/markdown'
 import { streamingMarkdownExtension } from '@tanstack/markdown/extensions/streaming'
-import { type MarkdownComponents, Markdown as TanStackMarkdown } from '@tanstack/markdown/react'
-import { memo } from 'react'
+import {
+  type MarkdownComponentProps,
+  type MarkdownComponents,
+  Markdown as TanStackMarkdown
+} from '@tanstack/markdown/react'
+import { ImageIcon } from 'lucide-react'
+import { memo, useState } from 'react'
 
 const typesetClassName = 'typeset typeset-docs max-w-[75ch]'
 
@@ -128,14 +134,34 @@ const autolinkExtension: MarkdownExtension = {
 
 const extensions = [streamingMarkdownExtension(), autolinkExtension]
 
+function isRemoteImage(url: string): boolean {
+  return URL.canParse(url) && ['http:', 'https:'].includes(new URL(url).protocol)
+}
+
+const urlTransform: UrlTransform = (_url, kind, defaultUrl) =>
+  kind === 'image' && !isRemoteImage(defaultUrl) ? null : defaultUrl
+
+function RemoteImage({ src, alt, title }: MarkdownComponentProps<'img'>): React.JSX.Element {
+  const [loaded, setLoaded] = useState(false)
+  if (loaded) return <img src={src} alt={alt} title={title} />
+  return (
+    <Button variant="outline" size="xs" title={src} onClick={() => setLoaded(true)}>
+      <ImageIcon data-icon="inline-start" />
+      Load image from {new URL(String(src)).host}
+    </Button>
+  )
+}
+
 const components = {
-  a: (props) => <a {...props} target="_blank" rel="noreferrer" />
+  a: (props) => <a {...props} target="_blank" rel="noreferrer" />,
+  img: RemoteImage
 } satisfies MarkdownComponents
 
 /**
  * Renders a string of Markdown as dia's standard prose block: the shared
- * `typeset` styling, syntax-highlighted code with line numbers, and links
- * opening in a new tab. Pass the raw markdown `content`, which may be a
+ * `typeset` styling, syntax-highlighted code with line numbers, links
+ * opening in a new tab, and remote images that load only after the user clicks
+ * them. Pass the raw markdown `content`, which may be a
  * partially streamed response; `className` appends to the typeset wrapper for
  * context-specific spacing or colour.
  */
@@ -153,6 +179,7 @@ export const Markdown = memo(function Markdown({
         frontmatter={false}
         headingIds={false}
         highlighter={highlighter}
+        urlTransform={urlTransform}
         codeLineNumbers
         components={components}
       >
