@@ -45,6 +45,13 @@
   --syntax-deletion: oklch(0.5 0.18 25);
 
   --radius: 0.625rem;
+
+  --titlebar-controls-inset: calc(
+    100vw -
+    env(titlebar-area-width, 100vw) -
+    env(titlebar-area-x, 0px) +
+    0.75rem
+  );
 }
 
 /* Dark theme -- the original Control Room palette. */
@@ -175,7 +182,8 @@
   -webkit-app-region: drag;
 }
 
-.titlebar-no-drag {
+.titlebar-no-drag,
+.titlebar-drag :is(button, input, a, [role='separator']) {
   -webkit-app-region: no-drag;
 }
 

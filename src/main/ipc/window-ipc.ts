@@ -4,6 +4,9 @@ import { CHANNEL, HostConnection, TitleBarOverlayColors } from '@shared/ipc/cont
 import { Effect, FileSystem, Option, Result, Schema } from 'effect'
 import { type BrowserWindow, dialog, ipcMain, shell } from 'electron'
 
+/** The fixed, fully transparent overlay background (alpha byte `00`; `#00000000` misbehaves on Linux). */
+export const TITLE_BAR_OVERLAY_COLOR = '#01000000'
+
 const decodeTitleBarOverlay = Schema.decodeUnknownResult(TitleBarOverlayColors)
 const encodeUpdateStatus = Schema.encodeSync(UpdateStatus)
 const encodeHostConnection = Schema.encodeSync(HostConnection)
@@ -109,8 +112,8 @@ export function wireGetUpdateStatus(current: Effect.Effect<UpdateStatus>): void 
 }
 
 /**
- * Registers the listener that recolours the OS-drawn window-control overlay to
- * match the renderer's active theme. The renderer pushes {@link
+ * Registers the listener that recolours the OS-drawn window-control glyphs to
+ * match the renderer's active theme; the overlay background stays transparent. The renderer pushes {@link
  * TitleBarOverlayColors} whenever the resolved theme changes; invalid payloads
  * are dropped with a warning. Call once during main-process startup with the
  * window whose overlay should track the theme.
@@ -123,7 +126,7 @@ export function wireTitleBarOverlay(window: BrowserWindow): void {
       return
     }
     window.setTitleBarOverlay({
-      color: decoded.success.color,
+      color: TITLE_BAR_OVERLAY_COLOR,
       symbolColor: decoded.success.symbolColor
     })
   })
