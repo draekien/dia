@@ -18,7 +18,7 @@ Confirmed with the user before design. Each maps to a test or to the Verify phas
 6. A collapsed group header shows its most urgent status and its agent count.
 7. Search matches agent and project names; status filters combine with search by AND; `Ctrl P` focuses search; arrow keys and `Enter` select a row and show its tab.
 8. Dragging a project header, or the keyboard drag, changes the project order, and the order survives a restart.
-9. `Ctrl B` shows the status rail: one dot per agent, a divider between projects, a tooltip naming project and agent.
+9. `Ctrl B` collapses the sidebar to its icon mode (the status rail): one dot per agent, a divider between projects, a tooltip naming project and agent. Since `docs/designs/settings-dialog-and-inset-sidebar.md`, `SidebarProvider` handles `Ctrl B`.
 10. With no projects, "Add project" opens the directory picker; a project with no agents offers "New agent".
 11. The content header shows `project / agent`.
 12. The transcript column is centred, capped at the chosen width, fills a narrower content area, and the setting survives a restart.
@@ -36,7 +36,7 @@ From the shape and alignment rounds; the design must not reopen them.
 | Sidebar header | Search input (`Ctrl P`), filter icon button (popover: status checkboxes, "Show archived agents", "Hide projects with no matches", "Clear filters"), add-project icon button (opens the directory picker) |
 | Reorder | Drag a project header; keyboard: `Space` lift, `↑`/`↓` move, `Space` drop, `Esc` cancel; a live region announces the new position |
 | Project menu | New agent, Reveal in Explorer, Remove project… |
-| Rail | `Ctrl B`; one dot per agent; hairline divider between projects; Meta first |
+| Rail | The collapsed sidebar (shadcn icon mode, `Ctrl B`); one dot per agent; hairline divider between projects; Meta first |
 | Search and filter | Meta group hidden while either applies; groups open while searching; counts read `n of total` |
 | Agent name | Optional in the New agent form; blank gets a generated two-word slug, shared with the worktree branch when one is created; rename with `F2` or the row menu |
 | New agent | Opens the creation form in the content area with the project fixed; no first-message field; "Start agent" shows the new tab with its composer focused |
@@ -266,9 +266,9 @@ State: `workspaceAtom` is written only by `GetWorkspace` and `WorkspaceChanged`.
 
 ### Plugins
 
-`plugins/layout` (feature, eager, renderer only): fills `ROOT` with the frame — a sidebar column sized to its content and the content area. Renders `<Slot name={SIDEBAR} empty={<NoSidebarPlugin/>}/>` and `<Slot name={MAIN}/>`.
+`plugins/layout` (feature, eager, renderer only): fills `ROOT` with the frame. Since `docs/designs/settings-dialog-and-inset-sidebar.md` this is a shadcn `SidebarProvider` with the `SIDEBAR` slot and an inset card holding the `MAIN_HEADER` and `MAIN` slots; it keeps the sidebar's open state and width in `localStorage` under `dia.sidebar.open` and `dia.sidebar.width`.
 
-`plugins/agent-overview` (feature, eager, renderer only): fills `SIDEBAR`. Owns search, filters, group collapse, the rail and their keyboard bindings (`Ctrl P`, `Ctrl B`, arrows, `Enter`, `F2`), drag reorder, the project menu, and the remove-project dialog. Group collapse and rail state are kept in `localStorage` under `dia.agent-overview.collapsed` and `dia.agent-overview.rail`. The window key listener and the drag sensors belong to the `AgentOverview` component, so they go when the slot empties. Drag uses `@dnd-kit/core` 6 and `@dnd-kit/sortable` 10; the keyboard sensor's codes are set so `Space` lifts and drops and `Enter` toggles a group. The Meta group is a static header reading "No open proposals" until plan step 6 adds proposals; it has no agents, so the rail shows nothing for it. With the plugin unloaded, `SIDEBAR` shows `NoSidebarPlugin` and `MAIN` is unaffected. The plugins page lists and unloads Host plugins only, so the user cannot unload a renderer plugin from it yet. Pure view logic in `plugins/agent-overview/overview.ts`: `buildOverview(workspace, summaries, filters): ReadonlyArray<OverviewGroup>` (ordered groups, ordered rows, most urgent status, `n of total` counts) and `navigationOrder(groups, collapsed)`. `OverviewFilters`, `OverviewGroup` and `OverviewRow` are schemas in that file.
+`plugins/agent-overview` (feature, eager, renderer only): fills `SIDEBAR`. Owns search, filters, group collapse, how the overview renders while the sidebar is collapsed, and their keyboard bindings (`Ctrl P`, arrows, `Enter`, `F2`), drag reorder, the project menu, and the remove-project dialog. Group collapse is kept in `localStorage` under `dia.agent-overview.collapsed`; the collapsed sidebar state belongs to `plugins/layout`. The window key listener and the drag sensors belong to the `AgentOverview` component, so they go when the slot empties. Drag uses `@dnd-kit/core` 6 and `@dnd-kit/sortable` 10; the keyboard sensor's codes are set so `Space` lifts and drops and `Enter` toggles a group. The Meta group is a static header reading "No open proposals" until plan step 6 adds proposals; it has no agents, so the rail shows nothing for it. With the plugin unloaded, `SIDEBAR` shows `NoSidebarPlugin` and `MAIN` is unaffected. The plugins page lists and unloads Host plugins only, so the user cannot unload a renderer plugin from it yet. Pure view logic in `plugins/agent-overview/overview.ts`: `buildOverview(workspace, summaries, filters): ReadonlyArray<OverviewGroup>` (ordered groups, ordered rows, most urgent status, `n of total` counts) and `navigationOrder(groups, collapsed)`. `OverviewFilters`, `OverviewGroup` and `OverviewRow` are schemas in that file.
 
 ## Internal decomposition
 

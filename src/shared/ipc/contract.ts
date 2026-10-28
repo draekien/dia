@@ -35,7 +35,7 @@ const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
  * over Electron IPC; every pane and workspace operation goes to the Host over its WebSocket
  * (see `DiaRpcs`). `event` carries updater status pushed from main; `getHostConnection` returns
  * the Host's {@link HostConnection}; `chooseDirectory` and `chooseFile` open the native directory
- * or file picker given a default path; `setTitleBarOverlay` recolours the native window-control overlay when the
+ * or file picker given a default path; `setTitleBarOverlay` recolours the native window-control glyphs when the
  * theme changes; `getAppVersion`/`getUpdateStatus`/`checkForUpdates`/`installUpdate` read the
  * running version and drive the self-updater; `toggleDevTools` opens or closes the renderer's
  * DevTools (dia's custom title bar has no native menu to do so); `revealPath` shows a directory
@@ -67,14 +67,12 @@ export const HostConnection = Schema.Struct({
 export type HostConnection = typeof HostConnection.Type
 
 /**
- * The colours the renderer pushes to the main process (over `setTitleBarOverlay`)
- * so the OS-drawn window-control buttons match the active theme: `color` is the
- * overlay background (matched to the app header), `symbolColor` the button glyph
- * colour. Both are CSS colour strings the platform title-bar overlay accepts
- * (hex/rgb — not `oklch`).
+ * What the renderer pushes to the main process (over `setTitleBarOverlay`) so the OS-drawn
+ * window-control glyphs match the active theme. The renderer sends only `symbolColor`, a CSS colour
+ * string the platform title-bar overlay accepts (hex/rgb, not `oklch`); main fixes the overlay
+ * background as transparent so the app draws beneath the controls.
  */
 export const TitleBarOverlayColors = Schema.Struct({
-  color: Schema.String,
   symbolColor: Schema.String
 })
 export type TitleBarOverlayColors = typeof TitleBarOverlayColors.Type

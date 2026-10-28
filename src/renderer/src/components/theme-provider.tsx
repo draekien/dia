@@ -40,7 +40,6 @@ function readToken(variable: string): string {
 
 function pushTitleBarOverlay(): void {
   window.dia.setTitleBarOverlay({
-    color: readToken('--background'),
     symbolColor: readToken('--ink')
   })
 }

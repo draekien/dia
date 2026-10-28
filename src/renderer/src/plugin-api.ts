@@ -23,6 +23,7 @@ import {
   workspaceAtom
 } from './lib/workspace-atoms'
 
+export * from './components/ui/sidebar'
 export { fillSlot, MAIN, MAIN_HEADER, ROOT, SIDEBAR, Slot, type SlotName } from './lib/slots'
 export type { View } from './lib/view'
 

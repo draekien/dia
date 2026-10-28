@@ -8,6 +8,11 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
   cn,
+  SidebarGroup,
+  SidebarGroupAction,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
   StatusIndicator,
   statusLabel
 } from '@dia/renderer-plugin'
@@ -23,6 +28,7 @@ interface ProjectGroupProps {
   readonly open: boolean
   readonly narrowing: boolean
   readonly dragging: boolean
+  readonly iconMode: boolean
   readonly visibleTab: PaneId | null
   readonly renaming: PaneId | null
   readonly tabStop: string | null
@@ -40,6 +46,7 @@ export function ProjectGroup({
   open,
   narrowing,
   dragging,
+  iconMode,
   visibleTab,
   renaming,
   tabStop,
@@ -48,7 +55,7 @@ export function ProjectGroup({
   onRemove
 }: ProjectGroupProps) {
   const { project } = group
-  const sortable = useSortable({ id: project.projectId })
+  const sortable = useSortable({ id: project.projectId, disabled: iconMode })
   const count = narrowing ? `${group.shown} of ${group.total}` : String(group.total)
   const showRows = open && !dragging
   const urgent = group.mostUrgent
@@ -64,76 +71,57 @@ export function ProjectGroup({
     />
   )
   return (
-    <section
+    <SidebarGroup
       ref={sortable.setNodeRef}
+      role="group"
       style={{
         transform: CSS.Translate.toString(sortable.transform),
         transition: sortable.transition
       }}
       aria-label={project.displayName}
-      className={cn('flex flex-col', sortable.isDragging && 'relative z-10 opacity-80')}
+      className={cn('group/project', sortable.isDragging && 'relative z-10 opacity-80')}
     >
       <ContextMenu>
         <ContextMenuTrigger asChild>
-          {/* biome-ignore lint/a11y/useSemanticElements: the header holds the New agent button, which a <button> cannot contain */}
-          <div
-            ref={sortable.setActivatorNodeRef}
-            data-nav={headerKey(project.projectId)}
-            {...sortable.attributes}
-            role="button"
-            tabIndex={tabStop === headerKey(project.projectId) ? 0 : -1}
-            {...sortable.listeners}
-            aria-roledescription="sortable project"
-            aria-expanded={open}
-            aria-label={`${project.displayName}, ${count} ${group.total === 1 ? 'agent' : 'agents'}${urgent === null || open ? '' : `, ${statusLabel(urgent)}`}`}
-            onClick={onToggle}
-            onKeyDown={(event) => {
-              sortable.listeners?.onKeyDown?.(event)
-              if (event.defaultPrevented) return
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                onToggle()
-              }
-            }}
-            className={cn(
-              'group/header flex h-8 cursor-default items-center gap-1.5 rounded-md pr-1 pl-1.5 outline-none transition-colors duration-150 ease-out hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none',
-              sortable.isDragging && 'bg-secondary ring-2 ring-ring'
-            )}
-          >
-            <ChevronRightIcon
-              aria-hidden
+          <SidebarGroupLabel asChild>
+            <button
+              type="button"
+              ref={sortable.setActivatorNodeRef}
+              data-nav={headerKey(project.projectId)}
+              {...sortable.attributes}
+              tabIndex={tabStop === headerKey(project.projectId) ? 0 : -1}
+              {...sortable.listeners}
+              aria-roledescription="sortable project"
+              aria-expanded={open}
+              aria-label={`${project.displayName}, ${count} ${group.total === 1 ? 'agent' : 'agents'}${urgent === null || open ? '' : `, ${statusLabel(urgent)}`}`}
+              onClick={onToggle}
+              onKeyDown={(event) => sortable.listeners?.onKeyDown?.(event)}
               className={cn(
-                'size-3.5 shrink-0 text-ink-muted transition-transform duration-150 ease-out motion-reduce:transition-none',
-                open && 'rotate-90'
+                'w-full cursor-default gap-1.5 pr-8 pl-1.5 text-left hover:bg-sidebar-accent group-data-[collapsible=icon]:hidden',
+                sortable.isDragging && 'bg-sidebar-accent ring-2 ring-sidebar-ring'
               )}
-            />
-            <span className="truncate text-sm font-medium text-ink">{project.displayName}</span>
-            {project.isGitRepo && (
-              <span className="shrink-0 rounded-sm border border-border px-1 font-mono text-[0.6875rem] leading-4 text-ink-muted">
-                git
+            >
+              <ChevronRightIcon
+                aria-hidden
+                className={cn(
+                  'size-3.5 shrink-0 text-ink-muted transition-transform duration-150 ease-out motion-reduce:transition-none',
+                  open && 'rotate-90'
+                )}
+              />
+              <span className="truncate text-sm font-medium text-ink">{project.displayName}</span>
+              {project.isGitRepo && (
+                <span className="shrink-0 rounded-sm border border-border px-1 font-mono text-[0.6875rem] leading-4 text-ink-muted">
+                  git
+                </span>
+              )}
+              <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                {!open && urgent !== null && <StatusIndicator status={urgent} />}
+                <span className="min-w-4 text-right text-xs tabular-nums text-ink-muted">
+                  {count}
+                </span>
               </span>
-            )}
-            <span className="ml-auto flex shrink-0 items-center gap-1.5">
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                aria-label={`New agent in ${project.displayName}`}
-                tabIndex={-1}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  actions.newAgent(project.projectId)
-                }}
-                className="opacity-0 group-focus-within/header:opacity-100 group-hover/header:opacity-100"
-              >
-                <PlusIcon />
-              </Button>
-              {!open && urgent !== null && <StatusIndicator status={urgent} />}
-              <span className="min-w-4 text-right text-xs tabular-nums text-ink-muted">
-                {count}
-              </span>
-            </span>
-          </div>
+            </button>
+          </SidebarGroupLabel>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-52">
           <ContextMenuGroup>
@@ -152,30 +140,42 @@ export function ProjectGroup({
           </ContextMenuGroup>
         </ContextMenuContent>
       </ContextMenu>
+      <SidebarGroupAction
+        tabIndex={-1}
+        aria-label={`New agent in ${project.displayName}`}
+        onClick={() => actions.newAgent(project.projectId)}
+        className="opacity-0 group-focus-within/project:opacity-100 group-hover/project:opacity-100"
+      >
+        <PlusIcon />
+      </SidebarGroupAction>
       {showRows && (
-        <div className="flex flex-col pb-1">
-          {group.rows.map((row) => renderRow(row, row.paneId === visibleTab))}
-          {group.archived.length > 0 && (
-            <>
-              <p className="pt-1 pl-7 text-xs text-ink-muted">Archived · {group.archived.length}</p>
-              {group.archived.map((row) => renderRow(row, false))}
-            </>
-          )}
-          {group.total === 0 && !narrowing && (
-            <div className="flex items-center gap-2 py-1 pl-7">
-              <span className="text-xs text-ink-muted">No agents</span>
-              <Button
-                size="xs"
-                variant="outline"
-                onClick={() => actions.newAgent(project.projectId)}
-              >
-                <PlusIcon data-icon="inline-start" />
-                New agent
-              </Button>
-            </div>
-          )}
-        </div>
+        <SidebarGroupContent>
+          <SidebarMenu className="gap-0">
+            {group.rows.map((row) => renderRow(row, row.paneId === visibleTab))}
+            {group.archived.length > 0 && (
+              <>
+                <li className="list-none pt-1 pl-2 text-xs text-ink-muted">
+                  Archived · {group.archived.length}
+                </li>
+                {group.archived.map((row) => renderRow(row, false))}
+              </>
+            )}
+            {group.total === 0 && !narrowing && (
+              <li className="flex list-none items-center gap-2 py-1 pl-2">
+                <span className="text-xs text-ink-muted">No agents</span>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => actions.newAgent(project.projectId)}
+                >
+                  <PlusIcon data-icon="inline-start" />
+                  New agent
+                </Button>
+              </li>
+            )}
+          </SidebarMenu>
+        </SidebarGroupContent>
       )}
-    </section>
+    </SidebarGroup>
   )
 }

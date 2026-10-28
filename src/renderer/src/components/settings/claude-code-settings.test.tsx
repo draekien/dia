@@ -7,8 +7,8 @@ import {
 import type { AdapterStatusSnapshotJson, ModelCatalogSnapshotJson } from '@shared/ipc/contract'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { SettingsPage } from './settings-page'
-import { TooltipProvider } from './ui/tooltip'
+import { TooltipProvider } from '../ui/tooltip'
+import { ClaudeCodeSettings } from './claude-code-settings'
 
 const OPUS = { value: 'opus', displayName: 'Opus', description: '' }
 const HAIKU = { value: 'haiku', displayName: 'Haiku', description: '' }
@@ -79,10 +79,10 @@ const installBridge = (options: BridgeOptions = {}) => {
   return bridge
 }
 
-const renderPage = (onClose: () => void = () => undefined) =>
+const renderPage = () =>
   render(
     <TooltipProvider>
-      <SettingsPage onClose={onClose} />
+      <ClaudeCodeSettings />
     </TooltipProvider>
   )
 
@@ -91,7 +91,7 @@ afterEach(() => {
   Reflect.deleteProperty(window, 'dia')
 })
 
-describe('SettingsPage models', () => {
+describe('ClaudeCodeSettings models', () => {
   it('marks a model favourite from its star toggle', async () => {
     const bridge = installBridge()
     renderPage()
@@ -173,7 +173,7 @@ describe('SettingsPage models', () => {
   })
 })
 
-describe('SettingsPage health', () => {
+describe('ClaudeCodeSettings health', () => {
   it('stores the executable the user picks', async () => {
     const bridge = installBridge({ pickedFile: 'D:/tools/claude.exe' })
     renderPage()
@@ -234,15 +234,5 @@ describe('SettingsPage health', () => {
 
     await screen.findByText('Checking…')
     expect(bridge.adapter.checkHealth).not.toHaveBeenCalled()
-  })
-
-  it('closes on Escape', async () => {
-    installBridge()
-    const onClose = vi.fn()
-    renderPage(onClose)
-
-    fireEvent.keyDown(document, { key: 'Escape' })
-
-    expect(onClose).toHaveBeenCalledTimes(1)
   })
 })

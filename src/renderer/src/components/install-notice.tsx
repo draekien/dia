@@ -1,5 +1,5 @@
 import type { AdapterStatusJson } from '@renderer/hooks/use-adapter-status'
-import { openSettingsPage } from './settings-page'
+import { openSettings } from './settings/open-settings'
 import { Button } from './ui/button'
 
 /**
@@ -24,7 +24,7 @@ export const installProblem = (status: AdapterStatusJson | undefined): string | 
 
 /**
  * A neutral one-line notice explaining why agents cannot start with the install in `status`,
- * with a button that opens the Settings page. Renders nothing when {@link installProblem} finds
+ * with a button that opens the Claude Code page of the Settings dialog. Renders nothing when {@link installProblem} finds
  * no problem.
  */
 export function InstallNotice({ status }: { readonly status: AdapterStatusJson | undefined }) {
@@ -33,7 +33,12 @@ export function InstallNotice({ status }: { readonly status: AdapterStatusJson |
   return (
     <p role="status" className="flex items-center gap-2 text-xs text-ink-muted">
       <span className="min-w-0 flex-1">{problem}</span>
-      <Button type="button" size="xs" variant="ghost" onClick={openSettingsPage}>
+      <Button
+        type="button"
+        size="xs"
+        variant="ghost"
+        onClick={() => openSettings({ page: 'adapters', adapter: 'claude-code' })}
+      >
         Open Settings
       </Button>
     </p>

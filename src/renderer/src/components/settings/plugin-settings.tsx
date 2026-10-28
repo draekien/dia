@@ -6,38 +6,18 @@ import {
   type PluginStatus
 } from '@shared/plugin/manifest'
 import { ByteSize } from 'effect'
-import { ArrowLeftIcon, FolderIcon, Loader2Icon, PlayIcon, RefreshCwIcon } from 'lucide-react'
+import { FolderIcon, Loader2Icon, PlayIcon, RefreshCwIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { useActivities } from '../hooks/use-activities'
-import { type OverrideRejection, usePlugins } from '../hooks/use-plugins'
-import { formatWhen } from '../lib/format-when'
-import { Button } from './ui/button'
-import { ScrollArea } from './ui/scroll-area'
-import { Skeleton } from './ui/skeleton'
-
-const OPEN_EVENT = 'dia:open-plugins-page'
-
-/**
- * Asks the app shell to show the plugin management page, from anywhere in the renderer (the
- * command palette uses it). A mounted shell that listens with {@link onPluginsPageRequested}
- * responds.
- */
-export function openPluginsPage(): void {
-  window.dispatchEvent(new Event(OPEN_EVENT))
-}
-
-/**
- * Calls `listener` whenever {@link openPluginsPage} is called. Returns a function that stops
- * listening.
- */
-export function onPluginsPageRequested(listener: () => void): () => void {
-  window.addEventListener(OPEN_EVENT, listener)
-  return () => window.removeEventListener(OPEN_EVENT, listener)
-}
+import { useActivities } from '../../hooks/use-activities'
+import { type OverrideRejection, usePlugins } from '../../hooks/use-plugins'
+import { formatWhen } from '../../lib/format-when'
+import { Button } from '../ui/button'
+import { Skeleton } from '../ui/skeleton'
 
 const limitBytes = ByteSize.toNumberUnsafe(PLUGIN_MEMORY_LIMIT)
 
-const statusLabel = (status: PluginStatus): string => {
+/** The short label for a plugin's load state, such as "Loaded" or "Failed to load". */
+export const statusLabel = (status: PluginStatus): string => {
   switch (status._tag) {
     case 'Unloaded':
       return 'Not loaded'
@@ -275,63 +255,44 @@ function PluginListSkeleton() {
 }
 
 /**
- * The plugin management page: every plugin with its state, the folder it loads from, the reason
- * for its last failed reload, and its memory use against the limit, with actions to load, reload
- * and unload it and to point it at a folder on disk or back at the bundled copy. Pressing Escape
- * calls `onClose`. Render it in place of the pane area; it fills the space it is given.
+ * The plugin list: every plugin with its state, the folder it loads from, the reason for its last
+ * failed reload, and its memory use against the limit, with actions to load, reload and unload it
+ * and to point it at a folder on disk or back at the bundled copy. Render it inside a scrolling
+ * container; it sizes to its content.
  */
-export function PluginsPage({ onClose }: { readonly onClose: () => void }) {
+export function PluginSettings() {
   const { plugins, pending, rejection, reload, unload, chooseOverride, clearOverride } =
     usePlugins()
   const { activities, run } = useActivities()
   const announcement = useActivityAnnouncement(activities)
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) onClose()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
-
   return (
-    <section className="flex h-full min-h-0 flex-col" aria-labelledby="plugins-heading">
-      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
-        <Button size="xs" variant="ghost" onClick={onClose}>
-          <ArrowLeftIcon />
-          Agents
-        </Button>
-        <h1 id="plugins-heading" className="text-base font-semibold tracking-tight text-ink">
-          Plugins
-        </h1>
-      </div>
-      <ScrollArea className="min-h-0 flex-1">
-        {plugins === undefined ? (
-          <PluginListSkeleton />
-        ) : plugins.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-ink-muted">No plugins found.</p>
-        ) : (
-          <ul className="divide-y">
-            {plugins.map((plugin) => (
-              <PluginRow
-                key={plugin.name}
-                plugin={plugin}
-                activities={activities?.filter((activity) => activity.plugin === plugin.name) ?? []}
-                onRunActivity={(id) => run(plugin.name, id)}
-                busy={pending.has(plugin.name)}
-                rejection={rejection?.name === plugin.name ? rejection : undefined}
-                onReload={() => void reload(plugin.name)}
-                onUnload={() => void unload(plugin.name)}
-                onChooseOverride={() => void chooseOverride(plugin.name)}
-                onClearOverride={() => void clearOverride(plugin.name)}
-              />
-            ))}
-          </ul>
-        )}
-      </ScrollArea>
+    <>
+      {plugins === undefined ? (
+        <PluginListSkeleton />
+      ) : plugins.length === 0 ? (
+        <p className="px-4 py-6 text-sm text-ink-muted">No plugins found.</p>
+      ) : (
+        <ul className="divide-y">
+          {plugins.map((plugin) => (
+            <PluginRow
+              key={plugin.name}
+              plugin={plugin}
+              activities={activities?.filter((activity) => activity.plugin === plugin.name) ?? []}
+              onRunActivity={(id) => run(plugin.name, id)}
+              busy={pending.has(plugin.name)}
+              rejection={rejection?.name === plugin.name ? rejection : undefined}
+              onReload={() => void reload(plugin.name)}
+              onUnload={() => void unload(plugin.name)}
+              onChooseOverride={() => void chooseOverride(plugin.name)}
+              onClearOverride={() => void clearOverride(plugin.name)}
+            />
+          ))}
+        </ul>
+      )}
       <p role="status" className="sr-only">
         {announcement}
       </p>
-    </section>
+    </>
   )
 }

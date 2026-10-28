@@ -4,7 +4,9 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './app'
 import { CommandPalette } from './components/command-palette'
-import { TabContent, TabHeader } from './components/tab-content'
+import { SettingsDialog } from './components/settings/settings-dialog'
+import { TabContent } from './components/tab-content'
+import { TabHeader } from './components/tab-header'
 import { ThemeProvider } from './components/theme-provider'
 import { TooltipProvider } from './components/ui/tooltip'
 import { MAIN, MAIN_HEADER, setKernelDefault, setPluginRegistry } from './lib/slots'
@@ -30,6 +32,7 @@ const renderApp = () =>
             <TooltipProvider delayDuration={400}>
               <App />
               <CommandPalette />
+              <SettingsDialog />
             </TooltipProvider>
           </QueryClientProvider>
         </ThemeProvider>

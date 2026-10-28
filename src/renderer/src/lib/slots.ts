@@ -10,13 +10,17 @@ import { type ComponentType, createElement, type ReactNode, useEffect, useState 
 /** A region of the window that a renderer plugin can fill. */
 export type SlotName = 'root' | 'sidebar' | 'main' | 'main.header'
 
-/** The whole window below the title bar. The layout plugin fills it. */
+/** The whole window; there is no title bar band. The layout plugin fills it. */
 export const ROOT: SlotName = 'root'
 /** The sidebar column the layout plugin declares. The agent overview fills it. */
 export const SIDEBAR: SlotName = 'sidebar'
 /** The content area the layout plugin declares. Shows the visible tab unless a plugin fills it. */
 export const MAIN: SlotName = 'main'
-/** The header above the visible tab. Shows `project / agent` unless a plugin fills it. */
+/**
+ * The card header row beside the sidebar toggle, rendered by the layout plugin for every view.
+ * Shows the breadcrumb and window status unless a plugin fills it; a plugin that does owns the
+ * window status items.
+ */
 export const MAIN_HEADER: SlotName = 'main.header'
 
 const slotKey = (name: SlotName): string => `slot:${name}`

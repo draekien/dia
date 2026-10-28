@@ -8,6 +8,7 @@ import { app, BrowserWindow, nativeTheme, net, protocol, shell } from 'electron'
 import electronUpdater from 'electron-updater'
 import { resolveEsbuildBinaryPath, startHostProcess } from './host-process'
 import {
+  TITLE_BAR_OVERLAY_COLOR,
   wireChooseDirectory,
   wireGetAppVersion,
   wireGetHostConnection,
@@ -81,13 +82,15 @@ const runUpdateCheck = Effect.tryPromise(() => autoUpdater.checkForUpdates()).pi
   Effect.ignore
 )
 
-// The dia app header is 40px tall; the native window-control overlay must match so the
-// OS-drawn buttons sit flush in it. These pre-mount overlay colours are a rough default
-// (resolved from the OS scheme); the renderer pushes exact theme-matched colours on mount.
-const TITLE_BAR_HEIGHT = 40
-const initialOverlay = nativeTheme.shouldUseDarkColors
-  ? { color: '#0b0d11', symbolColor: '#ededef', height: TITLE_BAR_HEIGHT }
-  : { color: '#f3f5f8', symbolColor: '#3b3f45', height: TITLE_BAR_HEIGHT }
+// The overlay is transparent and 48px tall: the inset margin (8px), the h-8 header row and 8px
+// centre the controls on that row.
+// These pre-mount glyph colours are a rough default; the renderer pushes the exact one on mount.
+const TITLE_BAR_HEIGHT = 48
+const initialOverlay = {
+  color: TITLE_BAR_OVERLAY_COLOR,
+  symbolColor: nativeTheme.shouldUseDarkColors ? '#ededef' : '#3b3f45',
+  height: TITLE_BAR_HEIGHT
+}
 
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({

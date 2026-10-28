@@ -4,7 +4,7 @@ import type { ActivityInfoJson } from '@shared/ipc/contract'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PluginsPage } from './plugins-page'
+import { PluginSettings } from './plugin-settings'
 
 const info = (name: string, overrides: Partial<PluginInfo> = {}): PluginInfo => ({
   name,
@@ -85,7 +85,7 @@ afterEach(() => {
   Reflect.deleteProperty(window, 'dia')
 })
 
-describe('PluginsPage', () => {
+describe('PluginSettings', () => {
   beforeEach(() => {
     installBridge([])
   })
@@ -96,7 +96,7 @@ describe('PluginsPage', () => {
       info('theme', { status: { _tag: 'Unloaded' } })
     ])
 
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
 
     await screen.findByText('chat')
     expect(rowOf('chat').getByText('Loaded')).toBeTruthy()
@@ -111,7 +111,7 @@ describe('PluginsPage', () => {
       info('chat', { status: { _tag: 'Loaded', reloadError: 'Cannot import "host.ts"' } })
     ])
 
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
 
     await screen.findByText('Cannot import "host.ts"')
     expect(rowOf('chat').getByText('Loaded · last reload failed')).toBeTruthy()
@@ -124,7 +124,7 @@ describe('PluginsPage', () => {
       })
     ])
 
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
 
     await screen.findByText('over the limit')
     expect(rowOf('chat').getByText('Restart dia to reload')).toBeTruthy()
@@ -133,7 +133,7 @@ describe('PluginsPage', () => {
   it('shows memory use against the limit only for a plugin that has used some', async () => {
     installBridge([info('chat', { memoryBytes: 40_000_000 }), info('theme')])
 
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
 
     await screen.findByText('Memory 40.0 MB of 100.0 MB')
     expect(rowOf('theme').queryByText(/^Memory/)).toBeNull()
@@ -141,7 +141,7 @@ describe('PluginsPage', () => {
 
   it('reloads a plugin and shows the list the Host returns afterwards', async () => {
     const { bridge, replaceList } = installBridge([info('chat')])
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
     await screen.findByText('chat')
     replaceList([info('chat', { memoryBytes: 12_000_000 })])
 
@@ -154,7 +154,7 @@ describe('PluginsPage', () => {
   it('offers Load instead of Reload and no Unload for a plugin that is not loaded', async () => {
     installBridge([info('theme', { status: { _tag: 'Unloaded' } })])
 
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
 
     await screen.findByText('theme')
     expect(rowOf('theme').getByRole('button', { name: 'Load' })).toBeTruthy()
@@ -163,7 +163,7 @@ describe('PluginsPage', () => {
 
   it('unloads a plugin', async () => {
     const { bridge } = installBridge([info('chat')])
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
     await screen.findByText('chat')
 
     fireEvent.click(rowOf('chat').getByRole('button', { name: 'Unload' }))
@@ -173,7 +173,7 @@ describe('PluginsPage', () => {
 
   it('points a plugin at the folder the user picks and reloads it', async () => {
     const { bridge } = installBridge([info('chat')])
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
     await screen.findByText('chat')
 
     fireEvent.click(rowOf('chat').getByRole('button', { name: /Set folder/ }))
@@ -185,7 +185,7 @@ describe('PluginsPage', () => {
   it('changes nothing when the user cancels the folder picker', async () => {
     const { bridge } = installBridge([info('chat')])
     bridge.pickDirectory.mockResolvedValueOnce(null)
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
     await screen.findByText('chat')
 
     fireEvent.click(rowOf('chat').getByRole('button', { name: /Set folder/ }))
@@ -201,7 +201,7 @@ describe('PluginsPage', () => {
       _tag: 'Rejected',
       message: 'no plugin.json'
     } as never)
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
     await screen.findByText('chat')
 
     fireEvent.click(rowOf('chat').getByRole('button', { name: /Set folder/ }))
@@ -213,7 +213,7 @@ describe('PluginsPage', () => {
   it('shows a failed bridge call on the plugin and lets the user retry it', async () => {
     const { bridge } = installBridge([info('chat')])
     bridge.plugins.load.mockRejectedValueOnce(new Error('bridge closed'))
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
     await screen.findByText('chat')
 
     fireEvent.click(rowOf('chat').getByRole('button', { name: 'Reload' }))
@@ -226,23 +226,12 @@ describe('PluginsPage', () => {
     )
   })
 
-  it('keeps the page open when Escape was already handled by an overlay', () => {
-    const onClose = vi.fn()
-    render(<PluginsPage onClose={onClose} />)
-
-    const handled = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })
-    handled.preventDefault()
-    document.dispatchEvent(handled)
-
-    expect(onClose).not.toHaveBeenCalled()
-  })
-
   it('offers to return only an overridden plugin to the bundled copy, and reloads it', async () => {
     const { bridge } = installBridge([
       info('chat', { origin: 'override', root: '/work/chat' }),
       info('theme')
     ])
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
     await screen.findByText('chat')
     expect(rowOf('theme').queryByRole('button', { name: 'Use bundled' })).toBeNull()
 
@@ -261,7 +250,7 @@ describe('PluginsPage', () => {
           finish = () => resolve(info('chat'))
         })
     )
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
     await screen.findByText('chat')
     const reload = rowOf('chat').getByRole('button', { name: 'Reload' })
 
@@ -273,26 +262,8 @@ describe('PluginsPage', () => {
     expect(bridge.plugins.load).toHaveBeenCalledTimes(1)
   })
 
-  it('calls onClose when the user presses Escape', async () => {
-    const onClose = vi.fn()
-    render(<PluginsPage onClose={onClose} />)
-
-    fireEvent.keyDown(document, { key: 'Escape' })
-
-    expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
-  it('calls onClose from the back button', async () => {
-    const onClose = vi.fn()
-    render(<PluginsPage onClose={onClose} />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Agents' }))
-
-    expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
   it('says so when there are no plugins', async () => {
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
 
     await screen.findByText('No plugins found.')
   })
@@ -307,7 +278,7 @@ describe('PluginsPage', () => {
         })
     )
 
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
 
     expect(screen.getByLabelText('Loading plugins')).toBeTruthy()
     expect(screen.queryByText('No plugins found.')).toBeNull()
@@ -319,7 +290,7 @@ describe('PluginsPage', () => {
   it('keeps a loaded adapter from being reloaded, unloaded or pointed at a folder', async () => {
     installBridge([info('claude-code', { category: 'adapter' })])
 
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
 
     await screen.findByText('claude-code')
     const row = rowOf('claude-code')
@@ -340,7 +311,7 @@ describe('PluginsPage', () => {
       info('claude-code', { category: 'adapter', status: { _tag: 'Failed', message: 'boom' } })
     ])
 
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
 
     await screen.findByText('claude-code')
     expect(
@@ -351,7 +322,7 @@ describe('PluginsPage', () => {
   it('shows a plugin the Host is still loading as Loading with its actions disabled', async () => {
     installBridge([info('chat', { status: { _tag: 'Loading' } })])
 
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
 
     await screen.findByText('chat')
     expect(rowOf('chat').getByText('Loading…')).toBeTruthy()
@@ -365,7 +336,7 @@ describe('PluginsPage', () => {
     const { replaceList, emitStatusChanged } = installBridge([
       info('chat', { status: { _tag: 'Loading' } })
     ])
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
     await screen.findByText('Loading…')
 
     replaceList([info('chat', { status: { _tag: 'Loaded' } })])
@@ -383,7 +354,7 @@ describe('PluginsPage', () => {
         deliveries.push(resolve)
       })
     bridge.plugins.list.mockImplementationOnce(pendingList).mockImplementationOnce(pendingList)
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
     emitStatusChanged('chat')
     await waitFor(() => expect(deliveries).toHaveLength(2))
 
@@ -398,7 +369,7 @@ describe('PluginsPage', () => {
 
   it('stops listening for status changes when the page closes', async () => {
     const { bridge } = installBridge([info('chat')])
-    const { unmount } = render(<PluginsPage onClose={() => {}} />)
+    const { unmount } = render(<PluginSettings />)
     await screen.findByText('chat')
     const unsubscribe = bridge.plugins.onStatusChanged.mock.results[0]?.value as () => boolean
 
@@ -419,7 +390,7 @@ describe('PluginsPage', () => {
       ]
     )
 
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
 
     await screen.findByText('Model list')
     expect(rowOf('claude-code').getByText(/^Failed .+ · retries .+$/)).toBeTruthy()
@@ -431,7 +402,7 @@ describe('PluginsPage', () => {
       [info('claude-code')],
       [modelList({ _tag: 'Scheduled', nextRunAt: DUE_AT })]
     )
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Run Model list for claude-code' }))
 
@@ -440,7 +411,7 @@ describe('PluginsPage', () => {
 
   it('ignores Run now while the activity is running', async () => {
     const { bridge } = installBridge([info('claude-code')], [modelList({ _tag: 'Running' })])
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Run Model list for claude-code' }))
 
@@ -452,7 +423,7 @@ describe('PluginsPage', () => {
       [info('claude-code')],
       [modelList({ _tag: 'Scheduled', nextRunAt: DUE_AT })]
     )
-    render(<PluginsPage onClose={() => {}} />)
+    render(<PluginSettings />)
     await screen.findByText('Model list')
 
     changeActivities([modelList({ _tag: 'Running' })])
