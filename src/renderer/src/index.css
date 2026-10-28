@@ -324,7 +324,7 @@
    any element that carries them. A distinct name keeps this element free of a
    standard `scrollbar-width` so the webkit styling actually applies. */
 @utility scrollbar-app {
-  scrollbar-gutter: stable;
+  scrollbar-gutter: stable both-edges;
   &::-webkit-scrollbar {
     width: 10px;
     height: 10px;
@@ -341,8 +341,8 @@
   &::-webkit-scrollbar-track {
     background: transparent;
   }
-  &[data-autoscrolling]::-webkit-scrollbar {
-    display: none;
+  &[data-autoscrolling]::-webkit-scrollbar-thumb {
+    background-color: transparent;
   }
 }
 

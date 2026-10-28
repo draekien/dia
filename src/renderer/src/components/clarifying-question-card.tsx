@@ -1,6 +1,6 @@
 import { Answers, type QuestionResponse } from '@shared/domain/attention'
 import type { PaneQuestionRequested } from '@shared/ipc/contract'
-import { useState } from 'react'
+import { type KeyboardEvent, useRef, useState } from 'react'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
 import { Input } from './ui/input'
@@ -45,24 +45,22 @@ function resolveAnswers(
   return answers
 }
 
-function isComplete(
-  questions: PaneQuestionRequested['questions'],
+function isAnswered(
+  question: Question,
   single: Record<string, string>,
   multi: Record<string, ReadonlySet<string>>,
   otherText: Record<string, string>
 ): boolean {
-  return questions.every((question) => {
-    const key = questionKey(question)
-    const hasCustom = (otherText[key] ?? '').trim().length > 0
-    if (question.multiSelect) {
-      const chosen = multi[key] ?? new Set<string>()
-      if (chosen.size === 0) return false
-      return chosen.has(OTHER) ? hasCustom : true
-    }
-    const selection = single[key]
-    if (selection === undefined || selection === '') return false
-    return selection === OTHER ? hasCustom : true
-  })
+  const key = questionKey(question)
+  const hasCustom = (otherText[key] ?? '').trim().length > 0
+  if (question.multiSelect) {
+    const chosen = multi[key] ?? new Set<string>()
+    if (chosen.size === 0) return false
+    return chosen.has(OTHER) ? hasCustom : true
+  }
+  const selection = single[key]
+  if (selection === undefined || selection === '') return false
+  return selection === OTHER ? hasCustom : true
 }
 
 /**
@@ -85,7 +83,12 @@ export function ClarifyingQuestionCard({
   const [multi, setMulti] = useState<Record<string, ReadonlySet<string>>>({})
   const [otherText, setOtherText] = useState<Record<string, string>>({})
 
-  const complete = isComplete(request.questions, single, multi, otherText)
+  const formRef = useRef<HTMLFormElement>(null)
+
+  const firstUnanswered = request.questions.findIndex(
+    (question) => !isAnswered(question, single, multi, otherText)
+  )
+  const complete = firstUnanswered === -1
 
   function toggleMulti(key: string, value: string, checked: boolean): void {
     setMulti((prev) => {
@@ -106,8 +109,35 @@ export function ClarifyingQuestionCard({
     )
   }
 
+  function handleEnter(event: KeyboardEvent<HTMLElement>): void {
+    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+    event.preventDefault()
+    const target = event.target as HTMLElement
+    if (target.getAttribute('role') === 'radio' && target.dataset.state === 'unchecked') {
+      target.click()
+      return
+    }
+    if (complete) {
+      submit()
+      return
+    }
+    formRef.current
+      ?.querySelectorAll('fieldset')
+      [firstUnanswered]?.querySelector<HTMLElement>('button, input')
+      ?.focus()
+  }
+
   return (
-    <section className="mt-2 flex flex-col gap-4 rounded-md border bg-muted/40 p-3">
+    <form
+      ref={formRef}
+      aria-label="Claude needs your input"
+      onKeyDown={handleEnter}
+      onSubmit={(event) => {
+        event.preventDefault()
+        submit()
+      }}
+      className="mt-2 flex flex-col gap-4 rounded-md border bg-muted/40 p-3"
+    >
       <p className="text-base font-semibold text-foreground">Claude needs your input</p>
       {request.questions.map((question) => {
         const key = questionKey(question)
@@ -197,10 +227,10 @@ export function ClarifyingQuestionCard({
         )
       })}
       <div className="flex justify-end">
-        <Button size="sm" disabled={!complete} onClick={submit}>
+        <Button type="submit" size="sm" disabled={!complete}>
           Submit
         </Button>
       </div>
-    </section>
+    </form>
   )
 }
