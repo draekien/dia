@@ -100,7 +100,6 @@ export function ClarifyingQuestionCard({
   }
 
   function submit(): void {
-    if (!complete) return
     onResolve(
       Answers.make({
         questions: request.questions,
