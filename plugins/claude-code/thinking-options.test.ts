@@ -15,4 +15,9 @@ describe('thinkingOptions', () => {
     expect(thinkingOptions('medium')).toEqual({ thinking: { type: 'adaptive' }, effort: 'medium' })
     expect(thinkingOptions('high')).toEqual({ thinking: { type: 'adaptive' }, effort: 'high' })
   })
+
+  it('passes the extra-high and max efforts through to the SDK', () => {
+    expect(thinkingOptions('xhigh')).toEqual({ thinking: { type: 'adaptive' }, effort: 'xhigh' })
+    expect(thinkingOptions('max')).toEqual({ thinking: { type: 'adaptive' }, effort: 'max' })
+  })
 })

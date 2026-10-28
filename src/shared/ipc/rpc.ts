@@ -11,7 +11,7 @@ import {
   ModelPreference,
   ModelPreferencesSnapshot
 } from '../domain/model-preferences'
-import { ConversationMessage } from '../domain/pane'
+import { ConversationMessage, PermissionMode } from '../domain/pane'
 import { ProjectId, ProjectNotFoundError, RegisterProjectError, Workspace } from '../domain/project'
 import { RemovalProgress } from '../domain/project-removal'
 import { ThemePreference } from '../domain/theme'
@@ -43,7 +43,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.2'
+export const PROTOCOL_VERSION = '0.0.3'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -99,7 +99,8 @@ export type EventFrame = typeof EventFrame.Type
  * `RemoveProject` are queries so their typed errors reach the caller; the plugin calls (`LoadPlugin`
  * on a loaded plugin reloads it), the model calls (`GetModels`, `RefreshModels`), the adapter calls
  * (`GetAdapterStatus`, `CheckAdapterHealth`, `SetInstallPath`, `GetModelPreferences`,
- * `SetModelPreference`, `SetAgentDefaults`, each setting a value, so repeating one is harmless) and
+ * `SetModelPreference`, `SetAgentDefaults`, each setting a value, so repeating one is harmless,
+ * and `GetDisabledPermissionModes`) and
  * the activity calls (`ListActivities`, `RunActivity`) are safe to repeat and take none; a
  * `RefreshModels`, `CheckAdapterHealth` or `RunActivity` sent while that run is in progress waits
  * for it instead of starting another;
@@ -168,6 +169,10 @@ export const DiaRpcs = RpcGroup.make(
     error: LastVisibleModel
   }),
   Rpc.make('SetAgentDefaults', { payload: { defaults: AgentDefaults } }),
+  Rpc.make('GetDisabledPermissionModes', {
+    payload: { cwd: Schema.String },
+    success: Schema.Array(PermissionMode)
+  }),
   Rpc.make('ListActivities', { success: Schema.Array(ActivityInfo) }),
   Rpc.make('RunActivity', {
     payload: { plugin: PluginName, id: ActivityId },

@@ -1,5 +1,6 @@
 import { InstallNotice, installProblem } from '@renderer/components/install-notice'
 import { isOfferedModel, ModelField } from '@renderer/components/model-field'
+import { PermissionModeItems } from '@renderer/components/permission-mode-items'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import {
@@ -11,12 +12,21 @@ import {
 } from '@renderer/components/ui/select'
 import { Switch } from '@renderer/components/ui/switch'
 import { useAdapterStatus } from '@renderer/hooks/use-adapter-status'
+import { useDisabledPermissionModes } from '@renderer/hooks/use-disabled-permission-modes'
 import { useModelCatalog } from '@renderer/hooks/use-model-catalog'
 import { useModelPreferences } from '@renderer/hooks/use-model-preferences'
 import { usePluginList } from '@renderer/hooks/use-plugin-list'
 import { cancelNewAgent } from '@renderer/lib/actions'
-import { CREATE_PERMISSION_MODE_OPTIONS } from '@renderer/lib/permission-modes'
-import { THINKING_LEVEL_OPTIONS } from '@renderer/lib/thinking-levels'
+import {
+  CREATE_PERMISSION_MODE_OPTIONS,
+  offeredPermissionModes,
+  permissionModeLabel
+} from '@renderer/lib/permission-modes'
+import {
+  fitThinkingLevel,
+  thinkingLevelLabel,
+  thinkingLevelsFor
+} from '@renderer/lib/thinking-levels'
 import {
   DEFAULT_THINKING_LEVEL,
   type StartupPermissionMode,
@@ -65,6 +75,16 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
   const defaultsApplied = useRef(false)
   const startable =
     isOfferedModel(catalog, preferences, model) && installProblem(adapterStatus) === undefined
+  const thinkingLevels = thinkingLevelsFor(
+    catalog.state?._tag === 'Ready'
+      ? catalog.state.models.find((option) => option.value === model)
+      : undefined
+  )
+  const offeredThinkingLevel = fitThinkingLevel(thinkingLevel, thinkingLevels)
+  const disabledPermissionModes = useDisabledPermissionModes(project.directory)
+  const offeredPermissionMode = disabledPermissionModes.includes(permissionMode)
+    ? 'default'
+    : permissionMode
 
   useEffect(() => {
     if (preferences === undefined || defaultsApplied.current) return
@@ -92,8 +112,8 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
         paneId,
         name: Option.getOrNull(decodeName(name.trim())),
         model,
-        thinkingLevel,
-        permissionMode,
+        thinkingLevel: offeredThinkingLevel,
+        permissionMode: offeredPermissionMode,
         useWorktree: worktreeOn
       })
     )
@@ -131,7 +151,7 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
         <div className="flex flex-col gap-1">
           <span className="text-xs text-ink-muted">Thinking</span>
           <Select
-            value={thinkingLevel}
+            value={offeredThinkingLevel}
             onValueChange={(value: ThinkingLevel) => {
               defaultsApplied.current = true
               setThinkingLevel(value)
@@ -142,9 +162,9 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {THINKING_LEVEL_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
+              {thinkingLevels.map((level) => (
+                <SelectItem key={level} value={level}>
+                  {thinkingLevelLabel(level)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -154,7 +174,7 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
         <div className="flex flex-col gap-1">
           <span className="text-xs text-ink-muted">Permissions</span>
           <Select
-            value={permissionMode}
+            value={offeredPermissionMode}
             onValueChange={(value: StartupPermissionMode) => {
               defaultsApplied.current = true
               setPermissionMode(value)
@@ -162,14 +182,16 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
             disabled={isBusy}
           >
             <SelectTrigger className="w-full">
-              <SelectValue />
+              <SelectValue>{permissionModeLabel(offeredPermissionMode)}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {CREATE_PERMISSION_MODE_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
+              <PermissionModeItems
+                options={offeredPermissionModes(
+                  CREATE_PERMISSION_MODE_OPTIONS,
+                  disabledPermissionModes,
+                  offeredPermissionMode
+                )}
+              />
             </SelectContent>
           </Select>
         </div>

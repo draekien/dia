@@ -31,7 +31,7 @@ Tested with a real agent in dia (a pane created from a `splitPane` placeholder, 
 | `dontAsk` | none | the SDK refused the call before the handler; the agent reported it needed permission |
 
 - **`auto` asks.** The SDK documentation leaves `auto` for MCP tools unverified; the tool's own approval made the question moot, and it was asked once.
-- **`bypassPermissions` was not tested.** dia has no such pane mode (`PermissionMode` is `default`, `plan`, `acceptEdits`, `auto`, `dontAsk`). Because the approval is inside the tool handler, it does not depend on the SDK calling `canUseTool`.
+- **`bypassPermissions` was not tested in this run.** dia had no such pane mode then; it now offers it as "Full access". Because the approval is inside the tool handler, it does not depend on the SDK calling `canUseTool`.
 - **`canUseTool` must let the tools through.** The handler asks, so `makeCanUseTool` returns `allow` for these tool names; otherwise `default` mode would ask twice.
 
 ### Traps while driving the app

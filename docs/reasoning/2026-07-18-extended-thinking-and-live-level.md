@@ -24,7 +24,7 @@ or no session has started yet.
 
 **The level map is a deliberate product decision, not an SDK passthrough.** `off` →
 `{ thinking: { type: 'disabled' } }`; `adaptive` → `{ thinking: { type: 'adaptive' } }`;
-`low`/`medium`/`high` → `{ thinking: { type: 'adaptive' }, effort: <level> }` (adaptive
+each effort level (`low` to `max`) → `{ thinking: { type: 'adaptive' }, effort: <level> }` (adaptive
 thinking *capped* at that effort, not `thinking: { type: 'enabled' }`). Extracted to the
 pure `plugins/claude-code/thinking-options.ts` (part of the `claude-code` adapter, `docs/designs/claude-code-adapter.md`) so the mapping is unit-tested on its own, without starting an SDK query.
 

@@ -693,6 +693,8 @@ export interface AdapterApi {
   setDefaults(defaults: AgentDefaults): Promise<void>
   /** Subscribes to preference changes, including after a reconnect. Subscribe before calling `getPreferences`. Returns a function that stops listening. */
   onPreferencesChanged(listener: (snapshot: ModelPreferencesSnapshot) => void): () => void
+  /** The permission modes the adapter's own settings turn off for an agent working in `cwd`; read it again to see a settings change. */
+  getDisabledPermissionModes(cwd: string): Promise<ReadonlyArray<PermissionMode>>
 }
 
 /** The background activity calls of `window.dia.activities`, served by the Host. */

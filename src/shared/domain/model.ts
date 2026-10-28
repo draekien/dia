@@ -1,13 +1,27 @@
 import { Schema } from 'effect'
+import { EffortLevel } from './pane'
+
+export const ModelSupportedFeature = Schema.Literals([
+  'effort levels',
+  'auto mode',
+  'fast mode',
+  'adaptive thinking'
+])
+export type ModelSupportedFeature = typeof ModelSupportedFeature.Type
 
 /**
  * A model a new agent can use, as the agent reports it. Pass `value` unchanged as the `model` of
- * a new tab; show `displayName`, with `description` as supporting text.
+ * a new tab; show `displayName`, with `description` as supporting text. `adaptiveThinking` says
+ * whether the model can think adaptively, and `effortLevels` lists the efforts it can cap that
+ * thinking at (empty when it supports none).
  */
 export const ModelOption = Schema.Struct({
   value: Schema.NonEmptyString,
   displayName: Schema.NonEmptyString,
-  description: Schema.String
+  description: Schema.String,
+  adaptiveThinking: Schema.Boolean,
+  effortLevels: Schema.Array(EffortLevel),
+  supportedFeatures: Schema.Array(ModelSupportedFeature)
 })
 export type ModelOption = typeof ModelOption.Type
 

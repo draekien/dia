@@ -9,9 +9,30 @@ import {
   withPreference
 } from './model-preferences'
 
-const opus: ModelOption = { value: 'opus', displayName: 'Opus', description: '' }
-const sonnet: ModelOption = { value: 'sonnet', displayName: 'Sonnet', description: '' }
-const haiku: ModelOption = { value: 'haiku', displayName: 'Haiku', description: '' }
+const opus: ModelOption = {
+  value: 'opus',
+  displayName: 'Opus',
+  description: '',
+  adaptiveThinking: true,
+  effortLevels: ['low', 'medium', 'high'],
+  supportedFeatures: ['effort levels', 'adaptive thinking']
+}
+const sonnet: ModelOption = {
+  value: 'sonnet',
+  displayName: 'Sonnet',
+  description: '',
+  adaptiveThinking: true,
+  effortLevels: ['low', 'medium', 'high'],
+  supportedFeatures: ['effort levels', 'adaptive thinking']
+}
+const haiku: ModelOption = {
+  value: 'haiku',
+  displayName: 'Haiku',
+  description: '',
+  adaptiveThinking: true,
+  effortLevels: ['low', 'medium', 'high'],
+  supportedFeatures: ['effort levels', 'adaptive thinking']
+}
 const catalog = [opus, sonnet, haiku]
 
 const preferring = (models: Record<string, ModelPreference>): AdapterPreferences => ({

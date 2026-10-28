@@ -90,7 +90,8 @@ export interface AgentSessionOptions {
  * `status` streams whether the agent install works, starting with the current status;
  * `checkHealth` re-checks it and completes when the check ends; `setInstallPath` stores (`Some`)
  * or clears (`None`) where the adapter finds its agent install, then re-checks, and sessions
- * started afterwards use it.
+ * started afterwards use it. `disabledPermissionModes` lists the permission modes the agent's own
+ * settings turn off for a session started in `cwd`; it is empty when the settings cannot be read.
  */
 export interface AgentBackend {
   readonly openSession: (
@@ -106,6 +107,7 @@ export interface AgentBackend {
   readonly status: () => Stream.Stream<AdapterStatus>
   readonly checkHealth: () => Effect.Effect<void>
   readonly setInstallPath: (path: Option.Option<string>) => Effect.Effect<void>
+  readonly disabledPermissionModes: (cwd: string) => Effect.Effect<ReadonlyArray<PermissionMode>>
 }
 
 /** {@link AgentBackend.deleteSession} could not delete the transcript of `sessionId`; `reason` says why. */
@@ -169,7 +171,8 @@ const unavailableBackend: AgentBackend = {
       )
     ),
   checkHealth: ignored('checkHealth'),
-  setInstallPath: ignored('setInstallPath')
+  setInstallPath: ignored('setInstallPath'),
+  disabledPermissionModes: () => Effect.succeed([])
 }
 
 const backendMethods = [
@@ -180,7 +183,8 @@ const backendMethods = [
   'refreshModels',
   'status',
   'checkHealth',
-  'setInstallPath'
+  'setInstallPath',
+  'disabledPermissionModes'
 ] as const
 
 /**

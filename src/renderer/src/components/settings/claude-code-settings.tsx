@@ -1,10 +1,12 @@
 // @effect-diagnostics globalDate:off -- the health check age is compared against wall-clock time; no Effect runtime exists in the renderer.
 // @effect-diagnostics asyncFunction:off -- React callbacks await the Promise-based window.dia bridge; no Effect runtime exists in the renderer.
+
+import { PermissionModeItems } from '@renderer/components/permission-mode-items'
 import { type AdapterStatusJson, useAdapterStatus } from '@renderer/hooks/use-adapter-status'
 import { type ModelCatalog, useModelCatalog } from '@renderer/hooks/use-model-catalog'
 import { useModelPreferences } from '@renderer/hooks/use-model-preferences'
 import { formatWhen } from '@renderer/lib/format-when'
-import { CREATE_PERMISSION_MODE_OPTIONS } from '@renderer/lib/permission-modes'
+import { CREATE_PERMISSION_MODE_OPTIONS, permissionModeLabel } from '@renderer/lib/permission-modes'
 import { THINKING_LEVEL_OPTIONS } from '@renderer/lib/thinking-levels'
 import { cn } from '@renderer/lib/utils'
 import {
@@ -217,6 +219,12 @@ function DefaultsSection({
       : FIRST_LISTED
 
   const update = (next: AgentDefaults) => void window.dia.adapter.setDefaults(next)
+  const thinkingModes = models.find((x) => x.value === modelValue)?.effortLevels
+  const thinkingLevelOptions =
+    thinkingModes?.map((x) => ({
+      value: x,
+      label: x
+    })) ?? THINKING_LEVEL_OPTIONS
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -260,7 +268,7 @@ function DefaultsSection({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {THINKING_LEVEL_OPTIONS.map((option) => (
+            {thinkingLevelOptions.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
               </SelectItem>
@@ -279,14 +287,10 @@ function DefaultsSection({
           }
         >
           <SelectTrigger className="w-full" aria-labelledby="default-permissions-label">
-            <SelectValue />
+            <SelectValue>{permissionModeLabel(defaults.permissionMode ?? 'auto')}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {CREATE_PERMISSION_MODE_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
+            <PermissionModeItems options={CREATE_PERMISSION_MODE_OPTIONS} />
           </SelectContent>
         </Select>
       </div>

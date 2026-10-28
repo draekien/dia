@@ -475,6 +475,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
               onSome: (newServer) => ({ mcpServers: { [DIA_TOOL_SERVER_KEY]: newServer() } })
             }),
             permissionMode: config.permissionMode,
+            allowDangerouslySkipPermissions: true,
             enableFileCheckpointing: true,
             extraArgs: { 'replay-user-messages': null },
             resume: Option.getOrUndefined(resume),

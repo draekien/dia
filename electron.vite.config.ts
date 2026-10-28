@@ -1,7 +1,8 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- electron-vite build config; runs at build time, not inside any Effect.
 import { resolve } from 'node:path'
+import babel from '@rolldown/plugin-babel'
 import tailwindcss from '@tailwindcss/vite'
-import react from '@vitejs/plugin-react'
+import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import { defineConfig } from 'electron-vite'
 
 export default defineConfig({
@@ -41,6 +42,12 @@ export default defineConfig({
         '@dia/renderer-plugin': resolve('src/renderer/src/plugin-api.ts')
       }
     },
-    plugins: [react(), tailwindcss()]
+    plugins: [
+      react(),
+      babel({
+        presets: [reactCompilerPreset()]
+      }),
+      tailwindcss()
+    ]
   }
 })

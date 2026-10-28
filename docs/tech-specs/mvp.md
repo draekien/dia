@@ -73,7 +73,7 @@ type WorktreeInfo = {
   sourceRepo: string  // the repo directory the worktree was created from
 }
 
-type PermissionMode = "default" | "plan" | "acceptEdits" | "auto" | "dontAsk"
+type PermissionMode = "default" | "plan" | "acceptEdits" | "auto" | "dontAsk" | "bypassPermissions"
 
 type PaneConfig = {
   paneId: PaneId
@@ -191,7 +191,6 @@ Mirrors the PRD's Out of Scope, plus technical exclusions specific to this spec:
 - No database or query layer over persisted state (per ADR-0008).
 - No dynamic reconfiguration of a running pane's `cwd`, `model`, or worktree — changing any of these requires closing and reopening the pane. `permissionMode` is the one exception (§4.3).
 - No UI for viewing/editing declarative allow/deny/ask rules or previously remembered "always allow" rules — `PermissionMode` selection (§3, §4.2) is the only in-app lever over automatic approval.
-- No support for the SDK's `bypassPermissions` mode — `PermissionMode` is limited to `default`, `plan`, `acceptEdits`, `auto`, `dontAsk`.
 - No worktree creation for a `cwd` that isn't a git repository — `GitOpsService.createWorktree` is simply not invoked, no fallback or detection UI.
 - No confirmation dialog or dirty-worktree check before `GitOpsService.removeWorktree` runs on pane close.
 - No merge/rebase tooling for reconciling a worktree's branch — out of scope per the PRD; the user does this with their own git tooling.

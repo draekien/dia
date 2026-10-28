@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 // @effect-diagnostics globalDate:off -- check ages are relative to the wall clock the page reads; no Effect runtime exists in the renderer.
+import type { ModelOption } from '@shared/domain/model'
 import {
   type AdapterPreferences,
   EMPTY_ADAPTER_PREFERENCES
@@ -10,8 +11,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '../ui/tooltip'
 import { ClaudeCodeSettings } from './claude-code-settings'
 
-const OPUS = { value: 'opus', displayName: 'Opus', description: '' }
-const HAIKU = { value: 'haiku', displayName: 'Haiku', description: '' }
+const OPUS: ModelOption = {
+  value: 'opus',
+  displayName: 'Opus',
+  description: '',
+  adaptiveThinking: true,
+  effortLevels: ['low', 'medium', 'high'],
+  supportedFeatures: ['effort levels', 'adaptive thinking']
+}
+const HAIKU: ModelOption = {
+  value: 'haiku',
+  displayName: 'Haiku',
+  description: '',
+  adaptiveThinking: true,
+  effortLevels: ['low', 'medium', 'high'],
+  supportedFeatures: ['effort levels', 'adaptive thinking']
+}
 
 const catalog = (models: ReadonlyArray<typeof OPUS>): ModelCatalogSnapshotJson => ({
   revision: 1,

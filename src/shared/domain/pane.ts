@@ -44,29 +44,43 @@ export const WorktreeInfo = Schema.Struct({
 export type WorktreeInfo = typeof WorktreeInfo.Type
 
 /**
- * How much extended thinking the pane's agent should do. `off` disables it,
- * `adaptive` lets Claude decide when and how much to think, and `low`/`medium`/
- * `high` guide adaptive thinking's depth. Consumed by the pane process to
- * derive the Agent SDK `thinking`/`effort` query options.
+ * A reasoning effort the agent can cap adaptive thinking at, from least to most effort. A model
+ * supports some or all of them; see `ModelOption.effortLevels`.
  */
-export const ThinkingLevel = Schema.Literals(['off', 'adaptive', 'low', 'medium', 'high'])
+export const EffortLevel = Schema.Literals(['low', 'medium', 'high', 'xhigh', 'max'])
+export type EffortLevel = typeof EffortLevel.Type
+
+/**
+ * How much extended thinking the pane's agent should do. `off` disables it,
+ * `adaptive` lets Claude decide when and how much to think, and an
+ * {@link EffortLevel} guides adaptive thinking's depth. Consumed by the pane
+ * process to derive the Agent SDK `thinking`/`effort` query options.
+ */
+export const ThinkingLevel = Schema.Literals(['off', 'adaptive', ...EffortLevel.literals])
 export type ThinkingLevel = typeof ThinkingLevel.Type
 
 /**
  * The thinking level a pane starts with when the user does not choose one:
  * `adaptive`, matching the Agent SDK's own default for supported models.
  */
-export const DEFAULT_THINKING_LEVEL: ThinkingLevel = 'adaptive'
+export const DEFAULT_THINKING_LEVEL: ThinkingLevel = 'medium'
 
 /**
  * How much autonomy a pane's agent has over tool use. `default` prompts for
  * dangerous operations, `plan` plans without executing tools, `acceptEdits`
  * auto-accepts file edits, `auto` lets a model classifier approve/deny prompts,
- * and `dontAsk` denies anything not pre-approved instead of prompting. Maps
- * onto the Agent SDK's `permissionMode` query option and its live
- * `setPermissionMode`.
+ * `dontAsk` denies anything not pre-approved instead of prompting, and
+ * `bypassPermissions` runs tools without prompts. Maps onto the Agent SDK's
+ * `permissionMode` query option and its live `setPermissionMode`.
  */
-export const PermissionMode = Schema.Literals(['default', 'plan', 'acceptEdits', 'auto', 'dontAsk'])
+export const PermissionMode = Schema.Literals([
+  'default',
+  'plan',
+  'acceptEdits',
+  'auto',
+  'dontAsk',
+  'bypassPermissions'
+])
 export type PermissionMode = typeof PermissionMode.Type
 
 /**
@@ -76,7 +90,13 @@ export type PermissionMode = typeof PermissionMode.Type
  * when a plan is approved. Use for pane-creation inputs; use the full
  * {@link PermissionMode} for a live pane's current mode.
  */
-export const StartupPermissionMode = Schema.Literals(['default', 'acceptEdits', 'auto', 'dontAsk'])
+export const StartupPermissionMode = Schema.Literals([
+  'default',
+  'acceptEdits',
+  'auto',
+  'dontAsk',
+  'bypassPermissions'
+])
 export type StartupPermissionMode = typeof StartupPermissionMode.Type
 
 /**

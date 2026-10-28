@@ -1,4 +1,4 @@
-import type { Query } from '@anthropic-ai/claude-agent-sdk'
+import type { ModelInfo, Query } from '@anthropic-ai/claude-agent-sdk'
 import {
   ActivityRunFailed,
   type HostPluginContext,
@@ -8,6 +8,7 @@ import {
   ModelsReady,
   ModelsUnavailable
 } from '@dia/plugin'
+import type { ModelSupportedFeature } from '@shared/domain/model'
 import {
   Data,
   DateTime,
@@ -43,7 +44,7 @@ export type ModelProbe = (cwd: string) => Effect.Effect<typeof ModelOptions.Type
 
 const ModelCache = Schema.fromJsonString(
   Schema.Struct({
-    version: Schema.Literal(1),
+    version: Schema.Literal(2),
     fetchedAt: Schema.DateTimeUtcFromString,
     models: ModelOptions
   })
@@ -68,6 +69,16 @@ export const probeModels =
       return yield* withIdleQuery(path.value, cwd, readModels)
     })
 
+const makeSupportedFeatures = (model: ModelInfo) => {
+  const options: ModelSupportedFeature[] = []
+  if (model.supportsEffort) options.push('effort levels')
+  if (model.supportsAdaptiveThinking) options.push('adaptive thinking')
+  if (model.supportsAutoMode) options.push('auto mode')
+  if (model.supportsFastMode) options.push('fast mode')
+
+  return options
+}
+
 const readModels = (probe: Query) =>
   Effect.tryPromise({
     try: () => probe.supportedModels(),
@@ -85,11 +96,18 @@ const readModels = (probe: Query) =>
       rows.length === 0
         ? Effect.fail(new ModelProbeFailed({ message: 'Claude Code reported no models' }))
         : Schema.decodeUnknownEffect(ModelOptions)(
-            rows.map(({ value, displayName, description }) => ({
-              value,
-              displayName,
-              description
-            }))
+            rows.map(
+              (row) =>
+                ({
+                  value: row.value,
+                  displayName: row.displayName,
+                  description: row.description,
+                  adaptiveThinking: row.supportsAdaptiveThinking === true,
+                  effortLevels:
+                    row.supportsEffort === true ? (row.supportedEffortLevels ?? []) : [],
+                  supportedFeatures: makeSupportedFeatures(row)
+                }) satisfies ModelOption
+            )
           ).pipe(
             Effect.mapError(
               (issue) =>
@@ -202,7 +220,7 @@ export const makeModelCatalog = Effect.fnUntraced(function* (
         state,
         ModelsReady.make({ models, fetchedAt: now, refreshing: false })
       )
-      yield* writeCache({ version: 1, fetchedAt: now, models })
+      yield* writeCache({ version: 2, fetchedAt: now, models })
       yield* Effect.logInfo('Read the model list', { count: models.length })
       return startOfTomorrow(now)
     }

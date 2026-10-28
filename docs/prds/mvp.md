@@ -53,7 +53,6 @@ William is the sole user and developer of dia, a personal desktop alternative to
 - User-configurable theming or appearance settings beyond the OS default light/dark look
 - Per-pane MCP server selection or configuration UI (panes use whatever MCP servers are already configured in the user's existing Claude Code setup)
 - Viewing, editing, or removing a previously remembered "always allow" rule, or hand-editing declarative allow/deny/ask rules, from within dia's UI (the underlying rule file is managed directly, outside the app) — permission mode selection (US-19, US-20) is the only in-app lever over automatic approval
-- The `bypassPermissions` permission mode
 - Rendering visual mockups (previews) alongside a clarifying question's options — options are shown as label and description only
 - Structured input beyond `AskUserQuestion` (custom domain-specific approval UIs, external ticketing/workflow integrations)
 - Clarifying questions from subagents (not available for subagent use per the underlying SDK)
@@ -67,7 +66,7 @@ William is the sole user and developer of dia, a personal desktop alternative to
 
 This MVP builds on dia's existing architecture decisions (see `docs/adr/`), including two made specifically to support this scope: running each pane as its own isolated Electron `utilityProcess` (ADR-0007; ADR-0007 is superseded by ADR-0021, one Host process), and persisting pane layout and session state as local JSON files rather than a database (ADR-0008).
 
-This revision supersedes the original PRD's blanket exclusion of auto-approval in two steps: first, an explicit "always allow" action taken from the permission dialog itself (US-13) was brought into scope; second, user-selected permission modes — including accept-edits and bypass, which the first step still excluded — are now in scope via explicit mode selection at pane creation and mid-session (US-19, US-20), since that selection is a deliberate user choice rather than an ambient bypass. dia later replaced bypass with `auto` and does not offer `bypassPermissions`.
+This revision supersedes the original PRD's blanket exclusion of auto-approval in two steps: first, an explicit "always allow" action taken from the permission dialog itself (US-13) was brought into scope; second, user-selected permission modes — including accept-edits and bypass, which the first step still excluded — are now in scope via explicit mode selection at pane creation and mid-session (US-19, US-20), since that selection is a deliberate user choice rather than an ambient bypass. dia later replaced bypass with `auto`, then added `bypassPermissions` back as "Full access" (issue #29); a pane's picker leaves out a mode the user's Claude Code settings turn off.
 
 ## Open Questions
 
