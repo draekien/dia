@@ -1,0 +1,40 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <title>dia app icon, light</title>
+  <defs>
+    <linearGradient id="lobes" x1="437" y1="144" x2="186" y2="880" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2E52AA"/>
+      <stop offset="0.35" stop-color="#3F62D4"/>
+      <stop offset="0.7" stop-color="#4A68E6"/>
+      <stop offset="1" stop-color="#4666E4"/>
+    </linearGradient>
+    <linearGradient id="orbLeft" x1="205" y1="0" x2="437" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6F68EE"/>
+      <stop offset="0.3" stop-color="#9468E8"/>
+      <stop offset="1" stop-color="#C872C4"/>
+    </linearGradient>
+    <linearGradient id="orbRight" x1="437" y1="0" x2="708" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FDA48B"/>
+      <stop offset="0.5" stop-color="#FEBC8C"/>
+      <stop offset="1" stop-color="#FFD29A"/>
+    </linearGradient>
+    <linearGradient id="orbBlush" x1="0" y1="305" x2="0" y2="719" gradientUnits="userSpaceOnUse">
+      <stop offset="0.45" stop-color="#F06FA0" stop-opacity="0"/>
+      <stop offset="1" stop-color="#F06FA0" stop-opacity="0.55"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="884" y1="144" x2="437" y2="880" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2E3956"/>
+      <stop offset="1" stop-color="#090C16"/>
+    </linearGradient>
+    <clipPath id="left"><rect width="437" height="1024"/></clipPath>
+    <clipPath id="right"><rect x="437" width="587" height="1024"/></clipPath>
+    <path id="tear" d="M205 512C250 412 380 305 501 305A207 207 0 0 1 501 719C380 719 250 612 205 512Z"/>
+  </defs>
+  <path d="M512 0C1018 0 1024 6 1024 512C1024 1018 1018 1024 512 1024C6 1024 0 1018 0 512C0 6 6 0 512 0Z" fill="#F7F7F5"/>
+  <g fill="url(#lobes)">
+    <ellipse cx="437" cy="404" rx="255" ry="260"/><ellipse cx="437" cy="620" rx="255" ry="260"/>
+  </g>
+  <path d="M437 144H520C721 144 884 309 884 512C884 715 721 880 520 880H437Z" fill="url(#ink)"/>
+  <use href="#tear" fill="url(#orbLeft)" clip-path="url(#left)"/>
+  <use href="#tear" fill="url(#orbRight)" clip-path="url(#right)"/>
+  <use href="#tear" fill="url(#orbBlush)" clip-path="url(#right)"/>
+</svg>
