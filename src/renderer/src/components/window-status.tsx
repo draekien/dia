@@ -54,31 +54,18 @@ function CommandPaletteHint() {
 }
 
 /**
- * The app's custom title bar, shown in place of the native window frame
- * (`titleBarStyle: 'hidden'`). Draggable and background-transparent so it reads
- * as one continuous surface with the app body and the OS-drawn window-control
- * overlay; hosts the dia wordmark, the plugin loading progress while the Host loads
- * plugins, the background self-update state (downloading
- * progress, a restart affordance when ready), and a hint for the command-palette
- * shortcut that opens it on click. Mount once at the top of the app shell, above
- * the pane grid.
+ * The window-wide status items: plugin loading progress, the background self-update state (a
+ * restart button when an update is ready) and a hint that opens the command palette. Render it at
+ * the right end of a `titlebar-drag` header row; its buttons are excluded from the drag region.
  */
-export function AppHeader() {
+export function WindowStatus() {
   const status = useUpdateStatus()
 
   return (
-    <header className="titlebar-drag flex h-10 shrink-0 items-center">
-      <div
-        className="flex h-full items-center gap-3 pr-3 pl-4"
-        style={{ width: 'env(titlebar-area-width, 100%)' }}
-      >
-        <span className="select-none text-sm font-semibold tracking-tight text-ink">dia</span>
-        <div className="titlebar-no-drag ml-auto flex items-center gap-2">
-          <PluginLoadIndicator />
-          <UpdateIndicator status={status} />
-          <CommandPaletteHint />
-        </div>
-      </div>
-    </header>
+    <div className="flex items-center gap-2">
+      <PluginLoadIndicator />
+      <UpdateIndicator status={status} />
+      <CommandPaletteHint />
+    </div>
   )
 }

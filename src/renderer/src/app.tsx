@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AppHeader } from './components/app-header'
 import { onPluginsPageRequested, PluginsPage } from './components/plugins-page'
 import { onSettingsPageRequested, SettingsPage } from './components/settings-page'
 import { NoLayoutPlugin } from './components/tab-content'
@@ -40,18 +39,17 @@ function App() {
   }, [])
 
   return (
-    <div className="flex h-screen flex-col bg-background">
-      <AppHeader />
-      <div className="min-h-0 flex-1" hidden={page !== null}>
+    <div className="h-screen bg-sidebar">
+      <div className="h-full" hidden={page !== null}>
         <Slot name={ROOT} empty={<NoLayoutPlugin />} />
       </div>
       {page === 'plugins' ? (
-        <div className="min-h-0 flex-1">
+        <div className="h-full bg-background">
           <PluginsPage onClose={closePage} />
         </div>
       ) : null}
       {page === 'settings' ? (
-        <div className="min-h-0 flex-1">
+        <div className="h-full bg-background">
           <SettingsPage onClose={closePage} />
         </div>
       ) : null}

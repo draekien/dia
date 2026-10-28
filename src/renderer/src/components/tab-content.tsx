@@ -1,70 +1,15 @@
 import type { Project, Workspace } from '@shared/domain/project'
 import { tabOf } from '@shared/domain/workspace'
 import { Result } from 'effect'
-import { FolderPlusIcon, PlusIcon, RulerIcon } from 'lucide-react'
+import { FolderPlusIcon, PlusIcon } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { newAgent, registerProject } from '../lib/actions'
-import { MAIN_HEADER, Slot } from '../lib/slots'
 import { useView, useWorkspace } from '../plugin-api'
 import Pane from './pane'
 import PaneCreationForm from './pane-creation-form'
 import { StartupSkeleton } from './startup-skeleton'
-import { TranscriptWidthToggle } from './transcript-width-toggle'
 import { Button } from './ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
-
-function TranscriptWidthButton() {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon-xs" aria-label="Transcript width">
-          <RulerIcon />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="flex w-64 flex-col gap-2">
-        <span className="text-xs font-medium text-ink">Transcript width</span>
-        <TranscriptWidthToggle />
-        <span className="text-xs text-ink-muted">Applies to every tab.</span>
-      </PopoverContent>
-    </Popover>
-  )
-}
-
-/**
- * The kernel's header above the visible tab: `project / agent`, the worktree branch when the tab
- * has one, and the transcript width control. Shown in the `main.header` slot unless a plugin
- * fills it.
- */
-export function TabHeader() {
-  const view = useView()
-  const workspace = useWorkspace()
-  if (view?._tag !== 'TabView' || workspace === undefined) return null
-  const found = tabOf(workspace, view.paneId)
-  if (Result.isFailure(found)) return null
-  const { project, tab } = found.success
-  return (
-    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-4">
-      <h1 className="flex min-w-0 items-center gap-1.5 text-sm">
-        <span className="truncate text-ink-muted">{project.displayName}</span>
-        <span className="text-ink-muted" aria-hidden>
-          /
-        </span>
-        <span className="truncate font-medium text-ink">{tab.name}</span>
-      </h1>
-      {tab.config.worktree !== undefined && (
-        <span
-          title={tab.config.worktree.path}
-          className="truncate rounded-sm border border-border px-1.5 py-0.5 font-mono text-xs text-ink-muted"
-        >
-          {tab.config.worktree.branch}
-        </span>
-      )}
-      <div className="ml-auto">
-        <TranscriptWidthButton />
-      </div>
-    </div>
-  )
-}
+import { WindowStatus } from './window-status'
 
 function FirstRun() {
   return (
@@ -114,25 +59,20 @@ function VisibleTab({
   if (Result.isFailure(found)) return null
   const { config } = found.success.tab
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <Slot name={MAIN_HEADER} />
-      <div className="min-h-0 flex-1">
-        <Pane
-          key={config.paneId}
-          paneId={config.paneId}
-          model={config.model}
-          thinkingLevel={config.thinkingLevel}
-          permissionMode={config.permissionMode}
-          focusComposer={focusComposer}
-        />
-      </div>
-    </div>
+    <Pane
+      key={config.paneId}
+      paneId={config.paneId}
+      model={config.model}
+      thinkingLevel={config.thinkingLevel}
+      permissionMode={config.permissionMode}
+      focusComposer={focusComposer}
+    />
   )
 }
 
 /**
  * The kernel's content area, shown in the `main` slot unless a plugin fills it. Renders by the
- * current view: the visible tab under its header, the New agent form, the first-run screen, or
+ * current view: the visible tab, the New agent form, the first-run screen, or
  * the prompt to start an agent; the startup skeleton until the workspace loads.
  */
 export function TabContent() {
@@ -164,14 +104,22 @@ export function TabContent() {
   }
 }
 
-/** Shown in place of the window body when no plugin fills the `root` slot. */
+/**
+ * Shown in place of the window body when no plugin fills the `root` slot. Keeps a drag row with
+ * the window status so the window can still be moved and plugin loading stays visible.
+ */
 export function NoLayoutPlugin() {
   return (
-    <div className="flex h-full items-center justify-center p-6">
-      <p className="max-w-sm text-sm text-ink-muted">
-        No layout plugin is loaded. Load the <span className="font-mono">layout</span> plugin from
-        the command palette's Plugins page.
-      </p>
+    <div className="flex h-full flex-col">
+      <div className="titlebar-drag flex h-8 shrink-0 items-center justify-end pr-(--titlebar-controls-inset)">
+        <WindowStatus />
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+        <p className="max-w-sm text-sm text-ink-muted">
+          No layout plugin is loaded. Press Ctrl K, type "plug", and load the layout plugin from
+          Settings › Plugins.
+        </p>
+      </div>
     </div>
   )
 }
