@@ -23,18 +23,9 @@ import {
 } from '@shared/domain/pane'
 import type { ModelCatalogSnapshotJson } from '@shared/ipc/contract'
 import { Duration } from 'effect'
-import {
-  ArrowLeftIcon,
-  EyeOffIcon,
-  FileIcon,
-  Loader2Icon,
-  RefreshCwIcon,
-  StarIcon,
-  XIcon
-} from 'lucide-react'
+import { EyeOffIcon, FileIcon, Loader2Icon, RefreshCwIcon, StarIcon, XIcon } from 'lucide-react'
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
-import { Button } from './ui/button'
-import { ScrollArea } from './ui/scroll-area'
+import { Button } from '../ui/button'
 import {
   Select,
   SelectContent,
@@ -43,31 +34,12 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue
-} from './ui/select'
-import { Skeleton } from './ui/skeleton'
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
+} from '../ui/select'
+import { Skeleton } from '../ui/skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 
-const OPEN_EVENT = 'dia:open-settings-page'
 const STALE_CHECK = Duration.minutes(5)
 const FIRST_LISTED = 'dia:first-listed'
-
-/**
- * Asks the app shell to show the Settings page, from anywhere in the renderer (the command
- * palette, the model picker and the install notice use it). A mounted shell that listens with
- * {@link onSettingsPageRequested} responds.
- */
-export function openSettingsPage(): void {
-  window.dispatchEvent(new Event(OPEN_EVENT))
-}
-
-/**
- * Calls `listener` whenever {@link openSettingsPage} is called. Returns a function that stops
- * listening.
- */
-export function onSettingsPageRequested(listener: () => void): () => void {
-  window.addEventListener(OPEN_EVENT, listener)
-  return () => window.removeEventListener(OPEN_EVENT, listener)
-}
 
 type Health = AdapterStatusJson['health']
 type ModelOptionJson = Extract<
@@ -588,13 +560,22 @@ function ModelsSection({
 }
 
 /**
- * The Settings page: for the agent adapter (Claude Code), its install health with the executable
- * it runs, the defaults new agents start with, and the model list with favourite and hidden
- * toggles. It re-checks the install on open when the last check is more than five minutes old.
- * Pressing Escape calls `onClose`. Render it in place of the pane area; it fills the space it is
- * given.
+ * The Claude Code install status as one short label ("Ready", "Not installed", …), for the status
+ * line of the Claude Code row in the adapter list. Renders nothing until the first status arrives.
  */
-export function SettingsPage({ onClose }: { readonly onClose: () => void }) {
+export function ClaudeCodeHealthLabel() {
+  const status = useAdapterStatus()
+  if (status === undefined) return null
+  return <span>{healthLabel(status.health, status.checking)}</span>
+}
+
+/**
+ * The Claude Code adapter settings: its install health with the executable it runs, the defaults
+ * new agents start with, and the model list with favourite and hidden toggles. It re-checks the
+ * install on mount when the last check is more than five minutes old. Render it inside a
+ * scrolling container; it sizes to its content.
+ */
+export function ClaudeCodeSettings() {
   const status = useAdapterStatus()
   const catalog = useModelCatalog()
   const preferences = useModelPreferences() ?? EMPTY_ADAPTER_PREFERENCES
@@ -607,42 +588,20 @@ export function SettingsPage({ onClose }: { readonly onClose: () => void }) {
     if (!status.checking && isStale(status.health)) void window.dia.adapter.checkHealth()
   }, [status])
 
-  useEffect(() => {
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) onClose()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
-
   return (
-    <section className="flex h-full min-h-0 flex-col" aria-labelledby="settings-heading">
-      <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
-        <Button size="xs" variant="ghost" onClick={onClose}>
-          <ArrowLeftIcon />
-          Agents
-        </Button>
-        <h1 id="settings-heading" className="text-base font-semibold tracking-tight text-ink">
-          Settings
-        </h1>
-      </div>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-6">
-          <h2 className="text-base font-semibold text-ink">Claude Code</h2>
-          <section className="flex flex-col gap-3" aria-labelledby="health-heading">
-            <SectionHeading id="health-heading">Health</SectionHeading>
-            <HealthSection status={status} />
-          </section>
-          <section className="flex flex-col gap-3 border-t pt-6" aria-labelledby="defaults-heading">
-            <SectionHeading id="defaults-heading">Defaults for new agents</SectionHeading>
-            <DefaultsSection models={models} preferences={preferences} />
-          </section>
-          <section className="flex flex-col gap-3 border-t pt-6" aria-labelledby="models-heading">
-            <SectionHeading id="models-heading">Models</SectionHeading>
-            <ModelsSection catalog={catalog} preferences={preferences} />
-          </section>
-        </div>
-      </ScrollArea>
-    </section>
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-6">
+      <section className="flex flex-col gap-3" aria-labelledby="health-heading">
+        <SectionHeading id="health-heading">Health</SectionHeading>
+        <HealthSection status={status} />
+      </section>
+      <section className="flex flex-col gap-3 border-t pt-6" aria-labelledby="defaults-heading">
+        <SectionHeading id="defaults-heading">Defaults for new agents</SectionHeading>
+        <DefaultsSection models={models} preferences={preferences} />
+      </section>
+      <section className="flex flex-col gap-3 border-t pt-6" aria-labelledby="models-heading">
+        <SectionHeading id="models-heading">Models</SectionHeading>
+        <ModelsSection catalog={catalog} preferences={preferences} />
+      </section>
+    </div>
   )
 }

@@ -2,7 +2,7 @@ import { useModelCatalog } from '@renderer/hooks/use-model-catalog'
 import { useModelPreferences } from '@renderer/hooks/use-model-preferences'
 import { EMPTY_ADAPTER_PREFERENCES, pickerModels } from '@shared/domain/model-preferences'
 import { Bot } from 'lucide-react'
-import { openSettingsPage } from './settings-page'
+import { openSettings } from './settings/settings-dialog'
 import {
   Select,
   SelectContent,
@@ -17,7 +17,7 @@ const MANAGE_MODELS = 'dia:manage-models'
 
 /**
  * The composer's model choice for a tab running `value`. It lists favourite models, then the
- * other visible models, then "Manage models…", which opens the Settings page. A `value` the list
+ * other visible models, then "Manage models…", which opens the Claude Code page of the Settings dialog. A `value` the list
  * does not offer shows as its raw id. Choosing a different model calls `onChange`.
  */
 export function ModelPicker({
@@ -34,7 +34,7 @@ export function ModelPicker({
   const listed = [...favourites, ...others].some((model) => model.value === value)
 
   const choose = (next: string) => {
-    if (next === MANAGE_MODELS) openSettingsPage()
+    if (next === MANAGE_MODELS) openSettings({ page: 'adapters', adapter: 'claude-code' })
     else if (next !== value) onChange(next)
   }
 

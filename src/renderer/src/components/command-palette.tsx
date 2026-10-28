@@ -1,24 +1,7 @@
-import { useAtomSet, useAtomValue } from '@effect/atom-react'
-import { sendModeAtom } from '@renderer/lib/send-mode-atom'
-import type { SendMode } from '@shared/domain/message-queue'
-import type { ThemePreference } from '@shared/domain/theme'
-import {
-  CodeIcon,
-  CornerDownRightIcon,
-  InfoIcon,
-  ListEndIcon,
-  MonitorIcon,
-  MoonIcon,
-  PuzzleIcon,
-  SettingsIcon,
-  SunIcon
-} from 'lucide-react'
-import { type ComponentType, useEffect, useState } from 'react'
+import { CodeIcon, InfoIcon, SettingsIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { AboutDialog } from './about-dialog'
-import { openPluginsPage } from './plugins-page'
-import { openSettingsPage } from './settings-page'
-import { useTheme } from './theme-provider'
-import { TranscriptWidthToggle } from './transcript-width-toggle'
+import { openSettings, type SettingsLocation } from './settings/settings-dialog'
 import {
   CommandDialog,
   CommandEmpty,
@@ -27,29 +10,30 @@ import {
   CommandItem,
   CommandList
 } from './ui/command'
-import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
 
-interface ThemeItem {
-  readonly value: ThemePreference
+interface SettingsPageLink {
   readonly label: string
-  readonly icon: ComponentType
+  readonly location: SettingsLocation
+  readonly keywords: ReadonlyArray<string>
 }
 
-const THEME_ITEMS: ReadonlyArray<ThemeItem> = [
-  { value: 'light', label: 'Light', icon: SunIcon },
-  { value: 'dark', label: 'Dark', icon: MoonIcon },
-  { value: 'system', label: 'System', icon: MonitorIcon }
-]
-
-interface SendModeItem {
-  readonly value: SendMode
-  readonly label: string
-  readonly icon: ComponentType
-}
-
-const SEND_MODE_ITEMS: ReadonlyArray<SendModeItem> = [
-  { value: 'queue', label: 'Queue', icon: ListEndIcon },
-  { value: 'steer', label: 'Steer', icon: CornerDownRightIcon }
+const SETTINGS_PAGE_LINKS: ReadonlyArray<SettingsPageLink> = [
+  {
+    label: 'Settings › General',
+    location: { page: 'general' },
+    keywords: ['theme', 'dark', 'light', 'send mode', 'queue', 'steer', 'transcript width']
+  },
+  { label: 'Settings › Adapters', location: { page: 'adapters' }, keywords: ['adapter'] },
+  {
+    label: 'Settings › Adapters › Claude Code',
+    location: { page: 'adapters', adapter: 'claude-code' },
+    keywords: ['claude', 'models', 'model', 'health', 'install']
+  },
+  {
+    label: 'Settings › Plugins',
+    location: { page: 'plugins' },
+    keywords: ['plugin', 'extensions']
+  }
 ]
 
 const OPEN_EVENT = 'dia:open-command-palette'
@@ -65,18 +49,15 @@ export function openCommandPalette(): void {
 
 /**
  * The app-wide command palette, opened with Cmd/Ctrl+K or {@link
- * openCommandPalette}. Hosts the About action, a persistent theme switcher
- * (light / dark / system) and the default send mode switcher (queue / steer:
- * what Enter does while a turn runs) and the app-wide transcript width as segmented rows; mount it once near the app
- * root, inside a {@link ThemeProvider}. It renders as an overlay dialog, so its
- * position in the tree only needs to be within the provider, not any layout.
+ * openCommandPalette}. Lists the Settings, About dia and Toggle Developer Tools commands; once
+ * the user types, it also lists links to each Settings page (General, Adapters, Claude Code,
+ * Plugins) that match the query. Mount it once near the app root; it renders as an overlay dialog,
+ * so its position in the tree does not matter.
  */
 export function CommandPalette() {
   const [open, setOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
-  const { theme, setTheme } = useTheme()
-  const sendMode = useAtomValue(sendModeAtom)
-  const setSendMode = useAtomSet(sendModeAtom)
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -94,34 +75,23 @@ export function CommandPalette() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!open) setQuery('')
+  }, [open])
+
   const openAbout = () => {
     setOpen(false)
     setAboutOpen(true)
   }
 
-  const openPlugins = () => {
+  const openSettingsAt = (location?: SettingsLocation) => {
     setOpen(false)
-    openPluginsPage()
-  }
-
-  const openSettings = () => {
-    setOpen(false)
-    openSettingsPage()
+    openSettings(location)
   }
 
   const toggleDevTools = () => {
     setOpen(false)
     window.dia.toggleDevTools()
-  }
-
-  const chooseTheme = (value: string) => {
-    if (value === '') return
-    setTheme(value as ThemePreference)
-  }
-
-  const chooseSendMode = (value: string) => {
-    if (value === '') return
-    setSendMode(value as SendMode)
   }
 
   return (
@@ -132,19 +102,17 @@ export function CommandPalette() {
         title="Command palette"
         description="Search for a command to run."
       >
-        <CommandInput placeholder="Type a command or search…" />
+        <CommandInput
+          placeholder="Type a command or search…"
+          value={query}
+          onValueChange={setQuery}
+        />
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
           <CommandGroup heading="Settings">
-            <CommandItem value="Settings" onSelect={openSettings}>
+            <CommandItem value="Settings" onSelect={() => openSettingsAt()}>
               <SettingsIcon />
               <span>Settings</span>
-            </CommandItem>
-          </CommandGroup>
-          <CommandGroup heading="Plugins">
-            <CommandItem value="Manage plugins" onSelect={openPlugins}>
-              <PuzzleIcon />
-              <span>Manage plugins</span>
             </CommandItem>
           </CommandGroup>
           <CommandGroup heading="Help">
@@ -159,46 +127,22 @@ export function CommandPalette() {
               <span>Toggle Developer Tools</span>
             </CommandItem>
           </CommandGroup>
+          {query.trim() === '' ? null : (
+            <CommandGroup heading="Settings pages">
+              {SETTINGS_PAGE_LINKS.map((link) => (
+                <CommandItem
+                  key={link.label}
+                  value={link.label}
+                  keywords={[...link.keywords]}
+                  onSelect={() => openSettingsAt(link.location)}
+                >
+                  <SettingsIcon />
+                  <span>{link.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
         </CommandList>
-        <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
-          <span className="text-xs font-medium text-muted-foreground">Theme</span>
-          <ToggleGroup
-            type="single"
-            value={theme}
-            onValueChange={chooseTheme}
-            variant="outline"
-            size="sm"
-          >
-            {THEME_ITEMS.map((item) => (
-              <ToggleGroupItem key={item.value} value={item.value} aria-label={item.label}>
-                <item.icon />
-                <span>{item.label}</span>
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </div>
-        <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
-          <span className="text-xs font-medium text-muted-foreground">Send mode</span>
-          <ToggleGroup
-            type="single"
-            value={sendMode}
-            onValueChange={chooseSendMode}
-            variant="outline"
-            size="sm"
-            aria-label="Send mode"
-          >
-            {SEND_MODE_ITEMS.map((item) => (
-              <ToggleGroupItem key={item.value} value={item.value} aria-label={item.label}>
-                <item.icon />
-                <span>{item.label}</span>
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        </div>
-        <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
-          <span className="text-xs font-medium text-muted-foreground">Transcript width</span>
-          <TranscriptWidthToggle />
-        </div>
       </CommandDialog>
       <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
     </>

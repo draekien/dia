@@ -2,7 +2,7 @@ import type { PaneId } from '@shared/domain/pane'
 import { type AgentName, ProjectId, type RegisterProjectRefusal } from '@shared/domain/project'
 import type { RemovalProgress } from '@shared/domain/project-removal'
 import { Effect, Option } from 'effect'
-import { openPluginsPage } from '../components/plugins-page'
+import { openSettings } from '../components/settings/settings-dialog'
 import { openNewAgentForm } from './view'
 import { appRegistry, newAgentFormAtom, workspaceAtom } from './workspace-atoms'
 
@@ -81,4 +81,5 @@ export const removeProject = (
 /** Shows the project directory `directory` in the system file manager. */
 export const revealProject = (directory: string): Promise<void> => window.dia.revealPath(directory)
 
-export { openPluginsPage }
+/** Opens the Settings dialog on its Plugins page. */
+export const openPluginsPage = (): void => openSettings({ page: 'plugins' })
