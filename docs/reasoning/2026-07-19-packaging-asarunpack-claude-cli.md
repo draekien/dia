@@ -2,6 +2,13 @@
 
 **Date:** 2026-07-19
 
+> **Superseded in part by ADR-0037.** dia now runs the user's own Claude Code install, not the
+> binary bundled with the SDK. Points 2 and 3 below describe the bundled binary and no longer
+> match the code: `electron-builder.yml` excludes `@anthropic-ai/claude-agent-sdk-*/**` from the
+> app and unpacks only `@anthropic-ai/claude-agent-sdk/**` (for its helper binaries), and
+> `claude-executable.ts` was replaced by `plugins/claude-code/claude-install.ts`, which resolves
+> the user's install. Point 1 and the adjacent facts still apply.
+
 ## Context
 
 Packaging dia into an installable app (ADR-0016) for the dogfooding milestone. electron-builder
@@ -26,13 +33,13 @@ app. Each is a runtime-only failure invisible to `pnpm build`, typecheck, and th
    installer code uses `__dirname` and crashes the ESM main process at startup if bundled —
    that presents as the *whole app* dying, including pane split/close, not just sessions.)
 
-2. **The native binary package must be `asarUnpack`ed.** Binaries that get `spawn`'d cannot
+2. **(Superseded by ADR-0037.) The native binary package must be `asarUnpack`ed.** Binaries that get `spawn`'d cannot
    execute from inside an asar archive — the OS cannot exec a file that only exists as a virtual
    path inside the archive. `electron-builder.yml` lists
    `@anthropic-ai/claude-agent-sdk/**` and `@anthropic-ai/claude-agent-sdk-*/**` under
    `asarUnpack`, so electron-builder places them in `app.asar.unpacked/node_modules/...`.
 
-3. **The SDK must be told the unpacked path via `pathToClaudeCodeExecutable`.** This is the
+3. **(Superseded by ADR-0037.) The SDK must be told the unpacked path via `pathToClaudeCodeExecutable`.** This is the
    piece asarUnpack alone misses. When unset, the SDK resolves the binary with
    `createRequire(import.meta.url).resolve('@anthropic-ai/claude-agent-sdk-<plat>-<arch>/claude<ext>')`,
    and in the packaged app `import.meta.url` sits *inside* `app.asar`, so it resolves to the

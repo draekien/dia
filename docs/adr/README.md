@@ -45,6 +45,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0034](0034-decision-path-and-decision-queue.md) | Review objective plans as a live decision path, and route everything that waits on the user through one decision queue | accepted |
 | [0035](0035-task-memory-and-retros.md) | Give each task a scratchpad and a transcript record, require a retro before a task completes, and let the retro write scoped long-term memory | accepted |
 | [0036](0036-tiered-self-improvement.md) | Let agents change the harness through `propose_change`, applied by a risk tier the user sets per change type | accepted |
+| [0037](0037-run-the-users-claude-code-install.md) | Run the user's own Claude Code install, found by an override or on `PATH`, instead of the binary bundled with the Agent SDK | accepted |
 
 ## Adding a new ADR
 

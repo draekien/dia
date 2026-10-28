@@ -56,9 +56,13 @@ export interface ClaudeInstall {
   readonly setOverride: (path: Option.Option<string>) => Effect.Effect<void>
 }
 
-/** Builds the {@link ClaudeInstall} that keeps its override in `<dataDir>/install.json`. */
+/**
+ * Builds the {@link ClaudeInstall} that keeps its override in `<dataDir>/install.json`. `isFile`
+ * says whether a path is an existing file; pass `isExistingFile`, or a stub in tests.
+ */
 export const makeClaudeInstall: (
-  ctx: Pick<HostPluginContext, 'dataDir'>
+  ctx: Pick<HostPluginContext, 'dataDir'>,
+  isFile: (path: string) => boolean
 ) => Effect.Effect<ClaudeInstall, never, FileSystem.FileSystem | Path.Path>
 
 /**
@@ -98,8 +102,10 @@ export interface ClaudeHealth {
  */
 export const makeClaudeHealth: (
   install: ClaudeInstall,
-  refreshModels: () => Effect.Effect<void>
-) => Effect.Effect<ClaudeHealth, never, ChildProcessSpawner>
+  cwd: string,
+  refreshModels: () => Effect.Effect<void>,
+  probe?: (path: string, cwd: string) => Effect.Effect<AccountInfo, InstallProbeFailed>
+) => Effect.Effect<ClaudeHealth, never, ChildProcessSpawner | Scope.Scope>
 
 /** `probeInstall` could not read the account; `message` says why. */
 export class InstallProbeFailed extends Data.TaggedError('InstallProbeFailed')<{ readonly message: string }> {}
@@ -108,7 +114,7 @@ export class InstallProbeFailed extends Data.TaggedError('InstallProbeFailed')<{
 export const probeInstall: (path: string, cwd: string) => Effect.Effect<AccountInfo, InstallProbeFailed>
 ```
 
-The `--version` spawn uses Effect's `ChildProcessSpawner`, provided by `@effect/platform-node/NodeChildProcessSpawner`, as `plugins/worktrees/git-ops.ts` does.
+`cwd` is the directory the probe query runs in (`host.ts` passes `ctx.dataDir`); `probe` defaults to `probeInstall`. The `--version` spawn uses Effect's `ChildProcessSpawner`; `host.ts` provides `@effect/platform-node/NodeServices`. `probeInstall` and `probeModels` share `withIdleQuery(path, cwd, use)` in `plugins/claude-code/idle-query.ts`, which runs a query that starts no turn and closes it afterwards.
 
 Check sequence; each step ends the check when it decides the state:
 
@@ -116,7 +122,7 @@ Check sequence; each step ends the check when it decides the state:
 | --- | --- | --- |
 | 1 | `install.resolve` | none with an override stored → `HealthError` "The configured install path cannot be run" with `installPath` (the file does not exist, or is a shim with no `claude.exe` or `cli.js` beside it); none without one → `HealthNotInstalled` |
 | 2 | spawn `<path> --version`, 10 s timeout (`.js` entry: `node <path> --version`) | non-zero, spawn error or timeout → `HealthError` with the message, and the version when one was parsed |
-| 3 | `probeInstall`: a query whose prompt never yields (`persistSession: false`, `strictMcpConfig: true`), awaiting `initializationResult()`; 60 s timeout | timeout or failure → `HealthUnknown`; `account.apiProvider` absent or `firstParty`, `tokenSource` `none`, no `subscriptionType` and `ANTHROPIC_API_KEY` unset → `HealthNotSignedIn`; otherwise `HealthReady` with `email` and `subscriptionType` |
+| 3 | `probeInstall`: a query whose prompt never yields (`persistSession: false`, `strictMcpConfig: true`), awaiting `initializationResult()`; 60 s timeout | timeout or failure → `HealthUnknown`; `account.apiProvider` absent or `firstParty`, `tokenSource` `none`, no `subscriptionType`, no `apiKeySource` and `ANTHROPIC_API_KEY` unset (read through `Config`) → `HealthNotSignedIn` (`isSignedOut`); otherwise `HealthReady` with `email` and `subscriptionType` |
 
 Checks run at adapter setup (forked; setup does not wait), from `checkHealth`, after `setInstallPath`, and from the Settings page when the last `checkedAt` is older than 5 minutes (`Duration.minutes(5)` in the renderer constant). It never polls. The health check is not a background activity: activities reschedule themselves, which is polling.
 
@@ -125,6 +131,8 @@ Every `query()` the adapter starts, including `probeInstall` and `probeModels`, 
 ### Session (`plugins/claude-code/session.ts`)
 
 `setModel(model)` stores the requested model in `desiredModelRef`, which starts as `options.config.model`, as `setThinkingLevel` uses `desiredLevelRef` (`session.ts:625`). `restartForThinkingChange` (`session.ts:706`) returns `true` when it restarted; when it restarts it reads `desiredModelRef` and starts the new query with `{ ...config, thinkingLevel, model }`, and `startQuery` sets `configRef` (`session.ts:701`). When it returns `false` and `desiredModelRef` differs from `configRef`'s model, `dispatch` calls `Query.setModel(model)` on the live query and sets `configRef` to `{ ...config, model }`. When the model changed by either path, the session emits `ModelChanged { model }` before `UserMessagesSent`, all under `restartLock`. A running turn therefore finishes on its model, the next turn uses the new one, and restarts keep it because they start from `configRef` (`session.ts:708`, `:786`). Choosing the model already in use leaves `desiredModelRef` equal to `configRef`, so nothing is applied or emitted.
+
+`openClaudeCodeSession(options, install, reportStartupFailure)` resolves the path once and hands `runSession` a `SessionLaunch { path, reportStartupFailure }`, which every query the session starts (including restarts) uses.
 
 When `install.resolve` is none, `openClaudeCodeSession` starts no query and returns a session whose `ended` is `The configured install path cannot be run: <path>` when an override is stored, else `NOT_INSTALLED_REASON` ("Claude Code is not installed", exported from `claude-install.ts`). The supervisor shows it as the pane error "Pane session ended unexpectedly: Claude Code is not installed" and logs it at error level (`pane-supervisor.ts:636-648`). The kernel refuses nothing. The New agent form blocks creating an agent, and an existing tab shows the error on its next send.
 
@@ -183,7 +191,7 @@ AdapterPreferences = Struct({ models: Record(String, ModelPreference), defaults:
 ModelPreferencesSnapshot = Struct({ revision: Int, preferences: AdapterPreferences })
 
 /** `SetModelPreference` refused to hide a model because no listed model would stay visible, or the model list is not known. */
-LastVisibleModel = TaggedErrorClass('LastVisibleModel', { message: String })
+LastVisibleModel = Schema.TaggedError('LastVisibleModel', { message: String })
 
 /**
  * The picker's groups for `models`, in catalog order: `favourites`, then `others` (neither
@@ -218,14 +226,14 @@ class ModelPreferences extends Context.Service<ModelPreferences, {
 
 ### RPCs and events
 
-Each command is a named `Schema.TaggedStruct` in `contract.ts`, wrapped by `withRequestId` and deduplicated with `once` (pane commands by `paneId`, app commands by `'app'`).
+`SetModel` is a named `Schema.TaggedStruct` in `contract.ts`, wrapped by `withRequestId` and deduplicated with `once` by `paneId`. The app setters (`SetModelPreference`, `SetAgentDefaults`, `SetInstallPath`) carry no `commandId`: each sets a value, so a repeat is harmless, as `SetTheme` is.
 
 | Name | Kind | Shape |
 | --- | --- | --- |
 | `SetModel` | pane command | `{ paneId: Uuid, model: NonEmptyString }` → `PaneWorkspace.setModel` |
-| `SetModelPreference` | app command | `{ model: NonEmptyString, preference: NullOr(ModelPreference) }`, error `LastVisibleModel` |
-| `SetAgentDefaults` | app command | `{ defaults: AgentDefaults }` |
-| `SetInstallPath` | app command | `{ path: NullOr(NonEmptyString) }` |
+| `SetModelPreference` | app setter | `{ model: NonEmptyString, preference: NullOr(ModelPreference) }`, error `LastVisibleModel` |
+| `SetAgentDefaults` | app setter | `{ defaults: AgentDefaults }` |
+| `SetInstallPath` | app setter | `{ path: NullOr(NonEmptyString) }` |
 | `GetAdapterStatus` | query | → `AdapterStatusSnapshot` |
 | `CheckAdapterHealth` | safe to repeat, no `commandId` | → void; waits for a running check (added to the `DiaRpcs` JSDoc next to `RefreshModels`) |
 | `GetModelPreferences` | query | → `ModelPreferencesSnapshot` |
@@ -239,10 +247,10 @@ The `makeDiaRpcHandlers` JSDoc (`rpc-handlers.ts:24`) lists `SetModelPreference`
 
 ### Renderer
 
-- **Settings page** (`settings-page.tsx`): frame copied from `PluginsPage`, opened from the command palette ("Settings"), Esc closes. Health, Defaults and Models are laid out as in issue #50 §3. `Change…` opens `window.dia.pickFile()` and calls `setInstallPath`; a `Use PATH` button clears the override. On open, the page calls `checkAdapterHealth` when `health` has a `checkedAt` older than 5 minutes; it does not call it while `health` is `HealthNotChecked`, because the startup check is running.
+- **Settings page** (`settings-page.tsx`): frame copied from `PluginsPage`, opened from the command palette ("Settings") or `openSettingsPage()`, Esc closes. Health, Defaults and Models are laid out as in issue #50 §3, under a "Claude Code" heading; there is no section list while only one adapter exists. The model list has one tab stop, `↑`/`↓` move between rows, and `F`/`H` toggle favourite and hidden on the focused row. A refused hide shows the refusal message under the list. The Defaults model choice offers "First listed" for no default. `window.dia.pickFile()` is a window-level call (`CHANNEL.chooseFile` in `window-ipc.ts`), not a Host RPC. `Change…` opens `window.dia.pickFile()` and calls `setInstallPath`; a `Use PATH` button clears the override. On open, the page calls `checkAdapterHealth` when `health` has a `checkedAt` older than 5 minutes; it does not call it while `health` is `HealthNotChecked`, because the startup check is running.
 - **Model picker** (`model-picker.tsx`): first in the composer's `InputGroupAddon`, in the `ThinkingLevelSelect` ghost style. It lists `pickerModels(...)`: favourites, a divider, others, a divider, `Manage models…` (opens the Settings page). A tab model outside the list shows as its raw id in mono. Choosing a different model calls `window.dia.setModel`.
 - **New agent form**: `ModelField` renders `pickerModels(...)`. The existing effect that replaces an unlisted `value` with `models[0]` (`model-field.tsx:49-54`) is deleted. The new effect only seeds `value` while it is `undefined`: `defaults.model` when listed, else the first listed model. A chosen `value` that leaves the list stays selected, is marked "No longer offered", and the form disables Start until the user picks again. The `ModelField` JSDoc is updated to match. The initial thinking level and permission mode come from `defaults.thinkingLevel` and `defaults.permissionMode`, falling back to `DEFAULT_THINKING_LEVEL` and `'auto'`.
-- **Transcript**: `PaneModelChanged` appends a `notice` message `Model → <displayName>` (raw id when not in the catalog), as `PaneConversationCompacted` does.
+- **Transcript**: `PaneModelChanged` appends a `notice` message `Model → <displayName>` (raw id when not in the catalog), as `PaneConversationCompacted` does. `reducePaneChat` stays pure: `pane-chat-atoms.ts` keeps the newest model list synchronously and attaches `displayName` to the event (`PaneModelChangeNotice`) before it reaches the reducer, so the notice keeps its place before the user's message.
 - **Install notice**: shown when `health` is `HealthNotInstalled` ("Claude Code is not installed.") or `HealthNotSignedIn` ("Claude Code is not signed in. Run `claude auth login` and try again."), and for a `HealthError` with `installPath` and no `version` (the step-1 message), with a link that opens the Settings page; the New agent form disables Start while it shows.
 
 ## Design Rationale
