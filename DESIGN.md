@@ -61,13 +61,14 @@ A fixed `rem` scale (Tailwind v4 defaults, product-appropriate ~1.125–1.2 rati
 
 ## 4. Elevation
 
-Responsive motion pairs with a mostly-flat surface: the sidebar and the visible tab's content are separated by borders/dividers rather than drop shadows in their resting state. Elevation (a subtle lift) is reserved as a state response — an open dialog, a permission prompt, a command palette — never as ambient decoration.
+The window has two resting levels: the sidebar surface, which fills the window and has no title bar strip above it, and the content card, which sits on it with an 8px inset, a large radius and a small shadow (the shadcn inset sidebar). Any further elevation is a state response — an open dialog, a permission prompt, a command palette — never ambient decoration.
 
 ### Shadow Vocabulary
+- **Content card** (`rounded-xl shadow-sm`, from `SidebarInset`): the one resting lift, on the card that holds the visible tab. Nothing inside the card adds its own resting shadow.
 - **Dialog lift** (`[value to be resolved]`): applied only to modal/dialog and overlay surfaces, to distinguish "what needs my answer now" from the flat resting surface.
 
 ### Named Rules
-**The Flat-Surface Rule.** At rest, the sidebar and the tab content sit on the same flat plane, separated only by dividers. Elevation appears only in direct response to an open dialog or overlay — never to decorate a resting surface.
+**The Inset Card Rule.** At rest there are exactly two levels: the sidebar surface and the content card on it. Inside either level, regions are separated by dividers, not shadows. Any higher elevation appears only in direct response to an open dialog or overlay.
 
 ## 5. Components
 
@@ -88,14 +89,16 @@ The one component the whole system is built around. A small dot on an agent's ov
 - **Order:** project order is fixed and set by the user by dragging a project header, or from the keyboard (`Space` lifts, `↑`/`↓` move, `Space` drops, `Esc` cancels, with the new position announced); a status change never moves a project group. Inside a group, agents sort needs input, failed, working, finished, idle, then by creation.
 - **Overflow:** project groups collapse. A collapsed group's header shows its most urgent status and a count of its agents; while a search or filter applies, every group is open and counts read `n of total`. Groups are separated by a hairline divider. `↑`/`↓` move between headers and rows, `→`/`←` open and close a group, and the list has one tab stop.
 - **Project menu:** New agent, Reveal in Explorer, Remove project…. Removing a project opens a dialog that lists every agent, worktree and transcript to be removed, enables "Remove" once the project name is typed, and then shows each item's progress.
-- **Archived:** archived agents sit in a collapsed "Archived" list at the bottom of their project group.
-- **Collapsed rail:** `Ctrl B` collapses the sidebar to a narrow rail: the Meta marker first, then one status indicator per agent, with a hairline between projects and a tooltip naming project, agent, status and activity.
+- **Archived:** while "Show archived agents" is on, archived agents follow an `Archived · n` caption at the bottom of their project group.
+- **Collapsed rail:** `Ctrl B` or the sidebar toggle in the content header collapses the sidebar to a narrow rail: the Meta marker first, then one status indicator per agent, with a hairline between projects and a tooltip naming project, agent, status and activity.
+- **Width:** dragging the sidebar's edge resizes it between 14rem and 32rem (default 18rem); double-clicking the edge resets it, and with the edge focused `←`/`→` resize and `Home` resets. A click on the edge does nothing.
+- **Top row:** the `dia` wordmark row is a window drag area, level with the window controls.
 - **Selection:** selecting a row shows that agent's tab; the selected row uses a primary-tinted fill and a medium-weight name, never a status color and never an edge stripe.
 
 ### Tabs
 - **One visible:** exactly one agent's tab fills the content area. There are no split panes.
-- **Selecting:** a tab is selected from its sidebar row; the content header names `project / agent`, shows the worktree branch when there is one, and holds the transcript width control. A divider separates the header from the transcript.
-- **Transcript width:** the transcript and composer sit in one centred column, capped at one of three widths (Narrow, Default, Wide) chosen app-wide from the content header or the command palette; a narrower content area fills the column.
+- **Selecting:** a tab is selected from its sidebar row. The content card's header row holds the sidebar toggle, a breadcrumb `project › agent`, the worktree branch when there is one, the transcript width control, and the window status (plugin loading, update, `Ctrl K` hint). The header row is a window drag area; its content stays clear of the window controls. A divider separates it from the transcript.
+- **Transcript width:** the transcript and composer sit in one centred column, capped at one of three widths (Narrow, Default, Wide) chosen app-wide from the content header or Settings › General; a narrower content area fills the column.
 - **Background tabs:** tabs that are not visible keep running and show their status in the sidebar and the collapsed rail only.
 
 ### Inputs / Fields
@@ -104,14 +107,14 @@ The one component the whole system is built around. A small dot on an agent's ov
 - **Error / Disabled:** error state may borrow the tertiary error red, muted rather than full pulse-intensity, to stay distinct from the status indicator's meaning.
 
 ### Navigation
-The sidebar is the primary navigation. Any command palette or agent switcher reads as an overlay (Raycast-style), not a further persistent chrome element.
+The sidebar is the primary navigation. Any command palette or agent switcher reads as an overlay (Raycast-style), not a further persistent chrome element. Every setting lives in one Settings dialog (General · Adapters · Plugins in a left nav, a breadcrumb over the page); the command palette has one Settings item, and its search also lists each Settings page.
 
 ## 6. Do's and Don'ts
 
 ### Do:
 - **Do** keep color roles deliberate: primary for action/selection, secondary for structure, tertiary reserved for agent status only, per the One Voice Rule.
 - **Do** use mono for all literal agent/session content and sans for all dia chrome, per the Content-Is-Mono Rule.
-- **Do** keep resting surfaces flat, reserving elevation for dialogs and overlays, per the Flat-Surface Rule.
+- **Do** keep to the two resting levels, reserving further elevation for dialogs and overlays, per the Inset Card Rule.
 - **Do** make motion responsive to real actions (tab switch, row selection, status change) — confirm, don't choreograph.
 
 ### Don't:

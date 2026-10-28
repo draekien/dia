@@ -145,7 +145,7 @@ The layout logs with `Effect.runSync(Effect.logDebug(...))`, as `lib/actions.ts`
 | Wordmark row | `dia`, a drag row of `h-8`. `SidebarHeader` has `pt-0`, so the row is centred at 8px (container padding) + 16px = 24px, level with the card header row and the window controls | An empty drag row of the same height |
 | Search row | As today | Not rendered; filters are ignored (as the rail did with `NO_FILTERS`) |
 | Meta | `SidebarMenuItem` with the marker, "Meta", "No open proposals" | The marker only, `tooltip="Meta · No open proposals"`; the text span is hidden as for agent rows |
-| Project | `SidebarGroup`; header is `SidebarGroupLabel asChild` over a `<button>` (sortable activator, chevron, name, `git` chip, urgent dot when closed, count) with `pr-8` reserving the action's slot, so the urgent dot and count sit left of it. New agent is a `SidebarGroupAction` (shadcn: `absolute top-3.5 right-3 w-5`) with `tabIndex={-1}`, `aria-label="New agent in <project>"`, and `opacity-0` revealed on the group's hover and focus-within, as today | The label gets `group-data-[collapsible=icon]:hidden` (shadcn only fades it with `-mt-8 opacity-0`, which would leave an invisible drag activator over the previous dot); `useSortable({ disabled: true })`; every group renders open; a `SidebarSeparator` between groups |
+| Project (collapsed: a `SidebarSeparator` precedes each project with agents, including the first, and projects with no agents are skipped, as `rail.tsx` did) | `SidebarGroup`; header is `SidebarGroupLabel asChild` over a `<button>` (sortable activator, chevron, name, `git` chip, urgent dot when closed, count) with `pr-8` reserving the action's slot, so the urgent dot and count sit left of it. New agent is a `SidebarGroupAction` (shadcn: `absolute top-3.5 right-3 w-5`) with `tabIndex={-1}`, `aria-label="New agent in <project>"`, and `opacity-0` revealed on the group's hover and focus-within, as today | The label gets `group-data-[collapsible=icon]:hidden` (shadcn only fades it with `-mt-8 opacity-0`, which would leave an invisible drag activator over the previous dot); `useSortable({ disabled: true })`; every group renders open; a `SidebarSeparator` between groups |
 | Agent row | `SidebarMenuItem` → `SidebarMenuButton size="lg" isActive tooltip`: status dot, name, second line | The status dot only: the button's text span gets `group-data-[collapsible=icon]:hidden` and the button `group-data-[collapsible=icon]:justify-center` (shadcn's `lg` size sets `p-0!` in icon mode, and the `flex-1` text span would otherwise push the dot to the left edge); tooltip `project / agent · status · second line` |
 | Archived | Shown only when the "Show archived agents" filter is on (unchanged): a caption `Archived · n` then the archived rows | Not shown |
 | Footer | Removed. ☰ in the card header and `Ctrl B` replace "Collapse" | — |
@@ -190,8 +190,8 @@ export function SettingsDialog(): JSX.Element
 |---|---|
 | `settings-dialog.tsx` | `DialogContent className="overflow-hidden p-0 sm:max-w-4xl h-[min(40rem,85vh)]"` (`sm:` overrides the built-in `sm:max-w-lg`; `DialogTitle` "Settings" visually hidden) → `SidebarProvider className="h-full min-h-0 items-start" style={{ '--sidebar-width': '12rem' } as CSSProperties}` → `Sidebar collapsible="none" className="h-full"` nav (General · Adapters · Plugins, `SidebarMenuButton isActive`) + `<section aria-label="Settings page" className="flex min-w-0 flex-1 flex-col">` (not `main`: `SidebarInset` is already the window's `main` landmark) with a `Breadcrumb` header that has `pr-12` to clear the dialog's close button, and a `min-h-0 flex-1 overflow-auto` body |
 | `general-settings.tsx` | Theme and send mode `ToggleGroup`s (moved from the palette), `TranscriptWidthToggle` |
-| `adapter-settings.tsx` | Adapter list (`SidebarMenu`, one row per `usePluginList()` entry with `category === 'adapter'`) and the selected adapter's page |
-| `claude-code-settings.tsx` | Today's `SettingsPage` body: Health, Defaults, Models, and the stale health re-check on mount; also `ClaudeCodeHealthLabel`. `settings-page.tsx` is deleted. |
+| `adapter-settings.tsx` | Adapter list (a bordered `SidebarMenu` above the page, one row per `usePluginList()` entry with `category === 'adapter'`) and the selected adapter's page below it. Above, not beside: a side column would leave the page about 21rem and squeeze the three-column Defaults grid. |
+| `claude-code-settings.tsx` | Today's `SettingsPage` body: Health, Defaults, Models, and the stale health re-check on mount; also `ClaudeCodeHealthLabel`. The "Claude Code" heading is dropped, because the breadcrumb and the adapter row name it. `settings-page.tsx` is deleted. |
 | `plugin-settings.tsx` | Today's `PluginsPage` list body. `plugins-page.tsx` is deleted. |
 
 Adapter pages are looked up in one table:
@@ -305,6 +305,12 @@ Verify also checks that the drag rows under an open dialog's overlay do not move
 | 10, 13 | `plugins/agent-overview/agent-overview.test.tsx` (new): exactly one `tabIndex=0` element in the expanded list (the New agent actions included), arrows, `F2`, collapsed tooltips and separators, and while collapsed exactly one `tabIndex=0` element, which is a row |
 | Breadcrumb per view | `tab-header.test.tsx` (new) |
 | `TitleBarOverlayColors` decodes `{ symbolColor }` and rejects a payload without it | `src/shared/ipc/contract.test.ts` (new) |
+
+## Implementation notes
+
+- `shadcn add sidebar breadcrumb` again wrote `import { cn } from "cn"`, added the `cn` npm package, and also appended generic `--sidebar*` variables to `index.css`; all three were reverted (`docs/reasoning/2026-10-24-shadcn-add-installs-cn-npm-package.md`).
+- The new shadcn files carry JSDoc only on the parts dia added (`SidebarWidth`, `SidebarRail`, `useIsMobile`), matching the other files in `components/ui/`.
+- The project header is a real `<button>`, so `Enter` toggles it natively; `Space` still lifts it through the dnd-kit keyboard sensor.
 
 ## Refinement Record
 

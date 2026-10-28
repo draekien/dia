@@ -25,7 +25,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0014](0014-tanstack-ai-usechat-for-renderer-chat-state.md) | Use TanStack AI `useChat` with a custom IPC ConnectionAdapter for renderer chat state | superseded by ADR-0015 |
 | [0015](0015-effect-atom-and-direct-ipc-reducer-for-renderer-chat-state.md) | Use effect-atom and a direct IPC-event reducer for renderer chat state | accepted, amended by ADR-0030 |
 | [0016](0016-electron-builder-distribution-and-auto-update.md) | Distribute dia as an electron-builder NSIS installer with GitHub-backed auto-update | accepted |
-| [0017](0017-frameless-window-with-native-overlay-controls.md) | Replace the native window frame with a custom titlebar and native overlay controls | accepted |
+| [0017](0017-frameless-window-with-native-overlay-controls.md) | Replace the native window frame with a custom titlebar and native overlay controls | accepted, header strip and colour sync superseded by ADR-0038 |
 | [0018](0018-transcript-anchored-file-checkpointing-with-conversation-fork.md) | Transcript-anchored file checkpointing that forks the conversation on rewind | accepted |
 | [0019](0019-thin-plugin-kernel-on-effect.md) | Build dia as a thin plugin kernel on Effect, with every feature as a plugin | accepted, amended by ADR-0029 |
 | [0020](0020-plugin-source-loading-and-hot-reload.md) | Load first-party plugins from source in the dia repo, with per-plugin worktree overrides and hot reload | accepted |
@@ -39,13 +39,14 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0028](0028-essential-plugins-and-the-permissions-plugin.md) | Keep essential plugins loaded and un-overridable, and move permission handling into one | superseded by ADR-0029 |
 | [0029](0029-plugin-categories-adapter-and-feature.md) | Split plugins into one adapter category and one feature category, and move the Agent SDK into a Claude Code adapter | accepted |
 | [0030](0030-user-turns-appear-when-the-host-reports-them-sent.md) | Show a user turn in the transcript when the Host reports it sent, not when the composer submits it | accepted |
-| [0031](0031-renderer-plugins-fill-slots.md) | Renderer plugins draw the UI by filling slots: one root slot, and child slots declared by the plugin that fills it | accepted |
+| [0031](0031-renderer-plugins-fill-slots.md) | Renderer plugins draw the UI by filling slots: one root slot, and child slots declared by the plugin that fills it | accepted, amended by ADR-0038 |
 | [0032](0032-background-activities-and-semver-plugin-api.md) | Plugins schedule background activities through the kernel, keep files in a data directory, and declare a semver plugin API version | accepted |
 | [0033](0033-one-org-of-hired-role-agents.md) | Run one org of hired agents with roles, per-role and overall concurrency caps, and ad-hoc tabs outside the caps | accepted |
 | [0034](0034-decision-path-and-decision-queue.md) | Review objective plans as a live decision path, and route everything that waits on the user through one decision queue | accepted |
 | [0035](0035-task-memory-and-retros.md) | Give each task a scratchpad and a transcript record, require a retro before a task completes, and let the retro write scoped long-term memory | accepted |
 | [0036](0036-tiered-self-improvement.md) | Let agents change the harness through `propose_change`, applied by a risk tier the user sets per change type | accepted |
 | [0037](0037-run-the-users-claude-code-install.md) | Run the user's own Claude Code install, found by an override or on `PATH`, instead of the binary bundled with the Agent SDK | accepted |
+| [0038](0038-transparent-overlay-and-inset-sidebar-frame.md) | Draw the window controls over a transparent overlay and use the shadcn inset sidebar as the window frame | accepted |
 
 ## Adding a new ADR
 

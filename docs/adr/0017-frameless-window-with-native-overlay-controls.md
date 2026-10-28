@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, header strip and colour sync superseded by ADR-0038"
 date: 2026-07-19
 decision-makers: William Pei
 ---
