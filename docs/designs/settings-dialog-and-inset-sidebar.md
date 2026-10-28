@@ -30,7 +30,7 @@ Confirmed with the user in Understand. Each maps to a test (T) or to Verify (V).
 
 Organised by what each module owns.
 
-- **Sidebar primitives** (`src/renderer/src/components/ui/sidebar.tsx`, `sheet.tsx`, `breadcrumb.tsx`, `src/renderer/src/hooks/use-mobile.ts`; added with `shadcn add sidebar breadcrumb`) — the shadcn sidebar, with six local edits (table below); the Sheet branch stays in the file but never renders. Owns the sidebar's open state context, width, and the `Ctrl B` shortcut.
+- **Sidebar primitives** (`src/renderer/src/components/ui/sidebar.tsx`, `breadcrumb.tsx`; added with `shadcn add sidebar breadcrumb`) — the shadcn sidebar, with six local edits (table below), one of which removes its mobile Sheet branch. Owns the sidebar's open state context, width, and the `Ctrl B` shortcut.
 - **Layout plugin** (`plugins/layout/layout.tsx`) — the window frame: `SidebarProvider`, the `sidebar` slot, and the inset card holding the header row (☰, separator, `main.header` slot) above the `main` slot. Owns persisting the sidebar's open state and width.
 - **Agent overview plugin** (`plugins/agent-overview/*`) — fills the `sidebar` slot with `Sidebar variant="inset" collapsible="icon"`. Owns the wordmark row, search, filters, project groups and agent rows, and how they render collapsed.
 - **Tab header** (`src/renderer/src/components/tab-header.tsx`, moved out of `tab-content.tsx`) — the kernel default for `main.header`: the breadcrumb for the current view, the transcript width control, and the window status items formerly in `AppHeader`.
@@ -48,7 +48,7 @@ Local edits, each kept minimal so a later `shadcn add --diff` stays readable:
 
 | Edit | Where | Why |
 |---|---|---|
-| `useIsMobile` returns `false`, with the JSDoc `/** Reports whether the viewport is mobile-sized; dia always returns false because it is a desktop window. */` | `hooks/use-mobile.ts` | dia is a desktop window; the Sheet branch is never wanted |
+| Remove the mobile `Sheet` branch, `openMobile`/`setOpenMobile`/`isMobile` from the context, and `SIDEBAR_WIDTH_MOBILE`; `hooks/use-mobile.ts` and `ui/sheet.tsx` are not added | `sidebar.tsx` | dia is a desktop window; the Sheet branch is never wanted |
 | Remove the inner `<TooltipProvider delayDuration={0}>` from `SidebarProvider`; `main.tsx` already supplies one with `delayDuration={400}` | `sidebar.tsx` | The layout provider wraps the card and the pane, so the inner provider would set a 0ms delay on every tooltip in the window |
 | Remove the `sidebar_state` cookie write from `setOpen` | `sidebar.tsx` | Nothing reads it; the layout plugin persists `open` |
 | Remove `md:` from `Sidebar` (wrapper `md:block`, container `md:flex`), from `SidebarInset`'s five `md:peer-data-…` classes, and from the `SidebarGroupAction`/`SidebarMenuAction` `md:` classes (`after:hidden`, `opacity-0`); the replacement `SidebarRail` has no `sm:flex` | `sidebar.tsx` | Below 768px the desktop sidebar is `hidden` and the inset card loses its margin and radius (criterion 12) |
@@ -310,7 +310,7 @@ Verify also checks that the drag rows under an open dialog's overlay do not move
 
 - `openSettings` and `SettingsLocation` live in `components/settings/open-settings.ts`, not `settings-dialog.tsx`: importing the dialog from `lib/actions.ts` closed an import cycle through `plugin-api.ts` that left every plugin `actions` member `undefined` in the build (`docs/reasoning/2026-10-28-plugin-api-actions-import-cycle.md`).
 - `shadcn add sidebar breadcrumb` again wrote `import { cn } from "cn"`, added the `cn` npm package, and also appended generic `--sidebar*` variables to `index.css`; all three were reverted (`docs/reasoning/2026-10-24-shadcn-add-installs-cn-npm-package.md`).
-- The new shadcn files carry JSDoc only on the parts dia added (`SidebarWidth`, `SidebarRail`, `useIsMobile`), matching the other files in `components/ui/`.
+- The new shadcn files carry JSDoc only on the parts dia added (`SidebarWidth`, `SidebarRail`), matching the other files in `components/ui/`.
 - The project header is a real `<button>`, so `Enter` toggles it natively; `Space` still lifts it through the dnd-kit keyboard sensor.
 
 ## Refinement Record
