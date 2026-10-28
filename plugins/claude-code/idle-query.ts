@@ -3,6 +3,10 @@ import { Effect, Queue } from 'effect'
 import { installQueryOptions } from './claude-install'
 import { openPromptInput } from './session'
 
+/** The message of `cause` when it is an `Error`, else `cause` as a string. Use it to describe a failed SDK call. */
+export const messageOf = (cause: unknown): string =>
+  cause instanceof Error ? cause.message : String(cause)
+
 /**
  * Starts the Claude Code install at `path` in `cwd` as a query that starts no turn, writes no
  * transcript and starts no MCP server, runs `use` on it, and closes it whatever the outcome.

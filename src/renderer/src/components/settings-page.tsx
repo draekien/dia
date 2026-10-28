@@ -12,6 +12,7 @@ import {
   type AgentDefaults,
   EMPTY_ADAPTER_PREFERENCES,
   keepsAModelVisible,
+  LAST_VISIBLE_MODEL_MESSAGE,
   type ModelPreference,
   pickerModels
 } from '@shared/domain/model-preferences'
@@ -49,7 +50,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 const OPEN_EVENT = 'dia:open-settings-page'
 const STALE_CHECK = Duration.minutes(5)
 const FIRST_LISTED = 'dia:first-listed'
-const LAST_VISIBLE = 'At least one model must stay visible'
 
 /**
  * Asks the app shell to show the Settings page, from anywhere in the renderer (the command
@@ -382,17 +382,20 @@ function ModelRow({
 }) {
   const favourite = entry.preference === 'favourite'
   const hidden = entry.preference === 'hidden'
+  const hideBlocked = hidden || entry.canHide ? undefined : LAST_VISIBLE_MODEL_MESSAGE
+  const toggleFavourite = () => onSet(favourite ? null : 'favourite')
+  const toggleHidden = () => onSet(hidden ? null : 'hidden')
 
   const onKeyDown = (event: KeyboardEvent<HTMLLIElement>) => {
-    if (event.ctrlKey || event.metaKey || event.altKey) return
+    if (event.ctrlKey || event.metaKey || event.altKey || !entry.offered) return
     const key = event.key.toLowerCase()
-    if (key === 'f' && entry.offered) {
+    if (key === 'f') {
       event.preventDefault()
-      onSet(favourite ? null : 'favourite')
+      toggleFavourite()
     }
-    if (key === 'h' && entry.offered && (hidden || entry.canHide)) {
+    if (key === 'h' && hideBlocked === undefined) {
       event.preventDefault()
-      onSet(hidden ? null : 'hidden')
+      toggleHidden()
     }
   }
 
@@ -419,15 +422,15 @@ function ModelRow({
             label={`Favourite ${entry.displayName}`}
             pressed={favourite}
             blockedReason={undefined}
-            onToggle={() => onSet(favourite ? null : 'favourite')}
+            onToggle={toggleFavourite}
           >
             <StarIcon fill={favourite ? 'currentColor' : 'none'} />
           </PreferenceToggle>
           <PreferenceToggle
             label={`Hide ${entry.displayName}`}
             pressed={hidden}
-            blockedReason={hidden || entry.canHide ? undefined : LAST_VISIBLE}
-            onToggle={() => onSet(hidden ? null : 'hidden')}
+            blockedReason={hideBlocked}
+            onToggle={toggleHidden}
           >
             <EyeOffIcon />
           </PreferenceToggle>

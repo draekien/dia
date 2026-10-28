@@ -177,14 +177,10 @@ export const makeClaudeInstall = Effect.fnUntraced(function* (
  */
 export const installQueryOptions = (
   path: string
-): { readonly pathToClaudeCodeExecutable: string; readonly env: Record<string, string> } => ({
+): {
+  readonly pathToClaudeCodeExecutable: string
+  readonly env: Record<string, string | undefined>
+} => ({
   pathToClaudeCodeExecutable: path,
-  env: {
-    ...Object.fromEntries(
-      Object.entries(process.env).filter(
-        (entry): entry is [string, string] => entry[1] !== undefined
-      )
-    ),
-    CLAUDE_CODE_STARTUP_FAILURE_RESULTS: '1'
-  }
+  env: { ...process.env, CLAUDE_CODE_STARTUP_FAILURE_RESULTS: '1' }
 })

@@ -3,6 +3,7 @@ import {
   type AgentDefaults,
   EMPTY_ADAPTER_PREFERENCES,
   keepsAModelVisible,
+  LAST_VISIBLE_MODEL_MESSAGE,
   LastVisibleModel,
   type ModelPreference,
   type ModelPreferencesSnapshot,
@@ -107,9 +108,7 @@ export const ModelPreferencesLive = Layer.effect(
               })
             }
             if (!keepsAModelVisible(state.models, preferences, model, value)) {
-              return yield* new LastVisibleModel({
-                message: 'At least one model must stay visible'
-              })
+              return yield* new LastVisibleModel({ message: LAST_VISIBLE_MODEL_MESSAGE })
             }
           }
           return withPreference(preferences, model, value)

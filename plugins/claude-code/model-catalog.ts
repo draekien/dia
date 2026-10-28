@@ -23,7 +23,7 @@ import {
   SubscriptionRef
 } from 'effect'
 import { type ClaudeInstall, NOT_INSTALLED_REASON } from './claude-install'
-import { withIdleQuery } from './idle-query'
+import { messageOf, withIdleQuery } from './idle-query'
 
 /** Longest a model probe may take before it counts as failed. */
 export const MODEL_PROBE_TIMEOUT = Duration.seconds(60)
@@ -51,9 +51,6 @@ const ModelCache = Schema.fromJsonString(
 type ModelCache = typeof ModelCache.Type
 
 const CACHE_FILE = 'models.json'
-
-const messageOf = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : String(cause)
 
 /**
  * The {@link ModelProbe} that asks the Claude Code install `install` resolves: it reads

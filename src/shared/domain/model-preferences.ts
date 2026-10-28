@@ -38,6 +38,9 @@ export const ModelPreferencesSnapshot = Schema.Struct({
 })
 export type ModelPreferencesSnapshot = typeof ModelPreferencesSnapshot.Type
 
+/** The refusal message when hiding a model would leave none visible; also the hide toggle's tooltip. */
+export const LAST_VISIBLE_MODEL_MESSAGE = 'At least one model must stay visible'
+
 /**
  * `SetModelPreference` refused to hide a model: no listed model would stay visible, or the model
  * list is not known yet. `message` is shown to the user.

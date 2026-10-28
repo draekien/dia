@@ -23,7 +23,7 @@ import {
 } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import type { ClaudeInstall } from './claude-install'
-import { withIdleQuery } from './idle-query'
+import { messageOf, withIdleQuery } from './idle-query'
 
 /** Longest `claude --version` may take before the check counts it as failed. */
 export const VERSION_TIMEOUT = Duration.seconds(10)
@@ -41,9 +41,6 @@ export const OVERRIDE_UNRUNNABLE = 'The configured install path cannot be run'
 export class InstallProbeFailed extends Data.TaggedError('InstallProbeFailed')<{
   readonly message: string
 }> {}
-
-const messageOf = (cause: unknown): string =>
-  cause instanceof Error ? cause.message : String(cause)
 
 /**
  * The account the Claude Code install at `path` reports, read in `cwd` by a query that starts no

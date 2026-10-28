@@ -14,7 +14,7 @@ import { formatWhen } from '@renderer/lib/format-when'
 import { cn } from '@renderer/lib/utils'
 import { type AdapterPreferences, pickerModels } from '@shared/domain/model-preferences'
 import { Loader2Icon, RefreshCwIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 type CatalogState = NonNullable<ModelCatalog['state']>
 
@@ -70,11 +70,17 @@ export function ModelField({
   const [announcement, setAnnouncement] = useState('')
   const wasRefreshing = useRef(false)
   const refreshing = isRefreshing(state)
-  const picked =
-    state?._tag === 'Ready' && preferences !== undefined
-      ? pickerModels(state.models, preferences)
-      : undefined
-  const offered = picked === undefined ? undefined : [...picked.favourites, ...picked.others]
+  const picked = useMemo(
+    () =>
+      state?._tag === 'Ready' && preferences !== undefined
+        ? pickerModels(state.models, preferences)
+        : undefined,
+    [state, preferences]
+  )
+  const offered = useMemo(
+    () => (picked === undefined ? undefined : [...picked.favourites, ...picked.others]),
+    [picked]
+  )
   const defaultModel = preferences?.defaults.model
   const offeredValue = offered?.some((model) => model.value === value) ?? true
 
