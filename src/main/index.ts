@@ -6,6 +6,7 @@ import { HostInit } from '@shared/ipc/host-process'
 import { Config, Effect, Layer, Option, References } from 'effect'
 import { app, BrowserWindow, nativeTheme, net, protocol, shell } from 'electron'
 import electronUpdater from 'electron-updater'
+import { isAppNavigation, isExternalUrl } from './external-url'
 import { resolveEsbuildBinaryPath, startHostProcess } from './host-process'
 import {
   TITLE_BAR_OVERLAY_COLOR,
@@ -71,6 +72,22 @@ const serveRenderer = (request: Request): Promise<Response> | Response => {
 
 const rendererDevUrl = Effect.runSync(Config.String('ELECTRON_RENDERER_URL').pipe(Config.option))
 
+const allowedOrigins = [
+  RENDERER_ORIGIN,
+  ...(isDev && Option.isSome(rendererDevUrl) ? [new URL(rendererDevUrl.value).origin] : [])
+]
+
+// The window exists before the file logger, so this is swapped for the logger runtime once it starts.
+let runLog = (effect: Effect.Effect<void>): void => void Effect.runFork(effect)
+
+const openExternalUrl = (url: string): void => {
+  if (isExternalUrl(url)) {
+    void shell.openExternal(url)
+    return
+  }
+  runLog(Effect.logWarning('Blocked opening a non-web URL', { url }))
+}
+
 const { autoUpdater } = electronUpdater
 
 // Kicks a GitHub Releases check; electron-updater downloads any newer build in the background
@@ -111,8 +128,14 @@ function createWindow(): BrowserWindow {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    openExternalUrl(details.url)
     return { action: 'deny' }
+  })
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isAppNavigation(url, allowedOrigins)) return
+    event.preventDefault()
+    openExternalUrl(url)
   })
 
   if (isDev && Option.isSome(rendererDevUrl)) {
@@ -145,17 +168,13 @@ app.whenReady().then(async () => {
 
   const LoggerLive = makeLoggerLive(isDev, logFilePath)
 
-  const allowedOrigins = [
-    RENDERER_ORIGIN,
-    ...(isDev && Option.isSome(rendererDevUrl) ? [new URL(rendererDevUrl.value).origin] : [])
-  ]
-
   let shuttingDown = false
 
   Effect.runFork(
     Effect.scoped(
       Effect.gen(function* () {
         const services = yield* Effect.context<never>()
+        runLog = (effect) => void Effect.runForkWith(services)(effect)
         const host = yield* startHostProcess({
           hostEntry: join(import.meta.dirname, 'host.js'),
           init: HostInit.make({
