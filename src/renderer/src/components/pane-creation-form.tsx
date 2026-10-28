@@ -132,7 +132,10 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
           <span className="text-xs text-ink-muted">Thinking</span>
           <Select
             value={thinkingLevel}
-            onValueChange={(value: ThinkingLevel) => setThinkingLevel(value)}
+            onValueChange={(value: ThinkingLevel) => {
+              defaultsApplied.current = true
+              setThinkingLevel(value)
+            }}
             disabled={isBusy}
           >
             <SelectTrigger className="w-full">
@@ -152,7 +155,10 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
           <span className="text-xs text-ink-muted">Permissions</span>
           <Select
             value={permissionMode}
-            onValueChange={(value: StartupPermissionMode) => setPermissionMode(value)}
+            onValueChange={(value: StartupPermissionMode) => {
+              defaultsApplied.current = true
+              setPermissionMode(value)
+            }}
             disabled={isBusy}
           >
             <SelectTrigger className="w-full">
