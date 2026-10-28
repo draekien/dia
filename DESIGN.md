@@ -61,10 +61,10 @@ A fixed `rem` scale (Tailwind v4 defaults, product-appropriate ~1.125–1.2 rati
 
 ## 4. Elevation
 
-The window has two resting levels: the sidebar surface, which fills the window and has no title bar strip above it, and the content card, which sits on it with an 8px inset, a 10px radius (`rounded-lg`) and a small shadow (the shadcn inset sidebar). Any further elevation is a state response — an open dialog, a permission prompt, a command palette — never ambient decoration.
+The window has two resting levels: the sidebar surface, which fills the window and has no title bar strip above it, and the content card, which sits on it with an 8px inset, an 8px radius (`rounded-md`) and a small shadow (the shadcn inset sidebar). Any further elevation is a state response — an open dialog, a permission prompt, a command palette — never ambient decoration.
 
 ### Shadow Vocabulary
-- **Content card** (`rounded-lg shadow-sm`, from `SidebarInset`): the one resting lift, on the card that holds the visible tab. Nothing inside the card adds its own resting shadow.
+- **Content card** (`rounded-md shadow-sm`, from `SidebarInset`): the one resting lift, on the card that holds the visible tab. Nothing inside the card adds its own resting shadow.
 - **Dialog lift** (`[value to be resolved]`): applied only to modal/dialog and overlay surfaces, to distinguish "what needs my answer now" from the flat resting surface.
 
 ### Named Rules
