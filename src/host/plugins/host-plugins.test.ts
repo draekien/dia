@@ -1,5 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
+import { PLUGIN_API_VERSION } from '@shared/plugin/manifest'
 import { Effect, Fiber, FileSystem, Layer, Option, Path, Stream } from 'effect'
 import { BackgroundActivitiesLive } from '../services/background-activities'
 import { EventHub, makeEventHubLive } from '../services/event-hub'
@@ -30,7 +31,7 @@ const writePlugin = (root: string, name: string, extra: Record<string, unknown>)
     yield* fs.makeDirectory(path.join(root, name), { recursive: true })
     yield* fs.writeFileString(
       path.join(root, name, 'plugin.json'),
-      JSON.stringify({ name, api: '0.0.2', category: 'feature', ...extra })
+      JSON.stringify({ name, api: PLUGIN_API_VERSION, category: 'feature', ...extra })
     )
   })
 

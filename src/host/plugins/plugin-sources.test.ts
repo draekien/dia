@@ -1,6 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
-import type { PluginCategory } from '@shared/plugin/manifest'
+import { PLUGIN_API_VERSION, type PluginCategory } from '@shared/plugin/manifest'
 import { Effect, FileSystem, Layer, Option, Path } from 'effect'
 import { SettingsStore } from '../services/settings-store'
 import { makePluginSourcesLive, PluginSources } from './plugin-sources'
@@ -30,7 +30,7 @@ const memorySettings = (initial: Record<string, string> = {}) => {
 }
 
 const manifestJson = (name: string, category: PluginCategory) =>
-  JSON.stringify({ name, api: '0.0.2', category, host: 'host.ts' })
+  JSON.stringify({ name, api: PLUGIN_API_VERSION, category, host: 'host.ts' })
 
 const workspace = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem

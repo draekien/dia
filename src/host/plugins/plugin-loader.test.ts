@@ -1,5 +1,6 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
+import { PLUGIN_API_VERSION } from '@shared/plugin/manifest'
 import { PluginRestartRequiredError } from '@shared/plugin/plugin-registry'
 import { Effect, FileSystem, Layer, Option, Path } from 'effect'
 import { makeHostPluginLoader } from './plugin-loader'
@@ -40,7 +41,12 @@ describe('host plugin loader', () => {
       Effect.gen(function* () {
         const setup = () => Effect.void
         const { root, path } = yield* pluginDirectory(
-          JSON.stringify({ name: 'chat', api: '0.0.2', category: 'feature', host: 'src/host.ts' })
+          JSON.stringify({
+            name: 'chat',
+            api: PLUGIN_API_VERSION,
+            category: 'feature',
+            host: 'src/host.ts'
+          })
         )
         const { modules, calls } = recordingModules(() => Promise.resolve({ default: setup }))
         const loader = yield* makeHostPluginLoader(modules)
@@ -51,7 +57,7 @@ describe('host plugin loader', () => {
 
         assert.deepStrictEqual(loaded.manifest, {
           name: 'chat',
-          api: '0.0.2',
+          api: PLUGIN_API_VERSION,
           category: 'feature',
           host: 'src/host.ts'
         })
@@ -70,7 +76,7 @@ describe('host plugin loader', () => {
           const { root } = yield* pluginDirectory(
             JSON.stringify({
               name: 'chat',
-              api: '0.0.2',
+              api: PLUGIN_API_VERSION,
               category: 'feature',
               host: 'host.ts',
               load: 'eager'
@@ -83,7 +89,7 @@ describe('host plugin loader', () => {
 
           assert.deepStrictEqual(manifest, {
             name: 'chat',
-            api: '0.0.2',
+            api: PLUGIN_API_VERSION,
             category: 'feature',
             host: 'host.ts',
             load: 'eager'
@@ -98,7 +104,12 @@ describe('host plugin loader', () => {
     run(
       Effect.gen(function* () {
         const { root } = yield* pluginDirectory(
-          JSON.stringify({ name: 'chat', api: '0.0.2', category: 'feature', load: 'sometimes' })
+          JSON.stringify({
+            name: 'chat',
+            api: PLUGIN_API_VERSION,
+            category: 'feature',
+            load: 'sometimes'
+          })
         )
         const { modules } = recordingModules(() => Promise.resolve({}))
         const loader = yield* makeHostPluginLoader(modules)
@@ -131,7 +142,7 @@ describe('host plugin loader', () => {
         const { root } = yield* pluginDirectory(
           JSON.stringify({
             name: 'theme',
-            api: '0.0.2',
+            api: PLUGIN_API_VERSION,
             category: 'feature',
             renderer: 'renderer.tsx'
           })
@@ -182,7 +193,12 @@ describe('host plugin loader', () => {
     run(
       Effect.gen(function* () {
         const { root } = yield* pluginDirectory(
-          JSON.stringify({ name: 'chat', api: '0.0.2', category: 'feature', host: 'host.ts' })
+          JSON.stringify({
+            name: 'chat',
+            api: PLUGIN_API_VERSION,
+            category: 'feature',
+            host: 'host.ts'
+          })
         )
         const { modules } = recordingModules(() => Promise.reject(new Error('Unexpected token')))
         const loader = yield* makeHostPluginLoader(modules)
@@ -198,7 +214,12 @@ describe('host plugin loader', () => {
     run(
       Effect.gen(function* () {
         const { root } = yield* pluginDirectory(
-          JSON.stringify({ name: 'chat', api: '0.0.2', category: 'feature', host: 'host.ts' })
+          JSON.stringify({
+            name: 'chat',
+            api: PLUGIN_API_VERSION,
+            category: 'feature',
+            host: 'host.ts'
+          })
         )
         const { modules } = recordingModules(() => Promise.resolve({ default: 'nope' }))
         const loader = yield* makeHostPluginLoader(modules)
@@ -214,7 +235,12 @@ describe('host plugin loader', () => {
     run(
       Effect.gen(function* () {
         const { root } = yield* pluginDirectory(
-          JSON.stringify({ name: 'chat', api: '0.0.2', category: 'feature', host: 'host.ts' })
+          JSON.stringify({
+            name: 'chat',
+            api: PLUGIN_API_VERSION,
+            category: 'feature',
+            host: 'host.ts'
+          })
         )
         const { modules, transactions } = recordingModules(() => Promise.resolve({}))
         const loader = yield* makeHostPluginLoader(modules)
@@ -232,7 +258,12 @@ describe('host plugin loader', () => {
     run(
       Effect.gen(function* () {
         const { root } = yield* pluginDirectory(
-          JSON.stringify({ name: 'chat', api: '0.0.2', category: 'feature', host: 'host.ts' })
+          JSON.stringify({
+            name: 'chat',
+            api: PLUGIN_API_VERSION,
+            category: 'feature',
+            host: 'host.ts'
+          })
         )
         const modules: PluginModules = {
           transact: () =>

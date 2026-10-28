@@ -1,10 +1,11 @@
 import { assert, describe, it } from '@effect/vitest'
+import { PLUGIN_API_VERSION } from '@shared/plugin/manifest'
 import { Effect } from 'effect'
 import { makeRendererPlugins } from './renderer-plugins'
 
 const manifest = (name: string, extra: Record<string, unknown> = {}) => ({
   name,
-  api: '0.0.2',
+  api: PLUGIN_API_VERSION,
   category: 'feature',
   renderer: 'renderer.tsx',
   ...extra
@@ -56,7 +57,12 @@ describe('renderer plugins', () => {
     Effect.gen(function* () {
       const plugins = yield* makeRendererPlugins({
         manifests: {
-          hostonly: { name: 'hostonly', api: '0.0.2', category: 'feature', host: 'host.ts' }
+          hostonly: {
+            name: 'hostonly',
+            api: PLUGIN_API_VERSION,
+            category: 'feature',
+            host: 'host.ts'
+          }
         },
         entries: {}
       })
