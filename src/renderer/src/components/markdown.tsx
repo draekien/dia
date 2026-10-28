@@ -145,7 +145,15 @@ function RemoteImage({ src, alt, title }: MarkdownComponentProps<'img'>): React.
   const [loaded, setLoaded] = useState(false)
   if (loaded) return <img src={src} alt={alt} title={title} />
   return (
-    <Button variant="outline" size="xs" title={src} onClick={() => setLoaded(true)}>
+    <Button
+      variant="outline"
+      size="xs"
+      title={src}
+      onClick={(event) => {
+        event.preventDefault()
+        setLoaded(true)
+      }}
+    >
       <ImageIcon data-icon="inline-start" />
       Load image from {new URL(String(src)).host}
     </Button>

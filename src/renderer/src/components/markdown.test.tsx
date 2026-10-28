@@ -72,6 +72,18 @@ describe('Markdown images', () => {
     expect(image?.getAttribute('alt')).toBe('chart')
   })
 
+  it('cancels the enclosing link when the load button inside it is clicked', () => {
+    render(
+      <Markdown content="[![chart](https://example.com/chart.png)](https://example.com/page)" />
+    )
+
+    const followed = fireEvent.click(
+      screen.getByRole('button', { name: 'Load image from example.com' })
+    )
+
+    expect(followed).toBe(false)
+  })
+
   it.each([
     ['protocol-relative', '//attacker/share/chart.png'],
     ['relative', '../../chart.png'],

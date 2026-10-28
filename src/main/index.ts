@@ -6,7 +6,7 @@ import { HostInit } from '@shared/ipc/host-process'
 import { Config, Effect, Layer, Option, References } from 'effect'
 import { app, BrowserWindow, nativeTheme, net, protocol, shell } from 'electron'
 import electronUpdater from 'electron-updater'
-import { isExternalUrl } from './external-url'
+import { isAppNavigation, isExternalUrl } from './external-url'
 import { resolveEsbuildBinaryPath, startHostProcess } from './host-process'
 import {
   TITLE_BAR_OVERLAY_COLOR,
@@ -77,19 +77,15 @@ const allowedOrigins = [
   ...(isDev && Option.isSome(rendererDevUrl) ? [new URL(rendererDevUrl.value).origin] : [])
 ]
 
-// Node's URL reports origin 'null' for the custom dia: scheme, so compare scheme and host instead.
-const isAppNavigation = (url: string): boolean => {
-  if (!URL.canParse(url)) return false
-  const { protocol, host } = new URL(url)
-  return allowedOrigins.includes(`${protocol}//${host}`)
-}
+// The window exists before the file logger, so this is swapped for the logger runtime once it starts.
+let runLog = (effect: Effect.Effect<void>): void => void Effect.runFork(effect)
 
 const openExternalUrl = (url: string): void => {
   if (isExternalUrl(url)) {
     void shell.openExternal(url)
     return
   }
-  Effect.runFork(Effect.logWarning('Blocked opening a non-web URL', { url }))
+  runLog(Effect.logWarning('Blocked opening a non-web URL', { url }))
 }
 
 const { autoUpdater } = electronUpdater
@@ -137,7 +133,7 @@ function createWindow(): BrowserWindow {
   })
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (isAppNavigation(url)) return
+    if (isAppNavigation(url, allowedOrigins)) return
     event.preventDefault()
     openExternalUrl(url)
   })
@@ -178,6 +174,7 @@ app.whenReady().then(async () => {
     Effect.scoped(
       Effect.gen(function* () {
         const services = yield* Effect.context<never>()
+        runLog = (effect) => void Effect.runForkWith(services)(effect)
         const host = yield* startHostProcess({
           hostEntry: join(import.meta.dirname, 'host.js'),
           init: HostInit.make({
