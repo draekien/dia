@@ -12,14 +12,6 @@ import {
 import { Marker, MarkerContent, MarkerIcon } from '@renderer/components/ui/marker'
 import { Message, MessageContent } from '@renderer/components/ui/message'
 import {
-  MessageScroller,
-  MessageScrollerButton,
-  MessageScrollerContent,
-  MessageScrollerItem,
-  MessageScrollerProvider,
-  MessageScrollerViewport
-} from '@renderer/components/ui/message-scroller'
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -92,6 +84,7 @@ import { PermissionRequestCard } from './permission-request-card'
 import { PlanReviewCard } from './plan-review-card'
 import { QueuedMessages } from './queued-messages'
 import { SlashCommandMenu, slashMenuListboxId, slashMenuOptionId } from './slash-command-menu'
+import { TranscriptItem, TranscriptScroller } from './transcript-scroller'
 import { TurnActivityLine } from './turn-activity-line'
 import { Bubble, BubbleContent } from './ui/bubble'
 import { Button } from './ui/button'
@@ -536,217 +529,207 @@ function PaneChat({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <MessageScrollerProvider autoScroll>
-        <MessageScroller className="-mx-2.5 w-auto flex-1">
-          <MessageScrollerViewport>
-            <MessageScrollerContent className={cn('gap-2 py-2', column)}>
-              {chat.messages.map((message) => (
-                <MessageScrollerItem
-                  key={message.id}
-                  messageId={message.id}
-                  scrollAnchor={message.role === 'user'}
-                >
-                  <MessageView message={message} onRewind={setRewindTarget} />
-                </MessageScrollerItem>
-              ))}
-              {activity !== null && !pendingInteraction && (
-                <TurnActivityLine
-                  activity={activity}
-                  onResend={resend}
-                  onInterruptAndRetry={interruptAndRetry}
-                />
-              )}
-              {attention._tag === 'Errored' && retryText !== undefined && (
-                <div className="flex px-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="xs"
-                    className="gap-1"
-                    onClick={resend}
-                  >
-                    <RotateCcw />
-                    Retry
-                  </Button>
-                </div>
-              )}
-            </MessageScrollerContent>
-          </MessageScrollerViewport>
-          <MessageScrollerButton />
-        </MessageScroller>
-      </MessageScrollerProvider>
-      <div className={column}>
-        {pendingPermission !== null && (
-          <PermissionRequestCard request={pendingPermission} onResolve={respondToPermission} />
-        )}
-        {pendingQuestion !== null && (
-          <ClarifyingQuestionCard request={pendingQuestion} onResolve={respondToQuestion} />
-        )}
-        {pendingPlanReview !== null && (
-          <PlanReviewCard request={pendingPlanReview} onResolve={respondToPlanReview} />
-        )}
-        <InstallNotice status={adapterStatus} />
-        <form
-          className="mt-2"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void form.handleSubmit({ mode: defaultSendMode })
-          }}
-        >
-          <form.Field name="text">
-            {(field) => {
-              const token = activeSlashToken(field.state.value, caret)
-              const matches =
-                token === null ? [] : filterSlashCommands(chat.slashCommands, token.query)
-              const isMenuOpen = matches.length > 0 && !slashDismissed
-              const highlight = wrapHighlight(slashHighlight, 0, matches.length)
+    <>
+      <TranscriptScroller
+        contentClassName={column}
+        overlay={
+          <>
+            {pendingPermission !== null && (
+              <PermissionRequestCard request={pendingPermission} onResolve={respondToPermission} />
+            )}
+            {pendingQuestion !== null && (
+              <ClarifyingQuestionCard request={pendingQuestion} onResolve={respondToQuestion} />
+            )}
+            {pendingPlanReview !== null && (
+              <PlanReviewCard request={pendingPlanReview} onResolve={respondToPlanReview} />
+            )}
+            <InstallNotice status={adapterStatus} />
+            <form
+              className="mt-2"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void form.handleSubmit({ mode: defaultSendMode })
+              }}
+            >
+              <form.Field name="text">
+                {(field) => {
+                  const token = activeSlashToken(field.state.value, caret)
+                  const matches =
+                    token === null ? [] : filterSlashCommands(chat.slashCommands, token.query)
+                  const isMenuOpen = matches.length > 0 && !slashDismissed
+                  const highlight = wrapHighlight(slashHighlight, 0, matches.length)
 
-              const changeText = (value: string, nextCaret: number): void => {
-                field.handleChange(value)
-                setCaret(nextCaret)
-                setSlashDismissed(false)
-                setSlashHighlight(0)
-              }
-              const selectCommand = (command: SlashCommandInfo, at: ActiveSlashToken): void => {
-                const completion = slashCommandCompletion(command)
-                const value =
-                  field.state.value.slice(0, at.start) +
-                  completion +
-                  field.state.value.slice(at.end)
-                const nextCaret = at.start + completion.length
-                field.handleChange(value)
-                setSlashHighlight(0)
-                requestAnimationFrame(() => {
-                  const element = textareaRef.current
-                  if (element === null) return
-                  element.selectionStart = nextCaret
-                  element.selectionEnd = nextCaret
-                  setCaret(nextCaret)
-                })
-              }
+                  const changeText = (value: string, nextCaret: number): void => {
+                    field.handleChange(value)
+                    setCaret(nextCaret)
+                    setSlashDismissed(false)
+                    setSlashHighlight(0)
+                  }
+                  const selectCommand = (command: SlashCommandInfo, at: ActiveSlashToken): void => {
+                    const completion = slashCommandCompletion(command)
+                    const value =
+                      field.state.value.slice(0, at.start) +
+                      completion +
+                      field.state.value.slice(at.end)
+                    const nextCaret = at.start + completion.length
+                    field.handleChange(value)
+                    setSlashHighlight(0)
+                    requestAnimationFrame(() => {
+                      const element = textareaRef.current
+                      if (element === null) return
+                      element.selectionStart = nextCaret
+                      element.selectionEnd = nextCaret
+                      setCaret(nextCaret)
+                    })
+                  }
 
-              return (
-                <div className="relative">
-                  {chat.warmingCommands && (
-                    <div className="mb-1.5 flex items-center gap-2 px-1 text-muted-foreground text-xs">
-                      <Loader2Icon className="size-3.5 animate-spin motion-reduce:animate-none" />
-                      Loading commands…
-                    </div>
-                  )}
-                  <QueuedMessages
-                    queued={chat.queued}
-                    held={chat.queueHeld}
-                    onEdit={(messageId, text) => editQueued({ messageId, text })}
-                    onRemove={removeQueued}
-                  />
-                  {isMenuOpen && token !== null && (
-                    <SlashCommandMenu
-                      paneId={paneId}
-                      commands={matches}
-                      highlightedIndex={highlight}
-                      onSelect={(command) => selectCommand(command, token)}
-                      onHighlight={setSlashHighlight}
-                    />
-                  )}
-                  <InputGroup>
-                    <InputGroupTextarea
-                      ref={textareaRef}
-                      className="min-h-14"
-                      value={field.state.value}
-                      onChange={(event) =>
-                        changeText(event.target.value, event.target.selectionStart)
-                      }
-                      onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
-                      onKeyDown={(event) => {
-                        if (isMenuOpen) {
-                          if (event.key === 'ArrowDown') {
-                            event.preventDefault()
-                            setSlashHighlight(wrapHighlight(highlight, 1, matches.length))
-                            return
-                          }
-                          if (event.key === 'ArrowUp') {
-                            event.preventDefault()
-                            setSlashHighlight(wrapHighlight(highlight, -1, matches.length))
-                            return
-                          }
-                          if (event.key === 'Escape') {
-                            event.preventDefault()
-                            setSlashDismissed(true)
-                            return
-                          }
-                          if (
-                            (event.key === 'Enter' || event.key === 'Tab') &&
-                            !event.shiftKey &&
-                            !event.nativeEvent.isComposing
-                          ) {
-                            event.preventDefault()
-                            const command = matches[highlight]
-                            if (command !== undefined && token !== null) {
-                              selectCommand(command, token)
-                            }
-                            return
-                          }
-                        }
-                        if (
-                          event.key === 'Enter' &&
-                          !event.shiftKey &&
-                          !event.nativeEvent.isComposing
-                        ) {
-                          event.preventDefault()
-                          void form.handleSubmit({
-                            mode: sendModeForEnter(defaultSendMode, event)
-                          })
-                        }
-                      }}
-                      role="combobox"
-                      aria-expanded={isMenuOpen}
-                      aria-controls={slashMenuListboxId(paneId)}
-                      aria-autocomplete="list"
-                      aria-activedescendant={
-                        isMenuOpen ? slashMenuOptionId(paneId, highlight) : undefined
-                      }
-                      placeholder="Message dia..."
-                      aria-label="Message dia"
-                    />
-                    <InputGroupAddon align="block-end">
-                      <ModelPicker value={model} onChange={onModelChange} />
-                      <ThinkingLevelSelect value={thinkingLevel} onChange={onThinkingLevelChange} />
-                      <PermissionModeSelect
-                        value={permissionMode}
-                        onChange={onPermissionModeChange}
-                      />
-                      {isLoading && (
-                        <InputGroupButton
-                          type="button"
-                          variant="outline"
-                          size="icon-sm"
-                          className="ml-auto"
-                          aria-label="Stop"
-                          title="Stop"
-                          onClick={() => stop()}
-                        >
-                          <SquareIcon />
-                        </InputGroupButton>
+                  return (
+                    <div className="relative">
+                      {chat.warmingCommands && (
+                        <div className="mb-1.5 flex items-center gap-2 px-1 text-muted-foreground text-xs">
+                          <Loader2Icon className="size-3.5 animate-spin motion-reduce:animate-none" />
+                          Loading commands…
+                        </div>
                       )}
-                      <InputGroupButton
-                        type="submit"
-                        variant="default"
-                        size="icon-sm"
-                        className={cn(!isLoading && 'ml-auto')}
-                        aria-label="Send message"
-                        disabled={field.state.value.trim() === ''}
-                      >
-                        <ArrowUp />
-                      </InputGroupButton>
-                    </InputGroupAddon>
-                  </InputGroup>
-                </div>
-              )
-            }}
-          </form.Field>
-        </form>
-      </div>
+                      <QueuedMessages
+                        queued={chat.queued}
+                        held={chat.queueHeld}
+                        onEdit={(messageId, text) => editQueued({ messageId, text })}
+                        onRemove={removeQueued}
+                      />
+                      {isMenuOpen && token !== null && (
+                        <SlashCommandMenu
+                          paneId={paneId}
+                          commands={matches}
+                          highlightedIndex={highlight}
+                          onSelect={(command) => selectCommand(command, token)}
+                          onHighlight={setSlashHighlight}
+                        />
+                      )}
+                      <InputGroup>
+                        <InputGroupTextarea
+                          ref={textareaRef}
+                          className="min-h-14"
+                          value={field.state.value}
+                          onChange={(event) =>
+                            changeText(event.target.value, event.target.selectionStart)
+                          }
+                          onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+                          onKeyDown={(event) => {
+                            if (isMenuOpen) {
+                              if (event.key === 'ArrowDown') {
+                                event.preventDefault()
+                                setSlashHighlight(wrapHighlight(highlight, 1, matches.length))
+                                return
+                              }
+                              if (event.key === 'ArrowUp') {
+                                event.preventDefault()
+                                setSlashHighlight(wrapHighlight(highlight, -1, matches.length))
+                                return
+                              }
+                              if (event.key === 'Escape') {
+                                event.preventDefault()
+                                setSlashDismissed(true)
+                                return
+                              }
+                              if (
+                                (event.key === 'Enter' || event.key === 'Tab') &&
+                                !event.shiftKey &&
+                                !event.nativeEvent.isComposing
+                              ) {
+                                event.preventDefault()
+                                const command = matches[highlight]
+                                if (command !== undefined && token !== null) {
+                                  selectCommand(command, token)
+                                }
+                                return
+                              }
+                            }
+                            if (
+                              event.key === 'Enter' &&
+                              !event.shiftKey &&
+                              !event.nativeEvent.isComposing
+                            ) {
+                              event.preventDefault()
+                              void form.handleSubmit({
+                                mode: sendModeForEnter(defaultSendMode, event)
+                              })
+                            }
+                          }}
+                          role="combobox"
+                          aria-expanded={isMenuOpen}
+                          aria-controls={slashMenuListboxId(paneId)}
+                          aria-autocomplete="list"
+                          aria-activedescendant={
+                            isMenuOpen ? slashMenuOptionId(paneId, highlight) : undefined
+                          }
+                          placeholder="Message dia..."
+                          aria-label="Message dia"
+                        />
+                        <InputGroupAddon align="block-end">
+                          <ModelPicker value={model} onChange={onModelChange} />
+                          <ThinkingLevelSelect
+                            value={thinkingLevel}
+                            onChange={onThinkingLevelChange}
+                          />
+                          <PermissionModeSelect
+                            value={permissionMode}
+                            onChange={onPermissionModeChange}
+                          />
+                          {isLoading && (
+                            <InputGroupButton
+                              type="button"
+                              variant="outline"
+                              size="icon-sm"
+                              className="ml-auto"
+                              aria-label="Stop"
+                              title="Stop"
+                              onClick={() => stop()}
+                            >
+                              <SquareIcon />
+                            </InputGroupButton>
+                          )}
+                          <InputGroupButton
+                            type="submit"
+                            variant="default"
+                            size="icon-sm"
+                            className={cn(!isLoading && 'ml-auto')}
+                            aria-label="Send message"
+                            disabled={field.state.value.trim() === ''}
+                          >
+                            <ArrowUp />
+                          </InputGroupButton>
+                        </InputGroupAddon>
+                      </InputGroup>
+                    </div>
+                  )
+                }}
+              </form.Field>
+            </form>
+          </>
+        }
+      >
+        {chat.messages.map((message) => (
+          <TranscriptItem key={message.id} anchor={message.role === 'user'}>
+            <MessageView message={message} onRewind={setRewindTarget} />
+          </TranscriptItem>
+        ))}
+        {activity !== null && !pendingInteraction && (
+          <TurnActivityLine
+            activity={activity}
+            onResend={resend}
+            onInterruptAndRetry={interruptAndRetry}
+          />
+        )}
+        {attention._tag === 'Errored' && retryText !== undefined && (
+          <div className="flex px-1">
+            <Button type="button" variant="outline" size="xs" className="gap-1" onClick={resend}>
+              <RotateCcw />
+              Retry
+            </Button>
+          </div>
+        )}
+      </TranscriptScroller>
       <AlertDialog
         open={rewindTarget !== null}
         onOpenChange={(open) => {
@@ -781,7 +764,7 @@ function PaneChat({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   )
 }
 
@@ -830,7 +813,7 @@ function Pane({ paneId, model, thinkingLevel, permissionMode, focusComposer = fa
   }, [queryClient, paneId, attentionQueryKey])
 
   return (
-    <div className="flex h-full flex-col bg-background px-4 pb-4 text-ink">
+    <div className="flex h-full flex-col bg-background text-ink">
       <PaneChat
         key={paneId}
         paneId={paneId}
