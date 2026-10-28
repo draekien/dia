@@ -6,6 +6,7 @@ import { HostInit } from '@shared/ipc/host-process'
 import { Config, Effect, Layer, Option, References } from 'effect'
 import { app, BrowserWindow, nativeTheme, net, protocol, shell } from 'electron'
 import electronUpdater from 'electron-updater'
+import { isExternalUrl } from './external-url'
 import { resolveEsbuildBinaryPath, startHostProcess } from './host-process'
 import {
   TITLE_BAR_OVERLAY_COLOR,
@@ -71,6 +72,26 @@ const serveRenderer = (request: Request): Promise<Response> | Response => {
 
 const rendererDevUrl = Effect.runSync(Config.String('ELECTRON_RENDERER_URL').pipe(Config.option))
 
+const allowedOrigins = [
+  RENDERER_ORIGIN,
+  ...(isDev && Option.isSome(rendererDevUrl) ? [new URL(rendererDevUrl.value).origin] : [])
+]
+
+// Node's URL reports origin 'null' for the custom dia: scheme, so compare scheme and host instead.
+const isAppNavigation = (url: string): boolean => {
+  if (!URL.canParse(url)) return false
+  const { protocol, host } = new URL(url)
+  return allowedOrigins.includes(`${protocol}//${host}`)
+}
+
+const openExternalUrl = (url: string): void => {
+  if (isExternalUrl(url)) {
+    void shell.openExternal(url)
+    return
+  }
+  Effect.runFork(Effect.logWarning('Blocked opening a non-web URL', { url }))
+}
+
 const { autoUpdater } = electronUpdater
 
 // Kicks a GitHub Releases check; electron-updater downloads any newer build in the background
@@ -111,8 +132,14 @@ function createWindow(): BrowserWindow {
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    openExternalUrl(details.url)
     return { action: 'deny' }
+  })
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isAppNavigation(url)) return
+    event.preventDefault()
+    openExternalUrl(url)
   })
 
   if (isDev && Option.isSome(rendererDevUrl)) {
@@ -144,11 +171,6 @@ app.whenReady().then(async () => {
   )
 
   const LoggerLive = makeLoggerLive(isDev, logFilePath)
-
-  const allowedOrigins = [
-    RENDERER_ORIGIN,
-    ...(isDev && Option.isSome(rendererDevUrl) ? [new URL(rendererDevUrl.value).origin] : [])
-  ]
 
   let shuttingDown = false
 
