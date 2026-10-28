@@ -1,6 +1,6 @@
 import { Answers, type QuestionResponse } from '@shared/domain/attention'
 import type { PaneQuestionRequested } from '@shared/ipc/contract'
-import { type KeyboardEvent, useRef, useState } from 'react'
+import { type KeyboardEvent, useState } from 'react'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
 import { Input } from './ui/input'
@@ -83,8 +83,6 @@ export function ClarifyingQuestionCard({
   const [multi, setMulti] = useState<Record<string, ReadonlySet<string>>>({})
   const [otherText, setOtherText] = useState<Record<string, string>>({})
 
-  const formRef = useRef<HTMLFormElement>(null)
-
   const firstUnanswered = request.questions.findIndex(
     (question) => !isAnswered(question, single, multi, otherText)
   )
@@ -108,11 +106,13 @@ export function ClarifyingQuestionCard({
     )
   }
 
-  function handleEnter(event: KeyboardEvent<HTMLElement>): void {
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+  function handleEnter(event: KeyboardEvent<HTMLFormElement>): void {
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
     event.preventDefault()
+    if (event.shiftKey) return
     const target = event.target as HTMLElement
-    if (target.getAttribute('role') === 'radio' && target.dataset.state === 'unchecked') {
+    const role = target.getAttribute('role')
+    if ((role === 'radio' || role === 'checkbox') && target.dataset.state === 'unchecked') {
       target.click()
       return
     }
@@ -120,15 +120,15 @@ export function ClarifyingQuestionCard({
       submit()
       return
     }
-    formRef.current
-      ?.querySelectorAll('fieldset')
-      [firstUnanswered]?.querySelector<HTMLElement>('button, input')
-      ?.focus()
+    const fieldset = event.currentTarget.querySelectorAll('fieldset')[firstUnanswered]
+    const field =
+      fieldset?.querySelector<HTMLElement>('input:not([aria-hidden="true"])') ??
+      fieldset?.querySelector<HTMLElement>('button')
+    field?.focus()
   }
 
   return (
     <form
-      ref={formRef}
       aria-label="Claude needs your input"
       onKeyDown={handleEnter}
       onSubmit={(event) => {

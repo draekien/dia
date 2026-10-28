@@ -88,6 +88,29 @@ describe('ClarifyingQuestionCard Enter key', () => {
     )
   })
 
+  it('focuses the empty Other answer of the first unanswered question', () => {
+    renderCard()
+    const other = screen.getAllByRole('radio', { name: 'Other' })[0]
+    fireEvent.click(other)
+
+    fireEvent.keyDown(other, { key: 'Enter' })
+
+    expect(document.activeElement).toBe(
+      screen.getByRole('textbox', { name: `Custom answer for ${SCOPE}` })
+    )
+  })
+
+  it('blocks the native implicit submit on Shift+Enter', () => {
+    renderCard()
+    fireEvent.click(screen.getByRole('radio', { name: 'Small' }))
+    const plugin = screen.getByRole('radio', { name: 'Plugin' })
+    fireEvent.click(plugin)
+
+    const notPrevented = fireEvent.keyDown(plugin, { key: 'Enter', shiftKey: true })
+
+    expect(notPrevented).toBe(false)
+  })
+
   it('does not submit on Shift+Enter', () => {
     const { onResolve } = renderCard()
     fireEvent.click(screen.getByRole('radio', { name: 'Small' }))
