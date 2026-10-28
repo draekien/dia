@@ -308,6 +308,7 @@ Verify also checks that the drag rows under an open dialog's overlay do not move
 
 ## Implementation notes
 
+- `openSettings` and `SettingsLocation` live in `components/settings/open-settings.ts`, not `settings-dialog.tsx`: importing the dialog from `lib/actions.ts` closed an import cycle through `plugin-api.ts` that left every plugin `actions` member `undefined` in the build (`docs/reasoning/2026-10-28-plugin-api-actions-import-cycle.md`).
 - `shadcn add sidebar breadcrumb` again wrote `import { cn } from "cn"`, added the `cn` npm package, and also appended generic `--sidebar*` variables to `index.css`; all three were reverted (`docs/reasoning/2026-10-24-shadcn-add-installs-cn-npm-package.md`).
 - The new shadcn files carry JSDoc only on the parts dia added (`SidebarWidth`, `SidebarRail`, `useIsMobile`), matching the other files in `components/ui/`.
 - The project header is a real `<button>`, so `Enter` toggles it natively; `Space` still lifts it through the dnd-kit keyboard sensor.

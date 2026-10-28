@@ -1,5 +1,5 @@
 import type { AdapterStatusJson } from '@renderer/hooks/use-adapter-status'
-import { openSettings } from './settings/settings-dialog'
+import { openSettings } from './settings/open-settings'
 import { Button } from './ui/button'
 
 /**

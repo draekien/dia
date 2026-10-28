@@ -1,7 +1,7 @@
 import { CodeIcon, InfoIcon, SettingsIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { AboutDialog } from './about-dialog'
-import { openSettings, type SettingsLocation } from './settings/settings-dialog'
+import { openSettings, type SettingsLocation } from './settings/open-settings'
 import {
   CommandDialog,
   CommandEmpty,

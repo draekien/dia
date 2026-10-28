@@ -2,10 +2,10 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CommandPalette } from './command-palette'
-import { openSettings } from './settings/settings-dialog'
+import { openSettings } from './settings/open-settings'
 
 vi.mock('./about-dialog', () => ({ AboutDialog: () => null }))
-vi.mock('./settings/settings-dialog', () => ({ openSettings: vi.fn() }))
+vi.mock('./settings/open-settings', () => ({ openSettings: vi.fn() }))
 
 const optionNames = (): ReadonlyArray<string> =>
   screen.getAllByRole('option').map((option) => option.textContent ?? '')

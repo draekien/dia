@@ -2,7 +2,7 @@ import type { PaneId } from '@shared/domain/pane'
 import { type AgentName, ProjectId, type RegisterProjectRefusal } from '@shared/domain/project'
 import type { RemovalProgress } from '@shared/domain/project-removal'
 import { Effect, Option } from 'effect'
-import { openSettings } from '../components/settings/settings-dialog'
+import { openSettings } from '../components/settings/open-settings'
 import { openNewAgentForm } from './view'
 import { appRegistry, newAgentFormAtom, workspaceAtom } from './workspace-atoms'
 

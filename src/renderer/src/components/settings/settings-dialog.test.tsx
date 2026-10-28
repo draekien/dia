@@ -5,7 +5,8 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { openPluginsPage } from '../../lib/actions'
 import { TooltipProvider } from '../ui/tooltip'
-import { openSettings, SettingsDialog } from './settings-dialog'
+import { openSettings } from './open-settings'
+import { SettingsDialog } from './settings-dialog'
 
 const theme = vi.hoisted(() => ({ setTheme: vi.fn() }))
 

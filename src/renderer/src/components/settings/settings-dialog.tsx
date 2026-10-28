@@ -1,4 +1,3 @@
-import { Effect } from 'effect'
 import { BlocksIcon, PuzzleIcon, SlidersHorizontalIcon } from 'lucide-react'
 import {
   type ComponentType,
@@ -28,28 +27,10 @@ import {
 } from '../ui/sidebar'
 import { AdapterSettings, adapterLabel } from './adapter-settings'
 import { GeneralSettings } from './general-settings'
+import { OPEN_SETTINGS_EVENT, type SettingsLocation } from './open-settings'
 import { PluginSettings } from './plugin-settings'
 
-const OPEN_EVENT = 'dia:open-settings'
-
-/** A page of the Settings dialog; `adapter` names an adapter plugin (`PluginInfo.name`). */
-export type SettingsLocation =
-  | { readonly page: 'general' }
-  | { readonly page: 'adapters'; readonly adapter?: string }
-  | { readonly page: 'plugins' }
-
 const GENERAL: SettingsLocation = { page: 'general' }
-
-/**
- * Opens the Settings dialog on `location`, or on the page last viewed when omitted. Call it from
- * anywhere in the renderer; a mounted {@link SettingsDialog} responds.
- */
-export function openSettings(location?: SettingsLocation): void {
-  Effect.runSync(Effect.logDebug('Opening Settings', { location }))
-  window.dispatchEvent(
-    new CustomEvent<SettingsLocation | undefined>(OPEN_EVENT, { detail: location })
-  )
-}
 
 interface NavItem {
   readonly page: SettingsLocation['page']
@@ -69,7 +50,7 @@ const pageLabel = (page: SettingsLocation['page']): string =>
 /**
  * The Settings dialog: a nav of General, Adapters and Plugins beside the selected page under a
  * breadcrumb. Mount it once near the app root, inside a `TooltipProvider` and the theme provider;
- * it opens when {@link openSettings} is called and reopens on the page and adapter last viewed.
+ * it opens when `openSettings` is called and reopens on the page and adapter last viewed.
  */
 export function SettingsDialog() {
   const [open, setOpen] = useState(false)
@@ -82,8 +63,8 @@ export function SettingsDialog() {
       if (requested !== null) setLocation(requested)
       setOpen(true)
     }
-    window.addEventListener(OPEN_EVENT, onOpen)
-    return () => window.removeEventListener(OPEN_EVENT, onOpen)
+    window.addEventListener(OPEN_SETTINGS_EVENT, onOpen)
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onOpen)
   }, [])
 
   const showPlugins = useCallback(() => setLocation({ page: 'plugins' }), [])
