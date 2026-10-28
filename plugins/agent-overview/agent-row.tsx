@@ -7,8 +7,11 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
   cn,
+  SidebarMenuButton,
+  SidebarMenuItem,
   StatusIndicator,
-  statusLabel
+  statusLabel,
+  useSidebar
 } from '@dia/renderer-plugin'
 import type { AgentSummary } from '@shared/domain/agent-summary'
 import { AgentName } from '@shared/domain/project'
@@ -96,12 +99,15 @@ export function AgentRow({
   tabbable,
   onRename
 }: AgentRowProps) {
+  const collapsed = useSidebar().state === 'collapsed'
   const line = secondLine(row.summary)
-  const label = `${row.name}, ${statusLabel(row.summary.status)}. ${line.text}`
+  const status = statusLabel(row.summary.status)
+  const label = `${row.name}, ${status}. ${line.text}`
+  const summaryText = `${projectName} / ${row.name} · ${status} · ${line.text}`
   const body = (name: React.ReactNode) => (
     <>
-      <StatusIndicator status={row.summary.status} className="mt-1.5" />
-      <span className="flex min-w-0 flex-1 flex-col">
+      <StatusIndicator status={row.summary.status} />
+      <span className="flex min-w-0 flex-1 flex-col group-data-[collapsible=icon]:hidden">
         {name}
         <span className={cn('truncate text-xs text-ink-muted', line.mono && 'font-mono')}>
           {line.text}
@@ -109,52 +115,53 @@ export function AgentRow({
       </span>
     </>
   )
-  const rowClass = cn(
-    'group/row flex w-full cursor-default items-start gap-2.5 rounded-md py-1.5 pr-2 pl-7 text-left outline-none transition-colors duration-150 ease-out hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none',
-    selected && 'bg-primary/10 hover:bg-primary/15'
-  )
+  const buttonClass = 'cursor-default group-data-[collapsible=icon]:justify-center'
   if (renaming) {
     return (
-      <div data-nav={rowKey(row.paneId)} className={rowClass}>
-        {body(<RenameField row={row} onDone={() => onRename(false)} />)}
-      </div>
+      <SidebarMenuItem>
+        <SidebarMenuButton asChild size="lg" isActive={selected} className={buttonClass}>
+          <div data-nav={rowKey(row.paneId)}>
+            {body(<RenameField row={row} onDone={() => onRename(false)} />)}
+          </div>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
     )
   }
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <button
-          type="button"
-          data-nav={rowKey(row.paneId)}
-          tabIndex={tabbable ? 0 : -1}
-          aria-label={label}
-          aria-current={selected ? 'page' : undefined}
-          title={`${projectName} / ${row.name}`}
-          onClick={() => actions.selectTab(row.paneId)}
-          onKeyDown={(event) => {
-            if (event.key === 'F2') {
-              event.preventDefault()
-              onRename(true)
-            }
-          }}
-          className={rowClass}
-        >
-          {body(
-            <span className={cn('truncate text-sm text-ink', selected && 'font-medium')}>
-              {row.name}
-            </span>
-          )}
-        </button>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="w-48">
-        <ContextMenuGroup>
-          <ContextMenuItem onSelect={() => actions.selectTab(row.paneId)}>Show</ContextMenuItem>
-          <ContextMenuItem onSelect={() => onRename(true)}>
-            Rename
-            <ContextMenuShortcut>F2</ContextMenuShortcut>
-          </ContextMenuItem>
-        </ContextMenuGroup>
-      </ContextMenuContent>
-    </ContextMenu>
+    <SidebarMenuItem>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <SidebarMenuButton
+            size="lg"
+            isActive={selected}
+            tooltip={summaryText}
+            data-nav={rowKey(row.paneId)}
+            tabIndex={tabbable ? 0 : -1}
+            aria-label={collapsed ? summaryText : label}
+            aria-current={selected ? 'page' : undefined}
+            title={collapsed ? undefined : `${projectName} / ${row.name}`}
+            onClick={() => actions.selectTab(row.paneId)}
+            onKeyDown={(event) => {
+              if (event.key === 'F2') {
+                event.preventDefault()
+                onRename(true)
+              }
+            }}
+            className={buttonClass}
+          >
+            {body(<span className="truncate text-sm text-ink">{row.name}</span>)}
+          </SidebarMenuButton>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-48">
+          <ContextMenuGroup>
+            <ContextMenuItem onSelect={() => actions.selectTab(row.paneId)}>Show</ContextMenuItem>
+            <ContextMenuItem onSelect={() => onRename(true)}>
+              Rename
+              <ContextMenuShortcut>F2</ContextMenuShortcut>
+            </ContextMenuItem>
+          </ContextMenuGroup>
+        </ContextMenuContent>
+      </ContextMenu>
+    </SidebarMenuItem>
   )
 }

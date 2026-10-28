@@ -1,14 +1,21 @@
 import {
   actions,
   Button,
-  cn,
-  Input,
-  ScrollArea,
-  Separator,
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarHeader,
+  SidebarInput,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+  SidebarSeparator,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
   useAgentSummaries,
+  useSidebar,
   useWorkspace
 } from '@dia/renderer-plugin'
 import {
@@ -31,8 +38,8 @@ import {
 import type { PaneId } from '@shared/domain/pane'
 import { ProjectId, type RegisterProjectRefusal, type Workspace } from '@shared/domain/project'
 import { Option, Schema } from 'effect'
-import { FolderPlusIcon, PanelLeftCloseIcon, SearchIcon } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { FolderPlusIcon, SearchIcon } from 'lucide-react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { FilterPopover } from './filter-popover'
 import {
   buildOverview,
@@ -48,11 +55,9 @@ import {
   type StatusTag
 } from './overview'
 import { ProjectGroup } from './project-group'
-import { MetaMarker, Rail } from './rail'
 import { RemoveProjectDialog } from './remove-project-dialog'
 
 const COLLAPSED_KEY = 'dia.agent-overview.collapsed'
-const RAIL_KEY = 'dia.agent-overview.rail'
 
 const decodeCollapsed = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(ProjectId)))
 
@@ -94,19 +99,15 @@ const orderGroups = (
       )
 
 /** The shortcuts the overview answers anywhere in the window. */
-const useWindowShortcuts = (onSearch: () => void, onToggleRail: () => void): void => {
-  const handlers = useRef({ onSearch, onToggleRail })
-  handlers.current = { onSearch, onToggleRail }
+const useWindowShortcuts = (onSearch: () => void): void => {
+  const handlers = useRef({ onSearch })
+  handlers.current = { onSearch }
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
       if (event.key.toLowerCase() === 'p') {
         event.preventDefault()
         handlers.current.onSearch()
-      }
-      if (event.key.toLowerCase() === 'b') {
-        event.preventDefault()
-        handlers.current.onToggleRail()
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -122,13 +123,40 @@ function Kbd({ children }: { readonly children: React.ReactNode }) {
   )
 }
 
+function MetaMarker() {
+  return <span aria-hidden className="size-2 shrink-0 rounded-[2px] bg-primary/60" />
+}
+
 function MetaGroup() {
   return (
-    <div className="flex h-8 items-center gap-1.5 pr-1 pl-1.5">
-      <MetaMarker />
-      <span className="text-sm font-medium text-ink">Meta</span>
-      <span className="ml-auto text-xs text-ink-muted">No open proposals</span>
-    </div>
+    <SidebarGroup>
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            asChild
+            tooltip="Meta · No open proposals"
+            className="cursor-default group-data-[collapsible=icon]:justify-center"
+          >
+            <div>
+              <span className="sr-only">Meta, no open proposals</span>
+              <MetaMarker />
+              <span
+                aria-hidden
+                className="text-sm font-medium text-ink group-data-[collapsible=icon]:hidden"
+              >
+                Meta
+              </span>
+              <span
+                aria-hidden
+                className="ml-auto text-xs text-ink-muted group-data-[collapsible=icon]:hidden"
+              >
+                No open proposals
+              </span>
+            </div>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    </SidebarGroup>
   )
 }
 
@@ -171,15 +199,17 @@ function NoMatches({
 
 /**
  * The agent overview sidebar: search, filters and add-project in its header, the Meta group, then
- * every registered project as a collapsible, reorderable group of agent rows. `Ctrl P` focuses
- * the search and `Ctrl B` collapses it to the status rail.
+ * every registered project as a collapsible, reorderable group of agent rows. Render it inside a
+ * `SidebarProvider`. `Ctrl P` expands the sidebar and focuses the search; while the sidebar is
+ * collapsed it shows Meta and one status dot per agent.
  */
 export function AgentOverview() {
   const workspace = useWorkspace()
   const summaries = useAgentSummaries()
+  const { state, setOpen } = useSidebar()
+  const iconMode = state === 'collapsed'
   const [filters, setFilters] = useState<OverviewFilters>(NO_FILTERS)
   const [collapsed, setCollapsed] = useState<ReadonlySet<ProjectId>>(readCollapsed)
-  const [rail, setRail] = useState(() => localStorage.getItem(RAIL_KEY) === '1')
   const [dragging, setDragging] = useState(false)
   const [order, setOrder] = useState<ReadonlyArray<ProjectId> | null>(null)
   const [renaming, setRenaming] = useState<PaneId | null>(null)
@@ -190,32 +220,31 @@ export function AgentOverview() {
   const listRef = useRef<HTMLElement>(null)
 
   useEffect(() => localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])), [collapsed])
-  useEffect(() => localStorage.setItem(RAIL_KEY, rail ? '1' : '0'), [rail])
   // biome-ignore lint/correctness/useExhaustiveDependencies: the optimistic order lasts until the next workspace arrives
   useEffect(() => setOrder(null), [workspace])
 
   const focusSearch = () => {
-    setRail(false)
+    setOpen(true)
     requestAnimationFrame(() => searchRef.current?.focus())
   }
-  useWindowShortcuts(focusSearch, () => setRail((current) => !current))
+  useWindowShortcuts(focusSearch)
 
-  const narrowing = filtersApply(filters)
+  const activeFilters = iconMode ? NO_FILTERS : filters
+  const narrowing = filtersApply(activeFilters)
   const groups = useMemo(
     () =>
       workspace === undefined
         ? []
-        : orderGroups(buildOverview(workspace, summaries, filters), order),
-    [workspace, summaries, filters, order]
+        : orderGroups(buildOverview(workspace, summaries, activeFilters), order),
+    [workspace, summaries, activeFilters, order]
   )
-  const effectiveCollapsed = narrowing ? NO_COLLAPSED : collapsed
+  const effectiveCollapsed = narrowing || iconMode ? NO_COLLAPSED : collapsed
   const targets = useMemo(
-    () => navigationOrder(groups, effectiveCollapsed),
-    [groups, effectiveCollapsed]
-  )
-  const railGroups = useMemo(
-    () => (workspace === undefined || !rail ? [] : buildOverview(workspace, summaries, NO_FILTERS)),
-    [workspace, summaries, rail]
+    () =>
+      navigationOrder(groups, effectiveCollapsed).filter(
+        (target) => !iconMode || target._tag === 'RowTarget'
+      ),
+    [groups, effectiveCollapsed, iconMode]
   )
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -225,13 +254,7 @@ export function AgentOverview() {
     })
   )
 
-  if (workspace === undefined) return <aside aria-label="Agents" className="w-72 shrink-0" />
-
-  if (rail) {
-    return (
-      <Rail groups={railGroups} visibleTab={workspace.visibleTab} onExpand={() => setRail(false)} />
-    )
-  }
+  if (workspace === undefined) return <Sidebar variant="inset" collapsible="icon" />
 
   const nameOf = (id: string | number): string =>
     workspace.projects.find((entry) => entry.project.projectId === id)?.project.displayName ??
@@ -352,122 +375,126 @@ export function AgentOverview() {
     removing === null
       ? undefined
       : workspace.projects.find((entry) => entry.project.projectId === removing)
+  const shownGroups = iconMode ? groups.filter((group) => group.rows.length > 0) : groups
 
   return (
-    <aside aria-label="Agents" className="flex w-72 shrink-0 flex-col">
-      <div className="flex items-center gap-1 p-2">
-        <div className="relative min-w-0 flex-1">
-          <SearchIcon
-            aria-hidden
-            className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-ink-muted"
-          />
-          <Input
-            ref={searchRef}
-            type="search"
-            aria-label="Search agents and projects"
-            placeholder="Search"
-            value={filters.query}
-            onChange={(event) => setFilters({ ...filters, query: event.target.value })}
-            onKeyDown={onSearchKeyDown}
-            className="h-8 pr-12 pl-7 text-sm [&::-webkit-search-cancel-button]:hidden"
-          />
-          <span className="absolute top-1/2 right-2 -translate-y-1/2">
-            <Kbd>Ctrl P</Kbd>
-          </span>
-        </div>
-        <FilterPopover
-          filters={filters}
-          counts={statusCounts(workspace, summaries)}
-          onChange={setFilters}
-        />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="Add project" onClick={addProject}>
-              <FolderPlusIcon />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Add project</TooltipContent>
-        </Tooltip>
-      </div>
-      {notice !== null && (
-        <p role="status" className="px-3 pb-2 text-xs text-error">
-          {notice}
-        </p>
-      )}
-
-      <ScrollArea className="min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
-        <nav
-          ref={listRef}
-          aria-label="Projects and agents"
-          className="flex flex-col px-2 pb-2"
-          onKeyDown={onListKeyDown}
-          onFocus={(event) => {
-            const key = event.target.closest<HTMLElement>('[data-nav]')?.dataset.nav
-            if (key !== undefined) setTabStop(key)
-          }}
-        >
-          {!narrowing && (
+    <>
+      <Sidebar variant="inset" collapsible="icon">
+        <SidebarHeader className="pt-0">
+          <div className="titlebar-drag flex h-8 items-center px-2 text-sm font-semibold tracking-tight text-ink select-none">
+            {!iconMode && 'dia'}
+          </div>
+          {!iconMode && (
             <>
-              <MetaGroup />
-              <Separator className="my-1" />
+              <div className="flex items-center gap-1">
+                <div className="relative min-w-0 flex-1">
+                  <SearchIcon
+                    aria-hidden
+                    className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-ink-muted"
+                  />
+                  <SidebarInput
+                    ref={searchRef}
+                    type="search"
+                    aria-label="Search agents and projects"
+                    placeholder="Search"
+                    value={filters.query}
+                    onChange={(event) => setFilters({ ...filters, query: event.target.value })}
+                    onKeyDown={onSearchKeyDown}
+                    className="pr-12 pl-7 text-sm [&::-webkit-search-cancel-button]:hidden"
+                  />
+                  <span className="absolute top-1/2 right-2 -translate-y-1/2">
+                    <Kbd>Ctrl P</Kbd>
+                  </span>
+                </div>
+                <FilterPopover
+                  filters={filters}
+                  counts={statusCounts(workspace, summaries)}
+                  onChange={setFilters}
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Add project"
+                      onClick={addProject}
+                    >
+                      <FolderPlusIcon />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Add project</TooltipContent>
+                </Tooltip>
+              </div>
+              {notice !== null && (
+                <p role="status" className="text-xs text-error">
+                  {notice}
+                </p>
+              )}
             </>
           )}
-          {workspace.projects.length === 0 ? (
-            <NoProjects onAdd={addProject} />
-          ) : groups.length === 0 ? (
-            <NoMatches filters={filters} onClear={() => setFilters(NO_FILTERS)} />
-          ) : (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              modifiers={[restrictToVerticalAxis]}
-              accessibility={{
-                announcements,
-                screenReaderInstructions: {
-                  draggable:
-                    'To move a project, press Space. Press the up and down arrow keys to move it, Space to drop it, or Escape to cancel.'
-                }
-              }}
-              onDragStart={() => setDragging(true)}
-              onDragCancel={() => setDragging(false)}
-              onDragEnd={onDragEnd}
-            >
-              <SortableContext
-                items={groups.map((group) => group.project.projectId)}
-                strategy={verticalListSortingStrategy}
-              >
-                {groups.map((group, index) => (
-                  <div
-                    key={group.project.projectId}
-                    className={cn(index > 0 && 'border-t border-border/60 pt-1', 'mt-1')}
-                  >
-                    <ProjectGroup
-                      group={group}
-                      open={!effectiveCollapsed.has(group.project.projectId)}
-                      narrowing={narrowing}
-                      dragging={dragging}
-                      visibleTab={workspace.visibleTab}
-                      renaming={renaming}
-                      tabStop={currentStop}
-                      onToggle={() => toggle(group.project.projectId)}
-                      onRename={setRenaming}
-                      onRemove={() => setRemoving(group.project.projectId)}
-                    />
-                  </div>
-                ))}
-              </SortableContext>
-            </DndContext>
-          )}
-        </nav>
-      </ScrollArea>
+        </SidebarHeader>
 
-      <div className="flex items-center justify-between border-t border-border px-2 py-1.5">
-        <Button variant="ghost" size="xs" onClick={() => setRail(true)} className="text-ink-muted">
-          <PanelLeftCloseIcon data-icon="inline-start" />
-          Collapse
-        </Button>
-        <Kbd>Ctrl B</Kbd>
-      </div>
+        <SidebarContent className="group-data-[collapsible=icon]:overflow-x-hidden group-data-[collapsible=icon]:overflow-y-auto">
+          <nav
+            ref={listRef}
+            aria-label="Projects and agents"
+            className="contents"
+            onKeyDown={onListKeyDown}
+            onFocus={(event) => {
+              const key = event.target.closest<HTMLElement>('[data-nav]')?.dataset.nav
+              if (key !== undefined) setTabStop(key)
+            }}
+          >
+            {!narrowing && <MetaGroup />}
+            {workspace.projects.length === 0 ? (
+              <NoProjects onAdd={addProject} />
+            ) : groups.length === 0 ? (
+              <NoMatches filters={filters} onClear={() => setFilters(NO_FILTERS)} />
+            ) : (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                modifiers={[restrictToVerticalAxis]}
+                accessibility={{
+                  announcements,
+                  screenReaderInstructions: {
+                    draggable:
+                      'To move a project, press Space. Press the up and down arrow keys to move it, Space to drop it, or Escape to cancel.'
+                  }
+                }}
+                onDragStart={() => setDragging(true)}
+                onDragCancel={() => setDragging(false)}
+                onDragEnd={onDragEnd}
+              >
+                <SortableContext
+                  items={groups.map((group) => group.project.projectId)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {shownGroups.map((group) => (
+                    <Fragment key={group.project.projectId}>
+                      {iconMode && <SidebarSeparator />}
+                      <ProjectGroup
+                        group={group}
+                        open={!effectiveCollapsed.has(group.project.projectId)}
+                        narrowing={narrowing}
+                        dragging={dragging}
+                        iconMode={iconMode}
+                        visibleTab={workspace.visibleTab}
+                        renaming={renaming}
+                        tabStop={currentStop}
+                        onToggle={() => toggle(group.project.projectId)}
+                        onRename={setRenaming}
+                        onRemove={() => setRemoving(group.project.projectId)}
+                      />
+                    </Fragment>
+                  ))}
+                </SortableContext>
+              </DndContext>
+            )}
+          </nav>
+        </SidebarContent>
+        <SidebarRail />
+      </Sidebar>
 
       {removingEntry !== undefined && (
         <RemoveProjectDialog
@@ -476,6 +503,6 @@ export function AgentOverview() {
           onClose={() => setRemoving(null)}
         />
       )}
-    </aside>
+    </>
   )
 }
