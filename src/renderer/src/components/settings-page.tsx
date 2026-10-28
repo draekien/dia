@@ -186,7 +186,11 @@ function HealthSection({ status }: { readonly status: AdapterStatusJson | undefi
               {installPath ?? 'Not found'}
             </span>
             <span className="text-xs text-ink-muted">
-              {installPathOverride === null ? 'Found on PATH' : 'Chosen by you'}
+              {installPathOverride !== null
+                ? 'Chosen by you'
+                : installPathOf(health) === undefined
+                  ? 'Searched PATH'
+                  : 'Found on PATH'}
             </span>
           </span>
         </Row>

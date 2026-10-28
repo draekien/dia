@@ -185,6 +185,21 @@ describe('SettingsPage health', () => {
     )
   })
 
+  it('says PATH was searched, not that an executable was found there, when none was found', async () => {
+    installBridge({
+      status: {
+        health: { _tag: 'HealthNotInstalled', checkedAt: minutesAgo(1) },
+        checking: false,
+        installPathOverride: null
+      }
+    })
+    renderPage()
+
+    expect(await screen.findByText('Not found')).toBeTruthy()
+    expect(screen.getByText('Searched PATH')).toBeTruthy()
+    expect(screen.queryByText('Found on PATH')).toBeNull()
+  })
+
   it('clears a chosen executable from Use PATH', async () => {
     const bridge = installBridge({
       status: { ...ready(minutesAgo(1)), installPathOverride: 'D:/tools/claude.exe' }
