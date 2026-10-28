@@ -1,4 +1,4 @@
-import { query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import {
   ActivityRunFailed,
   type HostPluginContext,
@@ -16,14 +16,14 @@ import {
   FileSystem,
   Option,
   Path,
-  Queue,
   Result,
   Schema,
   type Scope,
   type Stream,
   SubscriptionRef
 } from 'effect'
-import { claudeExecutablePath, openPromptInput } from './session'
+import { type ClaudeInstall, NOT_INSTALLED_REASON } from './claude-install'
+import { withIdleQuery } from './idle-query'
 
 /** Longest a model probe may take before it counts as failed. */
 export const MODEL_PROBE_TIMEOUT = Duration.seconds(60)
@@ -56,65 +56,52 @@ const messageOf = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause)
 
 /**
- * The {@link ModelProbe} that asks the Agent SDK: it starts a query whose prompt never yields,
- * calls `supportedModels()`, and closes the query whatever the outcome. The query writes no
- * transcript and starts no MCP server. Fails after {@link MODEL_PROBE_TIMEOUT}, or when the
- * reply is empty or unreadable.
+ * The {@link ModelProbe} that asks the Claude Code install `install` resolves: it reads
+ * `supportedModels()` from a query that starts no turn. Fails when no install is found, after
+ * {@link MODEL_PROBE_TIMEOUT}, or when the reply is empty or unreadable.
  */
-export const probeModels: ModelProbe = (cwd) =>
-  Effect.acquireUseRelease(
+export const probeModels =
+  (install: ClaudeInstall): ModelProbe =>
+  (cwd) =>
     Effect.gen(function* () {
-      const input = yield* openPromptInput(yield* Queue.unbounded<SDKUserMessage>())
-      const probe = query({
-        prompt: input.prompts,
-        options: {
-          cwd,
-          persistSession: false,
-          strictMcpConfig: true,
-          ...(claudeExecutablePath !== undefined
-            ? { pathToClaudeCodeExecutable: claudeExecutablePath }
-            : {})
-        }
-      })
-      return { input, probe }
-    }),
-    ({ probe }) =>
-      Effect.tryPromise({
-        try: () => probe.supportedModels(),
-        catch: (cause) => new ModelProbeFailed({ message: messageOf(cause) })
-      }).pipe(
-        Effect.timeout(MODEL_PROBE_TIMEOUT),
-        Effect.catchTag('TimeoutError', () =>
-          Effect.fail(
-            new ModelProbeFailed({
-              message: `Claude Code did not report models within ${Duration.format(MODEL_PROBE_TIMEOUT)}`
-            })
-          )
-        ),
-        Effect.flatMap((rows) =>
-          rows.length === 0
-            ? Effect.fail(new ModelProbeFailed({ message: 'Claude Code reported no models' }))
-            : Schema.decodeUnknownEffect(ModelOptions)(
-                rows.map(({ value, displayName, description }) => ({
-                  value,
-                  displayName,
-                  description
-                }))
-              ).pipe(
-                Effect.mapError(
-                  (issue) =>
-                    new ModelProbeFailed({
-                      message: `Claude Code reported a model list dia cannot read: ${issue.message}`
-                    })
-                )
-              )
-        )
-      ),
-    ({ input, probe }) =>
-      input.end.pipe(
-        Effect.andThen(Effect.sync(() => probe.close())),
-        Effect.andThen(Effect.logDebug('Closed the model probe'))
+      const path = yield* install.resolve
+      if (Option.isNone(path)) {
+        return yield* new ModelProbeFailed({ message: NOT_INSTALLED_REASON })
+      }
+      return yield* withIdleQuery(path.value, cwd, readModels)
+    })
+
+const readModels = (probe: Query) =>
+  Effect.tryPromise({
+    try: () => probe.supportedModels(),
+    catch: (cause) => new ModelProbeFailed({ message: messageOf(cause) })
+  }).pipe(
+    Effect.timeout(MODEL_PROBE_TIMEOUT),
+    Effect.catchTag('TimeoutError', () =>
+      Effect.fail(
+        new ModelProbeFailed({
+          message: `Claude Code did not report models within ${Duration.format(MODEL_PROBE_TIMEOUT)}`
+        })
       )
+    ),
+    Effect.flatMap((rows) =>
+      rows.length === 0
+        ? Effect.fail(new ModelProbeFailed({ message: 'Claude Code reported no models' }))
+        : Schema.decodeUnknownEffect(ModelOptions)(
+            rows.map(({ value, displayName, description }) => ({
+              value,
+              displayName,
+              description
+            }))
+          ).pipe(
+            Effect.mapError(
+              (issue) =>
+                new ModelProbeFailed({
+                  message: `Claude Code reported a model list dia cannot read: ${issue.message}`
+                })
+            )
+          )
+    )
   )
 
 /**
@@ -125,12 +112,12 @@ export const probeModels: ModelProbe = (cwd) =>
  * read is retried after {@link MODEL_PROBE_RETRY}. `models` streams the current state first and
  * then every change; `refreshModels` reads the list now and completes when the read ends. Requires
  * `FileSystem` and `Path`; provide `DateTime.CurrentTimeZone` only to fix the time zone of the
- * daily rule, which otherwise follows the system zone at each read. `probe` defaults to
- * {@link probeModels}.
+ * daily rule, which otherwise follows the system zone at each read. Pass
+ * {@link probeModels} as `probe` outside tests.
  */
 export const makeModelCatalog = Effect.fnUntraced(function* (
   ctx: Pick<HostPluginContext, 'dataDir' | 'activities'>,
-  probe: ModelProbe = probeModels
+  probe: ModelProbe
 ): Effect.fn.Return<
   {
     readonly models: () => Stream.Stream<ModelCatalogState>

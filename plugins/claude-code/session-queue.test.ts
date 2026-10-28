@@ -6,12 +6,18 @@ import { assert, describe, it } from '@effect/vitest'
 import type { PaneConfig } from '@shared/domain/pane'
 import { Effect, Option, Queue } from 'effect'
 import { vi } from 'vitest'
+import {
+  type ClaudeInstall,
+  NOT_INSTALLED_REASON,
+  overrideUnrunnableReason
+} from './claude-install'
 import { openClaudeCodeSession } from './session'
 
 interface FakeQuery {
   readonly options: Options
   readonly delivered: Array<SDKUserMessage>
   interrupts: number
+  readonly models: Array<string | undefined>
   readonly emit: (message: SDKMessage | 'end') => void
 }
 
@@ -31,6 +37,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
       options,
       delivered: [],
       interrupts: 0,
+      models: [],
       emit: (message) => {
         Queue.offerUnsafe(pending, message)
       }
@@ -63,7 +70,11 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
         record.interrupts += 1
         return Promise.resolve()
       },
-      setPermissionMode: () => Promise.resolve()
+      setPermissionMode: () => Promise.resolve(),
+      setModel: (model?: string) => {
+        record.models.push(model)
+        return Promise.resolve()
+      }
     }
   }
   return { ...original, query: fakeQuery }
@@ -88,20 +99,36 @@ const settle = Effect.gen(function* () {
   for (let tick = 0; tick < 10; tick++) yield* Effect.promise(() => setImmediate())
 })
 
+const INSTALL_PATH = '/usr/local/bin/claude'
+
+const installAt = (
+  resolved: Option.Option<string>,
+  override: Option.Option<string> = Option.none()
+): ClaudeInstall => ({
+  resolve: Effect.succeed(resolved),
+  override: Effect.succeed(override),
+  setOverride: () => Effect.void
+})
+
 const open = Effect.gen(function* () {
   sdk.queries.length = 0
   const emitted: Array<OutboundMessage> = []
-  const session = yield* openClaudeCodeSession({
-    config,
-    resume: Option.none(),
-    emit: (message) => Effect.sync(() => emitted.push(message)),
-    tools: []
-  })
+  const startupFailures: Array<string> = []
+  const session = yield* openClaudeCodeSession(
+    {
+      config,
+      resume: Option.none(),
+      emit: (message) => Effect.sync(() => emitted.push(message)),
+      tools: []
+    },
+    installAt(Option.some(INSTALL_PATH)),
+    (reason) => Effect.sync(() => startupFailures.push(reason))
+  )
   const query = sdk.queries[0]
   assert.isDefined(query)
   const endTurn = (result: SDKMessage = success) =>
     Effect.sync(() => query.emit(result)).pipe(Effect.andThen(settle))
-  return { session, emitted, query, endTurn }
+  return { session, emitted, query, endTurn, startupFailures }
 })
 
 const texts = (query: FakeQuery) => query.delivered.map((message) => message.message.content)
@@ -282,6 +309,127 @@ describe('message queue', () => {
       const queue = lastQueue(emitted)
       assert.isTrue(queue?._tag === 'MessageQueueChanged' && queue.queued.length === 0)
       assert.deepStrictEqual((yield* session.messageQueue).queued, [])
+    })
+  )
+})
+
+describe('model change', () => {
+  it.effect('applies a new model when the next turn is sent and marks it before that turn', () =>
+    Effect.gen(function* () {
+      const { session, emitted, query } = yield* open
+
+      yield* session.setModel('claude-opus-5')
+      yield* session.sendText('first', 'queue')
+      yield* settle
+
+      assert.deepStrictEqual(query.models, ['claude-opus-5'])
+      assert.deepStrictEqual(tags(emitted), ['ModelChanged', 'UserMessagesSent'])
+    })
+  )
+
+  it.effect('lets a running turn finish on its model and switches at the next turn', () =>
+    Effect.gen(function* () {
+      const { session, emitted, query, endTurn } = yield* open
+      yield* session.sendText('first', 'queue')
+      yield* settle
+
+      yield* session.setModel('claude-opus-5')
+      yield* settle
+      const modelsDuringTurn = [...query.models]
+      yield* endTurn()
+      yield* session.sendText('second', 'queue')
+      yield* settle
+
+      assert.deepStrictEqual(modelsDuringTurn, [])
+      assert.deepStrictEqual(query.models, ['claude-opus-5'])
+      assert.deepStrictEqual(tags(emitted), [
+        'UserMessagesSent',
+        'TurnCompleted',
+        'ModelChanged',
+        'UserMessagesSent'
+      ])
+    })
+  )
+
+  it.effect('does nothing when the chosen model is the one in use', () =>
+    Effect.gen(function* () {
+      const { session, emitted, query } = yield* open
+
+      yield* session.setModel(config.model)
+      yield* session.sendText('first', 'queue')
+      yield* settle
+
+      assert.deepStrictEqual(query.models, [])
+      assert.deepStrictEqual(tags(emitted), ['UserMessagesSent'])
+    })
+  )
+
+  it.effect('applies a model once, not again on the turn after', () =>
+    Effect.gen(function* () {
+      const { session, query, endTurn } = yield* open
+      yield* session.setModel('claude-opus-5')
+      yield* session.sendText('first', 'queue')
+      yield* settle
+      yield* endTurn()
+
+      yield* session.sendText('second', 'queue')
+      yield* settle
+
+      assert.deepStrictEqual(query.models, ['claude-opus-5'])
+    })
+  )
+})
+
+describe('install', () => {
+  it.effect('starts its query on the resolved install path', () =>
+    Effect.gen(function* () {
+      const { query } = yield* open
+
+      assert.strictEqual(query.options.pathToClaudeCodeExecutable, INSTALL_PATH)
+      assert.strictEqual(query.options.env?.CLAUDE_CODE_STARTUP_FAILURE_RESULTS, '1')
+    })
+  )
+
+  it.effect('reports a known startup failure from the result', () =>
+    Effect.gen(function* () {
+      const { session, endTurn, startupFailures } = yield* open
+      yield* session.sendText('first', 'queue')
+      yield* settle
+
+      yield* endTurn({
+        type: 'result',
+        subtype: 'error_during_execution',
+        errors: ['Claude Code is too old'],
+        startup_failure_reason: 'cli_version_too_old'
+      } as unknown as SDKMessage)
+
+      assert.deepStrictEqual(startupFailures, ['cli_version_too_old'])
+    })
+  )
+
+  it.effect('ends at once without a query when no install is found', () =>
+    Effect.gen(function* () {
+      sdk.queries.length = 0
+      const session = yield* openClaudeCodeSession(
+        { config, resume: Option.none(), emit: () => Effect.void, tools: [] },
+        installAt(Option.none()),
+        () => Effect.void
+      )
+
+      assert.strictEqual(yield* session.ended, NOT_INSTALLED_REASON)
+      assert.strictEqual(sdk.queries.length, 0)
+    })
+  )
+
+  it.effect('names the stored override when it cannot be run', () =>
+    Effect.gen(function* () {
+      const session = yield* openClaudeCodeSession(
+        { config, resume: Option.none(), emit: () => Effect.void, tools: [] },
+        installAt(Option.none(), Option.some('D:\\claude.cmd')),
+        () => Effect.void
+      )
+
+      assert.strictEqual(yield* session.ended, overrideUnrunnableReason('D:\\claude.cmd'))
     })
   )
 })
