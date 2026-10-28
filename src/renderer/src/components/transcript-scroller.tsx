@@ -30,8 +30,9 @@ export function transcriptEndSpace({
 }
 
 /**
- * A transcript row for use inside `TranscriptScroller`. Set `anchor` on rows the user sent: when
- * a new anchor row appears, the scroller shows it at the top of the pane while its reply streams in.
+ * A transcript row, rendered as a direct child of `TranscriptScroller`. Set `anchor` on rows the
+ * user sent: when a new anchor row appears, the scroller shows it at the top of the pane while its
+ * reply streams in.
  */
 export function TranscriptItem({
   anchor = false,
@@ -82,24 +83,36 @@ export function TranscriptScroller({
     const overlayElement = overlayRef.current
     if (!viewport || !items || !spacer || !overlayElement) return
 
-    let lastAnchor: Element | null | undefined
+    const lastAnchorRow = (): HTMLElement | null => {
+      for (let row = items.lastElementChild; row !== null; row = row.previousElementSibling) {
+        if (row instanceof HTMLElement && row.dataset.transcriptAnchor !== undefined) return row
+      }
+      return null
+    }
+
+    let lastAnchor = lastAnchorRow()
+    let lastSpace = -1
     const layout = (): void => {
-      const anchors = items.querySelectorAll('[data-transcript-anchor]')
-      const anchor = anchors.item(anchors.length - 1)
-      if (lastAnchor !== undefined && anchor !== lastAnchor) followingRef.current = true
+      const anchor = lastAnchorRow()
+      if (anchor !== lastAnchor) followingRef.current = true
       lastAnchor = anchor
       const contentTop = viewport.getBoundingClientRect().top - viewport.scrollTop
-      spacer.style.height = `${transcriptEndSpace({
-        overlayHeight: overlayElement.offsetHeight,
+      const overlayHeight = overlayElement.offsetHeight
+      const space = transcriptEndSpace({
+        overlayHeight,
         anchorTop: anchor === null ? null : anchor.getBoundingClientRect().top - contentTop,
         itemsBottom: items.getBoundingClientRect().bottom - contentTop,
         viewportHeight: viewport.clientHeight
-      })}px`
+      })
+      viewport.style.scrollPaddingBottom = `${overlayHeight}px`
+      if (space !== lastSpace) {
+        spacer.style.height = `${space}px`
+        lastSpace = space
+      }
       if (followingRef.current) viewport.scrollTop = viewport.scrollHeight
     }
 
     layout()
-    if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(layout)
     for (const element of [viewport, items, overlayElement]) observer.observe(element)
     return () => observer.disconnect()
@@ -122,6 +135,7 @@ export function TranscriptScroller({
     const viewport = viewportRef.current
     if (!viewport) return
     followingRef.current = true
+    setFollowing(true)
     viewport.scrollTop = viewport.scrollHeight
   }
 

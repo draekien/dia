@@ -63,5 +63,5 @@ use the webkit route.
 - When scrollbar styling "does nothing," grep the *compiled* CSS for
   `scrollbar-width` — a stray standard property is the tell.
 - A true floating overlay (Radix `ScrollArea`) still can't be transplanted onto
-  the message-scroller viewport: the primitive owns that scroll element (writes
-  `scrollTop`, toggles `data-autoscrolling`). The webkit pill is the match.
+  the `TranscriptScroller` viewport: that component owns the scroll element and
+  writes its `scrollTop`. The webkit pill is the match.
