@@ -21,40 +21,48 @@ export function wireGetHostConnection(connection: Effect.Effect<HostConnection>)
 }
 
 /**
- * Registers the IPC handler that opens a native directory picker and returns the chosen path,
- * or `null` when the user cancels. The renderer passes the directory to start in (`null` for
- * the OS default) and records the choice with the Host. Call once during main-process startup
- * with the window that should own the dialog.
+ * Registers the IPC handlers that open a native directory picker (`chooseDirectory`) or file
+ * picker (`chooseFile`) and return the chosen path, or `null` when the user cancels. The renderer
+ * passes the directory to start in (`null` for the OS default). Only one picker is open at a
+ * time; a request while one is open receives that picker's result. Call once during main-process
+ * startup with the window that should own the dialog.
  */
 export function wireChooseDirectory(ownerWindow: BrowserWindow): void {
   // Native dialogs are per-call, not deduplicated by Electron itself -- without this guard,
   // rapid double-invokes (or an unresponsive first click) can stack multiple pickers.
   let pending: Promise<string | null> | null = null
 
-  ipcMain.handle(
-    CHANNEL.chooseDirectory,
-    (_event, defaultPath: unknown): Promise<string | null> => {
-      if (pending !== null) return pending
+  const choose = (
+    property: 'openDirectory' | 'openFile',
+    defaultPath: unknown
+  ): Promise<string | null> => {
+    if (pending !== null) return pending
 
-      pending = Effect.runPromise(
-        Effect.gen(function* () {
-          // Passing the owner window makes this an app-modal dialog: the window can't be
-          // interacted with again until the picker closes, reinforcing the single-picker guard.
-          const result = yield* Effect.tryPromise(() =>
-            dialog.showOpenDialog(ownerWindow, {
-              properties: ['openDirectory'],
-              defaultPath: typeof defaultPath === 'string' ? defaultPath : undefined
-            })
-          )
-          if (result.canceled || result.filePaths.length === 0) return null
-          return Option.getOrNull(Option.fromNullishOr(result.filePaths[0]))
-        })
-      ).finally(() => {
-        pending = null
+    pending = Effect.runPromise(
+      Effect.gen(function* () {
+        // Passing the owner window makes this an app-modal dialog: the window can't be
+        // interacted with again until the picker closes, reinforcing the single-picker guard.
+        const result = yield* Effect.tryPromise(() =>
+          dialog.showOpenDialog(ownerWindow, {
+            properties: [property],
+            defaultPath: typeof defaultPath === 'string' ? defaultPath : undefined
+          })
+        )
+        if (result.canceled || result.filePaths.length === 0) return null
+        return Option.getOrNull(Option.fromNullishOr(result.filePaths[0]))
       })
+    ).finally(() => {
+      pending = null
+    })
 
-      return pending
-    }
+    return pending
+  }
+
+  ipcMain.handle(CHANNEL.chooseDirectory, (_event, defaultPath: unknown) =>
+    choose('openDirectory', defaultPath)
+  )
+  ipcMain.handle(CHANNEL.chooseFile, (_event, defaultPath: unknown) =>
+    choose('openFile', defaultPath)
   )
 }
 

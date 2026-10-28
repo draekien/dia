@@ -36,7 +36,10 @@ describe('resolveAgentBackend', () => {
         readHistory: () => Effect.succeed([{ role: 'user', content: 'hi' }]),
         deleteSession: () => Effect.void,
         models: () => Stream.empty,
-        refreshModels: () => Effect.void
+        refreshModels: () => Effect.void,
+        status: () => Stream.empty,
+        checkHealth: () => Effect.void,
+        setInstallPath: () => Effect.void
       }
 
       const resolved = yield* resolveAgentBackend(registryProviding(Option.some(backend)))
@@ -111,7 +114,10 @@ describe('agentBackendProblems', () => {
     readHistory: () => Effect.succeed([]),
     deleteSession: () => Effect.void,
     models: () => Stream.empty,
-    refreshModels: () => Effect.void
+    refreshModels: () => Effect.void,
+    status: () => Stream.empty,
+    checkHealth: () => Effect.void,
+    setInstallPath: () => Effect.void
   }
 
   it('reports no problem for a value with every backend method', () => {
@@ -140,7 +146,10 @@ describe('agentBackendProblems', () => {
         '"agentBackend.readHistory" is not a function',
         '"agentBackend.deleteSession" is not a function',
         '"agentBackend.models" is not a function',
-        '"agentBackend.refreshModels" is not a function'
+        '"agentBackend.refreshModels" is not a function',
+        '"agentBackend.status" is not a function',
+        '"agentBackend.checkHealth" is not a function',
+        '"agentBackend.setInstallPath" is not a function'
       ]
     ],
     [
@@ -180,7 +189,10 @@ describe('adapterContract', () => {
       '"agentBackend.readHistory" is not a function',
       '"agentBackend.deleteSession" is not a function',
       '"agentBackend.models" is not a function',
-      '"agentBackend.refreshModels" is not a function'
+      '"agentBackend.refreshModels" is not a function',
+      '"agentBackend.status" is not a function',
+      '"agentBackend.checkHealth" is not a function',
+      '"agentBackend.setInstallPath" is not a function'
     ])
   })
 })

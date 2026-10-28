@@ -3,6 +3,7 @@ import { assert, describe, it } from '@effect/vitest'
 import { NoActivity, StatusIdle } from '@shared/domain/agent-summary'
 import { Deny, FreeformResponse } from '@shared/domain/attention'
 import type { SendMode } from '@shared/domain/message-queue'
+import { LastVisibleModel } from '@shared/domain/model-preferences'
 import {
   AgentName,
   DirectoryNotFoundError,
@@ -31,11 +32,13 @@ import {
 import { Effect, FileSystem, Layer, Option, Stream } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { InvalidOverrideError, PluginSources } from '../plugins/plugin-sources'
+import { AdapterStatusFeed } from '../services/adapter-status-feed'
 import { AgentSummaries } from '../services/agent-summaries'
 import { BackgroundActivities } from '../services/background-activities'
 import { type CommandDeduper, makeCommandDeduperLive } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
 import { ModelCatalogFeed } from '../services/model-catalog-feed'
+import { ModelPreferences } from '../services/model-preferences'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { SettingsStore } from '../services/settings-store'
@@ -60,6 +63,8 @@ interface Harness {
     | PluginSources
     | BackgroundActivities
     | ModelCatalogFeed
+    | AdapterStatusFeed
+    | ModelPreferences
   >
 }
 
@@ -119,6 +124,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     messageQueue: Effect.succeed({ queued: [{ id: 'm-1', text: 'later' }], held: true }),
     setThinkingLevel: () => Effect.void,
     setPermissionMode: () => Effect.void,
+    setModel: () => Effect.void,
     resolvePermission: (requestId) =>
       Effect.sync(() => {
         calls.push(`resolvePermission:${requestId}`)
@@ -175,6 +181,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     selectTab: (paneId) => Effect.sync(() => void calls.push(`selectTab:${paneId ?? 'none'}`)),
     setThinkingLevel: () => Effect.void,
     setPermissionMode: () => Effect.void,
+    setModel: (paneId, model) => Effect.sync(() => void calls.push(`setModel:${paneId}:${model}`)),
     getPaneHistory: () => Effect.succeed([]),
     resumePane: () => Effect.void,
     ensureLive: (paneId) =>
@@ -191,6 +198,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   })
 
   const settings = Layer.succeed(SettingsStore, {
+    getAdapterPreferences: () => Effect.succeed({ models: {}, defaults: {} }),
+    setAdapterPreferences: () => Effect.void,
     getTheme: () => Effect.succeed(Option.none()),
     setTheme: () => Effect.void,
     getSendMode: () => Effect.succeed(Option.fromNullishOr(options.storedSendMode)),
@@ -267,6 +276,32 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     })
   })
 
+  const adapterStatus = Layer.succeed(AdapterStatusFeed, {
+    start: Effect.void,
+    current: Effect.die(new Error('current not used by these tests')),
+    check: Effect.sync(() => {
+      calls.push('checkHealth')
+    }),
+    setInstallPath: (path) =>
+      Effect.sync(() => {
+        calls.push(`setInstallPath:${path}`)
+      })
+  })
+
+  const modelPreferences = Layer.succeed(ModelPreferences, {
+    current: Effect.die(new Error('current not used by these tests')),
+    set: (model, preference) =>
+      model === 'last-visible'
+        ? Effect.fail(new LastVisibleModel({ message: 'At least one model must stay visible' }))
+        : Effect.sync(() => {
+            calls.push(`setModelPreference:${model}:${Option.getOrElse(preference, () => 'none')}`)
+          }),
+    setDefaults: (defaults) =>
+      Effect.sync(() => {
+        calls.push(`setAgentDefaults:${JSON.stringify(defaults)}`)
+      })
+  })
+
   const hub = Layer.succeed(EventHub, {
     publish: (event) =>
       Effect.sync(() => {
@@ -289,7 +324,9 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       plugins,
       pluginSources,
       activities,
-      models
+      models,
+      adapterStatus,
+      modelPreferences
     )
   }
 }
@@ -304,6 +341,78 @@ const withHandlers = <A, E>(
   }).pipe(Effect.provide(Layer.mergeAll(harness.layer, NodePath.layer)))
 
 describe('Dia RPC handlers', () => {
+  it.effect('delivers the pane id and model of a SetModel unchanged, once per commandId', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ livePanes: [PANE_ID] })
+
+      yield* withHandlers(harness, (handlers) =>
+        Effect.gen(function* () {
+          const command = {
+            _tag: 'SetModel' as const,
+            paneId: PANE_ID,
+            model: 'claude-opus-5',
+            commandId: 'req-1'
+          }
+          yield* handlers.SetModel(command)
+          yield* handlers.SetModel(command)
+        })
+      )
+
+      assert.deepStrictEqual(
+        harness.calls.filter((call) => call.startsWith('setModel')),
+        [`setModel:${PANE_ID}:claude-opus-5`]
+      )
+    })
+  )
+
+  it.effect('delivers the model and preference of a SetModelPreference unchanged', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+
+      yield* withHandlers(harness, (handlers) =>
+        Effect.gen(function* () {
+          yield* handlers.SetModelPreference({ model: 'claude-opus-5', preference: 'favourite' })
+          yield* handlers.SetModelPreference({ model: 'claude-haiku-5', preference: null })
+        })
+      )
+
+      assert.deepStrictEqual(harness.calls, [
+        'setModelPreference:claude-opus-5:favourite',
+        'setModelPreference:claude-haiku-5:none'
+      ])
+    })
+  )
+
+  it.effect('returns the refusal to hide the last visible model as a typed error', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+
+      const error = yield* withHandlers(harness, (handlers) =>
+        Effect.flip(handlers.SetModelPreference({ model: 'last-visible', preference: 'hidden' }))
+      )
+
+      assert.strictEqual(error._tag, 'LastVisibleModel')
+    })
+  )
+
+  it.effect('passes the SetInstallPath path, and null to clear it, to the adapter unchanged', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+
+      yield* withHandlers(harness, (handlers) =>
+        Effect.gen(function* () {
+          yield* handlers.SetInstallPath({ path: 'D:\\tools\\claude.exe' })
+          yield* handlers.SetInstallPath({ path: null })
+        })
+      )
+
+      assert.deepStrictEqual(harness.calls, [
+        'setInstallPath:D:\\tools\\claude.exe',
+        'setInstallPath:null'
+      ])
+    })
+  )
+
   it.effect('applies a SendMessage once when the client resends it with the same commandId', () =>
     Effect.gen(function* () {
       const harness = makeHarness({ livePanes: [PANE_ID] })

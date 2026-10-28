@@ -1,7 +1,12 @@
+import { type AdapterStatusSnapshot, HealthNotChecked } from '@shared/domain/adapter-status'
 import { type AgentSummary, NoActivity, StatusIdle } from '@shared/domain/agent-summary'
 import { Deny, FreeformResponse } from '@shared/domain/attention'
 import { ActivityNotFound } from '@shared/domain/background-activity'
 import { type ModelCatalogSnapshot, ModelsReady } from '@shared/domain/model'
+import {
+  EMPTY_ADAPTER_PREFERENCES,
+  type ModelPreferencesSnapshot
+} from '@shared/domain/model-preferences'
 import {
   AgentName,
   DirectoryNotFoundError,
@@ -17,6 +22,7 @@ import {
   Removing
 } from '@shared/domain/project-removal'
 import {
+  type AdapterStatusSnapshotJson,
   type AgentSummariesReplaced,
   type IpcEvent,
   type ModelCatalogSnapshotJson,
@@ -62,6 +68,15 @@ const SNAPSHOT_JSON: ModelCatalogSnapshotJson = {
     fetchedAt: '2026-10-25T15:00:00.000Z',
     refreshing: false
   }
+}
+
+const ADAPTER_STATUS: AdapterStatusSnapshot = {
+  revision: 3,
+  status: { health: HealthNotChecked.make({}), checking: false, installPathOverride: null }
+}
+const PREFERENCES: ModelPreferencesSnapshot = {
+  revision: 5,
+  preferences: EMPTY_ADAPTER_PREFERENCES
 }
 
 class ConnectionError extends Data.TaggedError('ConnectionError')<{ readonly reason: string }> {}
@@ -115,6 +130,8 @@ const makeClient = (script: ClientScript = {}) => {
     })
   )
   const getModels = vi.fn(() => script.getModels ?? Effect.succeed(SNAPSHOT))
+  const getAdapterStatus = vi.fn(() => Effect.succeed(ADAPTER_STATUS))
+  const getModelPreferences = vi.fn(() => Effect.succeed(PREFERENCES))
   const runActivity = vi.fn(
     (_payload: { plugin: string; id: string }) => script.runActivity ?? Effect.void
   )
@@ -134,6 +151,8 @@ const makeClient = (script: ClientScript = {}) => {
     RegisterProject: registerProject,
     RemoveProject: removeProject,
     GetModels: getModels,
+    GetAdapterStatus: getAdapterStatus,
+    GetModelPreferences: getModelPreferences,
     RunActivity: runActivity
   } as unknown as DiaRpcClient
   return {
@@ -324,6 +343,25 @@ describe('makeHostApi', () => {
 
     expect(models).toEqual([SNAPSHOT_JSON])
     expect(activityChanges).toBe(1)
+  })
+
+  it('re-reads the adapter status and the model preferences after a reconnect', async () => {
+    const { client } = makeClient({ subscriptions: [dropped] })
+    const { api } = makeApi(client)
+    const statuses: Array<AdapterStatusSnapshotJson> = []
+    const preferences: Array<ModelPreferencesSnapshot> = []
+    api.adapter.onStatusChanged((snapshot) => statuses.push(snapshot))
+    api.adapter.onPreferencesChanged((snapshot) => preferences.push(snapshot))
+
+    await advance(1500)
+
+    expect(statuses).toEqual([
+      {
+        revision: 3,
+        status: { health: { _tag: 'HealthNotChecked' }, checking: false, installPathOverride: null }
+      }
+    ])
+    expect(preferences).toEqual([PREFERENCES])
   })
 
   it('still re-reads the workspace after a reconnect when the model list cannot be read', async () => {

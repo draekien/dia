@@ -8,6 +8,8 @@ import { makePluginSourcesLive, PluginSources } from './plugin-sources'
 const memorySettings = (initial: Record<string, string> = {}) => {
   let overrides: Record<string, string> = initial
   return Layer.succeed(SettingsStore)({
+    getAdapterPreferences: () => Effect.succeed({ models: {}, defaults: {} }),
+    setAdapterPreferences: () => Effect.void,
     getTheme: () => Effect.succeed(Option.none()),
     setTheme: () => Effect.void,
     getSendMode: () => Effect.succeed(Option.none()),

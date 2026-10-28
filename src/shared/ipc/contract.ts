@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import { AdapterStatusSnapshot } from '../domain/adapter-status'
 import { AgentSummary } from '../domain/agent-summary'
 import {
   AttentionState,
@@ -10,6 +11,12 @@ import {
 import type { ActivityInfo, ActivityNotFound } from '../domain/background-activity'
 import { MessageQueueSnapshot, OutgoingMessage, SendMode } from '../domain/message-queue'
 import { ModelCatalogSnapshot } from '../domain/model'
+import {
+  type AgentDefaults,
+  type LastVisibleModel,
+  type ModelPreference,
+  ModelPreferencesSnapshot
+} from '../domain/model-preferences'
 import { ConversationMessage, PermissionMode, ThinkingLevel } from '../domain/pane'
 import type { RegisterProjectRefusal } from '../domain/project'
 import { AgentName, CreateTabRequest, ProjectId, Workspace } from '../domain/project'
@@ -27,8 +34,8 @@ const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
  * Electron IPC channel names shared by main, preload, and renderer. Only window duties travel
  * over Electron IPC; every pane and workspace operation goes to the Host over its WebSocket
  * (see `DiaRpcs`). `event` carries updater status pushed from main; `getHostConnection` returns
- * the Host's {@link HostConnection}; `chooseDirectory` opens the native directory picker given
- * a default path; `setTitleBarOverlay` recolours the native window-control overlay when the
+ * the Host's {@link HostConnection}; `chooseDirectory` and `chooseFile` open the native directory
+ * or file picker given a default path; `setTitleBarOverlay` recolours the native window-control overlay when the
  * theme changes; `getAppVersion`/`getUpdateStatus`/`checkForUpdates`/`installUpdate` read the
  * running version and drive the self-updater; `toggleDevTools` opens or closes the renderer's
  * DevTools (dia's custom title bar has no native menu to do so); `revealPath` shows a directory
@@ -38,6 +45,7 @@ export const CHANNEL = {
   event: 'dia:event',
   getHostConnection: 'dia:getHostConnection',
   chooseDirectory: 'dia:chooseDirectory',
+  chooseFile: 'dia:chooseFile',
   setTitleBarOverlay: 'dia:setTitleBarOverlay',
   getAppVersion: 'dia:getAppVersion',
   getUpdateStatus: 'dia:getUpdateStatus',
@@ -196,6 +204,16 @@ export const SetPermissionMode = Schema.TaggedStruct('SetPermissionMode', {
   mode: PermissionMode
 })
 export type SetPermissionMode = typeof SetPermissionMode.Type
+
+/**
+ * Command sent by the renderer to make the turns of pane `paneId` use `model` from its next turn,
+ * persisted on the pane's `PaneConfig`. A running turn finishes on its model.
+ */
+export const SetModel = Schema.TaggedStruct('SetModel', {
+  paneId: Uuid,
+  model: Schema.NonEmptyString
+})
+export type SetModel = typeof SetModel.Type
 
 /**
  * Command sent by the renderer to answer a pending plan review (identified by
@@ -446,6 +464,16 @@ export const PaneUserMessagesSent = Schema.TaggedStruct('PaneUserMessagesSent', 
 export type PaneUserMessagesSent = typeof PaneUserMessagesSent.Type
 
 /**
+ * Event pushed to the renderer when pane `paneId`'s next turn is the first to use `model`, before
+ * that turn's `PaneUserMessagesSent`. The renderer marks the switch in the transcript.
+ */
+export const PaneModelChanged = Schema.TaggedStruct('PaneModelChanged', {
+  paneId: Uuid,
+  model: Schema.NonEmptyString
+})
+export type PaneModelChanged = typeof PaneModelChanged.Type
+
+/**
  * Event pushed to the renderer whenever the workspace changes: a project was registered, moved
  * or removed, a tab was created, renamed or changed, or the visible tab changed. `workspace` is
  * the full current workspace and replaces the renderer's copy. Never replayed.
@@ -536,6 +564,26 @@ export const ModelsChanged = Schema.TaggedStruct('ModelsChanged', {
 })
 export type ModelsChanged = typeof ModelsChanged.Type
 
+/**
+ * Event pushed to the renderer whenever the agent adapter's install status changes. Never
+ * replayed; the preload raises it itself after a reconnect. Keep the snapshot with the highest
+ * `revision`.
+ */
+export const AdapterStatusChanged = Schema.TaggedStruct('AdapterStatusChanged', {
+  snapshot: AdapterStatusSnapshot
+})
+export type AdapterStatusChanged = typeof AdapterStatusChanged.Type
+
+/**
+ * Event pushed to the renderer whenever the adapter's model preferences or defaults change.
+ * Never replayed; the preload raises it itself after a reconnect. Keep the snapshot with the
+ * highest `revision`.
+ */
+export const ModelPreferencesChanged = Schema.TaggedStruct('ModelPreferencesChanged', {
+  snapshot: ModelPreferencesSnapshot
+})
+export type ModelPreferencesChanged = typeof ModelPreferencesChanged.Type
+
 // Additional events (PaneClosed) join this union in later bullets.
 /**
  * Union of every event pushed to the renderer, by the Host's event stream or
@@ -559,6 +607,7 @@ export const IpcEvent = Schema.Union([
   PaneRewoundToCheckpoint,
   PaneMessageQueueChanged,
   PaneUserMessagesSent,
+  PaneModelChanged,
   WorkspaceChanged,
   AgentSummaryChanged,
   AgentSummariesReplaced,
@@ -567,6 +616,8 @@ export const IpcEvent = Schema.Union([
   PluginStatusChanged,
   ActivitiesChanged,
   ModelsChanged,
+  AdapterStatusChanged,
+  ModelPreferencesChanged,
   UpdateStatusChanged
 ])
 export type IpcEvent = typeof IpcEvent.Type
@@ -617,6 +668,35 @@ export interface ModelApi {
   onChanged(listener: (snapshot: ModelCatalogSnapshotJson) => void): () => void
 }
 
+/** An {@link AdapterStatusSnapshot} as plain data, with dates as ISO strings, as `window.dia.adapter` delivers it. */
+export type AdapterStatusSnapshotJson = typeof AdapterStatusSnapshot.Encoded
+
+/** A `LastVisibleModel` refusal as plain data, as `window.dia.adapter.setModelPreference` resolves it. */
+export type LastVisibleModelJson = typeof LastVisibleModel.Encoded
+
+/** The agent adapter calls of `window.dia.adapter`, served by the Host. */
+export interface AdapterApi {
+  /** The adapter's current install status. Keep it only if its `revision` is higher than the one you hold. */
+  getStatus(): Promise<AdapterStatusSnapshotJson>
+  /** Re-checks the install; resolves when the check ends, whose outcome arrives through `onStatusChanged`. */
+  checkHealth(): Promise<void>
+  /** Sets where the adapter finds its install, or clears it with `null`, then re-checks. Sessions started afterwards use it. */
+  setInstallPath(path: string | null): Promise<void>
+  /** Subscribes to install status changes, including after a reconnect. Subscribe before calling `getStatus`. Returns a function that stops listening. */
+  onStatusChanged(listener: (snapshot: AdapterStatusSnapshotJson) => void): () => void
+  /** The adapter's model preferences and defaults. Keep them only if their `revision` is higher than the one you hold. */
+  getPreferences(): Promise<ModelPreferencesSnapshot>
+  /** Marks `model` favourite or hidden, or clears it with `null`. Resolves `null` once applied, or the refusal when hiding would leave no model visible. */
+  setModelPreference(
+    model: string,
+    preference: ModelPreference | null
+  ): Promise<LastVisibleModelJson | null>
+  /** Replaces the defaults new agents start with. */
+  setDefaults(defaults: AgentDefaults): Promise<void>
+  /** Subscribes to preference changes, including after a reconnect. Subscribe before calling `getPreferences`. Returns a function that stops listening. */
+  onPreferencesChanged(listener: (snapshot: ModelPreferencesSnapshot) => void): () => void
+}
+
 /** The background activity calls of `window.dia.activities`, served by the Host. */
 export interface ActivityApi {
   /** Every registered background activity of every loaded plugin. */
@@ -644,6 +724,7 @@ export interface DiaApi {
   readonly plugins: PluginApi
   readonly models: ModelApi
   readonly activities: ActivityApi
+  readonly adapter: AdapterApi
   sendMessage(paneId: string, text: string, mode: SendMode): void
   editQueuedMessage(paneId: string, messageId: string, text: string): void
   removeQueuedMessage(paneId: string, messageId: string): void
@@ -652,6 +733,7 @@ export interface DiaApi {
   resolveQuestion(paneId: string, requestId: string, response: QuestionResponse): void
   setThinkingLevel(paneId: string, level: ThinkingLevel): void
   setPermissionMode(paneId: string, mode: PermissionMode): void
+  setModel(paneId: string, model: string): void
   resolvePlanReview(paneId: string, requestId: string, approved: boolean): void
   interrupt(paneId: string): void
   rewindToCheckpoint(paneId: string, messageUuid: string, resumeAnchorUuid?: string): void
@@ -685,6 +767,8 @@ export interface DiaApi {
   getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>
   /** Opens the native folder picker and resolves the chosen path, or `null` when the user cancels. */
   pickDirectory(): Promise<string | null>
+  /** Opens the native file picker and resolves the chosen path, or `null` when the user cancels. */
+  pickFile(): Promise<string | null>
   getTheme(): Promise<ThemePreference>
   setTheme(theme: ThemePreference): Promise<void>
   getSendMode(): Promise<SendMode>
@@ -719,6 +803,7 @@ export interface DiaApi {
   onRewoundToCheckpoint(listener: (event: PaneRewoundToCheckpoint) => void): () => void
   onMessageQueueChanged(listener: (event: PaneMessageQueueChanged) => void): () => void
   onUserMessagesSent(listener: (event: PaneUserMessagesSent) => void): () => void
+  onModelChanged(listener: (event: PaneModelChanged) => void): () => void
   onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void
   onAssistantThinkingDelta(listener: (event: PaneAssistantThinkingDelta) => void): () => void
   onToolCallStarted(listener: (event: PaneToolCallStarted) => void): () => void

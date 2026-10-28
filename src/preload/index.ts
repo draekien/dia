@@ -76,6 +76,7 @@ const hostApi = makeHostApi({
 
 const api: DiaApi = {
   ...hostApi,
+  pickFile: () => ipcRenderer.invoke(CHANNEL.chooseFile, null),
   setTitleBarOverlay(colors) {
     ipcRenderer.send(CHANNEL.setTitleBarOverlay, encodeTitleBarOverlay(colors))
   },

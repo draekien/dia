@@ -32,7 +32,10 @@ describe('TranscriptReaderLive', () => {
           }),
         deleteSession: () => Effect.die('not called'),
         models: () => Stream.empty,
-        refreshModels: () => Effect.die('not called')
+        refreshModels: () => Effect.die('not called'),
+        status: () => Stream.empty,
+        checkHealth: () => Effect.void,
+        setInstallPath: () => Effect.void
       }
 
       const read = yield* Effect.gen(function* () {

@@ -1,4 +1,5 @@
 import { SendMode } from '@shared/domain/message-queue'
+import { AdapterPreferences, EMPTY_ADAPTER_PREFERENCES } from '@shared/domain/model-preferences'
 import { ThemePreference } from '@shared/domain/theme'
 import { TranscriptWidth } from '@shared/domain/transcript-width'
 import { Context, Effect, FileSystem, Layer, Option, Result, Schema } from 'effect'
@@ -7,7 +8,8 @@ const Settings = Schema.Struct({
   theme: Schema.optional(ThemePreference),
   sendMode: Schema.optional(SendMode),
   transcriptWidth: Schema.optional(TranscriptWidth),
-  pluginOverrides: Schema.optional(Schema.Record(Schema.String, Schema.String))
+  pluginOverrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  adapters: Schema.optional(Schema.Record(Schema.String, AdapterPreferences))
 })
 const parseJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
 const decodeSettings = Schema.decodeUnknownResult(Settings)
@@ -16,7 +18,8 @@ const encodeSettings = Schema.encodeSync(Schema.fromJsonString(Settings, { space
 /**
  * Effect Context.Service for the app's persisted settings store.
  * Depend on this to read or update the user's colour-theme choice, default send mode, transcript
- * width and per-plugin source overrides (plugin name to source directory). Provide it via
+ * width, per-plugin source overrides (plugin name to source directory) and per-adapter model
+ * preferences (adapter plugin name to {@link AdapterPreferences}; empty when never set). Provide it via
  * {@link makeSettingsStoreLive}.
  */
 export class SettingsStore extends Context.Service<
@@ -31,6 +34,11 @@ export class SettingsStore extends Context.Service<
     readonly getPluginOverrides: () => Effect.Effect<Readonly<Record<string, string>>>
     readonly setPluginOverride: (name: string, path: string) => Effect.Effect<void>
     readonly clearPluginOverride: (name: string) => Effect.Effect<void>
+    readonly getAdapterPreferences: (adapter: string) => Effect.Effect<AdapterPreferences>
+    readonly setAdapterPreferences: (
+      adapter: string,
+      preferences: AdapterPreferences
+    ) => Effect.Effect<void>
   }
 >()('SettingsStore') {}
 
@@ -108,6 +116,18 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
           })
         )
 
+      const getAdapterPreferences = (adapter: string) =>
+        read().pipe(
+          Effect.map((settings) => settings.adapters?.[adapter] ?? EMPTY_ADAPTER_PREFERENCES)
+        )
+
+      const setAdapterPreferences = (adapter: string, preferences: AdapterPreferences) =>
+        read().pipe(
+          Effect.flatMap((settings) =>
+            write({ ...settings, adapters: { ...settings.adapters, [adapter]: preferences } })
+          )
+        )
+
       return {
         getTheme,
         setTheme,
@@ -117,7 +137,9 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
         setTranscriptWidth,
         getPluginOverrides,
         setPluginOverride,
-        clearPluginOverride
+        clearPluginOverride,
+        getAdapterPreferences,
+        setAdapterPreferences
       }
     })
   )

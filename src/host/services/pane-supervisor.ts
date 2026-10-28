@@ -33,6 +33,7 @@ import {
   PaneConversationReset,
   PaneMessageAppended,
   PaneMessageQueueChanged,
+  PaneModelChanged,
   PanePermissionRequested,
   PanePlanReviewRequested,
   PaneQuestionRequested,
@@ -111,6 +112,7 @@ export interface PaneHandle {
   readonly messageQueue: Effect.Effect<MessageQueueSnapshot>
   readonly setThinkingLevel: (level: ThinkingLevel) => Effect.Effect<void>
   readonly setPermissionMode: (mode: PermissionMode) => Effect.Effect<void>
+  readonly setModel: (model: string) => Effect.Effect<void>
   readonly resolvePermission: (
     requestId: string,
     response: PermissionResponse
@@ -266,6 +268,9 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
     ),
     Match.tag('UserMessagesSent', (m) =>
       Option.some<IpcEvent>(PaneUserMessagesSent.make({ paneId, messages: m.messages }))
+    ),
+    Match.tag('ModelChanged', (m) =>
+      Option.some<IpcEvent>(PaneModelChanged.make({ paneId, model: m.model }))
     ),
     // TurnCompleted/TurnErrored/SessionStarted carry no renderer-facing content of their own --
     // they only drive AttentionState (see toAttentionTarget below) -- so they have no IpcEvent.
@@ -439,6 +444,10 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
     setPermissionMode: (mode) =>
       Effect.logDebug('Setting pane permission mode', { paneId: config.paneId, mode }).pipe(
         Effect.andThen(session.setPermissionMode(mode))
+      ),
+    setModel: (model) =>
+      Effect.logDebug('Setting pane model', { paneId: config.paneId, model }).pipe(
+        Effect.andThen(session.setModel(model))
       ),
     resolvePermission: (requestId, response) =>
       Effect.logDebug('Resolving pane permission request', {
