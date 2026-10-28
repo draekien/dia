@@ -1,4 +1,5 @@
 import type { SendMode } from '@shared/domain/message-queue'
+import type { ModelCatalogSnapshotJson, PaneModelChanged } from '@shared/ipc/contract'
 import { Duration, Effect, Queue, Stream, SubscriptionRef } from 'effect'
 import { Atom } from 'effect/reactivity'
 import type { PaneChatState, PaneStreamEvent } from './pane-chat'
@@ -6,14 +7,32 @@ import { emptyPaneChatState, paneChatStateFromHistory, reducePaneChat } from './
 
 const IDLE_TTL = Duration.seconds(30)
 
+const displayNameIn = (
+  catalog: ModelCatalogSnapshotJson | undefined,
+  model: string
+): string | undefined =>
+  catalog?.state._tag === 'Ready'
+    ? catalog.state.models.find((option) => option.value === model)?.displayName
+    : undefined
+
 const paneStreamEvents = (paneId: string): Stream.Stream<PaneStreamEvent> =>
   Stream.callback<PaneStreamEvent>((queue) =>
     Effect.acquireRelease(
       Effect.sync(() => {
+        let catalog: ModelCatalogSnapshotJson | undefined
+        const keepCatalog = (next: ModelCatalogSnapshotJson): void => {
+          if (catalog === undefined || next.revision > catalog.revision) catalog = next
+        }
         const push = (event: PaneStreamEvent): void => {
           if (event.paneId === paneId) Queue.offerUnsafe(queue, event)
         }
+        const pushModelChange = (event: PaneModelChanged): void =>
+          push({ ...event, displayName: displayNameIn(catalog, event.model) })
+        const stopCatalog = window.dia.models.onChanged(keepCatalog)
+        void window.dia.models.get().then(keepCatalog)
         return [
+          stopCatalog,
+          window.dia.onModelChanged(pushModelChange),
           window.dia.onAssistantTextDelta(push),
           window.dia.onAssistantThinkingDelta(push),
           window.dia.onToolCallStarted(push),

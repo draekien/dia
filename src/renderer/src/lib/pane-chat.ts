@@ -11,6 +11,7 @@ import type {
   PaneConversationReset,
   PaneMessageAppended,
   PaneMessageQueueChanged,
+  PaneModelChanged,
   PaneRewoundToCheckpoint,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
@@ -115,6 +116,13 @@ export type PaneStreamEvent =
   | PaneRewoundToCheckpoint
   | PaneMessageQueueChanged
   | PaneUserMessagesSent
+  | PaneModelChangeNotice
+
+/**
+ * A `PaneModelChanged` event with the `displayName` of its model, when the model list has it.
+ * Build it where the model list is known; {@link reducePaneChat} shows the raw id without it.
+ */
+export type PaneModelChangeNotice = PaneModelChanged & { readonly displayName?: string }
 
 /** The empty conversation state a pane starts from before history loads. */
 export const emptyPaneChatState: PaneChatState = {
@@ -290,6 +298,14 @@ const rewindToCheckpoint = (state: PaneChatState, messageUuid: string): PaneChat
   return { ...state, messages: state.messages.slice(0, anchor), isLoading: false }
 }
 
+const noticeMessage = (state: PaneChatState, content: string): PaneChatState => ({
+  ...state,
+  messages: [
+    ...state.messages,
+    { id: `${state.messages.length}:notice`, role: 'notice', parts: [{ type: 'text', content }] }
+  ]
+})
+
 const compactionNotice = (event: PaneConversationCompacted): string =>
   event.postTokens !== undefined
     ? `Context compacted — ${event.preTokens} → ${event.postTokens} tokens`
@@ -307,7 +323,8 @@ const compactionNotice = (event: PaneConversationCompacted): string =>
  * `PaneMessageQueueChanged` replaces `queued` and `queueHeld`; `Crashed` empties them.
  * `PaneSlashCommandsWarming` toggles the `warmingCommands` indicator, and
  * `PaneSlashCommandsAvailable` replaces the available command list (ending any
- * warming state); a compaction appends a `notice` divider; a conversation reset
+ * warming state); a compaction, and a model change (`Model → <name>`), append a `notice`
+ * divider; a conversation reset
  * clears the transcript while keeping the available commands and the queue.
  * `PaneCheckpointAvailable` anchors a rewindable checkpoint uuid (and its resume
  * anchor) onto the earliest user turn still lacking one, and
@@ -357,17 +374,9 @@ export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): Pa
     case 'PaneSlashCommandsAvailable':
       return { ...state, slashCommands: event.commands, warmingCommands: false }
     case 'PaneConversationCompacted':
-      return {
-        ...state,
-        messages: [
-          ...state.messages,
-          {
-            id: `${state.messages.length}:notice`,
-            role: 'notice',
-            parts: [{ type: 'text', content: compactionNotice(event) }]
-          }
-        ]
-      }
+      return noticeMessage(state, compactionNotice(event))
+    case 'PaneModelChanged':
+      return noticeMessage(state, `Model → ${event.displayName ?? event.model}`)
     case 'PaneConversationReset':
       return {
         ...emptyPaneChatState,

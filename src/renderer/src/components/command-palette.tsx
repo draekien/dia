@@ -10,11 +10,13 @@ import {
   MonitorIcon,
   MoonIcon,
   PuzzleIcon,
+  SettingsIcon,
   SunIcon
 } from 'lucide-react'
 import { type ComponentType, useEffect, useState } from 'react'
 import { AboutDialog } from './about-dialog'
 import { openPluginsPage } from './plugins-page'
+import { openSettingsPage } from './settings-page'
 import { useTheme } from './theme-provider'
 import { TranscriptWidthToggle } from './transcript-width-toggle'
 import {
@@ -102,6 +104,11 @@ export function CommandPalette() {
     openPluginsPage()
   }
 
+  const openSettings = () => {
+    setOpen(false)
+    openSettingsPage()
+  }
+
   const toggleDevTools = () => {
     setOpen(false)
     window.dia.toggleDevTools()
@@ -128,6 +135,12 @@ export function CommandPalette() {
         <CommandInput placeholder="Type a command or search…" />
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
+          <CommandGroup heading="Settings">
+            <CommandItem value="Settings" onSelect={openSettings}>
+              <SettingsIcon />
+              <span>Settings</span>
+            </CommandItem>
+          </CommandGroup>
           <CommandGroup heading="Plugins">
             <CommandItem value="Manage plugins" onSelect={openPlugins}>
               <PuzzleIcon />

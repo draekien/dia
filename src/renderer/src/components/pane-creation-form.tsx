@@ -1,4 +1,5 @@
-import { ModelField } from '@renderer/components/model-field'
+import { InstallNotice, installProblem } from '@renderer/components/install-notice'
+import { isOfferedModel, ModelField } from '@renderer/components/model-field'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import {
@@ -9,7 +10,9 @@ import {
   SelectValue
 } from '@renderer/components/ui/select'
 import { Switch } from '@renderer/components/ui/switch'
+import { useAdapterStatus } from '@renderer/hooks/use-adapter-status'
 import { useModelCatalog } from '@renderer/hooks/use-model-catalog'
+import { useModelPreferences } from '@renderer/hooks/use-model-preferences'
 import { usePluginList } from '@renderer/hooks/use-plugin-list'
 import { cancelNewAgent } from '@renderer/lib/actions'
 import { CREATE_PERMISSION_MODE_OPTIONS } from '@renderer/lib/permission-modes'
@@ -24,7 +27,7 @@ import { CreateTab } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { Option, Schema } from 'effect'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const providesWorktrees = (plugins: ReadonlyArray<PluginInfo> | undefined): boolean =>
   plugins?.some((plugin) => plugin.provides.includes(WORKTREES_KEY)) ?? false
@@ -42,7 +45,9 @@ interface PaneCreationFormProps {
 
 /**
  * The New agent form for `project`: an optional name, the model, thinking level, permission mode
- * and, for a git project, the worktree switch. "Start agent" asks the Host to create the tab,
+ * and, for a git project, the worktree switch. The model, thinking level and permission mode start
+ * from the adapter's defaults for new agents. Start is disabled while the chosen model is not
+ * offered or the agent install cannot run. "Start agent" asks the Host to create the tab,
  * which then becomes the visible tab; Cancel returns to the tab shown before the form opened.
  */
 function PaneCreationForm({ project }: PaneCreationFormProps) {
@@ -55,6 +60,19 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL)
   const [permissionMode, setPermissionMode] = useState<StartupPermissionMode>('auto')
   const [useWorktree, setUseWorktree] = useState(false)
+  const preferences = useModelPreferences()
+  const adapterStatus = useAdapterStatus()
+  const defaultsApplied = useRef(false)
+  const startable =
+    isOfferedModel(catalog, preferences, model) && installProblem(adapterStatus) === undefined
+
+  useEffect(() => {
+    if (preferences === undefined || defaultsApplied.current) return
+    defaultsApplied.current = true
+    const { thinkingLevel: level, permissionMode: mode } = preferences.defaults
+    if (level !== undefined) setThinkingLevel(level)
+    if (mode !== undefined) setPermissionMode(mode)
+  }, [preferences])
   const worktreesAvailable = providesWorktrees(usePluginList().plugins)
   const worktreeOn = project.isGitRepo && worktreesAvailable && useWorktree
 
@@ -66,7 +84,7 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
   }, [paneId])
 
   function handleStart() {
-    if (model === undefined) return
+    if (model === undefined || !startable) return
     setState({ step: 'creating' })
     window.dia.createTab(
       CreateTab.make({
@@ -102,7 +120,13 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
           />
         </div>
 
-        <ModelField catalog={catalog} value={model} onValueChange={setModel} disabled={isBusy} />
+        <ModelField
+          catalog={catalog}
+          preferences={preferences}
+          value={model}
+          onValueChange={setModel}
+          disabled={isBusy}
+        />
 
         <div className="flex flex-col gap-1">
           <span className="text-xs text-ink-muted">Thinking</span>
@@ -164,13 +188,15 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
           </div>
         )}
 
+        <InstallNotice status={adapterStatus} />
+
         {state.step === 'error' && <p className="text-sm text-destructive">{state.reason}</p>}
 
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={cancelNewAgent} disabled={isBusy}>
             Cancel
           </Button>
-          <Button type="button" onClick={handleStart} disabled={isBusy || model === undefined}>
+          <Button type="button" onClick={handleStart} disabled={isBusy || !startable}>
             {isBusy ? 'Starting…' : state.step === 'error' ? 'Try again' : 'Start agent'}
           </Button>
         </div>

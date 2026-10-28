@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
+import { useAdapterStatus } from '@renderer/hooks/use-adapter-status'
 import { PERMISSION_MODE_OPTIONS } from '@renderer/lib/permission-modes'
 import {
   type ActiveSlashToken,
@@ -84,7 +85,9 @@ import { sendModeAtom, sendModeForEnter } from '../lib/send-mode-atom'
 import { turnActivity } from '../lib/turn-activity'
 import { transcriptWidthAtom } from '../lib/workspace-atoms'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
+import { InstallNotice } from './install-notice'
 import { Markdown } from './markdown'
+import { ModelPicker } from './model-picker'
 import { PermissionRequestCard } from './permission-request-card'
 import { PlanReviewCard } from './plan-review-card'
 import { QueuedMessages } from './queued-messages'
@@ -96,6 +99,7 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } fro
 
 interface PaneProps {
   paneId: string
+  model: string
   thinkingLevel?: ThinkingLevel
   permissionMode?: PermissionMode
   focusComposer?: boolean
@@ -374,6 +378,8 @@ const messageActivitySignature = (state: PaneChatState): string => {
 function PaneChat({
   paneId,
   attention,
+  model,
+  onModelChange,
   thinkingLevel,
   onThinkingLevelChange,
   permissionMode,
@@ -383,6 +389,8 @@ function PaneChat({
 }: {
   paneId: string
   attention: AttentionState
+  model: string
+  onModelChange: (model: string) => void
   thinkingLevel: ThinkingLevel
   onThinkingLevelChange: (level: ThinkingLevel) => void
   permissionMode: PermissionMode
@@ -404,6 +412,7 @@ function PaneChat({
   const rewind = useAtomSet(paneRewindAtom(paneId))
   const [rewindTarget, setRewindTarget] = useState<PaneMessage | null>(null)
 
+  const adapterStatus = useAdapterStatus()
   const [slashHighlight, setSlashHighlight] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [caret, setCaret] = useState(0)
@@ -577,6 +586,7 @@ function PaneChat({
         {pendingPlanReview !== null && (
           <PlanReviewCard request={pendingPlanReview} onResolve={respondToPlanReview} />
         )}
+        <InstallNotice status={adapterStatus} />
         <form
           className="mt-2"
           onSubmit={(event) => {
@@ -700,6 +710,7 @@ function PaneChat({
                       aria-label="Message dia"
                     />
                     <InputGroupAddon align="block-end">
+                      <ModelPicker value={model} onChange={onModelChange} />
                       <ThinkingLevelSelect value={thinkingLevel} onChange={onThinkingLevelChange} />
                       <PermissionModeSelect
                         value={permissionMode}
@@ -774,13 +785,22 @@ function PaneChat({
   )
 }
 
-function Pane({ paneId, thinkingLevel, permissionMode, focusComposer = false }: PaneProps) {
+function Pane({ paneId, model, thinkingLevel, permissionMode, focusComposer = false }: PaneProps) {
   const queryClient = useQueryClient()
   const width = useAtomValue(transcriptWidthAtom)
   const attentionQueryKey = ['pane', paneId, 'attention'] as const
 
   const [level, setLevel] = useState<ThinkingLevel>(thinkingLevel ?? DEFAULT_THINKING_LEVEL)
   const [mode, setMode] = useState<PermissionMode>(permissionMode ?? DEFAULT_PERMISSION_MODE)
+
+  const [chosenModel, setChosenModel] = useState(model)
+
+  function changeModel(next: string): void {
+    setChosenModel(next)
+    window.dia.setModel(paneId, next)
+  }
+
+  useEffect(() => setChosenModel(model), [model])
 
   function changeThinkingLevel(next: ThinkingLevel): void {
     setLevel(next)
@@ -815,6 +835,8 @@ function Pane({ paneId, thinkingLevel, permissionMode, focusComposer = false }: 
         key={paneId}
         paneId={paneId}
         attention={attention}
+        model={chosenModel}
+        onModelChange={changeModel}
         thinkingLevel={level}
         onThinkingLevelChange={changeThinkingLevel}
         permissionMode={mode}
