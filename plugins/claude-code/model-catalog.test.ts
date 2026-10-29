@@ -81,7 +81,7 @@ const failing =
     Effect.fail(new ModelProbeFailed({ message }))
 
 const cacheJson = (fetchedAt: DateTime.Utc) =>
-  JSON.stringify({ version: 3, fetchedAt: DateTime.formatIso(fetchedAt), models: CACHED_MODELS })
+  JSON.stringify({ version: 4, fetchedAt: DateTime.formatIso(fetchedAt), models: CACHED_MODELS })
 
 const openCatalog = (options: { readonly cache?: string; readonly probe?: ModelProbe }) =>
   Effect.gen(function* () {
@@ -164,7 +164,7 @@ describe('makeModelCatalog', () => {
     }).pipe(Effect.scoped, Effect.provide(platform))
   )
 
-  it.effect('reads the list again when the cache predates auto and fast mode support', () =>
+  it.effect('reads the list again when the cache predates the current model fields', () =>
     Effect.gen(function* () {
       const versionTwo = JSON.stringify({
         version: 2,
@@ -216,7 +216,7 @@ describe('makeModelCatalog', () => {
       const saved = JSON.parse(yield* fs.readFileString(cacheFile))
 
       assert.deepStrictEqual(saved, {
-        version: 3,
+        version: 4,
         fetchedAt: '2026-10-25T15:00:00.000Z',
         models: PROBED_MODELS
       })
@@ -346,6 +346,34 @@ describe('probeModels', () => {
         },
         { adaptiveThinking: false, effortLevels: [], autoMode: false, fastMode: false }
       )
+    })
+  )
+
+  it.effect('leaves out the default alias', () =>
+    Effect.gen(function* () {
+      sdk.supportedModels.mockResolvedValue([
+        { value: 'default', displayName: 'Default (recommended)', description: 'Opus' },
+        { value: 'opus', displayName: 'Opus', description: '' }
+      ])
+
+      const models = yield* probeModels(installed)('/data')
+
+      assert.deepStrictEqual(
+        models.map((model) => model.value),
+        ['opus']
+      )
+    })
+  )
+
+  it.effect('fails when the default alias is the only reported model', () =>
+    Effect.gen(function* () {
+      sdk.supportedModels.mockResolvedValue([
+        { value: 'default', displayName: 'Default (recommended)', description: 'Opus' }
+      ])
+
+      const failure = yield* Effect.flip(probeModels(installed)('/data'))
+
+      assert.strictEqual(failure.message, 'Claude Code reported no models')
     })
   )
 

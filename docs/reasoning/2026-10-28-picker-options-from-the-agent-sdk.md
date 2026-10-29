@@ -17,4 +17,4 @@ The thinking-level and permission-mode pickers offered fixed lists. The thinking
 
 ## Implication
 
-The pickers hide a disabled mode, and the New agent form replaces a disabled default with `default`. Switching a live pane to a model that disables its current mode switches the pane to `default`. A pane already in a mode the settings later turn off keeps it in its picker. Re-read `supportedModels()` field names after an Agent SDK upgrade; the model cache (`models.json`) is version 3, and an older file is ignored and read again.
+The pickers hide a disabled mode, and the New agent form replaces a disabled default with `default`. Switching a live pane to a model that disables its current mode switches the pane to `default`. A pane already in a mode the settings later turn off keeps it in its picker. Re-read `supportedModels()` field names after an Agent SDK upgrade; the model cache (`models.json`) is version 4, and an older file is ignored and read again. Version 4 also leaves out the SDK's `default` alias row.
