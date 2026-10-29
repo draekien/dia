@@ -16,7 +16,17 @@ import { ModelCatalogFeed, ModelCatalogFeedLive } from './model-catalog-feed'
 const STARTED_AT_MILLIS = 5_000
 
 const READY = ModelsReady.make({
-  models: [{ value: 'sonnet', displayName: 'Sonnet', description: '' }],
+  models: [
+    {
+      value: 'sonnet',
+      displayName: 'Sonnet',
+      description: '',
+      adaptiveThinking: true,
+      effortLevels: ['low', 'medium', 'high'],
+      autoMode: true,
+      fastMode: false
+    }
+  ],
   fetchedAt: DateTime.makeUnsafe(STARTED_AT_MILLIS),
   refreshing: false
 })
@@ -36,7 +46,8 @@ const backendWith = (
   refreshModels,
   status: () => Stream.empty,
   checkHealth: () => Effect.void,
-  setInstallPath: () => Effect.void
+  setInstallPath: () => Effect.void,
+  disabledPermissionModes: () => Effect.succeed([])
 })
 
 const feedWith = (backend: Option.Option<AgentBackend>, published: Array<IpcEvent>) =>

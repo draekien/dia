@@ -245,7 +245,9 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         ),
       setDefaults: (defaults) => query((client) => client.SetAgentDefaults({ defaults })),
       onPreferencesChanged: (listener) =>
-        subscribeTo('ModelPreferencesChanged', (event) => listener(event.snapshot))
+        subscribeTo('ModelPreferencesChanged', (event) => listener(event.snapshot)),
+      getDisabledPermissionModes: (cwd) =>
+        query((client) => client.GetDisabledPermissionModes({ cwd }))
     },
     activities: {
       list: () => query((client) => client.ListActivities().pipe(Effect.map(encodeActivities))),

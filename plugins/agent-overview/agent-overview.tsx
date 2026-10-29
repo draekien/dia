@@ -100,19 +100,17 @@ const orderGroups = (
 
 /** The shortcuts the overview answers anywhere in the window. */
 const useWindowShortcuts = (onSearch: () => void): void => {
-  const handlers = useRef({ onSearch })
-  handlers.current = { onSearch }
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
       if (event.key.toLowerCase() === 'p') {
         event.preventDefault()
-        handlers.current.onSearch()
+        onSearch()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [onSearch])
 }
 
 function Kbd({ children }: { readonly children: React.ReactNode }) {
@@ -211,7 +209,11 @@ export function AgentOverview() {
   const [filters, setFilters] = useState<OverviewFilters>(NO_FILTERS)
   const [collapsed, setCollapsed] = useState<ReadonlySet<ProjectId>>(readCollapsed)
   const [dragging, setDragging] = useState(false)
-  const [order, setOrder] = useState<ReadonlyArray<ProjectId> | null>(null)
+  const [dragOrder, setDragOrder] = useState<{
+    readonly workspace: typeof workspace
+    readonly ids: ReadonlyArray<ProjectId>
+  } | null>(null)
+  const order = dragOrder !== null && dragOrder.workspace === workspace ? dragOrder.ids : null
   const [renaming, setRenaming] = useState<PaneId | null>(null)
   const [removing, setRemoving] = useState<ProjectId | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -220,8 +222,6 @@ export function AgentOverview() {
   const listRef = useRef<HTMLElement>(null)
 
   useEffect(() => localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsed])), [collapsed])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the optimistic order lasts until the next workspace arrives
-  useEffect(() => setOrder(null), [workspace])
 
   const focusSearch = () => {
     setOpen(true)
@@ -283,7 +283,7 @@ export function AgentOverview() {
     const from = ids.indexOf(active.id as ProjectId)
     const to = ids.indexOf(over.id as ProjectId)
     if (from === -1 || to === -1) return
-    setOrder(arrayMove(ids, from, to))
+    setDragOrder({ workspace, ids: arrayMove(ids, from, to) })
     actions.moveProject(ids[from], to)
   }
 

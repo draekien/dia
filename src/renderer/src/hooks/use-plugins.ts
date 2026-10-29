@@ -1,6 +1,6 @@
 // @effect-diagnostics asyncFunction:off -- React callbacks await the Promise-based window.dia bridge; no Effect runtime exists in the renderer.
 import type { PluginInfo } from '@shared/plugin/manifest'
-import { useCallback, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { usePluginList } from './use-plugin-list'
 
 /** An override the Host refused, kept until the user acts on that plugin again. */
@@ -40,64 +40,49 @@ export function usePlugins(): PluginsController {
   const [rejection, setRejection] = useState<OverrideRejection | undefined>(undefined)
   const inFlight = useRef(new Set<string>())
 
-  const run = useCallback(
-    async (name: string, action: () => Promise<void>) => {
-      if (inFlight.current.has(name)) return
-      inFlight.current.add(name)
+  const run = async (name: string, action: () => Promise<void>) => {
+    if (inFlight.current.has(name)) return
+    inFlight.current.add(name)
+    setPending(new Set(inFlight.current))
+    setRejection((current) => (current?.name === name ? undefined : current))
+    try {
+      await action()
+    } catch (error) {
+      setRejection({ name, message: error instanceof Error ? error.message : String(error) })
+    } finally {
+      inFlight.current.delete(name)
       setPending(new Set(inFlight.current))
-      setRejection((current) => (current?.name === name ? undefined : current))
-      try {
-        await action()
-      } catch (error) {
-        setRejection({ name, message: error instanceof Error ? error.message : String(error) })
-      } finally {
-        inFlight.current.delete(name)
-        setPending(new Set(inFlight.current))
-        await refresh().catch(() => undefined)
+      await refresh().catch(() => undefined)
+    }
+  }
+
+  const reload = (name: string) =>
+    run(name, async () => {
+      await window.dia.plugins.load(name)
+    })
+
+  const unload = (name: string) =>
+    run(name, async () => {
+      await window.dia.plugins.unload(name)
+    })
+
+  const chooseOverride = (name: string) =>
+    run(name, async () => {
+      const directory = await window.dia.pickDirectory()
+      if (directory === null) return
+      const result = await window.dia.plugins.setOverride(name, directory)
+      if (result._tag === 'Rejected') {
+        setRejection({ name, message: result.message })
+        return
       }
-    },
-    [refresh]
-  )
+      await window.dia.plugins.load(name)
+    })
 
-  const reload = useCallback(
-    (name: string) =>
-      run(name, async () => {
-        await window.dia.plugins.load(name)
-      }),
-    [run]
-  )
-
-  const unload = useCallback(
-    (name: string) =>
-      run(name, async () => {
-        await window.dia.plugins.unload(name)
-      }),
-    [run]
-  )
-
-  const chooseOverride = useCallback(
-    (name: string) =>
-      run(name, async () => {
-        const directory = await window.dia.pickDirectory()
-        if (directory === null) return
-        const result = await window.dia.plugins.setOverride(name, directory)
-        if (result._tag === 'Rejected') {
-          setRejection({ name, message: result.message })
-          return
-        }
-        await window.dia.plugins.load(name)
-      }),
-    [run]
-  )
-
-  const clearOverride = useCallback(
-    (name: string) =>
-      run(name, async () => {
-        await window.dia.plugins.clearOverride(name)
-        await window.dia.plugins.load(name)
-      }),
-    [run]
-  )
+  const clearOverride = (name: string) =>
+    run(name, async () => {
+      await window.dia.plugins.clearOverride(name)
+      await window.dia.plugins.load(name)
+    })
 
   return { plugins, pending, rejection, reload, unload, chooseOverride, clearOverride }
 }

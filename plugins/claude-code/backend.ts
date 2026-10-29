@@ -3,6 +3,7 @@ import { Effect } from 'effect'
 import type { ClaudeInstall } from './claude-install'
 import { deleteSession } from './delete-session'
 import type { ClaudeHealth } from './health'
+import { readDisabledPermissionModes } from './permission-settings'
 import { openClaudeCodeSession } from './session'
 import { readHistory } from './transcript'
 
@@ -25,5 +26,7 @@ export const makeClaudeCodeBackend = (deps: {
   refreshModels: deps.catalog.refreshModels,
   status: deps.health.status,
   checkHealth: () => deps.health.check,
-  setInstallPath: (path) => deps.install.setOverride(path).pipe(Effect.andThen(deps.health.recheck))
+  setInstallPath: (path) =>
+    deps.install.setOverride(path).pipe(Effect.andThen(deps.health.recheck)),
+  disabledPermissionModes: readDisabledPermissionModes
 })

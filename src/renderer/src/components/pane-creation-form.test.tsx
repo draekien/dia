@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
+import type { ModelOption } from '@shared/domain/model'
 import {
   type AdapterPreferences,
   EMPTY_ADAPTER_PREFERENCES
 } from '@shared/domain/model-preferences'
+import type { PermissionMode } from '@shared/domain/pane'
 import { type Project, ProjectId } from '@shared/domain/project'
 import {
   type AdapterStatusSnapshotJson,
@@ -36,9 +38,33 @@ const plugin = (name: string, provides: ReadonlyArray<string>): PluginInfo => ({
   provides
 })
 
-const DEFAULT_MODEL = { value: 'default', displayName: 'Default (recommended)', description: '' }
-const HAIKU = { value: 'haiku', displayName: 'Haiku', description: '' }
-const SONNET = { value: 'sonnet', displayName: 'Sonnet', description: '' }
+const DEFAULT_MODEL: ModelOption = {
+  value: 'default',
+  displayName: 'Default (recommended)',
+  description: '',
+  adaptiveThinking: true,
+  effortLevels: ['low', 'medium', 'high'],
+  autoMode: true,
+  fastMode: false
+}
+const HAIKU: ModelOption = {
+  value: 'haiku',
+  displayName: 'Haiku',
+  description: '',
+  adaptiveThinking: true,
+  effortLevels: ['low', 'medium', 'high'],
+  autoMode: true,
+  fastMode: false
+}
+const SONNET: ModelOption = {
+  value: 'sonnet',
+  displayName: 'Sonnet',
+  description: '',
+  adaptiveThinking: true,
+  effortLevels: ['low', 'medium', 'high'],
+  autoMode: true,
+  fastMode: false
+}
 
 const ready = (
   revision: number,
@@ -72,7 +98,8 @@ const installBridge = (
   plugins: ReadonlyArray<PluginInfo>,
   snapshot: ModelCatalogSnapshotJson = READY,
   preferences: AdapterPreferences = EMPTY_ADAPTER_PREFERENCES,
-  status: AdapterStatusSnapshotJson['status'] = READY_STATUS
+  status: AdapterStatusSnapshotJson['status'] = READY_STATUS,
+  disabledModes: ReadonlyArray<PermissionMode> = []
 ) => {
   const modelListeners = new Set<(snapshot: ModelCatalogSnapshotJson) => void>()
   const bridge = {
@@ -88,7 +115,8 @@ const installBridge = (
       getStatus: vi.fn(async () => ({ revision: 1, status })),
       onStatusChanged: vi.fn(() => () => undefined),
       getPreferences: vi.fn(async () => ({ revision: 1, preferences })),
-      onPreferencesChanged: vi.fn(() => () => undefined)
+      onPreferencesChanged: vi.fn(() => () => undefined),
+      getDisabledPermissionModes: vi.fn(async (_cwd: string) => disabledModes)
     },
     createTab: vi.fn((_request: { readonly paneId: string }) => undefined),
     selectTab: vi.fn(),
@@ -278,6 +306,40 @@ describe('PaneCreationForm model choice', () => {
 
     expect(bridge.createTab).toHaveBeenCalledWith(
       expect.objectContaining({ thinkingLevel: 'high', permissionMode: 'acceptEdits' })
+    )
+  })
+
+  it('lowers the default thinking level to the highest effort the chosen model supports', async () => {
+    const bridge = installBridge([], READY, {
+      models: {},
+      defaults: { thinkingLevel: 'max' }
+    })
+    renderForm(project(false))
+    await waitFor(() => expect(bridge.adapter.getPreferences).toHaveBeenCalled())
+
+    await start()
+
+    expect(bridge.createTab).toHaveBeenCalledWith(
+      expect.objectContaining({ thinkingLevel: 'high' })
+    )
+  })
+
+  it('starts in Default when Claude Code settings turn off the default permission mode', async () => {
+    const bridge = installBridge(
+      [],
+      READY,
+      { models: {}, defaults: { permissionMode: 'auto' } },
+      READY_STATUS,
+      ['auto']
+    )
+    renderForm(project(false))
+    await waitFor(() => expect(bridge.adapter.getDisabledPermissionModes).toHaveBeenCalled())
+
+    await start()
+
+    expect(bridge.adapter.getDisabledPermissionModes).toHaveBeenCalledWith('F:/Dev/dia')
+    expect(bridge.createTab).toHaveBeenCalledWith(
+      expect.objectContaining({ permissionMode: 'default' })
     )
   })
 

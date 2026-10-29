@@ -28,6 +28,9 @@
             }
           }
         }
+      },
+      "nursery": {
+        "useReactCompiler": "warn"
       }
     },
     "domains": {

@@ -55,7 +55,15 @@ export function ProjectGroup({
   onRemove
 }: ProjectGroupProps) {
   const { project } = group
-  const sortable = useSortable({ id: project.projectId, disabled: iconMode })
+  const {
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+    attributes,
+    listeners
+  } = useSortable({ id: project.projectId, disabled: iconMode })
   const count = narrowing ? `${group.shown} of ${group.total}` : String(group.total)
   const showRows = open && !dragging
   const urgent = group.mostUrgent
@@ -72,33 +80,33 @@ export function ProjectGroup({
   )
   return (
     <SidebarGroup
-      ref={sortable.setNodeRef}
+      ref={setNodeRef}
       role="group"
       style={{
-        transform: CSS.Translate.toString(sortable.transform),
-        transition: sortable.transition
+        transform: CSS.Translate.toString(transform),
+        transition
       }}
       aria-label={project.displayName}
-      className={cn('group/project', sortable.isDragging && 'relative z-10 opacity-80')}
+      className={cn('group/project', isDragging && 'relative z-10 opacity-80')}
     >
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <SidebarGroupLabel asChild>
             <button
               type="button"
-              ref={sortable.setActivatorNodeRef}
+              ref={setActivatorNodeRef}
               data-nav={headerKey(project.projectId)}
-              {...sortable.attributes}
+              {...attributes}
               tabIndex={tabStop === headerKey(project.projectId) ? 0 : -1}
-              {...sortable.listeners}
+              {...listeners}
               aria-roledescription="sortable project"
               aria-expanded={open}
               aria-label={`${project.displayName}, ${count} ${group.total === 1 ? 'agent' : 'agents'}${urgent === null || open ? '' : `, ${statusLabel(urgent)}`}`}
               onClick={onToggle}
-              onKeyDown={(event) => sortable.listeners?.onKeyDown?.(event)}
+              onKeyDown={(event) => listeners?.onKeyDown?.(event)}
               className={cn(
                 'w-full cursor-default gap-1.5 pr-8 pl-1.5 text-left hover:bg-sidebar-accent group-data-[collapsible=icon]:hidden',
-                sortable.isDragging && 'bg-sidebar-accent ring-2 ring-sidebar-ring'
+                isDragging && 'bg-sidebar-accent ring-2 ring-sidebar-ring'
               )}
             >
               <ChevronRightIcon

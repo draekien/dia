@@ -328,7 +328,7 @@ Model list   Not run yet · due 26 Oct         [Run now]
 
 ## Open Assumptions
 
-- Verified on 2026-10-26 (`docs/reasoning/2026-10-26-supported-models-probe.md`): `supportedModels()` on a `query()` whose prompt has not yielded resolves without starting a turn, and `close()` leaves no `claude.exe` running on Windows. The SDK's first row is `default` ("Default (recommended)"), so the default selection is the SDK default.
+- Verified on 2026-10-26 (`docs/reasoning/2026-10-26-supported-models-probe.md`): `supportedModels()` on a `query()` whose prompt has not yielded resolves without starting a turn, and `close()` leaves no `claude.exe` running on Windows. The SDK's first row is `default` ("Default (recommended)"); `probeModels` leaves it out, so dia lists only named models and the first listed model is the first named one.
 - With `settingSources` unset, user `SessionStart` hooks may run for the probe. Unverified.
 - The list reflects user and managed settings only. A project's `.claude/settings.json` can accept or hide a model differently from the list. Accepted: the list is one per app, not per project.
 

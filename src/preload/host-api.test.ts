@@ -55,7 +55,17 @@ const reloadFrame: EventFrame = { _tag: 'ReloadHistory', paneId: PANE }
 const SNAPSHOT: ModelCatalogSnapshot = {
   revision: 7,
   state: ModelsReady.make({
-    models: [{ value: 'sonnet', displayName: 'Sonnet', description: 'Everyday tasks' }],
+    models: [
+      {
+        value: 'sonnet',
+        displayName: 'Sonnet',
+        description: 'Everyday tasks',
+        adaptiveThinking: true,
+        effortLevels: ['low', 'medium', 'high'],
+        autoMode: true,
+        fastMode: false
+      }
+    ],
     fetchedAt: DateTime.makeUnsafe('2026-10-25T15:00:00Z'),
     refreshing: false
   })
@@ -64,7 +74,17 @@ const SNAPSHOT_JSON: ModelCatalogSnapshotJson = {
   revision: 7,
   state: {
     _tag: 'Ready',
-    models: [{ value: 'sonnet', displayName: 'Sonnet', description: 'Everyday tasks' }],
+    models: [
+      {
+        value: 'sonnet',
+        displayName: 'Sonnet',
+        description: 'Everyday tasks',
+        adaptiveThinking: true,
+        effortLevels: ['low', 'medium', 'high'],
+        autoMode: true,
+        fastMode: false
+      }
+    ],
     fetchedAt: '2026-10-25T15:00:00.000Z',
     refreshing: false
   }

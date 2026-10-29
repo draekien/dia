@@ -686,7 +686,7 @@ function SidebarMenuSkeleton({
   showIcon?: boolean
 }) {
   // @effect-diagnostics-next-line globalRandom:off -- decorative skeleton width, shadcn's upstream behaviour.
-  const width = React.useMemo(() => `${Math.floor(Math.random() * 40) + 50}%`, [])
+  const [width] = React.useState(() => `${Math.floor(Math.random() * 40) + 50}%`)
 
   return (
     <div

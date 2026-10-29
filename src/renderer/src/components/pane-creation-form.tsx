@@ -1,5 +1,6 @@
 import { InstallNotice, installProblem } from '@renderer/components/install-notice'
 import { isOfferedModel, ModelField } from '@renderer/components/model-field'
+import { PermissionModeItems } from '@renderer/components/permission-mode-items'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import {
@@ -11,12 +12,23 @@ import {
 } from '@renderer/components/ui/select'
 import { Switch } from '@renderer/components/ui/switch'
 import { useAdapterStatus } from '@renderer/hooks/use-adapter-status'
+import { useDisabledPermissionModes } from '@renderer/hooks/use-disabled-permission-modes'
 import { useModelCatalog } from '@renderer/hooks/use-model-catalog'
 import { useModelPreferences } from '@renderer/hooks/use-model-preferences'
 import { usePluginList } from '@renderer/hooks/use-plugin-list'
 import { cancelNewAgent } from '@renderer/lib/actions'
-import { CREATE_PERMISSION_MODE_OPTIONS } from '@renderer/lib/permission-modes'
-import { THINKING_LEVEL_OPTIONS } from '@renderer/lib/thinking-levels'
+import { findModelOption } from '@renderer/lib/model-options'
+import {
+  CREATE_PERMISSION_MODE_OPTIONS,
+  disabledPermissionModesFor,
+  offeredPermissionModes,
+  permissionModeLabel
+} from '@renderer/lib/permission-modes'
+import {
+  fitThinkingLevel,
+  thinkingLevelLabel,
+  thinkingLevelsFor
+} from '@renderer/lib/thinking-levels'
 import {
   DEFAULT_THINKING_LEVEL,
   type StartupPermissionMode,
@@ -27,7 +39,7 @@ import { CreateTab } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { Option, Schema } from 'effect'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const providesWorktrees = (plugins: ReadonlyArray<PluginInfo> | undefined): boolean =>
   plugins?.some((plugin) => plugin.provides.includes(WORKTREES_KEY)) ?? false
@@ -62,17 +74,26 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
   const [useWorktree, setUseWorktree] = useState(false)
   const preferences = useModelPreferences()
   const adapterStatus = useAdapterStatus()
-  const defaultsApplied = useRef(false)
+  const [defaultsApplied, setDefaultsApplied] = useState(false)
   const startable =
     isOfferedModel(catalog, preferences, model) && installProblem(adapterStatus) === undefined
+  const modelOption = findModelOption(catalog.state, model)
+  const thinkingLevels = thinkingLevelsFor(modelOption)
+  const offeredThinkingLevel = fitThinkingLevel(thinkingLevel, thinkingLevels)
+  const disabledPermissionModes = disabledPermissionModesFor(
+    useDisabledPermissionModes(project.directory),
+    modelOption
+  )
+  const offeredPermissionMode = disabledPermissionModes.includes(permissionMode)
+    ? 'default'
+    : permissionMode
 
-  useEffect(() => {
-    if (preferences === undefined || defaultsApplied.current) return
-    defaultsApplied.current = true
+  if (preferences !== undefined && !defaultsApplied) {
+    setDefaultsApplied(true)
     const { thinkingLevel: level, permissionMode: mode } = preferences.defaults
     if (level !== undefined) setThinkingLevel(level)
     if (mode !== undefined) setPermissionMode(mode)
-  }, [preferences])
+  }
   const worktreesAvailable = providesWorktrees(usePluginList().plugins)
   const worktreeOn = project.isGitRepo && worktreesAvailable && useWorktree
 
@@ -92,8 +113,8 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
         paneId,
         name: Option.getOrNull(decodeName(name.trim())),
         model,
-        thinkingLevel,
-        permissionMode,
+        thinkingLevel: offeredThinkingLevel,
+        permissionMode: offeredPermissionMode,
         useWorktree: worktreeOn
       })
     )
@@ -131,9 +152,9 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
         <div className="flex flex-col gap-1">
           <span className="text-xs text-ink-muted">Thinking</span>
           <Select
-            value={thinkingLevel}
+            value={offeredThinkingLevel}
             onValueChange={(value: ThinkingLevel) => {
-              defaultsApplied.current = true
+              setDefaultsApplied(true)
               setThinkingLevel(value)
             }}
             disabled={isBusy}
@@ -142,9 +163,9 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {THINKING_LEVEL_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
+              {thinkingLevels.map((level) => (
+                <SelectItem key={level} value={level}>
+                  {thinkingLevelLabel(level)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -154,22 +175,24 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
         <div className="flex flex-col gap-1">
           <span className="text-xs text-ink-muted">Permissions</span>
           <Select
-            value={permissionMode}
+            value={offeredPermissionMode}
             onValueChange={(value: StartupPermissionMode) => {
-              defaultsApplied.current = true
+              setDefaultsApplied(true)
               setPermissionMode(value)
             }}
             disabled={isBusy}
           >
             <SelectTrigger className="w-full">
-              <SelectValue />
+              <SelectValue>{permissionModeLabel(offeredPermissionMode)}</SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {CREATE_PERMISSION_MODE_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
+              <PermissionModeItems
+                options={offeredPermissionModes(
+                  CREATE_PERMISSION_MODE_OPTIONS,
+                  disabledPermissionModes,
+                  offeredPermissionMode
+                )}
+              />
             </SelectContent>
           </Select>
         </div>

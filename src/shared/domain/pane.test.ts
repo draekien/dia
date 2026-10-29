@@ -41,7 +41,7 @@ describe('PaneConfig', () => {
       model: 'claude-sonnet-5'
     })
 
-    expect(decoded.thinkingLevel).toBe('adaptive')
+    expect(decoded.thinkingLevel).toBe('medium')
   })
 
   it('defaults permissionMode to default when absent (migrating older records)', () => {

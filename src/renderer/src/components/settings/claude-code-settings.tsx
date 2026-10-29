@@ -1,11 +1,22 @@
 // @effect-diagnostics globalDate:off -- the health check age is compared against wall-clock time; no Effect runtime exists in the renderer.
 // @effect-diagnostics asyncFunction:off -- React callbacks await the Promise-based window.dia bridge; no Effect runtime exists in the renderer.
+
+import { PermissionModeItems } from '@renderer/components/permission-mode-items'
 import { type AdapterStatusJson, useAdapterStatus } from '@renderer/hooks/use-adapter-status'
 import { type ModelCatalog, useModelCatalog } from '@renderer/hooks/use-model-catalog'
 import { useModelPreferences } from '@renderer/hooks/use-model-preferences'
 import { formatWhen } from '@renderer/lib/format-when'
-import { CREATE_PERMISSION_MODE_OPTIONS } from '@renderer/lib/permission-modes'
-import { THINKING_LEVEL_OPTIONS } from '@renderer/lib/thinking-levels'
+import {
+  CREATE_PERMISSION_MODE_OPTIONS,
+  disabledPermissionModesFor,
+  offeredPermissionModes,
+  permissionModeLabel
+} from '@renderer/lib/permission-modes'
+import {
+  fitThinkingLevel,
+  thinkingLevelLabel,
+  thinkingLevelsFor
+} from '@renderer/lib/thinking-levels'
 import { cn } from '@renderer/lib/utils'
 import {
   type AdapterPreferences,
@@ -31,7 +42,6 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-  SelectSeparator,
   SelectTrigger,
   SelectValue
 } from '../ui/select'
@@ -39,7 +49,6 @@ import { Skeleton } from '../ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 
 const STALE_CHECK = Duration.minutes(5)
-const FIRST_LISTED = 'dia:first-listed'
 
 type Health = AdapterStatusJson['health']
 type ModelOptionJson = Extract<
@@ -211,10 +220,13 @@ function DefaultsSection({
   const { defaults } = preferences
   const { favourites, others } = pickerModels(models, preferences)
   const listed = [...favourites, ...others]
-  const modelValue =
-    defaults.model !== undefined && listed.some((model) => model.value === defaults.model)
-      ? defaults.model
-      : FIRST_LISTED
+  const model = listed.find((option) => option.value === defaults.model) ?? listed[0]
+  const thinkingLevels = thinkingLevelsFor(model)
+  const thinkingLevel = fitThinkingLevel(
+    defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
+    thinkingLevels
+  )
+  const permissionMode = defaults.permissionMode ?? 'auto'
 
   const update = (next: AgentDefaults) => void window.dia.adapter.setDefaults(next)
 
@@ -225,23 +237,17 @@ function DefaultsSection({
           Model
         </span>
         <Select
-          value={modelValue}
-          onValueChange={(value) =>
-            update({ ...defaults, model: value === FIRST_LISTED ? undefined : value })
-          }
+          value={model?.value}
+          onValueChange={(value) => update({ ...defaults, model: value })}
         >
           <SelectTrigger className="w-full" aria-labelledby="default-model-label">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              <SelectItem value={FIRST_LISTED}>First listed</SelectItem>
-            </SelectGroup>
-            {listed.length === 0 ? null : <SelectSeparator />}
-            <SelectGroup>
-              {listed.map((model) => (
-                <SelectItem key={model.value} value={model.value}>
-                  {model.displayName}
+              {listed.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.displayName}
                 </SelectItem>
               ))}
             </SelectGroup>
@@ -253,16 +259,16 @@ function DefaultsSection({
           Thinking
         </span>
         <Select
-          value={defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL}
+          value={thinkingLevel}
           onValueChange={(value: ThinkingLevel) => update({ ...defaults, thinkingLevel: value })}
         >
           <SelectTrigger className="w-full" aria-labelledby="default-thinking-label">
-            <SelectValue />
+            <SelectValue>{thinkingLevelLabel(thinkingLevel)}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {THINKING_LEVEL_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
+            {thinkingLevels.map((level) => (
+              <SelectItem key={level} value={level}>
+                {thinkingLevelLabel(level)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -273,20 +279,22 @@ function DefaultsSection({
           Permissions
         </span>
         <Select
-          value={defaults.permissionMode ?? 'auto'}
+          value={permissionMode}
           onValueChange={(value: StartupPermissionMode) =>
             update({ ...defaults, permissionMode: value })
           }
         >
           <SelectTrigger className="w-full" aria-labelledby="default-permissions-label">
-            <SelectValue />
+            <SelectValue>{permissionModeLabel(permissionMode)}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            {CREATE_PERMISSION_MODE_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
+            <PermissionModeItems
+              options={offeredPermissionModes(
+                CREATE_PERMISSION_MODE_OPTIONS,
+                disabledPermissionModesFor([], model),
+                permissionMode
+              )}
+            />
           </SelectContent>
         </Select>
       </div>

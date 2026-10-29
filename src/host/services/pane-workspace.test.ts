@@ -140,7 +140,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     refreshModels: () => Effect.die('not called'),
     status: () => Stream.empty,
     checkHealth: () => Effect.void,
-    setInstallPath: () => Effect.void
+    setInstallPath: () => Effect.void,
+    disabledPermissionModes: () => Effect.succeed([])
   }
   const provided = new Map<string, unknown>([[AGENT_BACKEND_KEY, backend]])
   if (options.gitOps !== undefined) provided.set(WORKTREES_KEY, options.gitOps(existing))

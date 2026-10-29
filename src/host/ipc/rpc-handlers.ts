@@ -16,6 +16,7 @@ import { ModelPreferences } from '../services/model-preferences'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { SettingsStore } from '../services/settings-store'
+import { resolveAgentBackend } from '../session/agent-backend'
 
 /**
  * Builds the implementation of {@link DiaRpcs} on top of the Host's services. Requires
@@ -304,6 +305,10 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     SetModelPreference: ({ model, preference }) =>
       modelPreferences.set(model, Option.fromNullishOr(preference)),
     SetAgentDefaults: ({ defaults }) => modelPreferences.setDefaults(defaults),
+    GetDisabledPermissionModes: ({ cwd }) =>
+      resolveAgentBackend(plugins).pipe(
+        Effect.flatMap((backend) => backend.disabledPermissionModes(cwd))
+      ),
     ListActivities: () => activities.list,
     RunActivity: ({ plugin, id }) => activities.runNow(plugin, id),
     SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)

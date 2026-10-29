@@ -1,13 +1,21 @@
 import { Schema } from 'effect'
+import { EffortLevel } from './pane'
 
 /**
  * A model a new agent can use, as the agent reports it. Pass `value` unchanged as the `model` of
- * a new tab; show `displayName`, with `description` as supporting text.
+ * a new tab; show `displayName`, with `description` as supporting text. `adaptiveThinking` says
+ * whether the model can think adaptively, and `effortLevels` lists the efforts it can cap that
+ * thinking at (empty when it supports none). `autoMode` and `fastMode` say whether the model
+ * supports the `auto` permission mode and fast mode.
  */
 export const ModelOption = Schema.Struct({
   value: Schema.NonEmptyString,
   displayName: Schema.NonEmptyString,
-  description: Schema.String
+  description: Schema.String,
+  adaptiveThinking: Schema.Boolean,
+  effortLevels: Schema.Array(EffortLevel),
+  autoMode: Schema.Boolean,
+  fastMode: Schema.Boolean
 })
 export type ModelOption = typeof ModelOption.Type
 

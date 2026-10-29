@@ -13,8 +13,8 @@ export interface ThinkingOptions {
 /**
  * Maps a user-facing {@link ThinkingLevel} to the Agent SDK query options that
  * enact it: `off` disables extended thinking, `adaptive` lets the model decide,
- * and `low`/`medium`/`high` run adaptive thinking capped at that reasoning
- * effort. Spread the result into a query's `options`.
+ * and an effort level runs adaptive thinking capped at that reasoning effort.
+ * Spread the result into a query's `options`.
  */
 export const thinkingOptions = (level: ThinkingLevel): ThinkingOptions => {
   switch (level) {
@@ -25,6 +25,8 @@ export const thinkingOptions = (level: ThinkingLevel): ThinkingOptions => {
     case 'low':
     case 'medium':
     case 'high':
+    case 'xhigh':
+    case 'max':
       return { thinking: { type: 'adaptive' }, effort: level }
   }
 }

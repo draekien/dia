@@ -38,12 +38,16 @@ export class ModelProbeFailed extends Data.TaggedError('ModelProbeFailed')<{
 
 const ModelOptions = Schema.NonEmptyArray(ModelOption)
 
+const DEFAULT_MODEL_ALIAS = 'default'
+
+const isEffortLevel = Schema.is(ModelOption.fields.effortLevels.value)
+
 /** Reads the models the local Claude Code install offers, starting it in `cwd`. The list is never empty. */
 export type ModelProbe = (cwd: string) => Effect.Effect<typeof ModelOptions.Type, ModelProbeFailed>
 
 const ModelCache = Schema.fromJsonString(
   Schema.Struct({
-    version: Schema.Literal(1),
+    version: Schema.Literal(4),
     fetchedAt: Schema.DateTimeUtcFromString,
     models: ModelOptions
   })
@@ -54,8 +58,9 @@ const CACHE_FILE = 'models.json'
 
 /**
  * The {@link ModelProbe} that asks the Claude Code install `install` resolves: it reads
- * `supportedModels()` from a query that starts no turn. Fails when no install is found, after
- * {@link MODEL_PROBE_TIMEOUT}, or when the reply is empty or unreadable.
+ * `supportedModels()` from a query that starts no turn, leaving out the `default` alias. Fails
+ * when no install is found, after {@link MODEL_PROBE_TIMEOUT}, or when the reply has no other
+ * model or is unreadable.
  */
 export const probeModels =
   (install: ClaudeInstall): ModelProbe =>
@@ -81,15 +86,26 @@ const readModels = (probe: Query) =>
         })
       )
     ),
+    Effect.map((rows) => rows.filter((row) => row.value !== DEFAULT_MODEL_ALIAS)),
     Effect.flatMap((rows) =>
       rows.length === 0
         ? Effect.fail(new ModelProbeFailed({ message: 'Claude Code reported no models' }))
         : Schema.decodeUnknownEffect(ModelOptions)(
-            rows.map(({ value, displayName, description }) => ({
-              value,
-              displayName,
-              description
-            }))
+            rows.map(
+              (row) =>
+                ({
+                  value: row.value,
+                  displayName: row.displayName,
+                  description: row.description,
+                  adaptiveThinking: row.supportsAdaptiveThinking === true,
+                  effortLevels:
+                    row.supportsEffort === true
+                      ? (row.supportedEffortLevels ?? []).filter(isEffortLevel)
+                      : [],
+                  autoMode: row.supportsAutoMode === true,
+                  fastMode: row.supportsFastMode === true
+                }) satisfies ModelOption
+            )
           ).pipe(
             Effect.mapError(
               (issue) =>
@@ -202,7 +218,7 @@ export const makeModelCatalog = Effect.fnUntraced(function* (
         state,
         ModelsReady.make({ models, fetchedAt: now, refreshing: false })
       )
-      yield* writeCache({ version: 1, fetchedAt: now, models })
+      yield* writeCache({ version: 4, fetchedAt: now, models })
       yield* Effect.logInfo('Read the model list', { count: models.length })
       return startOfTomorrow(now)
     }

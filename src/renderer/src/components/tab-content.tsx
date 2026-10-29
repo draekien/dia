@@ -1,8 +1,8 @@
+import { usePrevious } from '@renderer/hooks/use-previous'
 import type { Project, Workspace } from '@shared/domain/project'
 import { tabOf } from '@shared/domain/workspace'
 import { Result } from 'effect'
 import { FolderPlusIcon, PlusIcon } from 'lucide-react'
-import { useEffect, useRef } from 'react'
 import { newAgent, registerProject } from '../lib/actions'
 import { useView, useWorkspace } from '../plugin-api'
 import Pane from './pane'
@@ -62,6 +62,7 @@ function VisibleTab({
     <Pane
       key={config.paneId}
       paneId={config.paneId}
+      cwd={config.cwd}
       model={config.model}
       thinkingLevel={config.thinkingLevel}
       permissionMode={config.permissionMode}
@@ -78,11 +79,8 @@ function VisibleTab({
 export function TabContent() {
   const view = useView()
   const workspace = useWorkspace()
-  const previousView = useRef(view)
-  const cameFromNewAgent = previousView.current?._tag === 'NewAgentView'
-  useEffect(() => {
-    previousView.current = view
-  }, [view])
+  const previousView = usePrevious(view)
+  const cameFromNewAgent = previousView?._tag === 'NewAgentView'
   if (view === undefined || workspace === undefined) return <StartupSkeleton />
   switch (view._tag) {
     case 'TabView':

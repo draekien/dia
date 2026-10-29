@@ -16,7 +16,7 @@ import {
 } from './model-catalog'
 
 const sdk = vi.hoisted(() => ({
-  supportedModels: vi.fn<() => Promise<Array<Record<string, string>>>>(),
+  supportedModels: vi.fn<() => Promise<Array<Record<string, unknown>>>>(),
   close: vi.fn()
 }))
 
@@ -36,11 +36,35 @@ const READ_IN_THE_FUTURE = utc('2026-10-25T16:00:00Z')
 const NEXT_LOCAL_MIDNIGHT = utc('2026-10-26T14:00:00Z')
 
 const CACHED_MODELS = [
-  { value: 'sonnet', displayName: 'Sonnet', description: 'Everyday tasks' }
+  {
+    value: 'sonnet',
+    displayName: 'Sonnet',
+    description: 'Everyday tasks',
+    adaptiveThinking: true,
+    effortLevels: ['low', 'medium', 'high'],
+    autoMode: true,
+    fastMode: false
+  }
 ] as const
 const PROBED_MODELS = [
-  { value: 'default', displayName: 'Default (recommended)', description: 'Opus' },
-  { value: 'haiku', displayName: 'Haiku', description: 'Fastest' }
+  {
+    value: 'default',
+    displayName: 'Default (recommended)',
+    description: 'Opus',
+    adaptiveThinking: true,
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    autoMode: true,
+    fastMode: false
+  },
+  {
+    value: 'haiku',
+    displayName: 'Haiku',
+    description: 'Fastest',
+    adaptiveThinking: false,
+    effortLevels: [],
+    autoMode: false,
+    fastMode: false
+  }
 ] as const
 
 const platform = Layer.mergeAll(
@@ -57,7 +81,7 @@ const failing =
     Effect.fail(new ModelProbeFailed({ message }))
 
 const cacheJson = (fetchedAt: DateTime.Utc) =>
-  JSON.stringify({ version: 1, fetchedAt: DateTime.formatIso(fetchedAt), models: CACHED_MODELS })
+  JSON.stringify({ version: 4, fetchedAt: DateTime.formatIso(fetchedAt), models: CACHED_MODELS })
 
 const openCatalog = (options: { readonly cache?: string; readonly probe?: ModelProbe }) =>
   Effect.gen(function* () {
@@ -140,6 +164,28 @@ describe('makeModelCatalog', () => {
     }).pipe(Effect.scoped, Effect.provide(platform))
   )
 
+  it.effect('reads the list again when the cache predates the current model fields', () =>
+    Effect.gen(function* () {
+      const versionTwo = JSON.stringify({
+        version: 2,
+        fetchedAt: DateTime.formatIso(READ_EARLIER_TODAY),
+        models: [
+          {
+            value: 'sonnet',
+            displayName: 'Sonnet',
+            description: 'Everyday tasks',
+            adaptiveThinking: true,
+            effortLevels: ['low', 'medium', 'high']
+          }
+        ]
+      })
+      const { spec, state } = yield* openCatalog({ cache: versionTwo })
+
+      assert.deepStrictEqual(spec.firstRunAt, NOW)
+      assert.deepStrictEqual(yield* state, ModelsLoading.make({}))
+    }).pipe(Effect.scoped, Effect.provide(platform))
+  )
+
   it.effect('a successful run is next due at local midnight', () =>
     Effect.gen(function* () {
       const { spec } = yield* openCatalog({})
@@ -170,7 +216,7 @@ describe('makeModelCatalog', () => {
       const saved = JSON.parse(yield* fs.readFileString(cacheFile))
 
       assert.deepStrictEqual(saved, {
-        version: 1,
+        version: 4,
         fetchedAt: '2026-10-25T15:00:00.000Z',
         models: PROBED_MODELS
       })
@@ -261,16 +307,122 @@ describe('probeModels', () => {
     })
   )
 
-  it.effect('returns the reported models and closes the query', () =>
+  it.effect('returns the reported models with their capabilities and closes the query', () =>
     Effect.gen(function* () {
       sdk.supportedModels.mockResolvedValue([
-        { value: 'sonnet', displayName: 'Sonnet', description: 'Everyday tasks', extra: 'x' }
+        {
+          value: 'sonnet',
+          displayName: 'Sonnet',
+          description: 'Everyday tasks',
+          supportsAdaptiveThinking: true,
+          supportsEffort: true,
+          supportedEffortLevels: ['low', 'medium', 'high'],
+          supportsAutoMode: true,
+          extra: 'x'
+        }
       ])
 
       const models = yield* probeModels(installed)('/data')
 
       assert.deepStrictEqual(models, [CACHED_MODELS[0]])
       assert.strictEqual(sdk.close.mock.calls.length, 1)
+    })
+  )
+
+  it.effect('reports no thinking, auto mode or fast mode support for a model that omits them', () =>
+    Effect.gen(function* () {
+      sdk.supportedModels.mockResolvedValue([
+        { value: 'claude-haiku-4-5', displayName: 'Haiku 4.5', description: '' }
+      ])
+
+      const [model] = yield* probeModels(installed)('/data')
+
+      assert.deepStrictEqual(
+        {
+          adaptiveThinking: model.adaptiveThinking,
+          effortLevels: model.effortLevels,
+          autoMode: model.autoMode,
+          fastMode: model.fastMode
+        },
+        { adaptiveThinking: false, effortLevels: [], autoMode: false, fastMode: false }
+      )
+    })
+  )
+
+  it.effect('leaves out the default alias', () =>
+    Effect.gen(function* () {
+      sdk.supportedModels.mockResolvedValue([
+        { value: 'default', displayName: 'Default (recommended)', description: 'Opus' },
+        { value: 'opus', displayName: 'Opus', description: '' }
+      ])
+
+      const models = yield* probeModels(installed)('/data')
+
+      assert.deepStrictEqual(
+        models.map((model) => model.value),
+        ['opus']
+      )
+    })
+  )
+
+  it.effect('fails when the default alias is the only reported model', () =>
+    Effect.gen(function* () {
+      sdk.supportedModels.mockResolvedValue([
+        { value: 'default', displayName: 'Default (recommended)', description: 'Opus' }
+      ])
+
+      const failure = yield* Effect.flip(probeModels(installed)('/data'))
+
+      assert.strictEqual(failure.message, 'Claude Code reported no models')
+    })
+  )
+
+  it.effect('drops an effort level dia does not know and keeps the rest of the list', () =>
+    Effect.gen(function* () {
+      sdk.supportedModels.mockResolvedValue([
+        {
+          value: 'opus',
+          displayName: 'Opus',
+          description: '',
+          supportsAdaptiveThinking: true,
+          supportsEffort: true,
+          supportedEffortLevels: ['minimal', 'low', 'high']
+        }
+      ])
+
+      const [model] = yield* probeModels(installed)('/data')
+
+      assert.deepStrictEqual(model.effortLevels, ['low', 'high'])
+    })
+  )
+
+  it.effect('reports no effort levels when the SDK says the model does not support effort', () =>
+    Effect.gen(function* () {
+      sdk.supportedModels.mockResolvedValue([
+        {
+          value: 'sonnet',
+          displayName: 'Sonnet',
+          description: '',
+          supportsEffort: false,
+          supportedEffortLevels: ['low']
+        }
+      ])
+
+      const [model] = yield* probeModels(installed)('/data')
+
+      assert.deepStrictEqual(model.effortLevels, [])
+    })
+  )
+
+  it.effect('reports fast mode support when the SDK says the model supports it', () =>
+    Effect.gen(function* () {
+      sdk.supportedModels.mockResolvedValue([
+        { value: 'opus', displayName: 'Opus', description: '', supportsFastMode: true }
+      ])
+
+      const [model] = yield* probeModels(installed)('/data')
+
+      assert.strictEqual(model.fastMode, true)
     })
   )
 
