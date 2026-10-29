@@ -1,6 +1,6 @@
+import { Button } from '@dia/renderer-plugin'
 import type { PanePlanReviewRequested } from '@shared/ipc/contract'
 import { Markdown } from './markdown'
-import { Button } from './ui/button'
 
 /**
  * Inline card that presents a pane's proposed plan (raised when its agent, in

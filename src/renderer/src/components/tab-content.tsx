@@ -1,11 +1,10 @@
 import { usePrevious } from '@renderer/hooks/use-previous'
-import type { Project, Workspace } from '@shared/domain/project'
-import { tabOf } from '@shared/domain/workspace'
-import { Result } from 'effect'
+import type { Project } from '@shared/domain/project'
 import { FolderPlusIcon, PlusIcon } from 'lucide-react'
 import { newAgent, registerProject } from '../lib/actions'
+import { MAIN_TAB, Slot } from '../lib/slots'
+import { TabOpenedFromNewAgent } from '../lib/tab-opened-from-new-agent'
 import { useView, useWorkspace } from '../plugin-api'
-import Pane from './pane'
 import PaneCreationForm from './pane-creation-form'
 import { StartupSkeleton } from './startup-skeleton'
 import { Button } from './ui/button'
@@ -46,35 +45,24 @@ function EmptyProject({ project }: { readonly project: Project }) {
   )
 }
 
-function VisibleTab({
-  workspace,
-  paneId,
-  focusComposer
-}: {
-  readonly workspace: Workspace
-  readonly paneId: string
-  readonly focusComposer: boolean
-}) {
-  const found = tabOf(workspace, paneId)
-  if (Result.isFailure(found)) return null
-  const { config } = found.success.tab
+function NoChatPlugin() {
   return (
-    <Pane
-      key={config.paneId}
-      paneId={config.paneId}
-      cwd={config.cwd}
-      model={config.model}
-      thinkingLevel={config.thinkingLevel}
-      permissionMode={config.permissionMode}
-      focusComposer={focusComposer}
-    />
+    <div className="flex h-full items-center justify-center p-6">
+      <div className="flex max-w-sm flex-col items-start gap-3">
+        <h1 className="text-base font-semibold text-ink">No chat plugin is loaded</h1>
+        <p className="text-sm text-ink-muted">
+          This agent keeps running. Its conversation shows here once a chat plugin loads.
+        </p>
+      </div>
+    </div>
   )
 }
 
 /**
  * The kernel's content area, shown in the `main` slot unless a plugin fills it. Renders by the
- * current view: the visible tab, the New agent form, the first-run screen, or
- * the prompt to start an agent; the startup skeleton until the workspace loads.
+ * current view: the `main.tab` slot for the visible tab (or a notice that no chat plugin is
+ * loaded), the New agent form, the first-run screen, or the prompt to start an agent; the startup
+ * skeleton until the workspace loads.
  */
 export function TabContent() {
   const view = useView()
@@ -85,7 +73,9 @@ export function TabContent() {
   switch (view._tag) {
     case 'TabView':
       return (
-        <VisibleTab workspace={workspace} paneId={view.paneId} focusComposer={cameFromNewAgent} />
+        <TabOpenedFromNewAgent.Provider value={cameFromNewAgent}>
+          <Slot name={MAIN_TAB} empty={<NoChatPlugin />} />
+        </TabOpenedFromNewAgent.Provider>
       )
     case 'NewAgentView': {
       const entry = workspace.projects.find(

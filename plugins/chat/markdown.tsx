@@ -1,5 +1,4 @@
-import { Button } from '@renderer/components/ui/button'
-import { cn } from '@renderer/lib/utils'
+import { Button, cn } from '@dia/renderer-plugin'
 import { createHighlighter } from '@tanstack/highlight/core'
 import { c } from '@tanstack/highlight/languages/c'
 import { cpp } from '@tanstack/highlight/languages/cpp'

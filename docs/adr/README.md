@@ -39,7 +39,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0028](0028-essential-plugins-and-the-permissions-plugin.md) | Keep essential plugins loaded and un-overridable, and move permission handling into one | superseded by ADR-0029 |
 | [0029](0029-plugin-categories-adapter-and-feature.md) | Split plugins into one adapter category and one feature category, and move the Agent SDK into a Claude Code adapter | accepted |
 | [0030](0030-user-turns-appear-when-the-host-reports-them-sent.md) | Show a user turn in the transcript when the Host reports it sent, not when the composer submits it | accepted |
-| [0031](0031-renderer-plugins-fill-slots.md) | Renderer plugins draw the UI by filling slots: one root slot, and child slots declared by the plugin that fills it | accepted, amended by ADR-0038 |
+| [0031](0031-renderer-plugins-fill-slots.md) | Renderer plugins draw the UI by filling slots: one root slot, and child slots declared by the plugin that fills it | accepted, amended by ADR-0038 and ADR-0040 |
 | [0032](0032-background-activities-and-semver-plugin-api.md) | Plugins schedule background activities through the kernel, keep files in a data directory, and declare a semver plugin API version | accepted |
 | [0033](0033-one-org-of-hired-role-agents.md) | Run one org of hired agents with roles, per-role and overall concurrency caps, and ad-hoc tabs outside the caps | accepted |
 | [0034](0034-decision-path-and-decision-queue.md) | Review objective plans as a live decision path, and route everything that waits on the user through one decision queue | accepted |
@@ -48,6 +48,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0037](0037-run-the-users-claude-code-install.md) | Run the user's own Claude Code install, found by an override or on `PATH`, instead of the binary bundled with the Agent SDK | accepted |
 | [0038](0038-transparent-overlay-and-inset-sidebar-frame.md) | Draw the window controls over a transparent overlay and use the shadcn inset sidebar as the window frame | accepted; frame superseded by ADR-0039 |
 | [0039](0039-flush-window-frame.md) | Drop the inset card and make the window frame flush with 32px top rows | accepted |
+| [0040](0040-chat-plugin-fills-a-main-tab-slot.md) | The chat plugin fills a `main.tab` slot inside the kernel's `main` default | accepted |
 
 ## Adding a new ADR
 

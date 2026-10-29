@@ -4,7 +4,7 @@
 
 ## Context
 
-`TranscriptScroller` (`src/renderer/src/components/transcript-scroller.tsx`) replaced `@shadcn/react`'s `MessageScroller`. It follows the end of the transcript by setting `scrollTop` to `scrollHeight` from a `ResizeObserver` callback. In the first version, the `scroll` handler set "following" to whether the viewport was within 8px of the end. During a long streaming reply in the running app, following stopped after the view fell about 25px behind the end, and the reply then streamed below the composer.
+`TranscriptScroller` (`plugins/chat/transcript-scroller.tsx`) replaced `@shadcn/react`'s `MessageScroller`. It follows the end of the transcript by setting `scrollTop` to `scrollHeight` from a `ResizeObserver` callback. In the first version, the `scroll` handler set "following" to whether the viewport was within 8px of the end. During a long streaming reply in the running app, following stopped after the view fell about 25px behind the end, and the reply then streamed below the composer.
 
 ## Reasoning / Learning
 

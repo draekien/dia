@@ -8,7 +8,7 @@ import { Effect, Fiber, Option, type Scope, Stream } from 'effect'
 import { type ComponentType, createElement, type ReactNode, useEffect, useState } from 'react'
 
 /** A region of the window that a renderer plugin can fill. */
-export type SlotName = 'root' | 'sidebar' | 'main' | 'main.header'
+export type SlotName = 'root' | 'sidebar' | 'main' | 'main.header' | 'main.tab'
 
 /** The whole window; there is no title bar band. The layout plugin fills it. */
 export const ROOT: SlotName = 'root'
@@ -22,6 +22,12 @@ export const MAIN: SlotName = 'main'
  * window status items.
  */
 export const MAIN_HEADER: SlotName = 'main.header'
+/**
+ * The visible tab inside the kernel's `main` default. The chat plugin fills it; while it is empty,
+ * a tab shows that no chat plugin is loaded. Read the visible tab with `useView` and
+ * `useWorkspace`.
+ */
+export const MAIN_TAB: SlotName = 'main.tab'
 
 const slotKey = (name: SlotName): string => `slot:${name}`
 

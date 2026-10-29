@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
+
+import type { PaneMessage } from '@dia/renderer-plugin'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { PaneMessage } from '../lib/pane-chat'
 import { dirName, MessageView } from './pane'
 
 afterEach(cleanup)

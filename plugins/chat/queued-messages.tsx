@@ -1,8 +1,7 @@
+import { Button, Textarea } from '@dia/renderer-plugin'
 import type { OutgoingMessage } from '@shared/domain/message-queue'
 import { PencilIcon, XIcon } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from './ui/button'
-import { Textarea } from './ui/textarea'
 
 interface QueuedMessagesProps {
   readonly queued: ReadonlyArray<OutgoingMessage>

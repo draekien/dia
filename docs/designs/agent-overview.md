@@ -285,7 +285,7 @@ State: `workspaceAtom` is written only by `GetWorkspace` and `WorkspaceChanged`.
 
 **Slots reuse service keys, behind `fillSlot`.** The registry already gives single occupancy, scope-bound removal, taken-key errors and reopening of dependants; a separate slot registry would duplicate all four. `fillSlot` hides the key format and types the component, so a plugin depends only on what a slot is (Information Hiding).
 
-**Kernel defaults for `MAIN` and `MAIN_HEADER`.** The chat is still kernel code (issue #9, `plugins/chat`). A plugin cannot import `src/`, so it cannot render `TabContent`; the kernel resolves the default when no plugin fills the slot. The later chat plugin fills `MAIN`, with no change to the layout plugin.
+**Kernel defaults for `MAIN` and `MAIN_HEADER`.** The chat is still kernel code (issue #9, `plugins/chat`). A plugin cannot import `src/`, so it cannot render `TabContent`; the kernel resolves the default when no plugin fills the slot. The chat plugin (`plugins/chat`) fills the `main.tab` slot that `TabContent` renders for the visible tab, with no change to the layout plugin (ADR-0040).
 
 **Plugins talk through kernel state, not to each other.** The sidebar and `MAIN` agree on the visible tab only through `useView()` and `actions.selectTab` (Law of Demeter). The Host persists `visibleTab`, so a restart and a second client agree too.
 
