@@ -159,6 +159,13 @@ describe('AgentOverview expanded', () => {
 })
 
 describe('AgentOverview collapsed', () => {
+  it('hides the no-projects prompt, which only fits the expanded sidebar', () => {
+    state.workspace = { ...state.workspace, projects: [] } as Workspace
+    render(<Harness initialOpen={false} />)
+
+    expect(screen.queryByText('No projects yet')).toBeNull()
+  })
+
   it('lists Meta first, then one dot per agent, with a separator before each project', () => {
     render(<Harness initialOpen={false} />)
 

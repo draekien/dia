@@ -1,8 +1,10 @@
 ---
-status: "accepted"
+status: "accepted; frame superseded by ADR-0039"
 date: 2026-10-28
 decision-makers: William Pei
 ---
+
+> **The inset card frame, its alignment rule and the 48px overlay height are superseded by [ADR-0039](0039-flush-window-frame.md).**
 
 # Draw the window controls over a transparent overlay and use the shadcn inset sidebar as the window frame
 
