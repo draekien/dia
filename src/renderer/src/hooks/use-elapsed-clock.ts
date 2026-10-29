@@ -38,7 +38,7 @@ function createClock() {
     },
     markActivity: () => {
       lastActivityMs = performance.now()
-      publish()
+      if (reading.idleMs >= TICK_MS) publish()
     }
   }
 }

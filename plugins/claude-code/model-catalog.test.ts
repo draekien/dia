@@ -349,6 +349,25 @@ describe('probeModels', () => {
     })
   )
 
+  it.effect('drops an effort level dia does not know and keeps the rest of the list', () =>
+    Effect.gen(function* () {
+      sdk.supportedModels.mockResolvedValue([
+        {
+          value: 'opus',
+          displayName: 'Opus',
+          description: '',
+          supportsAdaptiveThinking: true,
+          supportsEffort: true,
+          supportedEffortLevels: ['minimal', 'low', 'high']
+        }
+      ])
+
+      const [model] = yield* probeModels(installed)('/data')
+
+      assert.deepStrictEqual(model.effortLevels, ['low', 'high'])
+    })
+  )
+
   it.effect('reports no effort levels when the SDK says the model does not support effort', () =>
     Effect.gen(function* () {
       sdk.supportedModels.mockResolvedValue([

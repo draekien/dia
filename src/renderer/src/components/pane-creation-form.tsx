@@ -17,6 +17,7 @@ import { useModelCatalog } from '@renderer/hooks/use-model-catalog'
 import { useModelPreferences } from '@renderer/hooks/use-model-preferences'
 import { usePluginList } from '@renderer/hooks/use-plugin-list'
 import { cancelNewAgent } from '@renderer/lib/actions'
+import { findModelOption } from '@renderer/lib/model-options'
 import {
   CREATE_PERMISSION_MODE_OPTIONS,
   disabledPermissionModesFor,
@@ -76,10 +77,7 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
   const [defaultsApplied, setDefaultsApplied] = useState(false)
   const startable =
     isOfferedModel(catalog, preferences, model) && installProblem(adapterStatus) === undefined
-  const modelOption =
-    catalog.state?._tag === 'Ready'
-      ? catalog.state.models.find((option) => option.value === model)
-      : undefined
+  const modelOption = findModelOption(catalog.state, model)
   const thinkingLevels = thinkingLevelsFor(modelOption)
   const offeredThinkingLevel = fitThinkingLevel(thinkingLevel, thinkingLevels)
   const disabledPermissionModes = disabledPermissionModesFor(

@@ -2,6 +2,7 @@ import type { SendMode } from '@shared/domain/message-queue'
 import type { ModelCatalogSnapshotJson, PaneModelChanged } from '@shared/ipc/contract'
 import { Duration, Effect, Queue, Stream, SubscriptionRef } from 'effect'
 import { Atom } from 'effect/reactivity'
+import { findModelOption } from './model-options'
 import type { PaneChatState, PaneStreamEvent } from './pane-chat'
 import { emptyPaneChatState, paneChatStateFromHistory, reducePaneChat } from './pane-chat'
 
@@ -10,10 +11,7 @@ const IDLE_TTL = Duration.seconds(30)
 const displayNameIn = (
   catalog: ModelCatalogSnapshotJson | undefined,
   model: string
-): string | undefined =>
-  catalog?.state._tag === 'Ready'
-    ? catalog.state.models.find((option) => option.value === model)?.displayName
-    : undefined
+): string | undefined => findModelOption(catalog?.state, model)?.displayName
 
 const paneStreamEvents = (paneId: string): Stream.Stream<PaneStreamEvent> =>
   Stream.callback<PaneStreamEvent>((queue) =>

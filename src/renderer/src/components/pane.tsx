@@ -22,6 +22,7 @@ import { useAdapterStatus } from '@renderer/hooks/use-adapter-status'
 import { useDisabledPermissionModes } from '@renderer/hooks/use-disabled-permission-modes'
 import { useElapsedClock } from '@renderer/hooks/use-elapsed-clock'
 import { useModelCatalog } from '@renderer/hooks/use-model-catalog'
+import { findModelOption } from '@renderer/lib/model-options'
 import {
   disabledPermissionModesFor,
   offeredPermissionModes,
@@ -48,7 +49,6 @@ import {
   type QuestionResponse
 } from '@shared/domain/attention'
 import type { SendMode } from '@shared/domain/message-queue'
-import type { ModelOption } from '@shared/domain/model'
 import {
   DEFAULT_PERMISSION_MODE,
   DEFAULT_THINKING_LEVEL,
@@ -786,10 +786,7 @@ function Pane({
   const [chosenModel, setChosenModel] = useState(model)
   const { state: catalogState } = useModelCatalog()
   const settingsDisabledModes = useDisabledPermissionModes(cwd)
-  const modelOption = (value: string): ModelOption | undefined =>
-    catalogState?._tag === 'Ready'
-      ? catalogState.models.find((option) => option.value === value)
-      : undefined
+  const modelOption = (value: string) => findModelOption(catalogState, value)
 
   function changeModel(next: string): void {
     setChosenModel(next)
@@ -824,6 +821,8 @@ function Pane({
     if (permissionMode !== undefined) setMode(permissionMode)
   }
 
+  const thinkingLevels = thinkingLevelsFor(modelOption(chosenModel))
+
   const { data: attention = Idle.make({}) } = useQuery<AttentionState>({
     queryKey: attentionQueryKey,
     queryFn: () => Idle.make({}),
@@ -845,8 +844,8 @@ function Pane({
         attention={attention}
         model={chosenModel}
         onModelChange={changeModel}
-        thinkingLevel={level}
-        thinkingLevels={thinkingLevelsFor(modelOption(chosenModel))}
+        thinkingLevel={fitThinkingLevel(level, thinkingLevels)}
+        thinkingLevels={thinkingLevels}
         onThinkingLevelChange={changeThinkingLevel}
         permissionMode={mode}
         disabledPermissionModes={disabledPermissionModesFor(

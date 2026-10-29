@@ -38,6 +38,8 @@ export class ModelProbeFailed extends Data.TaggedError('ModelProbeFailed')<{
 
 const ModelOptions = Schema.NonEmptyArray(ModelOption)
 
+const isEffortLevel = Schema.is(ModelOption.fields.effortLevels.value)
+
 /** Reads the models the local Claude Code install offers, starting it in `cwd`. The list is never empty. */
 export type ModelProbe = (cwd: string) => Effect.Effect<typeof ModelOptions.Type, ModelProbeFailed>
 
@@ -93,7 +95,9 @@ const readModels = (probe: Query) =>
                   description: row.description,
                   adaptiveThinking: row.supportsAdaptiveThinking === true,
                   effortLevels:
-                    row.supportsEffort === true ? (row.supportedEffortLevels ?? []) : [],
+                    row.supportsEffort === true
+                      ? (row.supportedEffortLevels ?? []).filter(isEffortLevel)
+                      : [],
                   autoMode: row.supportsAutoMode === true,
                   fastMode: row.supportsFastMode === true
                 }) satisfies ModelOption
