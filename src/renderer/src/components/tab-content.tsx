@@ -22,7 +22,7 @@ function FirstRun() {
         </p>
         <Button onClick={() => void registerProject()}>
           <FolderPlusIcon data-icon="inline-start" />
-          Add project…
+          Add project
         </Button>
       </div>
     </div>

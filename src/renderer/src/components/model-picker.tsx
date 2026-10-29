@@ -8,6 +8,7 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectSeparator,
   SelectTrigger,
   SelectValue
@@ -16,9 +17,10 @@ import {
 const MANAGE_MODELS = 'dia:manage-models'
 
 /**
- * The composer's model choice for a tab running `value`. It lists favourite models, then the
- * other visible models, then "Manage models…", which opens the Claude Code page of the Settings dialog. A `value` the list
- * does not offer shows as its raw id. Choosing a different model calls `onChange`.
+ * The composer's model choice for a tab running `value`. It lists favourite models under a
+ * "Favourites" heading, then the other visible models under "Models", then "Manage models", which
+ * opens the Claude Code page of the Settings dialog. A `value` the list does not offer shows as
+ * its raw id. Choosing a different model calls `onChange`.
  */
 export function ModelPicker({
   value,
@@ -57,7 +59,8 @@ export function ModelPicker({
           </SelectGroup>
         )}
         {favourites.length === 0 ? null : (
-          <SelectGroup aria-label="Favourite models">
+          <SelectGroup>
+            <SelectLabel>Favourites</SelectLabel>
             {favourites.map((model) => (
               <SelectItem key={model.value} value={model.value}>
                 {model.displayName}
@@ -65,9 +68,9 @@ export function ModelPicker({
             ))}
           </SelectGroup>
         )}
-        {favourites.length === 0 || others.length === 0 ? null : <SelectSeparator />}
         {others.length === 0 ? null : (
           <SelectGroup>
+            <SelectLabel>Models</SelectLabel>
             {others.map((model) => (
               <SelectItem key={model.value} value={model.value}>
                 {model.displayName}
@@ -77,7 +80,7 @@ export function ModelPicker({
         )}
         <SelectSeparator />
         <SelectGroup>
-          <SelectItem value={MANAGE_MODELS}>Manage models…</SelectItem>
+          <SelectItem value={MANAGE_MODELS}>Manage models</SelectItem>
         </SelectGroup>
       </SelectContent>
     </Select>

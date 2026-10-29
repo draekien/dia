@@ -182,7 +182,7 @@ function PluginRow({
             onClick={onChooseOverride}
           >
             <FolderIcon />
-            Set folder…
+            Set folder
           </Button>
           {overridden ? (
             <Button size="xs" variant="ghost" disabled={disabled} onClick={onClearOverride}>

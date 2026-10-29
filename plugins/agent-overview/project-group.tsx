@@ -143,7 +143,7 @@ export function ProjectGroup({
           <ContextMenuSeparator />
           <ContextMenuGroup>
             <ContextMenuItem variant="destructive" onSelect={onRemove}>
-              Remove project…
+              Remove project
             </ContextMenuItem>
           </ContextMenuGroup>
         </ContextMenuContent>

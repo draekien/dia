@@ -298,7 +298,7 @@ describe('PluginSettings', () => {
       (row.getByRole('button', { name }) as HTMLButtonElement).disabled
     expect(disabledOf('Reload')).toBe(true)
     expect(disabledOf('Unload')).toBe(true)
-    expect(disabledOf('Set folder…')).toBe(true)
+    expect(disabledOf('Set folder')).toBe(true)
     expect(
       row.getByText(
         'Adapter: it loads at startup from the bundled copy. Restart dia to apply a change.'

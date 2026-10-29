@@ -15,7 +15,7 @@ Confirmed with the user in Understand. Each maps to a test (T) or to Verify (V).
 3. The dialog nav lists General, Adapters and Plugins. Selecting one shows that page and updates the breadcrumb. (T)
 4. General changes theme, send mode and transcript width. (T)
 5. Adapters lists one row per adapter plugin with a status line. Selecting a row shows its settings (Health, Defaults, Models for Claude Code). With no adapters, it shows "No adapter plugin is installed". (T)
-6. "Manage models…" and "Open Settings" open Adapters › Claude Code. `openPluginsPage()` opens Plugins. (T)
+6. "Manage models" and "Open Settings" open Adapters › Claude Code. `openPluginsPage()` opens Plugins. (T)
 7. `Escape` closes the dialog, and the tab that was visible before is still visible. (V)
 8. No title bar band: the sidebar and the content card start at the top of the window, and the window controls draw over the app. Dragging the sidebar's top row or the card header moves the window; buttons in those rows still respond to clicks. (V)
 9. `Ctrl B` and ☰ switch between the expanded sidebar and the dot rail, and the state survives a restart. (T + V)

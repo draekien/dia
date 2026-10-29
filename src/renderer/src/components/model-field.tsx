@@ -4,7 +4,7 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-  SelectSeparator,
+  SelectLabel,
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
@@ -51,8 +51,8 @@ interface ModelFieldProps {
 }
 
 /**
- * The New agent form's model choice: the favourite models, then the other visible models, from
- * {@link ModelCatalog} and the adapter's `preferences`. While `value` is `undefined` and both are
+ * The New agent form's model choice: the favourite models under "Favourites", then the other
+ * visible models under "Models", from {@link ModelCatalog} and the adapter's `preferences`. While `value` is `undefined` and both are
  * known, it reports the default model through `onValueChange` (`preferences.defaults.model` when
  * offered, else the first offered model). A `value` that stops being offered stays selected and is
  * marked "No longer offered"; check {@link isOfferedModel} before starting an agent. It offers a
@@ -152,7 +152,8 @@ export function ModelField({
                 </SelectGroup>
               )}
               {picked === undefined || picked.favourites.length === 0 ? null : (
-                <SelectGroup aria-label="Favourite models">
+                <SelectGroup>
+                  <SelectLabel>Favourites</SelectLabel>
                   {picked.favourites.map((model) => (
                     <SelectItem key={model.value} value={model.value}>
                       {model.displayName}
@@ -160,18 +161,16 @@ export function ModelField({
                   ))}
                 </SelectGroup>
               )}
-              {picked === undefined ||
-              picked.favourites.length === 0 ||
-              picked.others.length === 0 ? null : (
-                <SelectSeparator />
+              {picked === undefined || picked.others.length === 0 ? null : (
+                <SelectGroup>
+                  <SelectLabel>Models</SelectLabel>
+                  {picked.others.map((model) => (
+                    <SelectItem key={model.value} value={model.value}>
+                      {model.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               )}
-              <SelectGroup>
-                {picked?.others.map((model) => (
-                  <SelectItem key={model.value} value={model.value}>
-                    {model.displayName}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
             </SelectContent>
           </Select>
           {offered === undefined ? null : (
