@@ -74,17 +74,14 @@ export const actions = {
 } as const
 
 /**
- * Kernel state, hooks and helpers the chat plugin renders from. Chat state lives in the kernel, so
- * a pane's transcript and pending requests survive the chat plugin being unloaded or reloaded.
+ * Kernel UI, state, hooks and helpers a renderer plugin renders from, so that a plugin file imports
+ * no `@renderer/*` path: the agent status dot and its label, shadcn primitives, `cn` to merge class
+ * names, and the chat's atoms, hooks and helpers. Chat state lives in the kernel, so a pane's
+ * transcript and pending requests survive the chat plugin being unloaded or reloaded.
  */
 export { InstallNotice } from './components/install-notice'
 export { PermissionModeItems } from './components/permission-mode-items'
 export { openSettings } from './components/settings/open-settings'
-/**
- * Kernel UI a renderer plugin renders, so that a plugin file imports no `@renderer/*` path: the
- * agent status dot and its label, the shadcn primitives the sidebar uses, and `cn` to merge
- * class names.
- */
 export { StatusIndicator, statusLabel } from './components/status-indicator'
 export * from './components/ui/alert-dialog'
 export * from './components/ui/bubble'

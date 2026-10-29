@@ -14,7 +14,7 @@ plugins/layout ─ <Slot main.header>   kernel default: TabHeader
                                          empty → NoChatPlugin
 ```
 
-- `main.tab` (`MAIN_TAB` in `src/renderer/src/lib/slots.ts`) is a `single` slot. `TabContent` renders it only for `TabView`. It has no kernel default; while it is empty, `TabContent` shows `NoChatPlugin`: "No chat plugin is loaded." with the same layout as `NoLayoutPlugin`.
+- `main.tab` (`MAIN_TAB` in `src/renderer/src/lib/slots.ts`) is a `single` slot. `TabContent` renders it only for `TabView`. It has no kernel default; while it is empty, `TabContent` shows `NoChatPlugin`: "No chat plugin is loaded.".
 - `main` keeps `TabContent` as its kernel default, so first run, an empty project and the New agent form work with the chat unloaded.
 - `main.header` is unchanged. Its kernel default `TabHeader` keeps the transcript width button, because only the plugin that fills `main.header` draws in that row; the width is kernel state (`transcriptWidthAtom`) that General settings also edits.
 
@@ -51,8 +51,9 @@ State, Host calls and components other kernel screens use stay in `src/renderer/
 - Chat state: the `pane-chat` types, `emptyPaneChatState`, `lastUserText`, the six `pane*Atom`s, `sendModeAtom`, `sendModeForEnter`, `turnActivity`.
 - Pure helpers: `findModelOption`, the four permission-mode helpers, the three thinking-level helpers.
 
-A non-React `.ts` module in the plugin may import only `@shared/*` and npm packages, because `tsconfig.node.json` also compiles `plugins/**/*.ts` and does not map `@dia/renderer-plugin`. `lib/turn-activity` imports the kernel's `PaneChatState`, so it stays in the kernel.
 - Components: `InstallNotice`, `PermissionModeItems`, `openSettings`, and the shadcn primitives `alert-dialog`, `bubble`, `input-group`, `label`, `marker`, `message`, `radio-group`, `select`, `switch`, `textarea`.
+
+A non-React `.ts` module in the plugin may import only `@shared/*` and npm packages, because `tsconfig.node.json` also compiles `plugins/**/*.ts` and does not map `@dia/renderer-plugin`. `lib/turn-activity` imports the kernel's `PaneChatState`, so it stays in the kernel.
 
 `PLUGIN_API_VERSION` 0.0.3 → 0.0.4 and `"api": "0.0.4"` in every `plugins/*/plugin.json` (ADR-0032).
 
