@@ -51,8 +51,8 @@ function NoSidebarPlugin() {
 }
 
 /**
- * The window frame: a shadcn inset-sidebar layout with no title bar. The `sidebar` slot fills the
- * left column; the inset card holds a draggable header row (sidebar toggle, then the `main.header`
+ * The window frame: a shadcn sidebar layout with no title bar. The `sidebar` slot fills the left
+ * column; the content column holds a draggable header row (sidebar toggle, then the `main.header`
  * slot) above the `main` slot. Persists the sidebar's open state and width in `localStorage`.
  * Fill the `root` slot with it.
  */

@@ -28,7 +28,7 @@ Chosen option: "Flush frame", because the user chose it (2026-10-29) over drawin
 
 | Rule | Value |
 |---|---|
-| Sidebar | `Sidebar variant="sidebar" collapsible="icon"` (`plugins/agent-overview/agent-overview.tsx`); a 1px `border-r` separates it from the content |
+| Sidebar | `Sidebar collapsible="icon"` with the default `variant="sidebar"` (`plugins/agent-overview/agent-overview.tsx`); a 1px `border-r` separates it from the content |
 | Content | `SidebarInset` with no margin, radius or shadow (`plugins/layout/layout.tsx`) |
 | Overlay | `TITLE_BAR_HEIGHT` is 32 (`src/main/index.ts`); colour stays `TITLE_BAR_OVERLAY_COLOR` |
 | Top rows | The sidebar's wordmark row and the content's header row are `h-8` and start at y=0; a control's hover background fills the header row and ends at the divider below it |

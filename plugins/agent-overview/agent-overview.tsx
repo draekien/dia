@@ -254,7 +254,7 @@ export function AgentOverview() {
     })
   )
 
-  if (workspace === undefined) return <Sidebar variant="sidebar" collapsible="icon" />
+  if (workspace === undefined) return <Sidebar collapsible="icon" />
 
   const nameOf = (id: string | number): string =>
     workspace.projects.find((entry) => entry.project.projectId === id)?.project.displayName ??
@@ -379,7 +379,7 @@ export function AgentOverview() {
 
   return (
     <>
-      <Sidebar variant="sidebar" collapsible="icon">
+      <Sidebar collapsible="icon">
         <SidebarHeader className="pt-0">
           <div className="titlebar-drag flex h-8 items-center px-2 text-sm font-semibold tracking-tight text-ink select-none">
             {!iconMode && 'dia'}
