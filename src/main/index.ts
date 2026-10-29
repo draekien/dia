@@ -99,10 +99,10 @@ const runUpdateCheck = Effect.tryPromise(() => autoUpdater.checkForUpdates()).pi
   Effect.ignore
 )
 
-// The overlay is transparent and 48px tall: the inset margin (8px), the h-8 header row and 8px
-// centre the controls on that row.
+// The overlay is transparent and 32px tall, the height of the sidebar's and the content's h-8
+// drag rows, so each control's hover fills its row.
 // These pre-mount glyph colours are a rough default; the renderer pushes the exact one on mount.
-const TITLE_BAR_HEIGHT = 48
+const TITLE_BAR_HEIGHT = 32
 const initialOverlay = {
   color: TITLE_BAR_OVERLAY_COLOR,
   symbolColor: nativeTheme.shouldUseDarkColors ? '#ededef' : '#3b3f45',

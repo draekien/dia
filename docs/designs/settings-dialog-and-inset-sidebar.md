@@ -1,5 +1,7 @@
 # Settings dialog, inset sidebar layout and seamless title bar (issue #52)
 
+> The inset card frame below is superseded by [ADR-0039](../adr/0039-flush-window-frame.md): the sidebar uses `variant="sidebar"`, the content area has no margin, radius or shadow, and the window-control overlay is 32px tall.
+
 Scope: layer. Spans the renderer kernel (`src/renderer/src`), the `layout` and `agent-overview` renderer plugins, the main process window setup (`src/main`), the shared IPC contract, and docs. One PR, branch `feat/settings-dialog-inset-sidebar`.
 
 ## Name and Purpose

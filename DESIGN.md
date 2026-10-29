@@ -38,7 +38,7 @@ A full-palette, cool-neutral strategy: several named roles, each with one delibe
 - **[to be resolved during implementation]** — cool-toned (graphite/slate) background, surface, text, and border ramp. Backgrounds sit at the dark-to-light ends depending on OS light/dark mode; body text and dividers are drawn from the same cool ramp, never warm-tinted.
 
 ### Named Rules
-**The One Voice Rule.** Amber/red/green are reserved exclusively for agent status, wherever it appears: an overview row, the collapsed rail. No other UI element — button, badge, link — may reuse them, or the status loses its meaning as the app's one urgent signal.
+**The One Voice Rule.** Amber/red/green are reserved exclusively for agent status, wherever it appears: an overview row, the collapsed rail. No other UI element — button, badge, link — may reuse them, or the status loses its meaning as the app's one urgent signal. The one exception is the OS-drawn close button's red hover, which dia does not style (ADR-0039).
 
 ## 3. Typography
 
@@ -61,14 +61,13 @@ A fixed `rem` scale (Tailwind v4 defaults, product-appropriate ~1.125–1.2 rati
 
 ## 4. Elevation
 
-The window has two resting levels: the sidebar surface, which fills the window and has no title bar strip above it, and the content card, which sits on it with an 8px inset, an 8px radius (`rounded-md`) and a small shadow (the shadcn inset sidebar). Any further elevation is a state response — an open dialog, a permission prompt, a command palette — never ambient decoration.
+The window has one resting level. The sidebar and the content area both fill the window from its top edge with no title bar strip; a 1px border separates them (ADR-0039). Their 32px top rows share one line with the native window controls, whose hover background fills the content's top row. Any elevation is a state response — an open dialog, a permission prompt, a command palette — never ambient decoration.
 
 ### Shadow Vocabulary
-- **Content card** (`rounded-md shadow-sm`, from `SidebarInset`): the one resting lift, on the card that holds the visible tab. Nothing inside the card adds its own resting shadow.
 - **Dialog lift** (`[value to be resolved]`): applied only to modal/dialog and overlay surfaces, to distinguish "what needs my answer now" from the flat resting surface.
 
 ### Named Rules
-**The Inset Card Rule.** At rest there are exactly two levels: the sidebar surface and the content card on it. Inside either level, regions are separated by dividers, not shadows. Any higher elevation appears only in direct response to an open dialog or overlay.
+**The Flat Frame Rule.** At rest there is one level. The sidebar and the content area, and the regions inside them, are separated by borders and dividers, not shadows. Elevation appears only in direct response to an open dialog or overlay.
 
 ## 5. Components
 
@@ -97,7 +96,7 @@ The one component the whole system is built around. A small dot on an agent's ov
 
 ### Tabs
 - **One visible:** exactly one agent's tab fills the content area. There are no split panes.
-- **Selecting:** a tab is selected from its sidebar row. The content card's header row holds the sidebar toggle, a breadcrumb `project › agent`, the worktree branch when there is one, the transcript width control, and the window status (plugin loading, update, `Ctrl K` hint). The header row is a window drag area; its content stays clear of the window controls. A divider separates it from the transcript.
+- **Selecting:** a tab is selected from its sidebar row. The content area's header row holds the sidebar toggle, a breadcrumb `project › agent`, the worktree branch when there is one, the transcript width control, and the window status (plugin loading, update, `Ctrl K` hint). The header row is a window drag area; its content stays clear of the window controls. A divider separates it from the transcript.
 - **Transcript width:** the transcript and composer sit in one centred column, capped at one of three widths (Narrow, Default, Wide) chosen app-wide from the content header or Settings › General; a narrower content area fills the column.
 - **Background tabs:** tabs that are not visible keep running and show their status in the sidebar and the collapsed rail only.
 
@@ -114,7 +113,7 @@ The sidebar is the primary navigation. Any command palette or agent switcher rea
 ### Do:
 - **Do** keep color roles deliberate: primary for action/selection, secondary for structure, tertiary reserved for agent status only, per the One Voice Rule.
 - **Do** use mono for all literal agent/session content and sans for all dia chrome, per the Content-Is-Mono Rule.
-- **Do** keep to the two resting levels, reserving further elevation for dialogs and overlays, per the Inset Card Rule.
+- **Do** keep to the one resting level, reserving elevation for dialogs and overlays, per the Flat Frame Rule.
 - **Do** make motion responsive to real actions (tab switch, row selection, status change) — confirm, don't choreograph.
 
 ### Don't:
