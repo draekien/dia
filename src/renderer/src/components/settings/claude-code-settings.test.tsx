@@ -6,7 +6,7 @@ import {
   EMPTY_ADAPTER_PREFERENCES
 } from '@shared/domain/model-preferences'
 import type { AdapterStatusSnapshotJson, ModelCatalogSnapshotJson } from '@shared/ipc/contract'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '../ui/tooltip'
 import { ClaudeCodeSettings } from './claude-code-settings'
@@ -82,7 +82,11 @@ const installBridge = (options: BridgeOptions = {}) => {
         revision: 1,
         preferences: options.preferences ?? EMPTY_ADAPTER_PREFERENCES
       })),
-      onPreferencesChanged: vi.fn(() => () => undefined),
+      onPreferencesChanged: vi.fn(
+        (_listener: (snapshot: { revision: number; preferences: AdapterPreferences }) => void) =>
+          () =>
+            undefined
+      ),
       setModelPreference: vi.fn(async (_model: string, _preference: string | null) =>
         options.refusal === undefined
           ? null
@@ -156,6 +160,20 @@ describe('ClaudeCodeSettings model sections', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Hidden · 1' }))
 
     expect(screen.getByRole('listitem', { name: 'Haiku' })).toBeTruthy()
+  })
+
+  it('closes the Hidden section once its last model is unhidden', async () => {
+    const bridge = installBridge({ preferences: { models: { haiku: 'hidden' }, defaults: {} } })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Hidden · 1' }))
+    const publish = bridge.adapter.onPreferencesChanged.mock.calls[0][0]
+
+    act(() => publish({ revision: 2, preferences: EMPTY_ADAPTER_PREFERENCES }))
+    act(() => publish({ revision: 3, preferences: { models: { haiku: 'hidden' }, defaults: {} } }))
+
+    expect(screen.getByRole('button', { name: 'Hidden · 1' }).getAttribute('aria-expanded')).toBe(
+      'false'
+    )
   })
 })
 

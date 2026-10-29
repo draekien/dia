@@ -474,6 +474,7 @@ function ModelList({
   const [active, setActive] = useState({ value: '', index: 0 })
   const rows = useRef(new Map<string, HTMLLIElement>())
   const restoreFocus = useRef(false)
+  if (hiddenOpen && sections.hidden.length === 0) setHiddenOpen(false)
   const shown = [...sections.favourites, ...sections.others, ...(hiddenOpen ? sections.hidden : [])]
   const found = shown.findIndex((entry) => entry.value === active.value)
   const activeIndex = found === -1 ? Math.min(active.index, shown.length - 1) : found
@@ -513,7 +514,9 @@ function ModelList({
     entries.length === 0 ? null : (
       <div className="flex flex-col gap-0.5">
         <h4 className="px-2 py-1 text-xs text-ink-muted">{title}</h4>
-        <ul className="flex flex-col">{entries.map(row)}</ul>
+        <ul aria-label={title} className="flex flex-col">
+          {entries.map(row)}
+        </ul>
       </div>
     )
 
@@ -537,7 +540,7 @@ function ModelList({
             size="xs"
             variant="ghost"
             aria-expanded={hiddenOpen}
-            aria-controls="hidden-models"
+            aria-controls={hiddenOpen ? 'hidden-models' : undefined}
             className="self-start text-ink-muted"
             onClick={() => setHiddenOpen((open) => !open)}
           >
@@ -551,7 +554,7 @@ function ModelList({
             Hidden · {sections.hidden.length}
           </Button>
           {hiddenOpen ? (
-            <ul id="hidden-models" className="flex flex-col">
+            <ul id="hidden-models" aria-label="Hidden" className="flex flex-col">
               {sections.hidden.map(row)}
             </ul>
           ) : null}

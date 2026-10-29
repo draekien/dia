@@ -52,8 +52,8 @@ interface ModelFieldProps {
 
 /**
  * The New agent form's model choice: the favourite models under "Favourites", then the other
- * visible models under "Models", from {@link ModelCatalog} and the adapter's `preferences`. While `value` is `undefined` and both are
- * known, it reports the default model through `onValueChange` (`preferences.defaults.model` when
+ * visible models under "Models", from {@link ModelCatalog} and the adapter's `preferences`.
+ * While `value` is `undefined` and both are known, it reports the default model through `onValueChange` (`preferences.defaults.model` when
  * offered, else the first offered model). A `value` that stops being offered stays selected and is
  * marked "No longer offered"; check {@link isOfferedModel} before starting an agent. It offers a
  * refresh, and a retry when no list could be read, and announces refresh outcomes to screen
