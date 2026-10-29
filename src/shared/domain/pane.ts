@@ -60,8 +60,8 @@ export const ThinkingLevel = Schema.Literals(['off', 'adaptive', ...EffortLevel.
 export type ThinkingLevel = typeof ThinkingLevel.Type
 
 /**
- * The thinking level a pane starts with when the user does not choose one:
- * `adaptive`, matching the Agent SDK's own default for supported models.
+ * The thinking level a pane starts with when the user does not choose one, and the level a
+ * persisted pane config without one decodes to: `medium`.
  */
 export const DEFAULT_THINKING_LEVEL: ThinkingLevel = 'medium'
 

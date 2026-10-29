@@ -23,7 +23,8 @@ const READY = ModelsReady.make({
       description: '',
       adaptiveThinking: true,
       effortLevels: ['low', 'medium', 'high'],
-      supportedFeatures: ['effort levels', 'adaptive thinking']
+      autoMode: true,
+      fastMode: false
     }
   ],
   fetchedAt: DateTime.makeUnsafe(STARTED_AT_MILLIS),

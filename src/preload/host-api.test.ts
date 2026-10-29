@@ -62,7 +62,8 @@ const SNAPSHOT: ModelCatalogSnapshot = {
         description: 'Everyday tasks',
         adaptiveThinking: true,
         effortLevels: ['low', 'medium', 'high'],
-        supportedFeatures: ['effort levels', 'adaptive thinking']
+        autoMode: true,
+        fastMode: false
       }
     ],
     fetchedAt: DateTime.makeUnsafe('2026-10-25T15:00:00Z'),
@@ -80,7 +81,8 @@ const SNAPSHOT_JSON: ModelCatalogSnapshotJson = {
         description: 'Everyday tasks',
         adaptiveThinking: true,
         effortLevels: ['low', 'medium', 'high'],
-        supportedFeatures: ['effort levels', 'adaptive thinking']
+        autoMode: true,
+        fastMode: false
       }
     ],
     fetchedAt: '2026-10-25T15:00:00.000Z',

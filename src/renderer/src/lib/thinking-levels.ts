@@ -21,15 +21,6 @@ const LEVELS_FOR_UNKNOWN_MODEL: ReadonlyArray<ThinkingLevel> = [
   'high'
 ]
 
-/**
- * Every thinking level paired with its label, in menu order. Use it where no single model applies,
- * such as the default for new agents.
- */
-export const THINKING_LEVEL_OPTIONS: ReadonlyArray<{
-  readonly value: ThinkingLevel
-  readonly label: string
-}> = MENU_ORDER.map((value) => ({ value, label: LABELS[value] }))
-
 /** The menu label of `level`. */
 export const thinkingLevelLabel = (level: ThinkingLevel): string => LABELS[level]
 

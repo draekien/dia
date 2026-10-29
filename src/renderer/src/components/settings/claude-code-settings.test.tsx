@@ -17,7 +17,8 @@ const OPUS: ModelOption = {
   description: '',
   adaptiveThinking: true,
   effortLevels: ['low', 'medium', 'high'],
-  supportedFeatures: ['effort levels', 'adaptive thinking']
+  autoMode: true,
+  fastMode: false
 }
 const HAIKU: ModelOption = {
   value: 'haiku',
@@ -25,7 +26,8 @@ const HAIKU: ModelOption = {
   description: '',
   adaptiveThinking: true,
   effortLevels: ['low', 'medium', 'high'],
-  supportedFeatures: ['effort levels', 'adaptive thinking']
+  autoMode: true,
+  fastMode: false
 }
 
 const catalog = (models: ReadonlyArray<typeof OPUS>): ModelCatalogSnapshotJson => ({

@@ -1,109 +1,64 @@
-import { Effect } from 'effect'
-import { useCallback, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 
-type ElapsedClockStore = {
-  subscribe: (listener: () => void, running: boolean, activitySignature: string) => () => void
-  getSnapshot: () => number
-  getServerSnapshot: () => number
-  getElapsedMs: () => number
-  getIdleMs: () => number
+interface ClockReading {
+  readonly elapsedMs: number
+  readonly idleMs: number
 }
 
-function createElapsedClockStore(): ElapsedClockStore {
-  let clockMs = 0
-  let turnStartMs: number | null = null
-  let lastActivityMs = 0
-  let running = false
-  let activitySignature = ''
+const TICK_MS = 1000
 
-  let intervalId: ReturnType<typeof setInterval> | undefined
+function createClock() {
+  let turnStartMs: number | null = null
+  let lastActivityMs = performance.now()
+  let intervalId: number | undefined
+  let reading: ClockReading = { elapsedMs: 0, idleMs: 0 }
   const listeners = new Set<() => void>()
 
-  function notify() {
-    listeners.forEach((listener) => void listener())
-  }
-
-  function stopTimer() {
-    if (intervalId === undefined) return
-
-    clearInterval(intervalId)
-    intervalId = undefined
-  }
-
-  function syncInputs(nextRunning: boolean, nextActivitySignature: string) {
+  const publish = () => {
     const now = performance.now()
-    let changed = false
-
-    if (nextRunning !== running) {
-      running = nextRunning
-      turnStartMs = running ? now : null
-      clockMs = now
-      changed = true
+    reading = {
+      elapsedMs: turnStartMs === null ? 0 : now - turnStartMs,
+      idleMs: now - lastActivityMs
     }
-
-    if (nextActivitySignature !== activitySignature) {
-      activitySignature = nextActivitySignature
-      lastActivityMs = now
-      clockMs = now
-      changed = true
-    }
-
-    if (running && listeners.size > 0 && intervalId === undefined) {
-      // @effect-diagnostics-next-line globalTimers:off - need to confirm if effect works here first
-      intervalId = setInterval(() => {
-        clockMs = performance.now()
-        notify()
-      }, 1000)
-    } else if (!running) {
-      stopTimer()
-    }
-
-    return changed
+    for (const listener of listeners) listener()
   }
 
   return {
-    getSnapshot: () => clockMs,
-
-    getServerSnapshot: () => 0,
-
-    getElapsedMs: () => (turnStartMs === null ? 0 : clockMs - turnStartMs),
-
-    getIdleMs: () => clockMs - lastActivityMs,
-
-    subscribe(listener, nextRunning, nextActivitySignature) {
-      syncInputs(nextRunning, nextActivitySignature)
+    subscribe: (listener: () => void) => {
       listeners.add(listener)
-
-      if (running && intervalId === undefined) {
-        // @effect-diagnostics-next-line globalTimers:off - need to confirm if effect works here first
-        intervalId = setInterval(() => {
-          clockMs = performance.now()
-          notify()
-        }, 1000)
-      }
-
-      return () => {
-        listeners.delete(listener)
-
-        if (listeners.size === 0) stopTimer()
-      }
+      return () => listeners.delete(listener)
+    },
+    read: () => reading,
+    setRunning: (running: boolean) => {
+      window.clearInterval(intervalId)
+      intervalId = undefined
+      turnStartMs = running ? performance.now() : null
+      if (running) intervalId = window.setInterval(publish, TICK_MS)
+      publish()
+    },
+    markActivity: () => {
+      lastActivityMs = performance.now()
+      publish()
     }
   }
 }
 
-export function useElapsedClock(running: boolean, activitySignature: string) {
-  const [store] = useState(createElapsedClockStore)
+/**
+ * The time of a running agent turn, refreshed every second while `running` is true. `elapsedMs` is
+ * the time since `running` last became true (0 while it is false). `idleMs` is the time since
+ * `activitySignature` last changed; pass a string that changes whenever the turn shows new
+ * activity.
+ */
+export function useElapsedClock(running: boolean, activitySignature: string): ClockReading {
+  const [clock] = useState(createClock)
 
-  const subscribe = useCallback(
-    (listener: () => void) => store.subscribe(listener, running, activitySignature),
-    [store, running, activitySignature]
-  )
+  useEffect(() => {
+    clock.setRunning(running)
+    return () => clock.setRunning(false)
+  }, [clock, running])
 
-  const clockMs = useSyncExternalStore(subscribe, store.getSnapshot, store.getServerSnapshot)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: restarts the idle time whenever the activity changes
+  useEffect(() => clock.markActivity(), [clock, activitySignature])
 
-  return {
-    clockMs,
-    elapsedMs: store.getElapsedMs(),
-    idleMs: store.getIdleMs()
-  }
+  return useSyncExternalStore(clock.subscribe, clock.read)
 }

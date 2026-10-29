@@ -1,3 +1,4 @@
+import type { ModelOption } from '@shared/domain/model'
 import type { PermissionMode, StartupPermissionMode } from '@shared/domain/pane'
 
 /** A permission mode as a picker shows it: its label and a one-line description. */
@@ -66,3 +67,14 @@ export const offeredPermissionModes = <M extends PermissionMode>(
   current: PermissionMode
 ): ReadonlyArray<PermissionModeOption<M>> =>
   options.filter((option) => option.value === current || !disabled.includes(option.value))
+
+/**
+ * The permission modes to withhold for an agent on `model`: `disabled` (the modes the adapter's
+ * settings turn off), plus `auto` when `model` is known and does not support auto mode. Pass the
+ * result as `disabled` to {@link offeredPermissionModes}.
+ */
+export const disabledPermissionModesFor = (
+  disabled: ReadonlyArray<PermissionMode>,
+  model: ModelOption | undefined
+): ReadonlyArray<PermissionMode> =>
+  model?.autoMode === false && !disabled.includes('auto') ? [...disabled, 'auto'] : disabled

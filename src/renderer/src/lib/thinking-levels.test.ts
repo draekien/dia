@@ -6,7 +6,8 @@ const model = (fields: Pick<ModelOption, 'adaptiveThinking' | 'effortLevels'>): 
   value: 'model',
   displayName: 'Model',
   description: '',
-  supportedFeatures: ['effort levels', 'adaptive thinking'],
+  autoMode: true,
+  fastMode: false,
   ...fields
 })
 

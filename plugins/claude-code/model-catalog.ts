@@ -1,4 +1,4 @@
-import type { ModelInfo, Query } from '@anthropic-ai/claude-agent-sdk'
+import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import {
   ActivityRunFailed,
   type HostPluginContext,
@@ -8,7 +8,6 @@ import {
   ModelsReady,
   ModelsUnavailable
 } from '@dia/plugin'
-import type { ModelSupportedFeature } from '@shared/domain/model'
 import {
   Data,
   DateTime,
@@ -44,7 +43,7 @@ export type ModelProbe = (cwd: string) => Effect.Effect<typeof ModelOptions.Type
 
 const ModelCache = Schema.fromJsonString(
   Schema.Struct({
-    version: Schema.Literal(2),
+    version: Schema.Literal(3),
     fetchedAt: Schema.DateTimeUtcFromString,
     models: ModelOptions
   })
@@ -68,16 +67,6 @@ export const probeModels =
       }
       return yield* withIdleQuery(path.value, cwd, readModels)
     })
-
-const makeSupportedFeatures = (model: ModelInfo) => {
-  const options: ModelSupportedFeature[] = []
-  if (model.supportsEffort) options.push('effort levels')
-  if (model.supportsAdaptiveThinking) options.push('adaptive thinking')
-  if (model.supportsAutoMode) options.push('auto mode')
-  if (model.supportsFastMode) options.push('fast mode')
-
-  return options
-}
 
 const readModels = (probe: Query) =>
   Effect.tryPromise({
@@ -105,7 +94,8 @@ const readModels = (probe: Query) =>
                   adaptiveThinking: row.supportsAdaptiveThinking === true,
                   effortLevels:
                     row.supportsEffort === true ? (row.supportedEffortLevels ?? []) : [],
-                  supportedFeatures: makeSupportedFeatures(row)
+                  autoMode: row.supportsAutoMode === true,
+                  fastMode: row.supportsFastMode === true
                 }) satisfies ModelOption
             )
           ).pipe(
@@ -220,7 +210,7 @@ export const makeModelCatalog = Effect.fnUntraced(function* (
         state,
         ModelsReady.make({ models, fetchedAt: now, refreshing: false })
       )
-      yield* writeCache({ version: 2, fetchedAt: now, models })
+      yield* writeCache({ version: 3, fetchedAt: now, models })
       yield* Effect.logInfo('Read the model list', { count: models.length })
       return startOfTomorrow(now)
     }

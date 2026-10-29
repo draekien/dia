@@ -44,7 +44,8 @@ const DEFAULT_MODEL: ModelOption = {
   description: '',
   adaptiveThinking: true,
   effortLevels: ['low', 'medium', 'high'],
-  supportedFeatures: ['effort levels', 'adaptive thinking']
+  autoMode: true,
+  fastMode: false
 }
 const HAIKU: ModelOption = {
   value: 'haiku',
@@ -52,7 +53,8 @@ const HAIKU: ModelOption = {
   description: '',
   adaptiveThinking: true,
   effortLevels: ['low', 'medium', 'high'],
-  supportedFeatures: ['effort levels', 'adaptive thinking']
+  autoMode: true,
+  fastMode: false
 }
 const SONNET: ModelOption = {
   value: 'sonnet',
@@ -60,7 +62,8 @@ const SONNET: ModelOption = {
   description: '',
   adaptiveThinking: true,
   effortLevels: ['low', 'medium', 'high'],
-  supportedFeatures: ['effort levels', 'adaptive thinking']
+  autoMode: true,
+  fastMode: false
 }
 
 const ready = (

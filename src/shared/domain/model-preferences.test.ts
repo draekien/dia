@@ -15,7 +15,8 @@ const opus: ModelOption = {
   description: '',
   adaptiveThinking: true,
   effortLevels: ['low', 'medium', 'high'],
-  supportedFeatures: ['effort levels', 'adaptive thinking']
+  autoMode: true,
+  fastMode: false
 }
 const sonnet: ModelOption = {
   value: 'sonnet',
@@ -23,7 +24,8 @@ const sonnet: ModelOption = {
   description: '',
   adaptiveThinking: true,
   effortLevels: ['low', 'medium', 'high'],
-  supportedFeatures: ['effort levels', 'adaptive thinking']
+  autoMode: true,
+  fastMode: false
 }
 const haiku: ModelOption = {
   value: 'haiku',
@@ -31,7 +33,8 @@ const haiku: ModelOption = {
   description: '',
   adaptiveThinking: true,
   effortLevels: ['low', 'medium', 'high'],
-  supportedFeatures: ['effort levels', 'adaptive thinking']
+  autoMode: true,
+  fastMode: false
 }
 const catalog = [opus, sonnet, haiku]
 

@@ -23,6 +23,7 @@ import { useDisabledPermissionModes } from '@renderer/hooks/use-disabled-permiss
 import { useElapsedClock } from '@renderer/hooks/use-elapsed-clock'
 import { useModelCatalog } from '@renderer/hooks/use-model-catalog'
 import {
+  disabledPermissionModesFor,
   offeredPermissionModes,
   PERMISSION_MODE_OPTIONS,
   permissionModeLabel
@@ -47,6 +48,7 @@ import {
   type QuestionResponse
 } from '@shared/domain/attention'
 import type { SendMode } from '@shared/domain/message-queue'
+import type { ModelOption } from '@shared/domain/model'
 import {
   DEFAULT_PERMISSION_MODE,
   DEFAULT_THINKING_LEVEL,
@@ -783,22 +785,28 @@ function Pane({
 
   const [chosenModel, setChosenModel] = useState(model)
   const { state: catalogState } = useModelCatalog()
-  const disabledPermissionModes = useDisabledPermissionModes(cwd)
-  const levelsFor = (value: string): ReadonlyArray<ThinkingLevel> =>
-    thinkingLevelsFor(
-      catalogState?._tag === 'Ready'
-        ? catalogState.models.find((option) => option.value === value)
-        : undefined
-    )
+  const settingsDisabledModes = useDisabledPermissionModes(cwd)
+  const modelOption = (value: string): ModelOption | undefined =>
+    catalogState?._tag === 'Ready'
+      ? catalogState.models.find((option) => option.value === value)
+      : undefined
 
   function changeModel(next: string): void {
     setChosenModel(next)
     window.dia.setModel(paneId, next)
-    const fitted = fitThinkingLevel(level, levelsFor(next))
+    const nextOption = modelOption(next)
+    const fitted = fitThinkingLevel(level, thinkingLevelsFor(nextOption))
     if (fitted !== level) changeThinkingLevel(fitted)
+    if (disabledPermissionModesFor(settingsDisabledModes, nextOption).includes(mode)) {
+      changePermissionMode('default')
+    }
   }
 
-  useEffect(() => setChosenModel(model), [model])
+  const [shownModelProp, setShownModelProp] = useState(model)
+  if (model !== shownModelProp) {
+    setShownModelProp(model)
+    setChosenModel(model)
+  }
 
   function changeThinkingLevel(next: ThinkingLevel): void {
     setLevel(next)
@@ -810,9 +818,11 @@ function Pane({
     window.dia.setPermissionMode(paneId, next)
   }
 
-  useEffect(() => {
+  const [shownModeProp, setShownModeProp] = useState(permissionMode)
+  if (permissionMode !== shownModeProp) {
+    setShownModeProp(permissionMode)
     if (permissionMode !== undefined) setMode(permissionMode)
-  }, [permissionMode])
+  }
 
   const { data: attention = Idle.make({}) } = useQuery<AttentionState>({
     queryKey: attentionQueryKey,
@@ -836,10 +846,13 @@ function Pane({
         model={chosenModel}
         onModelChange={changeModel}
         thinkingLevel={level}
-        thinkingLevels={levelsFor(chosenModel)}
+        thinkingLevels={thinkingLevelsFor(modelOption(chosenModel))}
         onThinkingLevelChange={changeThinkingLevel}
         permissionMode={mode}
-        disabledPermissionModes={disabledPermissionModes}
+        disabledPermissionModes={disabledPermissionModesFor(
+          settingsDisabledModes,
+          modelOption(chosenModel)
+        )}
         onPermissionModeChange={changePermissionMode}
         column={transcriptColumn({ width })}
         focusComposer={focusComposer}

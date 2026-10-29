@@ -75,9 +75,7 @@ export function CommandPalette() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!open) setQuery('')
-  }, [open])
+  if (!open && query !== '') setQuery('')
 
   const openAbout = () => {
     setOpen(false)

@@ -19,6 +19,7 @@ import { usePluginList } from '@renderer/hooks/use-plugin-list'
 import { cancelNewAgent } from '@renderer/lib/actions'
 import {
   CREATE_PERMISSION_MODE_OPTIONS,
+  disabledPermissionModesFor,
   offeredPermissionModes,
   permissionModeLabel
 } from '@renderer/lib/permission-modes'
@@ -37,7 +38,7 @@ import { CreateTab } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { Option, Schema } from 'effect'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const providesWorktrees = (plugins: ReadonlyArray<PluginInfo> | undefined): boolean =>
   plugins?.some((plugin) => plugin.provides.includes(WORKTREES_KEY)) ?? false
@@ -72,27 +73,29 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
   const [useWorktree, setUseWorktree] = useState(false)
   const preferences = useModelPreferences()
   const adapterStatus = useAdapterStatus()
-  const defaultsApplied = useRef(false)
+  const [defaultsApplied, setDefaultsApplied] = useState(false)
   const startable =
     isOfferedModel(catalog, preferences, model) && installProblem(adapterStatus) === undefined
-  const thinkingLevels = thinkingLevelsFor(
+  const modelOption =
     catalog.state?._tag === 'Ready'
       ? catalog.state.models.find((option) => option.value === model)
       : undefined
-  )
+  const thinkingLevels = thinkingLevelsFor(modelOption)
   const offeredThinkingLevel = fitThinkingLevel(thinkingLevel, thinkingLevels)
-  const disabledPermissionModes = useDisabledPermissionModes(project.directory)
+  const disabledPermissionModes = disabledPermissionModesFor(
+    useDisabledPermissionModes(project.directory),
+    modelOption
+  )
   const offeredPermissionMode = disabledPermissionModes.includes(permissionMode)
     ? 'default'
     : permissionMode
 
-  useEffect(() => {
-    if (preferences === undefined || defaultsApplied.current) return
-    defaultsApplied.current = true
+  if (preferences !== undefined && !defaultsApplied) {
+    setDefaultsApplied(true)
     const { thinkingLevel: level, permissionMode: mode } = preferences.defaults
     if (level !== undefined) setThinkingLevel(level)
     if (mode !== undefined) setPermissionMode(mode)
-  }, [preferences])
+  }
   const worktreesAvailable = providesWorktrees(usePluginList().plugins)
   const worktreeOn = project.isGitRepo && worktreesAvailable && useWorktree
 
@@ -153,7 +156,7 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
           <Select
             value={offeredThinkingLevel}
             onValueChange={(value: ThinkingLevel) => {
-              defaultsApplied.current = true
+              setDefaultsApplied(true)
               setThinkingLevel(value)
             }}
             disabled={isBusy}
@@ -176,7 +179,7 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
           <Select
             value={offeredPermissionMode}
             onValueChange={(value: StartupPermissionMode) => {
-              defaultsApplied.current = true
+              setDefaultsApplied(true)
               setPermissionMode(value)
             }}
             disabled={isBusy}

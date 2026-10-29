@@ -42,7 +42,8 @@ const CACHED_MODELS = [
     description: 'Everyday tasks',
     adaptiveThinking: true,
     effortLevels: ['low', 'medium', 'high'],
-    supportedFeatures: ['effort levels', 'adaptive thinking']
+    autoMode: true,
+    fastMode: false
   }
 ] as const
 const PROBED_MODELS = [
@@ -52,7 +53,8 @@ const PROBED_MODELS = [
     description: 'Opus',
     adaptiveThinking: true,
     effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
-    supportedFeatures: ['effort levels', 'adaptive thinking']
+    autoMode: true,
+    fastMode: false
   },
   {
     value: 'haiku',
@@ -60,7 +62,8 @@ const PROBED_MODELS = [
     description: 'Fastest',
     adaptiveThinking: false,
     effortLevels: [],
-    supportedFeatures: ['effort levels', 'adaptive thinking']
+    autoMode: false,
+    fastMode: false
   }
 ] as const
 
@@ -78,7 +81,7 @@ const failing =
     Effect.fail(new ModelProbeFailed({ message }))
 
 const cacheJson = (fetchedAt: DateTime.Utc) =>
-  JSON.stringify({ version: 2, fetchedAt: DateTime.formatIso(fetchedAt), models: CACHED_MODELS })
+  JSON.stringify({ version: 3, fetchedAt: DateTime.formatIso(fetchedAt), models: CACHED_MODELS })
 
 const openCatalog = (options: { readonly cache?: string; readonly probe?: ModelProbe }) =>
   Effect.gen(function* () {
@@ -161,14 +164,22 @@ describe('makeModelCatalog', () => {
     }).pipe(Effect.scoped, Effect.provide(platform))
   )
 
-  it.effect('reads the list again when the cache predates thinking support', () =>
+  it.effect('reads the list again when the cache predates auto and fast mode support', () =>
     Effect.gen(function* () {
-      const versionOne = JSON.stringify({
-        version: 1,
+      const versionTwo = JSON.stringify({
+        version: 2,
         fetchedAt: DateTime.formatIso(READ_EARLIER_TODAY),
-        models: [{ value: 'sonnet', displayName: 'Sonnet', description: 'Everyday tasks' }]
+        models: [
+          {
+            value: 'sonnet',
+            displayName: 'Sonnet',
+            description: 'Everyday tasks',
+            adaptiveThinking: true,
+            effortLevels: ['low', 'medium', 'high']
+          }
+        ]
       })
-      const { spec, state } = yield* openCatalog({ cache: versionOne })
+      const { spec, state } = yield* openCatalog({ cache: versionTwo })
 
       assert.deepStrictEqual(spec.firstRunAt, NOW)
       assert.deepStrictEqual(yield* state, ModelsLoading.make({}))
@@ -205,7 +216,7 @@ describe('makeModelCatalog', () => {
       const saved = JSON.parse(yield* fs.readFileString(cacheFile))
 
       assert.deepStrictEqual(saved, {
-        version: 2,
+        version: 3,
         fetchedAt: '2026-10-25T15:00:00.000Z',
         models: PROBED_MODELS
       })
@@ -296,7 +307,7 @@ describe('probeModels', () => {
     })
   )
 
-  it.effect('returns the reported models with their thinking support and closes the query', () =>
+  it.effect('returns the reported models with their capabilities and closes the query', () =>
     Effect.gen(function* () {
       sdk.supportedModels.mockResolvedValue([
         {
@@ -306,6 +317,7 @@ describe('probeModels', () => {
           supportsAdaptiveThinking: true,
           supportsEffort: true,
           supportedEffortLevels: ['low', 'medium', 'high'],
+          supportsAutoMode: true,
           extra: 'x'
         }
       ])
@@ -317,7 +329,7 @@ describe('probeModels', () => {
     })
   )
 
-  it.effect('reports no adaptive thinking and no effort levels for a model that omits them', () =>
+  it.effect('reports no thinking, auto mode or fast mode support for a model that omits them', () =>
     Effect.gen(function* () {
       sdk.supportedModels.mockResolvedValue([
         { value: 'claude-haiku-4-5', displayName: 'Haiku 4.5', description: '' }
@@ -325,8 +337,15 @@ describe('probeModels', () => {
 
       const [model] = yield* probeModels(installed)('/data')
 
-      assert.strictEqual(model.adaptiveThinking, false)
-      assert.deepStrictEqual(model.effortLevels, [])
+      assert.deepStrictEqual(
+        {
+          adaptiveThinking: model.adaptiveThinking,
+          effortLevels: model.effortLevels,
+          autoMode: model.autoMode,
+          fastMode: model.fastMode
+        },
+        { adaptiveThinking: false, effortLevels: [], autoMode: false, fastMode: false }
+      )
     })
   )
 
@@ -345,6 +364,18 @@ describe('probeModels', () => {
       const [model] = yield* probeModels(installed)('/data')
 
       assert.deepStrictEqual(model.effortLevels, [])
+    })
+  )
+
+  it.effect('reports fast mode support when the SDK says the model supports it', () =>
+    Effect.gen(function* () {
+      sdk.supportedModels.mockResolvedValue([
+        { value: 'opus', displayName: 'Opus', description: '', supportsFastMode: true }
+      ])
+
+      const [model] = yield* probeModels(installed)('/data')
+
+      assert.strictEqual(model.fastMode, true)
     })
   )
 
