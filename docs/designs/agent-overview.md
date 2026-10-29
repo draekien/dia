@@ -35,7 +35,7 @@ From the shape and alignment rounds; the design must not reopen them.
 | Row second line | Needs input and failed: the reason. Otherwise the activity line |
 | Sidebar header | Search input (`Ctrl P`), filter icon button (popover: status checkboxes, "Show archived agents", "Hide projects with no matches", "Clear filters"), add-project icon button (opens the directory picker) |
 | Reorder | Drag a project header; keyboard: `Space` lift, `↑`/`↓` move, `Space` drop, `Esc` cancel; a live region announces the new position |
-| Project menu | New agent, Reveal in Explorer, Remove project… |
+| Project menu | New agent, Reveal in Explorer, Remove project |
 | Rail | The collapsed sidebar (shadcn icon mode, `Ctrl B`); one dot per agent; hairline divider between projects; Meta first |
 | Search and filter | Meta group hidden while either applies; groups open while searching; counts read `n of total` |
 | Agent name | Optional in the New agent form; blank gets a generated two-word slug, shared with the worktree branch when one is created; rename with `F2` or the row menu |

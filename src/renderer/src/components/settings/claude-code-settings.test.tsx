@@ -6,7 +6,7 @@ import {
   EMPTY_ADAPTER_PREFERENCES
 } from '@shared/domain/model-preferences'
 import type { AdapterStatusSnapshotJson, ModelCatalogSnapshotJson } from '@shared/ipc/contract'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '../ui/tooltip'
 import { ClaudeCodeSettings } from './claude-code-settings'
@@ -82,7 +82,11 @@ const installBridge = (options: BridgeOptions = {}) => {
         revision: 1,
         preferences: options.preferences ?? EMPTY_ADAPTER_PREFERENCES
       })),
-      onPreferencesChanged: vi.fn(() => () => undefined),
+      onPreferencesChanged: vi.fn(
+        (_listener: (snapshot: { revision: number; preferences: AdapterPreferences }) => void) =>
+          () =>
+            undefined
+      ),
       setModelPreference: vi.fn(async (_model: string, _preference: string | null) =>
         options.refusal === undefined
           ? null
@@ -106,6 +110,71 @@ const renderPage = () =>
 afterEach(() => {
   cleanup()
   Reflect.deleteProperty(window, 'dia')
+})
+
+const rowsUnder = (heading: string) =>
+  within(screen.getByRole('heading', { name: heading }).parentElement as HTMLElement)
+    .getAllByRole('listitem')
+    .map((row) => row.getAttribute('aria-label'))
+
+describe('ClaudeCodeSettings model sections', () => {
+  it('lists favourites under Favourites and the rest under Other models', async () => {
+    installBridge({ preferences: { models: { haiku: 'favourite' }, defaults: {} } })
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Favourites' })
+
+    expect({ favourites: rowsUnder('Favourites'), others: rowsUnder('Other models') }).toEqual({
+      favourites: ['Haiku'],
+      others: ['Opus']
+    })
+  })
+
+  it('orders favourites by when they were starred', async () => {
+    installBridge({
+      preferences: { models: { haiku: 'favourite', opus: 'favourite' }, defaults: {} }
+    })
+    renderPage()
+
+    await screen.findByRole('heading', { name: 'Favourites' })
+
+    expect(rowsUnder('Favourites')).toEqual(['Haiku', 'Opus'])
+  })
+
+  it('keeps hidden models in a collapsed Hidden section', async () => {
+    installBridge({ preferences: { models: { haiku: 'hidden' }, defaults: {} } })
+    renderPage()
+
+    const toggle = await screen.findByRole('button', { name: 'Hidden · 1' })
+
+    expect({
+      expanded: toggle.getAttribute('aria-expanded'),
+      haikuRow: screen.queryByRole('listitem', { name: 'Haiku' })
+    }).toEqual({ expanded: 'false', haikuRow: null })
+  })
+
+  it('shows hidden models when the Hidden section is opened', async () => {
+    installBridge({ preferences: { models: { haiku: 'hidden' }, defaults: {} } })
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Hidden · 1' }))
+
+    expect(screen.getByRole('listitem', { name: 'Haiku' })).toBeTruthy()
+  })
+
+  it('closes the Hidden section once its last model is unhidden', async () => {
+    const bridge = installBridge({ preferences: { models: { haiku: 'hidden' }, defaults: {} } })
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Hidden · 1' }))
+    const publish = bridge.adapter.onPreferencesChanged.mock.calls[0][0]
+
+    act(() => publish({ revision: 2, preferences: EMPTY_ADAPTER_PREFERENCES }))
+    act(() => publish({ revision: 3, preferences: { models: { haiku: 'hidden' }, defaults: {} } }))
+
+    expect(screen.getByRole('button', { name: 'Hidden · 1' }).getAttribute('aria-expanded')).toBe(
+      'false'
+    )
+  })
 })
 
 describe('ClaudeCodeSettings models', () => {
@@ -195,7 +264,7 @@ describe('ClaudeCodeSettings health', () => {
     const bridge = installBridge({ pickedFile: 'D:/tools/claude.exe' })
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Change…' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Change' }))
 
     await waitFor(() =>
       expect(bridge.adapter.setInstallPath).toHaveBeenCalledWith('D:/tools/claude.exe')

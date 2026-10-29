@@ -180,7 +180,7 @@ export const adapterContract: AdapterContract = { keys: [AGENT_BACKEND_KEY], pro
 
 ### Plugins page
 
-For `category === 'adapter'`: Unload and Set folder… are disabled, Reload is disabled unless the status is `Failed`, and the row reads `Adapter: it loads at startup from the bundled copy. Restart dia to apply a change.`
+For `category === 'adapter'`: Unload and Set folder are disabled, Reload is disabled unless the status is `Failed`, and the row reads `Adapter: it loads at startup from the bundled copy. Restart dia to apply a change.`
 
 ### Agent session
 
@@ -195,7 +195,7 @@ For `category === 'adapter'`: Unload and Set folder… are disabled, Reload is d
 - plugin sources: `setOverride` refuses a shipped adapter and an override manifest that declares `adapter`; `resolve` ignores a saved override of an adapter; overriding `git-ops` is accepted.
 - pending user input: the existing seven tests move with the module.
 - adapter session: existing `canUseTool` tests drop the `DenyAll` case and construct options with `tools`.
-- plugins page: an adapter row has Unload and Set folder… disabled and shows the adapter note; a `Failed` adapter row has Reload enabled.
+- plugins page: an adapter row has Unload and Set folder disabled and shows the adapter note; a `Failed` adapter row has Reload enabled.
 - pane supervisor: the existing tests keep passing with `tools` in place of `toolGate`.
 - rpc: `PROTOCOL_VERSION` is 6 (now 7).
 

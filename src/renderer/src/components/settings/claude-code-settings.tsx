@@ -34,7 +34,15 @@ import {
 } from '@shared/domain/pane'
 import type { ModelCatalogSnapshotJson } from '@shared/ipc/contract'
 import { Duration } from 'effect'
-import { EyeOffIcon, FileIcon, Loader2Icon, RefreshCwIcon, StarIcon, XIcon } from 'lucide-react'
+import {
+  ChevronRightIcon,
+  EyeOffIcon,
+  FileIcon,
+  Loader2Icon,
+  RefreshCwIcon,
+  StarIcon,
+  XIcon
+} from 'lucide-react'
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { Button } from '../ui/button'
 import {
@@ -184,7 +192,7 @@ function HealthSection({ status }: { readonly status: AdapterStatusJson | undefi
       <div className="flex items-center gap-1">
         <Button size="xs" variant="outline" disabled={checking} onClick={() => void change()}>
           <FileIcon />
-          Change…
+          Change
         </Button>
         {installPathOverride === null ? null : (
           <Button
@@ -425,65 +433,134 @@ function ModelRow({
   )
 }
 
-const modelEntries = (
+interface ModelSections {
+  readonly favourites: ReadonlyArray<ModelRowEntry>
+  readonly others: ReadonlyArray<ModelRowEntry>
+  readonly hidden: ReadonlyArray<ModelRowEntry>
+}
+
+const modelSections = (
   models: ReadonlyArray<ModelOptionJson>,
   preferences: AdapterPreferences
-): ReadonlyArray<ModelRowEntry> => {
-  const offered = new Set(models.map((model) => model.value))
-  const listed = models.map((model) => ({
-    value: model.value,
-    displayName: model.displayName,
-    offered: true,
-    preference: preferences.models[model.value],
-    canHide: keepsAModelVisible(models, preferences, model.value, 'hidden')
-  }))
-  const gone = Object.entries(preferences.models)
-    .filter(([value, preference]) => preference === 'favourite' && !offered.has(value))
-    .map(([value]) => ({
+): ModelSections => {
+  const entryFor = (value: string): ModelRowEntry => {
+    const model = models.find((option) => option.value === value)
+    return {
       value,
-      displayName: value,
-      offered: false,
-      preference: 'favourite' as const,
-      canHide: false
-    }))
-  return [...listed, ...gone]
+      displayName: model?.displayName ?? value,
+      offered: model !== undefined,
+      preference: preferences.models[value],
+      canHide: model !== undefined && keepsAModelVisible(models, preferences, model.value, 'hidden')
+    }
+  }
+  const favourites = Object.entries(preferences.models)
+    .filter(([, preference]) => preference === 'favourite')
+    .map(([value]) => entryFor(value))
+  const modelsWith = (preference: ModelPreference | undefined) =>
+    models
+      .filter((model) => preferences.models[model.value] === preference)
+      .map((model) => entryFor(model.value))
+  return { favourites, others: modelsWith(undefined), hidden: modelsWith('hidden') }
 }
 
 function ModelList({
-  entries,
+  sections,
   onSet
 }: {
-  readonly entries: ReadonlyArray<ModelRowEntry>
+  readonly sections: ModelSections
   readonly onSet: (model: string, preference: ModelPreference | null) => void
 }) {
-  const [activeIndex, setActiveIndex] = useState(0)
-  const rows = useRef<Array<HTMLLIElement | null>>([])
-  const active = Math.min(activeIndex, entries.length - 1)
+  const [hiddenOpen, setHiddenOpen] = useState(false)
+  const [active, setActive] = useState({ value: '', index: 0 })
+  const rows = useRef(new Map<string, HTMLLIElement>())
+  const restoreFocus = useRef(false)
+  if (hiddenOpen && sections.hidden.length === 0) setHiddenOpen(false)
+  const shown = [...sections.favourites, ...sections.others, ...(hiddenOpen ? sections.hidden : [])]
+  const found = shown.findIndex((entry) => entry.value === active.value)
+  const activeIndex = found === -1 ? Math.min(active.index, shown.length - 1) : found
+  const activeValue = shown[activeIndex]?.value
 
-  const move = (event: KeyboardEvent<HTMLUListElement>) => {
+  useEffect(() => {
+    if (!restoreFocus.current || document.activeElement !== document.body) return
+    restoreFocus.current = false
+    if (activeValue !== undefined) rows.current.get(activeValue)?.focus()
+  })
+
+  const move = (event: KeyboardEvent<HTMLDivElement>) => {
     const step = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
-    if (step === 0) return
+    if (step === 0 || !(event.target instanceof HTMLLIElement)) return
     event.preventDefault()
-    const next = Math.max(0, Math.min(entries.length - 1, active + step))
-    setActiveIndex(next)
-    rows.current[next]?.focus()
+    const next = Math.max(0, Math.min(shown.length - 1, activeIndex + step))
+    rows.current.get(shown[next].value)?.focus()
   }
 
+  const row = (entry: ModelRowEntry) => (
+    <ModelRow
+      key={entry.value}
+      entry={entry}
+      active={entry.value === activeValue}
+      onFocus={() => setActive({ value: entry.value, index: shown.indexOf(entry) })}
+      onSet={(preference) => {
+        restoreFocus.current = true
+        onSet(entry.value, preference)
+      }}
+      rowRef={(element) => {
+        if (element === null) rows.current.delete(entry.value)
+        else rows.current.set(entry.value, element)
+      }}
+    />
+  )
+  const section = (title: string, entries: ReadonlyArray<ModelRowEntry>) =>
+    entries.length === 0 ? null : (
+      <div className="flex flex-col gap-0.5">
+        <h4 className="px-2 py-1 text-xs text-ink-muted">{title}</h4>
+        <ul aria-label={title} className="flex flex-col">
+          {entries.map(row)}
+        </ul>
+      </div>
+    )
+
   return (
-    <ul className="flex flex-col" aria-label="Models" onKeyDown={move}>
-      {entries.map((entry, index) => (
-        <ModelRow
-          key={entry.value}
-          entry={entry}
-          active={index === active}
-          onFocus={() => setActiveIndex(index)}
-          onSet={(preference) => onSet(entry.value, preference)}
-          rowRef={(element) => {
-            rows.current[index] = element
-          }}
-        />
-      ))}
-    </ul>
+    // biome-ignore lint/a11y/noStaticElementInteractions: arrow keys move focus between the focusable rows inside
+    <div
+      className="flex flex-col gap-2"
+      onKeyDown={move}
+      onBlur={(event) => {
+        if (event.relatedTarget !== null && !event.currentTarget.contains(event.relatedTarget)) {
+          restoreFocus.current = false
+        }
+      }}
+    >
+      {section('Favourites', sections.favourites)}
+      {section('Other models', sections.others)}
+      {sections.hidden.length === 0 ? null : (
+        <div className="flex flex-col gap-0.5">
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            aria-expanded={hiddenOpen}
+            aria-controls={hiddenOpen ? 'hidden-models' : undefined}
+            className="self-start text-ink-muted"
+            onClick={() => setHiddenOpen((open) => !open)}
+          >
+            <ChevronRightIcon
+              data-icon="inline-start"
+              className={cn(
+                'transition-transform duration-150 ease-out motion-reduce:transition-none',
+                hiddenOpen && 'rotate-90'
+              )}
+            />
+            Hidden · {sections.hidden.length}
+          </Button>
+          {hiddenOpen ? (
+            <ul id="hidden-models" aria-label="Hidden" className="flex flex-col">
+              {sections.hidden.map(row)}
+            </ul>
+          ) : null}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -543,7 +620,7 @@ function ModelsSection({
   return (
     <div className="flex flex-col gap-2">
       <ModelList
-        entries={modelEntries(state.models, preferences)}
+        sections={modelSections(state.models, preferences)}
         onSet={(model, preference) => void set(model, preference)}
       />
       <div className="flex items-center justify-between gap-2 px-2">
