@@ -456,29 +456,11 @@ const modelSections = (
   const favourites = Object.entries(preferences.models)
     .filter(([, preference]) => preference === 'favourite')
     .map(([value]) => entryFor(value))
-  const withPreference = (preference: ModelPreference | undefined) =>
+  const modelsWith = (preference: ModelPreference | undefined) =>
     models
       .filter((model) => preferences.models[model.value] === preference)
       .map((model) => entryFor(model.value))
-  return { favourites, others: withPreference(undefined), hidden: withPreference('hidden') }
-}
-
-function ModelGroup({
-  label,
-  entries,
-  children
-}: {
-  readonly label: React.ReactNode
-  readonly entries: ReadonlyArray<ModelRowEntry>
-  readonly children: (entry: ModelRowEntry) => React.ReactNode
-}) {
-  if (entries.length === 0) return null
-  return (
-    <div className="flex flex-col gap-0.5">
-      {label}
-      <ul className="flex flex-col">{entries.map(children)}</ul>
-    </div>
-  )
+  return { favourites, others: modelsWith(undefined), hidden: modelsWith('hidden') }
 }
 
 function ModelList({
@@ -527,7 +509,13 @@ function ModelList({
       }}
     />
   )
-  const heading = (text: string) => <h4 className="px-2 py-1 text-xs text-ink-muted">{text}</h4>
+  const section = (title: string, entries: ReadonlyArray<ModelRowEntry>) =>
+    entries.length === 0 ? null : (
+      <div className="flex flex-col gap-0.5">
+        <h4 className="px-2 py-1 text-xs text-ink-muted">{title}</h4>
+        <ul className="flex flex-col">{entries.map(row)}</ul>
+      </div>
+    )
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: arrow keys move focus between the focusable rows inside
@@ -540,12 +528,8 @@ function ModelList({
         }
       }}
     >
-      <ModelGroup label={heading('Favourites')} entries={sections.favourites}>
-        {row}
-      </ModelGroup>
-      <ModelGroup label={heading('Other models')} entries={sections.others}>
-        {row}
-      </ModelGroup>
+      {section('Favourites', sections.favourites)}
+      {section('Other models', sections.others)}
       {sections.hidden.length === 0 ? null : (
         <div className="flex flex-col gap-0.5">
           <Button
