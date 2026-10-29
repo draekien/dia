@@ -1,4 +1,3 @@
-import { useAtomSet, useAtomValue } from '@effect/atom-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -7,41 +6,55 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle
-} from '@renderer/components/ui/alert-dialog'
-import { Marker, MarkerContent, MarkerIcon } from '@renderer/components/ui/marker'
-import { Message, MessageContent } from '@renderer/components/ui/message'
-import {
+  AlertDialogTitle,
+  Bubble,
+  BubbleContent,
+  Button,
+  cn,
+  disabledPermissionModesFor,
+  emptyPaneChatState,
+  findModelOption,
+  fitThinkingLevel,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupTextarea,
+  InstallNotice,
+  lastUserText,
+  Marker,
+  MarkerContent,
+  MarkerIcon,
+  Message,
+  MessageContent,
+  offeredPermissionModes,
+  type PaneChatState,
+  type PaneMessage,
+  PERMISSION_MODE_OPTIONS,
+  PermissionModeItems,
+  paneChatAtom,
+  paneEditQueuedAtom,
+  paneInterruptAtom,
+  paneRemoveQueuedAtom,
+  paneRewindAtom,
+  paneSendAtom,
+  permissionModeLabel,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue
-} from '@renderer/components/ui/select'
-import { useAdapterStatus } from '@renderer/hooks/use-adapter-status'
-import { useDisabledPermissionModes } from '@renderer/hooks/use-disabled-permission-modes'
-import { useElapsedClock } from '@renderer/hooks/use-elapsed-clock'
-import { useModelCatalog } from '@renderer/hooks/use-model-catalog'
-import { findModelOption } from '@renderer/lib/model-options'
-import {
-  disabledPermissionModesFor,
-  offeredPermissionModes,
-  PERMISSION_MODE_OPTIONS,
-  permissionModeLabel
-} from '@renderer/lib/permission-modes'
-import {
-  type ActiveSlashToken,
-  activeSlashToken,
-  filterSlashCommands,
-  slashCommandCompletion,
-  wrapHighlight
-} from '@renderer/lib/slash-command-menu'
-import {
-  fitThinkingLevel,
+  SelectValue,
+  sendModeAtom,
+  sendModeForEnter,
+  type ToolCallPart,
   thinkingLevelLabel,
-  thinkingLevelsFor
-} from '@renderer/lib/thinking-levels'
-import { cn } from '@renderer/lib/utils'
+  thinkingLevelsFor,
+  turnActivity,
+  useAdapterStatus,
+  useDisabledPermissionModes,
+  useModelCatalog,
+  useTranscriptWidth
+} from '@dia/renderer-plugin'
+import { useAtomSet, useAtomValue } from '@effect/atom-react'
 import {
   type AttentionState,
   Idle,
@@ -77,33 +90,23 @@ import {
   SquareIcon
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import type { PaneChatState, PaneMessage, ToolCallPart } from '../lib/pane-chat'
-import { emptyPaneChatState, lastUserText } from '../lib/pane-chat'
-import {
-  paneChatAtom,
-  paneEditQueuedAtom,
-  paneInterruptAtom,
-  paneRemoveQueuedAtom,
-  paneRewindAtom,
-  paneSendAtom
-} from '../lib/pane-chat-atoms'
-import { sendModeAtom, sendModeForEnter } from '../lib/send-mode-atom'
-import { turnActivity } from '../lib/turn-activity'
-import { transcriptWidthAtom } from '../lib/workspace-atoms'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
-import { InstallNotice } from './install-notice'
 import { Markdown } from './markdown'
 import { ModelPicker } from './model-picker'
-import { PermissionModeItems } from './permission-mode-items'
 import { PermissionRequestCard } from './permission-request-card'
 import { PlanReviewCard } from './plan-review-card'
 import { QueuedMessages } from './queued-messages'
+import {
+  type ActiveSlashToken,
+  activeSlashToken,
+  filterSlashCommands,
+  slashCommandCompletion,
+  wrapHighlight
+} from './slash-command-filter'
 import { SlashCommandMenu, slashMenuListboxId, slashMenuOptionId } from './slash-command-menu'
 import { TranscriptItem, TranscriptScroller } from './transcript-scroller'
 import { TurnActivityLine } from './turn-activity-line'
-import { Bubble, BubbleContent } from './ui/bubble'
-import { Button } from './ui/button'
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from './ui/input-group'
+import { useElapsedClock } from './use-elapsed-clock'
 
 interface PaneProps {
   paneId: string
@@ -777,7 +780,7 @@ function Pane({
   focusComposer = false
 }: PaneProps) {
   const queryClient = useQueryClient()
-  const width = useAtomValue(transcriptWidthAtom)
+  const [width] = useTranscriptWidth()
   const attentionQueryKey = ['pane', paneId, 'attention'] as const
 
   const [level, setLevel] = useState<ThinkingLevel>(thinkingLevel ?? DEFAULT_THINKING_LEVEL)

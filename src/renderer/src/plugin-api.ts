@@ -24,7 +24,17 @@ import {
 } from './lib/workspace-atoms'
 
 export * from './components/ui/sidebar'
-export { fillSlot, MAIN, MAIN_HEADER, ROOT, SIDEBAR, Slot, type SlotName } from './lib/slots'
+export {
+  fillSlot,
+  MAIN,
+  MAIN_HEADER,
+  MAIN_TAB,
+  ROOT,
+  SIDEBAR,
+  Slot,
+  type SlotName
+} from './lib/slots'
+export { useTabOpenedFromNewAgent } from './lib/tab-opened-from-new-agent'
 export type { View } from './lib/view'
 
 /** The workspace (projects, tabs, visible tab); `undefined` until it first loads. */
@@ -64,18 +74,61 @@ export const actions = {
 } as const
 
 /**
- * Kernel UI a renderer plugin renders, so that a plugin file imports no `@renderer/*` path: the
- * agent status dot and its label, the shadcn primitives the sidebar uses, and `cn` to merge
- * class names.
+ * Kernel UI, state, hooks and helpers a renderer plugin renders from, so that a plugin file imports
+ * no `@renderer/*` path: the agent status dot and its label, shadcn primitives, `cn` to merge class
+ * names, and the chat's atoms, hooks and helpers. Chat state lives in the kernel, so a pane's
+ * transcript and pending requests survive the chat plugin being unloaded or reloaded.
  */
+export { InstallNotice } from './components/install-notice'
+export { PermissionModeItems } from './components/permission-mode-items'
+export { openSettings } from './components/settings/open-settings'
 export { StatusIndicator, statusLabel } from './components/status-indicator'
+export * from './components/ui/alert-dialog'
+export * from './components/ui/bubble'
 export * from './components/ui/button'
 export * from './components/ui/checkbox'
 export * from './components/ui/context-menu'
 export * from './components/ui/dialog'
 export * from './components/ui/input'
+export * from './components/ui/input-group'
+export * from './components/ui/label'
+export * from './components/ui/marker'
+export * from './components/ui/message'
 export * from './components/ui/popover'
+export * from './components/ui/radio-group'
 export * from './components/ui/scroll-area'
+export * from './components/ui/select'
 export * from './components/ui/separator'
+export * from './components/ui/switch'
+export * from './components/ui/textarea'
 export * from './components/ui/tooltip'
+export { useAdapterStatus } from './hooks/use-adapter-status'
+export { useDisabledPermissionModes } from './hooks/use-disabled-permission-modes'
+export { useModelCatalog } from './hooks/use-model-catalog'
+export { useModelPreferences } from './hooks/use-model-preferences'
+export { findModelOption } from './lib/model-options'
+export {
+  emptyPaneChatState,
+  lastUserText,
+  type PaneChatState,
+  type PaneMessage,
+  type ToolCallPart
+} from './lib/pane-chat'
+export {
+  paneChatAtom,
+  paneEditQueuedAtom,
+  paneInterruptAtom,
+  paneRemoveQueuedAtom,
+  paneRewindAtom,
+  paneSendAtom
+} from './lib/pane-chat-atoms'
+export {
+  disabledPermissionModesFor,
+  offeredPermissionModes,
+  PERMISSION_MODE_OPTIONS,
+  permissionModeLabel
+} from './lib/permission-modes'
+export { sendModeAtom, sendModeForEnter } from './lib/send-mode-atom'
+export { fitThinkingLevel, thinkingLevelLabel, thinkingLevelsFor } from './lib/thinking-levels'
+export { type TurnActivity, turnActivity } from './lib/turn-activity'
 export { cn } from './lib/utils'

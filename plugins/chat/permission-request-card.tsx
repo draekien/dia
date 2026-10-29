@@ -1,11 +1,7 @@
+import { Button, Input, Label, Switch, Textarea } from '@dia/renderer-plugin'
 import { Allow, Deny, type PermissionResponse } from '@shared/domain/attention'
 import type { PanePermissionRequested } from '@shared/ipc/contract'
 import { useMemo, useState } from 'react'
-import { Button } from './ui/button'
-import { Input } from './ui/input'
-import { Label } from './ui/label'
-import { Switch } from './ui/switch'
-import { Textarea } from './ui/textarea'
 
 type FieldKind = 'text' | 'number' | 'boolean' | 'json'
 

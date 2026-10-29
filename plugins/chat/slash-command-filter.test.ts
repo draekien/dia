@@ -5,7 +5,7 @@ import {
   filterSlashCommands,
   slashCommandCompletion,
   wrapHighlight
-} from './slash-command-menu'
+} from './slash-command-filter'
 
 const command = (name: string, description = '', argumentHint = ''): SlashCommandInfo => ({
   name,

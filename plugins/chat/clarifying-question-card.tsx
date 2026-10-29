@@ -1,11 +1,7 @@
+import { Button, Checkbox, Input, Label, RadioGroup, RadioGroupItem } from '@dia/renderer-plugin'
 import { Answers, type QuestionResponse } from '@shared/domain/attention'
 import type { PaneQuestionRequested } from '@shared/ipc/contract'
 import { type KeyboardEvent, useState } from 'react'
-import { Button } from './ui/button'
-import { Checkbox } from './ui/checkbox'
-import { Input } from './ui/input'
-import { Label } from './ui/label'
-import { RadioGroup, RadioGroupItem } from './ui/radio-group'
 
 type Question = PaneQuestionRequested['questions'][number]
 

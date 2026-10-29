@@ -19,7 +19,9 @@
     "src/shared/**/*",
     "plugins/**/renderer.ts",
     "plugins/**/*.tsx",
-    "plugins/agent-overview/overview.ts"
+    "plugins/agent-overview/overview.ts",
+    "plugins/chat/slash-command-filter.ts",
+    "plugins/chat/use-elapsed-clock.ts"
   ],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "plugins/**/*.test.tsx"]
 }

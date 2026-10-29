@@ -1,5 +1,4 @@
-import type { TurnActivity } from '../lib/turn-activity'
-import { Button } from './ui/button'
+import { Button, type TurnActivity } from '@dia/renderer-plugin'
 
 interface TurnActivityLineProps {
   readonly activity: TurnActivity

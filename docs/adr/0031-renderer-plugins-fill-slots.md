@@ -1,5 +1,5 @@
 ---
-status: "accepted, amended by ADR-0038"
+status: "accepted, amended by ADR-0038 and ADR-0040"
 date: 2026-10-25
 decision-makers: William Pei
 ---

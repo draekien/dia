@@ -1,9 +1,5 @@
-import { useModelCatalog } from '@renderer/hooks/use-model-catalog'
-import { useModelPreferences } from '@renderer/hooks/use-model-preferences'
-import { EMPTY_ADAPTER_PREFERENCES, pickerModels } from '@shared/domain/model-preferences'
-import { Bot } from 'lucide-react'
-import { openSettings } from './settings/open-settings'
 import {
+  openSettings,
   Select,
   SelectContent,
   SelectGroup,
@@ -11,8 +7,12 @@ import {
   SelectLabel,
   SelectSeparator,
   SelectTrigger,
-  SelectValue
-} from './ui/select'
+  SelectValue,
+  useModelCatalog,
+  useModelPreferences
+} from '@dia/renderer-plugin'
+import { EMPTY_ADAPTER_PREFERENCES, pickerModels } from '@shared/domain/model-preferences'
+import { Bot } from 'lucide-react'
 
 const MANAGE_MODELS = 'dia:manage-models'
 

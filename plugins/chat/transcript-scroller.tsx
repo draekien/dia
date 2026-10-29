@@ -1,5 +1,4 @@
-import { Button } from '@renderer/components/ui/button'
-import { cn } from '@renderer/lib/utils'
+import { Button, cn } from '@dia/renderer-plugin'
 import { ArrowDownIcon } from 'lucide-react'
 import { type ComponentProps, type ReactNode, useLayoutEffect, useRef, useState } from 'react'
 

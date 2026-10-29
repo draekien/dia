@@ -28,7 +28,7 @@ dia runs the Claude Code install on the user's machine, reports whether that ins
 | Preload | `src/preload/host-api.ts`, `src/preload/index.ts`, `DiaApi` in `contract.ts` | the new commands and queries, `onAdapterStatusChanged`, `onModelPreferencesChanged`, `onModelChanged`, `pickFile` |
 | File dialog | `src/main/ipc/window-ipc.ts` | `chooseFile` channel next to `chooseDirectory` |
 | Settings page | `src/renderer/src/components/settings-page.tsx`, `app.tsx`, `command-palette.tsx` | Adapters → Claude Code → Health, Defaults, Models |
-| Model picker | `src/renderer/src/components/model-picker.tsx`, `pane.tsx`, `tab-content.tsx` | the composer's ghost Select |
+| Model picker | `plugins/chat/model-picker.tsx`, `pane.tsx`, `chat.tsx` | the composer's ghost Select |
 | New agent form | `model-field.tsx`, `pane-creation-form.tsx` | the filtered list and the defaults |
 | Hooks | `src/renderer/src/hooks/use-adapter-status.ts`, `use-model-preferences.ts` | newest snapshot per component, as `useModelCatalog` does |
 | Install notice | `src/renderer/src/components/install-notice.tsx` | the neutral line above the composer and in the New agent form |

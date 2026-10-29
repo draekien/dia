@@ -1,7 +1,6 @@
-import { cn } from '@renderer/lib/utils'
+import { cn, ScrollArea } from '@dia/renderer-plugin'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import { useEffect, useRef } from 'react'
-import { ScrollArea } from './ui/scroll-area'
 
 /**
  * The DOM id of the menu's listbox for a pane, used to wire the input's
