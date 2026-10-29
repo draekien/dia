@@ -30,6 +30,8 @@ plugins/layout ─ <Slot main.header>   kernel default: TabHeader
 | `plan-review-card.tsx` | same name |
 | `queued-messages.tsx` | same name |
 | `slash-command-menu.tsx` | same name |
+| `lib/slash-command-menu.ts`, `.test.ts` | `slash-command-filter.ts`, `.test.ts` (renamed: the component above has the base name) |
+| `hooks/use-elapsed-clock.ts` | same name |
 | `transcript-scroller.tsx`, `.test.ts` | same names |
 | `turn-activity-line.tsx` | same name |
 | `model-picker.tsx` | same name |
@@ -40,14 +42,16 @@ plugins/layout ─ <Slot main.header>   kernel default: TabHeader
 
 ## What stays in the kernel
 
-State, Host calls and components other kernel screens use stay in `src/renderer/src`: `lib/pane-chat`, `lib/pane-chat-atoms`, `lib/send-mode-atom`, `lib/turn-activity`, `lib/permission-modes`, `lib/thinking-levels`, `lib/model-options`, `lib/slash-command-menu`, the hooks, `InstallNotice` and `PermissionModeItems` (both also used by `PaneCreationForm`). Chat state lives in the kernel's `Atom.family` and the kernel's `QueryClient`, so unloading or reloading the plugin does not lose a pane's transcript or a pending permission request.
+State, Host calls and components other kernel screens use stay in `src/renderer/src`: `lib/pane-chat`, `lib/pane-chat-atoms`, `lib/send-mode-atom`, `lib/turn-activity`, `lib/permission-modes`, `lib/thinking-levels`, `lib/model-options`, the other hooks, `InstallNotice` and `PermissionModeItems` (both also used by `PaneCreationForm`). Chat state lives in the kernel's `Atom.family` and the kernel's `QueryClient`, so unloading or reloading the plugin does not lose a pane's transcript or a pending permission request.
 
 `@dia/renderer-plugin` exports what the moved files import, by name, so no plugin file imports `@renderer/*`:
 
 - `MAIN_TAB` and `useTabOpenedFromNewAgent()`. `TabContent` computes whether the previous view was `NewAgentView` and provides it through a React context around the `main.tab` slot; the hook reads it. `Pane` focuses the composer when it is true. A slot filler has no props, and it mounts only when the view becomes `TabView`, so it cannot compute the previous view itself.
-- Hooks: `useAdapterStatus`, `useDisabledPermissionModes`, `useElapsedClock`, `useModelCatalog`, `useModelPreferences`. `Pane` reads the transcript width through the existing `useTranscriptWidth`.
+- Hooks: `useAdapterStatus`, `useDisabledPermissionModes`, `useModelCatalog`, `useModelPreferences`. `Pane` reads the transcript width through the existing `useTranscriptWidth`.
 - Chat state: the `pane-chat` types, `emptyPaneChatState`, `lastUserText`, the six `pane*Atom`s, `sendModeAtom`, `sendModeForEnter`, `turnActivity`.
-- Pure helpers: `findModelOption`, the four permission-mode helpers, the five slash-command helpers, the three thinking-level helpers.
+- Pure helpers: `findModelOption`, the four permission-mode helpers, the three thinking-level helpers.
+
+A non-React `.ts` module in the plugin may import only `@shared/*` and npm packages, because `tsconfig.node.json` also compiles `plugins/**/*.ts` and does not map `@dia/renderer-plugin`. `lib/turn-activity` imports the kernel's `PaneChatState`, so it stays in the kernel.
 - Components: `InstallNotice`, `PermissionModeItems`, `openSettings`, and the shadcn primitives `alert-dialog`, `bubble`, `input-group`, `label`, `marker`, `message`, `radio-group`, `select`, `switch`, `textarea`.
 
 `PLUGIN_API_VERSION` 0.0.3 → 0.0.4 and `"api": "0.0.4"` in every `plugins/*/plugin.json` (ADR-0032).

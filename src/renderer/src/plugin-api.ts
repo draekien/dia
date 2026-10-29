@@ -107,7 +107,6 @@ export * from './components/ui/textarea'
 export * from './components/ui/tooltip'
 export { useAdapterStatus } from './hooks/use-adapter-status'
 export { useDisabledPermissionModes } from './hooks/use-disabled-permission-modes'
-export { useElapsedClock } from './hooks/use-elapsed-clock'
 export { useModelCatalog } from './hooks/use-model-catalog'
 export { useModelPreferences } from './hooks/use-model-preferences'
 export { findModelOption } from './lib/model-options'
@@ -133,13 +132,6 @@ export {
   permissionModeLabel
 } from './lib/permission-modes'
 export { sendModeAtom, sendModeForEnter } from './lib/send-mode-atom'
-export {
-  type ActiveSlashToken,
-  activeSlashToken,
-  filterSlashCommands,
-  slashCommandCompletion,
-  wrapHighlight
-} from './lib/slash-command-menu'
 export { fitThinkingLevel, thinkingLevelLabel, thinkingLevelsFor } from './lib/thinking-levels'
 export { type TurnActivity, turnActivity } from './lib/turn-activity'
 export { cn } from './lib/utils'

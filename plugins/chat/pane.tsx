@@ -1,5 +1,4 @@
 import {
-  type ActiveSlashToken,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -8,14 +7,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  activeSlashToken,
   Bubble,
   BubbleContent,
   Button,
   cn,
   disabledPermissionModesFor,
   emptyPaneChatState,
-  filterSlashCommands,
   findModelOption,
   fitThinkingLevel,
   InputGroup,
@@ -48,17 +45,14 @@ import {
   SelectValue,
   sendModeAtom,
   sendModeForEnter,
-  slashCommandCompletion,
   type ToolCallPart,
   thinkingLevelLabel,
   thinkingLevelsFor,
   turnActivity,
   useAdapterStatus,
   useDisabledPermissionModes,
-  useElapsedClock,
   useModelCatalog,
-  useTranscriptWidth,
-  wrapHighlight
+  useTranscriptWidth
 } from '@dia/renderer-plugin'
 import { useAtomSet, useAtomValue } from '@effect/atom-react'
 import {
@@ -102,9 +96,17 @@ import { ModelPicker } from './model-picker'
 import { PermissionRequestCard } from './permission-request-card'
 import { PlanReviewCard } from './plan-review-card'
 import { QueuedMessages } from './queued-messages'
+import {
+  type ActiveSlashToken,
+  activeSlashToken,
+  filterSlashCommands,
+  slashCommandCompletion,
+  wrapHighlight
+} from './slash-command-filter'
 import { SlashCommandMenu, slashMenuListboxId, slashMenuOptionId } from './slash-command-menu'
 import { TranscriptItem, TranscriptScroller } from './transcript-scroller'
 import { TurnActivityLine } from './turn-activity-line'
+import { useElapsedClock } from './use-elapsed-clock'
 
 interface PaneProps {
   paneId: string
