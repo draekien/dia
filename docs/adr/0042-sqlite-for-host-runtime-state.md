@@ -78,7 +78,7 @@ This answers the `docs/prds/org.md` open question for #42: long-term memory is s
 | --- | --- | --- |
 | `workspace.json` | `PersistenceService` only; the whole project and tab tree, written atomically | Stays JSON |
 | `activity.json` | `AgentSummaries`; one line per pane, rewritten whole | Moves to `host.db` with #69, next to the rest of the pane runtime state |
-| `settings.json` | `SettingsStore`; read-modify-write per setter | Stays JSON. It is written in place (`settings-store.ts`), not through a temp file and rename, so a crash mid-write can truncate it; a follow-up issue makes the write atomic |
+| `settings.json` | `SettingsStore`; read-modify-write per setter | Stays JSON. It is written in place (`settings-store.ts`), not through a temp file and rename, so a crash mid-write can truncate it; #87 makes the write atomic |
 | `plugins/claude-code/install.json` | claude-code adapter; one path | Stays JSON |
 | `plugins/claude-code/models.json` | claude-code adapter; a cache rewritten whole once a day | Stays JSON |
 
