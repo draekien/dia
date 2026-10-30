@@ -292,6 +292,20 @@ describe('makeSessionEventReducer — tool input accumulation (T4)', () => {
     expect(toolCompletions(run(messages))[0]?.input).toEqual({})
   })
 
+  it('reports the parsed input as soon as it finishes streaming, before the tool runs', () => {
+    const emitted = run([
+      toolUseStart(0, 'tool-1', 'Bash'),
+      inputJsonDelta(0, '{"command":"ls"}'),
+      blockStop(0)
+    ])
+
+    expect(emitted).toContainEqual({
+      _tag: 'ToolCallUpdated',
+      toolCallId: 'tool-1',
+      input: { command: 'ls' }
+    })
+  })
+
   it('defers completion until the tool result arrives, not when input finishes streaming', () => {
     const beforeResult = run([
       toolUseStart(0, 'tool-1', 'Bash'),

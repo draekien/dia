@@ -301,6 +301,7 @@ function turnProgressEvent(
       return PaneToolCallUpdated.make({
         paneId,
         toolCallId: message.toolCallId,
+        ...(message.input !== undefined ? { input: message.input } : {}),
         ...(message.elapsedSeconds !== undefined ? { elapsedSeconds: message.elapsedSeconds } : {}),
         ...(message.detail !== undefined ? { detail: message.detail } : {})
       })

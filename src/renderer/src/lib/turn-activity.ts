@@ -62,15 +62,15 @@ const hasAssistantTurn = (state: PaneChatState): boolean =>
 
 /**
  * Formats a turn's elapsed milliseconds for display: whole seconds under a
- * minute (`"12s"`), and `m:ss` with a zero-padded seconds field at a minute or
- * more (`"1:23"`). Partial seconds are floored, never rounded up.
+ * minute (`"12s"`), and minutes and seconds at a minute or more (`"1m 23s"`). Partial seconds
+ * are floored, never rounded up.
  */
 export const formatElapsed = (elapsedMs: number): string => {
   const totalSeconds = Math.floor(elapsedMs / 1000)
   if (totalSeconds < 60) return `${totalSeconds}s`
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
+  return `${minutes}m ${seconds}s`
 }
 
 /**

@@ -3,6 +3,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 interface ClockReading {
   readonly elapsedMs: number
   readonly idleMs: number
+  readonly nowMs: number
 }
 
 const TICK_MS = 1000
@@ -11,14 +12,19 @@ function createClock() {
   let turnStartMs: number | null = null
   let lastActivityMs = performance.now()
   let intervalId: number | undefined
-  let reading: ClockReading = { elapsedMs: 0, idleMs: 0 }
+  let reading: ClockReading = {
+    elapsedMs: 0,
+    idleMs: 0,
+    nowMs: performance.timeOrigin + lastActivityMs
+  }
   const listeners = new Set<() => void>()
 
   const publish = () => {
     const now = performance.now()
     reading = {
       elapsedMs: turnStartMs === null ? 0 : now - turnStartMs,
-      idleMs: now - lastActivityMs
+      idleMs: now - lastActivityMs,
+      nowMs: performance.timeOrigin + now
     }
     for (const listener of listeners) listener()
   }
@@ -47,7 +53,7 @@ function createClock() {
  * The time of a running agent turn, refreshed every second while `running` is true. `elapsedMs` is
  * the time since `running` last became true (0 while it is false). `idleMs` is the time since
  * `activitySignature` last changed; pass a string that changes whenever the turn shows new
- * activity.
+ * activity. `nowMs` is the wall-clock time of the reading, in epoch milliseconds.
  */
 export function useElapsedClock(running: boolean, activitySignature: string): ClockReading {
   const [clock] = useState(createClock)

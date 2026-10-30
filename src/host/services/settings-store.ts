@@ -1,7 +1,6 @@
 import { SendMode } from '@shared/domain/message-queue'
 import { AdapterPreferences, EMPTY_ADAPTER_PREFERENCES } from '@shared/domain/model-preferences'
 import { ThemePreference } from '@shared/domain/theme'
-import { TranscriptMode } from '@shared/domain/transcript-mode'
 import { TranscriptWidth } from '@shared/domain/transcript-width'
 import { Context, Effect, FileSystem, Layer, Option, Result, Schema } from 'effect'
 
@@ -9,7 +8,6 @@ const Settings = Schema.Struct({
   theme: Schema.optional(ThemePreference),
   sendMode: Schema.optional(SendMode),
   transcriptWidth: Schema.optional(TranscriptWidth),
-  transcriptMode: Schema.optional(TranscriptMode),
   pluginOverrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   adapters: Schema.optional(Schema.Record(Schema.String, AdapterPreferences))
 })
@@ -20,7 +18,7 @@ const encodeSettings = Schema.encodeSync(Schema.fromJsonString(Settings, { space
 /**
  * Effect Context.Service for the app's persisted settings store.
  * Depend on this to read or update the user's colour-theme choice, default send mode, transcript
- * width, transcript mode, per-plugin source overrides (plugin name to source directory) and per-adapter model
+ * width, per-plugin source overrides (plugin name to source directory) and per-adapter model
  * preferences (adapter plugin name to {@link AdapterPreferences}; empty when never set). Provide it via
  * {@link makeSettingsStoreLive}.
  */
@@ -33,8 +31,6 @@ export class SettingsStore extends Context.Service<
     readonly setSendMode: (mode: SendMode) => Effect.Effect<void>
     readonly getTranscriptWidth: () => Effect.Effect<Option.Option<TranscriptWidth>>
     readonly setTranscriptWidth: (width: TranscriptWidth) => Effect.Effect<void>
-    readonly getTranscriptMode: () => Effect.Effect<Option.Option<TranscriptMode>>
-    readonly setTranscriptMode: (mode: TranscriptMode) => Effect.Effect<void>
     readonly getPluginOverrides: () => Effect.Effect<Readonly<Record<string, string>>>
     readonly setPluginOverride: (name: string, path: string) => Effect.Effect<void>
     readonly clearPluginOverride: (name: string) => Effect.Effect<void>
@@ -102,12 +98,6 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
       const setTranscriptWidth = (transcriptWidth: TranscriptWidth) =>
         read().pipe(Effect.flatMap((settings) => write({ ...settings, transcriptWidth })))
 
-      const getTranscriptMode = () =>
-        read().pipe(Effect.map((settings) => Option.fromNullishOr(settings.transcriptMode)))
-
-      const setTranscriptMode = (transcriptMode: TranscriptMode) =>
-        read().pipe(Effect.flatMap((settings) => write({ ...settings, transcriptMode })))
-
       const getPluginOverrides = () =>
         read().pipe(Effect.map((settings) => settings.pluginOverrides ?? {}))
 
@@ -145,8 +135,6 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
         setSendMode,
         getTranscriptWidth,
         setTranscriptWidth,
-        getTranscriptMode,
-        setTranscriptMode,
         getPluginOverrides,
         setPluginOverride,
         clearPluginOverride,

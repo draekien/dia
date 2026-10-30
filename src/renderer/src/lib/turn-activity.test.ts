@@ -35,10 +35,10 @@ describe('formatElapsed', () => {
     expect(formatElapsed(59_000)).toBe('59s')
   })
 
-  it('renders a minute or more as m:ss with a zero-padded seconds field', () => {
-    expect(formatElapsed(60_000)).toBe('1:00')
-    expect(formatElapsed(83_000)).toBe('1:23')
-    expect(formatElapsed(600_000)).toBe('10:00')
+  it('renders a minute or more as minutes and seconds, so it does not read as a clock time', () => {
+    expect(formatElapsed(60_000)).toBe('1m 0s')
+    expect(formatElapsed(65_000)).toBe('1m 5s')
+    expect(formatElapsed(600_000)).toBe('10m 0s')
   })
 
   it('floors partial seconds rather than rounding up', () => {

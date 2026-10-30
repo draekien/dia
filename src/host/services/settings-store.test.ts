@@ -151,21 +151,6 @@ describe('SettingsStore', () => {
       assert.deepStrictEqual(JSON.parse(writes[0]), { theme: 'dark', transcriptWidth: 'narrow' })
     })
   )
-
-  it.effect('setTranscriptMode persists the mode beside other settings', () =>
-    Effect.gen(function* () {
-      const { writes, testLayer, loggerLayer } = makeTestSetup(JSON.stringify({ theme: 'dark' }))
-
-      const result = yield* Effect.gen(function* () {
-        const store = yield* SettingsStore
-        yield* store.setTranscriptMode('all-text')
-        return yield* store.getTranscriptMode()
-      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
-
-      assert.deepStrictEqual(result, Option.some('all-text'))
-      assert.deepStrictEqual(JSON.parse(writes[0]), { theme: 'dark', transcriptMode: 'all-text' })
-    })
-  )
 })
 
 describe('SettingsStore plugin overrides', () => {

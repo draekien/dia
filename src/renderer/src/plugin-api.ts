@@ -2,7 +2,6 @@ import { useAtomSet, useAtomValue } from '@effect/atom-react'
 import type { AgentSummary } from '@shared/domain/agent-summary'
 import type { PaneId } from '@shared/domain/pane'
 import type { Workspace } from '@shared/domain/project'
-import type { TranscriptMode } from '@shared/domain/transcript-mode'
 import type { TranscriptWidth } from '@shared/domain/transcript-width'
 import { Option } from 'effect'
 import {
@@ -19,7 +18,6 @@ import {
 import type { View } from './lib/view'
 import {
   agentSummariesAtom,
-  transcriptModeAtom,
   transcriptWidthAtom,
   viewAtom,
   workspaceAtom
@@ -57,11 +55,6 @@ export function useView(): View | undefined {
 /** The app-wide transcript width and a setter that changes and persists it. */
 export function useTranscriptWidth(): readonly [TranscriptWidth, (width: TranscriptWidth) => void] {
   return [useAtomValue(transcriptWidthAtom), useAtomSet(transcriptWidthAtom)]
-}
-
-/** The app-wide transcript mode and a setter that changes and persists it. */
-export function useTranscriptMode(): readonly [TranscriptMode, (mode: TranscriptMode) => void] {
-  return [useAtomValue(transcriptModeAtom), useAtomSet(transcriptModeAtom)]
 }
 
 /**
@@ -144,7 +137,6 @@ export {
   type StepPart,
   type StepsSection,
   sectionDurationMs,
-  sectionSteps,
   type TurnBlock,
   turnBlocks
 } from './lib/turn-steps'

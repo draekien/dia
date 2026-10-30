@@ -47,7 +47,6 @@ import {
   SelectTrigger,
   SelectValue,
   type StepsSection as StepsSectionBlock,
-  sectionSteps,
   sendModeAtom,
   sendModeForEnter,
   type ToolCallPart,
@@ -58,7 +57,6 @@ import {
   useAdapterStatus,
   useDisabledPermissionModes,
   useModelCatalog,
-  useTranscriptMode,
   useTranscriptWidth
 } from '@dia/renderer-plugin'
 import { useAtomSet, useAtomValue } from '@effect/atom-react'
@@ -76,7 +74,6 @@ import {
   type ThinkingLevel
 } from '@shared/domain/pane'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
-import { DEFAULT_TRANSCRIPT_MODE, type TranscriptMode } from '@shared/domain/transcript-mode'
 import type {
   PanePermissionRequested,
   PanePlanReviewRequested,
@@ -95,7 +92,8 @@ import {
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
-  SquareIcon
+  SquareIcon,
+  X
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
@@ -112,7 +110,7 @@ import {
   wrapHighlight
 } from './slash-command-filter'
 import { SlashCommandMenu, slashMenuListboxId, slashMenuOptionId } from './slash-command-menu'
-import { type LiveSteps, StepsSection } from './steps-section'
+import { type LiveSteps, StepsSection, summaryFocus } from './steps-section'
 import { TranscriptItem, TranscriptScroller } from './transcript-scroller'
 import { TurnActivityLine } from './turn-activity-line'
 import { useElapsedClock } from './use-elapsed-clock'
@@ -185,11 +183,24 @@ function ToolCallLabel({ part }: { part: ToolCallPart }): React.JSX.Element {
   return (
     <>
       <span className="shrink-0 text-foreground/90">{part.name}</span>
-      {summary !== undefined && (
-        <span className="truncate text-muted-foreground/80">{summary}</span>
-      )}
+      {summary !== undefined && <span className="truncate text-muted-foreground">{summary}</span>}
     </>
   )
+}
+
+const toolCallStatus = (part: ToolCallPart): string => {
+  if (part.state === 'running') return 'running'
+  return part.isError === true ? 'failed' : 'completed'
+}
+
+function ToolCallStatusIcon({ part }: { part: ToolCallPart }): React.JSX.Element {
+  if (part.state === 'running') {
+    return (
+      <span className="size-1.5 animate-pulse-slow rounded-full bg-muted-foreground motion-reduce:animate-none" />
+    )
+  }
+  if (part.isError === true) return <X className="size-3 text-foreground" strokeWidth={2.5} />
+  return <Check className="size-3 text-muted-foreground" strokeWidth={2.5} />
 }
 
 function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
@@ -198,11 +209,7 @@ function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
   const row = (
     <Marker className="pl-0.5 font-mono text-xs">
       <MarkerIcon className="flex items-center justify-center">
-        {status === 'running' ? (
-          <span className="size-1.5 animate-pulse-slow rounded-full bg-muted-foreground motion-reduce:animate-none" />
-        ) : (
-          <Check className="size-3 text-muted-foreground/70" strokeWidth={2.5} />
-        )}
+        <ToolCallStatusIcon part={part} />
       </MarkerIcon>
       <MarkerContent className="flex min-w-0 items-center gap-2">
         <ToolCallLabel part={part} />
@@ -210,18 +217,20 @@ function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
           <span className="truncate font-sans text-muted-foreground">{part.detail}</span>
         )}
         {status === 'running' && part.elapsedSeconds !== undefined && (
-          <span className="shrink-0 tabular-nums text-muted-foreground/70">
+          <span className="shrink-0 tabular-nums text-muted-foreground">
             {formatElapsed(part.elapsedSeconds * 1000)}
           </span>
         )}
       </MarkerContent>
-      <span className="sr-only">{status === 'running' ? 'running' : 'completed'}</span>
+      <span className="sr-only">{toolCallStatus(part)}</span>
     </Marker>
   )
   if (output === undefined) return row
   return (
     <details className="min-w-0">
-      <summary className="cursor-pointer list-none">{row}</summary>
+      <summary className={cn('cursor-pointer list-none hover:bg-muted/60', summaryFocus)}>
+        {row}
+      </summary>
       <pre className="mt-1 max-h-64 overflow-auto rounded bg-muted px-3 py-2 font-mono text-xs text-foreground/90">
         {output}
       </pre>
@@ -232,9 +241,11 @@ function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
 function ThinkingDisclosure({ content }: { content: string }): React.JSX.Element {
   return (
     <details className="min-w-0">
-      <summary className="w-fit cursor-pointer list-none">
-        <Marker className="w-fit font-mono text-xs">
-          <MarkerIcon>
+      <summary
+        className={cn('w-fit cursor-pointer list-none hover:*:text-foreground', summaryFocus)}
+      >
+        <Marker className="w-fit pl-0.5 text-xs">
+          <MarkerIcon className="flex items-center justify-center">
             <Brain className="size-3" />
           </MarkerIcon>
           <MarkerContent>Thinking</MarkerContent>
@@ -251,8 +262,9 @@ function PartView({ part, isUser }: { part: MessagePart; isUser: boolean }): Rea
   if (part.type === 'tool-call') return <ToolCallRow part={part} />
   if (part.content.trim() === '') return null
   if (part.type === 'thinking') return <ThinkingDisclosure content={part.content} />
+  if (!isUser) return <Markdown content={part.content} />
   return (
-    <Bubble variant={isUser ? 'tinted' : 'muted'} align={isUser ? 'end' : 'start'}>
+    <Bubble variant="tinted" align="end">
       <BubbleContent>
         <Markdown content={part.content} />
       </BubbleContent>
@@ -260,19 +272,32 @@ function PartView({ part, isUser }: { part: MessagePart; isUser: boolean }): Rea
   )
 }
 
+type LiveTurn = LiveSteps & { readonly nowMs: number }
+
+const sectionLive = (section: StepsSectionBlock, live: LiveTurn): LiveSteps => {
+  const { nowMs, ...line } = live
+  const firstAt = section.parts[0]?.startedAt
+  return {
+    ...line,
+    label: line.label ?? latestStepLabel(section),
+    activity:
+      firstAt === undefined || line.activity.elapsedLabel === undefined
+        ? line.activity
+        : { ...line.activity, elapsedLabel: formatElapsed(Math.max(0, nowMs - firstAt)) }
+  }
+}
+
 const isLiveTurn = (message: PaneMessage): boolean =>
   message.role === 'assistant' && message.parts.some((part) => part.startedAt !== undefined)
 
 function TurnBlocksView({
   message,
-  mode,
   live
 }: {
   message: PaneMessage
-  mode: TranscriptMode
-  live: LiveSteps | undefined
+  live: LiveTurn | undefined
 }): React.JSX.Element {
-  const blocks = turnBlocks(message.parts, mode)
+  const blocks = turnBlocks(message.parts)
   const lastSection = blocks.filter((block) => block.type === 'steps').at(-1)
   return (
     <>
@@ -284,9 +309,7 @@ function TurnBlocksView({
             key={key}
             section={block}
             live={
-              block === lastSection && live !== undefined
-                ? { ...live, label: live.label ?? latestStepLabel(block) }
-                : undefined
+              block === lastSection && live !== undefined ? sectionLive(block, live) : undefined
             }
           >
             {block.parts.map((part, partIndex) => {
@@ -301,7 +324,7 @@ function TurnBlocksView({
 }
 
 function latestStepLabel(section: StepsSectionBlock): React.ReactNode {
-  const latest = sectionSteps(section).at(-1)
+  const latest = section.parts.at(-1)
   if (latest?.type !== 'tool-call') return 'Thinking'
   return (
     <span className="flex min-w-0 items-center gap-2 font-mono">
@@ -313,28 +336,28 @@ function latestStepLabel(section: StepsSectionBlock): React.ReactNode {
 /**
  * Renders one {@link PaneMessage} as an aligned bubble stack: user turns as a
  * single trailing tinted bubble, assistant turns as their ordered parts
- * (collapsed thinking disclosures, text bubbles, tool-call status rows).
+ * (collapsed thinking disclosures, Markdown text with no bubble, tool-call status rows).
  * Thinking parts render as a collapsed `Thinking` disclosure, click to expand.
  * Text parts render markdown directly with no reveal animation. When `onRewind`
  * is provided and the turn is a rewindable user turn (carries a
  * `checkpointUuid` and is not marked `rewindable: false`), a hover-revealed separator marker is shown above the
  * message — the branch point rewind restores to, just before this turn — with a
  * rewind action that invokes `onRewind` with this message.
- * An assistant turn that streamed in this session collapses its steps into sections laid out
- * for `mode` (see {@link turnBlocks}); a turn restored from history shows every part. Pass `live`
- * for the turn still running, to show its activity on its last section's summary line.
+ * An assistant turn that streamed in this session collapses each run of steps into a section
+ * and keeps its text visible between them (see {@link turnBlocks}); a turn restored from history
+ * shows every part. Pass `live` for the turn still running, to show
+ * its activity on its last section's summary line; `live.nowMs` (epoch milliseconds) times that
+ * section from its first part.
  * Pass a message from a pane's chat state ({@link paneChatAtom}).
  */
 export function MessageView({
   message,
   onRewind,
-  mode = DEFAULT_TRANSCRIPT_MODE,
   live
 }: {
   message: PaneMessage
   onRewind?: (message: PaneMessage) => void
-  mode?: TranscriptMode
-  live?: LiveSteps
+  live?: LiveTurn
 }): React.JSX.Element {
   if (message.role === 'notice') {
     const text = message.parts.find((part) => part.type === 'text')?.content ?? ''
@@ -386,7 +409,7 @@ export function MessageView({
       <Message align={isUser ? 'end' : 'start'}>
         <MessageContent>
           {isLiveTurn(message) ? (
-            <TurnBlocksView message={message} mode={mode} live={live} />
+            <TurnBlocksView message={message} live={live} />
           ) : (
             message.parts.map((part, index) => {
               const key = `${message.id}:${index}`
@@ -561,9 +584,8 @@ function PaneChat({
   const isLoading = chat.isLoading
   const activitySignature = messageActivitySignature(chat)
 
-  const { elapsedMs, idleMs } = useElapsedClock(isLoading, activitySignature)
+  const { elapsedMs, idleMs, nowMs } = useElapsedClock(isLoading, activitySignature)
   const activity = turnActivity(chat, elapsedMs, idleMs)
-  const [transcriptMode] = useTranscriptMode()
 
   const pendingInteraction =
     pendingPermission !== null || pendingQuestion !== null || pendingPlanReview !== null
@@ -577,9 +599,10 @@ function PaneChat({
   }
   const showActivity = activity !== null && !pendingInteraction
   const runningTurn = chat.messages.at(-1)
-  const liveSteps: LiveSteps | undefined = showActivity
+  const liveSteps: LiveTurn | undefined = showActivity
     ? {
         activity,
+        nowMs,
         label: chat.turnStatus ?? undefined,
         onResend: resend,
         onInterruptAndRetry: interruptAndRetry
@@ -810,7 +833,6 @@ function PaneChat({
             <MessageView
               message={message}
               onRewind={setRewindTarget}
-              mode={transcriptMode}
               live={message === runningTurn ? liveSteps : undefined}
             />
           </TranscriptItem>

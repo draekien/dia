@@ -28,7 +28,6 @@ import {
   SetModel,
   SetPermissionMode,
   SetThinkingLevel,
-  SetTranscriptMode,
   SetTranscriptWidth,
   WorkspaceChanged
 } from '@shared/ipc/contract'
@@ -378,11 +377,6 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     setTranscriptWidth: (width) =>
       command('SetTranscriptWidth', (client, commandId) =>
         client.SetTranscriptWidth({ ...SetTranscriptWidth.make({ width }), commandId })
-      ),
-    getTranscriptMode: () => query((client) => client.GetTranscriptMode()),
-    setTranscriptMode: (mode) =>
-      command('SetTranscriptMode', (client, commandId) =>
-        client.SetTranscriptMode({ ...SetTranscriptMode.make({ mode }), commandId })
       ),
     getPaneHistory: (paneId): Promise<ReadonlyArray<ConversationMessage>> =>
       query((client) => client.GetPaneHistory({ paneId })),

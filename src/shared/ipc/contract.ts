@@ -23,7 +23,6 @@ import { AgentName, CreateTabRequest, ProjectId, Workspace } from '../domain/pro
 import type { RemovalProgress } from '../domain/project-removal'
 import { SlashCommandInfo } from '../domain/slash-command'
 import type { ThemePreference } from '../domain/theme'
-import { TranscriptMode } from '../domain/transcript-mode'
 import { TranscriptWidth } from '../domain/transcript-width'
 import { UpdateStatus } from '../domain/update'
 import { Uuid } from '../domain/uuid'
@@ -180,12 +179,6 @@ export const SetTranscriptWidth = Schema.TaggedStruct('SetTranscriptWidth', {
 })
 export type SetTranscriptWidth = typeof SetTranscriptWidth.Type
 
-/** Command sent by the renderer to change the app-wide transcript mode. */
-export const SetTranscriptMode = Schema.TaggedStruct('SetTranscriptMode', {
-  mode: TranscriptMode
-})
-export type SetTranscriptMode = typeof SetTranscriptMode.Type
-
 /**
  * Command sent by the renderer to change the thinking level of the live pane
  * `paneId`. The change is persisted and applied on the pane's next user turn
@@ -327,13 +320,14 @@ export type PaneToolCallCompleted = typeof PaneToolCallCompleted.Type
 
 /**
  * Event pushed to the renderer with news about tool call `toolCallId` in pane
- * `paneId`: `elapsedSeconds` while it runs, and `detail` for a line to show on
+ * `paneId`: `input` once it has streamed in (before the call runs), `elapsedSeconds` while it runs, and `detail` for a line to show on
  * its row (a subagent's progress, or why it was denied or failed). An absent
  * field leaves the row's value unchanged.
  */
 export const PaneToolCallUpdated = Schema.TaggedStruct('PaneToolCallUpdated', {
   paneId: Uuid,
   toolCallId: Schema.String,
+  input: Schema.optional(JsonRecord),
   elapsedSeconds: Schema.optional(Schema.Number),
   detail: Schema.optional(Schema.String)
 })
@@ -809,8 +803,6 @@ export interface DiaApi {
   getAgentSummaries(): Promise<ReadonlyArray<AgentSummary>>
   getTranscriptWidth(): Promise<TranscriptWidth>
   setTranscriptWidth(width: TranscriptWidth): void
-  getTranscriptMode(): Promise<TranscriptMode>
-  setTranscriptMode(mode: TranscriptMode): void
   /** Shows `directory` in the system file manager; does nothing when it is not a directory. */
   revealPath(directory: string): Promise<void>
   getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>

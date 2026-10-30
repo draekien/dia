@@ -368,13 +368,11 @@ export const makeSessionEventReducer = (
     if (streamEvent.type === 'content_block_stop') {
       const toolCall = toolCallsByBlockIndex.get(streamEvent.index)
       if (!toolCall) return []
-      const partialJson = partialJsonByBlockIndex.get(streamEvent.index) ?? ''
+      const input = parseToolInput(partialJsonByBlockIndex.get(streamEvent.index) ?? '')
       toolCallsByBlockIndex.delete(streamEvent.index)
       partialJsonByBlockIndex.delete(streamEvent.index)
-      pendingToolCalls.set(toolCall.id, {
-        name: toolCall.name,
-        input: parseToolInput(partialJson)
-      })
+      pendingToolCalls.set(toolCall.id, { name: toolCall.name, input })
+      return [ToolCallUpdated.make({ toolCallId: toolCall.id, input })]
     }
 
     return []
