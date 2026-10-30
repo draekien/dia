@@ -1,0 +1,83 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden}
+body{background:#14161b;color:#e6e9ef;font:14px/1.5 Geist,system-ui,sans-serif;display:flex}
+.mono{font-family:'Geist Mono',monospace}
+aside{width:288px;border-right:1px solid #262a33;padding:10px 8px}
+.brand{height:32px;padding:0 8px;font-weight:600;display:flex;align-items:center}
+.search{margin:8px 4px 12px;height:30px;border:1px solid #262a33;border-radius:6px;padding:0 10px;color:#959eae;font-size:13px;display:flex;align-items:center}
+.grp{font-size:12px;color:#959eae;padding:8px 10px 4px}
+.row{display:flex;gap:10px;padding:6px 10px;border-radius:6px}
+.row.sel{background:#232842}
+.dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none;background:#8a93a3}
+.row b{font-weight:500;font-size:13px;display:block}
+.row small{font-size:12px;color:#959eae;display:block}
+main{flex:1;display:flex;flex-direction:column}
+header{height:32px;border-bottom:1px solid #262a33;display:flex;align-items:center;padding:0 16px;font-size:13px;color:#9aa3b2;gap:8px}
+.col{width:760px;margin:0 auto;flex:1;display:flex;flex-direction:column;padding-top:28px}
+.user{align-self:flex-end;background:#232842;border-radius:12px;padding:8px 14px;max-width:70%}
+.agent{margin:18px 0 10px;color:#d5d9e1}
+.steps{font-size:12px;color:#959eae;display:flex;gap:8px;align-items:center}
+.pulse{width:7px;height:7px;border-radius:50%;background:#8a93a3}
+.spacer{flex:1}
+.rail{border-top:2px solid #5b6472;position:relative;margin:0 6px 0;padding-top:10px;display:flex;gap:10px}
+.rail:before{content:'';position:absolute;top:-6px;left:0;right:0;height:4px}
+.qt{background:#1d2027;border:1px solid #2c313b;border-top:none;border-radius:0 0 6px 6px;padding:8px 12px;width:330px;font-size:13px}
+.qt .h{font-size:11px;color:#959eae;letter-spacing:.06em;display:flex;justify-content:space-between;margin-bottom:3px}
+.qt.void{opacity:.55}
+.qt.void .h b{color:#c9ced8}
+.ticket{margin:14px 0 22px;background:#1d2027;border:1px solid #2c313b;border-radius:8px}
+.head{display:flex;align-items:center;gap:18px;padding:7px 14px;border-bottom:1px solid #2c313b;font-size:12px;color:#9aa3b2;letter-spacing:.04em}
+.head .k{color:#8b94a4;margin-right:5px}
+.head .auth{color:#e6e9ef;font-weight:600}
+.head .ctx{margin-left:auto;display:flex;align-items:center;gap:8px}
+.bar{width:90px;height:4px;background:#2c313b;border-radius:2px}
+.bar i{display:block;width:62%;height:100%;background:#9aa3b2;border-radius:2px}
+.body{padding:12px 14px;min-height:76px;font-size:14px}
+.foot{display:flex;align-items:center;gap:8px;padding:8px 10px 10px 14px}
+.ib{width:28px;height:28px;border-radius:6px;display:grid;place-items:center;color:#9aa3b2;border:1px solid transparent}
+.hint{font-size:12px;color:#8b94a4;margin-left:6px}
+.seg{margin-left:auto;display:flex;border:1px solid #2c313b;border-radius:6px;overflow:hidden;font-size:12px;font-weight:600;letter-spacing:.08em}
+.seg span{padding:6px 14px}
+.seg .hold{color:#c9ced8}
+.seg .fire{background:#6b7cff;color:#fff}
+.stop{width:28px;height:28px;border:1px solid #2c313b;border-radius:6px;display:grid;place-items:center}
+.stop i{width:9px;height:9px;background:#c9ced8;border-radius:1px}
+</style></head><body>
+<aside>
+<div class="brand">dia</div>
+<div class="search">Search agents <span style="margin-left:auto" class="mono">Ctrl P</span></div>
+<div class="grp">dia</div>
+<div class="row sel"><span class="dot"></span><div><b>Composer redesign</b><small class="mono">Edit plugins/chat/pane.tsx</small></div></div>
+<div class="row"><span class="dot" style="background:#e0a63a"></span><div><b>Release notes</b><small>Asks: publish v0.0.16?</small></div></div>
+<div class="row"><span class="dot" style="background:transparent;border:1.5px solid #8b94a4"></span><div><b>Sidebar filters</b><small>Idle</small></div></div>
+<div class="grp">infotrack-api</div>
+<div class="row"><span class="dot"></span><div><b>Fix flaky test</b><small>Running the test suite</small></div></div>
+</aside>
+<main>
+<header>dia › Composer redesign <span class="mono" style="margin-left:10px;color:#8b94a4">feat/composer</span></header>
+<div class="col">
+<div class="user">Move the send-mode logic into the composer and keep Stop in a fixed place.</div>
+<div class="agent">I'll start by reading how <span class="mono">sendModeForEnter</span> picks the mode, then restructure the control row.</div>
+<div class="steps"><span class="pulse"></span><span class="mono">Edit plugins/chat/pane.tsx</span> · 14s</div>
+<div class="spacer"></div>
+<div class="rail">
+<div class="qt"><div class="h"><b>#2 · HOLD</b><span>after this turn</span></div>Then run pnpm typecheck and fix what it reports.</div>
+<div class="qt void"><div class="h"><b>#3 · REMOVED</b><span>Undo</span></div>Also update DESIGN.md.</div>
+</div>
+<div class="ticket">
+<div class="head mono"><span><span class="k">TO</span>Composer redesign</span><span>OPUS 5.5</span><span>MEDIUM</span><span class="auth">AUTO</span><span class="ctx">CONTEXT 62%<span class="bar"><i></i></span></span></div>
+<div class="body">Use the existing InputGroup, don't add a new primitive|</div>
+<div class="foot">
+<span class="ib">＋</span><span class="ib">/</span>
+<span class="hint">Enter holds · Ctrl+Enter fires into the turn</span>
+<span class="seg"><span class="hold">HOLD</span><span class="fire">FIRE</span></span>
+<span class="stop"><i></i></span>
+</div>
+</div>
+</div>
+</main>
+</body></html>

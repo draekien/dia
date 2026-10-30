@@ -67,5 +67,5 @@ If you realize partway through a task that a trigger applies and you skipped the
 ## Workflow
 
 - Run a task from request to open PR with `/implement-task`.
-- Commit every critique snapshot that `/impeccable critique` writes under `.impeccable/critique/`.
+- Commit every file impeccable writes under `.impeccable/` that `.gitignore`'s `impeccable-ignore` block does not ignore. That block is the list from [impeccable's README](https://github.com/pbakaus/impeccable#project-files-and-git); keep it in sync with that list.
 - Raise every PR through the `raise-pr` skill. Launch and drive the app for a manual check through the `verify-in-app` skill.

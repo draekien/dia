@@ -1,0 +1,58 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden}
+body{background:#16181d;color:#e6e8ec;font:14px/1.5 Geist,system-ui,sans-serif;display:flex}
+.mono{font-family:'Geist Mono',monospace}
+aside{width:288px;border-right:1px solid #2a2d35;padding:10px 8px}
+.brand{height:32px;padding:0 8px;font-weight:600;display:flex;align-items:center}
+.grp{font-size:12px;color:#979fad;padding:12px 10px 4px}
+.row{display:flex;gap:10px;padding:6px 10px;border-radius:6px}
+.row.sel{background:#252a40}
+.dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none;background:#8a93a3}
+.row b{font-weight:500;font-size:13px;display:block}
+.row small{font-size:12px;color:#979fad;display:block}
+main{flex:1;display:flex;flex-direction:column}
+header{height:32px;border-bottom:1px solid #2a2d35;display:flex;align-items:center;padding:0 16px;font-size:13px;color:#a6adba}
+.col{width:760px;margin:0 auto;flex:1;display:flex;flex-direction:column;padding-top:28px}
+.user{align-self:flex-end;background:#252a40;border-radius:12px;padding:8px 14px;max-width:70%}
+.agent{margin:18px 0 10px;color:#d5d9e1}
+.spacer{flex:1}
+.q{background:#1e2128;border:1px solid #2a2d35;border-radius:10px;padding:8px 12px;font-size:13px;margin-bottom:8px;display:flex;justify-content:space-between;color:#c6ccd6}
+.box{background:#1e2128;border:1px solid #2f333c;border-radius:16px;margin-bottom:22px;padding:12px 12px 10px 16px}
+.body{min-height:56px}
+.foot{display:flex;align-items:center;gap:6px;font-size:13px;color:#a6adba}
+.pill{padding:4px 10px;border-radius:999px}
+.ring{width:22px;height:22px;border-radius:50%;background:conic-gradient(#a6adba 0 62%,#2f333c 0);margin-left:auto;position:relative}
+.ring:after{content:'';position:absolute;inset:4px;border-radius:50%;background:#1e2128}
+.send{width:32px;height:32px;border-radius:50%;background:#6b7cff;display:grid;place-items:center;color:#fff;font-weight:600}
+.stopb{width:32px;height:32px;border-radius:50%;border:1px solid #2f333c;display:grid;place-items:center}
+.stopb i{width:9px;height:9px;background:#d5d9e1}
+.below{font-size:12px;color:#979fad;text-align:center;margin:-14px 0 14px}
+</style></head><body>
+<aside>
+<div class="brand">dia</div>
+<div class="grp">dia</div>
+<div class="row sel"><span class="dot"></span><div><b>Composer redesign</b><small class="mono">Edit plugins/chat/pane.tsx</small></div></div>
+<div class="row"><span class="dot" style="background:#e0a63a"></span><div><b>Release notes</b><small>Asks: publish v0.0.16?</small></div></div>
+<div class="grp">infotrack-api</div>
+<div class="row"><span class="dot"></span><div><b>Fix flaky test</b><small>Running the test suite</small></div></div>
+</aside>
+<main>
+<header>dia › Composer redesign</header>
+<div class="col">
+<div class="user">Move the send-mode logic into the composer and keep Stop in a fixed place.</div>
+<div class="agent">I'll start by reading how <span class="mono">sendModeForEnter</span> picks the mode. <span class="mono" style="color:#979fad;font-size:12px">Edit plugins/chat/pane.tsx · 14s</span></div>
+<div class="spacer"></div>
+<div class="q"><span>Queued: Then run pnpm typecheck and fix what it reports.</span><span>Edit · Remove</span></div>
+<div class="box">
+<div class="body">Use the existing InputGroup, don't add a new primitive|</div>
+<div class="foot"><span class="pill">＋</span><span class="pill">Opus 5.5 ⌄</span><span class="pill">Medium ⌄</span><span class="pill">Auto ⌄</span>
+<span class="ring" title="62% context"></span><span class="stopb"><i></i></span><span class="send">↑</span></div>
+</div>
+<div class="below">Enter to queue · Ctrl+Enter to steer</div>
+</div>
+</main>
+</body></html>

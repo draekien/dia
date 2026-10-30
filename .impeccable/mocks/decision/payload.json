@@ -1,0 +1,164 @@
+{
+  "title": "Choose the composer's visual direction",
+  "question": "The roll assigned Order Rail. Keep it, take an alternate, or re-roll.",
+  "options": [
+    {
+      "id": "assigned",
+      "kind": "assigned",
+      "label": "Order Rail",
+      "kicker": "THE ROLL",
+      "lineage": "kitchen order tickets on the pass rail",
+      "thesis": "Every message is a ticket you HOLD for the end of the turn or FIRE into it.",
+      "palette": ["#14161b", "#1d2027", "#e6e9ef", "#5b6472", "#6b7cff"],
+      "materials": ["ticket stock", "steel rail", "printed ticket head"],
+      "viewport": "Composer as one ticket: a printed head (agent, branch, model, effort, authority, context used) over the body; queued tickets clip to a rail above it; a HOLD | FIRE control replaces the lone arrow while a turn runs.",
+      "risk": "The HOLD/FIRE words read as a kitchen costume if the ticket head gets perforations or receipt type.",
+      "raised": [
+        {
+          "from": "variable-font-specimen",
+          "raise": "Hierarchy by type size and weight only: the three settings lose their chip borders and sit in the ticket head as text."
+        },
+        {
+          "from": "notation-diagram-systems-orienteering-map",
+          "raise": "One reserved ink: the primary accent marks only the single send action (FIRE or Send), nothing else in the composer."
+        },
+        {
+          "from": "japanese-high-density-web",
+          "raise": "Context used, send mode and branch pack into one ruled head line with no padding inflation."
+        },
+        {
+          "from": "vernacular-ephemera-jet-age-ticket-wallet",
+          "raise": "A queued ticket that is sent or removed stays in place for a moment stamped SENT or REMOVED, with Undo, instead of vanishing."
+        },
+        {
+          "from": "pop-culture-shelf-character-goods-catalog",
+          "raise": "Fixed furniture: every control keeps its position across idle, running and parked; Stop no longer shifts Send."
+        }
+      ],
+      "html": ".impeccable/mocks/decision/assigned.html"
+    },
+    {
+      "id": "model-pick",
+      "kind": "pick",
+      "label": "Telegram Blank",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "telegraph office message blanks",
+      "thesis": "A message blank: routing boxes above a ruled body, and a service class that decides delivery.",
+      "palette": ["#121418", "#191c22", "#2b303a", "#e4e7ec", "#7c8cff"],
+      "materials": ["ruled form", "labelled routing cells"],
+      "viewport": "Labelled cells TO · MODEL · EFFORT · AUTHORITY above the body; the footer holds the service class Queue (after this turn) / Steer (now) and the context count.",
+      "risk": "Closest to a plain structured form; familiar, and can read bureaucratic if the labels get loud.",
+      "html": ".impeccable/mocks/decision/model-pick.html"
+    },
+    {
+      "id": "challenger-transit",
+      "kind": "challenger",
+      "catalogId": "wayfinding-cartography-signage-midnight-transit-diagram",
+      "label": "Night Line",
+      "verdict": "competitive",
+      "lineage": "midnight-blue enamel metro diagrams",
+      "thesis": "The session is a line; the composer is the next station, and queued messages are stations ahead.",
+      "palette": ["#0f1830", "#17223f", "#eef2f7", "#3d6bff", "#9b7bff"],
+      "materials": ["enamel ground", "porcelain station ticks"],
+      "viewport": "A thin cobalt line runs down the composer's left edge from the transcript into queued stops and the draft; context used is the distance left to the terminus.",
+      "case": "Holds audience: the midnight ground suits the dark desktop scene and reaches the sidebar; loses on clarity, a line diagram explains less than HOLD/FIRE.",
+      "risk": "Line inks crowd the One Voice Rule's status colours, and the blue ground changes the whole app, not only the composer.",
+      "hero": "https://impeccable.style/worlds/cards/wayfinding-cartography-signage-midnight-transit-diagram-hero.webp",
+      "html": ".impeccable/mocks/decision/challenger-transit.html"
+    },
+    {
+      "id": "challenger-wallet",
+      "kind": "challenger",
+      "catalogId": "vernacular-ephemera-jet-age-ticket-wallet",
+      "label": "Ticket Wallet",
+      "verdict": "declined",
+      "lineage": "jet-age airline ticket wallets",
+      "thesis": "Queued messages as coupons that tear off in order.",
+      "palette": ["#1b2a52", "#c8312b", "#f4f2ec"],
+      "materials": ["carbon coupon stock"],
+      "viewport": "Coupon book of queued messages over the draft.",
+      "risk": "Carrier red collides with the failed-status red.",
+      "case": "Fuses on the queue only; William does not identify with airline paper, and red breaks the One Voice Rule.",
+      "kept": "States are stamped in place, nothing silently disappears.",
+      "hero": "https://impeccable.style/worlds/cards/vernacular-ephemera-jet-age-ticket-wallet-hero.webp"
+    },
+    {
+      "id": "challenger-specimen",
+      "kind": "challenger",
+      "catalogId": "variable-font-specimen",
+      "label": "Type Specimen",
+      "verdict": "declined",
+      "lineage": "variable font specimen sites",
+      "thesis": "Effort as a dragged axis.",
+      "palette": ["#f6f6f3", "#111111", "#3a5bff"],
+      "materials": ["flat paper", "axis sliders"],
+      "viewport": "A slider for thinking effort over the draft.",
+      "risk": "Effort has five discrete levels, not a continuous axis.",
+      "case": "Loses both axes: the slider misstates a discrete setting.",
+      "kept": "Hierarchy by type scale alone, no boxes.",
+      "hero": "https://impeccable.style/worlds/cards/variable-font-specimen-hero.webp"
+    },
+    {
+      "id": "challenger-orienteering",
+      "kind": "challenger",
+      "catalogId": "notation-diagram-systems-orienteering-map",
+      "label": "Orienteering Map",
+      "verdict": "declined",
+      "lineage": "ISOM orienteering maps",
+      "thesis": "A purple course over fixed terrain colours.",
+      "palette": ["#ffffff", "#f5c400", "#8a5a2b", "#b0279b"],
+      "materials": ["contour texture"],
+      "viewport": "Course overlay on terrain.",
+      "risk": "Yellow and green terrain inks collide with status colours.",
+      "case": "Loses both axes; nothing in the composer is terrain.",
+      "kept": "One ink reserved for exactly one job.",
+      "hero": "https://impeccable.style/worlds/cards/notation-diagram-systems-orienteering-map-hero.webp"
+    },
+    {
+      "id": "challenger-dense",
+      "kind": "challenger",
+      "catalogId": "japanese-high-density-web",
+      "label": "High-density Grid",
+      "verdict": "declined",
+      "lineage": "Japanese portal sites",
+      "thesis": "Every module ruled and packed edge to edge.",
+      "palette": ["#ffffff", "#111111", "#d0021b", "#c9ccd1"],
+      "materials": ["hairline modules"],
+      "viewport": "Packed module grid.",
+      "risk": "Utility red collides with failed status.",
+      "case": "Loses both axes for a single input.",
+      "kept": "Density courage in the status line.",
+      "hero": "https://impeccable.style/worlds/cards/japanese-high-density-web-hero.webp"
+    },
+    {
+      "id": "challenger-goods",
+      "kind": "challenger",
+      "catalogId": "pop-culture-shelf-character-goods-catalog",
+      "label": "Character Goods",
+      "verdict": "declined",
+      "lineage": "mascot goods catalogs",
+      "thesis": "A ranked roster, each with fixed furniture.",
+      "palette": ["#ffe3ec", "#d8f0ff", "#fff3c4", "#333333"],
+      "materials": ["pastel cells", "keylines"],
+      "viewport": "Roster grid.",
+      "risk": "Pastel mascots contradict the native-app brand.",
+      "case": "Loses both axes.",
+      "kept": "Controls keep fixed positions in every state.",
+      "hero": "https://impeccable.style/worlds/cards/pop-culture-shelf-character-goods-catalog-hero.webp"
+    }
+  ],
+  "reroll": { "registers": ["safer", "bolder"] },
+  "buildPath": { "value": "code" },
+  "canon": true,
+  "canonCard": {
+    "kind": "canon",
+    "label": "The category standard",
+    "thesis": "The Claude Desktop / Cursor composer, executed at full craft.",
+    "palette": ["#16181d", "#1e2128", "#e6e8ec", "#6b7cff"],
+    "materials": ["rounded field", "inline pill selects"],
+    "viewport": "Rounded field, settings as quiet inline selects, attach and send at the corners, a context ring by Send.",
+    "risk": "Indistinguishable from every other agent chat app by design.",
+    "html": ".impeccable/mocks/decision/canon.html"
+  },
+  "steer": true
+}
