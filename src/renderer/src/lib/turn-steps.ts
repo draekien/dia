@@ -20,6 +20,9 @@ export type TurnBlock = TextPart | StepsSection
 
 const isStep = (part: MessagePart): part is StepPart => part.type !== 'text'
 
+const isShown = (part: MessagePart): boolean =>
+  part.type === 'tool-call' || part.content.trim() !== ''
+
 const answerOnlyBlocks = (parts: ReadonlyArray<MessagePart>): Array<TurnBlock> => {
   const lastStep = parts.reduce((last, part, index) => (isStep(part) ? index : last), -1)
   const answer = parts.slice(lastStep + 1).filter((part) => part.type === 'text')
@@ -54,16 +57,17 @@ const withFollowedAt = (blocks: ReadonlyArray<TurnBlock>): ReadonlyArray<TurnBlo
  * Lays out an assistant turn's `parts` for `mode`. `answer-only` puts every part up to and
  * including the last step in one {@link StepsSection} and shows the text after it;
  * `all-text` shows every text part and collapses each run of consecutive steps. A turn with no
- * steps is all text.
+ * steps is all text. Blank text and thinking parts are left out.
  */
 export const turnBlocks = (
   parts: ReadonlyArray<MessagePart>,
   mode: TranscriptMode
 ): ReadonlyArray<TurnBlock> =>
-  withFollowedAt(mode === 'answer-only' ? answerOnlyBlocks(parts) : allTextBlocks(parts))
+  withFollowedAt((mode === 'answer-only' ? answerOnlyBlocks : allTextBlocks)(parts.filter(isShown)))
 
 /** Whether `parts` hold any step, so that {@link turnBlocks} lays out at least one section. */
-export const hasSteps = (parts: ReadonlyArray<MessagePart>): boolean => parts.some(isStep)
+export const hasSteps = (parts: ReadonlyArray<MessagePart>): boolean =>
+  parts.some((part) => isStep(part) && isShown(part))
 
 /** The steps in `section`: its thinking and tool-call parts, without the text between them. */
 export const sectionSteps = (section: StepsSection): ReadonlyArray<StepPart> =>
@@ -79,8 +83,7 @@ export const sectionDurationMs = (section: StepsSection): number | undefined => 
     part.startedAt,
     part.type === 'tool-call' ? part.endedAt : undefined
   ])
-  if (section.followedAt !== undefined) times.push(section.followedAt)
   const known = times.filter((time): time is number => time !== undefined)
   if (known.length === 0) return undefined
-  return Math.max(...known) - Math.min(...known)
+  return (section.followedAt ?? Math.max(...known)) - Math.min(...known)
 }

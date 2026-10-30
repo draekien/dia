@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TextPart, ThinkingPart, ToolCallPart } from './pane-chat'
-import { sectionDurationMs, sectionSteps, turnBlocks } from './turn-steps'
+import { hasSteps, sectionDurationMs, sectionSteps, turnBlocks } from './turn-steps'
 
 const text = (content: string, startedAt?: number): TextPart => ({
   type: 'text',
@@ -77,6 +77,23 @@ describe('turnBlocks: all-text', () => {
   })
 })
 
+describe('turnBlocks: blank parts', () => {
+  it('keeps one section when only blank text separates two steps in all-text mode', () => {
+    const read = tool('t1')
+    const edit = tool('t2')
+    expect(turnBlocks([read, text('\n\n'), edit], 'all-text')).toEqual([
+      { type: 'steps', parts: [read, edit] }
+    ])
+  })
+
+  it('does not count a blank thinking part as a step', () => {
+    const blank: ThinkingPart = { type: 'thinking', content: '' }
+    const answer = text('Done.')
+    expect(turnBlocks([blank, answer], 'answer-only')).toEqual([answer])
+    expect(hasSteps([blank, answer])).toBe(false)
+  })
+})
+
 describe('sectionSteps', () => {
   it('counts thinking and tool calls but not the text between them', () => {
     const think = thinking()
@@ -92,6 +109,12 @@ describe('sectionDurationMs', () => {
   it('runs from the first arrival to the arrival of the part after the section', () => {
     expect(
       sectionDurationMs({ type: 'steps', parts: [tool('t1', 1_000, 2_000)], followedAt: 9_000 })
+    ).toBe(8_000)
+  })
+
+  it('ends at the text after the section even when a tool completes later', () => {
+    expect(
+      sectionDurationMs({ type: 'steps', parts: [tool('t1', 1_000, 60_000)], followedAt: 9_000 })
     ).toBe(8_000)
   })
 

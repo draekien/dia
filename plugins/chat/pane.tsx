@@ -76,7 +76,7 @@ import {
   type ThinkingLevel
 } from '@shared/domain/pane'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
-import type { TranscriptMode } from '@shared/domain/transcript-mode'
+import { DEFAULT_TRANSCRIPT_MODE, type TranscriptMode } from '@shared/domain/transcript-mode'
 import type {
   PanePermissionRequested,
   PanePlanReviewRequested,
@@ -328,7 +328,7 @@ function latestStepLabel(section: StepsSectionBlock): React.ReactNode {
 export function MessageView({
   message,
   onRewind,
-  mode = 'all-text',
+  mode = DEFAULT_TRANSCRIPT_MODE,
   live
 }: {
   message: PaneMessage
