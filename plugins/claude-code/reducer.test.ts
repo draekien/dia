@@ -961,6 +961,16 @@ describe('makeSessionEventReducer — parked turns', () => {
     ])
   })
 
+  it('does not carry an earlier turn’s reset into a later rate-limit error', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(rejected())
+    reducer.step(failedResult)
+    reducer.step(assistantError('rate_limit'))
+    expect(reducer.step(failedResult)).toEqual([
+      { _tag: 'TurnParked', cause: { _tag: 'UsageLimit', resetsAt: null } }
+    ])
+  })
+
   it('parks a turn refused because Claude Code is signed out', () => {
     const reducer = makeSessionEventReducer(Option.none())
     reducer.step(assistantError('authentication_failed'))

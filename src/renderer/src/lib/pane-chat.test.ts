@@ -1051,6 +1051,13 @@ describe('reducePaneChat: parked turns', () => {
     expect(sent.messages.at(-1)?.resumedAt).toBeUndefined()
   })
 
+  it('drops the future time from the park notice when the agent leaves parked without a resume', () => {
+    const parked = reducePaneChat(emptyPaneChatState, attentionChanged(resuming))
+    const interrupted = reducePaneChat(parked, attentionChanged({ _tag: 'Idle' }))
+    expect(noticeTexts(interrupted)).toEqual(['Usage limit reached'])
+    expect(interrupted.messages.some(isParkNotice)).toBe(false)
+  })
+
   it('does not mark a continue sent while the agent is not parked', () => {
     const sent = sendUser(emptyPaneChatState, 'm-1', RESUME_TEXT)
     expect(sent.messages.at(-1)?.resumedAt).toBeUndefined()

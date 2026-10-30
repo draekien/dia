@@ -325,6 +325,7 @@ export const makeSessionEventReducer = (
       const flushed = flushPendingToolCalls()
       const cause = parkCause
       parkCause = null
+      lastRejectedResetsAt = null
       if (cause !== null && (message.subtype !== 'success' || message.is_error)) {
         return [...flushed, TurnParked.make({ cause })]
       }

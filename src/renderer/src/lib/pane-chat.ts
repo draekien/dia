@@ -347,10 +347,7 @@ const withToolCallMessage = (
 }
 
 const isTurnOver = (attention: AttentionState): boolean =>
-  attention._tag === 'Completed' ||
-  attention._tag === 'Errored' ||
-  attention._tag === 'Crashed' ||
-  isParkedState(attention)
+  attention._tag === 'Completed' || attention._tag === 'Errored' || attention._tag === 'Crashed'
 
 const PARKED_SUFFIX = ':parked'
 const RESUMED_SUFFIX = ':resumed'
@@ -531,6 +528,10 @@ export const reducePaneChat = (
       }
       if (isParkedState(event.attention)) {
         return parkedMessage(state, event.attention)
+      }
+      if (event.attention._tag === 'Idle') {
+        const messages = resolveParkNotice(state.messages)
+        return messages === state.messages ? state : { ...state, messages }
       }
       return isTurnOver(event.attention) ? { ...state, isLoading: false } : state
     case 'PaneSlashCommandsWarming':
