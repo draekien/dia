@@ -188,7 +188,6 @@ describe('MessageView: turn steps', () => {
   const working = { kind: 'working', label: 'Pondering…', stalled: false } as const
   const live = {
     activity: working,
-    nowMs: 20_000,
     onResend: () => {},
     onInterruptAndRetry: () => {}
   }
@@ -209,7 +208,7 @@ describe('MessageView: turn steps', () => {
   })
 
   it('shows a running turn’s latest step on the summary line instead of the count', () => {
-    const { container } = render(<MessageView message={liveTurn} live={live} />)
+    const { container } = render(<MessageView message={liveTurn} live={live} nowMs={20_000} />)
 
     const summary = container.querySelector('summary')?.textContent
     expect(summary).toContain('Read')
@@ -219,7 +218,11 @@ describe('MessageView: turn steps', () => {
 
   it('shows a running turn’s named state on the summary line', () => {
     const { container } = render(
-      <MessageView message={liveTurn} live={{ ...live, label: 'Compacting conversation' }} />
+      <MessageView
+        message={liveTurn}
+        live={{ ...live, label: 'Compacting conversation' }}
+        nowMs={20_000}
+      />
     )
 
     expect(container.querySelector('summary')?.textContent).toContain('Compacting conversation')
@@ -272,6 +275,7 @@ describe('MessageView: turn steps', () => {
       <MessageView
         message={liveTurn}
         live={{ ...live, activity: { ...working, elapsedLabel: '25s' } }}
+        nowMs={20_000}
       />
     )
 
@@ -282,7 +286,8 @@ describe('MessageView: turn steps', () => {
     const { container } = render(
       <MessageView
         message={liveTurn}
-        live={{ ...live, nowMs: 1_500, activity: { ...working, elapsedLabel: '25s' } }}
+        live={{ ...live, activity: { ...working, elapsedLabel: '25s' } }}
+        nowMs={1_500}
       />
     )
 
@@ -292,7 +297,11 @@ describe('MessageView: turn steps', () => {
 
   it('shows the stall actions outside the summary, so the disclosure holds no buttons', () => {
     const { container } = render(
-      <MessageView message={liveTurn} live={{ ...live, activity: { ...working, stalled: true } }} />
+      <MessageView
+        message={liveTurn}
+        live={{ ...live, activity: { ...working, stalled: true } }}
+        nowMs={20_000}
+      />
     )
 
     expect(container.querySelector('summary button')).toBeNull()

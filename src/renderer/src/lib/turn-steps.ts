@@ -4,7 +4,6 @@ import type { MessagePart, TextPart, ThinkingPart, ToolCallPart } from './pane-c
 export type StepPart = ThinkingPart | ToolCallPart
 
 /**
- * A run of a turn's parts collapsed behind one summary line. `pa/**
  * A run of consecutive steps in a turn, collapsed behind one summary line. `parts` holds them in
  * arrival order. `followedAt` is the arrival time of the text right after the section, when there
  * is one.

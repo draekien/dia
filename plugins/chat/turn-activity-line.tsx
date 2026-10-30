@@ -1,12 +1,10 @@
 import { Button, cn, Marker, MarkerIcon, type TurnActivity } from '@dia/renderer-plugin'
 import type { ReactNode } from 'react'
 
-/** What {@link TurnActivityLine} shows, and what its stall actions call. */
+/** What {@link TurnActivityLine} shows. `label` replaces the activity's own label. */
 export interface TurnActivityLineProps {
   readonly activity: TurnActivity
   readonly label?: ReactNode
-  readonly onResend: () => void
-  readonly onInterruptAndRetry: () => void
 }
 
 interface StallActionsProps {
@@ -16,8 +14,9 @@ interface StallActionsProps {
 }
 
 /**
- * The actions offered when a running turn has stalled: `Interrupt & retry` calls
- * `onInterruptAndRetry`, `Resend` calls `onResend`. Render it only while the turn is stalled.
+ * The actions offered when a running turn has stalled, so the user is never stuck on a silent
+ * session: `Interrupt & retry` calls `onInterruptAndRetry`, `Resend` calls `onResend`. Render it
+ * on its own row under the activity line, only while the turn is stalled.
  */
 export function StallActions({
   onResend,
@@ -43,25 +42,16 @@ export function StallActions({
 }
 
 /**
- * Renders the mid-turn activity line shown at the tail of a pane's transcript
- * while a turn is in flight. Shows a neutral pulsing dot, the current
- * {@link TurnActivity} label, and the elapsed-seconds counter once past the
- * short delay. When the turn has stalled, reveals manual `Resend` and
- * `Interrupt & retry` actions so the user is never stuck on a silent session —
- * `onResend` submits the last prompt again in the default send mode,
- * `onInterruptAndRetry` sends it as a steer, which aborts the in-flight turn first. Deliberately uses a
- * neutral dot, not a coloured pulse: attention colour is reserved for the pane
- * pulse indicator (the app's one loud signal). `label` replaces the activity's own label. Pass
- * `actions={false}` where the caller shows {@link StallActions} itself, such as inside a
- * `<summary>`, which must not hold buttons.
+ * Renders the mid-turn activity line shown while a turn is in flight: a neutral pulsing dot, the
+ * current {@link TurnActivity} label, and the elapsed time once past the short delay. It holds
+ * no buttons, so it can sit inside a `<summary>`; render {@link StallActions} beside it when the
+ * turn has stalled. Deliberately uses a neutral dot, not a coloured pulse: attention colour is
+ * reserved for the pane pulse indicator (the app's one loud signal).
  */
 export function TurnActivityLine({
   activity,
-  label = activity.label,
-  onResend,
-  onInterruptAndRetry,
-  actions = true
-}: TurnActivityLineProps & { readonly actions?: boolean }): React.JSX.Element {
+  label = activity.label
+}: TurnActivityLineProps): React.JSX.Element {
   return (
     <Marker className="pl-0.5 text-xs">
       <MarkerIcon className="flex items-center justify-center">
@@ -74,13 +64,6 @@ export function TurnActivityLine({
         <span aria-hidden className="tabular-nums">
           {activity.elapsedLabel}
         </span>
-      )}
-      {actions && activity.stalled && (
-        <StallActions
-          className="ml-1"
-          onResend={onResend}
-          onInterruptAndRetry={onInterruptAndRetry}
-        />
       )}
     </Marker>
   )

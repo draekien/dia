@@ -112,7 +112,7 @@ import {
 import { SlashCommandMenu, slashMenuListboxId, slashMenuOptionId } from './slash-command-menu'
 import { type LiveSteps, StepsSection, summaryFocus } from './steps-section'
 import { TranscriptItem, TranscriptScroller } from './transcript-scroller'
-import { TurnActivityLine } from './turn-activity-line'
+import { StallActions, TurnActivityLine } from './turn-activity-line'
 import { useElapsedClock } from './use-elapsed-clock'
 
 interface PaneProps {
@@ -188,28 +188,30 @@ function ToolCallLabel({ part }: { part: ToolCallPart }): React.JSX.Element {
   )
 }
 
-const toolCallStatus = (part: ToolCallPart): string => {
+type ToolCallStatus = 'running' | 'failed' | 'completed'
+
+const toolCallStatus = (part: ToolCallPart): ToolCallStatus => {
   if (part.state === 'running') return 'running'
   return part.isError === true ? 'failed' : 'completed'
 }
 
-function ToolCallStatusIcon({ part }: { part: ToolCallPart }): React.JSX.Element {
-  if (part.state === 'running') {
+function ToolCallStatusIcon({ status }: { status: ToolCallStatus }): React.JSX.Element {
+  if (status === 'running') {
     return (
       <span className="size-1.5 animate-pulse-slow rounded-full bg-muted-foreground motion-reduce:animate-none" />
     )
   }
-  if (part.isError === true) return <X className="size-3 text-foreground" strokeWidth={2.5} />
+  if (status === 'failed') return <X className="size-3 text-foreground" strokeWidth={2.5} />
   return <Check className="size-3 text-muted-foreground" strokeWidth={2.5} />
 }
 
 function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
-  const status = part.state
+  const status = toolCallStatus(part)
   const output = formatToolOutput(part.output)
   const row = (
     <Marker className="pl-0.5 font-mono text-xs">
       <MarkerIcon className="flex items-center justify-center">
-        <ToolCallStatusIcon part={part} />
+        <ToolCallStatusIcon status={status} />
       </MarkerIcon>
       <MarkerContent className="flex min-w-0 items-center gap-2">
         <ToolCallLabel part={part} />
@@ -222,7 +224,7 @@ function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
           </span>
         )}
       </MarkerContent>
-      <span className="sr-only">{toolCallStatus(part)}</span>
+      <span className="sr-only">{status}</span>
     </Marker>
   )
   if (output === undefined) return row
@@ -258,11 +260,15 @@ function ThinkingDisclosure({ content }: { content: string }): React.JSX.Element
   )
 }
 
-function PartView({ part, isUser }: { part: MessagePart; isUser: boolean }): React.ReactNode {
+function PartView({ part }: { part: MessagePart }): React.ReactNode {
   if (part.type === 'tool-call') return <ToolCallRow part={part} />
   if (part.content.trim() === '') return null
   if (part.type === 'thinking') return <ThinkingDisclosure content={part.content} />
-  if (!isUser) return <Markdown content={part.content} />
+  return <Markdown content={part.content} />
+}
+
+function UserPartView({ part }: { part: MessagePart }): React.ReactNode {
+  if (part.type !== 'text' || part.content.trim() === '') return null
   return (
     <Bubble variant="tinted" align="end">
       <BubbleContent>
@@ -272,18 +278,15 @@ function PartView({ part, isUser }: { part: MessagePart; isUser: boolean }): Rea
   )
 }
 
-type LiveTurn = LiveSteps & { readonly nowMs: number }
-
-const sectionLive = (section: StepsSectionBlock, live: LiveTurn): LiveSteps => {
-  const { nowMs, ...line } = live
+const sectionLive = (section: StepsSectionBlock, live: LiveSteps, nowMs: number): LiveSteps => {
   const firstAt = section.parts[0]?.startedAt
   return {
-    ...line,
-    label: line.label ?? latestStepLabel(section),
+    ...live,
+    label: live.label ?? latestStepLabel(section),
     activity:
-      firstAt === undefined || line.activity.elapsedLabel === undefined
-        ? line.activity
-        : { ...line.activity, elapsedLabel: formatElapsed(Math.max(0, nowMs - firstAt)) }
+      firstAt === undefined || live.activity.elapsedLabel === undefined
+        ? live.activity
+        : { ...live.activity, elapsedLabel: formatElapsed(Math.max(0, nowMs - firstAt)) }
   }
 }
 
@@ -292,10 +295,12 @@ const isLiveTurn = (message: PaneMessage): boolean =>
 
 function TurnBlocksView({
   message,
-  live
+  live,
+  nowMs
 }: {
   message: PaneMessage
-  live: LiveTurn | undefined
+  live: LiveSteps | undefined
+  nowMs: number
 }): React.JSX.Element {
   const blocks = turnBlocks(message.parts)
   const lastSection = blocks.filter((block) => block.type === 'steps').at(-1)
@@ -303,18 +308,20 @@ function TurnBlocksView({
     <>
       {blocks.map((block, blockIndex) => {
         const key = `${message.id}:${blockIndex}`
-        if (block.type === 'text') return <PartView key={key} part={block} isUser={false} />
+        if (block.type === 'text') return <PartView key={key} part={block} />
         return (
           <StepsSection
             key={key}
             section={block}
             live={
-              block === lastSection && live !== undefined ? sectionLive(block, live) : undefined
+              block === lastSection && live !== undefined
+                ? sectionLive(block, live, nowMs)
+                : undefined
             }
           >
             {block.parts.map((part, partIndex) => {
               const partKey = `${key}:${partIndex}`
-              return <PartView key={partKey} part={part} isUser={false} />
+              return <PartView key={partKey} part={part} />
             })}
           </StepsSection>
         )
@@ -346,18 +353,20 @@ function latestStepLabel(section: StepsSectionBlock): React.ReactNode {
  * An assistant turn that streamed in this session collapses each run of steps into a section
  * and keeps its text visible between them (see {@link turnBlocks}); a turn restored from history
  * shows every part. Pass `live` for the turn still running, to show
- * its activity on its last section's summary line; `live.nowMs` (epoch milliseconds) times that
- * section from its first part.
+ * its activity on its last section's summary line; `nowMs` (epoch milliseconds, default 0) times
+ * that section from its first part.
  * Pass a message from a pane's chat state ({@link paneChatAtom}).
  */
 export function MessageView({
   message,
   onRewind,
-  live
+  live,
+  nowMs = 0
 }: {
   message: PaneMessage
   onRewind?: (message: PaneMessage) => void
-  live?: LiveTurn
+  live?: LiveSteps
+  nowMs?: number
 }): React.JSX.Element {
   if (message.role === 'notice') {
     const text = message.parts.find((part) => part.type === 'text')?.content ?? ''
@@ -409,11 +418,15 @@ export function MessageView({
       <Message align={isUser ? 'end' : 'start'}>
         <MessageContent>
           {isLiveTurn(message) ? (
-            <TurnBlocksView message={message} live={live} />
+            <TurnBlocksView message={message} live={live} nowMs={nowMs} />
           ) : (
             message.parts.map((part, index) => {
               const key = `${message.id}:${index}`
-              return <PartView key={key} part={part} isUser={isUser} />
+              return isUser ? (
+                <UserPartView key={key} part={part} />
+              ) : (
+                <PartView key={key} part={part} />
+              )
             })
           )}
         </MessageContent>
@@ -599,10 +612,9 @@ function PaneChat({
   }
   const showActivity = activity !== null && !pendingInteraction
   const runningTurn = chat.messages.at(-1)
-  const liveSteps: LiveTurn | undefined = showActivity
+  const liveSteps: LiveSteps | undefined = showActivity
     ? {
         activity,
-        nowMs,
         label: chat.turnStatus ?? undefined,
         onResend: resend,
         onInterruptAndRetry: interruptAndRetry
@@ -834,15 +846,21 @@ function PaneChat({
               message={message}
               onRewind={setRewindTarget}
               live={message === runningTurn ? liveSteps : undefined}
+              nowMs={nowMs}
             />
           </TranscriptItem>
         ))}
         {showActivity && !activityInSteps && (
-          <TurnActivityLine
-            activity={activity}
-            onResend={resend}
-            onInterruptAndRetry={interruptAndRetry}
-          />
+          <div className="flex flex-col gap-1">
+            <TurnActivityLine activity={activity} />
+            {activity.stalled && (
+              <StallActions
+                className="pl-6"
+                onResend={resend}
+                onInterruptAndRetry={interruptAndRetry}
+              />
+            )}
+          </div>
         )}
         {attention._tag === 'Errored' && retryText !== undefined && (
           <div className="flex px-1">

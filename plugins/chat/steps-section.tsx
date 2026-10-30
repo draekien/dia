@@ -12,9 +12,13 @@ import { StallActions, TurnActivityLine, type TurnActivityLineProps } from './tu
 
 /**
  * The running turn's state, shown on the summary line of the section it is still adding to.
- * `label` names what the turn is doing; leave it out to name the section's latest step.
+ * `label` names what the turn is doing; leave it out to name the section's latest step. The
+ * callbacks back the stall actions.
  */
-export type LiveSteps = TurnActivityLineProps
+export interface LiveSteps extends TurnActivityLineProps {
+  readonly onResend: () => void
+  readonly onInterruptAndRetry: () => void
+}
 
 interface StepsSectionProps {
   readonly section: StepsSectionBlock
@@ -26,9 +30,7 @@ interface StepsSectionProps {
 export const summaryFocus =
   'rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
-function Separator(): React.JSX.Element {
-  return <span aria-hidden> · </span>
-}
+const separator = <span aria-hidden> · </span>
 
 function StepsSummary({ section }: { section: StepsSectionBlock }): React.JSX.Element {
   const steps = section.parts
@@ -39,13 +41,13 @@ function StepsSummary({ section }: { section: StepsSectionBlock }): React.JSX.El
       {steps.length} {steps.length === 1 ? 'step' : 'steps'}
       {failed > 0 && (
         <>
-          <Separator />
+          {separator}
           <span className="text-foreground">{failed} failed</span>
         </>
       )}
       {duration !== undefined && (
         <>
-          <Separator />
+          {separator}
           {formatElapsed(duration)}
         </>
       )}
@@ -75,7 +77,7 @@ export function StepsSection({ section, live, children }: StepsSectionProps): Re
               <StepsSummary section={section} />
             </Marker>
           ) : (
-            <TurnActivityLine {...live} actions={false} />
+            <TurnActivityLine activity={live.activity} label={live.label} />
           )}
         </summary>
         <div className="mt-2.5 flex min-w-0 flex-col gap-2.5 pl-6">{children}</div>
