@@ -58,6 +58,11 @@ export interface AgentSession {
     resumeAnchorUuid: string | undefined
   ) => Effect.Effect<void>
   /**
+   * Sends `continue` to a session whose last turn was parked (`TurnParked`), ahead of any held
+   * queue; the held messages run after it, in order. Does nothing while a turn is running.
+   */
+  readonly resume: Effect.Effect<void>
+  /**
    * Completes with a description of why the session ended on its own: its event stream failed
    * or finished without the pane being closed. Never completes for a restart the session
    * performs itself (thinking-level change, rewind) or for closing the scope it was opened in.
@@ -139,6 +144,7 @@ const unavailableSession: AgentSession = {
   resolvePlanReview: ignored('resolvePlanReview'),
   interrupt: ignored('interrupt'),
   rewindToCheckpoint: ignored('rewindToCheckpoint'),
+  resume: ignored('resume')(),
   ended: Effect.succeed(ADAPTER_NOT_LOADED)
 }
 

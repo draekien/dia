@@ -58,6 +58,12 @@ export const moveProject = (projectId: ProjectId, toIndex: number): void => {
   window.dia.moveProject(projectId, toIndex)
 }
 
+/** Resumes the parked agent in tab `paneId`; does nothing when it is not parked. */
+export const resumeParkedAgent = (paneId: PaneId): void => {
+  log('Resuming a parked agent', { paneId })
+  window.dia.resumeParkedAgent(paneId)
+}
+
 /** Renames tab `paneId` to `name`. */
 export const renameTab = (paneId: PaneId, name: AgentName): void => {
   log('Renaming a tab', { paneId, name })

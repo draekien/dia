@@ -68,6 +68,7 @@ import {
   type QueueState,
   type QueueTransition,
   remove,
+  resume as resumeQueue,
   rewound,
   send,
   sessionEnded,
@@ -379,7 +380,9 @@ export const openPromptInput = Effect.fnUntraced(function* (
 type LiveControlQuery = Pick<Query, 'rewindFiles' | 'interrupt' | 'setModel'>
 
 const isTurnEnd = (message: OutboundMessage): boolean =>
-  message._tag === 'TurnErrored' || message._tag === 'TurnCompleted'
+  message._tag === 'TurnErrored' ||
+  message._tag === 'TurnCompleted' ||
+  message._tag === 'TurnParked'
 
 const resolveContinuesFrom = Effect.fn('ClaudeCodeSession.resolveContinuesFrom')(function* (
   resume: Option.Option<SessionId>,
@@ -540,7 +543,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
         )
       }
 
-      if (outbound._tag === 'TurnErrored') {
+      if (outbound._tag === 'TurnErrored' || outbound._tag === 'TurnParked') {
         yield* Ref.set(silentResultsRef, 0)
       } else if (outbound._tag === 'TurnCompleted') {
         const silent = yield* Ref.modify(silentResultsRef, (pending) =>
@@ -557,7 +560,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       const abortExpected = yield* Ref.get(abortExpectedRef)
       if (abortExpected && isTurnEnd(outbound)) {
         yield* Ref.set(abortExpectedRef, false)
-        if (outbound._tag === 'TurnErrored') {
+        if (outbound._tag === 'TurnErrored' || outbound._tag === 'TurnParked') {
           yield* Effect.logInfo('Suppressing expected turn abort as a clean turn end', {
             paneId: config.paneId
           })
@@ -643,8 +646,11 @@ const unstartedSession = (reason: string): AgentSession => ({
   resolvePlanReview: ignoredUnstarted('resolvePlanReview', reason),
   interrupt: ignoredUnstarted('interrupt', reason),
   rewindToCheckpoint: ignoredUnstarted('rewindToCheckpoint', reason),
+  resume: ignoredUnstarted('resume', reason)(),
   ended: Effect.succeed(reason)
 })
+
+const RESUME_TEXT = 'continue'
 
 /**
  * Starts the Agent SDK session for one pane and returns its {@link AgentSession} controls.
@@ -959,16 +965,27 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
 
   yield* startQuery(options.config, options.resume, undefined)
 
+  const nextMessage = (text: string) =>
+    Ref.updateAndGet(messageCountRef, (sent) => sent + 1).pipe(
+      Effect.map((count): OutgoingMessage => ({ id: `${openedAtMillis}-${count}`, text }))
+    )
+
   const sendText = Effect.fn('ClaudeCodeSession.sendText')(function* (
     text: string,
     mode: SendMode
   ) {
-    const count = yield* Ref.updateAndGet(messageCountRef, (sent) => sent + 1)
-    const message = { id: `${openedAtMillis}-${count}`, text }
+    const message = yield* nextMessage(text)
     yield* Effect.logDebug('Accepted a user message', { messageId: message.id, mode })
     const dispatches = yield* performActions(yield* transition(send(message, mode)), steerInterrupt)
     yield* Effect.forEach(dispatches, Fiber.join, { discard: true })
   })
+
+  const resume = Effect.gen(function* () {
+    const message = yield* nextMessage(RESUME_TEXT)
+    yield* Effect.logInfo('Resuming a parked turn', { messageId: message.id })
+    const dispatches = yield* performActions(yield* transition(resumeQueue(message)))
+    yield* Effect.forEach(dispatches, Fiber.join, { discard: true })
+  }).pipe(Effect.withSpan('ClaudeCodeSession.resume'))
 
   const changeQueue = Effect.fn('ClaudeCodeSession.changeQueue')(function* (
     step: (state: QueueState) => QueueTransition
@@ -1001,6 +1018,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     resolvePlanReview,
     interrupt: () => changeQueue(stopRequested),
     rewindToCheckpoint,
+    resume,
     ended: Deferred.await(endedDeferred)
   }
 })

@@ -21,7 +21,7 @@ export type PluginApiVersion = typeof PluginApiVersion.Type
  * increment the minor version when the plugin context gains something, and the major version when
  * it changes in a way an older plugin cannot use.
  */
-export const PLUGIN_API_VERSION: PluginApiVersion = '0.0.4'
+export const PLUGIN_API_VERSION: PluginApiVersion = '0.0.5'
 
 const versionParts = (version: string): ReadonlyArray<number> | undefined => {
   const match = SEMVER.exec(version)

@@ -12,6 +12,7 @@ import {
   registerProject,
   removeProject,
   renameTab,
+  resumeParkedAgent,
   revealProject,
   selectTab
 } from './lib/actions'
@@ -68,6 +69,7 @@ export const actions = {
   registerProject,
   moveProject,
   renameTab,
+  resumeParkedAgent,
   removeProject,
   revealProject,
   openPluginsPage
@@ -79,6 +81,7 @@ export const actions = {
  * names, and the chat's atoms, hooks and helpers. Chat state lives in the kernel, so a pane's
  * transcript and pending requests survive the chat plugin being unloaded or reloaded.
  */
+export { AccountBanner } from './components/account-banner'
 export { InstallNotice } from './components/install-notice'
 export { PermissionModeItems } from './components/permission-mode-items'
 export { openSettings } from './components/settings/open-settings'
@@ -106,9 +109,13 @@ export { useAdapterStatus } from './hooks/use-adapter-status'
 export { useDisabledPermissionModes } from './hooks/use-disabled-permission-modes'
 export { useModelCatalog } from './hooks/use-model-catalog'
 export { useModelPreferences } from './hooks/use-model-preferences'
+export { useNow } from './hooks/use-now'
+export { awaitsUser } from './lib/account-banner'
+export { formatResetTime } from './lib/format-when'
 export { findModelOption } from './lib/model-options'
 export {
   emptyPaneChatState,
+  isParkNotice,
   lastUserText,
   type MessagePart,
   type PaneChatState,

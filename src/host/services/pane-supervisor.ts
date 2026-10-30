@@ -7,6 +7,8 @@ import {
   Errored,
   Idle,
   type PaneError,
+  ParkedForUser,
+  ParkedToResume,
   PermissionRequest,
   type PermissionResponse,
   PlanReview,
@@ -23,6 +25,12 @@ import type {
   ThinkingLevel,
   WorktreeInfo
 } from '@shared/domain/pane'
+import {
+  DEFAULT_USAGE_LIMIT_RESUME,
+  type ParkCause,
+  resumesAtFor,
+  type UsageLimitResume
+} from '@shared/domain/parking'
 import {
   type IpcEvent,
   PaneAssistantTextDelta,
@@ -49,6 +57,7 @@ import {
 } from '@shared/ipc/contract'
 import {
   type Cause,
+  Clock,
   Context,
   Data,
   Deferred,
@@ -71,6 +80,7 @@ import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { type AgentSession, resolveAgentBackend } from '../session/agent-backend'
 import { makePluginTools } from '../session/dia-tools'
 import type { OutboundMessage } from '../session/protocol'
+import { SettingsStore } from './settings-store'
 import { resolveGitOps, type WorktreeCreateError, WorktreeReattachError } from './worktrees-seam'
 
 /**
@@ -128,6 +138,8 @@ export interface PaneHandle {
   ) => Effect.Effect<void>
   readonly interrupt: () => Effect.Effect<void>
   readonly markCrashed: (error: PaneError) => Effect.Effect<void>
+  /** Resumes a parked pane (see {@link AgentSession.resume}). Does nothing unless the pane is parked. */
+  readonly resume: Effect.Effect<void>
 }
 
 /**
@@ -282,8 +294,13 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
     // they only drive AttentionState (see toAttentionTarget below) -- so they have no IpcEvent.
     // PermissionModeChanged is handled out of band by onPermissionModeChanged (it updates the
     // persisted config and layout tree), not surfaced as a standalone renderer event here.
-    Match.tag('TurnCompleted', 'TurnErrored', 'SessionStarted', 'PermissionModeChanged', () =>
-      Option.none<IpcEvent>()
+    Match.tag(
+      'TurnCompleted',
+      'TurnErrored',
+      'TurnParked',
+      'SessionStarted',
+      'PermissionModeChanged',
+      () => Option.none<IpcEvent>()
     ),
     Match.exhaustive
   )
@@ -352,9 +369,20 @@ function toAttentionTarget(message: OutboundMessage): Option.Option<AttentionSta
   )
 }
 
+const isParked = (attention: AttentionState): boolean =>
+  attention._tag === 'ParkedToResume' || attention._tag === 'ParkedForUser'
+
+const parkedState = (cause: ParkCause, mode: UsageLimitResume, nowMs: number): AttentionState => {
+  const resumesAt = resumesAtFor(cause, mode, nowMs)
+  return cause._tag === 'UsageLimit' && resumesAt !== null
+    ? ParkedToResume.make({ cause, resumesAt })
+    : ParkedForUser.make({ cause })
+}
+
 const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
   config: PaneConfig,
   factory: SessionFactory['Service'],
+  settings: SettingsStore['Service'],
   onSessionId: (sessionId: SessionId) => Effect.Effect<void>,
   onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>,
   resume: Option.Option<SessionId>
@@ -366,17 +394,19 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
     history: [],
     attention: Idle.make({})
   })
-  const settleFiberRef = yield* Ref.make<Option.Option<Fiber.Fiber<void>>>(Option.none())
+  const timerFiberRef = yield* Ref.make<Option.Option<Fiber.Fiber<void>>>(Option.none())
+  const sessionReady = yield* Deferred.make<AgentSession>()
+
+  const resumeSession = Effect.gen(function* () {
+    yield* Ref.set(timerFiberRef, Option.none())
+    yield* Effect.logInfo('Usage limit reset; resuming the parked pane', { paneId: config.paneId })
+    const session = yield* Deferred.await(sessionReady)
+    yield* session.resume
+  })
 
   const applyAttention: (next: AttentionState) => Effect.Effect<void> = Effect.fn(
     'PaneSupervisor.applyAttention'
   )(function* (next: AttentionState) {
-    const pending = yield* Ref.get(settleFiberRef)
-    if (Option.isSome(pending)) {
-      yield* Fiber.interrupt(pending.value)
-      yield* Ref.set(settleFiberRef, Option.none())
-    }
-
     const record = yield* Ref.get(recordRef)
     const result = transitionAttention(record.attention, next)
     if (Result.isFailure(result)) {
@@ -388,6 +418,12 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
       return
     }
 
+    const pending = yield* Ref.get(timerFiberRef)
+    if (Option.isSome(pending)) {
+      yield* Fiber.interrupt(pending.value)
+      yield* Ref.set(timerFiberRef, Option.none())
+    }
+
     yield* Ref.update(recordRef, (r) => ({ ...r, attention: result.success }))
     yield* Queue.offer(
       outbound,
@@ -396,13 +432,57 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
 
     if (result.success._tag === 'Completed') {
       const fiber = yield* Effect.sleep(Duration.seconds(3)).pipe(
-        Effect.andThen(Ref.set(settleFiberRef, Option.none())),
+        Effect.andThen(Ref.set(timerFiberRef, Option.none())),
         Effect.andThen(applyAttention(Idle.make({}))),
         Effect.forkIn(paneScope)
       )
-      yield* Ref.set(settleFiberRef, Option.some(fiber))
+      yield* Ref.set(timerFiberRef, Option.some(fiber))
+    }
+
+    if (result.success._tag === 'ParkedToResume') {
+      const nowMs = yield* Clock.currentTimeMillis
+      const fiber = yield* Effect.sleep(Duration.millis(result.success.resumesAt - nowMs)).pipe(
+        Effect.andThen(resumeSession),
+        Effect.forkIn(paneScope)
+      )
+      yield* Ref.set(timerFiberRef, Option.some(fiber))
     }
   })
+
+  const currentMode = settings
+    .getUsageLimitResume()
+    .pipe(Effect.map(Option.getOrElse(() => DEFAULT_USAGE_LIMIT_RESUME)))
+
+  const park = Effect.fn('PaneSupervisor.park')(function* (
+    cause: ParkCause,
+    mode: UsageLimitResume
+  ) {
+    const nowMs = yield* Clock.currentTimeMillis
+    const next = parkedState(cause, mode, nowMs)
+    yield* Effect.logInfo('Parked the pane', {
+      paneId: config.paneId,
+      cause: cause._tag,
+      mode,
+      resumesAt: next._tag === 'ParkedToResume' ? next.resumesAt : null
+    })
+    yield* applyAttention(next)
+  })
+
+  const repark = Effect.fn('PaneSupervisor.repark')(function* (mode: UsageLimitResume) {
+    const { attention } = yield* Ref.get(recordRef)
+    if (attention._tag !== 'ParkedToResume' && attention._tag !== 'ParkedForUser') return
+    yield* Effect.logInfo('Re-parking the pane under a new resume mode', {
+      paneId: config.paneId,
+      mode
+    })
+    yield* park(attention.cause, mode)
+  })
+
+  const leaveParked = Ref.get(recordRef).pipe(
+    Effect.flatMap(({ attention }) =>
+      isParked(attention) ? applyAttention(Idle.make({})) : Effect.void
+    )
+  )
 
   const handleSessionEvent = (message: OutboundMessage): Effect.Effect<void> =>
     Effect.gen(function* () {
@@ -444,11 +524,17 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
       const event = toIpcEvent(config.paneId, message)
       if (Option.isSome(event)) yield* Queue.offer(outbound, event.value)
 
+      if (message._tag === 'TurnParked') {
+        yield* park(message.cause, yield* currentMode)
+        return
+      }
+
       const attentionTarget = toAttentionTarget(message)
       if (Option.isSome(attentionTarget)) yield* applyAttention(attentionTarget.value)
     })
 
   const session = yield* factory.start({ config, resume, emit: handleSessionEvent })
+  yield* Deferred.succeed(sessionReady, session)
   yield* Effect.logInfo('Pane agent session created', { paneId: config.paneId, resume })
 
   const handle: PaneHandle = {
@@ -510,20 +596,36 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
         paneId: config.paneId,
         messageUuid,
         resumeAnchorUuid
-      }).pipe(Effect.andThen(session.rewindToCheckpoint(messageUuid, resumeAnchorUuid))),
+      }).pipe(
+        Effect.andThen(session.rewindToCheckpoint(messageUuid, resumeAnchorUuid)),
+        Effect.andThen(leaveParked)
+      ),
     interrupt: () =>
       Effect.logDebug('Interrupting pane session', { paneId: config.paneId }).pipe(
         Effect.andThen(session.interrupt()),
         Effect.andThen(applyAttention(Idle.make({})))
       ),
-    markCrashed: (error) => applyAttention(Crashed.make({ error }))
+    markCrashed: (error) => applyAttention(Crashed.make({ error })),
+    resume: Ref.get(recordRef).pipe(
+      Effect.flatMap(({ attention }) =>
+        isParked(attention)
+          ? Effect.logInfo('Resuming the parked pane', { paneId: config.paneId }).pipe(
+              Effect.andThen(session.resume)
+            )
+          : Effect.logInfo('Skipped a resume; the pane is not parked', {
+              paneId: config.paneId,
+              attention: attention._tag
+            })
+      )
+    )
   }
 
-  return { handle, session, outbound }
+  return { handle, session, outbound, repark }
 })
 
 interface PaneEntry {
   readonly handle: PaneHandle
+  readonly repark: (mode: UsageLimitResume) => Effect.Effect<void>
   readonly scope: Scope.Closeable
   readonly outbound: Queue.Queue<IpcEvent, Cause.Done>
   readonly subscriber: Fiber.Fiber<void>
@@ -564,6 +666,11 @@ export class PaneSupervisor extends Context.Service<
      * as crashes.
      */
     readonly closeAll: () => Effect.Effect<void>
+    /**
+     * Stores what dia does when a usage limit resets, and applies it to every parked pane: a pane
+     * waiting for its reset under `automatic` waits for the user under `manual`, and the reverse.
+     */
+    readonly setUsageLimitResume: (mode: UsageLimitResume) => Effect.Effect<void>
   }
 >()('PaneSupervisor') {}
 
@@ -573,6 +680,7 @@ export const PaneSupervisorLive = Layer.effect(
   Effect.gen(function* () {
     const factory = yield* SessionFactory
     const plugins = yield* HostPlugins
+    const settings = yield* SettingsStore
     const entriesRef = yield* Ref.make(HashMap.empty<PaneId, PaneEntry>())
 
     const teardown = Effect.fn('PaneSupervisor.teardown')(function* (paneId: PaneId) {
@@ -653,9 +761,10 @@ export const PaneSupervisorLive = Layer.effect(
 
       const config = prepared.success
 
-      const { handle, session, outbound } = yield* startPane(
+      const { handle, session, outbound, repark } = yield* startPane(
         config,
         factory,
+        settings,
         onSessionId,
         onPermissionModeChanged,
         Option.fromUndefinedOr(request.resume)
@@ -668,7 +777,7 @@ export const PaneSupervisorLive = Layer.effect(
 
       yield* Ref.update(
         entriesRef,
-        HashMap.set(config.paneId, { handle, scope, outbound, subscriber, closed })
+        HashMap.set(config.paneId, { handle, repark, scope, outbound, subscriber, closed })
       )
 
       const crashed = session.ended.pipe(
@@ -706,6 +815,16 @@ export const PaneSupervisorLive = Layer.effect(
         )
       )
 
-    return { openPane, closePane, getHandle, closeAll }
+    const setUsageLimitResume = Effect.fn('PaneSupervisor.setUsageLimitResume')(function* (
+      mode: UsageLimitResume
+    ) {
+      yield* settings.setUsageLimitResume(mode)
+      const entries = yield* Ref.get(entriesRef)
+      yield* Effect.forEach(HashMap.values(entries), (entry) => entry.repark(mode), {
+        discard: true
+      })
+    })
+
+    return { openPane, closePane, getHandle, closeAll, setUsageLimitResume }
   })
 )

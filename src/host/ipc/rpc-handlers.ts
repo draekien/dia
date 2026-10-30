@@ -1,4 +1,5 @@
 import { DEFAULT_SEND_MODE, EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
+import { DEFAULT_USAGE_LIMIT_RESUME } from '@shared/domain/parking'
 import { DEFAULT_THEME } from '@shared/domain/theme'
 import { DEFAULT_TRANSCRIPT_WIDTH } from '@shared/domain/transcript-width'
 import { type IpcEvent, PaneCreateFailed } from '@shared/ipc/contract'
@@ -232,6 +233,18 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
           handle.interrupt()
         )
       ),
+    ResumeParkedAgent: (command) =>
+      once(
+        command.paneId,
+        command.commandId,
+        'ResumeParkedAgent',
+        withHandle(
+          'ResumeParkedAgent',
+          command.paneId,
+          'Failed to resume a parked agent',
+          (handle) => handle.resume
+        )
+      ),
     RewindToCheckpoint: (command) =>
       once(
         command.paneId,
@@ -291,6 +304,11 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     GetSendMode: () =>
       settings.getSendMode().pipe(Effect.map(Option.getOrElse(() => DEFAULT_SEND_MODE))),
     SetSendMode: ({ mode }) => settings.setSendMode(mode),
+    GetUsageLimitResume: () =>
+      settings
+        .getUsageLimitResume()
+        .pipe(Effect.map(Option.getOrElse(() => DEFAULT_USAGE_LIMIT_RESUME))),
+    SetUsageLimitResume: ({ mode }) => supervisor.setUsageLimitResume(mode),
     ListPlugins: () => plugins.list(),
     LoadPlugin: ({ name }) => plugins.load(name),
     UnloadPlugin: ({ name }) => plugins.unload(name),

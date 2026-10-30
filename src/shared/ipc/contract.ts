@@ -18,6 +18,7 @@ import {
   ModelPreferencesSnapshot
 } from '../domain/model-preferences'
 import { ConversationMessage, PermissionMode, ThinkingLevel } from '../domain/pane'
+import type { UsageLimitResume } from '../domain/parking'
 import type { RegisterProjectRefusal } from '../domain/project'
 import { AgentName, CreateTabRequest, ProjectId, Workspace } from '../domain/project'
 import type { RemovalProgress } from '../domain/project-removal'
@@ -236,6 +237,15 @@ export const InterruptPane = Schema.TaggedStruct('InterruptPane', {
   paneId: Uuid
 })
 export type InterruptPane = typeof InterruptPane.Type
+
+/**
+ * Command sent by the renderer to resume the parked agent in pane `paneId`: the agent gets
+ * `continue` ahead of any messages held while it was parked. A pane that is not parked ignores it.
+ */
+export const ResumeParkedAgent = Schema.TaggedStruct('ResumeParkedAgent', {
+  paneId: Uuid
+})
+export type ResumeParkedAgent = typeof ResumeParkedAgent.Type
 
 /**
  * Command sent by the renderer to rewind pane `paneId` to a prior checkpoint:
@@ -777,6 +787,8 @@ export interface DiaApi {
   setModel(paneId: string, model: string): void
   resolvePlanReview(paneId: string, requestId: string, approved: boolean): void
   interrupt(paneId: string): void
+  /** Resumes the parked agent in pane `paneId`; does nothing when it is not parked. */
+  resumeParkedAgent(paneId: string): void
   rewindToCheckpoint(paneId: string, messageUuid: string, resumeAnchorUuid?: string): void
   getWorkspace(): Promise<Workspace>
   /**
@@ -814,6 +826,10 @@ export interface DiaApi {
   setTheme(theme: ThemePreference): Promise<void>
   getSendMode(): Promise<SendMode>
   setSendMode(mode: SendMode): Promise<void>
+  /** What dia does when a usage limit resets: `automatic` sends `continue` itself, `manual` waits for the user. */
+  getUsageLimitResume(): Promise<UsageLimitResume>
+  /** Stores what dia does when a usage limit resets and applies it to every parked agent. */
+  setUsageLimitResume(mode: UsageLimitResume): Promise<void>
   setTitleBarOverlay(colors: TitleBarOverlayColors): void
   getAppVersion(): Promise<string>
   getUpdateStatus(): Promise<UpdateStatus>

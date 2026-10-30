@@ -22,6 +22,7 @@ import {
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
+  ResumeParkedAgent,
   RewindToCheckpoint,
   SelectTab,
   SendMessage,
@@ -318,6 +319,10 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       command('InterruptPane', (client, commandId) =>
         client.InterruptPane({ ...InterruptPane.make({ paneId }), commandId })
       ),
+    resumeParkedAgent: (paneId) =>
+      command('ResumeParkedAgent', (client, commandId) =>
+        client.ResumeParkedAgent({ ...ResumeParkedAgent.make({ paneId }), commandId })
+      ),
     rewindToCheckpoint: (paneId, messageUuid, resumeAnchorUuid) =>
       command('RewindToCheckpoint', (client, commandId) =>
         client.RewindToCheckpoint({
@@ -385,6 +390,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     setTheme: (theme) => query((client) => client.SetTheme({ theme })),
     getSendMode: () => query((client) => client.GetSendMode()),
     setSendMode: (mode) => query((client) => client.SetSendMode({ mode })),
+    getUsageLimitResume: () => query((client) => client.GetUsageLimitResume()),
+    setUsageLimitResume: (mode) => query((client) => client.SetUsageLimitResume({ mode })),
     onHistoryReloadRequested: (listener) => {
       reloadListeners.add(listener)
       return () => reloadListeners.delete(listener)

@@ -1,6 +1,7 @@
 import { PaneError, PermissionUpdate, Question } from '@shared/domain/attention'
 import { OutgoingMessage } from '@shared/domain/message-queue'
 import { ConversationMessage, PermissionMode, SessionId } from '@shared/domain/pane'
+import { ParkCause } from '@shared/domain/parking'
 import { SlashCommandInfo } from '@shared/domain/slash-command'
 import { Schema } from 'effect'
 
@@ -69,6 +70,8 @@ export const PermissionModeChanged = Schema.TaggedStruct('PermissionModeChanged'
 export const TurnCompleted = Schema.TaggedStruct('TurnCompleted', {})
 /** Emitted by a pane's agent session when the agent's current turn has failed. */
 export const TurnErrored = Schema.TaggedStruct('TurnErrored', { error: PaneError })
+/** Emitted by a pane's agent session in place of `TurnCompleted` or `TurnErrored` when the account refused the turn (`cause`); the agent waits instead of failing. Ends the turn. */
+export const TurnParked = Schema.TaggedStruct('TurnParked', { cause: ParkCause })
 /** Emitted by a pane's agent session once the Agent SDK session has started (or resumed), carrying the `sessionId` the Host persists so the pane can later be resumed. */
 export const SessionStarted = Schema.TaggedStruct('SessionStarted', {
   sessionId: SessionId
@@ -131,6 +134,7 @@ export const OutboundMessage = Schema.Union([
   PermissionModeChanged,
   TurnCompleted,
   TurnErrored,
+  TurnParked,
   SessionStarted,
   SlashCommandsWarming,
   SlashCommandsAvailable,

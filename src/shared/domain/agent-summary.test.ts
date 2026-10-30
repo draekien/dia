@@ -11,12 +11,14 @@ import {
   StatusFinished,
   StatusIdle,
   StatusNeedsInput,
+  StatusParked,
   StatusWorking,
   statusRank,
   Todo,
   ToolUse
 } from './agent-summary'
 import type { AttentionState } from './attention'
+import type { ParkCause } from './parking'
 
 const paneId = '10000000-0000-4000-8000-000000000001'
 const otherPaneId = '10000000-0000-4000-8000-000000000002'
@@ -226,10 +228,11 @@ describe('markShown', () => {
 })
 
 describe('statusRank', () => {
-  it('orders needs input, failed, working, finished, idle', () => {
+  it('orders needs input, failed, parked, working, finished, idle', () => {
     const statuses: ReadonlyArray<AgentStatus> = [
       StatusIdle.make({}),
       StatusWorking.make({}),
+      StatusParked.make({ resumesAt: 0 }),
       StatusFailed.make({ reason: 'x' }),
       StatusFinished.make({}),
       StatusNeedsInput.make({ reason: 'y' })
@@ -242,6 +245,7 @@ describe('statusRank', () => {
     expect(sorted).toEqual([
       'StatusNeedsInput',
       'StatusFailed',
+      'StatusParked',
       'StatusWorking',
       'StatusFinished',
       'StatusIdle'
@@ -279,5 +283,59 @@ describe('foldSummary — turn status', () => {
   it('ignores a turn status for another pane', () => {
     const event: IpcEvent = { _tag: 'PaneTurnStatusChanged', paneId: otherPaneId, label: 'x' }
     expect(foldSummary(idle, event)).toBe(idle)
+  })
+})
+
+describe('foldSummary — parked agents', () => {
+  const limit = { _tag: 'UsageLimit' as const, resetsAt: 1000 }
+  const parkedToResume = attention({ _tag: 'ParkedToResume', cause: limit, resumesAt: 6000 })
+  const parkedForUser = (cause: ParkCause) => attention({ _tag: 'ParkedForUser', cause })
+  const sent: IpcEvent = { _tag: 'PaneUserMessagesSent', paneId, messages: [] }
+
+  it('shows an agent waiting for the reset as parked until its resume time', () => {
+    const folded = foldSummary(withStatus(StatusWorking.make({})), parkedToResume)
+    expect(folded.status).toEqual(StatusParked.make({ resumesAt: 6000 }))
+    expect(folded.parked).toEqual(limit)
+  })
+
+  it('shows an agent parked for the user after a usage limit as needing input', () => {
+    const folded = foldSummary(withStatus(StatusWorking.make({})), parkedForUser(limit))
+    expect(folded.status).toEqual(StatusNeedsInput.make({ reason: 'Usage limit reached' }))
+    expect(folded.parked).toEqual(limit)
+  })
+
+  it('shows a signed-out agent as needing input', () => {
+    const folded = foldSummary(
+      withStatus(StatusWorking.make({})),
+      parkedForUser({ _tag: 'SignedOut' })
+    )
+    expect(folded.status).toEqual(StatusNeedsInput.make({ reason: 'Claude Code is signed out' }))
+  })
+
+  it('becomes working with no parked cause when the resume sends its message', () => {
+    const folded = foldSummary(foldSummary(idle, parkedForUser(limit)), sent)
+    expect(folded.status).toEqual(StatusWorking.make({}))
+    expect(folded.parked).toBeUndefined()
+  })
+
+  it('stays working when the resumed turn reaches idle attention', () => {
+    const resumed = foldSummary(foldSummary(idle, parkedForUser(limit)), sent)
+    expect(foldSummary(resumed, attention({ _tag: 'Idle' })).status).toEqual(StatusWorking.make({}))
+  })
+
+  it('becomes idle when an interrupt leaves a parked state', () => {
+    for (const parked of [parkedToResume, parkedForUser(limit)]) {
+      const folded = foldSummary(foldSummary(idle, parked), attention({ _tag: 'Idle' }))
+      expect(folded.status).toEqual(StatusIdle.make({}))
+      expect(folded.parked).toBeUndefined()
+    }
+  })
+
+  it('drops the parked cause when the agent later fails', () => {
+    const folded = foldSummary(
+      foldSummary(idle, parkedForUser(limit)),
+      attention({ _tag: 'Crashed', error: { message: 'gone' } })
+    )
+    expect(folded.parked).toBeUndefined()
   })
 })

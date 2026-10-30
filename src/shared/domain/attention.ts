@@ -1,4 +1,5 @@
 import { Data, Result, Schema } from 'effect'
+import { ParkCause, UsageLimit } from './parking'
 
 const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
 
@@ -172,11 +173,27 @@ export const Crashed = Schema.TaggedStruct('Crashed', { error: PaneError })
 /** A pane whose run finished; settles back to `Idle` after a timeout. */
 export const Completed = Schema.TaggedStruct('Completed', {})
 
+/** A pane whose turn the usage limit refused; dia sends `continue` at `resumesAt` (epoch ms). */
+export const ParkedToResume = Schema.TaggedStruct('ParkedToResume', {
+  cause: UsageLimit,
+  resumesAt: Schema.Int
+})
+/** A pane whose turn the account refused; it waits for the user to resume it. */
+export const ParkedForUser = Schema.TaggedStruct('ParkedForUser', { cause: ParkCause })
+
 /**
  * The set of attention states a pane can be in. Use `transitionAttention`
  * rather than constructing transitions by hand so invalid moves are rejected.
  */
-export const AttentionState = Schema.Union([Idle, AwaitingPermission, Errored, Crashed, Completed])
+export const AttentionState = Schema.Union([
+  Idle,
+  AwaitingPermission,
+  Errored,
+  Crashed,
+  Completed,
+  ParkedToResume,
+  ParkedForUser
+])
 export type AttentionState = typeof AttentionState.Type
 
 /**
@@ -193,8 +210,20 @@ export class InvalidAttentionTransition extends Data.TaggedError('InvalidAttenti
 // recoverable error. Idle -> Idle is a self-loop so sending a message / interrupting from an
 // already-idle pane clears attention without a rejected-transition warning. A crash can strike
 // from any non-terminal state, so every non-Crashed state -> Crashed; Crashed itself is terminal
-// (no outbound transition) since its process is gone.
+// (no outbound transition) since its process is gone. A refused turn parks from any state a turn
+// can end in; a parked pane leaves through Idle (a send, an interrupt, a resume) or a crash, and
+// moves between its two parked states, or to itself, when the resume mode changes.
+const PARKED = ['ParkedToResume', 'ParkedForUser'] as const
+const parkedTransitions = PARKED.flatMap((parked) => [
+  `Idle->${parked}`,
+  `AwaitingPermission->${parked}`,
+  `Completed->${parked}`,
+  `${parked}->Idle`,
+  `${parked}->Crashed`,
+  ...PARKED.map((next) => `${parked}->${next}`)
+])
 const validTransitions: ReadonlySet<string> = new Set([
+  ...parkedTransitions,
   'Idle->Idle',
   'Idle->AwaitingPermission',
   'Idle->Errored',

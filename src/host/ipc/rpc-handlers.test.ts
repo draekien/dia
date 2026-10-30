@@ -4,6 +4,7 @@ import { NoActivity, StatusIdle } from '@shared/domain/agent-summary'
 import { Deny, FreeformResponse } from '@shared/domain/attention'
 import type { SendMode } from '@shared/domain/message-queue'
 import { LastVisibleModel } from '@shared/domain/model-preferences'
+import type { UsageLimitResume } from '@shared/domain/parking'
 import {
   AgentName,
   DirectoryNotFoundError,
@@ -24,6 +25,7 @@ import {
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
+  ResumeParkedAgent,
   RewindToCheckpoint,
   SelectTab,
   SendMessage,
@@ -75,6 +77,7 @@ interface HarnessOptions {
   readonly createTabFails?: boolean
   readonly storedSendMode?: SendMode
   readonly storedTranscriptWidth?: TranscriptWidth
+  readonly storedUsageLimitResume?: UsageLimitResume
 }
 
 const sendMessage = (
@@ -142,7 +145,10 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
         calls.push(`rewindToCheckpoint:${messageUuid}:${resumeAnchorUuid}`)
       }),
     interrupt: () => Effect.void,
-    markCrashed: () => Effect.void
+    markCrashed: () => Effect.void,
+    resume: Effect.sync(() => {
+      calls.push('resume')
+    })
   }
 
   const supervisor = Layer.succeed(PaneSupervisor, {
@@ -150,7 +156,11 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     closePane: () => Effect.void,
     getHandle: (paneId) =>
       Effect.sync(() => (live.has(paneId) ? Option.some(handle) : Option.none())),
-    closeAll: () => Effect.void
+    closeAll: () => Effect.void,
+    setUsageLimitResume: (mode) =>
+      Effect.sync(() => {
+        calls.push(`setUsageLimitResume:${mode}`)
+      })
   })
 
   const workspace = Layer.succeed(PaneWorkspace, {
@@ -211,6 +221,11 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     setTranscriptWidth: (width) =>
       Effect.sync(() => {
         calls.push(`setTranscriptWidth:${width}`)
+      }),
+    getUsageLimitResume: () => Effect.succeed(Option.fromNullishOr(options.storedUsageLimitResume)),
+    setUsageLimitResume: (mode) =>
+      Effect.sync(() => {
+        calls.push(`settings.setUsageLimitResume:${mode}`)
       }),
     getPluginOverrides: () => Effect.succeed({}),
     setPluginOverride: () => Effect.void,
@@ -864,5 +879,60 @@ describe('Dia RPC handlers', () => {
       assert.strictEqual(mode, 'steer')
       assert.deepStrictEqual(harness.calls, ['setSendMode:queue'])
     })
+  )
+
+  it.effect('resumes the parked agent of a live pane once per command id', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ livePanes: [PANE_ID] })
+      const command = { ...ResumeParkedAgent.make({ paneId: PANE_ID }), commandId: 'req-1' }
+
+      yield* withHandlers(harness, (handlers) =>
+        handlers
+          .ResumeParkedAgent(command)
+          .pipe(Effect.andThen(handlers.ResumeParkedAgent(command)))
+      )
+
+      assert.deepStrictEqual(harness.calls, ['resume'])
+    })
+  )
+
+  it.effect('skips a resume for a pane with no live session without starting one', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ knownPanes: [PANE_ID], livePanes: [] })
+
+      yield* withHandlers(harness, (handlers) =>
+        handlers.ResumeParkedAgent({
+          ...ResumeParkedAgent.make({ paneId: PANE_ID }),
+          commandId: 'req-1'
+        })
+      )
+
+      assert.deepStrictEqual(harness.calls, [])
+    })
+  )
+
+  it.effect('reports automatic as the usage-limit resume mode when none is stored', () =>
+    Effect.gen(function* () {
+      const mode = yield* withHandlers(makeHarness(), (handlers) => handlers.GetUsageLimitResume())
+
+      assert.strictEqual(mode, 'automatic')
+    })
+  )
+
+  it.effect(
+    'reports the stored usage-limit resume mode and hands a new one to the supervisor',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({ storedUsageLimitResume: 'manual' })
+
+        const mode = yield* withHandlers(harness, (handlers) =>
+          handlers
+            .GetUsageLimitResume()
+            .pipe(Effect.tap(handlers.SetUsageLimitResume({ mode: 'automatic' })))
+        )
+
+        assert.strictEqual(mode, 'manual')
+        assert.deepStrictEqual(harness.calls, ['setUsageLimitResume:automatic'])
+      })
   )
 })

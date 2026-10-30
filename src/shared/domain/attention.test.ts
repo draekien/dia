@@ -17,13 +17,21 @@ const awaitingPermission: AttentionState = {
 const errored: AttentionState = { _tag: 'Errored', error: { message: 'boom' } }
 const crashed: AttentionState = { _tag: 'Crashed', error: { message: 'process exited' } }
 const completed: AttentionState = { _tag: 'Completed' }
+const parkedToResume: AttentionState = {
+  _tag: 'ParkedToResume',
+  cause: { _tag: 'UsageLimit', resetsAt: 1000 },
+  resumesAt: 6000
+}
+const parkedForUser: AttentionState = { _tag: 'ParkedForUser', cause: { _tag: 'SignedOut' } }
 
 const states: ReadonlyArray<AttentionState> = [
   idle,
   awaitingPermission,
   errored,
   crashed,
-  completed
+  completed,
+  parkedToResume,
+  parkedForUser
 ]
 
 // Derived from the bullet doc's transition diagram (Idle -> AwaitingPermission -> Idle,
@@ -47,7 +55,21 @@ const validPairs: ReadonlySet<string> = new Set([
   'Completed->Errored',
   'Completed->Crashed',
   'Errored->Idle',
-  'Errored->Crashed'
+  'Errored->Crashed',
+  'Idle->ParkedToResume',
+  'Idle->ParkedForUser',
+  'AwaitingPermission->ParkedToResume',
+  'AwaitingPermission->ParkedForUser',
+  'Completed->ParkedToResume',
+  'Completed->ParkedForUser',
+  'ParkedToResume->Idle',
+  'ParkedToResume->Crashed',
+  'ParkedToResume->ParkedToResume',
+  'ParkedToResume->ParkedForUser',
+  'ParkedForUser->Idle',
+  'ParkedForUser->Crashed',
+  'ParkedForUser->ParkedToResume',
+  'ParkedForUser->ParkedForUser'
 ])
 
 const decodePermissionResponse = Schema.decodeUnknownResult(PermissionResponse)

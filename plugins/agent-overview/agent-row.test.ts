@@ -1,9 +1,11 @@
+import { formatResetTime } from '@dia/renderer-plugin'
 import {
   type Activity,
   type AgentStatus,
   NoActivity,
   StatusFailed,
   StatusNeedsInput,
+  StatusParked,
   StatusWorking,
   Todo,
   ToolUse
@@ -74,5 +76,14 @@ describe('secondLine — turn status', () => {
     expect(secondLine({ ...summary(needsInput, EDITING), turnStatus: RETRYING }).text).toBe(
       'Allow Bash?'
     )
+  })
+
+  it('shows when dia resumes a parked agent instead of its activity', () => {
+    const resumesAt = 1_700_000_000_000
+    const nowMs = resumesAt - 60_000
+    expect(secondLine(summary(StatusParked.make({ resumesAt }), EDITING), nowMs)).toEqual({
+      text: `Resumes ${formatResetTime(resumesAt, nowMs)}`,
+      mono: false
+    })
   })
 })

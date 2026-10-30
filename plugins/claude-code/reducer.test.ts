@@ -874,3 +874,105 @@ describe('makeSessionEventReducer — ending a turn status', () => {
     expect(stepOnce(system('status', { status: null }))).toEqual([])
   })
 })
+
+describe('makeSessionEventReducer — parked turns', () => {
+  const RESETS_AT_SECONDS = 1_700_000_000
+  const rejected = (overageStatus?: string): SDKMessage =>
+    sdkMessage({
+      type: 'rate_limit_event',
+      rate_limit_info: { status: 'rejected', resetsAt: RESETS_AT_SECONDS, overageStatus }
+    })
+  const failedResult = sdkMessage({ type: 'result', subtype: 'error_during_execution', errors: [] })
+  const successResult = (isError: boolean): SDKMessage =>
+    sdkMessage({ type: 'result', subtype: 'success', is_error: isError })
+  const assistantError = (error: string): SDKMessage =>
+    ({
+      ...assistantMessage([]),
+      error
+    }) as SDKMessage
+
+  it('parks a failed turn the usage limit refused, with the reset in epoch milliseconds', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(rejected())
+    expect(reducer.step(failedResult)).toEqual([
+      {
+        _tag: 'TurnParked',
+        cause: { _tag: 'UsageLimit', resetsAt: RESETS_AT_SECONDS * 1000 }
+      }
+    ])
+  })
+
+  it('rounds a fractional reset to whole milliseconds', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(
+      sdkMessage({
+        type: 'rate_limit_event',
+        rate_limit_info: { status: 'rejected', resetsAt: 1_700_000_000.4 }
+      })
+    )
+    expect(reducer.step(failedResult)).toEqual([
+      { _tag: 'TurnParked', cause: { _tag: 'UsageLimit', resetsAt: 1_700_000_000_400 } }
+    ])
+  })
+
+  it('parks a successful result that reports an error', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(rejected())
+    expect(reducer.step(successResult(true)).map((message) => message._tag)).toEqual(['TurnParked'])
+  })
+
+  it('completes a successful turn after a rejection instead of parking it', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(rejected())
+    expect(reducer.step(successResult(false))).toEqual([{ _tag: 'TurnCompleted' }])
+  })
+
+  for (const overageStatus of ['allowed', 'allowed_warning']) {
+    it(`fails rather than parks when overage (${overageStatus}) covers the rejected limit`, () => {
+      const reducer = makeSessionEventReducer(Option.none())
+      reducer.step(rejected(overageStatus))
+      expect(reducer.step(failedResult).map((message) => message._tag)).toEqual(['TurnErrored'])
+    })
+  }
+
+  it('parks when overage is itself rejected', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(rejected('rejected'))
+    expect(reducer.step(failedResult).map((message) => message._tag)).toEqual(['TurnParked'])
+  })
+
+  it('parks a rate-limit error with no rejected limit event and no reset time', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(assistantError('rate_limit'))
+    expect(reducer.step(failedResult)).toEqual([
+      { _tag: 'TurnParked', cause: { _tag: 'UsageLimit', resetsAt: null } }
+    ])
+  })
+
+  it('keeps the reset of the rejected event when the rate-limit error follows it', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(rejected())
+    reducer.step(assistantError('rate_limit'))
+    expect(reducer.step(failedResult)).toEqual([
+      {
+        _tag: 'TurnParked',
+        cause: { _tag: 'UsageLimit', resetsAt: RESETS_AT_SECONDS * 1000 }
+      }
+    ])
+  })
+
+  it('parks a turn refused because Claude Code is signed out', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(assistantError('authentication_failed'))
+    expect(reducer.step(failedResult)).toEqual([
+      { _tag: 'TurnParked', cause: { _tag: 'SignedOut' } }
+    ])
+  })
+
+  it('fails the next turn normally once a parked turn has ended', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(rejected())
+    reducer.step(failedResult)
+    expect(reducer.step(failedResult).map((message) => message._tag)).toEqual(['TurnErrored'])
+  })
+})

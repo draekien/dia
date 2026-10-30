@@ -92,7 +92,10 @@ const buildHostLayer = (init: HostInit, token: string) => {
     )
   )
   const sessionFactory = Layer.provide(SessionFactoryLive, Layer.merge(hostPlugins, pluginSources))
-  const supervisor = Layer.provide(PaneSupervisorLive, Layer.merge(sessionFactory, hostPlugins))
+  const supervisor = Layer.provide(
+    PaneSupervisorLive,
+    Layer.mergeAll(sessionFactory, hostPlugins, settings)
+  )
   const persistence = Layer.provide(
     makePersistenceServiceLive(init.userDataPath),
     NodeServices.layer

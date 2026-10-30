@@ -1,6 +1,7 @@
 import { Schema } from 'effect'
 import type { IpcEvent } from '../ipc/contract'
-import type { UserInputRequest } from './attention'
+import type { AttentionState, UserInputRequest } from './attention'
+import { ParkCause } from './parking'
 import { Uuid } from './uuid'
 
 /** Activity line from the agent's current `TodoWrite` item. */
@@ -30,6 +31,10 @@ export type StatusNeedsInput = typeof StatusNeedsInput.Type
 export const StatusFailed = Schema.TaggedStruct('StatusFailed', { reason: Schema.String })
 export type StatusFailed = typeof StatusFailed.Type
 
+/** The agent waits for the usage limit to reset; dia sends `continue` at `resumesAt` (epoch ms). */
+export const StatusParked = Schema.TaggedStruct('StatusParked', { resumesAt: Schema.Int })
+export type StatusParked = typeof StatusParked.Type
+
 /** The agent is running a turn. */
 export const StatusWorking = Schema.TaggedStruct('StatusWorking', {})
 export type StatusWorking = typeof StatusWorking.Type
@@ -46,6 +51,7 @@ export type StatusIdle = typeof StatusIdle.Type
 export const AgentStatus = Schema.Union([
   StatusNeedsInput,
   StatusFailed,
+  StatusParked,
   StatusWorking,
   StatusFinished,
   StatusIdle
@@ -55,13 +61,15 @@ export type AgentStatus = typeof AgentStatus.Type
 /**
  * What the overview shows for one tab: its status and its activity line. `turnStatus`, present
  * while the running turn is in a named state (retrying, compacting, thinking), replaces the
- * activity line until that state ends.
+ * activity line until that state ends. `parked`, present while the tab's agent is parked, says
+ * why the account refused its turn.
  */
 export const AgentSummary = Schema.Struct({
   paneId: Uuid,
   status: AgentStatus,
   activity: Activity,
-  turnStatus: Schema.optional(Schema.String)
+  turnStatus: Schema.optional(Schema.String),
+  parked: Schema.optional(ParkCause)
 })
 export type AgentSummary = typeof AgentSummary.Type
 
@@ -107,6 +115,56 @@ const withoutTurnStatus = (summary: AgentSummary): AgentSummary => {
   return rest
 }
 
+const withoutParked = (summary: AgentSummary): AgentSummary => {
+  if (summary.parked === undefined) return summary
+  const { parked: _resumed, ...rest } = summary
+  return rest
+}
+
+const isParked = (summary: AgentSummary): boolean =>
+  summary.status._tag === 'StatusParked' ||
+  (summary.status._tag === 'StatusNeedsInput' && summary.parked !== undefined)
+
+const PARKED_REASON: Record<ParkCause['_tag'], string> = {
+  UsageLimit: 'Usage limit reached',
+  SignedOut: 'Claude Code is signed out'
+}
+
+const foldAttention = (summary: AgentSummary, attention: AttentionState): AgentSummary => {
+  switch (attention._tag) {
+    case 'ParkedToResume':
+      return {
+        ...summary,
+        status: StatusParked.make({ resumesAt: attention.resumesAt }),
+        parked: attention.cause
+      }
+    case 'ParkedForUser':
+      return {
+        ...summary,
+        status: StatusNeedsInput.make({ reason: PARKED_REASON[attention.cause._tag] }),
+        parked: attention.cause
+      }
+  }
+  const resumed = withoutParked(summary)
+  switch (attention._tag) {
+    case 'AwaitingPermission':
+      return {
+        ...resumed,
+        status: StatusNeedsInput.make({ reason: needsInputReason(attention.request) })
+      }
+    case 'Idle':
+      if (isParked(summary)) return { ...resumed, status: StatusIdle.make({}) }
+      return resumed.status._tag === 'StatusNeedsInput'
+        ? { ...resumed, status: StatusWorking.make({}) }
+        : resumed
+    case 'Completed':
+      return { ...resumed, status: StatusFinished.make({}) }
+    case 'Errored':
+    case 'Crashed':
+      return { ...resumed, status: StatusFailed.make({ reason: attention.error.message }) }
+  }
+}
+
 const withActivity = (summary: AgentSummary, activity: Activity): AgentSummary =>
   summary.activity._tag === 'Todo' ? summary : { ...summary, activity }
 
@@ -126,7 +184,7 @@ export const foldSummary = (summary: AgentSummary, event: IpcEvent): AgentSummar
         ? withoutTurnStatus(summary)
         : { ...summary, turnStatus: event.label }
     case 'PaneUserMessagesSent':
-      return { ...withoutTurnStatus(summary), status: StatusWorking.make({}) }
+      return { ...withoutParked(withoutTurnStatus(summary)), status: StatusWorking.make({}) }
     case 'PaneToolCallStarted':
       return withActivity(summary, ToolUse.make({ tool: event.toolName, target: null }))
     case 'PaneToolCallCompleted':
@@ -136,26 +194,8 @@ export const foldSummary = (summary: AgentSummary, event: IpcEvent): AgentSummar
             summary,
             ToolUse.make({ tool: event.toolName, target: toolTarget(event.input) })
           )
-    case 'PaneAttentionChanged': {
-      const attention = event.attention
-      switch (attention._tag) {
-        case 'AwaitingPermission':
-          return {
-            ...summary,
-            status: StatusNeedsInput.make({ reason: needsInputReason(attention.request) })
-          }
-        case 'Idle':
-          return summary.status._tag === 'StatusNeedsInput'
-            ? { ...summary, status: StatusWorking.make({}) }
-            : summary
-        case 'Completed':
-          return { ...summary, status: StatusFinished.make({}) }
-        case 'Errored':
-        case 'Crashed':
-          return { ...summary, status: StatusFailed.make({ reason: attention.error.message }) }
-      }
-      return summary
-    }
+    case 'PaneAttentionChanged':
+      return foldAttention(summary, event.attention)
     default:
       return summary
   }
@@ -168,13 +208,14 @@ export const markShown = (summary: AgentSummary): AgentSummary =>
 const STATUS_RANK: Record<AgentStatus['_tag'], number> = {
   StatusNeedsInput: 0,
   StatusFailed: 1,
-  StatusWorking: 2,
-  StatusFinished: 3,
-  StatusIdle: 4
+  StatusParked: 2,
+  StatusWorking: 3,
+  StatusFinished: 4,
+  StatusIdle: 5
 }
 
 /**
- * The overview order of a status: needs input 0, failed 1, working 2, finished 3, idle 4. A lower
- * rank is more urgent.
+ * The overview order of a status: needs input 0, failed 1, parked 2, working 3, finished 4,
+ * idle 5. A lower rank is more urgent.
  */
 export const statusRank = (status: AgentStatus): number => STATUS_RANK[status._tag]

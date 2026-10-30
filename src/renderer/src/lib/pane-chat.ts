@@ -22,6 +22,7 @@ import type {
   PaneTurnStatusChanged,
   PaneUserMessagesSent
 } from '@shared/ipc/contract'
+import { formatResetTime } from './format-when'
 
 /** A streamed span of assistant answer text within a turn. */
 export interface TextPart {
@@ -326,7 +327,45 @@ const withToolCallMessage = (
 }
 
 const isTurnOver = (attention: AttentionState): boolean =>
-  attention._tag === 'Completed' || attention._tag === 'Errored' || attention._tag === 'Crashed'
+  attention._tag === 'Completed' ||
+  attention._tag === 'Errored' ||
+  attention._tag === 'Crashed' ||
+  attention._tag === 'ParkedToResume' ||
+  attention._tag === 'ParkedForUser'
+
+const PARKED_SUFFIX = ':parked'
+
+/** Whether `message` is the transcript notice that says the agent is parked. */
+export const isParkNotice = (message: PaneMessage): boolean => message.id.endsWith(PARKED_SUFFIX)
+
+const parkNoticeText = (
+  attention: Extract<AttentionState, { _tag: 'ParkedToResume' | 'ParkedForUser' }>,
+  nowMs: number
+): string => {
+  if (attention._tag === 'ParkedToResume') {
+    return `Usage limit reached · resumes ${formatResetTime(attention.resumesAt, nowMs)}`
+  }
+  if (attention.cause._tag === 'SignedOut') return 'Claude Code is signed out'
+  return attention.cause.resetsAt === null
+    ? 'Usage limit reached'
+    : `Usage limit reached · resets ${formatResetTime(attention.cause.resetsAt, nowMs)}`
+}
+
+const parkedMessage = (
+  state: PaneChatState,
+  attention: Extract<AttentionState, { _tag: 'ParkedToResume' | 'ParkedForUser' }>
+): PaneChatState => {
+  const last = state.messages.at(-1)
+  const kept =
+    last !== undefined && isParkNotice(last) ? state.messages.slice(0, -1) : state.messages
+  const notice: PaneMessage = {
+    id: `${kept.length}${PARKED_SUFFIX}`,
+    role: 'notice',
+    // @effect-diagnostics-next-line globalDate:off -- the notice reads the reset time against the wall clock; the chat reducer runs outside an Effect runtime.
+    parts: [{ type: 'text', content: parkNoticeText(attention, Date.now()) }]
+  }
+  return { ...state, messages: [...kept, notice], isLoading: false }
+}
 
 // Checkpoint uuids arrive after their user turn is already rendered, in the
 // same order the turns were submitted, so bind each to the earliest user turn still
@@ -460,6 +499,9 @@ export const reducePaneChat = (
           isLoading: false,
           ...(event.attention._tag === 'Crashed' ? { queued: [], queueHeld: false } : {})
         }
+      }
+      if (event.attention._tag === 'ParkedToResume' || event.attention._tag === 'ParkedForUser') {
+        return parkedMessage(state, event.attention)
       }
       return isTurnOver(event.attention) ? { ...state, isLoading: false } : state
     case 'PaneSlashCommandsWarming':

@@ -9,6 +9,7 @@ import {
   QueueIdle,
   QueueRunning,
   remove,
+  resume,
   rewound,
   send,
   sessionEnded,
@@ -211,5 +212,39 @@ describe('sessionEnded', () => {
       [QueueChangedAction.make({ queued: [], held: false })],
       initialQueueState
     ])
+  })
+})
+
+describe('resume', () => {
+  const resumeMessage = { id: 'm-r', text: 'continue' }
+
+  it('dispatches the resume message ahead of a held queue and releases the queue', () => {
+    const [actions, next] = resume(resumeMessage)(QueueIdle.make({ queued: [a, b], held: true }))
+    expect(actions).toEqual([
+      QueueChangedAction.make({ queued: [a, b], held: false }),
+      DispatchAction.make({ messages: [resumeMessage] })
+    ])
+    expect(next).toEqual(runningWith({ queued: [a, b], dispatching: 1 }))
+  })
+
+  it('sends the released queue once the resumed turn ends', () => {
+    const [, resumed] = resume(resumeMessage)(QueueIdle.make({ queued: [a], held: true }))
+    const [, dispatched] = dispatchEnded(resumed)
+    const [actions] = turnEnded(true)(dispatched)
+    expect(actions).toEqual([
+      QueueChangedAction.make({ queued: [], held: false }),
+      DispatchAction.make({ messages: [a] })
+    ])
+  })
+
+  it('dispatches the resume message alone when nothing is queued', () => {
+    const [actions, next] = resume(resumeMessage)(initialQueueState)
+    expect(actions).toEqual([DispatchAction.make({ messages: [resumeMessage] })])
+    expect(next).toEqual(runningWith({ dispatching: 1 }))
+  })
+
+  it('does nothing while a turn is running', () => {
+    const state = runningWith({ queued: [a] })
+    expect(resume(resumeMessage)(state)).toEqual([[], state])
   })
 })

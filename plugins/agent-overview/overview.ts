@@ -14,6 +14,7 @@ import { Schema } from 'effect'
 export const StatusTag = Schema.Literals([
   'StatusNeedsInput',
   'StatusFailed',
+  'StatusParked',
   'StatusWorking',
   'StatusFinished',
   'StatusIdle'
