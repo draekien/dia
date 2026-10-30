@@ -1,0 +1,88 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden}
+body{background:#14161b;color:#e6e9ef;font:14px/1.5 Geist,system-ui,sans-serif;display:flex}
+.mono{font-family:'Geist Mono',monospace}
+aside{width:288px;border-right:1px solid #262a33;padding:10px 8px}
+.brand{height:32px;padding:0 8px;font-weight:600;display:flex;align-items:center}
+.grp{font-size:12px;color:#959eae;padding:12px 10px 4px}
+.row{display:flex;gap:10px;padding:6px 10px;border-radius:6px}
+.row.sel{background:#232842}
+.dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none;background:#8a93a3}
+.row b{font-weight:500;font-size:13px;display:block}
+.row small{font-size:12px;color:#959eae;display:block}
+main{flex:1;display:flex;flex-direction:column}
+header{height:32px;border-bottom:1px solid #262a33;display:flex;align-items:center;padding:0 16px;font-size:13px;color:#a3abb9;gap:8px}
+.col{width:760px;margin:0 auto;flex:1;display:flex;flex-direction:column;padding-top:28px}
+.user{align-self:flex-end;background:#232842;border-radius:12px;padding:8px 14px;max-width:70%}
+.agent{margin:18px 0 10px;color:#d5d9e1}
+.steps{font-size:12px;color:#959eae;display:flex;gap:8px;align-items:center}
+.pulse{width:7px;height:7px;border-radius:50%;background:#8a93a3}
+.spacer{flex:1}
+.rail{border-top:2px solid #3a404c;margin:0 10px;display:flex;gap:8px}
+.qt{background:#1b1e24;border:1px solid #2c313b;border-top:none;border-radius:0 0 6px 6px;padding:6px 12px 8px;width:300px;font-size:13px;color:#c9ced8}
+.qt small{display:block;font-size:12px;color:#959eae}
+.qt.gone{color:#959eae;display:flex;align-items:center;justify-content:space-between;width:200px}
+.qt.gone u{color:#e6e9ef;text-decoration:none;font-weight:500}
+.ticket{margin:10px 0 22px;background:#1d2027;border:1px solid #2c313b;border-radius:8px}
+.ticket:focus-within{border-color:#6b7cff}
+.head{display:flex;align-items:center;gap:4px;padding:6px 8px;border-bottom:1px solid #2c313b;font-size:12px;color:#b3bac7}
+.m{padding:3px 8px;border-radius:5px}
+.m.strong{color:#e6e9ef;font-weight:500}
+.m.strong em{font-style:normal;font-weight:400;color:#a3abb9}
+.sep{color:#8b94a4}
+.ctx{margin-left:auto;padding:0 6px;color:#959eae}
+.body{padding:12px 14px;min-height:76px}
+.ph{color:#8b94a4}
+.foot{display:flex;align-items:center;gap:8px;padding:8px 10px 10px 10px}
+.ib{height:28px;padding:0 8px;border-radius:6px;display:flex;align-items:center;gap:6px;color:#b3bac7;font-size:12px}
+.r{margin-left:auto;display:flex;gap:8px;align-items:center}
+.stop{width:30px;height:30px;border:1px solid #2c313b;border-radius:6px;display:grid;place-items:center}
+.stop i{width:9px;height:9px;background:#c9ced8;border-radius:1px}
+.ghost{height:30px;padding:0 12px;border:1px solid #2c313b;border-radius:6px;display:flex;align-items:center;gap:8px;font-size:13px}
+.ghost kbd,.pri kbd{font:11px 'Geist Mono',monospace;color:#959eae}
+.pri{height:30px;padding:0 14px;border-radius:6px;background:#4f5fe6;color:#fff;font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px}
+.pri kbd{color:#eef0ff}
+</style></head><body>
+<aside>
+<div class="brand">dia</div>
+<div class="grp">dia</div>
+<div class="row sel"><span class="dot"></span><div><b>Composer redesign</b><small class="mono">Edit plugins/chat/pane.tsx</small></div></div>
+<div class="row"><span class="dot" style="background:#e0a63a"></span><div><b>Release notes</b><small>Asks: publish v0.0.16?</small></div></div>
+<div class="grp">infotrack-api</div>
+<div class="row"><span class="dot"></span><div><b>Fix flaky test</b><small>Running the test suite</small></div></div>
+</aside>
+<main>
+<header>dia › Composer redesign <span class="mono" style="margin-left:10px;color:#959eae">feat/composer</span></header>
+<div class="col">
+<div class="user">Move the send-mode logic into the composer and keep Stop in a fixed place.</div>
+<div class="agent">I'll start by reading how <span class="mono">sendModeForEnter</span> picks the mode, then restructure the control row.</div>
+<div class="steps"><span class="pulse"></span><span class="mono">Edit plugins/chat/pane.tsx</span> · 14s</div>
+<div class="spacer"></div>
+<div class="rail">
+<div class="qt"><small>Queued 1 · after this turn</small>Then run pnpm typecheck and fix what it reports.</div>
+<div class="qt gone">Removed <u>Undo</u></div>
+</div>
+<div class="ticket">
+<div class="head">
+<span class="m">Opus 5.5</span><span class="sep">·</span>
+<span class="m">Medium effort</span><span class="sep">·</span>
+<span class="m strong">Auto mode <em>· approves tools for you</em></span>
+<span class="ctx">62% context</span>
+</div>
+<div class="body"><span class="ph">Queue a message for after this turn</span></div>
+<div class="foot">
+<span class="ib">＋ Attach</span><span class="ib mono">/ Commands</span>
+<span class="r">
+<span class="stop"><i></i></span>
+<span class="ghost">Steer now <kbd>Ctrl ↵</kbd></span>
+<span class="pri">Queue <kbd>↵</kbd></span>
+</span>
+</div>
+</div>
+</div>
+</main>
+</body></html>

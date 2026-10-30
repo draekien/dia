@@ -1,0 +1,77 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+.stage{zoom:.8;width:880px;color:#e6e9ef;font:14px/1.5 Geist,system-ui,sans-serif}
+.state{position:relative;background:#14161b;border:1px solid #262a33;border-radius:10px;margin-bottom:20px;padding:40px 40px 28px}
+.tag{position:absolute;left:16px;top:12px;font-size:13px;color:#959eae}
+.queued{display:flex;justify-content:flex-end;margin-bottom:12px}
+.queued div{border:1px dashed #3d4352;border-radius:12px;padding:6px 14px;color:#c9ced8;max-width:70%}
+.queued small{display:block;font-size:12px;color:#8b94a4}
+.box{position:relative;background:#1d2027;border:1px solid #2c313b;border-radius:10px}
+.box.focus{border-color:#6b7cff}
+.head{display:flex;align-items:center;gap:12px;padding:6px 8px;border-bottom:1px solid #2c313b;font-size:12px;color:#b3bac7}
+.m{padding:3px 8px;border-radius:5px}
+.m.strong{color:#e6e9ef;font-weight:500}
+.donut{margin-left:auto;width:24px;height:24px;border-radius:6px;display:grid;place-items:center}
+.donut.open{background:#2a2e38}
+.text{padding:12px 14px;min-height:64px}
+.ph{color:#8b94a4}
+.foot{display:flex;justify-content:space-between;align-items:center;padding:0 10px 10px}
+.ib{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:#b3bac7}
+.ib.line{border:1px solid #3a404c;color:#d5d9e1}
+.ib.pri{background:#4f5fe6;color:#fff}
+.ib.dis{background:#262a33;color:#6f7787}
+svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tip{position:absolute;right:50px;bottom:8px;background:#2a2e38;border:1px solid #3a404c;border-radius:8px;padding:8px 12px;font-size:12px;color:#d5d9e1;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+.tip b{color:#fff;font-weight:600}
+.pop{position:absolute;right:6px;top:36px;background:#2a2e38;border:1px solid #3a404c;border-radius:8px;padding:12px 14px;font-size:12px;width:250px;color:#d5d9e1;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:2}
+.pop .big{font-size:14px;color:#fff;font-weight:500;margin-bottom:2px}
+.pop .bar{height:4px;background:#3a404c;border-radius:2px;margin:8px 0}
+.pop .bar i{display:block;height:100%;background:#b77cff;border-radius:2px;width:88%}
+.pop code{font-family:'Geist Mono',monospace;color:#e6e9ef}
+</style></head><body><div class="stage">
+
+<div class="state">
+<div class="tag">1. Turn running, composer empty → Stop</div>
+<div class="box">
+<div class="head"><span class="m">Opus 5.5</span><span class="m">Medium effort</span><span class="m strong">Auto mode</span>
+<span class="donut"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" stroke="#3a404c" stroke-width="2"/><circle cx="8" cy="8" r="6" stroke="#a3abb9" stroke-width="2" stroke-dasharray="12.8 37.7" transform="rotate(-90 8 8)"/></svg></span></div>
+<div class="text ph">Queue a message for after this turn, or type / for commands</div>
+<div class="foot"><span class="ib"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span class="ib line"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none"/></svg></span></div>
+</div></div>
+
+<div class="state">
+<div class="tag">2. Typing → default mode (Queue); hover shows the tooltip</div>
+<div class="queued"><div><small>Queued for after this turn</small>Then run pnpm typecheck and fix what it reports.</div></div>
+<div class="box focus">
+<div class="head"><span class="m">Opus 5.5</span><span class="m">Medium effort</span><span class="m strong">Auto mode</span>
+<span class="donut"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" stroke="#3a404c" stroke-width="2"/><circle cx="8" cy="8" r="6" stroke="#6b7cff" stroke-width="2" stroke-dasharray="23.4 37.7" transform="rotate(-90 8 8)"/></svg></span></div>
+<div class="text">Use the existing InputGroup, don't add a new primitive</div>
+<div class="foot"><span class="ib"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+<span class="ib pri"><svg viewBox="0 0 24 24"><path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/></svg></span></div>
+<div class="tip"><b>Queue</b> after this turn with <b>Enter</b><br>Hold <b>Ctrl</b> to steer now</div>
+</div></div>
+
+<div class="state">
+<div class="tag">3. Typing with Ctrl held → Steer now</div>
+<div class="box focus">
+<div class="head"><span class="m">Opus 5.5</span><span class="m">Medium effort</span><span class="m strong">Auto mode</span>
+<span class="donut"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" stroke="#3a404c" stroke-width="2"/><circle cx="8" cy="8" r="6" stroke="#6b7cff" stroke-width="2" stroke-dasharray="23.4 37.7" transform="rotate(-90 8 8)"/></svg></span></div>
+<div class="text">Stop, the test file is wrong, read it again</div>
+<div class="foot"><span class="ib"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+<span class="ib pri"><svg viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></svg></span></div>
+</div></div>
+
+<div class="state">
+<div class="tag">4. Idle, context donut clicked → popover</div>
+<div class="box">
+<div class="head"><span class="m">Opus 5.5</span><span class="m">Medium effort</span><span class="m strong">Auto mode</span>
+<span class="donut open"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" stroke="#3a404c" stroke-width="2"/><circle cx="8" cy="8" r="6" stroke="#b77cff" stroke-width="2" stroke-dasharray="33.2 37.7" transform="rotate(-90 8 8)"/></svg></span></div>
+<div class="pop"><div class="big">88% of context used</div>176k of 200k tokens<div class="bar"><i></i></div>Run <code>/compact</code> to summarise the conversation and free space.</div>
+<div class="text ph">Message this agent, or type / for commands</div>
+<div class="foot"><span class="ib"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span class="ib dis"><svg viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></svg></span></div>
+</div></div>
+
+</div></body></html>

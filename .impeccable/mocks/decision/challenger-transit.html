@@ -1,0 +1,69 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden}
+body{background:#0f1830;color:#eef2f7;font:14px/1.5 Geist,system-ui,sans-serif;display:flex}
+.mono{font-family:'Geist Mono',monospace}
+aside{width:288px;border-right:1px solid #24345e;padding:10px 8px;background:#0c1428}
+.brand{height:32px;padding:0 8px;font-weight:600;display:flex;align-items:center}
+.grp{font-size:12px;color:#9fb0d0;padding:12px 10px 4px}
+.row{display:flex;gap:10px;padding:6px 10px;border-radius:6px}
+.row.sel{background:#1c2c58}
+.dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none;background:#b8c4dc}
+.row b{font-weight:500;font-size:13px;display:block}
+.row small{font-size:12px;color:#9fb0d0;display:block}
+main{flex:1;display:flex;flex-direction:column}
+header{height:32px;border-bottom:1px solid #24345e;display:flex;align-items:center;padding:0 16px;font-size:13px;color:#b8c4dc}
+.col{width:760px;margin:0 auto;flex:1;display:flex;flex-direction:column;padding-top:28px;position:relative}
+.user{align-self:flex-end;background:#1c2c58;border-radius:12px;padding:8px 14px;max-width:70%}
+.agent{margin:18px 0 10px;color:#dbe3f0}
+.spacer{flex:1}
+.line{position:relative;padding-left:34px}
+.line:before{content:'';position:absolute;left:11px;top:-40px;bottom:46px;width:4px;background:#3d6bff;border-radius:2px}
+.stop{position:relative;padding:6px 0 12px;font-size:13px}
+.stop:before{content:'';position:absolute;left:-29px;top:10px;width:10px;height:10px;border-radius:50%;background:#0f1830;border:3px solid #eef2f7}
+.stop small{display:block;font-size:11px;letter-spacing:.08em;color:#9fb0d0}
+.draft{background:#17223f;border:1px solid #2a3c6b;border-radius:10px;margin-bottom:22px}
+.draft:before{content:'';position:absolute;left:5px;width:16px;height:16px;border-radius:50%;background:#3d6bff;margin-top:22px;border:3px solid #0f1830}
+.top{display:flex;gap:16px;padding:8px 14px;font-size:12px;color:#b8c4dc;border-bottom:1px solid #2a3c6b}
+.top b{color:#eef2f7;font-weight:600}
+.term{margin-left:auto;display:flex;align-items:center;gap:8px}
+.track{width:120px;height:4px;background:#2a3c6b;border-radius:2px;position:relative}
+.track i{position:absolute;left:0;top:0;bottom:0;width:62%;background:#9b7bff;border-radius:2px}
+.track:after{content:'';position:absolute;right:-4px;top:-3px;width:10px;height:10px;border-radius:50%;border:2px solid #9b7bff;background:#17223f}
+.body{padding:12px 14px;min-height:76px}
+.foot{display:flex;align-items:center;gap:10px;padding:8px 10px 10px 14px;font-size:12px;color:#9fb0d0}
+.mode{display:flex;border:1px solid #2a3c6b;border-radius:6px;overflow:hidden;margin-left:auto}
+.mode span{padding:5px 12px}
+.mode .on{background:#3d6bff;color:#fff;font-weight:600}
+.sq{width:28px;height:28px;border:1px solid #2a3c6b;border-radius:6px;display:grid;place-items:center}
+.sq i{width:9px;height:9px;background:#dbe3f0}
+</style></head><body>
+<aside>
+<div class="brand">dia</div>
+<div class="grp">dia</div>
+<div class="row sel"><span class="dot"></span><div><b>Composer redesign</b><small class="mono">Edit plugins/chat/pane.tsx</small></div></div>
+<div class="row"><span class="dot" style="background:#e0a63a"></span><div><b>Release notes</b><small>Asks: publish v0.0.16?</small></div></div>
+<div class="grp">infotrack-api</div>
+<div class="row"><span class="dot"></span><div><b>Fix flaky test</b><small>Running the test suite</small></div></div>
+</aside>
+<main>
+<header>dia › Composer redesign</header>
+<div class="col">
+<div class="user">Move the send-mode logic into the composer and keep Stop in a fixed place.</div>
+<div class="agent">I'll start by reading how <span class="mono">sendModeForEnter</span> picks the mode. <span class="mono" style="color:#9fb0d0;font-size:12px">Edit plugins/chat/pane.tsx · 14s</span></div>
+<div class="spacer"></div>
+<div class="line">
+<div class="stop"><small>NEXT STOP · AFTER THIS TURN</small>Then run pnpm typecheck and fix what it reports.</div>
+<div class="draft">
+<div class="top"><b>Opus 5.5</b><span>Medium</span><span>Auto</span><span class="term">Context 62% to terminus<span class="track"><i></i></span></span></div>
+<div class="body">Use the existing InputGroup, don't add a new primitive|</div>
+<div class="foot"><span>＋ Attach</span><span>/ Commands</span>
+<div class="mode"><span class="on">Next stop</span><span>Now</span></div><span class="sq"><i></i></span></div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

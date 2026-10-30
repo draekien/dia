@@ -1,0 +1,55 @@
+{
+  "title": "Order Rail, refined",
+  "question": "Order Rail after layout, clarify, onboard and distill. Lock it, steer it again, or re-roll.",
+  "options": [
+    {
+      "id": "refined",
+      "kind": "assigned",
+      "label": "Order Rail, refined",
+      "kicker": "THE ROLL, REFINED",
+      "lineage": "kitchen order tickets on the pass rail",
+      "thesis": "Queued messages clip to a rail above the composer; the send button always names what Enter does.",
+      "palette": ["#14161b", "#1d2027", "#e6e9ef", "#3a404c", "#4f5fe6"],
+      "materials": ["ticket stock", "steel rail"],
+      "viewport": "Rail of queued tickets, then the composer: a caption head (model · effort · mode, context %), the body, and a foot with Attach, Commands, Stop, Steer now and Queue.",
+      "risk": "Two send buttons while a turn runs; if Steer is misread as the default, messages interrupt the agent.",
+      "raised": [
+        {
+          "from": "distill",
+          "raise": "Head drops agent name and branch (the breadcrumb has them); HOLD/FIRE toggle and hint line become one primary button."
+        },
+        {
+          "from": "clarify",
+          "raise": "Queue and Steer replace HOLD and FIRE; Medium becomes Medium effort; Auto mode states it approves tools for you."
+        },
+        {
+          "from": "layout",
+          "raise": "Settings (changed rarely) sit in the head, actions (every message) in the foot, so Auto mode no longer weighs the same as effort."
+        },
+        {
+          "from": "onboard",
+          "raise": "The placeholder teaches the current state: idle reads Message this agent · / for commands, a running turn reads Queue a message for after this turn."
+        },
+        {
+          "from": "vernacular-ephemera-jet-age-ticket-wallet",
+          "raise": "A removed queued ticket stays in place as Removed · Undo for a few seconds."
+        }
+      ],
+      "html": ".impeccable/mocks/decision/refined.html"
+    }
+  ],
+  "reroll": { "registers": ["safer", "bolder"] },
+  "buildPath": { "value": "code" },
+  "canon": true,
+  "canonCard": {
+    "kind": "canon",
+    "label": "The category standard",
+    "thesis": "The Claude Desktop / Cursor composer, executed at full craft.",
+    "palette": ["#16181d", "#1e2128", "#e6e8ec", "#6b7cff"],
+    "materials": ["rounded field", "inline pill selects"],
+    "viewport": "Rounded field, settings as quiet inline selects, attach and send at the corners, a context ring by Send.",
+    "risk": "Indistinguishable from every other agent chat app by design.",
+    "html": ".impeccable/mocks/decision/canon.html"
+  },
+  "steer": true
+}

@@ -1,0 +1,71 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+.stage{zoom:.62;width:1152px;color:#e6e9ef;font:14px/1.5 Geist,system-ui,sans-serif}
+.mono{font-family:'Geist Mono',monospace}
+.state{position:relative;background:#14161b;border:1px solid #262a33;border-radius:10px;margin-bottom:28px;padding:30px 0 34px}
+.tag{position:absolute;left:18px;top:14px;font-size:13px;color:#959eae}
+.col{width:760px;margin:0 auto;position:relative;padding-top:24px}
+.queued{display:flex;justify-content:flex-end;margin-bottom:12px}
+.queued div{border:1px dashed #3d4352;border-radius:12px;padding:6px 14px;color:#a3abb9;max-width:70%}
+.queued small{display:block;font-size:12px;color:#8b94a4}
+.box{position:relative;background:#1d2027;border:1px solid #2c313b;border-radius:12px;height:120px}
+.box.focus{border-color:#6b7cff}
+.text{padding:14px 16px;color:#e6e9ef}
+.ph{color:#8b94a4}
+.bl{position:absolute;left:10px;bottom:10px;width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:#b3bac7;font-size:18px}
+.br{position:absolute;right:10px;bottom:10px;height:32px;border-radius:8px;display:flex;align-items:center;gap:8px;padding:0 14px;font-size:13px;font-weight:600}
+.stop{width:32px;padding:0;justify-content:center;border:1px solid #3a404c}
+.stop i{width:10px;height:10px;background:#d5d9e1;border-radius:2px}
+.send{background:#4f5fe6;color:#fff}
+.steer{background:#e6e9ef;color:#14161b}
+.br kbd{font:11px 'Geist Mono',monospace;opacity:.8}
+.tip{position:absolute;right:0;bottom:50px;background:#2a2e38;border:1px solid #3a404c;border-radius:8px;padding:8px 12px;font-size:12px;width:250px;color:#d5d9e1;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.tip b{font-weight:600;color:#fff}
+.arc{position:absolute;left:0;top:24px;height:120px;width:0}
+.d{position:absolute;width:36px;height:36px;border-radius:50%;border:1px solid #2c313b;background:#191c22;display:grid;place-items:center;color:#a3abb9;font-size:13px}
+.d.auth{border-color:#8b94a4;color:#e6e9ef}
+.d span{position:absolute;right:46px;white-space:nowrap;font-size:12px;color:#8b94a4;text-align:right}
+.d.auth span{color:#d5d9e1}
+.d1{left:-47px;top:-16px}.d2{left:-68px;top:42px}.d3{left:-47px;top:100px}
+.dim .d{opacity:.45}.dim .d span{display:none}
+.rail{position:absolute;right:-48px;top:24px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.donut{width:30px;height:30px;border-radius:50%;position:relative}
+.donut:after{content:'';position:absolute;inset:5px;border-radius:50%;background:#14161b}
+.vert{writing-mode:vertical-rl;font-size:12px;color:#8b94a4}
+</style></head><body><div class="stage">
+
+<div class="state dim">
+<div class="tag">1 · Turn running, composer empty → Stop</div>
+<div class="col">
+<div class="arc"><div class="d d1">◎<span>Opus 5.5</span></div><div class="d d2">◔<span>Medium effort</span></div><div class="d d3 auth">⛨<span>Auto mode</span></div></div>
+<div class="box"><div class="text ph">Queue a message for after this turn  ·  / for commands</div>
+<div class="bl">＋</div><div class="br stop"><i></i></div></div>
+<div class="rail"><div class="donut" style="background:conic-gradient(#a3abb9 0 34%,#2c313b 0)"></div><div class="vert mono">68k / 200k</div></div>
+</div></div>
+
+<div class="state">
+<div class="tag">2 · Typing, pointer over Send → tooltip; a queued message waits above</div>
+<div class="col">
+<div class="queued"><div><small>Queued · sends after this turn</small>Then run pnpm typecheck and fix what it reports.</div></div>
+<div style="position:relative">
+<div class="arc" style="top:0"><div class="d d1">◎<span>Opus 5.5</span></div><div class="d d2">◔<span>Medium effort</span></div><div class="d d3 auth">⛨<span>Auto mode · approves tools for you</span></div></div>
+<div class="box focus"><div class="text">Use the existing InputGroup, don't add a new primitive</div>
+<div class="bl">＋</div>
+<div class="tip"><b>Enter</b> queues this after the current turn.<br>Hold <b>Ctrl</b> and press Enter to steer now.</div>
+<div class="br send">Queue <kbd>↵</kbd></div></div>
+<div class="rail" style="top:0"><div class="donut" style="background:conic-gradient(#6b7cff 0 62%,#2c313b 0)"></div><div class="vert mono">124k / 200k</div></div>
+</div></div></div>
+
+<div class="state dim">
+<div class="tag">3 · Typing with Ctrl held → Send becomes Steer</div>
+<div class="col">
+<div class="arc"><div class="d d1">◎<span>Opus 5.5</span></div><div class="d d2">◔<span>Medium effort</span></div><div class="d d3 auth">⛨<span>Auto mode</span></div></div>
+<div class="box focus"><div class="text">Stop, the test file is wrong, read it again</div>
+<div class="bl">＋</div><div class="br steer">Steer now <kbd>Ctrl ↵</kbd></div></div>
+<div class="rail"><div class="donut" style="background:conic-gradient(#b77cff 0 88%,#2c313b 0)"></div><div class="vert mono">176k / 200k</div></div>
+</div></div>
+
+</div></body></html>

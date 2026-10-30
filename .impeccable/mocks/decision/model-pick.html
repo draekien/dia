@@ -1,0 +1,76 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1440px;height:900px;overflow:hidden}
+body{background:#121418;color:#e4e7ec;font:14px/1.5 Geist,system-ui,sans-serif;display:flex}
+.mono{font-family:'Geist Mono',monospace}
+aside{width:288px;border-right:1px solid #2b303a;padding:10px 8px}
+.brand{height:32px;padding:0 8px;font-weight:600;display:flex;align-items:center}
+.grp{font-size:12px;color:#959eae;padding:12px 10px 4px}
+.row{display:flex;gap:10px;padding:6px 10px;border-radius:6px}
+.row.sel{background:#22263d}
+.dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:none;background:#8a93a3}
+.row b{font-weight:500;font-size:13px;display:block}
+.row small{font-size:12px;color:#959eae;display:block}
+main{flex:1;display:flex;flex-direction:column}
+header{height:32px;border-bottom:1px solid #2b303a;display:flex;align-items:center;padding:0 16px;font-size:13px;color:#a3abb9}
+.col{width:760px;margin:0 auto;flex:1;display:flex;flex-direction:column;padding-top:28px}
+.user{align-self:flex-end;background:#22263d;border-radius:12px;padding:8px 14px;max-width:70%}
+.agent{margin:18px 0 10px;color:#d5d9e1}
+.steps{font-size:12px;color:#959eae}
+.spacer{flex:1}
+.queued{border-left:2px solid #3a4050;padding:4px 12px;margin-bottom:10px;font-size:13px;color:#c3c9d4}
+.queued small{display:block;font-size:11px;color:#959eae;letter-spacing:.06em}
+.blank{margin:4px 0 22px;background:#191c22;border:1px solid #2b303a;border-radius:8px}
+.route{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;border-bottom:1px solid #2b303a}
+.cell{padding:7px 14px;border-right:1px solid #2b303a}
+.cell:last-child{border-right:none}
+.cell label{display:block;font-size:11px;letter-spacing:.1em;color:#959eae}
+.cell span{font-size:13px;font-weight:500}
+.cell.warn span:after{content:' · runs tools unasked';font-weight:400;color:#a3abb9;font-size:12px}
+.lined{padding:10px 14px 4px;min-height:84px;background:repeating-linear-gradient(#191c22 0 27px,#252a33 27px 28px);line-height:28px}
+.foot{display:flex;align-items:center;gap:14px;padding:8px 10px 10px 14px;border-top:1px solid #2b303a}
+.class{display:flex;gap:4px;font-size:12px}
+.class span{padding:4px 10px;border-radius:5px;color:#a3abb9}
+.class .on{background:#272c3a;color:#e4e7ec;font-weight:500}
+.meta{font-size:12px;color:#959eae}
+.send{margin-left:auto;background:#7c8cff;color:#0d0f1a;font-weight:600;font-size:13px;padding:6px 14px;border-radius:6px}
+.stop{font-size:12px;color:#c3c9d4;border:1px solid #2b303a;padding:5px 10px;border-radius:6px}
+</style></head><body>
+<aside>
+<div class="brand">dia</div>
+<div class="grp">dia</div>
+<div class="row sel"><span class="dot"></span><div><b>Composer redesign</b><small class="mono">Edit plugins/chat/pane.tsx</small></div></div>
+<div class="row"><span class="dot" style="background:#e0a63a"></span><div><b>Release notes</b><small>Asks: publish v0.0.16?</small></div></div>
+<div class="grp">infotrack-api</div>
+<div class="row"><span class="dot"></span><div><b>Fix flaky test</b><small>Running the test suite</small></div></div>
+</aside>
+<main>
+<header>dia › Composer redesign</header>
+<div class="col">
+<div class="user">Move the send-mode logic into the composer and keep Stop in a fixed place.</div>
+<div class="agent">I'll start by reading how <span class="mono">sendModeForEnter</span> picks the mode, then restructure the control row.</div>
+<div class="steps"><span class="mono">Edit plugins/chat/pane.tsx</span> · 14s</div>
+<div class="spacer"></div>
+<div class="queued"><small>QUEUED · AFTER THIS TURN</small>Then run pnpm typecheck and fix what it reports.</div>
+<div class="blank">
+<div class="route">
+<div class="cell"><label>TO</label><span>Composer redesign</span> <span class="mono" style="font-size:12px;color:#959eae">feat/composer</span></div>
+<div class="cell"><label>MODEL</label><span>Opus 5.5</span></div>
+<div class="cell"><label>EFFORT</label><span>Medium</span></div>
+<div class="cell warn"><label>AUTHORITY</label><span>Auto</span></div>
+</div>
+<div class="lined">Use the existing InputGroup, don't add a new primitive|</div>
+<div class="foot">
+<span style="color:#a3abb9">＋</span>
+<div class="class"><span class="on">Queue · after this turn</span><span>Steer · now</span></div>
+<span class="meta">Context 62% · 124k of 200k</span>
+<span class="stop" style="margin-left:auto">Stop</span>
+<span class="send" style="margin-left:0">Queue ↵</span>
+</div>
+</div>
+</div>
+</main>
+</body></html>
