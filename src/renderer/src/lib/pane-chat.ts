@@ -291,6 +291,24 @@ const updateToolCall = (
       : part
   )
 
+const holdsToolCall = (message: PaneMessage, toolCallId: string): boolean =>
+  message.parts.some((part) => part.type === 'tool-call' && part.toolCallId === toolCallId)
+
+const withToolCallMessage = (
+  state: PaneChatState,
+  toolCallId: string,
+  update: (parts: ReadonlyArray<MessagePart>) => ReadonlyArray<MessagePart>
+): PaneChatState | undefined => {
+  const index = state.messages.findIndex((message) => holdsToolCall(message, toolCallId))
+  if (index === -1) return undefined
+  return {
+    ...state,
+    messages: state.messages.map((message, at) =>
+      at === index ? { ...message, parts: update(message.parts) } : message
+    )
+  }
+}
+
 const isTurnOver = (attention: AttentionState): boolean =>
   attention._tag === 'Completed' || attention._tag === 'Errored' || attention._tag === 'Crashed'
 
@@ -375,11 +393,16 @@ export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): Pa
         { type: 'tool-call', toolCallId: event.toolCallId, name: event.toolName, state: 'running' }
       ])
     case 'PaneToolCallCompleted':
-      return withStreamingAssistant(state, (parts) => completeToolCall(parts, event))
+      return (
+        withToolCallMessage(state, event.toolCallId, (parts) => completeToolCall(parts, event)) ??
+        withStreamingAssistant(state, (parts) => completeToolCall(parts, event))
+      )
     case 'PaneToolCallUpdated':
-      return isStreamingAssistant(state)
-        ? withStreamingAssistant(state, (parts) => updateToolCall(parts, event))
-        : state
+      if (!state.isLoading) return state
+      return (
+        withToolCallMessage(state, event.toolCallId, (parts) => updateToolCall(parts, event)) ??
+        state
+      )
     case 'PaneTurnStatusChanged':
       return { ...state, turnStatus: event.label }
     case 'PaneSessionNotice':

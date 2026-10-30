@@ -881,6 +881,29 @@ describe('reducePaneChat — turn status, tool row updates and notices', () => {
     expect(reducePaneChat(ended, toolUpdated({ detail: 'late' }))).toBe(ended)
   })
 
+  it('keeps resolving a running tool row after a notice lands mid-turn', () => {
+    const running = reducePaneChat(loading, toolStarted('toolu_1', 'Bash'))
+    const noticed = reducePaneChat(
+      running,
+      PaneSessionNotice.make({ paneId: PANE, text: 'Approaching the 5-hour usage limit' })
+    )
+    const updated = reducePaneChat(noticed, toolUpdated({ elapsedSeconds: 7 }))
+    const completed = reducePaneChat(updated, toolCompleted('toolu_1', 'Bash', {}, 'ok', false))
+    expect(completed.messages.map((message) => message.role)).toEqual(['assistant', 'notice'])
+    expect(completed.messages[0]?.parts).toEqual([
+      {
+        type: 'tool-call',
+        toolCallId: 'toolu_1',
+        name: 'Bash',
+        state: 'done',
+        elapsedSeconds: 7,
+        input: {},
+        output: 'ok',
+        isError: false
+      }
+    ])
+  })
+
   it('appends a session notice as a notice divider', () => {
     const state = reducePaneChat(
       emptyPaneChatState,

@@ -571,11 +571,54 @@ describe('makeSessionEventReducer — activity line states', () => {
     expect(emitted).toEqual([{ _tag: 'TurnStatusChanged', label: 'Thinking · ~1.2k tokens' }])
   })
 
-  it('shows a thinking-token estimate below 1000 as a plain count', () => {
+  it('shows no count below 1000 thinking tokens, so the label does not change per token', () => {
     const emitted = stepOnce(
       system('thinking_tokens', { estimated_tokens: 999, estimated_tokens_delta: 1 })
     )
-    expect(emitted).toEqual([{ _tag: 'TurnStatusChanged', label: 'Thinking · ~999 tokens' }])
+    expect(emitted).toEqual([{ _tag: 'TurnStatusChanged', label: 'Thinking' }])
+  })
+
+  it('keeps a retry label when a requesting status arrives during the wait', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(
+      system('api_retry', { attempt: 2, max_retries: 10, retry_delay_ms: 8000, error_status: 529 })
+    )
+    expect(reducer.step(system('status', { status: 'requesting' }))).toEqual([])
+  })
+
+  it('ignores progress for a tool running inside a subagent', () => {
+    const emitted = stepOnce(
+      sdkMessage({
+        type: 'tool_progress',
+        tool_use_id: 'toolu_inner',
+        tool_name: 'Grep',
+        parent_tool_use_id: 'toolu_task',
+        elapsed_time_seconds: 3
+      })
+    )
+    expect(emitted).toEqual([])
+  })
+
+  it('does not add a notice for an informational line tied to a tool call', () => {
+    const emitted = stepOnce(
+      system('informational', { content: 'hook output', level: 'notice', tool_use_id: 'toolu_1' })
+    )
+    expect(emitted).toEqual([])
+  })
+
+  it('prefers a task’s own progress summary over the tool count', () => {
+    const emitted = stepOnce(
+      system('task_progress', {
+        task_id: 'task_1',
+        tool_use_id: 'toolu_task',
+        description: 'Explore',
+        usage: { total_tokens: 900, tool_uses: 14, duration_ms: 5000 },
+        summary: 'Reading the reducer tests'
+      })
+    )
+    expect(emitted).toEqual([
+      { _tag: 'ToolCallUpdated', toolCallId: 'toolu_task', detail: 'Reading the reducer tests' }
+    ])
   })
 })
 

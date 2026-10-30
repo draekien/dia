@@ -395,7 +395,7 @@ const messageActivitySignature = (state: PaneChatState): string => {
       : lastPart.type === 'tool-call'
         ? lastPart.state
         : String(lastPart.content.length)
-  return `${state.messages.length}:${last?.parts.length ?? 0}:${detail}`
+  return `${state.messages.length}:${last?.parts.length ?? 0}:${detail}:${state.turnStatus ?? ''}`
 }
 
 function PaneChat({

@@ -79,13 +79,16 @@ const rateLimitWarning = (type: RateLimitType): string =>
     ? 'Approaching the usage limit'
     : `Approaching the ${RATE_LIMIT_LABELS[type]} usage limit`
 
-const formatTokens = (tokens: number): string =>
-  tokens < 1000 ? String(tokens) : `${(tokens / 1000).toFixed(1)}k`
+const COMPACTING_LABEL = 'Compacting conversation'
+
+const thinkingLabel = (tokens: number): string =>
+  tokens < 1000 ? 'Thinking' : `Thinking · ~${(Math.floor(tokens / 100) / 10).toFixed(1)}k tokens`
 
 const retryLabel = (retry: Extract<SDKMessage, { subtype: 'api_retry' }>): string =>
   `Retrying (attempt ${retry.attempt} of ${retry.max_retries}) in ${Math.ceil(retry.retry_delay_ms / 1000)}s · ${retry.error_status ?? 'connection error'}`
 
 const taskProgressDetail = (task: Extract<SDKMessage, { subtype: 'task_progress' }>): string =>
+  task.summary ??
   [
     task.description,
     `${task.usage.tool_uses} tools`,
@@ -160,6 +163,7 @@ export const makeSessionEventReducer = (
 
   const stepNotice = (message: SDKMessage): ReadonlyArray<OutboundMessage> | undefined => {
     if (message.type === 'tool_progress') {
+      if (message.parent_tool_use_id !== null) return []
       return [
         ToolCallUpdated.make({
           toolCallId: message.tool_use_id,
@@ -186,16 +190,14 @@ export const makeSessionEventReducer = (
       case 'api_retry':
         return [TurnStatusChanged.make({ label: retryLabel(message) })]
       case 'thinking_tokens':
-        return [
-          TurnStatusChanged.make({
-            label: `Thinking · ~${formatTokens(message.estimated_tokens)} tokens`
-          })
-        ]
+        return [TurnStatusChanged.make({ label: thinkingLabel(message.estimated_tokens) })]
       case 'status':
         return [
-          TurnStatusChanged.make({
-            label: message.status === 'compacting' ? 'Compacting conversation' : null
-          }),
+          ...(message.status === 'compacting'
+            ? [TurnStatusChanged.make({ label: COMPACTING_LABEL })]
+            : turnStatus === COMPACTING_LABEL
+              ? [TurnStatusChanged.make({ label: null })]
+              : []),
           ...(message.compact_result === 'failed'
             ? [
                 SessionNotice.make({
@@ -214,7 +216,9 @@ export const makeSessionEventReducer = (
           })
         ]
       case 'informational':
-        return message.level === 'info' ? [] : [SessionNotice.make({ text: message.content })]
+        return message.level === 'info' || message.tool_use_id !== undefined
+          ? []
+          : [SessionNotice.make({ text: message.content })]
       case 'permission_denied':
         return [
           ToolCallUpdated.make({
