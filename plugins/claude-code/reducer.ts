@@ -7,16 +7,20 @@ import {
   ConversationCompacted,
   ConversationReset,
   type OutboundMessage,
+  type ParkCause,
   SessionId,
   SessionNotice,
   SessionStarted,
+  SignedOut,
   SlashCommandsAvailable,
   ToolCallCompleted,
   ToolCallStarted,
   ToolCallUpdated,
   TurnCompleted,
   TurnErrored,
-  TurnStatusChanged
+  TurnParked,
+  TurnStatusChanged,
+  UsageLimit
 } from '@dia/plugin'
 import type { ConversationMessage } from '@shared/domain/pane'
 import { Option } from 'effect'
@@ -45,10 +49,16 @@ const flattenToolResultContent = (content: ToolResultBlock['content']): string =
 }
 
 type ResultMessage = Extract<SDKMessage, { type: 'result' }>
-type RateLimitType = Extract<
-  SDKMessage,
-  { type: 'rate_limit_event' }
->['rate_limit_info']['rateLimitType']
+type RateLimitInfo = Extract<SDKMessage, { type: 'rate_limit_event' }>['rate_limit_info']
+type RateLimitType = RateLimitInfo['rateLimitType']
+
+const refusedByLimit = (info: RateLimitInfo): boolean =>
+  info.status === 'rejected' &&
+  info.overageStatus !== 'allowed' &&
+  info.overageStatus !== 'allowed_warning'
+
+const resetsAtMillis = (info: RateLimitInfo): number | null =>
+  info.resetsAt === undefined ? null : Math.round(info.resetsAt * 1000)
 
 const ERROR_RESULT_LABELS: Record<Exclude<ResultMessage['subtype'], 'success'>, string> = {
   error_during_execution: 'The turn failed',
@@ -100,7 +110,8 @@ const ENDS_TURN_STATUS: ReadonlySet<OutboundMessage['_tag']> = new Set([
   'AssistantThinkingDelta',
   'ToolCallStarted',
   'TurnCompleted',
-  'TurnErrored'
+  'TurnErrored',
+  'TurnParked'
 ])
 
 /**
@@ -124,7 +135,9 @@ export interface SessionEventReducer {
  * up to but excluding that user turn. `continuesFrom` is the uuid of the last
  * assistant message of the conversation this stream continues, or none for a new
  * conversation; until the stream delivers an assistant message of its own, user
- * turns carry it as `resumeAnchorUuid`.
+ * turns carry it as `resumeAnchorUuid`. When the account refuses a turn (a rejected usage limit
+ * the plan's overage does not cover, or a signed-out account) and the turn's `result` fails, the
+ * reducer ends the turn with `TurnParked` instead of `TurnErrored`.
  */
 export const makeSessionEventReducer = (
   continuesFrom: Option.Option<string>
@@ -134,6 +147,8 @@ export const makeSessionEventReducer = (
   const pendingToolCalls = new Map<string, { name: string; input: Record<string, unknown> }>()
   let lastAssistantUuid = Option.getOrUndefined(continuesFrom)
   let lastRateLimitStatus: string | undefined
+  let lastRejectedResetsAt: number | null = null
+  let parkCause: ParkCause | null = null
   let turnStatus: string | null = null
 
   const completeToolCall = (
@@ -173,6 +188,10 @@ export const makeSessionEventReducer = (
     }
     if (message.type === 'rate_limit_event') {
       const { status, rateLimitType } = message.rate_limit_info
+      if (refusedByLimit(message.rate_limit_info)) {
+        lastRejectedResetsAt = resetsAtMillis(message.rate_limit_info)
+        parkCause = UsageLimit.make({ resetsAt: lastRejectedResetsAt })
+      }
       const entered = status !== lastRateLimitStatus
       lastRateLimitStatus = status
       return entered && status === 'allowed_warning'
@@ -290,6 +309,10 @@ export const makeSessionEventReducer = (
 
     if (message.type === 'assistant') {
       lastAssistantUuid = message.uuid
+      if (message.error === 'rate_limit' && parkCause?._tag !== 'UsageLimit') {
+        parkCause = UsageLimit.make({ resetsAt: lastRejectedResetsAt })
+      }
+      if (message.error === 'authentication_failed') parkCause = SignedOut.make({})
       const text = message.message.content
         .flatMap((block) => (block.type === 'text' ? [block.text] : []))
         .join('')
@@ -300,6 +323,12 @@ export const makeSessionEventReducer = (
 
     if (message.type === 'result') {
       const flushed = flushPendingToolCalls()
+      const cause = parkCause
+      parkCause = null
+      lastRejectedResetsAt = null
+      if (cause !== null && (message.subtype !== 'success' || message.is_error)) {
+        return [...flushed, TurnParked.make({ cause })]
+      }
       if (message.subtype === 'success') {
         return [...flushed, TurnCompleted.make({})]
       }

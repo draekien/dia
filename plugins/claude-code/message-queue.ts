@@ -95,6 +95,19 @@ export const send =
   }
 
 /**
+ * The session resumes a parked turn with `message`. With no turn running it is dispatched alone,
+ * ahead of any held queue, and the queue is released to run after it. During a turn nothing
+ * changes.
+ */
+export const resume =
+  (message: OutgoingMessage) =>
+  (state: QueueState): QueueTransition => {
+    if (state._tag === 'QueueRunning') return [[], state]
+    const [actions, next] = dispatchNow([message], state.queued, false)
+    return [state.held ? [queueChanged(state.queued, false), ...actions] : actions, next]
+  }
+
+/**
  * The running turn ended; `ok` is false for a failed turn. Steered messages run next; otherwise the
  * queue runs next unless it is held or the turn failed, in which case it is held.
  */

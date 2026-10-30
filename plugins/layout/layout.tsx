@@ -1,4 +1,5 @@
 import {
+  AccountBanner,
   MAIN,
   MAIN_HEADER,
   Separator,
@@ -93,6 +94,7 @@ export function Layout() {
           <Slot name={MAIN_HEADER} />
         </header>
         <Separator />
+        <AccountBanner />
         <div className="min-h-0 flex-1">
           <Slot name={MAIN} />
         </div>

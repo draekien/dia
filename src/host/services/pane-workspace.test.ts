@@ -56,7 +56,8 @@ const fakeHandle: PaneHandle = {
   resolvePlanReview: () => Effect.void,
   rewindToCheckpoint: () => Effect.void,
   interrupt: () => Effect.void,
-  markCrashed: () => Effect.void
+  markCrashed: () => Effect.void,
+  resume: Effect.void
 }
 
 interface Harness {
@@ -111,7 +112,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       ),
     getHandle: (paneId) =>
       Effect.succeed(options.live?.has(paneId) === true ? Option.some(fakeHandle) : Option.none()),
-    closeAll: () => Effect.void
+    closeAll: () => Effect.void,
+    setUsageLimitResume: () => Effect.void
   })
 
   const persistence = Layer.succeed(PersistenceService, {

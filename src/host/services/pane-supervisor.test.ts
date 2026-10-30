@@ -6,6 +6,7 @@ import {
   SessionId,
   type WorktreeInfo
 } from '@shared/domain/pane'
+import { SignedOut, UsageLimit, type UsageLimitResume } from '@shared/domain/parking'
 import type { IpcEvent } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
 import { Deferred, Effect, Layer, Option, Result, Stream } from 'effect'
@@ -17,6 +18,7 @@ import {
   MessageQueueChanged,
   type OutboundMessage,
   SessionStarted,
+  TurnParked,
   UserMessagesSent
 } from '../session/protocol'
 import {
@@ -26,6 +28,7 @@ import {
   SessionFactory,
   SessionFactoryLive
 } from './pane-supervisor'
+import { SettingsStore } from './settings-store'
 import { type GitOps, WorktreeReattachError } from './worktrees-seam'
 
 interface FakeSession {
@@ -84,10 +87,35 @@ const unusedGitOps: GitOps = {
     Effect.die(new Error('reattachWorktree should not be called in these tests'))
 }
 
+const unused = (name: string) => () => Effect.die(new Error(`${name} should not be called`))
+
+const memorySettings = (initial?: UsageLimitResume) => {
+  let stored = initial
+  return Layer.succeed(SettingsStore)({
+    getTheme: unused('getTheme'),
+    setTheme: unused('setTheme'),
+    getSendMode: unused('getSendMode'),
+    setSendMode: unused('setSendMode'),
+    getTranscriptWidth: unused('getTranscriptWidth'),
+    setTranscriptWidth: unused('setTranscriptWidth'),
+    getUsageLimitResume: () => Effect.sync(() => Option.fromUndefinedOr(stored)),
+    setUsageLimitResume: (mode) =>
+      Effect.sync(() => {
+        stored = mode
+      }),
+    getPluginOverrides: unused('getPluginOverrides'),
+    setPluginOverride: unused('setPluginOverride'),
+    clearPluginOverride: unused('clearPluginOverride'),
+    getAdapterPreferences: unused('getAdapterPreferences'),
+    setAdapterPreferences: unused('setAdapterPreferences')
+  })
+}
+
 function makeTestSetup(
   gitOps: GitOps = unusedGitOps,
   lifecycleLog: Array<string> = [],
-  plugins: Layer.Layer<HostPlugins> = pluginsProviding(gitOps)
+  plugins: Layer.Layer<HostPlugins> = pluginsProviding(gitOps),
+  usageLimitResume?: UsageLimitResume
 ) {
   const sessions: Array<FakeSession> = []
 
@@ -128,13 +156,17 @@ function makeTestSetup(
           resolvePlanReview: record('resolvePlanReview'),
           interrupt: () => record('interrupt')(),
           rewindToCheckpoint: record('rewindToCheckpoint'),
+          resume: record('resume')(),
           ended: Deferred.await(ended)
         }
         return session
       })
   })
 
-  const testLayer = Layer.provide(PaneSupervisorLive, Layer.merge(factoryLayer, plugins))
+  const testLayer = Layer.provide(
+    PaneSupervisorLive,
+    Layer.mergeAll(factoryLayer, plugins, memorySettings(usageLimitResume))
+  )
   return { sessions, testLayer }
 }
 
@@ -149,7 +181,10 @@ describe('SessionFactoryLive without the claude-code adapter', () => {
   it.effect('marks the pane Crashed once and removes it', () =>
     Effect.gen(function* () {
       const factory = Layer.provide(SessionFactoryLive, Layer.merge(noPlugins, unusedPluginSources))
-      const testLayer = Layer.provide(PaneSupervisorLive, Layer.merge(factory, noPlugins))
+      const testLayer = Layer.provide(
+        PaneSupervisorLive,
+        Layer.mergeAll(factory, noPlugins, memorySettings())
+      )
       const events: Array<IpcEvent> = []
 
       yield* Effect.gen(function* () {
@@ -688,6 +723,259 @@ describe('PaneSupervisor', () => {
             held: true
           }
         ])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+})
+
+const HOUR_MS = 60 * 60 * 1000
+const GRACE_MS = 5000
+
+const parkedEvents = (events: ReadonlyArray<IpcEvent>) =>
+  events.flatMap((event) =>
+    event._tag === 'PaneAttentionChanged' &&
+    (event.attention._tag === 'ParkedToResume' ||
+      event.attention._tag === 'ParkedUntilReset' ||
+      event.attention._tag === 'ParkedForUser')
+      ? [event.attention]
+      : []
+  )
+
+const openPaneA = (events: Array<IpcEvent>) =>
+  Effect.gen(function* () {
+    const supervisor = yield* PaneSupervisor
+    const opened = yield* supervisor.openPane(
+      requestA,
+      (event) => Effect.sync(() => void events.push(event)),
+      ignoreSessionId,
+      ignorePermissionMode
+    )
+    return { supervisor, handle: opened.handle }
+  })
+
+const limitResetAt = (resetsAt: number) => TurnParked.make({ cause: UsageLimit.make({ resetsAt }) })
+
+describe('PaneSupervisor parking', () => {
+  it.effect('waits for a usage limit to reset and sends continue five seconds after it', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const events: Array<IpcEvent> = []
+        yield* openPaneA(events)
+
+        yield* sessions[0].emit(limitResetAt(HOUR_MS))
+        yield* flush
+        assert.deepStrictEqual(parkedEvents(events), [
+          {
+            _tag: 'ParkedToResume',
+            cause: { _tag: 'UsageLimit', resetsAt: HOUR_MS },
+            resumesAt: HOUR_MS + GRACE_MS
+          }
+        ])
+
+        yield* TestClock.adjust(HOUR_MS + GRACE_MS - 1)
+        yield* flush
+        assert.deepStrictEqual(sessions[0].calls, [])
+
+        yield* TestClock.adjust(1)
+        yield* flush
+        assert.deepStrictEqual(sessions[0].calls, ['resume'])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('under manual, waits for the reset and then for the user, without resuming', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup(undefined, undefined, undefined, 'manual')
+
+      yield* Effect.gen(function* () {
+        const events: Array<IpcEvent> = []
+        yield* openPaneA(events)
+        const cause = { _tag: 'UsageLimit', resetsAt: HOUR_MS } as const
+
+        yield* sessions[0].emit(limitResetAt(HOUR_MS))
+        yield* flush
+        yield* TestClock.adjust(HOUR_MS - 1)
+        yield* flush
+        assert.deepStrictEqual(parkedEvents(events), [
+          { _tag: 'ParkedUntilReset', cause, resetsAt: HOUR_MS }
+        ])
+
+        yield* TestClock.adjust(1)
+        yield* flush
+        assert.deepStrictEqual(parkedEvents(events), [
+          { _tag: 'ParkedUntilReset', cause, resetsAt: HOUR_MS },
+          { _tag: 'ParkedForUser', cause }
+        ])
+        assert.deepStrictEqual(sessions[0].calls, [])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('waits for the user at once when the reset time has already passed', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup(undefined, undefined, undefined, 'manual')
+
+      yield* Effect.gen(function* () {
+        const events: Array<IpcEvent> = []
+        yield* openPaneA(events)
+
+        yield* TestClock.adjust(HOUR_MS)
+        yield* sessions[0].emit(limitResetAt(HOUR_MS))
+        yield* flush
+
+        assert.deepStrictEqual(
+          parkedEvents(events).map((attention) => attention._tag),
+          ['ParkedForUser']
+        )
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('waits for the user when signed out', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const events: Array<IpcEvent> = []
+        yield* openPaneA(events)
+
+        yield* sessions[0].emit(TurnParked.make({ cause: SignedOut.make({}) }))
+        yield* flush
+
+        assert.deepStrictEqual(parkedEvents(events), [
+          { _tag: 'ParkedForUser', cause: { _tag: 'SignedOut' } }
+        ])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect(
+    'waits for the reset, then the user, when the reset is more than seven days ahead',
+    () =>
+      Effect.gen(function* () {
+        const { sessions, testLayer } = makeTestSetup()
+
+        yield* Effect.gen(function* () {
+          const events: Array<IpcEvent> = []
+          yield* openPaneA(events)
+
+          yield* sessions[0].emit(limitResetAt(7 * 24 * HOUR_MS))
+          yield* flush
+
+          assert.deepStrictEqual(
+            parkedEvents(events).map((attention) => attention._tag),
+            ['ParkedUntilReset']
+          )
+        }).pipe(Effect.scoped, Effect.provide(testLayer))
+      })
+  )
+
+  it.effect('re-parks a pane dia would resume for the user when the mode changes to manual', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const events: Array<IpcEvent> = []
+        const { supervisor } = yield* openPaneA(events)
+
+        yield* sessions[0].emit(limitResetAt(HOUR_MS))
+        yield* flush
+        yield* supervisor.setUsageLimitResume('manual')
+        yield* TestClock.adjust(2 * HOUR_MS)
+        yield* flush
+
+        assert.deepStrictEqual(
+          parkedEvents(events).map((attention) => attention._tag),
+          ['ParkedToResume', 'ParkedUntilReset', 'ParkedForUser']
+        )
+        assert.deepStrictEqual(sessions[0].calls, [])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('parks the next refusal under the mode the user stored', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const events: Array<IpcEvent> = []
+        const { supervisor } = yield* openPaneA(events)
+
+        yield* supervisor.setUsageLimitResume('manual')
+        yield* sessions[0].emit(limitResetAt(HOUR_MS))
+        yield* flush
+
+        assert.deepStrictEqual(
+          parkedEvents(events).map((attention) => attention._tag),
+          ['ParkedUntilReset']
+        )
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('a user resume of a parked pane reaches the session', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const { handle } = yield* openPaneA([])
+
+        yield* sessions[0].emit(TurnParked.make({ cause: SignedOut.make({}) }))
+        yield* handle.resume
+
+        assert.deepStrictEqual(sessions[0].calls, ['resume'])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('a user resume of a pane that is not parked does nothing', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const { handle } = yield* openPaneA([])
+
+        yield* handle.resume
+
+        assert.deepStrictEqual(sessions[0].calls, [])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('a message sent while waiting for the reset cancels the automatic resume', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const events: Array<IpcEvent> = []
+        yield* openPaneA(events)
+
+        yield* sessions[0].emit(limitResetAt(HOUR_MS))
+        yield* sessions[0].emit(UserMessagesSent.make({ messages: [{ id: 'm-1', text: 'go' }] }))
+        yield* TestClock.adjust(2 * HOUR_MS)
+        yield* flush
+
+        assert.deepStrictEqual(attentionTags(events), ['ParkedToResume', 'Idle'])
+        assert.deepStrictEqual(sessions[0].calls, [])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('a rewind leaves the parked state', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const events: Array<IpcEvent> = []
+        const { handle } = yield* openPaneA(events)
+
+        yield* sessions[0].emit(TurnParked.make({ cause: SignedOut.make({}) }))
+        yield* handle.rewindToCheckpoint('u-1', undefined)
+        yield* flush
+
+        assert.deepStrictEqual(attentionTags(events), ['ParkedForUser', 'Idle'])
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })
   )

@@ -7,6 +7,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  actions,
+  awaitsUser,
   Bubble,
   BubbleContent,
   Button,
@@ -16,12 +18,14 @@ import {
   findModelOption,
   fitThinkingLevel,
   formatElapsed,
+  formatResetTime,
   hasSteps,
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupTextarea,
   InstallNotice,
+  isParkNotice,
   lastUserText,
   Marker,
   MarkerContent,
@@ -55,6 +59,7 @@ import {
   turnActivity,
   turnBlocks,
   useAdapterStatus,
+  useAgentSummaries,
   useDisabledPermissionModes,
   useModelCatalog,
   useTranscriptWidth
@@ -379,6 +384,15 @@ export function MessageView({
   live?: LiveSteps
   nowMs?: number
 }): React.JSX.Element {
+  if (message.role === 'user' && message.resumedAt !== undefined) {
+    return (
+      <Marker variant="separator" className="py-1 text-xs">
+        <MarkerContent>
+          Resumed at {formatResetTime(message.resumedAt, nowMs ?? message.resumedAt)}
+        </MarkerContent>
+      </Marker>
+    )
+  }
   if (message.role === 'notice') {
     const text = message.parts.find((part) => part.type === 'text')?.content ?? ''
     return (
@@ -609,6 +623,9 @@ function PaneChat({
   const activitySignature = messageActivitySignature(chat)
 
   const { elapsedMs, idleMs, nowMs } = useElapsedClock(isLoading, activitySignature)
+  const summary = useAgentSummaries().get(paneId)
+  const parkedForUser = summary !== undefined && awaitsUser(summary)
+  const lastMessage = chat.messages.at(-1)
   const activity = turnActivity(chat, elapsedMs, idleMs)
 
   const pendingInteraction =
@@ -859,6 +876,21 @@ function PaneChat({
               live={message === runningTurn ? liveSteps : undefined}
               nowMs={nowMs}
             />
+            {parkedForUser && message === lastMessage && isParkNotice(message) && (
+              <div className="flex justify-center pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={() => {
+                    textareaRef.current?.focus()
+                    actions.resumeParkedAgent(paneId)
+                  }}
+                >
+                  Resume
+                </Button>
+              </div>
+            )}
           </TranscriptItem>
         ))}
         {showActivity && !activityInSteps && (

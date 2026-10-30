@@ -12,6 +12,7 @@ import {
   ModelPreferencesSnapshot
 } from '../domain/model-preferences'
 import { ConversationMessage, PermissionMode } from '../domain/pane'
+import { UsageLimitResume } from '../domain/parking'
 import { ProjectId, ProjectNotFoundError, RegisterProjectError, Workspace } from '../domain/project'
 import { RemovalProgress } from '../domain/project-removal'
 import { ThemePreference } from '../domain/theme'
@@ -28,6 +29,7 @@ import {
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
+  ResumeParkedAgent,
   RewindToCheckpoint,
   SelectTab,
   SendMessage,
@@ -43,7 +45,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.6'
+export const PROTOCOL_VERSION = '0.0.7'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -100,7 +102,8 @@ export type EventFrame = typeof EventFrame.Type
  * on a loaded plugin reloads it), the model calls (`GetModels`, `RefreshModels`), the adapter calls
  * (`GetAdapterStatus`, `CheckAdapterHealth`, `SetInstallPath`, `GetModelPreferences`,
  * `SetModelPreference`, `SetAgentDefaults`, each setting a value, so repeating one is harmless,
- * and `GetDisabledPermissionModes`) and
+ * and `GetDisabledPermissionModes`), the usage-limit resume calls (`GetUsageLimitResume`,
+ * `SetUsageLimitResume`) and
  * the activity calls (`ListActivities`, `RunActivity`) are safe to repeat and take none; a
  * `RefreshModels`, `CheckAdapterHealth` or `RunActivity` sent while that run is in progress waits
  * for it instead of starting another;
@@ -122,6 +125,7 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('SetPermissionMode', { payload: withRequestId(SetPermissionMode) }),
   Rpc.make('SetModel', { payload: withRequestId(SetModel) }),
   Rpc.make('InterruptPane', { payload: withRequestId(InterruptPane) }),
+  Rpc.make('ResumeParkedAgent', { payload: withRequestId(ResumeParkedAgent) }),
   Rpc.make('RewindToCheckpoint', { payload: withRequestId(RewindToCheckpoint) }),
   Rpc.make('EditQueuedMessage', { payload: withRequestId(EditQueuedMessage) }),
   Rpc.make('RemoveQueuedMessage', { payload: withRequestId(RemoveQueuedMessage) }),
@@ -150,6 +154,8 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('SetTheme', { payload: { theme: ThemePreference } }),
   Rpc.make('GetSendMode', { success: SendMode }),
   Rpc.make('SetSendMode', { payload: { mode: SendMode } }),
+  Rpc.make('GetUsageLimitResume', { success: UsageLimitResume }),
+  Rpc.make('SetUsageLimitResume', { payload: { mode: UsageLimitResume } }),
   Rpc.make('ListPlugins', { success: Schema.Array(PluginInfo) }),
   Rpc.make('LoadPlugin', { payload: { name: PluginName }, success: PluginInfo }),
   Rpc.make('UnloadPlugin', { payload: { name: PluginName }, success: PluginInfo }),

@@ -433,3 +433,71 @@ describe('install', () => {
     })
   )
 })
+
+describe('parked turn', () => {
+  const rejected = {
+    type: 'rate_limit_event',
+    rate_limit_info: { status: 'rejected', resetsAt: 1_700_000_000 }
+  } as unknown as SDKMessage
+
+  const refuseTurn = (query: FakeQuery) => Effect.sync(() => query.emit(rejected))
+
+  it.effect('ends a refused turn as parked and holds the queue', () =>
+    Effect.gen(function* () {
+      const { session, emitted, query, endTurn } = yield* open
+      yield* session.sendText('first', 'queue')
+      yield* session.sendText('queued', 'queue')
+
+      yield* refuseTurn(query)
+      yield* endTurn(aborted)
+
+      assert.isTrue(tags(emitted).includes('TurnParked'))
+      assert.isFalse(tags(emitted).includes('TurnErrored'))
+      assert.deepStrictEqual(texts(query), ['first'])
+      assert.deepStrictEqual((yield* session.messageQueue).held, true)
+    })
+  )
+
+  it.effect('resumes with continue first and sends the held queue after that turn', () =>
+    Effect.gen(function* () {
+      const { session, query, endTurn } = yield* open
+      yield* session.sendText('first', 'queue')
+      yield* session.sendText('queued', 'queue')
+      yield* refuseTurn(query)
+      yield* endTurn(aborted)
+
+      yield* session.resume
+      yield* settle
+      assert.deepStrictEqual(texts(query), ['first', 'continue'])
+
+      yield* endTurn()
+      assert.deepStrictEqual(texts(query), ['first', 'continue', 'queued'])
+    })
+  )
+
+  it.effect('ignores a resume while a turn is running', () =>
+    Effect.gen(function* () {
+      const { session, query } = yield* open
+      yield* session.sendText('first', 'queue')
+
+      yield* session.resume
+      yield* settle
+
+      assert.deepStrictEqual(texts(query), ['first'])
+    })
+  )
+
+  it.effect('ends a refused turn the user stopped as a clean turn end', () =>
+    Effect.gen(function* () {
+      const { session, emitted, query, endTurn } = yield* open
+      yield* session.sendText('first', 'queue')
+
+      yield* session.interrupt()
+      yield* refuseTurn(query)
+      yield* endTurn(aborted)
+
+      assert.isFalse(tags(emitted).includes('TurnParked'))
+      assert.isTrue(tags(emitted).includes('TurnCompleted'))
+    })
+  )
+})
