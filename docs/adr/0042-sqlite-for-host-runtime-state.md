@@ -59,7 +59,7 @@ Current state is never derived by replaying events at Host start, so startup tim
 | Issue | State | Store | Shape |
 | --- | --- | --- | --- |
 | #69 | Parked cause, `resetsAt`, resume mode per pane | `host.db` | Relational, upsert |
-| #69 | Held message queue per pane | `host.db` | Relational, position column |
+| #69 | Held message queue per pane (owned by the claude-code adapter, `plugins/claude-code/message-queue.ts`) | claude-code adapter's `data.db` | Relational, position column |
 | #69 | Each tab's last activity line (today `activity.json`) | `host.db` | Relational, upsert |
 | #72 | Turn index: turn → start and end tree ids; tool call → hunks | diff viewer plugin's `data.db` | Append-only |
 | #40 | Roles, hired agents, org settings | org plugin's `data.db` | Relational |
