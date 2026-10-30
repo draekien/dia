@@ -1,4 +1,4 @@
-import { Button, type TurnActivity } from '@dia/renderer-plugin'
+import { Button, Marker, MarkerIcon, type TurnActivity } from '@dia/renderer-plugin'
 
 interface TurnActivityLineProps {
   readonly activity: TurnActivity
@@ -23,8 +23,10 @@ export function TurnActivityLine({
   onInterruptAndRetry
 }: TurnActivityLineProps): React.JSX.Element {
   return (
-    <div className="flex items-center gap-2 px-1 text-muted-foreground text-xs">
-      <span className="size-1.5 shrink-0 animate-pulse-slow rounded-full bg-muted-foreground motion-reduce:animate-none" />
+    <Marker className="pl-0.5 text-xs">
+      <MarkerIcon className="flex items-center justify-center">
+        <span className="size-1.5 animate-pulse-slow rounded-full bg-muted-foreground motion-reduce:animate-none" />
+      </MarkerIcon>
       <span aria-live="polite">{activity.label}</span>
       {activity.elapsedLabel !== undefined && (
         <span aria-hidden className="tabular-nums text-muted-foreground/70">
@@ -47,6 +49,6 @@ export function TurnActivityLine({
           </Button>
         </span>
       )}
-    </div>
+    </Marker>
   )
 }
