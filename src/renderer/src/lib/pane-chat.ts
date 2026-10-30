@@ -1,4 +1,9 @@
-import type { AttentionState, PaneError } from '@shared/domain/attention'
+import {
+  type AttentionState,
+  isParkedState,
+  type PaneError,
+  type ParkedState
+} from '@shared/domain/attention'
 import type { OutgoingMessage } from '@shared/domain/message-queue'
 import type { ConversationMessage } from '@shared/domain/pane'
 import { RESUME_TEXT } from '@shared/domain/parking'
@@ -184,16 +189,6 @@ export const paneChatStateFromHistory = (
   queueHeld: false,
   turnStatus: null
 })
-
-type ParkedState = Extract<
-  AttentionState,
-  { _tag: 'ParkedToResume' | 'ParkedUntilReset' | 'ParkedForUser' }
->
-
-const isParkedState = (attention: AttentionState): attention is ParkedState =>
-  attention._tag === 'ParkedToResume' ||
-  attention._tag === 'ParkedUntilReset' ||
-  attention._tag === 'ParkedForUser'
 
 const appendSentMessages = (state: PaneChatState, event: PaneUserMessagesSent): PaneChatState => {
   const present = new Set(state.messages.map((message) => message.id))

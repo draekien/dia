@@ -13,13 +13,16 @@ const agents = (count: number): string => (count === 1 ? '1 agent' : `${count} a
 
 const Dot = () => <span aria-hidden> · </span>
 
+function ResetTime({ at }: { at: number }) {
+  const nowMs = useNow(Duration.minutes(1))
+  return <>{formatResetTime(at, nowMs)}</>
+}
+
 function BannerContent({
   banner,
-  nowMs,
   onResume
 }: {
   banner: Banner
-  nowMs: number
   onResume: (paneIds: ReadonlyArray<string>) => void
 }) {
   switch (banner._tag) {
@@ -56,7 +59,7 @@ function BannerContent({
         <span>
           Usage limit reached
           <Dot />
-          you can resume {agents(banner.count)} at {formatResetTime(banner.resetsAt, nowMs)}
+          you can resume {agents(banner.count)} at <ResetTime at={banner.resetsAt} />
         </span>
       )
     case 'LimitResumingBanner':
@@ -64,7 +67,7 @@ function BannerContent({
         <span>
           Usage limit reached
           <Dot />
-          dia resumes {agents(banner.count)} at {formatResetTime(banner.resumesAt, nowMs)}
+          dia resumes {agents(banner.count)} at <ResetTime at={banner.resumesAt} />
         </span>
       )
   }
@@ -78,7 +81,6 @@ function BannerContent({
  */
 export function AccountBanner(): React.JSX.Element {
   const summaries = useAtomValue(agentSummariesAtom)
-  const nowMs = useNow(Duration.minutes(1))
   const regionRef = useRef<HTMLDivElement>(null)
   const banner = accountBannerOf(summaries.values())
   const resume = (paneIds: ReadonlyArray<string>) => {
@@ -96,7 +98,7 @@ export function AccountBanner(): React.JSX.Element {
           'flex min-h-9 shrink-0 items-center gap-2 border-b px-4 py-1.5 text-xs text-ink-muted'
       )}
     >
-      {banner !== null && <BannerContent banner={banner} nowMs={nowMs} onResume={resume} />}
+      {banner !== null && <BannerContent banner={banner} onResume={resume} />}
     </div>
   )
 }

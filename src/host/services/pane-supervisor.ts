@@ -6,8 +6,10 @@ import {
   Crashed,
   Errored,
   Idle,
+  isParkedState,
   type PaneError,
   ParkedForUser,
+  type ParkedState,
   ParkedToResume,
   ParkedUntilReset,
   PermissionRequest,
@@ -370,17 +372,7 @@ function toAttentionTarget(message: OutboundMessage): Option.Option<AttentionSta
   )
 }
 
-type Parked = Extract<
-  AttentionState,
-  { _tag: 'ParkedToResume' | 'ParkedUntilReset' | 'ParkedForUser' }
->
-
-const isParked = (attention: AttentionState): attention is Parked =>
-  attention._tag === 'ParkedToResume' ||
-  attention._tag === 'ParkedUntilReset' ||
-  attention._tag === 'ParkedForUser'
-
-const parkedState = (cause: ParkCause, mode: UsageLimitResume, nowMs: number): Parked => {
+const parkedState = (cause: ParkCause, mode: UsageLimitResume, nowMs: number): ParkedState => {
   if (cause._tag === 'SignedOut' || cause.resetsAt === null || cause.resetsAt <= nowMs) {
     return ParkedForUser.make({ cause })
   }
@@ -498,7 +490,7 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
 
   const repark = Effect.fn('PaneSupervisor.repark')(function* (mode: UsageLimitResume) {
     const { attention } = yield* Ref.get(recordRef)
-    if (!isParked(attention)) return
+    if (!isParkedState(attention)) return
     yield* Effect.logInfo('Re-parking the pane under a new resume mode', {
       paneId: config.paneId,
       mode
@@ -508,7 +500,7 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
 
   const leaveParked = Ref.get(recordRef).pipe(
     Effect.flatMap(({ attention }) =>
-      isParked(attention) ? applyAttention(Idle.make({})) : Effect.void
+      isParkedState(attention) ? applyAttention(Idle.make({})) : Effect.void
     )
   )
 
@@ -636,7 +628,7 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
     markCrashed: (error) => applyAttention(Crashed.make({ error })),
     resume: Ref.get(recordRef).pipe(
       Effect.flatMap(({ attention }) =>
-        isParked(attention)
+        isParkedState(attention)
           ? Effect.logInfo('Resuming the parked pane', { paneId: config.paneId }).pipe(
               Effect.andThen(session.resume)
             )

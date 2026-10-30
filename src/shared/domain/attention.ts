@@ -205,6 +205,15 @@ export const AttentionState = Schema.Union([
 ])
 export type AttentionState = typeof AttentionState.Type
 
+const PARKED = ['ParkedToResume', 'ParkedUntilReset', 'ParkedForUser'] as const
+
+/** An attention state in which the pane is parked because the account refused its turn. */
+export type ParkedState = Extract<AttentionState, { _tag: (typeof PARKED)[number] }>
+
+/** Whether `attention` is one of the parked states; narrows it to {@link ParkedState}. */
+export const isParkedState = (attention: AttentionState): attention is ParkedState =>
+  (PARKED as ReadonlyArray<string>).includes(attention._tag)
+
 /**
  * Raised by `transitionAttention` when the requested `from` -> `to` move is
  * not in the allowed state machine. Carries both tags for diagnostics.
@@ -222,7 +231,6 @@ export class InvalidAttentionTransition extends Data.TaggedError('InvalidAttenti
 // (no outbound transition) since its process is gone. A refused turn parks from any state a turn
 // can end in; a parked pane leaves through Idle (a send, an interrupt, a resume) or a crash, and
 // moves between its parked states, or to itself, when the resume mode changes.
-const PARKED = ['ParkedToResume', 'ParkedUntilReset', 'ParkedForUser'] as const
 const parkedTransitions = PARKED.flatMap((parked) => [
   `Idle->${parked}`,
   `AwaitingPermission->${parked}`,
