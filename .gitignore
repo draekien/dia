@@ -35,3 +35,5 @@ coverage/
 
 # Reference repository checkouts (Effect source, t3code)
 .repos/
+
+.impeccable/hook.cache.json
