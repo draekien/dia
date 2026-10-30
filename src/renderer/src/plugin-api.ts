@@ -140,6 +140,7 @@ export { sendModeAtom, sendModeForEnter } from './lib/send-mode-atom'
 export { fitThinkingLevel, thinkingLevelLabel, thinkingLevelsFor } from './lib/thinking-levels'
 export { formatElapsed, type TurnActivity, turnActivity } from './lib/turn-activity'
 export {
+  hasSteps,
   type StepPart,
   type StepsSection,
   sectionDurationMs,

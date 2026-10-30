@@ -5,23 +5,17 @@ import {
   MarkerIcon,
   type StepsSection as StepsSectionBlock,
   sectionDurationMs,
-  sectionSteps,
-  type TurnActivity
+  sectionSteps
 } from '@dia/renderer-plugin'
 import { ChevronRight } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { TurnActivityLine } from './turn-activity-line'
+import { TurnActivityLine, type TurnActivityLineProps } from './turn-activity-line'
 
 /**
  * The running turn's state, shown on the summary line of the section it is still adding to.
  * `label` names what the turn is doing; leave it out to name the section's latest step.
  */
-export interface LiveSteps {
-  readonly activity: TurnActivity
-  readonly label?: ReactNode
-  readonly onResend: () => void
-  readonly onInterruptAndRetry: () => void
-}
+export type LiveSteps = TurnActivityLineProps
 
 interface StepsSectionProps {
   readonly section: StepsSectionBlock
@@ -54,12 +48,7 @@ export function StepsSection({ section, live, children }: StepsSectionProps): Re
             <MarkerContent className="tabular-nums">{stepsSummary(section)}</MarkerContent>
           </Marker>
         ) : (
-          <TurnActivityLine
-            activity={live.activity}
-            label={live.label}
-            onResend={live.onResend}
-            onInterruptAndRetry={live.onInterruptAndRetry}
-          />
+          <TurnActivityLine {...live} />
         )}
       </summary>
       <div className="mt-2.5 flex min-w-0 flex-col gap-2.5 pl-3">{children}</div>

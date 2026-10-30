@@ -24,7 +24,7 @@ const tool = (toolCallId: string, startedAt?: number, endedAt?: number): ToolCal
 describe('turnBlocks: answer-only', () => {
   it('shows a turn with no steps as text only', () => {
     const answer = text('Done.')
-    expect(turnBlocks([answer], 'answer-only')).toEqual([{ type: 'text', part: answer }])
+    expect(turnBlocks([answer], 'answer-only')).toEqual([answer])
   })
 
   it('collapses everything up to the last step, text between steps included, and shows the text after it', () => {
@@ -34,7 +34,7 @@ describe('turnBlocks: answer-only', () => {
     const answer = text('Fixed it.')
     expect(turnBlocks([plan, read, edit, answer], 'answer-only')).toEqual([
       { type: 'steps', parts: [plan, read, edit] },
-      { type: 'text', part: answer }
+      answer
     ])
   })
 
@@ -59,11 +59,11 @@ describe('turnBlocks: all-text', () => {
     const edit = tool('t2')
     const answer = text('Fixed it.')
     expect(turnBlocks([plan, think, read, middle, edit, answer], 'all-text')).toEqual([
-      { type: 'text', part: plan },
+      plan,
       { type: 'steps', parts: [think, read] },
-      { type: 'text', part: middle },
+      middle,
       { type: 'steps', parts: [edit] },
-      { type: 'text', part: answer }
+      answer
     ])
   })
 

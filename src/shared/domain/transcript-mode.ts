@@ -11,6 +11,3 @@ export type TranscriptMode = typeof TranscriptMode.Type
 
 /** The transcript mode before the user chooses one. */
 export const DEFAULT_TRANSCRIPT_MODE: TranscriptMode = 'answer-only'
-
-/** Every transcript mode, in the order a control offers them. */
-export const TRANSCRIPT_MODES: ReadonlyArray<TranscriptMode> = TranscriptMode.literals

@@ -1,7 +1,8 @@
 import { Button, Marker, MarkerIcon, type TurnActivity } from '@dia/renderer-plugin'
-import type { MouseEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
-interface TurnActivityLineProps {
+/** What {@link TurnActivityLine} shows, and what its stall actions call. */
+export interface TurnActivityLineProps {
   readonly activity: TurnActivity
   readonly label?: ReactNode
   readonly onResend: () => void
@@ -17,8 +18,7 @@ interface TurnActivityLineProps {
  * `onResend` submits the last prompt again in the default send mode,
  * `onInterruptAndRetry` sends it as a steer, which aborts the in-flight turn first. Deliberately uses a
  * neutral dot, not a coloured pulse: attention colour is reserved for the pane
- * pulse indicator (the app's one loud signal). `label` replaces the activity's own label. The
- * actions do not toggle a `<details>` whose summary holds the line.
+ * pulse indicator (the app's one loud signal). `label` replaces the activity's own label.
  */
 export function TurnActivityLine({
   activity,
@@ -26,10 +26,6 @@ export function TurnActivityLine({
   onResend,
   onInterruptAndRetry
 }: TurnActivityLineProps): React.JSX.Element {
-  const act = (action: () => void) => (event: MouseEvent) => {
-    event.preventDefault()
-    action()
-  }
   return (
     <Marker className="pl-0.5 text-xs">
       <MarkerIcon className="flex items-center justify-center">
@@ -45,7 +41,7 @@ export function TurnActivityLine({
       )}
       {activity.stalled && (
         <span className="ml-1 flex items-center gap-1">
-          <Button type="button" variant="outline" size="xs" onClick={act(onInterruptAndRetry)}>
+          <Button type="button" variant="outline" size="xs" onClick={onInterruptAndRetry}>
             Interrupt & retry
           </Button>
           <Button
@@ -53,7 +49,7 @@ export function TurnActivityLine({
             variant="ghost"
             size="xs"
             className="text-muted-foreground hover:text-foreground"
-            onClick={act(onResend)}
+            onClick={onResend}
           >
             Resend
           </Button>

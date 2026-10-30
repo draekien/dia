@@ -16,6 +16,7 @@ import {
   findModelOption,
   fitThinkingLevel,
   formatElapsed,
+  hasSteps,
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
@@ -179,9 +180,20 @@ export function formatToolOutput(output: unknown): string | undefined {
   }
 }
 
+function ToolCallLabel({ part }: { part: ToolCallPart }): React.JSX.Element {
+  const summary = toolInputSummary(part.input)
+  return (
+    <>
+      <span className="shrink-0 text-foreground/90">{part.name}</span>
+      {summary !== undefined && (
+        <span className="truncate text-muted-foreground/80">{summary}</span>
+      )}
+    </>
+  )
+}
+
 function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
   const status = part.state
-  const summary = toolInputSummary(part.input)
   const output = formatToolOutput(part.output)
   const row = (
     <Marker className="pl-0.5 font-mono text-xs">
@@ -193,10 +205,7 @@ function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
         )}
       </MarkerIcon>
       <MarkerContent className="flex min-w-0 items-center gap-2">
-        <span className="shrink-0 text-foreground/90">{part.name}</span>
-        {summary !== undefined && (
-          <span className="truncate text-muted-foreground/80">{summary}</span>
-        )}
+        <ToolCallLabel part={part} />
         {part.detail !== undefined && (
           <span className="truncate font-sans text-muted-foreground">{part.detail}</span>
         )}
@@ -269,7 +278,7 @@ function TurnBlocksView({
     <>
       {blocks.map((block, blockIndex) => {
         const key = `${message.id}:${blockIndex}`
-        if (block.type === 'text') return <PartView key={key} part={block.part} isUser={false} />
+        if (block.type === 'text') return <PartView key={key} part={block} isUser={false} />
         return (
           <StepsSection
             key={key}
@@ -294,13 +303,9 @@ function TurnBlocksView({
 function latestStepLabel(section: StepsSectionBlock): React.ReactNode {
   const latest = sectionSteps(section).at(-1)
   if (latest?.type !== 'tool-call') return 'Thinking'
-  const summary = toolInputSummary(latest.input)
   return (
     <span className="flex min-w-0 items-center gap-2 font-mono">
-      <span className="shrink-0 text-foreground/90">{latest.name}</span>
-      {summary !== undefined && (
-        <span className="truncate text-muted-foreground/80">{summary}</span>
-      )}
+      <ToolCallLabel part={latest} />
     </span>
   )
 }
@@ -581,9 +586,7 @@ function PaneChat({
       }
     : undefined
   const activityInSteps =
-    runningTurn !== undefined &&
-    isLiveTurn(runningTurn) &&
-    turnBlocks(runningTurn.parts, transcriptMode).some((block) => block.type === 'steps')
+    runningTurn !== undefined && isLiveTurn(runningTurn) && hasSteps(runningTurn.parts)
 
   const form = useForm({
     defaultValues: { text: '' },
