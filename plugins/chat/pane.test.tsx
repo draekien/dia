@@ -167,3 +167,79 @@ describe('MessageView', () => {
     expect(container.querySelector('[data-slot="bubble"]')).toBeNull()
   })
 })
+
+describe('MessageView: turn steps', () => {
+  const liveTurn: PaneMessage = {
+    id: 'a10',
+    role: 'assistant',
+    parts: [
+      { type: 'text', content: 'Let me look.', startedAt: 1_000 },
+      {
+        type: 'tool-call',
+        toolCallId: 't1',
+        name: 'Read',
+        state: 'done',
+        input: { file_path: '/repo/a.ts' },
+        output: '',
+        startedAt: 2_000,
+        endedAt: 3_000
+      },
+      { type: 'text', content: 'Fixed it.', startedAt: 13_000 }
+    ]
+  }
+  const working = { kind: 'working', label: 'Pondering…', stalled: false } as const
+  const live = { activity: working, onResend: () => {}, onInterruptAndRetry: () => {} }
+
+  it('collapses a finished turn’s steps behind their count and duration, and shows the answer', () => {
+    const { container } = render(<MessageView message={liveTurn} mode="answer-only" />)
+
+    const section = container.querySelector('details')
+    expect(section?.open).toBe(false)
+    expect(section?.querySelector('summary')?.textContent).toBe('1 step · 12s')
+    expect(section?.textContent).toContain('Let me look.')
+    expect(screen.getByText('Fixed it.').closest('details')).toBeNull()
+  })
+
+  it('keeps the text between steps visible in all-text mode', () => {
+    render(<MessageView message={liveTurn} mode="all-text" />)
+
+    expect(screen.getByText('Let me look.').closest('details')).toBeNull()
+  })
+
+  it('shows a running turn’s latest step on the summary line instead of the count', () => {
+    const { container } = render(<MessageView message={liveTurn} mode="answer-only" live={live} />)
+
+    const summary = container.querySelector('summary')?.textContent
+    expect(summary).toContain('Read')
+    expect(summary).toContain('a.ts')
+    expect(summary).not.toContain('step')
+  })
+
+  it('shows a running turn’s named state on the summary line', () => {
+    const { container } = render(
+      <MessageView
+        message={liveTurn}
+        mode="answer-only"
+        live={{ ...live, label: 'Compacting conversation' }}
+      />
+    )
+
+    expect(container.querySelector('summary')?.textContent).toContain('Compacting conversation')
+  })
+
+  it('shows every part of a turn restored from history, with no steps section', () => {
+    const restored: PaneMessage = {
+      id: 'a11',
+      role: 'assistant',
+      parts: [
+        { type: 'tool-call', toolCallId: 't1', name: 'Read', state: 'running' },
+        { type: 'text', content: 'Fixed it.' }
+      ]
+    }
+
+    const { container } = render(<MessageView message={restored} mode="answer-only" />)
+
+    expect(container.querySelector('details')).toBeNull()
+    expect(screen.getByText('Read')).toBeTruthy()
+  })
+})

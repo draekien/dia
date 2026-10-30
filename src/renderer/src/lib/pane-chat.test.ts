@@ -214,7 +214,10 @@ describe('reducePaneChat: text deltas', () => {
   it('concatenates consecutive text deltas into a single text part', () => {
     const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
-    const result = [textDelta('Hel'), textDelta('lo')].reduce(reducePaneChat, afterSend)
+    const result = [textDelta('Hel'), textDelta('lo')].reduce(
+      (state, event) => reducePaneChat(state, event),
+      afterSend
+    )
 
     expect(result.messages.at(-1)?.parts).toEqual([{ type: 'text', content: 'Hello' }])
   })
@@ -259,7 +262,10 @@ describe('reducePaneChat: thinking deltas', () => {
   it('concatenates consecutive thinking deltas into a single thinking part', () => {
     const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
-    const result = [thinkingDelta('weigh'), thinkingDelta('ing')].reduce(reducePaneChat, afterSend)
+    const result = [thinkingDelta('weigh'), thinkingDelta('ing')].reduce(
+      (state, event) => reducePaneChat(state, event),
+      afterSend
+    )
 
     expect(result.messages.at(-1)?.parts).toEqual([{ type: 'thinking', content: 'weighing' }])
   })
@@ -267,7 +273,10 @@ describe('reducePaneChat: thinking deltas', () => {
   it('keeps thinking and text as distinct ordered parts of one message', () => {
     const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
-    const result = [thinkingDelta('hmm'), textDelta('answer')].reduce(reducePaneChat, afterSend)
+    const result = [thinkingDelta('hmm'), textDelta('answer')].reduce(
+      (state, event) => reducePaneChat(state, event),
+      afterSend
+    )
 
     expect(result.messages.at(-1)?.parts).toEqual([
       { type: 'thinking', content: 'hmm' },
@@ -376,7 +385,7 @@ describe('reducePaneChat: tool calls', () => {
       toolStarted('call-1', 'Bash'),
       toolCompleted('call-1', 'Bash', { command: 'ls' }, 'out', false),
       textDelta('B')
-    ].reduce(reducePaneChat, afterSend)
+    ].reduce((state, event) => reducePaneChat(state, event), afterSend)
 
     expect(result.messages.at(-1)?.parts).toEqual([
       { type: 'text', content: 'A' },
@@ -916,5 +925,37 @@ describe('reducePaneChat — turn status, tool row updates and notices', () => {
         parts: [{ type: 'text', content: 'Approaching the 5-hour usage limit' }]
       }
     ])
+  })
+})
+
+describe('reducePaneChat: arrival times', () => {
+  const loading = loadingWith(emptyPaneChatState)
+  const partsOf = (state: PaneChatState) => state.messages.at(-1)?.parts
+
+  it('stamps a new text part with the time its first delta arrived, and keeps it as it grows', () => {
+    const opened = reducePaneChat(loading, textDelta('Hel'), 1_000)
+    const grown = reducePaneChat(opened, textDelta('lo'), 2_500)
+    expect(partsOf(grown)).toEqual([{ type: 'text', content: 'Hello', startedAt: 1_000 }])
+  })
+
+  it('stamps a new thinking part with the time its first delta arrived', () => {
+    const opened = reducePaneChat(loading, thinkingDelta('weigh'), 1_000)
+    const grown = reducePaneChat(opened, thinkingDelta('ing'), 2_500)
+    expect(partsOf(grown)).toEqual([{ type: 'thinking', content: 'weighing', startedAt: 1_000 }])
+  })
+
+  it('stamps a tool call with its start time and, on completion, its end time', () => {
+    const started = reducePaneChat(loading, toolStarted('toolu_1', 'Read'), 1_000)
+    const done = reducePaneChat(
+      started,
+      toolCompleted('toolu_1', 'Read', { file_path: 'a.ts' }, 'ok', false),
+      4_000
+    )
+    expect(partsOf(done)).toMatchObject([{ startedAt: 1_000, endedAt: 4_000, state: 'done' }])
+  })
+
+  it('leaves parts without times when no arrival time is given', () => {
+    const started = reducePaneChat(loading, toolStarted('toolu_1', 'Read'))
+    expect(partsOf(started)?.[0]).not.toHaveProperty('startedAt')
   })
 })
