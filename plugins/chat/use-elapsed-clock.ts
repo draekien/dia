@@ -15,7 +15,8 @@ function createClock() {
   let reading: ClockReading = {
     elapsedMs: 0,
     idleMs: 0,
-    nowMs: performance.timeOrigin + lastActivityMs
+    // @effect-diagnostics-next-line globalDate:off -- compared with part arrival times the host stamps from the wall clock, which performance.now() drifts from after a system sleep.
+    nowMs: Date.now()
   }
   const listeners = new Set<() => void>()
 
@@ -24,7 +25,8 @@ function createClock() {
     reading = {
       elapsedMs: turnStartMs === null ? 0 : now - turnStartMs,
       idleMs: now - lastActivityMs,
-      nowMs: performance.timeOrigin + now
+      // @effect-diagnostics-next-line globalDate:off -- compared with part arrival times the host stamps from the wall clock, which performance.now() drifts from after a system sleep.
+      nowMs: Date.now()
     }
     for (const listener of listeners) listener()
   }

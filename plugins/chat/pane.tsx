@@ -278,15 +278,22 @@ function UserPartView({ part }: { part: MessagePart }): React.ReactNode {
   )
 }
 
-const sectionLive = (section: StepsSectionBlock, live: LiveSteps, nowMs: number): LiveSteps => {
+const sectionLive = (
+  section: StepsSectionBlock,
+  live: LiveSteps,
+  nowMs: number | undefined
+): LiveSteps => {
   const firstAt = section.parts[0]?.startedAt
   return {
     ...live,
     label: live.label ?? latestStepLabel(section),
     activity:
-      firstAt === undefined || live.activity.elapsedLabel === undefined
+      firstAt === undefined || nowMs === undefined || live.activity.elapsedLabel === undefined
         ? live.activity
-        : { ...live.activity, elapsedLabel: formatElapsed(Math.max(0, nowMs - firstAt)) }
+        : {
+            ...live.activity,
+            elapsedLabel: formatElapsed(Math.max(0, (section.followedAt ?? nowMs) - firstAt))
+          }
   }
 }
 
@@ -300,7 +307,7 @@ function TurnBlocksView({
 }: {
   message: PaneMessage
   live: LiveSteps | undefined
-  nowMs: number
+  nowMs: number | undefined
 }): React.JSX.Element {
   const blocks = turnBlocks(message.parts)
   const lastSection = blocks.filter((block) => block.type === 'steps').at(-1)
@@ -353,7 +360,7 @@ function latestStepLabel(section: StepsSectionBlock): React.ReactNode {
  * An assistant turn that streamed in this session collapses each run of steps into a section
  * and keeps its text visible between them (see {@link turnBlocks}); a turn restored from history
  * shows every part. Pass `live` for the turn still running, to show
- * its activity on its last section's summary line; `nowMs` (epoch milliseconds, default 0) times
+ * its activity on its last section's summary line; `nowMs` (epoch milliseconds) times
  * that section from its first part.
  * Pass a message from a pane's chat state ({@link paneChatAtom}).
  */
@@ -361,7 +368,7 @@ export function MessageView({
   message,
   onRewind,
   live,
-  nowMs = 0
+  nowMs
 }: {
   message: PaneMessage
   onRewind?: (message: PaneMessage) => void

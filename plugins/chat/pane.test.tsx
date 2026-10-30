@@ -185,6 +185,7 @@ describe('MessageView: turn steps', () => {
       { type: 'text', content: 'Fixed it.', startedAt: 13_000 }
     ]
   }
+  const stillStepping: PaneMessage = { ...liveTurn, parts: liveTurn.parts.slice(0, 2) }
   const working = { kind: 'working', label: 'Pondering…', stalled: false } as const
   const live = {
     activity: working,
@@ -273,7 +274,7 @@ describe('MessageView: turn steps', () => {
   it('times a running section from its first part, not from the start of the turn', () => {
     const { container } = render(
       <MessageView
-        message={liveTurn}
+        message={stillStepping}
         live={{ ...live, activity: { ...working, elapsedLabel: '25s' } }}
         nowMs={20_000}
       />
@@ -282,10 +283,22 @@ describe('MessageView: turn steps', () => {
     expect(container.querySelector('summary')?.textContent).toContain('18s')
   })
 
-  it('shows no negative time when the clock reading predates the section’s first part', () => {
+  it('stops a running section’s time at the text written after it', () => {
     const { container } = render(
       <MessageView
         message={liveTurn}
+        live={{ ...live, activity: { ...working, elapsedLabel: '25s' } }}
+        nowMs={20_000}
+      />
+    )
+
+    expect(container.querySelector('summary')?.textContent).toContain('11s')
+  })
+
+  it('shows no negative time when the clock reading predates the section’s first part', () => {
+    const { container } = render(
+      <MessageView
+        message={stillStepping}
         live={{ ...live, activity: { ...working, elapsedLabel: '25s' } }}
         nowMs={1_500}
       />
