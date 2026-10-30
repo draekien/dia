@@ -15,7 +15,7 @@ Every PR in this repo goes through this gate, in order, on the branch diff again
 
 ## Gate — run in this order
 
-Each step reviews the output of the one before, so the order is fixed.
+Each step reviews the output of the one before, so the order is fixed. Run steps 1 and 2 only over the code files in the branch diff (`.ts`, `.tsx`, `.js`, `.mjs`, `.css`). Skip both steps when the diff changes no code file, for example a diff of only docs, skills, config, `.gitignore` or `.impeccable/` files, and state the skip in the PR body. `.impeccable/` files are never reviewed: they are impeccable's generated design records.
 
 1. **Simplify.** Run `/simplify` (built in) over the branch diff and apply its verified fixes. Note every finding you do not apply, with the reason.
 2. **Review.** Run `/code-review medium --fix` (built in). Note every finding it does not fix, with the reason.
