@@ -13,7 +13,7 @@ Gives the Host kernel and each plugin that asks for one a SQLite database of its
 | `openDatabase`, `makeHostDatabaseLive` | `src/host/services/database.ts` | opening a SQLite file by building `SqliteClient.layer` (which provides `Reactivity`) in the caller's scope, checking and applying a migration record, closing the file when that scope closes; `<userData>/host.db` and the kernel migrations (`const kernelMigrations = {}` in the same file, moved to its own file when #69 adds the first migration) |
 | Plugin database | `src/shared/plugin/api.ts` (`HostPluginContext.database`, `MigrationKey`, `PluginMigrations`, `PluginDatabaseError`), `src/host/plugins/host-plugins.ts` (`extend`) | `<dataDir>/data.db`, opened in the plugin's setup scope. `MigrationKey` (compile-time shape) and the key check in `openDatabase` (runtime) state one format, `<id>_<name>`; change both together |
 | Plugin API version | `src/shared/plugin/manifest.ts`, every `plugins/*/plugin.json` | `0.0.5` → `0.0.6` |
-| Docs | JSDoc of `HostPluginContext` (`api.ts:86-92`) and `makeHostPluginsLive` (`host-plugins.ts:26-36`); the `plugin-authoring` skill's list of context members, wherever it lists `dataDir` | list `database` next to `dataDir` |
+| Docs | JSDoc of `HostPluginContext` (`api.ts`) and `makeHostPluginsLive` (`host-plugins.ts`) | list `database` next to `dataDir`. No repo doc lists the context members, so no other doc changes |
 | ADR-0042 | `docs/adr/0042-sqlite-for-host-runtime-state.md`, `docs/adr/README.md` | the technology, the file-per-owner rule, the storage-shape rule, the consumer table, the verdict on each JSON file |
 
 ## Interface
@@ -93,26 +93,18 @@ export const makeHostDatabaseLive: (
 ```
 
 - `openDatabase` checks keys itself because `SqliteMigrator.fromRecord` drops a key that does not match `/^(\d+)_(.+)$/` without an error (`effect/src/sql/Migrator.ts:420-432`), and `MigrationKey` does not reject every bad key at compile time (`1.5_x` type-checks).
-- It builds the client with `Layer.build(SqliteClient.layer({ filename }))` and takes `SqlClient` from the built context, then runs `SqliteMigrator.run({ loader: SqliteMigrator.fromRecord(migrations) })` against it. WAL and the busy timeout are the `SqliteClient` defaults; `openDatabase` passes no option for them.
+- It builds the client with `Layer.buildWithScope(SqliteClient.layer({ filename }), connection)`, where `connection` is a child of the caller's scope that `openDatabase` closes when opening or a migration fails, so a failed open never leaves the file locked; it takes `SqlClient` from the built context then runs `SqliteMigrator.run({ loader: SqliteMigrator.fromRecord(migrations) })` against it. WAL and the busy timeout are the `SqliteClient` defaults; `openDatabase` passes no option for them.
 - `host-main.ts` adds `makeHostDatabaseLive(init.userDataPath)` to `state`, so the database opens at Host start and closes at Host shutdown.
 
-### Plugin wiring (`src/host/plugins/host-plugins.ts`)
-
-`extend` builds, per context, a local `opened` flag and `filename`, and adds `database` to the object literal it already returns through `Effect.as` (`host-plugins.ts:57-72`):
+### Plugin wiring (`src/host/services/database.ts`, `src/host/plugins/host-plugins.ts`)
 
 ```ts
-const filename = path.join(dataDir, 'data.db')
-let opened = false
-// inside the Effect.as({...}) literal:
-database: (migrations) =>
-  Effect.gen(function* () {
-    if (opened) return yield* Effect.die(new Error(`${services.name} called ctx.database twice in one setup`))
-    opened = true
-    return yield* openDatabase(filename, migrations)
-  }).pipe(Effect.mapError((error) => new PluginDatabaseError({ filename, message: error.message })))
+/** Builds the `database` member of a plugin's context for `filename`, owned by plugin `plugin`. */
+export const makePluginDatabase: (filename: string, plugin: string) =>
+  (migrations: PluginMigrations) => Effect.Effect<SqlClient.SqlClient, PluginDatabaseError, Scope.Scope>
 ```
 
-`extend` runs once per open (`plugin-registry.ts:379`), so the flag is per setup. The effect runs inside the plugin's setup scope (`plugin-registry.ts:387-389`), so the connection closes when that scope closes. A failure the plugin does not handle fails its setup, and the plugin follows the setup-failure path (`Failed`, or `Loaded.reloadError` on reload).
+It holds the `opened` flag, dies with `${plugin} called ctx.database twice in one setup` on a second call, maps every failure to `PluginDatabaseError { filename, message }`, and annotates logs with `plugin`. `extend` adds `database: makePluginDatabase(path.join(dataDir, 'data.db'), services.name)` to the object it returns through `Effect.as`. `extend` runs once per open (`plugin-registry.ts:379`), so the flag is per setup. The effect runs inside the plugin's setup scope (`plugin-registry.ts:387-389`), so the connection closes when that scope closes. A failure the plugin does not handle fails its setup, and the plugin follows the setup-failure path (`Failed`, or `Loaded.reloadError` on reload).
 
 ### Logging
 
@@ -158,7 +150,7 @@ Current state is never derived by replaying events at Host start.
 ## Tests
 
 - `database.test.ts` (temp directory): `openDatabase` applies migrations once (a second open applies none and keeps the rows); `PRAGMA journal_mode` is `wal`; after its scope closes, `host.db` can be deleted and the temp directory removed recursively, and no `-wal` or `-shm` file remains (Windows refuses to delete an open file); with pending `1_a` and a failing `2_b`, opening fails with `MigrationError` and neither table exists; a key `create_turns` and the pair `1_a`/`01_b` fail with `InvalidMigrationKeyError` and create no file.
-- `host-plugins.test.ts`: a plugin that calls `ctx.database` gets `<dataDir>/data.db` with its migration applied; a plugin that does not call it has no `data.db`; unloading the plugin closes the connection (`data.db` can be deleted and no `-wal` or `-shm` file remains); a second call dies with a message naming the plugin, including after a first call that failed with `PluginDatabaseError`, and the defect is not wrapped in `PluginDatabaseError`; `PluginDatabaseError.message` for a bad key names the key; a failing migration surfaces to the plugin as `PluginDatabaseError` and an unhandled one fails the plugin's load.
+- `database.test.ts`, `makePluginDatabase`: a bad key and a failing migration map to `PluginDatabaseError` (the bad key's message names it); a second call dies naming the plugin, including after a failed first call; no file exists until the plugin calls it; a call returns a client on the file with its migrations applied. These run against `makePluginDatabase` directly because vitest cannot load a TypeScript plugin `host` entry through `makeHostPluginsLive` (`plugin-modules.test.ts` uses a child process for that).
 - Shipped manifests load on `0.0.6` (existing fixtures use `PLUGIN_API_VERSION`).
 
 ## Refinement Record
@@ -203,3 +195,8 @@ Applied
 Checked and kept
 - `let opened` in `extend`: the repo uses plain `let` inside Effect code (`pane-workspace.ts:305`); the check and set are synchronous.
 - `import type { SqlClient } from 'effect/sql'` in `src/shared`: no Node import in `effect/src/sql`; `biome.json` restricts only `@effect/platform-node`. `pnpm typecheck` confirms at implementation.
+
+**Implementation**
+
+- *Correctness* — the failing-migration test showed `openDatabase` left the connection open in the caller's scope after a failure (Windows reported `EBUSY` on `test.db-wal`). `openDatabase` now opens in a child scope and closes it on failure.
+- *Testability* — the plugin-side behaviour moved into `makePluginDatabase` so it can be tested without loading a plugin entry.
