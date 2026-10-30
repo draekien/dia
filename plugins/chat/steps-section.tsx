@@ -43,6 +43,7 @@ function StepsSummary({ section }: { section: StepsSectionBlock }): React.JSX.El
   const failed = steps.filter(
     (step): step is ToolCallPart => step.type === 'tool-call' && step.isError === true
   )
+  const failedLabel = failed.length === 1 ? failed[0]?.name : failed.length
   const duration = sectionDurationMs(section)
   return (
     <MarkerContent className="tabular-nums">
@@ -50,9 +51,7 @@ function StepsSummary({ section }: { section: StepsSectionBlock }): React.JSX.El
       {failed.length > 0 && (
         <>
           {separator}
-          <span className="text-foreground">
-            {failed.length === 1 ? failed[0]?.name : failed.length} failed
-          </span>
+          <span className="text-foreground">{failedLabel} failed</span>
         </>
       )}
       {duration !== undefined && (
@@ -68,9 +67,10 @@ function StepsSummary({ section }: { section: StepsSectionBlock }): React.JSX.El
 /**
  * Renders a collapsed run of an agent turn's steps: a summary line, and `children` (the
  * section's rendered parts) when the user expands it. The summary counts the steps, names the
- * failed tool call (or counts them, when more than one failed) and shows the section's duration. Pass `live` while the turn is still adding
- * to this section; the summary then shows the turn's activity (`live.label` and elapsed time) in
- * place of the count, and the stall actions show under it. Collapsed until the user opens it.
+ * failed tool call (or counts them, when more than one failed) and shows the section's duration.
+ * Pass `live` while the turn is still adding to this section; the summary then shows the turn's
+ * activity (`live.label` and elapsed time) in place of the count, and the stall actions show
+ * under it. Collapsed until the user opens it.
  */
 export function StepsSection({ section, live, children }: StepsSectionProps): React.JSX.Element {
   return (

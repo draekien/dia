@@ -44,10 +44,10 @@ export function StallActions({
 /**
  * Renders the mid-turn activity line shown while a turn is in flight: a neutral pulsing dot, the
  * current {@link TurnActivity} label, and the elapsed time once past the short delay. The dot
- * stops pulsing once the turn has stalled. It holds
- * no buttons, so it can sit inside a `<summary>`; render {@link StallActions} beside it when the
- * turn has stalled. Deliberately uses a neutral dot, not a coloured pulse: attention colour is
- * reserved for the pane pulse indicator (the app's one loud signal).
+ * stops pulsing once the turn has stalled. It holds no buttons, so it can sit inside a
+ * `<summary>`; render {@link StallActions} beside it when the turn has stalled. Deliberately uses
+ * a neutral dot, not a coloured pulse: attention colour is reserved for the pane pulse indicator
+ * (the app's one loud signal).
  */
 export function TurnActivityLine({
   activity,
