@@ -8,6 +8,7 @@ import {
 } from '@shared/plugin/plugin-registry'
 import { ByteSize, Context, Effect, FileSystem, Layer, Path } from 'effect'
 import { BackgroundActivities } from '../services/background-activities'
+import { makePluginDatabase } from '../services/database'
 import { EventHub } from '../services/event-hub'
 import { adapterContract } from '../session/agent-backend'
 import { makeHostPluginLoader } from './plugin-loader'
@@ -26,8 +27,9 @@ export class HostPlugins extends Context.Service<HostPlugins, PluginRegistry>()(
 /**
  * Builds the live {@link HostPlugins} layer. Each plugin's context carries `events`, a live
  * subscription to the Host's {@link EventHub}; `dataDir`, the directory
- * `<userDataPath>/plugins/<name>`, created before the plugin's setup runs; and `activities`,
- * registration with {@link BackgroundActivities} under the plugin's name. Every plugin state
+ * `<userDataPath>/plugins/<name>`, created before the plugin's setup runs; `activities`,
+ * registration with {@link BackgroundActivities} under the plugin's name; and `database`, which
+ * opens `<dataDir>/data.db` only when the plugin calls it. Every plugin state
  * change is published to the hub as a `PluginStatusChanged` event. `pluginApiPath` is the
  * absolute path of the built module that `import '@dia/plugin'` resolves to inside a plugin
  * (`out/main/plugin-api.js`). Build the layer once per process, because it installs a
@@ -67,7 +69,8 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
               dataDir,
               activities: {
                 register: (spec) => activities.register(services.name, spec)
-              }
+              },
+              database: makePluginDatabase(path.join(dataDir, 'data.db'), services.name)
             })
           )
         },

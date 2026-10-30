@@ -1,4 +1,5 @@
 import { Data, type DateTime, type Effect, type Option, type Scope, type Stream } from 'effect'
+import type { SqlClient } from 'effect/sql'
 import type { EventFrame } from '../ipc/rpc'
 
 /** Service key under which the `worktrees` plugin provides the Host's `GitOps`. */
@@ -87,14 +88,49 @@ export interface PluginActivities {
  * stream of every renderer-facing event the Host publishes from now on (consume it in a fiber
  * forked into the plugin's scope; the stream ends when that scope closes); `dataDir`, the
  * absolute path of a directory only this plugin uses, which exists before setup runs and is kept
- * across reloads, overrides and restarts; and `activities`, where the plugin registers background
- * activities.
+ * across reloads, overrides and restarts; `activities`, where the plugin registers background
+ * activities; and `database`, which opens the plugin's own SQLite database `<dataDir>/data.db`.
  */
 export interface HostPluginContext extends PluginServices {
   readonly events: Stream.Stream<EventFrame>
   readonly dataDir: string
   readonly activities: PluginActivities
+  /**
+   * Opens this plugin's SQLite database, `<dataDir>/data.db`, applies `migrations`, and returns a
+   * client for it. The connection closes when the scope it runs in (the plugin's setup scope)
+   * closes. The file is created on the first call and kept across reloads, overrides and
+   * restarts. Call it at most once per setup; a second call in the same setup is a defect, even
+   * when the first call failed.
+   */
+  readonly database: (
+    migrations: PluginMigrations
+  ) => Effect.Effect<SqlClient.SqlClient, PluginDatabaseError, Scope.Scope>
 }
+
+/**
+ * A migration key: `<id>_<name>`, for example `1_create_turns`. `id` is a non-negative integer,
+ * unique within one owner's migrations.
+ */
+export type MigrationKey = `${number}_${string}`
+
+/**
+ * A plugin's migrations, keyed by {@link MigrationKey}. Pending migrations run once, in id order,
+ * in a single transaction: if one fails, none of that run's migrations apply. A migration whose
+ * id is not above the highest id already applied never runs, so add a new migration with an id
+ * above every shipped one, and never edit or renumber a shipped one.
+ */
+export type PluginMigrations = Readonly<
+  Record<MigrationKey, Effect.Effect<void, unknown, SqlClient.SqlClient>>
+>
+
+/**
+ * Failure of `ctx.database`: `filename` could not be opened, a migration key is malformed or
+ * duplicated, or a migration failed. `message` states which.
+ */
+export class PluginDatabaseError extends Data.TaggedError('PluginDatabaseError')<{
+  readonly filename: string
+  readonly message: string
+}> {}
 
 /**
  * The setup effect a plugin entry exports as its default export. It receives the plugin's

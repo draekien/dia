@@ -37,6 +37,7 @@ import { AdapterStatusFeed, AdapterStatusFeedLive } from './services/adapter-sta
 import { AgentSummariesLive } from './services/agent-summaries'
 import { BackgroundActivitiesLive } from './services/background-activities'
 import { makeCommandDeduperLive } from './services/command-deduper'
+import { makeHostDatabaseLive } from './services/database'
 import { makeEventHubLive } from './services/event-hub'
 import { ModelCatalogFeed, ModelCatalogFeedLive } from './services/model-catalog-feed'
 import { ModelPreferencesLive } from './services/model-preferences'
@@ -135,6 +136,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     adapterStatus,
     modelPreferences,
     makeCommandDeduperLive(),
+    makeHostDatabaseLive(init.userDataPath),
     NodeFileSystem.layer,
     NodePath.layer
   )
