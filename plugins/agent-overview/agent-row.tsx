@@ -23,8 +23,8 @@ import { type OverviewRow, rowKey } from './overview'
 const decodeName = Schema.decodeUnknownOption(AgentName)
 
 /**
- * The second line of a row: the reason for a row that needs input or failed, the resume time of a
- * parked row (`nowMs` defaults to now), else the turn's
+ * The second line of a row: the reason for a row that needs input or failed, the resume or reset time
+ * of a parked row (`nowMs` defaults to now), else the turn's
  * named state (such as a retry), else the activity line. `mono` is true for a tool call, which is literal output.
  */
 export const secondLine = (
@@ -37,7 +37,10 @@ export const secondLine = (
     case 'StatusFailed':
       return { text: summary.status.reason, mono: false }
     case 'StatusParked':
-      return { text: `Resumes ${formatResetTime(summary.status.resumesAt, nowMs)}`, mono: false }
+      return {
+        text: `${summary.status.resumedBy === 'dia' ? 'Resumes' : 'Resets'} ${formatResetTime(summary.status.until, nowMs)}`,
+        mono: false
+      }
   }
   if (summary.turnStatus !== undefined) return { text: summary.turnStatus, mono: false }
   switch (summary.activity._tag) {

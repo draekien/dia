@@ -22,6 +22,11 @@ const parkedToResume: AttentionState = {
   cause: { _tag: 'UsageLimit', resetsAt: 1000 },
   resumesAt: 6000
 }
+const parkedUntilReset: AttentionState = {
+  _tag: 'ParkedUntilReset',
+  cause: { _tag: 'UsageLimit', resetsAt: 1000 },
+  resetsAt: 1000
+}
 const parkedForUser: AttentionState = { _tag: 'ParkedForUser', cause: { _tag: 'SignedOut' } }
 
 const states: ReadonlyArray<AttentionState> = [
@@ -31,6 +36,7 @@ const states: ReadonlyArray<AttentionState> = [
   crashed,
   completed,
   parkedToResume,
+  parkedUntilReset,
   parkedForUser
 ]
 
@@ -69,7 +75,17 @@ const validPairs: ReadonlySet<string> = new Set([
   'ParkedForUser->Idle',
   'ParkedForUser->Crashed',
   'ParkedForUser->ParkedToResume',
-  'ParkedForUser->ParkedForUser'
+  'ParkedForUser->ParkedForUser',
+  'Idle->ParkedUntilReset',
+  'AwaitingPermission->ParkedUntilReset',
+  'Completed->ParkedUntilReset',
+  'ParkedUntilReset->Idle',
+  'ParkedUntilReset->Crashed',
+  'ParkedUntilReset->ParkedToResume',
+  'ParkedUntilReset->ParkedUntilReset',
+  'ParkedUntilReset->ParkedForUser',
+  'ParkedToResume->ParkedUntilReset',
+  'ParkedForUser->ParkedUntilReset'
 ])
 
 const decodePermissionResponse = Schema.decodeUnknownResult(PermissionResponse)

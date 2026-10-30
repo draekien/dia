@@ -1,6 +1,7 @@
 import type { AttentionState, PaneError } from '@shared/domain/attention'
 import type { OutgoingMessage } from '@shared/domain/message-queue'
 import type { ConversationMessage } from '@shared/domain/pane'
+import { RESUME_TEXT } from '@shared/domain/parking'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import type {
   PaneAssistantTextDelta,
@@ -91,6 +92,7 @@ export interface PaneMessage {
   readonly checkpointUuid?: string
   readonly resumeAnchorUuid?: string
   readonly rewindable?: false
+  readonly resumedAt?: number
 }
 
 /**
@@ -183,19 +185,42 @@ export const paneChatStateFromHistory = (
   turnStatus: null
 })
 
+type ParkedState = Extract<
+  AttentionState,
+  { _tag: 'ParkedToResume' | 'ParkedUntilReset' | 'ParkedForUser' }
+>
+
+const isParkedState = (attention: AttentionState): attention is ParkedState =>
+  attention._tag === 'ParkedToResume' ||
+  attention._tag === 'ParkedUntilReset' ||
+  attention._tag === 'ParkedForUser'
+
 const appendSentMessages = (state: PaneChatState, event: PaneUserMessagesSent): PaneChatState => {
   const present = new Set(state.messages.map((message) => message.id))
+  const last = state.messages.at(-1)
+  const resumesPark =
+    last !== undefined &&
+    isParkNotice(last) &&
+    event.messages.length === 1 &&
+    event.messages[0]?.text === RESUME_TEXT
   const sent = event.messages
     .map(
       (message, index): PaneMessage => ({
         id: `${event.paneId}:user:${message.id}`,
         role: 'user',
         parts: [{ type: 'text', content: message.text }],
-        ...(index > 0 ? { rewindable: false as const } : {})
+        ...(index > 0 ? { rewindable: false as const } : {}),
+        // @effect-diagnostics-next-line globalDate:off -- the transcript records when dia resumed the agent; the chat reducer runs outside an Effect runtime.
+        ...(resumesPark ? { resumedAt: Date.now() } : {})
       })
     )
     .filter((message) => !present.has(message.id))
-  return { ...state, messages: [...state.messages, ...sent], isLoading: true, turnStatus: null }
+  return {
+    ...state,
+    messages: [...resolveParkNotice(state.messages), ...sent],
+    isLoading: true,
+    turnStatus: null
+  }
 }
 
 const lastMessage = (state: PaneChatState): PaneMessage | undefined => state.messages.at(-1)
@@ -330,31 +355,40 @@ const isTurnOver = (attention: AttentionState): boolean =>
   attention._tag === 'Completed' ||
   attention._tag === 'Errored' ||
   attention._tag === 'Crashed' ||
-  attention._tag === 'ParkedToResume' ||
-  attention._tag === 'ParkedForUser'
+  isParkedState(attention)
 
 const PARKED_SUFFIX = ':parked'
+const RESUMED_SUFFIX = ':resumed'
 
 /** Whether `message` is the transcript notice that says the agent is parked. */
 export const isParkNotice = (message: PaneMessage): boolean => message.id.endsWith(PARKED_SUFFIX)
 
-const parkNoticeText = (
-  attention: Extract<AttentionState, { _tag: 'ParkedToResume' | 'ParkedForUser' }>,
-  nowMs: number
-): string => {
-  if (attention._tag === 'ParkedToResume') {
-    return `Usage limit reached · resumes ${formatResetTime(attention.resumesAt, nowMs)}`
+const NOTICE_SEPARATOR = ' · '
+
+const parkNoticeText = (attention: ParkedState, nowMs: number): string => {
+  switch (attention._tag) {
+    case 'ParkedToResume':
+      return `Usage limit reached${NOTICE_SEPARATOR}dia resumes at ${formatResetTime(attention.resumesAt, nowMs)}`
+    case 'ParkedUntilReset':
+      return `Usage limit reached${NOTICE_SEPARATOR}you can resume at ${formatResetTime(attention.resetsAt, nowMs)}`
   }
-  if (attention.cause._tag === 'SignedOut') return 'Claude Code is signed out'
-  return attention.cause.resetsAt === null
-    ? 'Usage limit reached'
-    : `Usage limit reached · resets ${formatResetTime(attention.cause.resetsAt, nowMs)}`
+  if (attention.cause._tag === 'SignedOut') return 'Claude Code is not signed in'
+  return attention.cause.resetsAt === null ? 'Usage limit reached' : 'Usage limit has reset'
 }
 
-const parkedMessage = (
-  state: PaneChatState,
-  attention: Extract<AttentionState, { _tag: 'ParkedToResume' | 'ParkedForUser' }>
-): PaneChatState => {
+const resolveParkNotice = (messages: ReadonlyArray<PaneMessage>): ReadonlyArray<PaneMessage> => {
+  const last = messages.at(-1)
+  if (last === undefined || !isParkNotice(last)) return messages
+  const text = last.parts.find((part) => part.type === 'text')?.content ?? ''
+  const resolved: PaneMessage = {
+    ...last,
+    id: `${last.id.slice(0, -PARKED_SUFFIX.length)}${RESUMED_SUFFIX}`,
+    parts: [{ type: 'text', content: text.split(NOTICE_SEPARATOR)[0] ?? text }]
+  }
+  return [...messages.slice(0, -1), resolved]
+}
+
+const parkedMessage = (state: PaneChatState, attention: ParkedState): PaneChatState => {
   const last = state.messages.at(-1)
   const kept =
     last !== undefined && isParkNotice(last) ? state.messages.slice(0, -1) : state.messages
@@ -500,7 +534,7 @@ export const reducePaneChat = (
           ...(event.attention._tag === 'Crashed' ? { queued: [], queueHeld: false } : {})
         }
       }
-      if (event.attention._tag === 'ParkedToResume' || event.attention._tag === 'ParkedForUser') {
+      if (isParkedState(event.attention)) {
         return parkedMessage(state, event.attention)
       }
       return isTurnOver(event.attention) ? { ...state, isLoading: false } : state

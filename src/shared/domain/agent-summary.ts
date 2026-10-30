@@ -31,8 +31,14 @@ export type StatusNeedsInput = typeof StatusNeedsInput.Type
 export const StatusFailed = Schema.TaggedStruct('StatusFailed', { reason: Schema.String })
 export type StatusFailed = typeof StatusFailed.Type
 
-/** The agent waits for the usage limit to reset; dia sends `continue` at `resumesAt` (epoch ms). */
-export const StatusParked = Schema.TaggedStruct('StatusParked', { resumesAt: Schema.Int })
+/**
+ * The agent waits for the usage limit to reset. At `until` (epoch ms) dia sends `continue` when
+ * `resumedBy` is `'dia'`, or the agent starts to need the user when it is `'user'`.
+ */
+export const StatusParked = Schema.TaggedStruct('StatusParked', {
+  until: Schema.Int,
+  resumedBy: Schema.Literals(['dia', 'user'])
+})
 export type StatusParked = typeof StatusParked.Type
 
 /** The agent is running a turn. */
@@ -127,7 +133,7 @@ const isParked = (summary: AgentSummary): boolean =>
 
 const PARKED_REASON: Record<ParkCause['_tag'], string> = {
   UsageLimit: 'Usage limit reached',
-  SignedOut: 'Claude Code is signed out'
+  SignedOut: 'Claude Code is not signed in'
 }
 
 const foldAttention = (summary: AgentSummary, attention: AttentionState): AgentSummary => {
@@ -135,7 +141,13 @@ const foldAttention = (summary: AgentSummary, attention: AttentionState): AgentS
     case 'ParkedToResume':
       return {
         ...summary,
-        status: StatusParked.make({ resumesAt: attention.resumesAt }),
+        status: StatusParked.make({ until: attention.resumesAt, resumedBy: 'dia' }),
+        parked: attention.cause
+      }
+    case 'ParkedUntilReset':
+      return {
+        ...summary,
+        status: StatusParked.make({ until: attention.resetsAt, resumedBy: 'user' }),
         parked: attention.cause
       }
     case 'ParkedForUser':

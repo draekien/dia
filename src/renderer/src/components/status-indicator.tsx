@@ -7,7 +7,8 @@ const statusDot = cva('relative inline-flex size-2 rounded-full', {
     status: {
       StatusNeedsInput: 'bg-pulse-amber',
       StatusFailed: 'bg-pulse-red',
-      StatusParked: 'bg-ink-muted/40',
+      StatusParked:
+        'border border-ink-muted bg-linear-to-t from-ink-muted from-50% to-transparent to-50%',
       StatusWorking: 'bg-ink-muted animate-pulse-slow motion-reduce:animate-none',
       StatusFinished: 'bg-pulse-green',
       StatusIdle: 'border border-ink-muted bg-transparent'
@@ -47,7 +48,7 @@ interface StatusIndicatorProps {
 
 /**
  * The status dot of one agent: amber and pulsing when it needs input, red and pulsing when it
- * failed, a steady dimmed dot while it is parked until a usage limit resets, a slow neutral pulse
+ * failed, a steady half-filled dot while it is parked until a usage limit resets, a slow neutral pulse
  * while it works, steady green when it finished, a hollow ring when
  * idle. Pass `still` for a legend or sample that must not animate, because it stands for a
  * status rather than reporting one. Decorative: put {@link statusLabel} in the accessible name

@@ -8,6 +8,7 @@ import {
   PermissionRequest
 } from '@shared/domain/attention'
 import { ConversationMessage } from '@shared/domain/pane'
+import { RESUME_TEXT } from '@shared/domain/parking'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import {
   PaneAssistantTextDelta,
@@ -979,10 +980,19 @@ describe('reducePaneChat: parked turns', () => {
     _tag: 'ParkedForUser' as const,
     cause: { _tag: 'UsageLimit' as const, resetsAt: null }
   }
+  const limitHasReset = {
+    _tag: 'ParkedForUser' as const,
+    cause: { _tag: 'UsageLimit' as const, resetsAt: 1000 }
+  }
   const resuming = {
     _tag: 'ParkedToResume' as const,
     cause: { _tag: 'UsageLimit' as const, resetsAt: 1000 },
     resumesAt: 6000
+  }
+  const untilReset = {
+    _tag: 'ParkedUntilReset' as const,
+    cause: { _tag: 'UsageLimit' as const, resetsAt: 1000 },
+    resetsAt: 1000
   }
   const noticeTexts = (state: PaneChatState) =>
     state.messages
@@ -992,7 +1002,7 @@ describe('reducePaneChat: parked turns', () => {
   it('stops loading and adds a park notice that names the cause', () => {
     const state = reducePaneChat(loadingWith(emptyPaneChatState), attentionChanged(signedOut))
     expect(state.isLoading).toBe(false)
-    expect(noticeTexts(state)).toEqual(['Claude Code is signed out'])
+    expect(noticeTexts(state)).toEqual(['Claude Code is not signed in'])
     expect(state.messages.every(isParkNotice)).toBe(true)
   })
 
@@ -1001,26 +1011,58 @@ describe('reducePaneChat: parked turns', () => {
     expect(noticeTexts(state)).toEqual(['Usage limit reached'])
   })
 
-  it('names the resume time of an agent dia resumes on its own', () => {
+  it('says the limit has reset once the user can resume the agent', () => {
+    const state = reducePaneChat(emptyPaneChatState, attentionChanged(limitHasReset))
+    expect(noticeTexts(state)).toEqual(['Usage limit has reset'])
+  })
+
+  it('names when dia resumes an agent it resumes on its own', () => {
     const state = reducePaneChat(emptyPaneChatState, attentionChanged(resuming))
-    expect(noticeTexts(state)[0]).toMatch(/^Usage limit reached · resumes \S/)
+    expect(noticeTexts(state)[0]).toMatch(/^Usage limit reached · dia resumes at \S/)
+  })
+
+  it('names when the user can resume an agent waiting for its reset', () => {
+    const state = reducePaneChat(emptyPaneChatState, attentionChanged(untilReset))
+    expect(noticeTexts(state)[0]).toMatch(/^Usage limit reached · you can resume at \S/)
   })
 
   it('replaces the park notice when the agent is parked again, instead of repeating it', () => {
-    const parkedTwice = [resuming, unknownReset].reduce(
+    const parkedTwice = [untilReset, limitHasReset].reduce(
       (state, attention) => reducePaneChat(state, attentionChanged(attention)),
       emptyPaneChatState
     )
-    expect(noticeTexts(parkedTwice)).toEqual(['Usage limit reached'])
+    expect(noticeTexts(parkedTwice)).toEqual(['Usage limit has reset'])
+  })
+
+  it('records a resume: the notice drops its future time and the continue turn carries when it resumed', () => {
+    const parked = reducePaneChat(emptyPaneChatState, attentionChanged(resuming))
+    const resumed = sendUser(parked, 'm-1', RESUME_TEXT)
+    expect(noticeTexts(resumed)).toEqual(['Usage limit reached'])
+    expect(resumed.messages.some(isParkNotice)).toBe(false)
+    const turn = resumed.messages.at(-1)
+    expect(turn?.role).toBe('user')
+    expect(typeof turn?.resumedAt).toBe('number')
+  })
+
+  it('resolves the park notice for any message sent while parked, marking only a continue as a resume', () => {
+    const parked = reducePaneChat(emptyPaneChatState, attentionChanged(signedOut))
+    const sent = sendUser(parked, 'm-1', 'try again')
+    expect(sent.messages.some(isParkNotice)).toBe(false)
+    expect(sent.messages.at(-1)?.resumedAt).toBeUndefined()
+  })
+
+  it('does not mark a continue sent while the agent is not parked', () => {
+    const sent = sendUser(emptyPaneChatState, 'm-1', RESUME_TEXT)
+    expect(sent.messages.at(-1)?.resumedAt).toBeUndefined()
   })
 
   it('keeps an earlier park notice once other messages follow it', () => {
     const parked = reducePaneChat(emptyPaneChatState, attentionChanged(signedOut))
-    const resumed = sendUser(parked, 'm-1', 'continue')
+    const resumed = sendUser(parked, 'm-1', RESUME_TEXT)
     const parkedAgain = reducePaneChat(resumed, attentionChanged(signedOut))
     expect(noticeTexts(parkedAgain)).toEqual([
-      'Claude Code is signed out',
-      'Claude Code is signed out'
+      'Claude Code is not signed in',
+      'Claude Code is not signed in'
     ])
   })
 })

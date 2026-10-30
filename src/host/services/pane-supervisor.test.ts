@@ -734,7 +734,9 @@ const GRACE_MS = 5000
 const parkedEvents = (events: ReadonlyArray<IpcEvent>) =>
   events.flatMap((event) =>
     event._tag === 'PaneAttentionChanged' &&
-    (event.attention._tag === 'ParkedToResume' || event.attention._tag === 'ParkedForUser')
+    (event.attention._tag === 'ParkedToResume' ||
+      event.attention._tag === 'ParkedUntilReset' ||
+      event.attention._tag === 'ParkedForUser')
       ? [event.attention]
       : []
   )
@@ -783,7 +785,35 @@ describe('PaneSupervisor parking', () => {
     })
   )
 
-  it.effect('waits for the user when the stored mode is manual', () =>
+  it.effect('under manual, waits for the reset and then for the user, without resuming', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup(undefined, undefined, undefined, 'manual')
+
+      yield* Effect.gen(function* () {
+        const events: Array<IpcEvent> = []
+        yield* openPaneA(events)
+        const cause = { _tag: 'UsageLimit', resetsAt: HOUR_MS } as const
+
+        yield* sessions[0].emit(limitResetAt(HOUR_MS))
+        yield* flush
+        yield* TestClock.adjust(HOUR_MS - 1)
+        yield* flush
+        assert.deepStrictEqual(parkedEvents(events), [
+          { _tag: 'ParkedUntilReset', cause, resetsAt: HOUR_MS }
+        ])
+
+        yield* TestClock.adjust(1)
+        yield* flush
+        assert.deepStrictEqual(parkedEvents(events), [
+          { _tag: 'ParkedUntilReset', cause, resetsAt: HOUR_MS },
+          { _tag: 'ParkedForUser', cause }
+        ])
+        assert.deepStrictEqual(sessions[0].calls, [])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('waits for the user at once when the reset time has already passed', () =>
     Effect.gen(function* () {
       const { sessions, testLayer } = makeTestSetup(undefined, undefined, undefined, 'manual')
 
@@ -791,15 +821,14 @@ describe('PaneSupervisor parking', () => {
         const events: Array<IpcEvent> = []
         yield* openPaneA(events)
 
+        yield* TestClock.adjust(HOUR_MS)
         yield* sessions[0].emit(limitResetAt(HOUR_MS))
         yield* flush
-        yield* TestClock.adjust(2 * HOUR_MS)
-        yield* flush
 
-        assert.deepStrictEqual(parkedEvents(events), [
-          { _tag: 'ParkedForUser', cause: { _tag: 'UsageLimit', resetsAt: HOUR_MS } }
-        ])
-        assert.deepStrictEqual(sessions[0].calls, [])
+        assert.deepStrictEqual(
+          parkedEvents(events).map((attention) => attention._tag),
+          ['ParkedForUser']
+        )
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })
   )
@@ -822,26 +851,28 @@ describe('PaneSupervisor parking', () => {
     })
   )
 
-  it.effect('waits for the user when the reset is more than seven days ahead', () =>
-    Effect.gen(function* () {
-      const { sessions, testLayer } = makeTestSetup()
+  it.effect(
+    'waits for the reset, then the user, when the reset is more than seven days ahead',
+    () =>
+      Effect.gen(function* () {
+        const { sessions, testLayer } = makeTestSetup()
 
-      yield* Effect.gen(function* () {
-        const events: Array<IpcEvent> = []
-        yield* openPaneA(events)
+        yield* Effect.gen(function* () {
+          const events: Array<IpcEvent> = []
+          yield* openPaneA(events)
 
-        yield* sessions[0].emit(limitResetAt(7 * 24 * HOUR_MS))
-        yield* flush
+          yield* sessions[0].emit(limitResetAt(7 * 24 * HOUR_MS))
+          yield* flush
 
-        assert.deepStrictEqual(
-          parkedEvents(events).map((attention) => attention._tag),
-          ['ParkedForUser']
-        )
-      }).pipe(Effect.scoped, Effect.provide(testLayer))
-    })
+          assert.deepStrictEqual(
+            parkedEvents(events).map((attention) => attention._tag),
+            ['ParkedUntilReset']
+          )
+        }).pipe(Effect.scoped, Effect.provide(testLayer))
+      })
   )
 
-  it.effect('re-parks a waiting pane for the user when the mode changes to manual', () =>
+  it.effect('re-parks a pane dia would resume for the user when the mode changes to manual', () =>
     Effect.gen(function* () {
       const { sessions, testLayer } = makeTestSetup()
 
@@ -857,7 +888,7 @@ describe('PaneSupervisor parking', () => {
 
         assert.deepStrictEqual(
           parkedEvents(events).map((attention) => attention._tag),
-          ['ParkedToResume', 'ParkedForUser']
+          ['ParkedToResume', 'ParkedUntilReset', 'ParkedForUser']
         )
         assert.deepStrictEqual(sessions[0].calls, [])
       }).pipe(Effect.scoped, Effect.provide(testLayer))
@@ -878,7 +909,7 @@ describe('PaneSupervisor parking', () => {
 
         assert.deepStrictEqual(
           parkedEvents(events).map((attention) => attention._tag),
-          ['ParkedForUser']
+          ['ParkedUntilReset']
         )
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })

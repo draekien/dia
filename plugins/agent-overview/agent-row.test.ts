@@ -81,9 +81,19 @@ describe('secondLine — turn status', () => {
   it('shows when dia resumes a parked agent instead of its activity', () => {
     const resumesAt = 1_700_000_000_000
     const nowMs = resumesAt - 60_000
-    expect(secondLine(summary(StatusParked.make({ resumesAt }), EDITING), nowMs)).toEqual({
+    const parked = StatusParked.make({ until: resumesAt, resumedBy: 'dia' })
+    expect(secondLine(summary(parked, EDITING), nowMs)).toEqual({
       text: `Resumes ${formatResetTime(resumesAt, nowMs)}`,
       mono: false
     })
+  })
+
+  it('shows when the limit of an agent the user resumes resets', () => {
+    const resetsAt = 1_700_000_000_000
+    const nowMs = resetsAt - 60_000
+    const parked = StatusParked.make({ until: resetsAt, resumedBy: 'user' })
+    expect(secondLine(summary(parked, EDITING), nowMs).text).toBe(
+      `Resets ${formatResetTime(resetsAt, nowMs)}`
+    )
   })
 })

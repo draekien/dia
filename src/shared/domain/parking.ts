@@ -18,6 +18,9 @@ export type ParkCause = typeof ParkCause.Type
 export const UsageLimitResume = Schema.Literals(['automatic', 'manual'])
 export type UsageLimitResume = typeof UsageLimitResume.Type
 
+/** The message dia sends to a parked agent to resume its refused turn. */
+export const RESUME_TEXT = 'continue'
+
 /** The resume mode when the user has not chosen one. */
 export const DEFAULT_USAGE_LIMIT_RESUME: UsageLimitResume = 'automatic'
 

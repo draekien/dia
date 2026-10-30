@@ -27,7 +27,7 @@ When the account refuses a turn (the plan's usage limit is reached, or Claude Co
 
 Chosen option: "Park the turn", because it keeps one turn end per turn and does not depend on the order in which the SDK sends the refusal and the result: the reducer records the cause during the turn and replaces only a failed result with `TurnParked`.
 
-The pane supervisor decides between `ParkedToResume` (dia sends `continue` at the reset plus 5 seconds, when the reset is at most 7 days ahead and the user chose to resume automatically) and `ParkedForUser` (the user resumes it from the account banner or the tab). `AgentSession.resume` dispatches `continue` ahead of the held queue. The design is in `docs/designs/parked-agents.md`.
+The pane supervisor decides between `ParkedToResume` (dia sends `continue` at the reset plus 5 seconds, when the reset is at most 7 days ahead and the user chose to resume automatically), `ParkedUntilReset` (the user resumes it, but not before the reset; the supervisor moves it to `ParkedForUser` at the reset) and `ParkedForUser` (the user resumes it from the account banner or the tab). Only `ParkedForUser` shows as needs input, so an agent the user cannot act on yet never shows amber. `AgentSession.resume` dispatches `continue` ahead of the held queue. The design is in `docs/designs/parked-agents.md`.
 
 ### Consequences
 

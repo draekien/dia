@@ -178,6 +178,14 @@ export const ParkedToResume = Schema.TaggedStruct('ParkedToResume', {
   cause: UsageLimit,
   resumesAt: Schema.Int
 })
+/**
+ * A pane whose turn the usage limit refused under a resume mode that waits for the user; it moves
+ * to `ParkedForUser` at `resetsAt` (epoch ms), when the user can resume it.
+ */
+export const ParkedUntilReset = Schema.TaggedStruct('ParkedUntilReset', {
+  cause: UsageLimit,
+  resetsAt: Schema.Int
+})
 /** A pane whose turn the account refused; it waits for the user to resume it. */
 export const ParkedForUser = Schema.TaggedStruct('ParkedForUser', { cause: ParkCause })
 
@@ -192,6 +200,7 @@ export const AttentionState = Schema.Union([
   Crashed,
   Completed,
   ParkedToResume,
+  ParkedUntilReset,
   ParkedForUser
 ])
 export type AttentionState = typeof AttentionState.Type
@@ -212,8 +221,8 @@ export class InvalidAttentionTransition extends Data.TaggedError('InvalidAttenti
 // from any non-terminal state, so every non-Crashed state -> Crashed; Crashed itself is terminal
 // (no outbound transition) since its process is gone. A refused turn parks from any state a turn
 // can end in; a parked pane leaves through Idle (a send, an interrupt, a resume) or a crash, and
-// moves between its two parked states, or to itself, when the resume mode changes.
-const PARKED = ['ParkedToResume', 'ParkedForUser'] as const
+// moves between its parked states, or to itself, when the resume mode changes.
+const PARKED = ['ParkedToResume', 'ParkedUntilReset', 'ParkedForUser'] as const
 const parkedTransitions = PARKED.flatMap((parked) => [
   `Idle->${parked}`,
   `AwaitingPermission->${parked}`,

@@ -22,7 +22,7 @@ import { NO_FILTERS, type OverviewFilters, STATUS_TAGS, type StatusTag } from '.
 const SAMPLE_STATUS = {
   StatusNeedsInput: StatusNeedsInput.make({ reason: '' }),
   StatusFailed: StatusFailed.make({ reason: '' }),
-  StatusParked: StatusParked.make({ resumesAt: 0 }),
+  StatusParked: StatusParked.make({ until: 0, resumedBy: 'dia' }),
   StatusWorking: StatusWorking.make({}),
   StatusFinished: StatusFinished.make({}),
   StatusIdle: StatusIdle.make({})

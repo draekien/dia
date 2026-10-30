@@ -9,6 +9,7 @@ import {
   type PaneError,
   ParkedForUser,
   ParkedToResume,
+  ParkedUntilReset,
   PermissionRequest,
   type PermissionResponse,
   PlanReview,
@@ -369,14 +370,24 @@ function toAttentionTarget(message: OutboundMessage): Option.Option<AttentionSta
   )
 }
 
-const isParked = (attention: AttentionState): boolean =>
-  attention._tag === 'ParkedToResume' || attention._tag === 'ParkedForUser'
+type Parked = Extract<
+  AttentionState,
+  { _tag: 'ParkedToResume' | 'ParkedUntilReset' | 'ParkedForUser' }
+>
 
-const parkedState = (cause: ParkCause, mode: UsageLimitResume, nowMs: number): AttentionState => {
+const isParked = (attention: AttentionState): attention is Parked =>
+  attention._tag === 'ParkedToResume' ||
+  attention._tag === 'ParkedUntilReset' ||
+  attention._tag === 'ParkedForUser'
+
+const parkedState = (cause: ParkCause, mode: UsageLimitResume, nowMs: number): Parked => {
+  if (cause._tag === 'SignedOut' || cause.resetsAt === null || cause.resetsAt <= nowMs) {
+    return ParkedForUser.make({ cause })
+  }
   const resumesAt = resumesAtFor(cause, mode, nowMs)
-  return cause._tag === 'UsageLimit' && resumesAt !== null
-    ? ParkedToResume.make({ cause, resumesAt })
-    : ParkedForUser.make({ cause })
+  return resumesAt === null
+    ? ParkedUntilReset.make({ cause, resetsAt: cause.resetsAt })
+    : ParkedToResume.make({ cause, resumesAt })
 }
 
 const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
@@ -447,6 +458,22 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
       )
       yield* Ref.set(timerFiberRef, Option.some(fiber))
     }
+
+    if (result.success._tag === 'ParkedUntilReset') {
+      const nowMs = yield* Clock.currentTimeMillis
+      const forUser = ParkedForUser.make({ cause: result.success.cause })
+      const fiber = yield* Effect.sleep(Duration.millis(result.success.resetsAt - nowMs)).pipe(
+        Effect.andThen(Ref.set(timerFiberRef, Option.none())),
+        Effect.andThen(
+          Effect.logInfo('Usage limit reset; the parked pane waits for the user', {
+            paneId: config.paneId
+          })
+        ),
+        Effect.andThen(applyAttention(forUser)),
+        Effect.forkIn(paneScope)
+      )
+      yield* Ref.set(timerFiberRef, Option.some(fiber))
+    }
   })
 
   const currentMode = settings
@@ -463,6 +490,7 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
       paneId: config.paneId,
       cause: cause._tag,
       mode,
+      state: next._tag,
       resumesAt: next._tag === 'ParkedToResume' ? next.resumesAt : null
     })
     yield* applyAttention(next)
@@ -470,7 +498,7 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
 
   const repark = Effect.fn('PaneSupervisor.repark')(function* (mode: UsageLimitResume) {
     const { attention } = yield* Ref.get(recordRef)
-    if (attention._tag !== 'ParkedToResume' && attention._tag !== 'ParkedForUser') return
+    if (!isParked(attention)) return
     yield* Effect.logInfo('Re-parking the pane under a new resume mode', {
       paneId: config.paneId,
       mode

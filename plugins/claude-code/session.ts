@@ -24,6 +24,7 @@ import {
   PlanReviewResponse,
   Question,
   QuestionRequested,
+  RESUME_TEXT,
   RewoundToCheckpoint,
   SlashCommandsAvailable,
   SlashCommandsWarming,
@@ -649,8 +650,6 @@ const unstartedSession = (reason: string): AgentSession => ({
   resume: ignoredUnstarted('resume', reason)(),
   ended: Effect.succeed(reason)
 })
-
-const RESUME_TEXT = 'continue'
 
 /**
  * Starts the Agent SDK session for one pane and returns its {@link AgentSession} controls.

@@ -18,6 +18,7 @@ import {
   findModelOption,
   fitThinkingLevel,
   formatElapsed,
+  formatResetTime,
   hasSteps,
   InputGroup,
   InputGroupAddon,
@@ -61,7 +62,6 @@ import {
   useAgentSummaries,
   useDisabledPermissionModes,
   useModelCatalog,
-  useNow,
   useTranscriptWidth
 } from '@dia/renderer-plugin'
 import { useAtomSet, useAtomValue } from '@effect/atom-react'
@@ -87,7 +87,6 @@ import type {
 import { useForm } from '@tanstack/react-form'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { cva } from 'class-variance-authority'
-import { Duration } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
 import {
   AlertTriangle,
@@ -385,6 +384,15 @@ export function MessageView({
   live?: LiveSteps
   nowMs?: number
 }): React.JSX.Element {
+  if (message.role === 'user' && message.resumedAt !== undefined) {
+    return (
+      <Marker variant="separator" className="py-1 text-xs">
+        <MarkerContent>
+          Resumed at {formatResetTime(message.resumedAt, nowMs ?? message.resumedAt)}
+        </MarkerContent>
+      </Marker>
+    )
+  }
   if (message.role === 'notice') {
     const text = message.parts.find((part) => part.type === 'text')?.content ?? ''
     return (
@@ -616,8 +624,7 @@ function PaneChat({
 
   const { elapsedMs, idleMs, nowMs } = useElapsedClock(isLoading, activitySignature)
   const summary = useAgentSummaries().get(paneId)
-  const minuteNowMs = useNow(Duration.minutes(1))
-  const parkedForUser = summary !== undefined && awaitsUser(summary, minuteNowMs)
+  const parkedForUser = summary !== undefined && awaitsUser(summary)
   const lastMessage = chat.messages.at(-1)
   const activity = turnActivity(chat, elapsedMs, idleMs)
 
@@ -875,7 +882,10 @@ function PaneChat({
                   type="button"
                   variant="outline"
                   size="xs"
-                  onClick={() => actions.resumeParkedAgent(paneId)}
+                  onClick={() => {
+                    textareaRef.current?.focus()
+                    actions.resumeParkedAgent(paneId)
+                  }}
                 >
                   Resume
                 </Button>

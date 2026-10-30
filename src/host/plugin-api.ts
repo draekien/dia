@@ -18,7 +18,7 @@ export {
   ModelsUnavailable
 } from '../shared/domain/model'
 export { SessionId } from '../shared/domain/pane'
-export { ParkCause, SignedOut, UsageLimit } from '../shared/domain/parking'
+export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
 export * from '../shared/plugin/api'
 export {
   type GitOps,

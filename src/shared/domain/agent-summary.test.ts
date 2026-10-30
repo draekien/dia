@@ -232,7 +232,7 @@ describe('statusRank', () => {
     const statuses: ReadonlyArray<AgentStatus> = [
       StatusIdle.make({}),
       StatusWorking.make({}),
-      StatusParked.make({ resumesAt: 0 }),
+      StatusParked.make({ until: 0, resumedBy: 'dia' }),
       StatusFailed.make({ reason: 'x' }),
       StatusFinished.make({}),
       StatusNeedsInput.make({ reason: 'y' })
@@ -289,12 +289,19 @@ describe('foldSummary — turn status', () => {
 describe('foldSummary — parked agents', () => {
   const limit = { _tag: 'UsageLimit' as const, resetsAt: 1000 }
   const parkedToResume = attention({ _tag: 'ParkedToResume', cause: limit, resumesAt: 6000 })
+  const parkedUntilReset = attention({ _tag: 'ParkedUntilReset', cause: limit, resetsAt: 1000 })
   const parkedForUser = (cause: ParkCause) => attention({ _tag: 'ParkedForUser', cause })
   const sent: IpcEvent = { _tag: 'PaneUserMessagesSent', paneId, messages: [] }
 
-  it('shows an agent waiting for the reset as parked until its resume time', () => {
+  it('shows an agent dia resumes as parked until its resume time', () => {
     const folded = foldSummary(withStatus(StatusWorking.make({})), parkedToResume)
-    expect(folded.status).toEqual(StatusParked.make({ resumesAt: 6000 }))
+    expect(folded.status).toEqual(StatusParked.make({ until: 6000, resumedBy: 'dia' }))
+    expect(folded.parked).toEqual(limit)
+  })
+
+  it('shows an agent the user resumes as parked until its reset, not as needing input', () => {
+    const folded = foldSummary(withStatus(StatusWorking.make({})), parkedUntilReset)
+    expect(folded.status).toEqual(StatusParked.make({ until: 1000, resumedBy: 'user' }))
     expect(folded.parked).toEqual(limit)
   })
 
@@ -309,7 +316,7 @@ describe('foldSummary — parked agents', () => {
       withStatus(StatusWorking.make({})),
       parkedForUser({ _tag: 'SignedOut' })
     )
-    expect(folded.status).toEqual(StatusNeedsInput.make({ reason: 'Claude Code is signed out' }))
+    expect(folded.status).toEqual(StatusNeedsInput.make({ reason: 'Claude Code is not signed in' }))
   })
 
   it('becomes working with no parked cause when the resume sends its message', () => {
@@ -324,7 +331,7 @@ describe('foldSummary — parked agents', () => {
   })
 
   it('becomes idle when an interrupt leaves a parked state', () => {
-    for (const parked of [parkedToResume, parkedForUser(limit)]) {
+    for (const parked of [parkedToResume, parkedUntilReset, parkedForUser(limit)]) {
       const folded = foldSummary(foldSummary(idle, parked), attention({ _tag: 'Idle' }))
       expect(folded.status).toEqual(StatusIdle.make({}))
       expect(folded.parked).toBeUndefined()
