@@ -54,18 +54,18 @@ describe('turnActivity', () => {
   it('reports "starting" while loading with no assistant turn yet', () => {
     const activity = turnActivity(loadingNoAssistant, 0, 0)
     expect(activity?.kind).toBe('starting')
-    expect(activity?.label).toBe('Starting session')
+    expect(activity?.label).toBe('Starting session…')
   })
 
   it('reports "working" once an assistant turn has appeared', () => {
     const activity = turnActivity(loadingWithAssistant, 0, 0)
     expect(activity?.kind).toBe('working')
-    expect(WORKING_VERBS).toContain(activity?.label)
+    expect(WORKING_VERBS.map((verb) => `${verb}…`)).toContain(activity?.label)
   })
 
   it('picks the working verb deterministically from the user-turn count', () => {
     // seed = number of user turns; loadingWithAssistant has one user turn.
-    const expected = WORKING_VERBS[1 % WORKING_VERBS.length]
+    const expected = `${WORKING_VERBS[1 % WORKING_VERBS.length]}…`
     expect(turnActivity(loadingWithAssistant, 0, 0)?.label).toBe(expected)
     // Stable across re-renders within the same turn.
     expect(turnActivity(loadingWithAssistant, 9_999, 0)?.label).toBe(expected)
@@ -96,13 +96,13 @@ describe('turnActivity', () => {
 })
 
 describe('turnActivity — named turn state', () => {
-  it('shows the turn’s named state as a complete label', () => {
+  it('shows the turn’s named state as its label, without an ellipsis', () => {
     const retrying = reducePaneChat(
       loadingWithAssistant,
       PaneTurnStatusChanged.make({ paneId: PANE, label: 'Compacting conversation' })
     )
     expect(turnActivity(retrying, 0, 0)).toEqual({
-      kind: 'status',
+      kind: 'working',
       label: 'Compacting conversation',
       stalled: false
     })

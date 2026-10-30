@@ -845,28 +845,13 @@ describe('reducePaneChat — turn status, tool row updates and notices', () => {
     expect(state.turnStatus).toBe('Compacting conversation')
   })
 
-  it('ignores a turn status that arrives while no turn is in flight', () => {
-    const state = reducePaneChat(emptyPaneChatState, turnStatus('Compacting conversation'))
-    expect(state.turnStatus).toBeNull()
-  })
-
-  it('ends the turn status when the turn streams text', () => {
-    const retrying = reducePaneChat(loading, turnStatus('Retrying (attempt 1 of 10) in 1s · 529'))
-    expect(reducePaneChat(retrying, textDelta('Hi')).turnStatus).toBeNull()
-  })
-
-  it('ends the turn status when the turn starts a tool call', () => {
-    const retrying = reducePaneChat(loading, turnStatus('Retrying (attempt 1 of 10) in 1s · 529'))
-    expect(reducePaneChat(retrying, toolStarted('toolu_1', 'Bash')).turnStatus).toBeNull()
-  })
-
-  it('ends the turn status when the turn ends', () => {
-    const retrying = reducePaneChat(loading, turnStatus('Retrying (attempt 1 of 10) in 1s · 529'))
-    const ended = reducePaneChat(
-      retrying,
-      attentionChanged(Errored.make({ error: { message: 'x' } }))
+  it('clears a turn status left from the previous turn when the user sends again', () => {
+    const stale = { ...emptyPaneChatState, turnStatus: 'Compacting conversation' }
+    const sent = reducePaneChat(
+      stale,
+      PaneUserMessagesSent.make({ paneId: PANE, messages: [{ id: 'u-1', text: 'hi' }] })
     )
-    expect(ended.turnStatus).toBeNull()
+    expect(sent.turnStatus).toBeNull()
   })
 
   it('ends the turn status when the session clears it', () => {

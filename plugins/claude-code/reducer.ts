@@ -92,6 +92,14 @@ const taskProgressDetail = (task: Extract<SDKMessage, { subtype: 'task_progress'
     ...(task.last_tool_name !== undefined ? [`last: ${task.last_tool_name}`] : [])
   ].join(' · ')
 
+const ENDS_TURN_STATUS: ReadonlySet<OutboundMessage['_tag']> = new Set([
+  'AssistantTextDelta',
+  'AssistantThinkingDelta',
+  'ToolCallStarted',
+  'TurnCompleted',
+  'TurnErrored'
+])
+
 /**
  * Folds the Agent SDK's raw message stream into {@link OutboundMessage}s for one agent session.
  * `step` takes one SDK message, in arrival order, and returns the protocol messages it produces
@@ -123,6 +131,7 @@ export const makeSessionEventReducer = (
   const pendingToolCalls = new Map<string, { name: string; input: Record<string, unknown> }>()
   let lastAssistantUuid = Option.getOrUndefined(continuesFrom)
   let lastRateLimitStatus: string | undefined
+  let turnStatus: string | null = null
 
   const completeToolCall = (
     toolCallId: string,
@@ -236,7 +245,7 @@ export const makeSessionEventReducer = (
     }
   }
 
-  const step = (message: SDKMessage): ReadonlyArray<OutboundMessage> => {
+  const stepMessage = (message: SDKMessage): ReadonlyArray<OutboundMessage> => {
     if (message.type === 'system' && message.subtype === 'init') {
       // The streamed init message lists command names only (no descriptions). The
       // full list -- with descriptions and argument hints -- is fetched once at
@@ -366,6 +375,20 @@ export const makeSessionEventReducer = (
 
     return []
   }
+
+  const trackTurnStatus = (outbound: OutboundMessage): ReadonlyArray<OutboundMessage> => {
+    if (outbound._tag === 'TurnStatusChanged') {
+      if (outbound.label === turnStatus) return []
+      turnStatus = outbound.label
+      return [outbound]
+    }
+    if (turnStatus === null || !ENDS_TURN_STATUS.has(outbound._tag)) return [outbound]
+    turnStatus = null
+    return [TurnStatusChanged.make({ label: null }), outbound]
+  }
+
+  const step = (message: SDKMessage): ReadonlyArray<OutboundMessage> =>
+    stepMessage(message).flatMap(trackTurnStatus)
 
   return { step }
 }

@@ -25,10 +25,7 @@ export function TurnActivityLine({
   return (
     <div className="flex items-center gap-2 px-1 text-muted-foreground text-xs">
       <span className="size-1.5 shrink-0 animate-pulse-slow rounded-full bg-muted-foreground motion-reduce:animate-none" />
-      <span aria-live="polite">
-        {activity.label}
-        {activity.kind === 'status' ? '' : '…'}
-      </span>
+      <span aria-live="polite">{activity.label}</span>
       {activity.elapsedLabel !== undefined && (
         <span aria-hidden className="tabular-nums text-muted-foreground/70">
           {activity.elapsedLabel}

@@ -120,24 +120,13 @@ export const idleSummary = (paneId: string, activity: Activity): AgentSummary =>
  */
 export const foldSummary = (summary: AgentSummary, event: IpcEvent): AgentSummary => {
   if (!('paneId' in event) || event.paneId !== summary.paneId) return summary
-  const folded = foldOwnEvent(summary, event)
-  return endsTurnStatus(event) ? withoutTurnStatus(folded) : folded
-}
-
-const endsTurnStatus = (event: IpcEvent): boolean =>
-  event._tag === 'PaneAssistantTextDelta' ||
-  event._tag === 'PaneAssistantThinkingDelta' ||
-  event._tag === 'PaneToolCallStarted' ||
-  event._tag === 'PaneAttentionChanged'
-
-const foldOwnEvent = (summary: AgentSummary, event: IpcEvent): AgentSummary => {
   switch (event._tag) {
     case 'PaneTurnStatusChanged':
       return event.label === null
         ? withoutTurnStatus(summary)
         : { ...summary, turnStatus: event.label }
     case 'PaneUserMessagesSent':
-      return { ...summary, status: StatusWorking.make({}) }
+      return { ...withoutTurnStatus(summary), status: StatusWorking.make({}) }
     case 'PaneToolCallStarted':
       return withActivity(summary, ToolUse.make({ tool: event.toolName, target: null }))
     case 'PaneToolCallCompleted':

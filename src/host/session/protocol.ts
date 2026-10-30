@@ -37,7 +37,7 @@ export const ToolCallUpdated = Schema.TaggedStruct('ToolCallUpdated', {
   elapsedSeconds: Schema.optional(Schema.Number),
   detail: Schema.optional(Schema.String)
 })
-/** Emitted by a pane's agent session when the current turn enters a state worth naming in its activity line (retrying the API, compacting, thinking), with `label` as the text; `label` null ends that state. The state also ends when the turn produces output or ends. */
+/** Emitted by a pane's agent session when the current turn enters a state worth naming in its activity line (retrying the API, compacting, thinking), with `label` as the text. A `label` null, emitted before the turn's next output or its end, ends that state; a label repeats only when it changed. */
 export const TurnStatusChanged = Schema.TaggedStruct('TurnStatusChanged', {
   label: Schema.NullOr(Schema.String)
 })

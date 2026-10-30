@@ -335,8 +335,8 @@ export type PaneToolCallUpdated = typeof PaneToolCallUpdated.Type
 /**
  * Event pushed to the renderer when the current turn in pane `paneId` enters a
  * state its activity line should name (retrying the API, compacting, thinking),
- * with `label` as the text. `label` null ends the state; the turn producing
- * output or ending also ends it.
+ * with `label` as the text. `label` null ends the state, and arrives before the
+ * turn's next output or its end.
  */
 export const PaneTurnStatusChanged = Schema.TaggedStruct('PaneTurnStatusChanged', {
   paneId: Uuid,

@@ -768,3 +768,52 @@ describe('makeSessionEventReducer — failed turn messages', () => {
     ])
   })
 })
+
+describe('makeSessionEventReducer — ending a turn status', () => {
+  const compacting = system('status', { status: 'compacting' })
+
+  it('ends a named turn state before the turn’s next streamed text', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(compacting)
+    expect(reducer.step(textDelta(0, 'Hi'))).toEqual([
+      { _tag: 'TurnStatusChanged', label: null },
+      { _tag: 'AssistantTextDelta', text: 'Hi' }
+    ])
+  })
+
+  it('ends a named turn state before the turn starts a tool call', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(compacting)
+    expect(reducer.step(toolUseStart(0, 'toolu_1', 'Bash'))[0]).toEqual({
+      _tag: 'TurnStatusChanged',
+      label: null
+    })
+  })
+
+  it('ends a named turn state before the turn fails', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(compacting)
+    const emitted = reducer.step(
+      sdkMessage({ type: 'result', subtype: 'error_max_turns', errors: [] })
+    )
+    expect(emitted[0]).toEqual({ _tag: 'TurnStatusChanged', label: null })
+  })
+
+  it('emits nothing extra before streamed text when no state is named', () => {
+    expect(stepOnce(textDelta(0, 'Hi'))).toEqual([{ _tag: 'AssistantTextDelta', text: 'Hi' }])
+  })
+
+  it('does not repeat an unchanged label', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    const thinking = system('thinking_tokens', {
+      estimated_tokens: 1210,
+      estimated_tokens_delta: 10
+    })
+    reducer.step(thinking)
+    expect(reducer.step(thinking)).toEqual([])
+  })
+
+  it('does not report an end for a state that was never named', () => {
+    expect(stepOnce(system('status', { status: null }))).toEqual([])
+  })
+})

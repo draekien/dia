@@ -185,7 +185,7 @@ const appendSentMessages = (state: PaneChatState, event: PaneUserMessagesSent): 
       })
     )
     .filter((message) => !present.has(message.id))
-  return { ...state, messages: [...state.messages, ...sent], isLoading: true }
+  return { ...state, messages: [...state.messages, ...sent], isLoading: true, turnStatus: null }
 }
 
 const lastMessage = (state: PaneChatState): PaneMessage | undefined => state.messages.at(-1)
@@ -357,26 +357,13 @@ const compactionNotice = (event: PaneConversationCompacted): string =>
  * `PaneCheckpointAvailable` anchors a rewindable checkpoint uuid (and its resume
  * anchor) onto the earliest user turn still lacking one, and
  * `PaneToolCallUpdated` sets a running row's elapsed time or detail line, `PaneSessionNotice`
- * appends a `notice` divider, and `PaneTurnStatusChanged` sets `turnStatus`, which the
- * turn's next text, thinking or tool call, or its end, clears.
+ * appends a `notice` divider, and `PaneTurnStatusChanged` sets `turnStatus`, which the next
+ * `PaneUserMessagesSent` also clears.
  * `PaneRewoundToCheckpoint` truncates the transcript back to (and excluding) the
  * turn holding that uuid, ending any in-flight turn. Pure and total — drive a
  * pane's state atom by scanning the IPC stream with it.
  */
 export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): PaneChatState => {
-  const next = foldPaneChat(state, event)
-  return next.turnStatus !== null && endsTurnStatus(event, next)
-    ? { ...next, turnStatus: null }
-    : next
-}
-
-const endsTurnStatus = (event: PaneStreamEvent, next: PaneChatState): boolean =>
-  !next.isLoading ||
-  event._tag === 'PaneAssistantTextDelta' ||
-  event._tag === 'PaneAssistantThinkingDelta' ||
-  event._tag === 'PaneToolCallStarted'
-
-const foldPaneChat = (state: PaneChatState, event: PaneStreamEvent): PaneChatState => {
   switch (event._tag) {
     case 'PaneAssistantThinkingDelta':
       return withStreamingAssistant(state, (parts) => extendTrailingThinking(parts, event.text))
@@ -394,7 +381,7 @@ const foldPaneChat = (state: PaneChatState, event: PaneStreamEvent): PaneChatSta
         ? withStreamingAssistant(state, (parts) => updateToolCall(parts, event))
         : state
     case 'PaneTurnStatusChanged':
-      return state.isLoading ? { ...state, turnStatus: event.label } : state
+      return { ...state, turnStatus: event.label }
     case 'PaneSessionNotice':
       return noticeMessage(state, event.text)
     case 'PaneMessageAppended': {

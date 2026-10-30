@@ -271,16 +271,8 @@ describe('foldSummary — turn status', () => {
     expect(foldSummary(retrying, turnStatus(null))).toEqual(withTodo('Writing tests'))
   })
 
-  it('drops the named state when the turn starts a tool call', () => {
-    expect(foldSummary(retrying, started('Read')).turnStatus).toBeUndefined()
-  })
-
-  it('drops the named state when the agent’s attention changes', () => {
-    const event: IpcEvent = {
-      _tag: 'PaneAttentionChanged',
-      paneId,
-      attention: { _tag: 'Completed' }
-    }
+  it('drops the named state when the user sends the next messages', () => {
+    const event: IpcEvent = { _tag: 'PaneUserMessagesSent', paneId, messages: [] }
     expect(foldSummary(retrying, event).turnStatus).toBeUndefined()
   })
 
