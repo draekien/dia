@@ -60,7 +60,11 @@ export const openDatabase = Effect.fn('openDatabase')(
   },
   (effect, filename) =>
     Effect.tapError(effect, (error) =>
-      Effect.logError('Could not open database', { filename, message: error.message })
+      Effect.logError('Could not open database', {
+        filename,
+        message: error.message,
+        cause: error.cause
+      })
     )
 )
 

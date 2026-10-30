@@ -90,6 +90,7 @@ This answers the `docs/prds/org.md` open question for #42: long-term memory is s
 * Good, because FTS5 and the JSON functions work in Electron's SQLite build, which #42's memory search needs.
 * Bad, because `node:sqlite` is a release candidate (stability 1.2) in Node 24, not stable, and Electron 37.2.0 shipped without it once (electron/electron#47671). An Electron upgrade must check that `node:sqlite` still loads in a `utilityProcess`.
 * Bad, because `node:sqlite` runs synchronously on the Host's event loop. A slow query blocks every pane's events until it returns.
+* Bad, because a migration commits before the rest of the plugin's setup runs. If a reload's setup then fails, the registry reopens the previous version (ADR-0026) against the migrated schema, which that version may not read. A plugin keeps its migrations additive (new tables and nullable columns) so an older version still works.
 * Bad, because one file per owner rules out a SQL join across owners; a feature that needs data from two plugins asks one of them through a service.
 * Bad, because `synchronous = FULL` flushes to disk on each commit: 200 single-row commits took 372 ms (about 1.9 ms each). A consumer that writes many rows at once wraps them in one transaction.
 
