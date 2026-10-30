@@ -58,3 +58,21 @@ describe('secondLine', () => {
     expect(secondLine(summary(WORKING, NoActivity.make({}))).text).toBe('No activity yet')
   })
 })
+
+describe('secondLine — turn status', () => {
+  const RETRYING = 'Retrying (attempt 2 of 10) in 4s · 529'
+
+  it('shows the turn’s named state in sans instead of the activity line', () => {
+    expect(secondLine({ ...summary(WORKING, EDITING), turnStatus: RETRYING })).toEqual({
+      text: RETRYING,
+      mono: false
+    })
+  })
+
+  it('keeps the reason of an agent that needs input over the turn’s named state', () => {
+    const needsInput = StatusNeedsInput.make({ reason: 'Allow Bash?' })
+    expect(secondLine({ ...summary(needsInput, EDITING), turnStatus: RETRYING }).text).toBe(
+      'Allow Bash?'
+    )
+  })
+})

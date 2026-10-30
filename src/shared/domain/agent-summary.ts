@@ -52,11 +52,16 @@ export const AgentStatus = Schema.Union([
 ])
 export type AgentStatus = typeof AgentStatus.Type
 
-/** What the overview shows for one tab: its status and its activity line. */
+/**
+ * What the overview shows for one tab: its status and its activity line. `turnStatus`, present
+ * while the running turn is in a named state (retrying, compacting, thinking), replaces the
+ * activity line until that state ends.
+ */
 export const AgentSummary = Schema.Struct({
   paneId: Uuid,
   status: AgentStatus,
-  activity: Activity
+  activity: Activity,
+  turnStatus: Schema.optional(Schema.String)
 })
 export type AgentSummary = typeof AgentSummary.Type
 
@@ -96,6 +101,12 @@ const todoActivity = (input: Readonly<Record<string, unknown>>): Activity => {
     : Todo.make({ text })
 }
 
+const withoutTurnStatus = (summary: AgentSummary): AgentSummary => {
+  if (summary.turnStatus === undefined) return summary
+  const { turnStatus: _ended, ...rest } = summary
+  return rest
+}
+
 const withActivity = (summary: AgentSummary, activity: Activity): AgentSummary =>
   summary.activity._tag === 'Todo' ? summary : { ...summary, activity }
 
@@ -109,7 +120,22 @@ export const idleSummary = (paneId: string, activity: Activity): AgentSummary =>
  */
 export const foldSummary = (summary: AgentSummary, event: IpcEvent): AgentSummary => {
   if (!('paneId' in event) || event.paneId !== summary.paneId) return summary
+  const folded = foldOwnEvent(summary, event)
+  return endsTurnStatus(event) ? withoutTurnStatus(folded) : folded
+}
+
+const endsTurnStatus = (event: IpcEvent): boolean =>
+  event._tag === 'PaneAssistantTextDelta' ||
+  event._tag === 'PaneAssistantThinkingDelta' ||
+  event._tag === 'PaneToolCallStarted' ||
+  event._tag === 'PaneAttentionChanged'
+
+const foldOwnEvent = (summary: AgentSummary, event: IpcEvent): AgentSummary => {
   switch (event._tag) {
+    case 'PaneTurnStatusChanged':
+      return event.label === null
+        ? withoutTurnStatus(summary)
+        : { ...summary, turnStatus: event.label }
     case 'PaneUserMessagesSent':
       return { ...summary, status: StatusWorking.make({}) }
     case 'PaneToolCallStarted':

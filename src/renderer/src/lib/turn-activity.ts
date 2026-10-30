@@ -37,14 +37,15 @@ export const WORKING_VERBS = [
 /**
  * A snapshot of what a pane is doing mid-turn, for rendering the activity line.
  * `kind` is `'starting'` on the very first turn before any assistant output has
- * appeared (session warm-up) and `'working'` thereafter. `label` is the text to
- * show. `elapsedLabel` is the formatted seconds-elapsed once past the short
+ * appeared (session warm-up), `'status'` while the turn is in a named state
+ * (retrying, compacting, thinking), and `'working'` otherwise. `label` is the text to
+ * show; a `'status'` label is complete, the others read as ongoing. `elapsedLabel` is the formatted seconds-elapsed once past the short
  * delay, or `undefined` before it. `stalled` is true once the turn has gone
  * without progress for {@link STALL_THRESHOLD}, the cue to surface manual
  * resend / interrupt actions.
  */
 export interface TurnActivity {
-  readonly kind: 'starting' | 'working'
+  readonly kind: 'starting' | 'working' | 'status'
   readonly label: string
   readonly elapsedLabel?: string
   readonly stalled: boolean
@@ -86,11 +87,13 @@ export const turnActivity = (
 ): TurnActivity | null => {
   if (!state.isLoading) return null
 
-  const kind = hasAssistantTurn(state) ? 'working' : 'starting'
+  const kind =
+    state.turnStatus !== null ? 'status' : hasAssistantTurn(state) ? 'working' : 'starting'
   const label =
-    kind === 'starting'
+    state.turnStatus ??
+    (kind === 'starting'
       ? 'Starting session'
-      : WORKING_VERBS[userTurnCount(state) % WORKING_VERBS.length]
+      : WORKING_VERBS[userTurnCount(state) % WORKING_VERBS.length])
 
   return {
     kind,

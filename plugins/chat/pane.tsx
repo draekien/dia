@@ -15,6 +15,7 @@ import {
   emptyPaneChatState,
   findModelOption,
   fitThinkingLevel,
+  formatElapsed,
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
@@ -188,6 +189,14 @@ function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
         <span className="shrink-0 text-foreground/90">{part.name}</span>
         {summary !== undefined && (
           <span className="truncate text-muted-foreground/80">{summary}</span>
+        )}
+        {part.detail !== undefined && (
+          <span className="truncate font-sans text-muted-foreground">{part.detail}</span>
+        )}
+        {status === 'running' && part.elapsedSeconds !== undefined && (
+          <span className="shrink-0 tabular-nums text-muted-foreground/70">
+            {formatElapsed(part.elapsedSeconds * 1000)}
+          </span>
         )}
       </MarkerContent>
       <span className="sr-only">{status === 'running' ? 'running' : 'completed'}</span>

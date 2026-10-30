@@ -410,6 +410,9 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     onAssistantTextDelta: (listener) => subscribeTo('PaneAssistantTextDelta', listener),
     onAssistantThinkingDelta: (listener) => subscribeTo('PaneAssistantThinkingDelta', listener),
     onToolCallStarted: (listener) => subscribeTo('PaneToolCallStarted', listener),
-    onToolCallCompleted: (listener) => subscribeTo('PaneToolCallCompleted', listener)
+    onToolCallCompleted: (listener) => subscribeTo('PaneToolCallCompleted', listener),
+    onToolCallUpdated: (listener) => subscribeTo('PaneToolCallUpdated', listener),
+    onTurnStatusChanged: (listener) => subscribeTo('PaneTurnStatusChanged', listener),
+    onSessionNotice: (listener) => subscribeTo('PaneSessionNotice', listener)
   }
 }

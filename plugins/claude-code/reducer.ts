@@ -8,12 +8,15 @@ import {
   ConversationReset,
   type OutboundMessage,
   SessionId,
+  SessionNotice,
   SessionStarted,
   SlashCommandsAvailable,
   ToolCallCompleted,
   ToolCallStarted,
+  ToolCallUpdated,
   TurnCompleted,
-  TurnErrored
+  TurnErrored,
+  TurnStatusChanged
 } from '@dia/plugin'
 import type { ConversationMessage } from '@shared/domain/pane'
 import { Option } from 'effect'
@@ -40,6 +43,54 @@ const flattenToolResultContent = (content: ToolResultBlock['content']): string =
   if (typeof content === 'string') return content
   return content.map((block) => (block.type === 'text' ? block.text : `[${block.type}]`)).join('')
 }
+
+type ResultMessage = Extract<SDKMessage, { type: 'result' }>
+type RateLimitType = Extract<
+  SDKMessage,
+  { type: 'rate_limit_event' }
+>['rate_limit_info']['rateLimitType']
+
+const ERROR_RESULT_LABELS: Record<Exclude<ResultMessage['subtype'], 'success'>, string> = {
+  error_during_execution: 'The turn failed',
+  error_max_turns: 'Stopped at the turn limit',
+  error_max_budget_usd: 'Stopped at the budget limit',
+  error_max_structured_output_retries: 'Stopped after too many structured output retries'
+}
+
+const RATE_LIMIT_LABELS: Record<NonNullable<RateLimitType>, string> = {
+  five_hour: '5-hour',
+  seven_day: 'weekly',
+  seven_day_opus: 'weekly Opus',
+  seven_day_sonnet: 'weekly Sonnet',
+  seven_day_overage_included: 'weekly',
+  overage: 'overage'
+}
+
+const errorResultMessage = (
+  subtype: keyof typeof ERROR_RESULT_LABELS,
+  errors: ReadonlyArray<string>
+): string =>
+  errors.length > 0
+    ? `${ERROR_RESULT_LABELS[subtype]}: ${errors.join('; ')}`
+    : ERROR_RESULT_LABELS[subtype]
+
+const rateLimitWarning = (type: RateLimitType): string =>
+  type === undefined
+    ? 'Approaching the usage limit'
+    : `Approaching the ${RATE_LIMIT_LABELS[type]} usage limit`
+
+const formatTokens = (tokens: number): string =>
+  tokens < 1000 ? String(tokens) : `${(tokens / 1000).toFixed(1)}k`
+
+const retryLabel = (retry: Extract<SDKMessage, { subtype: 'api_retry' }>): string =>
+  `Retrying (attempt ${retry.attempt} of ${retry.max_retries}) in ${Math.ceil(retry.retry_delay_ms / 1000)}s · ${retry.error_status ?? 'connection error'}`
+
+const taskProgressDetail = (task: Extract<SDKMessage, { subtype: 'task_progress' }>): string =>
+  [
+    task.description,
+    `${task.usage.tool_uses} tools`,
+    ...(task.last_tool_name !== undefined ? [`last: ${task.last_tool_name}`] : [])
+  ].join(' · ')
 
 /**
  * Folds the Agent SDK's raw message stream into {@link OutboundMessage}s for one agent session.
@@ -71,6 +122,7 @@ export const makeSessionEventReducer = (
   const partialJsonByBlockIndex = new Map<number, string>()
   const pendingToolCalls = new Map<string, { name: string; input: Record<string, unknown> }>()
   let lastAssistantUuid = Option.getOrUndefined(continuesFrom)
+  let lastRateLimitStatus: string | undefined
 
   const completeToolCall = (
     toolCallId: string,
@@ -95,6 +147,93 @@ export const makeSessionEventReducer = (
       if (message) completed.push(message)
     }
     return completed
+  }
+
+  const stepNotice = (message: SDKMessage): ReadonlyArray<OutboundMessage> | undefined => {
+    if (message.type === 'tool_progress') {
+      return [
+        ToolCallUpdated.make({
+          toolCallId: message.tool_use_id,
+          elapsedSeconds: message.elapsed_time_seconds
+        })
+      ]
+    }
+    if (message.type === 'rate_limit_event') {
+      const { status, rateLimitType } = message.rate_limit_info
+      const entered = status !== lastRateLimitStatus
+      lastRateLimitStatus = status
+      return entered && status === 'allowed_warning'
+        ? [SessionNotice.make({ text: rateLimitWarning(rateLimitType) })]
+        : []
+    }
+    if (message.type !== 'system') return undefined
+    switch (message.subtype) {
+      case 'local_command_output':
+        return [
+          AssistantMessageReceived.make({
+            message: { role: 'assistant', content: message.content }
+          })
+        ]
+      case 'api_retry':
+        return [TurnStatusChanged.make({ label: retryLabel(message) })]
+      case 'thinking_tokens':
+        return [
+          TurnStatusChanged.make({
+            label: `Thinking · ~${formatTokens(message.estimated_tokens)} tokens`
+          })
+        ]
+      case 'status':
+        return [
+          TurnStatusChanged.make({
+            label: message.status === 'compacting' ? 'Compacting conversation' : null
+          }),
+          ...(message.compact_result === 'failed'
+            ? [
+                SessionNotice.make({
+                  text:
+                    message.compact_error !== undefined
+                      ? `Compaction failed: ${message.compact_error}`
+                      : 'Compaction failed'
+                })
+              ]
+            : [])
+        ]
+      case 'model_refusal_fallback':
+        return [
+          SessionNotice.make({
+            text: `${message.original_model} declined the request; retried on ${message.fallback_model}`
+          })
+        ]
+      case 'informational':
+        return message.level === 'info' ? [] : [SessionNotice.make({ text: message.content })]
+      case 'permission_denied':
+        return [
+          ToolCallUpdated.make({
+            toolCallId: message.tool_use_id,
+            detail: `Denied: ${message.decision_reason ?? message.message}`
+          })
+        ]
+      case 'task_progress':
+        return message.tool_use_id === undefined
+          ? []
+          : [
+              ToolCallUpdated.make({
+                toolCallId: message.tool_use_id,
+                detail: taskProgressDetail(message)
+              })
+            ]
+      case 'task_notification':
+        return message.tool_use_id === undefined || message.status !== 'failed'
+          ? []
+          : [
+              ToolCallUpdated.make({
+                toolCallId: message.tool_use_id,
+                detail: `Failed: ${message.summary}`
+              })
+            ]
+      default:
+        return undefined
+    }
   }
 
   const step = (message: SDKMessage): ReadonlyArray<OutboundMessage> => {
@@ -151,9 +290,16 @@ export const makeSessionEventReducer = (
       if (message.subtype === 'success') {
         return [...flushed, TurnCompleted.make({})]
       }
-      const errorMessage = message.errors.length > 0 ? message.errors.join('; ') : message.subtype
-      return [...flushed, TurnErrored.make({ error: { message: errorMessage } })]
+      return [
+        ...flushed,
+        TurnErrored.make({
+          error: { message: errorResultMessage(message.subtype, message.errors) }
+        })
+      ]
     }
+
+    const notice = stepNotice(message)
+    if (notice !== undefined) return notice
 
     if (message.type === 'user') {
       const content = message.message.content

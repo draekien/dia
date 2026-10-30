@@ -22,8 +22,8 @@ import { type OverviewRow, rowKey } from './overview'
 const decodeName = Schema.decodeUnknownOption(AgentName)
 
 /**
- * The second line of a row: the reason for a row that needs input or failed, else the activity
- * line. `mono` is true for a tool call, which is literal output.
+ * The second line of a row: the reason for a row that needs input or failed, else the turn's
+ * named state (such as a retry), else the activity line. `mono` is true for a tool call, which is literal output.
  */
 export const secondLine = (
   summary: AgentSummary
@@ -33,6 +33,7 @@ export const secondLine = (
     case 'StatusFailed':
       return { text: summary.status.reason, mono: false }
   }
+  if (summary.turnStatus !== undefined) return { text: summary.turnStatus, mono: false }
   switch (summary.activity._tag) {
     case 'Todo':
       return { text: summary.activity.text, mono: false }

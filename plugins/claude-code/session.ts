@@ -571,10 +571,19 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       if (isTurnEnd(outbound)) yield* onTurnEnded(outbound._tag === 'TurnCompleted')
     })
 
+    const forwardStep = Effect.fnUntraced(function* (event: SDKMessage) {
+      const outbound = reducer.step(event)
+      if (outbound.length === 0 && event.type !== 'stream_event') {
+        yield* Effect.logDebug('Agent SDK message not shown', {
+          type: event.type,
+          subtype: 'subtype' in event ? event.subtype : undefined
+        })
+      }
+      yield* Effect.forEach(outbound, forward, { discard: true })
+    })
+
     yield* Stream.runForEach(events, (event) =>
-      reportStartupFailure(event, launch).pipe(
-        Effect.andThen(Effect.forEach(reducer.step(event), forward, { discard: true }))
-      )
+      reportStartupFailure(event, launch).pipe(Effect.andThen(forwardStep(event)))
     )
   },
   (effect, config) =>

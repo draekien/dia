@@ -1,4 +1,8 @@
-import { PaneAssistantTextDelta, PaneUserMessagesSent } from '@shared/ipc/contract'
+import {
+  PaneAssistantTextDelta,
+  PaneTurnStatusChanged,
+  PaneUserMessagesSent
+} from '@shared/ipc/contract'
 import { Duration } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { emptyPaneChatState, reducePaneChat } from './pane-chat'
@@ -88,5 +92,19 @@ describe('turnActivity', () => {
   it('measures stall from last progress, independently of total elapsed', () => {
     // A long-running but actively-progressing turn (recent activity) is not stalled.
     expect(turnActivity(loadingWithAssistant, STALL_MS * 3, 1_000)?.stalled).toBe(false)
+  })
+})
+
+describe('turnActivity — named turn state', () => {
+  it('shows the turn’s named state as a complete label', () => {
+    const retrying = reducePaneChat(
+      loadingWithAssistant,
+      PaneTurnStatusChanged.make({ paneId: PANE, label: 'Compacting conversation' })
+    )
+    expect(turnActivity(retrying, 0, 0)).toEqual({
+      kind: 'status',
+      label: 'Compacting conversation',
+      stalled: false
+    })
   })
 })

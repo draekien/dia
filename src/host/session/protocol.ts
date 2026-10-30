@@ -31,6 +31,18 @@ export const ToolCallCompleted = Schema.TaggedStruct('ToolCallCompleted', {
   output: Schema.String,
   isError: Schema.Boolean
 })
+/** Emitted by a pane's agent session with news about a tool call it already reported via `ToolCallStarted`: `elapsedSeconds` while it runs, and `detail` for a line to show on its row (a subagent's progress, or why it was denied or failed). An absent field leaves the row's value unchanged. */
+export const ToolCallUpdated = Schema.TaggedStruct('ToolCallUpdated', {
+  toolCallId: Schema.String,
+  elapsedSeconds: Schema.optional(Schema.Number),
+  detail: Schema.optional(Schema.String)
+})
+/** Emitted by a pane's agent session when the current turn enters a state worth naming in its activity line (retrying the API, compacting, thinking), with `label` as the text; `label` null ends that state. The state also ends when the turn produces output or ends. */
+export const TurnStatusChanged = Schema.TaggedStruct('TurnStatusChanged', {
+  label: Schema.NullOr(Schema.String)
+})
+/** Emitted by a pane's agent session for an event the transcript should record as a one-line notice (a model fallback, a usage-limit warning, a message from Claude Code itself). */
+export const SessionNotice = Schema.TaggedStruct('SessionNotice', { text: Schema.String })
 /** Emitted by a pane's agent session when the agent needs the user to approve or deny a tool call. `suggestions`, when present, are the SDK's offered "always allow" rules for this call. The renderer's reply should be with a `ResolvePermission` message carrying the same `requestId`. */
 export const PermissionRequested = Schema.TaggedStruct('PermissionRequested', {
   requestId: Schema.String,
@@ -109,6 +121,9 @@ export const OutboundMessage = Schema.Union([
   AssistantThinkingDelta,
   ToolCallStarted,
   ToolCallCompleted,
+  ToolCallUpdated,
+  TurnStatusChanged,
+  SessionNotice,
   PermissionRequested,
   QuestionRequested,
   PlanReviewRequested,

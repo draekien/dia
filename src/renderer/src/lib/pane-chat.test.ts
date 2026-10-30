@@ -20,10 +20,13 @@ import {
   PaneMessageQueueChanged,
   PaneModelChanged,
   PaneRewoundToCheckpoint,
+  PaneSessionNotice,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
   PaneToolCallCompleted,
   PaneToolCallStarted,
+  PaneToolCallUpdated,
+  PaneTurnStatusChanged,
   PaneUserMessagesSent
 } from '@shared/ipc/contract'
 import { describe, expect, it } from 'vitest'
@@ -102,6 +105,7 @@ describe('paneChatStateFromHistory', () => {
       warmingCommands: false,
       queued: [],
       queueHeld: false,
+      turnStatus: null,
       messages: [
         { id: `${PANE}:history:0`, role: 'user', parts: [{ type: 'text', content: 'hi' }] },
         { id: `${PANE}:history:1`, role: 'assistant', parts: [{ type: 'text', content: 'hello' }] }
@@ -116,7 +120,8 @@ describe('paneChatStateFromHistory', () => {
       slashCommands: [],
       warmingCommands: false,
       queued: [],
-      queueHeld: false
+      queueHeld: false,
+      turnStatus: null
     })
   })
 
@@ -231,6 +236,7 @@ describe('reducePaneChat: text deltas', () => {
       warmingCommands: false,
       queued: [],
       queueHeld: false,
+      turnStatus: null,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'done' }] }
       ]
@@ -278,6 +284,7 @@ describe('reducePaneChat: tool calls', () => {
       warmingCommands: false,
       queued: [],
       queueHeld: false,
+      turnStatus: null,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'let me look' }] }
       ]
@@ -298,6 +305,7 @@ describe('reducePaneChat: tool calls', () => {
       warmingCommands: false,
       queued: [],
       queueHeld: false,
+      turnStatus: null,
       messages: [
         {
           id: '0:assistant',
@@ -332,6 +340,7 @@ describe('reducePaneChat: tool calls', () => {
       warmingCommands: false,
       queued: [],
       queueHeld: false,
+      turnStatus: null,
       messages: [
         {
           id: '0:assistant',
@@ -407,6 +416,7 @@ describe('reducePaneChat: PaneMessageAppended backstop', () => {
       warmingCommands: false,
       queued: [],
       queueHeld: false,
+      turnStatus: null,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'streamed' }] }
       ]
@@ -821,5 +831,82 @@ describe('reducePaneChat: message queue', () => {
     const result = reducePaneChat(queued, conversationReset())
 
     expect(result.queued).toEqual(queued.queued)
+  })
+})
+
+describe('reducePaneChat — turn status, tool row updates and notices', () => {
+  const turnStatus = (label: string | null) => PaneTurnStatusChanged.make({ paneId: PANE, label })
+  const toolUpdated = (fields: { elapsedSeconds?: number; detail?: string }) =>
+    PaneToolCallUpdated.make({ paneId: PANE, toolCallId: 'toolu_1', ...fields })
+  const loading = loadingWith(emptyPaneChatState)
+
+  it('names the in-flight turn’s state', () => {
+    const state = reducePaneChat(loading, turnStatus('Compacting conversation'))
+    expect(state.turnStatus).toBe('Compacting conversation')
+  })
+
+  it('ignores a turn status that arrives while no turn is in flight', () => {
+    const state = reducePaneChat(emptyPaneChatState, turnStatus('Compacting conversation'))
+    expect(state.turnStatus).toBeNull()
+  })
+
+  it('ends the turn status when the turn streams text', () => {
+    const retrying = reducePaneChat(loading, turnStatus('Retrying (attempt 1 of 10) in 1s · 529'))
+    expect(reducePaneChat(retrying, textDelta('Hi')).turnStatus).toBeNull()
+  })
+
+  it('ends the turn status when the turn starts a tool call', () => {
+    const retrying = reducePaneChat(loading, turnStatus('Retrying (attempt 1 of 10) in 1s · 529'))
+    expect(reducePaneChat(retrying, toolStarted('toolu_1', 'Bash')).turnStatus).toBeNull()
+  })
+
+  it('ends the turn status when the turn ends', () => {
+    const retrying = reducePaneChat(loading, turnStatus('Retrying (attempt 1 of 10) in 1s · 529'))
+    const ended = reducePaneChat(
+      retrying,
+      attentionChanged(Errored.make({ error: { message: 'x' } }))
+    )
+    expect(ended.turnStatus).toBeNull()
+  })
+
+  it('ends the turn status when the session clears it', () => {
+    const compacting = reducePaneChat(loading, turnStatus('Compacting conversation'))
+    expect(reducePaneChat(compacting, turnStatus(null)).turnStatus).toBeNull()
+  })
+
+  it('sets a running tool row’s elapsed time and detail without changing its state', () => {
+    const running = reducePaneChat(loading, toolStarted('toolu_1', 'Task'))
+    const timed = reducePaneChat(running, toolUpdated({ elapsedSeconds: 42 }))
+    const detailed = reducePaneChat(timed, toolUpdated({ detail: 'Explore · 3 tools' }))
+    expect(detailed.messages.at(-1)?.parts).toEqual([
+      {
+        type: 'tool-call',
+        toolCallId: 'toolu_1',
+        name: 'Task',
+        state: 'running',
+        elapsedSeconds: 42,
+        detail: 'Explore · 3 tools'
+      }
+    ])
+  })
+
+  it('ignores a tool row update for a turn that has ended', () => {
+    const running = reducePaneChat(loading, toolStarted('toolu_1', 'Task'))
+    const ended = reducePaneChat(running, attentionChanged(Completed.make({})))
+    expect(reducePaneChat(ended, toolUpdated({ detail: 'late' }))).toBe(ended)
+  })
+
+  it('appends a session notice as a notice divider', () => {
+    const state = reducePaneChat(
+      emptyPaneChatState,
+      PaneSessionNotice.make({ paneId: PANE, text: 'Approaching the 5-hour usage limit' })
+    )
+    expect(state.messages).toEqual([
+      {
+        id: '0:notice',
+        role: 'notice',
+        parts: [{ type: 'text', content: 'Approaching the 5-hour usage limit' }]
+      }
+    ])
   })
 })
