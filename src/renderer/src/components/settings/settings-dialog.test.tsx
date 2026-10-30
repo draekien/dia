@@ -45,7 +45,9 @@ const installBridge = (list: Promise<ReadonlyArray<PluginInfo>>) => {
     getSendMode: vi.fn(async () => 'queue'),
     setSendMode: vi.fn(),
     getTranscriptWidth: vi.fn(async () => 'default'),
-    setTranscriptWidth: vi.fn()
+    setTranscriptWidth: vi.fn(),
+    getTranscriptMode: vi.fn(async () => 'answer-only'),
+    setTranscriptMode: vi.fn()
   }
   Object.assign(window, { dia: bridge })
   return bridge
@@ -151,6 +153,15 @@ describe('SettingsDialog General page', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Wide' }))
 
     expect(bridge.setTranscriptWidth).toHaveBeenCalledWith('wide')
+  })
+
+  it('changes the transcript mode', async () => {
+    const bridge = renderDialog()
+    await open()
+
+    fireEvent.click(screen.getByRole('radio', { name: 'All text' }))
+
+    expect(bridge.setTranscriptMode).toHaveBeenCalledWith('all-text')
   })
 })
 

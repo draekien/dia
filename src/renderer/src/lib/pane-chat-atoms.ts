@@ -1,6 +1,6 @@
 import type { SendMode } from '@shared/domain/message-queue'
 import type { ModelCatalogSnapshotJson, PaneModelChanged } from '@shared/ipc/contract'
-import { Duration, Effect, Queue, Stream, SubscriptionRef } from 'effect'
+import { Clock, Duration, Effect, Queue, Stream, SubscriptionRef } from 'effect'
 import { Atom } from 'effect/reactivity'
 import { findModelOption } from './model-options'
 import type { PaneChatState, PaneStreamEvent } from './pane-chat'
@@ -98,7 +98,10 @@ export const paneChatAtom = Atom.family((paneId: string) =>
       const ref = yield* SubscriptionRef.make(emptyPaneChatState)
       yield* paneStreamEvents(paneId).pipe(
         Stream.runForEach((event) =>
-          SubscriptionRef.update(ref, (state) => reducePaneChat(state, event))
+          Effect.gen(function* () {
+            const now = yield* Clock.currentTimeMillis
+            yield* SubscriptionRef.update(ref, (state) => reducePaneChat(state, event, now))
+          })
         ),
         Effect.forkScoped
       )

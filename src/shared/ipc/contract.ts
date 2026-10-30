@@ -23,6 +23,7 @@ import { AgentName, CreateTabRequest, ProjectId, Workspace } from '../domain/pro
 import type { RemovalProgress } from '../domain/project-removal'
 import { SlashCommandInfo } from '../domain/slash-command'
 import type { ThemePreference } from '../domain/theme'
+import { TranscriptMode } from '../domain/transcript-mode'
 import { TranscriptWidth } from '../domain/transcript-width'
 import { UpdateStatus } from '../domain/update'
 import { Uuid } from '../domain/uuid'
@@ -178,6 +179,12 @@ export const SetTranscriptWidth = Schema.TaggedStruct('SetTranscriptWidth', {
   width: TranscriptWidth
 })
 export type SetTranscriptWidth = typeof SetTranscriptWidth.Type
+
+/** Command sent by the renderer to change the app-wide transcript mode. */
+export const SetTranscriptMode = Schema.TaggedStruct('SetTranscriptMode', {
+  mode: TranscriptMode
+})
+export type SetTranscriptMode = typeof SetTranscriptMode.Type
 
 /**
  * Command sent by the renderer to change the thinking level of the live pane
@@ -802,6 +809,8 @@ export interface DiaApi {
   getAgentSummaries(): Promise<ReadonlyArray<AgentSummary>>
   getTranscriptWidth(): Promise<TranscriptWidth>
   setTranscriptWidth(width: TranscriptWidth): void
+  getTranscriptMode(): Promise<TranscriptMode>
+  setTranscriptMode(mode: TranscriptMode): void
   /** Shows `directory` in the system file manager; does nothing when it is not a directory. */
   revealPath(directory: string): Promise<void>
   getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>

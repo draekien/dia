@@ -2,6 +2,7 @@ import { scheduleTask } from '@effect/atom-react'
 import type { AgentSummary } from '@shared/domain/agent-summary'
 import type { PaneId } from '@shared/domain/pane'
 import type { Workspace } from '@shared/domain/project'
+import { DEFAULT_TRANSCRIPT_MODE, type TranscriptMode } from '@shared/domain/transcript-mode'
 import { DEFAULT_TRANSCRIPT_WIDTH, type TranscriptWidth } from '@shared/domain/transcript-width'
 import { Effect, Option, Queue, Stream, SubscriptionRef } from 'effect'
 import { AsyncResult, Atom, AtomRegistry } from 'effect/reactivity'
@@ -137,6 +138,28 @@ export const transcriptWidthAtom = Atom.writable(
   (ctx, width: TranscriptWidth) => {
     ctx.set(chosenTranscriptWidthAtom, width)
     window.dia.setTranscriptWidth(width)
+  }
+).pipe(Atom.keepAlive)
+
+const storedTranscriptModeAtom = Atom.make(
+  Effect.promise(() => window.dia.getTranscriptMode()).pipe(
+    Effect.tap((mode) => Effect.logDebug('Loaded the transcript mode', { mode }))
+  )
+).pipe(Atom.keepAlive)
+
+const chosenTranscriptModeAtom = Atom.make<TranscriptMode | null>(null).pipe(Atom.keepAlive)
+
+/**
+ * The app-wide transcript mode. Reads `'answer-only'` until the persisted choice loads. Set it to
+ * change and persist the mode.
+ */
+export const transcriptModeAtom = Atom.writable(
+  (get): TranscriptMode =>
+    get(chosenTranscriptModeAtom) ??
+    AsyncResult.getOrElse(get(storedTranscriptModeAtom), () => DEFAULT_TRANSCRIPT_MODE),
+  (ctx, mode: TranscriptMode) => {
+    ctx.set(chosenTranscriptModeAtom, mode)
+    window.dia.setTranscriptMode(mode)
   }
 ).pipe(Atom.keepAlive)
 

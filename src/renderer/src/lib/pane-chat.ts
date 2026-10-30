@@ -27,12 +27,14 @@ import type {
 export interface TextPart {
   readonly type: 'text'
   readonly content: string
+  readonly startedAt?: number
 }
 
 /** A streamed span of assistant extended-thinking text, shown collapsed. */
 export interface ThinkingPart {
   readonly type: 'thinking'
   readonly content: string
+  readonly startedAt?: number
 }
 
 /**
@@ -40,6 +42,7 @@ export interface ThinkingPart {
  * once resolved, at which point `input`/`output`/`isError` are populated.
  * `elapsedSeconds` is how long it has run, when the session reported it, and
  * `detail` is a line about it (a subagent's progress, or why it was denied or failed).
+ * `endedAt` is when it resolved, in epoch milliseconds, for a live turn.
  */
 export interface ToolCallPart {
   readonly type: 'tool-call'
@@ -51,9 +54,14 @@ export interface ToolCallPart {
   readonly isError?: boolean
   readonly elapsedSeconds?: number
   readonly detail?: string
+  readonly startedAt?: number
+  readonly endedAt?: number
 }
 
-/** An ordered fragment of an assistant turn. Branch on `type` to render. */
+/**
+ * An ordered fragment of an assistant turn. Branch on `type` to render. `startedAt` is when the
+ * part arrived, in epoch milliseconds; parts restored from history have none.
+ */
 export type MessagePart = TextPart | ThinkingPart | ToolCallPart
 
 /**
@@ -239,31 +247,36 @@ const withStreamingAssistant = (
   return { ...state, messages: [...state.messages, opened], isLoading: true }
 }
 
+const startedAt = (now: number | undefined) => (now === undefined ? {} : { startedAt: now })
+
 const extendTrailingText = (
   parts: ReadonlyArray<MessagePart>,
-  delta: string
+  delta: string,
+  now: number | undefined
 ): ReadonlyArray<MessagePart> => {
   const last = parts.at(-1)
   if (last?.type === 'text') {
-    return [...parts.slice(0, -1), { type: 'text', content: last.content + delta }]
+    return [...parts.slice(0, -1), { ...last, content: last.content + delta }]
   }
-  return [...parts, { type: 'text', content: delta }]
+  return [...parts, { type: 'text', content: delta, ...startedAt(now) }]
 }
 
 const extendTrailingThinking = (
   parts: ReadonlyArray<MessagePart>,
-  delta: string
+  delta: string,
+  now: number | undefined
 ): ReadonlyArray<MessagePart> => {
   const last = parts.at(-1)
   if (last?.type === 'thinking') {
-    return [...parts.slice(0, -1), { type: 'thinking', content: last.content + delta }]
+    return [...parts.slice(0, -1), { ...last, content: last.content + delta }]
   }
-  return [...parts, { type: 'thinking', content: delta }]
+  return [...parts, { type: 'thinking', content: delta, ...startedAt(now) }]
 }
 
 const completeToolCall = (
   parts: ReadonlyArray<MessagePart>,
-  event: PaneToolCallCompleted
+  event: PaneToolCallCompleted,
+  now: number | undefined
 ): ReadonlyArray<MessagePart> =>
   parts.map((part) =>
     part.type === 'tool-call' && part.toolCallId === event.toolCallId
@@ -272,7 +285,8 @@ const completeToolCall = (
           state: 'done',
           input: event.input,
           output: event.output,
-          isError: event.isError
+          isError: event.isError,
+          ...(now === undefined ? {} : { endedAt: now })
         }
       : part
   )
@@ -377,25 +391,40 @@ const compactionNotice = (event: PaneConversationCompacted): string =>
  * `PaneToolCallUpdated` sets a running row's elapsed time or detail line, `PaneSessionNotice`
  * appends a `notice` divider, and `PaneTurnStatusChanged` sets `turnStatus`, which the next
  * `PaneUserMessagesSent` also clears.
+ * `now`, the event's arrival time in epoch milliseconds, stamps `startedAt` on each new part and
+ * `endedAt` on each completed tool call; omit it and parts carry no times.
  * `PaneRewoundToCheckpoint` truncates the transcript back to (and excluding) the
  * turn holding that uuid, ending any in-flight turn. Pure and total — drive a
  * pane's state atom by scanning the IPC stream with it.
  */
-export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): PaneChatState => {
+export const reducePaneChat = (
+  state: PaneChatState,
+  event: PaneStreamEvent,
+  now?: number
+): PaneChatState => {
   switch (event._tag) {
     case 'PaneAssistantThinkingDelta':
-      return withStreamingAssistant(state, (parts) => extendTrailingThinking(parts, event.text))
+      return withStreamingAssistant(state, (parts) =>
+        extendTrailingThinking(parts, event.text, now)
+      )
     case 'PaneAssistantTextDelta':
-      return withStreamingAssistant(state, (parts) => extendTrailingText(parts, event.text))
+      return withStreamingAssistant(state, (parts) => extendTrailingText(parts, event.text, now))
     case 'PaneToolCallStarted':
       return withStreamingAssistant(state, (parts) => [
         ...parts,
-        { type: 'tool-call', toolCallId: event.toolCallId, name: event.toolName, state: 'running' }
+        {
+          type: 'tool-call',
+          toolCallId: event.toolCallId,
+          name: event.toolName,
+          state: 'running',
+          ...startedAt(now)
+        }
       ])
     case 'PaneToolCallCompleted':
       return (
-        withToolCallMessage(state, event.toolCallId, (parts) => completeToolCall(parts, event)) ??
-        withStreamingAssistant(state, (parts) => completeToolCall(parts, event))
+        withToolCallMessage(state, event.toolCallId, (parts) =>
+          completeToolCall(parts, event, now)
+        ) ?? withStreamingAssistant(state, (parts) => completeToolCall(parts, event, now))
       )
     case 'PaneToolCallUpdated':
       if (!state.isLoading) return state

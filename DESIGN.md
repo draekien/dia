@@ -99,6 +99,13 @@ The one component the whole system is built around. A small dot on an agent's ov
 - **Selecting:** a tab is selected from its sidebar row. The content area's header row holds the sidebar toggle, a breadcrumb `project › agent`, the worktree branch when there is one, the transcript width control, and the window status (plugin loading, update, `Ctrl K` hint). The header row is a window drag area; its content stays clear of the window controls. A divider separates it from the transcript.
 - **Transcript width:** the transcript and composer sit in one centred column, capped at one of three widths (Narrow, Default, Wide) chosen app-wide from the content header or Settings › General; a narrower content area fills the column.
 - **Background tabs:** tabs that are not visible keep running and show their status in the sidebar and the collapsed rail only.
+- **Transcript mode:** chosen app-wide in Settings › General. Answer only (the default) keeps the text after a turn's last step visible and collapses everything before it into one Turn steps section. All text keeps every text part visible and collapses each run of thinking and tool steps into its own section.
+
+### Turn steps
+- **Shape:** a native `<details>` in the assistant turn, collapsed by default. Expanding it shows the section's thinking, tool rows and (in Answer only) the text between them, indented `pl-3` under the summary line. A re-render keeps the open state.
+- **Finished summary:** a chevron that turns 90° when open, then `N steps · 12s` in caption size, muted. The duration runs from the section's first part to the part after it; it is left out when unknown.
+- **Running summary:** the turn's last section shows the activity line in place of the count: a neutral pulsing dot, the latest step (tool name and target in mono, or `Thinking`) or the turn's named state, the elapsed time, and the stall actions. It replaces the separate activity line; the dot stops under reduced motion and the label is `aria-live="polite"`.
+- **Not collapsed:** notices, errors, permission, question and plan cards stay outside sections. A turn restored from history, and a turn with no steps, have no section.
 
 ### Inputs / Fields
 - **Style:** [to be resolved] — flat, bordered, neutral background.
