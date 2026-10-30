@@ -15,7 +15,6 @@ import { ConversationMessage, PermissionMode } from '../domain/pane'
 import { ProjectId, ProjectNotFoundError, RegisterProjectError, Workspace } from '../domain/project'
 import { RemovalProgress } from '../domain/project-removal'
 import { ThemePreference } from '../domain/theme'
-import { TranscriptMode } from '../domain/transcript-mode'
 import { TranscriptWidth } from '../domain/transcript-width'
 import { PluginInfo, PluginName, PluginOverrideResult } from '../plugin/manifest'
 import {
@@ -35,7 +34,6 @@ import {
   SetModel,
   SetPermissionMode,
   SetThinkingLevel,
-  SetTranscriptMode,
   SetTranscriptWidth
 } from './contract'
 
@@ -45,7 +43,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.5'
+export const PROTOCOL_VERSION = '0.0.6'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -120,7 +118,6 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('RenameTab', { payload: withRequestId(RenameTab) }),
   Rpc.make('SelectTab', { payload: withRequestId(SelectTab) }),
   Rpc.make('SetTranscriptWidth', { payload: withRequestId(SetTranscriptWidth) }),
-  Rpc.make('SetTranscriptMode', { payload: withRequestId(SetTranscriptMode) }),
   Rpc.make('SetThinkingLevel', { payload: withRequestId(SetThinkingLevel) }),
   Rpc.make('SetPermissionMode', { payload: withRequestId(SetPermissionMode) }),
   Rpc.make('SetModel', { payload: withRequestId(SetModel) }),
@@ -145,7 +142,6 @@ export const DiaRpcs = RpcGroup.make(
   }),
   Rpc.make('GetAgentSummaries', { success: Schema.Array(AgentSummary) }),
   Rpc.make('GetTranscriptWidth', { success: TranscriptWidth }),
-  Rpc.make('GetTranscriptMode', { success: TranscriptMode }),
   Rpc.make('GetPaneHistory', {
     payload: { paneId: Schema.String },
     success: Schema.Array(ConversationMessage)

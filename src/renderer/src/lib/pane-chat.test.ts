@@ -849,6 +849,18 @@ describe('reducePaneChat — turn status, tool row updates and notices', () => {
     PaneToolCallUpdated.make({ paneId: PANE, toolCallId: 'toolu_1', ...fields })
   const loading = loadingWith(emptyPaneChatState)
 
+  it('sets a running tool row’s input when it arrives before the call completes', () => {
+    const started = reducePaneChat(loading, toolStarted('toolu_1', 'Bash'))
+    const updated = reducePaneChat(
+      started,
+      PaneToolCallUpdated.make({ paneId: PANE, toolCallId: 'toolu_1', input: { command: 'ls' } })
+    )
+    expect(updated.messages.at(-1)?.parts[0]).toMatchObject({
+      state: 'running',
+      input: { command: 'ls' }
+    })
+  })
+
   it('names the in-flight turn’s state', () => {
     const state = reducePaneChat(loading, turnStatus('Compacting conversation'))
     expect(state.turnStatus).toBe('Compacting conversation')

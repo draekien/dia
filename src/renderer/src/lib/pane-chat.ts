@@ -39,7 +39,8 @@ export interface ThinkingPart {
 
 /**
  * One tool invocation in an assistant turn. `running` while in flight; `done`
- * once resolved, at which point `input`/`output`/`isError` are populated.
+ * once resolved, at which point `output`/`isError` are populated. `input` is set once it has
+ * streamed in, which is before the call runs.
  * `elapsedSeconds` is how long it has run, when the session reported it, and
  * `detail` is a line about it (a subagent's progress, or why it was denied or failed).
  * `endedAt` is when it resolved, in epoch milliseconds, for a live turn.
@@ -299,6 +300,7 @@ const updateToolCall = (
     part.type === 'tool-call' && part.toolCallId === event.toolCallId
       ? {
           ...part,
+          ...(event.input !== undefined ? { input: event.input } : {}),
           ...(event.elapsedSeconds !== undefined ? { elapsedSeconds: event.elapsedSeconds } : {}),
           ...(event.detail !== undefined ? { detail: event.detail } : {})
         }
@@ -388,7 +390,7 @@ const compactionNotice = (event: PaneConversationCompacted): string =>
  * clears the transcript while keeping the available commands and the queue.
  * `PaneCheckpointAvailable` anchors a rewindable checkpoint uuid (and its resume
  * anchor) onto the earliest user turn still lacking one, and
- * `PaneToolCallUpdated` sets a running row's elapsed time or detail line, `PaneSessionNotice`
+ * `PaneToolCallUpdated` sets a running row's input, elapsed time or detail line, `PaneSessionNotice`
  * appends a `notice` divider, and `PaneTurnStatusChanged` sets `turnStatus`, which the next
  * `PaneUserMessagesSent` also clears.
  * `now`, the event's arrival time in epoch milliseconds, stamps `startedAt` on each new part and

@@ -31,9 +31,10 @@ export const ToolCallCompleted = Schema.TaggedStruct('ToolCallCompleted', {
   output: Schema.String,
   isError: Schema.Boolean
 })
-/** Emitted by a pane's agent session with news about a tool call it already reported via `ToolCallStarted`: `elapsedSeconds` while it runs, and `detail` for a line to show on its row (a subagent's progress, or why it was denied or failed). An absent field leaves the row's value unchanged. */
+/** Emitted by a pane's agent session with news about a tool call it already reported via `ToolCallStarted`: `input` once the call's input has streamed in (before it runs), `elapsedSeconds` while it runs, and `detail` for a line to show on its row (a subagent's progress, or why it was denied or failed). An absent field leaves the row's value unchanged. */
 export const ToolCallUpdated = Schema.TaggedStruct('ToolCallUpdated', {
   toolCallId: Schema.String,
+  input: Schema.optional(JsonRecord),
   elapsedSeconds: Schema.optional(Schema.Number),
   detail: Schema.optional(Schema.String)
 })

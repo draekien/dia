@@ -46,7 +46,7 @@ describe('MessageView', () => {
     )
   })
 
-  it('renders an assistant text turn as a start-aligned muted bubble', () => {
+  it('renders an assistant text turn start-aligned as plain text, with no bubble', () => {
     const message: PaneMessage = {
       id: 'a1',
       role: 'assistant',
@@ -59,9 +59,7 @@ describe('MessageView', () => {
     expect(container.querySelector('[data-slot="message"]')?.getAttribute('data-align')).toBe(
       'start'
     )
-    expect(container.querySelector('[data-slot="bubble"]')?.getAttribute('data-variant')).toBe(
-      'muted'
-    )
+    expect(container.querySelector('[data-slot="bubble"]')).toBeNull()
   })
 
   it('shows a completed tool call as name, input summary, and an output disclosure', () => {
@@ -187,27 +185,39 @@ describe('MessageView: turn steps', () => {
       { type: 'text', content: 'Fixed it.', startedAt: 13_000 }
     ]
   }
+  const stillStepping: PaneMessage = { ...liveTurn, parts: liveTurn.parts.slice(0, 2) }
   const working = { kind: 'working', label: 'Pondering…', stalled: false } as const
-  const live = { activity: working, onResend: () => {}, onInterruptAndRetry: () => {} }
+  const live = {
+    activity: working,
+    onResend: () => {},
+    onInterruptAndRetry: () => {}
+  }
 
-  it('collapses a finished turn’s steps behind their count and duration, and shows the answer', () => {
-    const { container } = render(<MessageView message={liveTurn} mode="answer-only" />)
+  it('collapses a finished turn’s steps behind their count and duration', () => {
+    const { container } = render(<MessageView message={liveTurn} />)
 
     const section = container.querySelector('details')
     expect(section?.open).toBe(false)
-    expect(section?.querySelector('summary')?.textContent).toBe('1 step · 12s')
-    expect(section?.textContent).toContain('Let me look.')
+    expect(section?.querySelector('summary')?.textContent).toBe('1 step · 11s')
+  })
+
+  it('gives a finished section’s summary an accessible name with its parts kept apart', () => {
+    const { container } = render(<MessageView message={liveTurn} />)
+
+    const spoken = container.querySelector('summary')?.cloneNode(true) as HTMLElement
+    for (const hidden of spoken.querySelectorAll('[aria-hidden]')) hidden.remove()
+    expect(spoken.textContent?.replace(/\s+/g, ' ')).toBe('1 step 11s')
+  })
+
+  it('keeps the text before and after the steps visible, outside the section', () => {
+    render(<MessageView message={liveTurn} />)
+
+    expect(screen.getByText('Let me look.').closest('details')).toBeNull()
     expect(screen.getByText('Fixed it.').closest('details')).toBeNull()
   })
 
-  it('keeps the text between steps visible in all-text mode', () => {
-    render(<MessageView message={liveTurn} mode="all-text" />)
-
-    expect(screen.getByText('Let me look.').closest('details')).toBeNull()
-  })
-
   it('shows a running turn’s latest step on the summary line instead of the count', () => {
-    const { container } = render(<MessageView message={liveTurn} mode="answer-only" live={live} />)
+    const { container } = render(<MessageView message={liveTurn} live={live} nowMs={20_000} />)
 
     const summary = container.querySelector('summary')?.textContent
     expect(summary).toContain('Read')
@@ -219,8 +229,8 @@ describe('MessageView: turn steps', () => {
     const { container } = render(
       <MessageView
         message={liveTurn}
-        mode="answer-only"
         live={{ ...live, label: 'Compacting conversation' }}
+        nowMs={20_000}
       />
     )
 
@@ -237,9 +247,137 @@ describe('MessageView: turn steps', () => {
       ]
     }
 
-    const { container } = render(<MessageView message={restored} mode="answer-only" />)
+    const { container } = render(<MessageView message={restored} />)
 
     expect(container.querySelector('details')).toBeNull()
     expect(screen.getByText('Read')).toBeTruthy()
+  })
+
+  it('marks a failed tool call as failed on its row and counts it on the summary', () => {
+    const failing: PaneMessage = {
+      id: 'a12',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-call',
+          toolCallId: 't1',
+          name: 'Bash',
+          state: 'done',
+          input: { command: 'sleep 40' },
+          output: '',
+          isError: true,
+          startedAt: 1_000,
+          endedAt: 2_000
+        }
+      ]
+    }
+
+    const { container } = render(<MessageView message={failing} />)
+
+    expect(container.querySelector('summary')?.textContent).toBe('1 step · Bash failed · 1s')
+    expect(screen.getByText('failed')).toBeTruthy()
+    expect(screen.queryByText('completed')).toBeNull()
+  })
+
+  it('times a running section from its first part, not from the start of the turn', () => {
+    const { container } = render(
+      <MessageView
+        message={stillStepping}
+        live={{ ...live, activity: { ...working, elapsedLabel: '25s' } }}
+        nowMs={20_000}
+      />
+    )
+
+    expect(container.querySelector('summary')?.textContent).toContain('18s')
+  })
+
+  it('stops a running section’s time at the text written after it', () => {
+    const { container } = render(
+      <MessageView
+        message={liveTurn}
+        live={{ ...live, activity: { ...working, elapsedLabel: '25s' } }}
+        nowMs={20_000}
+      />
+    )
+
+    expect(container.querySelector('summary')?.textContent).toContain('11s')
+  })
+
+  it('shows no negative time when the clock reading predates the section’s first part', () => {
+    const { container } = render(
+      <MessageView
+        message={stillStepping}
+        live={{ ...live, activity: { ...working, elapsedLabel: '25s' } }}
+        nowMs={1_500}
+      />
+    )
+
+    expect(container.querySelector('summary')?.textContent).toContain('0s')
+    expect(container.querySelector('summary')?.textContent).not.toContain('-')
+  })
+
+  it('stops the activity dot pulsing once the turn stalls', () => {
+    const { container, rerender } = render(
+      <MessageView message={stillStepping} live={live} nowMs={20_000} />
+    )
+    expect(container.querySelector('summary .animate-pulse-slow')).not.toBeNull()
+
+    rerender(
+      <MessageView
+        message={stillStepping}
+        live={{ ...live, activity: { ...working, stalled: true } }}
+        nowMs={20_000}
+      />
+    )
+
+    expect(container.querySelector('summary .animate-pulse-slow')).toBeNull()
+  })
+
+  it('shows the stall actions outside the summary, so the disclosure holds no buttons', () => {
+    const { container } = render(
+      <MessageView
+        message={liveTurn}
+        live={{ ...live, activity: { ...working, stalled: true } }}
+        nowMs={20_000}
+      />
+    )
+
+    expect(container.querySelector('summary button')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Resend' }).closest('details')).toBeNull()
+  })
+})
+
+describe('MessageView: failed steps', () => {
+  const bash = (toolCallId: string, isError: boolean) =>
+    ({
+      type: 'tool-call',
+      toolCallId,
+      name: 'Bash',
+      state: 'done',
+      input: { command: 'make' },
+      output: '',
+      isError,
+      startedAt: 1_000,
+      endedAt: 2_000
+    }) as const
+
+  it('counts the failures instead of naming a tool when more than one call failed', () => {
+    const message: PaneMessage = {
+      id: 'a13',
+      role: 'assistant',
+      parts: [bash('t1', true), bash('t2', true), bash('t3', false)]
+    }
+
+    const { container } = render(<MessageView message={message} />)
+
+    expect(container.querySelector('summary')?.textContent).toBe('3 steps · 2 failed · 1s')
+  })
+
+  it('offers a tool row’s full target as its title, for when the row truncates it', () => {
+    const message: PaneMessage = { id: 'a14', role: 'assistant', parts: [bash('t1', false)] }
+
+    render(<MessageView message={message} />)
+
+    expect(screen.getByText('make').getAttribute('title')).toBe('make')
   })
 })

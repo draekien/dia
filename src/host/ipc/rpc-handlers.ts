@@ -1,6 +1,5 @@
 import { DEFAULT_SEND_MODE, EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
 import { DEFAULT_THEME } from '@shared/domain/theme'
-import { DEFAULT_TRANSCRIPT_MODE } from '@shared/domain/transcript-mode'
 import { DEFAULT_TRANSCRIPT_WIDTH } from '@shared/domain/transcript-width'
 import { type IpcEvent, PaneCreateFailed } from '@shared/ipc/contract'
 import { DiaRpcs } from '@shared/ipc/rpc'
@@ -197,8 +196,6 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
         'SetTranscriptWidth',
         settings.setTranscriptWidth(command.width)
       ),
-    SetTranscriptMode: (command) =>
-      once('app', command.commandId, 'SetTranscriptMode', settings.setTranscriptMode(command.mode)),
     SetThinkingLevel: (command) =>
       once(
         command.paneId,
@@ -288,10 +285,6 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
       settings
         .getTranscriptWidth()
         .pipe(Effect.map(Option.getOrElse(() => DEFAULT_TRANSCRIPT_WIDTH))),
-    GetTranscriptMode: () =>
-      settings
-        .getTranscriptMode()
-        .pipe(Effect.map(Option.getOrElse(() => DEFAULT_TRANSCRIPT_MODE))),
     GetPaneHistory: ({ paneId }) => workspace.getPaneHistory(paneId),
     GetTheme: () => settings.getTheme().pipe(Effect.map(Option.getOrElse(() => DEFAULT_THEME))),
     SetTheme: ({ theme }) => settings.setTheme(theme),
