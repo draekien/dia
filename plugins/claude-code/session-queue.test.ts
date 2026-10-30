@@ -266,21 +266,19 @@ describe('message queue', () => {
     })
   )
 
-  it.effect('holds the queue after a stop and sends it ahead of the next message', () =>
+  it.effect('sends the queue once the stopped turn ends', () =>
     Effect.gen(function* () {
       const { session, emitted, query, endTurn } = yield* open
       yield* session.sendText('first', 'queue')
       yield* session.sendText('queued', 'queue')
 
       yield* session.interrupt()
-      yield* endTurn(aborted)
-      assert.deepStrictEqual(texts(query), ['first'])
-      const queue = lastQueue(emitted)
-      assert.isTrue(queue?._tag === 'MessageQueueChanged' && queue.held)
-
-      yield* session.sendText('next', 'queue')
       yield* settle
-      assert.deepStrictEqual(texts(query), ['first', 'queued', 'next'])
+      assert.deepStrictEqual(texts(query), ['first'])
+      yield* endTurn(aborted)
+
+      assert.isFalse(tags(emitted).includes('TurnErrored'))
+      assert.deepStrictEqual(texts(query), ['first', 'queued'])
     })
   )
 

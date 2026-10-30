@@ -121,22 +121,34 @@ describe('turnEnded', () => {
 })
 
 describe('stopRequested', () => {
-  it('interrupts and holds the queue', () => {
+  it('interrupts and leaves the queue to run when the interrupted turn ends', () => {
     const [actions, next] = stopRequested(runningWith({ queued: [a] }))
-    expect(actions).toEqual([
-      InterruptAction.make({}),
-      QueueChangedAction.make({ queued: [a], held: true })
-    ])
-    expect(next).toEqual(runningWith({ queued: [a], held: true }))
+    expect(actions).toEqual([InterruptAction.make({})])
+    expect(next).toEqual(runningWith({ queued: [a] }))
   })
 
-  it('moves steered messages to the front of the held queue', () => {
+  it('moves steered messages to the front of the queue', () => {
     const [actions, next] = stopRequested(runningWith({ queued: [a], steered: [b] }))
     expect(actions).toEqual([
       InterruptAction.make({}),
-      QueueChangedAction.make({ queued: [b, a], held: true })
+      QueueChangedAction.make({ queued: [b, a], held: false })
     ])
-    expect(next).toEqual(runningWith({ queued: [b, a], held: true }))
+    expect(next).toEqual(runningWith({ queued: [b, a] }))
+  })
+
+  it('releases a held queue', () => {
+    const [actions, next] = stopRequested(runningWith({ queued: [a], held: true }))
+    expect(actions).toEqual([
+      InterruptAction.make({}),
+      QueueChangedAction.make({ queued: [a], held: false })
+    ])
+    expect(next).toEqual(runningWith({ queued: [a] }))
+  })
+
+  it('sends the queue as one turn once the interrupted turn ends', () => {
+    const [, stopped] = stopRequested(runningWith({ queued: [a], steered: [b] }))
+    const [actions] = turnEnded(true)(stopped)
+    expect(actions).toContainEqual(DispatchAction.make({ messages: [b, a] }))
   })
 
   it('only interrupts when nothing waits', () => {

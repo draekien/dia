@@ -651,18 +651,26 @@ function PaneChat({
   const activityInSteps =
     runningTurn !== undefined && isLiveTurn(runningTurn) && hasSteps(runningTurn.parts)
 
+  const clearPendingInteractions = (): void => {
+    queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
+    queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, null)
+    queryClient.setQueryData<PanePlanReviewRequested | null>(pendingPlanReviewQueryKey, null)
+  }
+
+  const stopTurn = (): void => {
+    stop()
+    clearPendingInteractions()
+  }
+
   const form = useForm({
     defaultValues: { text: '' },
     onSubmitMeta: { mode: defaultSendMode } as { readonly mode: SendMode },
     onSubmit: ({ value, formApi, meta }) => {
       const text = value.text.trim()
       if (!text) return
-      sendMessage({ text, mode: meta.mode })
-      if (meta.mode === 'steer' || !isLoading) {
-        queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
-        queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, null)
-        queryClient.setQueryData<PanePlanReviewRequested | null>(pendingPlanReviewQueryKey, null)
-      }
+      const mode = pendingInteraction ? 'steer' : meta.mode
+      sendMessage({ text, mode })
+      if (mode === 'steer' || !isLoading) clearPendingInteractions()
       formApi.reset()
     }
   })
@@ -843,7 +851,7 @@ function PaneChat({
                               className="ml-auto"
                               aria-label="Stop"
                               title="Stop"
-                              onClick={() => stop()}
+                              onClick={stopTurn}
                             >
                               <SquareIcon />
                             </InputGroupButton>

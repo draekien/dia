@@ -123,7 +123,7 @@ Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermissio
 | `turnEnded(false)` | `Running`, `steered` empty, `queued` non-empty | `Idle`, `held` true; `QueueChanged` |
 | `turnEnded(_)` | otherwise in `Running` | `Idle`; `queued` and `held` unchanged, so a held queue stays held |
 | `turnEnded(_)` | `Idle` (a turn the CLI started) | no change |
-| `stopRequested` | `Running` | `queued = steered ++ queued`, `steered` empty, `held` true when that is non-empty; `Interrupt`; `QueueChanged` when the queue or `held` changed |
+| `stopRequested` | `Running` | `queued = steered ++ queued`, `steered` empty, `held` false, so the queue is dispatched when the interrupted turn ends; `Interrupt`; `QueueChanged` when the queue or `held` changed |
 | `stopRequested` | `Idle` (a turn the CLI started) | no change; `Interrupt` |
 | `dispatchEnded` | `Running` | subtract 1 from `dispatching` |
 | `dispatchEnded` | `Idle` | no change |
@@ -189,7 +189,9 @@ Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermissio
 
 **Pure transitions, effectful wiring.** `MessageQueue` is tested as a table without the SDK. `silentResults` stays in the wiring because it counts SDK results, not user intent. `dispatching` is a `QueueRunning` field so `rewound` reads it in the same `Ref.modify` that changes the state.
 
-**A user stop holds the queue.** Draining after the stop button would start a turn the user did not request. A failed turn holds the queue for the same reason: the user sees the error before more messages go out.
+**A user stop sends the queue.** User decision: Stop ends the running turn, not the session. Queued and steered messages are dispatched as one turn when the interrupted turn ends. Before this, a stop held the queue, and a stop pressed while a question card was open left the queued message unsent until the user typed another message.
+
+**A failed turn holds the queue.** The user sees the error before more messages go out.
 
 **Steer waits for the interrupted turn to end before offering.** An offer while the turn runs lets the CLI's own queue take the steer message, outside dia's ordering.
 

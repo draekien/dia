@@ -134,17 +134,16 @@ export const turnEnded =
   }
 
 /**
- * The user pressed stop. The running turn is interrupted and anything waiting for it is held until
- * the next user send.
+ * The user pressed stop. The running turn is interrupted; steered messages join the front of the
+ * queue, a held queue is released, and the queue runs as one turn when the interrupted turn ends.
  */
 export const stopRequested = (state: QueueState): QueueTransition => {
   if (state._tag === 'QueueIdle') return [[InterruptAction.make({})], state]
   const queued = [...state.steered, ...state.queued]
-  const held = queued.length > 0
-  const changed = state.steered.length > 0 || held !== state.held
+  const changed = state.steered.length > 0 || state.held
   return [
-    [InterruptAction.make({}), ...(changed ? [queueChanged(queued, held)] : [])],
-    running(state, { queued, held, steered: [] })
+    [InterruptAction.make({}), ...(changed ? [queueChanged(queued, false)] : [])],
+    running(state, { queued, held: false, steered: [] })
   ]
 }
 
