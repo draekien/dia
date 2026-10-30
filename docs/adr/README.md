@@ -50,6 +50,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0039](0039-flush-window-frame.md) | Drop the inset card and make the window frame flush with 32px top rows | accepted |
 | [0040](0040-chat-plugin-fills-a-main-tab-slot.md) | The chat plugin fills a `main.tab` slot inside the kernel's `main` default | accepted |
 | [0041](0041-park-refused-turns.md) | Park a turn the account refused instead of failing it, and resume it with `continue` | accepted |
+| [0042](0042-sqlite-for-host-runtime-state.md) | Store Host runtime state in SQLite, one database file per owner | accepted |
 
 ## Adding a new ADR
 

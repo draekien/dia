@@ -104,6 +104,5 @@ This PRD extends `docs/prds/agent-os.md` and builds on the plugin platform (`doc
 
 - When a hired agent holds a slot: only while a session of its task is running a turn, or for the whole time it is assigned an open task, including time waiting in the decision queue.
 - How a hired agent's sessions appear in the agent overview: as tabs in the task's project labelled with the agent's name, or in a separate org group.
-- Where long-term memory is stored: in the meta repo, so that each write is a git commit, or in a store under `userData`.
 - The period after which an uncited memory entry is marked stale, and whether it differs by scope.
 - How a role selects a model, and whether the model is a role setting or a hire setting.
