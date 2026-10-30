@@ -123,7 +123,7 @@ Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermissio
 | `turnEnded(false)` | `Running`, `steered` empty, `queued` non-empty | `Idle`, `held` true; `QueueChanged` |
 | `turnEnded(_)` | otherwise in `Running` | `Idle`; `queued` and `held` unchanged, so a held queue stays held |
 | `turnEnded(_)` | `Idle` (a turn the CLI started) | no change |
-| `stopRequested` | `Running` | `queued = steered ++ queued`, `steered` empty, `held` true when that is non-empty; `Interrupt`; `QueueChanged` when the queue or `held` changed |
+| `stopRequested` | `Running` | `queued = steered ++ queued`, `steered` empty, `held` false, so the queue is dispatched when the interrupted turn ends; `Interrupt`; `QueueChanged` when the queue or `held` changed |
 | `stopRequested` | `Idle` (a turn the CLI started) | no change; `Interrupt` |
 | `dispatchEnded` | `Running` | subtract 1 from `dispatching` |
 | `dispatchEnded` | `Idle` | no change |
@@ -160,8 +160,8 @@ Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermissio
 - `PaneMessageQueueChanged` sets `PaneChatState.queued` and `PaneChatState.queueHeld`. `PaneAttentionChanged` with `Crashed` clears both. `loadHistory` in `paneChatAtom` sets both from `getMessageQueue`.
 - The composer shows `queued` above the textarea: each item's text with an edit control (inline textarea; Enter saves, Escape cancels; save is disabled for blank text) and a remove control. A held queue shows the label `Sends with your next message`.
 - `onKeyDown`: Enter without Shift sends in the default mode; Enter with `event.metaKey || event.ctrlKey` sends in the other mode. The slash-menu handling keeps precedence. The handler passes the mode through `form.handleSubmit({ mode })` (TanStack Form `onSubmitMeta`); the send button uses the default mode.
-- `onSubmit` clears the pending permission, question and plan-review cards only when the mode is `steer` or no turn is running.
-- `resend` sends `retryText` in the default mode. `interruptAndRetry` sends `retryText` with mode `steer`. Neither calls `interrupt()`. The composer shows a `Stop` button next to `Send message` while a turn runs; it sets `paneInterruptAtom`, which calls `window.dia.interrupt` (`stopRequested`). `lastUserText` returns the last message of the last batch.
+- `onSubmit` sends in mode `steer` while a permission, question or plan-review card is pending, whatever mode was requested. It clears those cards only when the sent mode is `steer` or no turn is running.
+- `resend` sends `retryText` in the default mode. `interruptAndRetry` sends `retryText` with mode `steer`. Neither calls `interrupt()`. The composer shows a `Stop` button next to `Send message` while a turn runs; it sets `paneInterruptAtom`, which calls `window.dia.interrupt` (`stopRequested`), and clears the pending permission, question and plan-review cards. `lastUserText` returns the last message of the last batch.
 - `sendModeAtom` holds the default, read with `getSendMode` at startup and written with `setSendMode`. The command palette has a `Send mode` `ToggleGroup` row with `Queue` and `Steer` items under its `Theme` row, built the same way as the `Theme` row.
 
 ## Key Data Structures
@@ -189,7 +189,9 @@ Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermissio
 
 **Pure transitions, effectful wiring.** `MessageQueue` is tested as a table without the SDK. `silentResults` stays in the wiring because it counts SDK results, not user intent. `dispatching` is a `QueueRunning` field so `rewound` reads it in the same `Ref.modify` that changes the state.
 
-**A user stop holds the queue.** Draining after the stop button would start a turn the user did not request. A failed turn holds the queue for the same reason: the user sees the error before more messages go out.
+**A user stop sends the queue.** User decision: Stop ends the running turn, not the session. Queued and steered messages are dispatched as one turn when the interrupted turn ends. Before this, a stop held the queue, and a stop pressed while a question card was open left the queued message unsent until the user typed another message.
+
+**A failed turn holds the queue.** The user sees the error before more messages go out.
 
 **Steer waits for the interrupted turn to end before offering.** An offer while the turn runs lets the CLI's own queue take the steer message, outside dia's ordering.
 
