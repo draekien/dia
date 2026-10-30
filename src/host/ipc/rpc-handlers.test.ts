@@ -27,6 +27,7 @@ import {
   RewindToCheckpoint,
   SelectTab,
   SendMessage,
+  SetTranscriptMode,
   SetTranscriptWidth
 } from '@shared/ipc/contract'
 import { Effect, FileSystem, Layer, Option, Stream } from 'effect'
@@ -211,6 +212,11 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     setTranscriptWidth: (width) =>
       Effect.sync(() => {
         calls.push(`setTranscriptWidth:${width}`)
+      }),
+    getTranscriptMode: () => Effect.succeed(Option.none()),
+    setTranscriptMode: (mode) =>
+      Effect.sync(() => {
+        calls.push(`setTranscriptMode:${mode}`)
       }),
     getPluginOverrides: () => Effect.succeed({}),
     setPluginOverride: () => Effect.void,
@@ -627,6 +633,30 @@ describe('Dia RPC handlers', () => {
       )
 
       assert.deepStrictEqual(harness.calls, ['setTranscriptWidth:wide'])
+    })
+  )
+
+  it.effect('stores the mode of a SetTranscriptMode once per commandId', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+      const command = { ...SetTranscriptMode.make({ mode: 'all-text' }), commandId: 'c-1' }
+
+      yield* withHandlers(harness, (handlers) =>
+        Effect.gen(function* () {
+          yield* handlers.SetTranscriptMode(command)
+          yield* handlers.SetTranscriptMode(command)
+        })
+      )
+
+      assert.deepStrictEqual(harness.calls, ['setTranscriptMode:all-text'])
+    })
+  )
+
+  it.effect('reports answer-only as the transcript mode when none is stored', () =>
+    Effect.gen(function* () {
+      const mode = yield* withHandlers(makeHarness(), (handlers) => handlers.GetTranscriptMode())
+
+      assert.strictEqual(mode, 'answer-only')
     })
   )
 
