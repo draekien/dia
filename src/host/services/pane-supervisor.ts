@@ -38,10 +38,13 @@ import {
   PanePlanReviewRequested,
   PaneQuestionRequested,
   PaneRewoundToCheckpoint,
+  PaneSessionNotice,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
   PaneToolCallCompleted,
   PaneToolCallStarted,
+  PaneToolCallUpdated,
+  PaneTurnStatusChanged,
   PaneUserMessagesSent
 } from '@shared/ipc/contract'
 import {
@@ -201,6 +204,9 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
         })
       )
     ),
+    Match.tag('ToolCallUpdated', 'TurnStatusChanged', 'SessionNotice', (m) =>
+      Option.some(turnProgressEvent(paneId, m))
+    ),
     Match.tag('PermissionRequested', (m) =>
       Option.some<IpcEvent>(
         PanePermissionRequested.make({
@@ -281,6 +287,28 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
     ),
     Match.exhaustive
   )
+}
+
+function turnProgressEvent(
+  paneId: string,
+  message: Extract<
+    OutboundMessage,
+    { _tag: 'ToolCallUpdated' | 'TurnStatusChanged' | 'SessionNotice' }
+  >
+): IpcEvent {
+  switch (message._tag) {
+    case 'ToolCallUpdated':
+      return PaneToolCallUpdated.make({
+        paneId,
+        toolCallId: message.toolCallId,
+        ...(message.elapsedSeconds !== undefined ? { elapsedSeconds: message.elapsedSeconds } : {}),
+        ...(message.detail !== undefined ? { detail: message.detail } : {})
+      })
+    case 'TurnStatusChanged':
+      return PaneTurnStatusChanged.make({ paneId, label: message.label })
+    case 'SessionNotice':
+      return PaneSessionNotice.make({ paneId, text: message.text })
+  }
 }
 
 function toAttentionTarget(message: OutboundMessage): Option.Option<AttentionState> {

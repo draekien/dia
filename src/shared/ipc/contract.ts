@@ -319,6 +319,43 @@ export const PaneToolCallCompleted = Schema.TaggedStruct('PaneToolCallCompleted'
 export type PaneToolCallCompleted = typeof PaneToolCallCompleted.Type
 
 /**
+ * Event pushed to the renderer with news about tool call `toolCallId` in pane
+ * `paneId`: `elapsedSeconds` while it runs, and `detail` for a line to show on
+ * its row (a subagent's progress, or why it was denied or failed). An absent
+ * field leaves the row's value unchanged.
+ */
+export const PaneToolCallUpdated = Schema.TaggedStruct('PaneToolCallUpdated', {
+  paneId: Uuid,
+  toolCallId: Schema.String,
+  elapsedSeconds: Schema.optional(Schema.Number),
+  detail: Schema.optional(Schema.String)
+})
+export type PaneToolCallUpdated = typeof PaneToolCallUpdated.Type
+
+/**
+ * Event pushed to the renderer when the current turn in pane `paneId` enters a
+ * state its activity line should name (retrying the API, compacting, thinking),
+ * with `label` as the text. `label` null ends the state, and arrives before the
+ * turn's next output or its end.
+ */
+export const PaneTurnStatusChanged = Schema.TaggedStruct('PaneTurnStatusChanged', {
+  paneId: Uuid,
+  label: Schema.NullOr(Schema.String)
+})
+export type PaneTurnStatusChanged = typeof PaneTurnStatusChanged.Type
+
+/**
+ * Event pushed to the renderer with a one-line `text` the transcript of pane
+ * `paneId` should record as a notice (a model fallback, a usage-limit warning,
+ * a message from Claude Code itself).
+ */
+export const PaneSessionNotice = Schema.TaggedStruct('PaneSessionNotice', {
+  paneId: Uuid,
+  text: Schema.String
+})
+export type PaneSessionNotice = typeof PaneSessionNotice.Type
+
+/**
  * Event pushed to the renderer when the agent in pane `paneId` wants to run
  * tool `toolName` with the given `input` and is blocked awaiting approval.
  * `suggestions`, when present, are the SDK's offered "always allow" rules the
@@ -594,6 +631,9 @@ export const IpcEvent = Schema.Union([
   PaneAssistantThinkingDelta,
   PaneToolCallStarted,
   PaneToolCallCompleted,
+  PaneToolCallUpdated,
+  PaneTurnStatusChanged,
+  PaneSessionNotice,
   PanePermissionRequested,
   PaneQuestionRequested,
   PanePlanReviewRequested,
@@ -808,4 +848,7 @@ export interface DiaApi {
   onAssistantThinkingDelta(listener: (event: PaneAssistantThinkingDelta) => void): () => void
   onToolCallStarted(listener: (event: PaneToolCallStarted) => void): () => void
   onToolCallCompleted(listener: (event: PaneToolCallCompleted) => void): () => void
+  onToolCallUpdated(listener: (event: PaneToolCallUpdated) => void): () => void
+  onTurnStatusChanged(listener: (event: PaneTurnStatusChanged) => void): () => void
+  onSessionNotice(listener: (event: PaneSessionNotice) => void): () => void
 }

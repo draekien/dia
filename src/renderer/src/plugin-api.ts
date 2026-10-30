@@ -130,5 +130,5 @@ export {
 } from './lib/permission-modes'
 export { sendModeAtom, sendModeForEnter } from './lib/send-mode-atom'
 export { fitThinkingLevel, thinkingLevelLabel, thinkingLevelsFor } from './lib/thinking-levels'
-export { type TurnActivity, turnActivity } from './lib/turn-activity'
+export { formatElapsed, type TurnActivity, turnActivity } from './lib/turn-activity'
 export { cn } from './lib/utils'

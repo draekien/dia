@@ -248,3 +248,36 @@ describe('statusRank', () => {
     ])
   })
 })
+
+describe('foldSummary — turn status', () => {
+  const turnStatus = (label: string | null): IpcEvent => ({
+    _tag: 'PaneTurnStatusChanged',
+    paneId,
+    label
+  })
+  const retrying = foldSummary(
+    withTodo('Writing tests'),
+    turnStatus('Retrying (attempt 2 of 10) in 4s · 529')
+  )
+
+  it('carries the turn’s named state while keeping the activity line', () => {
+    expect(retrying).toEqual({
+      ...withTodo('Writing tests'),
+      turnStatus: 'Retrying (attempt 2 of 10) in 4s · 529'
+    })
+  })
+
+  it('drops the named state when the session clears it', () => {
+    expect(foldSummary(retrying, turnStatus(null))).toEqual(withTodo('Writing tests'))
+  })
+
+  it('drops the named state when the user sends the next messages', () => {
+    const event: IpcEvent = { _tag: 'PaneUserMessagesSent', paneId, messages: [] }
+    expect(foldSummary(retrying, event).turnStatus).toBeUndefined()
+  })
+
+  it('ignores a turn status for another pane', () => {
+    const event: IpcEvent = { _tag: 'PaneTurnStatusChanged', paneId: otherPaneId, label: 'x' }
+    expect(foldSummary(idle, event)).toBe(idle)
+  })
+})

@@ -13,10 +13,13 @@ import type {
   PaneMessageQueueChanged,
   PaneModelChanged,
   PaneRewoundToCheckpoint,
+  PaneSessionNotice,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
   PaneToolCallCompleted,
   PaneToolCallStarted,
+  PaneToolCallUpdated,
+  PaneTurnStatusChanged,
   PaneUserMessagesSent
 } from '@shared/ipc/contract'
 
@@ -35,6 +38,8 @@ export interface ThinkingPart {
 /**
  * One tool invocation in an assistant turn. `running` while in flight; `done`
  * once resolved, at which point `input`/`output`/`isError` are populated.
+ * `elapsedSeconds` is how long it has run, when the session reported it, and
+ * `detail` is a line about it (a subagent's progress, or why it was denied or failed).
  */
 export interface ToolCallPart {
   readonly type: 'tool-call'
@@ -44,6 +49,8 @@ export interface ToolCallPart {
   readonly input?: Record<string, unknown>
   readonly output?: string
   readonly isError?: boolean
+  readonly elapsedSeconds?: number
+  readonly detail?: string
 }
 
 /** An ordered fragment of an assistant turn. Branch on `type` to render. */
@@ -84,7 +91,8 @@ export interface PaneMessage {
  * session is still discovering that list, so the input can show a "loading
  * commands" indicator. `queued` is the pane's message queue as the Host last reported it, in send
  * order, and `queueHeld` is true when that queue waits for the next user send instead of the next
- * turn end. This is the sole contract consumers depend on — how
+ * turn end. `turnStatus` names the state the in-flight turn is in (retrying, compacting,
+ * thinking), or is null when it has none worth naming. This is the sole contract consumers depend on — how
  * streaming deltas are assembled into it is private to {@link reducePaneChat}.
  */
 export interface PaneChatState {
@@ -94,6 +102,7 @@ export interface PaneChatState {
   readonly warmingCommands: boolean
   readonly queued: ReadonlyArray<OutgoingMessage>
   readonly queueHeld: boolean
+  readonly turnStatus: string | null
 }
 
 /**
@@ -106,6 +115,9 @@ export type PaneStreamEvent =
   | PaneAssistantThinkingDelta
   | PaneToolCallStarted
   | PaneToolCallCompleted
+  | PaneToolCallUpdated
+  | PaneTurnStatusChanged
+  | PaneSessionNotice
   | PaneMessageAppended
   | PaneAttentionChanged
   | PaneSlashCommandsWarming
@@ -131,7 +143,8 @@ export const emptyPaneChatState: PaneChatState = {
   slashCommands: [],
   warmingCommands: false,
   queued: [],
-  queueHeld: false
+  queueHeld: false,
+  turnStatus: null
 }
 
 /**
@@ -156,7 +169,8 @@ export const paneChatStateFromHistory = (
   slashCommands: [],
   warmingCommands: false,
   queued: [],
-  queueHeld: false
+  queueHeld: false,
+  turnStatus: null
 })
 
 const appendSentMessages = (state: PaneChatState, event: PaneUserMessagesSent): PaneChatState => {
@@ -171,7 +185,7 @@ const appendSentMessages = (state: PaneChatState, event: PaneUserMessagesSent): 
       })
     )
     .filter((message) => !present.has(message.id))
-  return { ...state, messages: [...state.messages, ...sent], isLoading: true }
+  return { ...state, messages: [...state.messages, ...sent], isLoading: true, turnStatus: null }
 }
 
 const lastMessage = (state: PaneChatState): PaneMessage | undefined => state.messages.at(-1)
@@ -263,6 +277,38 @@ const completeToolCall = (
       : part
   )
 
+const updateToolCall = (
+  parts: ReadonlyArray<MessagePart>,
+  event: PaneToolCallUpdated
+): ReadonlyArray<MessagePart> =>
+  parts.map((part) =>
+    part.type === 'tool-call' && part.toolCallId === event.toolCallId
+      ? {
+          ...part,
+          ...(event.elapsedSeconds !== undefined ? { elapsedSeconds: event.elapsedSeconds } : {}),
+          ...(event.detail !== undefined ? { detail: event.detail } : {})
+        }
+      : part
+  )
+
+const holdsToolCall = (message: PaneMessage, toolCallId: string): boolean =>
+  message.parts.some((part) => part.type === 'tool-call' && part.toolCallId === toolCallId)
+
+const withToolCallMessage = (
+  state: PaneChatState,
+  toolCallId: string,
+  update: (parts: ReadonlyArray<MessagePart>) => ReadonlyArray<MessagePart>
+): PaneChatState | undefined => {
+  const index = state.messages.findIndex((message) => holdsToolCall(message, toolCallId))
+  if (index === -1) return undefined
+  return {
+    ...state,
+    messages: state.messages.map((message, at) =>
+      at === index ? { ...message, parts: update(message.parts) } : message
+    )
+  }
+}
+
 const isTurnOver = (attention: AttentionState): boolean =>
   attention._tag === 'Completed' || attention._tag === 'Errored' || attention._tag === 'Crashed'
 
@@ -328,6 +374,9 @@ const compactionNotice = (event: PaneConversationCompacted): string =>
  * clears the transcript while keeping the available commands and the queue.
  * `PaneCheckpointAvailable` anchors a rewindable checkpoint uuid (and its resume
  * anchor) onto the earliest user turn still lacking one, and
+ * `PaneToolCallUpdated` sets a running row's elapsed time or detail line, `PaneSessionNotice`
+ * appends a `notice` divider, and `PaneTurnStatusChanged` sets `turnStatus`, which the next
+ * `PaneUserMessagesSent` also clears.
  * `PaneRewoundToCheckpoint` truncates the transcript back to (and excluding) the
  * turn holding that uuid, ending any in-flight turn. Pure and total — drive a
  * pane's state atom by scanning the IPC stream with it.
@@ -344,7 +393,20 @@ export const reducePaneChat = (state: PaneChatState, event: PaneStreamEvent): Pa
         { type: 'tool-call', toolCallId: event.toolCallId, name: event.toolName, state: 'running' }
       ])
     case 'PaneToolCallCompleted':
-      return withStreamingAssistant(state, (parts) => completeToolCall(parts, event))
+      return (
+        withToolCallMessage(state, event.toolCallId, (parts) => completeToolCall(parts, event)) ??
+        withStreamingAssistant(state, (parts) => completeToolCall(parts, event))
+      )
+    case 'PaneToolCallUpdated':
+      if (!state.isLoading) return state
+      return (
+        withToolCallMessage(state, event.toolCallId, (parts) => updateToolCall(parts, event)) ??
+        state
+      )
+    case 'PaneTurnStatusChanged':
+      return { ...state, turnStatus: event.label }
+    case 'PaneSessionNotice':
+      return noticeMessage(state, event.text)
     case 'PaneMessageAppended': {
       if (event.message.role !== 'assistant' || isStreamingAssistant(state)) return state
       return {
