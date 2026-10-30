@@ -4,7 +4,8 @@ import {
   MarkerContent,
   MarkerIcon,
   type StepsSection as StepsSectionBlock,
-  sectionDurationMs
+  sectionDurationMs,
+  type ToolCallPart
 } from '@dia/renderer-plugin'
 import { ChevronRight } from 'lucide-react'
 import type { ReactNode } from 'react'
@@ -30,19 +31,28 @@ interface StepsSectionProps {
 export const summaryFocus =
   'rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
-const separator = <span aria-hidden> · </span>
+const separator = (
+  <>
+    {' '}
+    <span aria-hidden>·</span>{' '}
+  </>
+)
 
 function StepsSummary({ section }: { section: StepsSectionBlock }): React.JSX.Element {
   const steps = section.parts
-  const failed = steps.filter((step) => step.type === 'tool-call' && step.isError === true).length
+  const failed = steps.filter(
+    (step): step is ToolCallPart => step.type === 'tool-call' && step.isError === true
+  )
   const duration = sectionDurationMs(section)
   return (
     <MarkerContent className="tabular-nums">
       {steps.length} {steps.length === 1 ? 'step' : 'steps'}
-      {failed > 0 && (
+      {failed.length > 0 && (
         <>
           {separator}
-          <span className="text-foreground">{failed} failed</span>
+          <span className="text-foreground">
+            {failed.length === 1 ? failed[0]?.name : failed.length} failed
+          </span>
         </>
       )}
       {duration !== undefined && (
@@ -57,8 +67,8 @@ function StepsSummary({ section }: { section: StepsSectionBlock }): React.JSX.El
 
 /**
  * Renders a collapsed run of an agent turn's steps: a summary line, and `children` (the
- * section's rendered parts) when the user expands it. The summary counts the steps, the failed
- * tool calls among them and the section's duration. Pass `live` while the turn is still adding
+ * section's rendered parts) when the user expands it. The summary counts the steps, names the
+ * failed tool call (or counts them, when more than one failed) and shows the section's duration. Pass `live` while the turn is still adding
  * to this section; the summary then shows the turn's activity (`live.label` and elapsed time) in
  * place of the count, and the stall actions show under it. Collapsed until the user opens it.
  */

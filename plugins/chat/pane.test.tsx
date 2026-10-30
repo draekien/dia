@@ -201,6 +201,14 @@ describe('MessageView: turn steps', () => {
     expect(section?.querySelector('summary')?.textContent).toBe('1 step · 11s')
   })
 
+  it('gives a finished section’s summary an accessible name with its parts kept apart', () => {
+    const { container } = render(<MessageView message={liveTurn} />)
+
+    const spoken = container.querySelector('summary')?.cloneNode(true) as HTMLElement
+    for (const hidden of spoken.querySelectorAll('[aria-hidden]')) hidden.remove()
+    expect(spoken.textContent?.replace(/\s+/g, ' ')).toBe('1 step 11s')
+  })
+
   it('keeps the text before and after the steps visible, outside the section', () => {
     render(<MessageView message={liveTurn} />)
 
@@ -266,7 +274,7 @@ describe('MessageView: turn steps', () => {
 
     const { container } = render(<MessageView message={failing} />)
 
-    expect(container.querySelector('summary')?.textContent).toBe('1 step · 1 failed · 1s')
+    expect(container.querySelector('summary')?.textContent).toBe('1 step · Bash failed · 1s')
     expect(screen.getByText('failed')).toBeTruthy()
     expect(screen.queryByText('completed')).toBeNull()
   })
@@ -308,6 +316,23 @@ describe('MessageView: turn steps', () => {
     expect(container.querySelector('summary')?.textContent).not.toContain('-')
   })
 
+  it('stops the activity dot pulsing once the turn stalls', () => {
+    const { container, rerender } = render(
+      <MessageView message={stillStepping} live={live} nowMs={20_000} />
+    )
+    expect(container.querySelector('summary .animate-pulse-slow')).not.toBeNull()
+
+    rerender(
+      <MessageView
+        message={stillStepping}
+        live={{ ...live, activity: { ...working, stalled: true } }}
+        nowMs={20_000}
+      />
+    )
+
+    expect(container.querySelector('summary .animate-pulse-slow')).toBeNull()
+  })
+
   it('shows the stall actions outside the summary, so the disclosure holds no buttons', () => {
     const { container } = render(
       <MessageView
@@ -319,5 +344,40 @@ describe('MessageView: turn steps', () => {
 
     expect(container.querySelector('summary button')).toBeNull()
     expect(screen.getByRole('button', { name: 'Resend' }).closest('details')).toBeNull()
+  })
+})
+
+describe('MessageView: failed steps', () => {
+  const bash = (toolCallId: string, isError: boolean) =>
+    ({
+      type: 'tool-call',
+      toolCallId,
+      name: 'Bash',
+      state: 'done',
+      input: { command: 'make' },
+      output: '',
+      isError,
+      startedAt: 1_000,
+      endedAt: 2_000
+    }) as const
+
+  it('counts the failures instead of naming a tool when more than one call failed', () => {
+    const message: PaneMessage = {
+      id: 'a13',
+      role: 'assistant',
+      parts: [bash('t1', true), bash('t2', true), bash('t3', false)]
+    }
+
+    const { container } = render(<MessageView message={message} />)
+
+    expect(container.querySelector('summary')?.textContent).toBe('3 steps · 2 failed · 1s')
+  })
+
+  it('offers a tool row’s full target as its title, for when the row truncates it', () => {
+    const message: PaneMessage = { id: 'a14', role: 'assistant', parts: [bash('t1', false)] }
+
+    render(<MessageView message={message} />)
+
+    expect(screen.getByText('make').getAttribute('title')).toBe('make')
   })
 })

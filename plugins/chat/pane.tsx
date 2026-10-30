@@ -183,7 +183,11 @@ function ToolCallLabel({ part }: { part: ToolCallPart }): React.JSX.Element {
   return (
     <>
       <span className="shrink-0 text-foreground/90">{part.name}</span>
-      {summary !== undefined && <span className="truncate text-muted-foreground">{summary}</span>}
+      {summary !== undefined && (
+        <span className="truncate text-muted-foreground" title={summary}>
+          {summary}
+        </span>
+      )}
     </>
   )
 }
