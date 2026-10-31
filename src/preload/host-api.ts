@@ -412,6 +412,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     onConversationReset: (listener) => subscribeTo('PaneConversationReset', listener),
     onCheckpointAvailable: (listener) => subscribeTo('PaneCheckpointAvailable', listener),
     onRewoundToCheckpoint: (listener) => subscribeTo('PaneRewoundToCheckpoint', listener),
+    onRewindFailed: (listener) => subscribeTo('PaneRewindFailed', listener),
     onMessageQueueChanged: (listener) => subscribeTo('PaneMessageQueueChanged', listener),
     onUserMessagesSent: (listener) => subscribeTo('PaneUserMessagesSent', listener),
     onAssistantTextDelta: (listener) => subscribeTo('PaneAssistantTextDelta', listener),

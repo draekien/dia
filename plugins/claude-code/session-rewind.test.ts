@@ -1,7 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the test yields to Node's event loop so the plugin's non-Effect callbacks run.
 import { setImmediate } from 'node:timers/promises'
 import type { Options, SDKUserMessage, SessionMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentSessionOptions, OutboundMessage } from '@dia/plugin'
+import { type AgentSessionOptions, type OutboundMessage, RewindFailed } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import type { PaneConfig, SessionId } from '@shared/domain/pane'
 import { Deferred, Duration, Effect, Fiber, Option } from 'effect'
@@ -30,7 +30,8 @@ const sdk = vi.hoisted(() => ({
   queries: [] as Array<FakeQuery>,
   log: [] as Array<string>,
   transcript: { messages: [] as Array<SessionMessage>, fails: false },
-  rewindGate: (): Promise<void> => Promise.resolve()
+  rewindGate: (): Promise<void> => Promise.resolve(),
+  rewindResult: { canRewind: true } as { canRewind: boolean; error?: string }
 }))
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
@@ -71,7 +72,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
       rewindFiles: async (messageUuid: string) => {
         record.rewound.push(messageUuid)
         await sdk.rewindGate()
-        return { canRewind: true, filesChanged: [] }
+        return { ...sdk.rewindResult, filesChanged: [] }
       },
       interrupt: () => Promise.resolve(),
       setPermissionMode: () => Promise.resolve()
@@ -126,6 +127,7 @@ const openResumed = (transcript: ReadonlyArray<SessionMessage>, transcriptFails 
     sdk.transcript.messages = [...transcript]
     sdk.transcript.fails = transcriptFails
     sdk.rewindGate = () => Promise.resolve()
+    sdk.rewindResult = { canRewind: true }
     const emitted: Array<OutboundMessage> = []
     const emit = (message: OutboundMessage) =>
       Effect.sync(() => {
@@ -141,6 +143,9 @@ const openResumed = (transcript: ReadonlyArray<SessionMessage>, transcriptFails 
     yield* settle
     return { session, emitted }
   })
+
+const rewindFailures = (emitted: ReadonlyArray<OutboundMessage>) =>
+  emitted.filter((message) => message._tag === 'RewindFailed')
 
 const queryAt = (index: number): FakeQuery => {
   const query = sdk.queries[index]
@@ -256,6 +261,9 @@ describe('rewindToCheckpoint', () => {
         assert.deepStrictEqual(queryAt(0).delivered, ['after timeout'])
         assert.strictEqual(sdk.queries.length, 1)
         assert.isFalse(emitted.some((message) => message._tag === 'RewoundToCheckpoint'))
+        assert.deepStrictEqual(rewindFailures(emitted), [
+          RewindFailed.make({ messageUuid: 'turn-2', cause: 'FilesNotRewound' })
+        ])
       })
   )
 
@@ -294,6 +302,104 @@ describe('rewindToCheckpoint', () => {
       assert.deepStrictEqual(queryAt(0).rewound, [])
       assert.strictEqual(sdk.queries.length, 1)
       assert.isFalse(emitted.some((message) => message._tag === 'RewoundToCheckpoint'))
+      assert.deepStrictEqual(rewindFailures(emitted), [
+        RewindFailed.make({ messageUuid: 'turn-2', cause: 'TurnNotInTranscript' })
+      ])
+    })
+  )
+
+  it.effect('reports the SDK reason when the files cannot be rewound', () =>
+    Effect.gen(function* () {
+      const { session, emitted } = yield* openResumed(twoTurns)
+      sdk.rewindResult = { canRewind: false, error: 'No file checkpoint found for this message.' }
+
+      yield* session.rewindToCheckpoint('turn-2', 'reply-1')
+      yield* settle
+
+      assert.strictEqual(sdk.queries.length, 1)
+      assert.deepStrictEqual(rewindFailures(emitted), [
+        RewindFailed.make({
+          messageUuid: 'turn-2',
+          cause: 'FilesNotRewound',
+          detail: 'No file checkpoint found for this message.'
+        })
+      ])
+    })
+  )
+
+  it.effect('reports a rewind sent before the session has an id', () =>
+    Effect.gen(function* () {
+      sdk.queries.length = 0
+      const emitted: Array<OutboundMessage> = []
+      const session = yield* openSession({
+        config,
+        resume: Option.none(),
+        emit: (message) => Effect.sync(() => emitted.push(message)),
+        tools: []
+      })
+
+      yield* session.rewindToCheckpoint('turn-2', 'reply-1')
+
+      assert.deepStrictEqual(rewindFailures(emitted), [
+        RewindFailed.make({ messageUuid: 'turn-2', cause: 'NoLiveSession' })
+      ])
+    })
+  )
+
+  it.effect('reports a rewind interrupted before the files were rewound', () =>
+    Effect.gen(function* () {
+      const { session, emitted } = yield* openResumed(twoTurns)
+      sdk.rewindGate = () => Effect.runPromise(Effect.never)
+
+      const rewind = yield* Effect.forkChild(session.rewindToCheckpoint('turn-2', 'reply-1'))
+      yield* settle
+      yield* Fiber.interrupt(rewind)
+
+      assert.deepStrictEqual(rewindFailures(emitted), [
+        RewindFailed.make({ messageUuid: 'turn-2', cause: 'Interrupted' })
+      ])
+    })
+  )
+
+  it.effect('reports a rewind stopped after the files were rewound', () =>
+    Effect.gen(function* () {
+      sdk.queries.length = 0
+      sdk.transcript.messages = [...twoTurns]
+      sdk.transcript.fails = false
+      sdk.rewindGate = () => Promise.resolve()
+      sdk.rewindResult = { canRewind: true }
+      const emitted: Array<OutboundMessage> = []
+      const session = yield* openSession({
+        config,
+        resume: Option.some(SESSION),
+        emit: (message) =>
+          message._tag === 'RewoundToCheckpoint'
+            ? Effect.never
+            : Effect.sync(() => emitted.push(message)),
+        tools: []
+      })
+      yield* settle
+
+      const rewind = yield* Effect.forkChild(session.rewindToCheckpoint('turn-2', 'reply-1'))
+      yield* settle
+      yield* Fiber.interrupt(rewind)
+
+      assert.deepStrictEqual(queryAt(0).rewound, ['turn-2'])
+      assert.deepStrictEqual(rewindFailures(emitted), [
+        RewindFailed.make({ messageUuid: 'turn-2', cause: 'ConversationNotBranched' })
+      ])
+    })
+  )
+
+  it.effect('reports no failure for a rewind that completed', () =>
+    Effect.gen(function* () {
+      const { session, emitted } = yield* openResumed(twoTurns)
+
+      yield* session.rewindToCheckpoint('turn-2', 'reply-1')
+      yield* settle
+
+      assert.isTrue(emitted.some((message) => message._tag === 'RewoundToCheckpoint'))
+      assert.deepStrictEqual(rewindFailures(emitted), [])
     })
   )
 })

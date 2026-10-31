@@ -5,6 +5,7 @@ import { Atom } from 'effect/reactivity'
 import { findModelOption } from './model-options'
 import type { PaneChatState, PaneStreamEvent } from './pane-chat'
 import { emptyPaneChatState, paneChatStateFromHistory, reducePaneChat } from './pane-chat'
+import { type RewindCommand, type RewindProgress, rewindFailureMessage } from './pane-rewind'
 
 const IDLE_TTL = Duration.seconds(30)
 
@@ -217,29 +218,102 @@ export const paneInterruptAtom = Atom.family((paneId: string) =>
   )
 )
 
-/** The pair of uuids identifying a rewind target: the user turn's checkpoint id and, when a prior assistant turn exists, the branch point to resume from. */
-export interface RewindTarget {
-  readonly checkpointUuid: string
-  readonly resumeAnchorUuid?: string
-}
+const REWIND_OUTCOME_TIMEOUT = Duration.seconds(45)
+
+const idle: RewindProgress = { status: 'idle' }
 
 /**
- * Per-pane rewind action, keyed by `paneId`. Set it with a {@link RewindTarget}
- * (a user turn's `checkpointUuid` and optional `resumeAnchorUuid`) to rewind that
- * pane's files and conversation back to that point (ADR-0018). It dispatches the
- * request to the pane process; the resulting transcript truncation arrives back
- * through the IPC fold on `PaneRewoundToCheckpoint`. A prompt sent through
- * {@link paneSendAtom} while the rewind runs waits for it, is sent to the
- * conversation the rewind leaves, and its user turn arrives after the truncation.
- * A prompt the pane reported sent before the rewind started is dropped with the
- * turns after the checkpoint. Bind with
- * `useAtomSet(paneRewindAtom(paneId))`.
+ * Per-pane rewind state and action, keyed by `paneId` (ADR-0018, ADR-0045). Read it for the pane's
+ * {@link RewindProgress}; set it with a {@link RewindCommand}. `start` sends the rewind to the pane
+ * process and shows it `rewinding`; it does nothing while a rewind runs. The rewind ends `idle`
+ * when the pane reports `PaneRewoundToCheckpoint` (the transcript truncation arrives through
+ * {@link paneChatAtom}), or `failed` with a sentence to show when the pane reports
+ * `PaneRewindFailed` or reports nothing within 45 seconds. It also ends `idle` when the pane
+ * crashes, errors or reloads its history, since its outcome is then unknown. `dismiss` clears a
+ * failure. A prompt sent through {@link paneSendAtom} while the rewind runs waits for it and is
+ * sent to the conversation the rewind leaves. The atom is kept alive for the renderer's lifetime,
+ * so a failure that arrives while the pane's tab is hidden is still shown. Bind with
+ * `useAtom(paneRewindAtom(paneId))`.
  */
-export const paneRewindAtom = Atom.family((paneId: string) =>
-  Atom.writable(
-    (): null => null,
-    (_ctx, target: RewindTarget) => {
-      window.dia.rewindToCheckpoint(paneId, target.checkpointUuid, target.resumeAnchorUuid)
+export const paneRewindAtom = Atom.family((paneId: string) => {
+  let current: RewindProgress = idle
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let setSelf: (next: RewindProgress) => void = () => undefined
+
+  const transition = (next: RewindProgress): void => {
+    if (next.status !== 'rewinding' && timer !== undefined) {
+      clearTimeout(timer)
+      timer = undefined
     }
-  )
-)
+    current = next
+    setSelf(next)
+    Effect.runSync(
+      Effect.logDebug('Rewind progress changed', {
+        paneId,
+        status: next.status,
+        checkpointUuid: next.status === 'idle' ? undefined : next.checkpointUuid
+      })
+    )
+  }
+  const abandonRewind = (): void => {
+    if (current.status === 'rewinding') transition(idle)
+  }
+
+  return Atom.writable(
+    (get): RewindProgress => {
+      clearTimeout(timer)
+      timer = undefined
+      current = idle
+      setSelf = (next) => get.setSelf(next)
+      const unsubscribes = [
+        window.dia.onRewindFailed((event) => {
+          if (event.paneId !== paneId) return
+          if (current.status === 'idle' || current.checkpointUuid !== event.messageUuid) return
+          transition({
+            status: 'failed',
+            checkpointUuid: event.messageUuid,
+            message: rewindFailureMessage(event.cause, event.detail)
+          })
+        }),
+        window.dia.onRewoundToCheckpoint((event) => {
+          if (event.paneId !== paneId || current.status === 'idle') return
+          if (current.checkpointUuid === event.messageUuid) transition(idle)
+        }),
+        window.dia.onAttentionChanged((event) => {
+          if (event.paneId !== paneId) return
+          if (event.attention._tag === 'Crashed' || event.attention._tag === 'Errored') {
+            abandonRewind()
+          }
+        }),
+        window.dia.onHistoryReloadRequested((reloadedPaneId) => {
+          if (reloadedPaneId === paneId) abandonRewind()
+        })
+      ]
+      get.addFinalizer(() => {
+        for (const unsubscribe of unsubscribes) unsubscribe()
+        clearTimeout(timer)
+      })
+      return current
+    },
+    (_ctx, command: RewindCommand) => {
+      if (command.type === 'dismiss') {
+        if (current.status === 'failed') transition(idle)
+        return
+      }
+      if (current.status === 'rewinding') return
+      const { checkpointUuid, resumeAnchorUuid } = command.target
+      transition({ status: 'rewinding', checkpointUuid })
+      // @effect-diagnostics-next-line globalTimers:off -- an atom's write function runs outside an Effect runtime; its finalizer clears the timer.
+      timer = setTimeout(
+        () =>
+          transition({
+            status: 'failed',
+            checkpointUuid,
+            message: 'Rewind failed: the agent did not respond.'
+          }),
+        Duration.toMillis(REWIND_OUTCOME_TIMEOUT)
+      )
+      window.dia.rewindToCheckpoint(paneId, checkpointUuid, resumeAnchorUuid)
+    }
+  ).pipe(Atom.keepAlive)
+})

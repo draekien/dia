@@ -25,6 +25,7 @@ import {
   Question,
   QuestionRequested,
   RESUME_TEXT,
+  RewindFailed,
   RewoundToCheckpoint,
   type SessionEnd,
   SessionFailed,
@@ -38,6 +39,7 @@ import {
 import type { QuestionResponse } from '@shared/domain/attention'
 import type { OutgoingMessage, SendMode } from '@shared/domain/message-queue'
 import type { PaneConfig, SessionId, ThinkingLevel } from '@shared/domain/pane'
+import type { RewindFailureCause } from '@shared/domain/rewind'
 import {
   Cause,
   Clock,
@@ -400,6 +402,8 @@ const resolveContinuesFrom = Effect.fn('ClaudeCodeSession.resolveContinuesFrom')
 
 const REWIND_FILES_TIMEOUT = Duration.seconds(30)
 
+type RewindOutcome = 'pending' | 'filesRewound' | 'emitted'
+
 /**
  * What a session needs to start its queries: the install `path` to run, and where to report a
  * query that refused to start with a known `startup_failure_reason`.
@@ -653,7 +657,10 @@ const ignoredUnstarted =
   (..._args: ReadonlyArray<unknown>): Effect.Effect<void> =>
     Effect.logWarning('Ignored a command; the agent session never started', { command, reason })
 
-const unstartedSession = (reason: string): AgentSession => ({
+const unstartedSession = (
+  reason: string,
+  emit: (message: OutboundMessage) => Effect.Effect<void>
+): AgentSession => ({
   sendText: ignoredUnstarted('sendText', reason),
   editQueuedText: ignoredUnstarted('editQueuedText', reason),
   removeQueuedText: ignoredUnstarted('removeQueuedText', reason),
@@ -665,7 +672,10 @@ const unstartedSession = (reason: string): AgentSession => ({
   resolveQuestion: ignoredUnstarted('resolveQuestion', reason),
   resolvePlanReview: ignoredUnstarted('resolvePlanReview', reason),
   interrupt: ignoredUnstarted('interrupt', reason),
-  rewindToCheckpoint: ignoredUnstarted('rewindToCheckpoint', reason),
+  rewindToCheckpoint: (messageUuid) =>
+    ignoredUnstarted('rewindToCheckpoint', reason)().pipe(
+      Effect.andThen(emit(RewindFailed.make({ messageUuid, cause: 'NoLiveSession' })))
+    ),
   resume: ignoredUnstarted('resume', reason)(),
   ended: Effect.succeed(SessionFailed.make({ reason }))
 })
@@ -692,7 +702,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
       paneId: options.config.paneId,
       reason
     })
-    return unstartedSession(reason)
+    return unstartedSession(reason, options.emit)
   }
   const launch: SessionLaunch = { path: path.value, reportStartupFailure }
   const { emit, tools } = options
@@ -921,15 +931,25 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     ).pipe(Effect.map((results) => results.filter(Predicate.isNotUndefined)))
   }
 
-  const rewindToCheckpoint = Effect.fn('ClaudeCodeSession.rewindToCheckpoint')(function* (
+  const rewindBody = Effect.fn('ClaudeCodeSession.rewindToCheckpoint')(function* (
+    outcome: Ref.Ref<RewindOutcome>,
     messageUuid: string,
     resumeAnchorUuid: string | undefined
   ) {
+    const fail = (cause: RewindFailureCause, detail?: string) =>
+      emit(
+        RewindFailed.make({ messageUuid, cause, ...(detail !== undefined ? { detail } : {}) })
+      ).pipe(Effect.andThen(Ref.set(outcome, 'emitted')))
+
     const configOpt = yield* Ref.get(configRef)
     const sessionIdOpt = yield* Ref.get(sessionIdRef)
     const queryOpt = yield* Ref.get(queryRef)
     if (Option.isNone(configOpt) || Option.isNone(sessionIdOpt) || Option.isNone(queryOpt)) {
-      yield* Effect.logWarning('Cannot rewind; no live session to rewind', { messageUuid })
+      yield* Effect.logWarning('Cannot rewind; no live session to rewind', {
+        messageUuid,
+        cause: 'NoLiveSession'
+      })
+      yield* fail('NoLiveSession')
       return
     }
     const config = configOpt.value
@@ -941,8 +961,10 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
       yield* Effect.logWarning('Rewind aborted; the turn is not in the session transcript', {
         paneId: config.paneId,
         sessionId: sessionIdOpt.value,
-        messageUuid
+        messageUuid,
+        cause: 'TurnNotInTranscript'
       })
+      yield* fail('TurnNotInTranscript')
       return
     }
 
@@ -957,13 +979,17 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
       Effect.option
     )
     if (Option.isNone(result) || !result.value.canRewind) {
+      const detail = Option.isSome(result) ? result.value.error : undefined
       yield* Effect.logWarning('Rewind aborted; files were not rewound', {
         paneId: config.paneId,
         messageUuid,
-        error: Option.isSome(result) ? result.value.error : undefined
+        cause: 'FilesNotRewound',
+        error: detail
       })
+      yield* fail('FilesNotRewound', detail)
       return
     }
+    yield* Ref.set(outcome, 'filesRewound')
 
     yield* Effect.logInfo('Rewound files to checkpoint; forking conversation', {
       paneId: config.paneId,
@@ -986,8 +1012,28 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     yield* Ref.set(silentResultsRef, 0)
     yield* Ref.set(abortExpectedRef, false)
     yield* emit(RewoundToCheckpoint.make({ messageUuid }))
+    yield* Ref.set(outcome, 'emitted')
     yield* performActions(yield* transition(rewound))
-  }, restartLock.withPermits(1))
+  })
+
+  const reportUnfinishedRewind = Effect.fnUntraced(function* (
+    outcome: Ref.Ref<RewindOutcome>,
+    messageUuid: string
+  ) {
+    const reached = yield* Ref.get(outcome)
+    if (reached === 'emitted') return
+    const cause = reached === 'filesRewound' ? 'ConversationNotBranched' : 'Interrupted'
+    yield* Effect.logWarning('Rewind stopped before it reported an outcome', { messageUuid, cause })
+    yield* emit(RewindFailed.make({ messageUuid, cause }))
+  })
+
+  const rewindToCheckpoint = (messageUuid: string, resumeAnchorUuid: string | undefined) =>
+    Effect.flatMap(Ref.make<RewindOutcome>('pending'), (outcome) =>
+      rewindBody(outcome, messageUuid, resumeAnchorUuid).pipe(
+        restartLock.withPermits(1),
+        Effect.ensuring(reportUnfinishedRewind(outcome, messageUuid))
+      )
+    )
 
   yield* startQuery(options.config, options.resume, undefined)
 

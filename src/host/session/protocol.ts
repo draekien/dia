@@ -2,6 +2,7 @@ import { PaneError, PermissionUpdate, Question } from '@shared/domain/attention'
 import { OutgoingMessage } from '@shared/domain/message-queue'
 import { ConversationMessage, PermissionMode, SessionId } from '@shared/domain/pane'
 import { ParkCause } from '@shared/domain/parking'
+import { RewindFailureCause } from '@shared/domain/rewind'
 import { SlashCommandInfo } from '@shared/domain/slash-command'
 import { Schema } from 'effect'
 
@@ -103,6 +104,12 @@ export const CheckpointAvailable = Schema.TaggedStruct('CheckpointAvailable', {
 export const RewoundToCheckpoint = Schema.TaggedStruct('RewoundToCheckpoint', {
   messageUuid: Schema.String
 })
+/** Emitted by a pane's agent session when a `RewindToCheckpoint` for `messageUuid` did not complete. `cause` says how far it got; `detail`, when present, is the Agent SDK's own explanation. The Host forwards this so the renderer can show the failure where the rewind was started. */
+export const RewindFailed = Schema.TaggedStruct('RewindFailed', {
+  messageUuid: Schema.String,
+  cause: RewindFailureCause,
+  detail: Schema.optional(Schema.String)
+})
 /** Emitted by a pane's agent session whenever its message queue changes, carrying the whole queue in send order. `held` is true when the queue waits for the next user send instead of the next turn end. */
 export const MessageQueueChanged = Schema.TaggedStruct('MessageQueueChanged', {
   queued: Schema.Array(OutgoingMessage),
@@ -142,6 +149,7 @@ export const OutboundMessage = Schema.Union([
   ConversationReset,
   CheckpointAvailable,
   RewoundToCheckpoint,
+  RewindFailed,
   MessageQueueChanged,
   UserMessagesSent,
   ModelChanged

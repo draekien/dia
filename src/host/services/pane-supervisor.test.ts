@@ -7,7 +7,7 @@ import {
   type WorktreeInfo
 } from '@shared/domain/pane'
 import { SignedOut, UsageLimit, type UsageLimitResume } from '@shared/domain/parking'
-import type { IpcEvent } from '@shared/ipc/contract'
+import { type IpcEvent, PaneRewindFailed } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
 import { Deferred, Effect, Layer, Option, Result, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
@@ -22,6 +22,7 @@ import {
 import {
   MessageQueueChanged,
   type OutboundMessage,
+  RewindFailed,
   SessionStarted,
   TurnParked,
   UserMessagesSent
@@ -730,6 +731,48 @@ describe('PaneSupervisor', () => {
             queued: [{ id: 'm-2', text: 'later' }],
             held: true
           }
+        ])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('publishes a failed rewind as a pane event carrying its cause and detail', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        const events: Array<IpcEvent> = []
+
+        yield* supervisor.openPane(
+          requestA,
+          (event) => Effect.sync(() => void events.push(event)),
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+
+        yield* sessions[0].emit(
+          RewindFailed.make({
+            messageUuid: 'turn-2',
+            cause: 'FilesNotRewound',
+            detail: 'No file checkpoint found for this message.'
+          })
+        )
+        yield* sessions[0].emit(RewindFailed.make({ messageUuid: 'turn-3', cause: 'Interrupted' }))
+        yield* flush
+
+        assert.deepStrictEqual(events, [
+          PaneRewindFailed.make({
+            paneId: requestA.paneId,
+            messageUuid: 'turn-2',
+            cause: 'FilesNotRewound',
+            detail: 'No file checkpoint found for this message.'
+          }),
+          PaneRewindFailed.make({
+            paneId: requestA.paneId,
+            messageUuid: 'turn-3',
+            cause: 'Interrupted'
+          })
         ])
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })

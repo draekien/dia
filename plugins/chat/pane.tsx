@@ -1,12 +1,4 @@
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
   actions,
   awaitsUser,
   Bubble,
@@ -45,6 +37,8 @@ import {
   paneRewindAtom,
   paneSendAtom,
   permissionModeLabel,
+  rewindRowState,
+  rewindTargets,
   Select,
   SelectContent,
   SelectItem,
@@ -67,7 +61,7 @@ import {
   useModelCatalog,
   useTranscriptWidth
 } from '@dia/renderer-plugin'
-import { useAtomSet, useAtomValue } from '@effect/atom-react'
+import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react'
 import {
   type AttentionState,
   Idle,
@@ -103,13 +97,14 @@ import {
   SquareIcon,
   X
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import { Markdown } from './markdown'
 import { ModelPicker } from './model-picker'
 import { PermissionRequestCard } from './permission-request-card'
 import { PlanReviewCard } from './plan-review-card'
 import { QueuedMessages } from './queued-messages'
+import { RewindAction, type RewindActionProps } from './rewind-action'
 import {
   activeSlashToken,
   completeSlashCommand,
@@ -379,11 +374,10 @@ function TokenCount({ count }: { count: number }): React.JSX.Element {
  * single trailing tinted bubble, assistant turns as their ordered parts
  * (collapsed thinking disclosures, Markdown text with no bubble, tool-call status rows).
  * Thinking parts render as a collapsed `Thinking` disclosure, click to expand.
- * Text parts render markdown directly with no reveal animation. When `onRewind`
- * is provided and the turn is a rewindable user turn (carries a
- * `checkpointUuid` and is not marked `rewindable: false`), a hover-revealed separator marker is shown above the
- * message — the branch point rewind restores to, just before this turn — with a
- * rewind action that invokes `onRewind` with this message.
+ * Text parts render markdown directly with no reveal animation. Pass `rewind` for an agent turn
+ * the user may rewind to (one `rewindTargets` maps): a {@link RewindAction} row under the turn
+ * shows `rewind.state` and calls `rewind.onStart` after a press and hold, keeping this turn and
+ * discarding everything after it.
  * An assistant turn that streamed in this session collapses each run of steps into a section
  * and keeps its text visible between them (see {@link turnBlocks}); a turn restored from history
  * shows every part. Pass `live` for the turn still running, to show
@@ -393,12 +387,12 @@ function TokenCount({ count }: { count: number }): React.JSX.Element {
  */
 export function MessageView({
   message,
-  onRewind,
+  rewind,
   live,
   nowMs
 }: {
   message: PaneMessage
-  onRewind?: (message: PaneMessage) => void
+  rewind?: RewindActionProps
   live?: LiveSteps
   nowMs?: number
 }): React.JSX.Element {
@@ -443,33 +437,8 @@ export function MessageView({
     )
   }
   const isUser = message.role === 'user'
-  const canRewind =
-    isUser &&
-    message.checkpointUuid !== undefined &&
-    message.rewindable !== false &&
-    onRewind !== undefined
   return (
-    <div className={canRewind ? 'group/turn' : undefined}>
-      {canRewind && (
-        <Marker
-          variant="separator"
-          className="mb-1 opacity-0 after:hidden transition-opacity group-hover/turn:opacity-100 group-focus-within/turn:opacity-100 motion-reduce:transition-none"
-        >
-          <MarkerContent>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              aria-label="Rewind to this point"
-              onClick={() => onRewind(message)}
-              className="gap-1 text-muted-foreground hover:text-foreground"
-            >
-              <RotateCcw />
-              Rewind to this point
-            </Button>
-          </MarkerContent>
-        </Marker>
-      )}
+    <div className={rewind !== undefined ? 'group/turn' : undefined}>
       <Message align={isUser ? 'end' : 'start'}>
         <MessageContent>
           {isLiveTurn(message) ? (
@@ -486,6 +455,7 @@ export function MessageView({
           )}
         </MessageContent>
       </Message>
+      {rewind !== undefined && <RewindAction {...rewind} />}
     </div>
   )
 }
@@ -598,8 +568,17 @@ function PaneChat({
   const removeQueued = useAtomSet(paneRemoveQueuedAtom(paneId))
   const stop = useAtomSet(paneInterruptAtom(paneId))
   const defaultSendMode = useAtomValue(sendModeAtom)
-  const rewind = useAtomSet(paneRewindAtom(paneId))
-  const [rewindTarget, setRewindTarget] = useState<PaneMessage | null>(null)
+  const [rewindProgress, commandRewind] = useAtom(paneRewindAtom(paneId))
+  const targets = useMemo(() => rewindTargets(chat.messages), [chat.messages])
+  const rewindRowFor = (message: PaneMessage): RewindActionProps | undefined => {
+    const target = targets.get(message.id)
+    if (target === undefined) return undefined
+    return {
+      state: rewindRowState(rewindProgress, target),
+      onStart: () => commandRewind({ type: 'start', target }),
+      onDismiss: () => commandRewind({ type: 'dismiss' })
+    }
+  }
 
   const adapterStatus = useAdapterStatus()
   const [slashHighlight, setSlashHighlight] = useState(0)
@@ -724,268 +703,232 @@ function PaneChat({
   }
 
   return (
-    <>
-      <TranscriptScroller
-        contentClassName={column}
-        overlay={
-          <>
-            {pendingPermission !== null && (
-              <PermissionRequestCard request={pendingPermission} onResolve={respondToPermission} />
-            )}
-            {pendingQuestion !== null && (
-              <ClarifyingQuestionCard request={pendingQuestion} onResolve={respondToQuestion} />
-            )}
-            {pendingPlanReview !== null && (
-              <PlanReviewCard request={pendingPlanReview} onResolve={respondToPlanReview} />
-            )}
-            <InstallNotice status={adapterStatus} />
-            <form
-              className="mt-2"
-              onSubmit={(event) => {
-                event.preventDefault()
-                void form.handleSubmit({ mode: defaultSendMode })
-              }}
-            >
-              <form.Field name="text">
-                {(field) => {
-                  const token = activeSlashToken(field.state.value, caret)
-                  const matches =
-                    token === null ? [] : filterSlashCommands(chat.slashCommands, token.query)
-                  const isMenuOpen = matches.length > 0 && !slashDismissed
-                  const highlight = wrapHighlight(slashHighlight, 0, matches.length)
+    <TranscriptScroller
+      contentClassName={column}
+      overlay={
+        <>
+          {pendingPermission !== null && (
+            <PermissionRequestCard request={pendingPermission} onResolve={respondToPermission} />
+          )}
+          {pendingQuestion !== null && (
+            <ClarifyingQuestionCard request={pendingQuestion} onResolve={respondToQuestion} />
+          )}
+          {pendingPlanReview !== null && (
+            <PlanReviewCard request={pendingPlanReview} onResolve={respondToPlanReview} />
+          )}
+          <InstallNotice status={adapterStatus} />
+          <form
+            className="mt-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void form.handleSubmit({ mode: defaultSendMode })
+            }}
+          >
+            <form.Field name="text">
+              {(field) => {
+                const token = activeSlashToken(field.state.value, caret)
+                const matches =
+                  token === null ? [] : filterSlashCommands(chat.slashCommands, token.query)
+                const isMenuOpen = matches.length > 0 && !slashDismissed
+                const highlight = wrapHighlight(slashHighlight, 0, matches.length)
 
-                  const changeText = (value: string, nextCaret: number): void => {
-                    field.handleChange(value)
+                const changeText = (value: string, nextCaret: number): void => {
+                  field.handleChange(value)
+                  setCaret(nextCaret)
+                  setSlashDismissed(false)
+                  setSlashHighlight(0)
+                }
+                const selectCommand = (command: SlashCommandInfo, at: TriggerToken): void => {
+                  const { value, caret: nextCaret } = completeSlashCommand(
+                    field.state.value,
+                    at,
+                    command
+                  )
+                  field.handleChange(value)
+                  setSlashHighlight(0)
+                  requestAnimationFrame(() => {
+                    const element = textareaRef.current
+                    if (element === null) return
+                    element.selectionStart = nextCaret
+                    element.selectionEnd = nextCaret
                     setCaret(nextCaret)
-                    setSlashDismissed(false)
-                    setSlashHighlight(0)
-                  }
-                  const selectCommand = (command: SlashCommandInfo, at: TriggerToken): void => {
-                    const { value, caret: nextCaret } = completeSlashCommand(
-                      field.state.value,
-                      at,
-                      command
-                    )
-                    field.handleChange(value)
-                    setSlashHighlight(0)
-                    requestAnimationFrame(() => {
-                      const element = textareaRef.current
-                      if (element === null) return
-                      element.selectionStart = nextCaret
-                      element.selectionEnd = nextCaret
-                      setCaret(nextCaret)
-                    })
-                  }
+                  })
+                }
 
-                  return (
-                    <div className="relative">
-                      {chat.warmingCommands && (
-                        <div className="mb-1.5 flex items-center gap-2 px-1 text-muted-foreground text-xs">
-                          <Loader2Icon className="size-3.5 animate-spin motion-reduce:animate-none" />
-                          Loading commands…
-                        </div>
-                      )}
-                      <QueuedMessages
-                        queued={chat.queued}
-                        held={chat.queueHeld}
-                        onEdit={(messageId, text) => editQueued({ messageId, text })}
-                        onRemove={removeQueued}
+                return (
+                  <div className="relative">
+                    {chat.warmingCommands && (
+                      <div className="mb-1.5 flex items-center gap-2 px-1 text-muted-foreground text-xs">
+                        <Loader2Icon className="size-3.5 animate-spin motion-reduce:animate-none" />
+                        Loading commands…
+                      </div>
+                    )}
+                    <QueuedMessages
+                      queued={chat.queued}
+                      held={chat.queueHeld}
+                      onEdit={(messageId, text) => editQueued({ messageId, text })}
+                      onRemove={removeQueued}
+                    />
+                    {isMenuOpen && token !== null && (
+                      <SlashCommandMenu
+                        paneId={paneId}
+                        commands={matches}
+                        highlightedIndex={highlight}
+                        onSelect={(command) => selectCommand(command, token)}
+                        onHighlight={setSlashHighlight}
                       />
-                      {isMenuOpen && token !== null && (
-                        <SlashCommandMenu
-                          paneId={paneId}
-                          commands={matches}
-                          highlightedIndex={highlight}
-                          onSelect={(command) => selectCommand(command, token)}
-                          onHighlight={setSlashHighlight}
-                        />
-                      )}
-                      <InputGroup>
-                        <InputGroupTextarea
-                          ref={textareaRef}
-                          className="min-h-14"
-                          value={field.state.value}
-                          onChange={(event) =>
-                            changeText(event.target.value, event.target.selectionStart)
-                          }
-                          onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
-                          onKeyDown={(event) => {
-                            if (isMenuOpen) {
-                              if (event.key === 'ArrowDown') {
-                                event.preventDefault()
-                                setSlashHighlight(wrapHighlight(highlight, 1, matches.length))
-                                return
-                              }
-                              if (event.key === 'ArrowUp') {
-                                event.preventDefault()
-                                setSlashHighlight(wrapHighlight(highlight, -1, matches.length))
-                                return
-                              }
-                              if (event.key === 'Escape') {
-                                event.preventDefault()
-                                setSlashDismissed(true)
-                                return
-                              }
-                              if (
-                                (event.key === 'Enter' || event.key === 'Tab') &&
-                                !event.shiftKey &&
-                                !event.nativeEvent.isComposing
-                              ) {
-                                event.preventDefault()
-                                const command = matches[highlight]
-                                if (command !== undefined && token !== null) {
-                                  selectCommand(command, token)
-                                }
-                                return
-                              }
+                    )}
+                    <InputGroup>
+                      <InputGroupTextarea
+                        ref={textareaRef}
+                        className="min-h-14"
+                        value={field.state.value}
+                        onChange={(event) =>
+                          changeText(event.target.value, event.target.selectionStart)
+                        }
+                        onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+                        onKeyDown={(event) => {
+                          if (isMenuOpen) {
+                            if (event.key === 'ArrowDown') {
+                              event.preventDefault()
+                              setSlashHighlight(wrapHighlight(highlight, 1, matches.length))
+                              return
+                            }
+                            if (event.key === 'ArrowUp') {
+                              event.preventDefault()
+                              setSlashHighlight(wrapHighlight(highlight, -1, matches.length))
+                              return
+                            }
+                            if (event.key === 'Escape') {
+                              event.preventDefault()
+                              setSlashDismissed(true)
+                              return
                             }
                             if (
-                              event.key === 'Enter' &&
+                              (event.key === 'Enter' || event.key === 'Tab') &&
                               !event.shiftKey &&
                               !event.nativeEvent.isComposing
                             ) {
                               event.preventDefault()
-                              void form.handleSubmit({
-                                mode: sendModeForEnter(defaultSendMode, event)
-                              })
+                              const command = matches[highlight]
+                              if (command !== undefined && token !== null) {
+                                selectCommand(command, token)
+                              }
+                              return
                             }
-                          }}
-                          role="combobox"
-                          aria-expanded={isMenuOpen}
-                          aria-controls={slashMenuListboxId(paneId)}
-                          aria-autocomplete="list"
-                          aria-activedescendant={
-                            isMenuOpen ? slashMenuOptionId(paneId, highlight) : undefined
                           }
-                          placeholder="Message dia..."
-                          aria-label="Message dia"
+                          if (
+                            event.key === 'Enter' &&
+                            !event.shiftKey &&
+                            !event.nativeEvent.isComposing
+                          ) {
+                            event.preventDefault()
+                            void form.handleSubmit({
+                              mode: sendModeForEnter(defaultSendMode, event)
+                            })
+                          }
+                        }}
+                        role="combobox"
+                        aria-expanded={isMenuOpen}
+                        aria-controls={slashMenuListboxId(paneId)}
+                        aria-autocomplete="list"
+                        aria-activedescendant={
+                          isMenuOpen ? slashMenuOptionId(paneId, highlight) : undefined
+                        }
+                        placeholder="Message dia..."
+                        aria-label="Message dia"
+                      />
+                      <InputGroupAddon align="block-end">
+                        <ModelPicker value={model} onChange={onModelChange} />
+                        <ThinkingLevelSelect
+                          value={thinkingLevel}
+                          levels={thinkingLevels}
+                          onChange={onThinkingLevelChange}
                         />
-                        <InputGroupAddon align="block-end">
-                          <ModelPicker value={model} onChange={onModelChange} />
-                          <ThinkingLevelSelect
-                            value={thinkingLevel}
-                            levels={thinkingLevels}
-                            onChange={onThinkingLevelChange}
-                          />
-                          <PermissionModeSelect
-                            value={permissionMode}
-                            disabledModes={disabledPermissionModes}
-                            onChange={onPermissionModeChange}
-                          />
-                          {isLoading && (
-                            <InputGroupButton
-                              type="button"
-                              variant="outline"
-                              size="icon-sm"
-                              className="ml-auto"
-                              aria-label="Stop"
-                              title="Stop"
-                              onClick={stopTurn}
-                            >
-                              <SquareIcon />
-                            </InputGroupButton>
-                          )}
+                        <PermissionModeSelect
+                          value={permissionMode}
+                          disabledModes={disabledPermissionModes}
+                          onChange={onPermissionModeChange}
+                        />
+                        {isLoading && (
                           <InputGroupButton
-                            type="submit"
-                            variant="default"
+                            type="button"
+                            variant="outline"
                             size="icon-sm"
-                            className={cn(!isLoading && 'ml-auto')}
-                            aria-label="Send message"
-                            disabled={field.state.value.trim() === ''}
+                            className="ml-auto"
+                            aria-label="Stop"
+                            title="Stop"
+                            onClick={stopTurn}
                           >
-                            <ArrowUp />
+                            <SquareIcon />
                           </InputGroupButton>
-                        </InputGroupAddon>
-                      </InputGroup>
-                    </div>
-                  )
-                }}
-              </form.Field>
-            </form>
-          </>
-        }
-      >
-        {chat.messages.map((message) => (
-          <TranscriptItem key={message.id} anchor={message.role === 'user'}>
-            <MessageView
-              message={message}
-              onRewind={setRewindTarget}
-              live={message === runningTurn ? liveSteps : undefined}
-              nowMs={nowMs}
-            />
-            {parkedForUser && message === lastMessage && isParkNotice(message) && (
-              <div className="flex justify-center pt-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={() => {
-                    textareaRef.current?.focus()
-                    actions.resumeParkedAgent(paneId)
-                  }}
-                >
-                  Resume
-                </Button>
-              </div>
-            )}
-          </TranscriptItem>
-        ))}
-        {showActivity && !activityInSteps && (
-          <div className="flex flex-col gap-1">
-            <TurnActivityLine activity={activity} />
-            {activity.stalled && (
-              <StallActions
-                className="pl-6"
-                onResend={resend}
-                onInterruptAndRetry={interruptAndRetry}
-              />
-            )}
-          </div>
-        )}
-        {attention._tag === 'Errored' && retryText !== undefined && (
-          <div className="flex px-1">
-            <Button type="button" variant="outline" size="xs" className="gap-1" onClick={resend}>
-              <RotateCcw />
-              Retry
-            </Button>
-          </div>
-        )}
-      </TranscriptScroller>
-      <AlertDialog
-        open={rewindTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setRewindTarget(null)
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Rewind to this point?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This restores your files and the conversation to just before this message. Everything
-              after it — later messages and the file edits Claude made — is discarded. Changes made
-              through the terminal can’t be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                if (rewindTarget?.checkpointUuid !== undefined) {
-                  rewind({
-                    checkpointUuid: rewindTarget.checkpointUuid,
-                    resumeAnchorUuid: rewindTarget.resumeAnchorUuid
-                  })
-                }
-                setRewindTarget(null)
+                        )}
+                        <InputGroupButton
+                          type="submit"
+                          variant="default"
+                          size="icon-sm"
+                          className={cn(!isLoading && 'ml-auto')}
+                          aria-label="Send message"
+                          disabled={field.state.value.trim() === ''}
+                        >
+                          <ArrowUp />
+                        </InputGroupButton>
+                      </InputGroupAddon>
+                    </InputGroup>
+                  </div>
+                )
               }}
-            >
-              Rewind
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+            </form.Field>
+          </form>
+        </>
+      }
+    >
+      {chat.messages.map((message) => (
+        <TranscriptItem key={message.id} anchor={message.role === 'user'}>
+          <MessageView
+            message={message}
+            rewind={rewindRowFor(message)}
+            live={message === runningTurn ? liveSteps : undefined}
+            nowMs={nowMs}
+          />
+          {parkedForUser && message === lastMessage && isParkNotice(message) && (
+            <div className="flex justify-center pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={() => {
+                  textareaRef.current?.focus()
+                  actions.resumeParkedAgent(paneId)
+                }}
+              >
+                Resume
+              </Button>
+            </div>
+          )}
+        </TranscriptItem>
+      ))}
+      {showActivity && !activityInSteps && (
+        <div className="flex flex-col gap-1">
+          <TurnActivityLine activity={activity} />
+          {activity.stalled && (
+            <StallActions
+              className="pl-6"
+              onResend={resend}
+              onInterruptAndRetry={interruptAndRetry}
+            />
+          )}
+        </div>
+      )}
+      {attention._tag === 'Errored' && retryText !== undefined && (
+        <div className="flex px-1">
+          <Button type="button" variant="outline" size="xs" className="gap-1" onClick={resend}>
+            <RotateCcw />
+            Retry
+          </Button>
+        </div>
+      )}
+    </TranscriptScroller>
   )
 }
 
