@@ -37,7 +37,6 @@ import {
   paneRewindAtom,
   paneSendAtom,
   permissionModeLabel,
-  type RewindRowState,
   rewindRowState,
   rewindTargets,
   Select,
@@ -62,7 +61,7 @@ import {
   useModelCatalog,
   useTranscriptWidth
 } from '@dia/renderer-plugin'
-import { useAtomSet, useAtomValue } from '@effect/atom-react'
+import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react'
 import {
   type AttentionState,
   Idle,
@@ -105,7 +104,7 @@ import { ModelPicker } from './model-picker'
 import { PermissionRequestCard } from './permission-request-card'
 import { PlanReviewCard } from './plan-review-card'
 import { QueuedMessages } from './queued-messages'
-import { RewindAction } from './rewind-action'
+import { RewindAction, type RewindActionProps } from './rewind-action'
 import {
   activeSlashToken,
   completeSlashCommand,
@@ -370,13 +369,6 @@ function TokenCount({ count }: { count: number }): React.JSX.Element {
   )
 }
 
-/** What {@link MessageView} needs to show a rewind row under an agent turn; see {@link RewindAction}. */
-export interface RewindRow {
-  readonly state: RewindRowState
-  readonly onStart: () => void
-  readonly onDismiss: () => void
-}
-
 /**
  * Renders one {@link PaneMessage} as an aligned bubble stack: user turns as a
  * single trailing tinted bubble, assistant turns as their ordered parts
@@ -400,7 +392,7 @@ export function MessageView({
   nowMs
 }: {
   message: PaneMessage
-  rewind?: RewindRow
+  rewind?: RewindActionProps
   live?: LiveSteps
   nowMs?: number
 }): React.JSX.Element {
@@ -576,10 +568,9 @@ function PaneChat({
   const removeQueued = useAtomSet(paneRemoveQueuedAtom(paneId))
   const stop = useAtomSet(paneInterruptAtom(paneId))
   const defaultSendMode = useAtomValue(sendModeAtom)
-  const rewindProgress = useAtomValue(paneRewindAtom(paneId))
-  const commandRewind = useAtomSet(paneRewindAtom(paneId))
+  const [rewindProgress, commandRewind] = useAtom(paneRewindAtom(paneId))
   const targets = useMemo(() => rewindTargets(chat.messages), [chat.messages])
-  const rewindRowFor = (message: PaneMessage): RewindRow | undefined => {
+  const rewindRowFor = (message: PaneMessage): RewindActionProps | undefined => {
     const target = targets.get(message.id)
     if (target === undefined) return undefined
     return {

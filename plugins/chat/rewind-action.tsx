@@ -13,18 +13,16 @@ const rewindRow = cva(
   'flex min-h-6 items-center gap-2 pt-1 text-xs transition-opacity motion-reduce:transition-none',
   {
     variants: {
-      state: {
-        ready: 'opacity-0 group-hover/turn:opacity-100 group-focus-within/turn:opacity-100',
-        blocked: 'opacity-0 group-hover/turn:opacity-100 group-focus-within/turn:opacity-100',
-        holding: 'opacity-100',
-        rewinding: 'opacity-100 text-muted-foreground',
-        failed: 'opacity-100'
+      revealed: {
+        false: 'opacity-0 group-hover/turn:opacity-100 group-focus-within/turn:opacity-100',
+        true: 'opacity-100'
       }
     }
   }
 )
 
-interface RewindActionProps {
+/** The props of {@link RewindAction}: the row's `state` from `rewindRowState`, and its two commands. */
+export interface RewindActionProps {
   readonly state: RewindRowState
   readonly onStart: () => void
   readonly onDismiss: () => void
@@ -63,7 +61,7 @@ export function RewindAction({ state, onStart, onDismiss }: RewindActionProps): 
 
   if (state.status === 'rewinding') {
     return (
-      <div className={rewindRow({ state: 'rewinding' })}>
+      <div className={rewindRow({ revealed: true, className: 'text-muted-foreground' })}>
         <span role="status" className="flex items-center gap-1 px-1.5">
           <Loader2Icon
             aria-hidden="true"
@@ -76,7 +74,7 @@ export function RewindAction({ state, onStart, onDismiss }: RewindActionProps): 
   }
 
   return (
-    <div className={rewindRow({ state: holding ? 'holding' : state.status })}>
+    <div className={rewindRow({ revealed: holding || state.status === 'failed' })}>
       <Button
         type="button"
         variant="ghost"

@@ -222,9 +222,6 @@ const REWIND_OUTCOME_TIMEOUT = Duration.seconds(45)
 
 const idle: RewindProgress = { status: 'idle' }
 
-const logRewind = (message: string, annotations: Record<string, unknown>): void =>
-  Effect.runSync(Effect.logDebug(message, annotations))
-
 /**
  * Per-pane rewind state and action, keyed by `paneId` (ADR-0018, ADR-0045). Read it for the pane's
  * {@link RewindProgress}; set it with a {@link RewindCommand}. `start` sends the rewind to the pane
@@ -250,15 +247,17 @@ export const paneRewindAtom = Atom.family((paneId: string) => {
     }
     current = next
     setSelf(next)
-    logRewind('Rewind progress changed', {
-      paneId,
-      status: next.status,
-      checkpointUuid: next.status === 'idle' ? undefined : next.checkpointUuid
-    })
+    Effect.runSync(
+      Effect.logDebug('Rewind progress changed', {
+        paneId,
+        status: next.status,
+        checkpointUuid: next.status === 'idle' ? undefined : next.checkpointUuid
+      })
+    )
   }
-  const isRewinding = (checkpointUuid?: string): boolean =>
-    current.status === 'rewinding' &&
-    (checkpointUuid === undefined || current.checkpointUuid === checkpointUuid)
+  const abandonRewind = (): void => {
+    if (current.status === 'rewinding') transition(idle)
+  }
 
   return Atom.writable(
     (get): RewindProgress => {
@@ -268,7 +267,8 @@ export const paneRewindAtom = Atom.family((paneId: string) => {
       setSelf = (next) => get.setSelf(next)
       const unsubscribes = [
         window.dia.onRewindFailed((event) => {
-          if (event.paneId !== paneId || !isRewinding(event.messageUuid)) return
+          if (event.paneId !== paneId) return
+          if (current.status !== 'rewinding' || current.checkpointUuid !== event.messageUuid) return
           transition({
             status: 'failed',
             checkpointUuid: event.messageUuid,
@@ -280,13 +280,13 @@ export const paneRewindAtom = Atom.family((paneId: string) => {
           if (current.checkpointUuid === event.messageUuid) transition(idle)
         }),
         window.dia.onAttentionChanged((event) => {
-          if (event.paneId !== paneId || !isRewinding()) return
+          if (event.paneId !== paneId) return
           if (event.attention._tag === 'Crashed' || event.attention._tag === 'Errored') {
-            transition(idle)
+            abandonRewind()
           }
         }),
         window.dia.onHistoryReloadRequested((reloadedPaneId) => {
-          if (reloadedPaneId === paneId && isRewinding()) transition(idle)
+          if (reloadedPaneId === paneId) abandonRewind()
         })
       ]
       get.addFinalizer(() => {
@@ -300,7 +300,7 @@ export const paneRewindAtom = Atom.family((paneId: string) => {
         if (current.status === 'failed') transition(idle)
         return
       }
-      if (isRewinding()) return
+      if (current.status === 'rewinding') return
       const { checkpointUuid, resumeAnchorUuid } = command.target
       transition({ status: 'rewinding', checkpointUuid })
       // @effect-diagnostics-next-line globalTimers:off -- an atom's write function runs outside an Effect runtime; its finalizer clears the timer.
