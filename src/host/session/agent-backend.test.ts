@@ -6,7 +6,8 @@ import {
   type AgentBackend,
   adapterContract,
   agentBackendProblems,
-  resolveAgentBackend
+  resolveAgentBackend,
+  SessionFailed
 } from './agent-backend'
 
 const registryProviding = (value: Option.Option<unknown>) => ({
@@ -65,9 +66,12 @@ describe('resolveAgentBackend', () => {
         const backend = yield* resolveAgentBackend(registryProviding(provided))
 
         const session = yield* backend.openSession(openOptions).pipe(Effect.scoped)
-        const reason = yield* session.ended
+        const end = yield* session.ended
 
-        assert.strictEqual(reason, 'The claude-code adapter is not loaded')
+        assert.deepStrictEqual(
+          end,
+          SessionFailed.make({ reason: 'The claude-code adapter is not loaded' })
+        )
       })
     )
 

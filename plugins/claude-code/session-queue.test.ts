@@ -1,9 +1,9 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the test yields to Node's event loop so the plugin's non-Effect callbacks run.
 import { setImmediate } from 'node:timers/promises'
 import type { Options, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { OutboundMessage } from '@dia/plugin'
+import { type OutboundMessage, SessionFailed, SessionNotFound } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
-import type { PaneConfig } from '@shared/domain/pane'
+import type { PaneConfig, SessionId } from '@shared/domain/pane'
 import { Effect, Option, Queue } from 'effect'
 import { vi } from 'vitest'
 import {
@@ -19,6 +19,7 @@ interface FakeQuery {
   interrupts: number
   readonly models: Array<string | undefined>
   readonly emit: (message: SDKMessage | 'end') => void
+  readonly fail: (error: Error) => void
 }
 
 const sdk = vi.hoisted(() => ({ queries: [] as Array<FakeQuery> }))
@@ -32,7 +33,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
     prompt: AsyncIterable<SDKUserMessage>
     options: Options
   }) => {
-    const pending = Effect.runSync(Queue.unbounded<SDKMessage | 'end'>())
+    const pending = Effect.runSync(Queue.unbounded<SDKMessage | 'end' | Error>())
     const record: FakeQuery = {
       options,
       delivered: [],
@@ -40,6 +41,9 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
       models: [],
       emit: (message) => {
         Queue.offerUnsafe(pending, message)
+      },
+      fail: (error) => {
+        Queue.offerUnsafe(pending, error)
       }
     }
     sdk.queries.push(record)
@@ -53,6 +57,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
     const next = async (): Promise<IteratorResult<SDKMessage>> => {
       const message = await Effect.runPromise(Queue.take(pending))
       if (closed || message === 'end') return { done: true, value: undefined }
+      if (message instanceof Error) throw message
       return { done: false, value: message }
     }
     return {
@@ -110,14 +115,14 @@ const installAt = (
   setOverride: () => Effect.void
 })
 
-const open = Effect.gen(function* () {
+const openWith = Effect.fnUntraced(function* (resume: Option.Option<SessionId>) {
   sdk.queries.length = 0
   const emitted: Array<OutboundMessage> = []
   const startupFailures: Array<string> = []
   const session = yield* openClaudeCodeSession(
     {
       config,
-      resume: Option.none(),
+      resume,
       emit: (message) => Effect.sync(() => emitted.push(message)),
       tools: []
     },
@@ -130,6 +135,8 @@ const open = Effect.gen(function* () {
     Effect.sync(() => query.emit(result)).pipe(Effect.andThen(settle))
   return { session, emitted, query, endTurn, startupFailures }
 })
+
+const open = openWith(Option.none())
 
 const texts = (query: FakeQuery) => query.delivered.map((message) => message.message.content)
 
@@ -414,7 +421,10 @@ describe('install', () => {
         () => Effect.void
       )
 
-      assert.strictEqual(yield* session.ended, NOT_INSTALLED_REASON)
+      assert.deepStrictEqual(
+        yield* session.ended,
+        SessionFailed.make({ reason: NOT_INSTALLED_REASON })
+      )
       assert.strictEqual(sdk.queries.length, 0)
     })
   )
@@ -427,7 +437,10 @@ describe('install', () => {
         () => Effect.void
       )
 
-      assert.strictEqual(yield* session.ended, overrideUnrunnableReason('D:\\claude.cmd'))
+      assert.deepStrictEqual(
+        yield* session.ended,
+        SessionFailed.make({ reason: overrideUnrunnableReason('D:\\claude.cmd') })
+      )
     })
   )
 })
@@ -497,5 +510,116 @@ describe('parked turn', () => {
       assert.isFalse(tags(emitted).includes('TurnParked'))
       assert.isTrue(tags(emitted).includes('TurnCompleted'))
     })
+  )
+})
+
+describe('missing session', () => {
+  const missingId = '9c376084-48c1-4e74-b886-7915ef2993db' as SessionId
+  const notFound = (turns = 0) =>
+    ({
+      type: 'result',
+      subtype: 'error_during_execution',
+      is_error: true,
+      num_turns: turns,
+      errors: [`No conversation found with session ID: ${missingId}`]
+    }) as unknown as SDKMessage
+  const thrown = new Error(
+    `Claude Code returned an error result: No conversation found with session ID: ${missingId}`
+  )
+
+  it.effect('ends as not found, without a turn error, when the resumed conversation is gone', () =>
+    Effect.gen(function* () {
+      const { session, emitted, query } = yield* openWith(Option.some(missingId))
+
+      query.emit(notFound())
+      query.fail(thrown)
+
+      assert.deepStrictEqual(yield* session.ended, SessionNotFound.make({ sessionId: missingId }))
+      assert.isFalse(tags(emitted).includes('TurnErrored'))
+    })
+  )
+
+  it.effect('ends as not found when the stream completes after the not-found result', () =>
+    Effect.gen(function* () {
+      const { session, query } = yield* openWith(Option.some(missingId))
+
+      query.emit(notFound())
+      query.emit('end')
+
+      assert.deepStrictEqual(yield* session.ended, SessionNotFound.make({ sessionId: missingId }))
+    })
+  )
+
+  it.effect('ends as failed, with a turn error, when the session was not resumed', () =>
+    Effect.gen(function* () {
+      const { session, emitted, query } = yield* open
+
+      query.emit(notFound())
+      query.fail(thrown)
+
+      assert.strictEqual((yield* session.ended)._tag, 'SessionFailed')
+      assert.isTrue(tags(emitted).includes('TurnErrored'))
+    })
+  )
+
+  it.effect('ends as failed, with a turn error, when the result ran a turn', () =>
+    Effect.gen(function* () {
+      const { session, emitted, query } = yield* openWith(Option.some(missingId))
+
+      query.emit(notFound(1))
+      query.fail(thrown)
+
+      assert.strictEqual((yield* session.ended)._tag, 'SessionFailed')
+      assert.isTrue(tags(emitted).includes('TurnErrored'))
+    })
+  )
+
+  it.effect('ends as failed with the rendered error for any other failure', () =>
+    Effect.gen(function* () {
+      const { session, query } = yield* openWith(Option.some(missingId))
+
+      query.fail(new Error('socket closed'))
+
+      const end = yield* session.ended
+      assert.strictEqual(end._tag, 'SessionFailed')
+      assert.include(end._tag === 'SessionFailed' ? end.reason : '', 'Error: socket closed')
+    })
+  )
+
+  it.effect(
+    'ends as not found when a thinking-level restart resumes a conversation that is gone',
+    () =>
+      Effect.gen(function* () {
+        const { session } = yield* openWith(Option.some(missingId))
+        yield* session.setThinkingLevel('high')
+        yield* session.sendText('first', 'queue')
+        yield* settle
+        const restarted = sdk.queries[1]
+        assert.isDefined(restarted)
+        assert.strictEqual(restarted.options.resume, missingId)
+
+        restarted.emit(notFound())
+        restarted.fail(thrown)
+
+        assert.deepStrictEqual(yield* session.ended, SessionNotFound.make({ sessionId: missingId }))
+      })
+  )
+
+  it.effect(
+    'ends as failed, with a turn error, when a rewind reports the conversation not found',
+    () =>
+      Effect.gen(function* () {
+        const { session, emitted } = yield* openWith(Option.some(missingId))
+        yield* session.rewindToCheckpoint('turn-2', 'reply-1')
+        const forked = sdk.queries[1]
+        assert.isDefined(forked)
+        assert.strictEqual(forked.options.resumeSessionAt, 'reply-1')
+
+        forked.emit(notFound())
+        forked.fail(thrown)
+
+        assert.strictEqual((yield* session.ended)._tag, 'SessionFailed')
+        assert.isTrue(tags(emitted).includes('TurnErrored'))
+      })
   )
 })

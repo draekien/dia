@@ -6,17 +6,27 @@ import {
   type SendMode
 } from '@shared/domain/message-queue'
 import { type ModelCatalogState, ModelsUnavailable } from '@shared/domain/model'
-import type {
-  ConversationMessage,
-  PaneConfig,
-  PermissionMode,
+import {
+  type ConversationMessage,
+  type PaneConfig,
+  type PermissionMode,
   SessionId,
-  ThinkingLevel
+  type ThinkingLevel
 } from '@shared/domain/pane'
 import type { AdapterContract, PluginRegistry } from '@shared/plugin/plugin-registry'
-import { Data, DateTime, Effect, Option, Predicate, type Scope, Stream } from 'effect'
+import { Data, DateTime, Effect, Option, Predicate, Schema, type Scope, Stream } from 'effect'
 import type { DiaTool } from './dia-tools'
 import type { OutboundMessage } from './protocol'
+
+/** The session ended for a reason other than a missing conversation; `reason` describes it for the user. */
+export const SessionFailed = Schema.TaggedStruct('SessionFailed', { reason: Schema.String })
+
+/** The session ended because the conversation it was asked to resume, `sessionId`, no longer exists. */
+export const SessionNotFound = Schema.TaggedStruct('SessionNotFound', { sessionId: SessionId })
+
+/** Why an agent session ended on its own, as {@link AgentSession.ended} reports it; match on `_tag`. */
+export const SessionEnd = Schema.Union([SessionFailed, SessionNotFound])
+export type SessionEnd = typeof SessionEnd.Type
 
 /** Service key under which the agent adapter plugin provides its {@link AgentBackend}. */
 export const AGENT_BACKEND_KEY = 'agentBackend'
@@ -63,11 +73,12 @@ export interface AgentSession {
    */
   readonly resume: Effect.Effect<void>
   /**
-   * Completes with a description of why the session ended on its own: its event stream failed
-   * or finished without the pane being closed. Never completes for a restart the session
-   * performs itself (thinking-level change, rewind) or for closing the scope it was opened in.
+   * Completes with why the session ended on its own: `SessionNotFound` when the conversation it
+   * resumes does not exist, `SessionFailed` for any other end. Does not complete because of a
+   * restart or rewind the session performs itself; it completes if the conversation that restart
+   * resumes does not exist. Does not complete when the scope it was opened in is closed.
    */
-  readonly ended: Effect.Effect<string>
+  readonly ended: Effect.Effect<SessionEnd>
 }
 
 /**
@@ -145,7 +156,7 @@ const unavailableSession: AgentSession = {
   interrupt: ignored('interrupt'),
   rewindToCheckpoint: ignored('rewindToCheckpoint'),
   resume: ignored('resume')(),
-  ended: Effect.succeed(ADAPTER_NOT_LOADED)
+  ended: Effect.succeed(SessionFailed.make({ reason: ADAPTER_NOT_LOADED }))
 }
 
 const unavailableBackend: AgentBackend = {

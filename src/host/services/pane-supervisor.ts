@@ -18,7 +18,11 @@ import {
   type QuestionResponse,
   transitionAttention
 } from '@shared/domain/attention'
-import type { MessageQueueSnapshot, SendMode } from '@shared/domain/message-queue'
+import {
+  EMPTY_MESSAGE_QUEUE,
+  type MessageQueueSnapshot,
+  type SendMode
+} from '@shared/domain/message-queue'
 import type {
   PaneConfig,
   PaneId,
@@ -80,7 +84,7 @@ import {
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { applyOverride, PluginSources } from '../plugins/plugin-sources'
-import { type AgentSession, resolveAgentBackend } from '../session/agent-backend'
+import { type AgentSession, resolveAgentBackend, type SessionEnd } from '../session/agent-backend'
 import { makePluginTools } from '../session/dia-tools'
 import type { OutboundMessage } from '../session/protocol'
 import { SettingsStore } from './settings-store'
@@ -114,6 +118,9 @@ export interface PaneCreationRequest {
   readonly resume?: SessionId
 }
 
+const SESSION_NOT_FOUND_NOTICE =
+  "This tab's conversation could not be found. Send your message again to start a new conversation."
+
 /** Failure logged when a pane's agent session ends on its own (not as part of a requested teardown). */
 export class SessionEndedError extends Data.TaggedError('SessionEndedError')<{
   readonly paneId: string
@@ -141,6 +148,11 @@ export interface PaneHandle {
   ) => Effect.Effect<void>
   readonly interrupt: () => Effect.Effect<void>
   readonly markCrashed: (error: PaneError) => Effect.Effect<void>
+  /**
+   * Moves the pane to `Errored` with `error`. Refused with a logged warning when the pane's
+   * attention cannot move to `Errored`: a parked pane, or one already `Errored`.
+   */
+  readonly markErrored: (error: PaneError) => Effect.Effect<void>
   /** Resumes a parked pane (see {@link AgentSession.resume}). Does nothing unless the pane is parked. */
   readonly resume: Effect.Effect<void>
 }
@@ -386,7 +398,7 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
   config: PaneConfig,
   factory: SessionFactory['Service'],
   settings: SettingsStore['Service'],
-  onSessionId: (sessionId: SessionId) => Effect.Effect<void>,
+  onSessionChanged: (sessionId: Option.Option<SessionId>) => Effect.Effect<void>,
   onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>,
   resume: Option.Option<SessionId>
 ) {
@@ -522,7 +534,7 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
           paneId: config.paneId,
           sessionId: message.sessionId
         })
-        yield* onSessionId(message.sessionId)
+        yield* onSessionChanged(Option.some(message.sessionId))
       }
 
       if (message._tag === 'ConversationReset') {
@@ -530,7 +542,7 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
           paneId: config.paneId,
           newSessionId: message.newSessionId
         })
-        yield* onSessionId(message.newSessionId)
+        yield* onSessionChanged(Option.some(message.newSessionId))
       }
 
       if (message._tag === 'PermissionModeChanged') {
@@ -626,6 +638,7 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
         Effect.andThen(applyAttention(Idle.make({})))
       ),
     markCrashed: (error) => applyAttention(Crashed.make({ error })),
+    markErrored: (error) => applyAttention(Errored.make({ error })),
     resume: Ref.get(recordRef).pipe(
       Effect.flatMap(({ attention }) =>
         isParkedState(attention)
@@ -660,17 +673,19 @@ export class PaneSupervisor extends Context.Service<
      * Provisions a pane's worktree (creating it, or reattaching the existing branch when
      * `request.resume` is set), starts its agent session in a scope of its own, and registers it
      * for lookup and teardown. `onEvent` receives every renderer-facing event the pane produces,
-     * in order. `onSessionId` is invoked when the pane's Agent SDK session starts or resumes,
-     * carrying the id the caller should persist for later resume. `onPermissionModeChanged` is
+     * in order. `onSessionChanged` receives the session the pane resumes from, for the caller to
+     * persist: `Some(id)` when the Agent SDK session starts or its conversation resets, and `None`
+     * when the session ended because the conversation it resumed does not exist. `onPermissionModeChanged` is
      * invoked when the pane changes its own permission mode (a plan was approved, restoring the
      * pre-plan mode), carrying the mode the caller should persist and reflect in the layout.
-     * When the pane's session later ends on its own, the pane is marked `Crashed`, every event
-     * produced before that reaches `onEvent`, and the pane is removed.
+     * When the pane's session later ends on its own, every event produced before that reaches
+     * `onEvent` and the pane is removed. A missing conversation marks the pane `Errored` with a
+     * notice that the next message starts a new conversation; any other end marks it `Crashed`.
      */
     readonly openPane: (
       request: PaneCreationRequest,
       onEvent: (event: IpcEvent) => Effect.Effect<void>,
-      onSessionId: (sessionId: SessionId) => Effect.Effect<void>,
+      onSessionChanged: (sessionId: Option.Option<SessionId>) => Effect.Effect<void>,
       onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>
     ) => Effect.Effect<
       { readonly handle: PaneHandle; readonly config: PaneConfig },
@@ -717,7 +732,7 @@ export const PaneSupervisorLive = Layer.effect(
     const openPane = Effect.fn('PaneSupervisor.openPane')(function* (
       request: PaneCreationRequest,
       onEvent: (event: IpcEvent) => Effect.Effect<void>,
-      onSessionId: (sessionId: SessionId) => Effect.Effect<void>,
+      onSessionChanged: (sessionId: Option.Option<SessionId>) => Effect.Effect<void>,
       onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>
     ) {
       const scope = yield* Scope.make()
@@ -785,7 +800,7 @@ export const PaneSupervisorLive = Layer.effect(
         config,
         factory,
         settings,
-        onSessionId,
+        onSessionChanged,
         onPermissionModeChanged,
         Option.fromUndefinedOr(request.resume)
       ).pipe(Effect.provideService(Scope.Scope, scope))
@@ -800,23 +815,37 @@ export const PaneSupervisorLive = Layer.effect(
         HashMap.set(config.paneId, { handle, repark, scope, outbound, subscriber, closed })
       )
 
-      const crashed = session.ended.pipe(
-        Effect.map(Option.some),
-        Effect.raceFirst(Deferred.await(closed).pipe(Effect.as(Option.none<string>()))),
-        Effect.flatMap(
-          Option.match({
-            onNone: () => Effect.void,
-            onSome: (reason) =>
-              Effect.logError(new SessionEndedError({ paneId: config.paneId, reason })).pipe(
-                Effect.andThen(
-                  handle.markCrashed({ message: `Pane session ended unexpectedly: ${reason}` })
-                ),
-                Effect.andThen(teardown(config.paneId))
-              )
-          })
+      const clearMissingSession = Effect.fnUntraced(function* (sessionId: SessionId) {
+        yield* Effect.logWarning('Pane session not found; cleared the tab session', {
+          paneId: config.paneId,
+          sessionId
+        })
+        yield* onSessionChanged(Option.none())
+        yield* Queue.offer(
+          outbound,
+          PaneMessageQueueChanged.make({ paneId: config.paneId, ...EMPTY_MESSAGE_QUEUE })
         )
+        yield* handle.markErrored({ message: SESSION_NOT_FOUND_NOTICE })
+      })
+
+      const ended = Effect.fnUntraced(function* (end: SessionEnd) {
+        if (end._tag === 'SessionNotFound') {
+          yield* clearMissingSession(end.sessionId)
+        } else {
+          yield* Effect.logError(
+            new SessionEndedError({ paneId: config.paneId, reason: end.reason })
+          )
+          yield* handle.markCrashed({ message: `Pane session ended unexpectedly: ${end.reason}` })
+        }
+        yield* teardown(config.paneId)
+      })
+
+      const watchEnd = session.ended.pipe(
+        Effect.map(Option.some),
+        Effect.raceFirst(Deferred.await(closed).pipe(Effect.as(Option.none<SessionEnd>()))),
+        Effect.flatMap(Option.match({ onNone: () => Effect.void, onSome: ended }))
       )
-      yield* Effect.forkDetach(crashed)
+      yield* Effect.forkDetach(watchEnd)
 
       return { handle, config }
     })

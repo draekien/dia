@@ -57,6 +57,7 @@ const fakeHandle: PaneHandle = {
   rewindToCheckpoint: () => Effect.void,
   interrupt: () => Effect.void,
   markCrashed: () => Effect.void,
+  markErrored: () => Effect.void,
   resume: Effect.void
 }
 
@@ -100,11 +101,11 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const directories = new Set(options.directories ?? [])
 
   const supervisor = Layer.succeed(PaneSupervisor, {
-    openPane: (request, onEvent, onSessionId, onModeChanged) => {
+    openPane: (request, onEvent, onSessionChanged, onModeChanged) => {
       requests.push(request)
       return options.openPane === undefined
         ? Effect.succeed({ handle: fakeHandle, config: configOf(request) })
-        : options.openPane(request, onEvent, onSessionId, onModeChanged)
+        : options.openPane(request, onEvent, onSessionChanged, onModeChanged)
     },
     closePane: (paneId) =>
       Effect.sync(() => log.push(`closePane ${paneId}`)).pipe(
@@ -497,8 +498,8 @@ describe('PaneWorkspace.createTab', () => {
     Effect.gen(function* () {
       const harness = makeHarness({
         persisted: oneProject(),
-        openPane: (req, _onEvent, onSessionId) =>
-          onSessionId(SessionId.make('early-session')).pipe(
+        openPane: (req, _onEvent, onSessionChanged) =>
+          onSessionChanged(Option.some(SessionId.make('early-session'))).pipe(
             Effect.as({ handle: fakeHandle, config: configOf(req) })
           )
       })
@@ -876,6 +877,41 @@ describe('PaneWorkspace sessions', () => {
 
       assert.strictEqual(harness.requests[0].resume, 'restored-1')
       assert.strictEqual(harness.requests[0].sourceCwd, '/repo')
+    })
+  )
+
+  it.effect('starts the next message fresh after the resumed conversation was not found', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        persisted: withSession(),
+        directories: ['/repo'],
+        openPane: (req, _onEvent, onSessionChanged) =>
+          (req.resume === undefined ? Effect.void : onSessionChanged(Option.none())).pipe(
+            Effect.as({ handle: fakeHandle, config: configOf(req) })
+          )
+      })
+
+      const tabAfter = yield* run(
+        harness,
+        Effect.gen(function* () {
+          const workspace = yield* PaneWorkspace
+          yield* workspace.resumePane(PANE_A, ignore)
+          yield* workspace.resumePane(PANE_A, ignore)
+          yield* workspace.ensureLive(PANE_A, ignore)
+          return (yield* current).projects[0].tabs[0]
+        })
+      )
+
+      assert.deepStrictEqual(
+        harness.requests.map((req) => req.resume),
+        ['restored-1', undefined]
+      )
+      assert.notProperty(tabAfter, 'sessionId')
+      assert.deepStrictEqual(tabAfter.config, withSession().projects[0].tabs[0].config)
+      assert.deepStrictEqual(
+        { model: harness.requests[1].model, sourceCwd: harness.requests[1].sourceCwd },
+        { model: tabAfter.config.model, sourceCwd: '/repo' }
+      )
     })
   )
 
