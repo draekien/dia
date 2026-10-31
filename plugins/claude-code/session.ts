@@ -392,11 +392,6 @@ const isTurnEnd = (message: OutboundMessage): boolean =>
   message._tag === 'TurnCompleted' ||
   message._tag === 'TurnParked'
 
-const changesContextUsage = (message: OutboundMessage): boolean =>
-  isTurnEnd(message) ||
-  message._tag === 'ConversationCompacted' ||
-  message._tag === 'ConversationReset'
-
 const resolveContinuesFrom = Effect.fn('ClaudeCodeSession.resolveContinuesFrom')(function* (
   resume: Option.Option<SessionId>,
   branchAt: string | undefined,
@@ -544,24 +539,33 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       )
     )
 
-    const reportContextUsage = Effect.forkChild(
-      readContextUsage(session, 'summary').pipe(
-        Effect.map(toContextUsage),
-        Effect.tap((usage) =>
-          Effect.logDebug('Read context usage', { paneId: config.paneId, ...usage })
-        ),
-        Effect.flatMap((usage) => emit(ContextUsageChanged.make({ usage }))),
-        Effect.catch((error) =>
-          Effect.logWarning('Failed to read context usage', { paneId: config.paneId, error })
+    const reportContextUsage = (detail: 'summary' | 'full') =>
+      Effect.forkChild(
+        readContextUsage(session, detail).pipe(
+          Effect.map(toContextUsage),
+          Effect.tap((usage) =>
+            Effect.logDebug('Read context usage', { paneId: config.paneId, ...usage })
+          ),
+          Effect.flatMap((usage) => emit(ContextUsageChanged.make({ usage }))),
+          Effect.catch((error) =>
+            Effect.logWarning('Failed to read context usage', { paneId: config.paneId, error })
+          )
         )
       )
-    )
-    yield* reportContextUsage
+    yield* reportContextUsage('summary')
 
-    const emitAndReport = (outbound: OutboundMessage) =>
-      emit(outbound).pipe(
-        Effect.andThen(changesContextUsage(outbound) ? reportContextUsage : Effect.void)
-      )
+    const compactedThisTurnRef = yield* Ref.make(false)
+    const emitAndReport = Effect.fnUntraced(function* (outbound: OutboundMessage) {
+      yield* emit(outbound)
+      if (outbound._tag === 'ConversationCompacted') {
+        yield* Ref.set(compactedThisTurnRef, true)
+      } else if (outbound._tag === 'ConversationReset') {
+        yield* reportContextUsage('full')
+      } else if (isTurnEnd(outbound)) {
+        const compacted = yield* Ref.getAndSet(compactedThisTurnRef, false)
+        yield* reportContextUsage(compacted ? 'full' : 'summary')
+      }
+    })
 
     const events = Stream.fromAsyncIterable(session, (cause) => new SessionStreamError({ cause }))
     const reducer = makeSessionEventReducer(continuesFrom)

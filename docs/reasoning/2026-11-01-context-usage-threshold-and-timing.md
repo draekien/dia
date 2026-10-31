@@ -1,4 +1,4 @@
-# `autoCompactThreshold` is a token count, and `getContextUsage` answers mid-turn
+# `autoCompactThreshold` is a token count; `getContextUsage` answers mid-turn and its `summary` is stale after compaction
 
 **Date:** 2026-11-01
 
@@ -21,6 +21,19 @@ A probe on SDK 0.3.311 with Claude Code 2.1.314 (`haiku`, `persistSession: false
 - The call answers mid-turn. The mid-turn reading includes a local estimate of the streaming reply and is higher than the reading after the turn.
 - The first call on a new query takes about 1.6 s because it waits for the CLI to start. Later calls take a few milliseconds.
 
+A second probe ran a turn, then `/compact`, then one more turn, reading both `detail` values each time:
+
+| Read point | `summary` | `full` |
+| --- | --- | --- |
+| After turn 1 | 37796 | 37796 |
+| At `compact_boundary` (`pre_tokens` 41342, `post_tokens` 11832) | 42237 | 37075 |
+| After the `/compact` turn's `result` | 42237 | 37075 |
+| After the next turn | 37727 | 37727 |
+
+- `summary` answers from the last API response, and the compaction call is not one, so it reports the pre-compaction estimate until the next real turn.
+- `full` is right straight after compaction. 37075 is the compacted messages plus about 25k of system prompt and tools; `post_tokens` counts messages only.
+- In the app the same happened: both `summary` readings after `/compact` read 39569 against `post_tokens` 12046.
+
 ## Implication
 
-`ContextUsage.autoCompactThreshold` (`src/shared/domain/context-usage.ts`) is in tokens. Compare it with `totalTokens`, not with a percentage. A read is safe at any point in a turn. The adapter reads after a turn ends, after compaction or reset, and when the query opens (`docs/designs/context-usage.md`).
+`ContextUsage.autoCompactThreshold` (`src/shared/domain/context-usage.ts`) is in tokens. Compare it with `totalTokens`, not with a percentage. A read is safe at any point in a turn. Read with `full` after a compaction, never `summary`. The adapter reads `full` at the end of a turn that compacted and after a reset, and `summary` everywhere else (`docs/designs/context-usage.md`).

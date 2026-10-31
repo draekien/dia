@@ -19,6 +19,7 @@ type Reading = Pick<
 
 const sdk = vi.hoisted(() => ({
   readings: [] as Array<Reading | Error>,
+  details: [] as Array<string | undefined>,
   emit: (_message: SDKMessage): void => {}
 }))
 
@@ -48,7 +49,8 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
       },
       supportedCommands: () => Promise.resolve([]),
       setPermissionMode: () => Promise.resolve(),
-      getContextUsage: () => {
+      getContextUsage: (options?: { detail?: string }) => {
+        sdk.details.push(options?.detail)
         const next = sdk.readings.shift()
         if (next === undefined) return Promise.reject(new Error('no reading scripted'))
         return next instanceof Error ? Promise.reject(next) : Promise.resolve(next)
@@ -94,6 +96,7 @@ const settle = Effect.gen(function* () {
 
 const open = Effect.fnUntraced(function* (readings: ReadonlyArray<Reading | Error>) {
   sdk.readings = [...readings]
+  sdk.details = []
   const emitted: Array<OutboundMessage> = []
   yield* openClaudeCodeSession(
     { config, resume: Option.none(), emit: (m) => Effect.sync(() => emitted.push(m)), tools: [] },
@@ -126,22 +129,51 @@ describe('claude-code session context usage', () => {
     }).pipe(Effect.scoped)
   )
 
-  const triggers = [
-    ['the turn ends', success],
-    ['the conversation is compacted', compactBoundary],
-    ['the conversation is reset', conversationReset]
-  ] as const
-  for (const [when, message] of triggers) {
-    it.effect(`reports a new reading after ${when}`, () =>
-      Effect.gen(function* () {
-        const { receive, usages } = yield* open([reading(60_000), reading(9_000)])
+  it.effect('reports a summary reading after a turn ends', () =>
+    Effect.gen(function* () {
+      const { receive, usages } = yield* open([reading(28_000), reading(41_000)])
 
-        yield* receive(message)
+      yield* receive(success)
 
-        assert.deepStrictEqual(usages(), [60_000, 9_000])
-      }).pipe(Effect.scoped)
-    )
-  }
+      assert.deepStrictEqual(usages(), [28_000, 41_000])
+      assert.deepStrictEqual(sdk.details, ['summary', 'summary'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('reads the full breakdown at the end of a turn that compacted', () =>
+    Effect.gen(function* () {
+      const { receive, usages } = yield* open([reading(120_000), reading(37_000)])
+
+      yield* receive(compactBoundary)
+      yield* receive(success)
+
+      assert.deepStrictEqual(usages(), [120_000, 37_000])
+      assert.deepStrictEqual(sdk.details, ['summary', 'full'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('reads a summary again on the turn after the one that compacted', () =>
+    Effect.gen(function* () {
+      const { receive } = yield* open([reading(120_000), reading(37_000), reading(38_000)])
+
+      yield* receive(compactBoundary)
+      yield* receive(success)
+      yield* receive(success)
+
+      assert.deepStrictEqual(sdk.details, ['summary', 'full', 'summary'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('reads the full breakdown right after the conversation is reset', () =>
+    Effect.gen(function* () {
+      const { receive, usages } = yield* open([reading(60_000), reading(25_000)])
+
+      yield* receive(conversationReset)
+
+      assert.deepStrictEqual(usages(), [60_000, 25_000])
+      assert.deepStrictEqual(sdk.details, ['summary', 'full'])
+    }).pipe(Effect.scoped)
+  )
 
   it.effect('reports the reading after the turn end it follows', () =>
     Effect.gen(function* () {
