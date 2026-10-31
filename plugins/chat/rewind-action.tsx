@@ -86,7 +86,7 @@ export function RewindAction({ state, onStart, onDismiss }: RewindActionProps): 
         disabled={state.status === 'blocked'}
         data-holding={holding}
         style={{ '--hold-duration': `${holdMs}ms` } as React.CSSProperties}
-        className="group/hold relative gap-1 overflow-hidden text-muted-foreground hover:text-foreground data-[holding=true]:text-foreground"
+        className="group/hold relative gap-1 overflow-hidden text-muted-foreground focus-visible:ring-inset hover:text-foreground data-[holding=true]:text-foreground"
         onPointerDown={(event) => {
           if (event.button === 0) begin()
         }}
