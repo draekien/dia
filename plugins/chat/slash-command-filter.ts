@@ -1,37 +1,59 @@
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
 
-const SLASH_LINE = /^\/([\w-]*)$/
-
-/** The `/` command token active at the caret: its filter `query` and the input
- * range (`start`..`end`) it occupies, used to splice in a completion. */
-export interface ActiveSlashToken {
+/** A trigger-character token at the caret: its filter `query` and the input range
+ * (`start`..`end`) it occupies, used to splice in a completion. */
+export interface TriggerToken {
   readonly query: string
   readonly start: number
   readonly end: number
 }
 
-/**
- * Finds the `/` command token being typed on the line that contains `caret`, so
- * the popover can assist several commands in one message (one per line). A line
- * qualifies only when it is exactly a leading `/` followed by command-name
- * characters (`[\w-]`) — so `/`, `/cl`, `/clear` yield queries `''`, `'cl'`,
- * `'clear'`, while a line with a trailing space, an argument (`/clear arg`), or
- * ordinary prose yields `null`. Returns the query plus the line's `start`/`end`
- * range for {@link slashCommandCompletion} to replace, or `null` when the caret's
- * line is not a bare command token. `caret` is the textarea `selectionStart`.
- */
-export const activeSlashToken = (input: string, caret: number): ActiveSlashToken | null => {
-  const start = caret === 0 ? 0 : input.lastIndexOf('\n', caret - 1) + 1
-  const nextNewline = input.indexOf('\n', caret)
-  const end = nextNewline === -1 ? input.length : nextNewline
-  const match = SLASH_LINE.exec(input.slice(start, end))
-  return match === null ? null : { query: match[1], start, end }
+/** The character that opens a completion menu (`char`) and the characters a name
+ * typed after it may contain (`isNameChar`, called with one character at a time). */
+export interface TokenTrigger {
+  readonly char: string
+  readonly isNameChar: (char: string) => boolean
 }
+
+const SLASH_TRIGGER: TokenTrigger = { char: '/', isNameChar: (char) => /[\w-]/.test(char) }
+
+/**
+ * Finds the token for `trigger` that the caret is in, so a menu can complete it
+ * anywhere in the input. A token is `trigger.char` at the start of the input or
+ * right after whitespace (a newline counts), followed by name characters. Text
+ * such as `a/b` or a URL is not a token. `query` is the name typed between the
+ * trigger character and `caret`; `start`..`end` covers the trigger character and
+ * the whole name, including name characters after the caret, and is the range a
+ * completion replaces. Returns `null` when the caret is not in a token. `caret`
+ * is the textarea `selectionStart`.
+ */
+export const activeTriggerToken = (
+  input: string,
+  caret: number,
+  trigger: TokenTrigger
+): TriggerToken | null => {
+  let nameStart = caret
+  while (nameStart > 0 && trigger.isNameChar(input[nameStart - 1])) nameStart--
+  const start = nameStart - 1
+  if (start < 0 || input[start] !== trigger.char) return null
+  if (start > 0 && !/\s/.test(input[start - 1])) return null
+  let end = caret
+  while (end < input.length && trigger.isNameChar(input[end])) end++
+  return { query: input.slice(nameStart, caret), start, end }
+}
+
+/**
+ * The `/` command token at the caret, as {@link activeTriggerToken} finds it for
+ * command names (`[\w-]`): `fix the build then /cl` yields query `'cl'`, while
+ * `/clear ` (after the argument space) and `a/b` yield `null`.
+ */
+export const activeSlashToken = (input: string, caret: number): TriggerToken | null =>
+  activeTriggerToken(input, caret, SLASH_TRIGGER)
 
 /**
  * Selects the commands whose name begins with `query` (case-insensitive),
  * preserving the input order. Pass the session's available commands and the
- * result of {@link slashCommandQuery}; an empty `query` returns every command.
+ * `query` of {@link activeSlashToken}; an empty `query` returns every command.
  */
 export const filterSlashCommands = (
   commands: ReadonlyArray<SlashCommandInfo>,
@@ -42,9 +64,9 @@ export const filterSlashCommands = (
 }
 
 /**
- * The line text produced by choosing `command`: its name prefixed with `/` and
- * a trailing space, so the caret sits ready for arguments and the line is no
- * longer a bare token, closing the menu (see {@link activeSlashToken}). Splice
+ * The token text produced by choosing `command`: its name prefixed with `/` and
+ * a trailing space, so the caret sits ready for arguments, outside the token,
+ * which closes the menu (see {@link activeSlashToken}). Splice
  * this over the active token's `start`..`end` range.
  */
 export const slashCommandCompletion = (command: SlashCommandInfo): string => `/${command.name} `

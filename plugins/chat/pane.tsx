@@ -108,10 +108,10 @@ import { PermissionRequestCard } from './permission-request-card'
 import { PlanReviewCard } from './plan-review-card'
 import { QueuedMessages } from './queued-messages'
 import {
-  type ActiveSlashToken,
   activeSlashToken,
   filterSlashCommands,
   slashCommandCompletion,
+  type TriggerToken,
   wrapHighlight
 } from './slash-command-filter'
 import { SlashCommandMenu, slashMenuListboxId, slashMenuOptionId } from './slash-command-menu'
@@ -730,7 +730,7 @@ function PaneChat({
                     setSlashDismissed(false)
                     setSlashHighlight(0)
                   }
-                  const selectCommand = (command: SlashCommandInfo, at: ActiveSlashToken): void => {
+                  const selectCommand = (command: SlashCommandInfo, at: TriggerToken): void => {
                     const completion = slashCommandCompletion(command)
                     const value =
                       field.state.value.slice(0, at.start) +

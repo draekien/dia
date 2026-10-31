@@ -2,6 +2,7 @@ import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import { describe, expect, it } from 'vitest'
 import {
   activeSlashToken,
+  activeTriggerToken,
   filterSlashCommands,
   slashCommandCompletion,
   wrapHighlight
@@ -46,8 +47,29 @@ describe('activeSlashToken', () => {
     expect(activeSlashToken('hello there', 11)).toBeNull()
   })
 
-  it('does not match a slash that is not first on its line', () => {
+  it('does not match a slash inside a word such as a path', () => {
     expect(activeSlashToken('a/b', 3)).toBeNull()
+  })
+
+  it('opens after other text when the slash follows a space', () => {
+    expect(activeSlashToken('fix the build then /cl', 22)).toEqual({
+      query: 'cl',
+      start: 19,
+      end: 22
+    })
+  })
+
+  it('opens at the start of a later line', () => {
+    expect(activeSlashToken('line one\n/cl', 12)).toEqual({ query: 'cl', start: 9, end: 12 })
+  })
+
+  it('does not open inside a URL', () => {
+    const input = 'see https://example.com/pa'
+    expect(activeSlashToken(input, input.length)).toBeNull()
+  })
+
+  it('queries only up to the caret and spans the rest of the name', () => {
+    expect(activeSlashToken('/clear', 3)).toEqual({ query: 'cl', start: 0, end: 6 })
   })
 
   it('returns null for empty input', () => {
@@ -63,11 +85,23 @@ describe('activeSlashToken', () => {
   })
 
   it('targets the line the caret is on, not a later one', () => {
-    expect(activeSlashToken('/clear\n/compact', 3)).toEqual({ query: 'clear', start: 0, end: 6 })
+    expect(activeSlashToken('/clear\n/compact', 3)).toEqual({ query: 'cl', start: 0, end: 6 })
   })
 
   it('is null when the caret sits on a prose line below a command line', () => {
     expect(activeSlashToken('/clear\nhello', 11)).toBeNull()
+  })
+})
+
+describe('activeTriggerToken', () => {
+  const mention = { char: '@', isNameChar: (char: string) => /[\w-]/.test(char) }
+
+  it('detects a token for another trigger character', () => {
+    expect(activeTriggerToken('@sr', 3, mention)).toEqual({ query: 'sr', start: 0, end: 3 })
+  })
+
+  it('ignores the slash when the trigger is another character', () => {
+    expect(activeTriggerToken('/sr', 3, mention)).toBeNull()
   })
 })
 
@@ -112,6 +146,16 @@ describe('slashCommandCompletion', () => {
   it('produces a line that no longer opens the menu', () => {
     const completion = slashCommandCompletion(command('compact'))
     expect(activeSlashToken(completion, completion.length)).toBeNull()
+  })
+
+  it('splices over a mid-text token and keeps the text before it', () => {
+    const input = 'fix the build then /cl'
+    const token = activeSlashToken(input, input.length)
+    expect(token).not.toBeNull()
+    if (token === null) return
+    const completion = slashCommandCompletion(command('clear'))
+    const next = input.slice(0, token.start) + completion + input.slice(token.end)
+    expect(next).toBe('fix the build then /clear ')
   })
 
   it('splices over the active token range to complete a second command in place', () => {
