@@ -94,10 +94,14 @@ describe('activeSlashToken', () => {
 })
 
 describe('activeTriggerToken', () => {
-  const mention = { char: '@', isNameChar: (char: string) => /[\w-]/.test(char) }
+  const mention = { char: '@', isNameChar: (char: string) => /[\w./-]/.test(char) }
 
-  it('detects a token for another trigger character', () => {
-    expect(activeTriggerToken('@sr', 3, mention)).toEqual({ query: 'sr', start: 0, end: 3 })
+  it('uses the trigger character and name characters it is given', () => {
+    expect(activeTriggerToken('see @src/ma', 11, mention)).toEqual({
+      query: 'src/ma',
+      start: 4,
+      end: 11
+    })
   })
 
   it('ignores the slash when the trigger is another character', () => {
