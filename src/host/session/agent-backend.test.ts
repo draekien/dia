@@ -35,7 +35,6 @@ describe('resolveAgentBackend', () => {
       const backend: AgentBackend = {
         openSession: () => Effect.die('not called'),
         readHistory: () => Effect.succeed([{ role: 'user', content: 'hi' }]),
-        deleteSession: () => Effect.void,
         models: () => Stream.empty,
         refreshModels: () => Effect.void,
         status: () => Stream.empty,
@@ -85,16 +84,6 @@ describe('resolveAgentBackend', () => {
       })
     )
 
-    it.effect(`returns a backend whose deleteSession fails when ${name}`, () =>
-      Effect.gen(function* () {
-        const backend = yield* resolveAgentBackend(registryProviding(provided))
-
-        const error = yield* Effect.flip(backend.deleteSession(SessionId.make('s-1')))
-
-        assert.strictEqual(error.reason, 'The claude-code adapter is not loaded')
-      })
-    )
-
     it.effect(`returns a backend whose model list is unavailable when ${name}`, () =>
       Effect.gen(function* () {
         const backend = yield* resolveAgentBackend(registryProviding(provided))
@@ -117,7 +106,6 @@ describe('agentBackendProblems', () => {
   const validBackend = {
     openSession: () => Effect.void,
     readHistory: () => Effect.succeed([]),
-    deleteSession: () => Effect.void,
     models: () => Stream.empty,
     refreshModels: () => Effect.void,
     status: () => Stream.empty,
@@ -150,7 +138,6 @@ describe('agentBackendProblems', () => {
       [
         '"agentBackend.openSession" is not a function',
         '"agentBackend.readHistory" is not a function',
-        '"agentBackend.deleteSession" is not a function',
         '"agentBackend.models" is not a function',
         '"agentBackend.refreshModels" is not a function',
         '"agentBackend.status" is not a function',
@@ -158,11 +145,6 @@ describe('agentBackendProblems', () => {
         '"agentBackend.setInstallPath" is not a function',
         '"agentBackend.disabledPermissionModes" is not a function'
       ]
-    ],
-    [
-      'deleteSession is missing',
-      Option.some({ ...validBackend, deleteSession: undefined }),
-      ['"agentBackend.deleteSession" is not a function']
     ],
     [
       'models is missing',
@@ -194,7 +176,6 @@ describe('adapterContract', () => {
 
     assert.deepStrictEqual(adapterContract.problems(provided), [
       '"agentBackend.readHistory" is not a function',
-      '"agentBackend.deleteSession" is not a function',
       '"agentBackend.models" is not a function',
       '"agentBackend.refreshModels" is not a function',
       '"agentBackend.status" is not a function',

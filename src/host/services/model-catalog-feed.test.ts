@@ -41,7 +41,6 @@ const backendWith = (
 ): AgentBackend => ({
   openSession: () => Effect.die('not called'),
   readHistory: () => Effect.die('not called'),
-  deleteSession: () => Effect.die('not called'),
   models,
   refreshModels,
   status: () => Stream.empty,

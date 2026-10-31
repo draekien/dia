@@ -9,10 +9,9 @@ import {
   Removed,
   RemoveFailed,
   Removing,
-  TranscriptItem,
   WorktreeItem
 } from '@shared/domain/project-removal'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RemoveProjectDialog, removalItems } from './remove-project-dialog'
 
@@ -77,13 +76,12 @@ afterEach(() => {
 })
 
 describe('removalItems', () => {
-  it('lists each agent, then its worktree, then its transcript, agent by agent', () => {
+  it('lists each agent, then its worktree, agent by agent, and no transcript of a tab with a session', () => {
     const items = removalItems(entry([withWorktreeAndSession, tab(PANE_B, 'docs')]))
 
     expect(items).toEqual([
       AgentItem.make({ paneId: PANE_A, name: AgentName.make('fix-anchor') }),
       WorktreeItem.make({ path: WORKTREE.path }),
-      TranscriptItem.make({ sessionId: SessionId.make('session-a') }),
       AgentItem.make({ paneId: PANE_B, name: AgentName.make('docs') })
     ])
   })
@@ -94,6 +92,19 @@ describe('removalItems', () => {
 })
 
 describe('RemoveProjectDialog', () => {
+  it('lists only the agent and worktree rows of a tab with a session', () => {
+    installBridge(async () => undefined)
+    render(
+      <RemoveProjectDialog entry={entry([withWorktreeAndSession])} onClose={() => undefined} />
+    )
+
+    const rows = within(screen.getByRole('list', { name: 'Items to remove' }))
+      .getAllByRole('listitem')
+      .map((row) => row.textContent)
+
+    expect(rows).toEqual(['fix-anchorAgent', `${WORKTREE.path}Worktree`])
+  })
+
   it('keeps Remove disabled until the project name is typed exactly', () => {
     installBridge(async () => undefined)
     render(<RemoveProjectDialog entry={entry([tab(PANE_B, 'docs')])} onClose={() => undefined} />)

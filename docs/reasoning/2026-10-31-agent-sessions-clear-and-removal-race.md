@@ -23,4 +23,4 @@ The intermediate id arrives first (the `conversation_reset` id that `docs/reason
 ## Implication
 
 - A reader of `agent_sessions` (#14, #96, #97) must tolerate a session row with no transcript.
-- Deleting a transcript while its agent's `claude` process may still be exiting leaves a stub file. #95 stops project removal from deleting transcripts, which removes this race; any other code that deletes a transcript (#14) must wait for the agent's process to exit first.
+- Deleting a transcript while its agent's `claude` process may still be exiting leaves a stub file. Project removal no longer deletes transcripts (ADR-0046, #95), which removes this race. Code that deletes a transcript in future must wait for the agent's process to exit first.

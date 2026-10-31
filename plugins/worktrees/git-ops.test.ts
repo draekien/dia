@@ -3,7 +3,9 @@ import { assert, describe, it } from '@effect/vitest'
 import type { WorktreeInfo } from '@shared/domain/pane'
 import {
   Context,
+  Duration,
   Effect,
+  Fiber,
   FileSystem,
   Layer,
   Logger,
@@ -13,6 +15,7 @@ import {
   Stream
 } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
+import { TestClock } from 'effect/testing'
 import { makeGitOps } from './git-ops'
 
 class TestGitOps extends Context.Service<TestGitOps, GitOps>()('TestGitOps') {}
@@ -56,11 +59,28 @@ interface TestSetupOptions {
   readonly worktreeExists?: boolean
   readonly registeredWorktrees?: ReadonlyArray<string> | 'unavailable'
   readonly directoryEntries?: ReadonlyArray<string>
+  readonly remove?: FileSystem.FileSystem['remove']
+  readonly readDirectory?: FileSystem.FileSystem['readDirectory']
 }
 
 function makeTestSetup(
   exitCodeFor: (command: ChildProcess.Command) => number,
-  { worktreeExists = false, registeredWorktrees = [], directoryEntries = [] }: TestSetupOptions = {}
+  {
+    worktreeExists = false,
+    registeredWorktrees = [],
+    directoryEntries = [],
+    remove = () => Effect.die('remove not expected'),
+    readDirectory = () =>
+      worktreeExists
+        ? Effect.succeed([...directoryEntries])
+        : Effect.fail(
+            PlatformError.systemError({
+              _tag: 'NotFound',
+              module: 'FileSystem',
+              method: 'readDirectory'
+            })
+          )
+  }: TestSetupOptions = {}
 ): {
   readonly capturedLogs: ReadonlyArray<unknown>
   readonly testLayer: Layer.Layer<TestGitOps>
@@ -72,7 +92,8 @@ function makeTestSetup(
   )
   const fsLayer = FileSystem.layerNoop({
     exists: () => Effect.succeed(worktreeExists),
-    readDirectory: () => Effect.succeed([...directoryEntries])
+    readDirectory,
+    remove
   })
 
   const capturedLogs: unknown[] = []
@@ -262,6 +283,90 @@ describe('makeGitOps', () => {
       const logs = capturedLogs.map((log) => String(log))
       assert.isTrue(logs.some((log) => log.includes('Standard worktree remove failed')))
       assert.isTrue(logs.some((log) => log.includes('manual cleanup may be needed')))
+    })
+  )
+
+  const busy = PlatformError.systemError({
+    _tag: 'Busy',
+    module: 'FileSystem',
+    method: 'remove',
+    description: 'EBUSY: resource busy or locked'
+  })
+  const isWorktreeRemove = (command: ChildProcess.Command): boolean =>
+    argsOf(command)[0] === 'worktree' && argsOf(command)[1] === 'remove'
+
+  const removeLeftover = (options: TestSetupOptions) => {
+    const setup = makeTestSetup((command) => (isWorktreeRemove(command) ? 255 : 0), {
+      worktreeExists: true,
+      ...options
+    })
+    return Effect.gen(function* () {
+      const gitOps = yield* TestGitOps
+      const removing = yield* Effect.forkChild(gitOps.removeWorktree(WORKTREE_INFO, PANE_ID))
+      yield* TestClock.adjust(Duration.seconds(10))
+      yield* Fiber.join(removing)
+      return setup.capturedLogs.map(String)
+    }).pipe(Effect.provide(setup.testLayer), Effect.provide(setup.loggerLayer))
+  }
+
+  it.effect(
+    'removeWorktree deletes the empty directory git leaves behind, retrying while it is busy',
+    () =>
+      Effect.gen(function* () {
+        const removed: string[] = []
+        let attempts = 0
+
+        yield* removeLeftover({
+          remove: (path) =>
+            Effect.suspend(() => {
+              attempts += 1
+              if (attempts < 3) return Effect.fail(busy)
+              removed.push(path)
+              return Effect.void
+            })
+        })
+
+        assert.deepStrictEqual(removed, [WORKTREE_INFO.path])
+      })
+  )
+
+  it.effect('removeWorktree keeps a leftover directory that still has files in it', () =>
+    Effect.gen(function* () {
+      const logs = yield* removeLeftover({ directoryEntries: ['notes.txt'] })
+
+      assert.isTrue(logs.some((log) => log.includes('Left a worktree directory that is not empty')))
+    })
+  )
+
+  it.effect('removeWorktree stops retrying and keeps the directory once files appear in it', () =>
+    Effect.gen(function* () {
+      let reads = 0
+      let removes = 0
+
+      const logs = yield* removeLeftover({
+        readDirectory: () => Effect.sync(() => (++reads === 1 ? [] : ['notes.txt'])),
+        remove: () => Effect.sync(() => ++removes).pipe(Effect.andThen(Effect.fail(busy)))
+      })
+
+      assert.deepStrictEqual([removes, logs.some((log) => log.includes('not empty'))], [1, true])
+    })
+  )
+
+  it.effect('removeWorktree does nothing more when the directory is already gone', () =>
+    Effect.gen(function* () {
+      const logs = yield* removeLeftover({ worktreeExists: false })
+
+      assert.isFalse(logs.some((log) => log.includes('worktree directory')))
+    })
+  )
+
+  it.effect('removeWorktree succeeds and warns when the empty directory stays busy', () =>
+    Effect.gen(function* () {
+      const logs = yield* removeLeftover({ remove: () => Effect.fail(busy) })
+
+      assert.isTrue(
+        logs.some((log) => log.includes('Could not remove the empty worktree directory'))
+      )
     })
   )
 

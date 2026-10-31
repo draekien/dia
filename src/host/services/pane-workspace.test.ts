@@ -28,7 +28,7 @@ import {
   Stream
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import { AGENT_BACKEND_KEY, type AgentBackend, SessionDeleteError } from '../session/agent-backend'
+import { AGENT_BACKEND_KEY, type AgentBackend } from '../session/agent-backend'
 import { EventHub } from './event-hub'
 import { type PaneCreationRequest, type PaneHandle, PaneSupervisor } from './pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
@@ -66,7 +66,6 @@ interface Harness {
   readonly saves: Array<Workspace>
   readonly published: Array<IpcEvent>
   readonly requests: Array<PaneCreationRequest>
-  readonly deletedSessions: Array<string>
   readonly existing: Set<string>
   readonly layer: Layer.Layer<PaneWorkspace, WorkspaceLoadError>
 }
@@ -79,7 +78,6 @@ interface HarnessOptions {
   readonly live?: ReadonlySet<string>
   readonly closePane?: (paneId: string) => Effect.Effect<void>
   readonly gitOps?: (existing: Set<string>) => GitOps
-  readonly deleteSession?: AgentBackend['deleteSession']
   readonly history?: ReadonlyArray<ConversationMessage>
 }
 
@@ -96,7 +94,6 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const saves: Array<Workspace> = []
   const published: Array<IpcEvent> = []
   const requests: Array<PaneCreationRequest> = []
-  const deletedSessions: Array<string> = []
   const existing = new Set([...(options.directories ?? []), ...(options.files ?? [])])
   const directories = new Set(options.directories ?? [])
 
@@ -134,9 +131,6 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const backend: AgentBackend = {
     openSession: () => Effect.die('not called'),
     readHistory: () => Effect.succeed([]),
-    deleteSession:
-      options.deleteSession ??
-      ((sessionId) => Effect.sync(() => void deletedSessions.push(sessionId))),
     models: () => Stream.empty,
     refreshModels: () => Effect.die('not called'),
     status: () => Stream.empty,
@@ -178,7 +172,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     makePaneWorkspaceLive(WORKTREES_ROOT),
     Layer.mergeAll(supervisor, store, hub, plugins, transcripts, fs, NodePath.layer)
   )
-  return { log, saves, published, requests, deletedSessions, existing, layer }
+  return { log, saves, published, requests, existing, layer }
 }
 
 const project = (projectId: ProjectId, directory: string, isGitRepo = true): Project => ({
@@ -656,7 +650,7 @@ describe('PaneWorkspace.removeProject', () => {
       step._tag === 'ProjectRemoved' ? step._tag : `${step._tag} ${step.item._tag}`
     )
 
-  it.effect('stops each agent, deletes its worktree and transcript, then drops the project', () =>
+  it.effect('stops each agent, deletes its worktree, then drops the project', () =>
     Effect.gen(function* () {
       const withGit = makeHarness({
         persisted: removable(),
@@ -671,11 +665,8 @@ describe('PaneWorkspace.removeProject', () => {
         'Removed AgentItem',
         'Removing WorktreeItem',
         'Removed WorktreeItem',
-        'Removing TranscriptItem',
-        'Removed TranscriptItem',
         'ProjectRemoved'
       ])
-      assert.deepStrictEqual(withGit.deletedSessions, ['s-a'])
       assert.deepStrictEqual(
         withGit.saves.at(-1)?.projects.map((entry) => entry.project.projectId),
         [PROJECT_2]
@@ -739,18 +730,22 @@ describe('PaneWorkspace.removeProject', () => {
     })
   )
 
-  it.effect('retries a failed transcript on the next removal and then drops the project', () =>
+  it.effect('retries a failed worktree on the next removal and then drops the project', () =>
     Effect.gen(function* () {
       let attempts = 0
+      const removesOnSecondAttempt = (existing: Set<string>): GitOps => ({
+        createWorktree: () => Effect.die('not called'),
+        reattachWorktree: () => Effect.die('not called'),
+        removeWorktree: (info) =>
+          Effect.sync(() => {
+            attempts += 1
+            if (attempts > 1) existing.delete(info.path)
+          })
+      })
       const harness = makeHarness({
         persisted: removable(),
-        deleteSession: (sessionId) =>
-          Effect.suspend(() => {
-            attempts += 1
-            return attempts === 1
-              ? Effect.fail(new SessionDeleteError({ sessionId, reason: 'EBUSY' }))
-              : Effect.void
-          })
+        files: [worktree.path],
+        gitOps: removesOnSecondAttempt
       })
 
       const [first, second] = yield* run(
@@ -758,28 +753,25 @@ describe('PaneWorkspace.removeProject', () => {
         Effect.all([removeAll(PROJECT_1), removeAll(PROJECT_1)])
       )
 
-      assert.include(tags(first), 'RemoveFailed TranscriptItem')
+      assert.include(tags(first), 'RemoveFailed WorktreeItem')
       assert.notInclude(tags(first), 'ProjectRemoved')
       assert.include(tags(second), 'ProjectRemoved')
     })
   )
 
-  it.effect(
-    'with force, stops agents and drops the project without deleting worktrees or transcripts',
-    () =>
-      Effect.gen(function* () {
-        const harness = makeHarness({ persisted: removable(), files: [worktree.path] })
+  it.effect('with force, stops agents and drops the project without deleting worktrees', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: removable(), files: [worktree.path] })
 
-        const progress = yield* run(harness, removeAll(PROJECT_1, true))
+      const progress = yield* run(harness, removeAll(PROJECT_1, true))
 
-        assert.deepStrictEqual(tags(progress), [
-          'Removing AgentItem',
-          'Removed AgentItem',
-          'ProjectRemoved'
-        ])
-        assert.deepStrictEqual(harness.deletedSessions, [])
-        assert.isTrue(harness.existing.has(worktree.path))
-      })
+      assert.deepStrictEqual(tags(progress), [
+        'Removing AgentItem',
+        'Removed AgentItem',
+        'ProjectRemoved'
+      ])
+      assert.isTrue(harness.existing.has(worktree.path))
+    })
   )
 
   it.effect('fails for an unknown project', () =>

@@ -31,7 +31,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0020](0020-plugin-source-loading-and-hot-reload.md) | Load first-party plugins from source in the dia repo, with per-plugin worktree overrides and hot reload | accepted |
 | [0021](0021-single-host-process-for-all-panes.md) | Run every pane's agent session and all non-UI plugins in one Host process | accepted |
 | [0022](0022-renderer-to-host-over-local-websocket.md) | Connect the renderer to the Host over an authenticated localhost WebSocket | accepted |
-| [0023](0023-agents-as-tabs-within-registered-projects.md) | Organise agents as tabs within registered projects, replacing the split-pane layout | accepted |
+| [0023](0023-agents-as-tabs-within-registered-projects.md) | Organise agents as tabs within registered projects, replacing the split-pane layout | accepted, amended by ADR-0046 |
 | [0024](0024-background-agents-run-in-tabs-not-on-screen.md) | Run background agents in tabs that are not on screen; closing the window still quits dia | accepted |
 | [0025](0025-meta-project-as-a-dia-owned-git-repo.md) | Run a meta project: a dia-owned git repo loaded into every agent, changed through approved proposals | accepted, amended by ADR-0036 |
 | [0026](0026-plugin-reload-as-a-transaction-with-rollback-and-a-memory-limit.md) | Reload a plugin as a transaction with rollback, per-module generations and a memory limit | accepted |
@@ -54,6 +54,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0043](0043-workspace-in-host-db.md) | Store the workspace in `host.db` as relational tables, with every session of each agent | accepted |
 | [0044](0044-nightly-build-as-side-by-side-app.md) | Publish a nightly build of `main` as a side-by-side `dia-nightly` app | accepted |
 | [0045](0045-hold-to-rewind-under-agent-turns.md) | Hold to rewind from a control under the agent turn | accepted |
+| [0046](0046-keep-harness-transcripts-on-removal.md) | Keep the agent harness's transcripts when dia removes a project or an agent | accepted |
 
 ## Adding a new ADR
 

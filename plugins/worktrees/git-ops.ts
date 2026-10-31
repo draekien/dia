@@ -5,11 +5,33 @@ import {
   WorktreeRemoveError
 } from '@dia/plugin'
 import type { PaneId, WorktreeInfo } from '@shared/domain/pane'
-import { Effect, FileSystem, Path, Random } from 'effect'
+import {
+  Data,
+  Duration,
+  Effect,
+  FileSystem,
+  Path,
+  type PlatformError,
+  Random,
+  Result,
+  Schedule
+} from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { generateWorktreeSlug } from './worktree-slug'
 
 const PORCELAIN_WORKTREE_PREFIX = 'worktree '
+
+const LEFTOVER_REMOVE_SCHEDULE = Schedule.spaced(Duration.millis(250)).pipe(
+  Schedule.upTo({ duration: Duration.seconds(3) })
+)
+
+class DirectoryNotEmpty extends Data.TaggedError('DirectoryNotEmpty') {}
+
+const isNotFound = (error: PlatformError.PlatformError | DirectoryNotEmpty): boolean =>
+  error._tag === 'PlatformError' && error.reason._tag === 'NotFound'
+
+const isRetryable = (error: PlatformError.PlatformError | DirectoryNotEmpty): boolean =>
+  error._tag === 'PlatformError' && !isNotFound(error)
 
 /**
  * Builds the {@link GitOps} the `worktrees` plugin provides, shelling out to the `git` CLI through
@@ -92,6 +114,37 @@ export const makeGitOps = Effect.gen(function* () {
     return { path: worktreePath, branch, sourceRepo }
   })
 
+  const removeIfEmpty = (directory: string) =>
+    Effect.gen(function* () {
+      const entries = yield* fs.readDirectory(directory)
+      if (entries.length > 0) return yield* new DirectoryNotEmpty()
+      yield* fs.remove(directory, { recursive: true })
+    })
+
+  const removeLeftoverDirectory = Effect.fn('GitOps.removeLeftoverDirectory')(function* (
+    directory: string,
+    paneId: PaneId
+  ) {
+    const outcome = yield* removeIfEmpty(directory).pipe(
+      Effect.retry({ schedule: LEFTOVER_REMOVE_SCHEDULE, while: isRetryable }),
+      Effect.result
+    )
+    if (Result.isSuccess(outcome)) {
+      yield* Effect.logInfo('Removed the empty worktree directory', { paneId, path: directory })
+    } else if (outcome.failure._tag === 'DirectoryNotEmpty') {
+      yield* Effect.logWarning('Left a worktree directory that is not empty on disk', {
+        paneId,
+        path: directory
+      })
+    } else if (!isNotFound(outcome.failure)) {
+      yield* Effect.logWarning('Could not remove the empty worktree directory', {
+        paneId,
+        path: directory,
+        cause: outcome.failure
+      })
+    }
+  })
+
   const removeWorktree = Effect.fn('GitOps.removeWorktree')(function* (
     info: WorktreeInfo,
     paneId: PaneId
@@ -132,6 +185,7 @@ export const makeGitOps = Effect.gen(function* () {
     }
 
     yield* Effect.logInfo('Pruned pane worktree', { paneId, path: info.path })
+    yield* removeLeftoverDirectory(info.path, paneId)
   })
 
   const comparablePath = (value: string): string => {

@@ -16,11 +16,13 @@ While verifying Phase 4 step 4 (`git-ops` plugin), a packaged build created a wo
 
 ## Implication
 
-Fixed in `reattachWorktree` (`plugins/worktrees/git-ops.ts`; the plugin was then named `git-ops`): it lists the repository's worktrees with `git worktree list --porcelain`, skips only a path that is registered, re-adds into an existing empty directory, and fails for a non-empty unregistered directory. In a packaged build the relaunch then showed the pane's worktree registered again. The removal itself still exits 255 on Windows each time (also on `closePane`), so an empty directory stays under the worktrees root after every removal; the cause is not identified.
+Fixed in `reattachWorktree` (`plugins/worktrees/git-ops.ts`; the plugin was then named `git-ops`): it lists the repository's worktrees with `git worktree list --porcelain`, skips only a path that is registered, re-adds into an existing empty directory, and fails for a non-empty unregistered directory. In a packaged build the relaunch then showed the pane's worktree registered again. The removal itself still exits 255 on Windows each time (also on `closePane`).
+
+The empty directory also made Remove Project fail (2026-10-31, #95): `closePane` removed and pruned the worktree, so the `WorktreeItem` step ran `git worktree remove` on an unregistered path (exit 128), the directory stayed, and every "Remove again" failed the same way. An `rmdir` of the directory succeeded once the agent's process had exited. `removeWorktree` now deletes the directory after `prune` when it is empty, retrying every 250 ms for up to 3 s while the deletion fails. Each attempt reads the directory again and stops when it has entries or is gone. The window is 3 s because `closeAll` closes panes one after another within the Host's 10 s `SHUTDOWN_TIMEOUT`, and the Agent SDK force-kills its process about 2 s after closing its input (`spawnClaudeCodeProcess` in `sdk.d.ts`).
 
 Options considered before the fix:
 
 - Wait for the session process to exit before `removeWorktree`: not done. It needs an exit signal from `Query.close()`, which was not checked, and it would not repair a worktree left by a crash.
 - Make `reattachWorktree` treat an unregistered path as absent: done, as described above. It repairs a failed removal and a crash alike.
 
-Follow-ups on the removal side, not done: skip removal on a quit that will resume (remove only on a permanent `closePane`), or finish the removal before pruning (retry, then delete the directory, and prune only when the directory is gone) so a failed removal does not leave a registered-then-pruned worktree. The reattach fix stays as the backstop for a crash.
+Follow-up on the removal side, not done: skip removal on a quit that will resume (remove only on a permanent `closePane`). The reattach fix stays as the backstop for a crash.

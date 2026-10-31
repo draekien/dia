@@ -8,7 +8,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  Input
+  Input,
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle
 } from '@dia/renderer-plugin'
 import type { ProjectEntry } from '@shared/domain/project'
 import {
@@ -16,7 +22,7 @@ import {
   type RemovalProgress,
   removalItemsOf
 } from '@shared/domain/project-removal'
-import { CheckIcon, CircleAlertIcon, Loader2Icon } from 'lucide-react'
+import { CheckIcon, Loader2Icon, XIcon } from 'lucide-react'
 import { useState } from 'react'
 
 type ItemState =
@@ -37,46 +43,35 @@ const itemKey = (item: RemovalItem): string => {
       return `agent:${item.paneId}`
     case 'WorktreeItem':
       return `worktree:${item.path}`
-    case 'TranscriptItem':
-      return `transcript:${item.sessionId}`
   }
 }
 
 const describe = (
-  item: RemovalItem,
-  entry: ProjectEntry
+  item: RemovalItem
 ): { readonly kind: string; readonly text: string; readonly mono: boolean } => {
   switch (item._tag) {
     case 'AgentItem':
       return { kind: 'Agent', text: item.name, mono: false }
     case 'WorktreeItem':
       return { kind: 'Worktree', text: item.path, mono: true }
-    case 'TranscriptItem': {
-      const owner = entry.tabs.find((tab) => tab.sessionId === item.sessionId)
-      return {
-        kind: 'Transcript',
-        text: owner === undefined ? item.sessionId : `of ${owner.name}`,
-        mono: false
-      }
-    }
   }
 }
 
 function ItemStateIcon({ state }: { readonly state: ItemState }) {
   switch (state._tag) {
     case 'Pending':
-      return <span aria-hidden className="size-3.5" />
+      return null
     case 'Removing':
       return (
         <Loader2Icon
           aria-label="Removing"
-          className="size-3.5 animate-spin text-ink-muted motion-reduce:animate-none"
+          className="size-4 animate-spin text-ink-muted motion-reduce:animate-none"
         />
       )
     case 'Removed':
-      return <CheckIcon aria-label="Removed" className="size-3.5 text-ink-muted" />
+      return <CheckIcon aria-label="Removed" className="size-4 text-ink-muted" />
     case 'Failed':
-      return <CircleAlertIcon aria-label="Not removed" className="size-3.5 text-error" />
+      return <XIcon aria-label="Not removed" className="size-4 text-ink" />
   }
 }
 
@@ -86,8 +81,8 @@ interface RemoveProjectDialogProps {
 }
 
 /**
- * Confirms and runs the removal of a project. It lists every agent, worktree and transcript that
- * will be removed; typing the project name enables "Remove". During removal each item shows its
+ * Confirms and runs the removal of a project. It lists every agent and worktree that will be
+ * removed; typing the project name enables "Remove". During removal each item shows its
  * progress. When an item fails, "Remove again" retries and "Remove anyway" drops the project and
  * leaves the failed items on disk.
  */
@@ -137,38 +132,44 @@ export function RemoveProjectDialog({ entry, onClose }: RemoveProjectDialogProps
         <DialogHeader>
           <DialogTitle>Remove {project.displayName}?</DialogTitle>
           <DialogDescription>
-            dia stops these agents and deletes their worktrees and transcripts. The project
-            directory <span className="font-mono break-all">{project.directory}</span> stays on
-            disk.
+            dia stops these agents and deletes their worktrees. Their transcripts and the project
+            directory <span className="font-mono break-all">{project.directory}</span> stay on disk.
           </DialogDescription>
         </DialogHeader>
 
         {items.length === 0 ? (
           <p className="text-sm text-ink-muted">This project has no agents.</p>
         ) : (
-          <ul aria-label="Items to remove" className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+          <ItemGroup aria-label="Items to remove" className="max-h-64 overflow-y-auto">
             {items.map((item) => {
-              const { kind, text, mono } = describe(item, entry)
+              const { kind, text, mono } = describe(item)
               const state = stateOf(item)
               return (
-                <li key={itemKey(item)} className="flex flex-col">
-                  <div className="flex items-center gap-2 text-sm">
-                    {phase !== 'confirm' && <ItemStateIcon state={state} />}
-                    <span className="w-20 shrink-0 text-xs text-ink-muted">{kind}</span>
-                    <span
-                      title={text}
-                      className={cn('truncate text-ink', mono && 'font-mono text-xs')}
-                    >
-                      {text}
-                    </span>
-                  </div>
-                  {state._tag === 'Failed' && (
-                    <p className="pl-[6.5rem] text-xs text-error">{state.reason}</p>
-                  )}
-                </li>
+                <Item key={itemKey(item)} asChild size="sm" className="px-0 py-1.5">
+                  <li>
+                    {phase !== 'confirm' && (
+                      <ItemMedia className="size-4">
+                        <ItemStateIcon state={state} />
+                      </ItemMedia>
+                    )}
+                    <ItemContent className="min-w-0 gap-0.5">
+                      <ItemTitle className="w-full min-w-0">
+                        <span title={text} className={cn('truncate', mono && 'font-mono text-xs')}>
+                          {text}
+                        </span>
+                      </ItemTitle>
+                      <ItemDescription className="text-xs">{kind}</ItemDescription>
+                      {state._tag === 'Failed' && (
+                        <ItemDescription className="text-xs text-foreground">
+                          {state.reason}
+                        </ItemDescription>
+                      )}
+                    </ItemContent>
+                  </li>
+                </Item>
               )
             })}
-          </ul>
+          </ItemGroup>
         )}
 
         {phase === 'confirm' && (

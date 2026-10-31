@@ -1,7 +1,6 @@
 import type { AgentBackend } from '@dia/plugin'
 import { Effect } from 'effect'
 import type { ClaudeInstall } from './claude-install'
-import { deleteSession } from './delete-session'
 import type { ClaudeHealth } from './health'
 import { readDisabledPermissionModes } from './permission-settings'
 import { openClaudeCodeSession } from './session'
@@ -21,7 +20,6 @@ export const makeClaudeCodeBackend = (deps: {
   openSession: (options) =>
     openClaudeCodeSession(options, deps.install, deps.health.reportStartupFailure),
   readHistory,
-  deleteSession,
   models: deps.catalog.models,
   refreshModels: deps.catalog.refreshModels,
   status: deps.health.status,

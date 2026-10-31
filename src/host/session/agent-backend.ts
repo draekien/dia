@@ -14,7 +14,7 @@ import {
   type ThinkingLevel
 } from '@shared/domain/pane'
 import type { AdapterContract, PluginRegistry } from '@shared/plugin/plugin-registry'
-import { Data, DateTime, Effect, Option, Predicate, Schema, type Scope, Stream } from 'effect'
+import { DateTime, Effect, Option, Predicate, Schema, type Scope, Stream } from 'effect'
 import type { DiaTool } from './dia-tools'
 import type { OutboundMessage } from './protocol'
 
@@ -98,11 +98,10 @@ export interface AgentSessionOptions {
  * The agent dia drives, as the adapter plugin provides it under {@link AGENT_BACKEND_KEY}.
  * `openSession` starts one pane's session; the session and every process it starts live in the
  * surrounding scope, and closing that scope ends them. `readHistory` reads a past conversation
- * without starting a session and returns an empty list when it cannot be read. `deleteSession`
- * deletes a past conversation's transcript; it succeeds when the transcript does not exist, so
- * calling it again after a success or a failure is safe. `models` streams the models a new
- * session can use, starting with the current state; `refreshModels` re-reads that list from the
- * agent and completes when the read ends, whatever its outcome, which arrives through `models`.
+ * without starting a session and returns an empty list when it cannot be read. `models` streams
+ * the models a new session can use, starting with the current state; `refreshModels` re-reads
+ * that list from the agent and completes when the read ends, whatever its outcome, which arrives
+ * through `models`.
  * `status` streams whether the agent install works, starting with the current status;
  * `checkHealth` re-checks it and completes when the check ends; `setInstallPath` stores (`Some`)
  * or clears (`None`) where the adapter finds its agent install, then re-checks, and sessions
@@ -117,7 +116,6 @@ export interface AgentBackend {
     sessionId: SessionId,
     cwd: string
   ) => Effect.Effect<ReadonlyArray<ConversationMessage>>
-  readonly deleteSession: (sessionId: SessionId) => Effect.Effect<void, SessionDeleteError>
   readonly models: () => Stream.Stream<ModelCatalogState>
   readonly refreshModels: () => Effect.Effect<void>
   readonly status: () => Stream.Stream<AdapterStatus>
@@ -125,12 +123,6 @@ export interface AgentBackend {
   readonly setInstallPath: (path: Option.Option<string>) => Effect.Effect<void>
   readonly disabledPermissionModes: (cwd: string) => Effect.Effect<ReadonlyArray<PermissionMode>>
 }
-
-/** {@link AgentBackend.deleteSession} could not delete the transcript of `sessionId`; `reason` says why. */
-export class SessionDeleteError extends Data.TaggedError('SessionDeleteError')<{
-  readonly sessionId: SessionId
-  readonly reason: string
-}> {}
 
 const ADAPTER_NOT_LOADED = 'The claude-code adapter is not loaded'
 
@@ -170,8 +162,6 @@ const unavailableBackend: AgentBackend = {
       sessionId,
       reason: ADAPTER_NOT_LOADED
     }).pipe(Effect.as([])),
-  deleteSession: (sessionId) =>
-    Effect.fail(new SessionDeleteError({ sessionId, reason: ADAPTER_NOT_LOADED })),
   models: () =>
     Stream.make(ModelsUnavailable.make({ message: ADAPTER_NOT_LOADED, refreshing: false })),
   refreshModels: ignored('refreshModels'),
@@ -195,7 +185,6 @@ const unavailableBackend: AgentBackend = {
 const backendMethods = [
   'openSession',
   'readHistory',
-  'deleteSession',
   'models',
   'refreshModels',
   'status',
@@ -235,8 +224,8 @@ export const adapterContract: AdapterContract = {
  * Reads the {@link AgentBackend} the adapter plugin provides under {@link AGENT_BACKEND_KEY}.
  * It never fails: when no plugin provides one, or the value is not a backend, it logs the
  * problems and returns a backend whose sessions end at once with
- * `The claude-code adapter is not loaded`, whose `readHistory` returns an empty list and whose
- * `deleteSession` fails. Call it each time a session starts or a transcript is read or deleted; a plugin reload applies from the next call.
+ * `The claude-code adapter is not loaded`, and whose `readHistory` returns an empty list. Call it
+ * each time a session starts or a transcript is read; a plugin reload applies from the next call.
  */
 export const resolveAgentBackend = Effect.fn('AgentBackend.resolve')(function* (
   registry: Pick<PluginRegistry, 'inject'>
