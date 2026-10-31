@@ -606,18 +606,63 @@ describe('reducePaneChat: conversation compaction', () => {
     const result = reducePaneChat(streaming, conversationCompacted('manual', 1842, 500))
 
     expect(result.isLoading).toBe(true)
-    expect(result.messages.slice(0, -1)).toEqual(streaming.messages)
+    expect(result.messages.slice(0, -1).map((message) => message.parts)).toEqual(
+      streaming.messages.map((message) => message.parts)
+    )
     expect(result.messages.at(-1)).toEqual({
       id: '1:notice',
       role: 'notice',
-      parts: [{ type: 'text', content: 'Context compacted — 1842 → 500 tokens' }]
+      parts: [{ type: 'text', content: 'Context compacted' }],
+      compaction: { preTokens: 1842, postTokens: 500 }
     })
   })
 
-  it('omits the token span when the post-compaction size is unknown', () => {
+  it('omits the post-compaction size when the session did not report it', () => {
     const result = reducePaneChat(emptyPaneChatState, conversationCompacted('auto', 900))
 
-    expect(result.messages.at(-1)?.parts).toEqual([{ type: 'text', content: 'Context compacted' }])
+    expect(result.messages.at(-1)?.compaction).toEqual({ preTokens: 900 })
+  })
+
+  it('hides rewind on every user turn sent before the compaction', () => {
+    const history = paneChatStateFromHistory(PANE, [
+      { role: 'user', content: 'write note', checkpointUuid: 'turn-a' },
+      { role: 'assistant', content: 'done' },
+      { role: 'user', content: '/compact' }
+    ])
+
+    const result = reducePaneChat(history, conversationCompacted('manual', 94533, 23665))
+
+    expect(
+      result.messages.filter((message) => message.role === 'user').map((m) => m.rewindable)
+    ).toEqual([false, false])
+  })
+
+  it('keeps rewind on a user turn sent after the compaction', () => {
+    const compacted = reducePaneChat(
+      paneChatStateFromHistory(PANE, [{ role: 'user', content: '/compact' }]),
+      conversationCompacted('manual', 94533, 23665)
+    )
+
+    const result = sendUser(compacted, 'm-c', 'edit note')
+
+    expect(result.messages.at(-1)?.rewindable).toBeUndefined()
+  })
+
+  it('still anchors the next checkpoint to the compact turn so later turns keep their own', () => {
+    const compacted = reducePaneChat(
+      paneChatStateFromHistory(PANE, [{ role: 'user', content: '/compact' }]),
+      conversationCompacted('manual', 94533, 23665)
+    )
+    const withNext = sendUser(compacted, 'm-c', 'edit note')
+
+    const result = reducePaneChat(
+      reducePaneChat(withNext, checkpointAvailable('summary-uuid')),
+      checkpointAvailable('turn-c')
+    )
+
+    expect(
+      result.messages.filter((message) => message.role === 'user').map((m) => m.checkpointUuid)
+    ).toEqual(['summary-uuid', 'turn-c'])
   })
 })
 

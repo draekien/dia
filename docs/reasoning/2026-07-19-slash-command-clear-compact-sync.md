@@ -75,8 +75,16 @@ as `system/compact_boundary` with `{ trigger, pre_tokens, post_tokens? }`.
 `post_tokens` is optional, so the renderer notice degrades to just
 "Context compacted" when absent. The notice is rendered as a new `notice`-role
 `PaneMessage` (a centered divider), a third role alongside `user`/`assistant`.
-Token counts are interpolated as plain numbers, **not** `toLocaleString()` —
-locale/ICU-dependent formatting would make the pure reducer test non-deterministic.
+The reducer keeps the raw counts on the notice (`compaction`), and the chat view
+rounds them (`~95k`, `<1k` below 500) with the exact value in a tooltip
+(`94,533 tokens`), formatted with the fixed `'en-US'` locale so tests do not
+depend on the machine's locale (`plugins/chat/token-count.ts`, #75).
+
+**A compaction ends rewind for earlier turns.** After compaction,
+`getSessionMessages` no longer returns the turns before it, and the `/compact`
+turn's checkpoint is the compaction summary's uuid, which has no file checkpoint.
+The reducer marks every user turn before the notice `rewindable: false`. Those
+turns still take checkpoints in order, so later turns keep their own (#75).
 
 ## Implication
 

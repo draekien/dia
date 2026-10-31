@@ -54,6 +54,9 @@ import {
   sendModeAtom,
   sendModeForEnter,
   type ToolCallPart,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
   thinkingLevelLabel,
   thinkingLevelsFor,
   turnActivity,
@@ -116,6 +119,7 @@ import {
 } from './slash-command-filter'
 import { SlashCommandMenu, slashMenuListboxId, slashMenuOptionId } from './slash-command-menu'
 import { type LiveSteps, StepsSection, summaryFocus } from './steps-section'
+import { approximateTokens, exactTokens } from './token-count'
 import { TranscriptItem, TranscriptScroller } from './transcript-scroller'
 import { StallActions, TurnActivityLine } from './turn-activity-line'
 import { useElapsedClock } from './use-elapsed-clock'
@@ -356,6 +360,20 @@ function latestStepLabel(section: StepsSectionBlock): React.ReactNode {
   )
 }
 
+function TokenCount({ count }: { count: number }): React.JSX.Element {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="cursor-default">
+          <span aria-hidden="true">{approximateTokens(count)}</span>
+          <span className="sr-only">{exactTokens(count)}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{exactTokens(count)}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 /**
  * Renders one {@link PaneMessage} as an aligned bubble stack: user turns as a
  * single trailing tinted bubble, assistant turns as their ordered parts
@@ -395,9 +413,21 @@ export function MessageView({
   }
   if (message.role === 'notice') {
     const text = message.parts.find((part) => part.type === 'text')?.content ?? ''
+    const compaction = message.compaction
     return (
       <Marker variant="separator" className="py-1 text-xs">
-        <MarkerContent>{text}</MarkerContent>
+        <MarkerContent>
+          {text}
+          {compaction?.postTokens !== undefined && (
+            <>
+              {' — '}
+              <TokenCount count={compaction.preTokens} />
+              {' → '}
+              <TokenCount count={compaction.postTokens} />
+              <span aria-hidden="true"> tokens</span>
+            </>
+          )}
+        </MarkerContent>
       </Marker>
     )
   }
