@@ -60,6 +60,7 @@ interface TestSetupOptions {
   readonly registeredWorktrees?: ReadonlyArray<string> | 'unavailable'
   readonly directoryEntries?: ReadonlyArray<string>
   readonly remove?: FileSystem.FileSystem['remove']
+  readonly readDirectory?: FileSystem.FileSystem['readDirectory']
 }
 
 function makeTestSetup(
@@ -68,7 +69,17 @@ function makeTestSetup(
     worktreeExists = false,
     registeredWorktrees = [],
     directoryEntries = [],
-    remove = () => Effect.die('remove not expected')
+    remove = () => Effect.die('remove not expected'),
+    readDirectory = () =>
+      worktreeExists
+        ? Effect.succeed([...directoryEntries])
+        : Effect.fail(
+            PlatformError.systemError({
+              _tag: 'NotFound',
+              module: 'FileSystem',
+              method: 'readDirectory'
+            })
+          )
   }: TestSetupOptions = {}
 ): {
   readonly capturedLogs: ReadonlyArray<unknown>
@@ -81,7 +92,7 @@ function makeTestSetup(
   )
   const fsLayer = FileSystem.layerNoop({
     exists: () => Effect.succeed(worktreeExists),
-    readDirectory: () => Effect.succeed([...directoryEntries]),
+    readDirectory,
     remove
   })
 
@@ -324,6 +335,28 @@ describe('makeGitOps', () => {
       const logs = yield* removeLeftover({ directoryEntries: ['notes.txt'] })
 
       assert.isTrue(logs.some((log) => log.includes('Left a worktree directory that is not empty')))
+    })
+  )
+
+  it.effect('removeWorktree stops retrying and keeps the directory once files appear in it', () =>
+    Effect.gen(function* () {
+      let reads = 0
+      let removes = 0
+
+      const logs = yield* removeLeftover({
+        readDirectory: () => Effect.sync(() => (++reads === 1 ? [] : ['notes.txt'])),
+        remove: () => Effect.sync(() => ++removes).pipe(Effect.andThen(Effect.fail(busy)))
+      })
+
+      assert.deepStrictEqual([removes, logs.some((log) => log.includes('not empty'))], [1, true])
+    })
+  )
+
+  it.effect('removeWorktree does nothing more when the directory is already gone', () =>
+    Effect.gen(function* () {
+      const logs = yield* removeLeftover({ worktreeExists: false })
+
+      assert.isFalse(logs.some((log) => log.includes('worktree directory')))
     })
   )
 
