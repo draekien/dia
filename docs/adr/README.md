@@ -26,7 +26,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0015](0015-effect-atom-and-direct-ipc-reducer-for-renderer-chat-state.md) | Use effect-atom and a direct IPC-event reducer for renderer chat state | accepted, amended by ADR-0030 |
 | [0016](0016-electron-builder-distribution-and-auto-update.md) | Distribute dia as an electron-builder NSIS installer with GitHub-backed auto-update | accepted, amended by ADR-0044 |
 | [0017](0017-frameless-window-with-native-overlay-controls.md) | Replace the native window frame with a custom titlebar and native overlay controls | accepted, header strip and colour sync superseded by ADR-0038 |
-| [0018](0018-transcript-anchored-file-checkpointing-with-conversation-fork.md) | Transcript-anchored file checkpointing that forks the conversation on rewind | accepted |
+| [0018](0018-transcript-anchored-file-checkpointing-with-conversation-fork.md) | Transcript-anchored file checkpointing that forks the conversation on rewind | accepted; its rewind-control sentence superseded by ADR-0045 |
 | [0019](0019-thin-plugin-kernel-on-effect.md) | Build dia as a thin plugin kernel on Effect, with every feature as a plugin | accepted, amended by ADR-0029 |
 | [0020](0020-plugin-source-loading-and-hot-reload.md) | Load first-party plugins from source in the dia repo, with per-plugin worktree overrides and hot reload | accepted |
 | [0021](0021-single-host-process-for-all-panes.md) | Run every pane's agent session and all non-UI plugins in one Host process | accepted |
@@ -53,6 +53,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0042](0042-sqlite-for-host-runtime-state.md) | Store Host runtime state in SQLite, one database file per owner | accepted, amended by ADR-0043 |
 | [0043](0043-workspace-in-host-db.md) | Store the workspace in `host.db` as relational tables, with every session of each agent | accepted |
 | [0044](0044-nightly-build-as-side-by-side-app.md) | Publish a nightly build of `main` as a side-by-side `dia-nightly` app | accepted |
+| [0045](0045-hold-to-rewind-under-agent-turns.md) | Hold to rewind from a control under the agent turn | accepted |
 
 ## Adding a new ADR
 
