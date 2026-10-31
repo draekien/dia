@@ -198,20 +198,6 @@ describe('splitCommandName', () => {
   })
 })
 
-describe('completeSlashCommand with a plugin command', () => {
-  it('inserts the full name when the short name was typed', () => {
-    const token = activeSlashToken('/get', 4)
-    if (token === null) throw new Error('no token')
-    expect(
-      completeSlashCommand(
-        '/get',
-        token,
-        command('productivity-skills:get-aligned', ['get-aligned'])
-      )
-    ).toEqual({ value: '/productivity-skills:get-aligned ', caret: 33 })
-  })
-})
-
 describe('completeSlashCommand', () => {
   const complete = (input: string, caret: number, name: string) => {
     const token = activeSlashToken(input, caret)
@@ -237,6 +223,13 @@ describe('completeSlashCommand', () => {
 
   it('keeps one space before the text after the token', () => {
     expect(complete('fix /cl more', 7, 'clear')).toEqual({ value: 'fix /clear more', caret: 11 })
+  })
+
+  it('inserts the full name of a plugin command found by its short name', () => {
+    expect(complete('/get', 4, 'productivity-skills:get-aligned')).toEqual({
+      value: '/productivity-skills:get-aligned ',
+      caret: 33
+    })
   })
 
   it('replaces only the token on its own line', () => {
