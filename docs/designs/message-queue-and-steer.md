@@ -94,7 +94,7 @@ Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermissio
 | `UserMessagesSent` | `toAttentionTarget` maps it to `Idle`, so a drained turn leaves `Completed` or `Errored` before its own permission request, completion or error |
 | `PaneHandle.sendMessage` with `steer` | applies `Idle` before calling `session.sendText`, so a superseded card's `AwaitingPermission` ends and a card raised by the steer turn is not cleared afterwards. The aborted turn's `TurnCompleted` then moves `Idle` to `Completed`, and `UserMessagesSent` moves it back to `Idle` |
 | `PaneHandle.sendMessage` with `queue` | applies nothing; a pending card's `AwaitingPermission` stays |
-| `PaneHandle.sendQueuedMessageNow` | applies `Idle` before calling `session.sendQueuedNow`, as `sendMessage` with `steer` does |
+| `PaneHandle.sendQueuedMessageNow` | applies `Idle` before calling `session.sendQueuedNow`, as `sendMessage` with `steer` does, but only when `messageId` is still queued, so a stale click keeps a pending card's `AwaitingPermission` |
 
 ### Settings (`src/host/services/settings-store.ts`)
 
@@ -135,8 +135,8 @@ Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermissio
 | `edit(id, t)` | `id` in `queued` | replace its text; `QueueChanged` |
 | `remove(id)` | `id` in `queued` | remove it, and clear `held` when `queued` becomes empty; `QueueChanged` |
 | `edit` / `remove` | `id` not in `queued` | no change; `QueueChanged`, so the renderer drops a stale item |
-| `sendNow(id)` | `Running`, `dispatching` 0 | remove `id` from `queued`, then as `send(m, 'steer')`; one `QueueChanged` |
-| `sendNow(id)` | `Running`, `dispatching > 0` | move `id` to the front of `queued`; `QueueChanged` |
+| `sendNow(id)` | `Running`, `dispatching` 0 | remove `id` from `queued`, then steer it as `send(m, 'steer')` does, but `held` keeps its value for the rest; one `QueueChanged` |
+| `sendNow(id)` | `Running`, `dispatching > 0` | move `id` to the front of `queued` and clear `held`, so a held queue does not keep it; `QueueChanged` |
 | `sendNow(id)` | `Idle`, `held` true | `Running` with the rest of `queued` still held; `Dispatch([m])`; `QueueChanged` |
 | `sendNow(id)` | `id` not in `queued` | no change, no actions |
 | `rewound` | any | `queued = steered ++ queued`, `held` true when that is non-empty; `Running` with empty `steered` when `dispatching > 0`, otherwise `Idle`; `QueueChanged` |
