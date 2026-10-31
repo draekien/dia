@@ -1095,7 +1095,6 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
   }).pipe(Effect.withSpan('ClaudeCodeSession.resume'))
 
   const sendQueuedNow = Effect.fn('ClaudeCodeSession.sendQueuedNow')(function* (messageId: string) {
-    yield* Effect.logDebug('Sending a queued message now', { messageId })
     yield* sendAndWait(sendNow(messageId))
   })
 

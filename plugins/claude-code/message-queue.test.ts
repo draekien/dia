@@ -278,11 +278,21 @@ describe('sendNow', () => {
     expect(next).toEqual(runningWith({ steered: [a, b] }))
   })
 
-  it('reports the queue once when steering releases a held queue', () => {
-    const [actions] = sendNow(a.id)(runningWith({ queued: [a, b], held: true }))
-    expect(actions.filter((action) => action._tag === 'QueueChangedAction')).toEqual([
-      QueueChangedAction.make({ queued: [b], held: false })
+  it('keeps the rest of a held queue held when steering', () => {
+    const [actions, next] = sendNow(a.id)(runningWith({ queued: [a, b], held: true }))
+    expect(actions).toEqual([
+      InterruptAction.make({}),
+      QueueChangedAction.make({ queued: [b], held: true })
     ])
+    expect(next).toEqual(runningWith({ queued: [b], held: true, steered: [a] }))
+  })
+
+  it('releases a held queue while a batch is being offered, so the message is not held', () => {
+    const [actions, next] = sendNow(b.id)(
+      runningWith({ queued: [a, b], held: true, dispatching: 1 })
+    )
+    expect(actions).toEqual([QueueChangedAction.make({ queued: [b, a], held: false })])
+    expect(next).toEqual(runningWith({ queued: [b, a], dispatching: 1 }))
   })
 
   it('moves the message to the front of the queue while a batch is being offered', () => {

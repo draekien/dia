@@ -602,11 +602,18 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
       Effect.logDebug('Removing a queued message', { paneId: config.paneId, messageId }).pipe(
         Effect.andThen(session.removeQueuedText(messageId))
       ),
-    sendQueuedMessageNow: (messageId) =>
-      Effect.logDebug('Sending a queued message now', { paneId: config.paneId, messageId }).pipe(
-        Effect.andThen(applyAttention(Idle.make({}))),
-        Effect.andThen(session.sendQueuedNow(messageId))
-      ),
+    sendQueuedMessageNow: Effect.fnUntraced(function* (messageId) {
+      const { queued } = yield* session.messageQueue
+      if (!queued.some((message) => message.id === messageId)) {
+        return yield* Effect.logDebug('Ignored send now for a message no longer queued', {
+          paneId: config.paneId,
+          messageId
+        })
+      }
+      yield* Effect.logDebug('Sending a queued message now', { paneId: config.paneId, messageId })
+      yield* applyAttention(Idle.make({}))
+      yield* session.sendQueuedNow(messageId)
+    }),
     messageQueue: session.messageQueue,
     setThinkingLevel: (level) =>
       Effect.logDebug('Setting pane thinking level', { paneId: config.paneId, level }).pipe(

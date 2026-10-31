@@ -63,7 +63,10 @@ const idle = (queued: Queued, held: boolean) =>
 const running = (state: typeof QueueRunning.Type, changes: Partial<typeof QueueRunning.Type>) =>
   QueueRunning.make({ ...state, ...changes })
 
-const steerTurn = (state: typeof QueueRunning.Type, message: OutgoingMessage): QueueTransition =>
+const steerTurn = (
+  state: typeof QueueRunning.Type,
+  message: OutgoingMessage
+): readonly [ReadonlyArray<QueueAction>, typeof QueueRunning.Type] =>
   state.steered.length > 0
     ? [[], running(state, { steered: [...state.steered, message] })]
     : [[InterruptAction.make({})], running(state, { steered: [message], held: false })]
@@ -91,7 +94,10 @@ export const send =
       return [[queueChanged(queued, false)], running(state, { queued, held: false })]
     }
     const [actions, next] = steerTurn(state, message)
-    return [state.held ? [...actions, queueChanged(next.queued, next.held)] : actions, next]
+    return [
+      next.held !== state.held ? [...actions, queueChanged(next.queued, next.held)] : actions,
+      next
+    ]
   }
 
 /**
@@ -187,9 +193,10 @@ export const remove =
 /**
  * The user asked for queued message `id` to be sent now instead of waiting for the turn to end.
  * During a turn it steers: the turn is interrupted and the message runs next, and the rest of the
- * queue still waits for the turn after. While a batch is being offered there is no turn to
- * interrupt yet, so the message moves to the front of the queue. A held queue with no turn
- * running sends the message alone and stays held. A message no longer queued is left alone.
+ * queue still waits for the turn after, held if it was held. With no turn running a held queue
+ * sends the message alone and the rest stays held. While a batch is being offered there is no turn
+ * to interrupt yet, so the message moves to the front of the queue and the queue is released, or
+ * a held queue would keep it. A message no longer queued is left alone.
  */
 export const sendNow =
   (id: string) =>
@@ -201,9 +208,13 @@ export const sendNow =
       const [actions, next] = dispatchNow([message], rest, true)
       return [[queueChanged(rest, true), ...actions], next]
     }
-    if (state.dispatching > 0) return replaceQueued(state, [message, ...rest])
-    const [actions, next] = steerTurn(running(state, { queued: rest }), message)
-    return [[...actions, queueChanged(next.queued, next.held)], next]
+    if (state.dispatching > 0) {
+      const queued = [message, ...rest]
+      return [[queueChanged(queued, false)], running(state, { queued, held: false })]
+    }
+    const [actions, steered] = steerTurn(running(state, { queued: rest }), message)
+    const next = running(steered, { held: heldFor(rest, state.held) })
+    return [[...actions, queueChanged(rest, next.held)], next]
   }
 
 /**
