@@ -122,6 +122,7 @@ export const paneChatAtom = Atom.family((paneId: string) =>
           ...paneChatStateFromHistory(paneId, history),
           slashCommands: state.slashCommands,
           warmingCommands: state.warmingCommands,
+          contextUsage: state.contextUsage,
           queued: queue.queued,
           queueHeld: queue.held
         }))

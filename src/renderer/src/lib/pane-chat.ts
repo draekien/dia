@@ -490,7 +490,8 @@ const compactConversation = (
  * `PaneSlashCommandsAvailable` replaces the available command list (ending any
  * warming state); a compaction, and a model change (`Model → <name>`), append a `notice`
  * divider; a conversation reset
- * clears the transcript while keeping the available commands and the queue.
+ * clears the transcript while keeping the available commands, the queue and the context usage.
+ * `PaneContextUsageChanged` replaces `contextUsage`.
  * `PaneCheckpointAvailable` anchors a rewindable checkpoint uuid (and its resume
  * anchor) onto the earliest user turn still lacking one, and
  * `PaneToolCallUpdated` sets a running row's input, elapsed time or detail line, `PaneSessionNotice`

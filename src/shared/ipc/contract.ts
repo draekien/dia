@@ -543,6 +543,7 @@ export const PaneContextUsageChanged = Schema.TaggedStruct('PaneContextUsageChan
   paneId: Uuid,
   usage: ContextUsage
 })
+/** A {@link PaneContextUsageChanged} event. */
 export type PaneContextUsageChanged = typeof PaneContextUsageChanged.Type
 
 /**

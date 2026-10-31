@@ -6,10 +6,12 @@ Issue #84. The claude-code adapter reads a tab's context window usage from the A
 
 ```ts
 // src/shared/domain/context-usage.ts
+const TokenCount = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+
 export const ContextUsage = Schema.Struct({
-  totalTokens: Schema.Int,                        // tokens in the window now
-  maxTokens: Schema.Int,                          // window size
-  autoCompactThreshold: Schema.optional(Schema.Int) // tokens; present only while auto-compact is on
+  totalTokens: TokenCount,                        // tokens in the window now
+  maxTokens: TokenCount,                          // window size
+  autoCompactThreshold: Schema.optional(TokenCount) // tokens; present only while auto-compact is on
 })
 ```
 
