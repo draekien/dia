@@ -22,6 +22,7 @@ import type { UsageLimitResume } from '../domain/parking'
 import type { RegisterProjectRefusal } from '../domain/project'
 import { AgentName, CreateTabRequest, ProjectId, Workspace } from '../domain/project'
 import type { RemovalProgress } from '../domain/project-removal'
+import { RewindFailureCause } from '../domain/rewind'
 import { SlashCommandInfo } from '../domain/slash-command'
 import type { ThemePreference } from '../domain/theme'
 import { TranscriptWidth } from '../domain/transcript-width'
@@ -489,6 +490,19 @@ export const PaneRewoundToCheckpoint = Schema.TaggedStruct('PaneRewoundToCheckpo
 export type PaneRewoundToCheckpoint = typeof PaneRewoundToCheckpoint.Type
 
 /**
+ * Event pushed to the renderer when a {@link RewindToCheckpoint} for `messageUuid` in pane
+ * `paneId` did not complete. The displayed transcript stays as it is; show `cause`, and `detail`
+ * when present (the Agent SDK's own explanation), to the user.
+ */
+export const PaneRewindFailed = Schema.TaggedStruct('PaneRewindFailed', {
+  paneId: Uuid,
+  messageUuid: Schema.String,
+  cause: RewindFailureCause,
+  detail: Schema.optional(Schema.String)
+})
+export type PaneRewindFailed = typeof PaneRewindFailed.Type
+
+/**
  * Event pushed to the renderer whenever the message queue of pane `paneId`
  * changes, carrying the whole queue in send order. Replaces the queue the
  * renderer shows.
@@ -654,6 +668,7 @@ export const IpcEvent = Schema.Union([
   PaneConversationReset,
   PaneCheckpointAvailable,
   PaneRewoundToCheckpoint,
+  PaneRewindFailed,
   PaneMessageQueueChanged,
   PaneUserMessagesSent,
   PaneModelChanged,
@@ -858,6 +873,7 @@ export interface DiaApi {
   onConversationReset(listener: (event: PaneConversationReset) => void): () => void
   onCheckpointAvailable(listener: (event: PaneCheckpointAvailable) => void): () => void
   onRewoundToCheckpoint(listener: (event: PaneRewoundToCheckpoint) => void): () => void
+  onRewindFailed(listener: (event: PaneRewindFailed) => void): () => void
   onMessageQueueChanged(listener: (event: PaneMessageQueueChanged) => void): () => void
   onUserMessagesSent(listener: (event: PaneUserMessagesSent) => void): () => void
   onModelChanged(listener: (event: PaneModelChanged) => void): () => void

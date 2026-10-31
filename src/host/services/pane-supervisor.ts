@@ -52,6 +52,7 @@ import {
   PanePermissionRequested,
   PanePlanReviewRequested,
   PaneQuestionRequested,
+  PaneRewindFailed,
   PaneRewoundToCheckpoint,
   PaneSessionNotice,
   PaneSlashCommandsAvailable,
@@ -200,125 +201,138 @@ export const SessionFactoryLive = Layer.effect(
 )
 
 function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<IpcEvent> {
-  return Match.value(message).pipe(
-    Match.tag('AssistantMessageReceived', (m) =>
-      Option.some<IpcEvent>(PaneMessageAppended.make({ paneId, message: m.message }))
-    ),
-    Match.tag('AssistantTextDelta', (m) =>
-      Option.some<IpcEvent>(PaneAssistantTextDelta.make({ paneId, text: m.text }))
-    ),
-    Match.tag('AssistantThinkingDelta', (m) =>
-      Option.some<IpcEvent>(PaneAssistantThinkingDelta.make({ paneId, text: m.text }))
-    ),
-    Match.tag('ToolCallStarted', (m) =>
-      Option.some<IpcEvent>(
-        PaneToolCallStarted.make({
-          paneId,
-          toolCallId: m.toolCallId,
-          toolName: m.toolName
-        })
+  return Match.value(message)
+    .pipe(
+      Match.tag('AssistantMessageReceived', (m) =>
+        Option.some<IpcEvent>(PaneMessageAppended.make({ paneId, message: m.message }))
+      ),
+      Match.tag('AssistantTextDelta', (m) =>
+        Option.some<IpcEvent>(PaneAssistantTextDelta.make({ paneId, text: m.text }))
+      ),
+      Match.tag('AssistantThinkingDelta', (m) =>
+        Option.some<IpcEvent>(PaneAssistantThinkingDelta.make({ paneId, text: m.text }))
+      ),
+      Match.tag('ToolCallStarted', (m) =>
+        Option.some<IpcEvent>(
+          PaneToolCallStarted.make({
+            paneId,
+            toolCallId: m.toolCallId,
+            toolName: m.toolName
+          })
+        )
+      ),
+      Match.tag('ToolCallCompleted', (m) =>
+        Option.some<IpcEvent>(
+          PaneToolCallCompleted.make({
+            paneId,
+            toolCallId: m.toolCallId,
+            toolName: m.toolName,
+            input: m.input,
+            output: m.output,
+            isError: m.isError
+          })
+        )
+      ),
+      Match.tag('ToolCallUpdated', 'TurnStatusChanged', 'SessionNotice', (m) =>
+        Option.some(turnProgressEvent(paneId, m))
+      ),
+      Match.tag('PermissionRequested', (m) =>
+        Option.some<IpcEvent>(
+          PanePermissionRequested.make({
+            paneId,
+            requestId: m.requestId,
+            toolName: m.toolName,
+            input: m.input,
+            ...(m.suggestions !== undefined ? { suggestions: m.suggestions } : {})
+          })
+        )
+      ),
+      Match.tag('QuestionRequested', (m) =>
+        Option.some<IpcEvent>(
+          PaneQuestionRequested.make({
+            paneId,
+            requestId: m.requestId,
+            questions: m.questions
+          })
+        )
+      ),
+      Match.tag('PlanReviewRequested', (m) =>
+        Option.some<IpcEvent>(
+          PanePlanReviewRequested.make({
+            paneId,
+            requestId: m.requestId,
+            plan: m.plan
+          })
+        )
+      ),
+      Match.tag('SlashCommandsWarming', (m) =>
+        Option.some<IpcEvent>(PaneSlashCommandsWarming.make({ paneId, active: m.active }))
+      ),
+      Match.tag('SlashCommandsAvailable', (m) =>
+        Option.some<IpcEvent>(PaneSlashCommandsAvailable.make({ paneId, commands: m.commands }))
+      ),
+      Match.tag('ConversationCompacted', (m) =>
+        Option.some<IpcEvent>(
+          PaneConversationCompacted.make({
+            paneId,
+            trigger: m.trigger,
+            preTokens: m.preTokens,
+            ...(m.postTokens !== undefined ? { postTokens: m.postTokens } : {})
+          })
+        )
+      ),
+      Match.tag('ConversationReset', () =>
+        Option.some<IpcEvent>(PaneConversationReset.make({ paneId }))
       )
-    ),
-    Match.tag('ToolCallCompleted', (m) =>
-      Option.some<IpcEvent>(
-        PaneToolCallCompleted.make({
-          paneId,
-          toolCallId: m.toolCallId,
-          toolName: m.toolName,
-          input: m.input,
-          output: m.output,
-          isError: m.isError
-        })
-      )
-    ),
-    Match.tag('ToolCallUpdated', 'TurnStatusChanged', 'SessionNotice', (m) =>
-      Option.some(turnProgressEvent(paneId, m))
-    ),
-    Match.tag('PermissionRequested', (m) =>
-      Option.some<IpcEvent>(
-        PanePermissionRequested.make({
-          paneId,
-          requestId: m.requestId,
-          toolName: m.toolName,
-          input: m.input,
-          ...(m.suggestions !== undefined ? { suggestions: m.suggestions } : {})
-        })
-      )
-    ),
-    Match.tag('QuestionRequested', (m) =>
-      Option.some<IpcEvent>(
-        PaneQuestionRequested.make({
-          paneId,
-          requestId: m.requestId,
-          questions: m.questions
-        })
-      )
-    ),
-    Match.tag('PlanReviewRequested', (m) =>
-      Option.some<IpcEvent>(
-        PanePlanReviewRequested.make({
-          paneId,
-          requestId: m.requestId,
-          plan: m.plan
-        })
-      )
-    ),
-    Match.tag('SlashCommandsWarming', (m) =>
-      Option.some<IpcEvent>(PaneSlashCommandsWarming.make({ paneId, active: m.active }))
-    ),
-    Match.tag('SlashCommandsAvailable', (m) =>
-      Option.some<IpcEvent>(PaneSlashCommandsAvailable.make({ paneId, commands: m.commands }))
-    ),
-    Match.tag('ConversationCompacted', (m) =>
-      Option.some<IpcEvent>(
-        PaneConversationCompacted.make({
-          paneId,
-          trigger: m.trigger,
-          preTokens: m.preTokens,
-          ...(m.postTokens !== undefined ? { postTokens: m.postTokens } : {})
-        })
-      )
-    ),
-    Match.tag('ConversationReset', () =>
-      Option.some<IpcEvent>(PaneConversationReset.make({ paneId }))
-    ),
-    Match.tag('CheckpointAvailable', (m) =>
-      Option.some<IpcEvent>(
-        PaneCheckpointAvailable.make({
-          paneId,
-          messageUuid: m.messageUuid,
-          ...(m.resumeAnchorUuid !== undefined ? { resumeAnchorUuid: m.resumeAnchorUuid } : {})
-        })
-      )
-    ),
-    Match.tag('RewoundToCheckpoint', (m) =>
-      Option.some<IpcEvent>(PaneRewoundToCheckpoint.make({ paneId, messageUuid: m.messageUuid }))
-    ),
-    Match.tag('MessageQueueChanged', (m) =>
-      Option.some<IpcEvent>(
-        PaneMessageQueueChanged.make({ paneId, queued: m.queued, held: m.held })
-      )
-    ),
-    Match.tag('UserMessagesSent', (m) =>
-      Option.some<IpcEvent>(PaneUserMessagesSent.make({ paneId, messages: m.messages }))
-    ),
-    Match.tag('ModelChanged', (m) =>
-      Option.some<IpcEvent>(PaneModelChanged.make({ paneId, model: m.model }))
-    ),
-    // TurnCompleted/TurnErrored/SessionStarted carry no renderer-facing content of their own --
-    // they only drive AttentionState (see toAttentionTarget below) -- so they have no IpcEvent.
-    // PermissionModeChanged is handled out of band by onPermissionModeChanged (it updates the
-    // persisted config and layout tree), not surfaced as a standalone renderer event here.
-    Match.tag(
-      'TurnCompleted',
-      'TurnErrored',
-      'TurnParked',
-      'SessionStarted',
-      'PermissionModeChanged',
-      () => Option.none<IpcEvent>()
-    ),
-    Match.exhaustive
-  )
+    )
+    .pipe(
+      Match.tag('CheckpointAvailable', (m) =>
+        Option.some<IpcEvent>(
+          PaneCheckpointAvailable.make({
+            paneId,
+            messageUuid: m.messageUuid,
+            ...(m.resumeAnchorUuid !== undefined ? { resumeAnchorUuid: m.resumeAnchorUuid } : {})
+          })
+        )
+      ),
+      Match.tag('RewoundToCheckpoint', (m) =>
+        Option.some<IpcEvent>(PaneRewoundToCheckpoint.make({ paneId, messageUuid: m.messageUuid }))
+      ),
+      Match.tag('RewindFailed', (m) =>
+        Option.some<IpcEvent>(
+          PaneRewindFailed.make({
+            paneId,
+            messageUuid: m.messageUuid,
+            cause: m.cause,
+            ...(m.detail !== undefined ? { detail: m.detail } : {})
+          })
+        )
+      ),
+      Match.tag('MessageQueueChanged', (m) =>
+        Option.some<IpcEvent>(
+          PaneMessageQueueChanged.make({ paneId, queued: m.queued, held: m.held })
+        )
+      ),
+      Match.tag('UserMessagesSent', (m) =>
+        Option.some<IpcEvent>(PaneUserMessagesSent.make({ paneId, messages: m.messages }))
+      ),
+      Match.tag('ModelChanged', (m) =>
+        Option.some<IpcEvent>(PaneModelChanged.make({ paneId, model: m.model }))
+      ),
+      // TurnCompleted/TurnErrored/SessionStarted carry no renderer-facing content of their own --
+      // they only drive AttentionState (see toAttentionTarget below) -- so they have no IpcEvent.
+      // PermissionModeChanged is handled out of band by onPermissionModeChanged (it updates the
+      // persisted config and layout tree), not surfaced as a standalone renderer event here.
+      Match.tag(
+        'TurnCompleted',
+        'TurnErrored',
+        'TurnParked',
+        'SessionStarted',
+        'PermissionModeChanged',
+        () => Option.none<IpcEvent>()
+      ),
+      Match.exhaustive
+    )
 }
 
 function turnProgressEvent(
