@@ -1,7 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the test yields to Node's event loop so the plugin's non-Effect callbacks run.
 import { setImmediate } from 'node:timers/promises'
 import type { Options, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import { type OutboundMessage, SessionFailed, SessionNotFound } from '@dia/plugin'
+import { type OutboundMessage, RewindFailed, SessionFailed, SessionNotFound } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import type { PaneConfig, SessionId } from '@shared/domain/pane'
 import { Effect, Option, Queue } from 'effect'
@@ -426,6 +426,28 @@ describe('install', () => {
         SessionFailed.make({ reason: NOT_INSTALLED_REASON })
       )
       assert.strictEqual(sdk.queries.length, 0)
+    })
+  )
+
+  it.effect('reports a rewind as failed when no install is found', () =>
+    Effect.gen(function* () {
+      const emitted: Array<OutboundMessage> = []
+      const session = yield* openClaudeCodeSession(
+        {
+          config,
+          resume: Option.none(),
+          emit: (message) => Effect.sync(() => void emitted.push(message)),
+          tools: []
+        },
+        installAt(Option.none()),
+        () => Effect.void
+      )
+
+      yield* session.rewindToCheckpoint('turn-2', undefined)
+
+      assert.deepStrictEqual(emitted, [
+        RewindFailed.make({ messageUuid: 'turn-2', cause: 'NoLiveSession' })
+      ])
     })
   )
 

@@ -268,7 +268,7 @@ export const paneRewindAtom = Atom.family((paneId: string) => {
       const unsubscribes = [
         window.dia.onRewindFailed((event) => {
           if (event.paneId !== paneId) return
-          if (current.status !== 'rewinding' || current.checkpointUuid !== event.messageUuid) return
+          if (current.status === 'idle' || current.checkpointUuid !== event.messageUuid) return
           transition({
             status: 'failed',
             checkpointUuid: event.messageUuid,

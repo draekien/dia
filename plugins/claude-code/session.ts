@@ -657,7 +657,10 @@ const ignoredUnstarted =
   (..._args: ReadonlyArray<unknown>): Effect.Effect<void> =>
     Effect.logWarning('Ignored a command; the agent session never started', { command, reason })
 
-const unstartedSession = (reason: string): AgentSession => ({
+const unstartedSession = (
+  reason: string,
+  emit: (message: OutboundMessage) => Effect.Effect<void>
+): AgentSession => ({
   sendText: ignoredUnstarted('sendText', reason),
   editQueuedText: ignoredUnstarted('editQueuedText', reason),
   removeQueuedText: ignoredUnstarted('removeQueuedText', reason),
@@ -669,7 +672,10 @@ const unstartedSession = (reason: string): AgentSession => ({
   resolveQuestion: ignoredUnstarted('resolveQuestion', reason),
   resolvePlanReview: ignoredUnstarted('resolvePlanReview', reason),
   interrupt: ignoredUnstarted('interrupt', reason),
-  rewindToCheckpoint: ignoredUnstarted('rewindToCheckpoint', reason),
+  rewindToCheckpoint: (messageUuid) =>
+    ignoredUnstarted('rewindToCheckpoint', reason)().pipe(
+      Effect.andThen(emit(RewindFailed.make({ messageUuid, cause: 'NoLiveSession' })))
+    ),
   resume: ignoredUnstarted('resume', reason)(),
   ended: Effect.succeed(SessionFailed.make({ reason }))
 })
@@ -696,7 +702,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
       paneId: options.config.paneId,
       reason
     })
-    return unstartedSession(reason)
+    return unstartedSession(reason, options.emit)
   }
   const launch: SessionLaunch = { path: path.value, reportStartupFailure }
   const { emit, tools } = options

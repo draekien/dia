@@ -500,6 +500,7 @@ export const PaneRewindFailed = Schema.TaggedStruct('PaneRewindFailed', {
   cause: RewindFailureCause,
   detail: Schema.optional(Schema.String)
 })
+/** A {@link PaneRewindFailed} event value. */
 export type PaneRewindFailed = typeof PaneRewindFailed.Type
 
 /**

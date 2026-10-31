@@ -193,6 +193,22 @@ describe('paneRewindAtom', () => {
     expect(progress()).toEqual({ status: 'idle' })
   })
 
+  it('replaces a timed-out failure with the failure the pane reports late', () => {
+    start()
+    vi.advanceTimersByTime(REWIND_OUTCOME_TIMEOUT_MS)
+
+    dia.push(
+      'onRewindFailed',
+      PaneRewindFailed.make({ paneId: PANE, messageUuid: 'cp-2', cause: 'ConversationNotBranched' })
+    )
+
+    expect(progress()).toEqual({
+      status: 'failed',
+      checkpointUuid: 'cp-2',
+      message: 'Rewind failed: files were restored, but the conversation could not be branched.'
+    })
+  })
+
   it.each([
     ['crashes', () => dia.push('onAttentionChanged', crashed(PANE))],
     [
