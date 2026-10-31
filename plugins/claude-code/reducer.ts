@@ -1,4 +1,4 @@
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { SDKMessage, SlashCommand } from '@anthropic-ai/claude-agent-sdk'
 import {
   AssistantMessageReceived,
   AssistantTextDelta,
@@ -23,7 +23,20 @@ import {
   UsageLimit
 } from '@dia/plugin'
 import type { ConversationMessage } from '@shared/domain/pane'
+import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import { Option } from 'effect'
+
+/**
+ * Converts an Agent SDK `SlashCommand` (from `supportedCommands()` or a
+ * `commands_changed` message) to the `SlashCommandInfo` the renderer's `/` menu
+ * reads. A command the SDK reports without `aliases` gets an empty list.
+ */
+export const toSlashCommandInfo = (command: SlashCommand): SlashCommandInfo => ({
+  name: command.name,
+  description: command.description,
+  argumentHint: command.argumentHint,
+  aliases: command.aliases ?? []
+})
 
 const parseToolInput = (partialJson: string): Record<string, unknown> => {
   if (!partialJson) return {}
@@ -283,11 +296,7 @@ export const makeSessionEventReducer = (
     if (message.type === 'system' && message.subtype === 'commands_changed') {
       return [
         SlashCommandsAvailable.make({
-          commands: message.commands.map((command) => ({
-            name: command.name,
-            description: command.description,
-            argumentHint: command.argumentHint
-          }))
+          commands: message.commands.map(toSlashCommandInfo)
         })
       ]
     }

@@ -5,13 +5,15 @@ import {
   activeTriggerToken,
   completeSlashCommand,
   filterSlashCommands,
+  splitCommandName,
   wrapHighlight
 } from './slash-command-filter'
 
-const command = (name: string, description = '', argumentHint = ''): SlashCommandInfo => ({
+const command = (name: string, aliases: ReadonlyArray<string> = []): SlashCommandInfo => ({
   name,
-  description,
-  argumentHint
+  description: '',
+  argumentHint: '',
+  aliases
 })
 
 describe('activeSlashToken', () => {
@@ -32,6 +34,14 @@ describe('activeSlashToken', () => {
       query: 'output-style',
       start: 0,
       end: 13
+    })
+  })
+
+  it('accepts a plugin-qualified name with a colon', () => {
+    expect(activeSlashToken('/productivity-skills:g', 22)).toEqual({
+      query: 'productivity-skills:g',
+      start: 0,
+      end: 22
     })
   })
 
@@ -139,6 +149,66 @@ describe('filterSlashCommands', () => {
   it('preserves the original order of matches', () => {
     const reordered = [command('config'), command('clear'), command('compact')]
     expect(filterSlashCommands(reordered, 'c')).toEqual(reordered)
+  })
+})
+
+describe('filterSlashCommands with plugin commands', () => {
+  const getAligned = command('productivity-skills:get-aligned', ['get-aligned'])
+  const impeccable = command('impeccable:impeccable', ['impeccable'])
+  const clear = command('clear')
+  const usage = command('usage', ['cost'])
+  const commands = [getAligned, impeccable, clear, usage]
+
+  it('finds a plugin skill by its short name', () => {
+    expect(filterSlashCommands(commands, 'get')).toEqual([getAligned])
+  })
+
+  it('finds a plugin skill by its full name', () => {
+    expect(filterSlashCommands(commands, 'productivity-skills:g')).toEqual([getAligned])
+  })
+
+  it('finds a plugin skill whose short name repeats the plugin name', () => {
+    expect(filterSlashCommands(commands, 'impec')).toEqual([impeccable])
+  })
+
+  it('finds a command by an alias', () => {
+    expect(filterSlashCommands(commands, 'cos')).toEqual([usage])
+  })
+
+  it('leaves a built-in command match unchanged', () => {
+    expect(filterSlashCommands(commands, 'cle')).toEqual([clear])
+  })
+
+  it('lists name matches before short-name and alias matches', () => {
+    const general = command('general')
+    expect(filterSlashCommands([getAligned, general], 'ge')).toEqual([general, getAligned])
+  })
+})
+
+describe('splitCommandName', () => {
+  it('splits a plugin-qualified name after the colon', () => {
+    expect(splitCommandName('productivity-skills:get-aligned')).toEqual({
+      namespace: 'productivity-skills:',
+      shortName: 'get-aligned'
+    })
+  })
+
+  it('gives a built-in command an empty namespace', () => {
+    expect(splitCommandName('clear')).toEqual({ namespace: '', shortName: 'clear' })
+  })
+})
+
+describe('completeSlashCommand with a plugin command', () => {
+  it('inserts the full name when the short name was typed', () => {
+    const token = activeSlashToken('/get', 4)
+    if (token === null) throw new Error('no token')
+    expect(
+      completeSlashCommand(
+        '/get',
+        token,
+        command('productivity-skills:get-aligned', ['get-aligned'])
+      )
+    ).toEqual({ value: '/productivity-skills:get-aligned ', caret: 33 })
   })
 })
 
