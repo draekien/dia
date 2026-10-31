@@ -2,8 +2,9 @@ import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import { describe, expect, it } from 'vitest'
 import {
   activeSlashToken,
+  activeTriggerToken,
+  completeSlashCommand,
   filterSlashCommands,
-  slashCommandCompletion,
   wrapHighlight
 } from './slash-command-filter'
 
@@ -46,8 +47,29 @@ describe('activeSlashToken', () => {
     expect(activeSlashToken('hello there', 11)).toBeNull()
   })
 
-  it('does not match a slash that is not first on its line', () => {
+  it('does not match a slash inside a word such as a path', () => {
     expect(activeSlashToken('a/b', 3)).toBeNull()
+  })
+
+  it('opens after other text when the slash follows a space', () => {
+    expect(activeSlashToken('fix the build then /cl', 22)).toEqual({
+      query: 'cl',
+      start: 19,
+      end: 22
+    })
+  })
+
+  it('opens at the start of a later line', () => {
+    expect(activeSlashToken('line one\n/cl', 12)).toEqual({ query: 'cl', start: 9, end: 12 })
+  })
+
+  it('does not open inside a URL', () => {
+    const input = 'see https://example.com/pa'
+    expect(activeSlashToken(input, input.length)).toBeNull()
+  })
+
+  it('queries only up to the caret and spans the rest of the name', () => {
+    expect(activeSlashToken('/clear', 3)).toEqual({ query: 'cl', start: 0, end: 6 })
   })
 
   it('returns null for empty input', () => {
@@ -63,11 +85,27 @@ describe('activeSlashToken', () => {
   })
 
   it('targets the line the caret is on, not a later one', () => {
-    expect(activeSlashToken('/clear\n/compact', 3)).toEqual({ query: 'clear', start: 0, end: 6 })
+    expect(activeSlashToken('/clear\n/compact', 3)).toEqual({ query: 'cl', start: 0, end: 6 })
   })
 
   it('is null when the caret sits on a prose line below a command line', () => {
     expect(activeSlashToken('/clear\nhello', 11)).toBeNull()
+  })
+})
+
+describe('activeTriggerToken', () => {
+  const mention = { char: '@', isNameChar: (char: string) => /[\w./-]/.test(char) }
+
+  it('uses the trigger character and name characters it is given', () => {
+    expect(activeTriggerToken('see @src/ma', 11, mention)).toEqual({
+      query: 'src/ma',
+      start: 4,
+      end: 11
+    })
+  })
+
+  it('ignores the slash when the trigger is another character', () => {
+    expect(activeTriggerToken('/sr', 3, mention)).toBeNull()
   })
 })
 
@@ -104,24 +142,38 @@ describe('filterSlashCommands', () => {
   })
 })
 
-describe('slashCommandCompletion', () => {
-  it('prefixes the slash and appends a trailing space', () => {
-    expect(slashCommandCompletion(command('clear'))).toBe('/clear ')
+describe('completeSlashCommand', () => {
+  const complete = (input: string, caret: number, name: string) => {
+    const token = activeSlashToken(input, caret)
+    if (token === null) throw new Error(`no token at ${caret} in ${input}`)
+    return completeSlashCommand(input, token, command(name))
+  }
+
+  it('replaces a lone token with the name and a trailing space', () => {
+    expect(complete('/cl', 3, 'clear')).toEqual({ value: '/clear ', caret: 7 })
   })
 
-  it('produces a line that no longer opens the menu', () => {
-    const completion = slashCommandCompletion(command('compact'))
-    expect(activeSlashToken(completion, completion.length)).toBeNull()
+  it('leaves the caret where the menu is closed', () => {
+    const { value, caret } = complete('/comp', 5, 'compact')
+    expect(activeSlashToken(value, caret)).toBeNull()
   })
 
-  it('splices over the active token range to complete a second command in place', () => {
-    const input = '/clear\n/comp'
-    const token = activeSlashToken(input, input.length)
-    expect(token).not.toBeNull()
-    if (token === null) return
-    const completion = slashCommandCompletion(command('compact'))
-    const next = input.slice(0, token.start) + completion + input.slice(token.end)
-    expect(next).toBe('/clear\n/compact ')
+  it('keeps the text before a mid-text token', () => {
+    expect(complete('fix the build then /cl', 22, 'clear')).toEqual({
+      value: 'fix the build then /clear ',
+      caret: 26
+    })
+  })
+
+  it('keeps one space before the text after the token', () => {
+    expect(complete('fix /cl more', 7, 'clear')).toEqual({ value: 'fix /clear more', caret: 11 })
+  })
+
+  it('replaces only the token on its own line', () => {
+    expect(complete('/clear\n/comp', 12, 'compact')).toEqual({
+      value: '/clear\n/compact ',
+      caret: 16
+    })
   })
 })
 
