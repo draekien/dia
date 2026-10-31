@@ -29,6 +29,7 @@ import {
   RewindToCheckpoint,
   SelectTab,
   SendMessage,
+  SendQueuedMessageNow,
   SetTranscriptWidth
 } from '@shared/ipc/contract'
 import { Effect, FileSystem, Layer, Option, Stream } from 'effect'
@@ -123,6 +124,10 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     removeQueuedMessage: (messageId) =>
       Effect.sync(() => {
         calls.push(`removeQueuedMessage:${messageId}`)
+      }),
+    sendQueuedMessageNow: (messageId) =>
+      Effect.sync(() => {
+        calls.push(`sendQueuedMessageNow:${messageId}`)
       }),
     messageQueue: Effect.succeed({ queued: [{ id: 'm-1', text: 'later' }], held: true }),
     setThinkingLevel: () => Effect.void,
@@ -842,6 +847,21 @@ describe('Dia RPC handlers', () => {
       )
 
       assert.deepStrictEqual(harness.calls, ['removeQueuedMessage:m-7'])
+    })
+  )
+
+  it.effect('delivers the message id of a SendQueuedMessageNow to the pane unchanged', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ livePanes: [PANE_ID] })
+
+      yield* withHandlers(harness, (handlers) =>
+        handlers.SendQueuedMessageNow({
+          ...SendQueuedMessageNow.make({ paneId: PANE_ID, messageId: 'm-7' }),
+          commandId: 'req-1'
+        })
+      )
+
+      assert.deepStrictEqual(harness.calls, ['sendQueuedMessageNow:m-7'])
     })
   )
 

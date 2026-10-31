@@ -257,6 +257,34 @@ describe('message queue', () => {
     })
   )
 
+  it.effect('sends a queued message now: interrupts once and runs it before the rest', () =>
+    Effect.gen(function* () {
+      const { session, emitted, query, endTurn } = yield* open
+      yield* session.sendText('first', 'queue')
+      yield* session.sendText('later', 'queue')
+      yield* session.sendText('now', 'queue')
+      const queue = lastQueue(emitted)
+      const now = queue?._tag === 'MessageQueueChanged' ? queue.queued[1] : undefined
+      assert.strictEqual(now?.text, 'now')
+
+      yield* session.sendQueuedNow(now?.id ?? '')
+      yield* settle
+      assert.strictEqual(query.interrupts, 1)
+      const after = lastQueue(emitted)
+      assert.deepStrictEqual(
+        after?._tag === 'MessageQueueChanged' ? after.queued.map((m) => m.text) : [],
+        ['later']
+      )
+
+      yield* endTurn(aborted)
+      assert.isFalse(tags(emitted).includes('TurnErrored'))
+      assert.deepStrictEqual(texts(query), ['first', 'now'])
+
+      yield* endTurn()
+      assert.deepStrictEqual(texts(query), ['first', 'now', 'later'])
+    })
+  )
+
   it.effect('suppresses a steered abort that follows the result of a silent message', () =>
     Effect.gen(function* () {
       const { session, emitted, endTurn } = yield* open

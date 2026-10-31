@@ -12,6 +12,7 @@ import {
   resume,
   rewound,
   send,
+  sendNow,
   sessionEnded,
   stopRequested,
   turnEnded
@@ -258,5 +259,62 @@ describe('resume', () => {
   it('does nothing while a turn is running', () => {
     const state = runningWith({ queued: [a] })
     expect(resume(resumeMessage)(state)).toEqual([[], state])
+  })
+})
+
+describe('sendNow', () => {
+  it('steers a queued message into the running turn and keeps the rest queued in order', () => {
+    const [actions, next] = sendNow(b.id)(runningWith({ queued: [a, b, c] }))
+    expect(actions).toEqual([
+      InterruptAction.make({}),
+      QueueChangedAction.make({ queued: [a, c], held: false })
+    ])
+    expect(next).toEqual(runningWith({ queued: [a, c], steered: [b] }))
+  })
+
+  it('joins messages already steered without a second interrupt', () => {
+    const [actions, next] = sendNow(b.id)(runningWith({ queued: [b], steered: [a] }))
+    expect(actions).toEqual([QueueChangedAction.make({ queued: [], held: false })])
+    expect(next).toEqual(runningWith({ steered: [a, b] }))
+  })
+
+  it('reports the queue once when steering releases a held queue', () => {
+    const [actions] = sendNow(a.id)(runningWith({ queued: [a, b], held: true }))
+    expect(actions.filter((action) => action._tag === 'QueueChangedAction')).toEqual([
+      QueueChangedAction.make({ queued: [b], held: false })
+    ])
+  })
+
+  it('moves the message to the front of the queue while a batch is being offered', () => {
+    const [actions, next] = sendNow(c.id)(runningWith({ queued: [a, b, c], dispatching: 1 }))
+    expect(actions).toEqual([QueueChangedAction.make({ queued: [c, a, b], held: false })])
+    expect(next).toEqual(runningWith({ queued: [c, a, b], dispatching: 1 }))
+  })
+
+  it('dispatches the message alone from a held queue and keeps the rest held', () => {
+    const [actions, next] = sendNow(b.id)(QueueIdle.make({ queued: [a, b, c], held: true }))
+    expect(actions).toEqual([
+      QueueChangedAction.make({ queued: [a, c], held: true }),
+      DispatchAction.make({ messages: [b] })
+    ])
+    expect(next).toEqual(runningWith({ queued: [a, c], held: true, dispatching: 1 }))
+  })
+
+  it('keeps the rest held after the turn the message started ends', () => {
+    const [, sent] = sendNow(b.id)(QueueIdle.make({ queued: [a, b], held: true }))
+    const [, offered] = dispatchEnded(sent)
+    const [actions, next] = turnEnded(true)(offered)
+    expect(actions).toEqual([])
+    expect(next).toEqual(QueueIdle.make({ queued: [a], held: true }))
+  })
+
+  it('changes nothing for an id that is no longer queued', () => {
+    for (const state of [
+      initialQueueState,
+      runningWith({ queued: [a] }),
+      QueueIdle.make({ queued: [a], held: true })
+    ]) {
+      expect(sendNow('m-gone')(state)).toEqual([[], state])
+    }
   })
 })

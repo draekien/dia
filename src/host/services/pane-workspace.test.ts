@@ -47,6 +47,7 @@ const fakeHandle: PaneHandle = {
   sendMessage: () => Effect.void,
   editQueuedMessage: () => Effect.void,
   removeQueuedMessage: () => Effect.void,
+  sendQueuedMessageNow: () => Effect.void,
   messageQueue: Effect.succeed(EMPTY_MESSAGE_QUEUE),
   setThinkingLevel: () => Effect.void,
   setPermissionMode: () => Effect.void,

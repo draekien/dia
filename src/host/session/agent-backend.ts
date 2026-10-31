@@ -46,6 +46,11 @@ export interface AgentSession {
   readonly editQueuedText: (messageId: string, text: string) => Effect.Effect<void>
   /** Removes queued message `messageId`; a message already sent is left alone. */
   readonly removeQueuedText: (messageId: string) => Effect.Effect<void>
+  /**
+   * Sends queued message `messageId` now: during a turn it interrupts the turn and runs next, and
+   * the rest of the queue keeps waiting. A message already sent is left alone.
+   */
+  readonly sendQueuedNow: (messageId: string) => Effect.Effect<void>
   /** The messages waiting to be sent, in send order. */
   readonly messageQueue: Effect.Effect<MessageQueueSnapshot>
   readonly setThinkingLevel: (level: ThinkingLevel) => Effect.Effect<void>
@@ -138,6 +143,7 @@ const unavailableSession: AgentSession = {
   sendText: ignored('sendText'),
   editQueuedText: ignored('editQueuedText'),
   removeQueuedText: ignored('removeQueuedText'),
+  sendQueuedNow: ignored('sendQueuedNow'),
   messageQueue: Effect.succeed(EMPTY_MESSAGE_QUEUE),
   setThinkingLevel: ignored('setThinkingLevel'),
   setPermissionMode: ignored('setPermissionMode'),

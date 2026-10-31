@@ -281,6 +281,18 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
           (handle) => handle.removeQueuedMessage(command.messageId)
         )
       ),
+    SendQueuedMessageNow: (command) =>
+      once(
+        command.paneId,
+        command.commandId,
+        'SendQueuedMessageNow',
+        withHandle(
+          'SendQueuedMessageNow',
+          command.paneId,
+          'Failed to send a queued message now',
+          (handle) => handle.sendQueuedMessageNow(command.messageId)
+        )
+      ),
     GetMessageQueue: ({ paneId }) =>
       supervisor.getHandle(paneId).pipe(
         Effect.flatMap(

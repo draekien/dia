@@ -156,6 +156,7 @@ function makeTestSetup(
           sendText: record('sendText'),
           editQueuedText: record('editQueuedText'),
           removeQueuedText: record('removeQueuedText'),
+          sendQueuedNow: record('sendQueuedNow'),
           messageQueue: Effect.succeed(EMPTY_MESSAGE_QUEUE),
           setThinkingLevel: record('setThinkingLevel'),
           setPermissionMode: record('setPermissionMode'),
@@ -610,6 +611,36 @@ describe('PaneSupervisor', () => {
           assert.deepStrictEqual(sessions[0].calls, ['sendText:take this instead:steer'])
         }).pipe(Effect.scoped, Effect.provide(testLayer))
       })
+  )
+
+  it.effect('send now clears a pending permission before it steers the turn', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        const events: Array<IpcEvent> = []
+
+        const opened = yield* supervisor.openPane(
+          requestA,
+          (event) => Effect.sync(() => void events.push(event)),
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+
+        yield* sessions[0].emit({
+          _tag: 'PermissionRequested',
+          requestId: 'req-1',
+          toolName: 'Bash',
+          input: {}
+        })
+        yield* opened.handle.sendQueuedMessageNow('m-7')
+        yield* flush
+
+        assert.deepStrictEqual(attentionTags(events), ['AwaitingPermission', 'Idle'])
+        assert.deepStrictEqual(sessions[0].calls, ['sendQueuedNow:m-7'])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
   )
 
   it.effect('interrupt reaches the session and clears a pending permission', () =>
