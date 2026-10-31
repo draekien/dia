@@ -13,14 +13,14 @@ function makeTestSetup(
   readonly loggerLayer: Layer.Layer<never>
 } {
   let stored = initialContent
-  const pending = new Map<string, string>()
+  let pending: string | undefined
   const writes: string[] = []
 
   const fakeFs = FileSystem.makeNoop({
     exists: () => Effect.succeed(stored !== undefined),
     readFileString: () => Effect.sync(() => stored ?? '{}').pipe(Effect.tap(() => Effect.yieldNow)),
-    writeFileString: (path, data) => Effect.sync(() => pending.set(path, data)),
-    rename: (from, to) =>
+    writeFileString: (_path, data) => Effect.sync(() => (pending = data)),
+    rename: (_from, to) =>
       options.failRename
         ? Effect.fail(
             PlatformError.systemError({
@@ -31,11 +31,10 @@ function makeTestSetup(
             })
           )
         : Effect.sync(() => {
-            const data = pending.get(from)
-            if (data === undefined || to !== '/userData/settings.json') return
-            pending.delete(from)
-            stored = data
-            writes.push(data)
+            if (pending === undefined) return
+            stored = pending
+            writes.push(pending)
+            pending = undefined
           })
   })
 

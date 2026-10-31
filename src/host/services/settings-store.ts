@@ -89,10 +89,9 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
       })
 
       const update = (change: (settings: typeof Settings.Type) => typeof Settings.Type) =>
-        read().pipe(
-          Effect.flatMap((settings) => write(change(settings))),
-          lock.withPermits(1)
-        )
+        Effect.gen(function* () {
+          yield* write(change(yield* read()))
+        }).pipe(lock.withPermits(1))
 
       const getTheme = () =>
         read().pipe(Effect.map((settings) => Option.fromNullishOr(settings.theme)))
