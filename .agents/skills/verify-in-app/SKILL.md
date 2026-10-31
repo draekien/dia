@@ -62,11 +62,11 @@ Call `window.dia` through the script. Register listeners on `window` first, act,
 ```sh
 node scripts/cdp-eval.mjs --port 9333 "window.__events = []; window.dia.onMessageAppended((...args) => window.__events.push(args)); true"
 node scripts/cdp-eval.mjs --port 9333 "window.dia.createPane('00000000-0000-0000-0000-000000000001', 'F:/Dev/dia', 'claude-sonnet-5', 'off', 'default', false)"
-node scripts/cdp-eval.mjs --port 9333 "{ const box = document.querySelector('textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'Reply with the word ready'); box.dispatchEvent(new Event('input', { bubbles: true })); setTimeout(() => document.querySelector('button[aria-label=\"Send message\"]').click(), 100); true }"
+node scripts/cdp-eval.mjs --port 9333 "{ const box = document.querySelector('textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'Reply with the word ready'); box.dispatchEvent(new Event('input', { bubbles: true })); setTimeout(() => document.querySelector('button[aria-label=\"Send\"]').click(), 100); true }"
 node scripts/cdp-eval.mjs --port 9333 "window.__events.length"
 ```
 
-The pane id `00000000-0000-0000-0000-000000000001` is the initial pane only with `host.db` and `workspace.json` moved away (dev) or on a fresh scratch profile (packaged). The third command sends the prompt through the composer: it fills the `textarea` and clicks `Send message`. The click returns before the turn ends: re-read the collected value until it reaches the expected state, up to a stated limit such as 60 s, and record a timeout as a failed observation. `--timeout-ms` does not bound the expression itself.
+The pane id `00000000-0000-0000-0000-000000000001` is the initial pane only with `host.db` and `workspace.json` moved away (dev) or on a fresh scratch profile (packaged). The third command sends the prompt through the composer: it fills the `textarea` and clicks the action button, whose accessible name is `Send` while no turn runs (`Queue` or `Steer now` during a turn, `Stop` when the composer is empty). The click returns before the turn ends: re-read the collected value until it reaches the expected state, up to a stated limit such as 60 s, and record a timeout as a failed observation. `--timeout-ms` does not bound the expression itself.
 
 Read `src/preload` for the current `window.dia` surface rather than guessing a method's arguments. For a change in a git-backed feature, run it against a throwaway git repo, not this one.
 

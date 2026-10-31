@@ -20,6 +20,8 @@
     "plugins/**/renderer.ts",
     "plugins/**/*.tsx",
     "plugins/agent-overview/overview.ts",
+    "plugins/chat/composer-action.ts",
+    "plugins/chat/composer-settings.ts",
     "plugins/chat/slash-command-filter.ts",
     "plugins/chat/token-count.ts",
     "plugins/chat/use-elapsed-clock.ts"

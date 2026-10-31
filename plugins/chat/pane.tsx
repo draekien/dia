@@ -36,7 +36,6 @@ import {
   paneRemoveQueuedAtom,
   paneRewindAtom,
   paneSendAtom,
-  permissionModeLabel,
   rewindRowState,
   rewindTargets,
   Select,
@@ -90,15 +89,26 @@ import {
   ArrowUp,
   Brain,
   Check,
+  ListPlus,
   Loader2Icon,
   RotateCcw,
-  ShieldAlert,
-  ShieldCheck,
   SquareIcon,
   X
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
+import {
+  type ComposerAction,
+  composerAction,
+  composerActionHint,
+  composerPlaceholder
+} from './composer-action'
+import {
+  composerSettingTrigger,
+  permissionSettingLabel,
+  skipsApproval,
+  thinkingSettingLabel
+} from './composer-settings'
 import { Markdown } from './markdown'
 import { ModelPicker } from './model-picker'
 import { PermissionRequestCard } from './permission-request-card'
@@ -471,13 +481,8 @@ function ThinkingLevelSelect({
 }): React.JSX.Element {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger
-        size="sm"
-        aria-label="Thinking level"
-        className="gap-1 border-0 bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground dark:bg-transparent dark:hover:bg-accent/50"
-      >
-        <Brain />
-        <SelectValue />
+      <SelectTrigger size="sm" aria-label="Thinking level" className={composerSettingTrigger()}>
+        <SelectValue>{thinkingSettingLabel(value)}</SelectValue>
       </SelectTrigger>
       <SelectContent align="start">
         {levels.map((level) => (
@@ -504,10 +509,11 @@ function PermissionModeSelect({
       <SelectTrigger
         size="sm"
         aria-label="Permission mode"
-        className="gap-1 border-0 bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground dark:bg-transparent dark:hover:bg-accent/50"
+        className={composerSettingTrigger({
+          emphasis: skipsApproval(value) ? 'foreground' : 'muted'
+        })}
       >
-        {value === 'bypassPermissions' ? <ShieldAlert /> : <ShieldCheck />}
-        <SelectValue>{permissionModeLabel(value)}</SelectValue>
+        <SelectValue>{permissionSettingLabel(value)}</SelectValue>
       </SelectTrigger>
       <SelectContent align="start">
         <PermissionModeItems
@@ -515,6 +521,65 @@ function PermissionModeSelect({
         />
       </SelectContent>
     </Select>
+  )
+}
+
+const MODIFIER_KEY =
+  typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent)
+    ? '⌘'
+    : 'Ctrl'
+
+const actionIcons = { queue: ListPlus, sendNow: ArrowUp, stop: SquareIcon } as const
+
+/**
+ * The composer's bottom-right icon button for `action`, with `hint` as its tooltip. Clicking a
+ * `stop` action calls `onStop`; clicking a `submit` action calls `onSubmit` with the click, whose
+ * Cmd/Ctrl state picks the send mode. Its label is announced politely when it changes.
+ */
+export function ComposerActionButton({
+  action,
+  hint,
+  onStop,
+  onSubmit
+}: {
+  action: ComposerAction
+  hint: readonly [string, string]
+  onStop: () => void
+  onSubmit: (event: React.MouseEvent) => void
+}): React.JSX.Element {
+  const Icon = actionIcons[action.icon]
+  const isStop = action.kind === 'stop'
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <InputGroupButton
+            type="button"
+            variant={isStop ? 'outline' : 'default'}
+            size="icon-sm"
+            className="ml-auto"
+            aria-label={action.label}
+            disabled={!isStop && action.disabled}
+            onClick={isStop ? onStop : onSubmit}
+          >
+            <Icon />
+          </InputGroupButton>
+        </TooltipTrigger>
+        <TooltipContent side="top" align="end">
+          {isStop ? (
+            action.label
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              <span>{hint[0]}</span>
+              <span className="opacity-70">{hint[1]}</span>
+            </div>
+          )}
+        </TooltipContent>
+      </Tooltip>
+      <span className="sr-only" aria-live="polite">
+        {action.label}
+      </span>
+    </>
   )
 }
 
@@ -584,7 +649,14 @@ function PaneChat({
   const [slashHighlight, setSlashHighlight] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [caret, setCaret] = useState(0)
+  const [modifierHeld, setModifierHeld] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    const release = (): void => setModifierHeld(false)
+    window.addEventListener('blur', release)
+    return () => window.removeEventListener('blur', release)
+  }, [])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: focuses once, when the composer first mounts
   useEffect(() => {
@@ -666,6 +738,10 @@ function PaneChat({
     queryClient.setQueryData<PanePlanReviewRequested | null>(pendingPlanReviewQueryKey, null)
   }
 
+  const actionDefaultMode: SendMode = pendingInteraction ? 'steer' : defaultSendMode
+  const trackModifier = (event: React.KeyboardEvent): void =>
+    setModifierHeld(event.metaKey || event.ctrlKey)
+
   const stopTurn = (): void => {
     stop()
     clearPendingInteractions()
@@ -719,6 +795,9 @@ function PaneChat({
           <InstallNotice status={adapterStatus} />
           <form
             className="mt-2"
+            onKeyDown={trackModifier}
+            onKeyUp={trackModifier}
+            onBlur={() => setModifierHeld(false)}
             onSubmit={(event) => {
               event.preventDefault()
               void form.handleSubmit({ mode: defaultSendMode })
@@ -835,10 +914,10 @@ function PaneChat({
                         aria-activedescendant={
                           isMenuOpen ? slashMenuOptionId(paneId, highlight) : undefined
                         }
-                        placeholder="Message dia..."
+                        placeholder={composerPlaceholder(isLoading, defaultSendMode)}
                         aria-label="Message dia"
                       />
-                      <InputGroupAddon align="block-end">
+                      <InputGroupAddon align="block-start">
                         <ModelPicker value={model} onChange={onModelChange} />
                         <ThinkingLevelSelect
                           value={thinkingLevel}
@@ -850,29 +929,27 @@ function PaneChat({
                           disabledModes={disabledPermissionModes}
                           onChange={onPermissionModeChange}
                         />
-                        {isLoading && (
-                          <InputGroupButton
-                            type="button"
-                            variant="outline"
-                            size="icon-sm"
-                            className="ml-auto"
-                            aria-label="Stop"
-                            title="Stop"
-                            onClick={stopTurn}
-                          >
-                            <SquareIcon />
-                          </InputGroupButton>
-                        )}
-                        <InputGroupButton
-                          type="submit"
-                          variant="default"
-                          size="icon-sm"
-                          className={cn(!isLoading && 'ml-auto')}
-                          aria-label="Send message"
-                          disabled={field.state.value.trim() === ''}
-                        >
-                          <ArrowUp />
-                        </InputGroupButton>
+                      </InputGroupAddon>
+                      <InputGroupAddon align="block-end">
+                        <ComposerActionButton
+                          action={composerAction({
+                            running: isLoading,
+                            hasText: field.state.value.trim() !== '',
+                            modifierHeld: modifierHeld && !pendingInteraction,
+                            defaultMode: actionDefaultMode
+                          })}
+                          hint={composerActionHint({
+                            running: isLoading,
+                            defaultMode: actionDefaultMode,
+                            modifierKey: MODIFIER_KEY
+                          })}
+                          onStop={stopTurn}
+                          onSubmit={(event) =>
+                            void form.handleSubmit({
+                              mode: sendModeForEnter(defaultSendMode, event)
+                            })
+                          }
+                        />
                       </InputGroupAddon>
                     </InputGroup>
                   </div>
