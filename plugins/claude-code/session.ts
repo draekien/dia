@@ -452,7 +452,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     silentResultsRef: Ref.Ref<number>,
     onTurnEnded: (ok: boolean) => Effect.Effect<void>,
     launch: SessionLaunch,
-    notFoundRef: Ref.Ref<boolean>
+    notFoundRef: Ref.Ref<Option.Option<SessionId>>
   ) {
     const continuesFrom = yield* resolveContinuesFrom(resume, branchAt, config.cwd)
     yield* Effect.logInfo('Starting query session', {
@@ -597,7 +597,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     })
 
     const markNotFound = (sessionId: SessionId) =>
-      Ref.set(notFoundRef, true).pipe(
+      Ref.set(notFoundRef, Option.some(sessionId)).pipe(
         Effect.andThen(
           Effect.logInfo('Resume target not found', { paneId: config.paneId, sessionId })
         )
@@ -760,13 +760,13 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     yield* Ref.set(sessionIdRef, resume)
     yield* Ref.set(branchAtRef, Option.fromUndefinedOr(branchAt))
     const queryOpened = yield* Deferred.make<void>()
-    const notFoundRef = yield* Ref.make(false)
+    const notFoundRef = yield* Ref.make(Option.none<SessionId>())
     const endOf = (failure: Option.Option<string>) =>
       Effect.map(
         Ref.get(notFoundRef),
         (notFound): SessionEnd =>
-          notFound && Option.isSome(resume) && branchAt === undefined
-            ? SessionNotFound.make({ sessionId: resume.value })
+          Option.isSome(notFound) && branchAt === undefined
+            ? SessionNotFound.make({ sessionId: notFound.value })
             : SessionFailed.make({
                 reason: Option.getOrElse(failure, () => 'Agent session ended unexpectedly')
               })

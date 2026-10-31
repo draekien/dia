@@ -18,7 +18,11 @@ import {
   type QuestionResponse,
   transitionAttention
 } from '@shared/domain/attention'
-import type { MessageQueueSnapshot, SendMode } from '@shared/domain/message-queue'
+import {
+  EMPTY_MESSAGE_QUEUE,
+  type MessageQueueSnapshot,
+  type SendMode
+} from '@shared/domain/message-queue'
 import type {
   PaneConfig,
   PaneId,
@@ -819,29 +823,29 @@ export const PaneSupervisorLive = Layer.effect(
         yield* onSessionChanged(Option.none())
         yield* Queue.offer(
           outbound,
-          PaneMessageQueueChanged.make({ paneId: config.paneId, queued: [], held: false })
+          PaneMessageQueueChanged.make({ paneId: config.paneId, ...EMPTY_MESSAGE_QUEUE })
         )
         yield* handle.markErrored({ message: SESSION_NOT_FOUND_NOTICE })
       })
 
-      const ended = (end: SessionEnd) =>
-        (end._tag === 'SessionNotFound'
-          ? clearMissingSession(end.sessionId)
-          : Effect.logError(
-              new SessionEndedError({ paneId: config.paneId, reason: end.reason })
-            ).pipe(
-              Effect.andThen(
-                handle.markCrashed({ message: `Pane session ended unexpectedly: ${end.reason}` })
-              )
-            )
-        ).pipe(Effect.andThen(teardown(config.paneId)))
+      const ended = Effect.fnUntraced(function* (end: SessionEnd) {
+        if (end._tag === 'SessionNotFound') {
+          yield* clearMissingSession(end.sessionId)
+        } else {
+          yield* Effect.logError(
+            new SessionEndedError({ paneId: config.paneId, reason: end.reason })
+          )
+          yield* handle.markCrashed({ message: `Pane session ended unexpectedly: ${end.reason}` })
+        }
+        yield* teardown(config.paneId)
+      })
 
-      const crashed = session.ended.pipe(
+      const watchEnd = session.ended.pipe(
         Effect.map(Option.some),
         Effect.raceFirst(Deferred.await(closed).pipe(Effect.as(Option.none<SessionEnd>()))),
         Effect.flatMap(Option.match({ onNone: () => Effect.void, onSome: ended }))
       )
-      yield* Effect.forkDetach(crashed)
+      yield* Effect.forkDetach(watchEnd)
 
       return { handle, config }
     })
