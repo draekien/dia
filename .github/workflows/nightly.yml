@@ -1,0 +1,123 @@
+name: nightly
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+      timezone: 'Australia/Sydney'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide build and version
+        id: plan
+        shell: bash
+        run: |
+          shipped=(src plugins build package.json pnpm-lock.yaml pnpm-workspace.yaml electron-builder.yml electron.vite.config.ts ':!**/*.test.ts' ':!**/*.test.tsx' ':!**/*.md')
+
+          stable=$(node -p "require('./package.json').version")
+          IFS=. read -r major minor patch <<< "$stable"
+          base="$major.$minor.$((patch + 1))"
+
+          last=$(git tag --list 'v*-nightly.*' --sort=-v:refname | sed -n 1p)
+          if [ -z "$last" ]; then
+            build=true
+          else
+            set +e
+            git diff --quiet "$last" HEAD -- "${shipped[@]}"
+            status=$?
+            set -e
+            case $status in
+              0) build=false ;;
+              1) build=true ;;
+              *) exit "$status" ;;
+            esac
+          fi
+
+          last_n=$(git tag --list "v$base-nightly.*" --sort=-v:refname | sed -n 1p | sed 's/.*-nightly\.//')
+          version="$base-nightly.$(( ${last_n:-0} + 1 ))"
+
+          echo "stable=$stable last=${last:-none} build=$build version=$version"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.13.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create draft prerelease
+        id: draft
+        run: gh release create "v$VERSION" --draft --prerelease --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes
+
+      - name: Build
+        run: pnpm build
+
+      - name: Package and upload
+        run: >-
+          pnpm exec electron-builder --win --publish always
+          -c.appId=com.draekien.dia.nightly
+          -c.productName=dia-nightly
+          -c.extraMetadata.name=dia-nightly
+          -c.extraMetadata.version="$VERSION"
+          -c.publish.releaseType=prerelease
+          -c.publish.channel=nightly
+
+      - name: Publish prerelease
+        id: publish
+        run: gh release edit "v$VERSION" --draft=false
+
+      - name: Prune old nightlies
+        continue-on-error: true
+        run: |
+          gh release list --limit 100 --json tagName --jq '.[].tagName' \
+            | grep -- '-nightly\.' \
+            | sort -rV \
+            | tail -n +6 \
+            | while read -r tag; do gh release delete "$tag" --cleanup-tag --yes; done
+
+      - name: Delete unpublished draft
+        if: always() && steps.draft.outcome == 'success' && steps.publish.outcome != 'success'
+        run: gh release delete "v$VERSION" --yes || true
