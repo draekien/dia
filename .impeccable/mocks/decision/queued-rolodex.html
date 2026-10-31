@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+.stage{width:100%;max-width:700px;color:#e6e9ef;font:13px/20px Geist,system-ui,sans-serif}
+.panel{background:#14161b;border:1px solid #262a33;border-radius:10px;margin-bottom:14px;padding:34px 28px 18px;position:relative}
+.tag{position:absolute;left:14px;top:10px;font-size:12px;color:#959eae}
+.transcript{color:#8b94a4;font-size:12px;border-bottom:1px dashed #262a33;padding-bottom:10px;margin-bottom:10px}
+.marker{display:flex;align-items:center;gap:6px;font-size:12px;color:#8b94a4;margin-bottom:8px}
+.marker:before{content:'';flex:1;height:1px;background:#2c313b}
+.marker b{color:#c9ced8;font-weight:500}
+svg{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.marker svg{width:12px;height:12px}
+.stack{position:relative;margin-bottom:10px}
+.stack>*{position:absolute;right:0;max-width:80%}
+.bub{--f:1;min-width:0;height:32px;border:1px dashed color-mix(in oklch,#4a5163 calc(var(--f)*100%),#262a33);border-radius:12px;padding:5px 12px;color:color-mix(in oklch,#d5d9e1 calc(var(--f)*100%),#1f2229);background:#1f2229}
+.bub.a{height:54px}
+.n1{--f:.7}.n2{--f:.55}
+.n2>*{visibility:hidden}
+.t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.att{display:flex;gap:4px;height:20px;margin-top:4px;align-items:center;overflow:hidden}
+.th{width:28px;height:20px;border-radius:4px;flex:none;background:linear-gradient(135deg,#3b4a6b,#26304a);border:1px solid #2f3646}
+.th.b{background:linear-gradient(135deg,#4b3b5c,#2a2236)}
+.ch{font:11px/16px 'Geist Mono',monospace;height:20px;color:#b3bac7;background:#262a33;border-radius:4px;padding:2px 6px;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;flex:none}
+.more{font-size:11px;color:#8b94a4;flex:none}
+.unit{display:flex;flex-direction:column;align-items:flex-end;background:#14161b}
+.unit .bub{max-width:100%}
+.row{display:flex;gap:2px;height:28px;align-items:center;justify-content:flex-end}
+.ib{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;color:#b3bac7}
+.ib svg{width:14px;height:14px}
+.box{background:#1d2027;border:1px solid #2c313b;border-radius:10px;height:40px;display:flex;align-items:center;padding:0 14px;color:#8b94a4}
+.anat{display:grid;grid-template-columns:150px 1fr;gap:10px 14px;align-items:center}
+.anat .l{font-size:12px;color:#959eae}
+.anat .r{display:flex;justify-content:flex-end;min-width:0}
+.anat .bub{max-width:100%}
+</style></head><body><div class="stage">
+
+<div class="panel"><div class="tag">1. At rest, 20 queued: the newest in front, 3 older cards stacked behind it</div>
+<div class="transcript">transcript: agent is editing plugins/chat/pane.tsx (14s)</div>
+<div class="marker"><svg viewBox="0 0 24 24"><path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/></svg><b>Queued</b> 20 of 20, all send when the turn ends</div>
+<div class="stack" style="height:94px">
+<div class="bub n2" style="top:0;z-index:1"><div class="t">Why does the worktree plugin create a branch even when I pick an existing one?</div></div>
+<div class="bub a n2" style="top:6px;z-index:2"><div class="t">Here is the stack trace from the packaged build.</div><div class="att"><span class="ch">crash-2026-10-31.log</span></div></div>
+<div class="bub n1" style="top:18px;z-index:3"><div class="t">Then check the Windows installer still signs before you tag the release.</div></div>
+<div class="bub a" style="top:40px;z-index:4"><div class="t">ok, and also look at the Windows build, the title bar is clipped</div><div class="att"><span class="th"></span><span class="th b"></span></div></div>
+</div>
+<div class="box">Queue a message for after this turn, or type / for commands</div>
+</div>
+
+<div class="panel"><div class="tag">2. Moved to card 9 (wheel or arrow keys); pointer on it, so its actions show</div>
+<div class="marker"><svg viewBox="0 0 24 24"><path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/></svg><b>Queued</b> 9 of 20, all send when the turn ends</div>
+<div class="stack" style="height:162px">
+<div class="bub n2" style="top:0;z-index:1"><div class="t">Check these files for the old One Voice wording.</div></div>
+<div class="bub n2" style="top:6px;z-index:2"><div class="t">Then open a PR.</div></div>
+<div class="bub a n1" style="top:18px;z-index:3"><div class="t">Compare these against the ADR and tell me which ones contradict it.</div><div class="att"><span class="ch">docs/adr/0019-plugin-kernel.md</span><span class="ch">src/host/plugin-api.ts</span><span class="more">+3</span></div></div>
+<div class="unit" style="top:40px;z-index:10"><div class="bub a"><div class="t">Here are the before and after screenshots of the context donut at 70%, 85% and 95%; the colour should shift before the threshold, not after.</div><div class="att"><span class="th"></span><span class="th b"></span><span class="th"></span><span class="th b"></span><span class="more">+2</span></div></div>
+<div class="row"><span class="ib"><svg viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></svg></span><span class="ib"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span><span class="ib"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div></div>
+<div class="bub n1" style="top:112px;z-index:6"><div class="t">Make the donut 14px and move it into the header row.</div></div>
+<div class="bub n2" style="top:124px;z-index:5"><div class="t">Add a test for the steer transition.</div></div>
+<div class="bub n2" style="top:130px;z-index:4"><div class="t">Rename the tab header component to match the ADR.</div></div>
+</div>
+<div class="box">Queue a message for after this turn, or type / for commands</div>
+</div>
+
+<div class="panel"><div class="tag">3. Card anatomy: one line of text, one line of attachments, both truncated</div>
+<div class="anat">
+<span class="l">Short text</span><div class="r"><div class="bub"><div class="t">ok</div></div></div>
+<span class="l">Long text</span><div class="r"><div class="bub"><div class="t">Read the reasoning entry about the effect-tsgo diagnostics before you change the severity map, because the last session got that wrong twice.</div></div></div>
+<span class="l">Images past the line</span><div class="r"><div class="bub a"><div class="t">This is the layout on my laptop at 125% zoom.</div><div class="att"><span class="th"></span><span class="th b"></span><span class="th"></span><span class="th b"></span><span class="th"></span><span class="th b"></span><span class="th"></span><span class="more">+5</span></div></div></div>
+<span class="l">Files past the line</span><div class="r"><div class="bub a"><div class="t">Check these files for the old One Voice wording, then fix each one.</div><div class="att"><span class="ch">DESIGN.md</span><span class="ch">plugins/chat/steps-section.tsx</span><span class="more">+7</span></div></div></div>
+<span class="l">Images and files</span><div class="r"><div class="bub a"><div class="t">Match this mock.</div><div class="att"><span class="th b"></span><span class="ch">refined.html</span></div></div></div>
+</div>
+</div>
+
+</div></body></html>
