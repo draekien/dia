@@ -26,6 +26,9 @@ import {
   QuestionRequested,
   RESUME_TEXT,
   RewoundToCheckpoint,
+  type SessionEnd,
+  SessionFailed,
+  SessionNotFound,
   SlashCommandsAvailable,
   SlashCommandsWarming,
   TurnCompleted,
@@ -413,6 +416,12 @@ const reportStartupFailure = (message: SDKMessage, launch: SessionLaunch): Effec
     ? launch.reportStartupFailure(message.startup_failure_reason)
     : Effect.void
 
+const isSessionNotFound = (message: SDKMessage): boolean =>
+  message.type === 'result' &&
+  message.subtype === 'error_during_execution' &&
+  message.num_turns === 0 &&
+  message.errors.some((error) => error.startsWith('No conversation found with session ID'))
+
 const TASK_TRACKING_TOOLS = ['TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList']
 
 const resolveRewindAnchor = (
@@ -442,7 +451,8 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     queryOpened: Deferred.Deferred<void>,
     silentResultsRef: Ref.Ref<number>,
     onTurnEnded: (ok: boolean) => Effect.Effect<void>,
-    launch: SessionLaunch
+    launch: SessionLaunch,
+    notFoundRef: Ref.Ref<boolean>
   ) {
     const continuesFrom = yield* resolveContinuesFrom(resume, branchAt, config.cwd)
     yield* Effect.logInfo('Starting query session', {
@@ -586,8 +596,21 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       yield* Effect.forEach(outbound, forward, { discard: true })
     })
 
+    const markNotFound = (sessionId: SessionId) =>
+      Ref.set(notFoundRef, true).pipe(
+        Effect.andThen(
+          Effect.logInfo('Resume target not found', { paneId: config.paneId, sessionId })
+        )
+      )
+
     yield* Stream.runForEach(events, (event) =>
-      reportStartupFailure(event, launch).pipe(Effect.andThen(forwardStep(event)))
+      reportStartupFailure(event, launch).pipe(
+        Effect.andThen(
+          Option.isSome(resume) && isSessionNotFound(event)
+            ? markNotFound(resume.value)
+            : forwardStep(event)
+        )
+      )
     )
   },
   (effect, config) =>
@@ -648,7 +671,7 @@ const unstartedSession = (reason: string): AgentSession => ({
   interrupt: ignoredUnstarted('interrupt', reason),
   rewindToCheckpoint: ignoredUnstarted('rewindToCheckpoint', reason),
   resume: ignoredUnstarted('resume', reason)(),
-  ended: Effect.succeed(reason)
+  ended: Effect.succeed(SessionFailed.make({ reason }))
 })
 
 /**
@@ -700,7 +723,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
   )
   const desiredModelRef = yield* Ref.make(options.config.model)
   const fiberRef = yield* Ref.make<Option.Option<Fiber.Fiber<void>>>(Option.none())
-  const endedDeferred = yield* Deferred.make<string>()
+  const endedDeferred = yield* Deferred.make<SessionEnd>()
   const restartLock = yield* Semaphore.make(1)
   const queueRef = yield* Ref.make<QueueState>(initialQueueState)
   const silentResultsRef = yield* Ref.make(0)
@@ -737,6 +760,17 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     yield* Ref.set(sessionIdRef, resume)
     yield* Ref.set(branchAtRef, Option.fromUndefinedOr(branchAt))
     const queryOpened = yield* Deferred.make<void>()
+    const notFoundRef = yield* Ref.make(false)
+    const endOf = (failure: Option.Option<string>) =>
+      Effect.map(
+        Ref.get(notFoundRef),
+        (notFound): SessionEnd =>
+          notFound && Option.isSome(resume) && branchAt === undefined
+            ? SessionNotFound.make({ sessionId: resume.value })
+            : SessionFailed.make({
+                reason: Option.getOrElse(failure, () => 'Agent session ended unexpectedly')
+              })
+      )
     const fiber = yield* Effect.forkIn(
       runSession(
         config,
@@ -758,15 +792,12 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
             Effect.flatMap((actions) => performActions(actions)),
             Effect.asVoid
           ),
-        launch
+        launch,
+        notFoundRef
       ).pipe(
         Effect.ensuring(Deferred.succeed(queryOpened, undefined)),
-        Effect.flatMap((failure) =>
-          Deferred.succeed(
-            endedDeferred,
-            Option.getOrElse(failure, () => 'Agent session ended unexpectedly')
-          )
-        ),
+        Effect.flatMap(endOf),
+        Effect.flatMap((end) => Deferred.succeed(endedDeferred, end)),
         Effect.andThen(transition(sessionEnded)),
         Effect.flatMap((actions) => performActions(actions)),
         Effect.asVoid

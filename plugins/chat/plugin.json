@@ -1,6 +1,6 @@
 {
   "name": "chat",
-  "api": "0.0.6",
+  "api": "0.0.7",
   "category": "feature",
   "renderer": "renderer.ts",
   "load": "eager"

@@ -31,7 +31,10 @@ export {
   type AgentBackend,
   type AgentSession,
   type AgentSessionOptions,
-  SessionDeleteError
+  SessionDeleteError,
+  type SessionEnd,
+  SessionFailed,
+  SessionNotFound
 } from './session/agent-backend'
 export type { DiaTool, DiaToolField, DiaToolResult } from './session/dia-tools'
 export {
