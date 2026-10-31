@@ -64,12 +64,25 @@ export const filterSlashCommands = (
 }
 
 /**
- * The token text produced by choosing `command`: its name prefixed with `/` and
- * a trailing space, so the caret sits ready for arguments, outside the token,
- * which closes the menu (see {@link activeSlashToken}). Splice
- * this over the active token's `start`..`end` range.
+ * The input after choosing `command` for the active `token` in `input`: the
+ * token becomes `/<name> `, the text around it is kept, and one space after the
+ * token is dropped so the result has one space between the command and the
+ * following text. `caret` is the position just after the inserted space, where
+ * arguments are typed; it is outside any token, so the menu closes (see
+ * {@link activeSlashToken}).
  */
-export const slashCommandCompletion = (command: SlashCommandInfo): string => `/${command.name} `
+export const completeSlashCommand = (
+  input: string,
+  token: TriggerToken,
+  command: SlashCommandInfo
+): { readonly value: string; readonly caret: number } => {
+  const completion = `/${command.name} `
+  const after = input.slice(token.end).replace(/^ /, '')
+  return {
+    value: input.slice(0, token.start) + completion + after,
+    caret: token.start + completion.length
+  }
+}
 
 /**
  * Moves a highlighted index by `delta` within a list of `length`, wrapping past

@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   activeSlashToken,
   activeTriggerToken,
+  completeSlashCommand,
   filterSlashCommands,
-  slashCommandCompletion,
   wrapHighlight
 } from './slash-command-filter'
 
@@ -142,34 +142,38 @@ describe('filterSlashCommands', () => {
   })
 })
 
-describe('slashCommandCompletion', () => {
-  it('prefixes the slash and appends a trailing space', () => {
-    expect(slashCommandCompletion(command('clear'))).toBe('/clear ')
+describe('completeSlashCommand', () => {
+  const complete = (input: string, caret: number, name: string) => {
+    const token = activeSlashToken(input, caret)
+    if (token === null) throw new Error(`no token at ${caret} in ${input}`)
+    return completeSlashCommand(input, token, command(name))
+  }
+
+  it('replaces a lone token with the name and a trailing space', () => {
+    expect(complete('/cl', 3, 'clear')).toEqual({ value: '/clear ', caret: 7 })
   })
 
-  it('produces a line that no longer opens the menu', () => {
-    const completion = slashCommandCompletion(command('compact'))
-    expect(activeSlashToken(completion, completion.length)).toBeNull()
+  it('leaves the caret where the menu is closed', () => {
+    const { value, caret } = complete('/comp', 5, 'compact')
+    expect(activeSlashToken(value, caret)).toBeNull()
   })
 
-  it('splices over a mid-text token and keeps the text before it', () => {
-    const input = 'fix the build then /cl'
-    const token = activeSlashToken(input, input.length)
-    expect(token).not.toBeNull()
-    if (token === null) return
-    const completion = slashCommandCompletion(command('clear'))
-    const next = input.slice(0, token.start) + completion + input.slice(token.end)
-    expect(next).toBe('fix the build then /clear ')
+  it('keeps the text before a mid-text token', () => {
+    expect(complete('fix the build then /cl', 22, 'clear')).toEqual({
+      value: 'fix the build then /clear ',
+      caret: 26
+    })
   })
 
-  it('splices over the active token range to complete a second command in place', () => {
-    const input = '/clear\n/comp'
-    const token = activeSlashToken(input, input.length)
-    expect(token).not.toBeNull()
-    if (token === null) return
-    const completion = slashCommandCompletion(command('compact'))
-    const next = input.slice(0, token.start) + completion + input.slice(token.end)
-    expect(next).toBe('/clear\n/compact ')
+  it('keeps one space before the text after the token', () => {
+    expect(complete('fix /cl more', 7, 'clear')).toEqual({ value: 'fix /clear more', caret: 11 })
+  })
+
+  it('replaces only the token on its own line', () => {
+    expect(complete('/clear\n/comp', 12, 'compact')).toEqual({
+      value: '/clear\n/compact ',
+      caret: 16
+    })
   })
 })
 
