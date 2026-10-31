@@ -45,7 +45,6 @@ import {
   Stream
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import { resolveAgentBackend } from '../session/agent-backend'
 import { EventHub } from './event-hub'
 import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
 import { probeProject } from './project-directory'
@@ -294,16 +293,6 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         )
       })
 
-      const deleteTranscript = Effect.fn('PaneWorkspace.deleteTranscript')(function* (
-        sessionId: SessionId
-      ) {
-        const backend = yield* resolveAgentBackend(plugins)
-        const deletion = yield* backend.deleteSession(sessionId).pipe(Effect.result)
-        return Result.isFailure(deletion)
-          ? Option.some(deletion.failure.reason)
-          : Option.none<string>()
-      })
-
       const removeProjectItems = Effect.fn('PaneWorkspace.removeProjectItems')(function* (
         tabs: ReadonlyArray<Tab>,
         force: boolean,
@@ -334,8 +323,6 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
               return tab.config.worktree === undefined
                 ? Effect.succeed(Option.none<string>())
                 : removeWorktree(tab.config.paneId, tab.config.worktree)
-            case 'TranscriptItem':
-              return deleteTranscript(item.sessionId)
           }
         }
 

@@ -1,5 +1,4 @@
 import { Schema } from 'effect'
-import { SessionId } from './pane'
 import { AgentName, type Tab } from './project'
 import { Uuid } from './uuid'
 
@@ -11,24 +10,22 @@ export type AgentItem = typeof AgentItem.Type
 export const WorktreeItem = Schema.TaggedStruct('WorktreeItem', { path: Schema.String })
 export type WorktreeItem = typeof WorktreeItem.Type
 
-/** A conversation transcript of an agent of the project; removing it deletes the transcript. */
-export const TranscriptItem = Schema.TaggedStruct('TranscriptItem', { sessionId: SessionId })
-export type TranscriptItem = typeof TranscriptItem.Type
-
-/** One thing removing a project removes. The project directory itself is never one. */
-export const RemovalItem = Schema.Union([AgentItem, WorktreeItem, TranscriptItem])
+/**
+ * One thing removing a project removes. The project directory and the agents' transcripts are
+ * never one; transcripts stay with the agent harness.
+ */
+export const RemovalItem = Schema.Union([AgentItem, WorktreeItem])
 export type RemovalItem = typeof RemovalItem.Type
 
 /**
  * Everything removing the project of `tab` deletes for that tab, in the order the Host removes
- * it: the agent, then its worktree and transcript when it has them.
+ * it: the agent, then its worktree when it has one.
  */
 export const removalItemsOf = (tab: Tab): ReadonlyArray<RemovalItem> => [
   AgentItem.make({ paneId: tab.config.paneId, name: tab.name }),
   ...(tab.config.worktree === undefined
     ? []
-    : [WorktreeItem.make({ path: tab.config.worktree.path })]),
-  ...(tab.sessionId === undefined ? [] : [TranscriptItem.make({ sessionId: tab.sessionId })])
+    : [WorktreeItem.make({ path: tab.config.worktree.path })])
 ]
 
 /** Removal of `item` has started. */

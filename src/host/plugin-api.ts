@@ -31,7 +31,6 @@ export {
   type AgentBackend,
   type AgentSession,
   type AgentSessionOptions,
-  SessionDeleteError,
   type SessionEnd,
   SessionFailed,
   SessionNotFound

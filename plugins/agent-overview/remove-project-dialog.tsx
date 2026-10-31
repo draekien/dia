@@ -37,28 +37,17 @@ const itemKey = (item: RemovalItem): string => {
       return `agent:${item.paneId}`
     case 'WorktreeItem':
       return `worktree:${item.path}`
-    case 'TranscriptItem':
-      return `transcript:${item.sessionId}`
   }
 }
 
 const describe = (
-  item: RemovalItem,
-  entry: ProjectEntry
+  item: RemovalItem
 ): { readonly kind: string; readonly text: string; readonly mono: boolean } => {
   switch (item._tag) {
     case 'AgentItem':
       return { kind: 'Agent', text: item.name, mono: false }
     case 'WorktreeItem':
       return { kind: 'Worktree', text: item.path, mono: true }
-    case 'TranscriptItem': {
-      const owner = entry.tabs.find((tab) => tab.sessionId === item.sessionId)
-      return {
-        kind: 'Transcript',
-        text: owner === undefined ? item.sessionId : `of ${owner.name}`,
-        mono: false
-      }
-    }
   }
 }
 
@@ -86,8 +75,8 @@ interface RemoveProjectDialogProps {
 }
 
 /**
- * Confirms and runs the removal of a project. It lists every agent, worktree and transcript that
- * will be removed; typing the project name enables "Remove". During removal each item shows its
+ * Confirms and runs the removal of a project. It lists every agent and worktree that will be
+ * removed; typing the project name enables "Remove". During removal each item shows its
  * progress. When an item fails, "Remove again" retries and "Remove anyway" drops the project and
  * leaves the failed items on disk.
  */
@@ -137,9 +126,8 @@ export function RemoveProjectDialog({ entry, onClose }: RemoveProjectDialogProps
         <DialogHeader>
           <DialogTitle>Remove {project.displayName}?</DialogTitle>
           <DialogDescription>
-            dia stops these agents and deletes their worktrees and transcripts. The project
-            directory <span className="font-mono break-all">{project.directory}</span> stays on
-            disk.
+            dia stops these agents and deletes their worktrees. Their transcripts and the project
+            directory <span className="font-mono break-all">{project.directory}</span> stay on disk.
           </DialogDescription>
         </DialogHeader>
 
@@ -148,7 +136,7 @@ export function RemoveProjectDialog({ entry, onClose }: RemoveProjectDialogProps
         ) : (
           <ul aria-label="Items to remove" className="flex max-h-64 flex-col gap-1 overflow-y-auto">
             {items.map((item) => {
-              const { kind, text, mono } = describe(item, entry)
+              const { kind, text, mono } = describe(item)
               const state = stateOf(item)
               return (
                 <li key={itemKey(item)} className="flex flex-col">
