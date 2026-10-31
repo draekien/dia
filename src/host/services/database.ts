@@ -2,12 +2,11 @@ import { SqliteClient, SqliteMigrator } from '@effect/sql-sqlite-node'
 import { PluginDatabaseError, type PluginMigrations } from '@shared/plugin/api'
 import { Context, Data, Effect, Exit, Layer, Scope } from 'effect'
 import { SqlClient } from 'effect/sql'
+import { kernelMigrations } from './kernel-migrations'
 
 type Migrations = Readonly<Record<string, Effect.Effect<void, unknown, SqlClient.SqlClient>>>
 
 const MIGRATION_KEY = /^(\d+)_(.+)$/
-
-const kernelMigrations: Migrations = {}
 
 /**
  * Failure of {@link openDatabase} when a migration key does not match `<id>_<name>` or two keys
@@ -34,8 +33,8 @@ const checkKeys = Effect.fnUntraced(function* (filename: string, migrations: Mig
 })
 
 /**
- * Opens the SQLite file at `filename` with write-ahead journaling and a busy timeout, applies
- * `migrations`, and returns a client. The connection closes when the surrounding scope closes.
+ * Opens the SQLite file at `filename` with write-ahead journaling, a busy timeout and foreign key
+ * enforcement, applies `migrations`, and returns a client. The connection closes when the surrounding scope closes.
  * Checks every key before opening the file. Fails with {@link InvalidMigrationKeyError} for a
  * malformed or duplicate key, `SqlError` when the file cannot be opened, and `MigrationError`
  * when a migration fails; pending migrations run in one transaction, so a failure applies none of them.
@@ -47,6 +46,7 @@ export const openDatabase = Effect.fn('openDatabase')(
     const { sql, applied } = yield* Effect.gen(function* () {
       const context = yield* Layer.buildWithScope(SqliteClient.layer({ filename }), connection)
       const sql = Context.get(context, SqlClient.SqlClient)
+      yield* sql.unsafe('PRAGMA foreign_keys = ON')
       const applied = yield* SqliteMigrator.run({
         loader: SqliteMigrator.fromRecord(migrations)
       }).pipe(Effect.provideService(SqlClient.SqlClient, sql))

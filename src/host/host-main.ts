@@ -46,6 +46,7 @@ import { makePaneWorkspaceLive } from './services/pane-workspace'
 import { makePersistenceServiceLive } from './services/persistence'
 import { makeSettingsStoreLive } from './services/settings-store'
 import { TranscriptReaderLive } from './services/transcript-reader'
+import { makeWorkspaceStoreLive } from './services/workspace-store'
 
 const encodeToMain = Schema.encodeSync(HostToMainMessage)
 const decodeFromMain = Schema.decodeUnknownResult(MainToHostMessage)
@@ -101,11 +102,16 @@ const buildHostLayer = (init: HostInit, token: string) => {
     makePersistenceServiceLive(init.userDataPath),
     NodeServices.layer
   )
+  const hostDatabase = makeHostDatabaseLive(init.userDataPath)
+  const workspaceStore = Layer.provide(
+    makeWorkspaceStoreLive(init.userDataPath),
+    Layer.merge(hostDatabase, NodeServices.layer)
+  )
   const workspace = Layer.provide(
     makePaneWorkspaceLive(init.worktreesRoot),
     Layer.mergeAll(
       supervisor,
-      persistence,
+      workspaceStore,
       Layer.provide(TranscriptReaderLive, hostPlugins),
       eventHub,
       hostPlugins,
@@ -136,7 +142,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     adapterStatus,
     modelPreferences,
     makeCommandDeduperLive(),
-    makeHostDatabaseLive(init.userDataPath),
+    hostDatabase,
     NodeFileSystem.layer,
     NodePath.layer
   )

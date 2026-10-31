@@ -50,8 +50,6 @@ const workspaceWith = (paneIds: ReadonlyArray<string>, visible?: string): Worksp
 const makeSetup = (initial: Workspace, saved: PersistedActivity = {}) => {
   const saves: Array<PersistedActivity> = []
   const persistence = Layer.succeed(PersistenceService, {
-    loadWorkspace: Effect.succeed(Option.none()),
-    saveWorkspace: () => Effect.void,
     loadActivity: Effect.succeed(saved),
     saveActivity: (activity) => Effect.sync(() => void saves.push(activity))
   })
