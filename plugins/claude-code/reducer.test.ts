@@ -384,7 +384,39 @@ describe('makeSessionEventReducer — slash commands and session lifecycle', () 
       {
         _tag: 'SlashCommandsAvailable',
         commands: [
-          { name: 'compact', description: 'Compact history', argumentHint: '[instructions]' }
+          {
+            name: 'compact',
+            description: 'Compact history',
+            argumentHint: '[instructions]',
+            aliases: []
+          }
+        ]
+      }
+    ])
+  })
+
+  it('keeps the aliases a commands_changed message reports for a command', () => {
+    const emitted = run([
+      commandsChanged([
+        {
+          name: 'productivity-skills:get-aligned',
+          description: '',
+          argumentHint: '',
+          aliases: ['get-aligned']
+        }
+      ])
+    ])
+
+    expect(emitted).toEqual([
+      {
+        _tag: 'SlashCommandsAvailable',
+        commands: [
+          {
+            name: 'productivity-skills:get-aligned',
+            description: '',
+            argumentHint: '',
+            aliases: ['get-aligned']
+          }
         ]
       }
     ])

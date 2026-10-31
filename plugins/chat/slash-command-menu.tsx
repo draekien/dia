@@ -1,6 +1,7 @@
 import { cn, ScrollArea } from '@dia/renderer-plugin'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import { useEffect, useRef } from 'react'
+import { splitCommandName } from './slash-command-filter'
 
 /**
  * The DOM id of the menu's listbox for a pane, used to wire the input's
@@ -61,6 +62,7 @@ export function SlashCommandMenu({
       >
         {commands.map((command, index) => {
           const isActive = index === highlightedIndex
+          const { namespace, shortName } = splitCommandName(command.name)
           return (
             // The combobox owns focus and keyboard nav (aria-activedescendant on the input);
             // options are intentionally non-focusable and selected via the input's Enter/Tab.
@@ -80,7 +82,15 @@ export function SlashCommandMenu({
               )}
             >
               <span className="shrink-0 whitespace-nowrap font-mono" title={`/${command.name}`}>
-                /{command.name}
+                /
+                {namespace !== '' && (
+                  <span
+                    className={isActive ? 'text-accent-foreground/70' : 'text-muted-foreground'}
+                  >
+                    {namespace}
+                  </span>
+                )}
+                {shortName}
               </span>
               {command.argumentHint !== '' && (
                 <span

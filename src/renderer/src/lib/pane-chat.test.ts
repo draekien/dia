@@ -187,7 +187,12 @@ describe('reducePaneChat: user messages sent', () => {
   })
 
   it('preserves the available slash commands and the queue', () => {
-    const command: SlashCommandInfo = { name: 'compact', description: '', argumentHint: '' }
+    const command: SlashCommandInfo = {
+      name: 'compact',
+      description: '',
+      argumentHint: '',
+      aliases: []
+    }
     const seeded = reducePaneChat(
       { ...emptyPaneChatState, slashCommands: [command] },
       queueChanged(['later'], false)
@@ -540,7 +545,7 @@ describe('reducePaneChat: slash commands', () => {
   it('sets the available slash-command list without touching the transcript', () => {
     const seeded = paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }])
     const commands: ReadonlyArray<SlashCommandInfo> = [
-      { name: 'compact', description: 'Compact history', argumentHint: '' }
+      { name: 'compact', description: 'Compact history', argumentHint: '', aliases: [] }
     ]
 
     const result = reducePaneChat(seeded, slashCommandsAvailable(commands))
@@ -552,13 +557,14 @@ describe('reducePaneChat: slash commands', () => {
   it('replaces the prior list rather than merging when a richer list arrives', () => {
     const names = reducePaneChat(
       emptyPaneChatState,
-      slashCommandsAvailable([{ name: 'compact', description: '', argumentHint: '' }])
+      slashCommandsAvailable([{ name: 'compact', description: '', argumentHint: '', aliases: [] }])
     )
 
     const enriched: SlashCommandInfo = {
       name: 'compact',
       description: 'Compact conversation history',
-      argumentHint: '[instructions]'
+      argumentHint: '[instructions]',
+      aliases: []
     }
     const result = reducePaneChat(names, slashCommandsAvailable([enriched]))
 
@@ -574,7 +580,7 @@ describe('reducePaneChat: slash commands', () => {
   it('clears the warming indicator when the available list arrives', () => {
     const warming = reducePaneChat(emptyPaneChatState, slashCommandsWarming(true))
     const commands: ReadonlyArray<SlashCommandInfo> = [
-      { name: 'compact', description: '', argumentHint: '' }
+      { name: 'compact', description: '', argumentHint: '', aliases: [] }
     ]
 
     const result = reducePaneChat(warming, slashCommandsAvailable(commands))
@@ -645,7 +651,12 @@ describe('reducePaneChat: model change', () => {
 
 describe('reducePaneChat: conversation reset', () => {
   it('clears messages and load state while preserving the available slash commands', () => {
-    const command: SlashCommandInfo = { name: 'clear', description: '', argumentHint: '' }
+    const command: SlashCommandInfo = {
+      name: 'clear',
+      description: '',
+      argumentHint: '',
+      aliases: []
+    }
     const active = reducePaneChat(
       loadingWith(paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }])),
       slashCommandsAvailable([command])

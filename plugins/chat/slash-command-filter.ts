@@ -15,7 +15,7 @@ export interface TokenTrigger {
   readonly isNameChar: (char: string) => boolean
 }
 
-const SLASH_TRIGGER: TokenTrigger = { char: '/', isNameChar: (char) => /[\w-]/.test(char) }
+const SLASH_TRIGGER: TokenTrigger = { char: '/', isNameChar: (char) => /[\w:-]/.test(char) }
 
 /**
  * Finds the token for `trigger` that the caret is in, so a menu can complete it
@@ -44,23 +44,43 @@ export const activeTriggerToken = (
 
 /**
  * The `/` command token at the caret, as {@link activeTriggerToken} finds it for
- * command names (`[\w-]`): `fix the build then /cl` yields query `'cl'`, while
+ * command names (`[\w:-]`, so a plugin prefix such as `productivity-skills:`
+ * counts): `fix the build then /cl` yields query `'cl'`, while
  * `/clear ` (after the argument space) and `a/b` yield `null`.
  */
 export const activeSlashToken = (input: string, caret: number): TriggerToken | null =>
   activeTriggerToken(input, caret, SLASH_TRIGGER)
 
 /**
- * Selects the commands whose name begins with `query` (case-insensitive),
- * preserving the input order. Pass the session's available commands and the
- * `query` of {@link activeSlashToken}; an empty `query` returns every command.
+ * Splits a command `name` into its plugin `namespace`, which keeps the trailing
+ * `:` (`'productivity-skills:'`), and its `shortName` (`'get-aligned'`). A
+ * command with no plugin prefix has an empty `namespace`.
+ */
+export const splitCommandName = (name: string): { namespace: string; shortName: string } => {
+  const colon = name.lastIndexOf(':')
+  return { namespace: name.slice(0, colon + 1), shortName: name.slice(colon + 1) }
+}
+
+/**
+ * Selects the commands that `query` matches, case-insensitively: first those
+ * whose `name` begins with it, then those matched only by their short name (see
+ * {@link splitCommandName}) or one of their `aliases`. Each group keeps the
+ * input order. Pass the session's available commands and the `query` of
+ * {@link activeSlashToken}; an empty `query` returns every command.
  */
 export const filterSlashCommands = (
   commands: ReadonlyArray<SlashCommandInfo>,
   query: string
 ): ReadonlyArray<SlashCommandInfo> => {
   const needle = query.toLowerCase()
-  return commands.filter((command) => command.name.toLowerCase().startsWith(needle))
+  const starts = (text: string): boolean => text.toLowerCase().startsWith(needle)
+  const byName = commands.filter((command) => starts(command.name))
+  const byOtherName = commands.filter(
+    (command) =>
+      !starts(command.name) &&
+      (starts(splitCommandName(command.name).shortName) || command.aliases.some(starts))
+  )
+  return [...byName, ...byOtherName]
 }
 
 /**

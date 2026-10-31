@@ -84,7 +84,7 @@ import {
   makePermissionModeController,
   type PermissionModeController
 } from './permission-mode-controller'
-import { makeSessionEventReducer } from './reducer'
+import { makeSessionEventReducer, toSlashCommandInfo } from './reducer'
 import { thinkingOptions } from './thinking-options'
 import { DIA_TOOL_SERVER_KEY, isDiaToolName, makeDiaToolServer } from './tool-server'
 import { readLastAssistantUuid, readTurnResumeAnchor } from './transcript'
@@ -520,11 +520,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
         Effect.flatMap((commands) =>
           emit(
             SlashCommandsAvailable.make({
-              commands: commands.map((command) => ({
-                name: command.name,
-                description: command.description,
-                argumentHint: command.argumentHint
-              }))
+              commands: commands.map(toSlashCommandInfo)
             })
           )
         ),
