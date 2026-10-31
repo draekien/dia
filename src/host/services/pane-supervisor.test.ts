@@ -13,7 +13,12 @@ import { Deferred, Effect, Layer, Option, Result, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
 import { HostPlugins } from '../plugins/host-plugins'
 import { PluginSources } from '../plugins/plugin-sources'
-import type { AgentSession } from '../session/agent-backend'
+import {
+  type AgentSession,
+  type SessionEnd,
+  SessionFailed,
+  SessionNotFound
+} from '../session/agent-backend'
 import {
   MessageQueueChanged,
   type OutboundMessage,
@@ -37,6 +42,7 @@ interface FakeSession {
   readonly calls: Array<string>
   readonly emit: (message: OutboundMessage) => Effect.Effect<void>
   readonly end: (reason: string) => Effect.Effect<void>
+  readonly endWith: (end: SessionEnd) => Effect.Effect<void>
   closed: boolean
 }
 
@@ -59,7 +65,7 @@ const requestB: PaneCreationRequest = {
 
 const flush = Effect.repeat(Effect.yieldNow, { times: 50 })
 
-const ignoreSessionId = (_sessionId: SessionId): Effect.Effect<void> => Effect.void
+const ignoreSessionId = (_sessionId: Option.Option<SessionId>): Effect.Effect<void> => Effect.void
 const ignorePermissionMode = (_mode: PermissionMode): Effect.Effect<void> => Effect.void
 
 const attentionTags = (events: ReadonlyArray<IpcEvent>): ReadonlyArray<string> =>
@@ -122,14 +128,16 @@ function makeTestSetup(
   const factoryLayer = Layer.succeed(SessionFactory)({
     start: ({ config, resume, emit }) =>
       Effect.gen(function* () {
-        const ended = yield* Deferred.make<string>()
+        const ended = yield* Deferred.make<SessionEnd>()
+        const endWith = (end: SessionEnd) => Deferred.succeed(ended, end).pipe(Effect.asVoid)
         const calls: Array<string> = []
         const fake: FakeSession = {
           config,
           resume,
           calls,
           emit,
-          end: (reason) => Deferred.succeed(ended, reason).pipe(Effect.asVoid),
+          end: (reason) => endWith(SessionFailed.make({ reason })),
+          endWith,
           closed: false
         }
         sessions.push(fake)
@@ -350,13 +358,13 @@ describe('PaneSupervisor', () => {
     })
   )
 
-  it.effect('routes a SessionStarted event from the session to the onSessionId callback', () =>
+  it.effect('routes a SessionStarted event from the session to the onSessionChanged callback', () =>
     Effect.gen(function* () {
       const { sessions, testLayer } = makeTestSetup()
 
       yield* Effect.gen(function* () {
         const supervisor = yield* PaneSupervisor
-        const sessionIds: Array<string> = []
+        const sessionIds: Array<Option.Option<SessionId>> = []
 
         yield* supervisor.openPane(
           requestA,
@@ -367,7 +375,7 @@ describe('PaneSupervisor', () => {
 
         yield* sessions[0].emit(SessionStarted.make({ sessionId: SessionId.make('session-xyz') }))
 
-        assert.deepStrictEqual(sessionIds, ['session-xyz'])
+        assert.deepStrictEqual(sessionIds, [Option.some(SessionId.make('session-xyz'))])
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })
   )
@@ -976,6 +984,91 @@ describe('PaneSupervisor parking', () => {
         yield* flush
 
         assert.deepStrictEqual(attentionTags(events), ['ParkedForUser', 'Idle'])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+})
+
+describe('PaneSupervisor when the resumed conversation is gone', () => {
+  const missing = SessionId.make('9c376084-48c1-4e74-b886-7915ef2993db')
+  const NOT_FOUND_NOTICE =
+    "This tab's conversation could not be found. Send your message again to start a new conversation."
+
+  const openRecording = Effect.fnUntraced(function* () {
+    const supervisor = yield* PaneSupervisor
+    const events: Array<IpcEvent> = []
+    const sessionChanges: Array<Option.Option<SessionId>> = []
+    yield* supervisor.openPane(
+      { ...requestA, resume: missing },
+      (event) => Effect.sync(() => void events.push(event)),
+      (sessionId) => Effect.sync(() => void sessionChanges.push(sessionId)),
+      ignorePermissionMode
+    )
+    return { supervisor, events, sessionChanges }
+  })
+
+  it.effect('clears the session, empties the queue, shows the notice and removes the pane', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const { supervisor, events, sessionChanges } = yield* openRecording()
+
+        yield* sessions[0].endWith(SessionNotFound.make({ sessionId: missing }))
+        yield* flush
+
+        assert.deepStrictEqual(sessionChanges, [Option.none()])
+        assert.deepStrictEqual(
+          events.map((event) =>
+            event._tag === 'PaneAttentionChanged'
+              ? event.attention
+              : event._tag === 'PaneMessageQueueChanged'
+                ? { queued: event.queued, held: event.held }
+                : event._tag
+          ),
+          [
+            { queued: [], held: false },
+            { _tag: 'Errored', error: { message: NOT_FOUND_NOTICE } }
+          ]
+        )
+        assert.isTrue(Option.isNone(yield* supervisor.getHandle(requestA.paneId)))
+        assert.isTrue(sessions[0].closed)
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('keeps the session and marks the pane Crashed for any other end', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const { supervisor, events, sessionChanges } = yield* openRecording()
+
+        yield* sessions[0].end('stream failed')
+        yield* flush
+
+        assert.deepStrictEqual(sessionChanges, [])
+        assert.deepStrictEqual(attentionTags(events), ['Crashed'])
+        assert.isTrue(Option.isNone(yield* supervisor.getHandle(requestA.paneId)))
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('clears the session and removes a parked pane without the notice', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const { supervisor, events, sessionChanges } = yield* openRecording()
+        yield* sessions[0].emit(TurnParked.make({ cause: SignedOut.make({}) }))
+        yield* flush
+
+        yield* sessions[0].endWith(SessionNotFound.make({ sessionId: missing }))
+        yield* flush
+
+        assert.deepStrictEqual(sessionChanges, [Option.none()])
+        assert.deepStrictEqual(attentionTags(events), ['ParkedForUser'])
+        assert.isTrue(Option.isNone(yield* supervisor.getHandle(requestA.paneId)))
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })
   )

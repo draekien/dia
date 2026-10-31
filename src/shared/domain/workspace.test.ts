@@ -1,4 +1,4 @@
-import { Result, Schema } from 'effect'
+import { Option, Result, Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
 import type { PaneId } from './pane'
 import { SessionId } from './pane'
@@ -338,9 +338,20 @@ describe('tab updates', () => {
   })
 
   it('records the session id on the named tab', () => {
-    const result = ok(recordSession(workspace, paneId(1), SessionId.make('session-1')))
+    const result = ok(recordSession(workspace, paneId(1), Option.some(SessionId.make('session-1'))))
 
     expect(result.projects[0].tabs[0].sessionId).toBe('session-1')
+  })
+
+  it('removes the session id from the named tab when given none', () => {
+    const recorded = ok(
+      recordSession(workspace, paneId(1), Option.some(SessionId.make('session-1')))
+    )
+
+    const result = ok(recordSession(recorded, paneId(1), Option.none()))
+
+    expect('sessionId' in result.projects[0].tabs[0]).toBe(false)
+    expect(result.projects[0].tabs[1]).toEqual(recorded.projects[0].tabs[1])
   })
 
   it('updates config fields but never the pane id', () => {

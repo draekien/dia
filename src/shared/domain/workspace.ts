@@ -1,4 +1,4 @@
-import { Result } from 'effect'
+import { Option, Result } from 'effect'
 import type { PaneConfig, PaneId, SessionId } from './pane'
 import {
   type AgentName,
@@ -165,13 +165,18 @@ export const updateTabConfig = (
 ): Result.Result<Workspace, TabNotFoundError> =>
   mapTab(workspace, paneId, (tab) => ({ ...tab, config: { ...tab.config, ...patch, paneId } }))
 
-/** Stores the agent session id a tab resumes from. */
+/** Stores the agent session a tab resumes from, or removes it when `sessionId` is none. */
 export const recordSession = (
   workspace: Workspace,
   paneId: PaneId,
-  sessionId: SessionId
+  sessionId: Option.Option<SessionId>
 ): Result.Result<Workspace, TabNotFoundError> =>
-  mapTab(workspace, paneId, (tab) => ({ ...tab, sessionId }))
+  mapTab(workspace, paneId, ({ sessionId: _previous, ...tab }) =>
+    Option.match(sessionId, {
+      onNone: () => tab,
+      onSome: (id) => ({ ...tab, sessionId: id })
+    })
+  )
 
 /** The tab with `paneId` and the project that holds it. */
 export const tabOf = (

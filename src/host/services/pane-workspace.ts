@@ -224,17 +224,24 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           return Result.isSuccess(projectId) && removing.has(projectId.success)
         })
 
-      const recordSessionId = (paneId: PaneId, sessionId: SessionId) =>
+      const recordSessionId = (paneId: PaneId, sessionId: Option.Option<SessionId>) =>
         mutate<never>('recordSession', (workspace) => {
           const next = WorkspaceOps.recordSession(workspace, paneId, sessionId)
           if (Result.isSuccess(next)) return Result.succeed(next.success)
-          pendingSessions.set(paneId, sessionId)
+          Option.match(sessionId, {
+            onNone: () => pendingSessions.delete(paneId),
+            onSome: (id) => pendingSessions.set(paneId, id)
+          })
           return Result.succeed(workspace)
         }).pipe(
           Effect.andThen(
-            Effect.logDebug('Recorded a session id, or held it for a tab not added yet', {
-              paneId
-            })
+            Effect.logDebug(
+              'Recorded or cleared a session id, or held it for a tab not added yet',
+              {
+                paneId,
+                cleared: Option.isNone(sessionId)
+              }
+            )
           )
         )
 

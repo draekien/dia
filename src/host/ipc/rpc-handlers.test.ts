@@ -146,6 +146,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       }),
     interrupt: () => Effect.void,
     markCrashed: () => Effect.void,
+    markErrored: () => Effect.void,
     resume: Effect.sync(() => {
       calls.push('resume')
     })
