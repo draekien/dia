@@ -9,7 +9,7 @@ import {
 } from '@shared/domain/agent-summary'
 import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
 import { type IpcEvent, WorkspaceChanged } from '@shared/ipc/contract'
-import { Duration, Effect, Exit, Layer, Option, Scope, Stream } from 'effect'
+import { Duration, Effect, Exit, Layer, Scope, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
 import { ACTIVITY_SAVE_DELAY, AgentSummaries, AgentSummariesLive } from './agent-summaries'
 import { EventHub, makeEventHubLive } from './event-hub'

@@ -2,15 +2,10 @@ import { type ProjectEntry, Workspace } from '@shared/domain/project'
 import { Effect, FileSystem, Option, Result, Schema } from 'effect'
 import { LegacyWorkspace, migrateLegacyWorkspace } from './workspace-migration'
 
-/**
- * The contents of a version 2 `workspace.json`: every project with its tabs, the project order and
- * the visible tab. Read only by {@link readLegacyWorkspace}; dia no longer writes the file.
- */
-export const PersistedWorkspace = Schema.Struct({
+const PersistedWorkspace = Schema.Struct({
   version: Schema.Literal(2),
   workspace: Workspace
 })
-export type PersistedWorkspace = typeof PersistedWorkspace.Type
 
 const parseJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
 const decodeCurrent = Schema.decodeUnknownResult(PersistedWorkspace)

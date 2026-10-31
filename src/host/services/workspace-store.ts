@@ -342,7 +342,12 @@ const makeStore = Effect.gen(function* () {
     )
   )
 
-  return { load, save, hasWorkspace: Effect.map(readRows, Option.isSome) }
+  const hasWorkspace = Effect.map(
+    sql`SELECT 1 FROM workspace_state WHERE id = 1`,
+    (rows) => rows.length > 0
+  )
+
+  return { load, save, hasWorkspace }
 })
 
 const importLegacyWorkspace = Effect.fn('WorkspaceStore.importLegacyWorkspace')(function* (
