@@ -48,7 +48,7 @@ Verification that needs no log file: main prints `Asking the Host to shut down` 
 ### Running a dev build touches the real profile
 
 - Main sets `userData` to `%APPDATA%\dia-dev` for an unpackaged build and ignores `--user-data-dir`, and Electron on Windows resolves `appData` from the known-folder API, so overriding the `APPDATA` environment variable does nothing. A manual run reads and writes the developer's real `dia-dev` workspace. A packaged build uses `%APPDATA%\dia`.
-- Back up `workspace.json` and `settings.json` before a manual run and restore them after.
+- Back up `host.db` (with its `-wal` and `-shm` files) and `settings.json` before a manual run and restore them after.
 - If the shell that launches Electron comes from an Electron-based app, `ELECTRON_RUN_AS_NODE` is set and `electron .` runs `out/main/index.js` as plain Node (`The requested module 'electron' does not provide an export named 'BrowserWindow'`). Launch with `env -u ELECTRON_RUN_AS_NODE`.
 
 ## Implication

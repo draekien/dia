@@ -29,7 +29,7 @@ If `--build` is given, use it. Otherwise pick from the table; when both rows or 
 
 ## Run a dev build
 
-1. **Back up the profile.** A dev build reads and writes the real `%APPDATA%\dia-dev` and ignores `--user-data-dir`. Copy `workspace.json` and `settings.json` to a new backup directory outside the repo, and note which of the two did not exist. Then move `workspace.json` away: a restored workspace can hold a session id the SDK no longer has, which crashes the pane. Without it, the initial pane `00000000-0000-0000-0000-000000000001` has status `pending`.
+1. **Back up the profile.** A dev build reads and writes the real `%APPDATA%\dia-dev` and ignores `--user-data-dir`. Copy `host.db`, `host.db-wal`, `host.db-shm`, `workspace.json`, `workspace.imported.json` and `settings.json` to a new backup directory outside the repo, and note which of them did not exist. Then move `host.db`, `host.db-wal`, `host.db-shm` and `workspace.json` away: `host.db` holds the workspace (ADR-0043), a restored workspace can hold a session id the SDK no longer has, which crashes the pane, and a `workspace.json` next to an empty `host.db` is imported on start. Without it, the initial pane `00000000-0000-0000-0000-000000000001` has status `pending`.
 2. **Build and launch.**
 
    ```sh
@@ -63,7 +63,7 @@ node scripts/cdp-eval.mjs --port 9333 "{ const box = document.querySelector('tex
 node scripts/cdp-eval.mjs --port 9333 "window.__events.length"
 ```
 
-The pane id `00000000-0000-0000-0000-000000000001` is the initial pane only with `workspace.json` moved away (dev) or on a fresh scratch profile (packaged). The third command sends the prompt through the composer: it fills the `textarea` and clicks `Send message`. The click returns before the turn ends: re-read the collected value until it reaches the expected state, up to a stated limit such as 60 s, and record a timeout as a failed observation. `--timeout-ms` does not bound the expression itself.
+The pane id `00000000-0000-0000-0000-000000000001` is the initial pane only with `host.db` and `workspace.json` moved away (dev) or on a fresh scratch profile (packaged). The third command sends the prompt through the composer: it fills the `textarea` and clicks `Send message`. The click returns before the turn ends: re-read the collected value until it reaches the expected state, up to a stated limit such as 60 s, and record a timeout as a failed observation. `--timeout-ms` does not bound the expression itself.
 
 Read `src/preload` for the current `window.dia` surface rather than guessing a method's arguments. For a change in a git-backed feature, run it against a throwaway git repo, not this one.
 
