@@ -606,7 +606,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     yield* Stream.runForEach(events, (event) =>
       reportStartupFailure(event, launch).pipe(
         Effect.andThen(
-          Option.isSome(resume) && isSessionNotFound(event)
+          Option.isSome(resume) && branchAt === undefined && isSessionNotFound(event)
             ? markNotFound(resume.value)
             : forwardStep(event)
         )
@@ -765,7 +765,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
       Effect.map(
         Ref.get(notFoundRef),
         (notFound): SessionEnd =>
-          Option.isSome(notFound) && branchAt === undefined
+          Option.isSome(notFound)
             ? SessionNotFound.make({ sessionId: notFound.value })
             : SessionFailed.make({
                 reason: Option.getOrElse(failure, () => 'Agent session ended unexpectedly')

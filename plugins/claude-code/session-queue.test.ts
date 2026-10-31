@@ -604,18 +604,22 @@ describe('missing session', () => {
         assert.deepStrictEqual(yield* session.ended, SessionNotFound.make({ sessionId: missingId }))
       })
   )
-  it.effect('ends as failed when a rewind reports the conversation not found', () =>
-    Effect.gen(function* () {
-      const { session } = yield* openWith(Option.some(missingId))
-      yield* session.rewindToCheckpoint('turn-2', 'reply-1')
-      const forked = sdk.queries[1]
-      assert.isDefined(forked)
-      assert.strictEqual(forked.options.resumeSessionAt, 'reply-1')
 
-      forked.emit(notFound())
-      forked.fail(thrown)
+  it.effect(
+    'ends as failed, with a turn error, when a rewind reports the conversation not found',
+    () =>
+      Effect.gen(function* () {
+        const { session, emitted } = yield* openWith(Option.some(missingId))
+        yield* session.rewindToCheckpoint('turn-2', 'reply-1')
+        const forked = sdk.queries[1]
+        assert.isDefined(forked)
+        assert.strictEqual(forked.options.resumeSessionAt, 'reply-1')
 
-      assert.strictEqual((yield* session.ended)._tag, 'SessionFailed')
-    })
+        forked.emit(notFound())
+        forked.fail(thrown)
+
+        assert.strictEqual((yield* session.ended)._tag, 'SessionFailed')
+        assert.isTrue(tags(emitted).includes('TurnErrored'))
+      })
   )
 })

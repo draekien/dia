@@ -92,11 +92,11 @@ const isSessionNotFound = (message: SDKMessage) =>
   message.errors.some((error) => error.startsWith('No conversation found with session ID'))
 ```
 
-- `startQuery` creates `notFoundRef: Ref<boolean>` and passes it to `runSession`.
-- In `runSession`, for each SDK message after `reportStartupFailure` and before the reducer: when `resume` is `Some` and `isSessionNotFound(message)`, it sets `notFoundRef`, logs `Effect.logInfo('Resume target not found', { paneId, sessionId })`, and does not pass the message to the reducer, so no `TurnErrored` reaches the user.
-- `runSession` still returns `Option<string>`, and its post-processor is unchanged. `startQuery`, where it completes `endedDeferred` today, chooses the end: if `notFoundRef` is set, `resume` is `Some` and `branchAt` is `undefined`, `SessionNotFound.make({ sessionId: resume.value })`; otherwise `SessionFailed.make({ reason: Option.getOrElse(failure, () => 'Agent session ended unexpectedly') })`. This covers both exits: the stream failing (observed in #48 against SDK 0.3.311: `Error: Claude Code returned an error result: No conversation found…`) and the stream completing.
+- `startQuery` passes `notFoundRef` to `runSession`, which sets it to the resumed id.
+- In `runSession`, for each SDK message after `reportStartupFailure` and before the reducer: when `resume` is `Some`, `branchAt` is `undefined` and `isSessionNotFound(message)`, it sets `notFoundRef`, logs `Effect.logInfo('Resume target not found', { paneId, sessionId })`, and does not pass the message to the reducer, so no `TurnErrored` reaches the user.
+- `runSession` still returns `Option<string>`, and its post-processor is unchanged. `startQuery` creates `notFoundRef: Ref<Option<SessionId>>`. Where it completes `endedDeferred` today, it chooses the end: if `notFoundRef` holds an id, `SessionNotFound.make({ sessionId })`; otherwise `SessionFailed.make({ reason: Option.getOrElse(failure, () => 'Agent session ended unexpectedly') })`. This covers both exits: the stream failing (observed in #48 against SDK 0.3.311: `Error: Claude Code returned an error result: No conversation found…`) and the stream completing.
 - `unstartedSession` and `unavailableSession` end with `SessionFailed.make({ reason })`.
-- `SessionNotFound` is reported for the first resume and a thinking-level restart. `num_turns === 0` limits the match to a result that ran no turn. A rewind (`branchAt` set) always ends as `SessionFailed`: its `resume` names a conversation that exists, and the SDK's text for a missing `resumeSessionAt` anchor is unverified, so a match there must not clear the tab's session.
+- `SessionNotFound` is reported for the first resume and a thinking-level restart. `num_turns === 0` limits the match to a result that ran no turn. A rewind (`branchAt` set) is never matched: its result reaches the reducer as a `TurnErrored`, and the session ends as `SessionFailed`. Its `resume` names a conversation that exists, and the SDK's text for a missing `resumeSessionAt` anchor is unverified, so a match there must not clear the tab's session.
 
 The SDK gives no error code for this case: the text is matched only in the adapter. The Host never reads error text.
 
@@ -142,7 +142,7 @@ The SDK gives no error code for this case: the text is matched only in the adapt
 - adapter: the same text with `num_turns: 1` → not matched; `TurnErrored` emitted.
 - adapter: any other thrown error → `SessionFailed` with the rendered reason.
 - adapter: a session opened with `resume: S` whose first query succeeds, then `setThinkingLevel` and a send, and the restarted query's first result is the not-found result → `ended` is `SessionNotFound({ sessionId: S })`; the first query's end did not complete `ended`.
-- adapter: a rewind (`branchAt` set) whose query returns the not-found result → `SessionFailed`.
+- adapter: a rewind (`branchAt` set) whose query returns the not-found result → `SessionFailed`, and `TurnErrored` is emitted.
 - supervisor: `ended` = `SessionNotFound` → `onSessionChanged(none)` once, an empty `PaneMessageQueueChanged`, then attention `Errored` with the notice, pane removed; `SessionFailed` → `Crashed`, `onSessionChanged` never called with none; a parked pane ending with `SessionNotFound` → `onSessionChanged(none)`, no `Errored`, pane removed.
 - workspace (`pane-workspace.test.ts` harness): after the supervisor reports `onSessionChanged(none)`, the tab has no `sessionId`, a later `resumePane` opens no pane, and `ensureLive` opens one with `resume` undefined and the tab's config. The `agent_sessions` side is the existing `workspace-store.test.ts` case "leaves no current session when the tab session is cleared".
 - `workspace.test.ts`: `recordSession` with `Option.none()` removes `sessionId`.
