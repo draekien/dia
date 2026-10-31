@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0046"
 date: 2026-10-23
 decision-makers: William Pei
 ---
@@ -38,7 +38,7 @@ Chosen options: "tabs, one visible at a time" and "any directory the user regist
 | Visible tab | Exactly one tab fills the content area at a time. There are no split panes. Tabs are selected from the agent overview, a left sidebar; there is no separate tab strip |
 | Background tab | A tab that is not visible. Its agent keeps running, and its status shows in the agent overview and OS notifications (`docs/prds/agent-os.md`) |
 | Archive | Removes the tab's worktree and keeps its session transcripts. The tab moves to its project's archived list |
-| Delete | Removes the tab's worktree and its session transcripts |
+| Delete | Removes the tab's worktree and its session transcripts (amended by ADR-0046: transcripts are kept) |
 
 The persisted state that ADR-0011 calls the layout tree becomes a list of projects, each with its tabs, plus the visible tab. Transcripts stay in the SDK session store (ADR-0011).
 
