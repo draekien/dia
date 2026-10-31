@@ -9,6 +9,7 @@ import {
   QuestionResponse
 } from '../domain/attention'
 import type { ActivityInfo, ActivityNotFound } from '../domain/background-activity'
+import { ContextUsage } from '../domain/context-usage'
 import { MessageQueueSnapshot, OutgoingMessage, SendMode } from '../domain/message-queue'
 import { ModelCatalogSnapshot } from '../domain/model'
 import {
@@ -535,6 +536,16 @@ export const PaneModelChanged = Schema.TaggedStruct('PaneModelChanged', {
 export type PaneModelChanged = typeof PaneModelChanged.Type
 
 /**
+ * Event pushed to the renderer with a new reading of how full pane `paneId`'s context window is.
+ * `usage` replaces the reading the renderer holds.
+ */
+export const PaneContextUsageChanged = Schema.TaggedStruct('PaneContextUsageChanged', {
+  paneId: Uuid,
+  usage: ContextUsage
+})
+export type PaneContextUsageChanged = typeof PaneContextUsageChanged.Type
+
+/**
  * Event pushed to the renderer whenever the workspace changes: a project was registered, moved
  * or removed, a tab was created, renamed or changed, or the visible tab changed. `workspace` is
  * the full current workspace and replaces the renderer's copy. Never replayed.
@@ -673,6 +684,7 @@ export const IpcEvent = Schema.Union([
   PaneMessageQueueChanged,
   PaneUserMessagesSent,
   PaneModelChanged,
+  PaneContextUsageChanged,
   WorkspaceChanged,
   AgentSummaryChanged,
   AgentSummariesReplaced,
@@ -878,6 +890,7 @@ export interface DiaApi {
   onMessageQueueChanged(listener: (event: PaneMessageQueueChanged) => void): () => void
   onUserMessagesSent(listener: (event: PaneUserMessagesSent) => void): () => void
   onModelChanged(listener: (event: PaneModelChanged) => void): () => void
+  onContextUsageChanged(listener: (event: PaneContextUsageChanged) => void): () => void
   onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void
   onAssistantThinkingDelta(listener: (event: PaneAssistantThinkingDelta) => void): () => void
   onToolCallStarted(listener: (event: PaneToolCallStarted) => void): () => void

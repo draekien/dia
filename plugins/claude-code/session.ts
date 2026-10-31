@@ -12,6 +12,7 @@ import {
 import {
   type AgentSession,
   type AgentSessionOptions,
+  ContextUsageChanged,
   type DiaTool,
   MessageQueueChanged,
   ModelChanged,
@@ -66,6 +67,7 @@ import {
   NOT_INSTALLED_REASON,
   overrideUnrunnableReason
 } from './claude-install'
+import { readContextUsage, toContextUsage } from './context-usage'
 import {
   dispatchEnded,
   edit,
@@ -390,6 +392,11 @@ const isTurnEnd = (message: OutboundMessage): boolean =>
   message._tag === 'TurnCompleted' ||
   message._tag === 'TurnParked'
 
+const changesContextUsage = (message: OutboundMessage): boolean =>
+  isTurnEnd(message) ||
+  message._tag === 'ConversationCompacted' ||
+  message._tag === 'ConversationReset'
+
 const resolveContinuesFrom = Effect.fn('ClaudeCodeSession.resolveContinuesFrom')(function* (
   resume: Option.Option<SessionId>,
   branchAt: string | undefined,
@@ -537,6 +544,20 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       )
     )
 
+    const reportContextUsage = Effect.forkChild(
+      readContextUsage(session, 'summary').pipe(
+        Effect.map(toContextUsage),
+        Effect.tap((usage) =>
+          Effect.logDebug('Read context usage', { paneId: config.paneId, ...usage })
+        ),
+        Effect.flatMap((usage) => emit(ContextUsageChanged.make({ usage }))),
+        Effect.catch((error) =>
+          Effect.logWarning('Failed to read context usage', { paneId: config.paneId, error })
+        )
+      )
+    )
+    yield* reportContextUsage
+
     const events = Stream.fromAsyncIterable(session, (cause) => new SessionStreamError({ cause }))
     const reducer = makeSessionEventReducer(continuesFrom)
 
@@ -576,12 +597,14 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
             paneId: config.paneId
           })
           yield* emit(TurnCompleted.make({}))
+          yield* reportContextUsage
           yield* onTurnEnded(true)
           return
         }
       }
 
       yield* emit(outbound)
+      if (changesContextUsage(outbound)) yield* reportContextUsage
       if (isTurnEnd(outbound)) yield* onTurnEnded(outbound._tag === 'TurnCompleted')
     })
 

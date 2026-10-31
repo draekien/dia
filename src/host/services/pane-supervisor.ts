@@ -44,6 +44,7 @@ import {
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
   PaneCheckpointAvailable,
+  PaneContextUsageChanged,
   PaneConversationCompacted,
   PaneConversationReset,
   PaneMessageAppended,
@@ -318,6 +319,9 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
       ),
       Match.tag('ModelChanged', (m) =>
         Option.some<IpcEvent>(PaneModelChanged.make({ paneId, model: m.model }))
+      ),
+      Match.tag('ContextUsageChanged', (m) =>
+        Option.some<IpcEvent>(PaneContextUsageChanged.make({ paneId, usage: m.usage }))
       ),
       // TurnCompleted/TurnErrored/SessionStarted carry no renderer-facing content of their own --
       // they only drive AttentionState (see toAttentionTarget below) -- so they have no IpcEvent.

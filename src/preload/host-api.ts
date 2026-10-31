@@ -409,6 +409,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     onSlashCommandsAvailable: (listener) => subscribeTo('PaneSlashCommandsAvailable', listener),
     onConversationCompacted: (listener) => subscribeTo('PaneConversationCompacted', listener),
     onModelChanged: (listener) => subscribeTo('PaneModelChanged', listener),
+    onContextUsageChanged: (listener) => subscribeTo('PaneContextUsageChanged', listener),
     onConversationReset: (listener) => subscribeTo('PaneConversationReset', listener),
     onCheckpointAvailable: (listener) => subscribeTo('PaneCheckpointAvailable', listener),
     onRewoundToCheckpoint: (listener) => subscribeTo('PaneRewoundToCheckpoint', listener),
