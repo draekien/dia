@@ -3,7 +3,7 @@ import { AdapterPreferences, EMPTY_ADAPTER_PREFERENCES } from '@shared/domain/mo
 import { UsageLimitResume } from '@shared/domain/parking'
 import { ThemePreference } from '@shared/domain/theme'
 import { TranscriptWidth } from '@shared/domain/transcript-width'
-import { Context, Effect, FileSystem, Layer, Option, Result, Schema } from 'effect'
+import { Context, Effect, FileSystem, Layer, Option, Result, Schema, Semaphore } from 'effect'
 
 const Settings = Schema.Struct({
   theme: Schema.optional(ThemePreference),
@@ -51,6 +51,7 @@ export class SettingsStore extends Context.Service<
  * under `<userDataPath>/settings.json`. Requires `FileSystem.FileSystem` in
  * the environment. Unreadable or malformed settings files are ignored
  * (treated as empty) rather than failing; write failures are logged, not thrown.
+ * Writes are atomic, and concurrent setters never drop each other's change.
  */
 export const makeSettingsStoreLive = (userDataPath: string) =>
   Layer.effect(
@@ -58,6 +59,8 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
       const filePath = `${userDataPath}/settings.json`
+      const tempPath = `${filePath}.tmp`
+      const lock = yield* Semaphore.make(1)
 
       const read = Effect.fn('SettingsStore.read')(function* () {
         const exists = yield* fs.exists(filePath).pipe(Effect.orElseSucceed(() => false))
@@ -79,52 +82,54 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
       })
 
       const write = Effect.fn('SettingsStore.write')(function* (settings: typeof Settings.Type) {
-        yield* fs
-          .writeFileString(filePath, encodeSettings(settings))
-          .pipe(Effect.catch((cause) => Effect.logError('Failed to persist settings', { cause })))
+        yield* fs.writeFileString(tempPath, encodeSettings(settings)).pipe(
+          Effect.andThen(fs.rename(tempPath, filePath)),
+          Effect.catch((cause) => Effect.logError('Failed to persist settings', { cause }))
+        )
       })
+
+      const update = (change: (settings: typeof Settings.Type) => typeof Settings.Type) =>
+        read().pipe(
+          Effect.flatMap((settings) => write(change(settings))),
+          lock.withPermits(1)
+        )
 
       const getTheme = () =>
         read().pipe(Effect.map((settings) => Option.fromNullishOr(settings.theme)))
 
-      const setTheme = (theme: ThemePreference) =>
-        read().pipe(Effect.flatMap((settings) => write({ ...settings, theme })))
+      const setTheme = (theme: ThemePreference) => update((settings) => ({ ...settings, theme }))
 
       const getSendMode = () =>
         read().pipe(Effect.map((settings) => Option.fromNullishOr(settings.sendMode)))
 
-      const setSendMode = (sendMode: SendMode) =>
-        read().pipe(Effect.flatMap((settings) => write({ ...settings, sendMode })))
+      const setSendMode = (sendMode: SendMode) => update((settings) => ({ ...settings, sendMode }))
 
       const getTranscriptWidth = () =>
         read().pipe(Effect.map((settings) => Option.fromNullishOr(settings.transcriptWidth)))
 
       const setTranscriptWidth = (transcriptWidth: TranscriptWidth) =>
-        read().pipe(Effect.flatMap((settings) => write({ ...settings, transcriptWidth })))
+        update((settings) => ({ ...settings, transcriptWidth }))
 
       const getUsageLimitResume = () =>
         read().pipe(Effect.map((settings) => Option.fromNullishOr(settings.usageLimitResume)))
 
       const setUsageLimitResume = (usageLimitResume: UsageLimitResume) =>
-        read().pipe(Effect.flatMap((settings) => write({ ...settings, usageLimitResume })))
+        update((settings) => ({ ...settings, usageLimitResume }))
 
       const getPluginOverrides = () =>
         read().pipe(Effect.map((settings) => settings.pluginOverrides ?? {}))
 
       const setPluginOverride = (name: string, path: string) =>
-        read().pipe(
-          Effect.flatMap((settings) =>
-            write({ ...settings, pluginOverrides: { ...settings.pluginOverrides, [name]: path } })
-          )
-        )
+        update((settings) => ({
+          ...settings,
+          pluginOverrides: { ...settings.pluginOverrides, [name]: path }
+        }))
 
       const clearPluginOverride = (name: string) =>
-        read().pipe(
-          Effect.flatMap((settings) => {
-            const { [name]: _removed, ...rest } = settings.pluginOverrides ?? {}
-            return write({ ...settings, pluginOverrides: rest })
-          })
-        )
+        update((settings) => {
+          const { [name]: _removed, ...rest } = settings.pluginOverrides ?? {}
+          return { ...settings, pluginOverrides: rest }
+        })
 
       const getAdapterPreferences = (adapter: string) =>
         read().pipe(
@@ -132,11 +137,10 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
         )
 
       const setAdapterPreferences = (adapter: string, preferences: AdapterPreferences) =>
-        read().pipe(
-          Effect.flatMap((settings) =>
-            write({ ...settings, adapters: { ...settings.adapters, [adapter]: preferences } })
-          )
-        )
+        update((settings) => ({
+          ...settings,
+          adapters: { ...settings.adapters, [adapter]: preferences }
+        }))
 
       return {
         getTheme,

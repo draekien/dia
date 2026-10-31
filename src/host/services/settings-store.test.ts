@@ -1,24 +1,42 @@
 import { assert, describe, it } from '@effect/vitest'
-import { Effect, FileSystem, Layer, Logger, Option } from 'effect'
+import { Effect, FileSystem, Layer, Logger, Option, PlatformError } from 'effect'
 import { makeSettingsStoreLive, SettingsStore } from './settings-store'
 
-function makeTestSetup(initialContent: string | undefined): {
+function makeTestSetup(
+  initialContent: string | undefined,
+  options: { readonly failRename?: boolean } = {}
+): {
   readonly writes: Array<string>
+  readonly stored: () => string | undefined
   readonly capturedLogs: ReadonlyArray<unknown>
   readonly testLayer: Layer.Layer<SettingsStore>
   readonly loggerLayer: Layer.Layer<never>
 } {
   let stored = initialContent
+  const pending = new Map<string, string>()
   const writes: string[] = []
 
   const fakeFs = FileSystem.makeNoop({
     exists: () => Effect.succeed(stored !== undefined),
-    readFileString: () => Effect.succeed(stored ?? '{}'),
-    writeFileString: (_path, data) =>
-      Effect.sync(() => {
-        stored = data
-        writes.push(data)
-      })
+    readFileString: () => Effect.sync(() => stored ?? '{}').pipe(Effect.tap(() => Effect.yieldNow)),
+    writeFileString: (path, data) => Effect.sync(() => pending.set(path, data)),
+    rename: (from, to) =>
+      options.failRename
+        ? Effect.fail(
+            PlatformError.systemError({
+              _tag: 'PermissionDenied',
+              module: 'FileSystem',
+              method: 'rename',
+              pathOrDescriptor: to
+            })
+          )
+        : Effect.sync(() => {
+            const data = pending.get(from)
+            if (data === undefined || to !== '/userData/settings.json') return
+            pending.delete(from)
+            stored = data
+            writes.push(data)
+          })
   })
 
   const capturedLogs: unknown[] = []
@@ -30,10 +48,45 @@ function makeTestSetup(initialContent: string | undefined): {
   const testLayer = Layer.provide(makeSettingsStoreLive('/userData'), fsLayer)
   const loggerLayer = Logger.layer([captureLogger], { mergeWithExisting: true })
 
-  return { writes, capturedLogs, testLayer, loggerLayer }
+  return { writes, stored: () => stored, capturedLogs, testLayer, loggerLayer }
 }
 
 describe('SettingsStore', () => {
+  it.effect('keeps the previous settings file when the write cannot be moved into place', () =>
+    Effect.gen(function* () {
+      const previous = JSON.stringify({ theme: 'light' })
+      const { stored, capturedLogs, testLayer, loggerLayer } = makeTestSetup(previous, {
+        failRename: true
+      })
+
+      yield* Effect.gen(function* () {
+        const store = yield* SettingsStore
+        yield* store.setTheme('dark')
+      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+
+      assert.strictEqual(stored(), previous)
+      assert.isTrue(capturedLogs.some((log) => String(log).includes('Failed to persist settings')))
+    })
+  )
+
+  it.effect('concurrent setters each keep their change', () =>
+    Effect.gen(function* () {
+      const { stored, testLayer, loggerLayer } = makeTestSetup('{}')
+
+      yield* Effect.gen(function* () {
+        const store = yield* SettingsStore
+        yield* Effect.all([store.setTheme('dark'), store.setTranscriptWidth('wide')], {
+          concurrency: 'unbounded'
+        })
+      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+
+      assert.deepStrictEqual(JSON.parse(stored() ?? '{}'), {
+        theme: 'dark',
+        transcriptWidth: 'wide'
+      })
+    })
+  )
+
   it.effect('getTheme returns None and warns when the file is not valid JSON', () =>
     Effect.gen(function* () {
       const { capturedLogs, testLayer, loggerLayer } = makeTestSetup('not json')
