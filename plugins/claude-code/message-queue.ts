@@ -63,6 +63,11 @@ const idle = (queued: Queued, held: boolean) =>
 const running = (state: typeof QueueRunning.Type, changes: Partial<typeof QueueRunning.Type>) =>
   QueueRunning.make({ ...state, ...changes })
 
+const steerTurn = (state: typeof QueueRunning.Type, message: OutgoingMessage): QueueTransition =>
+  state.steered.length > 0
+    ? [[], running(state, { steered: [...state.steered, message] })]
+    : [[InterruptAction.make({})], running(state, { steered: [message], held: false })]
+
 const dispatchNow = (messages: Queued, queued: Queued = [], held = false): QueueTransition => [
   [DispatchAction.make({ messages })],
   QueueRunning.make({ queued, held, steered: [], dispatching: 1 })
@@ -85,13 +90,8 @@ export const send =
       const queued = [...state.queued, message]
       return [[queueChanged(queued, false)], running(state, { queued, held: false })]
     }
-    if (state.steered.length > 0) {
-      return [[], running(state, { steered: [...state.steered, message] })]
-    }
-    return [
-      [InterruptAction.make({}), ...(state.held ? [queueChanged(state.queued, false)] : [])],
-      running(state, { steered: [message], held: false })
-    ]
+    const [actions, next] = steerTurn(state, message)
+    return [state.held ? [...actions, queueChanged(next.queued, next.held)] : actions, next]
   }
 
 /**
@@ -202,14 +202,8 @@ export const sendNow =
       return [[queueChanged(rest, true), ...actions], next]
     }
     if (state.dispatching > 0) return replaceQueued(state, [message, ...rest])
-    const [actions, next] = send(message, 'steer')(running(state, { queued: rest }))
-    return [
-      [
-        ...actions.filter((action) => action._tag !== 'QueueChangedAction'),
-        queueChanged(next.queued, next.held)
-      ],
-      next
-    ]
+    const [actions, next] = steerTurn(running(state, { queued: rest }), message)
+    return [[...actions, queueChanged(next.queued, next.held)], next]
   }
 
 /**
