@@ -48,9 +48,9 @@ import { HostPlugins } from '../plugins/host-plugins'
 import { resolveAgentBackend } from '../session/agent-backend'
 import { EventHub } from './event-hub'
 import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
-import { PersistenceService } from './persistence'
 import { probeProject } from './project-directory'
 import { TranscriptReader } from './transcript-reader'
+import { WorkspaceStore } from './workspace-store'
 import {
   resolveGitOps,
   type WorktreeCreateError,
@@ -156,7 +156,7 @@ const WORKTREES_PLUGIN_NOT_LOADED = 'Load the worktrees plugin to remove this wo
  * Builds the live {@link PaneWorkspace} layer. On construction it loads the persisted workspace
  * (sessions stay cold -- no processes are spawned here) and shows the first tab when none is
  * visible; with nothing persisted it starts empty. `worktreesRoot` is the base directory under
- * which tab worktrees are created. Requires {@link PaneSupervisor}, {@link PersistenceService},
+ * which tab worktrees are created. Requires {@link PaneSupervisor}, {@link WorkspaceStore},
  * {@link TranscriptReader}, {@link EventHub}, {@link HostPlugins} (for the worktree and agent
  * backend services used to remove a project), `FileSystem` and `Path`.
  */
@@ -165,14 +165,14 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
     PaneWorkspace,
     Effect.gen(function* () {
       const supervisor = yield* PaneSupervisor
-      const persistence = yield* PersistenceService
+      const store = yield* WorkspaceStore
       const transcriptReader = yield* TranscriptReader
       const hub = yield* EventHub
       const plugins = yield* HostPlugins
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
 
-      const persisted = yield* persistence.loadWorkspace
+      const persisted = yield* store.load
       const initial = Option.match(persisted, {
         onNone: () => EMPTY_WORKSPACE,
         onSome: WorkspaceOps.withDefaultVisibleTab
@@ -185,8 +185,8 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       const sessionStartLock = yield* Semaphore.make(1)
 
       const save = (workspace: Workspace) =>
-        persistence
-          .saveWorkspace(workspace)
+        store
+          .save(workspace)
           .pipe(Effect.catch((cause) => Effect.logError('Failed to persist workspace', { cause })))
 
       const mutate = <E>(

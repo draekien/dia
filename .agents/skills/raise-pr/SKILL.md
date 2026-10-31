@@ -29,13 +29,14 @@ Completion criterion: all three checks pass on the committed head, the working t
 1. Push the branch with upstream tracking.
 2. Write the body from [assets/pr-body.md](assets/pr-body.md). Replace every `<...>` placeholder; leave none. **Not covered** lists each affected behaviour that the proof did not exercise; an empty list is a claim that the proof reached everything, so check it before writing "none".
 3. Title it as a conventional commit, the same form as the commit log: `fix(plugins): reattach a worktree whose directory exists but is not registered`.
-4. Create it with `gh pr create --base <base> --title <title> --body-file <file>`.
+4. Create it with `gh pr create --base <base> --title <title> --body-file <file> --attach <file> ...`, passing every screenshot and recording from the proof record. Run it from the directory that holds the media: gh uploads each `--attach` file and rewrites the body's `![alt](./<file>)` reference to the uploaded URL; a video becomes a player. To add media to an open PR, run `gh pr edit <n> --body-file <file> --attach <file> ...`. `--attach` needs gh 2.100.0 or later (`gh --version`).
 5. Register the PR with the current thread through `link_pull_request` when that tool is available. If the call fails, report its error text to the user with the PR URL; do not recreate the PR.
 
-Completion criterion: the PR URL is reported to the user, and its body shows check results, the proof and the **Not covered** list.
+Completion criterion: the PR URL is reported to the user, its body shows check results, the proof and the **Not covered** list, and `gh pr view <n> --json body` shows a `github.com/user-attachments/` URL for every attached file.
 
 ## Gotchas
 
+- **Show the proof; do not describe it.** A behaviour visible in the app gets its screenshot or recording in the body, with one line of caption. A value with no visible effect goes in a table row (`Case | Observed`), not a paragraph.
 - **Do not paraphrase proof.** `pnpm test` 45 files / 533 tests passed is proof; "tests pass" is not. Quote counts, exit codes and observed values.
 - **Report each review finding that was not fixed**, from both `/simplify` and `/code-review`, with its reason.
 - **Do not commit with `--no-verify`.** Fix the diagnostic the hook reports.

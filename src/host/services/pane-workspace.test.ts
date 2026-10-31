@@ -32,8 +32,8 @@ import { AGENT_BACKEND_KEY, type AgentBackend, SessionDeleteError } from '../ses
 import { EventHub } from './event-hub'
 import { type PaneCreationRequest, type PaneHandle, PaneSupervisor } from './pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
-import { PersistenceService } from './persistence'
 import { TranscriptReader } from './transcript-reader'
+import { type WorkspaceLoadError, WorkspaceStore } from './workspace-store'
 import { type GitOps, WorktreeCreateError } from './worktrees-seam'
 
 const PANE_A = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -67,7 +67,7 @@ interface Harness {
   readonly requests: Array<PaneCreationRequest>
   readonly deletedSessions: Array<string>
   readonly existing: Set<string>
-  readonly layer: Layer.Layer<PaneWorkspace>
+  readonly layer: Layer.Layer<PaneWorkspace, WorkspaceLoadError>
 }
 
 interface HarnessOptions {
@@ -116,11 +116,9 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     setUsageLimitResume: () => Effect.void
   })
 
-  const persistence = Layer.succeed(PersistenceService, {
-    loadWorkspace: Effect.succeed(Option.fromNullishOr(options.persisted)),
-    saveWorkspace: (workspace) => Effect.sync(() => void saves.push(workspace)),
-    loadActivity: Effect.succeed({}),
-    saveActivity: () => Effect.void
+  const store = Layer.succeed(WorkspaceStore, {
+    load: Effect.succeed(Option.fromNullishOr(options.persisted)),
+    save: (workspace) => Effect.sync(() => void saves.push(workspace))
   })
 
   const hub = Layer.succeed(EventHub, {
@@ -177,7 +175,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
 
   const layer = Layer.provide(
     makePaneWorkspaceLive(WORKTREES_ROOT),
-    Layer.mergeAll(supervisor, persistence, hub, plugins, transcripts, fs, NodePath.layer)
+    Layer.mergeAll(supervisor, store, hub, plugins, transcripts, fs, NodePath.layer)
   )
   return { log, saves, published, requests, deletedSessions, existing, layer }
 }

@@ -10,7 +10,7 @@ exceptions (LevelDB / cache / singleton locks).
 
 ## Reasoning / Learning
 
-Every persistent path — `workspace.json`, `settings.json`, `worktrees/`, and
+Every persistent path — `host.db`, `settings.json`, `worktrees/`, and
 Chromium's *own* profile, cache, and `SingletonLock` files — is derived from
 `app.getPath('userData')`, which is keyed off the app name. Both builds resolve
 to the same name (`package.json` `name` and electron-builder `productName` are

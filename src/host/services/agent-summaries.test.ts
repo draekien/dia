@@ -9,7 +9,7 @@ import {
 } from '@shared/domain/agent-summary'
 import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
 import { type IpcEvent, WorkspaceChanged } from '@shared/ipc/contract'
-import { Duration, Effect, Exit, Layer, Option, Scope, Stream } from 'effect'
+import { Duration, Effect, Exit, Layer, Scope, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
 import { ACTIVITY_SAVE_DELAY, AgentSummaries, AgentSummariesLive } from './agent-summaries'
 import { EventHub, makeEventHubLive } from './event-hub'
@@ -50,8 +50,6 @@ const workspaceWith = (paneIds: ReadonlyArray<string>, visible?: string): Worksp
 const makeSetup = (initial: Workspace, saved: PersistedActivity = {}) => {
   const saves: Array<PersistedActivity> = []
   const persistence = Layer.succeed(PersistenceService, {
-    loadWorkspace: Effect.succeed(Option.none()),
-    saveWorkspace: () => Effect.void,
     loadActivity: Effect.succeed(saved),
     saveActivity: (activity) => Effect.sync(() => void saves.push(activity))
   })

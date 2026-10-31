@@ -187,7 +187,7 @@ Subscribes to `EventHub` and handles every event in one fiber, in order:
 
 It publishes `AgentSummaryChanged { summary }` when a summary changes. No RPC handler calls it.
 
-It persists each pane's `activity` to `<userData>/activity.json` through `PersistenceService.saveActivity` / `loadActivity`, `ACTIVITY_SAVE_DELAY` (`Duration.seconds(2)`) after the first unsaved change, and flushes in its scope finalizer. It seeds summaries from that file at start, with status `StatusIdle`. `workspace.json` holds no activity, so `WorkspaceChanged` fires only for structural changes.
+It persists each pane's `activity` to `<userData>/activity.json` through `PersistenceService.saveActivity` / `loadActivity`, `ACTIVITY_SAVE_DELAY` (`Duration.seconds(2)`) after the first unsaved change, and flushes in its scope finalizer. It seeds summaries from that file at start, with status `StatusIdle`. The workspace (`host.db`, ADR-0043) holds no activity, so `WorkspaceChanged` fires only for structural changes.
 
 ### Host — persistence and settings
 

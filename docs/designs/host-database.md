@@ -10,7 +10,7 @@ Gives the Host kernel and each plugin that asks for one a SQLite database of its
 
 | Module | Location | Owns |
 | --- | --- | --- |
-| `openDatabase`, `makeHostDatabaseLive` | `src/host/services/database.ts` | opening a SQLite file by building `SqliteClient.layer` (which provides `Reactivity`) in the caller's scope, checking and applying a migration record, closing the file when that scope closes; `<userData>/host.db` and the kernel migrations (`const kernelMigrations = {}` in the same file, moved to its own file when #69 adds the first migration) |
+| `openDatabase`, `makeHostDatabaseLive` | `src/host/services/database.ts` | opening a SQLite file by building `SqliteClient.layer` (which provides `Reactivity`) in the caller's scope, checking and applying a migration record, closing the file when that scope closes; `<userData>/host.db` with the kernel migrations from `kernel-migrations.ts` (the first, `1_workspace`, is #94's; `docs/designs/workspace-store.md`) |
 | Plugin database | `src/shared/plugin/api.ts` (`HostPluginContext.database`, `MigrationKey`, `PluginMigrations`, `PluginDatabaseError`), `src/host/plugins/host-plugins.ts` (`extend`) | `<dataDir>/data.db`, opened in the plugin's setup scope. `MigrationKey` (compile-time shape) and the key check in `openDatabase` (runtime) state one format, `<id>_<name>`; change both together |
 | Plugin API version | `src/shared/plugin/manifest.ts`, every `plugins/*/plugin.json` | `0.0.5` → `0.0.6` |
 | Docs | JSDoc of `HostPluginContext` (`api.ts`) and `makeHostPluginsLive` (`host-plugins.ts`) | list `database` next to `dataDir`. No repo doc lists the context members, so no other doc changes |
