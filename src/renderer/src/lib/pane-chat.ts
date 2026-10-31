@@ -438,11 +438,20 @@ const rewindToCheckpoint = (state: PaneChatState, messageUuid: string): PaneChat
   return { ...state, messages: state.messages.slice(0, anchor), isLoading: false }
 }
 
-const noticeMessage = (state: PaneChatState, content: string): PaneChatState => ({
+const noticeMessage = (
+  state: PaneChatState,
+  content: string,
+  extra: Pick<PaneMessage, 'compaction'> = {}
+): PaneChatState => ({
   ...state,
   messages: [
     ...state.messages,
-    { id: `${state.messages.length}:notice`, role: 'notice', parts: [{ type: 'text', content }] }
+    {
+      id: `${state.messages.length}:notice`,
+      role: 'notice',
+      parts: [{ type: 'text', content }],
+      ...extra
+    }
   ]
 })
 
@@ -457,13 +466,7 @@ const compactConversation = (
   const messages = state.messages.map((message) =>
     message.role === 'user' ? { ...message, rewindable: false as const } : message
   )
-  const notice: PaneMessage = {
-    id: `${messages.length}:notice`,
-    role: 'notice',
-    parts: [{ type: 'text', content: 'Context compacted' }],
-    compaction
-  }
-  return { ...state, messages: [...messages, notice] }
+  return noticeMessage({ ...state, messages }, 'Context compacted', { compaction })
 }
 
 /**

@@ -413,17 +413,17 @@ export function MessageView({
   }
   if (message.role === 'notice') {
     const text = message.parts.find((part) => part.type === 'text')?.content ?? ''
-    const postTokens = message.compaction?.postTokens
+    const compaction = message.compaction
     return (
       <Marker variant="separator" className="py-1 text-xs">
         <MarkerContent>
           {text}
-          {message.compaction !== undefined && postTokens !== undefined && (
+          {compaction?.postTokens !== undefined && (
             <>
               {' — '}
-              <TokenCount count={message.compaction.preTokens} />
+              <TokenCount count={compaction.preTokens} />
               {' → '}
-              <TokenCount count={postTokens} /> tokens
+              <TokenCount count={compaction.postTokens} /> tokens
             </>
           )}
         </MarkerContent>
