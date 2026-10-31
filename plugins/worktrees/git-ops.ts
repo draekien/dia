@@ -5,11 +5,15 @@ import {
   WorktreeRemoveError
 } from '@dia/plugin'
 import type { PaneId, WorktreeInfo } from '@shared/domain/pane'
-import { Effect, FileSystem, Path, Random } from 'effect'
+import { Duration, Effect, FileSystem, Option, Path, Random, Schedule } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { generateWorktreeSlug } from './worktree-slug'
 
 const PORCELAIN_WORKTREE_PREFIX = 'worktree '
+
+const LEFTOVER_REMOVE_SCHEDULE = Schedule.spaced(Duration.millis(250)).pipe(
+  Schedule.upTo({ duration: Duration.seconds(5) })
+)
 
 /**
  * Builds the {@link GitOps} the `worktrees` plugin provides, shelling out to the `git` CLI through
@@ -92,6 +96,34 @@ export const makeGitOps = Effect.gen(function* () {
     return { path: worktreePath, branch, sourceRepo }
   })
 
+  const removeLeftoverDirectory = Effect.fn('GitOps.removeLeftoverDirectory')(function* (
+    directory: string,
+    paneId: PaneId
+  ) {
+    if (!(yield* fs.exists(directory).pipe(Effect.orElseSucceed(() => false)))) return
+    const entries = yield* fs.readDirectory(directory).pipe(Effect.option)
+    if (Option.isNone(entries) || entries.value.length > 0) {
+      yield* Effect.logWarning('Left a worktree directory that is not empty on disk', {
+        paneId,
+        path: directory
+      })
+      return
+    }
+    yield* fs.remove(directory, { recursive: true }).pipe(
+      Effect.retry(LEFTOVER_REMOVE_SCHEDULE),
+      Effect.andThen(
+        Effect.logInfo('Removed the empty worktree directory', { paneId, path: directory })
+      ),
+      Effect.catch((cause) =>
+        Effect.logWarning('Could not remove the empty worktree directory', {
+          paneId,
+          path: directory,
+          cause
+        })
+      )
+    )
+  })
+
   const removeWorktree = Effect.fn('GitOps.removeWorktree')(function* (
     info: WorktreeInfo,
     paneId: PaneId
@@ -132,6 +164,7 @@ export const makeGitOps = Effect.gen(function* () {
     }
 
     yield* Effect.logInfo('Pruned pane worktree', { paneId, path: info.path })
+    yield* removeLeftoverDirectory(info.path, paneId)
   })
 
   const comparablePath = (value: string): string => {

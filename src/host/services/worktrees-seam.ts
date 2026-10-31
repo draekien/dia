@@ -45,8 +45,9 @@ export class WorktreeReattachError extends Data.TaggedError('WorktreeReattachErr
  * `info` on resume, checking out its existing branch so committed work is preserved; it returns
  * `info` and does nothing when the path is already a registered worktree, reuses a path that
  * exists but is an empty, unregistered directory, and fails with `WorktreeReattachError` when
- * that directory is not empty. `removeWorktree` tears one down and does
- * not fail when git cannot prune it, because pane teardown must not block on that.
+ * that directory is not empty. `removeWorktree` tears one down, deletes the directory when git
+ * leaves it on disk empty, and does not fail when git cannot prune it or the directory cannot be
+ * deleted, because pane teardown must not block on that.
  */
 export interface GitOps {
   readonly createWorktree: (
