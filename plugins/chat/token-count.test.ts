@@ -18,6 +18,18 @@ describe('approximateTokens', () => {
     expect(approximateTokens(499)).toBe('<1k')
   })
 
+  it('shows the largest count below a million in thousands', () => {
+    expect(approximateTokens(999_499)).toBe('~999k')
+  })
+
+  it('switches to millions where thousands would round to 1000k', () => {
+    expect(approximateTokens(999_500)).toBe('~1M')
+  })
+
+  it('shows millions to one decimal', () => {
+    expect(approximateTokens(1_250_000)).toBe('~1.3M')
+  })
+
   it('shows zero as <1k', () => {
     expect(approximateTokens(0)).toBe('<1k')
   })

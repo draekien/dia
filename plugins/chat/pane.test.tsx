@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { PaneMessage } from '@dia/renderer-plugin'
+import { type PaneMessage, TooltipProvider } from '@dia/renderer-plugin'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { dirName, MessageView } from './pane'
@@ -163,6 +163,49 @@ describe('MessageView', () => {
     const { container } = render(<MessageView message={message} />)
 
     expect(container.querySelector('[data-slot="bubble"]')).toBeNull()
+  })
+})
+
+describe('MessageView: compaction notice', () => {
+  const notice = (compaction: PaneMessage['compaction']): PaneMessage => ({
+    id: '3:notice',
+    role: 'notice',
+    parts: [{ type: 'text', content: 'Context compacted' }],
+    compaction
+  })
+  const renderNotice = (message: PaneMessage) =>
+    render(
+      <TooltipProvider>
+        <MessageView message={message} />
+      </TooltipProvider>
+    )
+
+  it('shows both counts rounded to thousands', () => {
+    const { container } = renderNotice(notice({ preTokens: 94533, postTokens: 23665 }))
+
+    const visible = [...container.querySelectorAll('[data-slot="marker-content"] *')]
+      .filter((element) => !element.closest('.sr-only') && element.children.length === 0)
+      .map((element) => element.textContent)
+      .join('')
+    expect(visible).toContain('~95k')
+    expect(visible).toContain('~24k')
+  })
+
+  it('gives assistive technology the exact counts with the unit once each', () => {
+    const { container } = renderNotice(notice({ preTokens: 94533, postTokens: 23665 }))
+
+    const content = container.querySelector('[data-slot="marker-content"]')?.cloneNode(true)
+    if (!(content instanceof Element)) throw new Error('no marker content')
+    for (const hidden of content.querySelectorAll('[aria-hidden="true"]')) hidden.remove()
+    expect(content.textContent).toBe('Context compacted — 94,533 tokens → 23,665 tokens')
+  })
+
+  it('shows only the text when the post-compaction size is unknown', () => {
+    const { container } = renderNotice(notice({ preTokens: 900 }))
+
+    expect(container.querySelector('[data-slot="marker-content"]')?.textContent).toBe(
+      'Context compacted'
+    )
   })
 })
 

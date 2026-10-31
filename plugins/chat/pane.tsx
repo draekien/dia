@@ -423,7 +423,8 @@ export function MessageView({
               {' — '}
               <TokenCount count={compaction.preTokens} />
               {' → '}
-              <TokenCount count={compaction.postTokens} /> tokens
+              <TokenCount count={compaction.postTokens} />
+              <span aria-hidden="true"> tokens</span>
             </>
           )}
         </MarkerContent>
