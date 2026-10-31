@@ -10,11 +10,14 @@ Tests show the code does what the tests expect; this skill shows the shipped app
 
 ## Available scripts
 
-- **`scripts/cdp-eval.mjs`** — evaluates one JavaScript expression in the dia window over CDP once `window.dia` exists, and prints `{"value": ...}` or `{"exception": ...}` as one JSON line. Run `node scripts/cdp-eval.mjs --help` for flags and exit codes. Requires Node 22+ (global `WebSocket`). `scripts/` paths resolve from this skill's directory; every other command runs from the repo root.
+- **`scripts/cdp-eval.mjs`** — evaluates one JavaScript expression in the dia window over CDP once `window.dia` exists, and prints `{"value": ...}` or `{"exception": ...}` as one JSON line. Run `node scripts/cdp-eval.mjs --help` for flags and exit codes. Requires Node 22+ (global `WebSocket`).
+- **`scripts/cdp-capture.mjs`** — writes a PNG of the dia window (`screenshot`), or records it for `--seconds` and writes an MP4 (`record`, needs `ffmpeg` on PATH). It captures only the app's page target, never other windows. Run `record` in the background and drive the app with `cdp-eval.mjs` while it records. Run `node scripts/cdp-capture.mjs --help` for flags. `scripts/` paths resolve from this skill's directory; every other command runs from the repo root.
 
 ## Plan the proof
 
 Before launching anything, write down each behaviour the change claims and the observable value that proves it: a `window.dia` call's return value, an event payload, a file on disk, a `git` command's output, a line in the app log. For a bug fix, include the steps that reproduced the bug, and run them on `main` as well when the before/after contrast is the proof.
+
+For each behaviour a person can see in the window, also name the screenshot or recording that shows it: one screenshot per state, a before/after pair for a state that must survive a restart, a recording of 20 s or less for a sequence of actions. A behaviour with no visible effect (a database row, a log line) keeps a quoted value instead.
 
 Completion criterion: every claimed behaviour has a named observation that would differ if the change were wrong.
 
@@ -67,15 +70,18 @@ The pane id `00000000-0000-0000-0000-000000000001` is the initial pane only with
 
 Read `src/preload` for the current `window.dia` surface rather than guessing a method's arguments. For a change in a git-backed feature, run it against a throwaway git repo, not this one.
 
-Completion criterion: every observation named in the plan was read from the running app, and every line of `app.log` containing `error` or `Unhandled` is listed with whether it is expected.
+Capture each planned screenshot and recording with `cdp-capture.mjs` into the scratch directory, numbered in the order the PR shows them (`1-imported-workspace.png`, `2-setup.mp4`). Open each file, or a frame extracted with `ffmpeg -ss <s> -i <file.mp4> -frames:v 1 <frame.png>`, and confirm it shows the claimed state before listing it.
+
+Completion criterion: every observation named in the plan was read from the running app, every planned media file exists and shows its state, and every line of `app.log` containing `error` or `Unhandled` is listed with whether it is expected.
 
 ## Proof record
 
 Return this to the caller (or to the user when run on its own):
 
 ```markdown
-- Commit `<sha>`, <build: unpackaged | `electron-builder --dir`>, <profile: backed-up dia-dev | scratch>, <fixture: e.g. throwaway git repo>: <steps taken> → <observed values, quoted>.
-- Before the change, the same steps <observed values> (bug fixes only).
+- Commit `<sha>`, <build: unpackaged | `electron-builder --dir`>, <profile: backed-up dia-dev | scratch>, <fixture: e.g. throwaway git repo>.
+- <behaviour> → `<absolute path of its screenshot or recording>`, or <observed value, quoted> when it has no visible effect.
+- Before the change, the same steps → <media path or observed value> (bug fixes only).
 - Not exercised: <claimed behaviour not reached, and why>.
 ```
 
