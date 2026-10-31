@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+.stage{width:100%;max-width:700px;color:#e6e9ef;font:13px/1.5 Geist,system-ui,sans-serif}
+.panel{background:#14161b;border:1px solid #262a33;border-radius:10px;margin-bottom:14px;padding:34px 28px 18px;position:relative}
+.tag{position:absolute;left:14px;top:10px;font-size:12px;color:#959eae}
+.transcript{color:#8b94a4;font-size:12px;border-bottom:1px dashed #262a33;padding-bottom:10px;margin-bottom:10px}
+.marker{display:flex;align-items:center;gap:6px;font-size:12px;color:#8b94a4;margin-bottom:8px}
+.marker:before{content:'';flex:1;height:1px;background:#2c313b}
+.marker b{color:#c9ced8;font-weight:500}
+.marker svg{width:12px;height:12px}
+.list{display:flex;flex-direction:column;align-items:flex-end;gap:6px;margin-bottom:10px}
+.bub{--f:1;max-width:80%;border:1px dashed color-mix(in oklch,#4a5163 calc(var(--f)*100%),#262a33);border-radius:12px;padding:6px 12px;color:color-mix(in oklch,#d5d9e1 calc(var(--f)*100%),#1f2229);background:#1f2229;position:relative}
+.txt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.att{display:flex;gap:4px;margin-top:6px;flex-wrap:nowrap;overflow:hidden;justify-content:flex-end}
+.thumb{width:44px;height:32px;border-radius:5px;flex:none;background:linear-gradient(135deg,#3b4a6b,#26304a);border:1px solid #2f3646}
+.thumb.b{background:linear-gradient(135deg,#4b3b5c,#2a2236)}
+.chip{font:11px 'Geist Mono',monospace;color:#b3bac7;background:#262a33;border-radius:5px;padding:2px 6px;white-space:nowrap;flex:none}
+.more{font-size:11px;color:#8b94a4;align-self:center;flex:none}
+.num{position:absolute;left:-26px;top:7px;font:11px 'Geist Mono',monospace;color:#6f7787}
+.deck{position:relative;width:80%;height:44px;align-self:flex-end}
+.deck .card{position:absolute;right:0;height:30px;border:1px dashed #30353f;border-radius:12px;background:#1b1e24}
+.deck .c1{top:0;width:96%}.deck .c2{top:5px;width:98%;background:#1d2027}
+.deck .front{position:absolute;right:0;top:10px;width:100%;height:32px;border:1px dashed #4a5163;border-radius:12px;background:#1f2229;display:flex;align-items:center;justify-content:center;gap:6px;color:#c9ced8;font-size:12px}
+.deck .front svg{width:12px;height:12px}
+svg{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.scroll{max-height:300px;overflow:hidden;position:relative;padding-left:30px;margin-bottom:10px;mask-image:linear-gradient(transparent,#000 28px,#000 calc(100% - 20px),transparent)}
+.scroll .list{margin:0}
+.sb{position:absolute;right:-12px;top:40px;width:3px;height:70px;background:#3a404c;border-radius:2px}
+.row{display:flex;gap:2px;height:28px;align-items:center;justify-content:flex-end;margin:-4px 0 -2px}
+.ib{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;color:#b3bac7}
+.ib svg{width:14px;height:14px}
+.collapse{font-size:12px;color:#b3bac7;display:flex;justify-content:flex-end;gap:6px;margin:-4px 0 8px}
+.collapse span{border:1px solid #2c313b;border-radius:6px;padding:2px 8px}
+.box{background:#1d2027;border:1px solid #2c313b;border-radius:10px;height:40px;display:flex;align-items:center;padding:0 14px;color:#8b94a4}
+</style></head><body><div class="stage">
+
+<div class="panel"><div class="tag">1. At rest with 20 queued: next to send, a deck of 17, and the 2 most recent</div>
+<div class="transcript">transcript: agent is editing plugins/chat/pane.tsx (14s)</div>
+<div class="marker"><svg viewBox="0 0 24 24"><path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/></svg><b>20 queued</b> all send when the turn ends</div>
+<div class="list">
+<div class="bub"><div class="txt">This is what the layout looks like on my laptop at 125% zoom. The sidebar overlaps the composer once the window is narrower than about 900px, fix that before anything else.</div><div class="att"><span class="thumb"></span><span class="thumb b"></span><span class="thumb"></span></div></div>
+<div class="deck"><div class="card c1"></div><div class="card c2"></div><div class="front"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>17 more queued</div></div>
+<div class="bub"><div class="txt">Compare these against the ADR and tell me which ones contradict it.</div><div class="att"><span class="chip">docs/adr/0019-plugin-kernel.md</span><span class="chip">src/host/plugin-api.ts</span><span class="more">+3</span></div></div>
+<div class="bub"><div class="txt">ok</div></div>
+</div>
+<div class="box">Queue a message for after this turn, or type / for commands</div>
+</div>
+
+<div class="panel"><div class="tag">2. Deck opened: the queue scrolls inside a region capped at 40% of the pane; bubble 4 hovered</div>
+<div class="marker"><svg viewBox="0 0 24 24"><path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/></svg><b>20 queued</b> all send when the turn ends</div>
+<div class="collapse"><span>Collapse</span></div>
+<div class="scroll"><div class="sb"></div><div class="list">
+<div class="bub" style="--f:.7"><span class="num">2</span><div class="txt">Then run pnpm typecheck and fix what it reports.</div></div>
+<div class="bub" style="--f:.7;margin-bottom:-28px;z-index:1"><span class="num">3</span><div class="txt">Read the reasoning entry about the effect-tsgo diagnostics before you change the severity map, because the last session got that wrong twice and the cache has to be busted afterwards.</div></div>
+<div class="bub" style="z-index:2"><span class="num">4</span><div class="txt">Use this mock as the target for the header row.</div><div class="att"><span class="thumb b"></span></div></div>
+<div class="row"><span class="ib"><svg viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></svg></span><span class="ib"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span><span class="ib"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+<div class="bub" style="--f:.7"><span class="num">5</span><div class="txt">Also update DESIGN.md with the composer section.</div></div>
+<div class="bub" style="--f:.4"><span class="num">6</span><div class="txt">Check these files for the old One Voice wording.</div><div class="att"><span class="chip">DESIGN.md</span><span class="chip">plugins/chat/steps-section.tsx</span><span class="chip">src/renderer/src/components/account-banner.tsx</span><span class="more">+6</span></div></div>
+<div class="bub" style="--f:.4"><span class="num">7</span><div class="txt">Then open a PR.</div></div>
+</div></div>
+<div class="box">Queue a message for after this turn, or type / for commands</div>
+</div>
+
+</div></body></html>

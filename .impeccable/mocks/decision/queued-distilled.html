@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+.stage{width:100%;max-width:700px;color:#e6e9ef;font:13px/20px Geist,system-ui,sans-serif}
+.panel{background:#14161b;border:1px solid #262a33;border-radius:10px;margin-bottom:14px;padding:34px 28px 18px;position:relative;overflow:hidden}
+.tag{position:absolute;left:14px;top:10px;font-size:12px;color:#959eae}
+.transcript{color:#8b94a4;font-size:12px;line-height:20px;padding-bottom:10px}
+.marker{display:flex;align-items:center;gap:6px;font-size:12px;color:#8b94a4;margin-bottom:8px}
+.marker:before{content:'';flex:1;height:1px;background:#2c313b}
+.marker b{color:#c9ced8;font-weight:500}
+svg{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.marker svg{width:12px;height:12px}
+.stack{position:relative;margin-bottom:10px}
+.stack>*{position:absolute;right:0;max-width:80%}
+.bub{--f:1;min-width:0;height:32px;border:1px dashed color-mix(in oklch,#4a5163 calc(var(--f)*100%),#262a33);border-radius:12px;padding:5px 12px;color:color-mix(in oklch,#d5d9e1 calc(var(--f)*100%),#1f2229);background:#1f2229}
+.bub.a{height:54px}
+.n1{--f:.7}.n2{--f:.55}
+.n2>*{visibility:hidden}
+.t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.att{display:flex;gap:4px;height:20px;margin-top:4px;align-items:center;overflow:hidden}
+.th{width:28px;height:20px;border-radius:4px;flex:none;background:linear-gradient(135deg,#3b4a6b,#26304a);border:1px solid #2f3646}
+.th.b{background:linear-gradient(135deg,#4b3b5c,#2a2236)}
+.ch{font:11px/16px 'Geist Mono',monospace;height:20px;color:#b3bac7;background:#262a33;border-radius:4px;padding:2px 6px;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;flex:none}
+.box{background:#1d2027;border:1px solid #2c313b;border-radius:10px;height:40px;display:flex;align-items:center;padding:0 14px;color:#8b94a4}
+.wrap{position:relative;margin-bottom:10px}
+.fan{position:absolute;left:-8px;right:-8px;bottom:0;background:#14161b;padding:0 8px;box-shadow:0 -10px 16px -8px rgba(0,0,0,.6)}
+.list{max-height:250px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;gap:6px;mask-image:linear-gradient(transparent,#000 36px)}
+.it{display:flex;justify-content:flex-end;align-items:center;gap:6px}
+.it .bub{max-width:80%}
+.acts{display:flex;gap:2px}
+.ib{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;color:#b3bac7;position:relative}
+.ib.on{background:#262a33;color:#fff}
+.ib svg{width:14px;height:14px}
+.tip{position:absolute;right:0;top:-30px;white-space:nowrap;background:#2a2e38;border:1px solid #3a404c;border-radius:6px;padding:2px 8px;font-size:12px;color:#d5d9e1}
+</style></head><body><div class="stage">
+
+<div class="panel"><div class="tag">1. Collapsed: the newest message in front, older ones stacked behind it</div>
+<div class="transcript">Updated plugins/chat/pane.tsx and plugins/chat/queued-messages.tsx. Running pnpm typecheck now.</div>
+<div class="marker"><svg viewBox="0 0 24 24"><path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/></svg><b>20 queued</b> send in order when this turn ends</div>
+<div class="stack" style="height:94px">
+<div class="bub n2" style="top:0;z-index:1"><div class="t">Why does the worktree plugin create a branch even when I pick an existing one?</div></div>
+<div class="bub a n2" style="top:6px;z-index:2"><div class="t">Here is the stack trace from the packaged build.</div><div class="att"><span class="ch">crash-2026-10-31.log</span></div></div>
+<div class="bub n1" style="top:18px;z-index:3"><div class="t">Then check the Windows installer still signs before you tag the release.</div></div>
+<div class="bub a" style="top:40px;z-index:4"><div class="t">ok, and also look at the Windows build, the title bar is clipped</div><div class="att"><span class="th"></span><span class="th b"></span></div></div>
+</div>
+<div class="box">Queue a message for after this turn, or type / for commands</div>
+</div>
+
+<div class="panel"><div class="tag">2. Pointer or focus on the stack: it opens upward over the transcript; actions sit beside the bubble</div>
+<div class="transcript">Updated plugins/chat/pane.tsx and plugins/chat/queued-messages.tsx.<br>Running pnpm typecheck now.<br>Typecheck passed.<br>Next I will run the tests and fix any failures.<br>Reading docs/adr/0013-shared-schemas.md.<br>The schema for queued messages lives in src/shared/domain/message-queue.ts.<br>Adding a send-now transition to plugins/claude-code/message-queue.ts.<br>Bumping PROTOCOL_VERSION in src/shared/ipc/rpc.ts.<br>Running pnpm test.</div>
+<div class="wrap" style="height:130px"><div class="fan">
+<div class="marker"><svg viewBox="0 0 24 24"><path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/></svg><b>20 queued</b> send in order when this turn ends</div>
+<div class="list">
+<div class="it"><div class="bub"><div class="t">Rename the tab header component to match the ADR.</div></div></div>
+<div class="it"><div class="bub"><div class="t">Add a test for the steer transition.</div></div></div>
+<div class="it"><div class="bub"><div class="t">Why does the worktree plugin create a branch even when I pick an existing one?</div></div></div>
+<div class="it"><div class="acts"><span class="ib on"><svg viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></svg><span class="tip">Send now and steer this turn</span></span><span class="ib"><svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span><span class="ib"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div><div class="bub a"><div class="t">Here is the stack trace from the packaged build.</div><div class="att"><span class="ch">crash-2026-10-31.log</span></div></div></div>
+<div class="it"><div class="bub"><div class="t">Then check the Windows installer still signs before you tag the release.</div></div></div>
+<div class="it"><div class="bub a"><div class="t">ok, and also look at the Windows build, the title bar is clipped</div><div class="att"><span class="th"></span><span class="th b"></span></div></div></div>
+</div>
+</div></div>
+<div class="box">Queue a message for after this turn, or type / for commands</div>
+</div>
+
+</div></body></html>
