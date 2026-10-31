@@ -46,20 +46,25 @@ export const composerAction = ({
 /**
  * The tooltip lines for the action button: what Enter does, then how to reach the other mode.
  * `modifierKey` is the key label shown to the user, `⌘` on macOS and `Ctrl` elsewhere. Use it for
- * a `submit` action; a `stop` action's tooltip is its label alone.
+ * a `submit` action; a `stop` action's tooltip is its label alone. `pending` is true while a
+ * permission, question or plan card is pending, when every send steers.
  */
 export const composerActionHint = ({
   running,
+  pending,
   defaultMode,
   modifierKey
 }: {
   readonly running: boolean
+  readonly pending: boolean
   readonly defaultMode: SendMode
   readonly modifierKey: string
 }): readonly [string, string] => {
   if (!running) {
     return ['Send with Enter', `${modifierKey}+Enter also sends now while no turn is running`]
   }
+  if (pending)
+    return ['Steer this turn now with Enter', 'Every send steers while a card is pending']
   return defaultMode === 'queue'
     ? ['Queue after this turn with Enter', `Hold ${modifierKey} to steer now`]
     : ['Steer this turn now with Enter', `Hold ${modifierKey} to queue after this turn`]

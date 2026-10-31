@@ -63,18 +63,35 @@ describe('composerAction', () => {
 
 describe('composerActionHint', () => {
   it('names Enter and the other mode with the given key label while running', () => {
-    expect(composerActionHint({ running: true, defaultMode: 'queue', modifierKey: '⌘' })).toEqual([
-      'Queue after this turn with Enter',
-      'Hold ⌘ to steer now'
-    ])
     expect(
-      composerActionHint({ running: true, defaultMode: 'steer', modifierKey: 'Ctrl' })
+      composerActionHint({ running: true, pending: false, defaultMode: 'queue', modifierKey: '⌘' })
+    ).toEqual(['Queue after this turn with Enter', 'Hold ⌘ to steer now'])
+    expect(
+      composerActionHint({
+        running: true,
+        pending: false,
+        defaultMode: 'steer',
+        modifierKey: 'Ctrl'
+      })
     ).toEqual(['Steer this turn now with Enter', 'Hold Ctrl to queue after this turn'])
+  })
+
+  it('says every send steers while a card is pending', () => {
+    for (const defaultMode of ['queue', 'steer'] as const) {
+      expect(
+        composerActionHint({ running: true, pending: true, defaultMode, modifierKey: 'Ctrl' })
+      ).toEqual(['Steer this turn now with Enter', 'Every send steers while a card is pending'])
+    }
   })
 
   it('says both modes send at once while idle', () => {
     expect(
-      composerActionHint({ running: false, defaultMode: 'queue', modifierKey: 'Ctrl' })
+      composerActionHint({
+        running: false,
+        pending: false,
+        defaultMode: 'queue',
+        modifierKey: 'Ctrl'
+      })
     ).toEqual(['Send with Enter', 'Ctrl+Enter also sends now while no turn is running'])
   })
 })

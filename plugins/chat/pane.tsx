@@ -791,7 +791,9 @@ function PaneChat({
             className="mt-2"
             onKeyDown={trackModifier}
             onKeyUp={trackModifier}
-            onBlur={() => setModifierHeld(false)}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setModifierHeld(false)
+            }}
             onSubmit={(event) => {
               event.preventDefault()
               void form.handleSubmit({ mode: defaultSendMode })
@@ -934,6 +936,7 @@ function PaneChat({
                           })}
                           hint={composerActionHint({
                             running: isLoading,
+                            pending: pendingInteraction,
                             defaultMode: actionDefaultMode,
                             modifierKey: MODIFIER_KEY
                           })}

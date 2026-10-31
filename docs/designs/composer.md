@@ -32,8 +32,8 @@ Issue #85, part of the composer redesign #81. The visual rules are in `DESIGN.md
 
 `ComposerActionButton` (`plugins/chat/pane.tsx`) maps `queue` to `ListPlus`, `sendNow` to `ArrowUp` and `stop` to `SquareIcon`. It puts the label in `aria-label` and in an `aria-live="polite"` `sr-only` span, and shows `composerActionHint` in a tooltip. A click on `submit` calls `form.handleSubmit` with `sendModeForEnter(defaultSendMode, clickEvent)`, so Ctrl/⌘+click sends in the other mode, as Ctrl/⌘+Enter does.
 
-- **Modifier state:** the form's `keydown` and `keyup` set `modifierHeld` to `metaKey || ctrlKey`. The form's `blur` (a `focusout`, which also fires when the window loses focus while the composer holds it) resets it to false.
-- **Pending card:** while a permission, question or plan card is pending, a send always steers (unchanged). The button then passes `defaultMode: 'steer'` and ignores the modifier, so it shows the mode the send uses.
+- **Modifier state:** the form's `keydown` and `keyup` set `modifierHeld` to `metaKey || ctrlKey`. The form's `blur` (a `focusout`, which also fires when the window loses focus while the composer holds it) resets it to false unless focus moves to another element inside the form.
+- **Pending card:** while a permission, question or plan card is pending, a send always steers (unchanged). The button then passes `defaultMode: 'steer'` and ignores the modifier, so it shows the mode the send uses, and `composerActionHint` gets `pending: true`, so the tooltip says every send steers instead of naming the modifier.
 - **Motion:** the icon swap has no transition, so reduced motion needs no special case.
 
 ## Placeholder
