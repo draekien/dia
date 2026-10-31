@@ -558,6 +558,11 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     )
     yield* reportContextUsage
 
+    const emitAndReport = (outbound: OutboundMessage) =>
+      emit(outbound).pipe(
+        Effect.andThen(changesContextUsage(outbound) ? reportContextUsage : Effect.void)
+      )
+
     const events = Stream.fromAsyncIterable(session, (cause) => new SessionStreamError({ cause }))
     const reducer = makeSessionEventReducer(continuesFrom)
 
@@ -596,15 +601,13 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
           yield* Effect.logInfo('Suppressing expected turn abort as a clean turn end', {
             paneId: config.paneId
           })
-          yield* emit(TurnCompleted.make({}))
-          yield* reportContextUsage
+          yield* emitAndReport(TurnCompleted.make({}))
           yield* onTurnEnded(true)
           return
         }
       }
 
-      yield* emit(outbound)
-      if (changesContextUsage(outbound)) yield* reportContextUsage
+      yield* emitAndReport(outbound)
       if (isTurnEnd(outbound)) yield* onTurnEnded(outbound._tag === 'TurnCompleted')
     })
 

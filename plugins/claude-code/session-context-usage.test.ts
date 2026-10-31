@@ -115,14 +115,6 @@ const open = Effect.fnUntraced(function* (readings: ReadonlyArray<Reading | Erro
 describe('claude-code session context usage', () => {
   it.effect('reports the usage of a newly opened query before its first turn', () =>
     Effect.gen(function* () {
-      const { usages } = yield* open([reading(28_000)])
-
-      assert.deepStrictEqual(usages(), [28_000])
-    }).pipe(Effect.scoped)
-  )
-
-  it.effect('reports the threshold and window size it read', () =>
-    Effect.gen(function* () {
       const { emitted } = yield* open([reading(28_000)])
 
       const event = emitted.find((m) => m._tag === 'ContextUsageChanged')
@@ -134,35 +126,31 @@ describe('claude-code session context usage', () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect('reports a new reading after the turn ends, following the turn end', () =>
+  const triggers = [
+    ['the turn ends', success],
+    ['the conversation is compacted', compactBoundary],
+    ['the conversation is reset', conversationReset]
+  ] as const
+  for (const [when, message] of triggers) {
+    it.effect(`reports a new reading after ${when}`, () =>
+      Effect.gen(function* () {
+        const { receive, usages } = yield* open([reading(60_000), reading(9_000)])
+
+        yield* receive(message)
+
+        assert.deepStrictEqual(usages(), [60_000, 9_000])
+      }).pipe(Effect.scoped)
+    )
+  }
+
+  it.effect('reports the reading after the turn end it follows', () =>
     Effect.gen(function* () {
-      const { emitted, receive, usages } = yield* open([reading(28_000), reading(41_000)])
+      const { emitted, receive } = yield* open([reading(28_000), reading(41_000)])
 
       yield* receive(success)
 
-      assert.deepStrictEqual(usages(), [28_000, 41_000])
       const tags = emitted.map((m) => m._tag)
       assert.isBelow(tags.indexOf('TurnCompleted'), tags.lastIndexOf('ContextUsageChanged'))
-    }).pipe(Effect.scoped)
-  )
-
-  it.effect('reports a new reading after the conversation is compacted', () =>
-    Effect.gen(function* () {
-      const { receive, usages } = yield* open([reading(120_000), reading(9_000)])
-
-      yield* receive(compactBoundary)
-
-      assert.deepStrictEqual(usages(), [120_000, 9_000])
-    }).pipe(Effect.scoped)
-  )
-
-  it.effect('reports a new reading after the conversation is reset', () =>
-    Effect.gen(function* () {
-      const { receive, usages } = yield* open([reading(60_000), reading(28_000)])
-
-      yield* receive(conversationReset)
-
-      assert.deepStrictEqual(usages(), [60_000, 28_000])
     }).pipe(Effect.scoped)
   )
 
