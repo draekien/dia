@@ -36,6 +36,29 @@ describe('dirName', () => {
 })
 
 describe('MessageView', () => {
+  it('shows a rewind row under an agent turn given a rewind', () => {
+    const message: PaneMessage = {
+      id: 'a1',
+      role: 'assistant',
+      parts: [{ type: 'text', content: 'created login.tsx' }]
+    }
+
+    render(
+      <MessageView
+        message={message}
+        rewind={{ state: { status: 'ready' }, onStart: () => {}, onDismiss: () => {} }}
+      />
+    )
+
+    expect(screen.getByRole('button', { name: 'Rewind to here, press and hold' })).toBeTruthy()
+  })
+
+  it('shows no rewind control on a user turn, even one with a checkpoint', () => {
+    render(<MessageView message={{ ...userMessage('add a login page'), checkpointUuid: 'cp-1' }} />)
+
+    expect(screen.queryByRole('button', { name: /rewind/i })).toBeNull()
+  })
+
   it('renders a user turn as an end-aligned bubble carrying the text', () => {
     const { container } = render(<MessageView message={userMessage('deploy the thing')} />)
 

@@ -130,6 +130,14 @@ export {
   paneSendAtom
 } from './lib/pane-chat-atoms'
 export {
+  type RewindCommand,
+  type RewindProgress,
+  type RewindRowState,
+  type RewindTarget,
+  rewindRowState,
+  rewindTargets
+} from './lib/pane-rewind'
+export {
   disabledPermissionModesFor,
   offeredPermissionModes,
   PERMISSION_MODE_OPTIONS,
