@@ -67,6 +67,16 @@ export interface ToolCallPart {
 }
 
 /**
+ * The context size before (`preTokens`) and after (`postTokens`, absent when the
+ * session did not report it) a context compaction, carried by its `notice`. The
+ * view decides how to show the counts.
+ */
+export interface CompactionCounts {
+  readonly preTokens: number
+  readonly postTokens?: number
+}
+
+/**
  * An ordered fragment of an assistant turn. Branch on `type` to render. `startedAt` is when the
  * part arrived, in epoch milliseconds; parts restored from history have none.
  */
@@ -77,7 +87,8 @@ export type MessagePart = TextPart | ThinkingPart | ToolCallPart
  * the ordered `parts` that compose it. User turns carry a single text part;
  * assistant turns interleave thinking, text, and tool-call parts; a `notice`
  * turn is a system-generated marker (e.g. a context-compaction divider) with a
- * single text part and no conversational author; an `error` turn is a failed
+ * single text part and no conversational author; a compaction notice also carries
+ * its `compaction` counts; an `error` turn is a failed
  * turn's message (its single text part is the error message). Whether an error
  * is retryable is a property of the pane's live attention state (`Errored` is
  * recoverable, `Crashed` is terminal), not of this row. `checkpointUuid`,
@@ -88,7 +99,8 @@ export type MessagePart = TextPart | ThinkingPart | ToolCallPart
  * assistant turn exists, is the branch point that rewind resumes from; absent
  * for the first turn. `rewindable` is `false` on the second and later user turns of a batch sent
  * as one turn: a rewind there would also drop the earlier turns of the batch, so the rewind
- * control is hidden for them.
+ * control is hidden for them. It is also `false` on every user turn sent before a context
+ * compaction: the compacted session no longer holds those turns, so a rewind to them fails.
  */
 export interface PaneMessage {
   readonly id: string
@@ -98,6 +110,7 @@ export interface PaneMessage {
   readonly resumeAnchorUuid?: string
   readonly rewindable?: false
   readonly resumedAt?: number
+  readonly compaction?: CompactionCounts
 }
 
 /**
@@ -433,10 +446,25 @@ const noticeMessage = (state: PaneChatState, content: string): PaneChatState => 
   ]
 })
 
-const compactionNotice = (event: PaneConversationCompacted): string =>
-  event.postTokens !== undefined
-    ? `Context compacted — ${event.preTokens} → ${event.postTokens} tokens`
-    : 'Context compacted'
+const compactConversation = (
+  state: PaneChatState,
+  event: PaneConversationCompacted
+): PaneChatState => {
+  const compaction: CompactionCounts = {
+    preTokens: event.preTokens,
+    ...(event.postTokens !== undefined ? { postTokens: event.postTokens } : {})
+  }
+  const messages = state.messages.map((message) =>
+    message.role === 'user' ? { ...message, rewindable: false as const } : message
+  )
+  const notice: PaneMessage = {
+    id: `${messages.length}:notice`,
+    role: 'notice',
+    parts: [{ type: 'text', content: 'Context compacted' }],
+    compaction
+  }
+  return { ...state, messages: [...messages, notice] }
+}
 
 /**
  * Folds one pane stream event into conversation state. Text and thinking deltas
@@ -539,7 +567,7 @@ export const reducePaneChat = (
     case 'PaneSlashCommandsAvailable':
       return { ...state, slashCommands: event.commands, warmingCommands: false }
     case 'PaneConversationCompacted':
-      return noticeMessage(state, compactionNotice(event))
+      return compactConversation(state, event)
     case 'PaneModelChanged':
       return noticeMessage(state, `Model → ${event.displayName ?? event.model}`)
     case 'PaneConversationReset':
