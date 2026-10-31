@@ -102,7 +102,7 @@ describe('RemoveProjectDialog', () => {
       .getAllByRole('listitem')
       .map((row) => row.textContent)
 
-    expect(rows).toEqual(['Agentfix-anchor', `Worktree${WORKTREE.path}`])
+    expect(rows).toEqual(['fix-anchorAgent', `${WORKTREE.path}Worktree`])
   })
 
   it('keeps Remove disabled until the project name is typed exactly', () => {
