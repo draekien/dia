@@ -652,12 +652,6 @@ function PaneChat({
   const [modifierHeld, setModifierHeld] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  useEffect(() => {
-    const release = (): void => setModifierHeld(false)
-    window.addEventListener('blur', release)
-    return () => window.removeEventListener('blur', release)
-  }, [])
-
   // biome-ignore lint/correctness/useExhaustiveDependencies: focuses once, when the composer first mounts
   useEffect(() => {
     if (focusComposer) textareaRef.current?.focus()
@@ -914,7 +908,7 @@ function PaneChat({
                         aria-activedescendant={
                           isMenuOpen ? slashMenuOptionId(paneId, highlight) : undefined
                         }
-                        placeholder={composerPlaceholder(isLoading, defaultSendMode)}
+                        placeholder={composerPlaceholder(isLoading, actionDefaultMode)}
                         aria-label="Message dia"
                       />
                       <InputGroupAddon align="block-start">

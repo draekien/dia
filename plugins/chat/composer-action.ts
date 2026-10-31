@@ -1,3 +1,4 @@
+import { sendModeForEnter } from '@dia/renderer-plugin'
 import type { SendMode } from '@shared/domain/message-queue'
 
 /**
@@ -14,8 +15,6 @@ export type ComposerAction =
       readonly mode: SendMode
       readonly disabled: boolean
     }
-
-const otherMode = (mode: SendMode): SendMode => (mode === 'queue' ? 'steer' : 'queue')
 
 const iconFor = (mode: SendMode) => (mode === 'queue' ? 'queue' : 'sendNow')
 
@@ -39,7 +38,7 @@ export const composerAction = ({
   if (!hasText) {
     return { kind: 'submit', icon: 'sendNow', label: 'Send', mode: defaultMode, disabled: true }
   }
-  const mode = modifierHeld ? otherMode(defaultMode) : defaultMode
+  const mode = sendModeForEnter(defaultMode, { metaKey: modifierHeld, ctrlKey: false })
   const label = !running ? 'Send' : mode === 'queue' ? 'Queue' : 'Steer now'
   return { kind: 'submit', icon: iconFor(mode), label, mode, disabled: false }
 }
