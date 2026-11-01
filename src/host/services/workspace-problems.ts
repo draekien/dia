@@ -52,6 +52,16 @@ const isProblemError = Schema.is(WorkspaceProblemError)
 const asProblemError = (cause: unknown) =>
   isProblemError(cause) ? cause : new WorkspaceProblemError({ reason: HOST_DB_UNAVAILABLE })
 
+const toProblemError = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.tapError((cause) =>
+      isProblemError(cause)
+        ? Effect.void
+        : Effect.logError('Could not read or write host.db for a workspace problem', { cause })
+    ),
+    Effect.mapError(asProblemError)
+  )
+
 const conflictOf = (skipped: SkippedImportTab, holders: Holders) => {
   const { tab, project } = skipped
   const sessionHolder =
@@ -129,10 +139,10 @@ export const makeWorkspaceProblemsLive = (userDataPath: string) =>
           conflicts: conflicts.length
         })
         return problems
-      }).pipe(Effect.mapError(asProblemError), Effect.withSpan('WorkspaceProblems.list'))
+      }).pipe(toProblemError, Effect.withSpan('WorkspaceProblems.list'))
 
       const deleteUnreadable = (row: UnreadableRow) =>
-        store.deleteUnreadable(row).pipe(Effect.mapError(asProblemError))
+        store.deleteUnreadable(row).pipe(toProblemError)
 
       const resolveImportConflict = Effect.fn('WorkspaceProblems.resolveImportConflict')(function* (
         agentId: string,
@@ -164,7 +174,7 @@ export const makeWorkspaceProblemsLive = (userDataPath: string) =>
           droppedSession: found.conflict.session !== undefined,
           droppedWorktree: found.conflict.worktree !== undefined
         })
-      }, Effect.mapError(asProblemError))
+      }, toProblemError)
 
       return WorkspaceProblems.of({ list, deleteUnreadable, resolveImportConflict })
     })

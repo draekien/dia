@@ -272,7 +272,14 @@ export function WorkspaceProblemsBanner(): React.JSX.Element | null {
           ? 'A workspace problem needs your decision'
           : `${visible.length} workspace problems need your decision`}
       </span>
-      <Button variant="ghost" size="xs" onClick={() => setOpen(true)}>
+      <Button
+        variant="ghost"
+        size="xs"
+        onClick={() => {
+          refresh()
+          setOpen(true)
+        }}
+      >
         Review
       </Button>
 

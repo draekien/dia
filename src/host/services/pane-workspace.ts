@@ -376,6 +376,9 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         tab: Tab
       ) {
         yield* mutate('importTab', (workspace, removing) => {
+          if (Result.isSuccess(WorkspaceOps.tabOf(workspace, tab.config.paneId))) {
+            return Result.succeed(workspace)
+          }
           const entry = workspace.projects.find(
             (candidate) => candidate.project.directoryKey === project.directoryKey
           )
