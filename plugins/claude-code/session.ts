@@ -21,6 +21,7 @@ import {
   ModelChanged,
   makePendingUserInput,
   type OutboundMessage,
+  PathAttachment,
   type PendingUserInput,
   PermissionModeChanged,
   PermissionRequested,
@@ -40,7 +41,7 @@ import {
   type UserInputResolution,
   UserMessagesSent
 } from '@dia/plugin'
-import { type Attachment, PathAttachment } from '@shared/domain/attachment'
+import type { Attachment } from '@shared/domain/attachment'
 import type { QuestionResponse } from '@shared/domain/attention'
 import type { OutgoingMessage, SendMode } from '@shared/domain/message-queue'
 import type { PaneConfig, SessionId, ThinkingLevel } from '@shared/domain/pane'

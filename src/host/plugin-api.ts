@@ -8,6 +8,7 @@ export {
   HealthUnknown
 } from '../shared/domain/adapter-status'
 export { AGENT_NAME_ADJECTIVES, AGENT_NAME_NOUNS } from '../shared/domain/agent-name'
+export { ContentAttachment, PathAttachment } from '../shared/domain/attachment'
 export { PlanReviewResponse, Question } from '../shared/domain/attention'
 export { OutgoingMessage } from '../shared/domain/message-queue'
 export {
