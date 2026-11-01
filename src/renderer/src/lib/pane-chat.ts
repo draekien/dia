@@ -1,3 +1,4 @@
+import type { Attachment } from '@shared/domain/attachment'
 import {
   type AttentionState,
   isParkedState,
@@ -98,7 +99,8 @@ export type MessagePart = TextPart | ThinkingPart | ToolCallPart
  * present only on user turns the
  * pane has confirmed as rewindable, is the Agent SDK message id to pass to
  * `window.dia.rewindToCheckpoint` to restore files and conversation to that
- * point (see ADR-0018). `resumeAnchorUuid`, present alongside it when a prior
+ * point (see ADR-0018). `attachments` are the files a user turn carried; absent means none.
+ * `resumeAnchorUuid`, present alongside it when a prior
  * assistant turn exists, is the branch point that rewind resumes from; absent
  * for the first turn. `rewindable` is `false` on the second and later user turns of a batch sent
  * as one turn: a rewind there would also drop the earlier turns of the batch, so the rewind
@@ -109,6 +111,7 @@ export interface PaneMessage {
   readonly id: string
   readonly role: 'user' | 'assistant' | 'notice' | 'error'
   readonly parts: ReadonlyArray<MessagePart>
+  readonly attachments?: ReadonlyArray<Attachment>
   readonly checkpointUuid?: string
   readonly resumeAnchorUuid?: string
   readonly rewindable?: false
@@ -202,6 +205,7 @@ export const paneChatStateFromHistory = (
     id: `${paneId}:history:${index}`,
     role: message.role,
     parts: [{ type: 'text', content: message.content }],
+    ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
     ...(message.checkpointUuid !== undefined ? { checkpointUuid: message.checkpointUuid } : {}),
     ...(message.resumeAnchorUuid !== undefined
       ? { resumeAnchorUuid: message.resumeAnchorUuid }
@@ -231,6 +235,9 @@ const appendSentMessages = (state: PaneChatState, event: PaneUserMessagesSent): 
         id: `${event.paneId}:user:${message.id}`,
         role: 'user',
         parts: [{ type: 'text', content: message.text }],
+        ...(message.attachments !== undefined && message.attachments.length > 0
+          ? { attachments: message.attachments }
+          : {}),
         ...(index > 0 ? { rewindable: false as const } : {}),
         // @effect-diagnostics-next-line globalDate:off -- the transcript records when dia resumed the agent; the chat reducer runs outside an Effect runtime.
         ...(resumesPark ? { resumedAt: Date.now() } : {})

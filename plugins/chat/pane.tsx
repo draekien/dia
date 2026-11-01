@@ -57,11 +57,13 @@ import {
   turnBlocks,
   useAdapterStatus,
   useAgentSummaries,
+  useAttachmentTypes,
   useDisabledPermissionModes,
   useModelCatalog,
   useTranscriptWidth
 } from '@dia/renderer-plugin'
 import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react'
+import { PathAttachment, type ProjectEntry } from '@shared/domain/attachment'
 import {
   type AttentionState,
   Idle,
@@ -92,11 +94,19 @@ import {
   Check,
   ListPlus,
   Loader2Icon,
+  Plus,
   RotateCcw,
   SquareIcon,
   X
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { AttachmentChip, SentAttachments } from './attachment-chips'
+import {
+  activeMentionToken,
+  entryPath,
+  filterProjectEntries,
+  removeToken
+} from './attachment-draft'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import {
   type ComposerAction,
@@ -113,6 +123,7 @@ import {
 import { ContextDonut } from './context-donut'
 import { Markdown } from './markdown'
 import { ModelPicker } from './model-picker'
+import { PathMenu, pathMenuListboxId, pathMenuOptionId } from './path-menu'
 import { PermissionRequestCard } from './permission-request-card'
 import { PlanReviewCard } from './plan-review-card'
 import { QueuedMessages } from './queued-messages'
@@ -129,6 +140,7 @@ import { type LiveSteps, StepsSection, summaryFocus } from './steps-section'
 import { approximateTokens, exactTokens } from './token-count'
 import { TranscriptItem, TranscriptScroller } from './transcript-scroller'
 import { StallActions, TurnActivityLine } from './turn-activity-line'
+import { filesOf, useComposerAttachments, useProjectEntries } from './use-composer-attachments'
 import { useElapsedClock } from './use-elapsed-clock'
 
 interface PaneProps {
@@ -395,18 +407,21 @@ function TokenCount({ count }: { count: number }): React.JSX.Element {
  * shows every part. Pass `live` for the turn still running, to show
  * its activity on its last section's summary line; `nowMs` (epoch milliseconds) times
  * that section from its first part.
- * Pass a message from a pane's chat state ({@link paneChatAtom}).
+ * Pass a message from a pane's chat state ({@link paneChatAtom}). A user turn's attachments show
+ * as read-only chips under its text, with paths relative to `cwd`.
  */
 export function MessageView({
   message,
   rewind,
   live,
-  nowMs
+  nowMs,
+  cwd = ''
 }: {
   message: PaneMessage
   rewind?: RewindActionProps
   live?: LiveSteps
   nowMs?: number
+  cwd?: string
 }): React.JSX.Element {
   if (message.role === 'user' && message.resumedAt !== undefined) {
     return (
@@ -464,6 +479,9 @@ export function MessageView({
                 <PartView key={key} part={part} />
               )
             })
+          )}
+          {isUser && message.attachments !== undefined && (
+            <SentAttachments attachments={message.attachments} cwd={cwd} />
           )}
         </MessageContent>
       </Message>
@@ -601,6 +619,7 @@ const messageActivitySignature = (state: PaneChatState): string => {
 
 function PaneChat({
   paneId,
+  cwd,
   attention,
   model,
   onModelChange,
@@ -614,6 +633,7 @@ function PaneChat({
   focusComposer
 }: {
   paneId: string
+  cwd: string
   attention: AttentionState
   model: string
   onModelChange: (model: string) => void
@@ -655,7 +675,12 @@ function PaneChat({
   const [slashDismissed, setSlashDismissed] = useState(false)
   const [caret, setCaret] = useState(0)
   const [modifierHeld, setModifierHeld] = useState(false)
+  const [pathHighlight, setPathHighlight] = useState(0)
+  const [pathDismissed, setPathDismissed] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const attachments = useComposerAttachments(useAttachmentTypes())
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: focuses once, when the composer first mounts
   useEffect(() => {
@@ -752,13 +777,22 @@ function PaneChat({
     onSubmitMeta: { mode: defaultSendMode } as { readonly mode: SendMode },
     onSubmit: ({ value, formApi, meta }) => {
       const text = value.text.trim()
-      if (!text) return
+      const ready = attachments.ready
+      if (attachments.reading || (!text && ready.length === 0)) return
       const mode = pendingInteraction ? 'steer' : meta.mode
-      sendMessage({ text, mode })
+      sendMessage({ text, mode, attachments: ready })
       if (mode === 'steer' || !isLoading) clearPendingInteractions()
       formApi.reset()
+      attachments.clear()
     }
   })
+  const mention = activeMentionToken(form.state.values.text, caret)
+  const projectEntries = useProjectEntries(cwd, mention !== null)
+  const mentionQuery = mention?.query ?? null
+  const pathMatches = useMemo(
+    () => (mentionQuery === null ? [] : filterProjectEntries(projectEntries.entries, mentionQuery)),
+    [projectEntries.entries, mentionQuery]
+  )
 
   function respondToPermission(response: PermissionResponse): void {
     if (!pendingPermission) return
@@ -800,6 +834,22 @@ function PaneChat({
             onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget)) setModifierHeld(false)
             }}
+            onDragOver={(event) => {
+              if (!event.dataTransfer.types.includes('Files')) return
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'copy'
+              setDragging(true)
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setDragging(false)
+              }
+            }}
+            onDrop={(event) => {
+              event.preventDefault()
+              setDragging(false)
+              void attachments.add(filesOf(event.dataTransfer))
+            }}
             onSubmit={(event) => {
               event.preventDefault()
               void form.handleSubmit({ mode: defaultSendMode })
@@ -812,12 +862,34 @@ function PaneChat({
                   token === null ? [] : filterSlashCommands(chat.slashCommands, token.query)
                 const isMenuOpen = matches.length > 0 && !slashDismissed
                 const highlight = wrapHighlight(slashHighlight, 0, matches.length)
+                const isPathMenuOpen = mention !== null && !isMenuOpen && !pathDismissed
+                const pathIndex = wrapHighlight(pathHighlight, 0, pathMatches.length)
 
+                const placeCaret = (nextCaret: number): void => {
+                  requestAnimationFrame(() => {
+                    const element = textareaRef.current
+                    if (element === null) return
+                    element.selectionStart = nextCaret
+                    element.selectionEnd = nextCaret
+                    setCaret(nextCaret)
+                  })
+                }
                 const changeText = (value: string, nextCaret: number): void => {
                   field.handleChange(value)
                   setCaret(nextCaret)
                   setSlashDismissed(false)
                   setSlashHighlight(0)
+                  setPathDismissed(false)
+                  setPathHighlight(0)
+                }
+                const selectPath = (entry: ProjectEntry, at: TriggerToken): void => {
+                  const { value, caret: nextCaret } = removeToken(field.state.value, at)
+                  field.handleChange(value)
+                  setPathHighlight(0)
+                  attachments.attach(
+                    PathAttachment.make({ path: entryPath(cwd, entry), kind: entry.kind })
+                  )
+                  placeCaret(nextCaret)
                 }
                 const selectCommand = (command: SlashCommandInfo, at: TriggerToken): void => {
                   const { value, caret: nextCaret } = completeSlashCommand(
@@ -827,13 +899,7 @@ function PaneChat({
                   )
                   field.handleChange(value)
                   setSlashHighlight(0)
-                  requestAnimationFrame(() => {
-                    const element = textareaRef.current
-                    if (element === null) return
-                    element.selectionStart = nextCaret
-                    element.selectionEnd = nextCaret
-                    setCaret(nextCaret)
-                  })
+                  placeCaret(nextCaret)
                 }
 
                 return (
@@ -847,13 +913,26 @@ function PaneChat({
                     <QueuedMessages
                       queued={chat.queued}
                       held={chat.queueHeld}
+                      cwd={cwd}
                       onSendNow={(messageId) => {
                         sendQueuedNow(messageId)
                         clearPendingInteractions()
                       }}
-                      onEdit={(messageId, text) => editQueued({ messageId, text })}
+                      onEdit={(messageId, text, kept) =>
+                        editQueued({ messageId, text, attachments: kept })
+                      }
                       onRemove={removeQueued}
                     />
+                    {isPathMenuOpen && mention !== null && (
+                      <PathMenu
+                        paneId={paneId}
+                        entries={pathMatches}
+                        loading={projectEntries.loading}
+                        highlightedIndex={pathIndex}
+                        onSelect={(entry) => selectPath(entry, mention)}
+                        onHighlight={setPathHighlight}
+                      />
+                    )}
                     {isMenuOpen && token !== null && (
                       <SlashCommandMenu
                         paneId={paneId}
@@ -863,7 +942,14 @@ function PaneChat({
                         onHighlight={setSlashHighlight}
                       />
                     )}
-                    <InputGroup>
+                    <InputGroup
+                      className={cn(dragging && 'outline-1 outline-primary outline-solid')}
+                    >
+                      {dragging && (
+                        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/85 text-foreground text-sm">
+                          Drop to attach
+                        </div>
+                      )}
                       <InputGroupTextarea
                         ref={textareaRef}
                         className="min-h-14"
@@ -872,7 +958,53 @@ function PaneChat({
                           changeText(event.target.value, event.target.selectionStart)
                         }
                         onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+                        onPaste={(event) => {
+                          const files = filesOf(event.clipboardData)
+                          if (files.length === 0) return
+                          event.preventDefault()
+                          void attachments.add(files)
+                        }}
                         onKeyDown={(event) => {
+                          if (
+                            event.key === 'Backspace' &&
+                            event.currentTarget.selectionStart === 0 &&
+                            event.currentTarget.selectionEnd === 0 &&
+                            attachments.drafts.length > 0
+                          ) {
+                            event.preventDefault()
+                            attachments.removeLast()
+                            return
+                          }
+                          if (isPathMenuOpen) {
+                            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                              event.preventDefault()
+                              setPathHighlight(
+                                wrapHighlight(
+                                  pathIndex,
+                                  event.key === 'ArrowDown' ? 1 : -1,
+                                  pathMatches.length
+                                )
+                              )
+                              return
+                            }
+                            if (event.key === 'Escape') {
+                              event.preventDefault()
+                              setPathDismissed(true)
+                              return
+                            }
+                            if (
+                              (event.key === 'Enter' || event.key === 'Tab') &&
+                              !event.shiftKey &&
+                              !event.nativeEvent.isComposing
+                            ) {
+                              const entry = pathMatches[pathIndex]
+                              if (entry !== undefined && mention !== null) {
+                                event.preventDefault()
+                                selectPath(entry, mention)
+                                return
+                              }
+                            }
+                          }
                           if (isMenuOpen) {
                             if (event.key === 'ArrowDown') {
                               event.preventDefault()
@@ -914,11 +1046,17 @@ function PaneChat({
                           }
                         }}
                         role="combobox"
-                        aria-expanded={isMenuOpen}
-                        aria-controls={slashMenuListboxId(paneId)}
+                        aria-expanded={isMenuOpen || isPathMenuOpen}
+                        aria-controls={
+                          isPathMenuOpen ? pathMenuListboxId(paneId) : slashMenuListboxId(paneId)
+                        }
                         aria-autocomplete="list"
                         aria-activedescendant={
-                          isMenuOpen ? slashMenuOptionId(paneId, highlight) : undefined
+                          isMenuOpen
+                            ? slashMenuOptionId(paneId, highlight)
+                            : isPathMenuOpen && pathMatches.length > 0
+                              ? pathMenuOptionId(paneId, pathIndex)
+                              : undefined
                         }
                         placeholder={composerPlaceholder(isLoading, actionDefaultMode)}
                         aria-label="Message dia"
@@ -945,11 +1083,55 @@ function PaneChat({
                           }
                         />
                       </InputGroupAddon>
+                      {attachments.drafts.length > 0 && (
+                        <InputGroupAddon
+                          align="block-start"
+                          className="flex-wrap gap-1.5 pt-1 pb-0"
+                        >
+                          {attachments.drafts.map((draft) => (
+                            <AttachmentChip
+                              key={draft.key}
+                              draft={draft}
+                              cwd={cwd}
+                              onRemove={() => attachments.remove(draft.key)}
+                            />
+                          ))}
+                        </InputGroupAddon>
+                      )}
                       <InputGroupAddon align="block-end">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <InputGroupButton
+                              type="button"
+                              size="icon-xs"
+                              variant="ghost"
+                              aria-label="Attach files"
+                              onClick={() => fileInputRef.current?.click()}
+                            >
+                              <Plus />
+                            </InputGroupButton>
+                          </TooltipTrigger>
+                          <TooltipContent>Attach files, or drop, paste or type @</TooltipContent>
+                        </Tooltip>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          hidden
+                          tabIndex={-1}
+                          onChange={(event) => {
+                            const files = [...(event.currentTarget.files ?? [])]
+                            event.currentTarget.value = ''
+                            void attachments.add(
+                              files.map((file) => ({ file, isDirectory: false }))
+                            )
+                          }}
+                        />
                         <ComposerActionButton
                           action={composerAction({
                             running: isLoading,
-                            hasText: field.state.value.trim() !== '',
+                            hasText:
+                              field.state.value.trim() !== '' || attachments.ready.length > 0,
                             modifierHeld: modifierHeld && !pendingInteraction,
                             defaultMode: actionDefaultMode
                           })}
@@ -980,6 +1162,7 @@ function PaneChat({
         <TranscriptItem key={message.id} anchor={message.role === 'user'}>
           <MessageView
             message={message}
+            cwd={cwd}
             rewind={rewindRowFor(message)}
             live={message === runningTurn ? liveSteps : undefined}
             nowMs={nowMs}
@@ -1094,10 +1277,20 @@ function Pane({
   }, [queryClient, paneId, attentionQueryKey])
 
   return (
-    <div className="flex h-full flex-col bg-background text-ink">
+    // biome-ignore lint/a11y/noStaticElementInteractions: a drop guard only, so a file dropped outside the composer does not navigate the window
+    <div
+      className="flex h-full flex-col bg-background text-ink"
+      onDragOver={(event) => {
+        if (event.defaultPrevented || !event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'none'
+      }}
+      onDrop={(event) => event.preventDefault()}
+    >
       <PaneChat
         key={paneId}
         paneId={paneId}
+        cwd={cwd}
         attention={attention}
         model={chosenModel}
         onModelChange={changeModel}

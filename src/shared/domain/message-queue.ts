@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import { Attachment } from './attachment'
 
 /**
  * How a user message sent while a turn runs is delivered. `queue` holds it until the turn ends;
@@ -13,9 +14,13 @@ export const DEFAULT_SEND_MODE: SendMode = 'queue'
 /**
  * A user message the agent session has accepted but not yet answered. `id` is unique within the
  * pane and stays the same from creation until the message is sent; `text` is what the agent
- * receives.
+ * receives, with `attachments` (absent means none).
  */
-export const OutgoingMessage = Schema.Struct({ id: Schema.String, text: Schema.String })
+export const OutgoingMessage = Schema.Struct({
+  id: Schema.String,
+  text: Schema.String,
+  attachments: Schema.optional(Schema.Array(Attachment))
+})
 export type OutgoingMessage = typeof OutgoingMessage.Type
 
 /**

@@ -1,6 +1,7 @@
 import { Schema } from 'effect'
 import { AdapterStatusSnapshot } from '../domain/adapter-status'
 import { AgentSummary } from '../domain/agent-summary'
+import { Attachment, type AttachmentType, type ProjectEntry } from '../domain/attachment'
 import {
   AttentionState,
   PermissionResponse,
@@ -85,23 +86,27 @@ export type TitleBarOverlayColors = typeof TitleBarOverlayColors.Type
  * by `paneId`. Consumed by the pane
  * supervisor to forward `text` into that pane's agent session. `mode` decides
  * what happens while a turn runs: `queue` holds the message until the turn
- * ends, `steer` interrupts the turn so the message runs next.
+ * ends, `steer` interrupts the turn so the message runs next. `attachments`
+ * travel with the text; absent means none.
  */
 export const SendMessage = Schema.TaggedStruct('SendMessage', {
   paneId: Uuid,
   text: Schema.String,
+  attachments: Schema.optional(Schema.Array(Attachment)),
   mode: SendMode
 })
 export type SendMessage = typeof SendMessage.Type
 
 /**
  * Command sent by the renderer to replace the text of queued message
- * `messageId` in pane `paneId`. A message already sent is left alone.
+ * `messageId` in pane `paneId`, and its attachments when `attachments` is
+ * present. A message already sent is left alone.
  */
 export const EditQueuedMessage = Schema.TaggedStruct('EditQueuedMessage', {
   paneId: Uuid,
   messageId: Schema.String,
-  text: Schema.String
+  text: Schema.String,
+  attachments: Schema.optional(Schema.Array(Attachment))
 })
 export type EditQueuedMessage = typeof EditQueuedMessage.Type
 
@@ -798,6 +803,8 @@ export interface AdapterApi {
   onPreferencesChanged(listener: (snapshot: ModelPreferencesSnapshot) => void): () => void
   /** The permission modes the adapter's own settings turn off for an agent working in `cwd`; read it again to see a settings change. */
   getDisabledPermissionModes(cwd: string): Promise<ReadonlyArray<PermissionMode>>
+  /** The file types the adapter accepts as content blocks; any other attached file is sent as its path. */
+  getAttachmentTypes(): Promise<ReadonlyArray<AttachmentType>>
 }
 
 /** The background activity calls of `window.dia.activities`, served by the Host. */
@@ -828,8 +835,23 @@ export interface DiaApi {
   readonly models: ModelApi
   readonly activities: ActivityApi
   readonly adapter: AdapterApi
-  sendMessage(paneId: string, text: string, mode: SendMode): void
-  editQueuedMessage(paneId: string, messageId: string, text: string): void
+  sendMessage(
+    paneId: string,
+    text: string,
+    mode: SendMode,
+    attachments?: ReadonlyArray<Attachment>
+  ): void
+  /** Replaces queued message `messageId`'s text, and its attachments when `attachments` is given. */
+  editQueuedMessage(
+    paneId: string,
+    messageId: string,
+    text: string,
+    attachments?: ReadonlyArray<Attachment>
+  ): void
+  /** The files and directories under `cwd` the `@` path menu offers; empty when they cannot be read. */
+  listProjectEntries(cwd: string): Promise<ReadonlyArray<ProjectEntry>>
+  /** The absolute path of a `File` from a drop, paste or file input; empty for a file with no path, such as a pasted screenshot. */
+  pathForFile(file: object): string
   removeQueuedMessage(paneId: string, messageId: string): void
   /** Sends queued message `messageId` now, steering the running turn; see {@link SendQueuedMessageNow}. */
   sendQueuedMessageNow(paneId: string, messageId: string): void

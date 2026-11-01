@@ -1,4 +1,5 @@
 import { Effect, Schema } from 'effect'
+import { Attachment } from './attachment'
 import { AttentionState } from './attention'
 import { Uuid } from './uuid'
 
@@ -21,11 +22,13 @@ export type SessionId = typeof SessionId.Type
  * carry no checkpoint (e.g. tool results). `resumeAnchorUuid`, present alongside
  * `checkpointUuid` when a prior assistant turn exists, is that assistant turn's
  * id — the point the conversation branches at on rewind; absent for the first
- * turn of a conversation.
+ * turn of a conversation. `attachments` are the images a user turn carried;
+ * absent means none.
  */
 export const ConversationMessage = Schema.Struct({
   role: Schema.Literals(['user', 'assistant']),
   content: Schema.String,
+  attachments: Schema.optional(Schema.Array(Attachment)),
   checkpointUuid: Schema.optional(Schema.String),
   resumeAnchorUuid: Schema.optional(Schema.String)
 })

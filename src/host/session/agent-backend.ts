@@ -1,4 +1,5 @@
 import { type AdapterStatus, HealthError } from '@shared/domain/adapter-status'
+import type { Attachment, AttachmentType } from '@shared/domain/attachment'
 import type { PermissionResponse, QuestionResponse } from '@shared/domain/attention'
 import {
   EMPTY_MESSAGE_QUEUE,
@@ -38,12 +39,25 @@ export const AGENT_BACKEND_KEY = 'agentBackend'
  */
 export interface AgentSession {
   /**
-   * Sends a user message. With no turn running it is sent at once in either mode; during a turn
-   * `queue` holds it until the turn ends and `steer` interrupts the turn so it runs next.
+   * Sends a user message of `text` and `attachments` (none when omitted). With no turn running it
+   * is sent at once in either mode; during a turn `queue` holds it until the turn ends and `steer`
+   * interrupts the turn so it runs next. A path attachment outside the session's working directory
+   * becomes readable by the agent.
    */
-  readonly sendText: (text: string, mode: SendMode) => Effect.Effect<void>
-  /** Replaces the text of queued message `messageId`; a message already sent is left alone. */
-  readonly editQueuedText: (messageId: string, text: string) => Effect.Effect<void>
+  readonly sendText: (
+    text: string,
+    mode: SendMode,
+    attachments?: ReadonlyArray<Attachment>
+  ) => Effect.Effect<void>
+  /**
+   * Replaces the text of queued message `messageId`, and its attachments when `attachments` is
+   * given; a message already sent is left alone.
+   */
+  readonly editQueuedText: (
+    messageId: string,
+    text: string,
+    attachments?: ReadonlyArray<Attachment>
+  ) => Effect.Effect<void>
   /** Removes queued message `messageId`; a message already sent is left alone. */
   readonly removeQueuedText: (messageId: string) => Effect.Effect<void>
   /**
@@ -112,6 +126,8 @@ export interface AgentSessionOptions {
  * or clears (`None`) where the adapter finds its agent install, then re-checks, and sessions
  * started afterwards use it. `disabledPermissionModes` lists the permission modes the agent's own
  * settings turn off for a session started in `cwd`; it is empty when the settings cannot be read.
+ * `attachmentTypes` lists the file types a session accepts as content blocks; any other attached
+ * file is sent as its path.
  */
 export interface AgentBackend {
   readonly openSession: (
@@ -127,6 +143,7 @@ export interface AgentBackend {
   readonly checkHealth: () => Effect.Effect<void>
   readonly setInstallPath: (path: Option.Option<string>) => Effect.Effect<void>
   readonly disabledPermissionModes: (cwd: string) => Effect.Effect<ReadonlyArray<PermissionMode>>
+  readonly attachmentTypes: () => Effect.Effect<ReadonlyArray<AttachmentType>>
 }
 
 const ADAPTER_NOT_LOADED = 'The claude-code adapter is not loaded'
@@ -185,7 +202,8 @@ const unavailableBackend: AgentBackend = {
     ),
   checkHealth: ignored('checkHealth'),
   setInstallPath: ignored('setInstallPath'),
-  disabledPermissionModes: () => Effect.succeed([])
+  disabledPermissionModes: () => Effect.succeed([]),
+  attachmentTypes: () => Effect.succeed([])
 }
 
 const backendMethods = [
@@ -196,7 +214,8 @@ const backendMethods = [
   'status',
   'checkHealth',
   'setInstallPath',
-  'disabledPermissionModes'
+  'disabledPermissionModes',
+  'attachmentTypes'
 ] as const
 
 /**

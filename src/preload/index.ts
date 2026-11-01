@@ -16,7 +16,7 @@ import {
 import { Context, Effect, Layer, ManagedRuntime, Result, Schema } from 'effect'
 import { RpcClient, RpcSerialization } from 'effect/rpc'
 import { Socket } from 'effect/socket'
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { type DiaRpcClient, makeHostApi } from './host-api'
 
 const decodeHostConnection = Schema.decodeUnknownSync(HostConnection)
@@ -77,6 +77,7 @@ const hostApi = makeHostApi({
 const api: DiaApi = {
   ...hostApi,
   pickFile: () => ipcRenderer.invoke(CHANNEL.chooseFile, null),
+  pathForFile: (file) => webUtils.getPathForFile(file as File),
   setTitleBarOverlay(colors) {
     ipcRenderer.send(CHANNEL.setTitleBarOverlay, encodeTitleBarOverlay(colors))
   },

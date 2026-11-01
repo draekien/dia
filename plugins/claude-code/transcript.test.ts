@@ -1,5 +1,6 @@
 import type { SessionMessage } from '@anthropic-ai/claude-agent-sdk'
 import { assert, describe, it } from '@effect/vitest'
+import { ContentAttachment } from '@shared/domain/attachment'
 import { Option } from 'effect'
 import { lastAssistantUuid, sessionMessagesToConversation } from './transcript'
 
@@ -26,6 +27,33 @@ describe('sessionMessagesToConversation', () => {
 
     assert.deepStrictEqual(result, [
       { role: 'user', content: 'hello there', checkpointUuid: 'turn-1' }
+    ])
+  })
+
+  it('restores the image blocks of a user turn as attachments and anchors its checkpoint', () => {
+    const result = sessionMessagesToConversation([
+      sessionMessage(
+        'user',
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'what is wrong here?' },
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAA' } }
+          ]
+        },
+        'turn-1'
+      )
+    ])
+
+    assert.deepStrictEqual(result, [
+      {
+        role: 'user',
+        content: 'what is wrong here?',
+        attachments: [
+          ContentAttachment.make({ name: 'image-1', mediaType: 'image/png', data: 'AAA' })
+        ],
+        checkpointUuid: 'turn-1'
+      }
     ])
   })
 

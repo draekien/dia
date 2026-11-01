@@ -1,3 +1,4 @@
+import type { Attachment } from '@shared/domain/attachment'
 import {
   type AttentionState,
   AwaitingPermission,
@@ -132,8 +133,16 @@ export class SessionEndedError extends Data.TaggedError('SessionEndedError')<{
 
 /** Live control surface for an open pane, returned by {@link PaneSupervisor.openPane} and {@link PaneSupervisor.getHandle}. */
 export interface PaneHandle {
-  readonly sendMessage: (text: string, mode: SendMode) => Effect.Effect<void>
-  readonly editQueuedMessage: (messageId: string, text: string) => Effect.Effect<void>
+  readonly sendMessage: (
+    text: string,
+    mode: SendMode,
+    attachments?: ReadonlyArray<Attachment>
+  ) => Effect.Effect<void>
+  readonly editQueuedMessage: (
+    messageId: string,
+    text: string,
+    attachments?: ReadonlyArray<Attachment>
+  ) => Effect.Effect<void>
   readonly removeQueuedMessage: (messageId: string) => Effect.Effect<void>
   readonly sendQueuedMessageNow: (messageId: string) => Effect.Effect<void>
   readonly messageQueue: Effect.Effect<MessageQueueSnapshot>
@@ -593,14 +602,19 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
   yield* Effect.logInfo('Pane agent session created', { paneId: config.paneId, resume })
 
   const handle: PaneHandle = {
-    sendMessage: (text, mode) =>
-      Effect.logDebug('Sending text to pane session', { paneId: config.paneId, text, mode }).pipe(
+    sendMessage: (text, mode, attachments = []) =>
+      Effect.logDebug('Sending text to pane session', {
+        paneId: config.paneId,
+        text,
+        mode,
+        attachments: attachments.length
+      }).pipe(
         Effect.andThen(mode === 'steer' ? applyAttention(Idle.make({})) : Effect.void),
-        Effect.andThen(session.sendText(text, mode))
+        Effect.andThen(session.sendText(text, mode, attachments))
       ),
-    editQueuedMessage: (messageId, text) =>
+    editQueuedMessage: (messageId, text, attachments) =>
       Effect.logDebug('Editing a queued message', { paneId: config.paneId, messageId }).pipe(
-        Effect.andThen(session.editQueuedText(messageId, text))
+        Effect.andThen(session.editQueuedText(messageId, text, attachments))
       ),
     removeQueuedMessage: (messageId) =>
       Effect.logDebug('Removing a queued message', { paneId: config.paneId, messageId }).pipe(

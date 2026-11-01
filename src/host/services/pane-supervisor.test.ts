@@ -253,7 +253,7 @@ describe('PaneSupervisor', () => {
         assert.isFalse(sessions[1].closed)
 
         yield* openedB.handle.sendMessage('ping', 'queue')
-        assert.deepStrictEqual(sessions[1].calls, ['sendText:ping:queue'])
+        assert.deepStrictEqual(sessions[1].calls, ['sendText:ping:queue:'])
 
         assert.deepStrictEqual(
           eventsA.map((event) => event._tag),
@@ -611,7 +611,7 @@ describe('PaneSupervisor', () => {
           yield* flush
 
           assert.deepStrictEqual(attentionTags(events), ['AwaitingPermission', 'Idle', 'Completed'])
-          assert.deepStrictEqual(sessions[0].calls, ['sendText:take this instead:steer'])
+          assert.deepStrictEqual(sessions[0].calls, ['sendText:take this instead:steer:'])
         }).pipe(Effect.scoped, Effect.provide(testLayer))
       })
   )
@@ -732,7 +732,7 @@ describe('PaneSupervisor', () => {
         yield* flush
 
         assert.deepStrictEqual(attentionTags(events), ['AwaitingPermission'])
-        assert.deepStrictEqual(sessions[0].calls, ['sendText:after you finish:queue'])
+        assert.deepStrictEqual(sessions[0].calls, ['sendText:after you finish:queue:'])
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })
   )

@@ -62,6 +62,10 @@ const flattenToolResultContent = (content: ToolResultBlock['content']): string =
   return content.map((block) => (block.type === 'text' ? block.text : `[${block.type}]`)).join('')
 }
 
+const isImagePrompt = (content: ReadonlyArray<UserContentBlock>): boolean =>
+  content.some((block) => block.type === 'image') &&
+  !content.some((block) => block.type === 'tool_result')
+
 type ResultMessage = Extract<SDKMessage, { type: 'result' }>
 type RateLimitInfo = Extract<SDKMessage, { type: 'rate_limit_event' }>['rate_limit_info']
 type RateLimitType = RateLimitInfo['rateLimitType']
@@ -363,7 +367,7 @@ export const makeSessionEventReducer = (
 
     if (message.type === 'user') {
       const content = message.message.content
-      if (typeof content === 'string') {
+      if (typeof content === 'string' || isImagePrompt(content)) {
         return message.uuid !== undefined
           ? [
               CheckpointAvailable.make({

@@ -55,6 +55,7 @@ export type HostApi = Omit<
   | 'onUpdateStatusChanged'
   | 'revealPath'
   | 'pickFile'
+  | 'pathForFile'
 >
 
 /**
@@ -249,7 +250,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       onPreferencesChanged: (listener) =>
         subscribeTo('ModelPreferencesChanged', (event) => listener(event.snapshot)),
       getDisabledPermissionModes: (cwd) =>
-        query((client) => client.GetDisabledPermissionModes({ cwd }))
+        query((client) => client.GetDisabledPermissionModes({ cwd })),
+      getAttachmentTypes: () => query((client) => client.GetAttachmentTypes())
     },
     activities: {
       list: () => query((client) => client.ListActivities().pipe(Effect.map(encodeActivities))),
@@ -264,17 +266,31 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         ),
       onChanged: (listener) => subscribeTo('ActivitiesChanged', () => listener())
     },
-    sendMessage: (paneId, text, mode) =>
+    sendMessage: (paneId, text, mode, attachments) =>
       command('SendMessage', (client, commandId) =>
-        client.SendMessage({ ...SendMessage.make({ paneId, text, mode }), commandId })
-      ),
-    editQueuedMessage: (paneId, messageId, text) =>
-      command('EditQueuedMessage', (client, commandId) =>
-        client.EditQueuedMessage({
-          ...EditQueuedMessage.make({ paneId, messageId, text }),
+        client.SendMessage({
+          ...SendMessage.make({
+            paneId,
+            text,
+            mode,
+            ...(attachments !== undefined && attachments.length > 0 ? { attachments } : {})
+          }),
           commandId
         })
       ),
+    editQueuedMessage: (paneId, messageId, text, attachments) =>
+      command('EditQueuedMessage', (client, commandId) =>
+        client.EditQueuedMessage({
+          ...EditQueuedMessage.make({
+            paneId,
+            messageId,
+            text,
+            ...(attachments !== undefined ? { attachments } : {})
+          }),
+          commandId
+        })
+      ),
+    listProjectEntries: (cwd) => query((client) => client.ListProjectEntries({ cwd })),
     removeQueuedMessage: (paneId, messageId) =>
       command('RemoveQueuedMessage', (client, commandId) =>
         client.RemoveQueuedMessage({

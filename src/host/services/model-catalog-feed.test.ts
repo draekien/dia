@@ -46,7 +46,8 @@ const backendWith = (
   status: () => Stream.empty,
   checkHealth: () => Effect.void,
   setInstallPath: () => Effect.void,
-  disabledPermissionModes: () => Effect.succeed([])
+  disabledPermissionModes: () => Effect.succeed([]),
+  attachmentTypes: () => Effect.succeed([])
 })
 
 const feedWith = (backend: Option.Option<AgentBackend>, published: Array<IpcEvent>) =>

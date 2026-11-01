@@ -16,6 +16,7 @@ import { ModelCatalogFeed } from '../services/model-catalog-feed'
 import { ModelPreferences } from '../services/model-preferences'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
+import { ProjectEntries } from '../services/project-entries'
 import { SettingsStore } from '../services/settings-store'
 import { resolveAgentBackend } from '../session/agent-backend'
 
@@ -38,6 +39,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
   const supervisor = yield* PaneSupervisor
   const settings = yield* SettingsStore
   const hub = yield* EventHub
+  const projectEntries = yield* ProjectEntries
   const deduper = yield* CommandDeduper
   const plugins = yield* HostPlugins
   const pluginSources = yield* PluginSources
@@ -107,7 +109,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
         command.commandId,
         'SendMessage',
         withLiveHandle('SendMessage', command.paneId, 'Failed to send message to pane', (handle) =>
-          handle.sendMessage(command.text, command.mode)
+          handle.sendMessage(command.text, command.mode, command.attachments)
         )
       ),
     ResolvePermission: (command) =>
@@ -266,7 +268,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
           'EditQueuedMessage',
           command.paneId,
           'Failed to edit a queued message',
-          (handle) => handle.editQueuedMessage(command.messageId, command.text)
+          (handle) => handle.editQueuedMessage(command.messageId, command.text, command.attachments)
         )
       ),
     RemoveQueuedMessage: (command) =>
@@ -339,6 +341,9 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
       resolveAgentBackend(plugins).pipe(
         Effect.flatMap((backend) => backend.disabledPermissionModes(cwd))
       ),
+    GetAttachmentTypes: () =>
+      resolveAgentBackend(plugins).pipe(Effect.flatMap((backend) => backend.attachmentTypes())),
+    ListProjectEntries: ({ cwd }) => projectEntries.list(cwd),
     ListActivities: () => activities.list,
     RunActivity: ({ plugin, id }) => activities.runNow(plugin, id),
     SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)

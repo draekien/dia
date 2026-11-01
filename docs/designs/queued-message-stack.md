@@ -38,4 +38,4 @@ Issue #92, part of the composer redesign #81. The visual rules are in `DESIGN.md
 |---|---|
 | The front bubble is the focus target | The collapsed stack needs one keyboard stop that opens it; the front bubble is the message the user is most likely to act on. |
 | The overlay is absolute over the collapsed stack | The transcript does not move when the stack opens, as #92 requires. |
-| The attachment row and its `+N` count are not built here | `OutgoingMessage` has no attachments until #74. #74 adds them to the bubble. |
+| The attachment row and its `+N` count are not built here | `OutgoingMessage` had no attachments before #74. #74 adds them: the front bubble grows to 54px with up to four chips and `+N`. |
