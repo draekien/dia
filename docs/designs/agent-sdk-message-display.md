@@ -6,7 +6,7 @@ Status: accepted. Issue #23 part 3 (part 1: #65, part 2: #70). Branches `feat/sd
 
 Records, for each of the 40 Agent SDK message kinds, whether the claude-code adapter shows it, logs it only, or hides it, and implements the rows #65 and #70 left undecided.
 
-Scope: module. `plugins/claude-code/reducer.ts` (the mapping), and for `background_tasks_changed` the session protocol, the IPC contract, the pane chat state and the composer header (`plugins/chat`).
+Scope: module. `plugins/claude-code/reducer.ts` (the mapping), and for `background_tasks_changed` the session protocol, the IPC contract, the pane chat state and the session rail's Background tasks card (`plugins/chat`).
 
 Source: the `SDKMessage` union in `@anthropic-ai/claude-agent-sdk` 0.3.311 `sdk.d.ts` (39 members; `result` splits into success and error).
 
@@ -65,7 +65,7 @@ The decisions apply three rules, in this order:
 | `system` / `notification` | show when `priority` is `high` or `immediate`: `SessionNotice` with the first line of its `text`; log otherwise | divider | Claude Code's REPL shows these; `low` and `medium` are transient hints |
 | `system` / `memory_recall` | show: `SessionNotice` (`Recalled from memory: auth.md, testing.md and 1 more`) | divider | The SDK documents it for an inline "Recalled from memory" row; it explains context the user did not send. File names only, at most three, to keep one line; a synthesis entry (`<synthesis:DIR>`) is named `synthesized memories` |
 | `auth_status` | show: `TurnStatusChanged` (`Signing in`) while `isAuthenticating`, cleared when it ends; `error` → `SessionNotice` (`Sign-in failed: <error>`) | activity line, divider | A turn waiting on sign-in otherwise looks stalled |
-| `system` / `background_tasks_changed` | show: new `BackgroundTasksChanged` → a `N in background` control in the composer header that opens a list of the tasks' descriptions; absent when no task runs | composer header popover | Work the agent started (a background shell, a subagent) keeps running after the turn ends and can wake the agent; nothing else shows it. The message is a level signal, so the list is replaced on each message |
+| `system` / `background_tasks_changed` | show: new `BackgroundTasksChanged` → the session rail's Background tasks card lists the tasks' descriptions, or `None running` | session rail card | Work the agent started (a background shell, a subagent) keeps running after the turn ends and can wake the agent; nothing else shows it. The message is a level signal, so the list is replaced on each message |
 | `system` / `task_started` | log only | | The tool row of the call that started the task already shows it; background tasks appear through `background_tasks_changed` |
 | `system` / `task_updated` | log only | | Failures arrive in `task_notification`; membership in `background_tasks_changed` |
 | `system` / `session_state_changed` | log only | | `result` already ends turns; `requires_action` is the permission request dia already shows |
@@ -81,7 +81,7 @@ The decisions apply three rules, in this order:
 
 - `plugins/claude-code/reducer.ts`: the rows above. Every notice text from these rows is one line of at most 200 characters, cut with `…`. A refusal is remembered until the turn's `result`, like a park cause; a park cause wins over a refusal.
 - `BackgroundTasksChanged { tasks: ReadonlyArray<{ taskId: string; description: string }> }` (`src/host/session/protocol.ts`), forwarded as the pane event `PaneBackgroundTasksChanged`; `PaneChatState.backgroundTasks` holds the latest list; a crash or a rewind empties it, because both end the Claude Code process, and `/clear` keeps it. The session also emits an empty `BackgroundTasksChanged` each time it replaces its Claude Code process (a rewind, or a restart to apply a new thinking level). Tasks the SDK marks `ambient` are left out, as the SDK documents. `BackgroundTask` lives in `src/shared/domain/background-task.ts`. `PROTOCOL_VERSION` goes from `0.0.14` to `0.0.15` and `PLUGIN_API_VERSION` (with every shipped `plugin.json`) from `0.0.9` to `0.0.10`, because `@dia/plugin` exports the new message.
-- `plugins/chat/background-tasks.tsx`: the composer header control, left of the context donut.
+- `plugins/chat/background-tasks.tsx`: the session rail's Background tasks card (`docs/designs/session-rail.md`).
 
 ## Not covered
 

@@ -49,7 +49,7 @@ Exports through `@dia/renderer-plugin`:
 | Export | For |
 |---|---|
 | `addRailCard(ctx, card)` | A plugin adding a card |
-| `useRailLayout(width, columnMax)` | The chat pane: returns `{ fits, marginLeft }` for its column and records `fits` for the header toggle. `fits` is `width >= columnMax + 320`; `marginLeft` is `min((width - columnMax) / 2, width - columnMax - 320)` while the cards fit and the rail is on, else `undefined` (centred) |
+| `useRailLayout(width, columnMax)` | The chat pane: returns `{ fits, shiftLeft }` for its column and records `fits` for the header toggle. `fits` is `width >= columnMax + 320`; `shiftLeft` is `max(0, 320 - (width - columnMax) / 2)` while the cards fit and the rail is on, else 0 |
 | `SessionRail({ paneId })` | The chat pane, which renders it where the cards belong |
 | `useRailCardShown(key): boolean` and `revealRailCard(key)` | A plugin that warns when its card is not visible (the context caption) |
 
@@ -70,7 +70,7 @@ The header toggle (`RailToggle`) is kernel UI in `TabHeader` and is not exported
 - `plugins/chat/background-tasks.tsx`: becomes the card body; one row per task description; empty: `None running`.
 - `plugins/chat/task-list-card.tsx` with `latestTodos(messages)`: the `todos` of the last `TodoWrite` tool call in the transcript, each `{ content, status }` where `status` is `pending`, `in_progress` or `completed`; items that fail that shape are dropped. Rows show a status icon; the in-progress item is in foreground text, others muted, completed ones struck through. Empty: `No task list`.
 - `plugins/chat/pane.tsx`:
-  - Measures the scroller's width with a `ResizeObserver` and passes it to `useRailLayout` with `columnMax` 672, 768 or 1024px for Narrow, Default, Wide. It applies `marginLeft` to the column (transcript and composer), which therefore moves left only as far as the cards need. `margin-left` transitions over 200ms, off under reduced motion.
+  - Measures the scroller's width with a `ResizeObserver` and passes it to `useRailLayout` with `columnMax` 672, 768 or 1024px for Narrow, Default, Wide. It translates the column (transcript and composer) left by `shiftLeft`, so the column moves only as far as the cards need. The translate transitions over 200ms, off under reduced motion. A translate keeps both columns centred in their own containers, which a `margin-left` measured against the transcript's padding box would not.
   - Renders `SessionRail` unless the session is empty.
   - **Empty session:** no messages, no running turn and nothing queued. The composer overlay is translated so its centre sits at 45% of the pane height, with a caption line above it: the project name, then the worktree branch in mono when there is one. The scroll-to-end button and the fade above the composer are hidden. When the session stops being empty the translate transitions to zero over 250ms ease-out (instant under reduced motion).
 - Composer:
@@ -113,7 +113,7 @@ One inline round (`--effort low --runner inline`); the user was away and asked f
 
 | Finding | Tag | Outcome |
 |---|---|---|
-| Exporting `RAIL_SPACE` and `useRailOpen` made the pane do the rail's layout maths (Information Hiding). | major | Applied: `useRailLayout(width, columnMax)` returns `{ fits, marginLeft }`. |
+| Exporting `RAIL_SPACE` and `useRailOpen` made the pane do the rail's layout maths (Information Hiding). | major | Applied: `useRailLayout(width, columnMax)` returns `{ fits, shiftLeft }`. |
 | `SessionRail` recorded `fits`, but it is not rendered in an empty session, so the header toggle read a stale value. | major | Applied: `useRailLayout` records `fits`. |
 | `peek` stayed on when `fits` turned true and reappeared later (Define Errors Out of Existence). | minor | Applied: recording `fits` clears `peek`. |
 | The `⋯` popover renders in a portal, so a click in it closed the temporary cards. | major | Applied: elements marked `data-session-rail` count as inside. |

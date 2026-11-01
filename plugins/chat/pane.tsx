@@ -1125,6 +1125,7 @@ function PaneChat({
                               type="button"
                               size="icon-xs"
                               variant="ghost"
+                              className="-ml-2"
                               aria-label="Attach files"
                               onClick={() => fileInputRef.current?.click()}
                             >

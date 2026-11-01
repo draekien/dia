@@ -1,4 +1,4 @@
-# Composer: header row and contextual action button
+# Composer: settings line and contextual action button
 
 Issue #85, part of the composer redesign #81. The visual rules are in `DESIGN.md` > Components > Composer.
 
@@ -6,15 +6,17 @@ Issue #85, part of the composer redesign #81. The visual rules are in `DESIGN.md
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ Opus 5.5    Medium effort    Auto mode                       (#86 donut)   │  InputGroupAddon block-start
-├────────────────────────────────────────────────────────────────────────────┤
+│ (#74 attachment chips)                                                     │
 │ textarea                                                                   │
-│ (#74 attach)                                                       [≡+]   │  InputGroupAddon block-end
+│ +                                                                    [≡+]  │  InputGroupAddon block-end
 └────────────────────────────────────────────────────────────────────────────┘
+  Opus 5.5    Medium effort    Auto mode                         78% context    settings line
 ```
 
-- `ModelPicker`, `ThinkingLevelSelect` and `PermissionModeSelect` (`plugins/chat/pane.tsx`, `plugins/chat/model-picker.tsx`) render in the header row with `composerSettingTrigger` classes and no icon.
-- `plugins/chat/composer-settings.ts` owns the header text: `thinkingSettingLabel` (`Medium effort`, `Adaptive thinking`, `Thinking off`), `permissionSettingLabel` (`Auto mode`) and `skipsApproval` (`auto`, `bypassPermissions`), which selects `emphasis: 'foreground'`.
+The settings moved from a header row inside the box to a line under it, and the context donut became the session rail's Context card (`docs/designs/session-rail.md`).
+
+- `ModelPicker`, `ThinkingLevelSelect` and `PermissionModeSelect` (`plugins/chat/pane.tsx`, `plugins/chat/model-picker.tsx`) render on the settings line with `composerSettingTrigger` classes and no icon.
+- `plugins/chat/composer-settings.ts` owns the settings text: `thinkingSettingLabel` (`Medium effort`, `Adaptive thinking`, `Thinking off`) and `permissionSettingLabel` (`Auto mode`). Only `bypassPermissions` selects `emphasis: 'foreground'`.
 - The queued messages, the slash command menu and `Loading commands…` stay above the `InputGroup`, unchanged.
 
 ## Action button
