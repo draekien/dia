@@ -11,24 +11,50 @@ import {
   TooltipContent,
   TooltipTrigger
 } from '@dia/renderer-plugin'
+import type { Attachment } from '@shared/domain/attachment'
 import type { OutgoingMessage } from '@shared/domain/message-queue'
 import { cva } from 'class-variance-authority'
 import { ArrowUpIcon, ListPlusIcon, PencilIcon, XIcon } from 'lucide-react'
 import { useRef, useState } from 'react'
+import { AttachmentChip, QueuedAttachmentRow } from './attachment-chips'
 
 interface QueuedMessagesProps {
   readonly queued: ReadonlyArray<OutgoingMessage>
   readonly held: boolean
+  readonly cwd: string
   readonly onSendNow: (messageId: string) => void
-  readonly onEdit: (messageId: string, text: string) => void
+  readonly onEdit: (messageId: string, text: string, attachments: ReadonlyArray<Attachment>) => void
   readonly onRemove: (messageId: string) => void
 }
 
 const BUBBLE_HEIGHT = 32
+const ATTACHED_BUBBLE_HEIGHT = 54
 const LAYER_OFFSETS = [0, 22, 34, 40] as const
 
 const dashedBubble =
-  '*:data-[slot=bubble-content]:h-8 *:data-[slot=bubble-content]:border-dashed *:data-[slot=bubble-content]:py-1.5'
+  '*:data-[slot=bubble-content]:border-dashed *:data-[slot=bubble-content]:py-1.5'
+
+const bubbleHeight = cva('', {
+  variants: {
+    attached: {
+      false: '*:data-[slot=bubble-content]:h-8',
+      true: '*:data-[slot=bubble-content]:h-[54px] *:data-[slot=bubble-content]:py-1'
+    }
+  },
+  defaultVariants: { attached: false }
+})
+
+const hasAttachments = (message: OutgoingMessage): boolean => (message.attachments?.length ?? 0) > 0
+
+function BubbleBody({ message }: { message: OutgoingMessage }): React.ReactNode {
+  if (!hasAttachments(message)) return message.text
+  return (
+    <span className="flex min-w-0 flex-col items-end gap-0.5">
+      {message.text !== '' && <span className="max-w-full truncate">{message.text}</span>}
+      <QueuedAttachmentRow attachments={message.attachments ?? []} />
+    </span>
+  )
+}
 
 const stackLayer = cva(cn('absolute right-0', dashedBubble), {
   variants: {
@@ -118,10 +144,13 @@ function QueuedRow({
         className={cn(
           'min-w-0',
           dashedBubble,
+          bubbleHeight({ attached: hasAttachments(message) }),
           '*:data-[slot=bubble-content]:border-muted-foreground/60'
         )}
       >
-        <BubbleContent className="truncate">{message.text}</BubbleContent>
+        <BubbleContent className="truncate">
+          <BubbleBody message={message} />
+        </BubbleContent>
       </Bubble>
     </li>
   )
@@ -138,6 +167,7 @@ function QueuedRow({
 export function QueuedMessages({
   queued,
   held,
+  cwd,
   onSendNow,
   onEdit,
   onRemove
@@ -147,6 +177,7 @@ export function QueuedMessages({
     <QueueStack
       queued={queued}
       held={held}
+      cwd={cwd}
       onSendNow={onSendNow}
       onEdit={onEdit}
       onRemove={onRemove}
@@ -157,6 +188,7 @@ export function QueuedMessages({
 function QueueStack({
   queued,
   held,
+  cwd,
   onSendNow,
   onEdit,
   onRemove
@@ -174,7 +206,10 @@ function QueueStack({
   }
   const layers = queued.slice(-LAYER_OFFSETS.length).reverse()
   const [front, ...behind] = layers
-  const height = BUBBLE_HEIGHT + LAYER_OFFSETS[layers.length - 1]
+  const frontHeight =
+    front !== undefined && hasAttachments(front) ? ATTACHED_BUBBLE_HEIGHT : BUBBLE_HEIGHT
+  const lift = frontHeight - BUBBLE_HEIGHT
+  const height = frontHeight + LAYER_OFFSETS[layers.length - 1]
   const noun = queued.length === 1 ? 'message' : 'messages'
 
   return (
@@ -210,8 +245,8 @@ function QueueStack({
             variant="outline"
             align="end"
             aria-hidden
-            className={stackLayer({ depth: (index + 1) as 1 | 2 | 3 })}
-            style={{ bottom: LAYER_OFFSETS[index + 1] }}
+            className={cn(stackLayer({ depth: (index + 1) as 1 | 2 | 3 }), bubbleHeight())}
+            style={{ bottom: LAYER_OFFSETS[index + 1] + lift }}
           >
             <BubbleContent className="truncate">{message.text}</BubbleContent>
           </Bubble>
@@ -220,7 +255,10 @@ function QueueStack({
           <Bubble
             variant="outline"
             align="end"
-            className={stackLayer({ depth: 0 })}
+            className={cn(
+              stackLayer({ depth: 0 }),
+              bubbleHeight({ attached: hasAttachments(front) })
+            )}
             style={{ bottom: 0 }}
           >
             <BubbleContent asChild>
@@ -232,7 +270,7 @@ function QueueStack({
                 className="truncate"
                 onClick={() => setDismissed(false)}
               >
-                {front.text}
+                <BubbleBody message={front} />
               </button>
             </BubbleContent>
           </Bubble>
@@ -251,8 +289,10 @@ function QueueStack({
                 <li key={message.id}>
                   <QueuedMessageEditor
                     initialText={message.text}
-                    onSave={(text) => {
-                      onEdit(message.id, text)
+                    initialAttachments={message.attachments ?? []}
+                    cwd={cwd}
+                    onSave={(text, attachments) => {
+                      onEdit(message.id, text, attachments)
                       setEditingId(null)
                       focusFront()
                     }}
@@ -288,17 +328,23 @@ function QueueStack({
 
 function QueuedMessageEditor({
   initialText,
+  initialAttachments,
+  cwd,
   onSave,
   onCancel
 }: {
   readonly initialText: string
-  readonly onSave: (text: string) => void
+  readonly initialAttachments: ReadonlyArray<Attachment>
+  readonly cwd: string
+  readonly onSave: (text: string, attachments: ReadonlyArray<Attachment>) => void
   readonly onCancel: () => void
 }): React.JSX.Element {
   const [text, setText] = useState(initialText)
+  const [kept, setKept] = useState(initialAttachments)
   const trimmed = text.trim()
+  const canSave = trimmed !== '' || kept.length > 0
   const save = (): void => {
-    if (trimmed !== '') onSave(trimmed)
+    if (canSave) onSave(trimmed, kept)
   }
 
   return (
@@ -321,11 +367,24 @@ function QueuedMessageEditor({
           }
         }}
       />
+      {kept.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {kept.map((attachment, index) => (
+            <AttachmentChip
+              // biome-ignore lint/suspicious/noArrayIndexKey: attachments carry no id, and two can share a name; the chips hold no state
+              key={`${index}:${attachment._tag === 'PathAttachment' ? attachment.path : attachment.name}`}
+              draft={{ _tag: 'Ready', key: String(index), attachment }}
+              cwd={cwd}
+              onRemove={() => setKept((current) => current.filter((_, at) => at !== index))}
+            />
+          ))}
+        </div>
+      )}
       <div className="flex justify-end gap-1">
         <Button type="button" variant="ghost" size="xs" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="button" size="xs" disabled={trimmed === ''} onClick={save}>
+        <Button type="button" size="xs" disabled={!canSave} onClick={save}>
           Save
         </Button>
       </div>

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { TooltipProvider } from '@dia/renderer-plugin'
+import { ContentAttachment, PathAttachment } from '@shared/domain/attachment'
 import type { OutgoingMessage } from '@shared/domain/message-queue'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -31,7 +32,7 @@ const handlers = { onSendNow: vi.fn(), onEdit: vi.fn(), onRemove: vi.fn() }
 
 const stackElement = (queued: ReadonlyArray<OutgoingMessage>, held = false) => (
   <TooltipProvider>
-    <QueuedMessages queued={queued} held={held} {...handlers} />
+    <QueuedMessages queued={queued} held={held} cwd="F:/repo" {...handlers} />
   </TooltipProvider>
 )
 
@@ -114,7 +115,7 @@ describe('QueuedMessages open list', () => {
     const editor = screen.getByRole('textbox', { name: 'Queued message text' })
     fireEvent.change(editor, { target: { value: '  Message two, edited  ' } })
     fireEvent.keyDown(editor, { key: 'Enter' })
-    expect(onEdit).toHaveBeenCalledExactlyOnceWith('m-2', 'Message two, edited')
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith('m-2', 'Message two, edited', [])
   })
 
   it('closes on Escape and returns focus to the front bubble', () => {
@@ -156,5 +157,45 @@ describe('QueuedMessages open list', () => {
     view.rerender(stackElement(queue(2).slice(1)))
     fireEvent.blur(screen.getByRole('button', { name: 'Show 1 queued message' }))
     expect(screen.queryByRole('list', { name: /in send order/ })).toBeNull()
+  })
+})
+
+describe('QueuedMessages attachments', () => {
+  const image = (n: number) =>
+    ContentAttachment.make({ name: `shot-${n}.png`, mediaType: 'image/png', data: 'AAA' })
+  const attached = (
+    attachments: OutgoingMessage['attachments']
+  ): ReadonlyArray<OutgoingMessage> => [{ id: 'm-1', text: 'look', attachments }]
+
+  it('shows up to four attachments under the text and counts the rest as +N', () => {
+    renderStack(attached([1, 2, 3, 4, 5, 6].map(image)))
+    const front = screen.getByRole('button', { name: 'Show 1 queued message' })
+    expect(front.querySelectorAll('img')).toHaveLength(4)
+    expect(front.textContent).toBe('look+2')
+  })
+
+  it('shows no count when every attachment fits', () => {
+    renderStack(attached([1, 2, 3, 4].map(image)))
+    const front = screen.getByRole('button', { name: 'Show 1 queued message' })
+    expect(front.textContent).toBe('look')
+  })
+
+  it('shows a path attachment by its file name', () => {
+    renderStack(attached([PathAttachment.make({ path: 'F:/repo/src/main.ts', kind: 'file' })]))
+    expect(screen.getByRole('button', { name: 'Show 1 queued message' }).textContent).toBe(
+      'lookmain.ts'
+    )
+  })
+
+  it('saves the attachments the editor keeps after one is removed', () => {
+    const kept = PathAttachment.make({ path: 'F:/repo/docs', kind: 'directory' })
+    const { onEdit } = renderStack(attached([image(1), kept]))
+    openStack()
+    const row = within(list()).getAllByRole('listitem')[0]
+    if (row === undefined) throw new Error('missing row')
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove shot-1.png' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(onEdit).toHaveBeenCalledExactlyOnceWith('m-1', 'look', [kept])
   })
 })

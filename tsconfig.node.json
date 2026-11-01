@@ -32,6 +32,7 @@
     "plugins/**/*.test.ts",
     "plugins/**/renderer.ts",
     "plugins/chat/composer-action.ts",
-    "plugins/chat/composer-settings.ts"
+    "plugins/chat/composer-settings.ts",
+    "plugins/chat/use-composer-attachments.ts"
   ]
 }

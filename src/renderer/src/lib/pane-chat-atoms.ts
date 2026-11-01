@@ -1,3 +1,4 @@
+import type { Attachment } from '@shared/domain/attachment'
 import type { SendMode } from '@shared/domain/message-queue'
 import type { ModelCatalogSnapshotJson, PaneModelChanged } from '@shared/ipc/contract'
 import { Clock, Duration, Effect, Queue, Stream, SubscriptionRef } from 'effect'
@@ -150,6 +151,7 @@ export const paneChatAtom = Atom.family((paneId: string) =>
 export interface SendRequest {
   readonly text: string
   readonly mode: SendMode
+  readonly attachments?: ReadonlyArray<Attachment>
 }
 
 /**
@@ -163,15 +165,16 @@ export const paneSendAtom = Atom.family((paneId: string) =>
   Atom.writable(
     (): null => null,
     (_ctx, request: SendRequest) => {
-      window.dia.sendMessage(paneId, request.text, request.mode)
+      window.dia.sendMessage(paneId, request.text, request.mode, request.attachments)
     }
   )
 )
 
-/** A queued message's id and its replacement text. */
+/** A queued message's id, its replacement text, and the attachments it keeps when given. */
 export interface QueuedMessageEdit {
   readonly messageId: string
   readonly text: string
+  readonly attachments?: ReadonlyArray<Attachment>
 }
 
 /**
@@ -183,7 +186,7 @@ export const paneEditQueuedAtom = Atom.family((paneId: string) =>
   Atom.writable(
     (): null => null,
     (_ctx, edit: QueuedMessageEdit) => {
-      window.dia.editQueuedMessage(paneId, edit.messageId, edit.text)
+      window.dia.editQueuedMessage(paneId, edit.messageId, edit.text, edit.attachments)
     }
   )
 )
