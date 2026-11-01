@@ -93,7 +93,7 @@ export function TranscriptScroller({
   const [settled, setSettled] = useState(false)
   useEffect(() => {
     if (!known) return
-    const frame = requestAnimationFrame(() => setSettled(true))
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => setSettled(true)))
     return () => cancelAnimationFrame(frame)
   }, [known])
   const onWidthChangeRef = useRef(onWidthChange)
@@ -190,7 +190,7 @@ export function TranscriptScroller({
       >
         <div
           className={cn(
-            'transition-[translate] duration-200 ease-out motion-reduce:transition-none',
+            settled && 'transition-[translate] duration-200 ease-out motion-reduce:transition-none',
             contentClassName
           )}
           style={columnStyle}
@@ -217,7 +217,8 @@ export function TranscriptScroller({
       >
         <div
           className={cn(
-            'pointer-events-auto relative bg-background transition-[translate] duration-200 ease-out motion-reduce:transition-none',
+            'pointer-events-auto relative bg-background',
+            settled && 'transition-[translate] duration-200 ease-out motion-reduce:transition-none',
             !centred &&
               'before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-4 before:bg-linear-to-t before:from-background',
             contentClassName
