@@ -94,6 +94,7 @@ import { makePluginTools } from '../session/dia-tools'
 import type { OutboundMessage } from '../session/protocol'
 import { resolveSessionAdditions } from './meta-repo-seam'
 import { SettingsStore } from './settings-store'
+import { setUpWorktreeTab } from './tab-setup'
 import { resolveGitOps, type WorktreeCreateError, WorktreeReattachError } from './worktrees-seam'
 
 /**
@@ -802,7 +803,7 @@ export const PaneSupervisorLive = Layer.effect(
           permissionMode: request.permissionMode
         }
         const worktreeRequest = request.worktree
-        if (worktreeRequest === undefined) return projectConfig
+        if (worktreeRequest === undefined) return { config: projectConfig, setup: undefined }
 
         const resolved = yield* resolveGitOps(plugins)
         if (Option.isNone(resolved)) {
@@ -817,7 +818,7 @@ export const PaneSupervisorLive = Layer.effect(
             'Opening the pane in the project directory because the worktrees plugin is not loaded',
             { paneId: request.paneId, cwd: request.sourceCwd }
           )
-          return projectConfig
+          return { config: projectConfig, setup: undefined }
         }
         const gitOps = resolved.value
 
@@ -830,19 +831,27 @@ export const PaneSupervisorLive = Layer.effect(
               )
             : gitOps.reattachWorktree(worktreeRequest.info, request.paneId)
 
-        const worktree = yield* Effect.acquireRelease(acquire, (info) =>
-          gitOps.removeWorktree(info, request.paneId).pipe(
-            Effect.catchCause((cause) =>
-              Effect.logError('Failed to remove pane worktree', {
-                paneId: request.paneId,
-                cause
-              })
+        const setup = yield* setUpWorktreeTab({
+          paneId: request.paneId,
+          sourceRepo: request.sourceCwd,
+          reattach: worktreeRequest._tag === 'Reattach',
+          gitOps,
+          acquire: Effect.acquireRelease(acquire, (info) =>
+            gitOps.removeWorktree(info, request.paneId).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logError('Failed to remove pane worktree', {
+                  paneId: request.paneId,
+                  cause
+                })
+              )
             )
-          )
-        )
+          ),
+          emit: onEvent
+        })
 
+        const worktree = setup.worktree
         const config: PaneConfig = { ...projectConfig, cwd: worktree.path, worktree }
-        return config
+        return { config, setup }
       }).pipe(Effect.provideService(Scope.Scope, scope), Effect.result)
 
       if (Result.isFailure(prepared)) {
@@ -850,9 +859,9 @@ export const PaneSupervisorLive = Layer.effect(
         return yield* prepared.failure
       }
 
-      const config = prepared.success
+      const { config, setup } = prepared.success
 
-      const { handle, session, outbound, repark } = yield* startPane(
+      const start = startPane(
         config,
         factory,
         settings,
@@ -860,6 +869,9 @@ export const PaneSupervisorLive = Layer.effect(
         onPermissionModeChanged,
         Option.fromUndefinedOr(request.resume)
       ).pipe(Effect.provideService(Scope.Scope, scope))
+      const { handle, session, outbound, repark } = yield* setup === undefined
+        ? start
+        : setup.startSession(start)
 
       const subscriber = yield* Effect.forkDetach(
         Stream.runForEach(Stream.fromQueue(outbound), onEvent)
@@ -882,6 +894,7 @@ export const PaneSupervisorLive = Layer.effect(
           PaneMessageQueueChanged.make({ paneId: config.paneId, ...EMPTY_MESSAGE_QUEUE })
         )
         yield* handle.markErrored({ message: SESSION_NOT_FOUND_NOTICE })
+        if (setup !== undefined) yield* setup.failSession(SESSION_NOT_FOUND_NOTICE)
       })
 
       const ended = Effect.fnUntraced(function* (end: SessionEnd) {

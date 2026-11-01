@@ -467,6 +467,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     onToolCallUpdated: (listener) => subscribeTo('PaneToolCallUpdated', listener),
     onTurnStatusChanged: (listener) => subscribeTo('PaneTurnStatusChanged', listener),
     onSessionNotice: (listener) => subscribeTo('PaneSessionNotice', listener),
+    onSetupProgress: (listener) => subscribeTo('PaneSetupProgress', listener),
     onBackgroundTasksChanged: (listener) => subscribeTo('PaneBackgroundTasksChanged', listener)
   }
 }

@@ -13,7 +13,9 @@ const registryProviding = (provided: Option.Option<unknown>) => ({
 const providedGitOps: GitOps = {
   createWorktree: () => Effect.succeed(info),
   removeWorktree: () => Effect.void,
-  reattachWorktree: () => Effect.succeed(info)
+  reattachWorktree: () => Effect.succeed(info),
+  findIncludedFiles: () => Effect.succeed(Option.none()),
+  copyIncludedFiles: () => Effect.succeed([])
 }
 
 describe('resolveGitOps', () => {
@@ -33,6 +35,14 @@ describe('resolveGitOps', () => {
     [
       'the service lacks reattachWorktree',
       Option.some({ createWorktree: () => {}, removeWorktree: () => {} })
+    ],
+    [
+      'the service lacks the include operations of an older worktrees plugin',
+      Option.some({
+        createWorktree: () => {},
+        removeWorktree: () => {},
+        reattachWorktree: () => {}
+      })
     ],
     ['the service is null', Option.some(null)]
   ]

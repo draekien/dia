@@ -9,7 +9,7 @@ import {
 import { SignedOut, UsageLimit, type UsageLimitResume } from '@shared/domain/parking'
 import { type IpcEvent, PaneRewindFailed } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
-import { Deferred, Effect, Layer, Option, Result, Stream } from 'effect'
+import { Deferred, Effect, Fiber, Layer, Option, Result, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
 import { HostPlugins } from '../plugins/host-plugins'
 import { PluginSources } from '../plugins/plugin-sources'
@@ -35,7 +35,12 @@ import {
   SessionFactoryLive
 } from './pane-supervisor'
 import { SettingsStore } from './settings-store'
-import { type GitOps, WorktreeReattachError } from './worktrees-seam'
+import {
+  type GitOps,
+  WorktreeCreateError,
+  WorktreeIncludeError,
+  WorktreeReattachError
+} from './worktrees-seam'
 
 interface FakeSession {
   readonly config: PaneConfig
@@ -92,7 +97,16 @@ const unusedGitOps: GitOps = {
   createWorktree: () => Effect.die(new Error('createWorktree should not be called in these tests')),
   removeWorktree: () => Effect.die(new Error('removeWorktree should not be called in these tests')),
   reattachWorktree: () =>
-    Effect.die(new Error('reattachWorktree should not be called in these tests'))
+    Effect.die(new Error('reattachWorktree should not be called in these tests')),
+  findIncludedFiles: () =>
+    Effect.die(new Error('findIncludedFiles should not be called in these tests')),
+  copyIncludedFiles: () =>
+    Effect.die(new Error('copyIncludedFiles should not be called in these tests'))
+}
+
+const withoutIncludeFile: Pick<GitOps, 'findIncludedFiles' | 'copyIncludedFiles'> = {
+  findIncludedFiles: () => Effect.succeed(Option.none()),
+  copyIncludedFiles: () => Effect.die(new Error('copyIncludedFiles needs a .worktreeinclude'))
 }
 
 const unused = (name: string) => () => Effect.die(new Error(`${name} should not be called`))
@@ -398,7 +412,8 @@ describe('PaneSupervisor', () => {
             Effect.sync(() => {
               reattachCalls.push({ info, paneId })
               return info
-            })
+            }),
+          ...withoutIncludeFile
         }
         const { sessions, testLayer } = makeTestSetup(gitOps)
 
@@ -453,7 +468,8 @@ describe('PaneSupervisor', () => {
       const gitOps: GitOps = {
         createWorktree: () => Effect.succeed(info),
         removeWorktree: () => Effect.sync(() => void lifecycleLog.push('worktree removed')),
-        reattachWorktree: () => Effect.die(new Error('reattachWorktree should not be called'))
+        reattachWorktree: () => Effect.die(new Error('reattachWorktree should not be called')),
+        ...withoutIncludeFile
       }
       const { testLayer } = makeTestSetup(gitOps, lifecycleLog)
 
@@ -1179,5 +1195,265 @@ describe('PaneSupervisor when the resumed conversation is gone', () => {
         assert.isTrue(Option.isNone(yield* supervisor.getHandle(requestA.paneId)))
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })
+  )
+})
+
+describe('PaneSupervisor tab setup progress', () => {
+  const created: WorktreeInfo = {
+    path: '/wt/quiet-otter',
+    branch: 'dia/quiet-otter',
+    sourceRepo: '/a'
+  }
+  const createRequest: PaneCreationRequest = {
+    ...requestA,
+    worktree: { _tag: 'Create', worktreesRoot: '/wt' }
+  }
+  const goneSession = SessionId.make('9c376084-48c1-4e74-b886-7915ef2993db')
+  const NOT_FOUND_NOTICE =
+    "This tab's conversation could not be found. Send your message again to start a new conversation."
+
+  const includeGitOps = (overrides: Partial<GitOps>): GitOps => ({
+    createWorktree: () => Effect.succeed(created),
+    removeWorktree: () => Effect.void,
+    reattachWorktree: (info) => Effect.succeed(info),
+    findIncludedFiles: () =>
+      Effect.succeed(Option.some(['.env', '.env.local', 'config/secrets.json'])),
+    copyIncludedFiles: () => Effect.succeed([]),
+    ...overrides
+  })
+
+  const progressOf = (events: ReadonlyArray<IpcEvent>) =>
+    events.flatMap((event) => (event._tag === 'PaneSetupProgress' ? [event.steps] : []))
+
+  const lastSteps = (events: ReadonlyArray<IpcEvent>) => progressOf(events).at(-1) ?? []
+
+  const noticesOf = (events: ReadonlyArray<IpcEvent>) =>
+    events.flatMap((event) => (event._tag === 'PaneSessionNotice' ? [event.text] : []))
+
+  const openRecording = Effect.fnUntraced(function* (request: PaneCreationRequest) {
+    const supervisor = yield* PaneSupervisor
+    const events: Array<IpcEvent> = []
+    const opened = yield* supervisor
+      .openPane(
+        request,
+        (event) => Effect.sync(() => void events.push(event)),
+        ignoreSessionId,
+        ignorePermissionMode
+      )
+      .pipe(Effect.result)
+    return { events, opened }
+  })
+
+  it.effect('copies every matched file into the created worktree and reports each step done', () =>
+    Effect.gen(function* () {
+      const copied: Array<{ worktree: WorktreeInfo; files: ReadonlyArray<string> }> = []
+      const { testLayer } = makeTestSetup(
+        includeGitOps({
+          copyIncludedFiles: (worktree, files) =>
+            Effect.sync(() => {
+              copied.push({ worktree, files })
+              return []
+            })
+        })
+      )
+
+      yield* Effect.gen(function* () {
+        const { events } = yield* openRecording(createRequest)
+
+        assert.deepStrictEqual(copied, [
+          { worktree: created, files: ['.env', '.env.local', 'config/secrets.json'] }
+        ])
+        assert.deepStrictEqual(
+          lastSteps(events).map((step) => [step._tag, step.state]),
+          [
+            ['WorktreeSetupStep', 'done'],
+            ['CopySetupStep', 'done'],
+            ['SessionSetupStep', 'done']
+          ]
+        )
+        assert.deepStrictEqual(noticesOf(events), [])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('shows every step pending first, then runs them one after another', () =>
+    Effect.gen(function* () {
+      const { testLayer } = makeTestSetup(includeGitOps({}))
+
+      yield* Effect.gen(function* () {
+        const { events } = yield* openRecording(createRequest)
+
+        assert.deepStrictEqual(
+          progressOf(events).map((steps) => steps.map((step) => step.state).join(' ')),
+          [
+            'running pending pending',
+            'done pending pending',
+            'done running pending',
+            'done done pending',
+            'done done running',
+            'done done done'
+          ]
+        )
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('names the created branch and times the worktree step with the clock', () =>
+    Effect.gen(function* () {
+      const { testLayer } = makeTestSetup(
+        includeGitOps({
+          createWorktree: () => Effect.sleep('1800 millis').pipe(Effect.as(created))
+        })
+      )
+
+      yield* Effect.gen(function* () {
+        const opening = yield* openRecording(createRequest).pipe(Effect.forkChild)
+        yield* TestClock.adjust('1800 millis')
+        const { events } = yield* Fiber.join(opening)
+
+        assert.deepStrictEqual(lastSteps(events)[0], {
+          _tag: 'WorktreeSetupStep',
+          reattach: false,
+          state: 'done',
+          branch: 'dia/quiet-otter',
+          durationMs: 1800
+        })
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('leaves the copy step out when the project has no .worktreeinclude', () =>
+    Effect.gen(function* () {
+      const { testLayer } = makeTestSetup(includeGitOps(withoutIncludeFile))
+
+      yield* Effect.gen(function* () {
+        const { events } = yield* openRecording(createRequest)
+
+        assert.deepStrictEqual(
+          lastSteps(events).map((step) => step._tag),
+          ['WorktreeSetupStep', 'SessionSetupStep']
+        )
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect(
+    'starts the tab and records a warning on the copy step and in the transcript when a file is locked',
+    () =>
+      Effect.gen(function* () {
+        const { sessions, testLayer } = makeTestSetup(
+          includeGitOps({
+            copyIncludedFiles: () =>
+              Effect.succeed([{ path: '.env.local', reason: 'EBUSY: resource busy or locked' }])
+          })
+        )
+
+        yield* Effect.gen(function* () {
+          const { events, opened } = yield* openRecording(createRequest)
+
+          assert.isTrue(Result.isSuccess(opened))
+          assert.strictEqual(sessions.length, 1)
+          const copy = lastSteps(events)[1]
+          assert.deepStrictEqual(copy?._tag === 'CopySetupStep' && [copy.state, copy.files], [
+            'warning',
+            [
+              { path: '.env' },
+              { path: '.env.local', error: 'EBUSY: resource busy or locked' },
+              { path: 'config/secrets.json' }
+            ]
+          ])
+          assert.deepStrictEqual(noticesOf(events), [
+            'Copied 2 of 3 .worktreeinclude files. Not copied: .env.local — EBUSY: resource busy or locked'
+          ])
+        }).pipe(Effect.scoped, Effect.provide(testLayer))
+      })
+  )
+
+  it.effect('records a matching failure as a copy warning and still starts the tab', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup(
+        includeGitOps({
+          findIncludedFiles: (sourceRepo, paneId) =>
+            Effect.fail(new WorktreeIncludeError({ paneId, sourceRepo, cause: 'git not found' })),
+          copyIncludedFiles: () => Effect.die(new Error('nothing to copy'))
+        })
+      )
+
+      yield* Effect.gen(function* () {
+        const { events } = yield* openRecording(createRequest)
+
+        assert.strictEqual(sessions.length, 1)
+        const copy = lastSteps(events)[1]
+        assert.deepStrictEqual(copy?._tag === 'CopySetupStep' && [copy.state, copy.matchError], [
+          'warning',
+          'git not found'
+        ])
+        assert.deepStrictEqual(noticesOf(events), [
+          'Could not match the .worktreeinclude files: git not found'
+        ])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect(
+    'fails the worktree step with its reason and copies nothing when the worktree cannot be created',
+    () =>
+      Effect.gen(function* () {
+        const { sessions, testLayer } = makeTestSetup(
+          includeGitOps({
+            createWorktree: (sourceRepo, paneId) =>
+              Effect.fail(
+                new WorktreeCreateError({
+                  paneId,
+                  sourceRepo,
+                  cause: 'git worktree add exited with code 128'
+                })
+              ),
+            copyIncludedFiles: () => Effect.die(new Error('must not copy'))
+          })
+        )
+
+        yield* Effect.gen(function* () {
+          const { events, opened } = yield* openRecording(createRequest)
+
+          assert.isTrue(Result.isFailure(opened))
+          assert.strictEqual(sessions.length, 0)
+          assert.deepStrictEqual(
+            lastSteps(events).map((step) => [step.state, 'error' in step ? step.error : undefined]),
+            [
+              ['failed', 'git worktree add exited with code 128'],
+              ['pending', undefined],
+              ['pending', undefined]
+            ]
+          )
+        }).pipe(Effect.scoped, Effect.provide(testLayer))
+      })
+  )
+
+  it.effect(
+    'reports a resumed tab as reattaching and fails its session step when the conversation is gone',
+    () =>
+      Effect.gen(function* () {
+        const { sessions, testLayer } = makeTestSetup(includeGitOps({}))
+
+        yield* Effect.gen(function* () {
+          const { events } = yield* openRecording({
+            ...createRequest,
+            worktree: { _tag: 'Reattach', info: created },
+            resume: goneSession
+          })
+          yield* sessions[0].endWith(SessionNotFound.make({ sessionId: goneSession }))
+          yield* flush
+
+          const steps = lastSteps(events)
+          assert.isTrue(steps[0]?._tag === 'WorktreeSetupStep' && steps[0].reattach)
+          assert.deepStrictEqual(steps[2], {
+            _tag: 'SessionSetupStep',
+            state: 'failed',
+            durationMs: 0,
+            error: NOT_FOUND_NOTICE
+          })
+        }).pipe(Effect.scoped, Effect.provide(testLayer))
+      })
   )
 })

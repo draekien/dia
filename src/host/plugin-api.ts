@@ -33,7 +33,9 @@ export * from '../shared/plugin/api'
 export type { MetaRepo } from './services/meta-repo-seam'
 export {
   type GitOps,
+  type IncludedFileFailure,
   WorktreeCreateError,
+  WorktreeIncludeError,
   WorktreeReattachError,
   WorktreeRemoveError
 } from './services/worktrees-seam'
