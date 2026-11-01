@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import { AgentNotification } from '../domain/notification'
 
 /**
  * First message the Host sends: it has registered its module loader and is listening on
@@ -34,8 +35,20 @@ export type HostInit = typeof HostInit.Type
 export const HostShutdown = Schema.TaggedStruct('Shutdown', {})
 export type HostShutdown = typeof HostShutdown.Type
 
+/**
+ * Message main sends to the Host whenever the user may have started or stopped looking at dia's
+ * window, and once after every Host start: `attended` is true while the window is shown, not
+ * minimised and focused.
+ */
+export const WindowAttention = Schema.TaggedStruct('WindowAttention', { attended: Schema.Boolean })
+export type WindowAttention = typeof WindowAttention.Type
+
+/** Message main sends to the Host when the user clicks an agent's notification: show `paneId`'s tab. */
+export const ShowAgent = Schema.TaggedStruct('ShowAgent', { paneId: Schema.String })
+export type ShowAgent = typeof ShowAgent.Type
+
 /** Every message main may send to the Host over `parentPort`. */
-export const MainToHostMessage = Schema.Union([HostInit, HostShutdown])
+export const MainToHostMessage = Schema.Union([HostInit, HostShutdown, WindowAttention, ShowAgent])
 export type MainToHostMessage = typeof MainToHostMessage.Type
 
 /**
@@ -52,6 +65,10 @@ export type HostReady = typeof HostReady.Type
 export const HostShutdownComplete = Schema.TaggedStruct('ShutdownComplete', {})
 export type HostShutdownComplete = typeof HostShutdownComplete.Type
 
+/** Message the Host sends to have main show `notification` as an OS notification. */
+export const Notify = Schema.TaggedStruct('Notify', { notification: AgentNotification })
+export type Notify = typeof Notify.Type
+
 /** Every message the Host may send to main over `parentPort`. */
-export const HostToMainMessage = Schema.Union([HostBooted, HostReady, HostShutdownComplete])
+export const HostToMainMessage = Schema.Union([HostBooted, HostReady, HostShutdownComplete, Notify])
 export type HostToMainMessage = typeof HostToMainMessage.Type

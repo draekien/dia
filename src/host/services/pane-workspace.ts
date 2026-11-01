@@ -43,13 +43,15 @@ import {
   Ref,
   Result,
   Semaphore,
-  Stream
+  Stream,
+  SubscriptionRef
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { EventHub } from './event-hub'
 import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
 import { probeProject } from './project-directory'
 import { TranscriptReader } from './transcript-reader'
+import { WorkspaceFeed } from './workspace-feed'
 import { WorkspaceStore } from './workspace-store'
 import {
   resolveGitOps,
@@ -177,7 +179,8 @@ const WORKTREES_PLUGIN_NOT_LOADED = 'Load the worktrees plugin to remove this wo
  * visible; with nothing persisted it starts empty. `worktreesRoot` is the base directory under
  * which tab worktrees are created. Requires {@link PaneSupervisor}, {@link WorkspaceStore},
  * {@link TranscriptReader}, {@link EventHub}, {@link HostPlugins} (for the worktree and agent
- * backend services used to remove a project), `FileSystem` and `Path`.
+ * backend services used to remove a project), {@link WorkspaceFeed} (which it keeps current),
+ * `FileSystem` and `Path`.
  */
 export const makePaneWorkspaceLive = (worktreesRoot: string) =>
   Layer.effect(
@@ -197,7 +200,8 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         onSome: WorkspaceOps.withDefaultVisibleTab
       })
 
-      const workspaceRef = yield* Ref.make(initial)
+      const workspaceRef = yield* WorkspaceFeed
+      yield* SubscriptionRef.set(workspaceRef, initial)
       const removingRef = yield* Ref.make<ReadonlySet<ProjectId>>(new Set())
       const retiringRef = yield* Ref.make<ReadonlySet<PaneId>>(new Set())
       const pendingSessions = new Map<PaneId, SessionId>()
@@ -218,14 +222,14 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       ): Effect.Effect<void, E> =>
         mutationLock.withPermits(1)(
           Effect.gen(function* () {
-            const current = yield* Ref.get(workspaceRef)
+            const current = yield* SubscriptionRef.get(workspaceRef)
             const next = apply(current, yield* Ref.get(removingRef))
             if (Result.isFailure(next)) {
               yield* Effect.logDebug('Workspace change refused', { operation, error: next.failure })
               return yield* Effect.fail(next.failure)
             }
             if (next.success === current) return
-            yield* Ref.set(workspaceRef, next.success)
+            yield* SubscriptionRef.set(workspaceRef, next.success)
             yield* save(next.success)
             yield* hub.publish(WorkspaceChanged.make({ workspace: next.success }))
             yield* Effect.logDebug('Workspace changed', { operation })
@@ -233,7 +237,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         )
 
       const projectOfTab = (paneId: PaneId) =>
-        Effect.map(Ref.get(workspaceRef), (workspace) =>
+        Effect.map(SubscriptionRef.get(workspaceRef), (workspace) =>
           Result.map(WorkspaceOps.tabOf(workspace, paneId), (found) => found.project.projectId)
         )
 
@@ -275,7 +279,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           )
         )
 
-      const getWorkspace = Ref.get(workspaceRef)
+      const getWorkspace = SubscriptionRef.get(workspaceRef)
 
       const registerProject = Effect.fn('PaneWorkspace.registerProject')(function* (
         projectId: ProjectId,
@@ -360,7 +364,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       const markRemoving = (projectId: ProjectId) =>
         mutationLock.withPermits(1)(
           Effect.gen(function* () {
-            const workspace = yield* Ref.get(workspaceRef)
+            const workspace = yield* SubscriptionRef.get(workspaceRef)
             const removing = yield* Ref.get(removingRef)
             const entry = workspace.projects.find(
               (candidate) => candidate.project.projectId === projectId
@@ -428,7 +432,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         onEvent: OnEvent
       ) {
         const { projectId, paneId } = request
-        const workspace = yield* Ref.get(workspaceRef)
+        const workspace = yield* SubscriptionRef.get(workspaceRef)
         const entry = workspace.projects.find(
           (candidate) => candidate.project.projectId === projectId
         )
@@ -473,7 +477,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       const markRetiring = (paneId: PaneId) =>
         mutationLock.withPermits(1)(
           Effect.gen(function* () {
-            const found = WorkspaceOps.tabOf(yield* Ref.get(workspaceRef), paneId)
+            const found = WorkspaceOps.tabOf(yield* SubscriptionRef.get(workspaceRef), paneId)
             if (Result.isFailure(found) || (yield* isRemovingTab(paneId))) {
               return yield* new TabNotFoundError({ paneId })
             }
@@ -560,7 +564,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       })
 
       const getPaneHistory = Effect.fn('PaneWorkspace.getPaneHistory')(function* (paneId: PaneId) {
-        const found = WorkspaceOps.tabOf(yield* Ref.get(workspaceRef), paneId)
+        const found = WorkspaceOps.tabOf(yield* SubscriptionRef.get(workspaceRef), paneId)
         if (Result.isFailure(found)) return []
         const { sessionId, config } = found.success.tab
         if (sessionId === undefined) return []
@@ -584,7 +588,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           yield* Effect.logWarning('Did not start a tab whose project is being removed', { paneId })
           return
         }
-        const found = WorkspaceOps.tabOf(yield* Ref.get(workspaceRef), paneId)
+        const found = WorkspaceOps.tabOf(yield* SubscriptionRef.get(workspaceRef), paneId)
         if (Result.isFailure(found)) {
           yield* Effect.logWarning('Did not start an unknown tab', { paneId })
           return
