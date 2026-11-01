@@ -33,10 +33,10 @@ const dashedBubble =
 const stackLayer = cva(cn('absolute right-0', dashedBubble), {
   variants: {
     depth: {
-      0: 'bottom-0 z-[4] *:data-[slot=bubble-content]:border-muted-foreground/60',
-      1: 'bottom-[22px] z-[3] *:data-[slot=bubble-content]:border-muted-foreground/40 *:data-[slot=bubble-content]:pt-0.5 *:data-[slot=bubble-content]:text-foreground/70',
-      2: 'bottom-[34px] z-[2] *:data-[slot=bubble-content]:border-muted-foreground/35 *:data-[slot=bubble-content]:text-transparent',
-      3: 'bottom-[40px] z-[1] *:data-[slot=bubble-content]:border-muted-foreground/35 *:data-[slot=bubble-content]:text-transparent'
+      0: 'z-[4] *:data-[slot=bubble-content]:border-muted-foreground/60',
+      1: 'z-[3] *:data-[slot=bubble-content]:border-muted-foreground/40 *:data-[slot=bubble-content]:pt-0.5 *:data-[slot=bubble-content]:text-foreground/70',
+      2: 'z-[2] *:data-[slot=bubble-content]:border-muted-foreground/35 *:data-[slot=bubble-content]:text-transparent',
+      3: 'z-[1] *:data-[slot=bubble-content]:border-muted-foreground/35 *:data-[slot=bubble-content]:text-transparent'
     }
   }
 })
@@ -144,6 +144,7 @@ export function QueuedMessages({
 
   const open = (hovered || focused || editingId !== null) && !dismissed
   const layers = queued.slice(-LAYER_OFFSETS.length).reverse()
+  const [front, ...behind] = layers
   const height = BUBBLE_HEIGHT + LAYER_OFFSETS[layers.length - 1]
   const noun = queued.length === 1 ? 'message' : 'messages'
 
@@ -169,34 +170,43 @@ export function QueuedMessages({
         event.currentTarget.querySelector<HTMLElement>('[data-queue-front]')?.focus()
       }}
     >
-      <QueueMarker count={queued.length} held={held} />
+      <div aria-hidden={open || undefined}>
+        <QueueMarker count={queued.length} held={held} />
+      </div>
       <div className="relative" style={{ height }}>
-        {layers.map((message, depth) => (
+        {behind.map((message, index) => (
           <Bubble
             key={message.id}
             variant="outline"
             align="end"
-            className={stackLayer({ depth: depth as 0 | 1 | 2 | 3 })}
-            aria-hidden={depth === 0 ? undefined : true}
+            aria-hidden
+            className={stackLayer({ depth: (index + 1) as 1 | 2 | 3 })}
+            style={{ bottom: LAYER_OFFSETS[index + 1] }}
           >
-            {depth === 0 ? (
-              <BubbleContent asChild>
-                <button
-                  type="button"
-                  data-queue-front
-                  aria-expanded={open}
-                  aria-label={`Show ${queued.length} queued ${noun}`}
-                  className="truncate"
-                  onClick={() => setDismissed(false)}
-                >
-                  {message.text}
-                </button>
-              </BubbleContent>
-            ) : (
-              <BubbleContent className="truncate">{message.text}</BubbleContent>
-            )}
+            <BubbleContent className="truncate">{message.text}</BubbleContent>
           </Bubble>
         ))}
+        {front !== undefined && (
+          <Bubble
+            variant="outline"
+            align="end"
+            className={stackLayer({ depth: 0 })}
+            style={{ bottom: 0 }}
+          >
+            <BubbleContent asChild>
+              <button
+                type="button"
+                data-queue-front
+                aria-expanded={open}
+                aria-label={`Show ${queued.length} queued ${noun}`}
+                className="truncate"
+                onClick={() => setDismissed(false)}
+              >
+                {front.text}
+              </button>
+            </BubbleContent>
+          </Bubble>
+        )}
       </div>
       {open && (
         <div className="absolute inset-x-0 bottom-0 z-10 bg-background motion-safe:animate-in motion-safe:fade-in-0">
