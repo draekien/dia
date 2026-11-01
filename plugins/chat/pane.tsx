@@ -44,9 +44,12 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  StepStatusIcon,
   type StepsSection as StepsSectionBlock,
   sendModeAtom,
   sendModeForEnter,
+  showsSetup,
+  TabSetupSteps,
   type ToolCallPart,
   Tooltip,
   TooltipContent,
@@ -91,13 +94,11 @@ import {
   AlertTriangle,
   ArrowUp,
   Brain,
-  Check,
   ListPlus,
   Loader2Icon,
   Plus,
   RotateCcw,
-  SquareIcon,
-  X
+  SquareIcon
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AttachmentChip, SentAttachments } from './attachment-chips'
@@ -229,23 +230,13 @@ const toolCallStatus = (part: ToolCallPart): ToolCallStatus => {
   return part.isError === true ? 'failed' : 'completed'
 }
 
-function ToolCallStatusIcon({ status }: { status: ToolCallStatus }): React.JSX.Element {
-  if (status === 'running') {
-    return (
-      <span className="size-1.5 animate-pulse-slow rounded-full bg-muted-foreground motion-reduce:animate-none" />
-    )
-  }
-  if (status === 'failed') return <X className="size-3 text-foreground" strokeWidth={2.5} />
-  return <Check className="size-3 text-muted-foreground" strokeWidth={2.5} />
-}
-
 function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
   const status = toolCallStatus(part)
   const output = formatToolOutput(part.output)
   const row = (
     <Marker className="pl-0.5 font-mono text-xs">
       <MarkerIcon className="flex items-center justify-center">
-        <ToolCallStatusIcon status={status} />
+        <StepStatusIcon status={status === 'completed' ? 'done' : status} />
       </MarkerIcon>
       <MarkerContent className="flex min-w-0 items-center gap-2">
         <ToolCallLabel part={part} />
@@ -1199,6 +1190,11 @@ function PaneChat({
               onInterruptAndRetry={interruptAndRetry}
             />
           )}
+        </div>
+      )}
+      {chat.setup !== undefined && showsSetup(chat.setup) && (
+        <div className="px-1">
+          <TabSetupSteps steps={chat.setup} />
         </div>
       )}
       {attention._tag === 'Errored' && retryText !== undefined && (

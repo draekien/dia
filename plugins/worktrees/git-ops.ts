@@ -1,6 +1,8 @@
 import {
   type GitOps,
+  type IncludedFileFailure,
   WorktreeCreateError,
+  WorktreeIncludeError,
   WorktreeReattachError,
   WorktreeRemoveError
 } from '@dia/plugin'
@@ -10,8 +12,10 @@ import {
   Duration,
   Effect,
   FileSystem,
+  Option,
   Path,
   type PlatformError,
+  Predicate,
   Random,
   Result,
   Schedule
@@ -20,6 +24,10 @@ import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { generateWorktreeSlug } from './worktree-slug'
 
 const PORCELAIN_WORKTREE_PREFIX = 'worktree '
+
+const INCLUDE_FILE = '.worktreeinclude'
+
+const COPY_CONCURRENCY = 8
 
 const LEFTOVER_REMOVE_SCHEDULE = Schedule.spaced(Duration.millis(250)).pipe(
   Schedule.upTo({ duration: Duration.seconds(3) })
@@ -32,6 +40,14 @@ const isNotFound = (error: PlatformError.PlatformError | DirectoryNotEmpty): boo
 
 const isRetryable = (error: PlatformError.PlatformError | DirectoryNotEmpty): boolean =>
   error._tag === 'PlatformError' && !isNotFound(error)
+
+const copyFailureReason = (error: PlatformError.PlatformError): string => {
+  const cause = error.reason.cause
+  if (Predicate.hasProperty(cause, 'message') && Predicate.isString(cause.message)) {
+    return cause.message.split(', ')[0] ?? cause.message
+  }
+  return error.message
+}
 
 /**
  * Builds the {@link GitOps} the `worktrees` plugin provides, shelling out to the `git` CLI through
@@ -276,6 +292,81 @@ export const makeGitOps = Effect.gen(function* () {
     return info
   })
 
-  const gitOps: GitOps = { createWorktree, removeWorktree, reattachWorktree }
+  const findIncludedFiles = Effect.fn('GitOps.findIncludedFiles')(function* (
+    sourceRepo: string,
+    paneId: PaneId
+  ) {
+    const includeFile = path.join(sourceRepo, INCLUDE_FILE)
+    if (!(yield* fs.exists(includeFile).pipe(Effect.orElseSucceed(() => false)))) {
+      yield* Effect.logDebug('No .worktreeinclude in the project', { paneId, sourceRepo })
+      return Option.none<ReadonlyArray<string>>()
+    }
+    const command = ChildProcess.make('git', [
+      'ls-files',
+      '-z',
+      '--others',
+      '--ignored',
+      `--exclude-from=${includeFile}`
+    ]).pipe(
+      ChildProcess.pipeTo(ChildProcess.make('git', ['check-ignore', '-z', '--stdin'])),
+      ChildProcess.setCwd(sourceRepo)
+    )
+    const output = yield* spawner
+      .string(command)
+      .pipe(Effect.mapError((cause) => new WorktreeIncludeError({ paneId, sourceRepo, cause })))
+    const files = output.split('\0').filter((file) => file !== '')
+    yield* Effect.logInfo('Matched .worktreeinclude files', { paneId, count: files.length })
+    return Option.some<ReadonlyArray<string>>(files)
+  })
+
+  const copyIncludedFile = Effect.fnUntraced(function* (worktree: WorktreeInfo, file: string) {
+    const destination = path.join(worktree.path, file)
+    if (yield* fs.exists(destination)) return 'skipped' as const
+    yield* fs.makeDirectory(path.dirname(destination), { recursive: true })
+    yield* fs.copyFile(path.join(worktree.sourceRepo, file), destination)
+    return 'copied' as const
+  })
+
+  const copyIncludedFiles = Effect.fn('GitOps.copyIncludedFiles')(function* (
+    worktree: WorktreeInfo,
+    files: ReadonlyArray<string>,
+    paneId: PaneId
+  ) {
+    const outcomes = yield* Effect.forEach(
+      files,
+      (file) =>
+        copyIncludedFile(worktree, file).pipe(
+          Effect.catch((error) =>
+            Effect.succeed<IncludedFileFailure>({ path: file, reason: copyFailureReason(error) })
+          )
+        ),
+      { concurrency: COPY_CONCURRENCY }
+    )
+    const failures: Array<IncludedFileFailure> = []
+    let skipped = 0
+    for (const outcome of outcomes) {
+      if (outcome === 'skipped') skipped++
+      else if (outcome !== 'copied') failures.push(outcome)
+    }
+    yield* Effect.logInfo('Copied .worktreeinclude files', {
+      paneId,
+      path: worktree.path,
+      matched: files.length,
+      skipped,
+      failed: failures.length
+    })
+    if (failures.length > 0) {
+      yield* Effect.logWarning('Some .worktreeinclude files were not copied', { paneId, failures })
+    }
+    return failures
+  })
+
+  const gitOps: GitOps = {
+    createWorktree,
+    removeWorktree,
+    reattachWorktree,
+    findIncludedFiles,
+    copyIncludedFiles
+  }
   return gitOps
 })

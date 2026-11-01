@@ -1,5 +1,6 @@
 import { EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
-import { PaneContextUsageChanged } from '@shared/ipc/contract'
+import { CopySetupStep, SessionSetupStep, WorktreeSetupStep } from '@shared/domain/tab-setup'
+import { PaneContextUsageChanged, PaneSetupProgress } from '@shared/ipc/contract'
 import { AsyncResult, AtomRegistry } from 'effect/reactivity'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { paneChatAtom } from './pane-chat-atoms'
@@ -11,6 +12,7 @@ interface FakeDia {
   readonly getPaneHistory: ReturnType<typeof vi.fn>
   readonly requestReload: (paneId: string) => void
   readonly pushContextUsage: (event: PaneContextUsageChanged) => void
+  readonly pushSetup: (event: PaneSetupProgress) => void
   readonly reloadListenerCount: () => number
 }
 
@@ -19,6 +21,7 @@ const installFakeDia = (
 ) => {
   const reloadListeners = new Set<(paneId: string) => void>()
   const usageListeners = new Set<(event: PaneContextUsageChanged) => void>()
+  const setupListeners = new Set<(event: PaneSetupProgress) => void>()
   let call = 0
   const getPaneHistory = vi.fn(async () => histories[Math.min(call++, histories.length - 1)])
   const noSubscription = () => () => undefined
@@ -34,6 +37,10 @@ const installFakeDia = (
       onContextUsageChanged: (listener: (event: PaneContextUsageChanged) => void) => {
         usageListeners.add(listener)
         return () => usageListeners.delete(listener)
+      },
+      onSetupProgress: (listener: (event: PaneSetupProgress) => void) => {
+        setupListeners.add(listener)
+        return () => setupListeners.delete(listener)
       }
     } as Record<string, unknown>,
     { get: (target, key: string) => target[key] ?? noSubscription() }
@@ -46,6 +53,9 @@ const installFakeDia = (
     },
     pushContextUsage: (event) => {
       for (const listener of usageListeners) listener(event)
+    },
+    pushSetup: (event) => {
+      for (const listener of setupListeners) listener(event)
     },
     reloadListenerCount: () => reloadListeners.size
   }
@@ -130,6 +140,27 @@ describe('paneChatAtom history reload', () => {
 
     await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['after']))
     expect(contextUsage(registry, PANE)).toEqual(usage)
+  })
+
+  it('keeps the setup steps across a history reload', async () => {
+    const steps = [
+      WorktreeSetupStep.make({ reattach: true, state: 'done', branch: 'dia/quiet-otter' }),
+      CopySetupStep.make({ state: 'running', files: [{ path: '.env' }] }),
+      SessionSetupStep.make({ state: 'pending' })
+    ]
+    const dia = installFakeDia([
+      [{ role: 'user', content: 'before' }],
+      [{ role: 'user', content: 'after' }]
+    ])
+    unmount = registry.mount(paneChatAtom(PANE))
+    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['before']))
+    dia.pushSetup(PaneSetupProgress.make({ paneId: PANE, steps }))
+
+    dia.requestReload(PANE)
+
+    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['after']))
+    const result = registry.get(paneChatAtom(PANE))
+    expect(AsyncResult.isSuccess(result) ? result.value.setup : undefined).toEqual(steps)
   })
 
   it('stops listening for reload requests once the atom is released', async () => {

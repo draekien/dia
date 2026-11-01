@@ -668,6 +668,8 @@ describe('PaneWorkspace.removeProject', () => {
   const removingGitOps = (existing: Set<string>): GitOps => ({
     createWorktree: () => Effect.die('not called'),
     reattachWorktree: () => Effect.die('not called'),
+    findIncludedFiles: () => Effect.die('not called'),
+    copyIncludedFiles: () => Effect.die('not called'),
     removeWorktree: (info) => Effect.sync(() => void existing.delete(info.path))
   })
 
@@ -742,6 +744,8 @@ describe('PaneWorkspace.removeProject', () => {
       const stubborn: GitOps = {
         createWorktree: () => Effect.die('not called'),
         reattachWorktree: () => Effect.die('not called'),
+        findIncludedFiles: () => Effect.die('not called'),
+        copyIncludedFiles: () => Effect.die('not called'),
         removeWorktree: () => Effect.void
       }
       const harness = makeHarness({
@@ -762,6 +766,8 @@ describe('PaneWorkspace.removeProject', () => {
       const removesOnSecondAttempt = (existing: Set<string>): GitOps => ({
         createWorktree: () => Effect.die('not called'),
         reattachWorktree: () => Effect.die('not called'),
+        findIncludedFiles: () => Effect.die('not called'),
+        copyIncludedFiles: () => Effect.die('not called'),
         removeWorktree: (info) =>
           Effect.sync(() => {
             attempts += 1
@@ -864,11 +870,15 @@ describe('PaneWorkspace.archiveTab and deleteTab', () => {
   const removingGitOps = (existing: Set<string>): GitOps => ({
     createWorktree: () => Effect.die('not called'),
     reattachWorktree: () => Effect.die('not called'),
+    findIncludedFiles: () => Effect.die('not called'),
+    copyIncludedFiles: () => Effect.die('not called'),
     removeWorktree: (info) => Effect.sync(() => void existing.delete(info.path))
   })
   const stubbornGitOps = (): GitOps => ({
     createWorktree: () => Effect.die('not called'),
     reattachWorktree: () => Effect.die('not called'),
+    findIncludedFiles: () => Effect.die('not called'),
+    copyIncludedFiles: () => Effect.die('not called'),
     removeWorktree: () => Effect.void
   })
   const withWorktree = (gitOps?: (existing: Set<string>) => GitOps) =>

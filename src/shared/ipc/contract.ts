@@ -28,6 +28,7 @@ import { AgentName, CreateTabRequest, ProjectId, Workspace } from '../domain/pro
 import type { RemovalProgress } from '../domain/project-removal'
 import { RewindFailureCause } from '../domain/rewind'
 import { SlashCommandInfo } from '../domain/slash-command'
+import { SetupStep } from '../domain/tab-setup'
 import type { ThemePreference } from '../domain/theme'
 import { TranscriptWidth } from '../domain/transcript-width'
 import { UpdateStatus } from '../domain/update'
@@ -387,6 +388,17 @@ export const PaneSessionNotice = Schema.TaggedStruct('PaneSessionNotice', {
 export type PaneSessionNotice = typeof PaneSessionNotice.Type
 
 /**
+ * Event pushed to the renderer while worktree tab `paneId` is being created or resumed, and when
+ * one of its setup steps changes afterwards. `steps` is the whole list, in order; replace any
+ * earlier list with it.
+ */
+export const PaneSetupProgress = Schema.TaggedStruct('PaneSetupProgress', {
+  paneId: Uuid,
+  steps: Schema.Array(SetupStep)
+})
+export type PaneSetupProgress = typeof PaneSetupProgress.Type
+
+/**
  * Event pushed to the renderer when the set of work running outside the turns of pane `paneId`
  * changes. `tasks` is the full set, in the order the session reported it, and is empty when none
  * runs.
@@ -712,6 +724,7 @@ export const IpcEvent = Schema.Union([
   PaneToolCallUpdated,
   PaneTurnStatusChanged,
   PaneSessionNotice,
+  PaneSetupProgress,
   PaneBackgroundTasksChanged,
   PanePermissionRequested,
   PaneQuestionRequested,
@@ -983,5 +996,6 @@ export interface DiaApi {
   onToolCallUpdated(listener: (event: PaneToolCallUpdated) => void): () => void
   onTurnStatusChanged(listener: (event: PaneTurnStatusChanged) => void): () => void
   onSessionNotice(listener: (event: PaneSessionNotice) => void): () => void
+  onSetupProgress(listener: (event: PaneSetupProgress) => void): () => void
   onBackgroundTasksChanged(listener: (event: PaneBackgroundTasksChanged) => void): () => void
 }
