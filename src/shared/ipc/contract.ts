@@ -13,6 +13,7 @@ import type { ActivityInfo, ActivityNotFound } from '../domain/background-activi
 import { BackgroundTask } from '../domain/background-task'
 import { CompactionFailure, ContextUsage } from '../domain/context-usage'
 import { MessageQueueSnapshot, OutgoingMessage, SendMode } from '../domain/message-queue'
+import type { MetaRepoPushResult, MetaRepoStateResult } from '../domain/meta-repo'
 import { ModelCatalogSnapshot } from '../domain/model'
 import {
   type AgentDefaults,
@@ -837,6 +838,16 @@ export interface ActivityApi {
   onChanged(listener: () => void): () => void
 }
 
+/** The meta repo push calls of `window.dia.metaRepo`, served by the Host. None of them rejects except on a lost connection. */
+export interface MetaRepoApi {
+  /** The meta repo's remote and branch, or why they cannot be read. */
+  getState(): Promise<MetaRepoStateResult>
+  /** Sets the meta repo's remote to `url` and resolves the new state, or why it was not set. */
+  setRemote(url: string): Promise<MetaRepoStateResult>
+  /** Scans the commits the remote does not have and pushes the current branch when they hold no secret; resolves the outcome. */
+  push(): Promise<MetaRepoPushResult>
+}
+
 /**
  * Shape of the `window.dia` bridge the preload script exposes to the renderer.
  * The single source of truth for that surface: preload's implementation is
@@ -848,6 +859,7 @@ export interface DiaApi {
   readonly models: ModelApi
   readonly activities: ActivityApi
   readonly adapter: AdapterApi
+  readonly metaRepo: MetaRepoApi
   sendMessage(
     paneId: string,
     text: string,

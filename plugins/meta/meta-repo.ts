@@ -1,6 +1,7 @@
 import type { MetaRepo } from '@dia/plugin'
 import { Effect, FileSystem, Path } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
+import { makeMetaPush } from './meta-push'
 
 const INSTRUCTIONS_FILE = 'instructions.md'
 const PLUGIN_DIRECTORY = 'plugin'
@@ -90,7 +91,8 @@ export const ensureMetaRepo = Effect.fn('MetaRepo.ensure')(function* (directory:
 /**
  * The {@link MetaRepo} for the meta repo in `directory`, created with {@link ensureMetaRepo}.
  * Each run of `forNewSession` reads `instructions.md` again, trimmed, as the system-prompt append
- * (empty when it cannot be read) and offers `plugin/` as the one plugin path.
+ * (empty when it cannot be read) and offers `plugin/` as the one plugin path. `state`,
+ * `setRemote` and `push` are those of {@link makeMetaPush}.
  */
 export const makeMetaRepo = Effect.fn('MetaRepo.make')(function* (directory: string) {
   const fs = yield* FileSystem.FileSystem
@@ -108,5 +110,6 @@ export const makeMetaRepo = Effect.fn('MetaRepo.make')(function* (directory: str
     ),
     Effect.map((systemPromptAppend) => ({ systemPromptAppend, pluginPaths }))
   )
-  return { forNewSession } satisfies MetaRepo
+  const metaPush = yield* makeMetaPush(directory)
+  return { forNewSession, ...metaPush } satisfies MetaRepo
 })

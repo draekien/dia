@@ -77,6 +77,9 @@ const handlersLayer = Layer.unwrap(
       RefreshModels: unused,
       ListActivities: unused,
       RunActivity: unused,
+      GetMetaRepo: unused,
+      SetMetaRemote: unused,
+      PushMetaRepo: unused,
       SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
     })
   })

@@ -5,6 +5,7 @@ import { AgentSummary } from '../domain/agent-summary'
 import { AttachmentType, ProjectEntry } from '../domain/attachment'
 import { ActivityId, ActivityInfo, ActivityNotFound } from '../domain/background-activity'
 import { MessageQueueSnapshot, SendMode } from '../domain/message-queue'
+import { MetaRepoPushResult, MetaRepoStateResult } from '../domain/meta-repo'
 import { ModelCatalogSnapshot } from '../domain/model'
 import {
   AgentDefaults,
@@ -47,7 +48,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.15'
+export const PROTOCOL_VERSION = '0.0.16'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -109,6 +110,8 @@ export type EventFrame = typeof EventFrame.Type
  * the activity calls (`ListActivities`, `RunActivity`) are safe to repeat and take none; a
  * `RefreshModels`, `CheckAdapterHealth` or `RunActivity` sent while that run is in progress waits
  * for it instead of starting another;
+ * the meta repo calls (`GetMetaRepo`, `SetMetaRemote`, `PushMetaRepo`) take none and report every
+ * failure in their result, never as an RPC error;
  * `SubscribeEvents` takes the
  * last sequence number received per pane (`cursors`) and streams {@link EventFrame}s. Serve it
  * with `RpcServer` in the Host and call it with `RpcClient` from the preload.
@@ -192,6 +195,9 @@ export const DiaRpcs = RpcGroup.make(
     payload: { plugin: PluginName, id: ActivityId },
     error: ActivityNotFound
   }),
+  Rpc.make('GetMetaRepo', { success: MetaRepoStateResult }),
+  Rpc.make('SetMetaRemote', { payload: { url: Schema.String }, success: MetaRepoStateResult }),
+  Rpc.make('PushMetaRepo', { success: MetaRepoPushResult }),
   Rpc.make('SubscribeEvents', {
     payload: { cursors: Schema.Record(Schema.String, Schema.Finite) },
     success: EventFrame,
