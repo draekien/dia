@@ -266,3 +266,17 @@ export const resolveAgentBackend = Effect.fn('AgentBackend.resolve')(function* (
   })
   return unavailableBackend
 })
+
+/**
+ * Streams the agent backend: the one provided now, then the one provided after each change of the
+ * plugin providing {@link AGENT_BACKEND_KEY}, each read with {@link resolveAgentBackend}. Never
+ * ends. Use it with `Stream.switchMap` to follow a stream of the backend that is loaded now,
+ * including an adapter loaded after a failed start.
+ */
+export const agentBackendChanges = (
+  registry: Pick<PluginRegistry, 'inject' | 'changes'>
+): Stream.Stream<AgentBackend> =>
+  Stream.merge(
+    Stream.make(AGENT_BACKEND_KEY),
+    registry.changes.pipe(Stream.filter((key) => key === AGENT_BACKEND_KEY))
+  ).pipe(Stream.mapEffect(() => resolveAgentBackend(registry)))

@@ -11,13 +11,14 @@ import {
   SubscriptionRef
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import { resolveAgentBackend } from '../session/agent-backend'
+import { agentBackendChanges, resolveAgentBackend } from '../session/agent-backend'
 import { EventHub } from './event-hub'
 
 /**
  * The model list for the renderer. Call `start` once, after the agent adapter has loaded and
  * before the Host reports ready: it reads the adapter's first model state, then keeps forwarding
- * every later state, each published as a `ModelsChanged` event. `current` is the latest
+ * every later state, each published as a `ModelsChanged` event. An adapter loaded later, such as
+ * one reloaded after a failed start, replaces the one it forwards from. `current` is the latest
  * snapshot (`Loading` with revision 0 before `start`); `refresh` asks the adapter to re-read the
  * list and completes when that read ends. Revisions rise across Host restarts, so the renderer
  * can keep the newest of a reply and an event. Provide it with {@link ModelCatalogFeedLive}.
@@ -58,9 +59,9 @@ export const ModelCatalogFeedLive = Layer.effect(
       })
 
     const start = Effect.gen(function* () {
-      const backend = yield* resolveAgentBackend(plugins)
       const firstPublished = yield* Deferred.make<void>()
-      yield* backend.models().pipe(
+      yield* agentBackendChanges(plugins).pipe(
+        Stream.switchMap((backend) => backend.models()),
         Stream.runForEach((state) =>
           publish(state).pipe(Effect.andThen(Deferred.succeed(firstPublished, undefined)))
         ),
