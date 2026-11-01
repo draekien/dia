@@ -35,6 +35,7 @@ export type MessageQueueSnapshot = typeof MessageQueueSnapshot.Type
 | `SendMessage` | `{ paneId, text, mode: SendMode }` | `withRequestId` | `withLiveHandle` (unchanged) |
 | `EditQueuedMessage` | `{ paneId, messageId, text }` | `withRequestId` | `withHandle` |
 | `RemoveQueuedMessage` | `{ paneId, messageId }` | `withRequestId` | `withHandle` |
+| `SendQueuedMessageNow` | `{ paneId, messageId }` | `withRequestId` | `withHandle` |
 | `GetMessageQueue` | `{ paneId }` → `MessageQueueSnapshot` | none, as `GetPaneHistory` | `withHandle`; empty snapshot when the pane has no live session |
 | `GetSendMode` | → `SendMode` | none, as `GetTheme` | settings store |
 | `SetSendMode` | `{ mode: SendMode }` | none, as `SetTheme` | settings store |
@@ -54,6 +55,7 @@ No payload field is named `commandId`, the field `withRequestId` adds. `rpc-hand
 sendMessage(paneId: string, text: string, mode: SendMode): void
 editQueuedMessage(paneId: string, messageId: string, text: string): void
 removeQueuedMessage(paneId: string, messageId: string): void
+sendQueuedMessageNow(paneId: string, messageId: string): void
 getMessageQueue(paneId: string): Promise<MessageQueueSnapshot>
 getSendMode(): Promise<SendMode>
 setSendMode(mode: SendMode): Promise<void>
@@ -68,6 +70,7 @@ interface AgentSession {
   readonly sendText: (text: string, mode: SendMode) => Effect.Effect<void>
   readonly editQueuedText: (messageId: string, text: string) => Effect.Effect<void>
   readonly removeQueuedText: (messageId: string) => Effect.Effect<void>
+  readonly sendQueuedNow: (messageId: string) => Effect.Effect<void>
   readonly messageQueue: Effect.Effect<MessageQueueSnapshot>
   // existing members unchanged
 }
@@ -76,6 +79,7 @@ interface PaneHandle {
   readonly sendMessage: (text: string, mode: SendMode) => Effect.Effect<void>
   readonly editQueuedMessage: (messageId: string, text: string) => Effect.Effect<void>
   readonly removeQueuedMessage: (messageId: string) => Effect.Effect<void>
+  readonly sendQueuedMessageNow: (messageId: string) => Effect.Effect<void>
   readonly messageQueue: Effect.Effect<MessageQueueSnapshot>
   // existing members unchanged
 }
@@ -90,6 +94,7 @@ Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermissio
 | `UserMessagesSent` | `toAttentionTarget` maps it to `Idle`, so a drained turn leaves `Completed` or `Errored` before its own permission request, completion or error |
 | `PaneHandle.sendMessage` with `steer` | applies `Idle` before calling `session.sendText`, so a superseded card's `AwaitingPermission` ends and a card raised by the steer turn is not cleared afterwards. The aborted turn's `TurnCompleted` then moves `Idle` to `Completed`, and `UserMessagesSent` moves it back to `Idle` |
 | `PaneHandle.sendMessage` with `queue` | applies nothing; a pending card's `AwaitingPermission` stays |
+| `PaneHandle.sendQueuedMessageNow` | applies `Idle` before calling `session.sendQueuedNow`, as `sendMessage` with `steer` does, but only when `messageId` is still queued, so a stale click keeps a pending card's `AwaitingPermission` |
 
 ### Settings (`src/host/services/settings-store.ts`)
 
@@ -130,6 +135,10 @@ Attention (`src/shared/domain/attention.ts` has no `Completed->AwaitingPermissio
 | `edit(id, t)` | `id` in `queued` | replace its text; `QueueChanged` |
 | `remove(id)` | `id` in `queued` | remove it, and clear `held` when `queued` becomes empty; `QueueChanged` |
 | `edit` / `remove` | `id` not in `queued` | no change; `QueueChanged`, so the renderer drops a stale item |
+| `sendNow(id)` | `Running`, `dispatching` 0 | remove `id` from `queued`, then steer it as `send(m, 'steer')` does, but `held` keeps its value for the rest; one `QueueChanged` |
+| `sendNow(id)` | `Running`, `dispatching > 0` | move `id` to the front of `queued` and clear `held`, so a held queue does not keep it; `QueueChanged` |
+| `sendNow(id)` | `Idle`, `held` true | `Running` with the rest of `queued` still held; `Dispatch([m])`; `QueueChanged` |
+| `sendNow(id)` | `id` not in `queued` | no change, no actions |
 | `rewound` | any | `queued = steered ++ queued`, `held` true when that is non-empty; `Running` with empty `steered` when `dispatching > 0`, otherwise `Idle`; `QueueChanged` |
 | `sessionEnded` | any | `Idle`, empty; `QueueChanged` |
 

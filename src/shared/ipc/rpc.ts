@@ -33,6 +33,7 @@ import {
   RewindToCheckpoint,
   SelectTab,
   SendMessage,
+  SendQueuedMessageNow,
   SetModel,
   SetPermissionMode,
   SetThinkingLevel,
@@ -45,7 +46,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.11'
+export const PROTOCOL_VERSION = '0.0.12'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -129,6 +130,7 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('RewindToCheckpoint', { payload: withRequestId(RewindToCheckpoint) }),
   Rpc.make('EditQueuedMessage', { payload: withRequestId(EditQueuedMessage) }),
   Rpc.make('RemoveQueuedMessage', { payload: withRequestId(RemoveQueuedMessage) }),
+  Rpc.make('SendQueuedMessageNow', { payload: withRequestId(SendQueuedMessageNow) }),
   Rpc.make('GetMessageQueue', {
     payload: { paneId: Schema.String },
     success: MessageQueueSnapshot

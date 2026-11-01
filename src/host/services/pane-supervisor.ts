@@ -134,6 +134,7 @@ export interface PaneHandle {
   readonly sendMessage: (text: string, mode: SendMode) => Effect.Effect<void>
   readonly editQueuedMessage: (messageId: string, text: string) => Effect.Effect<void>
   readonly removeQueuedMessage: (messageId: string) => Effect.Effect<void>
+  readonly sendQueuedMessageNow: (messageId: string) => Effect.Effect<void>
   readonly messageQueue: Effect.Effect<MessageQueueSnapshot>
   readonly setThinkingLevel: (level: ThinkingLevel) => Effect.Effect<void>
   readonly setPermissionMode: (mode: PermissionMode) => Effect.Effect<void>
@@ -601,6 +602,18 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
       Effect.logDebug('Removing a queued message', { paneId: config.paneId, messageId }).pipe(
         Effect.andThen(session.removeQueuedText(messageId))
       ),
+    sendQueuedMessageNow: Effect.fnUntraced(function* (messageId) {
+      const { queued } = yield* session.messageQueue
+      if (!queued.some((message) => message.id === messageId)) {
+        return yield* Effect.logDebug('Ignored send now for a message no longer queued', {
+          paneId: config.paneId,
+          messageId
+        })
+      }
+      yield* Effect.logDebug('Sending a queued message now', { paneId: config.paneId, messageId })
+      yield* applyAttention(Idle.make({}))
+      yield* session.sendQueuedNow(messageId)
+    }),
     messageQueue: session.messageQueue,
     setThinkingLevel: (level) =>
       Effect.logDebug('Setting pane thinking level', { paneId: config.paneId, level }).pipe(

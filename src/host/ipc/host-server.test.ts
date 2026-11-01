@@ -52,6 +52,7 @@ const handlersLayer = Layer.unwrap(
       RewindToCheckpoint: unused,
       EditQueuedMessage: unused,
       RemoveQueuedMessage: unused,
+      SendQueuedMessageNow: unused,
       GetMessageQueue: unused,
       GetSendMode: unused,
       SetSendMode: unused,

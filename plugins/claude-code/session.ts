@@ -79,6 +79,7 @@ import {
   resume as resumeQueue,
   rewound,
   send,
+  sendNow,
   sessionEnded,
   snapshotOf,
   stopRequested,
@@ -694,6 +695,7 @@ const unstartedSession = (
   sendText: ignoredUnstarted('sendText', reason),
   editQueuedText: ignoredUnstarted('editQueuedText', reason),
   removeQueuedText: ignoredUnstarted('removeQueuedText', reason),
+  sendQueuedNow: ignoredUnstarted('sendQueuedNow', reason),
   messageQueue: Effect.succeed({ queued: [], held: false }),
   setThinkingLevel: ignoredUnstarted('setThinkingLevel', reason),
   setPermissionMode: ignoredUnstarted('setPermissionMode', reason),
@@ -1072,22 +1074,29 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
       Effect.map((count): OutgoingMessage => ({ id: `${openedAtMillis}-${count}`, text }))
     )
 
+  const sendAndWait = Effect.fnUntraced(function* (step: (state: QueueState) => QueueTransition) {
+    const dispatches = yield* performActions(yield* transition(step), steerInterrupt)
+    yield* Effect.forEach(dispatches, Fiber.join, { discard: true })
+  })
+
   const sendText = Effect.fn('ClaudeCodeSession.sendText')(function* (
     text: string,
     mode: SendMode
   ) {
     const message = yield* nextMessage(text)
     yield* Effect.logDebug('Accepted a user message', { messageId: message.id, mode })
-    const dispatches = yield* performActions(yield* transition(send(message, mode)), steerInterrupt)
-    yield* Effect.forEach(dispatches, Fiber.join, { discard: true })
+    yield* sendAndWait(send(message, mode))
   })
 
   const resume = Effect.gen(function* () {
     const message = yield* nextMessage(RESUME_TEXT)
     yield* Effect.logInfo('Resuming a parked turn', { messageId: message.id })
-    const dispatches = yield* performActions(yield* transition(resumeQueue(message)))
-    yield* Effect.forEach(dispatches, Fiber.join, { discard: true })
+    yield* sendAndWait(resumeQueue(message))
   }).pipe(Effect.withSpan('ClaudeCodeSession.resume'))
+
+  const sendQueuedNow = Effect.fn('ClaudeCodeSession.sendQueuedNow')(function* (messageId: string) {
+    yield* sendAndWait(sendNow(messageId))
+  })
 
   const changeQueue = Effect.fn('ClaudeCodeSession.changeQueue')(function* (
     step: (state: QueueState) => QueueTransition
@@ -1110,6 +1119,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     sendText,
     editQueuedText: (messageId, text) => changeQueue(edit(messageId, text)),
     removeQueuedText: (messageId) => changeQueue(remove(messageId)),
+    sendQueuedNow,
     messageQueue: Ref.get(queueRef).pipe(Effect.map(snapshotOf)),
     setThinkingLevel: (level) => Ref.set(desiredLevelRef, Option.some(level)),
     setModel: (model) => Ref.set(desiredModelRef, model),

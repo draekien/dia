@@ -63,6 +63,14 @@ const idle = (queued: Queued, held: boolean) =>
 const running = (state: typeof QueueRunning.Type, changes: Partial<typeof QueueRunning.Type>) =>
   QueueRunning.make({ ...state, ...changes })
 
+const steerTurn = (
+  state: typeof QueueRunning.Type,
+  message: OutgoingMessage
+): readonly [ReadonlyArray<QueueAction>, typeof QueueRunning.Type] =>
+  state.steered.length > 0
+    ? [[], running(state, { steered: [...state.steered, message] })]
+    : [[InterruptAction.make({})], running(state, { steered: [message], held: false })]
+
 const dispatchNow = (messages: Queued, queued: Queued = [], held = false): QueueTransition => [
   [DispatchAction.make({ messages })],
   QueueRunning.make({ queued, held, steered: [], dispatching: 1 })
@@ -85,12 +93,10 @@ export const send =
       const queued = [...state.queued, message]
       return [[queueChanged(queued, false)], running(state, { queued, held: false })]
     }
-    if (state.steered.length > 0) {
-      return [[], running(state, { steered: [...state.steered, message] })]
-    }
+    const [actions, next] = steerTurn(state, message)
     return [
-      [InterruptAction.make({}), ...(state.held ? [queueChanged(state.queued, false)] : [])],
-      running(state, { steered: [message], held: false })
+      next.held !== state.held ? [...actions, queueChanged(next.queued, next.held)] : actions,
+      next
     ]
   }
 
@@ -183,6 +189,33 @@ export const remove =
       state,
       state.queued.filter((message) => message.id !== id)
     )
+
+/**
+ * The user asked for queued message `id` to be sent now instead of waiting for the turn to end.
+ * During a turn it steers: the turn is interrupted and the message runs next, and the rest of the
+ * queue still waits for the turn after, held if it was held. With no turn running a held queue
+ * sends the message alone and the rest stays held. While a batch is being offered there is no turn
+ * to interrupt yet, so the message moves to the front of the queue and the queue is released, or
+ * a held queue would keep it. A message no longer queued is left alone.
+ */
+export const sendNow =
+  (id: string) =>
+  (state: QueueState): QueueTransition => {
+    const message = state.queued.find((queued) => queued.id === id)
+    if (message === undefined) return [[], state]
+    const rest = state.queued.filter((queued) => queued.id !== id)
+    if (state._tag === 'QueueIdle') {
+      const [actions, next] = dispatchNow([message], rest, true)
+      return [[queueChanged(rest, true), ...actions], next]
+    }
+    if (state.dispatching > 0) {
+      const queued = [message, ...rest]
+      return [[queueChanged(queued, false)], running(state, { queued, held: false })]
+    }
+    const [actions, steered] = steerTurn(running(state, { queued: rest }), message)
+    const next = running(steered, { held: heldFor(rest, state.held) })
+    return [[...actions, queueChanged(rest, next.held)], next]
+  }
 
 /**
  * The session rewound to a checkpoint and its query was replaced; the turn that was running is

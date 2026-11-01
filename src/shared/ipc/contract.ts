@@ -116,6 +116,17 @@ export const RemoveQueuedMessage = Schema.TaggedStruct('RemoveQueuedMessage', {
 export type RemoveQueuedMessage = typeof RemoveQueuedMessage.Type
 
 /**
+ * Command sent by the renderer to send queued message `messageId` in pane `paneId` now instead of
+ * after the running turn: it interrupts the turn and runs next, and the rest of the queue keeps
+ * waiting. With no turn running it is sent alone. A message already sent is left alone.
+ */
+export const SendQueuedMessageNow = Schema.TaggedStruct('SendQueuedMessageNow', {
+  paneId: Uuid,
+  messageId: Schema.String
+})
+export type SendQueuedMessageNow = typeof SendQueuedMessageNow.Type
+
+/**
  * Command sent by the renderer to answer a pending tool-permission prompt
  * (identified by `requestId`) for the pane `paneId`. `response` carries the
  * user's decision: `Allow` (optionally with edited input and/or an "always
@@ -808,6 +819,8 @@ export interface DiaApi {
   sendMessage(paneId: string, text: string, mode: SendMode): void
   editQueuedMessage(paneId: string, messageId: string, text: string): void
   removeQueuedMessage(paneId: string, messageId: string): void
+  /** Sends queued message `messageId` now, steering the running turn; see {@link SendQueuedMessageNow}. */
+  sendQueuedMessageNow(paneId: string, messageId: string): void
   getMessageQueue(paneId: string): Promise<MessageQueueSnapshot>
   resolvePermission(paneId: string, requestId: string, response: PermissionResponse): void
   resolveQuestion(paneId: string, requestId: string, response: QuestionResponse): void

@@ -26,6 +26,7 @@ import {
   RewindToCheckpoint,
   SelectTab,
   SendMessage,
+  SendQueuedMessageNow,
   SetModel,
   SetPermissionMode,
   SetThinkingLevel,
@@ -278,6 +279,13 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       command('RemoveQueuedMessage', (client, commandId) =>
         client.RemoveQueuedMessage({
           ...RemoveQueuedMessage.make({ paneId, messageId }),
+          commandId
+        })
+      ),
+    sendQueuedMessageNow: (paneId, messageId) =>
+      command('SendQueuedMessageNow', (client, commandId) =>
+        client.SendQueuedMessageNow({
+          ...SendQueuedMessageNow.make({ paneId, messageId }),
           commandId
         })
       ),

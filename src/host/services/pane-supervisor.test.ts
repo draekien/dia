@@ -1,5 +1,5 @@
 import { assert, describe, it } from '@effect/vitest'
-import { EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
+import type { OutgoingMessage } from '@shared/domain/message-queue'
 import {
   type PaneConfig,
   type PermissionMode,
@@ -41,6 +41,7 @@ interface FakeSession {
   readonly config: PaneConfig
   readonly resume: Option.Option<SessionId>
   readonly calls: Array<string>
+  readonly queued: Array<OutgoingMessage>
   readonly emit: (message: OutboundMessage) => Effect.Effect<void>
   readonly end: (reason: string) => Effect.Effect<void>
   readonly endWith: (end: SessionEnd) => Effect.Effect<void>
@@ -132,10 +133,12 @@ function makeTestSetup(
         const ended = yield* Deferred.make<SessionEnd>()
         const endWith = (end: SessionEnd) => Deferred.succeed(ended, end).pipe(Effect.asVoid)
         const calls: Array<string> = []
+        const queued: Array<OutgoingMessage> = []
         const fake: FakeSession = {
           config,
           resume,
           calls,
+          queued,
           emit,
           end: (reason) => endWith(SessionFailed.make({ reason })),
           endWith,
@@ -156,7 +159,8 @@ function makeTestSetup(
           sendText: record('sendText'),
           editQueuedText: record('editQueuedText'),
           removeQueuedText: record('removeQueuedText'),
-          messageQueue: Effect.succeed(EMPTY_MESSAGE_QUEUE),
+          sendQueuedNow: record('sendQueuedNow'),
+          messageQueue: Effect.sync(() => ({ queued: [...queued], held: false })),
           setThinkingLevel: record('setThinkingLevel'),
           setPermissionMode: record('setPermissionMode'),
           setModel: record('setModel'),
@@ -610,6 +614,67 @@ describe('PaneSupervisor', () => {
           assert.deepStrictEqual(sessions[0].calls, ['sendText:take this instead:steer'])
         }).pipe(Effect.scoped, Effect.provide(testLayer))
       })
+  )
+
+  it.effect('send now clears a pending permission before it steers the turn', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        const events: Array<IpcEvent> = []
+
+        const opened = yield* supervisor.openPane(
+          requestA,
+          (event) => Effect.sync(() => void events.push(event)),
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+
+        yield* sessions[0].emit({
+          _tag: 'PermissionRequested',
+          requestId: 'req-1',
+          toolName: 'Bash',
+          input: {}
+        })
+        sessions[0].queued.push({ id: 'm-7', text: 'take this now' })
+        yield* opened.handle.sendQueuedMessageNow('m-7')
+        yield* flush
+
+        assert.deepStrictEqual(attentionTags(events), ['AwaitingPermission', 'Idle'])
+        assert.deepStrictEqual(sessions[0].calls, ['sendQueuedNow:m-7'])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('send now for a message no longer queued keeps a pending permission', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        const events: Array<IpcEvent> = []
+
+        const opened = yield* supervisor.openPane(
+          requestA,
+          (event) => Effect.sync(() => void events.push(event)),
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+
+        yield* sessions[0].emit({
+          _tag: 'PermissionRequested',
+          requestId: 'req-1',
+          toolName: 'Bash',
+          input: {}
+        })
+        yield* opened.handle.sendQueuedMessageNow('m-gone')
+        yield* flush
+
+        assert.deepStrictEqual(attentionTags(events), ['AwaitingPermission'])
+        assert.deepStrictEqual(sessions[0].calls, [])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
   )
 
   it.effect('interrupt reaches the session and clears a pending permission', () =>
