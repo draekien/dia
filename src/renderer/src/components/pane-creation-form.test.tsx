@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+
+import { EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
 import type { ModelOption } from '@shared/domain/model'
 import {
   type AdapterPreferences,
@@ -6,10 +8,12 @@ import {
 } from '@shared/domain/model-preferences'
 import type { PermissionMode } from '@shared/domain/pane'
 import { type Project, ProjectId } from '@shared/domain/project'
+import { SessionSetupStep, WorktreeSetupStep } from '@shared/domain/tab-setup'
 import {
   type AdapterStatusSnapshotJson,
   type ModelCatalogSnapshotJson,
-  PaneCreateFailed
+  PaneCreateFailed,
+  PaneSetupProgress
 } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
@@ -102,6 +106,7 @@ const installBridge = (
   disabledModes: ReadonlyArray<PermissionMode> = []
 ) => {
   const modelListeners = new Set<(snapshot: ModelCatalogSnapshotJson) => void>()
+  const setupListeners = new Set<(event: PaneSetupProgress) => void>()
   const bridge = {
     models: {
       get: vi.fn(async () => snapshot),
@@ -124,12 +129,25 @@ const installBridge = (
     plugins: {
       list: vi.fn(async () => plugins),
       onStatusChanged: vi.fn(() => () => undefined)
+    },
+    getPaneHistory: vi.fn(async () => []),
+    getMessageQueue: vi.fn(async () => EMPTY_MESSAGE_QUEUE),
+    onSetupProgress: (listener: (event: PaneSetupProgress) => void) => {
+      setupListeners.add(listener)
+      return () => setupListeners.delete(listener)
     }
   }
-  Object.assign(window, { dia: bridge })
+  const noSubscription = () => () => undefined
+  const dia = new Proxy(bridge as Record<string, unknown>, {
+    get: (target, key: string) => target[key] ?? noSubscription
+  })
+  Object.assign(window, { dia })
   return Object.assign(bridge, {
     emitModels: (next: ModelCatalogSnapshotJson) => {
       for (const listener of modelListeners) listener(next)
+    },
+    emitSetup: (event: PaneSetupProgress) => {
+      for (const listener of setupListeners) listener(event)
     }
   })
 }
@@ -201,6 +219,40 @@ describe('PaneCreationForm', () => {
 })
 
 describe('PaneCreationForm model choice', () => {
+  it('shows the worktree tab’s setup steps once Start agent is pressed', async () => {
+    const bridge = installBridge([plugin('worktrees', [WORKTREES_KEY])])
+    renderForm(project(true))
+    await start()
+    const paneId = bridge.createTab.mock.calls[0][0].paneId
+    await waitFor(() => expect(bridge.getPaneHistory).toHaveBeenCalledWith(paneId))
+
+    act(() =>
+      bridge.emitSetup(
+        PaneSetupProgress.make({
+          paneId,
+          steps: [
+            WorktreeSetupStep.make({ reattach: false, state: 'running' }),
+            SessionSetupStep.make({ state: 'pending' })
+          ]
+        })
+      )
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('list', { name: 'Tab setup' }).textContent).toBe(
+        'Create worktreerunningStart Claude Code sessionpending'
+      )
+    )
+  })
+
+  it('shows no setup steps before Start agent is pressed', async () => {
+    installBridge([plugin('worktrees', [WORKTREES_KEY])])
+    renderForm(project(true))
+    await waitFor(() => expect(startButton().disabled).toBe(false))
+
+    expect(screen.queryByRole('list', { name: 'Tab setup' })).toBeNull()
+  })
+
   it('creates the tab with the first model the agent reported', async () => {
     const bridge = installBridge([])
     renderForm(project(false))

@@ -40,6 +40,7 @@ const paneStreamEvents = (paneId: string): Stream.Stream<PaneStreamEvent> =>
           window.dia.onToolCallUpdated(push),
           window.dia.onTurnStatusChanged(push),
           window.dia.onSessionNotice(push),
+          window.dia.onSetupProgress(push),
           window.dia.onBackgroundTasksChanged(push),
           window.dia.onMessageAppended(push),
           window.dia.onAttentionChanged(push),
@@ -89,7 +90,7 @@ const paneHistoryReloads = (paneId: string): Stream.Stream<void> =>
  *
  * The event subscription is attached *before* the history fetch, and the fetched
  * history and the pane's message queue are then folded in while preserving any slash-command
- * state the stream already delivered. This closes a resume race: a freshly resumed pane warms up
+ * state and setup steps the stream already delivered. This closes a resume race: a freshly resumed pane warms up
  * its slash commands as soon as its process spawns, and that push would be lost
  * if it landed during the (async) history round-trip on a not-yet-subscribed atom.
  *
@@ -126,6 +127,7 @@ export const paneChatAtom = Atom.family((paneId: string) =>
           slashCommands: state.slashCommands,
           warmingCommands: state.warmingCommands,
           contextUsage: state.contextUsage,
+          ...(state.setup !== undefined ? { setup: state.setup } : {}),
           queued: queue.queued,
           queueHeld: queue.held
         }))

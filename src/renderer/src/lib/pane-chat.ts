@@ -11,6 +11,7 @@ import type { OutgoingMessage } from '@shared/domain/message-queue'
 import type { ConversationMessage } from '@shared/domain/pane'
 import { RESUME_TEXT } from '@shared/domain/parking'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
+import type { SetupStep } from '@shared/domain/tab-setup'
 import type {
   PaneAssistantTextDelta,
   PaneAssistantThinkingDelta,
@@ -26,6 +27,7 @@ import type {
   PaneModelChanged,
   PaneRewoundToCheckpoint,
   PaneSessionNotice,
+  PaneSetupProgress,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
   PaneToolCallCompleted,
@@ -134,7 +136,8 @@ export interface PaneMessage {
  * how full the pane's context window is, or null before the first reading arrives.
  * `compactionFailure` says why the last requested compaction did not run, until the next send or
  * compaction. `backgroundTasks` is the work the agent started that runs outside its turns, empty
- * when none runs. This is the sole contract consumers depend on — how
+ * when none runs. `setup` is the latest list of setup steps the Host reported for a worktree tab
+ * being created or resumed, absent until one arrives. This is the sole contract consumers depend on — how
  * streaming deltas are assembled into it is private to {@link reducePaneChat}.
  */
 export interface PaneChatState {
@@ -148,6 +151,7 @@ export interface PaneChatState {
   readonly contextUsage: ContextUsage | null
   readonly compactionFailure: CompactionFailure | null
   readonly backgroundTasks: ReadonlyArray<BackgroundTask>
+  readonly setup?: ReadonlyArray<SetupStep>
 }
 
 /**
@@ -163,6 +167,7 @@ export type PaneStreamEvent =
   | PaneToolCallUpdated
   | PaneTurnStatusChanged
   | PaneSessionNotice
+  | PaneSetupProgress
   | PaneBackgroundTasksChanged
   | PaneMessageAppended
   | PaneAttentionChanged
@@ -517,7 +522,7 @@ const compactConversation = (
  * `PaneCheckpointAvailable` anchors a rewindable checkpoint uuid (and its resume
  * anchor) onto the earliest user turn still lacking one, and
  * `PaneToolCallUpdated` sets a running row's input, elapsed time or detail line, `PaneSessionNotice`
- * appends a `notice` divider, and `PaneTurnStatusChanged` sets `turnStatus`, which the next
+ * appends a `notice` divider, `PaneSetupProgress` replaces `setup`, and `PaneTurnStatusChanged` sets `turnStatus`, which the next
  * `PaneUserMessagesSent` also clears. `PaneBackgroundTasksChanged` replaces `backgroundTasks`; a
  * crash and a rewind empty it, because both end the session's process and its tasks with it.
  * `now`, the event's arrival time in epoch milliseconds, stamps `startedAt` on each new part and
@@ -565,6 +570,8 @@ export const reducePaneChat = (
       return { ...state, turnStatus: event.label }
     case 'PaneSessionNotice':
       return noticeMessage(state, event.text)
+    case 'PaneSetupProgress':
+      return { ...state, setup: event.steps }
     case 'PaneMessageAppended': {
       if (event.message.role !== 'assistant' || isStreamingAssistant(state)) return state
       return {
