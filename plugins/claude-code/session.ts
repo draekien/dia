@@ -14,6 +14,7 @@ import {
 import {
   type AgentSession,
   type AgentSessionOptions,
+  BackgroundTasksChanged,
   ContextUsageChanged,
   type DiaTool,
   MessageQueueChanged,
@@ -815,6 +816,12 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     resume: Option.Option<SessionId>,
     branchAt: string | undefined
   ) {
+    if (Option.isSome(yield* Ref.get(fiberRef))) {
+      yield* Effect.logInfo('Cleared background tasks; the previous Claude Code process ended', {
+        paneId: config.paneId
+      })
+      yield* emit(BackgroundTasksChanged.make({ tasks: [] }))
+    }
     yield* modeController.seed(config.permissionMode)
     yield* Ref.set(sessionIdRef, resume)
     yield* Ref.set(branchAtRef, Option.fromUndefinedOr(branchAt))

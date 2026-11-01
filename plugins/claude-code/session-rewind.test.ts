@@ -279,6 +279,18 @@ describe('rewindToCheckpoint', () => {
     })
   )
 
+  it.effect('reports no background tasks once a rewind replaces the process', () =>
+    Effect.gen(function* () {
+      const { session, emitted } = yield* openResumed(twoTurns)
+      assert.isFalse(emitted.some((message) => message._tag === 'BackgroundTasksChanged'))
+
+      yield* session.rewindToCheckpoint('turn-2', 'reply-1')
+      yield* settle
+
+      assert.deepInclude(emitted, { _tag: 'BackgroundTasksChanged', tasks: [] })
+    })
+  )
+
   it.effect('starts a new conversation when the anchorless turn is the first', () =>
     Effect.gen(function* () {
       const { session, emitted } = yield* openResumed(twoTurns)
