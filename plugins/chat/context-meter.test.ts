@@ -15,7 +15,7 @@ const at = (share: number, autoCompactThreshold?: number) => ({
   ...(autoCompactThreshold !== undefined ? { autoCompactThreshold } : {})
 })
 
-const NEUTRAL = 'var(--muted-foreground)'
+const NEUTRAL = 'var(--ink-muted)'
 const AMBER = 'var(--pulse-amber)'
 const RED = 'var(--pulse-red)'
 
@@ -23,7 +23,7 @@ describe('contextColor with an auto-compact threshold (91.75%)', () => {
   it.each([
     ['0%', 0, NEUTRAL],
     ['50%', 0.5, NEUTRAL],
-    ['62%, 48% of the way from 50% to 75%', 0.62, `color-mix(in oklch, ${AMBER} 48%, ${NEUTRAL})`],
+    ['62%, 48% of the way from 50% to 75%', 0.62, `color-mix(in oklab, ${AMBER} 48%, ${NEUTRAL})`],
     ['75%', 0.75, AMBER],
     ['85%, 60% of the way from 75% to 91.75%', 0.85, `color-mix(in oklch, ${RED} 60%, ${AMBER})`],
     ['the threshold', THRESHOLD / MAX, RED],
@@ -37,7 +37,7 @@ describe('contextColor without a threshold (red at 90%)', () => {
   it.each([
     ['0%', 0, NEUTRAL],
     ['50%', 0.5, NEUTRAL],
-    ['62%', 0.62, `color-mix(in oklch, ${AMBER} 48%, ${NEUTRAL})`],
+    ['62%', 0.62, `color-mix(in oklab, ${AMBER} 48%, ${NEUTRAL})`],
     ['75%', 0.75, AMBER],
     [
       '85%, two thirds of the way from 75% to 90%',

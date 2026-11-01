@@ -4,7 +4,7 @@ const AMBER_START = 0.5
 const AMBER_FULL = 0.75
 const RED_WITHOUT_THRESHOLD = 0.9
 
-const NEUTRAL = 'var(--muted-foreground)'
+const NEUTRAL = 'var(--ink-muted)'
 const AMBER = 'var(--pulse-amber)'
 const RED = 'var(--pulse-red)'
 
@@ -17,13 +17,13 @@ const redEnd = (usage: ContextUsage): number =>
     ? RED_WITHOUT_THRESHOLD
     : usage.autoCompactThreshold / usage.maxTokens
 
-const blend = (to: string, from: string, share: number): string =>
-  `color-mix(in oklch, ${to} ${Math.round(share * 100)}%, ${from})`
+const blend = (space: 'oklab' | 'oklch', to: string, from: string, share: number): string =>
+  `color-mix(in ${space}, ${to} ${Math.round(share * 100)}%, ${from})`
 
 /**
  * The CSS colour of the context meter for `usage`. It is neutral up to 50%, blends to amber at
- * 75%, then to red at the auto-compact threshold (90% when `usage` has none), and stays red from
- * there. `compactFailed` makes it red at any usage. Use the result as a CSS `color` or `stroke`.
+ * 75% (in OKLab, because the near-grey neutral has no hue to interpolate from), then to red at the
+ * auto-compact threshold (90% when `usage` has none) in OKLCH, and stays red from there. `compactFailed` makes it red at any usage. Use the result as a CSS `color` or `stroke`.
  */
 export const contextColor = (usage: ContextUsage, compactFailed: boolean): string => {
   const fraction = contextFraction(usage)
@@ -31,10 +31,10 @@ export const contextColor = (usage: ContextUsage, compactFailed: boolean): strin
   if (compactFailed || fraction >= red) return RED
   if (fraction <= AMBER_START) return NEUTRAL
   if (fraction < AMBER_FULL) {
-    return blend(AMBER, NEUTRAL, (fraction - AMBER_START) / (AMBER_FULL - AMBER_START))
+    return blend('oklab', AMBER, NEUTRAL, (fraction - AMBER_START) / (AMBER_FULL - AMBER_START))
   }
   if (fraction === AMBER_FULL) return AMBER
-  return blend(RED, AMBER, (fraction - AMBER_FULL) / (red - AMBER_FULL))
+  return blend('oklch', RED, AMBER, (fraction - AMBER_FULL) / (red - AMBER_FULL))
 }
 
 /** The whole percentage of the context window `usage` fills, for example `88`. */

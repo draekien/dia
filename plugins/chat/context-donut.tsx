@@ -107,8 +107,7 @@ export function ContextDonut({
 }): React.JSX.Element {
   const failed = failure?.reason === 'failed'
   const percent = usage === null ? null : contextPercent(usage)
-  const colour =
-    usage === null || compacting ? 'var(--muted-foreground)' : contextColor(usage, failed)
+  const colour = usage === null || compacting ? 'var(--ink-muted)' : contextColor(usage, failed)
   return (
     <Popover>
       <PopoverTrigger asChild>

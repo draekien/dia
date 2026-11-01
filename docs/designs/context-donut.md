@@ -8,13 +8,13 @@ Issue #86, part of the composer redesign #81. The data comes from #84 (`docs/des
 
 | Share of the window | Colour |
 |---|---|
-| up to 0.5 | `var(--muted-foreground)` |
-| 0.5 to 0.75 | `color-mix(in oklch, var(--pulse-amber) p%, var(--muted-foreground))`, `p` rising from 0 to 100 |
+| up to 0.5 | `var(--ink-muted)` |
+| 0.5 to 0.75 | `color-mix(in oklab, var(--pulse-amber) p%, var(--ink-muted))`, `p` rising from 0 to 100 |
 | 0.75 | `var(--pulse-amber)` |
 | 0.75 to the red end | `color-mix(in oklch, var(--pulse-red) p%, var(--pulse-amber))` |
 | at or above the red end, or `compactFailed` | `var(--pulse-red)` |
 
-`color-mix` blends in OKLCH in the browser, so the theme's light and dark tokens both blend without a JS colour library. The ring and the popover meter use the same colour.
+`color-mix` blends in the browser, so the theme's light and dark tokens both blend without a JS colour library. Amber to red blends in OKLCH, which keeps lightness and chroma along the hue. Neutral to amber blends in OKLab: `--ink-muted` has hue 255 at chroma 0.015, and an OKLCH blend with amber (hue 70) passes through hue 339 (`oklch(0.69 0.085 339)` at 62%, a pink), while OKLab gives `oklab(0.69 0.024 0.065)`, hue 70. The neutral end is `--ink-muted`, not `--muted-foreground`: the `@theme inline` block maps `--color-muted-foreground` without emitting a `--muted-foreground` variable, so `var(--muted-foreground)` is invalid at runtime. The ring and the popover meter use the same colour.
 
 ## Component
 
