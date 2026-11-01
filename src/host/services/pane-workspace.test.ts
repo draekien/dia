@@ -88,6 +88,7 @@ interface HarnessOptions {
   readonly gitOps?: (existing: Set<string>) => GitOps
   readonly history?: ReadonlyArray<ConversationMessage>
   readonly discovered?: ReadonlyArray<DiscoveredSession>
+  readonly storedSessionIds?: ReadonlyArray<string>
 }
 
 const configOf = (request: PaneCreationRequest): PaneConfig => ({
@@ -125,7 +126,10 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
 
   const store = Layer.succeed(WorkspaceStore, {
     load: Effect.succeed(Option.fromNullishOr(options.persisted)),
-    save: (workspace) => Effect.sync(() => void saves.push(workspace))
+    save: (workspace) => Effect.sync(() => void saves.push(workspace)),
+    sessionIds: Effect.succeed(
+      new Set((options.storedSessionIds ?? []).map((id) => SessionId.make(id)))
+    )
   })
 
   const hub = Layer.succeed(EventHub, {
@@ -479,6 +483,23 @@ describe('PaneWorkspace.registerProject importing discovered sessions', () => {
 
       assert.strictEqual(workspace.visibleTab, PANE_A)
       assert.deepStrictEqual(harness.requests, [])
+    })
+  )
+
+  it.effect('does not import a session host.db records for another agent', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        directories: ['/other'],
+        storedSessionIds: ['s-superseded'],
+        discovered: [discovered('s-superseded', 'Old', 1), discovered('s-free', 'Free', 2)]
+      })
+
+      const workspace = yield* register(harness)
+
+      assert.deepStrictEqual(
+        workspace.projects[0].tabs.map((t): string | undefined => t.sessionId),
+        ['s-free']
+      )
     })
   )
 

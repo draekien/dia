@@ -182,6 +182,38 @@ describe('WorkspaceStore round trip', () => {
 })
 
 describe('WorkspaceStore sessions', () => {
+  it.effect('lists superseded and current session ids', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store } = yield* openStore(dir)
+        yield* store.save(oneTab({ sessionId: SessionId.make('s-1') }))
+        yield* store.save(oneTab({ sessionId: SessionId.make('s-2') }))
+
+        assert.deepStrictEqual([...(yield* store.sessionIds)].sort(), ['s-1', 's-2'])
+      })
+    )
+  )
+
+  it.effect("refuses a new agent whose session is another agent's superseded session", () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store } = yield* openStore(dir)
+        yield* store.save(oneTab({ sessionId: SessionId.make('s-1') }))
+        yield* store.save(oneTab({ sessionId: SessionId.make('s-2') }))
+        const withSecondAgent = workspaceOf([
+          entry(PROJECT_X, 'F:\\x', [
+            tab(PANE_A, { sessionId: SessionId.make('s-2') }),
+            tab(PANE_B, { sessionId: SessionId.make('s-1') })
+          ])
+        ])
+
+        const error = yield* Effect.flip(store.save(withSecondAgent))
+
+        assert.strictEqual(error._tag, 'WorkspaceWriteError')
+      })
+    )
+  )
+
   it.effect('keeps the previous session as superseded at the time the session changed', () =>
     inTempDir((dir) =>
       Effect.gen(function* () {

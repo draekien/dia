@@ -316,6 +316,29 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         } satisfies Tab
       })
 
+      const importableSessions = Effect.fn('PaneWorkspace.importableSessions')(function* (
+        directory: string
+      ) {
+        const discovered = yield* transcriptReader.discoverSessions(directory)
+        if (discovered.length === 0) return discovered
+        const stored = yield* store.sessionIds.pipe(Effect.option)
+        if (Option.isNone(stored)) {
+          yield* Effect.logWarning(
+            'Imported no sessions: the stored session ids could not be read',
+            { directory, discovered: discovered.length }
+          )
+          return []
+        }
+        const skipped = discovered.filter((session) => stored.value.has(session.sessionId))
+        if (skipped.length > 0) {
+          yield* Effect.logInfo('Skipped discovered sessions another agent already recorded', {
+            directory,
+            sessionIds: skipped.map((session) => session.sessionId)
+          })
+        }
+        return discovered.filter((session) => !stored.value.has(session.sessionId))
+      })
+
       const registerProject = Effect.fn('PaneWorkspace.registerProject')(function* (
         projectId: ProjectId,
         directory: string
@@ -328,7 +351,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           Effect.provideService(FileSystem.FileSystem, fs),
           Effect.provideService(Path.Path, path)
         )
-        const sessions = yield* transcriptReader.discoverSessions(project.directory)
+        const sessions = yield* importableSessions(project.directory)
         const tabs = yield* Effect.forEach(
           [...sessions].sort((a, b) => a.startedAt - b.startedAt),
           (session) => importedTab(project.directory, session)
