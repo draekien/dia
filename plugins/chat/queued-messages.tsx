@@ -14,7 +14,7 @@ import {
 import type { OutgoingMessage } from '@shared/domain/message-queue'
 import { cva } from 'class-variance-authority'
 import { ArrowUpIcon, ListPlusIcon, PencilIcon, XIcon } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 interface QueuedMessagesProps {
   readonly queued: ReadonlyArray<OutgoingMessage>
@@ -84,11 +84,13 @@ function RowAction({
 
 function QueuedRow({
   message,
+  held,
   onSendNow,
   onEdit,
   onRemove
 }: {
   message: OutgoingMessage
+  held: boolean
   onSendNow: () => void
   onEdit: () => void
   onRemove: () => void
@@ -96,7 +98,11 @@ function QueuedRow({
   return (
     <li className="group/row flex items-center justify-end gap-1.5">
       <div className="flex gap-0.5 opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100">
-        <RowAction label="Send now" tooltip="Send now and steer this turn" onClick={onSendNow}>
+        <RowAction
+          label="Send now"
+          tooltip={held ? 'Send now' : 'Send now and steer this turn'}
+          onClick={onSendNow}
+        >
           <ArrowUpIcon />
         </RowAction>
         <RowAction label="Edit" tooltip="Edit" onClick={onEdit}>
@@ -136,13 +142,36 @@ export function QueuedMessages({
   onEdit,
   onRemove
 }: QueuedMessagesProps): React.JSX.Element | null {
+  if (queued.length === 0) return null
+  return (
+    <QueueStack
+      queued={queued}
+      held={held}
+      onSendNow={onSendNow}
+      onEdit={onEdit}
+      onRemove={onRemove}
+    />
+  )
+}
+
+function QueueStack({
+  queued,
+  held,
+  onSendNow,
+  onEdit,
+  onRemove
+}: QueuedMessagesProps): React.JSX.Element {
+  const sectionRef = useRef<HTMLElement>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
   const [dismissed, setDismissed] = useState(false)
-  if (queued.length === 0) return null
 
-  const open = (hovered || focused || editingId !== null) && !dismissed
+  const editing = queued.some((message) => message.id === editingId)
+  const open = (hovered || focused || editing) && !dismissed
+  const focusFront = (): void => {
+    sectionRef.current?.querySelector<HTMLElement>('[data-queue-front]')?.focus()
+  }
   const layers = queued.slice(-LAYER_OFFSETS.length).reverse()
   const [front, ...behind] = layers
   const height = BUBBLE_HEIGHT + LAYER_OFFSETS[layers.length - 1]
@@ -150,6 +179,7 @@ export function QueuedMessages({
 
   return (
     <section
+      ref={sectionRef}
       aria-label="Queued messages"
       className="relative mb-1.5"
       onPointerEnter={() => setHovered(true)}
@@ -167,7 +197,7 @@ export function QueuedMessages({
         if (event.key !== 'Escape' || event.defaultPrevented || !open) return
         event.preventDefault()
         setDismissed(true)
-        event.currentTarget.querySelector<HTMLElement>('[data-queue-front]')?.focus()
+        focusFront()
       }}
     >
       <div aria-hidden={open || undefined}>
@@ -224,17 +254,28 @@ export function QueuedMessages({
                     onSave={(text) => {
                       onEdit(message.id, text)
                       setEditingId(null)
+                      focusFront()
                     }}
-                    onCancel={() => setEditingId(null)}
+                    onCancel={() => {
+                      setEditingId(null)
+                      focusFront()
+                    }}
                   />
                 </li>
               ) : (
                 <QueuedRow
                   key={message.id}
                   message={message}
-                  onSendNow={() => onSendNow(message.id)}
+                  held={held}
+                  onSendNow={() => {
+                    onSendNow(message.id)
+                    focusFront()
+                  }}
                   onEdit={() => setEditingId(message.id)}
-                  onRemove={() => onRemove(message.id)}
+                  onRemove={() => {
+                    onRemove(message.id)
+                    focusFront()
+                  }}
                 />
               )
             )}

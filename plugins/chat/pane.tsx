@@ -847,7 +847,10 @@ function PaneChat({
                     <QueuedMessages
                       queued={chat.queued}
                       held={chat.queueHeld}
-                      onSendNow={sendQueuedNow}
+                      onSendNow={(messageId) => {
+                        sendQueuedNow(messageId)
+                        clearPendingInteractions()
+                      }}
                       onEdit={(messageId, text) => editQueued({ messageId, text })}
                       onRemove={removeQueued}
                     />

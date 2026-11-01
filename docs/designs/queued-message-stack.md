@@ -29,7 +29,7 @@ Issue #92, part of the composer redesign #81. The visual rules are in `DESIGN.md
 
 - **Open state:** `(hovered || focused || editing) && !dismissed`. Escape sets `dismissed` and moves focus to the front bubble; `dismissed` clears once both the pointer and focus have left the section. An Escape already handled by the editor (`defaultPrevented`) leaves the list open.
 - **Layers:** the `stackLayer` cva maps `depth` 0 to 3 to the offset, z-order and colour strength. Bubbles use `Bubble variant="outline"` (opaque `bg-background`) with a dashed border.
-- **Row actions:** icon buttons with `aria-label` and a tooltip: `Send now` (tooltip `Send now and steer this turn`), `Edit`, `Remove`. They are hidden until the row is hovered or holds focus.
+- **Row actions:** icon buttons with `aria-label` and a tooltip: `Send now` (tooltip `Send now and steer this turn`, or `Send now` for a held queue), `Edit`, `Remove`. They are hidden until the row is hovered or holds focus.
 - **Motion:** the overlay fades in under `motion-safe` only; it closes without a transition.
 
 ## Decisions

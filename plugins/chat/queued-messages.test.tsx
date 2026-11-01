@@ -27,13 +27,17 @@ const queue = (count: number): ReadonlyArray<OutgoingMessage> =>
     text: `Message ${index + 1}`
   }))
 
+const handlers = { onSendNow: vi.fn(), onEdit: vi.fn(), onRemove: vi.fn() }
+
+const stackElement = (queued: ReadonlyArray<OutgoingMessage>, held = false) => (
+  <TooltipProvider>
+    <QueuedMessages queued={queued} held={held} {...handlers} />
+  </TooltipProvider>
+)
+
 const renderStack = (queued: ReadonlyArray<OutgoingMessage>, held = false) => {
-  const handlers = { onSendNow: vi.fn(), onEdit: vi.fn(), onRemove: vi.fn() }
-  const view = render(
-    <TooltipProvider>
-      <QueuedMessages queued={queued} held={held} {...handlers} />
-    </TooltipProvider>
-  )
+  vi.clearAllMocks()
+  const view = render(stackElement(queued, held))
   return { ...handlers, view }
 }
 
@@ -133,5 +137,24 @@ describe('QueuedMessages open list', () => {
       key: 'Escape'
     })
     expect(within(list()).getAllByRole('listitem')[0]?.textContent).toBe('Message 1')
+  })
+
+  it('opens collapsed for a new queue after the last one emptied while open', () => {
+    const { view } = renderStack(queue(1))
+    openStack()
+    view.rerender(stackElement([]))
+    view.rerender(stackElement(queue(1)))
+    expect(screen.queryByRole('list', { name: /in send order/ })).toBeNull()
+  })
+
+  it('closes once the message being edited leaves the queue and focus leaves', () => {
+    const { view } = renderStack(queue(2))
+    openStack()
+    const first = within(list()).getAllByRole('listitem')[0]
+    if (first === undefined) throw new Error('missing row')
+    fireEvent.click(within(first).getByRole('button', { name: 'Edit' }))
+    view.rerender(stackElement(queue(2).slice(1)))
+    fireEvent.blur(screen.getByRole('button', { name: 'Show 1 queued message' }))
+    expect(screen.queryByRole('list', { name: /in send order/ })).toBeNull()
   })
 })
