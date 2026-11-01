@@ -58,10 +58,6 @@ function ContextMenuSubContent({
   return (
     <ContextMenuContent
       data-slot="context-menu-sub-content"
-      align="start"
-      alignOffset={4}
-      side="right"
-      sideOffset={0}
       className={cn('shadow-lg', className)}
       {...props}
     />

@@ -225,7 +225,7 @@ function DefaultsSection({
           Model
         </span>
         <Select
-          value={model?.value}
+          value={model?.value ?? null}
           onValueChange={(value) => {
             if (value !== null) update({ ...defaults, model: value })
           }}

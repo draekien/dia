@@ -49,8 +49,7 @@ export function SlashCommandMenu({
     <ScrollArea
       className={cn(
         'absolute right-0 bottom-full left-0 z-50 mb-2 rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 motion-reduce:animate-none',
-        '[&>[data-slot=scroll-area-viewport]]:max-h-64',
-        '[&>[data-slot=scroll-area-viewport]>div]:block!'
+        '[&>[data-slot=scroll-area-viewport]]:max-h-64'
       )}
     >
       <div
