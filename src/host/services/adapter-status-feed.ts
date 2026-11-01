@@ -12,13 +12,15 @@ import {
   SubscriptionRef
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import { resolveAgentBackend } from '../session/agent-backend'
+import { agentBackendChanges, resolveAgentBackend } from '../session/agent-backend'
 import { EventHub } from './event-hub'
 
 /**
  * The agent adapter's install status for the renderer. Call `start` once, after the agent
  * adapter has loaded and before the Host reports ready: it reads the adapter's first status, then
- * keeps forwarding every later status, each published as an `AdapterStatusChanged` event.
+ * keeps forwarding every later status, each published as an `AdapterStatusChanged` event. An
+ * adapter loaded later, such as one reloaded after a failed start, replaces the one it forwards
+ * from.
  * `current` is the latest snapshot (`HealthNotChecked` before `start`); `check` asks the adapter
  * to re-check its install and completes when that check ends; `setInstallPath` stores or clears
  * where the adapter finds its install, then re-checks. Revisions rise across Host restarts.
@@ -62,9 +64,9 @@ export const AdapterStatusFeedLive = Layer.effect(
       })
 
     const start = Effect.gen(function* () {
-      const backend = yield* resolveAgentBackend(plugins)
       const firstPublished = yield* Deferred.make<void>()
-      yield* backend.status().pipe(
+      yield* agentBackendChanges(plugins).pipe(
+        Stream.switchMap((backend) => backend.status()),
         Stream.runForEach((status) =>
           publish(status).pipe(Effect.andThen(Deferred.succeed(firstPublished, undefined)))
         ),

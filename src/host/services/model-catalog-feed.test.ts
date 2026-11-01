@@ -6,7 +6,7 @@ import {
   ModelsUnavailable
 } from '@shared/domain/model'
 import { type IpcEvent, ModelsChanged } from '@shared/ipc/contract'
-import { DateTime, Effect, Layer, Option, Stream, SubscriptionRef } from 'effect'
+import { DateTime, Effect, Layer, Option, PubSub, Stream, SubscriptionRef } from 'effect'
 import { TestClock } from 'effect/testing'
 import { HostPlugins } from '../plugins/host-plugins'
 import { AGENT_BACKEND_KEY, type AgentBackend } from '../session/agent-backend'
@@ -50,17 +50,28 @@ const backendWith = (
   attachmentTypes: () => Effect.succeed([])
 })
 
-const feedWith = (backend: Option.Option<AgentBackend>, published: Array<IpcEvent>) =>
+const feedWith = (
+  backend: Option.Option<AgentBackend>,
+  published: Array<IpcEvent>,
+  provider: {
+    readonly current: () => Option.Option<AgentBackend>
+    readonly changes: Stream.Stream<string>
+  } = {
+    current: () => backend,
+    changes: Stream.empty
+  }
+) =>
   Layer.provide(
     ModelCatalogFeedLive,
     Layer.mergeAll(
       Layer.succeed(HostPlugins)({
         list: () => Effect.succeed([]),
         start: () => Effect.void,
-        changes: Stream.empty,
+        changes: provider.changes,
         load: () => Effect.die(new Error('load should not be called in these tests')),
         unload: () => Effect.die(new Error('unload should not be called in these tests')),
-        inject: (key) => Effect.succeed(key === AGENT_BACKEND_KEY ? backend : Option.none())
+        inject: (key) =>
+          Effect.sync(() => (key === AGENT_BACKEND_KEY ? provider.current() : Option.none()))
       }),
       Layer.succeed(EventHub)({
         publish: (event) =>
@@ -159,4 +170,27 @@ describe('ModelCatalogFeed', () => {
       assert.strictEqual(refreshes.count, 1)
     }).pipe(Effect.provide(feedWith(Option.some(backend), [])))
   })
+
+  it.effect('forwards the models of an adapter loaded after start', () =>
+    Effect.gen(function* () {
+      const changes = yield* PubSub.unbounded<string>()
+      let current = Option.none<AgentBackend>()
+      yield* Effect.gen(function* () {
+        const feed = yield* startFeed
+
+        current = Option.some(backendWith(() => Stream.make(READY)))
+        yield* PubSub.publish(changes, AGENT_BACKEND_KEY)
+        yield* settle
+
+        assert.deepStrictEqual((yield* feed.current).state, READY)
+      }).pipe(
+        Effect.provide(
+          feedWith(Option.none(), [], {
+            current: () => current,
+            changes: Stream.fromPubSub(changes)
+          })
+        )
+      )
+    })
+  )
 })

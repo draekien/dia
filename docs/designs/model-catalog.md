@@ -195,7 +195,7 @@ export class ModelCatalogFeed extends Context.Service<ModelCatalogFeed, {
 ```
 
 - The layer starts no background work and captures its `Scope.Scope`. `runHost` calls `start` after `HostPlugins.start()` and before `post(HostReady)` (`host-main.ts:166-167`); adapters finish loading inside `start()` (`plugin-registry.ts:126`). `GetModels` cannot arrive before `start`, because the renderer learns the port only from `HostReady`. The value held before `start` is `Loading` with revision 0.
-- `start` resolves the backend with `resolveAgentBackend`, takes the first element of `backend.models()`, stamps it and sets `current` before returning, then forks the rest of the stream with `Effect.forkIn(scope)`. If the adapter failed to load, the feed holds the `unavailableBackend` state for the Host's lifetime; adapters are never reloaded (`manifest.ts:32`).
+- `start` resolves the backend with `resolveAgentBackend`, takes the first element of `backend.models()`, stamps it and sets `current` before returning, then forks the rest of the stream with `Effect.forkIn(scope)`. If the adapter failed to load, the feed holds the `unavailableBackend` state until the user loads the adapter from the Plugins page: the feed follows `agentBackendChanges` (`src/host/session/agent-backend.ts`) with `Stream.switchMap`, so each change of the plugin providing `agentBackend` switches it to that backend's `models()` (issue #35).
 - Each state is stamped with `revision = max(previous + 1, Clock.currentTimeMillis)`, so revisions keep rising across Host restarts, kept in a `SubscriptionRef`, and published to `EventHub` as `ModelsChanged`.
 
 ### RPCs and events
