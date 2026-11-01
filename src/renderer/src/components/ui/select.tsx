@@ -1,10 +1,40 @@
 import { cn } from '@renderer/lib/utils'
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 import { Select as SelectPrimitive } from 'radix-ui'
-import type * as React from 'react'
+import * as React from 'react'
 
-function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />
+// Radix closes only the top open select on an outside click, so opening a second one must close the first.
+let closeOpenSelect: (() => void) | undefined
+
+function Select({
+  open: openProp,
+  defaultOpen = false,
+  onOpenChange,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Root>) {
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(defaultOpen)
+  const open = openProp ?? uncontrolledOpen
+  const changeOpen = React.useCallback(
+    (next: boolean) => {
+      setUncontrolledOpen(next)
+      onOpenChange?.(next)
+    },
+    [onOpenChange]
+  )
+  const close = React.useCallback(() => changeOpen(false), [changeOpen])
+
+  React.useEffect(() => {
+    if (!open) return
+    if (closeOpenSelect !== close) closeOpenSelect?.()
+    closeOpenSelect = close
+    return () => {
+      if (closeOpenSelect === close) closeOpenSelect = undefined
+    }
+  }, [open, close])
+
+  return (
+    <SelectPrimitive.Root data-slot="select" open={open} onOpenChange={changeOpen} {...props} />
+  )
 }
 
 function SelectGroup({ ...props }: React.ComponentProps<typeof SelectPrimitive.Group>) {
