@@ -1,4 +1,4 @@
-import { NodePath } from '@effect/platform-node'
+import { NodeCrypto, NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import { AGENT_NAME_ADJECTIVES, AGENT_NAME_NOUNS } from '@shared/domain/agent-name'
 import { EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
@@ -30,7 +30,11 @@ import {
   SubscriptionRef
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import { AGENT_BACKEND_KEY, type AgentBackend } from '../session/agent-backend'
+import {
+  AGENT_BACKEND_KEY,
+  type AgentBackend,
+  type DiscoveredSession
+} from '../session/agent-backend'
 import { EventHub } from './event-hub'
 import { type PaneCreationRequest, type PaneHandle, PaneSupervisor } from './pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
@@ -83,6 +87,8 @@ interface HarnessOptions {
   readonly closePane?: (paneId: string) => Effect.Effect<void>
   readonly gitOps?: (existing: Set<string>) => GitOps
   readonly history?: ReadonlyArray<ConversationMessage>
+  readonly discovered?: ReadonlyArray<DiscoveredSession>
+  readonly storedSessionIds?: ReadonlyArray<string>
 }
 
 const configOf = (request: PaneCreationRequest): PaneConfig => ({
@@ -120,7 +126,10 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
 
   const store = Layer.succeed(WorkspaceStore, {
     load: Effect.succeed(Option.fromNullishOr(options.persisted)),
-    save: (workspace) => Effect.sync(() => void saves.push(workspace))
+    save: (workspace) => Effect.sync(() => void saves.push(workspace)),
+    sessionIds: Effect.succeed(
+      new Set((options.storedSessionIds ?? []).map((id) => SessionId.make(id)))
+    )
   })
 
   const hub = Layer.succeed(EventHub, {
@@ -154,6 +163,11 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       Effect.sync(() => {
         log.push(`readHistory ${sessionId} ${cwd}`)
         return options.history ?? []
+      }),
+    discoverSessions: (directory) =>
+      Effect.sync(() => {
+        log.push(`discoverSessions ${directory}`)
+        return options.discovered ?? []
       })
   })
 
@@ -175,7 +189,16 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
 
   const layer = Layer.provide(
     makePaneWorkspaceLive(WORKTREES_ROOT),
-    Layer.mergeAll(supervisor, store, hub, plugins, transcripts, fs, NodePath.layer)
+    Layer.mergeAll(
+      supervisor,
+      store,
+      hub,
+      plugins,
+      transcripts,
+      fs,
+      NodePath.layer,
+      NodeCrypto.layer
+    )
   ).pipe(Layer.provideMerge(WorkspaceFeedLive))
   return { log, saves, published, requests, existing, layer }
 }
@@ -374,6 +397,124 @@ describe('PaneWorkspace.registerProject', () => {
 
       assert.strictEqual(workspace.projects[0].project.directoryKey, yield* resolvedKey('/Repo'))
     }).pipe(Effect.provide(NodePath.layer))
+  )
+})
+
+describe('PaneWorkspace.registerProject importing discovered sessions', () => {
+  const discovered = (sessionId: string, title: string, startedAt: number): DiscoveredSession => ({
+    sessionId: SessionId.make(sessionId),
+    title,
+    startedAt,
+    model: 'adapter-model'
+  })
+
+  const register = (harness: Harness) =>
+    run(
+      harness,
+      Effect.gen(function* () {
+        yield* (yield* PaneWorkspace).registerProject(PROJECT_2, '/other')
+        return yield* current
+      })
+    )
+
+  it.effect('imports each discovered session as a tab of the project, oldest first', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        directories: ['/other'],
+        discovered: [discovered('s-new', 'Newer chat', 200), discovered('s-old', 'Older chat', 100)]
+      })
+
+      const workspace = yield* register(harness)
+
+      const tabs = workspace.projects[0].tabs
+      assert.deepStrictEqual(
+        tabs.map((t): ReadonlyArray<string | undefined> => [t.sessionId, t.name]),
+        [
+          ['s-old', 'Older chat'],
+          ['s-new', 'Newer chat']
+        ]
+      )
+      assert.ok(harness.log.includes('discoverSessions /other'))
+    })
+  )
+
+  it.effect(
+    'opens an imported tab in the project directory on the adapter model with safe modes',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({
+          directories: ['/other'],
+          discovered: [discovered('s-1', 'Chat', 1)]
+        })
+
+        const imported = (yield* register(harness)).projects[0].tabs[0]
+
+        assert.deepStrictEqual(
+          {
+            cwd: imported.config.cwd,
+            model: imported.config.model,
+            thinkingLevel: imported.config.thinkingLevel,
+            permissionMode: imported.config.permissionMode,
+            archived: imported.archived
+          },
+          {
+            cwd: '/other',
+            model: 'adapter-model',
+            thinkingLevel: 'medium',
+            permissionMode: 'default',
+            archived: false
+          }
+        )
+      })
+  )
+
+  it.effect('starts no session and leaves the visible tab', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        persisted: {
+          projects: [{ project: project(PROJECT_1, '/repo'), tabs: [tab(PANE_A, '/repo')] }],
+          visibleTab: PANE_A
+        },
+        directories: ['/other'],
+        discovered: [discovered('s-1', 'Chat', 1)]
+      })
+
+      const workspace = yield* register(harness)
+
+      assert.strictEqual(workspace.visibleTab, PANE_A)
+      assert.deepStrictEqual(harness.requests, [])
+    })
+  )
+
+  it.effect('does not import a session host.db records for another agent', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        directories: ['/other'],
+        storedSessionIds: ['s-superseded'],
+        discovered: [discovered('s-superseded', 'Old', 1), discovered('s-free', 'Free', 2)]
+      })
+
+      const workspace = yield* register(harness)
+
+      assert.deepStrictEqual(
+        workspace.projects[0].tabs.map((t): string | undefined => t.sessionId),
+        ['s-free']
+      )
+    })
+  )
+
+  it.effect('names a session with a blank title with a generated name', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        directories: ['/other'],
+        discovered: [discovered('s-1', '   ', 1)]
+      })
+
+      const [adjective, noun] = (yield* register(harness)).projects[0].tabs[0].name.split('-')
+
+      assert.ok((AGENT_NAME_ADJECTIVES as ReadonlyArray<string>).includes(adjective))
+      assert.ok((AGENT_NAME_NOUNS as ReadonlyArray<string>).includes(noun))
+    })
   )
 })
 

@@ -101,6 +101,18 @@ export interface AgentSession {
 }
 
 /**
+ * A conversation an agent harness holds, as {@link AgentBackend.discoverSessions} reports it.
+ * `title` is the harness's name for it and may be empty; `startedAt` is when it began, in epoch
+ * milliseconds; `model` is the model value a session that resumes it is opened with.
+ */
+export interface DiscoveredSession {
+  readonly sessionId: SessionId
+  readonly title: string
+  readonly startedAt: number
+  readonly model: string
+}
+
+/**
  * What dia adds to an agent session on top of the agent's own configuration.
  * `systemPromptAppend` is text appended to the agent's system prompt; an empty string appends
  * nothing. `pluginPaths` are absolute paths of local Claude Code plugin directories loaded into
@@ -139,7 +151,8 @@ export interface AgentSessionOptions extends SessionAdditions {
  * started afterwards use it. `disabledPermissionModes` lists the permission modes the agent's own
  * settings turn off for a session started in `cwd`; it is empty when the settings cannot be read.
  * `attachmentTypes` lists the file types a session accepts as content blocks; any other attached
- * file is sent as its path.
+ * file is sent as its path. `discoverSessions` is optional: an adapter without it imports nothing
+ * when a project is added.
  */
 export interface AgentBackend {
   readonly openSession: (
@@ -156,6 +169,11 @@ export interface AgentBackend {
   readonly setInstallPath: (path: Option.Option<string>) => Effect.Effect<void>
   readonly disabledPermissionModes: (cwd: string) => Effect.Effect<ReadonlyArray<PermissionMode>>
   readonly attachmentTypes: () => Effect.Effect<ReadonlyArray<AttachmentType>>
+  /**
+   * The conversations the harness holds whose working directory is `directory`, in any order.
+   * Never fails: empty when there are none or they cannot be read.
+   */
+  readonly discoverSessions?: (directory: string) => Effect.Effect<ReadonlyArray<DiscoveredSession>>
 }
 
 const ADAPTER_NOT_LOADED = 'The claude-code adapter is not loaded'
@@ -237,7 +255,11 @@ const backendMethods = [
 export const agentBackendProblems = (provided: Option.Option<unknown>): ReadonlyArray<string> => {
   if (Option.isNone(provided)) return [`setup did not provide "${AGENT_BACKEND_KEY}"`]
   const value = provided.value
-  return backendMethods
+  const methods =
+    Predicate.hasProperty(value, 'discoverSessions') && value.discoverSessions !== undefined
+      ? [...backendMethods, 'discoverSessions']
+      : backendMethods
+  return methods
     .filter(
       (method) => !(Predicate.hasProperty(value, method) && Predicate.isFunction(value[method]))
     )

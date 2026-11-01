@@ -6,12 +6,15 @@ import { Uuid } from './uuid'
 export const ProjectId = Uuid.pipe(Schema.brand('ProjectId'))
 export type ProjectId = typeof ProjectId.Type
 
+/** The most characters an {@link AgentName} has. */
+export const AGENT_NAME_MAX_LENGTH = 64
+
 /**
  * The name an agent shows in the overview and the content header. Decode trimmed input: the
  * schema rejects leading or trailing spaces rather than removing them.
  */
 export const AgentName = Schema.Trimmed.pipe(
-  Schema.check(Schema.isNonEmpty(), Schema.isMaxLength(64)),
+  Schema.check(Schema.isNonEmpty(), Schema.isMaxLength(AGENT_NAME_MAX_LENGTH)),
   Schema.brand('AgentName')
 )
 export type AgentName = typeof AgentName.Type

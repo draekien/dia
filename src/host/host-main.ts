@@ -148,8 +148,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
       eventHub,
       hostPlugins,
       WorkspaceFeedLive,
-      NodeFileSystem.layer,
-      NodePath.layer
+      NodeServices.layer
     )
   )
   const summaries = Layer.provide(

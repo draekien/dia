@@ -37,21 +37,29 @@ const mapTab = (
       })
 
 /**
- * Registers `project` at the end of the project order. Succeeds unchanged when a project with the
- * same `projectId` and `directoryKey` is already registered, so a resent request is harmless.
- * Fails when another project has the same `directoryKey`.
+ * Registers `project` with `tabs`, in their order, at the end of the project order. A tab whose
+ * `sessionId` another tab already holds is left out. The visible tab does not change. Succeeds
+ * unchanged when a project with the same `projectId` and `directoryKey` is already registered, so
+ * a resent request is harmless. Fails when another project has the same `directoryKey`.
  */
 export const addProject = (
   workspace: Workspace,
-  project: Project
+  project: Project,
+  tabs: ReadonlyArray<Tab> = []
 ): Result.Result<Workspace, ProjectAlreadyRegisteredError> => {
   const existing = workspace.projects.find(
     (entry) => entry.project.directoryKey === project.directoryKey
   )
   if (existing === undefined) {
+    const heldSessions = new Set(
+      workspace.projects.flatMap((entry) => entry.tabs.map((tab) => tab.sessionId))
+    )
+    const newTabs = tabs.filter(
+      (tab) => tab.sessionId === undefined || !heldSessions.has(tab.sessionId)
+    )
     return Result.succeed({
       ...workspace,
-      projects: [...workspace.projects, { project, tabs: [] }]
+      projects: [...workspace.projects, { project, tabs: newTabs }]
     })
   }
   return existing.project.projectId === project.projectId

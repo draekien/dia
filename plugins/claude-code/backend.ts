@@ -2,6 +2,7 @@ import type { AgentBackend } from '@dia/plugin'
 import { Effect } from 'effect'
 import { CLAUDE_CODE_ATTACHMENT_TYPES } from './attachments'
 import type { ClaudeInstall } from './claude-install'
+import { discoverSessions } from './discovery'
 import type { ClaudeHealth } from './health'
 import { readDisabledPermissionModes } from './permission-settings'
 import { openClaudeCodeSession } from './session'
@@ -28,5 +29,6 @@ export const makeClaudeCodeBackend = (deps: {
   setInstallPath: (path) =>
     deps.install.setOverride(path).pipe(Effect.andThen(deps.health.recheck)),
   disabledPermissionModes: readDisabledPermissionModes,
-  attachmentTypes: () => Effect.succeed(CLAUDE_CODE_ATTACHMENT_TYPES)
+  attachmentTypes: () => Effect.succeed(CLAUDE_CODE_ATTACHMENT_TYPES),
+  discoverSessions
 })

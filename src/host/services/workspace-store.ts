@@ -1,3 +1,4 @@
+import type { SessionId } from '@shared/domain/pane'
 import { Project, type ProjectEntry, Tab, type Workspace } from '@shared/domain/project'
 import { Clock, Context, Data, Effect, Layer, Option, Ref, Result, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
@@ -33,6 +34,12 @@ export class WorkspaceStore extends Context.Service<
      * fails; nothing is applied then.
      */
     readonly save: (workspace: Workspace) => Effect.Effect<void, WorkspaceWriteError>
+    /**
+     * Every session id stored for any agent, current or superseded, including agents `load` left
+     * out. A tab given one of these ids belonging to another agent makes `save` fail. Reads only.
+     * Fails with {@link WorkspaceLoadError} when `host.db` cannot be read.
+     */
+    readonly sessionIds: Effect.Effect<ReadonlySet<SessionId>, WorkspaceLoadError>
   }
 >()('WorkspaceStore') {}
 
@@ -347,7 +354,15 @@ const makeStore = Effect.gen(function* () {
     (rows) => rows.length > 0
   )
 
-  return { load, save, hasWorkspace }
+  const sessionIds = sql<{
+    readonly session_id: SessionId
+  }>`SELECT session_id FROM agent_sessions`.pipe(
+    Effect.map((rows): ReadonlySet<SessionId> => new Set(rows.map((row) => row.session_id))),
+    Effect.mapError((cause) => new WorkspaceLoadError({ cause })),
+    Effect.withSpan('WorkspaceStore.sessionIds')
+  )
+
+  return { load, save, sessionIds, hasWorkspace }
 })
 
 const importLegacyWorkspace = Effect.fn('WorkspaceStore.importLegacyWorkspace')(function* (
@@ -378,6 +393,6 @@ export const makeWorkspaceStoreLive = (userDataPath: string) =>
       yield* importLegacyWorkspace(userDataPath, store).pipe(
         Effect.mapError((cause) => new WorkspaceLoadError({ cause }))
       )
-      return WorkspaceStore.of({ load: store.load, save: store.save })
+      return WorkspaceStore.of({ load: store.load, save: store.save, sessionIds: store.sessionIds })
     })
   )

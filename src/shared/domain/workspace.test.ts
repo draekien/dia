@@ -160,6 +160,28 @@ describe('addProject', () => {
 
     expect(ok(addProject(workspace, project(1)))).toBe(workspace)
   })
+
+  it('adds the given tabs to the new project in their order', () => {
+    const result = ok(addProject(workspaceOf([[1, []]]), project(2), [tab(3), tab(2)]))
+
+    expect(result.projects[1]?.tabs.map((t) => t.config.paneId)).toEqual([paneId(3), paneId(2)])
+  })
+
+  it('leaves out a tab whose session another tab holds', () => {
+    const held = { ...tab(1), sessionId: SessionId.make('s-held') }
+    const duplicate = { ...tab(2), sessionId: SessionId.make('s-held') }
+    const free = { ...tab(3), sessionId: SessionId.make('s-free') }
+
+    const result = ok(addProject(workspaceOf([[1, [held]]]), project(2), [duplicate, free]))
+
+    expect(result.projects[1]?.tabs.map((t) => t.config.paneId)).toEqual([paneId(3)])
+  })
+
+  it('keeps the visible tab when it adds tabs', () => {
+    const result = ok(addProject(workspaceOf([[1, [tab(1)]]], paneId(1)), project(2), [tab(2)]))
+
+    expect(result.visibleTab).toBe(paneId(1))
+  })
 })
 
 describe('moveProject', () => {

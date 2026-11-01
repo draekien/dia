@@ -44,6 +44,7 @@ export {
   type AgentBackend,
   type AgentSession,
   type AgentSessionOptions,
+  type DiscoveredSession,
   type SessionAdditions,
   type SessionEnd,
   SessionFailed,
