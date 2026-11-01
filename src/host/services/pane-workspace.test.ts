@@ -9,7 +9,8 @@ import {
   type Project,
   ProjectId,
   type Tab,
-  type Workspace
+  type Workspace,
+  WorktreeNotRemovedError
 } from '@shared/domain/project'
 import type { RemovalProgress } from '@shared/domain/project-removal'
 import type { IpcEvent } from '@shared/ipc/contract'
@@ -815,6 +816,194 @@ describe('PaneWorkspace.removeProject', () => {
 
       assert.strictEqual(createError._tag, 'ProjectNotFoundError')
       assert.strictEqual(selectError._tag, 'TabNotFoundError')
+      assert.strictEqual(harness.requests.length, 0)
+    })
+  )
+})
+
+describe('PaneWorkspace.archiveTab and deleteTab', () => {
+  const worktree = {
+    path: '/worktrees/brave-otter',
+    branch: 'dia/brave-otter',
+    sourceRepo: '/repo'
+  }
+  const worktreeTab = tab(PANE_A, worktree.path, {
+    sessionId: SessionId.make('s-a'),
+    config: { ...tab(PANE_A, worktree.path).config, worktree }
+  })
+  const persisted = (): Workspace => ({
+    projects: [
+      { project: project(PROJECT_1, '/repo'), tabs: [worktreeTab] },
+      { project: project(PROJECT_2, '/other'), tabs: [tab(PANE_B, '/other')] }
+    ],
+    visibleTab: PANE_A
+  })
+  const removingGitOps = (existing: Set<string>): GitOps => ({
+    createWorktree: () => Effect.die('not called'),
+    reattachWorktree: () => Effect.die('not called'),
+    removeWorktree: (info) => Effect.sync(() => void existing.delete(info.path))
+  })
+  const stubbornGitOps = (): GitOps => ({
+    createWorktree: () => Effect.die('not called'),
+    reattachWorktree: () => Effect.die('not called'),
+    removeWorktree: () => Effect.void
+  })
+  const withWorktree = (gitOps?: (existing: Set<string>) => GitOps) =>
+    makeHarness({ persisted: persisted(), files: [worktree.path], gitOps })
+  const archive = (paneId: string) => Effect.flatMap(PaneWorkspace, (s) => s.archiveTab(paneId))
+  const remove = (paneId: string) => Effect.flatMap(PaneWorkspace, (s) => s.deleteTab(paneId))
+
+  it.effect('archiving stops the agent, removes the worktree and keeps cwd and session', () =>
+    Effect.gen(function* () {
+      const harness = withWorktree(removingGitOps)
+
+      const workspace = yield* run(harness, archive(PANE_A).pipe(Effect.andThen(current)))
+
+      assert.include(harness.log, `closePane ${PANE_A}`)
+      assert.isFalse(harness.existing.has(worktree.path))
+      assert.deepStrictEqual(workspace.projects[0].tabs[0], {
+        name: worktreeTab.name,
+        config: tab(PANE_A, worktree.path).config,
+        sessionId: worktreeTab.sessionId,
+        archived: true
+      })
+      assert.deepStrictEqual(harness.saves.at(-1), workspace)
+    })
+  )
+
+  it.effect('deleting stops the agent, removes the worktree, drops the tab and shows another', () =>
+    Effect.gen(function* () {
+      const harness = withWorktree(removingGitOps)
+
+      const workspace = yield* run(harness, remove(PANE_A).pipe(Effect.andThen(current)))
+
+      assert.include(harness.log, `closePane ${PANE_A}`)
+      assert.isFalse(harness.existing.has(worktree.path))
+      assert.deepStrictEqual(tabsOf(workspace), [PANE_B])
+      assert.strictEqual(workspace.visibleTab, PANE_B)
+      assert.deepStrictEqual(harness.saves.at(-1), workspace)
+    })
+  )
+
+  it.effect('leaves the tab unchanged when its worktree is still on disk afterwards', () =>
+    Effect.gen(function* () {
+      const harness = withWorktree(stubbornGitOps)
+
+      const [archiveError, deleteError, workspace] = yield* run(
+        harness,
+        Effect.all([Effect.flip(archive(PANE_A)), Effect.flip(remove(PANE_A)), current])
+      )
+
+      assert.deepStrictEqual(
+        [archiveError._tag, deleteError._tag],
+        ['WorktreeNotRemovedError', 'WorktreeNotRemovedError']
+      )
+      assert.deepStrictEqual(workspace, persisted())
+      assert.strictEqual(harness.saves.length, 0)
+    })
+  )
+
+  it.effect('names the worktrees plugin when it is not loaded', () =>
+    Effect.gen(function* () {
+      const error = yield* run(withWorktree(), Effect.flip(archive(PANE_A)))
+
+      assert.deepStrictEqual(
+        error,
+        new WorktreeNotRemovedError({
+          paneId: PANE_A,
+          path: worktree.path,
+          reason: 'Load the worktrees plugin to remove this worktree'
+        })
+      )
+    })
+  )
+
+  it.effect('archives and deletes a tab without a worktree without the worktrees plugin', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.all([archive(PANE_A), remove(PANE_B)]).pipe(Effect.andThen(current))
+      )
+
+      assert.deepStrictEqual(
+        workspace.projects.map((entry) => entry.tabs.map((t) => [t.config.paneId, t.archived])),
+        [[[PANE_A, true]], []]
+      )
+    })
+  )
+
+  it.effect('fails for an unknown tab', () =>
+    Effect.gen(function* () {
+      const error = yield* run(
+        makeHarness({ persisted: twoProjects() }),
+        Effect.flip(remove(PANE_NEW))
+      )
+
+      assert.strictEqual(error._tag, 'TabNotFoundError')
+    })
+  )
+
+  it.effect('refuses showing, starting or retiring the tab again while it is being archived', () =>
+    Effect.gen(function* () {
+      const release = yield* Deferred.make<void>()
+      const harness = makeHarness({
+        persisted: twoProjects(PANE_B),
+        closePane: () => Deferred.await(release)
+      })
+
+      const [selectError, deleteError] = yield* run(
+        harness,
+        Effect.gen(function* () {
+          const service = yield* PaneWorkspace
+          const archiving = yield* Effect.forkChild(service.archiveTab(PANE_A))
+          while (!harness.log.includes(`closePane ${PANE_A}`)) yield* Effect.yieldNow
+          const selectError = yield* Effect.flip(service.selectTab(PANE_A, ignore))
+          const deleteError = yield* Effect.flip(service.deleteTab(PANE_A))
+          yield* service.ensureLive(PANE_A, ignore)
+          yield* Deferred.succeed(release, undefined)
+          yield* Fiber.join(archiving)
+          return [selectError, deleteError] as const
+        })
+      )
+
+      assert.deepStrictEqual(
+        [selectError._tag, deleteError._tag],
+        ['TabNotFoundError', 'TabNotFoundError']
+      )
+      assert.strictEqual(harness.requests.length, 0)
+    })
+  )
+
+  it.effect('shows an archived tab without starting its session, and never starts it', () =>
+    Effect.gen(function* () {
+      const archived = twoProjects(PANE_B)
+      const harness = makeHarness({
+        persisted: {
+          ...archived,
+          projects: [
+            {
+              ...archived.projects[0],
+              tabs: [tab(PANE_A, '/repo', { sessionId: SessionId.make('s-a'), archived: true })]
+            },
+            archived.projects[1]
+          ]
+        },
+        directories: ['/repo']
+      })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          const service = yield* PaneWorkspace
+          yield* service.selectTab(PANE_A, ignore)
+          yield* service.ensureLive(PANE_A, ignore)
+          return yield* service.getWorkspace
+        })
+      )
+
+      assert.strictEqual(workspace.visibleTab, PANE_A)
       assert.strictEqual(harness.requests.length, 0)
     })
   )

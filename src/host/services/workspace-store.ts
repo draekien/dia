@@ -175,7 +175,7 @@ const makeStore = Effect.gen(function* () {
     }
     const visible = entries
       .flatMap((entry) => entry.tabs)
-      .find((tab) => tab.config.paneId === rows.visibleAgent && !tab.archived)
+      .find((tab) => tab.config.paneId === rows.visibleAgent)
     const workspace: Workspace = {
       projects: entries,
       visibleTab: visible === undefined ? null : visible.config.paneId

@@ -11,7 +11,9 @@ import {
   DirectoryNotFoundError,
   EMPTY_WORKSPACE,
   ProjectId,
-  ProjectNotFoundError
+  ProjectNotFoundError,
+  TabNotFoundError,
+  WorktreeNotRemovedError
 } from '@shared/domain/project'
 import { AgentItem, ProjectRemoved, Removed } from '@shared/domain/project-removal'
 import type { TranscriptWidth } from '@shared/domain/transcript-width'
@@ -51,6 +53,7 @@ import { makeDiaRpcHandlers } from './rpc-handlers'
 
 const PANE_ID = '00000000-0000-4000-8000-00000000000a'
 const OTHER_PANE_ID = '00000000-0000-4000-8000-00000000000b'
+const STUCK_PANE_ID = '00000000-0000-4000-8000-00000000000c'
 const PROJECT_ID = ProjectId.make('00000000-0000-4000-8000-0000000000aa')
 
 interface Harness {
@@ -177,6 +180,15 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       })
   })
 
+  const retire = (operation: string, paneId: string) =>
+    paneId === STUCK_PANE_ID
+      ? Effect.fail(
+          new WorktreeNotRemovedError({ paneId, path: '/worktrees/stuck', reason: 'locked' })
+        )
+      : paneId === PANE_ID
+        ? Effect.sync(() => void calls.push(`${operation}:${paneId}`))
+        : Effect.fail(new TabNotFoundError({ paneId }))
+
   const workspace = Layer.succeed(PaneWorkspace, {
     getWorkspace: Effect.succeed(EMPTY_WORKSPACE),
     registerProject: (projectId, directory) =>
@@ -202,6 +214,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
         ? Effect.fail(new ProjectNotFoundError({ projectId: request.projectId }))
         : Effect.sync(() => void calls.push(`createTab:${JSON.stringify(request)}`)),
     renameTab: (paneId, name) => Effect.sync(() => void calls.push(`renameTab:${paneId}:${name}`)),
+    archiveTab: (paneId) => retire('archiveTab', paneId),
+    deleteTab: (paneId) => retire('deleteTab', paneId),
     selectTab: (paneId) => Effect.sync(() => void calls.push(`selectTab:${paneId ?? 'none'}`)),
     setThinkingLevel: () => Effect.void,
     setPermissionMode: () => Effect.void,
@@ -718,6 +732,46 @@ describe('Dia RPC handlers', () => {
       )
 
       assert.strictEqual(error._tag, 'DirectoryNotFoundError')
+    })
+  )
+
+  it.effect('delivers the pane id of an ArchiveTab and a DeleteTab unchanged', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+      yield* withHandlers(harness, (handlers) =>
+        Effect.all([
+          handlers.ArchiveTab({ paneId: PANE_ID }),
+          handlers.DeleteTab({ paneId: PANE_ID })
+        ])
+      )
+
+      assert.deepStrictEqual(harness.calls, [`archiveTab:${PANE_ID}`, `deleteTab:${PANE_ID}`])
+    })
+  )
+
+  it.effect('succeeds an ArchiveTab and a DeleteTab for a tab that is already gone', () =>
+    Effect.gen(function* () {
+      const results = yield* withHandlers(makeHarness(), (handlers) =>
+        Effect.all([
+          Effect.result(handlers.ArchiveTab({ paneId: OTHER_PANE_ID })),
+          Effect.result(handlers.DeleteTab({ paneId: OTHER_PANE_ID }))
+        ])
+      )
+
+      assert.isTrue(results.every((result) => result._tag === 'Success'))
+    })
+  )
+
+  it.effect('returns a worktree that DeleteTab could not remove as a typed error', () =>
+    Effect.gen(function* () {
+      const error = yield* withHandlers(makeHarness(), (handlers) =>
+        Effect.flip(handlers.DeleteTab({ paneId: STUCK_PANE_ID }))
+      )
+
+      assert.deepStrictEqual(
+        [error._tag, error.path, error.reason],
+        ['WorktreeNotRemovedError', '/worktrees/stuck', 'locked']
+      )
     })
   )
 

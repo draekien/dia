@@ -314,6 +314,46 @@ describe('WorkspaceStore deletes', () => {
     )
   )
 
+  it.effect('deletes every row of a deleted agent, superseded sessions included', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store, sql } = yield* openStore(dir)
+        const deleted = (sessionId: string) =>
+          tab(PANE_A, {
+            config: {
+              ...config(PANE_A, 'F:\\wt'),
+              worktree: { path: 'F:\\wt', branch: 'dia/a', sourceRepo: 'F:\\x' }
+            },
+            sessionId: SessionId.make(sessionId)
+          })
+        yield* store.save(workspaceOf([entry(PROJECT_X, 'F:\\x', [deleted('s-1'), tab(PANE_B)])]))
+        yield* store.save(workspaceOf([entry(PROJECT_X, 'F:\\x', [deleted('s-2'), tab(PANE_B)])]))
+
+        yield* store.save(workspaceOf([entry(PROJECT_X, 'F:\\x', [tab(PANE_B)])]))
+
+        const tables = ['projects', 'agents', 'agent_worktrees', 'agent_sessions']
+        const counts = yield* Effect.forEach(tables, (table) => count(sql, table))
+        assert.deepStrictEqual(counts, [1, 1, 0, 0])
+      })
+    )
+  )
+
+  it.effect('loads an archived visible tab as the visible tab after a reopen', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const workspace = workspaceOf(
+          [entry(PROJECT_X, 'F:\\x', [tab(PANE_A), tab(PANE_B, { archived: true })])],
+          PANE_B
+        )
+        yield* (yield* openStore(dir)).store.save(workspace)
+
+        const loaded = yield* (yield* openStore(dir)).store.load
+
+        assert.deepStrictEqual(loaded, Option.some(workspace))
+      })
+    )
+  )
+
   it.effect('moves a worktree path from one tab to another in one save', () =>
     inTempDir((dir) =>
       Effect.gen(function* () {

@@ -18,6 +18,7 @@ import {
   type Tab,
   TabNotFoundError,
   type Workspace,
+  WorktreeNotRemovedError,
   WorktreeUnavailableError
 } from '@shared/domain/project'
 import {
@@ -110,9 +111,28 @@ export class PaneWorkspace extends Context.Service<
     >
     readonly renameTab: (paneId: PaneId, name: AgentName) => Effect.Effect<void, TabNotFoundError>
     /**
+     * Archives a tab: stops its session, removes its worktree, and marks it archived. Its branch
+     * and transcripts stay. Fails with `WorktreeNotRemovedError`, leaving the tab unarchived with
+     * its session stopped, when the worktree is still on disk afterwards; a later call retries.
+     * Fails with `TabNotFoundError` for an unknown tab, one whose project is being removed, or
+     * one already being archived or deleted.
+     */
+    readonly archiveTab: (
+      paneId: PaneId
+    ) => Effect.Effect<void, TabNotFoundError | WorktreeNotRemovedError>
+    /**
+     * Deletes a tab: stops its session, removes its worktree, and drops the tab with every record
+     * dia keeps of it. Its branch and transcripts stay with git and the agent harness (ADR-0046).
+     * When it was the visible tab, another tab is shown. Fails as {@link archiveTab} does, leaving
+     * the tab in place.
+     */
+    readonly deleteTab: (
+      paneId: PaneId
+    ) => Effect.Effect<void, TabNotFoundError | WorktreeNotRemovedError>
+    /**
      * Shows the tab of `paneId`, or no tab for `null`, and resumes the shown tab's recorded
-     * session when it is not running. Fails for an unknown or archived tab, or one whose project
-     * is being removed.
+     * session when it is not running and the tab is not archived. Fails for an unknown tab, or one
+     * whose project is being removed or which is being archived or deleted.
      */
     readonly selectTab: (
       paneId: PaneId | null,
@@ -179,6 +199,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
 
       const workspaceRef = yield* Ref.make(initial)
       const removingRef = yield* Ref.make<ReadonlySet<ProjectId>>(new Set())
+      const retiringRef = yield* Ref.make<ReadonlySet<PaneId>>(new Set())
       const pendingSessions = new Map<PaneId, SessionId>()
       const mutationLock = yield* Semaphore.make(1)
       const sessionStartLock = yield* Semaphore.make(1)
@@ -218,6 +239,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
 
       const isRemovingTab = (paneId: PaneId) =>
         Effect.gen(function* () {
+          if ((yield* Ref.get(retiringRef)).has(paneId)) return true
           const projectId = yield* projectOfTab(paneId)
           const removing = yield* Ref.get(removingRef)
           return Result.isSuccess(projectId) && removing.has(projectId.success)
@@ -448,6 +470,62 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       const renameTab = (paneId: PaneId, name: AgentName) =>
         mutate('renameTab', (workspace) => WorkspaceOps.renameTab(workspace, paneId, name))
 
+      const markRetiring = (paneId: PaneId) =>
+        mutationLock.withPermits(1)(
+          Effect.gen(function* () {
+            const found = WorkspaceOps.tabOf(yield* Ref.get(workspaceRef), paneId)
+            if (Result.isFailure(found) || (yield* isRemovingTab(paneId))) {
+              return yield* new TabNotFoundError({ paneId })
+            }
+            yield* Ref.update(retiringRef, (retiring) => new Set([...retiring, paneId]))
+            return found.success.tab
+          })
+        )
+
+      const clearRetiring = (paneId: PaneId) =>
+        Ref.update(retiringRef, (retiring) => {
+          const next = new Set(retiring)
+          next.delete(paneId)
+          return next
+        })
+
+      const retireTab = Effect.fn('PaneWorkspace.retireTab')(function* (
+        paneId: PaneId,
+        operation: 'archiveTab' | 'deleteTab',
+        apply: (workspace: Workspace, paneId: PaneId) => Result.Result<Workspace, TabNotFoundError>
+      ) {
+        const tab = yield* markRetiring(paneId)
+        yield* Effect.gen(function* () {
+          yield* supervisor.closePane(paneId)
+          const worktree = tab.config.worktree
+          if (worktree !== undefined) {
+            const failure = yield* removeWorktree(paneId, worktree)
+            if (Option.isSome(failure)) {
+              yield* Effect.logWarning('Left a tab in place; its worktree was not removed', {
+                paneId,
+                operation,
+                reason: failure.value
+              })
+              return yield* new WorktreeNotRemovedError({
+                paneId,
+                path: worktree.path,
+                reason: failure.value
+              })
+            }
+          }
+          yield* mutate(operation, (workspace) => apply(workspace, paneId))
+          yield* Effect.logInfo(operation === 'archiveTab' ? 'Archived tab' : 'Deleted tab', {
+            paneId,
+            removedWorktree: worktree?.path
+          })
+        }).pipe(Effect.ensuring(clearRetiring(paneId)))
+      })
+
+      const archiveTab = (paneId: PaneId) =>
+        retireTab(paneId, 'archiveTab', WorkspaceOps.archiveTab)
+
+      const deleteTab = (paneId: PaneId) => retireTab(paneId, 'deleteTab', WorkspaceOps.deleteTab)
+
       const setThinkingLevel = Effect.fn('PaneWorkspace.setThinkingLevel')(function* (
         paneId: PaneId,
         level: ThinkingLevel
@@ -512,7 +590,11 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           return
         }
 
-        const { config, sessionId } = found.success.tab
+        const { config, sessionId, archived } = found.success.tab
+        if (archived) {
+          yield* Effect.logDebug('Did not start an archived tab', { paneId })
+          return
+        }
         if (sessionId === undefined && !startFresh) {
           yield* Effect.logDebug('resumePane skipped; tab has no session to resume', { paneId })
           return
@@ -586,6 +668,8 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         removeProject,
         createTab,
         renameTab,
+        archiveTab,
+        deleteTab,
         selectTab,
         setThinkingLevel,
         setPermissionMode,

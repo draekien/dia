@@ -912,6 +912,17 @@ export interface DiaApi {
   ): Promise<void>
   createTab(request: CreateTab): void
   renameTab(paneId: string, name: AgentName): void
+  /**
+   * Archives tab `paneId`: stops its agent and removes its worktree; its branch and transcripts
+   * stay. Resolves `null` once archived, also when the tab is already gone, or the reason the
+   * worktree could not be removed, in which case the tab is left unarchived.
+   */
+  archiveTab(paneId: string): Promise<string | null>
+  /**
+   * Deletes tab `paneId`: stops its agent, removes its worktree and dia's records of it; its
+   * branch and transcripts stay. Resolves as {@link DiaApi.archiveTab} does.
+   */
+  deleteTab(paneId: string): Promise<string | null>
   selectTab(paneId: string | null): void
   getAgentSummaries(): Promise<ReadonlyArray<AgentSummary>>
   getTranscriptWidth(): Promise<TranscriptWidth>
