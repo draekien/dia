@@ -1,17 +1,24 @@
-import { agentNameFromBranch, generateAgentName } from '@shared/domain/agent-name'
+import {
+  agentNameFromBranch,
+  agentNameFromTitle,
+  generateAgentName
+} from '@shared/domain/agent-name'
 import { Errored } from '@shared/domain/attention'
-import type {
-  ConversationMessage,
-  PaneId,
-  PermissionMode,
-  SessionId,
-  ThinkingLevel
+import {
+  type ConversationMessage,
+  DEFAULT_PERMISSION_MODE,
+  DEFAULT_THINKING_LEVEL,
+  type PaneId,
+  type PermissionMode,
+  type SessionId,
+  type ThinkingLevel
 } from '@shared/domain/pane'
 import {
   type AgentName,
   type CreateTabRequest,
   DirectoryNotFoundError,
   EMPTY_WORKSPACE,
+  type Project,
   type ProjectAlreadyRegisteredError,
   type ProjectId,
   ProjectNotFoundError,
@@ -30,10 +37,12 @@ import {
   Removing,
   removalItemsOf
 } from '@shared/domain/project-removal'
+import { Uuid } from '@shared/domain/uuid'
 import * as WorkspaceOps from '@shared/domain/workspace'
 import { type IpcEvent, PaneAttentionChanged, WorkspaceChanged } from '@shared/ipc/contract'
 import {
   Context,
+  Crypto,
   Effect,
   FileSystem,
   Layer,
@@ -47,6 +56,7 @@ import {
   SubscriptionRef
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
+import type { DiscoveredSession } from '../session/agent-backend'
 import { EventHub } from './event-hub'
 import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
 import { probeProject } from './project-directory'
@@ -73,8 +83,10 @@ export class PaneWorkspace extends Context.Service<
   {
     readonly getWorkspace: Effect.Effect<Workspace>
     /**
-     * Registers `directory` as project `projectId` at the end of the project order. Succeeds
-     * unchanged when the same id already registered it. Fails when another project registered
+     * Registers `directory` as project `projectId` at the end of the project order, and imports
+     * each conversation the agent adapter holds for the directory as a tab that has not started,
+     * in the order the conversations began. The visible tab does not change. Succeeds unchanged
+     * when the same id already registered it. Fails when another project registered
      * the directory, or when it is not an existing directory.
      */
     readonly registerProject: (
@@ -180,7 +192,7 @@ const WORKTREES_PLUGIN_NOT_LOADED = 'Load the worktrees plugin to remove this wo
  * which tab worktrees are created. Requires {@link PaneSupervisor}, {@link WorkspaceStore},
  * {@link TranscriptReader}, {@link EventHub}, {@link HostPlugins} (for the worktree and agent
  * backend services used to remove a project), {@link WorkspaceFeed} (which it keeps current),
- * `FileSystem` and `Path`.
+ * `FileSystem`, `Path` and `Crypto`.
  */
 export const makePaneWorkspaceLive = (worktreesRoot: string) =>
   Layer.effect(
@@ -193,6 +205,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       const plugins = yield* HostPlugins
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
+      const crypto = yield* Crypto.Crypto
 
       const persisted = yield* store.load
       const initial = Option.match(persisted, {
@@ -281,6 +294,29 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
 
       const getWorkspace = SubscriptionRef.get(workspaceRef)
 
+      const importedTab = Effect.fn('PaneWorkspace.importedTab')(function* (
+        project: Project,
+        session: DiscoveredSession
+      ) {
+        const paneId = Uuid.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie))
+        const name = yield* Option.match(agentNameFromTitle(session.title), {
+          onSome: Effect.succeed,
+          onNone: () => generateAgentName
+        })
+        return {
+          name,
+          config: {
+            paneId,
+            cwd: project.directory,
+            model: session.model,
+            thinkingLevel: DEFAULT_THINKING_LEVEL,
+            permissionMode: DEFAULT_PERMISSION_MODE
+          },
+          sessionId: session.sessionId,
+          archived: false
+        } satisfies Tab
+      })
+
       const registerProject = Effect.fn('PaneWorkspace.registerProject')(function* (
         projectId: ProjectId,
         directory: string
@@ -293,8 +329,15 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           Effect.provideService(FileSystem.FileSystem, fs),
           Effect.provideService(Path.Path, path)
         )
-        yield* mutate('registerProject', (workspace) => WorkspaceOps.addProject(workspace, project))
-        yield* Effect.logInfo('Registered project', { projectId, directory })
+        const sessions = yield* transcriptReader.discoverSessions(project.directory)
+        const tabs = yield* Effect.forEach(
+          [...sessions].sort((a, b) => a.startedAt - b.startedAt),
+          (session) => importedTab(project, session)
+        )
+        yield* mutate('registerProject', (workspace) =>
+          WorkspaceOps.addProject(workspace, project, tabs)
+        )
+        yield* Effect.logInfo('Registered project', { projectId, directory, imported: tabs.length })
       })
 
       const moveProject = (projectId: ProjectId, toIndex: number) =>

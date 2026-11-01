@@ -80,3 +80,10 @@ export const agentNameFromBranch = (branch: string | undefined): Option.Option<A
   branch?.startsWith('dia/') === true
     ? Schema.decodeUnknownOption(AgentName)(branch.slice('dia/'.length))
     : Option.none()
+
+/**
+ * The agent name for a conversation an agent harness titled `title`: trimmed and cut to the
+ * longest {@link AgentName}. `None` when nothing is left.
+ */
+export const agentNameFromTitle = (title: string): Option.Option<AgentName> =>
+  Schema.decodeUnknownOption(AgentName)(title.trim().slice(0, 64).trim())

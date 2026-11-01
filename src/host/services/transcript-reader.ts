@@ -1,11 +1,12 @@
 import type { ConversationMessage, SessionId } from '@shared/domain/pane'
 import { Context, Effect, Layer } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import { resolveAgentBackend } from '../session/agent-backend'
+import { type DiscoveredSession, resolveAgentBackend } from '../session/agent-backend'
 
 /**
- * Service tag for reading a pane's past conversation without spawning a live session. Depend on
- * this to display a restored pane's history on startup; provide it via {@link TranscriptReaderLive}.
+ * Service tag for reading a pane's past conversation, and the conversations a directory holds,
+ * without spawning a live session. Depend on this to display a restored pane's history on startup
+ * or to import a project's conversations; provide it via {@link TranscriptReaderLive}.
  */
 export class TranscriptReader extends Context.Service<
   TranscriptReader,
@@ -20,6 +21,14 @@ export class TranscriptReader extends Context.Service<
       sessionId: SessionId,
       cwd: string
     ) => Effect.Effect<ReadonlyArray<ConversationMessage>>
+    /**
+     * The conversations the loaded agent adapter holds for `directory`, in any order. Empty,
+     * with a log line, when no adapter is loaded or the adapter cannot discover sessions. Never
+     * fails.
+     */
+    readonly discoverSessions: (
+      directory: string
+    ) => Effect.Effect<ReadonlyArray<DiscoveredSession>>
   }
 >()('TranscriptReader') {}
 
@@ -38,6 +47,16 @@ export const TranscriptReaderLive = Layer.effect(
       ) {
         const backend = yield* resolveAgentBackend(plugins)
         return yield* backend.readHistory(sessionId, cwd)
+      }),
+      discoverSessions: Effect.fn('TranscriptReader.discoverSessions')(function* (
+        directory: string
+      ) {
+        const backend = yield* resolveAgentBackend(plugins)
+        if (backend.discoverSessions === undefined) {
+          yield* Effect.logDebug('The agent backend cannot discover sessions', { directory })
+          return []
+        }
+        return yield* backend.discoverSessions(directory)
       })
     }
   })
