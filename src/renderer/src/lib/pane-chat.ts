@@ -5,6 +5,7 @@ import {
   type PaneError,
   type ParkedState
 } from '@shared/domain/attention'
+import type { BackgroundTask } from '@shared/domain/background-task'
 import type { CompactionFailure, ContextUsage } from '@shared/domain/context-usage'
 import type { OutgoingMessage } from '@shared/domain/message-queue'
 import type { ConversationMessage } from '@shared/domain/pane'
@@ -14,6 +15,7 @@ import type {
   PaneAssistantTextDelta,
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
+  PaneBackgroundTasksChanged,
   PaneCheckpointAvailable,
   PaneCompactionFailed,
   PaneContextUsageChanged,
@@ -131,7 +133,8 @@ export interface PaneMessage {
  * thinking), or is null when it has none worth naming. `contextUsage` is the latest reading of
  * how full the pane's context window is, or null before the first reading arrives.
  * `compactionFailure` says why the last requested compaction did not run, until the next send or
- * compaction. This is the sole contract consumers depend on — how
+ * compaction. `backgroundTasks` is the work the agent started that runs outside its turns, empty
+ * when none runs. This is the sole contract consumers depend on — how
  * streaming deltas are assembled into it is private to {@link reducePaneChat}.
  */
 export interface PaneChatState {
@@ -144,6 +147,7 @@ export interface PaneChatState {
   readonly turnStatus: string | null
   readonly contextUsage: ContextUsage | null
   readonly compactionFailure: CompactionFailure | null
+  readonly backgroundTasks: ReadonlyArray<BackgroundTask>
 }
 
 /**
@@ -159,6 +163,7 @@ export type PaneStreamEvent =
   | PaneToolCallUpdated
   | PaneTurnStatusChanged
   | PaneSessionNotice
+  | PaneBackgroundTasksChanged
   | PaneMessageAppended
   | PaneAttentionChanged
   | PaneSlashCommandsWarming
@@ -189,7 +194,8 @@ export const emptyPaneChatState: PaneChatState = {
   queueHeld: false,
   turnStatus: null,
   contextUsage: null,
-  compactionFailure: null
+  compactionFailure: null,
+  backgroundTasks: []
 }
 
 /**
@@ -218,7 +224,8 @@ export const paneChatStateFromHistory = (
   queueHeld: false,
   turnStatus: null,
   contextUsage: null,
-  compactionFailure: null
+  compactionFailure: null,
+  backgroundTasks: []
 })
 
 const appendSentMessages = (state: PaneChatState, event: PaneUserMessagesSent): PaneChatState => {
@@ -511,7 +518,8 @@ const compactConversation = (
  * anchor) onto the earliest user turn still lacking one, and
  * `PaneToolCallUpdated` sets a running row's input, elapsed time or detail line, `PaneSessionNotice`
  * appends a `notice` divider, and `PaneTurnStatusChanged` sets `turnStatus`, which the next
- * `PaneUserMessagesSent` also clears.
+ * `PaneUserMessagesSent` also clears. `PaneBackgroundTasksChanged` replaces `backgroundTasks`; a
+ * crash and a rewind empty it, because both end the session's process and its tasks with it.
  * `now`, the event's arrival time in epoch milliseconds, stamps `startedAt` on each new part and
  * `endedAt` on each completed tool call; omit it and parts carry no times.
  * `PaneRewoundToCheckpoint` truncates the transcript back to (and excluding) the
@@ -577,7 +585,9 @@ export const reducePaneChat = (
           ...state,
           messages: [...state.messages, errorMessage(state, event.attention.error)],
           isLoading: false,
-          ...(event.attention._tag === 'Crashed' ? { queued: [], queueHeld: false } : {})
+          ...(event.attention._tag === 'Crashed'
+            ? { queued: [], queueHeld: false, backgroundTasks: [] }
+            : {})
         }
       }
       if (isParkedState(event.attention)) {
@@ -602,7 +612,8 @@ export const reducePaneChat = (
         slashCommands: state.slashCommands,
         queued: state.queued,
         queueHeld: state.queueHeld,
-        contextUsage: state.contextUsage
+        contextUsage: state.contextUsage,
+        backgroundTasks: state.backgroundTasks
       }
     case 'PaneCheckpointAvailable':
       return {
@@ -610,7 +621,9 @@ export const reducePaneChat = (
         messages: anchorCheckpoint(state.messages, event.messageUuid, event.resumeAnchorUuid)
       }
     case 'PaneRewoundToCheckpoint':
-      return rewindToCheckpoint(state, event.messageUuid)
+      return rewindToCheckpoint({ ...state, backgroundTasks: [] }, event.messageUuid)
+    case 'PaneBackgroundTasksChanged':
+      return { ...state, backgroundTasks: event.tasks }
     case 'PaneContextUsageChanged':
       return { ...state, contextUsage: event.usage }
     case 'PaneCompactionFailed':

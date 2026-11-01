@@ -44,6 +44,7 @@ import {
   PaneAssistantTextDelta,
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
+  PaneBackgroundTasksChanged,
   PaneCheckpointAvailable,
   PaneCompactionFailed,
   PaneContextUsageChanged,
@@ -247,6 +248,9 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
       ),
       Match.tag('ToolCallUpdated', 'TurnStatusChanged', 'SessionNotice', (m) =>
         Option.some(turnProgressEvent(paneId, m))
+      ),
+      Match.tag('BackgroundTasksChanged', (m) =>
+        Option.some<IpcEvent>(PaneBackgroundTasksChanged.make({ paneId, tasks: m.tasks }))
       ),
       Match.tag('PermissionRequested', (m) =>
         Option.some<IpcEvent>(

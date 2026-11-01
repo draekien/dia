@@ -1,4 +1,5 @@
 import { PaneError, PermissionUpdate, Question } from '@shared/domain/attention'
+import { BackgroundTask } from '@shared/domain/background-task'
 import { CompactionFailure, ContextUsage } from '@shared/domain/context-usage'
 import { OutgoingMessage } from '@shared/domain/message-queue'
 import { ConversationMessage, PermissionMode, SessionId } from '@shared/domain/pane'
@@ -47,6 +48,10 @@ export const TurnStatusChanged = Schema.TaggedStruct('TurnStatusChanged', {
 })
 /** Emitted by a pane's agent session for an event the transcript should record as a one-line notice (a model fallback, a usage-limit warning, a message from Claude Code itself). */
 export const SessionNotice = Schema.TaggedStruct('SessionNotice', { text: Schema.String })
+/** Emitted by a pane's agent session when the set of work running outside its turns changes; `tasks` is the full set, empty when none runs. */
+export const BackgroundTasksChanged = Schema.TaggedStruct('BackgroundTasksChanged', {
+  tasks: Schema.Array(BackgroundTask)
+})
 /** Emitted by a pane's agent session when the agent needs the user to approve or deny a tool call. `suggestions`, when present, are the SDK's offered "always allow" rules for this call. The renderer's reply should be with a `ResolvePermission` message carrying the same `requestId`. */
 export const PermissionRequested = Schema.TaggedStruct('PermissionRequested', {
   requestId: Schema.String,
@@ -146,6 +151,7 @@ export const OutboundMessage = Schema.Union([
   ToolCallUpdated,
   TurnStatusChanged,
   SessionNotice,
+  BackgroundTasksChanged,
   PermissionRequested,
   QuestionRequested,
   PlanReviewRequested,

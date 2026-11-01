@@ -40,6 +40,7 @@ const paneStreamEvents = (paneId: string): Stream.Stream<PaneStreamEvent> =>
           window.dia.onToolCallUpdated(push),
           window.dia.onTurnStatusChanged(push),
           window.dia.onSessionNotice(push),
+          window.dia.onBackgroundTasksChanged(push),
           window.dia.onMessageAppended(push),
           window.dia.onAttentionChanged(push),
           window.dia.onSlashCommandsWarming(push),

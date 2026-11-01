@@ -107,6 +107,7 @@ import {
   filterProjectEntries,
   removeToken
 } from './attachment-draft'
+import { BackgroundTasks } from './background-tasks'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import {
   type ComposerAction,
@@ -1073,15 +1074,18 @@ function PaneChat({
                           disabledModes={disabledPermissionModes}
                           onChange={onPermissionModeChange}
                         />
-                        <ContextDonut
-                          usage={chat.contextUsage}
-                          failure={chat.compactionFailure}
-                          compacting={compacting}
-                          running={isLoading}
-                          onCompact={() =>
-                            sendMessage({ text: COMPACT_COMMAND, mode: defaultSendMode })
-                          }
-                        />
+                        <div className="ml-auto flex items-center gap-1">
+                          <BackgroundTasks tasks={chat.backgroundTasks} />
+                          <ContextDonut
+                            usage={chat.contextUsage}
+                            failure={chat.compactionFailure}
+                            compacting={compacting}
+                            running={isLoading}
+                            onCompact={() =>
+                              sendMessage({ text: COMPACT_COMMAND, mode: defaultSendMode })
+                            }
+                          />
+                        </div>
                       </InputGroupAddon>
                       {attachments.drafts.length > 0 && (
                         <InputGroupAddon
