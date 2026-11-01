@@ -1,6 +1,13 @@
 import { Button, cn } from '@dia/renderer-plugin'
 import { ArrowDownIcon } from 'lucide-react'
-import { type ComponentProps, type ReactNode, useLayoutEffect, useRef, useState } from 'react'
+import {
+  type ComponentProps,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState
+} from 'react'
 
 const PREVIOUS_TURN_PEEK_PX = 64
 const AT_END_THRESHOLD_PX = 8
@@ -55,18 +62,45 @@ export function TranscriptItem({
  *
  * It follows the end of the transcript while the user is at the end, stops following when the
  * user scrolls away, and shows a scroll-to-end button until they return. `contentClassName` sets
- * the column that both the transcript and the overlay are laid out in. The parent must give the
- * scroller a height.
+ * the column that both the transcript and the overlay are laid out in; `shiftLeft` moves that
+ * column left by that many px. With `centred` the overlay sits a little above the pane's middle
+ * with `lead` above it, and moves to the bottom edge when `centred` turns off. Pass `centred`
+ * null while it is not yet known: the overlay stays hidden, and the first known position is
+ * shown without moving. `aside` renders
+ * over the pane, positioned against it. `onWidthChange` receives the transcript's content width
+ * in px whenever it changes. The parent must give the scroller a height.
  */
 export function TranscriptScroller({
   children,
   overlay,
-  contentClassName
+  contentClassName,
+  shiftLeft = 0,
+  centred = false,
+  lead,
+  aside,
+  onWidthChange
 }: {
   children: ReactNode
   overlay: ReactNode
   contentClassName?: string
+  shiftLeft?: number
+  centred?: boolean | null
+  lead?: ReactNode
+  aside?: ReactNode
+  onWidthChange?: (width: number) => void
 }) {
+  const known = centred !== null
+  const [settled, setSettled] = useState(false)
+  useEffect(() => {
+    if (!known) return
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => setSettled(true)))
+    return () => cancelAnimationFrame(frame)
+  }, [known])
+  const onWidthChangeRef = useRef(onWidthChange)
+  useLayoutEffect(() => {
+    onWidthChangeRef.current = onWidthChange
+  })
+  const columnStyle = { translate: shiftLeft === 0 ? undefined : `${-shiftLeft}px 0` }
   const viewportRef = useRef<HTMLElement>(null)
   const itemsRef = useRef<HTMLDivElement>(null)
   const spacerRef = useRef<HTMLDivElement>(null)
@@ -91,6 +125,9 @@ export function TranscriptScroller({
 
     let lastAnchor = lastAnchorRow()
     let lastSpace = -1
+    let lastWidth = -1
+    const padding = getComputedStyle(viewport)
+    const horizontalPadding = parseFloat(padding.paddingLeft) + parseFloat(padding.paddingRight)
     const layout = (): void => {
       const anchor = lastAnchorRow()
       if (anchor !== lastAnchor) followingRef.current = true
@@ -103,6 +140,11 @@ export function TranscriptScroller({
         itemsBottom: items.getBoundingClientRect().bottom - contentTop,
         viewportHeight: viewport.clientHeight
       })
+      const width = viewport.clientWidth - horizontalPadding
+      if (width !== lastWidth) {
+        lastWidth = width
+        onWidthChangeRef.current?.(width)
+      }
       viewport.style.scrollPaddingBottom = `${overlayHeight}px`
       if (space !== lastSpace) {
         spacer.style.height = `${space}px`
@@ -139,14 +181,20 @@ export function TranscriptScroller({
   }
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="relative min-h-0 flex-1 [container-type:size]">
       <section
         ref={viewportRef}
         aria-label="Messages"
         onScroll={trackEnd}
         className="size-full scrollbar-app overflow-y-auto overscroll-contain px-1.5"
       >
-        <div className={contentClassName}>
+        <div
+          className={cn(
+            settled && 'transition-[translate] duration-200 ease-out motion-reduce:transition-none',
+            contentClassName
+          )}
+          style={columnStyle}
+        >
           <div
             ref={itemsRef}
             role="log"
@@ -158,13 +206,26 @@ export function TranscriptScroller({
           <div ref={spacerRef} aria-hidden />
         </div>
       </section>
-      <div ref={overlayRef} className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-4">
+      <div
+        ref={overlayRef}
+        data-centred={centred || undefined}
+        className={cn(
+          'pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-4 data-centred:translate-y-[calc(-55cqh+50%)]',
+          centred === null && 'invisible',
+          settled && 'transition-[translate] duration-250 ease-out motion-reduce:transition-none'
+        )}
+      >
         <div
           className={cn(
-            'pointer-events-auto relative bg-background before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-4 before:bg-linear-to-t before:from-background',
+            'pointer-events-auto relative bg-background',
+            settled && 'transition-[translate] duration-200 ease-out motion-reduce:transition-none',
+            !centred &&
+              'before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-4 before:bg-linear-to-t before:from-background',
             contentClassName
           )}
+          style={columnStyle}
         >
+          {centred && lead}
           <Button
             type="button"
             variant="outline"
@@ -180,6 +241,7 @@ export function TranscriptScroller({
           {overlay}
         </div>
       </div>
+      {aside}
     </div>
   )
 }

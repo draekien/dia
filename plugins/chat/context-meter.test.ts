@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   contextColor,
+  contextNeedsAttention,
   contextPercent,
   contextTokensExact,
   contextTokensLine
@@ -74,5 +75,21 @@ describe('context meter text', () => {
 
   it('caps the percentage at 100 when the reading exceeds the window', () => {
     expect(contextPercent({ totalTokens: 210_000, maxTokens: 200_000 })).toBe(100)
+  })
+})
+
+describe('contextNeedsAttention', () => {
+  const at = (totalTokens: number) => ({ totalTokens, maxTokens: 200_000 })
+
+  it('stays quiet just below full amber', () => {
+    expect(contextNeedsAttention(at(149_999), false)).toBe(false)
+  })
+
+  it('warns from full amber, 75% of the window', () => {
+    expect(contextNeedsAttention(at(150_000), false)).toBe(true)
+  })
+
+  it('warns at any usage after a failed compaction', () => {
+    expect(contextNeedsAttention(at(10_000), true)).toBe(true)
   })
 })

@@ -3,6 +3,7 @@ import { tabOf } from '@shared/domain/workspace'
 import { Result } from 'effect'
 import { RulerIcon } from 'lucide-react'
 import { useView, useWorkspace } from '../plugin-api'
+import { RailToggle } from './session-rail'
 import { TranscriptWidthToggle } from './transcript-width-toggle'
 import {
   Breadcrumb,
@@ -86,6 +87,7 @@ export function TabHeader() {
       {newAgentProject !== undefined && <Crumbs project={newAgentProject} page="New agent" />}
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {tab !== undefined && <TranscriptWidthButton />}
+        {tab !== undefined && <RailToggle />}
         <WindowStatus />
       </div>
     </div>

@@ -38,6 +38,13 @@ export const contextColor = (usage: ContextUsage, compactFailed: boolean): strin
   return blend('oklch', RED, AMBER, (fraction - AMBER_FULL) / (red - AMBER_FULL))
 }
 
+/**
+ * Whether `usage` warrants a warning: the context is full amber (75%) or more, or the last
+ * compaction failed (`compactFailed`). Use it to decide whether to warn while the meter is hidden.
+ */
+export const contextNeedsAttention = (usage: ContextUsage, compactFailed: boolean): boolean =>
+  compactFailed || contextFraction(usage) >= AMBER_FULL
+
 /** The whole percentage of the context window `usage` fills, for example `88`. */
 export const contextPercent = (usage: ContextUsage): number =>
   Math.round(contextFraction(usage) * 100)

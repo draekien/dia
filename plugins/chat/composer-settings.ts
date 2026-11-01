@@ -3,7 +3,7 @@ import type { PermissionMode, ThinkingLevel } from '@shared/domain/pane'
 import { cva } from 'class-variance-authority'
 
 /**
- * Classes for a setting trigger in the composer's header row: borderless muted text, or
+ * Classes for a setting trigger on the line under the composer: borderless muted text, or
  * foreground weight with `emphasis: 'foreground'` for a setting the user should notice.
  */
 export const composerSettingTrigger = cva(
@@ -19,17 +19,13 @@ export const composerSettingTrigger = cva(
   }
 )
 
-/** The header row text for a pane's thinking `level`, for example `Medium effort`. */
+/** The settings line text for a pane's thinking `level`, for example `Medium effort`. */
 export const thinkingSettingLabel = (level: ThinkingLevel): string => {
   if (level === 'adaptive') return 'Adaptive thinking'
   if (level === 'off') return 'Thinking off'
   return `${thinkingLevelLabel(level)} effort`
 }
 
-/** The header row text for a pane's permission `mode`, for example `Auto mode`. */
+/** The settings line text for a pane's permission `mode`, for example `Auto mode`. */
 export const permissionSettingLabel = (mode: PermissionMode): string =>
   `${permissionModeLabel(mode)} mode`
-
-/** Whether permission `mode` lets the agent act without asking for approval. */
-export const skipsApproval = (mode: PermissionMode): boolean =>
-  mode === 'auto' || mode === 'bypassPermissions'

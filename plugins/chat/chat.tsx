@@ -17,6 +17,7 @@ export function Chat() {
   const found = tabOf(workspace, view.paneId)
   if (Result.isFailure(found)) return null
   const { config, archived } = found.success.tab
+  const { project } = found.success
   if (archived)
     return <ArchivedTranscript key={config.paneId} paneId={config.paneId} cwd={config.cwd} />
   return (
@@ -28,6 +29,8 @@ export function Chat() {
       thinkingLevel={config.thinkingLevel}
       permissionMode={config.permissionMode}
       focusComposer={focusComposer}
+      projectName={project.displayName}
+      branch={config.worktree?.branch}
     />
   )
 }

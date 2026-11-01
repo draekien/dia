@@ -35,11 +35,11 @@ composer chips ──SendMessage{text, attachments}──▶ host ──sendText
 
 ```text
 ┌ InputGroup ────────────────────────────────────────────┐
-│ header row (model, effort, mode, donut)                │  block-start
 │ [▢ shot.png ×] [▤ docs/adr ×] [▤ F:\other\a.ts ×]      │  block-start, wraps, only when chips exist
 │ textarea                                               │
 │ [+]                                            [Send]  │  block-end
 └────────────────────────────────────────────────────────┘
+  settings line (model, effort, mode)
 ```
 
 - Paste: when `clipboardData.files` is non-empty, the files are attached and the text paste is suppressed; otherwise the paste is plain text.

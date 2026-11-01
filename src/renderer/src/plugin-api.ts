@@ -26,7 +26,15 @@ import {
   workspaceAtom
 } from './lib/workspace-atoms'
 
+export { SessionRail } from './components/session-rail'
 export * from './components/ui/sidebar'
+export {
+  addRailCard,
+  type RailCard,
+  revealRailCard,
+  useRailCardShown,
+  useRailLayout
+} from './lib/session-rail'
 export {
   fillSlot,
   MAIN,

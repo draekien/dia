@@ -1,5 +1,7 @@
 # Context donut
 
+> Superseded by `docs/designs/session-rail.md`: the donut is removed, and its popover content is the session rail's Context card (`plugins/chat/context-card.tsx`). The colour rules below still apply to the card's meter.
+
 Issue #86, part of the composer redesign #81. The data comes from #84 (`docs/designs/context-usage.md`); the visual rules are in `DESIGN.md` > Components > Composer.
 
 ## Colour
