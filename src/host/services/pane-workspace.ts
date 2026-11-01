@@ -18,7 +18,6 @@ import {
   type CreateTabRequest,
   DirectoryNotFoundError,
   EMPTY_WORKSPACE,
-  type Project,
   type ProjectAlreadyRegisteredError,
   type ProjectId,
   ProjectNotFoundError,
@@ -295,7 +294,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       const getWorkspace = SubscriptionRef.get(workspaceRef)
 
       const importedTab = Effect.fn('PaneWorkspace.importedTab')(function* (
-        project: Project,
+        directory: string,
         session: DiscoveredSession
       ) {
         const paneId = Uuid.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie))
@@ -307,7 +306,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           name,
           config: {
             paneId,
-            cwd: project.directory,
+            cwd: directory,
             model: session.model,
             thinkingLevel: DEFAULT_THINKING_LEVEL,
             permissionMode: DEFAULT_PERMISSION_MODE
@@ -332,7 +331,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         const sessions = yield* transcriptReader.discoverSessions(project.directory)
         const tabs = yield* Effect.forEach(
           [...sessions].sort((a, b) => a.startedAt - b.startedAt),
-          (session) => importedTab(project, session)
+          (session) => importedTab(project.directory, session)
         )
         yield* mutate('registerProject', (workspace) =>
           WorkspaceOps.addProject(workspace, project, tabs)

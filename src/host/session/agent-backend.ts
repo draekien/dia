@@ -248,8 +248,6 @@ const backendMethods = [
   'attachmentTypes'
 ] as const
 
-const optionalBackendMethods = ['discoverSessions'] as const
-
 /**
  * Lists what keeps `provided`, a value read under {@link AGENT_BACKEND_KEY}, from being an
  * {@link AgentBackend}, one sentence per problem. Returns an empty list when it is one.
@@ -257,10 +255,10 @@ const optionalBackendMethods = ['discoverSessions'] as const
 export const agentBackendProblems = (provided: Option.Option<unknown>): ReadonlyArray<string> => {
   if (Option.isNone(provided)) return [`setup did not provide "${AGENT_BACKEND_KEY}"`]
   const value = provided.value
-  const optionalMethods = optionalBackendMethods.filter((method) =>
-    Predicate.hasProperty(value, method)
-  )
-  return [...backendMethods, ...optionalMethods]
+  const methods = Predicate.hasProperty(value, 'discoverSessions')
+    ? [...backendMethods, 'discoverSessions']
+    : backendMethods
+  return methods
     .filter(
       (method) => !(Predicate.hasProperty(value, method) && Predicate.isFunction(value[method]))
     )
