@@ -9,7 +9,7 @@ import {
   QuestionResponse
 } from '../domain/attention'
 import type { ActivityInfo, ActivityNotFound } from '../domain/background-activity'
-import { ContextUsage } from '../domain/context-usage'
+import { CompactionFailure, ContextUsage } from '../domain/context-usage'
 import { MessageQueueSnapshot, OutgoingMessage, SendMode } from '../domain/message-queue'
 import { ModelCatalogSnapshot } from '../domain/model'
 import {
@@ -558,6 +558,17 @@ export const PaneContextUsageChanged = Schema.TaggedStruct('PaneContextUsageChan
 export type PaneContextUsageChanged = typeof PaneContextUsageChanged.Type
 
 /**
+ * Event pushed to the renderer when a compaction requested in pane `paneId` did not run. `failure`
+ * says why and carries the text to show.
+ */
+export const PaneCompactionFailed = Schema.TaggedStruct('PaneCompactionFailed', {
+  paneId: Uuid,
+  failure: CompactionFailure
+})
+/** A {@link PaneCompactionFailed} event. */
+export type PaneCompactionFailed = typeof PaneCompactionFailed.Type
+
+/**
  * Event pushed to the renderer whenever the workspace changes: a project was registered, moved
  * or removed, a tab was created, renamed or changed, or the visible tab changed. `workspace` is
  * the full current workspace and replaces the renderer's copy. Never replayed.
@@ -697,6 +708,7 @@ export const IpcEvent = Schema.Union([
   PaneUserMessagesSent,
   PaneModelChanged,
   PaneContextUsageChanged,
+  PaneCompactionFailed,
   WorkspaceChanged,
   AgentSummaryChanged,
   AgentSummariesReplaced,
@@ -905,6 +917,7 @@ export interface DiaApi {
   onUserMessagesSent(listener: (event: PaneUserMessagesSent) => void): () => void
   onModelChanged(listener: (event: PaneModelChanged) => void): () => void
   onContextUsageChanged(listener: (event: PaneContextUsageChanged) => void): () => void
+  onCompactionFailed(listener: (event: PaneCompactionFailed) => void): () => void
   onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void
   onAssistantThinkingDelta(listener: (event: PaneAssistantThinkingDelta) => void): () => void
   onToolCallStarted(listener: (event: PaneToolCallStarted) => void): () => void

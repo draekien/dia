@@ -1,5 +1,5 @@
 import { PaneError, PermissionUpdate, Question } from '@shared/domain/attention'
-import { ContextUsage } from '@shared/domain/context-usage'
+import { CompactionFailure, ContextUsage } from '@shared/domain/context-usage'
 import { OutgoingMessage } from '@shared/domain/message-queue'
 import { ConversationMessage, PermissionMode, SessionId } from '@shared/domain/pane'
 import { ParkCause } from '@shared/domain/parking'
@@ -131,6 +131,11 @@ export const ContextUsageChanged = Schema.TaggedStruct('ContextUsageChanged', {
   usage: ContextUsage
 })
 
+/** Emitted by a pane's agent session when a compaction it was asked for did not run. */
+export const CompactionFailed = Schema.TaggedStruct('CompactionFailed', {
+  failure: CompactionFailure
+})
+
 /** The full set of events a pane's agent session may emit. Match on `_tag` to translate each into renderer events and attention transitions. */
 export const OutboundMessage = Schema.Union([
   AssistantMessageReceived,
@@ -159,6 +164,7 @@ export const OutboundMessage = Schema.Union([
   MessageQueueChanged,
   UserMessagesSent,
   ModelChanged,
-  ContextUsageChanged
+  ContextUsageChanged,
+  CompactionFailed
 ])
 export type OutboundMessage = typeof OutboundMessage.Type

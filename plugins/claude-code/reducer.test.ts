@@ -610,6 +610,30 @@ describe('makeSessionEventReducer — activity line states', () => {
     })
   })
 
+  it('reports a failed compaction with its error', () => {
+    const emitted = stepOnce(
+      system('status', { status: null, compact_result: 'failed', compact_error: 'prompt too long' })
+    )
+    expect(emitted).toContainEqual({
+      _tag: 'CompactionFailed',
+      failure: { reason: 'failed', message: 'Compaction failed: prompt too long' }
+    })
+  })
+
+  it('reports a conversation too short to compact as nothing to compact', () => {
+    const emitted = stepOnce(
+      system('status', {
+        status: null,
+        compact_result: 'failed',
+        compact_error: 'Not enough messages to compact.'
+      })
+    )
+    expect(emitted).toContainEqual({
+      _tag: 'CompactionFailed',
+      failure: { reason: 'nothingToCompact', message: 'Not enough messages to compact.' }
+    })
+  })
+
   it('shows the thinking-token estimate in thousands above 999 tokens', () => {
     const emitted = stepOnce(
       system('thinking_tokens', { estimated_tokens: 1234, estimated_tokens_delta: 100 })

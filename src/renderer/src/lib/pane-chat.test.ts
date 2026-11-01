@@ -15,6 +15,7 @@ import {
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
   PaneCheckpointAvailable,
+  PaneCompactionFailed,
   PaneContextUsageChanged,
   PaneConversationCompacted,
   PaneConversationReset,
@@ -110,6 +111,7 @@ describe('paneChatStateFromHistory', () => {
       queueHeld: false,
       turnStatus: null,
       contextUsage: null,
+      compactionFailure: null,
       messages: [
         { id: `${PANE}:history:0`, role: 'user', parts: [{ type: 'text', content: 'hi' }] },
         { id: `${PANE}:history:1`, role: 'assistant', parts: [{ type: 'text', content: 'hello' }] }
@@ -126,7 +128,8 @@ describe('paneChatStateFromHistory', () => {
       queued: [],
       queueHeld: false,
       turnStatus: null,
-      contextUsage: null
+      contextUsage: null,
+      compactionFailure: null
     })
   })
 
@@ -251,6 +254,7 @@ describe('reducePaneChat: text deltas', () => {
       queueHeld: false,
       turnStatus: null,
       contextUsage: null,
+      compactionFailure: null,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'done' }] }
       ]
@@ -306,6 +310,7 @@ describe('reducePaneChat: tool calls', () => {
       queueHeld: false,
       turnStatus: null,
       contextUsage: null,
+      compactionFailure: null,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'let me look' }] }
       ]
@@ -328,6 +333,7 @@ describe('reducePaneChat: tool calls', () => {
       queueHeld: false,
       turnStatus: null,
       contextUsage: null,
+      compactionFailure: null,
       messages: [
         {
           id: '0:assistant',
@@ -364,6 +370,7 @@ describe('reducePaneChat: tool calls', () => {
       queueHeld: false,
       turnStatus: null,
       contextUsage: null,
+      compactionFailure: null,
       messages: [
         {
           id: '0:assistant',
@@ -441,6 +448,7 @@ describe('reducePaneChat: PaneMessageAppended backstop', () => {
       queueHeld: false,
       turnStatus: null,
       contextUsage: null,
+      compactionFailure: null,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'streamed' }] }
       ]
@@ -704,6 +712,32 @@ describe('reducePaneChat: context usage', () => {
     const result = reducePaneChat(read, conversationReset())
 
     expect(result.contextUsage).toEqual(usage)
+  })
+})
+
+describe('reducePaneChat: compaction failure', () => {
+  const failure = { reason: 'failed', message: 'Compaction failed: prompt too long' } as const
+  const failed = reducePaneChat(
+    emptyPaneChatState,
+    PaneCompactionFailed.make({ paneId: PANE, failure })
+  )
+
+  it('holds the failure', () => {
+    expect(failed.compactionFailure).toEqual(failure)
+  })
+
+  it('clears the failure on the next send', () => {
+    expect(sendUser(failed, 'u-1', 'next').compactionFailure).toBeNull()
+  })
+
+  it('clears the failure when a compaction succeeds', () => {
+    expect(
+      reducePaneChat(failed, conversationCompacted('manual', 40_000)).compactionFailure
+    ).toBeNull()
+  })
+
+  it('clears the failure on a conversation reset', () => {
+    expect(reducePaneChat(failed, conversationReset()).compactionFailure).toBeNull()
   })
 })
 

@@ -109,6 +109,7 @@ import {
   skipsApproval,
   thinkingSettingLabel
 } from './composer-settings'
+import { ContextDonut } from './context-donut'
 import { Markdown } from './markdown'
 import { ModelPicker } from './model-picker'
 import { PermissionRequestCard } from './permission-request-card'
@@ -524,6 +525,8 @@ function PermissionModeSelect({
   )
 }
 
+const COMPACT_COMMAND = '/compact'
+
 const MODIFIER_KEY =
   typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent)
     ? '⌘'
@@ -706,6 +709,7 @@ function PaneChat({
   const pendingInteraction =
     pendingPermission !== null || pendingQuestion !== null || pendingPlanReview !== null
   const retryText = lastUserText(chat)
+  const compacting = isLoading && retryText?.trim() === COMPACT_COMMAND
 
   const resend = (): void => {
     if (retryText !== undefined) sendMessage({ text: retryText, mode: defaultSendMode })
@@ -924,6 +928,15 @@ function PaneChat({
                           value={permissionMode}
                           disabledModes={disabledPermissionModes}
                           onChange={onPermissionModeChange}
+                        />
+                        <ContextDonut
+                          usage={chat.contextUsage}
+                          failure={chat.compactionFailure}
+                          compacting={compacting}
+                          running={isLoading}
+                          onCompact={() =>
+                            sendMessage({ text: COMPACT_COMMAND, mode: defaultSendMode })
+                          }
                         />
                       </InputGroupAddon>
                       <InputGroupAddon align="block-end">

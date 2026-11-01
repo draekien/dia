@@ -4,6 +4,7 @@ import {
   AssistantTextDelta,
   AssistantThinkingDelta,
   CheckpointAvailable,
+  CompactionFailed,
   ConversationCompacted,
   ConversationReset,
   type OutboundMessage,
@@ -106,6 +107,21 @@ const COMPACTING_LABEL = 'Compacting conversation'
 
 const thinkingLabel = (tokens: number): string =>
   tokens < 1000 ? 'Thinking' : `Thinking · ~${(Math.floor(tokens / 100) / 10).toFixed(1)}k tokens`
+
+const NOTHING_TO_COMPACT = 'Not enough messages to compact.'
+
+const compactionFailedEvents = (error: string | undefined) => {
+  const text = error !== undefined ? `Compaction failed: ${error}` : 'Compaction failed'
+  return [
+    SessionNotice.make({ text }),
+    CompactionFailed.make({
+      failure:
+        error === NOTHING_TO_COMPACT
+          ? { reason: 'nothingToCompact', message: error }
+          : { reason: 'failed', message: text }
+    })
+  ]
+}
 
 const retryLabel = (retry: Extract<SDKMessage, { subtype: 'api_retry' }>): string =>
   `Retrying (attempt ${retry.attempt} of ${retry.max_retries}) in ${Math.ceil(retry.retry_delay_ms / 1000)}s · ${retry.error_status ?? 'connection error'}`
@@ -231,14 +247,7 @@ export const makeSessionEventReducer = (
               ? [TurnStatusChanged.make({ label: null })]
               : []),
           ...(message.compact_result === 'failed'
-            ? [
-                SessionNotice.make({
-                  text:
-                    message.compact_error !== undefined
-                      ? `Compaction failed: ${message.compact_error}`
-                      : 'Compaction failed'
-                })
-              ]
+            ? compactionFailedEvents(message.compact_error)
             : [])
         ]
       case 'model_refusal_fallback':
