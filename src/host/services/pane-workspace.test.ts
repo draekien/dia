@@ -40,7 +40,7 @@ import { type PaneCreationRequest, type PaneHandle, PaneSupervisor } from './pan
 import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
 import { TranscriptReader } from './transcript-reader'
 import { WorkspaceFeed, WorkspaceFeedLive } from './workspace-feed'
-import { type WorkspaceLoadError, WorkspaceStore } from './workspace-store'
+import { type WorkspaceLoadError, WorkspaceStore, WorkspaceWriteError } from './workspace-store'
 import { type GitOps, WorktreeCreateError } from './worktrees-seam'
 
 const PANE_A = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -89,6 +89,7 @@ interface HarnessOptions {
   readonly history?: ReadonlyArray<ConversationMessage>
   readonly discovered?: ReadonlyArray<DiscoveredSession>
   readonly storedSessionIds?: ReadonlyArray<string>
+  readonly unloadedDirectoryKeys?: ReadonlyArray<string>
 }
 
 const configOf = (request: PaneCreationRequest): PaneConfig => ({
@@ -126,7 +127,13 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
 
   const store = Layer.succeed(WorkspaceStore, {
     load: Effect.succeed(Option.fromNullishOr(options.persisted)),
-    save: (workspace) => Effect.sync(() => void saves.push(workspace)),
+    save: (workspace) =>
+      workspace.projects.some((entry) =>
+        options.unloadedDirectoryKeys?.includes(entry.project.directoryKey)
+      )
+        ? Effect.fail(new WorkspaceWriteError({ cause: 'UNIQUE constraint failed' }))
+        : Effect.sync(() => void saves.push(workspace)),
+    directoryKeys: Effect.succeed(new Set(options.unloadedDirectoryKeys)),
     sessionIds: Effect.succeed(
       new Set((options.storedSessionIds ?? []).map((id) => SessionId.make(id)))
     ),
@@ -403,6 +410,34 @@ describe('PaneWorkspace.registerProject', () => {
       assert.strictEqual(workspace.projects[0].project.directoryKey, yield* resolvedKey('/Repo'))
     }).pipe(Effect.provide(NodePath.layer))
   )
+
+  it.effect(
+    'refuses a directory a stored project it could not load has, and later saves succeed',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({
+          directories: ['/held', '/repo'],
+          unloadedDirectoryKeys: [yield* resolvedKey('/held')]
+        })
+
+        const [error, workspace] = yield* run(
+          harness,
+          Effect.gen(function* () {
+            const service = yield* PaneWorkspace
+            const refused = yield* Effect.flip(service.registerProject(PROJECT_1, '/held'))
+            yield* service.registerProject(PROJECT_2, '/repo')
+            return [refused, yield* current] as const
+          })
+        )
+
+        assert.strictEqual(error._tag, 'StoredProjectUnreadableError')
+        assert.deepStrictEqual(
+          workspace.projects.map((entry) => entry.project.projectId),
+          [PROJECT_2]
+        )
+        assert.strictEqual(harness.saves.at(-1), workspace)
+      }).pipe(Effect.provide(NodePath.layer))
+  )
 })
 
 describe('PaneWorkspace.importTab', () => {
@@ -469,6 +504,30 @@ describe('PaneWorkspace.importTab', () => {
 
       assert.deepStrictEqual(tabsOf(workspace), [PANE_A, PANE_B])
     })
+  )
+
+  it.effect(
+    'refuses a directory a stored project it could not load has, and later saves succeed',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({ persisted: twoProjects(), unloadedDirectoryKeys: ['/held'] })
+
+        const [error, workspace] = yield* run(
+          harness,
+          Effect.gen(function* () {
+            const service = yield* PaneWorkspace
+            const refused = yield* Effect.flip(
+              service.importTab(project(PROJECT_3, '/held'), tab(PANE_NEW, '/held'))
+            )
+            yield* service.importTab(project(PROJECT_3, '/gone'), tab(PANE_NEW, '/gone'))
+            return [refused, yield* current] as const
+          })
+        )
+
+        assert.strictEqual(error._tag, 'StoredProjectUnreadableError')
+        assert.deepStrictEqual(tabsOf(workspace), [PANE_A, PANE_B, PANE_NEW])
+        assert.strictEqual(harness.saves.at(-1), workspace)
+      })
   )
 })
 

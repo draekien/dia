@@ -159,12 +159,17 @@ export const makeWorkspaceProblemsLive = (userDataPath: string) =>
           yield* workspace
             .importTab(candidate.project, withoutHeldValues(candidate.tab, conflict))
             .pipe(
-              Effect.mapError(
-                () =>
+              Effect.catchTags({
+                ProjectNotFoundError: () =>
                   new WorkspaceProblemError({
                     reason: 'Its project is being removed. Try again once it is gone.'
+                  }),
+                StoredProjectUnreadableError: () =>
+                  new WorkspaceProblemError({
+                    reason:
+                      'A stored project for this directory could not be loaded. Resolve it first.'
                   })
-              )
+              })
             )
         }
         yield* store.recordImportResolution(agentId, resolution)

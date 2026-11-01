@@ -399,7 +399,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
           Effect.as<RegisterProjectRefusal | null>(null),
           Effect.catchTags({
             ProjectAlreadyRegisteredError: (error) => Effect.succeed(encodeRefusal(error)),
-            DirectoryNotFoundError: (error) => Effect.succeed(encodeRefusal(error))
+            DirectoryNotFoundError: (error) => Effect.succeed(encodeRefusal(error)),
+            StoredProjectUnreadableError: (error) => Effect.succeed(encodeRefusal(error))
           })
         )
       ),

@@ -56,6 +56,12 @@ export class WorkspaceStore extends Context.Service<
      */
     readonly sessionIds: Effect.Effect<ReadonlySet<SessionId>, WorkspaceLoadError>
     /**
+     * Every stored project's `directoryKey`, including projects `load` left out. A project given
+     * one of these keys under another project id makes `save` fail. Reads only. Fails with
+     * {@link WorkspaceLoadError} when `host.db` cannot be read.
+     */
+    readonly directoryKeys: Effect.Effect<ReadonlySet<string>, WorkspaceLoadError>
+    /**
      * Every stored project and agent `load` leaves out, with its decode issue as the reason. An
      * agent of a left-out project is not listed; its project counts it. Empty when no workspace
      * is stored. Reads only. Fails with {@link WorkspaceLoadError} when `host.db` cannot be read.
@@ -486,10 +492,19 @@ const makeStore = Effect.gen(function* () {
     Effect.withSpan('WorkspaceStore.sessionIds')
   )
 
+  const directoryKeys = sql<{
+    readonly directory_key: string
+  }>`SELECT directory_key FROM projects`.pipe(
+    Effect.map((rows): ReadonlySet<string> => new Set(rows.map((row) => row.directory_key))),
+    Effect.mapError((cause) => new WorkspaceLoadError({ cause })),
+    Effect.withSpan('WorkspaceStore.directoryKeys')
+  )
+
   return {
     load,
     save,
     sessionIds,
+    directoryKeys,
     unreadable,
     deleteUnreadable,
     holders,
@@ -531,6 +546,7 @@ export const makeWorkspaceStoreLive = (userDataPath: string) =>
         load: store.load,
         save: store.save,
         sessionIds: store.sessionIds,
+        directoryKeys: store.directoryKeys,
         unreadable: store.unreadable,
         deleteUnreadable: store.deleteUnreadable,
         holders: store.holders,

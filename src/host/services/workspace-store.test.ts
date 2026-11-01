@@ -541,6 +541,34 @@ describe('WorkspaceStore unreadable rows', () => {
     )
   )
 
+  it.effect(
+    'reads the directory key of every stored project, including one it could not load',
+    () =>
+      inTempDir((dir) =>
+        Effect.gen(function* () {
+          const { store } = yield* storeWithUnreadableProject(dir)
+
+          const keys = yield* store.directoryKeys
+
+          assert.deepStrictEqual([...keys].sort(), ['f:\\old', 'f:\\x'])
+        })
+      )
+  )
+
+  it.effect('fails to save another project with the directory key of one it could not load', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store } = yield* storeWithUnreadableProject(dir)
+
+        const error = yield* Effect.flip(
+          store.save(workspaceOf([entry(PROJECT_X, 'F:\\old', [tab(PANE_A)])]))
+        )
+
+        assert.strictEqual(error._tag, 'WorkspaceWriteError')
+      })
+    )
+  )
+
   it.effect('lists nothing when every stored row loads', () =>
     inTempDir((dir) =>
       Effect.gen(function* () {

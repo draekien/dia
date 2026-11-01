@@ -23,13 +23,14 @@ Governing decisions: ADR-0043 (workspace in `host.db`), ADR-0046 (dia keeps the 
 | Action labels | `Import without its session`, `Import without its worktree`, `Import without its session and worktree`, or `Import` when nothing is held any more; all send one `import` resolution | One host rule, and the label states exactly what the rule drops |
 | Working directory of a tab imported without its worktree | Unchanged | The session's transcript is stored under its working directory, so changing `cwd` would make the session unresumable. The tab works in the holder's worktree directory while it exists |
 | Project of an imported tab | The registered project with the file project's directory key; when none, the file's project is registered with the tab | Matches how the import grouped tabs. The visible tab does not change, as in `registerProject` |
+| A directory a left-out project holds | `importTab` and `registerProject` refuse it with `StoredProjectUnreadableError` when `WorkspaceStore.directoryKeys` has its key and no loaded project does; also when the keys cannot be read. The import action shows "A stored project for this directory could not be loaded. Resolve it first." | Accepting it puts a project in memory that `save` rejects on `UNIQUE (directory_key)`; `PaneWorkspace` only logs that failure, so every later save fails too |
 | What Delete removes | The row and its cascade: for an agent its worktree and session records; for a project its agents. No worktree directory or transcript on disk | The worktree may belong to another dia version's agent; ADR-0046 keeps transcripts. The dialog says what stays |
 | Deleting a row `load` returned | Refused (a no-op, logged) | Delete is only for rows the user cannot see; a loaded row is changed through `PaneWorkspace` |
 | Discard confirmation | None | Discard deletes nothing: the file keeps the tab |
 | Where the UI lives | A kernel component `WorkspaceProblemsBanner`, exported from `@dia/renderer-plugin` and placed by the layout plugin under `AccountBanner`; a Dialog lists the problems | Same placement and pattern as `AccountBanner` |
 | Colour | Neutral strip, caption muted text, no amber | `PRODUCT.md`: attention signals are reserved for agent state; `AccountBanner` precedent |
 | Live updates | The renderer reads the list on mount and after each action | The list changes only through these actions or a project removal (whose cascade only shrinks it; a stale row's Delete is a no-op) |
-| `PROTOCOL_VERSION` | 0.0.18 to 0.0.19 | `DiaRpcs` gains three RPCs |
+| `PROTOCOL_VERSION` | 0.0.18 to 0.0.20 | `DiaRpcs` gains three RPCs, and `RegisterProjectError` gains `StoredProjectUnreadableError` |
 | `PLUGIN_API_VERSION` | Not bumped | Only `@dia/renderer-plugin` gains an export; precedent (#14, #118) adds renderer exports without a bump |
 
 ## Interface
@@ -85,7 +86,7 @@ readonly recordImportResolution: (agentId: string, resolution: ImportResolution)
 
 ### `PaneWorkspace.importTab` (`pane-workspace.ts`)
 
-`(project: Project, tab: Tab) => Effect<void, ProjectNotFoundError>` — adds a tab that has not started to the registered project with `project`'s directory key, registering `project` with it when none has it. The visible tab does not change; a tab with the same pane id leaves the workspace unchanged. Fails when that project is being removed.
+`(project: Project, tab: Tab) => Effect<void, ProjectNotFoundError | StoredProjectUnreadableError>` — adds a tab that has not started to the registered project with `project`'s directory key, registering `project` with it when none has it. The visible tab does not change; a tab with the same pane id leaves the workspace unchanged. Fails when that project is being removed, or when a stored project `load` left out has the directory key.
 
 ### `WorkspaceProblems` (`workspace-problems.ts`, new)
 
