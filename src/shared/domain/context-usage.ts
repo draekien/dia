@@ -15,3 +15,14 @@ export const ContextUsage = Schema.Struct({
 })
 /** A {@link ContextUsage} value. */
 export type ContextUsage = typeof ContextUsage.Type
+
+/**
+ * Why a requested compaction did not run, and the text to show the user. `nothingToCompact` means
+ * the conversation was too short to compact, which is not an error; `failed` is any other failure.
+ */
+export const CompactionFailure = Schema.Struct({
+  reason: Schema.Literals(['nothingToCompact', 'failed']),
+  message: Schema.String
+})
+/** A {@link CompactionFailure} value. */
+export type CompactionFailure = typeof CompactionFailure.Type

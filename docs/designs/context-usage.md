@@ -22,6 +22,8 @@ export const ContextUsage = Schema.Struct({
 | Preload (`DiaApi`) | `onContextUsageChanged(listener)` | the event |
 | Renderer state (`PaneChatState`) | `contextUsage: ContextUsage \| null` | the latest reading; `null` before the first |
 
+A compaction that did not run is reported by a separate `CompactionFailed` event; see `docs/designs/context-donut.md`.
+
 `PaneContextUsageChanged` is a pane event, so it is replayed to a reconnecting client like every other pane event. `PROTOCOL_VERSION` goes from `0.0.10` to `0.0.11`.
 
 ## Adapter

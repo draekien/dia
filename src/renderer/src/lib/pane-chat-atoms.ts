@@ -45,6 +45,7 @@ const paneStreamEvents = (paneId: string): Stream.Stream<PaneStreamEvent> =>
           window.dia.onSlashCommandsAvailable(push),
           window.dia.onConversationCompacted(push),
           window.dia.onContextUsageChanged(push),
+          window.dia.onCompactionFailed(push),
           window.dia.onConversationReset(push),
           window.dia.onCheckpointAvailable(push),
           window.dia.onRewoundToCheckpoint(push),
