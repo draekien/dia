@@ -5,7 +5,8 @@ import { Effect, Scope } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { addRailCard, toggleRail, useRailLayout } from '../lib/session-rail'
 import { appRegistry } from '../lib/workspace-atoms'
-import { SessionRail } from './session-rail'
+import { RailToggle, SessionRail } from './session-rail'
+import { TooltipProvider } from './ui/tooltip'
 
 const COLUMN = 768
 const CARD_SPACE = 320
@@ -27,8 +28,11 @@ const fitCards = (fits: boolean) =>
 const showRail = () =>
   render(
     <RegistryContext.Provider value={appRegistry}>
-      <SessionRail paneId="pane-1" />
-      <p>transcript</p>
+      <TooltipProvider>
+        <RailToggle />
+        <SessionRail paneId="pane-1" />
+        <p>transcript</p>
+      </TooltipProvider>
     </RegistryContext.Provider>
   )
 

@@ -43,6 +43,16 @@ describe('latestTodos', () => {
     expect(latestTodos(messages)).toEqual([readSchema])
   })
 
+  it('keeps the previous task list while the next TodoWrite call has no input yet', () => {
+    const inFlight: ToolCallPart = {
+      type: 'tool-call',
+      toolCallId: newId(),
+      name: 'TodoWrite',
+      state: 'running'
+    }
+    expect(latestTodos([turn(todoWrite([readSchema])), turn(inFlight)])).toEqual([readSchema])
+  })
+
   it('is empty when the last TodoWrite call has no todo array', () => {
     expect(latestTodos([turn(todoWrite([readSchema])), turn(todoWrite('oops'))])).toEqual([])
   })

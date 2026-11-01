@@ -136,10 +136,8 @@ function AllCardsHidden(): React.JSX.Element {
  */
 export function SessionRail({ paneId }: { readonly paneId: PaneId }): React.JSX.Element | null {
   const shown = useAtomValue(railShownAtom)
-  const peeking = useAtomValue(railPeekAtom)
   const cards = useAtomValue(railCardsAtom)
   const visible = useAtomValue(visibleRailCardsAtom)
-  useEndPeekOnOutsideFocus(peeking)
   if (!shown || cards.length === 0) return null
   return (
     <aside
@@ -163,6 +161,7 @@ export function SessionRail({ paneId }: { readonly paneId: PaneId }): React.JSX.
  */
 export function RailToggle(): React.JSX.Element {
   const shown = useAtomValue(railShownAtom)
+  useEndPeekOnOutsideFocus(useAtomValue(railPeekAtom))
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (

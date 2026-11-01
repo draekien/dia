@@ -1,6 +1,13 @@
 import { Button, cn } from '@dia/renderer-plugin'
 import { ArrowDownIcon } from 'lucide-react'
-import { type ComponentProps, type ReactNode, useLayoutEffect, useRef, useState } from 'react'
+import {
+  type ComponentProps,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState
+} from 'react'
 
 const PREVIOUS_TURN_PEEK_PX = 64
 const AT_END_THRESHOLD_PX = 8
@@ -57,7 +64,9 @@ export function TranscriptItem({
  * user scrolls away, and shows a scroll-to-end button until they return. `contentClassName` sets
  * the column that both the transcript and the overlay are laid out in; `shiftLeft` moves that
  * column left by that many px. With `centred` the overlay sits a little above the pane's middle
- * with `lead` above it, and moves to the bottom edge when `centred` turns off. `aside` renders
+ * with `lead` above it, and moves to the bottom edge when `centred` turns off. Pass `centred`
+ * null while it is not yet known: the overlay stays hidden, and the first known position is
+ * shown without moving. `aside` renders
  * over the pane, positioned against it. `onWidthChange` receives the transcript's content width
  * in px whenever it changes. The parent must give the scroller a height.
  */
@@ -75,11 +84,18 @@ export function TranscriptScroller({
   overlay: ReactNode
   contentClassName?: string
   shiftLeft?: number
-  centred?: boolean
+  centred?: boolean | null
   lead?: ReactNode
   aside?: ReactNode
   onWidthChange?: (width: number) => void
 }) {
+  const known = centred !== null
+  const [settled, setSettled] = useState(false)
+  useEffect(() => {
+    if (!known) return
+    const frame = requestAnimationFrame(() => setSettled(true))
+    return () => cancelAnimationFrame(frame)
+  }, [known])
   const onWidthChangeRef = useRef(onWidthChange)
   useLayoutEffect(() => {
     onWidthChangeRef.current = onWidthChange
@@ -193,7 +209,11 @@ export function TranscriptScroller({
       <div
         ref={overlayRef}
         data-centred={centred || undefined}
-        className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-4 transition-[translate] duration-250 ease-out data-centred:translate-y-[calc(-55cqh+50%)] motion-reduce:transition-none"
+        className={cn(
+          'pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-4 data-centred:translate-y-[calc(-55cqh+50%)]',
+          centred === null && 'invisible',
+          settled && 'transition-[translate] duration-250 ease-out motion-reduce:transition-none'
+        )}
       >
         <div
           className={cn(

@@ -21,7 +21,8 @@ const decodeTodo = Schema.decodeUnknownOption(TodoItem)
 export const latestTodos = (messages: ReadonlyArray<PaneMessage>): ReadonlyArray<TodoItem> => {
   for (const message of [...messages].reverse()) {
     for (const part of [...message.parts].reverse()) {
-      if (part.type !== 'tool-call' || part.name !== 'TodoWrite') continue
+      if (part.type !== 'tool-call' || part.name !== 'TodoWrite' || part.input === undefined)
+        continue
       const todos = part.input?.todos
       if (!Array.isArray(todos)) return []
       return todos.flatMap((todo: unknown) => Option.toArray(decodeTodo(todo)))

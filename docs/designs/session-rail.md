@@ -60,7 +60,7 @@ The header toggle (`RailToggle`) is kernel UI in `TabHeader` and is not exported
 - `SessionRail` renders nothing unless `railShown`. When shown it renders, absolutely positioned at the pane's top right (16px in), one card per shown key, 288px wide, stacked with 8px gaps, scrolling when taller than the pane.
 - Card frame: a hairline border, `bg-card` (the surface token, one step lighter than the pane), no shadow; a caption-size title row with a `⋯` icon button. The `⋯` popover lists every registered card with a checkbox; unchecking one hides it.
 - When every card is hidden, one small card reads `All cards hidden` with a `Show cards` button that clears the hidden list.
-- While `peek` is on: a `focusin` or `pointerdown` outside every element marked `data-session-rail` (the cards, their `⋯` popovers and the header toggle), or `Escape`, turns it off.
+- While `peek` is on, `RailToggle` (mounted for every tab, so also in an empty session where the rail is not rendered) listens: a `focusin` or `pointerdown` outside every element marked `data-session-rail` (the cards, their `⋯` popovers and the header toggle), or `Escape`, turns it off.
 - `RailToggle` (in `TabHeader`, shown for a tab): an icon button (`PanelRight`), `aria-pressed` = `railShown`, with the shortcut `Ctrl Shift B` (`⌘ Shift B` on macOS). When the cards fit it flips `railOpen`; otherwise it flips `peek`.
 
 ### Chat plugin
@@ -72,7 +72,7 @@ The header toggle (`RailToggle`) is kernel UI in `TabHeader` and is not exported
 - `plugins/chat/pane.tsx`:
   - Measures the scroller's width with a `ResizeObserver` and passes it to `useRailLayout` with `columnMax` 672, 768 or 1024px for Narrow, Default, Wide. It translates the column (transcript and composer) left by `shiftLeft`, so the column moves only as far as the cards need. The translate transitions over 200ms, off under reduced motion. A translate keeps both columns centred in their own containers, which a `margin-left` measured against the transcript's padding box would not.
   - Renders `SessionRail` unless the session is empty.
-  - **Empty session:** no messages, no running turn and nothing queued. The composer overlay is translated so its centre sits at 45% of the pane height, with a caption line above it: the project name, then the worktree branch in mono when there is one. The scroll-to-end button and the fade above the composer are hidden. When the session stops being empty the translate transitions to zero over 250ms ease-out (instant under reduced motion).
+  - **Empty session:** no messages, no running turn and nothing queued. The composer overlay is translated so its centre sits at 45% of the pane height, with a caption line above it: the project name, then the worktree branch in mono when there is one. The scroll-to-end button and the fade above the composer are hidden. When the session stops being empty the translate transitions to zero over 250ms ease-out (instant under reduced motion). Until the pane's history loads (`paneChatAtom` is not yet a success) the composer is hidden, and the first known position is shown without moving, so an existing session never appears centred while it loads.
 - Composer:
   - The model, thinking and permission triggers move from the box's header row to a line under the box. Their label text lines up with the box's text.
   - The text area loses `min-h-14`; it starts one line tall, grows with its text, and scrolls past `max-h-60` (about 10 lines).

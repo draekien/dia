@@ -6,7 +6,6 @@ import {
   Button,
   cn,
   disabledPermissionModesFor,
-  emptyPaneChatState,
   findModelOption,
   fitThinkingLevel,
   formatElapsed,
@@ -146,6 +145,7 @@ import { TranscriptItem, TranscriptScroller } from './transcript-scroller'
 import { StallActions, TurnActivityLine } from './turn-activity-line'
 import { filesOf, useComposerAttachments, useProjectEntries } from './use-composer-attachments'
 import { useElapsedClock } from './use-elapsed-clock'
+import { usePaneChat } from './use-pane-chat'
 
 interface PaneProps {
   paneId: string
@@ -668,7 +668,7 @@ function PaneChat({
   const pendingQuestionQueryKey = ['pane', paneId, 'pendingQuestion'] as const
   const pendingPlanReviewQueryKey = ['pane', paneId, 'pendingPlanReview'] as const
 
-  const chat = AsyncResult.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
+  const chat = usePaneChat(paneId)
   const sendMessage = useAtomSet(paneSendAtom(paneId))
   const editQueued = useAtomSet(paneEditQueuedAtom(paneId))
   const removeQueued = useAtomSet(paneRemoveQueuedAtom(paneId))
@@ -744,6 +744,7 @@ function PaneChat({
   const isLoading = chat.isLoading
   const [paneWidth, setPaneWidth] = useState<number>()
   const rail = useRailLayout(paneWidth, columnMax)
+  const historyLoaded = AsyncResult.isSuccess(useAtomValue(paneChatAtom(paneId)))
   const emptySession = chat.messages.length === 0 && !isLoading && chat.queued.length === 0
   const contextCardShown = useRailCardShown(CONTEXT_CARD_KEY)
   const compactFailed = chat.compactionFailure?.reason === 'failed'
@@ -843,7 +844,7 @@ function PaneChat({
     <TranscriptScroller
       contentClassName={column}
       shiftLeft={emptySession ? 0 : rail.shiftLeft}
-      centred={emptySession}
+      centred={historyLoaded ? emptySession : null}
       onWidthChange={setPaneWidth}
       aside={emptySession ? null : <SessionRail paneId={paneId} />}
       lead={
