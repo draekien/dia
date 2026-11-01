@@ -1,8 +1,6 @@
-import { emptyPaneChatState, paneChatAtom } from '@dia/renderer-plugin'
-import { useAtomValue } from '@effect/atom-react'
 import type { BackgroundTask } from '@shared/domain/background-task'
 import type { PaneId } from '@shared/domain/pane'
-import { AsyncResult } from 'effect/reactivity'
+import { usePaneChat } from './use-pane-chat'
 
 /**
  * The list of the agent's background `tasks` (background shells, subagents): each task's
@@ -27,6 +25,5 @@ export function BackgroundTaskList({
 
 /** The session rail's Background tasks card body for `paneId`. Add it with `addRailCard`. */
 export function BackgroundTasksCard({ paneId }: { readonly paneId: PaneId }): React.JSX.Element {
-  const chat = AsyncResult.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
-  return <BackgroundTaskList tasks={chat.backgroundTasks} />
+  return <BackgroundTaskList tasks={usePaneChat(paneId).backgroundTasks} />
 }

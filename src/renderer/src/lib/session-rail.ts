@@ -70,6 +70,17 @@ export const railShownAtom = Atom.make((get): boolean =>
   get(railFitsAtom) ? get(railOpenAtom) : get(railPeekAtom)
 ).pipe(Atom.keepAlive)
 
+/** The cards the user did not hide, in order; empty while the rail is not on screen. */
+export const visibleRailCardsAtom = Atom.make((get): ReadonlyArray<RegisteredRailCard> => {
+  if (!get(railShownAtom)) return []
+  const hidden = get(hiddenRailCardsAtom)
+  return get(railCardsAtom).filter((card) => !hidden.includes(card.key))
+}).pipe(Atom.keepAlive)
+
+const railCardShownAtom = Atom.family((key: string) =>
+  Atom.make((get): boolean => get(visibleRailCardsAtom).some((card) => card.key === key))
+)
+
 /**
  * Adds `card` to the session rail for as long as the plugin's scope is open. Its key is
  * `<plugin name>.<card.id>`; adding the same id again, as a reload does, replaces the card in
@@ -179,8 +190,5 @@ export const revealRailCard = (key: string): void => {
 
 /** Whether the card with `key` is on screen now. */
 export function useRailCardShown(key: string): boolean {
-  const shown = useAtomValue(railShownAtom)
-  const hidden = useAtomValue(hiddenRailCardsAtom)
-  const cards = useAtomValue(railCardsAtom)
-  return shown && !hidden.includes(key) && cards.some((card) => card.key === key)
+  return useAtomValue(railCardShownAtom(key))
 }

@@ -1,10 +1,9 @@
-import { cn, emptyPaneChatState, type PaneMessage, paneChatAtom } from '@dia/renderer-plugin'
-import { useAtomValue } from '@effect/atom-react'
+import { cn, type PaneMessage } from '@dia/renderer-plugin'
 import type { PaneId } from '@shared/domain/pane'
 import { Option, Schema } from 'effect'
-import { AsyncResult } from 'effect/reactivity'
 import { CheckIcon, CircleDotIcon, CircleIcon } from 'lucide-react'
 import { useMemo } from 'react'
+import { usePaneChat } from './use-pane-chat'
 
 /** One item of the agent's `TodoWrite` task list. */
 export const TodoItem = Schema.Struct({
@@ -31,16 +30,10 @@ export const latestTodos = (messages: ReadonlyArray<PaneMessage>): ReadonlyArray
   return []
 }
 
-const statusIcons = {
-  pending: CircleIcon,
-  in_progress: CircleDotIcon,
-  completed: CheckIcon
-} as const
-
-const statusLabels = {
-  pending: 'Pending',
-  in_progress: 'In progress',
-  completed: 'Completed'
+const statuses = {
+  pending: { Icon: CircleIcon, label: 'Pending' },
+  in_progress: { Icon: CircleDotIcon, label: 'In progress' },
+  completed: { Icon: CheckIcon, label: 'Completed' }
 } as const
 
 /** The agent's task list `todos`, each with its status, or `No task list` when it is empty. */
@@ -49,7 +42,7 @@ export function TaskList({ todos }: { todos: ReadonlyArray<TodoItem> }): React.J
   return (
     <ul className="flex flex-col gap-1.5">
       {todos.map((todo, index) => {
-        const Icon = statusIcons[todo.status]
+        const { Icon, label } = statuses[todo.status]
         return (
           <li
             // biome-ignore lint/suspicious/noArrayIndexKey: TodoWrite items carry no id, and two items may share their text
@@ -62,7 +55,7 @@ export function TaskList({ todos }: { todos: ReadonlyArray<TodoItem> }): React.J
           >
             <Icon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
             <span className="min-w-0 break-words">
-              <span className="sr-only">{statusLabels[todo.status]}: </span>
+              <span className="sr-only">{label}: </span>
               {todo.content}
             </span>
           </li>
@@ -74,7 +67,7 @@ export function TaskList({ todos }: { todos: ReadonlyArray<TodoItem> }): React.J
 
 /** The session rail's Task list card body for `paneId`. Add it with `addRailCard`. */
 export function TaskListCard({ paneId }: { readonly paneId: PaneId }): React.JSX.Element {
-  const chat = AsyncResult.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
+  const chat = usePaneChat(paneId)
   const todos = useMemo(() => latestTodos(chat.messages), [chat.messages])
   return <TaskList todos={todos} />
 }

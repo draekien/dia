@@ -27,6 +27,7 @@
     "plugins/chat/slash-command-filter.ts",
     "plugins/chat/token-count.ts",
     "plugins/chat/use-composer-attachments.ts",
+    "plugins/chat/use-pane-chat.ts",
     "plugins/chat/use-elapsed-clock.ts"
   ],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "plugins/**/*.test.tsx"]

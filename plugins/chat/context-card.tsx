@@ -1,9 +1,7 @@
 import {
   Button,
   cn,
-  emptyPaneChatState,
   lastUserText,
-  paneChatAtom,
   paneSendAtom,
   sendModeAtom,
   Tooltip,
@@ -13,13 +11,13 @@ import {
 import { useAtomSet, useAtomValue } from '@effect/atom-react'
 import type { CompactionFailure, ContextUsage } from '@shared/domain/context-usage'
 import type { PaneId } from '@shared/domain/pane'
-import { AsyncResult } from 'effect/reactivity'
 import {
   contextColor,
   contextPercent,
   contextTokensExact,
   contextTokensLine
 } from './context-meter'
+import { usePaneChat } from './use-pane-chat'
 
 function CompactButton({
   running,
@@ -129,7 +127,7 @@ export function ContextUsageView({
 
 /** The session rail's Context card body for `paneId`. Add it to the rail with `addRailCard`. */
 export function ContextCard({ paneId }: { readonly paneId: PaneId }): React.JSX.Element {
-  const chat = AsyncResult.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
+  const chat = usePaneChat(paneId)
   const sendMessage = useAtomSet(paneSendAtom(paneId))
   const sendMode = useAtomValue(sendModeAtom)
   const compacting = chat.isLoading && lastUserText(chat)?.trim().split(/\s/)[0] === COMPACT_COMMAND

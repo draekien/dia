@@ -11,7 +11,8 @@ import {
   railShownAtom,
   setRailCardHidden,
   showAllRailCards,
-  toggleRail
+  toggleRail,
+  visibleRailCardsAtom
 } from '../lib/session-rail'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
@@ -137,10 +138,9 @@ export function SessionRail({ paneId }: { readonly paneId: PaneId }): React.JSX.
   const shown = useAtomValue(railShownAtom)
   const peeking = useAtomValue(railPeekAtom)
   const cards = useAtomValue(railCardsAtom)
-  const hidden = useAtomValue(hiddenRailCardsAtom)
+  const visible = useAtomValue(visibleRailCardsAtom)
   useEndPeekOnOutsideFocus(peeking)
   if (!shown || cards.length === 0) return null
-  const visible = cards.filter((card) => !hidden.includes(card.key))
   return (
     <aside
       data-session-rail

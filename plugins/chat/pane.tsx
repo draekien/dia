@@ -748,10 +748,10 @@ function PaneChat({
   const contextCardShown = useRailCardShown(CONTEXT_CARD_KEY)
   const compactFailed = chat.compactionFailure?.reason === 'failed'
   const contextWarning =
-    !contextCardShown && chat.contextUsage !== null
-      ? contextNeedsAttention(chat.contextUsage, compactFailed)
-        ? chat.contextUsage
-        : null
+    !contextCardShown &&
+    chat.contextUsage !== null &&
+    contextNeedsAttention(chat.contextUsage, compactFailed)
+      ? chat.contextUsage
       : null
   const activitySignature = messageActivitySignature(chat)
 

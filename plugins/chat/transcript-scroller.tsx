@@ -109,6 +109,9 @@ export function TranscriptScroller({
 
     let lastAnchor = lastAnchorRow()
     let lastSpace = -1
+    let lastWidth = -1
+    const padding = getComputedStyle(viewport)
+    const horizontalPadding = parseFloat(padding.paddingLeft) + parseFloat(padding.paddingRight)
     const layout = (): void => {
       const anchor = lastAnchorRow()
       if (anchor !== lastAnchor) followingRef.current = true
@@ -121,10 +124,11 @@ export function TranscriptScroller({
         itemsBottom: items.getBoundingClientRect().bottom - contentTop,
         viewportHeight: viewport.clientHeight
       })
-      const padding = getComputedStyle(viewport)
-      onWidthChangeRef.current?.(
-        viewport.clientWidth - parseFloat(padding.paddingLeft) - parseFloat(padding.paddingRight)
-      )
+      const width = viewport.clientWidth - horizontalPadding
+      if (width !== lastWidth) {
+        lastWidth = width
+        onWidthChangeRef.current?.(width)
+      }
       viewport.style.scrollPaddingBottom = `${overlayHeight}px`
       if (space !== lastSpace) {
         spacer.style.height = `${space}px`
