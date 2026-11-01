@@ -5,6 +5,9 @@ import type { EventFrame } from '../ipc/rpc'
 /** Service key under which the `worktrees` plugin provides the Host's `GitOps`. */
 export const WORKTREES_KEY = 'worktrees'
 
+/** Service key under which the `meta` plugin provides the Host's `MetaRepo`. */
+export const META_REPO_KEY = 'metaRepo'
+
 /**
  * Failure of `ctx.provide` when another loaded plugin already provides `key`. `owner` is the
  * name of that plugin. The plugin that hit it fails to load and keeps no registrations.

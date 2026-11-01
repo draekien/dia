@@ -8,6 +8,7 @@ export {
   HealthUnknown
 } from '../shared/domain/adapter-status'
 export { AGENT_NAME_ADJECTIVES, AGENT_NAME_NOUNS } from '../shared/domain/agent-name'
+export { ContentAttachment, PathAttachment } from '../shared/domain/attachment'
 export { PlanReviewResponse, Question } from '../shared/domain/attention'
 export { OutgoingMessage } from '../shared/domain/message-queue'
 export {
@@ -20,6 +21,7 @@ export {
 export { SessionId } from '../shared/domain/pane'
 export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
 export * from '../shared/plugin/api'
+export type { MetaRepo } from './services/meta-repo-seam'
 export {
   type GitOps,
   WorktreeCreateError,
@@ -31,6 +33,7 @@ export {
   type AgentBackend,
   type AgentSession,
   type AgentSessionOptions,
+  type SessionAdditions,
   type SessionEnd,
   SessionFailed,
   SessionNotFound

@@ -1,5 +1,6 @@
 import { getSessionMessages, type SessionMessage } from '@anthropic-ai/claude-agent-sdk'
-import { type Attachment, ContentAttachment } from '@shared/domain/attachment'
+import { ContentAttachment } from '@dia/plugin'
+import type { Attachment } from '@shared/domain/attachment'
 import type { ConversationMessage, SessionId } from '@shared/domain/pane'
 import { Array as Arr, Data, Effect, Option, Schema } from 'effect'
 
