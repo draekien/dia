@@ -72,16 +72,18 @@ function CardMenu({ title }: { readonly title: string }): React.JSX.Element {
   const hidden = useAtomValue(hiddenRailCardsAtom)
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="-my-1 -mr-1.5 text-ink-muted"
-          aria-label={`${title} card options`}
-        >
-          <EllipsisIcon />
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="-my-1 -mr-1.5 text-ink-muted"
+            aria-label={`${title} card options`}
+          >
+            <EllipsisIcon />
+          </Button>
+        }
+      />
       <PopoverContent data-session-rail align="end" className="flex w-56 flex-col gap-1 p-3">
         <span className="pb-1 text-xs font-medium text-ink-muted">Cards</span>
         {cards.map((card) => (

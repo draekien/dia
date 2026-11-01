@@ -19,11 +19,13 @@ import { WindowStatus } from './window-status'
 function TranscriptWidthButton() {
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon-xs" aria-label="Transcript width">
-          <RulerIcon />
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Button variant="ghost" size="icon-xs" aria-label="Transcript width">
+            <RulerIcon />
+          </Button>
+        }
+      />
       <PopoverContent side="bottom" align="end" className="flex w-64 flex-col gap-2">
         <span className="text-xs font-medium text-ink">Transcript width</span>
         <TranscriptWidthToggle />
