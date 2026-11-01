@@ -37,7 +37,8 @@ import {
 } from '@dnd-kit/sortable'
 import type { PaneId } from '@shared/domain/pane'
 import { ProjectId, type RegisterProjectRefusal, type Workspace } from '@shared/domain/project'
-import { Option, Schema } from 'effect'
+import { tabOf } from '@shared/domain/workspace'
+import { Option, Result, Schema } from 'effect'
 import { FolderPlusIcon, SearchIcon } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { FilterPopover } from './filter-popover'
@@ -321,12 +322,13 @@ export function AgentOverview() {
   const toggleArchived = (projectId: ProjectId) =>
     setArchivedOpen((current) => toggleIn(current, projectId))
 
-  const tabOfPane = (paneId: PaneId) =>
-    workspace.projects.flatMap((entry) => entry.tabs).find((tab) => tab.config.paneId === paneId)
+  const tabOfPane = (paneId: PaneId) => Result.getOrUndefined(tabOf(workspace, paneId))?.tab
 
   const retire = (paneId: PaneId, retirement: Retirement) => {
     if (retirement === 'archive' && tabOfPane(paneId)?.config.worktree === undefined) {
-      void actions.archiveTab(paneId)
+      actions
+        .archiveTab(paneId)
+        .catch(() => setNotice("The connection to dia's background process was lost."))
       return
     }
     setRetiring({ paneId, retirement })

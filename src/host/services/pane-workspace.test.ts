@@ -961,9 +961,10 @@ describe('PaneWorkspace.archiveTab and deleteTab', () => {
           while (!harness.log.includes(`closePane ${PANE_A}`)) yield* Effect.yieldNow
           const selectError = yield* Effect.flip(service.selectTab(PANE_A, ignore))
           const deleteError = yield* Effect.flip(service.deleteTab(PANE_A))
-          yield* service.ensureLive(PANE_A, ignore)
+          const starting = yield* Effect.forkChild(service.ensureLive(PANE_A, ignore))
           yield* Deferred.succeed(release, undefined)
           yield* Fiber.join(archiving)
+          yield* Fiber.join(starting)
           return [selectError, deleteError] as const
         })
       )

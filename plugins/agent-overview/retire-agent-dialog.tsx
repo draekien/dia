@@ -70,11 +70,13 @@ export function RetireAgentDialog({ tab, retirement, onClose }: RetireAgentDialo
           <AlertDialogTitle>{`${copy.verb} ${tab.name}?`}</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="flex flex-col gap-2">
-              <p>
-                {worktree === undefined
-                  ? 'dia stops this agent.'
-                  : 'dia stops this agent and deletes its worktree, with any uncommitted changes in it:'}
-              </p>
+              {!tab.archived && (
+                <p>
+                  {worktree === undefined
+                    ? 'dia stops this agent.'
+                    : 'dia stops this agent and deletes its worktree, with any uncommitted changes in it:'}
+                </p>
+              )}
               {worktree !== undefined && (
                 <p className="font-mono text-xs break-all text-ink">{worktree.path}</p>
               )}

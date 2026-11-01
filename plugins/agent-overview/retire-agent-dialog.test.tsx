@@ -58,6 +58,19 @@ describe('RetireAgentDialog', () => {
     ]).toEqual([true, true])
   })
 
+  it('does not claim to stop an archived agent', () => {
+    installBridge(Promise.resolve(null))
+    render(
+      <RetireAgentDialog
+        tab={{ ...tab(), archived: true }}
+        retirement="delete"
+        onClose={() => undefined}
+      />
+    )
+
+    expect(dialogText()).not.toContain('dia stops this agent')
+  })
+
   it('deletes the tab it was opened for and closes once it is deleted', async () => {
     const bridge = installBridge(Promise.resolve(null))
     const onClose = vi.fn()

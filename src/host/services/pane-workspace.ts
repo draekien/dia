@@ -496,7 +496,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       ) {
         const tab = yield* markRetiring(paneId)
         yield* Effect.gen(function* () {
-          yield* supervisor.closePane(paneId)
+          yield* sessionStartLock.withPermits(1)(supervisor.closePane(paneId))
           const worktree = tab.config.worktree
           if (worktree !== undefined) {
             const failure = yield* removeWorktree(paneId, worktree)
