@@ -79,7 +79,8 @@ const mainMessages = Stream.callback<unknown>((queue) =>
 )
 
 const handleMainMessage = Effect.fn('Host.handleMainMessage')(function* (
-  message: MainToHostMessage
+  message: MainToHostMessage,
+  hostScope: Scope.Scope
 ) {
   switch (message._tag) {
     case 'WindowAttention':
@@ -87,14 +88,16 @@ const handleMainMessage = Effect.fn('Host.handleMainMessage')(function* (
     case 'ShowAgent': {
       const hub = yield* EventHub
       yield* Effect.logInfo('Showing an agent from its notification', { paneId: message.paneId })
-      return yield* (yield* PaneWorkspace).selectTab(message.paneId, hub.publish).pipe(
+      yield* (yield* PaneWorkspace).selectTab(message.paneId, hub.publish).pipe(
         Effect.catch((error) =>
           Effect.logWarning('Could not show the agent of a notification', {
             paneId: message.paneId,
             error
           })
-        )
+        ),
+        Effect.forkIn(hostScope)
       )
+      return
     }
     default:
       return
@@ -244,7 +247,7 @@ export const runHost = Effect.scoped(
       while (true) {
         const message = yield* Queue.take(inbox)
         if (message._tag === 'Shutdown') break
-        yield* handleMainMessage(message)
+        yield* handleMainMessage(message, hostScope)
       }
       yield* Effect.logInfo('Host shutting down')
       yield* supervisor.closeAll()

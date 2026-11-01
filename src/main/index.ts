@@ -35,8 +35,6 @@ if (isDev) {
   app.setPath('userData', join(app.getPath('appData'), 'dia-dev'))
 }
 
-// Windows shows a toast only for the AppUserModelID of a Start Menu shortcut; the NSIS installer
-// gives the shortcut electron-builder's appId (the nightly workflow overrides it).
 const APP_USER_MODEL_ID = isDev
   ? process.execPath
   : app.getName() === 'dia-nightly'

@@ -42,7 +42,7 @@ export const makeAgentNotifier = (
     shown.get(paneId)?.close()
     const toast = new Notification({ title, body })
     toast.on('click', () => {
-      shown.delete(paneId)
+      if (shown.get(paneId) === toast) shown.delete(paneId)
       if (window.isMinimized()) window.restore()
       window.show()
       window.focus()
