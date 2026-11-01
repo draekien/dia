@@ -27,7 +27,7 @@ composer chips ──SendMessage{text, attachments}──▶ host ──sendText
 ```
 
 - `AgentBackend.attachmentTypes` declares the content-block types; `GetAttachmentTypes` returns them to the renderer. The composer reads a dropped or pasted file's bytes only when its MIME type is on that list.
-- `ListProjectEntries({ cwd })` returns the `@` index: `git ls-files --cached --others --exclude-standard` plus the directories those paths imply, capped at 20 000 entries; outside a git repository, a directory walk that skips `.git` and `node_modules`, with the same cap.
+- `ListProjectEntries({ cwd })` returns the `@` index: `git ls-files --cached --others --exclude-standard` plus the directories those paths imply, capped at 20 000 entries; outside a git repository, a walk one directory at a time that does not enter `.git` or `node_modules`, skips entries it cannot read, and stops at the same cap.
 - The prompt text is the message text, a blank line, then one absolute path per line for each `PathAttachment`. A message with no text and only images sends image blocks alone.
 - A user message whose content is a block array without `tool_result` blocks is a user prompt: the live reducer offers its checkpoint, and `sessionMessagesToConversation` restores its text and image blocks as `attachments`.
 
@@ -65,7 +65,8 @@ composer chips ──SendMessage{text, attachments}──▶ host ──sendText
 | Paths outside cwd go through `Query.applyFlagSettings` | A probe showed a Read outside cwd prompts without it and runs without a prompt after it, on a running query. No restart is needed. See `docs/reasoning/2026-11-01-sdk-attachments-probe.md`. |
 | Attach uses `<input type="file" multiple>`, not a `showOpenDialog` IPC | On Windows and Linux a dialog cannot select files and folders together. The input returns `File` objects, so accepted types are read the same way as a drop. Folders come from drop, paste and `@`. |
 | Clipboard files win over clipboard text | Explorer and browsers put a file and text on the clipboard together; the file is what the user copied. |
-| The `@` index is fetched each time a menu opens | No watcher to keep fresh; one `git ls-files` per opened menu is fast at 20 000 entries. |
+| The renderer caches the `@` index per cwd and re-reads it when a menu opens more than 10 seconds after the last read | No watcher to keep fresh; typing and deleting `@` does not spawn `git` each time, and a new file shows up within 10 seconds. |
+| A send waits while a dropped or pasted file is still being read | Otherwise the message goes without the file and its chip appears in the next draft. |
 | Image bytes ride in the queue snapshot and the sent-message event | The renderer shows thumbnails in the queue and the transcript; a renderer-side cache keyed by attachment would be a second store of the same bytes. |
 | `attachments` is optional on `OutgoingMessage` and `ConversationMessage` | Existing messages and history entries have none, and every existing producer stays valid. |
 | Restored history shows path attachments as the path lines in the message text, not as chips | The transcript stores only the prompt text; telling attached path lines from paths the user typed would be a guess, and the restored text is what the agent saw. |
