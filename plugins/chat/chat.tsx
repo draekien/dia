@@ -15,6 +15,7 @@ export function Chat() {
   const found = tabOf(workspace, view.paneId)
   if (Result.isFailure(found)) return null
   const { config } = found.success.tab
+  const { project } = found.success
   return (
     <Pane
       key={config.paneId}
@@ -24,6 +25,8 @@ export function Chat() {
       thinkingLevel={config.thinkingLevel}
       permissionMode={config.permissionMode}
       focusComposer={focusComposer}
+      projectName={project.displayName}
+      branch={config.worktree?.branch}
     />
   )
 }

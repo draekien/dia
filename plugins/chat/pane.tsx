@@ -37,6 +37,7 @@ import {
   paneRewindAtom,
   paneSendAtom,
   paneSendQueuedNowAtom,
+  revealRailCard,
   rewindRowState,
   rewindTargets,
   Select,
@@ -44,6 +45,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SessionRail,
   type StepsSection as StepsSectionBlock,
   sendModeAtom,
   sendModeForEnter,
@@ -60,6 +62,8 @@ import {
   useAttachmentTypes,
   useDisabledPermissionModes,
   useModelCatalog,
+  useRailCardShown,
+  useRailLayout,
   useTranscriptWidth
 } from '@dia/renderer-plugin'
 import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react'
@@ -107,7 +111,6 @@ import {
   filterProjectEntries,
   removeToken
 } from './attachment-draft'
-import { BackgroundTasks } from './background-tasks'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
 import {
   type ComposerAction,
@@ -118,10 +121,10 @@ import {
 import {
   composerSettingTrigger,
   permissionSettingLabel,
-  skipsApproval,
   thinkingSettingLabel
 } from './composer-settings'
-import { ContextDonut } from './context-donut'
+import { CONTEXT_CARD_ID } from './context-card'
+import { contextColor, contextNeedsAttention, contextPercent } from './context-meter'
 import { Markdown } from './markdown'
 import { ModelPicker } from './model-picker'
 import { PathMenu, pathMenuListboxId, pathMenuOptionId } from './path-menu'
@@ -151,7 +154,11 @@ interface PaneProps {
   thinkingLevel?: ThinkingLevel
   permissionMode?: PermissionMode
   focusComposer?: boolean
+  projectName?: string
+  branch?: string
 }
+
+const CONTEXT_CARD_KEY = `chat.${CONTEXT_CARD_ID}`
 
 const transcriptColumn = cva('mx-auto w-full', {
   variants: {
@@ -162,6 +169,8 @@ const transcriptColumn = cva('mx-auto w-full', {
     }
   }
 })
+
+const COLUMN_MAX_PX = { narrow: 672, default: 768, wide: 1024 } as const
 
 /**
  * Returns the final path segment of a filesystem path, tolerating either
@@ -531,7 +540,7 @@ function PermissionModeSelect({
         size="sm"
         aria-label="Permission mode"
         className={composerSettingTrigger({
-          emphasis: skipsApproval(value) ? 'foreground' : 'muted'
+          emphasis: value === 'bypassPermissions' ? 'foreground' : 'muted'
         })}
       >
         <SelectValue>{permissionSettingLabel(value)}</SelectValue>
@@ -544,8 +553,6 @@ function PermissionModeSelect({
     </Select>
   )
 }
-
-const COMPACT_COMMAND = '/compact'
 
 const MODIFIER_KEY =
   typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent)
@@ -578,14 +585,17 @@ export function ComposerActionButton({
         <TooltipTrigger asChild>
           <InputGroupButton
             type="button"
-            variant={isStop ? 'outline' : 'default'}
+            variant={isStop ? 'outline' : action.disabled ? 'secondary' : 'default'}
             size="icon-sm"
-            className="ml-auto"
+            className="ml-auto transition-colors duration-150 motion-reduce:transition-none"
             aria-label={action.label}
             disabled={!isStop && action.disabled}
             onClick={isStop ? onStop : onSubmit}
           >
-            <Icon />
+            <Icon
+              key={action.icon}
+              className="animate-in duration-150 fade-in motion-reduce:animate-none"
+            />
           </InputGroupButton>
         </TooltipTrigger>
         <TooltipContent side="top" align="end">
@@ -631,7 +641,10 @@ function PaneChat({
   disabledPermissionModes,
   onPermissionModeChange,
   column,
-  focusComposer
+  columnMax,
+  focusComposer,
+  projectName,
+  branch
 }: {
   paneId: string
   cwd: string
@@ -644,8 +657,11 @@ function PaneChat({
   permissionMode: PermissionMode
   disabledPermissionModes: ReadonlyArray<PermissionMode>
   column: string
+  columnMax: number
   onPermissionModeChange: (mode: PermissionMode) => void
   focusComposer: boolean
+  projectName: string | undefined
+  branch: string | undefined
 }): React.JSX.Element {
   const queryClient = useQueryClient()
   const pendingPermissionQueryKey = ['pane', paneId, 'pendingPermission'] as const
@@ -726,6 +742,17 @@ function PaneChat({
   }, [queryClient, paneId, pendingPlanReviewQueryKey])
 
   const isLoading = chat.isLoading
+  const [paneWidth, setPaneWidth] = useState<number>()
+  const rail = useRailLayout(paneWidth, columnMax)
+  const emptySession = chat.messages.length === 0 && !isLoading && chat.queued.length === 0
+  const contextCardShown = useRailCardShown(CONTEXT_CARD_KEY)
+  const compactFailed = chat.compactionFailure?.reason === 'failed'
+  const contextWarning =
+    !contextCardShown && chat.contextUsage !== null
+      ? contextNeedsAttention(chat.contextUsage, compactFailed)
+        ? chat.contextUsage
+        : null
+      : null
   const activitySignature = messageActivitySignature(chat)
 
   const { elapsedMs, idleMs, nowMs } = useElapsedClock(isLoading, activitySignature)
@@ -737,7 +764,6 @@ function PaneChat({
   const pendingInteraction =
     pendingPermission !== null || pendingQuestion !== null || pendingPlanReview !== null
   const retryText = lastUserText(chat)
-  const compacting = isLoading && retryText?.trim().split(/\s/)[0] === COMPACT_COMMAND
 
   const resend = (): void => {
     if (retryText !== undefined) sendMessage({ text: retryText, mode: defaultSendMode })
@@ -816,6 +842,18 @@ function PaneChat({
   return (
     <TranscriptScroller
       contentClassName={column}
+      shiftLeft={emptySession ? 0 : rail.shiftLeft}
+      centred={emptySession}
+      onWidthChange={setPaneWidth}
+      aside={emptySession ? null : <SessionRail paneId={paneId} />}
+      lead={
+        projectName === undefined ? null : (
+          <p className="mb-3 flex justify-center gap-2 text-muted-foreground text-xs">
+            <span>{projectName}</span>
+            {branch !== undefined && <span className="font-mono">{branch}</span>}
+          </p>
+        )
+      }
       overlay={
         <>
           {pendingPermission !== null && (
@@ -944,7 +982,10 @@ function PaneChat({
                       />
                     )}
                     <InputGroup
-                      className={cn(dragging && 'outline-1 outline-primary outline-solid')}
+                      className={cn(
+                        'transition-[color,box-shadow,border-color] duration-150 motion-reduce:transition-none',
+                        dragging && 'outline-1 outline-primary outline-solid'
+                      )}
                     >
                       {dragging && (
                         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/85 text-foreground text-sm">
@@ -953,7 +994,7 @@ function PaneChat({
                       )}
                       <InputGroupTextarea
                         ref={textareaRef}
-                        className="min-h-14"
+                        className="min-h-11 max-h-60"
                         value={field.state.value}
                         onChange={(event) =>
                           changeText(event.target.value, event.target.selectionStart)
@@ -1062,31 +1103,6 @@ function PaneChat({
                         placeholder={composerPlaceholder(isLoading, actionDefaultMode)}
                         aria-label="Message dia"
                       />
-                      <InputGroupAddon align="block-start">
-                        <ModelPicker value={model} onChange={onModelChange} />
-                        <ThinkingLevelSelect
-                          value={thinkingLevel}
-                          levels={thinkingLevels}
-                          onChange={onThinkingLevelChange}
-                        />
-                        <PermissionModeSelect
-                          value={permissionMode}
-                          disabledModes={disabledPermissionModes}
-                          onChange={onPermissionModeChange}
-                        />
-                        <div className="ml-auto flex items-center gap-1">
-                          <BackgroundTasks tasks={chat.backgroundTasks} />
-                          <ContextDonut
-                            usage={chat.contextUsage}
-                            failure={chat.compactionFailure}
-                            compacting={compacting}
-                            running={isLoading}
-                            onCompact={() =>
-                              sendMessage({ text: COMPACT_COMMAND, mode: defaultSendMode })
-                            }
-                          />
-                        </div>
-                      </InputGroupAddon>
                       {attachments.drafts.length > 0 && (
                         <InputGroupAddon
                           align="block-start"
@@ -1154,6 +1170,31 @@ function PaneChat({
                         />
                       </InputGroupAddon>
                     </InputGroup>
+                    <div className="mt-1 flex min-w-0 items-center gap-0.5 pl-[5px]">
+                      <ModelPicker value={model} onChange={onModelChange} />
+                      <ThinkingLevelSelect
+                        value={thinkingLevel}
+                        levels={thinkingLevels}
+                        onChange={onThinkingLevelChange}
+                      />
+                      <PermissionModeSelect
+                        value={permissionMode}
+                        disabledModes={disabledPermissionModes}
+                        onChange={onPermissionModeChange}
+                      />
+                      {contextWarning !== null && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="xs"
+                          className="ml-auto font-medium"
+                          style={{ color: contextColor(contextWarning, compactFailed) }}
+                          onClick={() => revealRailCard(CONTEXT_CARD_KEY)}
+                        >
+                          {contextPercent(contextWarning)}% context
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 )
               }}
@@ -1218,7 +1259,9 @@ function Pane({
   model,
   thinkingLevel,
   permissionMode,
-  focusComposer = false
+  focusComposer = false,
+  projectName,
+  branch
 }: PaneProps) {
   const queryClient = useQueryClient()
   const [width] = useTranscriptWidth()
@@ -1308,7 +1351,10 @@ function Pane({
         )}
         onPermissionModeChange={changePermissionMode}
         column={transcriptColumn({ width })}
+        columnMax={COLUMN_MAX_PX[width]}
         focusComposer={focusComposer}
+        projectName={projectName}
+        branch={branch}
       />
     </div>
   )

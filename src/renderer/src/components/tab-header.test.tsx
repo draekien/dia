@@ -4,6 +4,7 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { View } from '../lib/view'
 import { TabHeader } from './tab-header'
+import { TooltipProvider } from './ui/tooltip'
 
 const shown = vi.hoisted(() => ({
   view: undefined as View | undefined,
@@ -52,7 +53,11 @@ const entry: ProjectEntry = {
 const show = (view: View | undefined, workspace: Workspace | undefined = undefined) => {
   shown.view = view
   shown.workspace = workspace
-  return render(<TabHeader />)
+  return render(
+    <TooltipProvider>
+      <TabHeader />
+    </TooltipProvider>
+  )
 }
 
 afterEach(cleanup)
@@ -66,13 +71,14 @@ describe('TabHeader', () => {
     expect(within(crumbs).getByText('fix-anchor').getAttribute('aria-current')).toBe('page')
   })
 
-  it('shows the worktree branch and the transcript width control for a tab', () => {
+  it('shows the worktree branch, the transcript width control and the rail toggle for a tab', () => {
     show({ _tag: 'TabView', paneId: PANE }, { projects: [entry], visibleTab: PANE })
 
     expect(screen.getByText('fix-anchor', { selector: 'span.font-mono' }).textContent).toBe(
       'fix-anchor'
     )
     expect(screen.getByRole('button', { name: 'Transcript width' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Session details' })).toBeTruthy()
   })
 
   it('shows project then New agent for the New agent form, without a width control', () => {
@@ -82,6 +88,7 @@ describe('TabHeader', () => {
     expect(within(crumbs).getByText('dia')).toBeTruthy()
     expect(within(crumbs).getByText('New agent').getAttribute('aria-current')).toBe('page')
     expect(screen.queryByRole('button', { name: 'Transcript width' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Session details' })).toBeNull()
   })
 
   it.each([

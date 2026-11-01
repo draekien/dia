@@ -1,54 +1,25 @@
 import {
   Button,
   cn,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
+  emptyPaneChatState,
+  lastUserText,
+  paneChatAtom,
+  paneSendAtom,
+  sendModeAtom,
   Tooltip,
   TooltipContent,
   TooltipTrigger
 } from '@dia/renderer-plugin'
+import { useAtomSet, useAtomValue } from '@effect/atom-react'
 import type { CompactionFailure, ContextUsage } from '@shared/domain/context-usage'
+import type { PaneId } from '@shared/domain/pane'
+import { AsyncResult } from 'effect/reactivity'
 import {
   contextColor,
-  contextFraction,
   contextPercent,
   contextTokensExact,
   contextTokensLine
 } from './context-meter'
-
-const RADIUS = 7
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS
-
-function Ring({
-  fraction,
-  colour,
-  working
-}: {
-  fraction: number
-  colour: string
-  working: boolean
-}): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 16 16" className="size-4 -rotate-90" aria-hidden="true">
-      <circle cx="8" cy="8" r={RADIUS} fill="none" strokeWidth="2" className="stroke-border" />
-      <circle
-        cx="8"
-        cy="8"
-        r={RADIUS}
-        fill="none"
-        strokeWidth="2"
-        strokeDasharray={CIRCUMFERENCE}
-        strokeDashoffset={CIRCUMFERENCE * (1 - fraction)}
-        style={{ stroke: colour }}
-        className={cn(
-          'transition-[stroke-dashoffset,stroke] duration-300 motion-reduce:transition-none',
-          working && 'animate-pulse motion-reduce:animate-none'
-        )}
-      />
-    </svg>
-  )
-}
 
 function CompactButton({
   running,
@@ -111,14 +82,20 @@ function Reading({ usage, colour }: { usage: ContextUsage; colour: string }): Re
   )
 }
 
+/** The Context card's id within the chat plugin; its rail key is `chat.context`. */
+export const CONTEXT_CARD_ID = 'context'
+
+/** The slash command that compacts the conversation. */
+export const COMPACT_COMMAND = '/compact'
+
 /**
- * The composer header's context indicator: a 16px ring filled to how much of the context window
- * `usage` uses, coloured by {@link contextColor}. It opens a popover with the numbers and a
- * Compact conversation button that calls `onCompact`. Pass `usage` null before the first reading,
- * `failure` for the last compaction that did not run, `compacting` while a `/compact` turn runs,
- * and `running` while any other turn runs, which disables Compact.
+ * The context usage readout: the share and token counts of `usage` with a meter coloured by
+ * {@link contextColor}, a Compact conversation button that calls `onCompact`, and why the last
+ * compaction did not run. Pass `usage` null before the first reading, `failure` for the last
+ * compaction that did not run, `compacting` while a `/compact` turn runs, and `running` while
+ * any other turn runs, which disables Compact.
  */
-export function ContextDonut({
+export function ContextUsageView({
   usage,
   failure,
   compacting,
@@ -134,37 +111,35 @@ export function ContextDonut({
   const failed = failure?.reason === 'failed'
   const colour = usage === null || compacting ? 'var(--ink-muted)' : contextColor(usage, failed)
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="ml-auto"
-          aria-label={usage === null ? 'Context usage' : `Context ${contextPercent(usage)}% used`}
-        >
-          <Ring
-            fraction={usage === null ? 0 : contextFraction(usage)}
-            colour={colour}
-            working={compacting}
-          />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="flex w-64 flex-col gap-3 text-sm">
-        {usage === null ? (
-          <p className="text-muted-foreground">Context usage appears after the first turn</p>
-        ) : (
-          <Reading usage={usage} colour={colour} />
-        )}
-        <CompactButton running={running} compacting={compacting} onCompact={onCompact} />
-        {failure !== null && (
-          <p
-            className={cn('text-xs', failed ? 'text-error' : 'text-muted-foreground')}
-            role="status"
-          >
-            {failure.message}
-          </p>
-        )}
-      </PopoverContent>
-    </Popover>
+    <div className="flex flex-col gap-3">
+      {usage === null ? (
+        <p className="text-muted-foreground">No usage yet</p>
+      ) : (
+        <Reading usage={usage} colour={colour} />
+      )}
+      <CompactButton running={running} compacting={compacting} onCompact={onCompact} />
+      {failure !== null && (
+        <p className={cn('text-xs', failed ? 'text-error' : 'text-muted-foreground')} role="status">
+          {failure.message}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** The session rail's Context card body for `paneId`. Add it to the rail with `addRailCard`. */
+export function ContextCard({ paneId }: { readonly paneId: PaneId }): React.JSX.Element {
+  const chat = AsyncResult.getOrElse(useAtomValue(paneChatAtom(paneId)), () => emptyPaneChatState)
+  const sendMessage = useAtomSet(paneSendAtom(paneId))
+  const sendMode = useAtomValue(sendModeAtom)
+  const compacting = chat.isLoading && lastUserText(chat)?.trim().split(/\s/)[0] === COMPACT_COMMAND
+  return (
+    <ContextUsageView
+      usage={chat.contextUsage}
+      failure={chat.compactionFailure}
+      compacting={compacting}
+      running={chat.isLoading}
+      onCompact={() => sendMessage({ text: COMPACT_COMMAND, mode: sendMode })}
+    />
   )
 }
