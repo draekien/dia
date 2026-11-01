@@ -203,6 +203,21 @@ export const paneRemoveQueuedAtom = Atom.family((paneId: string) =>
 )
 
 /**
+ * Per-pane action that sends a queued message now instead of after the running turn, keyed by
+ * `paneId`. During a turn it steers the turn with that message; the rest of the queue keeps
+ * waiting. The new queue arrives back through {@link paneChatAtom}. Bind with
+ * `useAtomSet(paneSendQueuedNowAtom(paneId))` and set it to the message id.
+ */
+export const paneSendQueuedNowAtom = Atom.family((paneId: string) =>
+  Atom.writable(
+    (): null => null,
+    (_ctx, messageId: string) => {
+      window.dia.sendQueuedMessageNow(paneId, messageId)
+    }
+  )
+)
+
+/**
  * Per-pane stop action, keyed by `paneId`. Set it (with no argument) to abort
  * the pane's in-flight turn: it dispatches `window.dia.interrupt`, which
  * supersedes any pending prompt, cancels generation in the pane process and

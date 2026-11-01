@@ -128,7 +128,8 @@ export {
   paneInterruptAtom,
   paneRemoveQueuedAtom,
   paneRewindAtom,
-  paneSendAtom
+  paneSendAtom,
+  paneSendQueuedNowAtom
 } from './lib/pane-chat-atoms'
 export {
   type RewindCommand,
