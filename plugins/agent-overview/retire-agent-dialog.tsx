@@ -68,33 +68,35 @@ export function RetireAgentDialog({ tab, retirement, onClose }: RetireAgentDialo
       <AlertDialogContent className="sm:max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle>{`${copy.verb} ${tab.name}?`}</AlertDialogTitle>
-          <AlertDialogDescription asChild>
-            <div className="flex flex-col gap-2">
-              {!tab.archived && (
-                <p>
-                  {worktree === undefined
-                    ? 'dia stops this agent.'
-                    : 'dia stops this agent and deletes its worktree, with any uncommitted changes in it:'}
-                </p>
-              )}
-              {worktree !== undefined && (
-                <p className="font-mono text-xs break-all text-ink">{worktree.path}</p>
-              )}
-              <p>
-                {retirement === 'archive'
-                  ? 'The agent moves to the Archived list, where its transcript stays readable.'
-                  : 'dia forgets the agent and removes it from the sidebar.'}{' '}
-                {worktree === undefined ? (
-                  'Its Claude Code transcripts stay on disk.'
-                ) : (
-                  <>
-                    Its branch <span className="font-mono text-xs">{worktree.branch}</span> and its
-                    Claude Code transcripts stay on disk.
-                  </>
+          <AlertDialogDescription
+            render={
+              <div className="flex flex-col gap-2">
+                {!tab.archived && (
+                  <p>
+                    {worktree === undefined
+                      ? 'dia stops this agent.'
+                      : 'dia stops this agent and deletes its worktree, with any uncommitted changes in it:'}
+                  </p>
                 )}
-              </p>
-            </div>
-          </AlertDialogDescription>
+                {worktree !== undefined && (
+                  <p className="font-mono text-xs break-all text-ink">{worktree.path}</p>
+                )}
+                <p>
+                  {retirement === 'archive'
+                    ? 'The agent moves to the Archived list, where its transcript stays readable.'
+                    : 'dia forgets the agent and removes it from the sidebar.'}{' '}
+                  {worktree === undefined ? (
+                    'Its Claude Code transcripts stay on disk.'
+                  ) : (
+                    <>
+                      Its branch <span className="font-mono text-xs">{worktree.branch}</span> and
+                      its Claude Code transcripts stay on disk.
+                    </>
+                  )}
+                </p>
+              </div>
+            }
+          />
         </AlertDialogHeader>
 
         {phase._tag === 'Failed' && (
