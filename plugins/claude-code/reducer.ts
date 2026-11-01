@@ -153,6 +153,8 @@ const firstLine = (text: string): string | undefined =>
 const shorten = (line: string): string =>
   line.length > NOTICE_LINE_LIMIT ? `${line.slice(0, NOTICE_LINE_LIMIT - 1)}…` : line
 
+const oneLine = (text: string): string => shorten(firstLine(text) ?? '')
+
 const hookFailureNotice = (hook: Extract<SDKMessage, { subtype: 'hook_response' }>): string => {
   const exit = hook.exit_code !== undefined ? ` (exit ${hook.exit_code})` : ''
   const line = firstLine(hook.stderr) ?? firstLine(hook.output)
@@ -162,18 +164,24 @@ const hookFailureNotice = (hook: Extract<SDKMessage, { subtype: 'hook_response' 
 const pluginInstallFailureNotice = (
   install: Extract<SDKMessage, { subtype: 'plugin_install' }>
 ): string =>
-  ['Plugin install failed', install.name, install.error]
-    .filter((part) => part !== undefined)
+  ['Plugin install failed', install.name, oneLine(install.error ?? '')]
+    .filter((part) => part !== undefined && part !== '')
     .join(': ')
 
-const fileName = (path: string): string => path.split(/[\\/]/).at(-1) ?? path
+const memoryName = (path: string): string =>
+  path.startsWith('<synthesis:')
+    ? 'synthesized memories'
+    : (path
+        .split(/[\\/]/)
+        .filter((segment) => segment.length > 0)
+        .at(-1) ?? path)
 
 const memoryRecallNotice = (
   memories: Extract<SDKMessage, { subtype: 'memory_recall' }>['memories']
 ): string => {
   const names = memories
     .slice(0, MEMORY_NAMES_SHOWN)
-    .map((memory) => fileName(memory.path))
+    .map((memory) => memoryName(memory.path))
     .join(', ')
   const rest = memories.length - MEMORY_NAMES_SHOWN
   return `Recalled from memory: ${names}${rest > 0 ? ` and ${rest} more` : ''}`
@@ -181,8 +189,12 @@ const memoryRecallNotice = (
 
 const refusalMessage = (
   refusal: Extract<SDKMessage, { subtype: 'model_refusal_no_fallback' }>
-): string =>
-  `${refusal.original_model} declined the request: ${refusal.api_refusal_explanation || refusal.content}`
+): string => {
+  const reason = refusal.api_refusal_explanation || refusal.content
+  return reason
+    ? `${refusal.original_model} declined the request: ${reason}`
+    : `${refusal.original_model} declined the request`
+}
 
 const ENDS_TURN_STATUS: ReadonlySet<OutboundMessage['_tag']> = new Set([
   'AssistantTextDelta',
@@ -282,17 +294,16 @@ export const makeSessionEventReducer = (
         : []
     }
     if (message.type === 'auth_status') {
-      const signingInEnded = !message.isAuthenticating && turnStatus === SIGNING_IN_LABEL
-      return [
-        ...(message.isAuthenticating
-          ? [TurnStatusChanged.make({ label: SIGNING_IN_LABEL })]
-          : signingInEnded
-            ? [TurnStatusChanged.make({ label: null })]
-            : []),
-        ...(message.error !== undefined
-          ? [SessionNotice.make({ text: `Sign-in failed: ${message.error}` })]
-          : [])
-      ]
+      const outbound: OutboundMessage[] = []
+      if (message.isAuthenticating) {
+        outbound.push(TurnStatusChanged.make({ label: SIGNING_IN_LABEL }))
+      } else if (turnStatus === SIGNING_IN_LABEL) {
+        outbound.push(TurnStatusChanged.make({ label: null }))
+      }
+      if (message.error !== undefined) {
+        outbound.push(SessionNotice.make({ text: `Sign-in failed: ${message.error}` }))
+      }
+      return outbound
     }
     if (message.type !== 'system') return undefined
     switch (message.subtype) {
@@ -336,7 +347,7 @@ export const makeSessionEventReducer = (
           : []
       case 'notification':
         return message.priority === 'high' || message.priority === 'immediate'
-          ? [SessionNotice.make({ text: message.text })]
+          ? [SessionNotice.make({ text: oneLine(message.text) })]
           : []
       case 'memory_recall':
         return message.memories.length > 0
@@ -421,6 +432,9 @@ export const makeSessionEventReducer = (
         .flatMap((block) => (block.type === 'text' ? [block.text] : []))
         .join('')
       if (!text) return []
+      if (message.parent_tool_use_id === null && message.message.stop_reason !== 'refusal') {
+        refusal = null
+      }
       const conversationMessage: ConversationMessage = { role: 'assistant', content: text }
       return [AssistantMessageReceived.make({ message: conversationMessage })]
     }

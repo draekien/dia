@@ -185,6 +185,18 @@ describe('makeSessionEventReducer — memory recall', () => {
     ])
   })
 
+  it('names a synthesized memory by its kind instead of its sentinel path', () => {
+    expect(stepOnce(recall(['<synthesis:C:\\Users\\me\\.claude\\memory>']))).toEqual([
+      { _tag: 'SessionNotice', text: 'Recalled from memory: synthesized memories' }
+    ])
+  })
+
+  it('names an organization memory URL by its last non-empty segment', () => {
+    expect(stepOnce(recall(['https://example.com/memories/style/']))).toEqual([
+      { _tag: 'SessionNotice', text: 'Recalled from memory: style' }
+    ])
+  })
+
   it('does not show a memory recall with no memories', () => {
     expect(stepOnce(recall([]))).toEqual([])
   })
@@ -246,5 +258,66 @@ describe('makeSessionEventReducer — messages logged only or hidden', () => {
     ['prompt_suggestion', sdkMessage({ type: 'prompt_suggestion', suggestion: 'run the tests' })]
   ])('produces no protocol message for %s', (_name, message) => {
     expect(stepOnce(message)).toEqual([])
+  })
+})
+
+describe('makeSessionEventReducer — one-line notices and recovered refusals', () => {
+  const mainAssistantText = (stopReason: string): SDKMessage =>
+    sdkMessage({
+      type: 'assistant',
+      parent_tool_use_id: null,
+      message: {
+        content: [{ type: 'text', text: 'Here is another way.' }],
+        stop_reason: stopReason
+      }
+    })
+  const refusal = system('model_refusal_no_fallback', {
+    original_model: 'claude-opus-5-5',
+    request_id: null,
+    content: ''
+  })
+
+  it('shows only the first line of a multi-line notification', () => {
+    const emitted = stepOnce(
+      system('notification', {
+        key: 'mcp',
+        text: 'MCP server failed\n  at connect',
+        priority: 'high'
+      })
+    )
+    expect(emitted).toEqual([{ _tag: 'SessionNotice', text: 'MCP server failed' }])
+  })
+
+  it('shows only the first line of a multi-line plugin install error', () => {
+    const emitted = stepOnce(
+      system('plugin_install', { status: 'failed', name: 'acme', error: 'ENOTFOUND\n  at fetch' })
+    )
+    expect(emitted).toEqual([
+      { _tag: 'SessionNotice', text: 'Plugin install failed: acme: ENOTFOUND' }
+    ])
+  })
+
+  it('names the refusing model alone when the refusal has no reason', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(refusal)
+    expect(reducer.step(success())).toEqual([
+      { _tag: 'TurnErrored', error: { message: 'claude-opus-5-5 declined the request' } }
+    ])
+  })
+
+  it('completes the turn when the main agent wrote more text after the refusal', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(refusal)
+    reducer.step(mainAssistantText('end_turn'))
+    expect(reducer.step(success())).toEqual([{ _tag: 'TurnCompleted' }])
+  })
+
+  it('keeps the refusal when the text arrives on the refused assistant frame', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(refusal)
+    reducer.step(mainAssistantText('refusal'))
+    expect(reducer.step(success())).toEqual([
+      { _tag: 'TurnErrored', error: { message: 'claude-opus-5-5 declined the request' } }
+    ])
   })
 })

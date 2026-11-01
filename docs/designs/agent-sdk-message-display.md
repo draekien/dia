@@ -57,13 +57,13 @@ The decisions apply three rules, in this order:
 
 | SDK message | Decision | Element | Reason |
 | --- | --- | --- | --- |
-| `system` / `model_refusal_no_fallback` | show: the turn ends with `TurnErrored` (`claude-opus-5-5 declined the request: <explanation>`) instead of `TurnCompleted` | `error` row; the pane and sidebar show `Errored` | The turn produced nothing and needs a reworded prompt from the user; `Errored` is the existing state that asks for the user's input and keeps the session. Without an explanation the text is the message's `content` |
+| `system` / `model_refusal_no_fallback` | show: the turn ends with `TurnErrored` (`claude-opus-5-5 declined the request: <explanation>`) instead of `TurnCompleted` | `error` row; the pane and sidebar show `Errored` | The turn produced nothing and needs a reworded prompt from the user; `Errored` is the existing state that asks for the user's input and keeps the session. Without an explanation the text is the message's `content`. Main-thread assistant text after the refusal (not on the refused frame, `stop_reason: refusal`) means the turn recovered, so it completes normally; this covers a refused subagent request the main agent works around |
 | `system` / `hook_response` | show when `outcome` is `error`: `SessionNotice` (`SessionStart:startup hook failed (exit 1): <first stderr line>`); log otherwise | divider | A failing hook changes the session silently otherwise. Success and `cancelled` are routine |
 | `system` / `hook_started` | log only | | Its outcome arrives in `hook_response` |
 | `system` / `hook_progress` | log only | | Its outcome arrives in `hook_response` |
-| `system` / `plugin_install` | show when `failed`: `SessionNotice` (`Plugin install failed: <name>: <error>`); log otherwise | divider | A Claude Code plugin the user expects is missing. Emitted only with `CLAUDE_CODE_SYNC_PLUGIN_INSTALL` |
-| `system` / `notification` | show when `priority` is `high` or `immediate`: `SessionNotice` with its `text`; log otherwise | divider | Claude Code's REPL shows these; `low` and `medium` are transient hints |
-| `system` / `memory_recall` | show: `SessionNotice` (`Recalled from memory: auth.md, testing.md and 1 more`) | divider | The SDK documents it for an inline "Recalled from memory" row; it explains context the user did not send. File names only, at most three, to keep one line |
+| `system` / `plugin_install` | show when `failed`: `SessionNotice` (`Plugin install failed: <name>: <first line of error>`); log otherwise | divider | A Claude Code plugin the user expects is missing. Emitted only with `CLAUDE_CODE_SYNC_PLUGIN_INSTALL` |
+| `system` / `notification` | show when `priority` is `high` or `immediate`: `SessionNotice` with the first line of its `text`; log otherwise | divider | Claude Code's REPL shows these; `low` and `medium` are transient hints |
+| `system` / `memory_recall` | show: `SessionNotice` (`Recalled from memory: auth.md, testing.md and 1 more`) | divider | The SDK documents it for an inline "Recalled from memory" row; it explains context the user did not send. File names only, at most three, to keep one line; a synthesis entry (`<synthesis:DIR>`) is named `synthesized memories` |
 | `auth_status` | show: `TurnStatusChanged` (`Signing in`) while `isAuthenticating`, cleared when it ends; `error` → `SessionNotice` (`Sign-in failed: <error>`) | activity line, divider | A turn waiting on sign-in otherwise looks stalled |
 | `system` / `background_tasks_changed` | show: new `BackgroundTasksChanged` → a `N in background` control in the composer header that opens a list of the tasks' descriptions; absent when no task runs | composer header popover | Work the agent started (a background shell, a subagent) keeps running after the turn ends and can wake the agent; nothing else shows it. The message is a level signal, so the list is replaced on each message |
 | `system` / `task_started` | log only | | The tool row of the call that started the task already shows it; background tasks appear through `background_tasks_changed` |
@@ -79,7 +79,7 @@ The decisions apply three rules, in this order:
 
 ## Interface changes
 
-- `plugins/claude-code/reducer.ts`: the rows above. A refusal is remembered until the turn's `result`, like a park cause; a park cause wins over a refusal.
+- `plugins/claude-code/reducer.ts`: the rows above. Every notice text from these rows is one line of at most 200 characters, cut with `…`. A refusal is remembered until the turn's `result`, like a park cause; a park cause wins over a refusal.
 - `BackgroundTasksChanged { tasks: ReadonlyArray<{ taskId: string; description: string }> }` (`src/host/session/protocol.ts`), forwarded as the pane event `PaneBackgroundTasksChanged`; `PaneChatState.backgroundTasks` holds the latest list. `PROTOCOL_VERSION` is bumped.
 
 ## Not covered
