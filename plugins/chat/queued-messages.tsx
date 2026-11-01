@@ -372,7 +372,7 @@ function QueuedMessageEditor({
           {kept.map((attachment, index) => (
             <AttachmentChip
               // biome-ignore lint/suspicious/noArrayIndexKey: attachments carry no id, and two can share a name; the chips hold no state
-              key={`${index}:${attachment._tag === 'PathAttachment' ? attachment.path : attachment.name}`}
+              key={index}
               draft={{ _tag: 'Ready', key: String(index), attachment }}
               cwd={cwd}
               onRemove={() => setKept((current) => current.filter((_, at) => at !== index))}

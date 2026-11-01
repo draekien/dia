@@ -4,6 +4,9 @@ import {
   ContentAttachment,
   type ProjectEntry
 } from '@shared/domain/attachment'
+import { useQuery } from '@tanstack/react-query'
+import { Duration } from 'effect'
+import { Base64 } from 'effect/encoding'
 import { useEffect, useRef, useState } from 'react'
 import { type DraftAttachment, planFile, readyAttachments } from './attachment-draft'
 
@@ -24,17 +27,6 @@ export const filesOf = (data: DataTransfer): ReadonlyArray<DroppedFile> =>
       ? []
       : [{ file, isDirectory: item.webkitGetAsEntry()?.isDirectory === true }]
   })
-
-const CHUNK = 0x8000
-
-const toBase64 = (bytes: ArrayBuffer): string => {
-  const view = new Uint8Array(bytes)
-  let binary = ''
-  for (let start = 0; start < view.length; start += CHUNK) {
-    binary += String.fromCharCode(...view.subarray(start, start + CHUNK))
-  }
-  return btoa(binary)
-}
 
 const PASTED_NAME = 'Pasted image'
 
@@ -87,7 +79,7 @@ export function useComposerAttachments(types: ReadonlyArray<AttachmentType>) {
         attachment: ContentAttachment.make({
           name,
           mediaType: plan.mediaType,
-          data: toBase64(bytes)
+          data: Base64.encode(new Uint8Array(bytes))
         })
       }),
       (): DraftAttachment => ({ _tag: 'Rejected', key, name, reason: 'Could not read this file' })
@@ -108,37 +100,27 @@ export function useComposerAttachments(types: ReadonlyArray<AttachmentType>) {
   }
 }
 
+const PROJECT_ENTRIES_STALE = Duration.toMillis(Duration.seconds(10))
+
 /**
  * The `@` menu's entries for a session working in `cwd`, read through
- * `window.dia.listProjectEntries` each time `active` turns true. While `active` is false the list
- * is empty. `loading` is true until the first read for `cwd` finishes; a later read keeps showing
- * the previous list until it finishes. A failed read gives an empty list.
+ * `window.dia.listProjectEntries` when `active` turns true and the last read for `cwd` is more than
+ * 10 seconds old. While `active` is false the list is empty. `loading` is true until the first
+ * read for `cwd` finishes. A failed read gives an empty list.
  */
 export function useProjectEntries(
   cwd: string,
   active: boolean
 ): { readonly entries: ReadonlyArray<ProjectEntry>; readonly loading: boolean } {
-  const [loaded, setLoaded] = useState<{
-    readonly cwd: string
-    readonly entries: ReadonlyArray<ProjectEntry>
-  } | null>(null)
-
-  useEffect(() => {
-    if (!active) return
-    let current = true
-    window.dia.listProjectEntries(cwd).then(
-      (entries) => {
-        if (current) setLoaded({ cwd, entries })
-      },
-      () => {
-        if (current) setLoaded({ cwd, entries: [] })
-      }
-    )
-    return () => {
-      current = false
-    }
-  }, [active, cwd])
-
-  const fresh = loaded?.cwd === cwd ? loaded.entries : undefined
-  return { entries: active ? (fresh ?? []) : [], loading: active && fresh === undefined }
+  const { data, isPending } = useQuery({
+    queryKey: ['projectEntries', cwd],
+    queryFn: () =>
+      window.dia.listProjectEntries(cwd).then(
+        (entries) => entries,
+        (): ReadonlyArray<ProjectEntry> => []
+      ),
+    enabled: active,
+    staleTime: PROJECT_ENTRIES_STALE
+  })
+  return { entries: active ? (data ?? []) : [], loading: active && isPending }
 }

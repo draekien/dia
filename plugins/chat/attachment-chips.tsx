@@ -114,7 +114,7 @@ export function SentAttachments({
       {attachments.map((attachment, index) => (
         <li
           // biome-ignore lint/suspicious/noArrayIndexKey: attachments carry no id, and two can share a name; the chips hold no state
-          key={`${index}:${attachment._tag === 'PathAttachment' ? attachment.path : attachment.name}`}
+          key={index}
         >
           <AttachmentChip draft={{ _tag: 'Ready', key: String(index), attachment }} cwd={cwd} />
         </li>
@@ -159,7 +159,7 @@ export function QueuedAttachmentRow({
         attachment._tag === 'ContentAttachment' ? (
           <img
             // biome-ignore lint/suspicious/noArrayIndexKey: attachments carry no id, and two can share a name; the chips hold no state
-            key={`${index}:${attachment.name}`}
+            key={index}
             src={dataUrl(attachment)}
             alt={attachment.name}
             className="h-5 w-7 shrink-0 rounded-sm object-cover"
@@ -167,7 +167,7 @@ export function QueuedAttachmentRow({
         ) : (
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: attachments carry no id, and two can share a name; the chips hold no state
-            key={`${index}:${attachment.path}`}
+            key={index}
             className={compactChip({ missing: attachment.missing === true })}
             title={attachment.path}
           >

@@ -5,7 +5,7 @@ import {
   attachmentLabel,
   entryPath,
   filterProjectEntries,
-  formatMegabytes,
+  formatMebibytes,
   planFile,
   removeToken
 } from './attachment-draft'
@@ -60,9 +60,9 @@ describe('planFile', () => {
   })
 })
 
-describe('formatMegabytes', () => {
+describe('formatMebibytes', () => {
   it('drops trailing zeros', () => {
-    expect(formatMegabytes(5 * MiB)).toBe('5 MB')
+    expect(formatMebibytes(5 * MiB)).toBe('5 MB')
   })
 })
 

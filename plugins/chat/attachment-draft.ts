@@ -39,7 +39,7 @@ export type FilePlan =
   | { readonly _tag: 'reject'; readonly reason: string }
 
 /** `bytes` in megabytes with up to two decimals, e.g. `3.75 MB`. */
-export const formatMegabytes = (bytes: number): string =>
+export const formatMebibytes = (bytes: number): string =>
   `${Number((bytes / (1024 * 1024)).toFixed(2))} MB`
 
 /** Decides how to attach `file`, given the content-block `types` the adapter accepts. */
@@ -47,7 +47,7 @@ export const planFile = (file: IncomingFile, types: ReadonlyArray<AttachmentType
   const accepted = file.isDirectory ? undefined : types.find((type) => type.mediaType === file.type)
   if (accepted !== undefined) {
     return file.size > accepted.maxBytes
-      ? { _tag: 'reject', reason: `Too large, ${formatMegabytes(accepted.maxBytes)} max` }
+      ? { _tag: 'reject', reason: `Too large, ${formatMebibytes(accepted.maxBytes)} max` }
       : { _tag: 'read', mediaType: accepted.mediaType }
   }
   if (file.path === '') return { _tag: 'reject', reason: 'This file has no path to send' }
