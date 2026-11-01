@@ -132,8 +132,10 @@ export function ModelField({
       ) : (
         <div className="flex items-center gap-1">
           <Select
-            value={value ?? ''}
-            onValueChange={onValueChange}
+            value={value ?? null}
+            onValueChange={(next) => {
+              if (next !== null) onValueChange(next)
+            }}
             disabled={disabled || offered === undefined}
           >
             <SelectTrigger
@@ -141,7 +143,11 @@ export function ModelField({
               aria-labelledby="model-label"
               aria-describedby={offeredValue ? undefined : 'model-not-offered'}
             >
-              <SelectValue placeholder="Loading models…" />
+              <SelectValue placeholder="Loading models…">
+                {value === undefined
+                  ? undefined
+                  : (offered?.find((model) => model.value === value)?.displayName ?? value)}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {offeredValue || value === undefined ? null : (

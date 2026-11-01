@@ -504,7 +504,12 @@ function ThinkingLevelSelect({
   onChange: (level: ThinkingLevel) => void
 }): React.JSX.Element {
   return (
-    <Select value={value} onValueChange={onChange}>
+    <Select
+      value={value}
+      onValueChange={(next) => {
+        if (next !== null) onChange(next)
+      }}
+    >
       <SelectTrigger size="sm" aria-label="Thinking level" className={composerSettingTrigger()}>
         <SelectValue>{thinkingSettingLabel(value)}</SelectValue>
       </SelectTrigger>
@@ -529,7 +534,12 @@ function PermissionModeSelect({
   onChange: (mode: PermissionMode) => void
 }): React.JSX.Element {
   return (
-    <Select value={value} onValueChange={onChange}>
+    <Select
+      value={value}
+      onValueChange={(next) => {
+        if (next !== null) onChange(next)
+      }}
+    >
       <SelectTrigger
         size="sm"
         aria-label="Permission mode"

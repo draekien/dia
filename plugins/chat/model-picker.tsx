@@ -33,7 +33,8 @@ export function ModelPicker({
   const preferences = useModelPreferences() ?? EMPTY_ADAPTER_PREFERENCES
   const models = state?._tag === 'Ready' ? state.models : []
   const { favourites, others } = pickerModels(models, preferences)
-  const listed = [...favourites, ...others].some((model) => model.value === value)
+  const label = [...favourites, ...others].find((model) => model.value === value)?.displayName
+  const listed = label !== undefined
 
   const choose = (next: string) => {
     if (next === MANAGE_MODELS) openSettings({ page: 'adapters', adapter: 'claude-code' })
@@ -41,9 +42,14 @@ export function ModelPicker({
   }
 
   return (
-    <Select value={value} onValueChange={choose}>
+    <Select
+      value={value}
+      onValueChange={(next) => {
+        if (next !== null) choose(next)
+      }}
+    >
       <SelectTrigger size="sm" aria-label="Model" className={composerSettingTrigger()}>
-        <SelectValue />
+        <SelectValue>{label ?? value}</SelectValue>
       </SelectTrigger>
       <SelectContent align="start">
         {listed ? null : (
