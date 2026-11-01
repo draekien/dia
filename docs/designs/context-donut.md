@@ -29,7 +29,7 @@ Issue #86, part of the composer redesign #81. The data comes from #84 (`docs/des
 | `onCompact` | `sendMessage({ text: '/compact', mode })`, the same path as typing it |
 
 - The trigger is a 16px ring with a 2px stroke, named `Context 88% used` (`Context usage` before the first reading).
-- The popover shows `88% of context used`, `176k of 200k tokens` (the exact counts in `title`), a `role="meter"` bar and `Compact conversation`.
+- The popover shows `88% of context used`, `~176k of ~200k tokens` (`approximateTokens`; the exact counts in `title`), a `role="meter"` bar and `Compact conversation`.
 - While `running` and not `compacting`, Compact has `aria-disabled` and no click handler, and stays focusable so its tooltip `Available when this turn ends` shows on hover and focus.
 - While `compacting`, Compact is disabled with `aria-busy`, and the ring is neutral and pulses (no pulse under reduced motion).
 - `failure.message` shows under the button: in `text-error` for `failed`, muted for `nothingToCompact`.

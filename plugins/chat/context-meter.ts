@@ -1,4 +1,5 @@
 import type { ContextUsage } from '@shared/domain/context-usage'
+import { approximateTokens, exactTokens } from './token-count'
 
 const AMBER_START = 0.5
 const AMBER_FULL = 0.75
@@ -41,12 +42,10 @@ export const contextColor = (usage: ContextUsage, compactFailed: boolean): strin
 export const contextPercent = (usage: ContextUsage): number =>
   Math.round(contextFraction(usage) * 100)
 
-const thousands = (count: number): string => `${Math.round(count / 1000)}k`
-
-/** The token line for `usage` in thousands, for example `176k of 200k tokens`. */
+/** The token line for `usage`, rounded to thousands, for example `~176k of ~200k tokens`. */
 export const contextTokensLine = (usage: ContextUsage): string =>
-  `${thousands(usage.totalTokens)} of ${thousands(usage.maxTokens)} tokens`
+  `${approximateTokens(usage.totalTokens)} of ${approximateTokens(usage.maxTokens)} tokens`
 
 /** The token line for `usage` in full, for example `176,000 of 200,000 tokens`. */
 export const contextTokensExact = (usage: ContextUsage): string =>
-  `${usage.totalTokens.toLocaleString('en-US')} of ${usage.maxTokens.toLocaleString('en-US')} tokens`
+  `${usage.totalTokens.toLocaleString('en-US')} of ${exactTokens(usage.maxTokens)}`

@@ -65,7 +65,7 @@ describe('context meter text', () => {
   })
 
   it('reads tokens in thousands', () => {
-    expect(contextTokensLine(usage)).toBe('176k of 200k tokens')
+    expect(contextTokensLine(usage)).toBe('~176k of ~200k tokens')
   })
 
   it('reads tokens in full', () => {

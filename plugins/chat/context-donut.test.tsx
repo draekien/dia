@@ -62,7 +62,7 @@ describe('ContextDonut', () => {
   it('shows the numbers and a meter in the popover', () => {
     open({})
     expect(screen.getByText('88% of context used')).toBeTruthy()
-    expect(screen.getByText('176k of 200k tokens').getAttribute('title')).toBe(
+    expect(screen.getByText('~176k of ~200k tokens').getAttribute('title')).toBe(
       '176,000 of 200,000 tokens'
     )
     expect(screen.getByRole('meter').getAttribute('aria-valuenow')).toBe('88')

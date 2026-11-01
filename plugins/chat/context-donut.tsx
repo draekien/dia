@@ -59,29 +59,55 @@ function CompactButton({
   compacting: boolean
   onCompact: () => void
 }): React.JSX.Element {
-  if (!running || compacting) {
-    return (
-      <Button
-        size="sm"
-        variant="outline"
-        className="w-full"
-        disabled={compacting}
-        aria-busy={compacting}
-        onClick={onCompact}
-      >
-        Compact conversation
-      </Button>
-    )
-  }
+  const blocked = running && !compacting
+  const button = (
+    <Button
+      size="sm"
+      variant="outline"
+      className={cn('w-full', blocked && 'opacity-50')}
+      disabled={compacting}
+      aria-busy={compacting}
+      aria-disabled={blocked || undefined}
+      onClick={blocked ? undefined : onCompact}
+    >
+      Compact conversation
+    </Button>
+  )
+  if (!blocked) return button
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button size="sm" variant="outline" className="w-full opacity-50" aria-disabled="true">
-          Compact conversation
-        </Button>
-      </TooltipTrigger>
+      <TooltipTrigger asChild>{button}</TooltipTrigger>
       <TooltipContent>Available when this turn ends</TooltipContent>
     </Tooltip>
+  )
+}
+
+function Reading({ usage, colour }: { usage: ContextUsage; colour: string }): React.JSX.Element {
+  const percent = contextPercent(usage)
+  return (
+    <>
+      <div className="flex flex-col gap-0.5">
+        <p className="font-medium">{percent}% of context used</p>
+        <p className="text-muted-foreground text-xs" title={contextTokensExact(usage)}>
+          {contextTokensLine(usage)}
+        </p>
+      </div>
+      {/* biome-ignore lint/a11y/useSemanticElements: a native meter cannot take the computed fill colour */}
+      <div
+        role="meter"
+        aria-label="Context used"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-valuetext={`${percent}% of context used, ${contextTokensLine(usage)}`}
+        className="h-1.5 w-full overflow-hidden rounded-full bg-border"
+      >
+        <div
+          className="h-full rounded-full transition-[width,background-color] duration-300 motion-reduce:transition-none"
+          style={{ width: `${percent}%`, backgroundColor: colour }}
+        />
+      </div>
+    </>
   )
 }
 
@@ -106,7 +132,6 @@ export function ContextDonut({
   onCompact: () => void
 }): React.JSX.Element {
   const failed = failure?.reason === 'failed'
-  const percent = usage === null ? null : contextPercent(usage)
   const colour = usage === null || compacting ? 'var(--ink-muted)' : contextColor(usage, failed)
   return (
     <Popover>
@@ -115,7 +140,7 @@ export function ContextDonut({
           variant="ghost"
           size="icon-sm"
           className="ml-auto"
-          aria-label={percent === null ? 'Context usage' : `Context ${percent}% used`}
+          aria-label={usage === null ? 'Context usage' : `Context ${contextPercent(usage)}% used`}
         >
           <Ring
             fraction={usage === null ? 0 : contextFraction(usage)}
@@ -125,32 +150,10 @@ export function ContextDonut({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="flex w-64 flex-col gap-3 text-sm">
-        {usage === null || percent === null ? (
+        {usage === null ? (
           <p className="text-muted-foreground">Context usage appears after the first turn</p>
         ) : (
-          <>
-            <div className="flex flex-col gap-0.5">
-              <p className="font-medium">{percent}% of context used</p>
-              <p className="text-muted-foreground text-xs" title={contextTokensExact(usage)}>
-                {contextTokensLine(usage)}
-              </p>
-            </div>
-            {/* biome-ignore lint/a11y/useSemanticElements: a native meter cannot take the computed fill colour */}
-            <div
-              role="meter"
-              aria-label="Context used"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={percent}
-              aria-valuetext={`${percent}% of context used, ${contextTokensLine(usage)}`}
-              className="h-1.5 w-full overflow-hidden rounded-full bg-border"
-            >
-              <div
-                className="h-full rounded-full transition-[width,background-color] duration-300 motion-reduce:transition-none"
-                style={{ width: `${percent}%`, backgroundColor: colour }}
-              />
-            </div>
-          </>
+          <Reading usage={usage} colour={colour} />
         )}
         <CompactButton running={running} compacting={compacting} onCompact={onCompact} />
         {failure !== null && (
