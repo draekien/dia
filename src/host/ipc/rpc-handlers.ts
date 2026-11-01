@@ -12,6 +12,7 @@ import { AgentSummaries } from '../services/agent-summaries'
 import { BackgroundActivities } from '../services/background-activities'
 import { CommandDeduper } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
+import { withMetaRepo } from '../services/meta-repo-seam'
 import { ModelCatalogFeed } from '../services/model-catalog-feed'
 import { ModelPreferences } from '../services/model-preferences'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
@@ -346,6 +347,9 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     ListProjectEntries: ({ cwd }) => projectEntries.list(cwd),
     ListActivities: () => activities.list,
     RunActivity: ({ plugin, id }) => activities.runNow(plugin, id),
+    GetMetaRepo: () => withMetaRepo(plugins, (repo) => repo.state),
+    SetMetaRemote: ({ url }) => withMetaRepo(plugins, (repo) => repo.setRemote(url)),
+    PushMetaRepo: () => withMetaRepo(plugins, (repo) => repo.push),
     SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
   })
 })

@@ -55,6 +55,7 @@ import {
 } from '../ui/select'
 import { Skeleton } from '../ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
+import { Row, SectionHeading } from './section'
 
 const STALE_CHECK = Duration.minutes(5)
 
@@ -113,23 +114,6 @@ const isStale = (health: Health): boolean => {
   return (
     checkedAt !== undefined &&
     Date.now() - new Date(checkedAt).getTime() > Duration.toMillis(STALE_CHECK)
-  )
-}
-
-function SectionHeading({ id, children }: { readonly id: string; readonly children: string }) {
-  return (
-    <h3 id={id} className="text-sm font-medium text-ink">
-      {children}
-    </h3>
-  )
-}
-
-function Row({ label, children }: { readonly label: string; readonly children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)] items-baseline gap-3">
-      <dt className="text-xs text-ink-muted">{label}</dt>
-      <dd className="min-w-0 text-sm text-ink">{children}</dd>
-    </div>
   )
 }
 

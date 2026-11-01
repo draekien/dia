@@ -12,6 +12,15 @@ export { ContentAttachment, PathAttachment } from '../shared/domain/attachment'
 export { PlanReviewResponse, Question } from '../shared/domain/attention'
 export { OutgoingMessage } from '../shared/domain/message-queue'
 export {
+  MetaRepoFailed,
+  MetaRepoPushed,
+  MetaRepoPushRefused,
+  type MetaRepoPushResult,
+  MetaRepoState,
+  type MetaRepoStateResult,
+  SecretFinding
+} from '../shared/domain/meta-repo'
+export {
   type ModelCatalogState,
   ModelOption,
   ModelsLoading,

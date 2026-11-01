@@ -77,4 +77,4 @@ Roadmap, not in this PRD:
 
 ## Open Questions
 
-- Which secret scanner checks meta repo pushes is decided during implementation.
+- Resolved 2026-11-01: a built-in rule set in the `meta` plugin checks meta repo pushes (ADR-0047).

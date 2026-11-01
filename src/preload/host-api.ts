@@ -266,6 +266,11 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         ),
       onChanged: (listener) => subscribeTo('ActivitiesChanged', () => listener())
     },
+    metaRepo: {
+      getState: () => query((client) => client.GetMetaRepo()),
+      setRemote: (url) => query((client) => client.SetMetaRemote({ url })),
+      push: () => query((client) => client.PushMetaRepo())
+    },
     sendMessage: (paneId, text, mode, attachments) =>
       command('SendMessage', (client, commandId) =>
         client.SendMessage({

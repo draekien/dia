@@ -84,7 +84,7 @@ A meta agent's change to a project follows the same approval rule as a change to
 
 ### Publishing
 
-The user may add a remote to the meta repo and push to it. dia scans the commits being pushed for secrets and refuses the push when the scan finds one. The scanner is chosen during implementation.
+The user may add a remote to the meta repo and push to it. dia scans the commits being pushed for secrets and refuses the push when the scan finds one. ADR-0047 chooses the scanner.
 
 ### Consequences
 

@@ -129,7 +129,7 @@ A one-line strip under the title bar, above the main tab, shown while any agent 
 - **Error / Disabled:** an error state, such as a validation error, uses red, per the One Voice Rule. It does not pulse.
 
 ### Navigation
-The sidebar is the primary navigation. Any command palette or agent switcher reads as an overlay (Raycast-style), not a further persistent chrome element. Every setting lives in one Settings dialog (General, Adapters and Plugins in a left nav, a breadcrumb over the page); the command palette has one Settings item, and its search also lists each Settings page.
+The sidebar is the primary navigation. Any command palette or agent switcher reads as an overlay (Raycast-style), not a further persistent chrome element. Every setting lives in one Settings dialog (General, Adapters, Plugins and Meta repo in a left nav, a breadcrumb over the page). Meta repo shows the remote and branch, adds or changes the remote, and pushes; a refused push lists each finding by description, `file:line` and short commit in mono, under one line in error red, and never the secret; the command palette has one Settings item, and its search also lists each Settings page.
 
 ## 6. Do's and Don'ts
 

@@ -155,6 +155,9 @@ const makeClient = (script: ClientScript = {}) => {
   const runActivity = vi.fn(
     (_payload: { plugin: string; id: string }) => script.runActivity ?? Effect.void
   )
+  const setMetaRemote = vi.fn((payload: { url: string }) =>
+    Effect.succeed({ _tag: 'MetaRepoState' as const, remoteUrl: payload.url, branch: 'main' })
+  )
   const setPluginOverride = vi.fn((_payload: { name: string; directory: string }) =>
     Effect.succeed({ _tag: 'Rejected' as const, message: 'no plugin.json' })
   )
@@ -173,7 +176,8 @@ const makeClient = (script: ClientScript = {}) => {
     GetModels: getModels,
     GetAdapterStatus: getAdapterStatus,
     GetModelPreferences: getModelPreferences,
-    RunActivity: runActivity
+    RunActivity: runActivity,
+    SetMetaRemote: setMetaRemote
   } as unknown as DiaRpcClient
   return {
     client,
@@ -187,7 +191,8 @@ const makeClient = (script: ClientScript = {}) => {
     loadPlugin,
     setPluginOverride,
     getModels,
-    runActivity
+    runActivity,
+    setMetaRemote
   }
 }
 
@@ -409,6 +414,22 @@ describe('makeHostApi', () => {
       { plugin: 'claude-code', id: 'models' }
     ])
     expect(result).toBeNull()
+  })
+
+  it('sends the remote URL to SetMetaRemote unchanged and resolves its state', async () => {
+    const { client, setMetaRemote } = makeClient()
+    const { api } = makeApi(client)
+
+    const result = await api.metaRepo.setRemote('git@github.com:me/meta.git')
+
+    expect(setMetaRemote.mock.calls.map(([payload]) => payload)).toEqual([
+      { url: 'git@github.com:me/meta.git' }
+    ])
+    expect(result).toStrictEqual({
+      _tag: 'MetaRepoState',
+      remoteUrl: 'git@github.com:me/meta.git',
+      branch: 'main'
+    })
   })
 
   it('resolves running an unknown activity as the plain refusal', async () => {
