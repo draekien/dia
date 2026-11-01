@@ -34,12 +34,16 @@ const stackLayer = cva(cn('absolute right-0', dashedBubble), {
   variants: {
     depth: {
       0: 'bottom-0 z-[4] *:data-[slot=bubble-content]:border-muted-foreground/60',
-      1: 'bottom-[22px] z-[3] *:data-[slot=bubble-content]:border-muted-foreground/40 *:data-[slot=bubble-content]:text-foreground/70',
+      1: 'bottom-[22px] z-[3] *:data-[slot=bubble-content]:border-muted-foreground/40 *:data-[slot=bubble-content]:pt-0.5 *:data-[slot=bubble-content]:text-foreground/70',
       2: 'bottom-[34px] z-[2] *:data-[slot=bubble-content]:border-muted-foreground/35 *:data-[slot=bubble-content]:text-transparent',
       3: 'bottom-[40px] z-[1] *:data-[slot=bubble-content]:border-muted-foreground/35 *:data-[slot=bubble-content]:text-transparent'
     }
   }
 })
+
+const scrollToEnd = (list: HTMLOListElement | null): void => {
+  if (list !== null) list.scrollTop = list.scrollHeight
+}
 
 function QueueMarker({ count, held }: { count: number; held: boolean }): React.JSX.Element {
   return (
@@ -199,7 +203,8 @@ export function QueuedMessages({
           <QueueMarker count={queued.length} held={held} />
           <ol
             aria-label={`${queued.length} queued ${noun}, in send order`}
-            className="flex max-h-[250px] flex-col gap-1.5 overflow-y-auto pt-6 [mask-image:linear-gradient(transparent,#000_24px)]"
+            ref={scrollToEnd}
+            className="flex max-h-[250px] flex-col gap-1.5 overflow-y-auto pt-6 [mask-image:linear-gradient(transparent,#000_24px)] [scrollbar-color:var(--border)_transparent] [scrollbar-width:thin]"
           >
             {queued.map((message) =>
               message.id === editingId ? (
