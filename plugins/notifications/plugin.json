@@ -1,0 +1,7 @@
+{
+  "name": "notifications",
+  "api": "0.0.13",
+  "category": "feature",
+  "host": "host.ts",
+  "load": "eager"
+}

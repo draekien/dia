@@ -26,7 +26,8 @@ import {
   Path,
   PlatformError,
   Result,
-  Stream
+  Stream,
+  SubscriptionRef
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { AGENT_BACKEND_KEY, type AgentBackend } from '../session/agent-backend'
@@ -34,6 +35,7 @@ import { EventHub } from './event-hub'
 import { type PaneCreationRequest, type PaneHandle, PaneSupervisor } from './pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
 import { TranscriptReader } from './transcript-reader'
+import { WorkspaceFeed, WorkspaceFeedLive } from './workspace-feed'
 import { type WorkspaceLoadError, WorkspaceStore } from './workspace-store'
 import { type GitOps, WorktreeCreateError } from './worktrees-seam'
 
@@ -69,7 +71,7 @@ interface Harness {
   readonly published: Array<IpcEvent>
   readonly requests: Array<PaneCreationRequest>
   readonly existing: Set<string>
-  readonly layer: Layer.Layer<PaneWorkspace, WorkspaceLoadError>
+  readonly layer: Layer.Layer<PaneWorkspace | WorkspaceFeed, WorkspaceLoadError>
 }
 
 interface HarnessOptions {
@@ -174,7 +176,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const layer = Layer.provide(
     makePaneWorkspaceLive(WORKTREES_ROOT),
     Layer.mergeAll(supervisor, store, hub, plugins, transcripts, fs, NodePath.layer)
-  )
+  ).pipe(Layer.provideMerge(WorkspaceFeedLive))
   return { log, saves, published, requests, existing, layer }
 }
 
@@ -214,7 +216,7 @@ const request = (overrides: Partial<CreateTabRequest> = {}): CreateTabRequest =>
 
 const ignore = (_event: IpcEvent): Effect.Effect<void> => Effect.void
 
-const run = <A, E>(harness: Harness, body: Effect.Effect<A, E, PaneWorkspace>) =>
+const run = <A, E>(harness: Harness, body: Effect.Effect<A, E, PaneWorkspace | WorkspaceFeed>) =>
   body.pipe(Effect.provide(harness.layer))
 
 const current = Effect.flatMap(PaneWorkspace, (workspace) => workspace.getWorkspace)
@@ -249,6 +251,27 @@ describe('PaneWorkspace loading', () => {
         assert.deepStrictEqual(workspace.visibleTab, PANE_A)
         assert.strictEqual(harness.requests.length, 0)
       })
+  )
+})
+
+describe('PaneWorkspace workspace feed', () => {
+  it.effect('holds the loaded workspace, then each change', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects(undefined) })
+
+      const [loaded, changed] = yield* run(
+        harness,
+        Effect.gen(function* () {
+          const feed = yield* WorkspaceFeed
+          const before = yield* SubscriptionRef.get(feed)
+          yield* (yield* PaneWorkspace).selectTab(PANE_B, ignore)
+          return [before, yield* SubscriptionRef.get(feed)] as const
+        })
+      )
+
+      assert.deepStrictEqual(loaded.visibleTab, PANE_A)
+      assert.deepStrictEqual(changed.visibleTab, PANE_B)
+    })
   )
 })
 

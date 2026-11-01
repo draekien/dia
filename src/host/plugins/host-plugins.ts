@@ -6,10 +6,12 @@ import {
   PluginLoadError,
   type PluginRegistry
 } from '@shared/plugin/plugin-registry'
-import { ByteSize, Context, Effect, FileSystem, Layer, Path } from 'effect'
+import { ByteSize, Context, Effect, FileSystem, Layer, Path, SubscriptionRef } from 'effect'
+import { AppWindow } from '../services/app-window'
 import { BackgroundActivities } from '../services/background-activities'
 import { makePluginDatabase } from '../services/database'
 import { EventHub } from '../services/event-hub'
+import { WorkspaceFeed } from '../services/workspace-feed'
 import { adapterContract } from '../session/agent-backend'
 import { makeHostPluginLoader } from './plugin-loader'
 import { heapUsedAfterGc, makePluginMemoryGuard } from './plugin-memory-guard'
@@ -29,12 +31,13 @@ export class HostPlugins extends Context.Service<HostPlugins, PluginRegistry>()(
  * subscription to the Host's {@link EventHub}; `dataDir`, the directory
  * `<userDataPath>/plugins/<name>`, created before the plugin's setup runs; `activities`,
  * registration with {@link BackgroundActivities} under the plugin's name; and `database`, which
- * opens `<dataDir>/data.db` only when the plugin calls it. Every plugin state
+ * opens `<dataDir>/data.db` only when the plugin calls it; `workspace`, following
+ * {@link WorkspaceFeed}; and `window`, backed by {@link AppWindow}. Every plugin state
  * change is published to the hub as a `PluginStatusChanged` event. `pluginApiPath` is the
  * absolute path of the built module that `import '@dia/plugin'` resolves to inside a plugin
  * (`out/main/plugin-api.js`). Build the layer once per process, because it installs a
  * process-wide resolution hook. Requires `PluginSources`, `EventHub`, `BackgroundActivities`,
- * `FileSystem` and `Path`.
+ * `WorkspaceFeed`, `AppWindow`, `FileSystem` and `Path`.
  */
 export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string) =>
   Layer.effect(
@@ -43,6 +46,8 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
       const sources = yield* PluginSources
       const hub = yield* EventHub
       const activities = yield* BackgroundActivities
+      const workspaceFeed = yield* WorkspaceFeed
+      const appWindow = yield* AppWindow
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
       const pluginApiUrl = yield* path.toFileUrl(pluginApiPath).pipe(Effect.orDie)
@@ -66,6 +71,8 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
             Effect.as({
               ...services,
               events: hub.subscribe({}),
+              workspace: SubscriptionRef.changes(workspaceFeed),
+              window: { attended: appWindow.attended, notify: appWindow.notify },
               dataDir,
               activities: {
                 register: (spec) => activities.register(services.name, spec)

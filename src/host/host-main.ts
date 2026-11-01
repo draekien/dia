@@ -35,18 +35,20 @@ import { HostPlugins, makeHostPluginsLive } from './plugins/host-plugins'
 import { makePluginSourcesLive } from './plugins/plugin-sources'
 import { AdapterStatusFeed, AdapterStatusFeedLive } from './services/adapter-status-feed'
 import { AgentSummariesLive } from './services/agent-summaries'
+import { AppWindow, makeAppWindowLive } from './services/app-window'
 import { BackgroundActivitiesLive } from './services/background-activities'
 import { makeCommandDeduperLive } from './services/command-deduper'
 import { makeHostDatabaseLive } from './services/database'
-import { makeEventHubLive } from './services/event-hub'
+import { EventHub, makeEventHubLive } from './services/event-hub'
 import { ModelCatalogFeed, ModelCatalogFeedLive } from './services/model-catalog-feed'
 import { ModelPreferencesLive } from './services/model-preferences'
 import { PaneSupervisor, PaneSupervisorLive, SessionFactoryLive } from './services/pane-supervisor'
-import { makePaneWorkspaceLive } from './services/pane-workspace'
+import { makePaneWorkspaceLive, PaneWorkspace } from './services/pane-workspace'
 import { makePersistenceServiceLive } from './services/persistence'
 import { ProjectEntriesLive } from './services/project-entries'
 import { makeSettingsStoreLive } from './services/settings-store'
 import { TranscriptReaderLive } from './services/transcript-reader'
+import { WorkspaceFeedLive } from './services/workspace-feed'
 import { makeWorkspaceStoreLive } from './services/workspace-store'
 
 const encodeToMain = Schema.encodeSync(HostToMainMessage)
@@ -76,9 +78,36 @@ const mainMessages = Stream.callback<unknown>((queue) =>
   Stream.filterMap((decoded) => decoded)
 )
 
+const handleMainMessage = Effect.fn('Host.handleMainMessage')(function* (
+  message: MainToHostMessage,
+  hostScope: Scope.Scope
+) {
+  switch (message._tag) {
+    case 'WindowAttention':
+      return yield* (yield* AppWindow).setAttended(message.attended)
+    case 'ShowAgent': {
+      const hub = yield* EventHub
+      yield* Effect.logInfo('Showing an agent from its notification', { paneId: message.paneId })
+      yield* (yield* PaneWorkspace).selectTab(message.paneId, hub.publish).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning('Could not show the agent of a notification', {
+            paneId: message.paneId,
+            error
+          })
+        ),
+        Effect.forkIn(hostScope)
+      )
+      return
+    }
+    default:
+      return
+  }
+})
+
 const buildHostLayer = (init: HostInit, token: string) => {
   const settings = Layer.provide(makeSettingsStoreLive(init.userDataPath), NodeServices.layer)
   const eventHub = makeEventHubLive()
+  const appWindow = makeAppWindowLive(post)
   const pluginSources = Layer.provide(
     makePluginSourcesLive(init.pluginsRoot),
     Layer.mergeAll(settings, NodeFileSystem.layer, NodePath.layer)
@@ -90,6 +119,8 @@ const buildHostLayer = (init: HostInit, token: string) => {
       pluginSources,
       eventHub,
       backgroundActivities,
+      WorkspaceFeedLive,
+      appWindow,
       NodeFileSystem.layer,
       NodePath.layer
     )
@@ -116,6 +147,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
       Layer.provide(TranscriptReaderLive, hostPlugins),
       eventHub,
       hostPlugins,
+      WorkspaceFeedLive,
       NodeFileSystem.layer,
       NodePath.layer
     )
@@ -142,6 +174,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     modelCatalog,
     adapterStatus,
     modelPreferences,
+    appWindow,
     makeCommandDeduperLive(),
     Layer.provide(ProjectEntriesLive, NodeServices.layer),
     hostDatabase,
@@ -214,6 +247,7 @@ export const runHost = Effect.scoped(
       while (true) {
         const message = yield* Queue.take(inbox)
         if (message._tag === 'Shutdown') break
+        yield* handleMainMessage(message, hostScope)
       }
       yield* Effect.logInfo('Host shutting down')
       yield* supervisor.closeAll()
