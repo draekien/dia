@@ -6,14 +6,20 @@ export const isWindowAttended = (window: BrowserWindow): boolean =>
   window.isVisible() && !window.isMinimized() && window.isFocused()
 
 /**
- * Calls `report` with {@link isWindowAttended} each time `window` is focused, blurred, shown,
- * hidden, minimised or restored. Call once per window.
+ * Calls `report` with {@link isWindowAttended} when it changes on `window` being focused, blurred,
+ * shown, hidden, minimised or restored. Call once per window.
  */
 export const watchWindowAttention = (
   window: BrowserWindow,
   report: (attended: boolean) => void
 ): void => {
-  const onChange = (): void => report(isWindowAttended(window))
+  let reported: boolean | undefined
+  const onChange = (): void => {
+    const attended = isWindowAttended(window)
+    if (attended === reported) return
+    reported = attended
+    report(attended)
+  }
   window.on('focus', onChange)
   window.on('blur', onChange)
   window.on('show', onChange)

@@ -70,9 +70,8 @@ export const startHostProcess = Effect.fn('HostProcess.start')(function* (option
   readonly esbuildBinaryPath: string | undefined
   readonly onRestarted: Effect.Effect<void>
   readonly readyMessages: Effect.Effect<ReadonlyArray<MainToHostMessage>>
-  readonly onNotify: (notification: AgentNotification) => Effect.Effect<void>
+  readonly onNotify: (notification: AgentNotification) => void
 }): Effect.fn.Return<HostProcess, never, Scope.Scope> {
-  const services = yield* Effect.context<never>()
   const connectionRef = yield* SubscriptionRef.make<Option.Option<HostConnection>>(Option.none())
   const childRef = yield* Ref.make<Option.Option<UtilityProcess>>(Option.none())
   const stoppingRef = yield* Ref.make(false)
@@ -104,7 +103,7 @@ export const startHostProcess = Effect.fn('HostProcess.start')(function* (option
         const decoded = decodeFromHost(raw)
         if (Option.isNone(decoded)) return
         if (decoded.value._tag === 'Notify') {
-          Effect.runForkWith(services)(options.onNotify(decoded.value.notification))
+          options.onNotify(decoded.value.notification)
           return
         }
         Queue.offerUnsafe(messages, decoded.value)

@@ -29,12 +29,7 @@ export const makeAppWindowLive = (post: (message: HostToMainMessage) => Effect.E
           SubscriptionRef.set(attendedRef, attended).pipe(
             Effect.andThen(Effect.logDebug('Window attention changed', { attended }))
           ),
-        notify: (notification) =>
-          post(Notify.make({ notification })).pipe(
-            Effect.andThen(
-              Effect.logInfo('Asked main to show a notification', { paneId: notification.paneId })
-            )
-          )
+        notify: (notification) => post(Notify.make({ notification }))
       }
     })
   )

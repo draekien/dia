@@ -30,7 +30,9 @@ vi.mock('electron', () => ({
   }
 }))
 
-const { isWindowAttended, makeAgentNotifier } = await import('./agent-notifications')
+const { isWindowAttended, makeAgentNotifier, watchWindowAttention } = await import(
+  './agent-notifications'
+)
 
 const fakeWindow = (state: { visible: boolean; minimized: boolean; focused: boolean }) => {
   const calls: Array<string> = []
@@ -59,6 +61,28 @@ describe('isWindowAttended', () => {
     [{ visible: true, minimized: false, focused: false }, false]
   ])('is %o -> %s', (state, expected) => {
     expect(isWindowAttended(fakeWindow(state).window)).toBe(expected)
+  })
+})
+
+describe('watchWindowAttention', () => {
+  it('reports only when whether the window is attended changes', () => {
+    const state = { visible: true, minimized: false, focused: true }
+    const handlers = new Map<string, () => void>()
+    const window = {
+      ...fakeWindow(state).window,
+      on: (event: string, handler: () => void) => handlers.set(event, handler)
+    } as unknown as BrowserWindow
+    const reports: Array<boolean> = []
+    watchWindowAttention(window, (attended) => reports.push(attended))
+
+    handlers.get('focus')?.()
+    handlers.get('show')?.()
+    state.focused = false
+    handlers.get('blur')?.()
+    state.minimized = true
+    handlers.get('minimize')?.()
+
+    expect(reports).toEqual([true, false])
   })
 })
 

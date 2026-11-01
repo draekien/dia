@@ -1,7 +1,6 @@
 import type { HostPluginContext, PluginSetup } from '@dia/plugin'
-import type { AgentSummaryChanged } from '@shared/ipc/contract'
 import type { EventFrame } from '@shared/ipc/rpc'
-import { Effect, Stream } from 'effect'
+import { Effect, Result, Stream } from 'effect'
 import {
   attentionChanged,
   INITIAL_RULE_STATE,
@@ -10,21 +9,17 @@ import {
   workspaceChanged
 } from './notification-rule'
 
-const summaryEventOf = (frame: EventFrame): AgentSummaryChanged | undefined =>
+const summaryStepOf = (frame: EventFrame): Result.Result<RuleStep, void> =>
   frame._tag !== 'ReloadHistory' && frame.event._tag === 'AgentSummaryChanged'
-    ? frame.event
-    : undefined
+    ? Result.succeed(summaryChanged(frame.event.summary))
+    : Result.failVoid
 
 const ruleSteps = (ctx: HostPluginContext): Stream.Stream<RuleStep> =>
   Stream.mergeAll(
     [
       Stream.map(ctx.workspace, workspaceChanged),
       Stream.map(ctx.window.attended, attentionChanged),
-      ctx.events.pipe(
-        Stream.map(summaryEventOf),
-        Stream.filter((event) => event !== undefined),
-        Stream.map((event) => summaryChanged(event.summary))
-      )
+      Stream.filterMap(ctx.events, summaryStepOf)
     ],
     { concurrency: 'unbounded' }
   )

@@ -65,17 +65,13 @@ export const summaryChanged =
   (summary: AgentSummary): RuleStep =>
   (state) => {
     const previous = state.statuses.get(summary.paneId)
+    if (previous !== undefined && Equal.equals(previous, summary.status)) return [state, []]
     const next: RuleState = {
       ...state,
       statuses: new Map(state.statuses).set(summary.paneId, summary.status)
     }
     const reason = reasonOf(summary.status)
-    if (
-      reason === undefined ||
-      (previous !== undefined && Equal.equals(previous, summary.status))
-    ) {
-      return [next, []]
-    }
+    if (reason === undefined) return [next, []]
     const title = state.workspace === null ? undefined : agentTitle(state.workspace, summary.paneId)
     if (title === undefined || isOnScreen(state, summary.paneId)) return [next, []]
     return [next, [{ paneId: summary.paneId, title, body: reason }]]

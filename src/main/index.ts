@@ -199,12 +199,16 @@ app.whenReady().then(async () => {
           readyMessages: Effect.sync(() => [
             WindowAttention.make({ attended: isWindowAttended(mainWindow) })
           ]),
-          onNotify: (notification) =>
-            Notification.isSupported()
-              ? Effect.logInfo('Showing an agent notification', notification).pipe(
-                  Effect.andThen(Effect.sync(() => showNotification(notification)))
-                )
-              : Effect.logWarning('OS notifications are not supported; dropped one', notification)
+          onNotify: (notification) => {
+            if (!Notification.isSupported()) {
+              runLog(
+                Effect.logWarning('OS notifications are not supported; dropped one', notification)
+              )
+              return
+            }
+            runLog(Effect.logInfo('Showing an agent notification', notification))
+            showNotification(notification)
+          }
         })
         const showNotification = makeAgentNotifier(mainWindow, (paneId) =>
           runLog(host.send(ShowAgent.make({ paneId })))
