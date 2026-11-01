@@ -8,10 +8,11 @@ export interface SecretRule {
   readonly matches: (line: string) => boolean
 }
 
-const pattern =
-  (regex: RegExp) =>
-  (line: string): boolean =>
-    regex.test(line)
+const rule = (id: string, description: string, regex: RegExp): SecretRule => ({
+  id,
+  description,
+  matches: (line) => regex.test(line)
+})
 
 const GENERIC_ASSIGNMENT =
   /(?:access|auth|api|credential|creds|key|passw(?:or)?d|pwd|secret|token)[\w.-]{0,20}["'`]?\s{0,3}(?::=|=>|=|:)\s{0,3}["'`]?([\w.=+/-]{16,})/gi
@@ -41,58 +42,28 @@ const hasGenericSecret = (line: string): boolean =>
  * of them and the generic rule is reported under the specific one.
  */
 export const SECRET_RULES: ReadonlyArray<SecretRule> = [
-  {
-    id: 'anthropic-key',
-    description: 'Anthropic API key or token',
-    matches: pattern(/\bsk-ant-[a-z]{2,10}\d{2}-[\w-]{20,}/)
-  },
-  {
-    id: 'openai-key',
-    description: 'OpenAI API key',
-    matches: pattern(
-      /\bsk-(?:(?:proj|svcacct|admin)-[\w-]{20,}|[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20})/
-    )
-  },
-  {
-    id: 'github-token',
-    description: 'GitHub token',
-    matches: pattern(/\b(?:gh[pousr]_[0-9a-zA-Z]{36}|github_pat_\w{82})/)
-  },
-  {
-    id: 'aws-access-key',
-    description: 'AWS access key ID',
-    matches: pattern(/\b(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b/)
-  },
-  {
-    id: 'private-key',
-    description: 'Private key',
-    matches: pattern(/-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i)
-  },
-  {
-    id: 'slack-token',
-    description: 'Slack token',
-    matches: pattern(/\bxox[baprse]-[0-9a-zA-Z-]{10,}/)
-  },
-  {
-    id: 'google-api-key',
-    description: 'Google API key',
-    matches: pattern(/\bAIza[\w-]{35}/)
-  },
-  {
-    id: 'stripe-key',
-    description: 'Stripe secret key',
-    matches: pattern(/\b(?:sk|rk)_(?:test|live|prod)_[a-zA-Z0-9]{10,99}/)
-  },
-  {
-    id: 'npm-token',
-    description: 'npm access token',
-    matches: pattern(/\bnpm_[a-zA-Z0-9]{36}/)
-  },
-  {
-    id: 'jwt',
-    description: 'JSON Web Token',
-    matches: pattern(/\bey[a-zA-Z0-9]{17,}\.ey[a-zA-Z0-9/\\_-]{17,}\.[a-zA-Z0-9/\\_-]{10,}/)
-  },
+  rule('anthropic-key', 'Anthropic API key or token', /\bsk-ant-[a-z]{2,10}\d{2}-[\w-]{20,}/),
+  rule(
+    'openai-key',
+    'OpenAI API key',
+    /\bsk-(?:(?:proj|svcacct|admin)-[\w-]{20,}|[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20})/
+  ),
+  rule('github-token', 'GitHub token', /\b(?:gh[pousr]_[0-9a-zA-Z]{36}|github_pat_\w{82})/),
+  rule(
+    'aws-access-key',
+    'AWS access key ID',
+    /\b(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z2-7]{16}\b/
+  ),
+  rule('private-key', 'Private key', /-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i),
+  rule('slack-token', 'Slack token', /\bxox[baprse]-[0-9a-zA-Z-]{10,}/),
+  rule('google-api-key', 'Google API key', /\bAIza[\w-]{35}/),
+  rule('stripe-key', 'Stripe secret key', /\b(?:sk|rk)_(?:test|live|prod)_[a-zA-Z0-9]{10,99}/),
+  rule('npm-token', 'npm access token', /\bnpm_[a-zA-Z0-9]{36}/),
+  rule(
+    'jwt',
+    'JSON Web Token',
+    /\bey[a-zA-Z0-9]{17,}\.ey[a-zA-Z0-9/\\_-]{17,}\.[a-zA-Z0-9/\\_-]{10,}/
+  ),
   {
     id: 'generic-secret',
     description: 'High-entropy value assigned to a key, token, secret or password',
@@ -102,4 +73,4 @@ export const SECRET_RULES: ReadonlyArray<SecretRule> = [
 
 /** The first rule in {@link SECRET_RULES} that `line` matches, or `undefined` when none does. */
 export const findSecretRule = (line: string): SecretRule | undefined =>
-  SECRET_RULES.find((rule) => rule.matches(line))
+  SECRET_RULES.find((candidate) => candidate.matches(line))

@@ -66,20 +66,17 @@ const scanPatch = (commit: string, patch: string): ReadonlyArray<SecretFinding> 
       file = null
       continue
     }
+    const hunk = HUNK_HEADER.exec(text)
+    if (hunk !== null) {
+      inHunk = true
+      nextLine = Number(hunk[1])
+      continue
+    }
     if (!inHunk) {
       if (text.startsWith(NEW_FILE_HEADER)) {
         const path = text.slice(NEW_FILE_HEADER.length)
         file = path.startsWith('b/') ? path.slice(2) : null
       }
-      const hunk = HUNK_HEADER.exec(text)
-      if (hunk === null) continue
-      inHunk = true
-      nextLine = Number(hunk[1])
-      continue
-    }
-    const hunk = HUNK_HEADER.exec(text)
-    if (hunk !== null) {
-      nextLine = Number(hunk[1])
       continue
     }
     if (text.startsWith('+')) {

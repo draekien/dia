@@ -5,29 +5,13 @@ import type {
   SecretFinding
 } from '@shared/domain/meta-repo'
 import { Loader2Icon, ShieldAlertIcon, UploadIcon } from 'lucide-react'
-import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react'
+import { type FormEvent, useEffect, useId, useState } from 'react'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Skeleton } from '../ui/skeleton'
+import { Row, SectionHeading } from './section'
 
 const SHORT_SHA_LENGTH = 7
-
-function SectionHeading({ id, children }: { readonly id: string; readonly children: string }) {
-  return (
-    <h3 id={id} className="text-sm font-medium text-ink">
-      {children}
-    </h3>
-  )
-}
-
-function Row({ label, children }: { readonly label: string; readonly children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)] items-baseline gap-3">
-      <dt className="text-xs text-ink-muted">{label}</dt>
-      <dd className="min-w-0 text-sm text-ink">{children}</dd>
-    </div>
-  )
-}
 
 const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? '' : 's'}`
 
@@ -120,11 +104,8 @@ function RemoteSection({
     setSaving(true)
     const next = await window.dia.metaRepo.setRemote(url)
     setSaving(false)
-    if (next._tag === 'MetaRepoFailed') {
-      setError(next.message)
-      return
-    }
-    setError(undefined)
+    setError(next._tag === 'MetaRepoFailed' ? next.message : undefined)
+    if (next._tag === 'MetaRepoFailed') return
     setUrl('')
     onChange(next)
   }

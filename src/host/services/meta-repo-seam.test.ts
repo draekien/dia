@@ -60,6 +60,22 @@ describe('resolveSessionAdditions', () => {
     })
   )
 
+  it.effect('adds to a session from an older meta plugin that has no push members', () =>
+    Effect.gen(function* () {
+      const older = {
+        forNewSession: Effect.succeed({ systemPromptAppend: 'older', pluginPaths: [] })
+      }
+
+      assert.deepStrictEqual(
+        yield* resolveSessionAdditions(registryProviding(Option.some(older))),
+        {
+          systemPromptAppend: 'older',
+          pluginPaths: []
+        }
+      )
+    })
+  )
+
   it.effect('adds nothing when the provided value has no forNewSession effect', () =>
     Effect.gen(function* () {
       assert.deepStrictEqual(

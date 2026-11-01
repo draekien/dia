@@ -27,24 +27,27 @@ export interface MetaRepo {
 
 const NO_ADDITIONS: SessionAdditions = { systemPromptAppend: '', pluginPaths: [] }
 
-const isMetaRepo = (value: unknown): value is MetaRepo =>
-  Predicate.hasProperty(value, 'forNewSession') &&
-  Effect.isEffect(value.forNewSession) &&
-  Predicate.hasProperty(value, 'state') &&
-  Effect.isEffect(value.state) &&
-  Predicate.hasProperty(value, 'setRemote') &&
-  Predicate.isFunction(value.setRemote) &&
-  Predicate.hasProperty(value, 'push') &&
-  Effect.isEffect(value.push)
+const SESSION_MEMBERS = ['forNewSession'] as const
+const ALL_MEMBERS = ['forNewSession', 'state', 'setRemote', 'push'] as const
 
-const resolveMetaRepo = Effect.fnUntraced(function* (registry: Pick<PluginRegistry, 'inject'>) {
+const hasMembers = (value: unknown, members: ReadonlyArray<keyof MetaRepo>): value is MetaRepo =>
+  members.every(
+    (member) =>
+      Predicate.hasProperty(value, member) &&
+      (member === 'setRemote' ? Predicate.isFunction : Effect.isEffect)(value[member])
+  )
+
+const resolveMetaRepo = Effect.fnUntraced(function* (
+  registry: Pick<PluginRegistry, 'inject'>,
+  members: ReadonlyArray<keyof MetaRepo>
+) {
   const provided = yield* registry.inject(META_REPO_KEY)
   if (Option.isNone(provided)) {
     yield* Effect.logDebug('The meta plugin is not loaded')
     return Option.none<MetaRepo>()
   }
-  if (!isMetaRepo(provided.value)) {
-    yield* Effect.logError('The meta repo service does not have the MetaRepo members')
+  if (!hasMembers(provided.value, members)) {
+    yield* Effect.logError('The meta repo service lacks MetaRepo members', { members })
     return Option.none<MetaRepo>()
   }
   return Option.some(provided.value)
@@ -59,7 +62,7 @@ export const withMetaRepo = Effect.fn('MetaRepo.with')(function* <A>(
   registry: Pick<PluginRegistry, 'inject'>,
   use: (repo: MetaRepo) => Effect.Effect<A>
 ) {
-  const repo = yield* resolveMetaRepo(registry)
+  const repo = yield* resolveMetaRepo(registry, ALL_MEMBERS)
   if (Option.isNone(repo)) {
     return MetaRepoFailed.make({ message: 'The meta plugin is not loaded.' })
   }
@@ -74,14 +77,15 @@ export const withMetaRepo = Effect.fn('MetaRepo.with')(function* <A>(
 
 /**
  * Reads the {@link SessionAdditions} for a session starting now from the {@link MetaRepo} the
- * loaded `meta` plugin provides. It never fails: when the plugin is not loaded, or what it
- * provides is not a `MetaRepo`, it logs why and returns additions that add nothing. Call it once
+ * loaded `meta` plugin provides. It needs only `forNewSession`, so an older `meta` plugin without
+ * the push members still adds to sessions. It never fails: when the plugin is not loaded, or what
+ * it provides has no `forNewSession` effect, it logs why and returns additions that add nothing. Call it once
  * per session start; a plugin reload applies from the next call.
  */
 export const resolveSessionAdditions = Effect.fn('MetaRepo.resolveSessionAdditions')(function* (
   registry: Pick<PluginRegistry, 'inject'>
 ) {
-  const repo = yield* resolveMetaRepo(registry)
+  const repo = yield* resolveMetaRepo(registry, SESSION_MEMBERS)
   if (Option.isNone(repo)) return NO_ADDITIONS
   return yield* repo.value.forNewSession.pipe(
     Effect.catchDefect((defect) =>

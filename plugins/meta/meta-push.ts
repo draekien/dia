@@ -94,13 +94,11 @@ export const makeMetaPush = Effect.fn('MetaPush.make')(function* (directory: str
       return Option.none<string>()
     })
 
-  const readRemoteUrl = git(['remote', 'get-url', REMOTE]).pipe(
-    Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() : null))
-  )
+  const gitText = (args: ReadonlyArray<string>) =>
+    git(args).pipe(Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() : null)))
 
-  const readBranch = git(['symbolic-ref', '--quiet', '--short', 'HEAD']).pipe(
-    Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() : null))
-  )
+  const readRemoteUrl = gitText(['remote', 'get-url', REMOTE])
+  const readBranch = gitText(['symbolic-ref', '--quiet', '--short', 'HEAD'])
 
   const state: Effect.Effect<MetaRepoStateResult> = Effect.gen(function* () {
     const remoteUrl = yield* readRemoteUrl
@@ -110,34 +108,18 @@ export const makeMetaPush = Effect.fn('MetaPush.make')(function* (directory: str
     })
   })
 
-  const network = (step: string, args: ReadonlyArray<string>) =>
-    git(args).pipe(
-      Effect.timeoutOption(NETWORK_TIMEOUT),
-      Effect.flatMap(
-        Option.match({
-          onNone: () =>
-            Effect.logWarning('A meta repo git command timed out', { step }).pipe(
-              Effect.as<Option.Option<MetaRepoFailed>>(
-                Option.some(
-                  failed(
-                    `git ${step} did not finish within ${Duration.toMinutes(NETWORK_TIMEOUT)} minutes.`
-                  )
-                )
-              )
-            ),
-          onSome: (result) =>
-            Effect.succeed(
-              result.exitCode === 0
-                ? Option.none<MetaRepoFailed>()
-                : Option.some(
-                    failed(
-                      `git ${step} failed: ${lastLine(result.stderr) || `exit code ${result.exitCode}`}`
-                    )
-                  )
-            )
-        })
+  const network = Effect.fnUntraced(function* (step: string, args: ReadonlyArray<string>) {
+    const result = yield* git(args).pipe(Effect.timeoutOption(NETWORK_TIMEOUT))
+    if (Option.isNone(result)) {
+      yield* Effect.logWarning('A meta repo git command timed out', { step })
+      return failed(
+        `git ${step} did not finish within ${Duration.toMinutes(NETWORK_TIMEOUT)} minutes.`
       )
-    )
+    }
+    const { exitCode, stderr } = result.value
+    if (exitCode === 0) return undefined
+    return failed(`git ${step} failed: ${lastLine(stderr) || `exit code ${exitCode}`}`)
+  })
 
   const setRemote = (url: string): Effect.Effect<MetaRepoStateResult> =>
     lock.withPermits(1)(
@@ -147,11 +129,12 @@ export const makeMetaPush = Effect.fn('MetaPush.make')(function* (directory: str
           return failed('Enter a remote URL without spaces that does not start with "-".')
         }
         const existing = yield* readRemoteUrl
-        const args =
-          existing === null
-            ? ['remote', 'add', REMOTE, trimmed]
-            : ['remote', 'set-url', REMOTE, trimmed]
-        const result = yield* git(args)
+        const result = yield* git([
+          'remote',
+          existing === null ? 'add' : 'set-url',
+          REMOTE,
+          trimmed
+        ])
         if (result.exitCode !== 0) {
           return failed(`Could not set the remote: ${lastLine(result.stderr)}`)
         }
@@ -173,7 +156,7 @@ export const makeMetaPush = Effect.fn('MetaPush.make')(function* (directory: str
       const sha = head.value.trim()
 
       const fetchFailure = yield* network('fetch', ['fetch', '--prune', REMOTE])
-      if (Option.isSome(fetchFailure)) return fetchFailure.value
+      if (fetchFailure !== undefined) return fetchFailure
 
       const log = yield* gitOrFail('log', [
         '-c',
@@ -189,18 +172,13 @@ export const makeMetaPush = Effect.fn('MetaPush.make')(function* (directory: str
       const [first, ...rest] = scan.findings
       if (first !== undefined) {
         yield* Effect.logWarning('Refused to push the meta repo: the scan found secrets', {
-          findings: scan.findings.map(({ rule, commit, file, line }) => ({
-            rule,
-            commit,
-            file,
-            line
-          }))
+          findings: scan.findings
         })
         return MetaRepoPushRefused.make({ findings: [first, ...rest] })
       }
 
       const pushFailure = yield* network('push', ['push', REMOTE, `${sha}:refs/heads/${branch}`])
-      if (Option.isSome(pushFailure)) return pushFailure.value
+      if (pushFailure !== undefined) return pushFailure
       yield* Effect.logInfo('Pushed the meta repo', {
         branch,
         commit: sha,
