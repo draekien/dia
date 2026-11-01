@@ -255,9 +255,10 @@ const backendMethods = [
 export const agentBackendProblems = (provided: Option.Option<unknown>): ReadonlyArray<string> => {
   if (Option.isNone(provided)) return [`setup did not provide "${AGENT_BACKEND_KEY}"`]
   const value = provided.value
-  const methods = Predicate.hasProperty(value, 'discoverSessions')
-    ? [...backendMethods, 'discoverSessions']
-    : backendMethods
+  const methods =
+    Predicate.hasProperty(value, 'discoverSessions') && value.discoverSessions !== undefined
+      ? [...backendMethods, 'discoverSessions']
+      : backendMethods
   return methods
     .filter(
       (method) => !(Predicate.hasProperty(value, method) && Predicate.isFunction(value[method]))

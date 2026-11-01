@@ -13,7 +13,7 @@ The issue left four questions open; no user was available, so each was decided h
 | Question | Options considered | Choice | Reason |
 | --- | --- | --- | --- |
 | 1. Grouping sessions into agents | one agent per session; chain sessions by `/clear` and fork lineage | One agent per session | The SDK exposes no lineage: `SDKSessionInfo` (`sdk.d.ts`) has `sessionId`, `summary`, `lastModified`, `fileSize`, `customTitle`, `firstPrompt`, `gitBranch`, `cwd`, `tag`, `createdAt` and nothing naming a parent. A session forked with `claude -p --resume <id> --fork-session` contains no reference to its source id (probe below), and `/clear` starts an unlinked session (`docs/reasoning/2026-10-31-agent-sessions-clear-and-removal-race.md`). Grouping by comparing message content would be a guess. Consequence: an agent that ran `/clear` or rewound returns as several agents; the newest holds the conversation it last resumed. |
-| 2. Name, model, thinking level, permission mode | the harness's title or a generated name; the user's new-agent defaults or fixed safe defaults; the model the transcript last used | Name: the harness's title for the session (`customTitle`, else `summary`), trimmed and cut to 64 characters; a generated name when that is empty. Model: the adapter's choice, `default` for claude-code (the model `claude` uses with no `--model`, and the first row of its model list). Thinking level `medium` (`DEFAULT_THINKING_LEVEL`). Permission mode `default` (`DEFAULT_PERMISSION_MODE`) | The title is what Claude Code's own `/resume` shows, so the user recognises the conversation. The model value belongs to the adapter, so the adapter names it. An imported conversation never gets a wider permission mode than `default` without the user choosing it; the user's defaults may be `bypassPermissions`. `SDKSessionInfo` carries no model, and reading every transcript for its last model costs a full read per session. |
+| 2. Name, model, thinking level, permission mode | the harness's title or a generated name; the user's new-agent defaults or fixed safe defaults; the model the transcript last used | Name: the harness's title for the session (`customTitle`, else `summary`), each run of whitespace made one space, trimmed and cut to 64 characters without splitting a surrogate pair; a generated name when that is empty. Model: the adapter's choice, `default` for claude-code (the model `claude` uses with no `--model`, and the first row of its model list). Thinking level `medium` (`DEFAULT_THINKING_LEVEL`). Permission mode `default` (`DEFAULT_PERMISSION_MODE`) | The title is what Claude Code's own `/resume` shows, so the user recognises the conversation. The model value belongs to the adapter, so the adapter names it. An imported conversation never gets a wider permission mode than `default` without the user choosing it; the user's defaults may be `bypassPermissions`. `SDKSessionInfo` carries no model, and reading every transcript for its last model costs a full read per session. |
 | 3. Sessions started outside dia (CLI) | import them; offer them in a picker | Import them, like dia's own | dia cannot tell its sessions from CLI sessions: both are written by Claude Code, and the probe's `claude -p` sessions recorded `entrypoint: "sdk-ts"`, the value dia's own sessions record. The import runs only on the user's Add project action and every imported agent is listed in the overview at once, so nothing appears without the user's action. A picker needs a dialog and two RPCs; it can replace this when projects with many sessions make it necessary. |
 | 4. Rescan for a registered project | a Rescan action; import only on add | Import only when a project is registered | A rescan would bring back the superseded sessions of live agents as new agents unless it compared against every `agent_sessions` row, which `WorkspaceStore` does not expose. Removing and adding a project again is the rescan for now. |
 | Imported agents archived or active | archived (PR #129); active and cold | Active, cold (no session started) | An archived tab never runs and dia has no unarchive (`Tab` JSDoc, `src/shared/domain/project.ts`), so an archived import could never resume. A cold tab starts no process until it is shown (`makePaneWorkspaceLive` JSDoc). |
@@ -51,7 +51,7 @@ export interface AgentBackend {
 }
 ```
 
-`agentBackendProblems` reports `"agentBackend.discoverSessions" is not a function` when the member is present and is not a function. `plugin-api.ts` exports the `DiscoveredSession` type. `PLUGIN_API_VERSION` and every `plugins/*/plugin.json` go from `0.0.14` to `0.0.15`. `PROTOCOL_VERSION` is unchanged: no RPC or event shape changes.
+`agentBackendProblems` reports `"agentBackend.discoverSessions" is not a function` when the member is set to a value that is not a function; `undefined` counts as absent. `plugin-api.ts` exports the `DiscoveredSession` type. `PLUGIN_API_VERSION` and every `plugins/*/plugin.json` go from `0.0.14` to `0.0.15`. `PROTOCOL_VERSION` is unchanged: no RPC or event shape changes.
 
 ```ts
 // src/host/services/transcript-reader.ts — TranscriptReader gains:
@@ -64,7 +64,7 @@ readonly discoverSessions: (directory: string) => Effect.Effect<ReadonlyArray<Di
 
 ```ts
 // src/shared/domain/agent-name.ts
-/** The agent name for a harness's conversation title: trimmed, cut to 64 characters. `None` when nothing is left. */
+/** The agent name for a harness's conversation title: on one line, trimmed, cut to 64 characters without splitting a character. `None` when nothing is left. */
 export const agentNameFromTitle: (title: string) => Option.Option<AgentName>
 ```
 
@@ -90,7 +90,7 @@ export const addProject: (workspace: Workspace, project: Project, tabs?: Readonl
 
 Tests:
 
-1. `agent-name.test.ts` — `agentNameFromTitle` trims, cuts to 64 characters (and trims again), and gives `None` for a blank title.
+1. `agent-name.test.ts` — `agentNameFromTitle` trims, puts a multi-line title on one line, cuts to 64 characters (and trims again) without leaving half a surrogate pair, and gives `None` for a blank title.
 2. `workspace.test.ts` — `addProject` with tabs adds them in order; a tab whose `sessionId` another project's tab holds is left out; the visible tab is unchanged.
 3. `transcript-reader.test.ts` — discovers through the backend; a backend without `discoverSessions` and no backend both give `[]`.
 4. `agent-backend.test.ts` — a non-function `discoverSessions` is a problem; an absent one is not.

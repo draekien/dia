@@ -41,6 +41,16 @@ describe('agentNameFromTitle', () => {
     expect(agentNameFromTitle(title)).toEqual(Option.some('a'.repeat(63)))
   })
 
+  it('puts a title that spans lines on one line', () => {
+    expect(agentNameFromTitle('Fix the\r\n\tlogin bug')).toEqual(Option.some('Fix the login bug'))
+  })
+
+  it('drops a character the cut would split in half', () => {
+    const title = `${'a'.repeat(63)}😀`
+
+    expect(agentNameFromTitle(title)).toEqual(Option.some('a'.repeat(63)))
+  })
+
   it('gives no name for a blank title', () => {
     expect(agentNameFromTitle('   ')).toEqual(Option.none())
   })

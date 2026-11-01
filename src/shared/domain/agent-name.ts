@@ -82,8 +82,15 @@ export const agentNameFromBranch = (branch: string | undefined): Option.Option<A
     : Option.none()
 
 /**
- * The agent name for a conversation an agent harness titled `title`: trimmed and cut to the
- * longest {@link AgentName}. `None` when nothing is left.
+ * The agent name for a conversation an agent harness titled `title`: on one line, trimmed and
+ * cut to the longest {@link AgentName} without splitting a character. `None` when nothing is left.
  */
 export const agentNameFromTitle = (title: string): Option.Option<AgentName> =>
-  Schema.decodeUnknownOption(AgentName)(title.trim().slice(0, AGENT_NAME_MAX_LENGTH).trim())
+  Schema.decodeUnknownOption(AgentName)(
+    title
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, AGENT_NAME_MAX_LENGTH)
+      .replace(/[\uD800-\uDBFF]$/, '')
+      .trim()
+  )

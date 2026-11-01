@@ -128,6 +128,12 @@ describe('agentBackendProblems', () => {
     assert.deepStrictEqual(agentBackendProblems(Option.some(discovering)), [])
   })
 
+  it('reports no problem for a backend whose discoverSessions is undefined', () => {
+    const undiscovering = { ...validBackend, discoverSessions: undefined }
+
+    assert.deepStrictEqual(agentBackendProblems(Option.some(undiscovering)), [])
+  })
+
   it('reports a discoverSessions that is not a function', () => {
     const broken = { ...validBackend, discoverSessions: 'sessions' }
 
