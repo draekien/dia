@@ -22,11 +22,14 @@ interface GitResult {
 }
 
 /**
- * Replaces the password in every URL's user-info in `text` with `***`, so a token embedded in a
- * remote URL is never shown or logged.
+ * Replaces the password in every URL's user-info in `text`, and the whole user-info of an
+ * `http(s)` URL that has no password, with `***`, so a token embedded in a remote URL is never
+ * shown or logged.
  */
 export const redactUrlCredentials = (text: string): string =>
-  text.replace(/(\/\/[^/\s:@]*):[^/\s@]*@/g, '$1:***@')
+  text
+    .replace(/(\/\/[^/\s:@]*):[^/\s@]*@/g, '$1:***@')
+    .replace(/(https?:\/\/)[^/\s:@]+@/gi, '$1***@')
 
 const lastLine = (text: string): string =>
   text
@@ -136,7 +139,9 @@ export const makeMetaPush = Effect.fn('MetaPush.make')(function* (directory: str
           trimmed
         ])
         if (result.exitCode !== 0) {
-          return failed(`Could not set the remote: ${lastLine(result.stderr)}`)
+          return failed(
+            `Could not set the remote: ${lastLine(result.stderr) || `exit code ${result.exitCode}`}`
+          )
         }
         yield* Effect.logInfo('Set the meta repo remote', {
           remoteUrl: redactUrlCredentials(trimmed)

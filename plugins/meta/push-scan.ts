@@ -75,7 +75,11 @@ const scanPatch = (commit: string, patch: string): ReadonlyArray<SecretFinding> 
     if (!inHunk) {
       if (text.startsWith(NEW_FILE_HEADER)) {
         const path = text.slice(NEW_FILE_HEADER.length)
-        file = path.startsWith('b/') ? path.slice(2) : null
+        file = path.startsWith('b/')
+          ? path.slice(2)
+          : path.startsWith('"b/')
+            ? path.slice(3, -1)
+            : null
       }
       continue
     }
@@ -93,7 +97,7 @@ const scanPatch = (commit: string, patch: string): ReadonlyArray<SecretFinding> 
  * and lines of deleted files are not scanned.
  */
 export const scanPatchLog = (output: string): PushScan => {
-  const parts = output.split('\0')
+  const parts = output.split(/(?<=^|\n)\0/)
   const findings: Array<SecretFinding> = []
   let commitCount = 0
   for (let index = 1; index < parts.length; index += 2) {

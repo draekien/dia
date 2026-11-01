@@ -102,8 +102,7 @@ function RemoteSection({
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setSaving(true)
-    const next = await window.dia.metaRepo.setRemote(url)
-    setSaving(false)
+    const next = await window.dia.metaRepo.setRemote(url).finally(() => setSaving(false))
     setError(next._tag === 'MetaRepoFailed' ? next.message : undefined)
     if (next._tag === 'MetaRepoFailed') return
     setUrl('')
@@ -169,8 +168,7 @@ function PushSection({ state }: { readonly state: MetaRepoStateResult | undefine
 
   const push = async () => {
     setPushing(true)
-    setResult(await window.dia.metaRepo.push())
-    setPushing(false)
+    setResult(await window.dia.metaRepo.push().finally(() => setPushing(false)))
   }
 
   return (
@@ -218,7 +216,10 @@ export function MetaRepoSettings() {
       {state?._tag === 'MetaRepoFailed' ? null : (
         <section className="flex flex-col gap-3 border-t pt-6" aria-labelledby="meta-push-heading">
           <SectionHeading id="meta-push-heading">Push</SectionHeading>
-          <PushSection state={state} />
+          <PushSection
+            key={state?._tag === 'MetaRepoState' ? (state.remoteUrl ?? '') : ''}
+            state={state}
+          />
         </section>
       )}
     </div>

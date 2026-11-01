@@ -60,7 +60,7 @@ src/renderer/src/components/settings/meta-repo-settings.tsx
 
 - The remote is the git remote named `origin` in the meta repo; dia stores nothing else. `state` reads it with `git remote get-url origin` (no remote gives `null`) and the current branch with `git symbolic-ref --quiet --short HEAD` (detached gives `null`).
 - `setRemote(url)` trims `url` and refuses (as `MetaRepoFailed`) an empty URL, one containing whitespace, or one starting with `-`, so the value can never be read by git as an option. It runs `git remote set-url origin <url>` when `origin` exists and `git remote add origin <url>` otherwise, then returns the new `state`.
-- Every URL and git message that leaves the plugin has the password in a URL's user-info replaced (`https://user:***@host`), so a token embedded in the remote URL is not shown or logged.
+- Every URL and git message that leaves the plugin has the password in a URL's user-info replaced (`https://user:***@host`), and the user name of an `http(s)` URL without a password replaced too (`https://***@host`), so a token embedded in the remote URL is not shown or logged.
 
 ### Push
 

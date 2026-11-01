@@ -245,4 +245,11 @@ describe('redactUrlCredentials', () => {
       "fatal: unable to access 'https://me:***@host/a.git/': and ssh://git@host/b.git"
     )
   })
+
+  it('replaces a token used as the user name of an https URL', () => {
+    assert.strictEqual(
+      redactUrlCredentials(`remote: https://${SECRET}@github.com/me/meta.git`),
+      'remote: https://***@github.com/me/meta.git'
+    )
+  })
 })

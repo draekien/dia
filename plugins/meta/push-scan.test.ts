@@ -82,6 +82,37 @@ describe('scanPatchLog', () => {
     ])
   })
 
+  it('keeps scanning a hunk after an added line that holds a NUL byte', () => {
+    const output = commit(
+      COMMIT_A,
+      'chore: binary',
+      filePatch('blob.bin', `@@ -0,0 +1,2 @@\n+a\0b\n+${SECRET}\n`)
+    )
+
+    expect(scanPatchLog(output)).toEqual({
+      commitCount: 1,
+      findings: [expect.objectContaining({ commit: COMMIT_A, file: 'blob.bin', line: 2 })]
+    })
+  })
+
+  it('scans a file whose path git quotes', () => {
+    const output = commit(
+      COMMIT_A,
+      'docs: odd name',
+      [
+        'diff --git "a/odd\\"name.md" "b/odd\\"name.md"',
+        'new file mode 100644',
+        '--- /dev/null',
+        '+++ "b/odd\\"name.md"',
+        `@@ -0,0 +1 @@\n+${SECRET}\n`
+      ].join('\n')
+    )
+
+    expect(scanPatchLog(output).findings).toEqual([
+      expect.objectContaining({ file: 'odd\\"name.md', line: 1 })
+    ])
+  })
+
   it('reads a line that ends in a carriage return', () => {
     const output = commit(
       COMMIT_A,
