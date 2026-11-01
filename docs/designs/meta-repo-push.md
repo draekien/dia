@@ -1,6 +1,6 @@
 # Meta repo push
 
-Status: draft for issue #19 (agent OS plan step 8, ADR-0025, ADR-0047).
+Status: implemented for issue #19 (agent OS plan step 8, ADR-0025, ADR-0047).
 
 ## Purpose
 
@@ -26,26 +26,28 @@ src/host/services/meta-repo-seam.ts                                 (kernel)
     setRemote: (url: string) => Effect<MetaRepoStateResult>
     push: Effect<MetaRepoPushResult>
   }                                                                 none of them fails
-  resolveMetaRepo(registry): Effect<Option<MetaRepo>>               None, logged, when not loaded or malformed
-  resolveSessionAdditions(registry)                                 unchanged behaviour, uses resolveMetaRepo
+  withMetaRepo(registry, use): Effect<A | MetaRepoFailed>           MetaRepoFailed, logged, when the plugin is
+                                                                    not loaded, malformed, or `use` dies
+  resolveSessionAdditions(registry)                                 unchanged behaviour
 
 src/shared/ipc/rpc.ts            (PROTOCOL_VERSION bump)
   GetMetaRepo                    success MetaRepoStateResult
   SetMetaRemote { url }          success MetaRepoStateResult
   PushMetaRepo                   success MetaRepoPushResult
-  The kernel answers MetaRepoFailed "The meta plugin is not loaded." when resolveMetaRepo is None.
+  The handlers call withMetaRepo, which answers MetaRepoFailed "The meta plugin is not loaded." when no plugin provides a MetaRepo.
 
 src/shared/ipc/contract.ts, src/preload/host-api.ts
   window.dia.metaRepo { getState(), setRemote(url), push() }  -> encoded results
 
 src/host/plugin-api.ts           (PLUGIN_API_VERSION bump, every plugin.json)
   exports MetaRepoState, MetaRepoPushed, MetaRepoPushRefused, MetaRepoFailed, SecretFinding
+  and the types MetaRepoStateResult, MetaRepoPushResult
 
 plugins/meta/
-  secret-rules.ts   SECRET_RULES, findSecrets(text): ReadonlyArray<SecretRule>
-  push-scan.ts      scanPatchLog(output: string): ReadonlyArray<SecretFinding>
-                    PUSH_LOG_FORMAT and the git log arguments that produce `output`
-  meta-push.ts      makeMetaPush(directory): { state, setRemote, push }
+  secret-rules.ts   SECRET_RULES, findSecretRule(line): SecretRule | undefined (first match only)
+  push-scan.ts      SCAN_LOG_OPTIONS, the git log options whose output scanPatchLog reads
+                    scanPatchLog(output): { commitCount, findings }
+  meta-push.ts      makeMetaPush(directory): { state, setRemote, push }, redactUrlCredentials
   meta-repo.ts      makeMetaRepo(directory) combines forNewSession with makeMetaPush
 
 src/renderer/src/components/settings/meta-repo-settings.tsx
@@ -100,7 +102,7 @@ There is no allow comment and no ignore file: a finding can only be cleared by r
 
 ### UI
 
-Settings gets a fourth page, "Meta repo", after Plugins. It shows the current remote (redacted) and branch, an empty URL field with a Save button that sets a new remote, and a Push button. The field is never prefilled, so a redacted URL is never saved back. While a push runs the button shows a spinner and is disabled. A pushed result shows "Pushed N commits of <branch> to <url>". A refusal shows "Push refused: dia found N possible secrets in the commits to push" and a list, one row per finding: rule description, `file:line` (or "commit message, line N"), short commit SHA. A failure shows its message. When the meta plugin is not loaded the page shows that message and no controls.
+Settings gets a fourth page, "Meta repo", after Plugins. It shows the current remote (redacted) and branch, an empty URL field with a Save button that sets a new remote, and a Push button. The field is never prefilled, so a redacted URL is never saved back. While a push runs the button shows a spinner and is disabled. A pushed result shows "Pushed N commits of <branch> to <url>". A refusal shows "Push refused: dia found N possible secrets in the commits to push" and a list, one row per finding: rule description, `file:line` (or "commit message, line N"), short commit SHA. A failure shows its message. When the meta plugin is not loaded the page shows that message and no controls. The command palette lists the page as `Settings › Meta repo`.
 
 ## Design Rationale
 
