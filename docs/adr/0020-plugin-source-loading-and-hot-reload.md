@@ -41,7 +41,7 @@ Chosen option: "Source loading", because it is the model cordis and deepseek-har
 | Shared runtime libraries | `react`, `effect` and the dia plugin API are provided by the host and never bundled into a plugin, so only one copy of each exists at runtime |
 | Clearing an override | The plugin returns to its default copy. Done after the refinement ships in a release |
 
-Third-party plugins are out of scope for this decision and on the roadmap: a third-party plugin is a GitHub repository, installed with `pnpm add` using a git specifier, following deepseek-harness's Plugin Manager (`packages/boot/plugin-manager/README.md`). cordis itself resolves only npm package specifiers and local paths (`packages/loader/src/config/tree.ts` in `cordiverse/cordis`).
+Third-party plugins are out of scope for this decision and on the roadmap: a third-party plugin is a GitHub repository, installed with `pnpm add` using a git specifier, following deepseek-harness's Plugin Manager (`packages/boot/plugin-manager/README.md`). cordis itself resolves only npm package specifiers and local paths (`packages/loader/src/config/tree.ts` in `cordiverse/cordis`). Until the plugin API version reaches 1.0.0, third-party plugins are unsupported; the warning is in `README.md` ("Plugins").
 
 ### Consequences
 

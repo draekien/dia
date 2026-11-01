@@ -47,6 +47,25 @@ pnpm build:win
 
 The installer is written to `dist/dia Setup <version>.exe`. Run it as in Option 1.
 
+## Plugins
+
+Every dia feature is a plugin, and the bundled plugins are the only supported
+ones.
+
+> [!WARNING]
+> **Third-party plugins are not supported while the plugin API version is
+> below 1.0.0.** The plugin API version is `PLUGIN_API_VERSION` in
+> [`src/shared/plugin/manifest.ts`](src/shared/plugin/manifest.ts).
+>
+> - dia loads a plugin only when its `api` version is compatible with dia's,
+>   by the rule in
+>   [ADR-0032](docs/adr/0032-background-activities-and-semver-plugin-api.md).
+>   Below 1.0.0, each plugin API change can refuse a plugin built for the
+>   previous version.
+> - The plugin context (`HostPluginContext` in
+>   [`src/shared/plugin/api.ts`](src/shared/plugin/api.ts) and the exports of
+>   `@dia/plugin`) can change in any release without notice.
+
 ## Development
 
 Run dia against the dev server with hot-reload:
