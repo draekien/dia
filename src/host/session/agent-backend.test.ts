@@ -26,7 +26,9 @@ const openOptions = {
   config,
   resume: Option.none(),
   emit: () => Effect.void,
-  tools: []
+  tools: [],
+  systemPromptAppend: '',
+  pluginPaths: []
 }
 
 describe('resolveAgentBackend', () => {

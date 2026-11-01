@@ -99,7 +99,14 @@ const open = Effect.fnUntraced(function* (readings: ReadonlyArray<Reading | Erro
   sdk.details = []
   const emitted: Array<OutboundMessage> = []
   yield* openClaudeCodeSession(
-    { config, resume: Option.none(), emit: (m) => Effect.sync(() => emitted.push(m)), tools: [] },
+    {
+      config,
+      resume: Option.none(),
+      emit: (m) => Effect.sync(() => emitted.push(m)),
+      tools: [],
+      systemPromptAppend: '',
+      pluginPaths: []
+    },
     {
       resolve: Effect.succeed(Option.some('/usr/local/bin/claude')),
       override: Effect.succeed(Option.none()),

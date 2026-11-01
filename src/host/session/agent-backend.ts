@@ -101,12 +101,24 @@ export interface AgentSession {
 }
 
 /**
+ * What dia adds to an agent session on top of the agent's own configuration.
+ * `systemPromptAppend` is text appended to the agent's system prompt; an empty string appends
+ * nothing. `pluginPaths` are absolute paths of local Claude Code plugin directories loaded into
+ * the session.
+ */
+export interface SessionAdditions {
+  readonly systemPromptAppend: string
+  readonly pluginPaths: ReadonlyArray<string>
+}
+
+/**
  * What a session opens with. `config` chooses the working directory, model and modes; `resume`
  * names the conversation to continue, or is none for a new one; `emit` receives every event the
  * session produces, in order; `tools` are the dia tools offered to the agent, each asked about
- * before it runs.
+ * before it runs; the {@link SessionAdditions} apply for the session's whole life, including
+ * every restart it performs itself.
  */
-export interface AgentSessionOptions {
+export interface AgentSessionOptions extends SessionAdditions {
   readonly config: PaneConfig
   readonly resume: Option.Option<SessionId>
   readonly emit: (message: OutboundMessage) => Effect.Effect<void>

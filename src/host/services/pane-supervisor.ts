@@ -92,6 +92,7 @@ import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { type AgentSession, resolveAgentBackend, type SessionEnd } from '../session/agent-backend'
 import { makePluginTools } from '../session/dia-tools'
 import type { OutboundMessage } from '../session/protocol'
+import { resolveSessionAdditions } from './meta-repo-seam'
 import { SettingsStore } from './settings-store'
 import { resolveGitOps, type WorktreeCreateError, WorktreeReattachError } from './worktrees-seam'
 
@@ -189,7 +190,8 @@ export class SessionFactory extends Context.Service<
 /**
  * Production {@link SessionFactory}. Each start resolves the agent backend and the
  * pending-user-input registry from the loaded plugins, so a plugin reload applies from the next
- * session. When the registry is available the agent gets the plugin tools, backed by
+ * session. Each session also gets what the loaded `meta` plugin adds to new sessions, read at
+ * that start. When the registry is available the agent gets the plugin tools, backed by
  * `HostPlugins` and `PluginSources`, so it can point a plugin at a source folder and reload it
  * after the user approves; otherwise every tool call is denied.
  */
@@ -207,7 +209,8 @@ export const SessionFactoryLive = Layer.effect(
       options: Parameters<SessionFactory['Service']['start']>[0]
     ) {
       const backend = yield* resolveAgentBackend(plugins)
-      return yield* backend.openSession({ ...options, tools: pluginTools })
+      const additions = yield* resolveSessionAdditions(plugins)
+      return yield* backend.openSession({ ...options, ...additions, tools: pluginTools })
     })
     return { start }
   })

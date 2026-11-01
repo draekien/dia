@@ -1,7 +1,13 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the test yields to Node's event loop so the plugin's non-Effect callbacks run.
 import { setImmediate } from 'node:timers/promises'
 import type { Options, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import { type OutboundMessage, RewindFailed, SessionFailed, SessionNotFound } from '@dia/plugin'
+import {
+  type OutboundMessage,
+  RewindFailed,
+  type SessionAdditions,
+  SessionFailed,
+  SessionNotFound
+} from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import { ContentAttachment, PathAttachment } from '@shared/domain/attachment'
 import type { PaneConfig, SessionId } from '@shared/domain/pane'
@@ -122,7 +128,12 @@ const installAt = (
   setOverride: () => Effect.void
 })
 
-const openWith = Effect.fnUntraced(function* (resume: Option.Option<SessionId>) {
+const nothingAdded: SessionAdditions = { systemPromptAppend: '', pluginPaths: [] }
+
+const openWith = Effect.fnUntraced(function* (
+  resume: Option.Option<SessionId>,
+  additions: SessionAdditions = nothingAdded
+) {
   sdk.queries.length = 0
   const emitted: Array<OutboundMessage> = []
   const startupFailures: Array<string> = []
@@ -131,7 +142,8 @@ const openWith = Effect.fnUntraced(function* (resume: Option.Option<SessionId>) 
       config,
       resume,
       emit: (message) => Effect.sync(() => emitted.push(message)),
-      tools: []
+      tools: [],
+      ...additions
     },
     installAt(Option.some(INSTALL_PATH)),
     (reason) => Effect.sync(() => startupFailures.push(reason))
@@ -451,7 +463,14 @@ describe('install', () => {
     Effect.gen(function* () {
       sdk.queries.length = 0
       const session = yield* openClaudeCodeSession(
-        { config, resume: Option.none(), emit: () => Effect.void, tools: [] },
+        {
+          config,
+          resume: Option.none(),
+          emit: () => Effect.void,
+          tools: [],
+          systemPromptAppend: '',
+          pluginPaths: []
+        },
         installAt(Option.none()),
         () => Effect.void
       )
@@ -472,7 +491,9 @@ describe('install', () => {
           config,
           resume: Option.none(),
           emit: (message) => Effect.sync(() => void emitted.push(message)),
-          tools: []
+          tools: [],
+          systemPromptAppend: '',
+          pluginPaths: []
         },
         installAt(Option.none()),
         () => Effect.void
@@ -489,7 +510,14 @@ describe('install', () => {
   it.effect('names the stored override when it cannot be run', () =>
     Effect.gen(function* () {
       const session = yield* openClaudeCodeSession(
-        { config, resume: Option.none(), emit: () => Effect.void, tools: [] },
+        {
+          config,
+          resume: Option.none(),
+          emit: () => Effect.void,
+          tools: [],
+          systemPromptAppend: '',
+          pluginPaths: []
+        },
         installAt(Option.none(), Option.some('D:\\claude.cmd')),
         () => Effect.void
       )
@@ -678,6 +706,45 @@ describe('missing session', () => {
         assert.strictEqual((yield* session.ended)._tag, 'SessionFailed')
         assert.isTrue(tags(emitted).includes('TurnErrored'))
       })
+  )
+})
+
+describe('session additions', () => {
+  const additions: SessionAdditions = {
+    systemPromptAppend: 'Prefer rg over grep.',
+    pluginPaths: ['F:/dia/meta/repo/plugin']
+  }
+
+  it.effect('passes the append and plugin paths to the query', () =>
+    Effect.gen(function* () {
+      const { query } = yield* openWith(Option.none(), additions)
+
+      assert.deepStrictEqual(query.options.systemPrompt, {
+        type: 'preset',
+        preset: 'claude_code',
+        append: 'Prefer rg over grep.'
+      })
+      assert.deepStrictEqual(query.options.plugins, [
+        { type: 'local', path: 'F:/dia/meta/repo/plugin' }
+      ])
+      assert.isUndefined(query.options.settingSources)
+    })
+  )
+
+  it.effect('keeps the same append and plugin paths when a thinking change restarts it', () =>
+    Effect.gen(function* () {
+      const resumed = '4f1b2c3d-0000-4000-8000-000000000016' as SessionId
+      const { session, query } = yield* openWith(Option.some(resumed), additions)
+
+      yield* session.setThinkingLevel('high')
+      yield* session.sendText('first', 'queue')
+      yield* settle
+      const restarted = sdk.queries[1]
+
+      assert.isDefined(restarted)
+      assert.deepStrictEqual(restarted.options.systemPrompt, query.options.systemPrompt)
+      assert.deepStrictEqual(restarted.options.plugins, query.options.plugins)
+    })
   )
 })
 

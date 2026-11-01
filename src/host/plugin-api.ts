@@ -20,6 +20,7 @@ export {
 export { SessionId } from '../shared/domain/pane'
 export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
 export * from '../shared/plugin/api'
+export type { MetaRepo } from './services/meta-repo-seam'
 export {
   type GitOps,
   WorktreeCreateError,
@@ -31,6 +32,7 @@ export {
   type AgentBackend,
   type AgentSession,
   type AgentSessionOptions,
+  type SessionAdditions,
   type SessionEnd,
   SessionFailed,
   SessionNotFound

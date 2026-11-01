@@ -131,4 +131,5 @@ The user may add a remote to the meta repo and push to it. dia scans the commits
 
 * Related: ADR-0019 (kernel), ADR-0023 (projects), `docs/prds/agent-os.md`.
 * Roadmap: scheduled meta agent runs; an approval step that copies parts of the meta repo into `~/.claude`.
+* The meta repo and its loading into every agent are implemented as `docs/designs/meta-repo.md` (2026-11-01): the `meta` feature plugin keeps the repo in its data directory, `<userData>/plugins/meta/repo`, and the Claude Code plugin manifest names the plugin `dia-meta`.
 * Amended by ADR-0036: the retro calls `propose_change` in place of project agents calling `meta_propose`; only change types in the decision queue tier wait for the user's approval; a routine can start a meta agent.
