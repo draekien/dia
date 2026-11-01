@@ -709,7 +709,7 @@ function PaneChat({
   const pendingInteraction =
     pendingPermission !== null || pendingQuestion !== null || pendingPlanReview !== null
   const retryText = lastUserText(chat)
-  const compacting = isLoading && retryText?.trim() === COMPACT_COMMAND
+  const compacting = isLoading && retryText?.trim().split(/\s/)[0] === COMPACT_COMMAND
 
   const resend = (): void => {
     if (retryText !== undefined) sendMessage({ text: retryText, mode: defaultSendMode })

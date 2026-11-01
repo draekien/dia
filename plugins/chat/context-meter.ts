@@ -23,8 +23,8 @@ const blend = (space: 'oklab' | 'oklch', to: string, from: string, share: number
 
 /**
  * The CSS colour of the context meter for `usage`. It is neutral up to 50%, blends to amber at
- * 75% (in OKLab, because the near-grey neutral has no hue to interpolate from), then to red at the
- * auto-compact threshold (90% when `usage` has none) in OKLCH, and stays red from there. `compactFailed` makes it red at any usage. Use the result as a CSS `color` or `stroke`.
+ * 75%, then to red at the auto-compact threshold (90% when `usage` has none), and stays red from
+ * there. `compactFailed` makes it red at any usage. Use the result as a CSS `color` or `stroke`.
  */
 export const contextColor = (usage: ContextUsage, compactFailed: boolean): string => {
   const fraction = contextFraction(usage)

@@ -24,7 +24,7 @@ Issue #86, part of the composer redesign #81. The data comes from #84 (`docs/des
 |---|---|
 | `usage` | `chat.contextUsage` |
 | `failure` | `chat.compactionFailure` |
-| `compacting` | `isLoading` and the last sent text is `/compact` |
+| `compacting` | `isLoading` and the last sent text is the `/compact` command, with or without instructions |
 | `running` | `isLoading` |
 | `onCompact` | `sendMessage({ text: '/compact', mode })`, the same path as typing it |
 
