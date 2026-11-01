@@ -188,13 +188,9 @@ export const deleteTab = (
     tabs: entry.tabs.filter((tab) => tab.config.paneId !== paneId)
   }))
   if (workspace.visibleTab !== paneId) return Result.succeed({ ...workspace, projects })
-  return Result.succeed({
-    projects,
-    visibleTab:
-      firstShowableTab(projects[own]) ??
-      projects.map(firstShowableTab).find((id) => id !== null) ??
-      null
-  })
+  return Result.succeed(
+    withDefaultVisibleTab({ projects, visibleTab: firstShowableTab(projects[own]) })
+  )
 }
 
 /** Replaces fields of a tab's config. The pane id cannot change. */
