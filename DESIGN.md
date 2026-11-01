@@ -18,7 +18,7 @@ This system explicitly rejects two adjacent aesthetics: the generic AI-chat-SaaS
 **Key Characteristics:**
 - Cool-neutral, full-palette surface with each color role used deliberately
 - Sans + mono pairing: sans for chrome and UI copy, mono for session/code content
-- Status indicators (amber/red/green) are the one place the UI raises its voice
+- Amber, red and green carry severity only: amber for a warning or alert, red for an error, green for a finished agent
 - Responsive, non-choreographed motion: transitions confirm actions, they don't perform
 
 ## 2. Colors
@@ -32,13 +32,15 @@ A full-palette, cool-neutral strategy: several named roles, each with one delibe
 - **[to be resolved during implementation]** — a secondary role reserved for structural chrome (the sidebar's project group dividers, panel borders) distinct from the primary accent.
 
 ### Tertiary
-- **[to be resolved during implementation]** — reserved exclusively for the three agent status states: amber (needs input: a permission request or a question), red (failed), green (finished). This is the system's only "loud" color use.
+- **[to be resolved during implementation]** — the severity colours, per the One Voice Rule: amber (a warning or alert, such as an agent that needs input or a context window near its auto-compact threshold), red (an error, such as a failed agent or a failed `/compact`), green (a finished agent).
 
 ### Neutral
 - **[to be resolved during implementation]** — cool-toned (graphite/slate) background, surface, text, and border ramp. Backgrounds sit at the dark-to-light ends depending on OS light/dark mode; body text and dividers are drawn from the same cool ramp, never warm-tinted.
 
 ### Named Rules
-**The One Voice Rule.** Amber/red/green are reserved exclusively for agent status, wherever it appears: an overview row, the collapsed rail. No other UI element — button, badge, link — may reuse them, or the status loses its meaning as the app's one urgent signal. The one exception is the OS-drawn close button's red hover, which dia does not style (ADR-0039).
+**The One Voice Rule.** Amber marks every warning and alert. Red marks every error. Green marks a finished agent. No element uses these colours for decoration or emphasis: diff added and removed lines are neither warnings nor errors, so they do not use them. Amber and red pulse only on the status indicator. The OS-drawn close button's red hover is not dia's and does not follow this rule (ADR-0039).
+
+**The No Middle Dot Rule.** Text dia writes never uses the middle dot (U+00B7) as a separator. Use layout spacing, a line break, a comma or a sentence instead: `3 steps, Bash failed, 12s`, not the same parts joined by middle dots. Data from elsewhere shown verbatim, such as a skill's `argumentHint`, keeps its own characters.
 
 ## 3. Typography
 
@@ -81,7 +83,7 @@ The window has one resting level. The sidebar and the content area both fill the
 The one component the whole system is built around. A small dot on an agent's overview row and its place in the collapsed rail, in six states: amber with a pulsing ring (needs input), red with a pulsing ring (failed), a neutral dot with a slow opacity pulse (working), a steady half-filled neutral dot (parked: the agent waits for its usage limit to reset), green steady (finished, until the user shows the tab), and a hollow neutral ring (idle). A parked agent turns amber (needs input) only when the user can resume it: its limit has reset, its reset time is unknown, or Claude Code is not signed in. Only amber and red get the ring, because only those states block on the user and also raise an OS notification; the working pulse is slow and neutral so it reads as activity, not as a call for attention. All motion stops under reduced-motion settings, leaving the color. A legend or filter sample renders the dot still (`still`), because it stands for a status rather than reporting one. This is the system's single sanctioned "loud" element per the One Voice Rule.
 
 ### Account Banner
-A one-line strip under the title bar, above the main tab, shown while any agent is parked because the account refused its turn. Neutral surface, caption-size muted text and ghost buttons, never amber or red. It reads, in priority order: `Claude Code is not signed in. Run claude auth login, then [Retry]`; `Usage limit has reset · 2 agents waiting [Resume all]`; `Usage limit reached, reset time unknown · 2 agents waiting [Resume all]`; `Usage limit reached · you can resume 2 agents at 14:30`; `Usage limit reached · dia resumes 2 agents at 14:30`. The wording names who resumes the agents. A parked agent's transcript ends with a notice and, when only the user can resume it, a `Resume` button. After the resume the notice keeps only its cause, and a `Resumed at 14:35` marker replaces the `continue` message dia sent.
+A one-line strip under the title bar, above the main tab, shown while any agent is parked because the account refused its turn. Neutral surface, caption-size muted text and ghost buttons, never amber or red. It reads, in priority order: `Claude Code is not signed in. Run claude auth login, then [Retry]`; `Usage limit has reset, 2 agents waiting [Resume all]`; `Usage limit reached, reset time unknown, 2 agents waiting [Resume all]`; `Usage limit reached. You can resume 2 agents at 14:30`; `Usage limit reached. dia resumes 2 agents at 14:30`. The wording names who resumes the agents. A parked agent's transcript ends with a notice and, when only the user can resume it, a `Resume` button. After the resume the notice keeps only its cause, and a `Resumed at 14:35` marker replaces the `continue` message dia sent.
 
 ### Agent Overview
 - **Purpose:** the left sidebar. It lists every agent in every project, grouped by project, so the user knows which agents need them without opening a tab. It is also the only way to switch tabs: there is no tab strip.
@@ -91,7 +93,7 @@ A one-line strip under the title bar, above the main tab, shown while any agent 
 - **Order:** project order is fixed and set by the user by dragging a project header, or from the keyboard (`Space` lifts, `↑`/`↓` move, `Space` drops, `Esc` cancels, with the new position announced); a status change never moves a project group. Inside a group, agents sort needs input, failed, parked, working, finished, idle, then by creation. A parked agent's second line reads `Resumes 14:30` when dia resumes it, or `Resets 14:30` when the user does.
 - **Overflow:** project groups collapse. A collapsed group's header shows its most urgent status and a count of its agents; while a search or filter applies, every group is open and counts read `n of total`. Groups are separated by a hairline divider. `↑`/`↓` move between headers and rows, `→`/`←` open and close a group, and the list has one tab stop.
 - **Project menu:** New agent, Reveal in Explorer, Remove project. Removing a project opens a dialog that lists every agent, worktree and transcript to be removed, enables "Remove" once the project name is typed, and then shows each item's progress.
-- **Archived:** while "Show archived agents" is on, archived agents follow an `Archived · n` caption at the bottom of their project group.
+- **Archived:** while "Show archived agents" is on, archived agents follow an `Archived (n)` caption at the bottom of their project group.
 - **Collapsed rail:** `Ctrl B` or the sidebar toggle in the content header collapses the sidebar to a narrow rail: the Meta marker first, then one status indicator per agent, with a hairline between projects and a tooltip naming project, agent, status and activity.
 - **Width:** dragging the sidebar's edge resizes it between 14rem and 32rem (default 18rem); double-clicking the edge resets it, and with the edge focused `←`/`→` resize and `Home` resets. A click on the edge does nothing.
 - **Top row:** the `dia` wordmark row is a window drag area, level with the window controls.
@@ -106,7 +108,7 @@ A one-line strip under the title bar, above the main tab, shown while any agent 
 
 ### Turn steps
 - **Shape:** a native `<details>` in the assistant turn, collapsed by default. Each run of consecutive thinking and tool steps forms one section; the agent's text always stays visible between sections. Expanding a section shows its thinking and tool rows, indented `pl-6` so each row's icon lines up under the summary text. A re-render keeps the open state.
-- **Finished summary:** a chevron that turns 90° when open, then `N steps · 12s` in caption size, muted. When one tool call failed it names the tool, `N steps · Bash failed · 12s`; when more failed it counts them, `N steps · 2 failed · 12s`. Either reads in foreground text, not red. The `·` separators are `aria-hidden`, with the spaces around them outside the hidden span, so a screen reader hears `3 steps Bash failed 12s`. The duration runs from the section's first part to the text after it; it is left out when unknown. Durations of a minute or more read `1m 5s`.
+- **Finished summary:** a chevron that turns 90° when open, then `N steps, 12s` in caption size, muted. When one tool call failed it names the tool, `N steps, Bash failed, 12s`; when more failed it counts them, `N steps, 2 failed, 12s`. Either reads in foreground text, not red. A screen reader hears the same text, `3 steps, Bash failed, 12s`. The duration runs from the section's first part to the text after it; it is left out when unknown. Durations of a minute or more read `1m 5s`.
 - **Running summary:** the turn's last section shows the activity line in place of the count: a neutral pulsing dot, the latest step (tool name and target in mono, or `Thinking` in sans) or the turn's named state, and the time since the section's first part. It replaces the separate activity line; the dot stops under reduced motion and the label is `aria-live="polite"`. When the turn stalls, the dot stops pulsing, and `Interrupt & retry` and `Resend` show on their own row under the summary, never inside `<summary>`.
 - **Tool rows:** a check when the call succeeded, an `X` in foreground text when it failed (screen readers hear "failed"). A row with output is itself a disclosure and shows a `muted/60` background on hover. The target truncates at the row's end and carries its full text as a `title`.
 - **Focus:** every `<summary>` in the transcript shows the app ring (`focus-visible:ring-[3px] ring-ring/50`), never the browser's default outline.
@@ -115,15 +117,15 @@ A one-line strip under the title bar, above the main tab, shown while any agent 
 ### Inputs / Fields
 - **Style:** [to be resolved] — flat, bordered, neutral background.
 - **Focus:** border shift to primary accent + focus ring, matching button focus treatment.
-- **Error / Disabled:** error state may borrow the tertiary error red, muted rather than full pulse-intensity, to stay distinct from the status indicator's meaning.
+- **Error / Disabled:** an error state, such as a validation error, uses red, per the One Voice Rule. It does not pulse.
 
 ### Navigation
-The sidebar is the primary navigation. Any command palette or agent switcher reads as an overlay (Raycast-style), not a further persistent chrome element. Every setting lives in one Settings dialog (General · Adapters · Plugins in a left nav, a breadcrumb over the page); the command palette has one Settings item, and its search also lists each Settings page.
+The sidebar is the primary navigation. Any command palette or agent switcher reads as an overlay (Raycast-style), not a further persistent chrome element. Every setting lives in one Settings dialog (General, Adapters and Plugins in a left nav, a breadcrumb over the page); the command palette has one Settings item, and its search also lists each Settings page.
 
 ## 6. Do's and Don'ts
 
 ### Do:
-- **Do** keep color roles deliberate: primary for action/selection, secondary for structure, tertiary reserved for agent status only, per the One Voice Rule.
+- **Do** keep color roles deliberate: primary for action/selection, secondary for structure, amber for warnings, red for errors and green for a finished agent, per the One Voice Rule.
 - **Do** use mono for all literal agent/session content and sans for all dia chrome, per the Content-Is-Mono Rule.
 - **Do** keep to the one resting level, reserving elevation for dialogs and overlays, per the Flat Frame Rule.
 - **Do** make motion responsive to real actions (tab switch, row selection, status change) — confirm, don't choreograph.
@@ -131,5 +133,6 @@ The sidebar is the primary navigation. Any command palette or agent switcher rea
 ### Don't:
 - **Don't** build a generic AI-chat-SaaS look — no gradient hero treatments, no bubble-chat marketing polish, nothing that reads as a hosted product's landing page.
 - **Don't** default to a raw terminal-multiplexer aesthetic — no bare ASCII-art borders, no zero-chrome-for-its-own-sake tmux-default look.
-- **Don't** reuse amber/red/green outside the status indicator; that overloads the app's one urgent signal.
+- **Don't** use amber, red or green for decoration or emphasis; they mean warning, error and finished.
+- **Don't** separate text with a middle dot (U+00B7), per the No Middle Dot Rule.
 - **Don't** pulse for a finished agent; a finished agent does not need the user, and a pulse there makes the needs-input pulse easier to ignore.
