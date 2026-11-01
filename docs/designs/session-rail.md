@@ -95,7 +95,7 @@ The header toggle (`RailToggle`) is kernel UI in `TabHeader` and is not exported
 | `Ctrl Shift B` | `Ctrl B` toggles the sidebar and checks `!shiftKey`, so the two never both fire. |
 | Context caption at 75% | The amber threshold of `contextColor`: below it the hidden card holds nothing that needs the user. |
 | Only `Full access mode` is emphasised | The user said `Auto mode` is the safest mode; `bypassPermissions` skips every approval. |
-| `PLUGIN_API_VERSION` 0.0.10 → 0.0.11 | The plugin context gains `addRailCard` and the rail exports, per the rule in `src/shared/plugin/manifest.ts`. |
+| `PLUGIN_API_VERSION` 0.0.15 → 0.0.16 | The plugin context gains `addRailCard` and the rail exports, per the rule in `src/shared/plugin/manifest.ts`. |
 
 ## Success criteria
 

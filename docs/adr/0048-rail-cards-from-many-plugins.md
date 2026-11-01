@@ -40,7 +40,7 @@ Chosen option: "A kernel card list that plugins add to inside their scope", beca
 * Good, because a third-party card needs one call in its renderer setup.
 * Good, because hiding, ordering and the card frame are the kernel's, the same for every card.
 * Bad, because rail cards are a second extension mechanism next to slots, and a reader has to know both.
-* Bad, because the plugin context gains exports, so `PLUGIN_API_VERSION` goes from 0.0.10 to 0.0.11 and every shipped `plugin.json` changes.
+* Bad, because the plugin context gains exports, so `PLUGIN_API_VERSION` goes from 0.0.15 to 0.0.16 and every shipped `plugin.json` changes.
 
 ## Pros and Cons of the Options
 
