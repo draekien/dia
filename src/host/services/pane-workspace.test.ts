@@ -132,7 +132,9 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     ),
     unreadable: Effect.succeed([]),
     deleteUnreadable: () => Effect.void,
-    holders: Effect.succeed({ sessions: new Map(), worktrees: new Map() })
+    holders: Effect.succeed({ sessions: new Map(), worktrees: new Map() }),
+    resolvedImports: Effect.succeed(new Set<string>()),
+    recordImportResolution: () => Effect.void
   })
 
   const hub = Layer.succeed(EventHub, {

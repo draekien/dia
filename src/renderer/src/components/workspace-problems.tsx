@@ -85,11 +85,11 @@ interface RowProps {
   readonly title: string
   readonly caption: string
   readonly reason: React.ReactNode
-  readonly error: string | null
+  readonly error?: string | null
   readonly children: React.ReactNode
 }
 
-function ProblemRow({ title, caption, reason, error, children }: RowProps) {
+function ProblemRow({ title, caption, reason, error = null, children }: RowProps) {
   return (
     <li className="flex flex-col gap-1.5 py-3">
       <div className="flex items-start gap-3">
@@ -301,7 +301,6 @@ export function WorkspaceProblemsBanner(): React.JSX.Element | null {
                         {problem.reason}
                       </span>
                     }
-                    error={null}
                   >
                     <Button variant="ghost" size="sm" onClick={() => keep(problem)}>
                       Keep for later

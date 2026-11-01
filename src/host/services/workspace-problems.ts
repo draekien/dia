@@ -6,17 +6,7 @@ import {
   type WorkspaceProblem,
   WorkspaceProblemError
 } from '@shared/domain/workspace-problem'
-import {
-  Clock,
-  Context,
-  type Crypto,
-  Effect,
-  type FileSystem,
-  Layer,
-  type Path,
-  Schema
-} from 'effect'
-import { SqlClient } from 'effect/sql'
+import { Context, type Crypto, Effect, type FileSystem, Layer, type Path, Schema } from 'effect'
 import { PaneWorkspace } from './pane-workspace'
 import { readSkippedImportTabs, type SkippedImportTab } from './workspace-import'
 import { type Holders, WorkspaceStore } from './workspace-store'
@@ -81,18 +71,22 @@ const conflictOf = (skipped: SkippedImportTab, holders: Holders) => {
   })
 }
 
+const withoutSession = ({ sessionId: _dropped, ...tab }: Tab): Tab => tab
+
+const withoutWorktree = (tab: Tab): Tab => {
+  const { worktree: _dropped, ...config } = tab.config
+  return { ...tab, config }
+}
+
 const withoutHeldValues = (tab: Tab, conflict: ImportConflict): Tab => {
-  const { sessionId: _sessionId, ...withoutSession } = tab
-  const { worktree: _worktree, ...configWithoutWorktree } = tab.config
-  const kept = conflict.session === undefined ? tab : withoutSession
-  return conflict.worktree === undefined ? kept : { ...kept, config: configWithoutWorktree }
+  const afterSession = conflict.session === undefined ? tab : withoutSession(tab)
+  return conflict.worktree === undefined ? afterSession : withoutWorktree(afterSession)
 }
 
 /**
  * Builds the live {@link WorkspaceProblems}. `userDataPath` holds `workspace.imported.json`.
- * Records each resolved import conflict in `host.db`. Requires {@link WorkspaceStore},
- * {@link PaneWorkspace}, `SqlClient` (from `makeHostDatabaseLive`), `FileSystem`, `Path` and
- * `Crypto`.
+ * The file is read once, on the first call that needs it. Requires {@link WorkspaceStore},
+ * {@link PaneWorkspace}, `FileSystem`, `Path` and `Crypto`.
  */
 export const makeWorkspaceProblemsLive = (userDataPath: string) =>
   Layer.effect(
@@ -100,17 +94,15 @@ export const makeWorkspaceProblemsLive = (userDataPath: string) =>
     Effect.gen(function* () {
       const store = yield* WorkspaceStore
       const workspace = yield* PaneWorkspace
-      const sql = yield* SqlClient.SqlClient
       const files = yield* Effect.context<FileSystem.FileSystem | Path.Path | Crypto.Crypto>()
-      const readSkipped = readSkippedImportTabs(userDataPath).pipe(Effect.provideContext(files))
+      const readSkipped = yield* Effect.cached(
+        readSkippedImportTabs(userDataPath).pipe(Effect.provideContext(files))
+      )
 
       const openSkipped = Effect.gen(function* () {
         const skipped = yield* readSkipped
         if (skipped.length === 0) return skipped
-        const resolved = yield* sql<{
-          readonly agent_id: string
-        }>`SELECT agent_id FROM import_resolutions`
-        const closed = new Set(resolved.map((row) => row.agent_id))
+        const closed = new Set(yield* store.resolvedImports)
         const current = yield* workspace.getWorkspace
         for (const entry of current.projects) {
           for (const tab of entry.tabs) closed.add(tab.config.paneId)
@@ -142,16 +134,6 @@ export const makeWorkspaceProblemsLive = (userDataPath: string) =>
       const deleteUnreadable = (row: UnreadableRow) =>
         store.deleteUnreadable(row).pipe(Effect.mapError(asProblemError))
 
-      const record = (agentId: string, resolution: ImportResolution) =>
-        Effect.gen(function* () {
-          const now = yield* Clock.currentTimeMillis
-          yield* sql`INSERT INTO import_resolutions ${sql.insert({
-            agent_id: agentId,
-            resolution: resolution === 'import' ? 'imported' : 'discarded',
-            resolved_at: now
-          })} ON CONFLICT (agent_id) DO NOTHING`
-        })
-
       const resolveImportConflict = Effect.fn('WorkspaceProblems.resolveImportConflict')(function* (
         agentId: string,
         resolution: ImportResolution
@@ -175,7 +157,7 @@ export const makeWorkspaceProblemsLive = (userDataPath: string) =>
               )
             )
         }
-        yield* record(agentId, resolution)
+        yield* store.recordImportResolution(agentId, resolution)
         yield* Effect.logInfo('Resolved an import conflict', {
           agentId,
           resolution,

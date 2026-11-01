@@ -1,6 +1,7 @@
 import type { SessionId } from '@shared/domain/pane'
 import { Project, type ProjectEntry, Tab, type Workspace } from '@shared/domain/project'
 import {
+  type ImportResolution,
   UnreadableAgent,
   UnreadableProject,
   type UnreadableRow
@@ -74,6 +75,20 @@ export class WorkspaceStore extends Context.Service<
      * {@link WorkspaceLoadError} when `host.db` cannot be read.
      */
     readonly holders: Effect.Effect<Holders, WorkspaceLoadError>
+    /**
+     * The pane ids of every skipped import tab the user imported or discarded. Reads only. Fails
+     * with {@link WorkspaceLoadError} when `host.db` cannot be read.
+     */
+    readonly resolvedImports: Effect.Effect<ReadonlySet<string>, WorkspaceLoadError>
+    /**
+     * Records that the user resolved the skipped import tab `agentId`, so it is never offered
+     * again. Recording an id twice keeps the first record. Fails with {@link WorkspaceWriteError}
+     * when the write fails.
+     */
+    readonly recordImportResolution: (
+      agentId: string,
+      resolution: ImportResolution
+    ) => Effect.Effect<void, WorkspaceWriteError>
   }
 >()('WorkspaceStore') {}
 
@@ -185,21 +200,17 @@ const makeStore = Effect.gen(function* () {
     return Option.some({ visibleAgent: state[0].visible_agent, projects, agents })
   })
 
-  const assemble = Effect.fn('WorkspaceStore.assemble')(function* (rows: {
+  const assemble = (rows: {
     readonly visibleAgent: string | null
     readonly projects: ReadonlyArray<ProjectRow>
     readonly agents: ReadonlyArray<AgentRow>
-  }) {
+  }) => {
     const entries: Array<ProjectEntry> = []
     const unreadable: Array<UnreadableProject | UnreadableAgent> = []
     for (const row of rows.projects) {
       const agentRows = rows.agents.filter((agent) => agent.project_id === row.project_id)
       const project = projectFromRow(row)
       if (Result.isFailure(project)) {
-        yield* Effect.logWarning('Left out a stored project that does not decode', {
-          projectId: row.project_id,
-          issue: project.failure
-        })
         unreadable.push(
           UnreadableProject.make({
             projectId: row.project_id,
@@ -214,10 +225,6 @@ const makeStore = Effect.gen(function* () {
       for (const agentRow of agentRows) {
         const tab = tabFromRow(agentRow)
         if (Result.isFailure(tab)) {
-          yield* Effect.logWarning('Left out a stored agent that does not decode', {
-            agentId: agentRow.agent_id,
-            issue: tab.failure
-          })
           unreadable.push(
             UnreadableAgent.make({
               agentId: agentRow.agent_id,
@@ -240,7 +247,7 @@ const makeStore = Effect.gen(function* () {
       visibleTab: visible === undefined ? null : visible.config.paneId
     }
     return { workspace, unreadable }
-  })
+  }
 
   const load = Effect.gen(function* () {
     const rows = yield* readRows
@@ -248,7 +255,10 @@ const makeStore = Effect.gen(function* () {
       yield* Effect.logInfo('No stored workspace')
       return Option.none<Workspace>()
     }
-    const { workspace } = yield* assemble(rows.value)
+    const { workspace, unreadable } = assemble(rows.value)
+    for (const problem of unreadable) {
+      yield* Effect.logWarning('Left out a stored row that does not decode', problem)
+    }
     yield* Ref.set(knownRef, idsOf(workspace))
     yield* Effect.logInfo('Loaded the stored workspace', {
       projects: workspace.projects.length,
@@ -404,8 +414,7 @@ const makeStore = Effect.gen(function* () {
   const unreadable = Effect.gen(function* () {
     const rows = yield* readRows
     if (Option.isNone(rows)) return []
-    const { unreadable } = yield* assemble(rows.value)
-    return unreadable
+    return assemble(rows.value).unreadable
   }).pipe(
     Effect.mapError((cause) => new WorkspaceLoadError({ cause })),
     Effect.withSpan('WorkspaceStore.unreadable')
@@ -435,14 +444,33 @@ const makeStore = Effect.gen(function* () {
       readonly path: string
       readonly name: string
     }>`SELECT w.path, a.name FROM agent_worktrees w JOIN agents a ON a.agent_id = w.agent_id`
-    const result: Holders = {
+    return {
       sessions: new Map(sessions.map((row) => [row.session_id, row.name])),
       worktrees: new Map(worktrees.map((row) => [row.path, row.name]))
-    }
-    return result
+    } satisfies Holders
   }).pipe(
     Effect.mapError((cause) => new WorkspaceLoadError({ cause })),
     Effect.withSpan('WorkspaceStore.holders')
+  )
+
+  const resolvedImports = sql<{
+    readonly agent_id: string
+  }>`SELECT agent_id FROM import_resolutions`.pipe(
+    Effect.map((rows): ReadonlySet<string> => new Set(rows.map((row) => row.agent_id))),
+    Effect.mapError((cause) => new WorkspaceLoadError({ cause })),
+    Effect.withSpan('WorkspaceStore.resolvedImports')
+  )
+
+  const recordImportResolution = Effect.fn('WorkspaceStore.recordImportResolution')(
+    function* (agentId: string, resolution: ImportResolution) {
+      const now = yield* Clock.currentTimeMillis
+      yield* sql`INSERT INTO import_resolutions ${sql.insert({
+        agent_id: agentId,
+        resolution: resolution === 'import' ? 'imported' : 'discarded',
+        resolved_at: now
+      })} ON CONFLICT (agent_id) DO NOTHING`
+    },
+    Effect.mapError((cause) => new WorkspaceWriteError({ cause }))
   )
 
   const hasWorkspace = Effect.map(
@@ -458,7 +486,17 @@ const makeStore = Effect.gen(function* () {
     Effect.withSpan('WorkspaceStore.sessionIds')
   )
 
-  return { load, save, sessionIds, unreadable, deleteUnreadable, holders, hasWorkspace }
+  return {
+    load,
+    save,
+    sessionIds,
+    unreadable,
+    deleteUnreadable,
+    holders,
+    resolvedImports,
+    recordImportResolution,
+    hasWorkspace
+  }
 })
 
 const importLegacyWorkspace = Effect.fn('WorkspaceStore.importLegacyWorkspace')(function* (
@@ -495,7 +533,9 @@ export const makeWorkspaceStoreLive = (userDataPath: string) =>
         sessionIds: store.sessionIds,
         unreadable: store.unreadable,
         deleteUnreadable: store.deleteUnreadable,
-        holders: store.holders
+        holders: store.holders,
+        resolvedImports: store.resolvedImports,
+        recordImportResolution: store.recordImportResolution
       })
     })
   )

@@ -154,7 +154,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
   )
   const workspaceProblems = Layer.provide(
     makeWorkspaceProblemsLive(init.userDataPath),
-    Layer.mergeAll(workspace, workspaceStore, hostDatabase, NodeServices.layer)
+    Layer.mergeAll(workspace, workspaceStore, NodeServices.layer)
   )
   const summaries = Layer.provide(
     AgentSummariesLive,

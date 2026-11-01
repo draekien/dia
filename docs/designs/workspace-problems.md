@@ -71,7 +71,13 @@ readonly unreadable: Effect.Effect<ReadonlyArray<UnreadableProject | UnreadableA
 readonly deleteUnreadable: (row: UnreadableRow) => Effect.Effect<void, WorkspaceWriteError>
 /** The name of the stored agent holding each session id and worktree path, including agents `load` left out. */
 readonly holders: Effect.Effect<Holders, WorkspaceLoadError>
+/** The pane ids of every skipped import tab the user imported or discarded. */
+readonly resolvedImports: Effect.Effect<ReadonlySet<string>, WorkspaceLoadError>
+/** Records a resolved skipped import tab; a second record of the same id keeps the first. */
+readonly recordImportResolution: (agentId: string, resolution: ImportResolution) => Effect.Effect<void, WorkspaceWriteError>
 ```
+
+`load` logs each left-out row once; `unreadable` decodes the same rows without logging.
 
 ### `readSkippedImportTabs` (`workspace-import.ts`)
 
@@ -92,8 +98,10 @@ export class WorkspaceProblems extends Context.Service<WorkspaceProblems, {
   /** Imports (dropping every held value) or discards the skipped tab `agentId`, and records it so it is never listed again. An unknown or resolved id is a no-op. */
   readonly resolveImportConflict: (agentId: string, resolution: ImportResolution) => Effect.Effect<void, WorkspaceProblemError>
 }>()('WorkspaceProblems') {}
-export const makeWorkspaceProblemsLive: (userDataPath: string) => Layer<WorkspaceProblems, never, WorkspaceStore | PaneWorkspace | SqlClient | FileSystem | Path | Crypto>
+export const makeWorkspaceProblemsLive: (userDataPath: string) => Layer<WorkspaceProblems, never, WorkspaceStore | PaneWorkspace | FileSystem | Path | Crypto>
 ```
+
+`workspace.imported.json` is read once per Host run, on the first call that needs it, so a version 1 file's generated names stay the same within a run.
 
 ### RPCs (`rpc.ts`) and `window.dia.workspaceProblems`
 
