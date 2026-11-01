@@ -261,17 +261,19 @@ function QueueStack({
             )}
             style={{ bottom: 0 }}
           >
-            <BubbleContent asChild>
-              <button
-                type="button"
-                data-queue-front
-                aria-expanded={open}
-                aria-label={`Show ${queued.length} queued ${noun}`}
-                className="truncate"
-                onClick={() => setDismissed(false)}
-              >
-                <BubbleBody message={front} />
-              </button>
+            <BubbleContent
+              render={
+                <button
+                  type="button"
+                  data-queue-front
+                  aria-expanded={open}
+                  aria-label={`Show ${queued.length} queued ${noun}`}
+                  className="truncate"
+                  onClick={() => setDismissed(false)}
+                />
+              }
+            >
+              <BubbleBody message={front} />
             </BubbleContent>
           </Bubble>
         )}
