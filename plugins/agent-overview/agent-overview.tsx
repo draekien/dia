@@ -37,11 +37,13 @@ import {
 } from '@dnd-kit/sortable'
 import type { PaneId } from '@shared/domain/pane'
 import { ProjectId, type RegisterProjectRefusal, type Workspace } from '@shared/domain/project'
-import { Option, Schema } from 'effect'
+import { tabOf } from '@shared/domain/workspace'
+import { Option, Result, Schema } from 'effect'
 import { FolderPlusIcon, SearchIcon } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { FilterPopover } from './filter-popover'
 import {
+  archivedKey,
   buildOverview,
   filtersApply,
   headerKey,
@@ -56,6 +58,7 @@ import {
 } from './overview'
 import { ProjectGroup } from './project-group'
 import { RemoveProjectDialog } from './remove-project-dialog'
+import { RetireAgentDialog, type Retirement } from './retire-agent-dialog'
 
 const COLLAPSED_KEY = 'dia.agent-overview.collapsed'
 
@@ -64,8 +67,16 @@ const decodeCollapsed = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.
 const readCollapsed = (): ReadonlySet<ProjectId> =>
   new Set(Option.getOrElse(decodeCollapsed(localStorage.getItem(COLLAPSED_KEY) ?? '[]'), () => []))
 
-const navKey = (target: NavigationTarget): string =>
-  target._tag === 'HeaderTarget' ? headerKey(target.projectId) : rowKey(target.paneId)
+const navKey = (target: NavigationTarget): string => {
+  switch (target._tag) {
+    case 'HeaderTarget':
+      return headerKey(target.projectId)
+    case 'ArchivedTarget':
+      return archivedKey(target.projectId)
+    case 'RowTarget':
+      return rowKey(target.paneId)
+  }
+}
 
 const NO_COLLAPSED: ReadonlySet<ProjectId> = new Set()
 
@@ -216,6 +227,11 @@ export function AgentOverview() {
   const order = dragOrder !== null && dragOrder.workspace === workspace ? dragOrder.ids : null
   const [renaming, setRenaming] = useState<PaneId | null>(null)
   const [removing, setRemoving] = useState<ProjectId | null>(null)
+  const [archivedOpen, setArchivedOpen] = useState<ReadonlySet<ProjectId>>(NO_COLLAPSED)
+  const [retiring, setRetiring] = useState<{
+    readonly paneId: PaneId
+    readonly retirement: Retirement
+  } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [tabStop, setTabStop] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -239,12 +255,21 @@ export function AgentOverview() {
     [workspace, summaries, activeFilters, order]
   )
   const effectiveCollapsed = narrowing || iconMode ? NO_COLLAPSED : collapsed
+  const effectiveArchivedOpen = useMemo(
+    () =>
+      iconMode
+        ? NO_COLLAPSED
+        : activeFilters.showArchived
+          ? new Set(groups.map((group) => group.project.projectId))
+          : archivedOpen,
+    [iconMode, activeFilters.showArchived, groups, archivedOpen]
+  )
   const targets = useMemo(
     () =>
-      navigationOrder(groups, effectiveCollapsed).filter(
+      navigationOrder(groups, effectiveCollapsed, effectiveArchivedOpen).filter(
         (target) => !iconMode || target._tag === 'RowTarget'
       ),
-    [groups, effectiveCollapsed, iconMode]
+    [groups, effectiveCollapsed, effectiveArchivedOpen, iconMode]
   )
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -287,13 +312,27 @@ export function AgentOverview() {
     actions.moveProject(ids[from], to)
   }
 
-  const toggle = (projectId: ProjectId) =>
-    setCollapsed((current) => {
-      const next = new Set(current)
-      if (next.has(projectId)) next.delete(projectId)
-      else next.add(projectId)
-      return next
-    })
+  const toggleIn = (current: ReadonlySet<ProjectId>, projectId: ProjectId) => {
+    const next = new Set(current)
+    if (next.has(projectId)) next.delete(projectId)
+    else next.add(projectId)
+    return next
+  }
+  const toggle = (projectId: ProjectId) => setCollapsed((current) => toggleIn(current, projectId))
+  const toggleArchived = (projectId: ProjectId) =>
+    setArchivedOpen((current) => toggleIn(current, projectId))
+
+  const tabOfPane = (paneId: PaneId) => Result.getOrUndefined(tabOf(workspace, paneId))?.tab
+
+  const retire = (paneId: PaneId, retirement: Retirement) => {
+    if (retirement === 'archive' && tabOfPane(paneId)?.config.worktree === undefined) {
+      actions
+        .archiveTab(paneId)
+        .catch(() => setNotice("The connection to dia's background process was lost."))
+      return
+    }
+    setRetiring({ paneId, retirement })
+  }
 
   const addProject = () => {
     setNotice(null)
@@ -375,6 +414,7 @@ export function AgentOverview() {
     removing === null
       ? undefined
       : workspace.projects.find((entry) => entry.project.projectId === removing)
+  const retiringTab = retiring === null ? undefined : tabOfPane(retiring.paneId)
   const shownGroups = iconMode ? groups.filter((group) => group.rows.length > 0) : groups
 
   return (
@@ -476,6 +516,7 @@ export function AgentOverview() {
                       <ProjectGroup
                         group={group}
                         open={!effectiveCollapsed.has(group.project.projectId)}
+                        archivedOpen={effectiveArchivedOpen.has(group.project.projectId)}
                         narrowing={narrowing}
                         dragging={dragging}
                         iconMode={iconMode}
@@ -483,7 +524,9 @@ export function AgentOverview() {
                         renaming={renaming}
                         tabStop={currentStop}
                         onToggle={() => toggle(group.project.projectId)}
+                        onToggleArchived={() => toggleArchived(group.project.projectId)}
                         onRename={setRenaming}
+                        onRetire={retire}
                         onRemove={() => setRemoving(group.project.projectId)}
                       />
                     </Fragment>
@@ -501,6 +544,14 @@ export function AgentOverview() {
           key={removingEntry.project.projectId}
           entry={removingEntry}
           onClose={() => setRemoving(null)}
+        />
+      )}
+      {retiring !== null && retiringTab !== undefined && (
+        <RetireAgentDialog
+          key={retiring.paneId}
+          tab={retiringTab}
+          retirement={retiring.retirement}
+          onClose={() => setRetiring(null)}
         />
       )}
     </>

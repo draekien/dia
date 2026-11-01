@@ -153,7 +153,8 @@ interface PaneProps {
   focusComposer?: boolean
 }
 
-const transcriptColumn = cva('mx-auto w-full', {
+/** The classes of the centred transcript column, capped at the app-wide transcript `width`. */
+export const transcriptColumn = cva('mx-auto w-full', {
   variants: {
     width: {
       narrow: 'max-w-2xl',

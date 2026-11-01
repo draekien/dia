@@ -15,10 +15,17 @@ import {
 } from '../domain/model-preferences'
 import { ConversationMessage, PermissionMode } from '../domain/pane'
 import { UsageLimitResume } from '../domain/parking'
-import { ProjectId, ProjectNotFoundError, RegisterProjectError, Workspace } from '../domain/project'
+import {
+  ProjectId,
+  ProjectNotFoundError,
+  RegisterProjectError,
+  Workspace,
+  WorktreeNotRemovedError
+} from '../domain/project'
 import { RemovalProgress } from '../domain/project-removal'
 import { ThemePreference } from '../domain/theme'
 import { TranscriptWidth } from '../domain/transcript-width'
+import { Uuid } from '../domain/uuid'
 import { PluginInfo, PluginName, PluginOverrideResult } from '../plugin/manifest'
 import {
   CreateTab,
@@ -48,7 +55,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.16'
+export const PROTOCOL_VERSION = '0.0.17'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -100,8 +107,9 @@ export const EventFrame = Schema.Union([PaneEventFrame, GlobalEventFrame, Reload
 export type EventFrame = typeof EventFrame.Type
 
 /**
- * The Host's RPC surface. Every command takes a `commandId`; `RegisterProject` and
- * `RemoveProject` are queries so their typed errors reach the caller; the plugin calls (`LoadPlugin`
+ * The Host's RPC surface. Every command takes a `commandId`; `RegisterProject`, `RemoveProject`,
+ * `ArchiveTab` and `DeleteTab` are queries so their typed errors reach the caller (`ArchiveTab` and
+ * `DeleteTab` succeed for a tab already gone, so repeating one is harmless); the plugin calls (`LoadPlugin`
  * on a loaded plugin reloads it), the model calls (`GetModels`, `RefreshModels`), the adapter calls
  * (`GetAdapterStatus`, `CheckAdapterHealth`, `SetInstallPath`, `GetModelPreferences`,
  * `SetModelPreference`, `SetAgentDefaults`, each setting a value, so repeating one is harmless,
@@ -150,6 +158,8 @@ export const DiaRpcs = RpcGroup.make(
     error: ProjectNotFoundError,
     stream: true
   }),
+  Rpc.make('ArchiveTab', { payload: { paneId: Uuid }, error: WorktreeNotRemovedError }),
+  Rpc.make('DeleteTab', { payload: { paneId: Uuid }, error: WorktreeNotRemovedError }),
   Rpc.make('GetAgentSummaries', { success: Schema.Array(AgentSummary) }),
   Rpc.make('GetTranscriptWidth', { success: TranscriptWidth }),
   Rpc.make('GetPaneHistory', {

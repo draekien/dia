@@ -6,6 +6,8 @@ import { AgentName, EMPTY_WORKSPACE, type Project, ProjectId, type Tab, Workspac
 import {
   addProject,
   addTab,
+  archiveTab,
+  deleteTab,
   moveProject,
   moveVisibleTabOff,
   recordSession,
@@ -115,11 +117,11 @@ describe('Workspace schema', () => {
     ).toBe(true)
   })
 
-  it('rejects an archived visible tab', () => {
+  it('accepts an archived visible tab, which shows read-only', () => {
     const encoded = Schema.encodeSync(Workspace)(workspaceOf([[1, [tab(1, true)]]]))
 
     expect(
-      Result.isFailure(Schema.decodeUnknownResult(Workspace)({ ...encoded, visibleTab: paneId(1) }))
+      Result.isSuccess(Schema.decodeUnknownResult(Workspace)({ ...encoded, visibleTab: paneId(1) }))
     ).toBe(true)
   })
 })
@@ -319,12 +321,95 @@ describe('selectTab', () => {
     expect(ok(selectTab(workspace, null)).visibleTab).toEqual(null)
   })
 
-  it('fails for an archived tab', () => {
-    expect(failureTag(selectTab(workspace, paneId(2)))).toBe('TabNotFoundError')
+  it('shows an archived tab', () => {
+    expect(ok(selectTab(workspace, paneId(2))).visibleTab).toEqual(paneId(2))
   })
 
   it('fails for a pane id no tab has', () => {
     expect(failureTag(selectTab(workspace, paneId(9)))).toBe('TabNotFoundError')
+  })
+})
+
+describe('archiveTab', () => {
+  const worktree = { path: 'F:\\wt\\heron', branch: 'dia/heron', sourceRepo: 'F:\\Dev\\repo1' }
+  const worktreeTab: Tab = {
+    ...tab(1),
+    config: { ...tab(1).config, cwd: worktree.path, worktree }
+  }
+
+  it('marks the tab archived, forgets its worktree and keeps its cwd and session', () => {
+    const session = { ...worktreeTab, sessionId: SessionId.make('s-1') }
+    const result = ok(archiveTab(workspaceOf([[1, [session, tab(2)]]], paneId(2)), paneId(1)))
+
+    expect(result.projects[0].tabs[0]).toEqual({
+      name: session.name,
+      config: { ...tab(1).config, cwd: worktree.path },
+      sessionId: session.sessionId,
+      archived: true
+    })
+  })
+
+  it('keeps the archived tab visible when it was visible', () => {
+    expect(
+      ok(archiveTab(workspaceOf([[1, [worktreeTab, tab(2)]]], paneId(1)), paneId(1))).visibleTab
+    ).toEqual(paneId(1))
+  })
+
+  it('fails for a pane id no tab has', () => {
+    expect(failureTag(archiveTab(workspaceOf([[1, [tab(1)]]]), paneId(9)))).toBe('TabNotFoundError')
+  })
+})
+
+describe('deleteTab', () => {
+  it('drops only the named tab and keeps the visible tab when it is another', () => {
+    const result = ok(deleteTab(workspaceOf([[1, [tab(1), tab(2)]]], paneId(1)), paneId(2)))
+
+    expect(result).toEqual(workspaceOf([[1, [tab(1)]]], paneId(1)))
+  })
+
+  it('shows the first non-archived tab of the same project when the visible tab is deleted', () => {
+    const result = ok(
+      deleteTab(
+        workspaceOf(
+          [
+            [1, [tab(1)]],
+            [2, [tab(2), tab(3, true), tab(4)]]
+          ],
+          paneId(2)
+        ),
+        paneId(2)
+      )
+    )
+
+    expect(result.visibleTab).toEqual(paneId(4))
+  })
+
+  it('shows a tab of another project when its own project has no other non-archived tab', () => {
+    const result = ok(
+      deleteTab(
+        workspaceOf(
+          [
+            [1, [tab(1, true)]],
+            [2, [tab(2), tab(3, true)]],
+            [3, [tab(4)]]
+          ],
+          paneId(2)
+        ),
+        paneId(2)
+      )
+    )
+
+    expect(result.visibleTab).toEqual(paneId(4))
+  })
+
+  it('shows no tab when no non-archived tab is left', () => {
+    const result = ok(deleteTab(workspaceOf([[1, [tab(1), tab(2, true)]]], paneId(1)), paneId(1)))
+
+    expect(result.visibleTab).toEqual(null)
+  })
+
+  it('fails for a pane id no tab has', () => {
+    expect(failureTag(deleteTab(workspaceOf([[1, [tab(1)]]]), paneId(9)))).toBe('TabNotFoundError')
   })
 })
 

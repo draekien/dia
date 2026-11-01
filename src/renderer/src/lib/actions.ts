@@ -71,6 +71,25 @@ export const renameTab = (paneId: PaneId, name: AgentName): void => {
 }
 
 /**
+ * Archives tab `paneId`: stops its agent and removes its worktree; its branch and transcripts
+ * stay, and the tab moves to its project's archived list. Resolves `null` once archived, or the
+ * reason the worktree could not be removed, in which case the tab is left as it was.
+ */
+export const archiveTab = (paneId: PaneId): Promise<string | null> => {
+  log('Archiving a tab', { paneId })
+  return window.dia.archiveTab(paneId)
+}
+
+/**
+ * Deletes tab `paneId`: stops its agent, removes its worktree and dia's records of it; its branch
+ * and transcripts stay. Resolves as {@link archiveTab} does.
+ */
+export const deleteTab = (paneId: PaneId): Promise<string | null> => {
+  log('Deleting a tab', { paneId })
+  return window.dia.deleteTab(paneId)
+}
+
+/**
  * Removes project `projectId`: closes its agents and, unless `force`, deletes their worktrees and
  * transcripts. `onProgress` receives each step. Resolves once the project is gone; rejects when
  * the connection to the Host drops.
