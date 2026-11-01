@@ -261,6 +261,45 @@ describe('makeSessionEventReducer — messages logged only or hidden', () => {
   })
 })
 
+describe('makeSessionEventReducer — background tasks', () => {
+  const changed = (tasks: ReadonlyArray<Record<string, unknown>>): SDKMessage =>
+    system('background_tasks_changed', { tasks })
+
+  it('reports every running background task by id and description', () => {
+    const emitted = stepOnce(
+      changed([
+        { task_id: 'b1', task_type: 'local_bash', description: 'Run the test watcher' },
+        { task_id: 'a1', task_type: 'local_agent', description: 'Review the diff' }
+      ])
+    )
+    expect(emitted).toEqual([
+      {
+        _tag: 'BackgroundTasksChanged',
+        tasks: [
+          { taskId: 'b1', description: 'Run the test watcher' },
+          { taskId: 'a1', description: 'Review the diff' }
+        ]
+      }
+    ])
+  })
+
+  it('leaves out ambient tasks, which the SDK says are not activity', () => {
+    const emitted = stepOnce(
+      changed([
+        { task_id: 'w1', task_type: 'monitor', description: 'Watch settings', ambient: true },
+        { task_id: 'b1', task_type: 'local_bash', description: 'Run the build' }
+      ])
+    )
+    expect(emitted).toEqual([
+      { _tag: 'BackgroundTasksChanged', tasks: [{ taskId: 'b1', description: 'Run the build' }] }
+    ])
+  })
+
+  it('reports an empty set when the last background task ends', () => {
+    expect(stepOnce(changed([]))).toEqual([{ _tag: 'BackgroundTasksChanged', tasks: [] }])
+  })
+})
+
 describe('makeSessionEventReducer — one-line notices and recovered refusals', () => {
   const mainAssistantText = (stopReason: string): SDKMessage =>
     sdkMessage({

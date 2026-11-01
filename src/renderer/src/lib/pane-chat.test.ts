@@ -14,6 +14,7 @@ import {
   PaneAssistantTextDelta,
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
+  PaneBackgroundTasksChanged,
   PaneCheckpointAvailable,
   PaneCompactionFailed,
   PaneContextUsageChanged,
@@ -112,6 +113,7 @@ describe('paneChatStateFromHistory', () => {
       turnStatus: null,
       contextUsage: null,
       compactionFailure: null,
+      backgroundTasks: [],
       messages: [
         { id: `${PANE}:history:0`, role: 'user', parts: [{ type: 'text', content: 'hi' }] },
         { id: `${PANE}:history:1`, role: 'assistant', parts: [{ type: 'text', content: 'hello' }] }
@@ -129,7 +131,8 @@ describe('paneChatStateFromHistory', () => {
       queueHeld: false,
       turnStatus: null,
       contextUsage: null,
-      compactionFailure: null
+      compactionFailure: null,
+      backgroundTasks: []
     })
   })
 
@@ -255,6 +258,7 @@ describe('reducePaneChat: text deltas', () => {
       turnStatus: null,
       contextUsage: null,
       compactionFailure: null,
+      backgroundTasks: [],
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'done' }] }
       ]
@@ -311,6 +315,7 @@ describe('reducePaneChat: tool calls', () => {
       turnStatus: null,
       contextUsage: null,
       compactionFailure: null,
+      backgroundTasks: [],
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'let me look' }] }
       ]
@@ -334,6 +339,7 @@ describe('reducePaneChat: tool calls', () => {
       turnStatus: null,
       contextUsage: null,
       compactionFailure: null,
+      backgroundTasks: [],
       messages: [
         {
           id: '0:assistant',
@@ -371,6 +377,7 @@ describe('reducePaneChat: tool calls', () => {
       turnStatus: null,
       contextUsage: null,
       compactionFailure: null,
+      backgroundTasks: [],
       messages: [
         {
           id: '0:assistant',
@@ -449,6 +456,7 @@ describe('reducePaneChat: PaneMessageAppended backstop', () => {
       turnStatus: null,
       contextUsage: null,
       compactionFailure: null,
+      backgroundTasks: [],
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'streamed' }] }
       ]
@@ -1202,5 +1210,48 @@ describe('reducePaneChat: parked turns', () => {
       'Claude Code is not signed in',
       'Claude Code is not signed in'
     ])
+  })
+})
+
+describe('reducePaneChat — background tasks', () => {
+  const watcher = { taskId: 'b1', description: 'Run the test watcher' }
+  const reviewer = { taskId: 'a1', description: 'Review the diff' }
+  const tasksChanged = (tasks: ReadonlyArray<{ taskId: string; description: string }>) =>
+    PaneBackgroundTasksChanged.make({ paneId: PANE, tasks })
+  const running = reducePaneChat(emptyPaneChatState, tasksChanged([watcher, reviewer]))
+
+  it('starts with no background tasks', () => {
+    expect(emptyPaneChatState.backgroundTasks).toEqual([])
+  })
+
+  it('replaces the set with each report instead of merging it', () => {
+    expect(reducePaneChat(running, tasksChanged([reviewer])).backgroundTasks).toEqual([reviewer])
+  })
+
+  it('keeps the set when the conversation is cleared, because the process keeps running', () => {
+    expect(reducePaneChat(running, conversationReset()).backgroundTasks).toEqual([
+      watcher,
+      reviewer
+    ])
+  })
+
+  it('empties the set when the session crashes', () => {
+    const crashed = reducePaneChat(
+      running,
+      attentionChanged(Crashed.make({ error: { message: 'process exited' } }))
+    )
+    expect(crashed.backgroundTasks).toEqual([])
+  })
+
+  it('keeps the set when a turn errors, because the process keeps running', () => {
+    const errored = reducePaneChat(
+      running,
+      attentionChanged(Errored.make({ error: { message: 'declined' } }))
+    )
+    expect(errored.backgroundTasks).toEqual([watcher, reviewer])
+  })
+
+  it('empties the set on a rewind, which restarts the session process', () => {
+    expect(reducePaneChat(running, rewoundToCheckpoint('u1')).backgroundTasks).toEqual([])
   })
 })

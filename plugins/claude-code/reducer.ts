@@ -3,6 +3,7 @@ import {
   AssistantMessageReceived,
   AssistantTextDelta,
   AssistantThinkingDelta,
+  BackgroundTasksChanged,
   CheckpointAvailable,
   CompactionFailed,
   ConversationCompacted,
@@ -353,6 +354,14 @@ export const makeSessionEventReducer = (
         return message.memories.length > 0
           ? [SessionNotice.make({ text: memoryRecallNotice(message.memories) })]
           : []
+      case 'background_tasks_changed':
+        return [
+          BackgroundTasksChanged.make({
+            tasks: message.tasks
+              .filter((task) => task.ambient !== true)
+              .map((task) => ({ taskId: task.task_id, description: task.description }))
+          })
+        ]
       case 'informational':
         return message.level === 'info' || message.tool_use_id !== undefined
           ? []

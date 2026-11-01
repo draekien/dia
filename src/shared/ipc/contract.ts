@@ -10,6 +10,7 @@ import {
   QuestionResponse
 } from '../domain/attention'
 import type { ActivityInfo, ActivityNotFound } from '../domain/background-activity'
+import { BackgroundTask } from '../domain/background-task'
 import { CompactionFailure, ContextUsage } from '../domain/context-usage'
 import { MessageQueueSnapshot, OutgoingMessage, SendMode } from '../domain/message-queue'
 import { ModelCatalogSnapshot } from '../domain/model'
@@ -385,6 +386,17 @@ export const PaneSessionNotice = Schema.TaggedStruct('PaneSessionNotice', {
 export type PaneSessionNotice = typeof PaneSessionNotice.Type
 
 /**
+ * Event pushed to the renderer when the set of work running outside the turns of pane `paneId`
+ * changes. `tasks` is the full set, in the order the session reported it, and is empty when none
+ * runs.
+ */
+export const PaneBackgroundTasksChanged = Schema.TaggedStruct('PaneBackgroundTasksChanged', {
+  paneId: Uuid,
+  tasks: Schema.Array(BackgroundTask)
+})
+export type PaneBackgroundTasksChanged = typeof PaneBackgroundTasksChanged.Type
+
+/**
  * Event pushed to the renderer when the agent in pane `paneId` wants to run
  * tool `toolName` with the given `input` and is blocked awaiting approval.
  * `suggestions`, when present, are the SDK's offered "always allow" rules the
@@ -699,6 +711,7 @@ export const IpcEvent = Schema.Union([
   PaneToolCallUpdated,
   PaneTurnStatusChanged,
   PaneSessionNotice,
+  PaneBackgroundTasksChanged,
   PanePermissionRequested,
   PaneQuestionRequested,
   PanePlanReviewRequested,
@@ -947,4 +960,5 @@ export interface DiaApi {
   onToolCallUpdated(listener: (event: PaneToolCallUpdated) => void): () => void
   onTurnStatusChanged(listener: (event: PaneTurnStatusChanged) => void): () => void
   onSessionNotice(listener: (event: PaneSessionNotice) => void): () => void
+  onBackgroundTasksChanged(listener: (event: PaneBackgroundTasksChanged) => void): () => void
 }
