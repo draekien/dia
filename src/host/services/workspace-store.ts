@@ -1,5 +1,10 @@
 import type { SessionId } from '@shared/domain/pane'
 import { Project, type ProjectEntry, Tab, type Workspace } from '@shared/domain/project'
+import {
+  UnreadableAgent,
+  UnreadableProject,
+  type UnreadableRow
+} from '@shared/domain/workspace-problem'
 import { Clock, Context, Data, Effect, Layer, Option, Ref, Result, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { markImported, readLegacyWorkspace } from './workspace-import'
@@ -13,6 +18,15 @@ export class WorkspaceLoadError extends Data.TaggedError('WorkspaceLoadError')<{
 export class WorkspaceWriteError extends Data.TaggedError('WorkspaceWriteError')<{
   readonly cause: unknown
 }> {}
+
+/**
+ * Who holds each stored session id and worktree path: the name of the stored agent, including
+ * agents `load` left out. A tab given one of these values for another agent makes `save` fail.
+ */
+export interface Holders {
+  readonly sessions: ReadonlyMap<string, string>
+  readonly worktrees: ReadonlyMap<string, string>
+}
 
 /** Service tag for the Host's persisted workspace. Provide it with {@link makeWorkspaceStoreLive}. */
 export class WorkspaceStore extends Context.Service<
@@ -40,6 +54,26 @@ export class WorkspaceStore extends Context.Service<
      * Fails with {@link WorkspaceLoadError} when `host.db` cannot be read.
      */
     readonly sessionIds: Effect.Effect<ReadonlySet<SessionId>, WorkspaceLoadError>
+    /**
+     * Every stored project and agent `load` leaves out, with its decode issue as the reason. An
+     * agent of a left-out project is not listed; its project counts it. Empty when no workspace
+     * is stored. Reads only. Fails with {@link WorkspaceLoadError} when `host.db` cannot be read.
+     */
+    readonly unreadable: Effect.Effect<
+      ReadonlyArray<UnreadableProject | UnreadableAgent>,
+      WorkspaceLoadError
+    >
+    /**
+     * Deletes a stored row `load` left out, with every row that cascades from it: a project's
+     * agents, an agent's worktree and session records. A row `load` returned or `save` wrote, and a
+     * missing row, are left alone. Fails with {@link WorkspaceWriteError} when the delete fails.
+     */
+    readonly deleteUnreadable: (row: UnreadableRow) => Effect.Effect<void, WorkspaceWriteError>
+    /**
+     * The stored {@link Holders} of session ids and worktree paths. Reads only. Fails with
+     * {@link WorkspaceLoadError} when `host.db` cannot be read.
+     */
+    readonly holders: Effect.Effect<Holders, WorkspaceLoadError>
   }
 >()('WorkspaceStore') {}
 
@@ -66,8 +100,8 @@ interface AgentRow {
   readonly session_id: string | null
 }
 
-const decodeProject = Schema.decodeUnknownResult(Project)
-const decodeTab = Schema.decodeUnknownResult(Tab)
+const decodeProject = Schema.decodeUnknownResult(Project, { reportInput: true })
+const decodeTab = Schema.decodeUnknownResult(Tab, { reportInput: true })
 
 const projectFromRow = (row: ProjectRow) =>
   decodeProject({
@@ -157,23 +191,41 @@ const makeStore = Effect.gen(function* () {
     readonly agents: ReadonlyArray<AgentRow>
   }) {
     const entries: Array<ProjectEntry> = []
+    const unreadable: Array<UnreadableProject | UnreadableAgent> = []
     for (const row of rows.projects) {
+      const agentRows = rows.agents.filter((agent) => agent.project_id === row.project_id)
       const project = projectFromRow(row)
       if (Result.isFailure(project)) {
         yield* Effect.logWarning('Left out a stored project that does not decode', {
           projectId: row.project_id,
           issue: project.failure
         })
+        unreadable.push(
+          UnreadableProject.make({
+            projectId: row.project_id,
+            name: row.display_name,
+            agents: agentRows.length,
+            reason: project.failure.message
+          })
+        )
         continue
       }
       const tabs: Array<Tab> = []
-      for (const agentRow of rows.agents.filter((agent) => agent.project_id === row.project_id)) {
+      for (const agentRow of agentRows) {
         const tab = tabFromRow(agentRow)
         if (Result.isFailure(tab)) {
           yield* Effect.logWarning('Left out a stored agent that does not decode', {
             agentId: agentRow.agent_id,
             issue: tab.failure
           })
+          unreadable.push(
+            UnreadableAgent.make({
+              agentId: agentRow.agent_id,
+              name: agentRow.name,
+              project: project.success.displayName,
+              reason: tab.failure.message
+            })
+          )
           continue
         }
         tabs.push(tab.success)
@@ -187,7 +239,7 @@ const makeStore = Effect.gen(function* () {
       projects: entries,
       visibleTab: visible === undefined ? null : visible.config.paneId
     }
-    return workspace
+    return { workspace, unreadable }
   })
 
   const load = Effect.gen(function* () {
@@ -196,7 +248,7 @@ const makeStore = Effect.gen(function* () {
       yield* Effect.logInfo('No stored workspace')
       return Option.none<Workspace>()
     }
-    const workspace = yield* assemble(rows.value)
+    const { workspace } = yield* assemble(rows.value)
     yield* Ref.set(knownRef, idsOf(workspace))
     yield* Effect.logInfo('Loaded the stored workspace', {
       projects: workspace.projects.length,
@@ -349,6 +401,50 @@ const makeStore = Effect.gen(function* () {
     )
   )
 
+  const unreadable = Effect.gen(function* () {
+    const rows = yield* readRows
+    if (Option.isNone(rows)) return []
+    const { unreadable } = yield* assemble(rows.value)
+    return unreadable
+  }).pipe(
+    Effect.mapError((cause) => new WorkspaceLoadError({ cause })),
+    Effect.withSpan('WorkspaceStore.unreadable')
+  )
+
+  const deleteUnreadable = Effect.fn('WorkspaceStore.deleteUnreadable')(
+    function* (row: UnreadableRow) {
+      const known = yield* Ref.get(knownRef)
+      const loaded = row.kind === 'project' ? known.projects : known.agents
+      if (loaded.has(row.id)) {
+        yield* Effect.logWarning('Refused to delete a stored row the workspace holds', row)
+        return
+      }
+      if (row.kind === 'project') yield* sql`DELETE FROM projects WHERE project_id = ${row.id}`
+      else yield* sql`DELETE FROM agents WHERE agent_id = ${row.id}`
+      yield* Effect.logInfo('Deleted a stored row that could not be loaded', row)
+    },
+    Effect.mapError((cause) => new WorkspaceWriteError({ cause }))
+  )
+
+  const holders = Effect.gen(function* () {
+    const sessions = yield* sql<{
+      readonly session_id: string
+      readonly name: string
+    }>`SELECT s.session_id, a.name FROM agent_sessions s JOIN agents a ON a.agent_id = s.agent_id`
+    const worktrees = yield* sql<{
+      readonly path: string
+      readonly name: string
+    }>`SELECT w.path, a.name FROM agent_worktrees w JOIN agents a ON a.agent_id = w.agent_id`
+    const result: Holders = {
+      sessions: new Map(sessions.map((row) => [row.session_id, row.name])),
+      worktrees: new Map(worktrees.map((row) => [row.path, row.name]))
+    }
+    return result
+  }).pipe(
+    Effect.mapError((cause) => new WorkspaceLoadError({ cause })),
+    Effect.withSpan('WorkspaceStore.holders')
+  )
+
   const hasWorkspace = Effect.map(
     sql`SELECT 1 FROM workspace_state WHERE id = 1`,
     (rows) => rows.length > 0
@@ -362,7 +458,7 @@ const makeStore = Effect.gen(function* () {
     Effect.withSpan('WorkspaceStore.sessionIds')
   )
 
-  return { load, save, sessionIds, hasWorkspace }
+  return { load, save, sessionIds, unreadable, deleteUnreadable, holders, hasWorkspace }
 })
 
 const importLegacyWorkspace = Effect.fn('WorkspaceStore.importLegacyWorkspace')(function* (
@@ -393,6 +489,13 @@ export const makeWorkspaceStoreLive = (userDataPath: string) =>
       yield* importLegacyWorkspace(userDataPath, store).pipe(
         Effect.mapError((cause) => new WorkspaceLoadError({ cause }))
       )
-      return WorkspaceStore.of({ load: store.load, save: store.save, sessionIds: store.sessionIds })
+      return WorkspaceStore.of({
+        load: store.load,
+        save: store.save,
+        sessionIds: store.sessionIds,
+        unreadable: store.unreadable,
+        deleteUnreadable: store.deleteUnreadable,
+        holders: store.holders
+      })
     })
   )

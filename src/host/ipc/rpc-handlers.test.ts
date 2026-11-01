@@ -49,6 +49,7 @@ import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { ProjectEntries } from '../services/project-entries'
 import { SettingsStore } from '../services/settings-store'
+import { WorkspaceProblems } from '../services/workspace-problems'
 import { makeDiaRpcHandlers } from './rpc-handlers'
 
 const PANE_ID = '00000000-0000-4000-8000-00000000000a'
@@ -73,6 +74,7 @@ interface Harness {
     | ModelCatalogFeed
     | AdapterStatusFeed
     | ModelPreferences
+    | WorkspaceProblems
   >
 }
 
@@ -195,6 +197,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       directory === '/missing'
         ? Effect.fail(new DirectoryNotFoundError({ directory }))
         : Effect.sync(() => void calls.push(`registerProject:${projectId}:${directory}`)),
+    importTab: () => Effect.die(new Error('importTab not used by these tests')),
     moveProject: (projectId, toIndex) =>
       Effect.sync(() => void calls.push(`moveProject:${projectId}:${toIndex}`)),
     removeProject: (projectId, force) =>
@@ -345,6 +348,14 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       })
   })
 
+  const problems = Layer.succeed(WorkspaceProblems, {
+    list: Effect.succeed([]),
+    deleteUnreadable: (row) =>
+      Effect.sync(() => void calls.push(`deleteUnreadable:${row.kind}:${row.id}`)),
+    resolveImportConflict: (agentId, resolution) =>
+      Effect.sync(() => void calls.push(`resolveImportConflict:${agentId}:${resolution}`))
+  })
+
   const hub = Layer.succeed(EventHub, {
     publish: (event) =>
       Effect.sync(() => {
@@ -369,7 +380,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       activities,
       models,
       adapterStatus,
-      modelPreferences
+      modelPreferences,
+      problems
     )
   }
 }
@@ -747,6 +759,25 @@ describe('Dia RPC handlers', () => {
 
       assert.deepStrictEqual(harness.calls, [`archiveTab:${PANE_ID}`, `deleteTab:${PANE_ID}`])
     })
+  )
+
+  it.effect(
+    'delivers the row of a DeleteUnreadableRow and the conflict of a ResolveImportConflict unchanged',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness()
+        yield* withHandlers(harness, (handlers) =>
+          Effect.all([
+            handlers.DeleteUnreadableRow({ kind: 'agent', id: PANE_ID }),
+            handlers.ResolveImportConflict({ agentId: OTHER_PANE_ID, resolution: 'discard' })
+          ])
+        )
+
+        assert.deepStrictEqual(harness.calls, [
+          `deleteUnreadable:agent:${PANE_ID}`,
+          `resolveImportConflict:${OTHER_PANE_ID}:discard`
+        ])
+      })
   )
 
   it.effect('succeeds an ArchiveTab and a DeleteTab for a tab that is already gone', () =>

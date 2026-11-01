@@ -129,7 +129,10 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     save: (workspace) => Effect.sync(() => void saves.push(workspace)),
     sessionIds: Effect.succeed(
       new Set((options.storedSessionIds ?? []).map((id) => SessionId.make(id)))
-    )
+    ),
+    unreadable: Effect.succeed([]),
+    deleteUnreadable: () => Effect.void,
+    holders: Effect.succeed({ sessions: new Map(), worktrees: new Map() })
   })
 
   const hub = Layer.succeed(EventHub, {
@@ -397,6 +400,73 @@ describe('PaneWorkspace.registerProject', () => {
 
       assert.strictEqual(workspace.projects[0].project.directoryKey, yield* resolvedKey('/Repo'))
     }).pipe(Effect.provide(NodePath.layer))
+  )
+})
+
+describe('PaneWorkspace.importTab', () => {
+  const PROJECT_3 = ProjectId.make('33333333-0000-4000-8000-000000000003')
+
+  it.effect('adds the tab to the project with its directory key and keeps the visible tab', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* (yield* PaneWorkspace).importTab(
+            { ...project(PROJECT_3, '/OTHER'), directoryKey: '/other' },
+            tab(PANE_NEW, '/other')
+          )
+          return yield* current
+        })
+      )
+
+      assert.deepStrictEqual(
+        [workspace.projects.map((entry) => entry.tabs.length), workspace.visibleTab],
+        [[1, 2], PANE_A]
+      )
+      assert.strictEqual(workspace.projects[1].tabs[1].config.paneId, PANE_NEW)
+      assert.strictEqual(harness.saves.at(-1), workspace)
+    })
+  )
+
+  it.effect('registers the project with the tab when no project has its directory', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* (yield* PaneWorkspace).importTab(
+            project(PROJECT_3, '/gone'),
+            tab(PANE_NEW, '/gone')
+          )
+          return yield* current
+        })
+      )
+
+      assert.deepStrictEqual(workspace.projects[2], {
+        project: project(PROJECT_3, '/gone'),
+        tabs: [tab(PANE_NEW, '/gone')]
+      })
+      assert.strictEqual(workspace.visibleTab, PANE_A)
+    })
+  )
+
+  it.effect('leaves the workspace unchanged for a pane id it already has', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* (yield* PaneWorkspace).importTab(project(PROJECT_1, '/repo'), tab(PANE_B, '/repo'))
+          return yield* current
+        })
+      )
+
+      assert.deepStrictEqual(tabsOf(workspace), [PANE_A, PANE_B])
+    })
   )
 })
 

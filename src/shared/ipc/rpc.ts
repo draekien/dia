@@ -26,6 +26,12 @@ import { RemovalProgress } from '../domain/project-removal'
 import { ThemePreference } from '../domain/theme'
 import { TranscriptWidth } from '../domain/transcript-width'
 import { Uuid } from '../domain/uuid'
+import {
+  ImportResolution,
+  UnreadableRow,
+  WorkspaceProblem,
+  WorkspaceProblemError
+} from '../domain/workspace-problem'
 import { PluginInfo, PluginName, PluginOverrideResult } from '../plugin/manifest'
 import {
   CreateTab,
@@ -55,7 +61,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.18'
+export const PROTOCOL_VERSION = '0.0.19'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -120,6 +126,9 @@ export type EventFrame = typeof EventFrame.Type
  * for it instead of starting another;
  * the meta repo calls (`GetMetaRepo`, `SetMetaRemote`, `PushMetaRepo`) take none and report every
  * failure in their result, never as an RPC error;
+ * the workspace problem calls (`ListWorkspaceProblems`, `DeleteUnreadableRow`,
+ * `ResolveImportConflict`) take none, are safe to repeat (a resolved problem is a no-op) and fail
+ * with `WorkspaceProblemError`;
  * `SubscribeEvents` takes the
  * last sequence number received per pane (`cursors`) and streams {@link EventFrame}s. Serve it
  * with `RpcServer` in the Host and call it with `RpcClient` from the preload.
@@ -208,6 +217,15 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('GetMetaRepo', { success: MetaRepoStateResult }),
   Rpc.make('SetMetaRemote', { payload: { url: Schema.String }, success: MetaRepoStateResult }),
   Rpc.make('PushMetaRepo', { success: MetaRepoPushResult }),
+  Rpc.make('ListWorkspaceProblems', {
+    success: Schema.Array(WorkspaceProblem),
+    error: WorkspaceProblemError
+  }),
+  Rpc.make('DeleteUnreadableRow', { payload: UnreadableRow, error: WorkspaceProblemError }),
+  Rpc.make('ResolveImportConflict', {
+    payload: { agentId: Schema.String, resolution: ImportResolution },
+    error: WorkspaceProblemError
+  }),
   Rpc.make('SubscribeEvents', {
     payload: { cursors: Schema.Record(Schema.String, Schema.Finite) },
     success: EventFrame,

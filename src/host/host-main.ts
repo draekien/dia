@@ -49,6 +49,7 @@ import { ProjectEntriesLive } from './services/project-entries'
 import { makeSettingsStoreLive } from './services/settings-store'
 import { TranscriptReaderLive } from './services/transcript-reader'
 import { WorkspaceFeedLive } from './services/workspace-feed'
+import { makeWorkspaceProblemsLive } from './services/workspace-problems'
 import { makeWorkspaceStoreLive } from './services/workspace-store'
 
 const encodeToMain = Schema.encodeSync(HostToMainMessage)
@@ -151,6 +152,10 @@ const buildHostLayer = (init: HostInit, token: string) => {
       NodeServices.layer
     )
   )
+  const workspaceProblems = Layer.provide(
+    makeWorkspaceProblemsLive(init.userDataPath),
+    Layer.mergeAll(workspace, workspaceStore, hostDatabase, NodeServices.layer)
+  )
   const summaries = Layer.provide(
     AgentSummariesLive,
     Layer.mergeAll(workspace, persistence, eventHub)
@@ -164,6 +169,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
   const state = Layer.mergeAll(
     supervisor,
     workspace,
+    workspaceProblems,
     summaries,
     settings,
     eventHub,

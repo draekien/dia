@@ -18,6 +18,7 @@ import {
   type CreateTabRequest,
   DirectoryNotFoundError,
   EMPTY_WORKSPACE,
+  type Project,
   type ProjectAlreadyRegisteredError,
   type ProjectId,
   ProjectNotFoundError,
@@ -92,6 +93,14 @@ export class PaneWorkspace extends Context.Service<
       projectId: ProjectId,
       directory: string
     ) => Effect.Effect<void, ProjectAlreadyRegisteredError | DirectoryNotFoundError>
+    /**
+     * Adds `tab` as a tab that has not started to the registered project with `project`'s
+     * directory, registering `project` with it at the end of the project order when no project
+     * has the directory. The visible tab does not change, and a tab with the same pane id leaves
+     * the workspace unchanged. The caller ensures no stored agent holds the tab's session id or
+     * worktree path. Fails when that project is being removed.
+     */
+    readonly importTab: (project: Project, tab: Tab) => Effect.Effect<void, ProjectNotFoundError>
     /** Moves a project to `toIndex` in the project order. */
     readonly moveProject: (
       projectId: ProjectId,
@@ -360,6 +369,37 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           WorkspaceOps.addProject(workspace, project, tabs)
         )
         yield* Effect.logInfo('Registered project', { projectId, directory, imported: tabs.length })
+      })
+
+      const importTab = Effect.fn('PaneWorkspace.importTab')(function* (
+        project: Project,
+        tab: Tab
+      ) {
+        yield* mutate('importTab', (workspace, removing) => {
+          const entry = workspace.projects.find(
+            (candidate) => candidate.project.directoryKey === project.directoryKey
+          )
+          if (entry === undefined) {
+            return Result.succeed({
+              ...workspace,
+              projects: [...workspace.projects, { project, tabs: [tab] }]
+            })
+          }
+          if (removing.has(entry.project.projectId)) {
+            return Result.fail(new ProjectNotFoundError({ projectId: entry.project.projectId }))
+          }
+          return Result.map(
+            WorkspaceOps.addTab(workspace, entry.project.projectId, tab),
+            (next) => ({
+              ...next,
+              visibleTab: workspace.visibleTab
+            })
+          )
+        })
+        yield* Effect.logInfo('Imported a tab', {
+          paneId: tab.config.paneId,
+          directory: project.directory
+        })
       })
 
       const moveProject = (projectId: ProjectId, toIndex: number) =>
@@ -733,6 +773,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       return {
         getWorkspace,
         registerProject,
+        importTab,
         moveProject,
         removeProject,
         createTab,
