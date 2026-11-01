@@ -8,6 +8,7 @@ export type SettingsLocation =
   | { readonly page: 'general' }
   | { readonly page: 'adapters'; readonly adapter?: string }
   | { readonly page: 'plugins' }
+  | { readonly page: 'meta' }
 
 /**
  * Opens the Settings dialog on `location`, or on the page last viewed when omitted. Call it from

@@ -1,4 +1,4 @@
-import { BlocksIcon, PuzzleIcon, SlidersHorizontalIcon } from 'lucide-react'
+import { BlocksIcon, FolderGitIcon, PuzzleIcon, SlidersHorizontalIcon } from 'lucide-react'
 import {
   type ComponentType,
   type CSSProperties,
@@ -27,6 +27,7 @@ import {
 } from '../ui/sidebar'
 import { AdapterSettings, adapterLabel } from './adapter-settings'
 import { GeneralSettings } from './general-settings'
+import { MetaRepoSettings } from './meta-repo-settings'
 import { OPEN_SETTINGS_EVENT, type SettingsLocation } from './open-settings'
 import { PluginSettings } from './plugin-settings'
 
@@ -41,14 +42,15 @@ interface NavItem {
 const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { page: 'general', label: 'General', icon: SlidersHorizontalIcon },
   { page: 'adapters', label: 'Adapters', icon: BlocksIcon },
-  { page: 'plugins', label: 'Plugins', icon: PuzzleIcon }
+  { page: 'plugins', label: 'Plugins', icon: PuzzleIcon },
+  { page: 'meta', label: 'Meta repo', icon: FolderGitIcon }
 ]
 
 const pageLabel = (page: SettingsLocation['page']): string =>
   NAV_ITEMS.find((item) => item.page === page)?.label ?? page
 
 /**
- * The Settings dialog: a nav of General, Adapters and Plugins beside the selected page under a
+ * The Settings dialog: a nav of General, Adapters, Plugins and Meta repo beside the selected page under a
  * breadcrumb. Mount it once near the app root, inside a `TooltipProvider` and the theme provider;
  * it opens when `openSettings` is called and reopens on the page and adapter last viewed.
  */
@@ -86,7 +88,7 @@ export function SettingsDialog() {
       <DialogContent className="h-[min(40rem,85vh)] overflow-hidden p-0 sm:max-w-4xl">
         <DialogTitle className="sr-only">Settings</DialogTitle>
         <DialogDescription className="sr-only">
-          Change how dia looks, behaves and which plugins it runs.
+          Change how dia looks, behaves, which plugins it runs and where it pushes the meta repo.
         </DialogDescription>
         <SidebarProvider
           className="h-full min-h-0 items-start"
@@ -150,6 +152,7 @@ export function SettingsDialog() {
                 />
               ) : null}
               {location.page === 'plugins' ? <PluginSettings /> : null}
+              {location.page === 'meta' ? <MetaRepoSettings /> : null}
             </div>
           </section>
         </SidebarProvider>
