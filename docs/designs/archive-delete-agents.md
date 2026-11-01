@@ -23,7 +23,7 @@ Governing decisions: ADR-0023 (Archive and Delete rows), ADR-0046 (dia keeps the
 | Viewing an archived agent | `visibleTab` may name an archived tab; the Host never starts an archived tab's session; the chat plugin renders it read-only | Reuses `SelectTab`, the content header and `getPaneHistory`; no second view state in the renderer |
 | Failure | No "anyway" option; the tab stays as it was (session stopped) and the dialog offers "Try again" | One agent has one removable item; a forced drop would leave an orphaned worktree, which criterion 6 forbids |
 | Confirmation | Delete always confirms in an `AlertDialog`. Archive confirms only for an agent with a worktree, because `git worktree remove --force` discards uncommitted changes | Destructive steps confirm; archiving an agent without a worktree removes nothing |
-| Archived list | Each project group ends with an `Archived · n` disclosure, collapsed by default; "Show archived agents" opens every list | The issue asks for a collapsed list; the existing filter keeps a meaning |
+| Archived list | Each project group ends with an `Archived (n)` disclosure, collapsed by default; "Show archived agents" opens every list | The issue asks for a collapsed list; the existing filter keeps a meaning |
 | Plugin API version | Not bumped | Only the renderer plugin `actions` gain members; precedent (#118, #119, #110) adds renderer exports without a bump. `@dia/plugin` is unchanged |
 
 ## Interface

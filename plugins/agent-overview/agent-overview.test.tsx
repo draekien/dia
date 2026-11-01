@@ -158,6 +158,70 @@ describe('AgentOverview expanded', () => {
   })
 })
 
+describe('AgentOverview archived agents', () => {
+  const withArchived = () => {
+    const alpha = state.workspace?.projects[0]
+    if (state.workspace === undefined || alpha === undefined) throw new Error('no workspace')
+    state.workspace = {
+      ...state.workspace,
+      projects: [
+        { ...alpha, tabs: [...alpha.tabs, { ...tab(4, 'old-heron'), archived: true }] },
+        ...state.workspace.projects.slice(1)
+      ]
+    }
+  }
+
+  it('lists archived agents under a closed Archived toggle that opens them', () => {
+    withArchived()
+    render(<Harness initialOpen />)
+    const toggle = screen.getByRole('button', { name: 'Archived (1)' })
+    const closed = [toggle.getAttribute('aria-expanded'), rowNames().length]
+
+    fireEvent.click(toggle)
+
+    expect([closed, toggle.getAttribute('aria-expanded'), rowNames()[2]]).toEqual([
+      ['false', 3],
+      'true',
+      'old-heron, Idle. No activity yet'
+    ])
+  })
+
+  it('reaches the Archived toggle with the arrow keys after the last row of its project', () => {
+    withArchived()
+    render(<Harness initialOpen />)
+    const lastRow = screen.getByRole('button', { name: /^build, / })
+    lastRow.focus()
+
+    fireEvent.keyDown(lastRow, { key: 'ArrowDown' })
+
+    expect(document.activeElement?.textContent).toBe('Archived (1)')
+  })
+
+  it('archives an agent without a worktree from the row menu without asking', () => {
+    const bridge = { archiveTab: vi.fn(async () => null) }
+    Object.assign(window, { dia: bridge })
+    render(<Harness initialOpen />)
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /^docs, / }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }))
+
+    expect([bridge.archiveTab.mock.calls, screen.queryByRole('alertdialog')]).toEqual([
+      [[paneId(3)]],
+      null
+    ])
+    Reflect.deleteProperty(window, 'dia')
+  })
+
+  it('asks before deleting an agent', () => {
+    render(<Harness initialOpen />)
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /^docs, / }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete…' }))
+
+    expect(screen.getByRole('alertdialog').textContent).toContain('Delete docs?')
+  })
+})
+
 describe('AgentOverview collapsed', () => {
   it('hides the no-projects prompt, which only fits the expanded sidebar', () => {
     state.workspace = { ...state.workspace, projects: [] } as Workspace

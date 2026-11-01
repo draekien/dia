@@ -5,7 +5,9 @@ import type { Workspace } from '@shared/domain/project'
 import type { TranscriptWidth } from '@shared/domain/transcript-width'
 import { Option } from 'effect'
 import {
+  archiveTab,
   cancelNewAgent,
+  deleteTab,
   moveProject,
   newAgent,
   openPluginsPage,
@@ -69,6 +71,8 @@ export const actions = {
   registerProject,
   moveProject,
   renameTab,
+  archiveTab,
+  deleteTab,
   resumeParkedAgent,
   removeProject,
   revealProject,
