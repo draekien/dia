@@ -40,6 +40,16 @@ describe('resolveSessionAdditions', () => {
     })
   )
 
+  it.effect('adds nothing when the forNewSession effect dies', () =>
+    Effect.gen(function* () {
+      const repo: MetaRepo = { forNewSession: Effect.die(new Error('boom')) }
+      assert.deepStrictEqual(
+        yield* resolveSessionAdditions(registryProviding(Option.some(repo))),
+        nothingAdded
+      )
+    })
+  )
+
   it.effect('adds nothing when the provided value has no forNewSession effect', () =>
     Effect.gen(function* () {
       assert.deepStrictEqual(

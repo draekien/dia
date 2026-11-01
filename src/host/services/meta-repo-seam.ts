@@ -35,5 +35,11 @@ export const resolveSessionAdditions = Effect.fn('MetaRepo.resolveSessionAdditio
     yield* Effect.logError('The meta repo service does not have a forNewSession effect')
     return NO_ADDITIONS
   }
-  return yield* provided.value.forNewSession
+  return yield* provided.value.forNewSession.pipe(
+    Effect.catchDefect((defect) =>
+      Effect.logError('The meta repo forNewSession effect died', { defect }).pipe(
+        Effect.as(NO_ADDITIONS)
+      )
+    )
+  )
 })

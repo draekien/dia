@@ -34,8 +34,8 @@ const GIT_STEPS: ReadonlyArray<ReadonlyArray<string>> = [
 /**
  * Creates the meta repo (ADR-0025) in `directory` where it is missing: `instructions.md`, empty,
  * and `plugin/.claude-plugin/plugin.json`, a Claude Code plugin manifest. An existing file is
- * never overwritten. When `directory` is not yet a git repo it is initialised and the files are
- * committed. A failed git command is logged and skipped, so the files are usable without git.
+ * never overwritten. When `directory` is not yet a git repo with a commit it is initialised and the
+ * files are committed. A failed git command is logged and skipped, so the files are usable without git.
  * Fails only when a file or directory cannot be created. Run it once in the plugin's setup with
  * the Node platform services provided.
  */
@@ -57,9 +57,8 @@ export const ensureMetaRepo = Effect.fn('MetaRepo.ensure')(function* (directory:
     PLUGIN_MANIFEST
   )
 
-  if (yield* fs.exists(path.join(directory, '.git'))) return
-  for (const args of GIT_STEPS) {
-    const exitCode = yield* spawner
+  const git = (args: ReadonlyArray<string>) =>
+    spawner
       .exitCode(ChildProcess.make('git', [...args]).pipe(ChildProcess.setCwd(directory)))
       .pipe(
         Effect.catch((error) =>
@@ -68,6 +67,14 @@ export const ensureMetaRepo = Effect.fn('MetaRepo.ensure')(function* (directory:
           )
         )
       )
+
+  if (
+    (yield* fs.exists(path.join(directory, '.git'))) &&
+    (yield* git(['rev-parse', '--verify', '--quiet', 'HEAD'])) === 0
+  )
+    return
+  for (const args of GIT_STEPS) {
+    const exitCode = yield* git(args)
     if (exitCode !== 0) {
       yield* Effect.logWarning('Stopped creating the meta repo history; a git command failed', {
         directory,

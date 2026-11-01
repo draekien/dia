@@ -22,7 +22,8 @@ src/host/session/agent-backend.ts                                   (kernel)
 src/host/services/meta-repo-seam.ts                                 (kernel)
   interface MetaRepo { forNewSession: Effect<SessionAdditions> }    provided under META_REPO_KEY
   resolveSessionAdditions(registry: Pick<PluginRegistry, 'inject'>): Effect<SessionAdditions>
-    never fails; no provider or an invalid value gives { systemPromptAppend: '', pluginPaths: [] }
+    never fails; no provider, an invalid value or a defect in forNewSession gives
+    { systemPromptAppend: '', pluginPaths: [] }
 
 src/host/plugin-api.ts
   re-exports META_REPO_KEY (through shared api), MetaRepo, SessionAdditions
@@ -46,7 +47,7 @@ plugins/claude-code/session-additions.ts
     plugin/.claude-plugin/plugin.json    { "name": "dia-meta", "description": ... }
   ```
 
-- `ensureMetaRepo` writes each of the two files only when it is missing, so it never overwrites a user's or meta agent's edit. When `repo/.git` is missing it runs `git init`, then `git add -A` and `git commit` with the committer identity `dia <dia@localhost>` passed through `-c`, so the first commit does not depend on the user's git config. A failed git command is logged as a warning and does not fail the plugin: agents still receive the files.
+- `ensureMetaRepo` writes each of the two files only when it is missing, so it never overwrites a user's or meta agent's edit. When `repo/.git` is missing or the repo has no commit (`git rev-parse --verify HEAD` fails) it runs `git init`, then `git add -A` and `git commit` with the committer identity `dia <dia@localhost>` passed through `-c`, so the first commit does not depend on the user's git config; it also passes `commit.gpgsign=false` and `--no-verify`, so a signing prompt or a global hook cannot block the plugin's eager setup, which the Host waits for before it reports ready. A failed git command is logged as a warning and does not fail the plugin: agents still receive the files.
 - `forNewSession` reads `instructions.md` from disk on every call and trims it; a read failure logs a warning and gives an empty append. `pluginPaths` is `[<repo>/plugin]`. Reading on every call is what makes a change merged into the repo apply to agents started afterwards.
 - `SessionFactoryLive` calls `resolveSessionAdditions` on every session start and spreads the result into `openSession`'s options.
 - The adapter always sets `systemPrompt: { type: 'preset', preset: 'claude_code' }`, adding `append` when `systemPromptAppend` is not empty, and sets `plugins: [{ type: 'local', path }]` per plugin path when there is at least one. `settingSources` stays unset (the SDK default). The options are computed once per `openSession` and reused by every restart of that session (thinking-level change, rewind), so a running agent keeps what it started with.

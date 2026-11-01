@@ -46,6 +46,18 @@ describe('ensureMetaRepo', () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
   )
 
+  it.effect('commits the files on a later start when the first commit did not happen', () =>
+    Effect.gen(function* () {
+      const { fs, directory } = yield* scratchRepo
+      yield* fs.makeDirectory(directory, { recursive: true })
+      yield* git(directory, 'init')
+
+      yield* ensureMetaRepo(directory)
+
+      assert.strictEqual(yield* git(directory, 'rev-list', '--count', 'HEAD'), '1')
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
+  )
+
   it.effect('keeps an existing instructions.md and adds no commit on a later start', () =>
     Effect.gen(function* () {
       const { fs, path, directory } = yield* scratchRepo
