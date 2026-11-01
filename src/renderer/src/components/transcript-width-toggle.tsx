@@ -16,13 +16,12 @@ export function TranscriptWidthToggle() {
   const [width, setWidth] = useTranscriptWidth()
   return (
     <ToggleGroup
-      type="single"
       variant="outline"
       size="sm"
       aria-label="Transcript width"
-      value={width}
-      onValueChange={(value: TranscriptWidth | '') => {
-        if (value !== '') setWidth(value)
+      value={[width]}
+      onValueChange={([value]) => {
+        if (value !== undefined) setWidth(value as TranscriptWidth)
       }}
     >
       {TRANSCRIPT_WIDTHS.map((option) => (
