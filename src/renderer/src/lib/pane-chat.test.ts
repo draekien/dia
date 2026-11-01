@@ -15,6 +15,7 @@ import {
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
   PaneCheckpointAvailable,
+  PaneContextUsageChanged,
   PaneConversationCompacted,
   PaneConversationReset,
   PaneMessageAppended,
@@ -108,6 +109,7 @@ describe('paneChatStateFromHistory', () => {
       queued: [],
       queueHeld: false,
       turnStatus: null,
+      contextUsage: null,
       messages: [
         { id: `${PANE}:history:0`, role: 'user', parts: [{ type: 'text', content: 'hi' }] },
         { id: `${PANE}:history:1`, role: 'assistant', parts: [{ type: 'text', content: 'hello' }] }
@@ -123,7 +125,8 @@ describe('paneChatStateFromHistory', () => {
       warmingCommands: false,
       queued: [],
       queueHeld: false,
-      turnStatus: null
+      turnStatus: null,
+      contextUsage: null
     })
   })
 
@@ -247,6 +250,7 @@ describe('reducePaneChat: text deltas', () => {
       queued: [],
       queueHeld: false,
       turnStatus: null,
+      contextUsage: null,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'done' }] }
       ]
@@ -301,6 +305,7 @@ describe('reducePaneChat: tool calls', () => {
       queued: [],
       queueHeld: false,
       turnStatus: null,
+      contextUsage: null,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'let me look' }] }
       ]
@@ -322,6 +327,7 @@ describe('reducePaneChat: tool calls', () => {
       queued: [],
       queueHeld: false,
       turnStatus: null,
+      contextUsage: null,
       messages: [
         {
           id: '0:assistant',
@@ -357,6 +363,7 @@ describe('reducePaneChat: tool calls', () => {
       queued: [],
       queueHeld: false,
       turnStatus: null,
+      contextUsage: null,
       messages: [
         {
           id: '0:assistant',
@@ -433,6 +440,7 @@ describe('reducePaneChat: PaneMessageAppended backstop', () => {
       queued: [],
       queueHeld: false,
       turnStatus: null,
+      contextUsage: null,
       messages: [
         { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'streamed' }] }
       ]
@@ -663,6 +671,39 @@ describe('reducePaneChat: conversation compaction', () => {
     expect(
       result.messages.filter((message) => message.role === 'user').map((m) => m.checkpointUuid)
     ).toEqual(['summary-uuid', 'turn-c'])
+  })
+})
+
+describe('reducePaneChat: context usage', () => {
+  const usage = { totalTokens: 41_000, maxTokens: 200_000, autoCompactThreshold: 167_000 }
+
+  it('holds no reading before the first one arrives', () => {
+    expect(emptyPaneChatState.contextUsage).toBeNull()
+  })
+
+  it('replaces the held reading with the new one', () => {
+    const first = reducePaneChat(
+      emptyPaneChatState,
+      PaneContextUsageChanged.make({
+        paneId: PANE,
+        usage: { totalTokens: 9_000, maxTokens: 200_000 }
+      })
+    )
+
+    const result = reducePaneChat(first, PaneContextUsageChanged.make({ paneId: PANE, usage }))
+
+    expect(result.contextUsage).toEqual(usage)
+  })
+
+  it('keeps the reading across a conversation reset until the next one arrives', () => {
+    const read = reducePaneChat(
+      emptyPaneChatState,
+      PaneContextUsageChanged.make({ paneId: PANE, usage })
+    )
+
+    const result = reducePaneChat(read, conversationReset())
+
+    expect(result.contextUsage).toEqual(usage)
   })
 })
 

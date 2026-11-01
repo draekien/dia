@@ -44,6 +44,7 @@ const paneStreamEvents = (paneId: string): Stream.Stream<PaneStreamEvent> =>
           window.dia.onSlashCommandsWarming(push),
           window.dia.onSlashCommandsAvailable(push),
           window.dia.onConversationCompacted(push),
+          window.dia.onContextUsageChanged(push),
           window.dia.onConversationReset(push),
           window.dia.onCheckpointAvailable(push),
           window.dia.onRewoundToCheckpoint(push),
@@ -121,6 +122,7 @@ export const paneChatAtom = Atom.family((paneId: string) =>
           ...paneChatStateFromHistory(paneId, history),
           slashCommands: state.slashCommands,
           warmingCommands: state.warmingCommands,
+          contextUsage: state.contextUsage,
           queued: queue.queued,
           queueHeld: queue.held
         }))

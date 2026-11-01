@@ -12,6 +12,7 @@ import {
 import {
   type AgentSession,
   type AgentSessionOptions,
+  ContextUsageChanged,
   type DiaTool,
   MessageQueueChanged,
   ModelChanged,
@@ -66,6 +67,7 @@ import {
   NOT_INSTALLED_REASON,
   overrideUnrunnableReason
 } from './claude-install'
+import { readContextUsage, toContextUsage } from './context-usage'
 import {
   dispatchEnded,
   edit,
@@ -537,6 +539,34 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       )
     )
 
+    const reportContextUsage = (detail: 'summary' | 'full') =>
+      Effect.forkChild(
+        readContextUsage(session, detail).pipe(
+          Effect.map(toContextUsage),
+          Effect.tap((usage) =>
+            Effect.logDebug('Read context usage', { paneId: config.paneId, ...usage })
+          ),
+          Effect.flatMap((usage) => emit(ContextUsageChanged.make({ usage }))),
+          Effect.catch((error) =>
+            Effect.logWarning('Failed to read context usage', { paneId: config.paneId, error })
+          )
+        )
+      )
+    yield* reportContextUsage('summary')
+
+    const compactedThisTurnRef = yield* Ref.make(false)
+    const emitAndReport = Effect.fnUntraced(function* (outbound: OutboundMessage) {
+      yield* emit(outbound)
+      if (outbound._tag === 'ConversationCompacted') {
+        yield* Ref.set(compactedThisTurnRef, true)
+      } else if (outbound._tag === 'ConversationReset') {
+        yield* reportContextUsage('full')
+      } else if (isTurnEnd(outbound)) {
+        const compacted = yield* Ref.getAndSet(compactedThisTurnRef, false)
+        yield* reportContextUsage(compacted ? 'full' : 'summary')
+      }
+    })
+
     const events = Stream.fromAsyncIterable(session, (cause) => new SessionStreamError({ cause }))
     const reducer = makeSessionEventReducer(continuesFrom)
 
@@ -575,13 +605,13 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
           yield* Effect.logInfo('Suppressing expected turn abort as a clean turn end', {
             paneId: config.paneId
           })
-          yield* emit(TurnCompleted.make({}))
+          yield* emitAndReport(TurnCompleted.make({}))
           yield* onTurnEnded(true)
           return
         }
       }
 
-      yield* emit(outbound)
+      yield* emitAndReport(outbound)
       if (isTurnEnd(outbound)) yield* onTurnEnded(outbound._tag === 'TurnCompleted')
     })
 

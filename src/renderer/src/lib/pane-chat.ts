@@ -4,6 +4,7 @@ import {
   type PaneError,
   type ParkedState
 } from '@shared/domain/attention'
+import type { ContextUsage } from '@shared/domain/context-usage'
 import type { OutgoingMessage } from '@shared/domain/message-queue'
 import type { ConversationMessage } from '@shared/domain/pane'
 import { RESUME_TEXT } from '@shared/domain/parking'
@@ -13,6 +14,7 @@ import type {
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
   PaneCheckpointAvailable,
+  PaneContextUsageChanged,
   PaneConversationCompacted,
   PaneConversationReset,
   PaneMessageAppended,
@@ -122,7 +124,8 @@ export interface PaneMessage {
  * commands" indicator. `queued` is the pane's message queue as the Host last reported it, in send
  * order, and `queueHeld` is true when that queue waits for the next user send instead of the next
  * turn end. `turnStatus` names the state the in-flight turn is in (retrying, compacting,
- * thinking), or is null when it has none worth naming. This is the sole contract consumers depend on — how
+ * thinking), or is null when it has none worth naming. `contextUsage` is the latest reading of
+ * how full the pane's context window is, or null before the first reading arrives. This is the sole contract consumers depend on — how
  * streaming deltas are assembled into it is private to {@link reducePaneChat}.
  */
 export interface PaneChatState {
@@ -133,6 +136,7 @@ export interface PaneChatState {
   readonly queued: ReadonlyArray<OutgoingMessage>
   readonly queueHeld: boolean
   readonly turnStatus: string | null
+  readonly contextUsage: ContextUsage | null
 }
 
 /**
@@ -153,6 +157,7 @@ export type PaneStreamEvent =
   | PaneSlashCommandsWarming
   | PaneSlashCommandsAvailable
   | PaneConversationCompacted
+  | PaneContextUsageChanged
   | PaneConversationReset
   | PaneCheckpointAvailable
   | PaneRewoundToCheckpoint
@@ -174,7 +179,8 @@ export const emptyPaneChatState: PaneChatState = {
   warmingCommands: false,
   queued: [],
   queueHeld: false,
-  turnStatus: null
+  turnStatus: null,
+  contextUsage: null
 }
 
 /**
@@ -200,7 +206,8 @@ export const paneChatStateFromHistory = (
   warmingCommands: false,
   queued: [],
   queueHeld: false,
-  turnStatus: null
+  turnStatus: null,
+  contextUsage: null
 })
 
 const appendSentMessages = (state: PaneChatState, event: PaneUserMessagesSent): PaneChatState => {
@@ -483,7 +490,8 @@ const compactConversation = (
  * `PaneSlashCommandsAvailable` replaces the available command list (ending any
  * warming state); a compaction, and a model change (`Model → <name>`), append a `notice`
  * divider; a conversation reset
- * clears the transcript while keeping the available commands and the queue.
+ * clears the transcript while keeping the available commands, the queue and the context usage.
+ * `PaneContextUsageChanged` replaces `contextUsage`.
  * `PaneCheckpointAvailable` anchors a rewindable checkpoint uuid (and its resume
  * anchor) onto the earliest user turn still lacking one, and
  * `PaneToolCallUpdated` sets a running row's input, elapsed time or detail line, `PaneSessionNotice`
@@ -578,7 +586,8 @@ export const reducePaneChat = (
         ...emptyPaneChatState,
         slashCommands: state.slashCommands,
         queued: state.queued,
-        queueHeld: state.queueHeld
+        queueHeld: state.queueHeld,
+        contextUsage: state.contextUsage
       }
     case 'PaneCheckpointAvailable':
       return {
@@ -587,6 +596,8 @@ export const reducePaneChat = (
       }
     case 'PaneRewoundToCheckpoint':
       return rewindToCheckpoint(state, event.messageUuid)
+    case 'PaneContextUsageChanged':
+      return { ...state, contextUsage: event.usage }
     case 'PaneMessageQueueChanged':
       return { ...state, queued: event.queued, queueHeld: event.held }
     case 'PaneUserMessagesSent':

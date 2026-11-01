@@ -1,4 +1,5 @@
 import { PaneError, PermissionUpdate, Question } from '@shared/domain/attention'
+import { ContextUsage } from '@shared/domain/context-usage'
 import { OutgoingMessage } from '@shared/domain/message-queue'
 import { ConversationMessage, PermissionMode, SessionId } from '@shared/domain/pane'
 import { ParkCause } from '@shared/domain/parking'
@@ -125,6 +126,11 @@ export const ModelChanged = Schema.TaggedStruct('ModelChanged', {
   model: Schema.NonEmptyString
 })
 
+/** Emitted by a pane's agent session with a new reading of how full its context window is. Each reading replaces the last; a failed read emits nothing. */
+export const ContextUsageChanged = Schema.TaggedStruct('ContextUsageChanged', {
+  usage: ContextUsage
+})
+
 /** The full set of events a pane's agent session may emit. Match on `_tag` to translate each into renderer events and attention transitions. */
 export const OutboundMessage = Schema.Union([
   AssistantMessageReceived,
@@ -152,6 +158,7 @@ export const OutboundMessage = Schema.Union([
   RewindFailed,
   MessageQueueChanged,
   UserMessagesSent,
-  ModelChanged
+  ModelChanged,
+  ContextUsageChanged
 ])
 export type OutboundMessage = typeof OutboundMessage.Type
