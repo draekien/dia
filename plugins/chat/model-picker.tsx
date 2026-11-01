@@ -12,7 +12,7 @@ import {
   useModelPreferences
 } from '@dia/renderer-plugin'
 import { EMPTY_ADAPTER_PREFERENCES, pickerModels } from '@shared/domain/model-preferences'
-import { Bot } from 'lucide-react'
+import { composerSettingTrigger } from './composer-settings'
 
 const MANAGE_MODELS = 'dia:manage-models'
 
@@ -42,12 +42,7 @@ export function ModelPicker({
 
   return (
     <Select value={value} onValueChange={choose}>
-      <SelectTrigger
-        size="sm"
-        aria-label="Model"
-        className="gap-1 border-0 bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground dark:bg-transparent dark:hover:bg-accent/50"
-      >
-        <Bot />
+      <SelectTrigger size="sm" aria-label="Model" className={composerSettingTrigger()}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent align="start">

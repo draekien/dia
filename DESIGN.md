@@ -114,6 +114,12 @@ A one-line strip under the title bar, above the main tab, shown while any agent 
 - **Focus:** every `<summary>` in the transcript shows the app ring (`focus-visible:ring-[3px] ring-ring/50`), never the browser's default outline.
 - **Not collapsed:** notices, errors, permission, question and plan cards stay outside sections. A turn restored from history, and a turn with no steps, have no section.
 
+### Composer
+- **Shape:** one `InputGroup` with at most one interactive control in each corner. A header row above the text holds the settings; the action button sits bottom-right; bottom-left is reserved for attach.
+- **Header row:** the model, thinking level and permission mode as borderless text triggers in caption size, for example `Opus 5.5`, `Medium effort`, `Auto mode`, separated by spacing only. A permission mode that skips approval (`Auto mode`, `Full access mode`) reads in foreground weight; every other setting is muted. The right end holds the context indicator.
+- **Action button:** an icon button with no visible text. `ListPlus` means queue, `ArrowUp` means send now, `Square` means stop. The icon follows the turn, the text and the held Cmd/Ctrl key; the accessible name is `Send`, `Queue`, `Steer now` or `Stop`, and a change is announced politely. The tooltip names what Enter does and how to reach the other mode, with `⌘` on macOS and `Ctrl` elsewhere.
+- **Placeholder:** names what sending does now: `Message this agent, or type / for commands` while idle, `Queue a message for after this turn, or type / for commands` or `Steer this turn, or type / for commands` during a turn.
+
 ### Inputs / Fields
 - **Style:** [to be resolved] — flat, bordered, neutral background.
 - **Focus:** border shift to primary accent + focus ring, matching button focus treatment.

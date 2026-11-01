@@ -30,6 +30,8 @@
     "src/**/*.test.ts",
     "src/**/*.test.tsx",
     "plugins/**/*.test.ts",
-    "plugins/**/renderer.ts"
+    "plugins/**/renderer.ts",
+    "plugins/chat/composer-action.ts",
+    "plugins/chat/composer-settings.ts"
   ]
 }
