@@ -98,11 +98,13 @@ function RowAction({
 }): React.JSX.Element {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button type="button" variant="ghost" size="icon-xs" aria-label={label} onClick={onClick}>
-          {children}
-        </Button>
-      </TooltipTrigger>
+      <TooltipTrigger
+        render={
+          <Button type="button" variant="ghost" size="icon-xs" aria-label={label} onClick={onClick}>
+            {children}
+          </Button>
+        }
+      />
       <TooltipContent>{tooltip}</TooltipContent>
     </Tooltip>
   )

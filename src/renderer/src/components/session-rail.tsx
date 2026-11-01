@@ -179,18 +179,20 @@ export function RailToggle(): React.JSX.Element {
   }, [])
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          data-session-rail
-          variant="ghost"
-          size="icon-xs"
-          aria-label="Session details"
-          aria-pressed={shown}
-          onClick={toggleRail}
-        >
-          <PanelRightIcon />
-        </Button>
-      </TooltipTrigger>
+      <TooltipTrigger
+        render={
+          <Button
+            data-session-rail
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Session details"
+            aria-pressed={shown}
+            onClick={toggleRail}
+          >
+            <PanelRightIcon />
+          </Button>
+        }
+      />
       <TooltipContent side="bottom" align="end">
         Session details ({MODIFIER_KEY} Shift B)
       </TooltipContent>

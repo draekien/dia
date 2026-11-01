@@ -333,7 +333,7 @@ function PreferenceToggle({
   if (blockedReason === undefined) return button
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipTrigger render={button} />
       <TooltipContent>{blockedReason}</TooltipContent>
     </Tooltip>
   )

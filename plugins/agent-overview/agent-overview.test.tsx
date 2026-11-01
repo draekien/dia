@@ -10,7 +10,7 @@ import {
   ToolUse
 } from '@shared/domain/agent-summary'
 import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AgentOverview } from './agent-overview'
@@ -260,9 +260,12 @@ describe('AgentOverview collapsed', () => {
 
     screen.getByRole('button', { name: 'beta / docs · Idle · No activity yet' }).focus()
 
-    expect((await screen.findByRole('tooltip')).textContent).toBe(
-      'beta / docs · Idle · No activity yet'
-    )
+    const tooltip = await waitFor(() => {
+      const popup = document.querySelector('[data-slot="tooltip-content"]')
+      expect(popup).not.toBeNull()
+      return popup
+    })
+    expect(tooltip?.textContent).toBe('beta / docs · Idle · No activity yet')
   })
 
   it('has exactly one tab stop and it is an agent row', () => {

@@ -29,7 +29,7 @@ const renderApp = () =>
       <RegistryContext.Provider value={appRegistry}>
         <ThemeProvider>
           <QueryClientProvider client={queryClient}>
-            <TooltipProvider delayDuration={400}>
+            <TooltipProvider delay={400}>
               <App />
               <CommandPalette />
               <SettingsDialog />

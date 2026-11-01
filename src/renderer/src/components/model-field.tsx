@@ -175,18 +175,20 @@ export function ModelField({
           </Select>
           {offered === undefined ? null : (
             <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  aria-label="Refresh models"
-                  aria-disabled={refreshing}
-                  onClick={requestRefresh}
-                >
-                  <RefreshCwIcon className={cn(refreshing && 'motion-safe:animate-spin')} />
-                </Button>
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label="Refresh models"
+                    aria-disabled={refreshing}
+                    onClick={requestRefresh}
+                  >
+                    <RefreshCwIcon className={cn(refreshing && 'motion-safe:animate-spin')} />
+                  </Button>
+                }
+              />
               <TooltipContent>Refresh models</TooltipContent>
             </Tooltip>
           )}

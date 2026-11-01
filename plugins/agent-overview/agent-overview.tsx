@@ -454,16 +454,18 @@ export function AgentOverview() {
                   onChange={setFilters}
                 />
                 <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Add project"
-                      onClick={addProject}
-                    >
-                      <FolderPlusIcon />
-                    </Button>
-                  </TooltipTrigger>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Add project"
+                        onClick={addProject}
+                      >
+                        <FolderPlusIcon />
+                      </Button>
+                    }
+                  />
                   <TooltipContent>Add project</TooltipContent>
                 </Tooltip>
               </div>

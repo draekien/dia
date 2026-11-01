@@ -45,7 +45,7 @@ function CompactButton({
   if (!blocked) return button
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipTrigger render={button} />
       <TooltipContent>Available when this turn ends</TooltipContent>
     </Tooltip>
   )
