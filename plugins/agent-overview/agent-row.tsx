@@ -136,10 +136,13 @@ export function AgentRow({
   if (renaming) {
     return (
       <SidebarMenuItem>
-        <SidebarMenuButton asChild size="lg" isActive={selected} className={buttonClass}>
-          <div data-nav={rowKey(row.paneId)}>
-            {body(<RenameField row={row} onDone={() => onRename(false)} />)}
-          </div>
+        <SidebarMenuButton
+          render={<div data-nav={rowKey(row.paneId)} />}
+          size="lg"
+          isActive={selected}
+          className={buttonClass}
+        >
+          {body(<RenameField row={row} onDone={() => onRename(false)} />)}
         </SidebarMenuButton>
       </SidebarMenuItem>
     )
