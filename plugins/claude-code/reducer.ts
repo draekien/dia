@@ -138,6 +138,64 @@ const taskProgressDetail = (task: Extract<SDKMessage, { subtype: 'task_progress'
     ...(task.last_tool_name !== undefined ? [`last: ${task.last_tool_name}`] : [])
   ].join(' · ')
 
+const SIGNING_IN_LABEL = 'Signing in'
+
+const NOTICE_LINE_LIMIT = 200
+
+const MEMORY_NAMES_SHOWN = 3
+
+const firstLine = (text: string): string | undefined =>
+  text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0)
+
+const shorten = (line: string): string =>
+  line.length > NOTICE_LINE_LIMIT ? `${line.slice(0, NOTICE_LINE_LIMIT - 1)}…` : line
+
+const oneLine = (text: string): string => shorten(firstLine(text) ?? '')
+
+const hookFailureNotice = (hook: Extract<SDKMessage, { subtype: 'hook_response' }>): string => {
+  const exit = hook.exit_code !== undefined ? ` (exit ${hook.exit_code})` : ''
+  const line = firstLine(hook.stderr) ?? firstLine(hook.output)
+  return `${hook.hook_name} hook failed${exit}${line !== undefined ? `: ${shorten(line)}` : ''}`
+}
+
+const pluginInstallFailureNotice = (
+  install: Extract<SDKMessage, { subtype: 'plugin_install' }>
+): string =>
+  ['Plugin install failed', install.name, oneLine(install.error ?? '')]
+    .filter((part) => part !== undefined && part !== '')
+    .join(': ')
+
+const memoryName = (path: string): string =>
+  path.startsWith('<synthesis:')
+    ? 'synthesized memories'
+    : (path
+        .split(/[\\/]/)
+        .filter((segment) => segment.length > 0)
+        .at(-1) ?? path)
+
+const memoryRecallNotice = (
+  memories: Extract<SDKMessage, { subtype: 'memory_recall' }>['memories']
+): string => {
+  const names = memories
+    .slice(0, MEMORY_NAMES_SHOWN)
+    .map((memory) => memoryName(memory.path))
+    .join(', ')
+  const rest = memories.length - MEMORY_NAMES_SHOWN
+  return `Recalled from memory: ${names}${rest > 0 ? ` and ${rest} more` : ''}`
+}
+
+const refusalMessage = (
+  refusal: Extract<SDKMessage, { subtype: 'model_refusal_no_fallback' }>
+): string => {
+  const reason = refusal.api_refusal_explanation || refusal.content
+  return reason
+    ? `${refusal.original_model} declined the request: ${reason}`
+    : `${refusal.original_model} declined the request`
+}
+
 const ENDS_TURN_STATUS: ReadonlySet<OutboundMessage['_tag']> = new Set([
   'AssistantTextDelta',
   'AssistantThinkingDelta',
@@ -170,7 +228,10 @@ export interface SessionEventReducer {
  * conversation; until the stream delivers an assistant message of its own, user
  * turns carry it as `resumeAnchorUuid`. When the account refuses a turn (a rejected usage limit
  * the plan's overage does not cover, or a signed-out account) and the turn's `result` fails, the
- * reducer ends the turn with `TurnParked` instead of `TurnErrored`.
+ * reducer ends the turn with `TurnParked` instead of `TurnErrored`. When the model refuses the
+ * turn and no fallback model retries it, the reducer ends the turn with `TurnErrored` naming the
+ * refusal instead of `TurnCompleted`. Which Agent SDK messages are shown is recorded in
+ * `docs/designs/agent-sdk-message-display.md`.
  */
 export const makeSessionEventReducer = (
   continuesFrom: Option.Option<string>
@@ -182,6 +243,7 @@ export const makeSessionEventReducer = (
   let lastRateLimitStatus: string | undefined
   let lastRejectedResetsAt: number | null = null
   let parkCause: ParkCause | null = null
+  let refusal: string | null = null
   let turnStatus: string | null = null
 
   const completeToolCall = (
@@ -231,6 +293,18 @@ export const makeSessionEventReducer = (
         ? [SessionNotice.make({ text: rateLimitWarning(rateLimitType) })]
         : []
     }
+    if (message.type === 'auth_status') {
+      const outbound: OutboundMessage[] = []
+      if (message.isAuthenticating) {
+        outbound.push(TurnStatusChanged.make({ label: SIGNING_IN_LABEL }))
+      } else if (turnStatus === SIGNING_IN_LABEL) {
+        outbound.push(TurnStatusChanged.make({ label: null }))
+      }
+      if (message.error !== undefined) {
+        outbound.push(SessionNotice.make({ text: `Sign-in failed: ${message.error}` }))
+      }
+      return outbound
+    }
     if (message.type !== 'system') return undefined
     switch (message.subtype) {
       case 'local_command_output':
@@ -260,6 +334,25 @@ export const makeSessionEventReducer = (
             text: `${message.original_model} declined the request; retried on ${message.fallback_model}`
           })
         ]
+      case 'model_refusal_no_fallback':
+        refusal = refusalMessage(message)
+        return []
+      case 'hook_response':
+        return message.outcome === 'error'
+          ? [SessionNotice.make({ text: hookFailureNotice(message) })]
+          : []
+      case 'plugin_install':
+        return message.status === 'failed'
+          ? [SessionNotice.make({ text: pluginInstallFailureNotice(message) })]
+          : []
+      case 'notification':
+        return message.priority === 'high' || message.priority === 'immediate'
+          ? [SessionNotice.make({ text: oneLine(message.text) })]
+          : []
+      case 'memory_recall':
+        return message.memories.length > 0
+          ? [SessionNotice.make({ text: memoryRecallNotice(message.memories) })]
+          : []
       case 'informational':
         return message.level === 'info' || message.tool_use_id !== undefined
           ? []
@@ -339,6 +432,9 @@ export const makeSessionEventReducer = (
         .flatMap((block) => (block.type === 'text' ? [block.text] : []))
         .join('')
       if (!text) return []
+      if (message.parent_tool_use_id === null && message.message.stop_reason !== 'refusal') {
+        refusal = null
+      }
       const conversationMessage: ConversationMessage = { role: 'assistant', content: text }
       return [AssistantMessageReceived.make({ message: conversationMessage })]
     }
@@ -346,10 +442,15 @@ export const makeSessionEventReducer = (
     if (message.type === 'result') {
       const flushed = flushPendingToolCalls()
       const cause = parkCause
+      const refused = refusal
       parkCause = null
+      refusal = null
       lastRejectedResetsAt = null
       if (cause !== null && (message.subtype !== 'success' || message.is_error)) {
         return [...flushed, TurnParked.make({ cause })]
+      }
+      if (refused !== null) {
+        return [...flushed, TurnErrored.make({ error: { message: refused } })]
       }
       if (message.subtype === 'success') {
         return [...flushed, TurnCompleted.make({})]
