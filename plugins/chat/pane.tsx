@@ -1111,7 +1111,7 @@ function PaneChat({
                           ))}
                         </InputGroupAddon>
                       )}
-                      <InputGroupAddon align="block-end">
+                      <InputGroupAddon align="block-end" className="pb-0.5">
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <InputGroupButton
