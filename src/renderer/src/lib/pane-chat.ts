@@ -638,6 +638,6 @@ export const reducePaneChat = (
     case 'PaneMessageQueueChanged':
       return { ...state, queued: event.queued, queueHeld: event.held }
     case 'PaneUserMessagesSent':
-      return appendSentMessages({ ...state, compactionFailure: null }, event)
+      return appendSentMessages({ ...state, compactionFailure: null, setup: undefined }, event)
   }
 }

@@ -70,10 +70,10 @@ Added to `IpcEvent`; the preload adds `onSetupProgress`.
 3. Create or reattach the worktree: `done` with the branch and duration, or `failed` with the error text, then fail as today.
 4. Copy step `running`, then `copyIncludedFiles`: `done` when nothing failed, `warning` with each file's error otherwise. A matching failure makes the step `warning` with `matchError` and copies nothing.
 5. Session step `running`, `startPane`, then `done`, sent before the pane's event subscriber starts.
-6. A copy warning is then offered to the pane's outbound queue as a `PaneSessionNotice`.
+6. A copy warning is then sent through `onEvent` as a `PaneSessionNotice`.
 7. A `SessionNotFound` end sends the session step again as `failed`.
 
-`src/host/services/tab-setup.ts` owns the step list: `makeTabSetup(paneId, steps, emit)` returns `run(index, effect, onDone)` (marks running, times with `Clock`, marks done or failed) and `set(index, step)`. Nothing else is exported.
+`src/host/services/tab-setup.ts` owns the step list: `setUpWorktreeTab(options)` runs steps 1 to 4 and returns the worktree with `startSession(start)` (step 5 and 6) and `failSession(error)` (step 7). Nothing else is exported apart from its option and result types.
 
 ### Renderer
 

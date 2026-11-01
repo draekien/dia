@@ -10,6 +10,7 @@ import {
 import { ConversationMessage } from '@shared/domain/pane'
 import { RESUME_TEXT } from '@shared/domain/parking'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
+import { SessionSetupStep, WorktreeSetupStep } from '@shared/domain/tab-setup'
 import {
   PaneAssistantTextDelta,
   PaneAssistantThinkingDelta,
@@ -25,6 +26,7 @@ import {
   PaneModelChanged,
   PaneRewoundToCheckpoint,
   PaneSessionNotice,
+  PaneSetupProgress,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
   PaneToolCallCompleted,
@@ -148,6 +150,23 @@ describe('paneChatStateFromHistory', () => {
 })
 
 describe('reducePaneChat: user messages sent', () => {
+  it('drops a failed setup once the user sends a message, which starts a new conversation', () => {
+    const failedSetup = reducePaneChat(
+      emptyPaneChatState,
+      PaneSetupProgress.make({
+        paneId: PANE,
+        steps: [
+          WorktreeSetupStep.make({ reattach: true, state: 'done' }),
+          SessionSetupStep.make({ state: 'failed', error: 'gone' })
+        ]
+      })
+    )
+
+    const result = sendUser(failedSetup, 'u-1', 'start again')
+
+    expect(result.setup).toBeUndefined()
+  })
+
   it('appends a user turn with a pane-scoped id after existing messages and marks the pane loading', () => {
     const seeded = paneChatStateFromHistory(PANE, [{ role: 'assistant', content: 'earlier' }])
 

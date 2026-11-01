@@ -19,6 +19,8 @@ interface Steps {
 const stepList = ({ worktree, copy, session }: Steps): ReadonlyArray<SetupStep> =>
   copy === undefined ? [worktree, session] : [worktree, copy, session]
 
+const SESSION_START_FAILED = 'The Claude Code session could not be started.'
+
 const errorText = (error: unknown): string =>
   errorMessage(Predicate.hasProperty(error, 'cause') ? error.cause : error)
 
@@ -155,7 +157,9 @@ export const setUpWorktreeTab = Effect.fn('TabSetup.setUpWorktreeTab')(function*
         ...current,
         session: SessionSetupStep.make({ state: 'running' })
       }))
-      const [duration, started] = yield* Effect.timed(start)
+      const [duration, started] = yield* Effect.timed(start).pipe(
+        Effect.onError(() => failSession(SESSION_START_FAILED))
+      )
       const next = yield* Ref.get(steps)
       yield* update((current) => ({
         ...current,
@@ -172,11 +176,7 @@ export const setUpWorktreeTab = Effect.fn('TabSetup.setUpWorktreeTab')(function*
   const failSession = (error: string) =>
     update((current) => ({
       ...current,
-      session: SessionSetupStep.make({
-        state: 'failed',
-        durationMs: current.session.durationMs,
-        error
-      })
+      session: SessionSetupStep.make({ ...current.session, state: 'failed', error })
     }))
 
   const setup: WorktreeTabSetup = { worktree, startSession, failSession }

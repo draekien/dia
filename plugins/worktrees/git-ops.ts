@@ -336,16 +336,15 @@ export const makeGitOps = Effect.gen(function* () {
       files,
       (file) =>
         copyIncludedFile(worktree, file).pipe(
-          Effect.map((outcome) => ({ file, outcome })),
           Effect.catch((error) =>
-            Effect.succeed({ file, outcome: { path: file, reason: copyFailureReason(error) } })
+            Effect.succeed<IncludedFileFailure>({ path: file, reason: copyFailureReason(error) })
           )
         ),
       { concurrency: COPY_CONCURRENCY }
     )
     const failures: Array<IncludedFileFailure> = []
     let skipped = 0
-    for (const { outcome } of outcomes) {
+    for (const outcome of outcomes) {
       if (outcome === 'skipped') skipped++
       else if (outcome !== 'copied') failures.push(outcome)
     }

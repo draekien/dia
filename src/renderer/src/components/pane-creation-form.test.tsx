@@ -18,6 +18,7 @@ import {
 import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { Duration, Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import PaneCreationForm from './pane-creation-form'
 import { TooltipProvider } from './ui/tooltip'
@@ -159,6 +160,17 @@ const renderForm = (formProject: Project) =>
     </TooltipProvider>
   )
 
+const settle = () => act(() => Effect.runPromise(Effect.sleep(Duration.millis(50))))
+
+const runningSetup = (paneId: string) =>
+  PaneSetupProgress.make({
+    paneId,
+    steps: [
+      WorktreeSetupStep.make({ reattach: false, state: 'running' }),
+      SessionSetupStep.make({ state: 'pending' })
+    ]
+  })
+
 const startButton = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Start agent' })
 
 const start = async () => {
@@ -222,27 +234,33 @@ describe('PaneCreationForm model choice', () => {
   it('shows the worktree tab’s setup steps once Start agent is pressed', async () => {
     const bridge = installBridge([plugin('worktrees', [WORKTREES_KEY])])
     renderForm(project(true))
+    const toggle = await screen.findByRole('switch')
+    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false))
+    fireEvent.click(toggle)
     await start()
     const paneId = bridge.createTab.mock.calls[0][0].paneId
     await waitFor(() => expect(bridge.getPaneHistory).toHaveBeenCalledWith(paneId))
 
-    act(() =>
-      bridge.emitSetup(
-        PaneSetupProgress.make({
-          paneId,
-          steps: [
-            WorktreeSetupStep.make({ reattach: false, state: 'running' }),
-            SessionSetupStep.make({ state: 'pending' })
-          ]
-        })
-      )
-    )
+    act(() => bridge.emitSetup(runningSetup(paneId)))
 
     await waitFor(() =>
       expect(screen.getByRole('list', { name: 'Tab setup' }).textContent).toBe(
         'Create worktreerunningStart Claude Code sessionpending'
       )
     )
+  })
+
+  it('shows no setup steps for a tab started without a worktree, such as a retry after a worktree failed', async () => {
+    const bridge = installBridge([plugin('worktrees', [WORKTREES_KEY])])
+    renderForm(project(true))
+    await start()
+    const paneId = bridge.createTab.mock.calls[0][0].paneId
+    await settle()
+
+    act(() => bridge.emitSetup(runningSetup(paneId)))
+    await settle()
+
+    expect(screen.queryByRole('list', { name: 'Tab setup' })).toBeNull()
   })
 
   it('shows no setup steps before Start agent is pressed', async () => {

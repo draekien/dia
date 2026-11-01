@@ -230,7 +230,7 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
 
         <InstallNotice status={adapterStatus} />
 
-        {state.step !== 'editing' && <CreationSetupSteps paneId={paneId} />}
+        {state.step !== 'editing' && worktreeOn && <CreationSetupSteps paneId={paneId} />}
 
         {state.step === 'error' && <p className="text-sm text-destructive">{state.reason}</p>}
 
