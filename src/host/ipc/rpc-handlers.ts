@@ -20,18 +20,19 @@ import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { ProjectEntries } from '../services/project-entries'
 import { SettingsStore } from '../services/settings-store'
+import { WorkspaceProblems } from '../services/workspace-problems'
 import { resolveAgentBackend } from '../session/agent-backend'
 
 /**
  * Builds the implementation of {@link DiaRpcs} on top of the Host's services. Requires
  * `PaneWorkspace`, `AgentSummaries`, `PaneSupervisor`, `SettingsStore`, `EventHub`, `CommandDeduper`,
- * `HostPlugins`, `PluginSources`, `ModelCatalogFeed`, `AdapterStatusFeed`, `ModelPreferences` and
- * `BackgroundActivities`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
+ * `HostPlugins`, `PluginSources`, `ModelCatalogFeed`, `AdapterStatusFeed`, `ModelPreferences`,
+ * `BackgroundActivities` and `WorkspaceProblems`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
  * handlers without a transport.
  *
  * Every command is applied at most once per `commandId` within its target (pane, project, or
  * `'app'`), drops with a warning when its target does not exist, and never fails the RPC:
- * failures are logged. `RegisterProject`, `RemoveProject`, `ArchiveTab`, `DeleteTab` and `SetModelPreference` return their typed errors. `SendMessage` starts
+ * failures are logged. `RegisterProject`, `RemoveProject`, `ArchiveTab`, `DeleteTab`, `SetModelPreference` and the workspace problem calls return their typed errors. `SendMessage` starts
  * the pane's session on demand when the pane has none, so a message to a pane whose session
  * ended is not lost.
  */
@@ -49,6 +50,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
   const adapterStatus = yield* AdapterStatusFeed
   const modelPreferences = yield* ModelPreferences
   const activities = yield* BackgroundActivities
+  const problems = yield* WorkspaceProblems
 
   const publish = (event: IpcEvent): Effect.Effect<void> => hub.publish(event)
 
@@ -364,6 +366,10 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     GetMetaRepo: () => withMetaRepo(plugins, (repo) => repo.state),
     SetMetaRemote: ({ url }) => withMetaRepo(plugins, (repo) => repo.setRemote(url)),
     PushMetaRepo: () => withMetaRepo(plugins, (repo) => repo.push),
+    ListWorkspaceProblems: () => problems.list,
+    DeleteUnreadableRow: (row) => problems.deleteUnreadable(row),
+    ResolveImportConflict: ({ agentId, resolution }) =>
+      problems.resolveImportConflict(agentId, resolution),
     SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
   })
 })

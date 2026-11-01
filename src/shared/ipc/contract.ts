@@ -33,6 +33,7 @@ import type { ThemePreference } from '../domain/theme'
 import { TranscriptWidth } from '../domain/transcript-width'
 import { UpdateStatus } from '../domain/update'
 import { Uuid } from '../domain/uuid'
+import type { ImportResolution, UnreadableRow, WorkspaceProblem } from '../domain/workspace-problem'
 import { type PluginInfo, PluginName, type PluginOverrideResult } from '../plugin/manifest'
 
 const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
@@ -862,6 +863,23 @@ export interface MetaRepoApi {
 }
 
 /**
+ * The workspace problem calls of `window.dia.workspaceProblems`, served by the Host: stored rows
+ * the Host could not load, and tabs the legacy workspace import skipped. They reject only on a
+ * lost connection.
+ */
+export interface WorkspaceProblemsApi {
+  /** Every open problem; empty when the Host could not read them (the failure is logged). */
+  list(): Promise<ReadonlyArray<WorkspaceProblem>>
+  /** Deletes an unreadable stored row. Resolves `null` once done, else the reason it failed. */
+  deleteRow(row: UnreadableRow): Promise<string | null>
+  /**
+   * Imports or discards the skipped import tab `agentId`, for good. Resolves `null` once done,
+   * else the reason it failed.
+   */
+  resolveImportConflict(agentId: string, resolution: ImportResolution): Promise<string | null>
+}
+
+/**
  * Shape of the `window.dia` bridge the preload script exposes to the renderer.
  * The single source of truth for that surface: preload's implementation is
  * checked against this interface, and the renderer's ambient `Window.dia`
@@ -873,6 +891,7 @@ export interface DiaApi {
   readonly activities: ActivityApi
   readonly adapter: AdapterApi
   readonly metaRepo: MetaRepoApi
+  readonly workspaceProblems: WorkspaceProblemsApi
   sendMessage(
     paneId: string,
     text: string,

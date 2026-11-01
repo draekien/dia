@@ -18,9 +18,11 @@ import {
   type CreateTabRequest,
   DirectoryNotFoundError,
   EMPTY_WORKSPACE,
+  type Project,
   type ProjectAlreadyRegisteredError,
   type ProjectId,
   ProjectNotFoundError,
+  StoredProjectUnreadableError,
   type Tab,
   TabNotFoundError,
   type Workspace,
@@ -50,6 +52,7 @@ import {
   Queue,
   Ref,
   Result,
+  Schema,
   Semaphore,
   Stream,
   SubscriptionRef
@@ -86,12 +89,28 @@ export class PaneWorkspace extends Context.Service<
      * each conversation the agent adapter holds for the directory as a tab that has not started,
      * in the order the conversations began. The visible tab does not change. Succeeds unchanged
      * when the same id already registered it. Fails when another project registered
-     * the directory, or when it is not an existing directory.
+     * the directory, when it is not an existing directory, or when a stored project that could
+     * not be loaded has the directory.
      */
     readonly registerProject: (
       projectId: ProjectId,
       directory: string
-    ) => Effect.Effect<void, ProjectAlreadyRegisteredError | DirectoryNotFoundError>
+    ) => Effect.Effect<
+      void,
+      ProjectAlreadyRegisteredError | DirectoryNotFoundError | StoredProjectUnreadableError
+    >
+    /**
+     * Adds `tab` as a tab that has not started to the registered project with `project`'s
+     * directory, registering `project` with it at the end of the project order when no project
+     * has the directory. The visible tab does not change, and a tab with the same pane id leaves
+     * the workspace unchanged. The caller ensures no stored agent holds the tab's session id or
+     * worktree path. Fails when that project is being removed, or when a stored project that
+     * could not be loaded has the directory.
+     */
+    readonly importTab: (
+      project: Project,
+      tab: Tab
+    ) => Effect.Effect<void, ProjectNotFoundError | StoredProjectUnreadableError>
     /** Moves a project to `toIndex` in the project order. */
     readonly moveProject: (
       projectId: ProjectId,
@@ -339,6 +358,41 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         return discovered.filter((session) => !stored.value.has(session.sessionId))
       })
 
+      const storedDirectoryKeys = (directory: string) =>
+        store.directoryKeys.pipe(
+          Effect.tapError((cause) =>
+            Effect.logWarning('Refused a directory: the stored directory keys could not be read', {
+              directory,
+              cause
+            })
+          ),
+          Effect.mapError(() => new StoredProjectUnreadableError({ directory }))
+        )
+
+      const isStoredProjectUnreadable = Schema.is(StoredProjectUnreadableError)
+
+      const warnStoredProjectUnreadable = <A, E>(effect: Effect.Effect<A, E>) =>
+        Effect.tapError(effect, (error) =>
+          isStoredProjectUnreadable(error)
+            ? Effect.logWarning(
+                'Refused a directory a stored project that could not be loaded has',
+                {
+                  directory: error.directory
+                }
+              )
+            : Effect.void
+        )
+
+      const heldByUnloadedProject = (
+        workspace: Workspace,
+        stored: ReadonlySet<string>,
+        project: Project
+      ) =>
+        stored.has(project.directoryKey) &&
+        !workspace.projects.some(
+          (candidate) => candidate.project.directoryKey === project.directoryKey
+        )
+
       const registerProject = Effect.fn('PaneWorkspace.registerProject')(function* (
         projectId: ProjectId,
         directory: string
@@ -356,10 +410,56 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           [...sessions].sort((a, b) => a.startedAt - b.startedAt),
           (session) => importedTab(project.directory, session)
         )
-        yield* mutate('registerProject', (workspace) =>
-          WorkspaceOps.addProject(workspace, project, tabs)
-        )
+        const stored = yield* storedDirectoryKeys(project.directory)
+        yield* mutate<ProjectAlreadyRegisteredError | StoredProjectUnreadableError>(
+          'registerProject',
+          (workspace) =>
+            heldByUnloadedProject(workspace, stored, project)
+              ? Result.fail(new StoredProjectUnreadableError({ directory: project.directory }))
+              : WorkspaceOps.addProject(workspace, project, tabs)
+        ).pipe(warnStoredProjectUnreadable)
         yield* Effect.logInfo('Registered project', { projectId, directory, imported: tabs.length })
+      })
+
+      const importTab = Effect.fn('PaneWorkspace.importTab')(function* (
+        project: Project,
+        tab: Tab
+      ) {
+        const stored = yield* storedDirectoryKeys(project.directory)
+        yield* mutate<ProjectNotFoundError | StoredProjectUnreadableError>(
+          'importTab',
+          (workspace, removing) => {
+            if (Result.isSuccess(WorkspaceOps.tabOf(workspace, tab.config.paneId))) {
+              return Result.succeed(workspace)
+            }
+            if (heldByUnloadedProject(workspace, stored, project)) {
+              return Result.fail(new StoredProjectUnreadableError({ directory: project.directory }))
+            }
+            const entry = workspace.projects.find(
+              (candidate) => candidate.project.directoryKey === project.directoryKey
+            )
+            if (entry === undefined) {
+              return Result.succeed({
+                ...workspace,
+                projects: [...workspace.projects, { project, tabs: [tab] }]
+              })
+            }
+            if (removing.has(entry.project.projectId)) {
+              return Result.fail(new ProjectNotFoundError({ projectId: entry.project.projectId }))
+            }
+            return Result.map(
+              WorkspaceOps.addTab(workspace, entry.project.projectId, tab),
+              (next) => ({
+                ...next,
+                visibleTab: workspace.visibleTab
+              })
+            )
+          }
+        ).pipe(warnStoredProjectUnreadable)
+        yield* Effect.logInfo('Imported a tab', {
+          paneId: tab.config.paneId,
+          directory: project.directory
+        })
       })
 
       const moveProject = (projectId: ProjectId, toIndex: number) =>
@@ -733,6 +833,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       return {
         getWorkspace,
         registerProject,
+        importTab,
         moveProject,
         removeProject,
         createTab,

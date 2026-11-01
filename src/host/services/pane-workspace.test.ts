@@ -40,7 +40,7 @@ import { type PaneCreationRequest, type PaneHandle, PaneSupervisor } from './pan
 import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
 import { TranscriptReader } from './transcript-reader'
 import { WorkspaceFeed, WorkspaceFeedLive } from './workspace-feed'
-import { type WorkspaceLoadError, WorkspaceStore } from './workspace-store'
+import { type WorkspaceLoadError, WorkspaceStore, WorkspaceWriteError } from './workspace-store'
 import { type GitOps, WorktreeCreateError } from './worktrees-seam'
 
 const PANE_A = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -89,6 +89,7 @@ interface HarnessOptions {
   readonly history?: ReadonlyArray<ConversationMessage>
   readonly discovered?: ReadonlyArray<DiscoveredSession>
   readonly storedSessionIds?: ReadonlyArray<string>
+  readonly unloadedDirectoryKeys?: ReadonlyArray<string>
 }
 
 const configOf = (request: PaneCreationRequest): PaneConfig => ({
@@ -126,10 +127,21 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
 
   const store = Layer.succeed(WorkspaceStore, {
     load: Effect.succeed(Option.fromNullishOr(options.persisted)),
-    save: (workspace) => Effect.sync(() => void saves.push(workspace)),
+    save: (workspace) =>
+      workspace.projects.some((entry) =>
+        options.unloadedDirectoryKeys?.includes(entry.project.directoryKey)
+      )
+        ? Effect.fail(new WorkspaceWriteError({ cause: 'UNIQUE constraint failed' }))
+        : Effect.sync(() => void saves.push(workspace)),
+    directoryKeys: Effect.succeed(new Set(options.unloadedDirectoryKeys)),
     sessionIds: Effect.succeed(
       new Set((options.storedSessionIds ?? []).map((id) => SessionId.make(id)))
-    )
+    ),
+    unreadable: Effect.succeed([]),
+    deleteUnreadable: () => Effect.void,
+    holders: Effect.succeed({ sessions: new Map(), worktrees: new Map() }),
+    resolvedImports: Effect.succeed(new Set<string>()),
+    recordImportResolution: () => Effect.void
   })
 
   const hub = Layer.succeed(EventHub, {
@@ -397,6 +409,125 @@ describe('PaneWorkspace.registerProject', () => {
 
       assert.strictEqual(workspace.projects[0].project.directoryKey, yield* resolvedKey('/Repo'))
     }).pipe(Effect.provide(NodePath.layer))
+  )
+
+  it.effect(
+    'refuses a directory a stored project it could not load has, and later saves succeed',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({
+          directories: ['/held', '/repo'],
+          unloadedDirectoryKeys: [yield* resolvedKey('/held')]
+        })
+
+        const [error, workspace] = yield* run(
+          harness,
+          Effect.gen(function* () {
+            const service = yield* PaneWorkspace
+            const refused = yield* Effect.flip(service.registerProject(PROJECT_1, '/held'))
+            yield* service.registerProject(PROJECT_2, '/repo')
+            return [refused, yield* current] as const
+          })
+        )
+
+        assert.strictEqual(error._tag, 'StoredProjectUnreadableError')
+        assert.deepStrictEqual(
+          workspace.projects.map((entry) => entry.project.projectId),
+          [PROJECT_2]
+        )
+        assert.strictEqual(harness.saves.at(-1), workspace)
+      }).pipe(Effect.provide(NodePath.layer))
+  )
+})
+
+describe('PaneWorkspace.importTab', () => {
+  const PROJECT_3 = ProjectId.make('33333333-0000-4000-8000-000000000003')
+
+  it.effect('adds the tab to the project with its directory key and keeps the visible tab', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* (yield* PaneWorkspace).importTab(
+            { ...project(PROJECT_3, '/OTHER'), directoryKey: '/other' },
+            tab(PANE_NEW, '/other')
+          )
+          return yield* current
+        })
+      )
+
+      assert.deepStrictEqual(
+        [workspace.projects.map((entry) => entry.tabs.length), workspace.visibleTab],
+        [[1, 2], PANE_A]
+      )
+      assert.strictEqual(workspace.projects[1].tabs[1].config.paneId, PANE_NEW)
+      assert.strictEqual(harness.saves.at(-1), workspace)
+    })
+  )
+
+  it.effect('registers the project with the tab when no project has its directory', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* (yield* PaneWorkspace).importTab(
+            project(PROJECT_3, '/gone'),
+            tab(PANE_NEW, '/gone')
+          )
+          return yield* current
+        })
+      )
+
+      assert.deepStrictEqual(workspace.projects[2], {
+        project: project(PROJECT_3, '/gone'),
+        tabs: [tab(PANE_NEW, '/gone')]
+      })
+      assert.strictEqual(workspace.visibleTab, PANE_A)
+    })
+  )
+
+  it.effect('leaves the workspace unchanged for a pane id it already has', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* (yield* PaneWorkspace).importTab(project(PROJECT_1, '/repo'), tab(PANE_B, '/repo'))
+          return yield* current
+        })
+      )
+
+      assert.deepStrictEqual(tabsOf(workspace), [PANE_A, PANE_B])
+    })
+  )
+
+  it.effect(
+    'refuses a directory a stored project it could not load has, and later saves succeed',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({ persisted: twoProjects(), unloadedDirectoryKeys: ['/held'] })
+
+        const [error, workspace] = yield* run(
+          harness,
+          Effect.gen(function* () {
+            const service = yield* PaneWorkspace
+            const refused = yield* Effect.flip(
+              service.importTab(project(PROJECT_3, '/held'), tab(PANE_NEW, '/held'))
+            )
+            yield* service.importTab(project(PROJECT_3, '/gone'), tab(PANE_NEW, '/gone'))
+            return [refused, yield* current] as const
+          })
+        )
+
+        assert.strictEqual(error._tag, 'StoredProjectUnreadableError')
+        assert.deepStrictEqual(tabsOf(workspace), [PANE_A, PANE_B, PANE_NEW])
+        assert.strictEqual(harness.saves.at(-1), workspace)
+      })
   )
 })
 

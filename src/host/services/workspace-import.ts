@@ -1,4 +1,4 @@
-import { type ProjectEntry, Workspace } from '@shared/domain/project'
+import { type Project, type ProjectEntry, type Tab, Workspace } from '@shared/domain/project'
 import { Effect, FileSystem, Option, Result, Schema } from 'effect'
 import { LegacyWorkspace, migrateLegacyWorkspace } from './workspace-migration'
 
@@ -12,6 +12,7 @@ const decodeCurrent = Schema.decodeUnknownResult(PersistedWorkspace)
 const decodeLegacy = Schema.decodeUnknownResult(LegacyWorkspace)
 
 const workspaceFile = (userDataPath: string) => `${userDataPath}/workspace.json`
+const importedFile = (userDataPath: string) => `${userDataPath}/workspace.imported.json`
 
 const readJson = Effect.fn('WorkspaceImport.readJson')(function* (filePath: string) {
   const fs = yield* FileSystem.FileSystem
@@ -50,7 +51,7 @@ const dropConflictingTabs = Effect.fn('WorkspaceImport.dropConflictingTabs')(fun
 ) {
   const sessionIds = new Set<string>()
   const worktreePaths = new Set<string>()
-  const dropped = new Set<string>()
+  const dropped: Array<SkippedImportTab> = []
   const projects: Array<ProjectEntry> = []
   for (const entry of workspace.projects) {
     const tabs = []
@@ -59,7 +60,7 @@ const dropConflictingTabs = Effect.fn('WorkspaceImport.dropConflictingTabs')(fun
       const worktree = tab.config.worktree
       const worktreeTaken = worktree !== undefined && worktreePaths.has(worktree.path)
       if (sessionTaken || worktreeTaken) {
-        dropped.add(tab.config.paneId)
+        dropped.push({ project: entry.project, tab })
         yield* Effect.logWarning('Did not import a tab that shares a session or worktree', {
           name: tab.name,
           paneId: tab.config.paneId,
@@ -74,9 +75,19 @@ const dropConflictingTabs = Effect.fn('WorkspaceImport.dropConflictingTabs')(fun
     }
     projects.push({ ...entry, tabs })
   }
-  const visibleTab =
-    workspace.visibleTab !== null && dropped.has(workspace.visibleTab) ? null : workspace.visibleTab
-  return { projects, visibleTab }
+  const visibleTab = dropped.some((skipped) => skipped.tab.config.paneId === workspace.visibleTab)
+    ? null
+    : workspace.visibleTab
+  const kept: Workspace = { projects, visibleTab }
+  return { kept, dropped }
+})
+
+const readWorkspaceFile = Effect.fn('WorkspaceImport.readWorkspaceFile')(function* (
+  filePath: string
+) {
+  const json = yield* readJson(filePath)
+  if (Option.isNone(json)) return Option.none<Workspace>()
+  return yield* decodeWorkspace(json.value, filePath)
 })
 
 /**
@@ -89,12 +100,30 @@ const dropConflictingTabs = Effect.fn('WorkspaceImport.dropConflictingTabs')(fun
 export const readLegacyWorkspace = Effect.fn('WorkspaceImport.read')(function* (
   userDataPath: string
 ) {
-  const filePath = workspaceFile(userDataPath)
-  const json = yield* readJson(filePath)
-  if (Option.isNone(json)) return Option.none<Workspace>()
-  const workspace = yield* decodeWorkspace(json.value, filePath)
+  const workspace = yield* readWorkspaceFile(workspaceFile(userDataPath))
   if (Option.isNone(workspace)) return workspace
-  return Option.some<Workspace>(yield* dropConflictingTabs(workspace.value))
+  return Option.some((yield* dropConflictingTabs(workspace.value)).kept)
+})
+
+/** A tab the import left out because an earlier tab held its session id or worktree path, with the project it was in. */
+export interface SkippedImportTab {
+  readonly project: Project
+  readonly tab: Tab
+}
+
+/**
+ * The tabs of the `workspace.imported.json` in `userDataPath` that {@link readLegacyWorkspace}
+ * leaves out, in file order. Each read of a version 1 file generates new project ids and tab
+ * names, so identify a tab by its pane id. Returns none, and logs why, when the file is missing,
+ * unreadable or malformed. Never fails and never changes the file.
+ */
+export const readSkippedImportTabs = Effect.fn('WorkspaceImport.readSkipped')(function* (
+  userDataPath: string
+) {
+  const workspace = yield* readWorkspaceFile(importedFile(userDataPath))
+  if (Option.isNone(workspace)) return []
+  const { dropped } = yield* dropConflictingTabs(workspace.value)
+  return dropped
 })
 
 /**
@@ -107,7 +136,7 @@ export const markImported = Effect.fn('WorkspaceImport.markImported')(function* 
 ) {
   const fs = yield* FileSystem.FileSystem
   const from = workspaceFile(userDataPath)
-  const to = `${userDataPath}/workspace.imported.json`
+  const to = importedFile(userDataPath)
   yield* fs.rename(from, to).pipe(
     Effect.andThen(Effect.logInfo('Imported the workspace file', { from, to })),
     Effect.catch((cause) =>

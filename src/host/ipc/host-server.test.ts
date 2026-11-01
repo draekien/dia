@@ -82,6 +82,9 @@ const handlersLayer = Layer.unwrap(
       GetMetaRepo: unused,
       SetMetaRemote: unused,
       PushMetaRepo: unused,
+      ListWorkspaceProblems: unused,
+      DeleteUnreadableRow: unused,
+      ResolveImportConflict: unused,
       SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
     })
   })

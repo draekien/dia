@@ -85,7 +85,9 @@ const focusNav = (container: HTMLElement, key: string): void =>
 
 const REFUSAL_TEXT: Record<RegisterProjectRefusal['_tag'], string> = {
   ProjectAlreadyRegisteredError: 'dia already has a project for that directory.',
-  DirectoryNotFoundError: 'That directory no longer exists.'
+  DirectoryNotFoundError: 'That directory no longer exists.',
+  StoredProjectUnreadableError:
+    'A stored project for that directory could not be loaded. Resolve it under workspace problems first.'
 }
 
 const statusCounts = (workspace: Workspace, summaries: ReturnType<typeof useAgentSummaries>) => {

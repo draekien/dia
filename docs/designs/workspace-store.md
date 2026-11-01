@@ -2,6 +2,8 @@
 
 Issue: #94. Decision: ADR-0043 (supersedes ADR-0042's "`workspace.json` stays JSON" row). Scope: module.
 
+Later changes: #97 adds `unreadable`, `deleteUnreadable` and `holders` to the store and the `import_resolutions` table; see `docs/designs/workspace-problems.md`.
+
 ## Name and Purpose
 
 `WorkspaceStore` keeps the Host's `Workspace` (every project, its tabs, their order and the visible tab) in `<userData>/host.db`, records every SDK session each tab has had, and imports a `workspace.json` left by an earlier version once.

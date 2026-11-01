@@ -107,10 +107,21 @@ export class DirectoryNotFoundError extends Schema.TaggedError<DirectoryNotFound
   { directory: Schema.String }
 ) {}
 
+/**
+ * A project was refused a directory because a stored project that could not be loaded already
+ * has its `directoryKey`, or because the stored keys could not be read. The user resolves the
+ * stored project under workspace problems first.
+ */
+export class StoredProjectUnreadableError extends Schema.TaggedError<StoredProjectUnreadableError>()(
+  'StoredProjectUnreadableError',
+  { directory: Schema.String }
+) {}
+
 /** Why `registerProject` refused a directory. */
 export const RegisterProjectError = Schema.Union([
   ProjectAlreadyRegisteredError,
-  DirectoryNotFoundError
+  DirectoryNotFoundError,
+  StoredProjectUnreadableError
 ])
 export type RegisterProjectError = typeof RegisterProjectError.Type
 
