@@ -271,6 +271,35 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       setRemote: (url) => query((client) => client.SetMetaRemote({ url })),
       push: () => query((client) => client.PushMetaRepo())
     },
+    workspaceProblems: {
+      list: () =>
+        query((client) =>
+          client.ListWorkspaceProblems().pipe(
+            Effect.catchTag('WorkspaceProblemError', (error) =>
+              Effect.as(
+                Effect.logWarning('Could not list the workspace problems', {
+                  reason: error.reason
+                }),
+                []
+              )
+            )
+          )
+        ),
+      deleteRow: (row) =>
+        query((client) =>
+          client.DeleteUnreadableRow(row).pipe(
+            Effect.as<string | null>(null),
+            Effect.catchTag('WorkspaceProblemError', (error) => Effect.succeed(error.reason))
+          )
+        ),
+      resolveImportConflict: (agentId, resolution) =>
+        query((client) =>
+          client.ResolveImportConflict({ agentId, resolution }).pipe(
+            Effect.as<string | null>(null),
+            Effect.catchTag('WorkspaceProblemError', (error) => Effect.succeed(error.reason))
+          )
+        )
+    },
     sendMessage: (paneId, text, mode, attachments) =>
       command('SendMessage', (client, commandId) =>
         client.SendMessage({

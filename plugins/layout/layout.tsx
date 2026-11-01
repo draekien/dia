@@ -7,7 +7,8 @@ import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
-  Slot
+  Slot,
+  WorkspaceProblemsBanner
 } from '@dia/renderer-plugin'
 import { Effect } from 'effect'
 import { useState } from 'react'
@@ -95,6 +96,7 @@ export function Layout() {
         </header>
         <Separator />
         <AccountBanner />
+        <WorkspaceProblemsBanner />
         <div className="min-h-0 flex-1">
           <Slot name={MAIN} />
         </div>

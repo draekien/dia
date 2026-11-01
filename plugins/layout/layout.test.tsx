@@ -16,13 +16,17 @@ function TestSidebar() {
 }
 
 beforeEach(() => {
+  Object.assign(window, { dia: { workspaceProblems: { list: async () => [] } } })
   localStorage.clear()
   setKernelDefault(SIDEBAR, TestSidebar)
   setKernelDefault(MAIN_HEADER, () => <p>header content</p>)
   setKernelDefault(MAIN, () => <p>main content</p>)
 })
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  Reflect.deleteProperty(window, 'dia')
+})
 
 const rail = () => screen.getByRole('separator', { name: 'Resize sidebar' })
 const wrapper = () =>
