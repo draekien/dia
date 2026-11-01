@@ -100,59 +100,61 @@ export function ProjectGroup({
       className={cn('group/project', isDragging && 'relative z-10 opacity-80')}
     >
       <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <SidebarGroupLabel asChild>
-            <button
-              type="button"
-              ref={setActivatorNodeRef}
-              data-nav={headerKey(project.projectId)}
-              {...attributes}
-              tabIndex={tabStop === headerKey(project.projectId) ? 0 : -1}
-              {...listeners}
-              aria-roledescription="sortable project"
-              aria-expanded={open}
-              aria-label={`${project.displayName}, ${count} ${group.total === 1 ? 'agent' : 'agents'}${urgent === null || open ? '' : `, ${statusLabel(urgent)}`}`}
-              onClick={onToggle}
-              onKeyDown={(event) => listeners?.onKeyDown?.(event)}
-              className={cn(
-                'w-full cursor-default gap-1.5 pr-8 pl-1.5 text-left hover:bg-sidebar-accent group-data-[collapsible=icon]:hidden',
-                isDragging && 'bg-sidebar-accent ring-2 ring-sidebar-ring'
-              )}
-            >
-              <ChevronRightIcon
-                aria-hidden
+        <ContextMenuTrigger
+          render={
+            <SidebarGroupLabel asChild>
+              <button
+                type="button"
+                ref={setActivatorNodeRef}
+                data-nav={headerKey(project.projectId)}
+                {...attributes}
+                tabIndex={tabStop === headerKey(project.projectId) ? 0 : -1}
+                {...listeners}
+                aria-roledescription="sortable project"
+                aria-expanded={open}
+                aria-label={`${project.displayName}, ${count} ${group.total === 1 ? 'agent' : 'agents'}${urgent === null || open ? '' : `, ${statusLabel(urgent)}`}`}
+                onClick={onToggle}
+                onKeyDown={(event) => listeners?.onKeyDown?.(event)}
                 className={cn(
-                  'size-3.5 shrink-0 text-ink-muted transition-transform duration-150 ease-out motion-reduce:transition-none',
-                  open && 'rotate-90'
+                  'w-full cursor-default gap-1.5 pr-8 pl-1.5 text-left hover:bg-sidebar-accent group-data-[collapsible=icon]:hidden',
+                  isDragging && 'bg-sidebar-accent ring-2 ring-sidebar-ring'
                 )}
-              />
-              <span className="truncate text-sm font-medium text-ink">{project.displayName}</span>
-              {project.isGitRepo && (
-                <span className="shrink-0 rounded-sm border border-border px-1 font-mono text-[0.6875rem] leading-4 text-ink-muted">
-                  git
+              >
+                <ChevronRightIcon
+                  aria-hidden
+                  className={cn(
+                    'size-3.5 shrink-0 text-ink-muted transition-transform duration-150 ease-out motion-reduce:transition-none',
+                    open && 'rotate-90'
+                  )}
+                />
+                <span className="truncate text-sm font-medium text-ink">{project.displayName}</span>
+                {project.isGitRepo && (
+                  <span className="shrink-0 rounded-sm border border-border px-1 font-mono text-[0.6875rem] leading-4 text-ink-muted">
+                    git
+                  </span>
+                )}
+                <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                  {!open && urgent !== null && <StatusIndicator status={urgent} />}
+                  <span className="min-w-4 text-right text-xs tabular-nums text-ink-muted">
+                    {count}
+                  </span>
                 </span>
-              )}
-              <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                {!open && urgent !== null && <StatusIndicator status={urgent} />}
-                <span className="min-w-4 text-right text-xs tabular-nums text-ink-muted">
-                  {count}
-                </span>
-              </span>
-            </button>
-          </SidebarGroupLabel>
-        </ContextMenuTrigger>
+              </button>
+            </SidebarGroupLabel>
+          }
+        />
         <ContextMenuContent className="w-52">
           <ContextMenuGroup>
-            <ContextMenuItem onSelect={() => actions.newAgent(project.projectId)}>
+            <ContextMenuItem onClick={() => actions.newAgent(project.projectId)}>
               New agent
             </ContextMenuItem>
-            <ContextMenuItem onSelect={() => void actions.revealProject(project.directory)}>
+            <ContextMenuItem onClick={() => void actions.revealProject(project.directory)}>
               Reveal in Explorer
             </ContextMenuItem>
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuGroup>
-            <ContextMenuItem variant="destructive" onSelect={onRemove}>
+            <ContextMenuItem variant="destructive" onClick={onRemove}>
               Remove project
             </ContextMenuItem>
           </ContextMenuGroup>
