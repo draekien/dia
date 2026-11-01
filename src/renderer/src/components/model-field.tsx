@@ -132,8 +132,10 @@ export function ModelField({
       ) : (
         <div className="flex items-center gap-1">
           <Select
-            value={value ?? ''}
-            onValueChange={onValueChange}
+            value={value ?? null}
+            onValueChange={(next) => {
+              if (next !== null) onValueChange(next)
+            }}
             disabled={disabled || offered === undefined}
           >
             <SelectTrigger
@@ -141,7 +143,11 @@ export function ModelField({
               aria-labelledby="model-label"
               aria-describedby={offeredValue ? undefined : 'model-not-offered'}
             >
-              <SelectValue placeholder="Loading models…" />
+              <SelectValue placeholder="Loading models…">
+                {value === undefined
+                  ? undefined
+                  : (offered?.find((model) => model.value === value)?.displayName ?? value)}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {offeredValue || value === undefined ? null : (
@@ -175,18 +181,20 @@ export function ModelField({
           </Select>
           {offered === undefined ? null : (
             <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  aria-label="Refresh models"
-                  aria-disabled={refreshing}
-                  onClick={requestRefresh}
-                >
-                  <RefreshCwIcon className={cn(refreshing && 'motion-safe:animate-spin')} />
-                </Button>
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label="Refresh models"
+                    aria-disabled={refreshing}
+                    onClick={requestRefresh}
+                  >
+                    <RefreshCwIcon className={cn(refreshing && 'motion-safe:animate-spin')} />
+                  </Button>
+                }
+              />
               <TooltipContent>Refresh models</TooltipContent>
             </Tooltip>
           )}

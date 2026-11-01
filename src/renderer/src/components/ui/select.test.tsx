@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select'
 
@@ -21,11 +21,13 @@ const Menu = ({ label, option }: { label: string; option: string }) => (
   </Select>
 )
 
-const press = (element: Element) =>
+const press = (element: Element) => {
   fireEvent.pointerDown(element, { button: 0, ctrlKey: false, pointerType: 'mouse' })
+  fireEvent.mouseDown(element, { button: 0, ctrlKey: false })
+}
 
 describe('Select', () => {
-  it('closes an open menu when another select is opened', () => {
+  it('closes an open menu when another select is opened', async () => {
     render(
       <>
         <Menu label="Model" option="Opus 5.5" />
@@ -33,11 +35,13 @@ describe('Select', () => {
       </>
     )
     press(screen.getByRole('combobox', { name: 'Model' }))
-    expect(screen.getAllByRole('listbox', { hidden: true })).toHaveLength(1)
+    expect(await screen.findAllByRole('listbox', { hidden: true })).toHaveLength(1)
 
     press(screen.getByRole('combobox', { name: 'Effort', hidden: true }))
 
-    expect(screen.getAllByRole('listbox', { hidden: true })).toHaveLength(1)
-    expect(screen.getByRole('option', { name: 'Medium' })).toBeTruthy()
+    await waitFor(() => {
+      expect(screen.getAllByRole('listbox', { hidden: true })).toHaveLength(1)
+      expect(screen.getByRole('option', { name: 'Medium', hidden: true })).toBeTruthy()
+    })
   })
 })

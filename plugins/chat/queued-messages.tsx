@@ -98,11 +98,13 @@ function RowAction({
 }): React.JSX.Element {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button type="button" variant="ghost" size="icon-xs" aria-label={label} onClick={onClick}>
-          {children}
-        </Button>
-      </TooltipTrigger>
+      <TooltipTrigger
+        render={
+          <Button type="button" variant="ghost" size="icon-xs" aria-label={label} onClick={onClick}>
+            {children}
+          </Button>
+        }
+      />
       <TooltipContent>{tooltip}</TooltipContent>
     </Tooltip>
   )
@@ -261,17 +263,19 @@ function QueueStack({
             )}
             style={{ bottom: 0 }}
           >
-            <BubbleContent asChild>
-              <button
-                type="button"
-                data-queue-front
-                aria-expanded={open}
-                aria-label={`Show ${queued.length} queued ${noun}`}
-                className="truncate"
-                onClick={() => setDismissed(false)}
-              >
-                <BubbleBody message={front} />
-              </button>
+            <BubbleContent
+              render={
+                <button
+                  type="button"
+                  data-queue-front
+                  aria-expanded={open}
+                  aria-label={`Show ${queued.length} queued ${noun}`}
+                  className="truncate"
+                  onClick={() => setDismissed(false)}
+                />
+              }
+            >
+              <BubbleBody message={front} />
             </BubbleContent>
           </Bubble>
         )}

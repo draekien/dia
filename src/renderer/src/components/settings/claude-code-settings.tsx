@@ -27,11 +27,7 @@ import {
   type ModelPreference,
   pickerModels
 } from '@shared/domain/model-preferences'
-import {
-  DEFAULT_THINKING_LEVEL,
-  type StartupPermissionMode,
-  type ThinkingLevel
-} from '@shared/domain/pane'
+import { DEFAULT_THINKING_LEVEL } from '@shared/domain/pane'
 import type { ModelCatalogSnapshotJson } from '@shared/ipc/contract'
 import { Duration } from 'effect'
 import {
@@ -229,11 +225,13 @@ function DefaultsSection({
           Model
         </span>
         <Select
-          value={model?.value}
-          onValueChange={(value) => update({ ...defaults, model: value })}
+          value={model?.value ?? null}
+          onValueChange={(value) => {
+            if (value !== null) update({ ...defaults, model: value })
+          }}
         >
           <SelectTrigger className="w-full" aria-labelledby="default-model-label">
-            <SelectValue />
+            <SelectValue>{model?.displayName}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
@@ -252,7 +250,9 @@ function DefaultsSection({
         </span>
         <Select
           value={thinkingLevel}
-          onValueChange={(value: ThinkingLevel) => update({ ...defaults, thinkingLevel: value })}
+          onValueChange={(value) => {
+            if (value !== null) update({ ...defaults, thinkingLevel: value })
+          }}
         >
           <SelectTrigger className="w-full" aria-labelledby="default-thinking-label">
             <SelectValue>{thinkingLevelLabel(thinkingLevel)}</SelectValue>
@@ -272,9 +272,9 @@ function DefaultsSection({
         </span>
         <Select
           value={permissionMode}
-          onValueChange={(value: StartupPermissionMode) =>
-            update({ ...defaults, permissionMode: value })
-          }
+          onValueChange={(value) => {
+            if (value !== null) update({ ...defaults, permissionMode: value })
+          }}
         >
           <SelectTrigger className="w-full" aria-labelledby="default-permissions-label">
             <SelectValue>{permissionModeLabel(permissionMode)}</SelectValue>
@@ -333,7 +333,7 @@ function PreferenceToggle({
   if (blockedReason === undefined) return button
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
+      <TooltipTrigger render={button} />
       <TooltipContent>{blockedReason}</TooltipContent>
     </Tooltip>
   )

@@ -67,10 +67,9 @@ export function GeneralSettings() {
     <div className="mx-auto flex w-full max-w-2xl flex-col divide-y px-4 py-3">
       <SettingRow label="Theme">
         <ToggleGroup
-          type="single"
-          value={theme}
-          onValueChange={(value) => {
-            if (value !== '') setTheme(value as ThemePreference)
+          value={[theme]}
+          onValueChange={([value]) => {
+            if (value !== undefined) setTheme(value as ThemePreference)
           }}
           variant="outline"
           size="sm"
@@ -86,10 +85,9 @@ export function GeneralSettings() {
       </SettingRow>
       <SettingRow label="Send mode">
         <ToggleGroup
-          type="single"
-          value={sendMode}
-          onValueChange={(value) => {
-            if (value !== '') setSendMode(value as SendMode)
+          value={[sendMode]}
+          onValueChange={([value]) => {
+            if (value !== undefined) setSendMode(value as SendMode)
           }}
           variant="outline"
           size="sm"
@@ -105,10 +103,9 @@ export function GeneralSettings() {
       </SettingRow>
       <SettingRow label="When the usage limit resets">
         <ToggleGroup
-          type="single"
-          value={usageLimitResume}
-          onValueChange={(value) => {
-            if (value !== '') setUsageLimitResume(value as UsageLimitResume)
+          value={[usageLimitResume]}
+          onValueChange={([value]) => {
+            if (value !== undefined) setUsageLimitResume(value as UsageLimitResume)
           }}
           variant="outline"
           size="sm"

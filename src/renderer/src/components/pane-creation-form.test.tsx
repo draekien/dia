@@ -235,7 +235,7 @@ describe('PaneCreationForm model choice', () => {
     const bridge = installBridge([plugin('worktrees', [WORKTREES_KEY])])
     renderForm(project(true))
     const toggle = await screen.findByRole('switch')
-    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false))
+    await waitFor(() => expect(toggle.getAttribute('aria-disabled')).not.toBe('true'))
     fireEvent.click(toggle)
     await start()
     const paneId = bridge.createTab.mock.calls[0][0].paneId
@@ -463,7 +463,7 @@ describe('PaneCreationForm worktree option', () => {
 
     const toggle = await screen.findByRole('switch')
 
-    expect((toggle as HTMLButtonElement).disabled).toBe(true)
+    expect(toggle.getAttribute('aria-disabled')).toBe('true')
     expect(screen.getByText(HINT)).toBeTruthy()
   })
 
@@ -473,7 +473,7 @@ describe('PaneCreationForm worktree option', () => {
 
     const toggle = await screen.findByRole('switch')
 
-    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false))
+    await waitFor(() => expect(toggle.getAttribute('aria-disabled')).not.toBe('true'))
     expect(screen.queryByText(HINT)).toBeNull()
   })
 
@@ -483,14 +483,14 @@ describe('PaneCreationForm worktree option', () => {
 
     const toggle = await screen.findByRole('switch')
 
-    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false))
+    await waitFor(() => expect(toggle.getAttribute('aria-disabled')).not.toBe('true'))
   })
 
   it('creates the tab with a worktree when the user turns the switch on', async () => {
     const bridge = installBridge([plugin('worktrees', [WORKTREES_KEY])])
     renderForm(project(true))
     const toggle = await screen.findByRole('switch')
-    await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false))
+    await waitFor(() => expect(toggle.getAttribute('aria-disabled')).not.toBe('true'))
 
     fireEvent.click(toggle)
     await start()

@@ -384,12 +384,14 @@ function latestStepLabel(section: StepsSectionBlock): React.ReactNode {
 function TokenCount({ count }: { count: number }): React.JSX.Element {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="cursor-default">
-          <span aria-hidden="true">{approximateTokens(count)}</span>
-          <span className="sr-only">{exactTokens(count)}</span>
-        </span>
-      </TooltipTrigger>
+      <TooltipTrigger
+        render={
+          <span className="cursor-default">
+            <span aria-hidden="true">{approximateTokens(count)}</span>
+            <span className="sr-only">{exactTokens(count)}</span>
+          </span>
+        }
+      />
       <TooltipContent>{exactTokens(count)}</TooltipContent>
     </Tooltip>
   )
@@ -502,7 +504,12 @@ function ThinkingLevelSelect({
   onChange: (level: ThinkingLevel) => void
 }): React.JSX.Element {
   return (
-    <Select value={value} onValueChange={onChange}>
+    <Select
+      value={value}
+      onValueChange={(next) => {
+        if (next !== null) onChange(next)
+      }}
+    >
       <SelectTrigger size="sm" aria-label="Thinking level" className={composerSettingTrigger()}>
         <SelectValue>{thinkingSettingLabel(value)}</SelectValue>
       </SelectTrigger>
@@ -527,7 +534,12 @@ function PermissionModeSelect({
   onChange: (mode: PermissionMode) => void
 }): React.JSX.Element {
   return (
-    <Select value={value} onValueChange={onChange}>
+    <Select
+      value={value}
+      onValueChange={(next) => {
+        if (next !== null) onChange(next)
+      }}
+    >
       <SelectTrigger
         size="sm"
         aria-label="Permission mode"
@@ -574,22 +586,24 @@ export function ComposerActionButton({
   return (
     <>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <InputGroupButton
-            type="button"
-            variant={isStop ? 'outline' : action.disabled ? 'secondary' : 'default'}
-            size="icon-sm"
-            className="ml-auto transition-colors duration-150 motion-reduce:transition-none"
-            aria-label={action.label}
-            disabled={!isStop && action.disabled}
-            onClick={isStop ? onStop : onSubmit}
-          >
-            <Icon
-              key={action.icon}
-              className="animate-in duration-150 fade-in motion-reduce:animate-none"
-            />
-          </InputGroupButton>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <InputGroupButton
+              type="button"
+              variant={isStop ? 'outline' : action.disabled ? 'secondary' : 'default'}
+              size="icon-sm"
+              className="ml-auto transition-colors duration-150 motion-reduce:transition-none"
+              aria-label={action.label}
+              disabled={!isStop && action.disabled}
+              onClick={isStop ? onStop : onSubmit}
+            >
+              <Icon
+                key={action.icon}
+                className="animate-in duration-150 fade-in motion-reduce:animate-none"
+              />
+            </InputGroupButton>
+          }
+        />
         <TooltipContent side="top" align="end">
           {isStop ? (
             action.label
@@ -1113,18 +1127,20 @@ function PaneChat({
                       )}
                       <InputGroupAddon align="block-end">
                         <Tooltip>
-                          <TooltipTrigger asChild>
-                            <InputGroupButton
-                              type="button"
-                              size="icon-xs"
-                              variant="ghost"
-                              className="-ml-1.5 translate-y-2.5"
-                              aria-label="Attach files"
-                              onClick={() => fileInputRef.current?.click()}
-                            >
-                              <Plus />
-                            </InputGroupButton>
-                          </TooltipTrigger>
+                          <TooltipTrigger
+                            render={
+                              <InputGroupButton
+                                type="button"
+                                size="icon-xs"
+                                variant="ghost"
+                                className="-ml-1.5 translate-y-2.5"
+                                aria-label="Attach files"
+                                onClick={() => fileInputRef.current?.click()}
+                              >
+                                <Plus />
+                              </InputGroupButton>
+                            }
+                          />
                           <TooltipContent>Attach files, or drop, paste or type @</TooltipContent>
                         </Tooltip>
                         <input

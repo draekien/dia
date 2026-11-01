@@ -1,7 +1,7 @@
 import { Button, Checkbox, Input, Label, RadioGroup, RadioGroupItem } from '@dia/renderer-plugin'
 import { Answers, type QuestionResponse } from '@shared/domain/attention'
 import type { PaneQuestionRequested } from '@shared/ipc/contract'
-import { type KeyboardEvent, useState } from 'react'
+import { type KeyboardEvent, useId, useState } from 'react'
 
 type Question = PaneQuestionRequested['questions'][number]
 
@@ -75,6 +75,7 @@ export function ClarifyingQuestionCard({
   request: PaneQuestionRequested
   onResolve: (response: QuestionResponse) => void
 }) {
+  const idPrefix = useId()
   const [single, setSingle] = useState<Record<string, string>>({})
   const [multi, setMulti] = useState<Record<string, ReadonlySet<string>>>({})
   const [otherText, setOtherText] = useState<Record<string, string>>({})
@@ -108,7 +109,7 @@ export function ClarifyingQuestionCard({
     if (event.shiftKey) return
     const target = event.target as HTMLElement
     const role = target.getAttribute('role')
-    if ((role === 'radio' || role === 'checkbox') && target.dataset.state === 'unchecked') {
+    if ((role === 'radio' || role === 'checkbox') && target.hasAttribute('data-unchecked')) {
       target.click()
       return
     }
@@ -119,7 +120,7 @@ export function ClarifyingQuestionCard({
     const fieldset = event.currentTarget.querySelectorAll('fieldset')[firstUnanswered]
     const field =
       fieldset?.querySelector<HTMLElement>('input:not([aria-hidden="true"])') ??
-      fieldset?.querySelector<HTMLElement>('button')
+      fieldset?.querySelector<HTMLElement>('[role="radio"], [role="checkbox"]')
     field?.focus()
   }
 
@@ -134,8 +135,9 @@ export function ClarifyingQuestionCard({
       className="mt-2 flex flex-col gap-4 rounded-md border bg-muted/40 p-3"
     >
       <p className="text-base font-semibold text-foreground">Claude needs your input</p>
-      {request.questions.map((question) => {
+      {request.questions.map((question, questionIndex) => {
         const key = questionKey(question)
+        const idBase = `${idPrefix}-${questionIndex}`
         const otherSelected = question.multiSelect
           ? (multi[key]?.has(OTHER) ?? false)
           : single[key] === OTHER
@@ -144,18 +146,18 @@ export function ClarifyingQuestionCard({
             <legend className="mb-1 text-sm text-foreground">{question.question}</legend>
             {question.multiSelect ? (
               <div className="flex flex-col gap-2">
-                {question.options.map((option) => (
+                {question.options.map((option, optionIndex) => (
                   <div key={option.label} className="flex items-start gap-2">
                     <Checkbox
                       className="mt-0.5"
-                      id={`${key}-${option.label}`}
+                      id={`${idBase}-${optionIndex}`}
                       checked={multi[key]?.has(option.label) ?? false}
                       onCheckedChange={(checked) =>
                         toggleMulti(key, option.label, checked === true)
                       }
                     />
                     <Label
-                      htmlFor={`${key}-${option.label}`}
+                      htmlFor={`${idBase}-${optionIndex}`}
                       className="flex flex-col items-start gap-0.5 font-normal text-foreground"
                     >
                       <span>{option.label}</span>
@@ -167,11 +169,11 @@ export function ClarifyingQuestionCard({
                 ))}
                 <div className="flex items-center gap-2">
                   <Checkbox
-                    id={`${key}-other`}
+                    id={`${idBase}-other`}
                     checked={multi[key]?.has(OTHER) ?? false}
                     onCheckedChange={(checked) => toggleMulti(key, OTHER, checked === true)}
                   />
-                  <Label htmlFor={`${key}-other`} className="font-normal text-foreground">
+                  <Label htmlFor={`${idBase}-other`} className="font-normal text-foreground">
                     Other
                   </Label>
                 </div>
@@ -181,15 +183,15 @@ export function ClarifyingQuestionCard({
                 value={single[key] ?? ''}
                 onValueChange={(value) => setSingle((prev) => ({ ...prev, [key]: value }))}
               >
-                {question.options.map((option) => (
+                {question.options.map((option, optionIndex) => (
                   <div key={option.label} className="flex items-start gap-2">
                     <RadioGroupItem
                       className="mt-0.5"
                       value={option.label}
-                      id={`${key}-${option.label}`}
+                      id={`${idBase}-${optionIndex}`}
                     />
                     <Label
-                      htmlFor={`${key}-${option.label}`}
+                      htmlFor={`${idBase}-${optionIndex}`}
                       className="flex flex-col items-start gap-0.5 font-normal text-foreground"
                     >
                       <span>{option.label}</span>
@@ -200,8 +202,8 @@ export function ClarifyingQuestionCard({
                   </div>
                 ))}
                 <div className="flex items-center gap-2">
-                  <RadioGroupItem value={OTHER} id={`${key}-other`} />
-                  <Label htmlFor={`${key}-other`} className="font-normal text-foreground">
+                  <RadioGroupItem value={OTHER} id={`${idBase}-other`} />
+                  <Label htmlFor={`${idBase}-other`} className="font-normal text-foreground">
                     Other
                   </Label>
                 </div>

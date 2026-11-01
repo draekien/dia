@@ -155,21 +155,23 @@ function DeleteRowDialog({
           <AlertDialogTitle>
             {isProject ? `Delete project ${problem.name}?` : `Delete agent ${problem.name}?`}
           </AlertDialogTitle>
-          <AlertDialogDescription asChild>
-            <div className="flex flex-col gap-2">
-              <p>
-                {isProject
-                  ? `dia deletes what it stored about this project and its ${agentsLabel(problem.agents)}: their settings, worktree records and session history.`
-                  : 'dia deletes what it stored about this agent: its settings, its worktree record and its session history.'}{' '}
-                This cannot be undone.
-              </p>
-              <p>
-                {isProject
-                  ? 'The project directory, any worktree directories and the Claude Code transcripts stay on disk.'
-                  : 'Its worktree directory, if it has one, and its Claude Code transcripts stay on disk.'}
-              </p>
-            </div>
-          </AlertDialogDescription>
+          <AlertDialogDescription
+            render={
+              <div className="flex flex-col gap-2">
+                <p>
+                  {isProject
+                    ? `dia deletes what it stored about this project and its ${agentsLabel(problem.agents)}: their settings, worktree records and session history.`
+                    : 'dia deletes what it stored about this agent: its settings, its worktree record and its session history.'}{' '}
+                  This cannot be undone.
+                </p>
+                <p>
+                  {isProject
+                    ? 'The project directory, any worktree directories and the Claude Code transcripts stay on disk.'
+                    : 'Its worktree directory, if it has one, and its Claude Code transcripts stay on disk.'}
+                </p>
+              </div>
+            }
+          />
         </AlertDialogHeader>
         {failure !== null && (
           <p role="alert" className="text-sm text-error">

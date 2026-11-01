@@ -144,26 +144,24 @@ function MetaGroup() {
       <SidebarMenu>
         <SidebarMenuItem>
           <SidebarMenuButton
-            asChild
+            render={<div />}
             tooltip="Meta · No open proposals"
             className="cursor-default group-data-[collapsible=icon]:justify-center"
           >
-            <div>
-              <span className="sr-only">Meta, no open proposals</span>
-              <MetaMarker />
-              <span
-                aria-hidden
-                className="text-sm font-medium text-ink group-data-[collapsible=icon]:hidden"
-              >
-                Meta
-              </span>
-              <span
-                aria-hidden
-                className="ml-auto text-xs text-ink-muted group-data-[collapsible=icon]:hidden"
-              >
-                No open proposals
-              </span>
-            </div>
+            <span className="sr-only">Meta, no open proposals</span>
+            <MetaMarker />
+            <span
+              aria-hidden
+              className="text-sm font-medium text-ink group-data-[collapsible=icon]:hidden"
+            >
+              Meta
+            </span>
+            <span
+              aria-hidden
+              className="ml-auto text-xs text-ink-muted group-data-[collapsible=icon]:hidden"
+            >
+              No open proposals
+            </span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
@@ -454,16 +452,18 @@ export function AgentOverview() {
                   onChange={setFilters}
                 />
                 <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Add project"
-                      onClick={addProject}
-                    >
-                      <FolderPlusIcon />
-                    </Button>
-                  </TooltipTrigger>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Add project"
+                        onClick={addProject}
+                      >
+                        <FolderPlusIcon />
+                      </Button>
+                    }
+                  />
                   <TooltipContent>Add project</TooltipContent>
                 </Tooltip>
               </div>

@@ -30,9 +30,7 @@ function PathIcon({ kind }: { kind: 'file' | 'directory' }): React.JSX.Element {
 function ImagePreview({ label, src }: { label: string; src: string }): React.JSX.Element {
   return (
     <Dialog>
-      <DialogTrigger asChild>
-        <AttachmentTrigger aria-label={`Preview ${label}`} />
-      </DialogTrigger>
+      <DialogTrigger render={<AttachmentTrigger aria-label={`Preview ${label}`} />} />
       <DialogContent className="w-auto max-w-[min(90vw,64rem)]">
         <DialogTitle className="truncate pr-6 font-normal text-sm">{label}</DialogTitle>
         <img src={src} alt={label} className="max-h-[75vh] w-auto rounded-md object-contain" />

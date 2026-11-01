@@ -145,27 +145,25 @@ export function RemoveProjectDialog({ entry, onClose }: RemoveProjectDialogProps
               const { kind, text, mono } = describe(item)
               const state = stateOf(item)
               return (
-                <Item key={itemKey(item)} asChild size="sm" className="px-0 py-1.5">
-                  <li>
-                    {phase !== 'confirm' && (
-                      <ItemMedia className="size-4">
-                        <ItemStateIcon state={state} />
-                      </ItemMedia>
+                <Item key={itemKey(item)} render={<li />} size="sm" className="px-0 py-1.5">
+                  {phase !== 'confirm' && (
+                    <ItemMedia className="size-4">
+                      <ItemStateIcon state={state} />
+                    </ItemMedia>
+                  )}
+                  <ItemContent className="min-w-0 gap-0.5">
+                    <ItemTitle className="w-full min-w-0">
+                      <span title={text} className={cn('truncate', mono && 'font-mono text-xs')}>
+                        {text}
+                      </span>
+                    </ItemTitle>
+                    <ItemDescription className="text-xs">{kind}</ItemDescription>
+                    {state._tag === 'Failed' && (
+                      <ItemDescription className="text-xs text-foreground">
+                        {state.reason}
+                      </ItemDescription>
                     )}
-                    <ItemContent className="min-w-0 gap-0.5">
-                      <ItemTitle className="w-full min-w-0">
-                        <span title={text} className={cn('truncate', mono && 'font-mono text-xs')}>
-                          {text}
-                        </span>
-                      </ItemTitle>
-                      <ItemDescription className="text-xs">{kind}</ItemDescription>
-                      {state._tag === 'Failed' && (
-                        <ItemDescription className="text-xs text-foreground">
-                          {state.reason}
-                        </ItemDescription>
-                      )}
-                    </ItemContent>
-                  </li>
+                  </ItemContent>
                 </Item>
               )
             })}

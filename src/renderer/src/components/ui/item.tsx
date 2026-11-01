@@ -1,7 +1,8 @@
+import { mergeProps } from '@base-ui/react/merge-props'
+import { useRender } from '@base-ui/react/use-render'
 import { Separator } from '@renderer/components/ui/separator'
 import { cn } from '@renderer/lib/utils'
 import { cva, type VariantProps } from 'class-variance-authority'
-import { Slot } from 'radix-ui'
 import type * as React from 'react'
 
 function ItemGroup({ className, ...props }: React.ComponentProps<'div'>) {
@@ -52,19 +53,15 @@ function Item({
   className,
   variant = 'default',
   size = 'default',
-  asChild = false,
+  render,
   ...props
-}: React.ComponentProps<'div'> & VariantProps<typeof itemVariants> & { asChild?: boolean }) {
-  const Comp = asChild ? Slot.Root : 'div'
-  return (
-    <Comp
-      data-slot="item"
-      data-variant={variant}
-      data-size={size}
-      className={cn(itemVariants({ variant, size, className }))}
-      {...props}
-    />
-  )
+}: useRender.ComponentProps<'div'> & VariantProps<typeof itemVariants>) {
+  return useRender({
+    defaultTagName: 'div',
+    props: mergeProps<'div'>({ className: cn(itemVariants({ variant, size, className })) }, props),
+    render,
+    state: { slot: 'item', variant, size }
+  })
 }
 
 const itemMediaVariants = cva(

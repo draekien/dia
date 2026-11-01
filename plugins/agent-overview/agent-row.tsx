@@ -136,10 +136,13 @@ export function AgentRow({
   if (renaming) {
     return (
       <SidebarMenuItem>
-        <SidebarMenuButton asChild size="lg" isActive={selected} className={buttonClass}>
-          <div data-nav={rowKey(row.paneId)}>
-            {body(<RenameField row={row} onDone={() => onRename(false)} />)}
-          </div>
+        <SidebarMenuButton
+          render={<div data-nav={rowKey(row.paneId)} />}
+          size="lg"
+          isActive={selected}
+          className={buttonClass}
+        >
+          {body(<RenameField row={row} onDone={() => onRename(false)} />)}
         </SidebarMenuButton>
       </SidebarMenuItem>
     )
@@ -147,32 +150,34 @@ export function AgentRow({
   return (
     <SidebarMenuItem>
       <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <SidebarMenuButton
-            size="lg"
-            isActive={selected}
-            tooltip={summaryText}
-            data-nav={rowKey(row.paneId)}
-            tabIndex={tabbable ? 0 : -1}
-            aria-label={collapsed ? summaryText : label}
-            aria-current={selected ? 'page' : undefined}
-            title={collapsed ? undefined : `${projectName} / ${row.name}`}
-            onClick={() => actions.selectTab(row.paneId)}
-            onKeyDown={(event) => {
-              if (event.key === 'F2') {
-                event.preventDefault()
-                onRename(true)
-              }
-            }}
-            className={buttonClass}
-          >
-            {body(<span className="truncate text-sm text-ink">{row.name}</span>)}
-          </SidebarMenuButton>
-        </ContextMenuTrigger>
+        <ContextMenuTrigger
+          render={
+            <SidebarMenuButton
+              size="lg"
+              isActive={selected}
+              tooltip={summaryText}
+              data-nav={rowKey(row.paneId)}
+              tabIndex={tabbable ? 0 : -1}
+              aria-label={collapsed ? summaryText : label}
+              aria-current={selected ? 'page' : undefined}
+              title={collapsed ? undefined : `${projectName} / ${row.name}`}
+              onClick={() => actions.selectTab(row.paneId)}
+              onKeyDown={(event) => {
+                if (event.key === 'F2') {
+                  event.preventDefault()
+                  onRename(true)
+                }
+              }}
+              className={buttonClass}
+            >
+              {body(<span className="truncate text-sm text-ink">{row.name}</span>)}
+            </SidebarMenuButton>
+          }
+        />
         <ContextMenuContent className="w-48">
           <ContextMenuGroup>
-            <ContextMenuItem onSelect={() => actions.selectTab(row.paneId)}>Show</ContextMenuItem>
-            <ContextMenuItem onSelect={() => onRename(true)}>
+            <ContextMenuItem onClick={() => actions.selectTab(row.paneId)}>Show</ContextMenuItem>
+            <ContextMenuItem onClick={() => onRename(true)}>
               Rename
               <ContextMenuShortcut>F2</ContextMenuShortcut>
             </ContextMenuItem>
@@ -180,9 +185,9 @@ export function AgentRow({
           <ContextMenuSeparator />
           <ContextMenuGroup>
             {!archived && (
-              <ContextMenuItem onSelect={() => onRetire('archive')}>Archive</ContextMenuItem>
+              <ContextMenuItem onClick={() => onRetire('archive')}>Archive</ContextMenuItem>
             )}
-            <ContextMenuItem variant="destructive" onSelect={() => onRetire('delete')}>
+            <ContextMenuItem variant="destructive" onClick={() => onRetire('delete')}>
               Delete…
             </ContextMenuItem>
           </ContextMenuGroup>

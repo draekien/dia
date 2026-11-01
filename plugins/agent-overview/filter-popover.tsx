@@ -71,22 +71,24 @@ export function FilterPopover({ filters, counts, onChange }: FilterPopoverProps)
     })
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={active ? 'Filter agents, filters active' : 'Filter agents'}
-          className="relative"
-        >
-          <ListFilterIcon />
-          {active && (
-            <span
-              aria-hidden
-              className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-primary"
-            />
-          )}
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={active ? 'Filter agents, filters active' : 'Filter agents'}
+            className="relative"
+          >
+            <ListFilterIcon />
+            {active && (
+              <span
+                aria-hidden
+                className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-primary"
+              />
+            )}
+          </Button>
+        }
+      />
       <PopoverContent align="start" className="flex w-64 flex-col gap-1 p-3">
         <span className="pb-1 text-xs font-medium text-ink-muted">Show status</span>
         {STATUS_TAGS.map((tag) => (
