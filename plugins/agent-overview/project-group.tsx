@@ -170,6 +170,19 @@ export function ProjectGroup({
         <SidebarGroupContent>
           <SidebarMenu className="gap-0">
             {group.rows.map((row) => renderRow(row, false))}
+            {group.total === 0 && !narrowing && (
+              <li className="flex list-none items-center gap-2 py-1 pl-2">
+                <span className="text-xs text-ink-muted">No agents</span>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => actions.newAgent(project.projectId)}
+                >
+                  <PlusIcon data-icon="inline-start" />
+                  New agent
+                </Button>
+              </li>
+            )}
             {group.archived.length > 0 && !iconMode && (
               <>
                 <li className="list-none">
@@ -193,19 +206,6 @@ export function ProjectGroup({
                 </li>
                 {archivedOpen && group.archived.map((row) => renderRow(row, true))}
               </>
-            )}
-            {group.total === 0 && !narrowing && (
-              <li className="flex list-none items-center gap-2 py-1 pl-2">
-                <span className="text-xs text-ink-muted">No agents</span>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  onClick={() => actions.newAgent(project.projectId)}
-                >
-                  <PlusIcon data-icon="inline-start" />
-                  New agent
-                </Button>
-              </li>
             )}
           </SidebarMenu>
         </SidebarGroupContent>
