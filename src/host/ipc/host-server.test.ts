@@ -63,6 +63,8 @@ const handlersLayer = Layer.unwrap(
       GetWorkspace: unused,
       RegisterProject: unused,
       RemoveProject: unused,
+      ArchiveTab: unused,
+      DeleteTab: unused,
       GetAgentSummaries: unused,
       GetTranscriptWidth: unused,
       GetPaneHistory: unused,
@@ -77,6 +79,12 @@ const handlersLayer = Layer.unwrap(
       RefreshModels: unused,
       ListActivities: unused,
       RunActivity: unused,
+      GetMetaRepo: unused,
+      SetMetaRemote: unused,
+      PushMetaRepo: unused,
+      ListWorkspaceProblems: unused,
+      DeleteUnreadableRow: unused,
+      ResolveImportConflict: unused,
       SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
     })
   })

@@ -21,6 +21,7 @@ import {
   Removed,
   Removing
 } from '@shared/domain/project-removal'
+import { WorkspaceProblemError } from '@shared/domain/workspace-problem'
 import {
   type AdapterStatusSnapshotJson,
   type AgentSummariesReplaced,
@@ -116,6 +117,7 @@ interface ClientScript {
   readonly removeProject?: Stream.Stream<RemovalProgress, ProjectNotFoundError>
   readonly getModels?: Effect.Effect<ModelCatalogSnapshot, ConnectionError>
   readonly runActivity?: Effect.Effect<void, ActivityNotFound>
+  readonly resolveImportConflict?: Effect.Effect<void, WorkspaceProblemError>
 }
 
 const makeClient = (script: ClientScript = {}) => {
@@ -155,10 +157,18 @@ const makeClient = (script: ClientScript = {}) => {
   const runActivity = vi.fn(
     (_payload: { plugin: string; id: string }) => script.runActivity ?? Effect.void
   )
+  const setMetaRemote = vi.fn((payload: { url: string }) =>
+    Effect.succeed({ _tag: 'MetaRepoState' as const, remoteUrl: payload.url, branch: 'main' })
+  )
   const setPluginOverride = vi.fn((_payload: { name: string; directory: string }) =>
     Effect.succeed({ _tag: 'Rejected' as const, message: 'no plugin.json' })
   )
+  const resolveImportConflict = vi.fn(
+    (_payload: { agentId: string; resolution: string }) =>
+      script.resolveImportConflict ?? Effect.void
+  )
   const client = {
+    ResolveImportConflict: resolveImportConflict,
     LoadPlugin: loadPlugin,
     SetPluginOverride: setPluginOverride,
     SendMessage: sendMessage,
@@ -173,7 +183,8 @@ const makeClient = (script: ClientScript = {}) => {
     GetModels: getModels,
     GetAdapterStatus: getAdapterStatus,
     GetModelPreferences: getModelPreferences,
-    RunActivity: runActivity
+    RunActivity: runActivity,
+    SetMetaRemote: setMetaRemote
   } as unknown as DiaRpcClient
   return {
     client,
@@ -187,7 +198,9 @@ const makeClient = (script: ClientScript = {}) => {
     loadPlugin,
     setPluginOverride,
     getModels,
-    runActivity
+    runActivity,
+    setMetaRemote,
+    resolveImportConflict
   }
 }
 
@@ -409,6 +422,45 @@ describe('makeHostApi', () => {
       { plugin: 'claude-code', id: 'models' }
     ])
     expect(result).toBeNull()
+  })
+
+  it('sends the remote URL to SetMetaRemote unchanged and resolves its state', async () => {
+    const { client, setMetaRemote } = makeClient()
+    const { api } = makeApi(client)
+
+    const result = await api.metaRepo.setRemote('git@github.com:me/meta.git')
+
+    expect(setMetaRemote.mock.calls.map(([payload]) => payload)).toEqual([
+      { url: 'git@github.com:me/meta.git' }
+    ])
+    expect(result).toStrictEqual({
+      _tag: 'MetaRepoState',
+      remoteUrl: 'git@github.com:me/meta.git',
+      branch: 'main'
+    })
+  })
+
+  it('sends the agent id and resolution to ResolveImportConflict unchanged and resolves null', async () => {
+    const { client, resolveImportConflict } = makeClient()
+    const { api } = makeApi(client)
+
+    const result = await api.workspaceProblems.resolveImportConflict('pane-b', 'import')
+
+    expect(resolveImportConflict.mock.calls.map(([payload]) => payload)).toEqual([
+      { agentId: 'pane-b', resolution: 'import' }
+    ])
+    expect(result).toBeNull()
+  })
+
+  it('resolves a refused import conflict resolution as its reason', async () => {
+    const { client } = makeClient({
+      resolveImportConflict: Effect.fail(new WorkspaceProblemError({ reason: 'project removing' }))
+    })
+    const { api } = makeApi(client)
+
+    expect(await api.workspaceProblems.resolveImportConflict('pane-b', 'discard')).toBe(
+      'project removing'
+    )
   })
 
   it('resolves running an unknown activity as the plain refusal', async () => {

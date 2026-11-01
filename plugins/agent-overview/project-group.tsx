@@ -21,11 +21,13 @@ import { CSS } from '@dnd-kit/utilities'
 import type { PaneId } from '@shared/domain/pane'
 import { ChevronRightIcon, PlusIcon } from 'lucide-react'
 import { AgentRow } from './agent-row'
-import { headerKey, type OverviewGroup, type OverviewRow, rowKey } from './overview'
+import { archivedKey, headerKey, type OverviewGroup, type OverviewRow, rowKey } from './overview'
+import type { Retirement } from './retire-agent-dialog'
 
 interface ProjectGroupProps {
   readonly group: OverviewGroup
   readonly open: boolean
+  readonly archivedOpen: boolean
   readonly narrowing: boolean
   readonly dragging: boolean
   readonly iconMode: boolean
@@ -33,17 +35,21 @@ interface ProjectGroupProps {
   readonly renaming: PaneId | null
   readonly tabStop: string | null
   readonly onToggle: () => void
+  readonly onToggleArchived: () => void
   readonly onRename: (paneId: PaneId | null) => void
+  readonly onRetire: (paneId: PaneId, retirement: Retirement) => void
   readonly onRemove: () => void
 }
 
 /**
  * One project in the overview: a header that toggles the group, carries the project menu and is
- * the drag handle, then the project's agent rows while the group is open.
+ * the drag handle, then the project's agent rows while the group is open, ending with a toggle
+ * that opens the list of its archived agents.
  */
 export function ProjectGroup({
   group,
   open,
+  archivedOpen,
   narrowing,
   dragging,
   iconMode,
@@ -51,7 +57,9 @@ export function ProjectGroup({
   renaming,
   tabStop,
   onToggle,
+  onToggleArchived,
   onRename,
+  onRetire,
   onRemove
 }: ProjectGroupProps) {
   const { project } = group
@@ -67,15 +75,17 @@ export function ProjectGroup({
   const count = narrowing ? `${group.shown} of ${group.total}` : String(group.total)
   const showRows = open && !dragging
   const urgent = group.mostUrgent
-  const renderRow = (row: OverviewRow, selected: boolean) => (
+  const renderRow = (row: OverviewRow, archived: boolean) => (
     <AgentRow
       key={row.paneId}
       row={row}
       projectName={project.displayName}
-      selected={selected}
+      selected={row.paneId === visibleTab}
       renaming={row.paneId === renaming}
       tabbable={tabStop === rowKey(row.paneId)}
+      archived={archived}
       onRename={(next) => onRename(next ? row.paneId : null)}
+      onRetire={(retirement) => onRetire(row.paneId, retirement)}
     />
   )
   return (
@@ -159,15 +169,7 @@ export function ProjectGroup({
       {showRows && (
         <SidebarGroupContent>
           <SidebarMenu className="gap-0">
-            {group.rows.map((row) => renderRow(row, row.paneId === visibleTab))}
-            {group.archived.length > 0 && (
-              <>
-                <li className="list-none pt-1 pl-2 text-xs text-ink-muted">
-                  Archived · {group.archived.length}
-                </li>
-                {group.archived.map((row) => renderRow(row, false))}
-              </>
-            )}
+            {group.rows.map((row) => renderRow(row, false))}
             {group.total === 0 && !narrowing && (
               <li className="flex list-none items-center gap-2 py-1 pl-2">
                 <span className="text-xs text-ink-muted">No agents</span>
@@ -180,6 +182,30 @@ export function ProjectGroup({
                   New agent
                 </Button>
               </li>
+            )}
+            {group.archived.length > 0 && !iconMode && (
+              <>
+                <li className="list-none">
+                  <button
+                    type="button"
+                    data-nav={archivedKey(project.projectId)}
+                    tabIndex={tabStop === archivedKey(project.projectId) ? 0 : -1}
+                    aria-expanded={archivedOpen}
+                    onClick={onToggleArchived}
+                    className="flex w-full cursor-default items-center gap-1 rounded-md py-1 pl-2 text-left text-xs text-ink-muted outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                  >
+                    <ChevronRightIcon
+                      aria-hidden
+                      className={cn(
+                        'size-3 shrink-0 transition-transform duration-150 ease-out motion-reduce:transition-none',
+                        archivedOpen && 'rotate-90'
+                      )}
+                    />
+                    Archived ({group.archived.length})
+                  </button>
+                </li>
+                {archivedOpen && group.archived.map((row) => renderRow(row, true))}
+              </>
             )}
           </SidebarMenu>
         </SidebarGroupContent>

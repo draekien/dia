@@ -47,10 +47,19 @@ const workspaceTables = runEach([
   )`
 ])
 
+const importResolutions = runEach([
+  `CREATE TABLE import_resolutions (
+    agent_id    TEXT    PRIMARY KEY,
+    resolution  TEXT    NOT NULL CHECK (resolution IN ('imported', 'discarded')),
+    resolved_at INTEGER NOT NULL
+  )`
+])
+
 /**
  * The migrations of `<userData>/host.db`, keyed `<id>_<name>` and applied in id order by
  * `makeHostDatabaseLive`. Add a migration as a new key; never change an applied one.
  */
 export const kernelMigrations = {
-  '1_workspace': workspaceTables
+  '1_workspace': workspaceTables,
+  '2_import_resolutions': importResolutions
 }

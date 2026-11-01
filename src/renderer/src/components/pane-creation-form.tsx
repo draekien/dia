@@ -1,6 +1,8 @@
+import { useAtomValue } from '@effect/atom-react'
 import { InstallNotice, installProblem } from '@renderer/components/install-notice'
 import { isOfferedModel, ModelField } from '@renderer/components/model-field'
 import { PermissionModeItems } from '@renderer/components/permission-mode-items'
+import { TabSetupSteps } from '@renderer/components/tab-setup-steps'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import {
@@ -18,6 +20,7 @@ import { useModelPreferences } from '@renderer/hooks/use-model-preferences'
 import { usePluginList } from '@renderer/hooks/use-plugin-list'
 import { cancelNewAgent } from '@renderer/lib/actions'
 import { findModelOption } from '@renderer/lib/model-options'
+import { paneChatAtom } from '@renderer/lib/pane-chat-atoms'
 import {
   CREATE_PERMISSION_MODE_OPTIONS,
   disabledPermissionModesFor,
@@ -39,6 +42,7 @@ import { CreateTab } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { Option, Schema } from 'effect'
+import { AsyncResult } from 'effect/reactivity'
 import { useEffect, useState } from 'react'
 
 const providesWorktrees = (plugins: ReadonlyArray<PluginInfo> | undefined): boolean =>
@@ -51,6 +55,12 @@ type FormState =
 
 const decodeName = Schema.decodeUnknownOption(AgentName)
 
+function CreationSetupSteps({ paneId }: { paneId: string }) {
+  const steps = AsyncResult.getOrElse(useAtomValue(paneChatAtom(paneId)), () => undefined)?.setup
+  if (steps === undefined) return null
+  return <TabSetupSteps steps={steps} />
+}
+
 interface PaneCreationFormProps {
   readonly project: Project
 }
@@ -61,6 +71,7 @@ interface PaneCreationFormProps {
  * from the adapter's defaults for new agents. Start is disabled while the chosen model is not
  * offered or the agent install cannot run. "Start agent" asks the Host to create the tab,
  * which then becomes the visible tab; Cancel returns to the tab shown before the form opened.
+ * Once started, a worktree tab's setup steps show above the buttons, and stay after a failure.
  */
 function PaneCreationForm({ project }: PaneCreationFormProps) {
   // @effect-diagnostics-next-line cryptoRandomUUID:off -- React state initialiser outside any Effect; the id only has to be unique.
@@ -218,6 +229,8 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
         )}
 
         <InstallNotice status={adapterStatus} />
+
+        {state.step !== 'editing' && worktreeOn && <CreationSetupSteps paneId={paneId} />}
 
         {state.step === 'error' && <p className="text-sm text-destructive">{state.reason}</p>}
 

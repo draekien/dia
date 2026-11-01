@@ -5,7 +5,9 @@ import type { Workspace } from '@shared/domain/project'
 import type { TranscriptWidth } from '@shared/domain/transcript-width'
 import { Option } from 'effect'
 import {
+  archiveTab,
   cancelNewAgent,
+  deleteTab,
   moveProject,
   newAgent,
   openPluginsPage,
@@ -77,6 +79,8 @@ export const actions = {
   registerProject,
   moveProject,
   renameTab,
+  archiveTab,
+  deleteTab,
   resumeParkedAgent,
   removeProject,
   revealProject,
@@ -94,6 +98,7 @@ export { InstallNotice } from './components/install-notice'
 export { PermissionModeItems } from './components/permission-mode-items'
 export { openSettings } from './components/settings/open-settings'
 export { StatusIndicator, statusLabel } from './components/status-indicator'
+export { StepStatusIcon, showsSetup, TabSetupSteps } from './components/tab-setup-steps'
 export * from './components/ui/alert-dialog'
 export * from './components/ui/attachment'
 export * from './components/ui/bubble'
@@ -115,6 +120,7 @@ export * from './components/ui/separator'
 export * from './components/ui/switch'
 export * from './components/ui/textarea'
 export * from './components/ui/tooltip'
+export { WorkspaceProblemsBanner } from './components/workspace-problems'
 export { useAdapterStatus } from './hooks/use-adapter-status'
 export { useAttachmentTypes } from './hooks/use-attachment-types'
 export { useDisabledPermissionModes } from './hooks/use-disabled-permission-modes'

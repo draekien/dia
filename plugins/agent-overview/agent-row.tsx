@@ -4,6 +4,7 @@ import {
   ContextMenuContent,
   ContextMenuGroup,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuTrigger,
   cn,
@@ -19,6 +20,7 @@ import { AgentName } from '@shared/domain/project'
 import { Option, Schema } from 'effect'
 import { useState } from 'react'
 import { type OverviewRow, rowKey } from './overview'
+import type { Retirement } from './retire-agent-dialog'
 
 const decodeName = Schema.decodeUnknownOption(AgentName)
 
@@ -94,12 +96,15 @@ interface AgentRowProps {
   readonly selected: boolean
   readonly renaming: boolean
   readonly tabbable: boolean
+  readonly archived: boolean
   readonly onRename: (renaming: boolean) => void
+  readonly onRetire: (retirement: Retirement) => void
 }
 
 /**
  * One agent in the overview: its status dot, name and second line. Clicking it or pressing
- * `Enter` shows the agent's tab; `F2` or the row menu renames it.
+ * `Enter` shows the agent's tab; `F2` or the row menu renames it. The row menu also archives an
+ * agent that is not `archived`, and deletes any agent, through `onRetire`.
  */
 export function AgentRow({
   row,
@@ -107,7 +112,9 @@ export function AgentRow({
   selected,
   renaming,
   tabbable,
-  onRename
+  archived,
+  onRename,
+  onRetire
 }: AgentRowProps) {
   const collapsed = useSidebar().state === 'collapsed'
   const line = secondLine(row.summary)
@@ -168,6 +175,15 @@ export function AgentRow({
             <ContextMenuItem onSelect={() => onRename(true)}>
               Rename
               <ContextMenuShortcut>F2</ContextMenuShortcut>
+            </ContextMenuItem>
+          </ContextMenuGroup>
+          <ContextMenuSeparator />
+          <ContextMenuGroup>
+            {!archived && (
+              <ContextMenuItem onSelect={() => onRetire('archive')}>Archive</ContextMenuItem>
+            )}
+            <ContextMenuItem variant="destructive" onSelect={() => onRetire('delete')}>
+              Delete…
             </ContextMenuItem>
           </ContextMenuGroup>
         </ContextMenuContent>

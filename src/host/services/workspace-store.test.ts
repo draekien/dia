@@ -182,6 +182,38 @@ describe('WorkspaceStore round trip', () => {
 })
 
 describe('WorkspaceStore sessions', () => {
+  it.effect('lists superseded and current session ids', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store } = yield* openStore(dir)
+        yield* store.save(oneTab({ sessionId: SessionId.make('s-1') }))
+        yield* store.save(oneTab({ sessionId: SessionId.make('s-2') }))
+
+        assert.deepStrictEqual([...(yield* store.sessionIds)].sort(), ['s-1', 's-2'])
+      })
+    )
+  )
+
+  it.effect("refuses a new agent whose session is another agent's superseded session", () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store } = yield* openStore(dir)
+        yield* store.save(oneTab({ sessionId: SessionId.make('s-1') }))
+        yield* store.save(oneTab({ sessionId: SessionId.make('s-2') }))
+        const withSecondAgent = workspaceOf([
+          entry(PROJECT_X, 'F:\\x', [
+            tab(PANE_A, { sessionId: SessionId.make('s-2') }),
+            tab(PANE_B, { sessionId: SessionId.make('s-1') })
+          ])
+        ])
+
+        const error = yield* Effect.flip(store.save(withSecondAgent))
+
+        assert.strictEqual(error._tag, 'WorkspaceWriteError')
+      })
+    )
+  )
+
   it.effect('keeps the previous session as superseded at the time the session changed', () =>
     inTempDir((dir) =>
       Effect.gen(function* () {
@@ -314,6 +346,46 @@ describe('WorkspaceStore deletes', () => {
     )
   )
 
+  it.effect('deletes every row of a deleted agent, superseded sessions included', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store, sql } = yield* openStore(dir)
+        const deleted = (sessionId: string) =>
+          tab(PANE_A, {
+            config: {
+              ...config(PANE_A, 'F:\\wt'),
+              worktree: { path: 'F:\\wt', branch: 'dia/a', sourceRepo: 'F:\\x' }
+            },
+            sessionId: SessionId.make(sessionId)
+          })
+        yield* store.save(workspaceOf([entry(PROJECT_X, 'F:\\x', [deleted('s-1'), tab(PANE_B)])]))
+        yield* store.save(workspaceOf([entry(PROJECT_X, 'F:\\x', [deleted('s-2'), tab(PANE_B)])]))
+
+        yield* store.save(workspaceOf([entry(PROJECT_X, 'F:\\x', [tab(PANE_B)])]))
+
+        const tables = ['projects', 'agents', 'agent_worktrees', 'agent_sessions']
+        const counts = yield* Effect.forEach(tables, (table) => count(sql, table))
+        assert.deepStrictEqual(counts, [1, 1, 0, 0])
+      })
+    )
+  )
+
+  it.effect('loads an archived visible tab as the visible tab after a reopen', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const workspace = workspaceOf(
+          [entry(PROJECT_X, 'F:\\x', [tab(PANE_A), tab(PANE_B, { archived: true })])],
+          PANE_B
+        )
+        yield* (yield* openStore(dir)).store.save(workspace)
+
+        const loaded = yield* (yield* openStore(dir)).store.load
+
+        assert.deepStrictEqual(loaded, Option.some(workspace))
+      })
+    )
+  )
+
   it.effect('moves a worktree path from one tab to another in one save', () =>
     inTempDir((dir) =>
       Effect.gen(function* () {
@@ -385,6 +457,201 @@ describe('WorkspaceStore rows that do not decode', () => {
         yield* store.save(workspaceOf([]))
 
         assert.strictEqual(yield* count(sql, 'agents'), 0)
+      })
+    )
+  )
+})
+
+describe('WorkspaceStore unreadable rows', () => {
+  const storeWithUnreadableTab = (dir: string) =>
+    Effect.gen(function* () {
+      const first = yield* openStore(dir)
+      yield* first.store.save(workspaceOf([entry(PROJECT_X, 'F:\\x', [tab(PANE_A), tab(PANE_B)])]))
+      yield* first.sql`UPDATE agents SET thinking_level = 'ultra' WHERE agent_id = ${PANE_B}`
+      const reopened = yield* openStore(dir)
+      yield* reopened.store.load
+      return reopened
+    })
+
+  const storeWithUnreadableProject = (dir: string) =>
+    Effect.gen(function* () {
+      const first = yield* openStore(dir)
+      yield* first.store.save(workspaceOf([entry(PROJECT_X, 'F:\\x', [tab(PANE_A)])]))
+      yield* first.sql`INSERT INTO projects ${first.sql.insert({
+        project_id: 'not-a-uuid',
+        position: 1,
+        directory: 'F:\\old',
+        directory_key: 'f:\\old',
+        display_name: 'old',
+        is_git_repo: 0
+      })}`
+      for (const agentId of [PANE_B, PANE_C]) {
+        yield* first.sql`INSERT INTO agents ${first.sql.insert({
+          agent_id: agentId,
+          project_id: 'not-a-uuid',
+          position: 0,
+          name: 'kept',
+          archived: 0,
+          cwd: 'F:\\old',
+          model: 'claude-sonnet-5-5',
+          thinking_level: 'adaptive',
+          permission_mode: 'default'
+        })}`
+      }
+      const reopened = yield* openStore(dir)
+      yield* reopened.store.load
+      return reopened
+    })
+
+  it.effect('lists an agent with an unknown thinking level with its project and the value', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store } = yield* storeWithUnreadableTab(dir)
+
+        const [problem, ...rest] = yield* store.unreadable
+
+        assert.strictEqual(rest.length, 0)
+        assert.strictEqual(problem._tag, 'UnreadableAgent')
+        if (problem._tag !== 'UnreadableAgent') return
+        assert.deepStrictEqual(
+          [problem.agentId, problem.name, problem.project],
+          [PANE_B, 'agent-2', 'F:\\x']
+        )
+        assert.include(problem.reason, '"ultra"')
+      })
+    )
+  )
+
+  it.effect('lists an unreadable project once, counting its agents, and none of its agents', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store } = yield* storeWithUnreadableProject(dir)
+
+        const problems = yield* store.unreadable
+
+        assert.deepStrictEqual(
+          problems.map((problem) =>
+            problem._tag === 'UnreadableProject'
+              ? [problem._tag, problem.projectId, problem.name, problem.agents]
+              : [problem._tag]
+          ),
+          [['UnreadableProject', 'not-a-uuid', 'old', 2]]
+        )
+      })
+    )
+  )
+
+  it.effect(
+    'reads the directory key of every stored project, including one it could not load',
+    () =>
+      inTempDir((dir) =>
+        Effect.gen(function* () {
+          const { store } = yield* storeWithUnreadableProject(dir)
+
+          const keys = yield* store.directoryKeys
+
+          assert.deepStrictEqual([...keys].sort(), ['f:\\old', 'f:\\x'])
+        })
+      )
+  )
+
+  it.effect('fails to save another project with the directory key of one it could not load', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store } = yield* storeWithUnreadableProject(dir)
+
+        const error = yield* Effect.flip(
+          store.save(workspaceOf([entry(PROJECT_X, 'F:\\old', [tab(PANE_A)])]))
+        )
+
+        assert.strictEqual(error._tag, 'WorkspaceWriteError')
+      })
+    )
+  )
+
+  it.effect('lists nothing when every stored row loads', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store } = yield* openStore(dir)
+        yield* store.save(oneTab())
+
+        assert.deepStrictEqual(yield* store.unreadable, [])
+      })
+    )
+  )
+
+  it.effect('deletes an unreadable agent with its session records', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const first = yield* openStore(dir)
+        yield* first.store.save(
+          workspaceOf([
+            entry(PROJECT_X, 'F:\\x', [
+              tab(PANE_A),
+              tab(PANE_B, { sessionId: SessionId.make('s-b') })
+            ])
+          ])
+        )
+        yield* first.sql`UPDATE agents SET thinking_level = 'ultra' WHERE agent_id = ${PANE_B}`
+        const { store, sql } = yield* openStore(dir)
+        yield* store.load
+
+        yield* store.deleteUnreadable({ kind: 'agent', id: PANE_B })
+
+        assert.deepStrictEqual(
+          [yield* count(sql, 'agents'), yield* count(sql, 'agent_sessions')],
+          [1, 0]
+        )
+      })
+    )
+  )
+
+  it.effect('deletes an unreadable project with its agents', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store, sql } = yield* storeWithUnreadableProject(dir)
+
+        yield* store.deleteUnreadable({ kind: 'project', id: 'not-a-uuid' })
+
+        assert.deepStrictEqual([yield* count(sql, 'projects'), yield* count(sql, 'agents')], [1, 1])
+      })
+    )
+  )
+
+  it.effect('refuses to delete an agent the loaded workspace holds', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store, sql } = yield* storeWithUnreadableTab(dir)
+
+        yield* store.deleteUnreadable({ kind: 'agent', id: PANE_A })
+
+        assert.strictEqual(yield* count(sql, 'agents'), 2)
+      })
+    )
+  )
+
+  it.effect('names the agent holding each session id and worktree path, unreadable or not', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const worktree = { path: 'F:\\wt\\b', branch: 'dia/b', sourceRepo: 'F:\\x' }
+        const first = yield* openStore(dir)
+        yield* first.store.save(
+          workspaceOf([
+            entry(PROJECT_X, 'F:\\x', [
+              tab(PANE_A, { sessionId: SessionId.make('s-a') }),
+              tab(PANE_B, { config: { ...config(PANE_B, worktree.path), worktree } })
+            ])
+          ])
+        )
+        yield* first.sql`UPDATE agents SET thinking_level = 'ultra' WHERE agent_id = ${PANE_B}`
+        const { store } = yield* openStore(dir)
+
+        const holders = yield* store.holders
+
+        assert.deepStrictEqual(
+          [[...holders.sessions], [...holders.worktrees]],
+          [[['s-a', 'agent-1']], [[worktree.path, 'agent-2']]]
+        )
       })
     )
   )

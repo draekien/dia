@@ -33,6 +33,11 @@ const SETTINGS_PAGE_LINKS: ReadonlyArray<SettingsPageLink> = [
     label: 'Settings › Plugins',
     location: { page: 'plugins' },
     keywords: ['plugin', 'extensions']
+  },
+  {
+    label: 'Settings › Meta repo',
+    location: { page: 'meta' },
+    keywords: ['meta', 'remote', 'push', 'git', 'secret']
   }
 ]
 

@@ -1,23 +1,32 @@
-import { agentNameFromBranch, generateAgentName } from '@shared/domain/agent-name'
+import {
+  agentNameFromBranch,
+  agentNameFromTitle,
+  generateAgentName
+} from '@shared/domain/agent-name'
 import { Errored } from '@shared/domain/attention'
-import type {
-  ConversationMessage,
-  PaneId,
-  PermissionMode,
-  SessionId,
-  ThinkingLevel
+import {
+  type ConversationMessage,
+  DEFAULT_PERMISSION_MODE,
+  DEFAULT_THINKING_LEVEL,
+  type PaneId,
+  type PermissionMode,
+  type SessionId,
+  type ThinkingLevel
 } from '@shared/domain/pane'
 import {
   type AgentName,
   type CreateTabRequest,
   DirectoryNotFoundError,
   EMPTY_WORKSPACE,
+  type Project,
   type ProjectAlreadyRegisteredError,
   type ProjectId,
   ProjectNotFoundError,
+  StoredProjectUnreadableError,
   type Tab,
   TabNotFoundError,
   type Workspace,
+  WorktreeNotRemovedError,
   WorktreeUnavailableError
 } from '@shared/domain/project'
 import {
@@ -29,10 +38,12 @@ import {
   Removing,
   removalItemsOf
 } from '@shared/domain/project-removal'
+import { Uuid } from '@shared/domain/uuid'
 import * as WorkspaceOps from '@shared/domain/workspace'
 import { type IpcEvent, PaneAttentionChanged, WorkspaceChanged } from '@shared/ipc/contract'
 import {
   Context,
+  Crypto,
   Effect,
   FileSystem,
   Layer,
@@ -41,14 +52,18 @@ import {
   Queue,
   Ref,
   Result,
+  Schema,
   Semaphore,
-  Stream
+  Stream,
+  SubscriptionRef
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
+import type { DiscoveredSession } from '../session/agent-backend'
 import { EventHub } from './event-hub'
 import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
 import { probeProject } from './project-directory'
 import { TranscriptReader } from './transcript-reader'
+import { WorkspaceFeed } from './workspace-feed'
 import { WorkspaceStore } from './workspace-store'
 import {
   resolveGitOps,
@@ -70,14 +85,32 @@ export class PaneWorkspace extends Context.Service<
   {
     readonly getWorkspace: Effect.Effect<Workspace>
     /**
-     * Registers `directory` as project `projectId` at the end of the project order. Succeeds
-     * unchanged when the same id already registered it. Fails when another project registered
-     * the directory, or when it is not an existing directory.
+     * Registers `directory` as project `projectId` at the end of the project order, and imports
+     * each conversation the agent adapter holds for the directory as a tab that has not started,
+     * in the order the conversations began. The visible tab does not change. Succeeds unchanged
+     * when the same id already registered it. Fails when another project registered
+     * the directory, when it is not an existing directory, or when a stored project that could
+     * not be loaded has the directory.
      */
     readonly registerProject: (
       projectId: ProjectId,
       directory: string
-    ) => Effect.Effect<void, ProjectAlreadyRegisteredError | DirectoryNotFoundError>
+    ) => Effect.Effect<
+      void,
+      ProjectAlreadyRegisteredError | DirectoryNotFoundError | StoredProjectUnreadableError
+    >
+    /**
+     * Adds `tab` as a tab that has not started to the registered project with `project`'s
+     * directory, registering `project` with it at the end of the project order when no project
+     * has the directory. The visible tab does not change, and a tab with the same pane id leaves
+     * the workspace unchanged. The caller ensures no stored agent holds the tab's session id or
+     * worktree path. Fails when that project is being removed, or when a stored project that
+     * could not be loaded has the directory.
+     */
+    readonly importTab: (
+      project: Project,
+      tab: Tab
+    ) => Effect.Effect<void, ProjectNotFoundError | StoredProjectUnreadableError>
     /** Moves a project to `toIndex` in the project order. */
     readonly moveProject: (
       projectId: ProjectId,
@@ -110,9 +143,28 @@ export class PaneWorkspace extends Context.Service<
     >
     readonly renameTab: (paneId: PaneId, name: AgentName) => Effect.Effect<void, TabNotFoundError>
     /**
+     * Archives a tab: stops its session, removes its worktree, and marks it archived. Its branch
+     * and transcripts stay. Fails with `WorktreeNotRemovedError`, leaving the tab unarchived with
+     * its session stopped, when the worktree is still on disk afterwards; a later call retries.
+     * Fails with `TabNotFoundError` for an unknown tab, one whose project is being removed, or
+     * one already being archived or deleted.
+     */
+    readonly archiveTab: (
+      paneId: PaneId
+    ) => Effect.Effect<void, TabNotFoundError | WorktreeNotRemovedError>
+    /**
+     * Deletes a tab: stops its session, removes its worktree, and drops the tab with every record
+     * dia keeps of it. Its branch and transcripts stay with git and the agent harness (ADR-0046).
+     * When it was the visible tab, another tab is shown. Fails as {@link archiveTab} does, leaving
+     * the tab in place.
+     */
+    readonly deleteTab: (
+      paneId: PaneId
+    ) => Effect.Effect<void, TabNotFoundError | WorktreeNotRemovedError>
+    /**
      * Shows the tab of `paneId`, or no tab for `null`, and resumes the shown tab's recorded
-     * session when it is not running. Fails for an unknown or archived tab, or one whose project
-     * is being removed.
+     * session when it is not running and the tab is not archived. Fails for an unknown tab, or one
+     * whose project is being removed or which is being archived or deleted.
      */
     readonly selectTab: (
       paneId: PaneId | null,
@@ -157,7 +209,8 @@ const WORKTREES_PLUGIN_NOT_LOADED = 'Load the worktrees plugin to remove this wo
  * visible; with nothing persisted it starts empty. `worktreesRoot` is the base directory under
  * which tab worktrees are created. Requires {@link PaneSupervisor}, {@link WorkspaceStore},
  * {@link TranscriptReader}, {@link EventHub}, {@link HostPlugins} (for the worktree and agent
- * backend services used to remove a project), `FileSystem` and `Path`.
+ * backend services used to remove a project), {@link WorkspaceFeed} (which it keeps current),
+ * `FileSystem`, `Path` and `Crypto`.
  */
 export const makePaneWorkspaceLive = (worktreesRoot: string) =>
   Layer.effect(
@@ -170,6 +223,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       const plugins = yield* HostPlugins
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
+      const crypto = yield* Crypto.Crypto
 
       const persisted = yield* store.load
       const initial = Option.match(persisted, {
@@ -177,8 +231,10 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         onSome: WorkspaceOps.withDefaultVisibleTab
       })
 
-      const workspaceRef = yield* Ref.make(initial)
+      const workspaceRef = yield* WorkspaceFeed
+      yield* SubscriptionRef.set(workspaceRef, initial)
       const removingRef = yield* Ref.make<ReadonlySet<ProjectId>>(new Set())
+      const retiringRef = yield* Ref.make<ReadonlySet<PaneId>>(new Set())
       const pendingSessions = new Map<PaneId, SessionId>()
       const mutationLock = yield* Semaphore.make(1)
       const sessionStartLock = yield* Semaphore.make(1)
@@ -197,14 +253,14 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       ): Effect.Effect<void, E> =>
         mutationLock.withPermits(1)(
           Effect.gen(function* () {
-            const current = yield* Ref.get(workspaceRef)
+            const current = yield* SubscriptionRef.get(workspaceRef)
             const next = apply(current, yield* Ref.get(removingRef))
             if (Result.isFailure(next)) {
               yield* Effect.logDebug('Workspace change refused', { operation, error: next.failure })
               return yield* Effect.fail(next.failure)
             }
             if (next.success === current) return
-            yield* Ref.set(workspaceRef, next.success)
+            yield* SubscriptionRef.set(workspaceRef, next.success)
             yield* save(next.success)
             yield* hub.publish(WorkspaceChanged.make({ workspace: next.success }))
             yield* Effect.logDebug('Workspace changed', { operation })
@@ -212,12 +268,13 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         )
 
       const projectOfTab = (paneId: PaneId) =>
-        Effect.map(Ref.get(workspaceRef), (workspace) =>
+        Effect.map(SubscriptionRef.get(workspaceRef), (workspace) =>
           Result.map(WorkspaceOps.tabOf(workspace, paneId), (found) => found.project.projectId)
         )
 
       const isRemovingTab = (paneId: PaneId) =>
         Effect.gen(function* () {
+          if ((yield* Ref.get(retiringRef)).has(paneId)) return true
           const projectId = yield* projectOfTab(paneId)
           const removing = yield* Ref.get(removingRef)
           return Result.isSuccess(projectId) && removing.has(projectId.success)
@@ -253,7 +310,88 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           )
         )
 
-      const getWorkspace = Ref.get(workspaceRef)
+      const getWorkspace = SubscriptionRef.get(workspaceRef)
+
+      const importedTab = Effect.fn('PaneWorkspace.importedTab')(function* (
+        directory: string,
+        session: DiscoveredSession
+      ) {
+        const paneId = Uuid.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie))
+        const name = yield* Option.match(agentNameFromTitle(session.title), {
+          onSome: Effect.succeed,
+          onNone: () => generateAgentName
+        })
+        return {
+          name,
+          config: {
+            paneId,
+            cwd: directory,
+            model: session.model,
+            thinkingLevel: DEFAULT_THINKING_LEVEL,
+            permissionMode: DEFAULT_PERMISSION_MODE
+          },
+          sessionId: session.sessionId,
+          archived: false
+        } satisfies Tab
+      })
+
+      const importableSessions = Effect.fn('PaneWorkspace.importableSessions')(function* (
+        directory: string
+      ) {
+        const discovered = yield* transcriptReader.discoverSessions(directory)
+        if (discovered.length === 0) return discovered
+        const stored = yield* store.sessionIds.pipe(Effect.option)
+        if (Option.isNone(stored)) {
+          yield* Effect.logWarning(
+            'Imported no sessions: the stored session ids could not be read',
+            { directory, discovered: discovered.length }
+          )
+          return []
+        }
+        const skipped = discovered.filter((session) => stored.value.has(session.sessionId))
+        if (skipped.length > 0) {
+          yield* Effect.logInfo('Skipped discovered sessions another agent already recorded', {
+            directory,
+            sessionIds: skipped.map((session) => session.sessionId)
+          })
+        }
+        return discovered.filter((session) => !stored.value.has(session.sessionId))
+      })
+
+      const storedDirectoryKeys = (directory: string) =>
+        store.directoryKeys.pipe(
+          Effect.tapError((cause) =>
+            Effect.logWarning('Refused a directory: the stored directory keys could not be read', {
+              directory,
+              cause
+            })
+          ),
+          Effect.mapError(() => new StoredProjectUnreadableError({ directory }))
+        )
+
+      const isStoredProjectUnreadable = Schema.is(StoredProjectUnreadableError)
+
+      const warnStoredProjectUnreadable = <A, E>(effect: Effect.Effect<A, E>) =>
+        Effect.tapError(effect, (error) =>
+          isStoredProjectUnreadable(error)
+            ? Effect.logWarning(
+                'Refused a directory a stored project that could not be loaded has',
+                {
+                  directory: error.directory
+                }
+              )
+            : Effect.void
+        )
+
+      const heldByUnloadedProject = (
+        workspace: Workspace,
+        stored: ReadonlySet<string>,
+        project: Project
+      ) =>
+        stored.has(project.directoryKey) &&
+        !workspace.projects.some(
+          (candidate) => candidate.project.directoryKey === project.directoryKey
+        )
 
       const registerProject = Effect.fn('PaneWorkspace.registerProject')(function* (
         projectId: ProjectId,
@@ -267,8 +405,61 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           Effect.provideService(FileSystem.FileSystem, fs),
           Effect.provideService(Path.Path, path)
         )
-        yield* mutate('registerProject', (workspace) => WorkspaceOps.addProject(workspace, project))
-        yield* Effect.logInfo('Registered project', { projectId, directory })
+        const sessions = yield* importableSessions(project.directory)
+        const tabs = yield* Effect.forEach(
+          [...sessions].sort((a, b) => a.startedAt - b.startedAt),
+          (session) => importedTab(project.directory, session)
+        )
+        const stored = yield* storedDirectoryKeys(project.directory)
+        yield* mutate<ProjectAlreadyRegisteredError | StoredProjectUnreadableError>(
+          'registerProject',
+          (workspace) =>
+            heldByUnloadedProject(workspace, stored, project)
+              ? Result.fail(new StoredProjectUnreadableError({ directory: project.directory }))
+              : WorkspaceOps.addProject(workspace, project, tabs)
+        ).pipe(warnStoredProjectUnreadable)
+        yield* Effect.logInfo('Registered project', { projectId, directory, imported: tabs.length })
+      })
+
+      const importTab = Effect.fn('PaneWorkspace.importTab')(function* (
+        project: Project,
+        tab: Tab
+      ) {
+        const stored = yield* storedDirectoryKeys(project.directory)
+        yield* mutate<ProjectNotFoundError | StoredProjectUnreadableError>(
+          'importTab',
+          (workspace, removing) => {
+            if (Result.isSuccess(WorkspaceOps.tabOf(workspace, tab.config.paneId))) {
+              return Result.succeed(workspace)
+            }
+            if (heldByUnloadedProject(workspace, stored, project)) {
+              return Result.fail(new StoredProjectUnreadableError({ directory: project.directory }))
+            }
+            const entry = workspace.projects.find(
+              (candidate) => candidate.project.directoryKey === project.directoryKey
+            )
+            if (entry === undefined) {
+              return Result.succeed({
+                ...workspace,
+                projects: [...workspace.projects, { project, tabs: [tab] }]
+              })
+            }
+            if (removing.has(entry.project.projectId)) {
+              return Result.fail(new ProjectNotFoundError({ projectId: entry.project.projectId }))
+            }
+            return Result.map(
+              WorkspaceOps.addTab(workspace, entry.project.projectId, tab),
+              (next) => ({
+                ...next,
+                visibleTab: workspace.visibleTab
+              })
+            )
+          }
+        ).pipe(warnStoredProjectUnreadable)
+        yield* Effect.logInfo('Imported a tab', {
+          paneId: tab.config.paneId,
+          directory: project.directory
+        })
       })
 
       const moveProject = (projectId: ProjectId, toIndex: number) =>
@@ -338,7 +529,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       const markRemoving = (projectId: ProjectId) =>
         mutationLock.withPermits(1)(
           Effect.gen(function* () {
-            const workspace = yield* Ref.get(workspaceRef)
+            const workspace = yield* SubscriptionRef.get(workspaceRef)
             const removing = yield* Ref.get(removingRef)
             const entry = workspace.projects.find(
               (candidate) => candidate.project.projectId === projectId
@@ -406,7 +597,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         onEvent: OnEvent
       ) {
         const { projectId, paneId } = request
-        const workspace = yield* Ref.get(workspaceRef)
+        const workspace = yield* SubscriptionRef.get(workspaceRef)
         const entry = workspace.projects.find(
           (candidate) => candidate.project.projectId === projectId
         )
@@ -448,6 +639,62 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       const renameTab = (paneId: PaneId, name: AgentName) =>
         mutate('renameTab', (workspace) => WorkspaceOps.renameTab(workspace, paneId, name))
 
+      const markRetiring = (paneId: PaneId) =>
+        mutationLock.withPermits(1)(
+          Effect.gen(function* () {
+            const found = WorkspaceOps.tabOf(yield* SubscriptionRef.get(workspaceRef), paneId)
+            if (Result.isFailure(found) || (yield* isRemovingTab(paneId))) {
+              return yield* new TabNotFoundError({ paneId })
+            }
+            yield* Ref.update(retiringRef, (retiring) => new Set([...retiring, paneId]))
+            return found.success.tab
+          })
+        )
+
+      const clearRetiring = (paneId: PaneId) =>
+        Ref.update(retiringRef, (retiring) => {
+          const next = new Set(retiring)
+          next.delete(paneId)
+          return next
+        })
+
+      const retireTab = Effect.fn('PaneWorkspace.retireTab')(function* (
+        paneId: PaneId,
+        operation: 'archiveTab' | 'deleteTab',
+        apply: (workspace: Workspace, paneId: PaneId) => Result.Result<Workspace, TabNotFoundError>
+      ) {
+        const tab = yield* markRetiring(paneId)
+        yield* Effect.gen(function* () {
+          yield* sessionStartLock.withPermits(1)(supervisor.closePane(paneId))
+          const worktree = tab.config.worktree
+          if (worktree !== undefined) {
+            const failure = yield* removeWorktree(paneId, worktree)
+            if (Option.isSome(failure)) {
+              yield* Effect.logWarning('Left a tab in place; its worktree was not removed', {
+                paneId,
+                operation,
+                reason: failure.value
+              })
+              return yield* new WorktreeNotRemovedError({
+                paneId,
+                path: worktree.path,
+                reason: failure.value
+              })
+            }
+          }
+          yield* mutate(operation, (workspace) => apply(workspace, paneId))
+          yield* Effect.logInfo(operation === 'archiveTab' ? 'Archived tab' : 'Deleted tab', {
+            paneId,
+            removedWorktree: worktree?.path
+          })
+        }).pipe(Effect.ensuring(clearRetiring(paneId)))
+      })
+
+      const archiveTab = (paneId: PaneId) =>
+        retireTab(paneId, 'archiveTab', WorkspaceOps.archiveTab)
+
+      const deleteTab = (paneId: PaneId) => retireTab(paneId, 'deleteTab', WorkspaceOps.deleteTab)
+
       const setThinkingLevel = Effect.fn('PaneWorkspace.setThinkingLevel')(function* (
         paneId: PaneId,
         level: ThinkingLevel
@@ -482,7 +729,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       })
 
       const getPaneHistory = Effect.fn('PaneWorkspace.getPaneHistory')(function* (paneId: PaneId) {
-        const found = WorkspaceOps.tabOf(yield* Ref.get(workspaceRef), paneId)
+        const found = WorkspaceOps.tabOf(yield* SubscriptionRef.get(workspaceRef), paneId)
         if (Result.isFailure(found)) return []
         const { sessionId, config } = found.success.tab
         if (sessionId === undefined) return []
@@ -506,13 +753,17 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           yield* Effect.logWarning('Did not start a tab whose project is being removed', { paneId })
           return
         }
-        const found = WorkspaceOps.tabOf(yield* Ref.get(workspaceRef), paneId)
+        const found = WorkspaceOps.tabOf(yield* SubscriptionRef.get(workspaceRef), paneId)
         if (Result.isFailure(found)) {
           yield* Effect.logWarning('Did not start an unknown tab', { paneId })
           return
         }
 
-        const { config, sessionId } = found.success.tab
+        const { config, sessionId, archived } = found.success.tab
+        if (archived) {
+          yield* Effect.logDebug('Did not start an archived tab', { paneId })
+          return
+        }
         if (sessionId === undefined && !startFresh) {
           yield* Effect.logDebug('resumePane skipped; tab has no session to resume', { paneId })
           return
@@ -582,10 +833,13 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       return {
         getWorkspace,
         registerProject,
+        importTab,
         moveProject,
         removeProject,
         createTab,
         renameTab,
+        archiveTab,
+        deleteTab,
         selectTab,
         setThinkingLevel,
         setPermissionMode,

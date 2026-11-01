@@ -37,21 +37,29 @@ const mapTab = (
       })
 
 /**
- * Registers `project` at the end of the project order. Succeeds unchanged when a project with the
- * same `projectId` and `directoryKey` is already registered, so a resent request is harmless.
- * Fails when another project has the same `directoryKey`.
+ * Registers `project` with `tabs`, in their order, at the end of the project order. A tab whose
+ * `sessionId` another tab already holds is left out. The visible tab does not change. Succeeds
+ * unchanged when a project with the same `projectId` and `directoryKey` is already registered, so
+ * a resent request is harmless. Fails when another project has the same `directoryKey`.
  */
 export const addProject = (
   workspace: Workspace,
-  project: Project
+  project: Project,
+  tabs: ReadonlyArray<Tab> = []
 ): Result.Result<Workspace, ProjectAlreadyRegisteredError> => {
   const existing = workspace.projects.find(
     (entry) => entry.project.directoryKey === project.directoryKey
   )
   if (existing === undefined) {
+    const heldSessions = new Set(
+      workspace.projects.flatMap((entry) => entry.tabs.map((tab) => tab.sessionId))
+    )
+    const newTabs = tabs.filter(
+      (tab) => tab.sessionId === undefined || !heldSessions.has(tab.sessionId)
+    )
     return Result.succeed({
       ...workspace,
-      projects: [...workspace.projects, { project, tabs: [] }]
+      projects: [...workspace.projects, { project, tabs: newTabs }]
     })
   }
   return existing.project.projectId === project.projectId
@@ -143,18 +151,54 @@ export const renameTab = (
   mapTab(workspace, paneId, (tab) => ({ ...tab, name }))
 
 /**
- * Sets the visible tab; `null` shows no tab. Fails for a pane id that no tab has, or an archived
- * tab.
+ * Sets the visible tab; `null` shows no tab. An archived tab can be visible. Fails for a pane id
+ * that no tab has.
  */
 export const selectTab = (
   workspace: Workspace,
   paneId: PaneId | null
 ): Result.Result<Workspace, TabNotFoundError> => {
   if (paneId === null) return Result.succeed({ ...workspace, visibleTab: null })
-  const tab = findTab(workspace, paneId)
-  return tab === undefined || tab.archived
+  return findTab(workspace, paneId) === undefined
     ? Result.fail(new TabNotFoundError({ paneId }))
     : Result.succeed({ ...workspace, visibleTab: paneId })
+}
+
+/**
+ * Archives the tab with `paneId`: marks it archived and forgets its worktree. Its `config.cwd`
+ * is kept, because the agent harness finds the tab's transcripts by it. The visible tab is
+ * unchanged, so an archived tab on screen stays on screen.
+ */
+export const archiveTab = (
+  workspace: Workspace,
+  paneId: PaneId
+): Result.Result<Workspace, TabNotFoundError> =>
+  mapTab(workspace, paneId, ({ config: { worktree: _worktree, ...config }, ...tab }) => ({
+    ...tab,
+    config,
+    archived: true
+  }))
+
+/**
+ * Drops the tab with `paneId`. When it is the visible tab, the first non-archived tab of its
+ * project becomes visible, else the first non-archived tab of any project, else none.
+ */
+export const deleteTab = (
+  workspace: Workspace,
+  paneId: PaneId
+): Result.Result<Workspace, TabNotFoundError> => {
+  const own = workspace.projects.findIndex((entry) =>
+    entry.tabs.some((tab) => tab.config.paneId === paneId)
+  )
+  if (own === -1) return Result.fail(new TabNotFoundError({ paneId }))
+  const projects = workspace.projects.map((entry) => ({
+    ...entry,
+    tabs: entry.tabs.filter((tab) => tab.config.paneId !== paneId)
+  }))
+  if (workspace.visibleTab !== paneId) return Result.succeed({ ...workspace, projects })
+  return Result.succeed(
+    withDefaultVisibleTab({ projects, visibleTab: firstShowableTab(projects[own]) })
+  )
 }
 
 /** Replaces fields of a tab's config. The pane id cannot change. */

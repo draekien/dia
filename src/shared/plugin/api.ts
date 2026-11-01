@@ -1,9 +1,14 @@
 import { Data, type DateTime, type Effect, type Option, type Scope, type Stream } from 'effect'
 import type { SqlClient } from 'effect/sql'
+import type { AgentNotification } from '../domain/notification'
+import type { Workspace } from '../domain/project'
 import type { EventFrame } from '../ipc/rpc'
 
 /** Service key under which the `worktrees` plugin provides the Host's `GitOps`. */
 export const WORKTREES_KEY = 'worktrees'
+
+/** Service key under which the `meta` plugin provides the Host's `MetaRepo`. */
+export const META_REPO_KEY = 'metaRepo'
 
 /**
  * Failure of `ctx.provide` when another loaded plugin already provides `key`. `owner` is the
@@ -83,16 +88,34 @@ export interface PluginActivities {
   readonly register: (spec: ActivitySpec) => Effect.Effect<ActivityHandle, never, Scope.Scope>
 }
 
+/** dia's window, offered to a plugin's `host` entry as `ctx.window`. */
+export interface PluginWindow {
+  /**
+   * Whether the user can see the window (shown, not minimised and focused): the current value
+   * first, then each change. Consume it in a fiber forked into the plugin's scope.
+   */
+  readonly attended: Stream.Stream<boolean>
+  /**
+   * Shows `notification` as an OS notification. Clicking it brings the window forward and shows
+   * the tab of its `paneId`. A newer notification for the same `paneId` replaces the older one.
+   */
+  readonly notify: (notification: AgentNotification) => Effect.Effect<void>
+}
+
 /**
  * The context a plugin's `host` entry receives: {@link PluginServices} plus `events`, a fresh
  * stream of every renderer-facing event the Host publishes from now on (consume it in a fiber
  * forked into the plugin's scope; the stream ends when that scope closes); `dataDir`, the
  * absolute path of a directory only this plugin uses, which exists before setup runs and is kept
  * across reloads, overrides and restarts; `activities`, where the plugin registers background
- * activities; and `database`, which opens the plugin's own SQLite database `<dataDir>/data.db`.
+ * activities; `database`, which opens the plugin's own SQLite database `<dataDir>/data.db`;
+ * `workspace`, the projects and tabs with the visible tab, first as they are now and then after
+ * each change (consume it like `events`); and `window`, dia's window.
  */
 export interface HostPluginContext extends PluginServices {
   readonly events: Stream.Stream<EventFrame>
+  readonly workspace: Stream.Stream<Workspace>
+  readonly window: PluginWindow
   readonly dataDir: string
   readonly activities: PluginActivities
   /**

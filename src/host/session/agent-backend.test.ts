@@ -26,7 +26,9 @@ const openOptions = {
   config,
   resume: Option.none(),
   emit: () => Effect.void,
-  tools: []
+  tools: [],
+  systemPromptAppend: '',
+  pluginPaths: []
 }
 
 describe('resolveAgentBackend', () => {
@@ -118,6 +120,26 @@ describe('agentBackendProblems', () => {
 
   it('reports no problem for a value with every backend method', () => {
     assert.deepStrictEqual(agentBackendProblems(Option.some(validBackend)), [])
+  })
+
+  it('reports no problem for a backend that can discover sessions', () => {
+    const discovering = { ...validBackend, discoverSessions: () => Effect.succeed([]) }
+
+    assert.deepStrictEqual(agentBackendProblems(Option.some(discovering)), [])
+  })
+
+  it('reports no problem for a backend whose discoverSessions is undefined', () => {
+    const undiscovering = { ...validBackend, discoverSessions: undefined }
+
+    assert.deepStrictEqual(agentBackendProblems(Option.some(undiscovering)), [])
+  })
+
+  it('reports a discoverSessions that is not a function', () => {
+    const broken = { ...validBackend, discoverSessions: 'sessions' }
+
+    assert.deepStrictEqual(agentBackendProblems(Option.some(broken)), [
+      '"agentBackend.discoverSessions" is not a function'
+    ])
   })
 
   const problemCases: ReadonlyArray<

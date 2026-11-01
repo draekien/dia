@@ -1,11 +1,13 @@
 import { useTabOpenedFromNewAgent, useView, useWorkspace } from '@dia/renderer-plugin'
 import { tabOf } from '@shared/domain/workspace'
 import { Result } from 'effect'
+import { ArchivedTranscript } from './archived-transcript'
 import Pane from './pane'
 
 /**
- * The chat for the visible tab, filling the `main.tab` slot. Renders nothing when the view is not
- * a tab or the tab no longer exists in the workspace.
+ * The chat for the visible tab, filling the `main.tab` slot; an archived tab shows its transcript
+ * read-only. Renders nothing when the view is not a tab or the tab no longer exists in the
+ * workspace.
  */
 export function Chat() {
   const view = useView()
@@ -14,8 +16,10 @@ export function Chat() {
   if (view?._tag !== 'TabView' || workspace === undefined) return null
   const found = tabOf(workspace, view.paneId)
   if (Result.isFailure(found)) return null
-  const { config } = found.success.tab
+  const { config, archived } = found.success.tab
   const { project } = found.success
+  if (archived)
+    return <ArchivedTranscript key={config.paneId} paneId={config.paneId} cwd={config.cwd} />
   return (
     <Pane
       key={config.paneId}

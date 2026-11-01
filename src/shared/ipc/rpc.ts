@@ -5,6 +5,7 @@ import { AgentSummary } from '../domain/agent-summary'
 import { AttachmentType, ProjectEntry } from '../domain/attachment'
 import { ActivityId, ActivityInfo, ActivityNotFound } from '../domain/background-activity'
 import { MessageQueueSnapshot, SendMode } from '../domain/message-queue'
+import { MetaRepoPushResult, MetaRepoStateResult } from '../domain/meta-repo'
 import { ModelCatalogSnapshot } from '../domain/model'
 import {
   AgentDefaults,
@@ -14,10 +15,23 @@ import {
 } from '../domain/model-preferences'
 import { ConversationMessage, PermissionMode } from '../domain/pane'
 import { UsageLimitResume } from '../domain/parking'
-import { ProjectId, ProjectNotFoundError, RegisterProjectError, Workspace } from '../domain/project'
+import {
+  ProjectId,
+  ProjectNotFoundError,
+  RegisterProjectError,
+  Workspace,
+  WorktreeNotRemovedError
+} from '../domain/project'
 import { RemovalProgress } from '../domain/project-removal'
 import { ThemePreference } from '../domain/theme'
 import { TranscriptWidth } from '../domain/transcript-width'
+import { Uuid } from '../domain/uuid'
+import {
+  ImportResolution,
+  UnreadableRow,
+  WorkspaceProblem,
+  WorkspaceProblemError
+} from '../domain/workspace-problem'
 import { PluginInfo, PluginName, PluginOverrideResult } from '../plugin/manifest'
 import {
   CreateTab,
@@ -47,7 +61,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.15'
+export const PROTOCOL_VERSION = '0.0.20'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -99,8 +113,9 @@ export const EventFrame = Schema.Union([PaneEventFrame, GlobalEventFrame, Reload
 export type EventFrame = typeof EventFrame.Type
 
 /**
- * The Host's RPC surface. Every command takes a `commandId`; `RegisterProject` and
- * `RemoveProject` are queries so their typed errors reach the caller; the plugin calls (`LoadPlugin`
+ * The Host's RPC surface. Every command takes a `commandId`; `RegisterProject`, `RemoveProject`,
+ * `ArchiveTab` and `DeleteTab` are queries so their typed errors reach the caller (`ArchiveTab` and
+ * `DeleteTab` succeed for a tab already gone, so repeating one is harmless); the plugin calls (`LoadPlugin`
  * on a loaded plugin reloads it), the model calls (`GetModels`, `RefreshModels`), the adapter calls
  * (`GetAdapterStatus`, `CheckAdapterHealth`, `SetInstallPath`, `GetModelPreferences`,
  * `SetModelPreference`, `SetAgentDefaults`, each setting a value, so repeating one is harmless,
@@ -109,6 +124,11 @@ export type EventFrame = typeof EventFrame.Type
  * the activity calls (`ListActivities`, `RunActivity`) are safe to repeat and take none; a
  * `RefreshModels`, `CheckAdapterHealth` or `RunActivity` sent while that run is in progress waits
  * for it instead of starting another;
+ * the meta repo calls (`GetMetaRepo`, `SetMetaRemote`, `PushMetaRepo`) take none and report every
+ * failure in their result, never as an RPC error;
+ * the workspace problem calls (`ListWorkspaceProblems`, `DeleteUnreadableRow`,
+ * `ResolveImportConflict`) take none, are safe to repeat (a resolved problem is a no-op) and fail
+ * with `WorkspaceProblemError`;
  * `SubscribeEvents` takes the
  * last sequence number received per pane (`cursors`) and streams {@link EventFrame}s. Serve it
  * with `RpcServer` in the Host and call it with `RpcClient` from the preload.
@@ -147,6 +167,8 @@ export const DiaRpcs = RpcGroup.make(
     error: ProjectNotFoundError,
     stream: true
   }),
+  Rpc.make('ArchiveTab', { payload: { paneId: Uuid }, error: WorktreeNotRemovedError }),
+  Rpc.make('DeleteTab', { payload: { paneId: Uuid }, error: WorktreeNotRemovedError }),
   Rpc.make('GetAgentSummaries', { success: Schema.Array(AgentSummary) }),
   Rpc.make('GetTranscriptWidth', { success: TranscriptWidth }),
   Rpc.make('GetPaneHistory', {
@@ -191,6 +213,18 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('RunActivity', {
     payload: { plugin: PluginName, id: ActivityId },
     error: ActivityNotFound
+  }),
+  Rpc.make('GetMetaRepo', { success: MetaRepoStateResult }),
+  Rpc.make('SetMetaRemote', { payload: { url: Schema.String }, success: MetaRepoStateResult }),
+  Rpc.make('PushMetaRepo', { success: MetaRepoPushResult }),
+  Rpc.make('ListWorkspaceProblems', {
+    success: Schema.Array(WorkspaceProblem),
+    error: WorkspaceProblemError
+  }),
+  Rpc.make('DeleteUnreadableRow', { payload: UnreadableRow, error: WorkspaceProblemError }),
+  Rpc.make('ResolveImportConflict', {
+    payload: { agentId: Schema.String, resolution: ImportResolution },
+    error: WorkspaceProblemError
   }),
   Rpc.make('SubscribeEvents', {
     payload: { cursors: Schema.Record(Schema.String, Schema.Finite) },

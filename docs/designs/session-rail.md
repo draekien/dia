@@ -1,6 +1,6 @@
 # Session rail and centred composer
 
-Shaped in conversation with the user on 2026-11-01 (`/impeccable shape`). The visual rules are in `DESIGN.md` > Components > Session rail and Composer. The decision to add a many-contributor extension point is ADR-0047.
+Shaped in conversation with the user on 2026-11-01 (`/impeccable shape`). The visual rules are in `DESIGN.md` > Components > Session rail and Composer. The decision to add a many-contributor extension point is ADR-0048.
 
 ## Scope
 
@@ -85,7 +85,7 @@ The header toggle (`RailToggle`) is kernel UI in `TabHeader` and is not exported
 
 | Decision | Why |
 |---|---|
-| Cards live in a kernel atom, not in the plugin registry's service keys | A service key has one owner (`ServiceKeyTakenError`) and the registry cannot list keys by prefix. A scoped add/remove on an atom gives many contributors and unload cleanup without changing the registry. ADR-0047. |
+| Cards live in a kernel atom, not in the plugin registry's service keys | A service key has one owner (`ServiceKeyTakenError`) and the registry cannot list keys by prefix. A scoped add/remove on an atom gives many contributors and unload cleanup without changing the registry. ADR-0048. |
 | Card keys are `<plugin>.<id>` | Two plugins cannot collide, so no collision error has to exist. |
 | Rail state in `localStorage`, not the Host settings store | Same as the sidebar's open state and width (`plugins/layout/layout.tsx`): a renderer-only view preference. Avoids an RPC and a `PROTOCOL_VERSION` bump. |
 | The kernel renders the card frame; a plugin renders only the body | Every card gets the same title row, hide control and spacing, so a plugin card cannot break the rail's look. |

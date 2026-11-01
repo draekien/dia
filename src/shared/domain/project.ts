@@ -6,12 +6,15 @@ import { Uuid } from './uuid'
 export const ProjectId = Uuid.pipe(Schema.brand('ProjectId'))
 export type ProjectId = typeof ProjectId.Type
 
+/** The most characters an {@link AgentName} has. */
+export const AGENT_NAME_MAX_LENGTH = 64
+
 /**
  * The name an agent shows in the overview and the content header. Decode trimmed input: the
  * schema rejects leading or trailing spaces rather than removing them.
  */
 export const AgentName = Schema.Trimmed.pipe(
-  Schema.check(Schema.isNonEmpty(), Schema.isMaxLength(64)),
+  Schema.check(Schema.isNonEmpty(), Schema.isMaxLength(AGENT_NAME_MAX_LENGTH)),
   Schema.brand('AgentName')
 )
 export type AgentName = typeof AgentName.Type
@@ -31,8 +34,9 @@ export const Project = Schema.Struct({
 export type Project = typeof Project.Type
 
 /**
- * One agent in a project (ADR-0023). Its pane id is `config.paneId`. `archived` tabs stay in the
- * project's archived list and are never the visible tab.
+ * One agent in a project (ADR-0023). Its pane id is `config.paneId`. An `archived` tab is listed
+ * in the project's archived list, has no worktree and never runs; showing it shows its transcript
+ * read-only.
  */
 export const Tab = Schema.Struct({
   name: AgentName,
@@ -58,7 +62,7 @@ const hasDuplicates = (values: ReadonlyArray<string>): boolean =>
 /**
  * Every registered project with its tabs, in the user's project order, and the tab the content
  * area shows. Decoding rejects two projects with one `directoryKey`, two tabs with one pane id,
- * and a `visibleTab` that names no tab or an archived one. `visibleTab` is `null` while the
+ * and a `visibleTab` that names no tab. `visibleTab` is `null` while the
  * content area shows no tab. Every field is plain data, so a workspace crosses `contextBridge`
  * unchanged.
  */
@@ -80,8 +84,7 @@ export const Workspace = Schema.Struct({
     const tab = workspace.projects
       .flatMap((entry) => entry.tabs)
       .find((candidate) => candidate.config.paneId === paneId)
-    if (tab === undefined) return 'the visible tab is not in the workspace'
-    return tab.archived ? 'the visible tab is archived' : undefined
+    return tab === undefined ? 'the visible tab is not in the workspace' : undefined
   })
 )
 export type Workspace = typeof Workspace.Type
@@ -104,10 +107,21 @@ export class DirectoryNotFoundError extends Schema.TaggedError<DirectoryNotFound
   { directory: Schema.String }
 ) {}
 
+/**
+ * A project was refused a directory because a stored project that could not be loaded already
+ * has its `directoryKey`, or because the stored keys could not be read. The user resolves the
+ * stored project under workspace problems first.
+ */
+export class StoredProjectUnreadableError extends Schema.TaggedError<StoredProjectUnreadableError>()(
+  'StoredProjectUnreadableError',
+  { directory: Schema.String }
+) {}
+
 /** Why `registerProject` refused a directory. */
 export const RegisterProjectError = Schema.Union([
   ProjectAlreadyRegisteredError,
-  DirectoryNotFoundError
+  DirectoryNotFoundError,
+  StoredProjectUnreadableError
 ])
 export type RegisterProjectError = typeof RegisterProjectError.Type
 
@@ -127,6 +141,15 @@ export class ProjectNotFoundError extends Schema.TaggedError<ProjectNotFoundErro
 export class TabNotFoundError extends Schema.TaggedError<TabNotFoundError>()('TabNotFoundError', {
   paneId: Schema.String
 }) {}
+
+/**
+ * Archiving or deleting a tab could not remove its worktree at `path`; `reason` says why. The tab
+ * is left as it was, with its session stopped, so the request can be sent again.
+ */
+export class WorktreeNotRemovedError extends Schema.TaggedError<WorktreeNotRemovedError>()(
+  'WorktreeNotRemovedError',
+  { paneId: Schema.String, path: Schema.String, reason: Schema.String }
+) {}
 
 /** `createTab` asked for a worktree in a project that is not a git repo. */
 export class WorktreeUnavailableError extends Schema.TaggedError<WorktreeUnavailableError>()(

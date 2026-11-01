@@ -1,4 +1,4 @@
-import { NodePath } from '@effect/platform-node'
+import { NodeCrypto, NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import { AGENT_NAME_ADJECTIVES, AGENT_NAME_NOUNS } from '@shared/domain/agent-name'
 import { EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
@@ -9,7 +9,8 @@ import {
   type Project,
   ProjectId,
   type Tab,
-  type Workspace
+  type Workspace,
+  WorktreeNotRemovedError
 } from '@shared/domain/project'
 import type { RemovalProgress } from '@shared/domain/project-removal'
 import type { IpcEvent } from '@shared/ipc/contract'
@@ -25,15 +26,21 @@ import {
   Path,
   PlatformError,
   Result,
-  Stream
+  Stream,
+  SubscriptionRef
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import { AGENT_BACKEND_KEY, type AgentBackend } from '../session/agent-backend'
+import {
+  AGENT_BACKEND_KEY,
+  type AgentBackend,
+  type DiscoveredSession
+} from '../session/agent-backend'
 import { EventHub } from './event-hub'
 import { type PaneCreationRequest, type PaneHandle, PaneSupervisor } from './pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
 import { TranscriptReader } from './transcript-reader'
-import { type WorkspaceLoadError, WorkspaceStore } from './workspace-store'
+import { WorkspaceFeed, WorkspaceFeedLive } from './workspace-feed'
+import { type WorkspaceLoadError, WorkspaceStore, WorkspaceWriteError } from './workspace-store'
 import { type GitOps, WorktreeCreateError } from './worktrees-seam'
 
 const PANE_A = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -68,7 +75,7 @@ interface Harness {
   readonly published: Array<IpcEvent>
   readonly requests: Array<PaneCreationRequest>
   readonly existing: Set<string>
-  readonly layer: Layer.Layer<PaneWorkspace, WorkspaceLoadError>
+  readonly layer: Layer.Layer<PaneWorkspace | WorkspaceFeed, WorkspaceLoadError>
 }
 
 interface HarnessOptions {
@@ -80,6 +87,9 @@ interface HarnessOptions {
   readonly closePane?: (paneId: string) => Effect.Effect<void>
   readonly gitOps?: (existing: Set<string>) => GitOps
   readonly history?: ReadonlyArray<ConversationMessage>
+  readonly discovered?: ReadonlyArray<DiscoveredSession>
+  readonly storedSessionIds?: ReadonlyArray<string>
+  readonly unloadedDirectoryKeys?: ReadonlyArray<string>
 }
 
 const configOf = (request: PaneCreationRequest): PaneConfig => ({
@@ -117,7 +127,21 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
 
   const store = Layer.succeed(WorkspaceStore, {
     load: Effect.succeed(Option.fromNullishOr(options.persisted)),
-    save: (workspace) => Effect.sync(() => void saves.push(workspace))
+    save: (workspace) =>
+      workspace.projects.some((entry) =>
+        options.unloadedDirectoryKeys?.includes(entry.project.directoryKey)
+      )
+        ? Effect.fail(new WorkspaceWriteError({ cause: 'UNIQUE constraint failed' }))
+        : Effect.sync(() => void saves.push(workspace)),
+    directoryKeys: Effect.succeed(new Set(options.unloadedDirectoryKeys)),
+    sessionIds: Effect.succeed(
+      new Set((options.storedSessionIds ?? []).map((id) => SessionId.make(id)))
+    ),
+    unreadable: Effect.succeed([]),
+    deleteUnreadable: () => Effect.void,
+    holders: Effect.succeed({ sessions: new Map(), worktrees: new Map() }),
+    resolvedImports: Effect.succeed(new Set<string>()),
+    recordImportResolution: () => Effect.void
   })
 
   const hub = Layer.succeed(EventHub, {
@@ -151,6 +175,11 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       Effect.sync(() => {
         log.push(`readHistory ${sessionId} ${cwd}`)
         return options.history ?? []
+      }),
+    discoverSessions: (directory) =>
+      Effect.sync(() => {
+        log.push(`discoverSessions ${directory}`)
+        return options.discovered ?? []
       })
   })
 
@@ -172,8 +201,17 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
 
   const layer = Layer.provide(
     makePaneWorkspaceLive(WORKTREES_ROOT),
-    Layer.mergeAll(supervisor, store, hub, plugins, transcripts, fs, NodePath.layer)
-  )
+    Layer.mergeAll(
+      supervisor,
+      store,
+      hub,
+      plugins,
+      transcripts,
+      fs,
+      NodePath.layer,
+      NodeCrypto.layer
+    )
+  ).pipe(Layer.provideMerge(WorkspaceFeedLive))
   return { log, saves, published, requests, existing, layer }
 }
 
@@ -213,7 +251,7 @@ const request = (overrides: Partial<CreateTabRequest> = {}): CreateTabRequest =>
 
 const ignore = (_event: IpcEvent): Effect.Effect<void> => Effect.void
 
-const run = <A, E>(harness: Harness, body: Effect.Effect<A, E, PaneWorkspace>) =>
+const run = <A, E>(harness: Harness, body: Effect.Effect<A, E, PaneWorkspace | WorkspaceFeed>) =>
   body.pipe(Effect.provide(harness.layer))
 
 const current = Effect.flatMap(PaneWorkspace, (workspace) => workspace.getWorkspace)
@@ -248,6 +286,27 @@ describe('PaneWorkspace loading', () => {
         assert.deepStrictEqual(workspace.visibleTab, PANE_A)
         assert.strictEqual(harness.requests.length, 0)
       })
+  )
+})
+
+describe('PaneWorkspace workspace feed', () => {
+  it.effect('holds the loaded workspace, then each change', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects(undefined) })
+
+      const [loaded, changed] = yield* run(
+        harness,
+        Effect.gen(function* () {
+          const feed = yield* WorkspaceFeed
+          const before = yield* SubscriptionRef.get(feed)
+          yield* (yield* PaneWorkspace).selectTab(PANE_B, ignore)
+          return [before, yield* SubscriptionRef.get(feed)] as const
+        })
+      )
+
+      assert.deepStrictEqual(loaded.visibleTab, PANE_A)
+      assert.deepStrictEqual(changed.visibleTab, PANE_B)
+    })
   )
 })
 
@@ -350,6 +409,243 @@ describe('PaneWorkspace.registerProject', () => {
 
       assert.strictEqual(workspace.projects[0].project.directoryKey, yield* resolvedKey('/Repo'))
     }).pipe(Effect.provide(NodePath.layer))
+  )
+
+  it.effect(
+    'refuses a directory a stored project it could not load has, and later saves succeed',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({
+          directories: ['/held', '/repo'],
+          unloadedDirectoryKeys: [yield* resolvedKey('/held')]
+        })
+
+        const [error, workspace] = yield* run(
+          harness,
+          Effect.gen(function* () {
+            const service = yield* PaneWorkspace
+            const refused = yield* Effect.flip(service.registerProject(PROJECT_1, '/held'))
+            yield* service.registerProject(PROJECT_2, '/repo')
+            return [refused, yield* current] as const
+          })
+        )
+
+        assert.strictEqual(error._tag, 'StoredProjectUnreadableError')
+        assert.deepStrictEqual(
+          workspace.projects.map((entry) => entry.project.projectId),
+          [PROJECT_2]
+        )
+        assert.strictEqual(harness.saves.at(-1), workspace)
+      }).pipe(Effect.provide(NodePath.layer))
+  )
+})
+
+describe('PaneWorkspace.importTab', () => {
+  const PROJECT_3 = ProjectId.make('33333333-0000-4000-8000-000000000003')
+
+  it.effect('adds the tab to the project with its directory key and keeps the visible tab', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* (yield* PaneWorkspace).importTab(
+            { ...project(PROJECT_3, '/OTHER'), directoryKey: '/other' },
+            tab(PANE_NEW, '/other')
+          )
+          return yield* current
+        })
+      )
+
+      assert.deepStrictEqual(
+        [workspace.projects.map((entry) => entry.tabs.length), workspace.visibleTab],
+        [[1, 2], PANE_A]
+      )
+      assert.strictEqual(workspace.projects[1].tabs[1].config.paneId, PANE_NEW)
+      assert.strictEqual(harness.saves.at(-1), workspace)
+    })
+  )
+
+  it.effect('registers the project with the tab when no project has its directory', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* (yield* PaneWorkspace).importTab(
+            project(PROJECT_3, '/gone'),
+            tab(PANE_NEW, '/gone')
+          )
+          return yield* current
+        })
+      )
+
+      assert.deepStrictEqual(workspace.projects[2], {
+        project: project(PROJECT_3, '/gone'),
+        tabs: [tab(PANE_NEW, '/gone')]
+      })
+      assert.strictEqual(workspace.visibleTab, PANE_A)
+    })
+  )
+
+  it.effect('leaves the workspace unchanged for a pane id it already has', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* (yield* PaneWorkspace).importTab(project(PROJECT_1, '/repo'), tab(PANE_B, '/repo'))
+          return yield* current
+        })
+      )
+
+      assert.deepStrictEqual(tabsOf(workspace), [PANE_A, PANE_B])
+    })
+  )
+
+  it.effect(
+    'refuses a directory a stored project it could not load has, and later saves succeed',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({ persisted: twoProjects(), unloadedDirectoryKeys: ['/held'] })
+
+        const [error, workspace] = yield* run(
+          harness,
+          Effect.gen(function* () {
+            const service = yield* PaneWorkspace
+            const refused = yield* Effect.flip(
+              service.importTab(project(PROJECT_3, '/held'), tab(PANE_NEW, '/held'))
+            )
+            yield* service.importTab(project(PROJECT_3, '/gone'), tab(PANE_NEW, '/gone'))
+            return [refused, yield* current] as const
+          })
+        )
+
+        assert.strictEqual(error._tag, 'StoredProjectUnreadableError')
+        assert.deepStrictEqual(tabsOf(workspace), [PANE_A, PANE_B, PANE_NEW])
+        assert.strictEqual(harness.saves.at(-1), workspace)
+      })
+  )
+})
+
+describe('PaneWorkspace.registerProject importing discovered sessions', () => {
+  const discovered = (sessionId: string, title: string, startedAt: number): DiscoveredSession => ({
+    sessionId: SessionId.make(sessionId),
+    title,
+    startedAt,
+    model: 'adapter-model'
+  })
+
+  const register = (harness: Harness) =>
+    run(
+      harness,
+      Effect.gen(function* () {
+        yield* (yield* PaneWorkspace).registerProject(PROJECT_2, '/other')
+        return yield* current
+      })
+    )
+
+  it.effect('imports each discovered session as a tab of the project, oldest first', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        directories: ['/other'],
+        discovered: [discovered('s-new', 'Newer chat', 200), discovered('s-old', 'Older chat', 100)]
+      })
+
+      const workspace = yield* register(harness)
+
+      const tabs = workspace.projects[0].tabs
+      assert.deepStrictEqual(
+        tabs.map((t): ReadonlyArray<string | undefined> => [t.sessionId, t.name]),
+        [
+          ['s-old', 'Older chat'],
+          ['s-new', 'Newer chat']
+        ]
+      )
+      assert.ok(harness.log.includes('discoverSessions /other'))
+    })
+  )
+
+  it.effect(
+    'opens an imported tab in the project directory on the adapter model with safe modes',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({
+          directories: ['/other'],
+          discovered: [discovered('s-1', 'Chat', 1)]
+        })
+
+        const imported = (yield* register(harness)).projects[0].tabs[0]
+
+        assert.deepStrictEqual(
+          {
+            cwd: imported.config.cwd,
+            model: imported.config.model,
+            thinkingLevel: imported.config.thinkingLevel,
+            permissionMode: imported.config.permissionMode,
+            archived: imported.archived
+          },
+          {
+            cwd: '/other',
+            model: 'adapter-model',
+            thinkingLevel: 'medium',
+            permissionMode: 'default',
+            archived: false
+          }
+        )
+      })
+  )
+
+  it.effect('starts no session and leaves the visible tab', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        persisted: {
+          projects: [{ project: project(PROJECT_1, '/repo'), tabs: [tab(PANE_A, '/repo')] }],
+          visibleTab: PANE_A
+        },
+        directories: ['/other'],
+        discovered: [discovered('s-1', 'Chat', 1)]
+      })
+
+      const workspace = yield* register(harness)
+
+      assert.strictEqual(workspace.visibleTab, PANE_A)
+      assert.deepStrictEqual(harness.requests, [])
+    })
+  )
+
+  it.effect('does not import a session host.db records for another agent', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        directories: ['/other'],
+        storedSessionIds: ['s-superseded'],
+        discovered: [discovered('s-superseded', 'Old', 1), discovered('s-free', 'Free', 2)]
+      })
+
+      const workspace = yield* register(harness)
+
+      assert.deepStrictEqual(
+        workspace.projects[0].tabs.map((t): string | undefined => t.sessionId),
+        ['s-free']
+      )
+    })
+  )
+
+  it.effect('names a session with a blank title with a generated name', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        directories: ['/other'],
+        discovered: [discovered('s-1', '   ', 1)]
+      })
+
+      const [adjective, noun] = (yield* register(harness)).projects[0].tabs[0].name.split('-')
+
+      assert.ok((AGENT_NAME_ADJECTIVES as ReadonlyArray<string>).includes(adjective))
+      assert.ok((AGENT_NAME_NOUNS as ReadonlyArray<string>).includes(noun))
+    })
   )
 })
 
@@ -644,6 +940,8 @@ describe('PaneWorkspace.removeProject', () => {
   const removingGitOps = (existing: Set<string>): GitOps => ({
     createWorktree: () => Effect.die('not called'),
     reattachWorktree: () => Effect.die('not called'),
+    findIncludedFiles: () => Effect.die('not called'),
+    copyIncludedFiles: () => Effect.die('not called'),
     removeWorktree: (info) => Effect.sync(() => void existing.delete(info.path))
   })
 
@@ -718,6 +1016,8 @@ describe('PaneWorkspace.removeProject', () => {
       const stubborn: GitOps = {
         createWorktree: () => Effect.die('not called'),
         reattachWorktree: () => Effect.die('not called'),
+        findIncludedFiles: () => Effect.die('not called'),
+        copyIncludedFiles: () => Effect.die('not called'),
         removeWorktree: () => Effect.void
       }
       const harness = makeHarness({
@@ -738,6 +1038,8 @@ describe('PaneWorkspace.removeProject', () => {
       const removesOnSecondAttempt = (existing: Set<string>): GitOps => ({
         createWorktree: () => Effect.die('not called'),
         reattachWorktree: () => Effect.die('not called'),
+        findIncludedFiles: () => Effect.die('not called'),
+        copyIncludedFiles: () => Effect.die('not called'),
         removeWorktree: (info) =>
           Effect.sync(() => {
             attempts += 1
@@ -815,6 +1117,199 @@ describe('PaneWorkspace.removeProject', () => {
 
       assert.strictEqual(createError._tag, 'ProjectNotFoundError')
       assert.strictEqual(selectError._tag, 'TabNotFoundError')
+      assert.strictEqual(harness.requests.length, 0)
+    })
+  )
+})
+
+describe('PaneWorkspace.archiveTab and deleteTab', () => {
+  const worktree = {
+    path: '/worktrees/brave-otter',
+    branch: 'dia/brave-otter',
+    sourceRepo: '/repo'
+  }
+  const worktreeTab = tab(PANE_A, worktree.path, {
+    sessionId: SessionId.make('s-a'),
+    config: { ...tab(PANE_A, worktree.path).config, worktree }
+  })
+  const persisted = (): Workspace => ({
+    projects: [
+      { project: project(PROJECT_1, '/repo'), tabs: [worktreeTab] },
+      { project: project(PROJECT_2, '/other'), tabs: [tab(PANE_B, '/other')] }
+    ],
+    visibleTab: PANE_A
+  })
+  const removingGitOps = (existing: Set<string>): GitOps => ({
+    createWorktree: () => Effect.die('not called'),
+    reattachWorktree: () => Effect.die('not called'),
+    findIncludedFiles: () => Effect.die('not called'),
+    copyIncludedFiles: () => Effect.die('not called'),
+    removeWorktree: (info) => Effect.sync(() => void existing.delete(info.path))
+  })
+  const stubbornGitOps = (): GitOps => ({
+    createWorktree: () => Effect.die('not called'),
+    reattachWorktree: () => Effect.die('not called'),
+    findIncludedFiles: () => Effect.die('not called'),
+    copyIncludedFiles: () => Effect.die('not called'),
+    removeWorktree: () => Effect.void
+  })
+  const withWorktree = (gitOps?: (existing: Set<string>) => GitOps) =>
+    makeHarness({ persisted: persisted(), files: [worktree.path], gitOps })
+  const archive = (paneId: string) => Effect.flatMap(PaneWorkspace, (s) => s.archiveTab(paneId))
+  const remove = (paneId: string) => Effect.flatMap(PaneWorkspace, (s) => s.deleteTab(paneId))
+
+  it.effect('archiving stops the agent, removes the worktree and keeps cwd and session', () =>
+    Effect.gen(function* () {
+      const harness = withWorktree(removingGitOps)
+
+      const workspace = yield* run(harness, archive(PANE_A).pipe(Effect.andThen(current)))
+
+      assert.include(harness.log, `closePane ${PANE_A}`)
+      assert.isFalse(harness.existing.has(worktree.path))
+      assert.deepStrictEqual(workspace.projects[0].tabs[0], {
+        name: worktreeTab.name,
+        config: tab(PANE_A, worktree.path).config,
+        sessionId: worktreeTab.sessionId,
+        archived: true
+      })
+      assert.deepStrictEqual(harness.saves.at(-1), workspace)
+    })
+  )
+
+  it.effect('deleting stops the agent, removes the worktree, drops the tab and shows another', () =>
+    Effect.gen(function* () {
+      const harness = withWorktree(removingGitOps)
+
+      const workspace = yield* run(harness, remove(PANE_A).pipe(Effect.andThen(current)))
+
+      assert.include(harness.log, `closePane ${PANE_A}`)
+      assert.isFalse(harness.existing.has(worktree.path))
+      assert.deepStrictEqual(tabsOf(workspace), [PANE_B])
+      assert.strictEqual(workspace.visibleTab, PANE_B)
+      assert.deepStrictEqual(harness.saves.at(-1), workspace)
+    })
+  )
+
+  it.effect('leaves the tab unchanged when its worktree is still on disk afterwards', () =>
+    Effect.gen(function* () {
+      const harness = withWorktree(stubbornGitOps)
+
+      const [archiveError, deleteError, workspace] = yield* run(
+        harness,
+        Effect.all([Effect.flip(archive(PANE_A)), Effect.flip(remove(PANE_A)), current])
+      )
+
+      assert.deepStrictEqual(
+        [archiveError._tag, deleteError._tag],
+        ['WorktreeNotRemovedError', 'WorktreeNotRemovedError']
+      )
+      assert.deepStrictEqual(workspace, persisted())
+      assert.strictEqual(harness.saves.length, 0)
+    })
+  )
+
+  it.effect('names the worktrees plugin when it is not loaded', () =>
+    Effect.gen(function* () {
+      const error = yield* run(withWorktree(), Effect.flip(archive(PANE_A)))
+
+      assert.deepStrictEqual(
+        error,
+        new WorktreeNotRemovedError({
+          paneId: PANE_A,
+          path: worktree.path,
+          reason: 'Load the worktrees plugin to remove this worktree'
+        })
+      )
+    })
+  )
+
+  it.effect('archives and deletes a tab without a worktree without the worktrees plugin', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.all([archive(PANE_A), remove(PANE_B)]).pipe(Effect.andThen(current))
+      )
+
+      assert.deepStrictEqual(
+        workspace.projects.map((entry) => entry.tabs.map((t) => [t.config.paneId, t.archived])),
+        [[[PANE_A, true]], []]
+      )
+    })
+  )
+
+  it.effect('fails for an unknown tab', () =>
+    Effect.gen(function* () {
+      const error = yield* run(
+        makeHarness({ persisted: twoProjects() }),
+        Effect.flip(remove(PANE_NEW))
+      )
+
+      assert.strictEqual(error._tag, 'TabNotFoundError')
+    })
+  )
+
+  it.effect('refuses showing, starting or retiring the tab again while it is being archived', () =>
+    Effect.gen(function* () {
+      const release = yield* Deferred.make<void>()
+      const harness = makeHarness({
+        persisted: twoProjects(PANE_B),
+        closePane: () => Deferred.await(release)
+      })
+
+      const [selectError, deleteError] = yield* run(
+        harness,
+        Effect.gen(function* () {
+          const service = yield* PaneWorkspace
+          const archiving = yield* Effect.forkChild(service.archiveTab(PANE_A))
+          while (!harness.log.includes(`closePane ${PANE_A}`)) yield* Effect.yieldNow
+          const selectError = yield* Effect.flip(service.selectTab(PANE_A, ignore))
+          const deleteError = yield* Effect.flip(service.deleteTab(PANE_A))
+          const starting = yield* Effect.forkChild(service.ensureLive(PANE_A, ignore))
+          yield* Deferred.succeed(release, undefined)
+          yield* Fiber.join(archiving)
+          yield* Fiber.join(starting)
+          return [selectError, deleteError] as const
+        })
+      )
+
+      assert.deepStrictEqual(
+        [selectError._tag, deleteError._tag],
+        ['TabNotFoundError', 'TabNotFoundError']
+      )
+      assert.strictEqual(harness.requests.length, 0)
+    })
+  )
+
+  it.effect('shows an archived tab without starting its session, and never starts it', () =>
+    Effect.gen(function* () {
+      const archived = twoProjects(PANE_B)
+      const harness = makeHarness({
+        persisted: {
+          ...archived,
+          projects: [
+            {
+              ...archived.projects[0],
+              tabs: [tab(PANE_A, '/repo', { sessionId: SessionId.make('s-a'), archived: true })]
+            },
+            archived.projects[1]
+          ]
+        },
+        directories: ['/repo']
+      })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          const service = yield* PaneWorkspace
+          yield* service.selectTab(PANE_A, ignore)
+          yield* service.ensureLive(PANE_A, ignore)
+          return yield* service.getWorkspace
+        })
+      )
+
+      assert.strictEqual(workspace.visibleTab, PANE_A)
       assert.strictEqual(harness.requests.length, 0)
     })
   )

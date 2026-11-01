@@ -55,7 +55,8 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0044](0044-nightly-build-as-side-by-side-app.md) | Publish a nightly build of `main` as a side-by-side `dia-nightly` app | accepted |
 | [0045](0045-hold-to-rewind-under-agent-turns.md) | Hold to rewind from a control under the agent turn | accepted |
 | [0046](0046-keep-harness-transcripts-on-removal.md) | Keep the agent harness's transcripts when dia removes a project or an agent | accepted |
-| [0047](0047-rail-cards-from-many-plugins.md) | Let many plugins add cards to the session rail | accepted |
+| [0047](0047-built-in-secret-rules-for-meta-repo-push.md) | Scan meta repo pushes with a built-in rule set, run in the Host over `git log -p` | accepted |
+| [0048](0048-rail-cards-from-many-plugins.md) | Let many plugins add cards to the session rail | accepted |
 
 ## Adding a new ADR
 

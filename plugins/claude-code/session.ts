@@ -21,6 +21,7 @@ import {
   ModelChanged,
   makePendingUserInput,
   type OutboundMessage,
+  PathAttachment,
   type PendingUserInput,
   PermissionModeChanged,
   PermissionRequested,
@@ -31,6 +32,7 @@ import {
   RESUME_TEXT,
   RewindFailed,
   RewoundToCheckpoint,
+  type SessionAdditions,
   type SessionEnd,
   SessionFailed,
   SessionNotFound,
@@ -40,7 +42,7 @@ import {
   type UserInputResolution,
   UserMessagesSent
 } from '@dia/plugin'
-import { type Attachment, PathAttachment } from '@shared/domain/attachment'
+import type { Attachment } from '@shared/domain/attachment'
 import type { QuestionResponse } from '@shared/domain/attention'
 import type { OutgoingMessage, SendMode } from '@shared/domain/message-queue'
 import type { PaneConfig, SessionId, ThinkingLevel } from '@shared/domain/pane'
@@ -95,6 +97,7 @@ import {
   type PermissionModeController
 } from './permission-mode-controller'
 import { makeSessionEventReducer, toSlashCommandInfo } from './reducer'
+import { sessionAdditionsOptions } from './session-additions'
 import { thinkingOptions } from './thinking-options'
 import { DIA_TOOL_SERVER_KEY, isDiaToolName, makeDiaToolServer } from './tool-server'
 import { readLastAssistantUuid, readTurnResumeAnchor } from './transcript'
@@ -477,7 +480,8 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     onTurnEnded: (ok: boolean) => Effect.Effect<void>,
     launch: SessionLaunch,
     notFoundRef: Ref.Ref<Option.Option<SessionId>>,
-    additionalDirectories: ReadonlyArray<string>
+    additionalDirectories: ReadonlyArray<string>,
+    additions: SessionAdditions
   ) {
     const continuesFrom = yield* resolveContinuesFrom(resume, branchAt, config.cwd)
     yield* Effect.logInfo('Starting query session', {
@@ -523,6 +527,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
             resume: Option.getOrUndefined(resume),
             ...(branchAt !== undefined ? { resumeSessionAt: branchAt, forkSession: true } : {}),
             ...thinking,
+            ...sessionAdditionsOptions(additions),
             ...installQueryOptions(launch.path)
           }
         })
@@ -758,6 +763,11 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     return unstartedSession(reason, options.emit)
   }
   const launch: SessionLaunch = { path: path.value, reportStartupFailure }
+  yield* Effect.logInfo('Resolved session additions', {
+    paneId: options.config.paneId,
+    appendLength: options.systemPromptAppend.length,
+    pluginPaths: options.pluginPaths
+  })
   const { emit, tools } = options
   const sessionScope = yield* Scope.Scope
   const services = yield* Effect.context<never>()
@@ -860,7 +870,8 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
           ),
         launch,
         notFoundRef,
-        yield* Ref.get(directoriesRef)
+        yield* Ref.get(directoriesRef),
+        options
       ).pipe(
         Effect.ensuring(Deferred.succeed(queryOpened, undefined)),
         Effect.flatMap(endOf),

@@ -1,5 +1,5 @@
 import { Effect, Option, Random, Schema } from 'effect'
-import { AgentName } from './project'
+import { AGENT_NAME_MAX_LENGTH, AgentName } from './project'
 
 /** The first words of generated agent names and worktree slugs. */
 export const AGENT_NAME_ADJECTIVES = [
@@ -80,3 +80,17 @@ export const agentNameFromBranch = (branch: string | undefined): Option.Option<A
   branch?.startsWith('dia/') === true
     ? Schema.decodeUnknownOption(AgentName)(branch.slice('dia/'.length))
     : Option.none()
+
+/**
+ * The agent name for a conversation an agent harness titled `title`: on one line, trimmed and
+ * cut to the longest {@link AgentName} without splitting a character. `None` when nothing is left.
+ */
+export const agentNameFromTitle = (title: string): Option.Option<AgentName> =>
+  Schema.decodeUnknownOption(AgentName)(
+    title
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, AGENT_NAME_MAX_LENGTH)
+      .replace(/[\uD800-\uDBFF]$/, '')
+      .trim()
+  )

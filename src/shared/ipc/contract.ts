@@ -13,6 +13,7 @@ import type { ActivityInfo, ActivityNotFound } from '../domain/background-activi
 import { BackgroundTask } from '../domain/background-task'
 import { CompactionFailure, ContextUsage } from '../domain/context-usage'
 import { MessageQueueSnapshot, OutgoingMessage, SendMode } from '../domain/message-queue'
+import type { MetaRepoPushResult, MetaRepoStateResult } from '../domain/meta-repo'
 import { ModelCatalogSnapshot } from '../domain/model'
 import {
   type AgentDefaults,
@@ -27,10 +28,12 @@ import { AgentName, CreateTabRequest, ProjectId, Workspace } from '../domain/pro
 import type { RemovalProgress } from '../domain/project-removal'
 import { RewindFailureCause } from '../domain/rewind'
 import { SlashCommandInfo } from '../domain/slash-command'
+import { SetupStep } from '../domain/tab-setup'
 import type { ThemePreference } from '../domain/theme'
 import { TranscriptWidth } from '../domain/transcript-width'
 import { UpdateStatus } from '../domain/update'
 import { Uuid } from '../domain/uuid'
+import type { ImportResolution, UnreadableRow, WorkspaceProblem } from '../domain/workspace-problem'
 import { type PluginInfo, PluginName, type PluginOverrideResult } from '../plugin/manifest'
 
 const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
@@ -386,6 +389,17 @@ export const PaneSessionNotice = Schema.TaggedStruct('PaneSessionNotice', {
 export type PaneSessionNotice = typeof PaneSessionNotice.Type
 
 /**
+ * Event pushed to the renderer while worktree tab `paneId` is being created or resumed, and when
+ * one of its setup steps changes afterwards. `steps` is the whole list, in order; replace any
+ * earlier list with it.
+ */
+export const PaneSetupProgress = Schema.TaggedStruct('PaneSetupProgress', {
+  paneId: Uuid,
+  steps: Schema.Array(SetupStep)
+})
+export type PaneSetupProgress = typeof PaneSetupProgress.Type
+
+/**
  * Event pushed to the renderer when the set of work running outside the turns of pane `paneId`
  * changes. `tasks` is the full set, in the order the session reported it, and is empty when none
  * runs.
@@ -711,6 +725,7 @@ export const IpcEvent = Schema.Union([
   PaneToolCallUpdated,
   PaneTurnStatusChanged,
   PaneSessionNotice,
+  PaneSetupProgress,
   PaneBackgroundTasksChanged,
   PanePermissionRequested,
   PaneQuestionRequested,
@@ -837,6 +852,33 @@ export interface ActivityApi {
   onChanged(listener: () => void): () => void
 }
 
+/** The meta repo push calls of `window.dia.metaRepo`, served by the Host. None of them rejects except on a lost connection. */
+export interface MetaRepoApi {
+  /** The meta repo's remote and branch, or why they cannot be read. */
+  getState(): Promise<MetaRepoStateResult>
+  /** Sets the meta repo's remote to `url` and resolves the new state, or why it was not set. */
+  setRemote(url: string): Promise<MetaRepoStateResult>
+  /** Scans the commits the remote does not have and pushes the current branch when they hold no secret; resolves the outcome. */
+  push(): Promise<MetaRepoPushResult>
+}
+
+/**
+ * The workspace problem calls of `window.dia.workspaceProblems`, served by the Host: stored rows
+ * the Host could not load, and tabs the legacy workspace import skipped. They reject only on a
+ * lost connection.
+ */
+export interface WorkspaceProblemsApi {
+  /** Every open problem; empty when the Host could not read them (the failure is logged). */
+  list(): Promise<ReadonlyArray<WorkspaceProblem>>
+  /** Deletes an unreadable stored row. Resolves `null` once done, else the reason it failed. */
+  deleteRow(row: UnreadableRow): Promise<string | null>
+  /**
+   * Imports or discards the skipped import tab `agentId`, for good. Resolves `null` once done,
+   * else the reason it failed.
+   */
+  resolveImportConflict(agentId: string, resolution: ImportResolution): Promise<string | null>
+}
+
 /**
  * Shape of the `window.dia` bridge the preload script exposes to the renderer.
  * The single source of truth for that surface: preload's implementation is
@@ -848,6 +890,8 @@ export interface DiaApi {
   readonly models: ModelApi
   readonly activities: ActivityApi
   readonly adapter: AdapterApi
+  readonly metaRepo: MetaRepoApi
+  readonly workspaceProblems: WorkspaceProblemsApi
   sendMessage(
     paneId: string,
     text: string,
@@ -900,6 +944,17 @@ export interface DiaApi {
   ): Promise<void>
   createTab(request: CreateTab): void
   renameTab(paneId: string, name: AgentName): void
+  /**
+   * Archives tab `paneId`: stops its agent and removes its worktree; its branch and transcripts
+   * stay. Resolves `null` once archived, also when the tab is already gone, or the reason the
+   * worktree could not be removed, in which case the tab is left unarchived.
+   */
+  archiveTab(paneId: string): Promise<string | null>
+  /**
+   * Deletes tab `paneId`: stops its agent, removes its worktree and dia's records of it; its
+   * branch and transcripts stay. Resolves as {@link DiaApi.archiveTab} does.
+   */
+  deleteTab(paneId: string): Promise<string | null>
   selectTab(paneId: string | null): void
   getAgentSummaries(): Promise<ReadonlyArray<AgentSummary>>
   getTranscriptWidth(): Promise<TranscriptWidth>
@@ -960,5 +1015,6 @@ export interface DiaApi {
   onToolCallUpdated(listener: (event: PaneToolCallUpdated) => void): () => void
   onTurnStatusChanged(listener: (event: PaneTurnStatusChanged) => void): () => void
   onSessionNotice(listener: (event: PaneSessionNotice) => void): () => void
+  onSetupProgress(listener: (event: PaneSetupProgress) => void): () => void
   onBackgroundTasksChanged(listener: (event: PaneBackgroundTasksChanged) => void): () => void
 }

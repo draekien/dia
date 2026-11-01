@@ -81,7 +81,7 @@ describe('SettingsDialog navigation', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('lists General, Adapters and Plugins and starts on General', async () => {
+  it('lists General, Adapters, Plugins and Meta repo and starts on General', async () => {
     renderDialog()
     await open()
 
@@ -90,7 +90,7 @@ describe('SettingsDialog navigation', () => {
       within(nav)
         .getAllByRole('button')
         .map((item) => item.textContent)
-    ).toEqual(['General', 'Adapters', 'Plugins'])
+    ).toEqual(['General', 'Adapters', 'Plugins', 'Meta repo'])
     expect(within(breadcrumb()).getByText('General').getAttribute('aria-current')).toBe('page')
   })
 

@@ -2,6 +2,8 @@
 
 Issue: #94. Decision: ADR-0043 (supersedes ADR-0042's "`workspace.json` stays JSON" row). Scope: module.
 
+Later changes: #97 adds `unreadable`, `deleteUnreadable` and `holders` to the store and the `import_resolutions` table; see `docs/designs/workspace-problems.md`.
+
 ## Name and Purpose
 
 `WorkspaceStore` keeps the Host's `Workspace` (every project, its tabs, their order and the visible tab) in `<userData>/host.db`, records every SDK session each tab has had, and imports a `workspace.json` left by an earlier version once.
@@ -126,7 +128,7 @@ Mapping to the domain (`src/shared/domain/project.ts`, `pane.ts`); the domain ty
 ## Internal Decomposition
 
 - **`workspace-store.ts`** — the service; owns the SQL.
-  - `load` decodes each project row with `Project`, and each agent row together with its worktree and current session with `Tab` (`is_git_repo` and `archived` 0/1 to boolean; an absent worktree or session is omitted, never `null`), ordered by `position`. A row that fails is left out and logged with its decode issue; an agent of a left-out project is left out too. `visible_agent` becomes `visibleTab` when it names a loaded, unarchived tab, otherwise `null`. The `Workspace` is built from the decoded parts without decoding it again: its remaining checks (duplicate directory, duplicate pane id) are guaranteed by `UNIQUE` and `PRIMARY KEY`, and the visible tab by the rule above.
+  - `load` decodes each project row with `Project`, and each agent row together with its worktree and current session with `Tab` (`is_git_repo` and `archived` 0/1 to boolean; an absent worktree or session is omitted, never `null`), ordered by `position`. A row that fails is left out and logged with its decode issue; an agent of a left-out project is left out too. `visible_agent` becomes `visibleTab` when it names a loaded tab, archived or not, otherwise `null`. The `Workspace` is built from the decoded parts without decoding it again: its remaining checks (duplicate directory, duplicate pane id) are guaranteed by `UNIQUE` and `PRIMARY KEY`, and the visible tab by the rule above.
   - The store keeps, in a `Ref`, the project and agent ids it has loaded or saved. Those are the only ids `save` may delete.
   - `save` first fails with `WorkspaceWriteError` when two tabs in `workspace` share a `sessionId` or a worktree `path`; `Workspace` checks neither.
   - `save` binds booleans as 0/1 and optional values as `null`, never `undefined`, which `node:sqlite` rejects. It runs in one `sql.withTransaction`:

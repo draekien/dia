@@ -95,7 +95,7 @@ const resendSchedule = Schedule.spaced(RESEND_INTERVAL).pipe(
  * `WorkspaceChanged` and `AgentSummariesReplaced`.
  *
  * Values cross `contextBridge`, which drops prototypes, so every result is plain data: a typed
- * error (`registerProject`) resolves in its encoded form, and only a lost connection is retried. `removeProject` is not retried: it rejects when the connection drops.
+ * error (`registerProject`) resolves in its encoded form (`archiveTab` and `deleteTab` resolve its reason), and only a lost connection is retried. `removeProject` is not retried: it rejects when the connection drops.
  */
 const encodeRefusal = Schema.encodeSync(RegisterProjectError)
 const encodeSnapshot = Schema.encodeSync(ModelCatalogSnapshot)
@@ -266,6 +266,40 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         ),
       onChanged: (listener) => subscribeTo('ActivitiesChanged', () => listener())
     },
+    metaRepo: {
+      getState: () => query((client) => client.GetMetaRepo()),
+      setRemote: (url) => query((client) => client.SetMetaRemote({ url })),
+      push: () => query((client) => client.PushMetaRepo())
+    },
+    workspaceProblems: {
+      list: () =>
+        query((client) =>
+          client.ListWorkspaceProblems().pipe(
+            Effect.catchTag('WorkspaceProblemError', (error) =>
+              Effect.as(
+                Effect.logWarning('Could not list the workspace problems', {
+                  reason: error.reason
+                }),
+                []
+              )
+            )
+          )
+        ),
+      deleteRow: (row) =>
+        query((client) =>
+          client.DeleteUnreadableRow(row).pipe(
+            Effect.as<string | null>(null),
+            Effect.catchTag('WorkspaceProblemError', (error) => Effect.succeed(error.reason))
+          )
+        ),
+      resolveImportConflict: (agentId, resolution) =>
+        query((client) =>
+          client.ResolveImportConflict({ agentId, resolution }).pipe(
+            Effect.as<string | null>(null),
+            Effect.catchTag('WorkspaceProblemError', (error) => Effect.succeed(error.reason))
+          )
+        )
+    },
     sendMessage: (paneId, text, mode, attachments) =>
       command('SendMessage', (client, commandId) =>
         client.SendMessage({
@@ -365,7 +399,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
           Effect.as<RegisterProjectRefusal | null>(null),
           Effect.catchTags({
             ProjectAlreadyRegisteredError: (error) => Effect.succeed(encodeRefusal(error)),
-            DirectoryNotFoundError: (error) => Effect.succeed(encodeRefusal(error))
+            DirectoryNotFoundError: (error) => Effect.succeed(encodeRefusal(error)),
+            StoredProjectUnreadableError: (error) => Effect.succeed(encodeRefusal(error))
           })
         )
       ),
@@ -390,6 +425,20 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       ),
     createTab: (request) =>
       command('CreateTab', (client, commandId) => client.CreateTab({ ...request, commandId })),
+    archiveTab: (paneId) =>
+      query((client) =>
+        client.ArchiveTab({ paneId }).pipe(
+          Effect.as<string | null>(null),
+          Effect.catchTag('WorktreeNotRemovedError', (error) => Effect.succeed(error.reason))
+        )
+      ),
+    deleteTab: (paneId) =>
+      query((client) =>
+        client.DeleteTab({ paneId }).pipe(
+          Effect.as<string | null>(null),
+          Effect.catchTag('WorktreeNotRemovedError', (error) => Effect.succeed(error.reason))
+        )
+      ),
     renameTab: (paneId, name) =>
       command('RenameTab', (client, commandId) =>
         client.RenameTab({ ...RenameTab.make({ paneId, name }), commandId })
@@ -448,6 +497,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     onToolCallUpdated: (listener) => subscribeTo('PaneToolCallUpdated', listener),
     onTurnStatusChanged: (listener) => subscribeTo('PaneTurnStatusChanged', listener),
     onSessionNotice: (listener) => subscribeTo('PaneSessionNotice', listener),
+    onSetupProgress: (listener) => subscribeTo('PaneSetupProgress', listener),
     onBackgroundTasksChanged: (listener) => subscribeTo('PaneBackgroundTasksChanged', listener)
   }
 }
