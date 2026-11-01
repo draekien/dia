@@ -130,7 +130,7 @@ describe('SettingsDialog General page', () => {
     renderDialog()
     await open()
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Dark' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Dark' }))
 
     expect(theme.setTheme).toHaveBeenCalledWith('dark')
   })
@@ -139,7 +139,7 @@ describe('SettingsDialog General page', () => {
     const bridge = renderDialog()
     await open()
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Steer' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Steer' }))
 
     expect(bridge.setSendMode).toHaveBeenCalledWith('steer')
   })
@@ -148,7 +148,7 @@ describe('SettingsDialog General page', () => {
     const bridge = renderDialog()
     await open()
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Wide' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Wide' }))
 
     expect(bridge.setTranscriptWidth).toHaveBeenCalledWith('wide')
   })
