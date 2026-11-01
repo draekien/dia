@@ -35,10 +35,5 @@ export const resolveSessionAdditions = Effect.fn('MetaRepo.resolveSessionAdditio
     yield* Effect.logError('The meta repo service does not have a forNewSession effect')
     return NO_ADDITIONS
   }
-  const additions = yield* provided.value.forNewSession
-  yield* Effect.logDebug('Resolved the meta repo session additions', {
-    appendLength: additions.systemPromptAppend.length,
-    pluginPaths: additions.pluginPaths
-  })
-  return additions
+  return yield* provided.value.forNewSession
 })
