@@ -40,10 +40,11 @@ const pathOf = (draft: DraftAttachment): string | undefined =>
  * `planFile`), reads accepted ones as content blocks, and appends a chip per file; `attach`
  * appends a path chip. A path already attached is not added again. `remove(key)` and
  * `removeLast()` drop chips; `clear()` empties the row after a send. `ready` is what a send
- * carries.
+ * carries; `reading` is true while an `add` is still reading files, and a send must wait for it.
  */
 export function useComposerAttachments(types: ReadonlyArray<AttachmentType>) {
   const [drafts, setDrafts] = useState<ReadonlyArray<DraftAttachment>>([])
+  const [reads, setReads] = useState(0)
   const nextKey = useRef(0)
   const keyFor = (): string => `attachment-${nextKey.current++}`
 
@@ -54,7 +55,10 @@ export function useComposerAttachments(types: ReadonlyArray<AttachmentType>) {
         ...current,
         ...incoming.filter((draft) => {
           const path = pathOf(draft)
-          return path === undefined || !paths.has(path)
+          if (path === undefined) return true
+          if (paths.has(path)) return false
+          paths.add(path)
+          return true
         })
       ]
     })
@@ -89,8 +93,13 @@ export function useComposerAttachments(types: ReadonlyArray<AttachmentType>) {
   return {
     drafts,
     ready: readyAttachments(drafts),
-    add: (files: ReadonlyArray<DroppedFile>): Promise<void> =>
-      Promise.all(files.map(toDraft)).then(append),
+    reading: reads > 0,
+    add: (files: ReadonlyArray<DroppedFile>): Promise<void> => {
+      setReads((count) => count + 1)
+      return Promise.all(files.map(toDraft))
+        .then(append)
+        .finally(() => setReads((count) => count - 1))
+    },
     attach: (attachment: Attachment): void =>
       append([{ _tag: 'Ready', key: keyFor(), attachment }]),
     remove: (key: string): void =>

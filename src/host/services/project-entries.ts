@@ -1,5 +1,5 @@
 import type { ProjectEntry } from '@shared/domain/attachment'
-import { Context, Effect, FileSystem, Layer, Path } from 'effect'
+import { Context, Effect, FileSystem, Layer, Option, Path } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
 /** The most entries {@link ProjectEntries.list} returns for one directory. */
@@ -32,7 +32,7 @@ export const entriesFromFiles = (
 /**
  * Lists the files and directories under a session's working directory for the `@` path menu.
  * `list(cwd)` reads a git repository through `git ls-files`, so `.gitignore` applies; any other
- * directory is walked, skipping `.git` and `node_modules`. It returns at most
+ * directory is walked one directory at a time, skipping `.git`, `node_modules` and any entry it cannot read. It returns at most
  * {@link PROJECT_ENTRY_LIMIT} entries, and an empty list when `cwd` cannot be read. Each call
  * reads the directory again.
  */
@@ -62,25 +62,38 @@ export const ProjectEntriesLive = Layer.effect(
         )
         .pipe(Effect.map((output) => output.split('\0').filter((line) => line !== '')))
 
-    const walk = Effect.fn('ProjectEntries.walk')(function* (cwd: string) {
-      const relative = yield* fs.readDirectory(cwd, { recursive: true })
-      const kept = relative
-        .map((entry) => entry.split(path.sep).join('/'))
-        .filter((entry) => !entry.split('/').some((segment) => SKIPPED_SEGMENTS.has(segment)))
-        .slice(0, PROJECT_ENTRY_LIMIT)
-      return yield* Effect.forEach(
-        kept,
-        (entry) =>
-          fs.stat(path.join(cwd, entry)).pipe(
-            Effect.map(
-              (info): ProjectEntry => ({
-                path: entry,
-                kind: info.type === 'Directory' ? 'directory' : 'file'
-              })
-            )
-          ),
-        { concurrency: 32 }
+    const entryAt = (cwd: string, relative: string) =>
+      fs.stat(path.join(cwd, relative)).pipe(
+        Effect.map(
+          (info): ProjectEntry => ({
+            path: relative,
+            kind: info.type === 'Directory' ? 'directory' : 'file'
+          })
+        ),
+        Effect.option
       )
+
+    const walk = Effect.fn('ProjectEntries.walk')(function* (cwd: string) {
+      const entries: Array<ProjectEntry> = []
+      const pending = ['']
+      while (pending.length > 0 && entries.length < PROJECT_ENTRY_LIMIT) {
+        const directory = pending.shift() ?? ''
+        const names = yield* fs
+          .readDirectory(path.join(cwd, directory))
+          .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []))
+        const children = names
+          .filter((name) => !SKIPPED_SEGMENTS.has(name))
+          .map((name) => (directory === '' ? name : `${directory}/${name}`))
+        const read = yield* Effect.forEach(children, (child) => entryAt(cwd, child), {
+          concurrency: 32
+        })
+        for (const entry of read) {
+          if (Option.isNone(entry) || entries.length >= PROJECT_ENTRY_LIMIT) continue
+          entries.push(entry.value)
+          if (entry.value.kind === 'directory') pending.push(entry.value.path)
+        }
+      }
+      return entries
     })
 
     const list = Effect.fn('ProjectEntries.list')(function* (cwd: string) {

@@ -1,5 +1,5 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- pure path arithmetic on the session's cwd, with no I/O.
-import { dirname, isAbsolute, relative } from 'node:path'
+import { dirname, isAbsolute, relative, sep } from 'node:path'
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { Attachment, AttachmentType, PathAttachment } from '@shared/domain/attachment'
 import type { OutgoingMessage } from '@shared/domain/message-queue'
@@ -64,7 +64,7 @@ export const outsideDirectories = (
 ): ReadonlyArray<string> => {
   const outside = pathsOf(attachments).filter((attachment) => {
     const fromCwd = relative(cwd, attachment.path)
-    return fromCwd.startsWith('..') || isAbsolute(fromCwd)
+    return fromCwd === '..' || fromCwd.startsWith(`..${sep}`) || isAbsolute(fromCwd)
   })
   return [
     ...new Set(

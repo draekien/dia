@@ -778,7 +778,7 @@ function PaneChat({
     onSubmit: ({ value, formApi, meta }) => {
       const text = value.text.trim()
       const ready = attachments.ready
-      if (!text && ready.length === 0) return
+      if (attachments.reading || (!text && ready.length === 0)) return
       const mode = pendingInteraction ? 'steer' : meta.mode
       sendMessage({ text, mode, attachments: ready })
       if (mode === 'steer' || !isLoading) clearPendingInteractions()
@@ -788,6 +788,11 @@ function PaneChat({
   })
   const mention = activeMentionToken(form.state.values.text, caret)
   const projectEntries = useProjectEntries(cwd, mention !== null)
+  const mentionQuery = mention?.query ?? null
+  const pathMatches = useMemo(
+    () => (mentionQuery === null ? [] : filterProjectEntries(projectEntries.entries, mentionQuery)),
+    [projectEntries.entries, mentionQuery]
+  )
 
   function respondToPermission(response: PermissionResponse): void {
     if (!pendingPermission) return
@@ -857,10 +862,6 @@ function PaneChat({
                   token === null ? [] : filterSlashCommands(chat.slashCommands, token.query)
                 const isMenuOpen = matches.length > 0 && !slashDismissed
                 const highlight = wrapHighlight(slashHighlight, 0, matches.length)
-                const pathMatches =
-                  mention === null
-                    ? []
-                    : filterProjectEntries(projectEntries.entries, mention.query)
                 const isPathMenuOpen = mention !== null && !isMenuOpen && !pathDismissed
                 const pathIndex = wrapHighlight(pathHighlight, 0, pathMatches.length)
 
@@ -996,11 +997,12 @@ function PaneChat({
                               !event.shiftKey &&
                               !event.nativeEvent.isComposing
                             ) {
-                              event.preventDefault()
                               const entry = pathMatches[pathIndex]
-                              if (entry !== undefined && mention !== null)
+                              if (entry !== undefined && mention !== null) {
+                                event.preventDefault()
                                 selectPath(entry, mention)
-                              return
+                                return
+                              }
                             }
                           }
                           if (isMenuOpen) {
@@ -1279,7 +1281,7 @@ function Pane({
     <div
       className="flex h-full flex-col bg-background text-ink"
       onDragOver={(event) => {
-        if (event.defaultPrevented) return
+        if (event.defaultPrevented || !event.dataTransfer.types.includes('Files')) return
         event.preventDefault()
         event.dataTransfer.dropEffect = 'none'
       }}

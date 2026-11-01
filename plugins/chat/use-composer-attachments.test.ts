@@ -34,6 +34,17 @@ describe('useComposerAttachments', () => {
     ])
   })
 
+  it('reports reading until the dropped files are read', async () => {
+    const { result } = setup()
+    let added: Promise<void> = Promise.resolve()
+    act(() => {
+      added = result.current.add([{ file: fileAt('', '', 'image/png'), isDirectory: false }])
+    })
+    expect(result.current.reading).toBe(true)
+    await act(() => added)
+    expect(result.current.reading).toBe(false)
+  })
+
   it('keeps an image over the limit as a rejected chip that is not sent', async () => {
     const { result } = setup()
     const big = new Uint8Array(3.75 * MiB + 1)
