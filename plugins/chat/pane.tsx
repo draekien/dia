@@ -36,6 +36,7 @@ import {
   paneRemoveQueuedAtom,
   paneRewindAtom,
   paneSendAtom,
+  paneSendQueuedNowAtom,
   rewindRowState,
   rewindTargets,
   Select,
@@ -634,6 +635,7 @@ function PaneChat({
   const sendMessage = useAtomSet(paneSendAtom(paneId))
   const editQueued = useAtomSet(paneEditQueuedAtom(paneId))
   const removeQueued = useAtomSet(paneRemoveQueuedAtom(paneId))
+  const sendQueuedNow = useAtomSet(paneSendQueuedNowAtom(paneId))
   const stop = useAtomSet(paneInterruptAtom(paneId))
   const defaultSendMode = useAtomValue(sendModeAtom)
   const [rewindProgress, commandRewind] = useAtom(paneRewindAtom(paneId))
@@ -845,6 +847,7 @@ function PaneChat({
                     <QueuedMessages
                       queued={chat.queued}
                       held={chat.queueHeld}
+                      onSendNow={sendQueuedNow}
                       onEdit={(messageId, text) => editQueued({ messageId, text })}
                       onRemove={removeQueued}
                     />
