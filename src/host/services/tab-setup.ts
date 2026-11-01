@@ -6,7 +6,8 @@ import {
   WorktreeSetupStep
 } from '@shared/domain/tab-setup'
 import { type IpcEvent, PaneSessionNotice, PaneSetupProgress } from '@shared/ipc/contract'
-import { Clock, Effect, Exit, Option, Predicate, Ref, type Scope } from 'effect'
+import { errorMessage } from '@shared/plugin/plugin-registry'
+import { Duration, Effect, Exit, Option, Predicate, Ref, type Scope } from 'effect'
 import type { GitOps, IncludedFileFailure } from './worktrees-seam'
 
 interface Steps {
@@ -18,12 +19,8 @@ interface Steps {
 const stepList = ({ worktree, copy, session }: Steps): ReadonlyArray<SetupStep> =>
   copy === undefined ? [worktree, session] : [worktree, copy, session]
 
-const errorText = (error: unknown): string => {
-  const cause = Predicate.hasProperty(error, 'cause') ? error.cause : error
-  if (Predicate.isString(cause)) return cause
-  if (cause instanceof Error) return cause.message
-  return String(cause)
-}
+const errorText = (error: unknown): string =>
+  errorMessage(Predicate.hasProperty(error, 'cause') ? error.cause : error)
 
 const copyNotice = (copy: CopySetupStep): Option.Option<string> => {
   if (copy.matchError !== undefined) {
@@ -84,7 +81,7 @@ export const setUpWorktreeTab = Effect.fn('TabSetup.setUpWorktreeTab')(function*
   const included = yield* gitOps.findIncludedFiles(sourceRepo, paneId).pipe(Effect.result)
   const copy =
     included._tag === 'Failure'
-      ? CopySetupStep.make({ state: 'pending', files: [] })
+      ? CopySetupStep.make({ state: 'pending', files: [], matchError: errorText(included.failure) })
       : Option.match(included.success, {
           onNone: () => undefined,
           onSome: (files) =>
@@ -101,9 +98,8 @@ export const setUpWorktreeTab = Effect.fn('TabSetup.setUpWorktreeTab')(function*
     )
   yield* update((current) => current)
 
-  const worktreeStart = yield* Clock.currentTimeMillis
-  const acquired = yield* Effect.exit(acquire)
-  const worktreeDurationMs = (yield* Clock.currentTimeMillis) - worktreeStart
+  const [worktreeDuration, acquired] = yield* Effect.timed(Effect.exit(acquire))
+  const worktreeDurationMs = Duration.toMillis(worktreeDuration)
   if (Exit.isFailure(acquired)) {
     const error = Option.match(Exit.findErrorOption(acquired), {
       onNone: () => 'The worktree could not be set up',
@@ -133,30 +129,24 @@ export const setUpWorktreeTab = Effect.fn('TabSetup.setUpWorktreeTab')(function*
 
   if (copy !== undefined) {
     yield* update((current) => ({ ...current, copy: { ...copy, state: 'running' } }))
-    const copyStart = yield* Clock.currentTimeMillis
-    const finished: CopySetupStep =
-      included._tag === 'Failure'
-        ? { ...copy, state: 'warning', matchError: errorText(included.failure) }
-        : yield* gitOps
-            .copyIncludedFiles(
-              worktree,
-              copy.files.map((file) => file.path),
-              paneId
+    const paths = copy.files.map((file) => file.path)
+    const [duration, finished] = yield* Effect.timed(
+      copy.matchError === undefined
+        ? gitOps.copyIncludedFiles(worktree, paths, paneId).pipe(
+            Effect.map(
+              (failures): CopySetupStep => ({
+                ...copy,
+                state: failures.length === 0 ? 'done' : 'warning',
+                files: withFailures(paths, failures)
+              })
             )
-            .pipe(
-              Effect.map(
-                (failures): CopySetupStep => ({
-                  ...copy,
-                  state: failures.length === 0 ? 'done' : 'warning',
-                  files: withFailures(
-                    copy.files.map((file) => file.path),
-                    failures
-                  )
-                })
-              )
-            )
-    const durationMs = (yield* Clock.currentTimeMillis) - copyStart
-    yield* update((current) => ({ ...current, copy: { ...finished, durationMs } }))
+          )
+        : Effect.succeed<CopySetupStep>({ ...copy, state: 'warning' })
+    )
+    yield* update((current) => ({
+      ...current,
+      copy: { ...finished, durationMs: Duration.toMillis(duration) }
+    }))
   }
 
   const startSession = <A, E2, R>(start: Effect.Effect<A, E2, R>) =>
@@ -165,13 +155,11 @@ export const setUpWorktreeTab = Effect.fn('TabSetup.setUpWorktreeTab')(function*
         ...current,
         session: SessionSetupStep.make({ state: 'running' })
       }))
-      const sessionStart = yield* Clock.currentTimeMillis
-      const started = yield* start
-      const durationMs = (yield* Clock.currentTimeMillis) - sessionStart
+      const [duration, started] = yield* Effect.timed(start)
       const next = yield* Ref.get(steps)
       yield* update((current) => ({
         ...current,
-        session: SessionSetupStep.make({ state: 'done', durationMs })
+        session: SessionSetupStep.make({ state: 'done', durationMs: Duration.toMillis(duration) })
       }))
       const notice = next.copy === undefined ? Option.none() : copyNotice(next.copy)
       if (Option.isSome(notice)) {
