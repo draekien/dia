@@ -57,6 +57,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0046](0046-keep-harness-transcripts-on-removal.md) | Keep the agent harness's transcripts when dia removes a project or an agent | accepted |
 | [0047](0047-built-in-secret-rules-for-meta-repo-push.md) | Scan meta repo pushes with a built-in rule set, run in the Host over `git log -p` | accepted |
 | [0048](0048-rail-cards-from-many-plugins.md) | Let many plugins add cards to the session rail | accepted |
+| [0049](0049-base-ui-primitives-under-shadcn-ui.md) | Build the shadcn/ui wrappers on Base UI instead of Radix | accepted |
 
 ## Adding a new ADR
 
