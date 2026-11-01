@@ -1111,14 +1111,14 @@ function PaneChat({
                           ))}
                         </InputGroupAddon>
                       )}
-                      <InputGroupAddon align="block-end" className="pb-0.5">
+                      <InputGroupAddon align="block-end">
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <InputGroupButton
                               type="button"
                               size="icon-xs"
                               variant="ghost"
-                              className="-ml-1.5"
+                              className="-ml-1.5 translate-y-2.5"
                               aria-label="Attach files"
                               onClick={() => fileInputRef.current?.click()}
                             >
