@@ -1,5 +1,6 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- composes the unpacked esbuild binary path from Electron's resourcesPath outside any Effect.
 import { join } from 'node:path'
+import type { AgentNotification } from '@shared/domain/notification'
 import type { HostConnection } from '@shared/ipc/contract'
 import {
   type HostInit,
@@ -33,11 +34,13 @@ const SHUTDOWN_TIMEOUT = Duration.seconds(10)
  * Handle on the supervised Host process returned by {@link startHostProcess}. `connection`
  * completes with the Host's current {@link HostConnection}, waiting while the Host is starting or
  * restarting. `shutdown` asks the Host to end every pane's session and exit, then kills it if it
- * does not within a timeout, and stops restarting it.
+ * does not within a timeout, and stops restarting it. `send` posts a message to the running Host,
+ * and drops it while no Host runs.
  */
 export interface HostProcess {
   readonly connection: Effect.Effect<HostConnection>
   readonly shutdown: Effect.Effect<void>
+  readonly send: (message: MainToHostMessage) => Effect.Effect<void>
 }
 
 /**
@@ -57,15 +60,19 @@ export const resolveEsbuildBinaryPath = (isPackaged: boolean): string | undefine
  * Starts the Host as an Electron `utilityProcess` running `options.hostEntry`, hands it
  * `options.init` once it announces it is booted, and restarts it when it exits unexpectedly.
  * `onRestarted` runs after every restart once the new Host is ready, so the caller can make the
- * renderer reconnect to the new port and token. The returned {@link HostProcess} lives in the
- * surrounding scope.
+ * renderer reconnect to the new port and token. `readyMessages` runs each time a Host becomes
+ * ready, and the messages it returns are sent to that Host. `onNotify` runs for each notification
+ * the Host asks main to show. The returned {@link HostProcess} lives in the surrounding scope.
  */
 export const startHostProcess = Effect.fn('HostProcess.start')(function* (options: {
   readonly hostEntry: string
   readonly init: HostInit
   readonly esbuildBinaryPath: string | undefined
   readonly onRestarted: Effect.Effect<void>
+  readonly readyMessages: Effect.Effect<ReadonlyArray<MainToHostMessage>>
+  readonly onNotify: (notification: AgentNotification) => Effect.Effect<void>
 }): Effect.fn.Return<HostProcess, never, Scope.Scope> {
+  const services = yield* Effect.context<never>()
   const connectionRef = yield* SubscriptionRef.make<Option.Option<HostConnection>>(Option.none())
   const childRef = yield* Ref.make<Option.Option<UtilityProcess>>(Option.none())
   const stoppingRef = yield* Ref.make(false)
@@ -95,7 +102,12 @@ export const startHostProcess = Effect.fn('HostProcess.start')(function* (option
       const messages = yield* Queue.unbounded<HostToMainMessage>()
       child.on('message', (raw) => {
         const decoded = decodeFromHost(raw)
-        if (Option.isSome(decoded)) Queue.offerUnsafe(messages, decoded.value)
+        if (Option.isNone(decoded)) return
+        if (decoded.value._tag === 'Notify') {
+          Effect.runForkWith(services)(options.onNotify(decoded.value.notification))
+          return
+        }
+        Queue.offerUnsafe(messages, decoded.value)
       })
 
       const awaitMessage = <Tag extends HostToMainMessage['_tag']>(tag: Tag) =>
@@ -124,6 +136,7 @@ export const startHostProcess = Effect.fn('HostProcess.start')(function* (option
         Option.some({ port: ready.value.port, token: ready.value.token })
       )
       yield* Effect.logInfo('Host ready', { pid: child.pid, port: ready.value.port })
+      for (const message of yield* options.readyMessages) child.postMessage(encodeToHost(message))
 
       const completion = yield* awaitMessage('ShutdownComplete').pipe(
         Effect.andThen(Deferred.succeed(shutdownComplete, undefined)),
@@ -180,5 +193,10 @@ export const startHostProcess = Effect.fn('HostProcess.start')(function* (option
     child.value.kill()
   })
 
-  return { connection, shutdown }
+  const send = (message: MainToHostMessage) =>
+    Effect.map(Ref.get(childRef), (child) => {
+      if (Option.isSome(child)) child.value.postMessage(encodeToHost(message))
+    })
+
+  return { connection, shutdown, send }
 })

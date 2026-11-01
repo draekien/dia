@@ -2,10 +2,11 @@
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem'
-import { HostInit } from '@shared/ipc/host-process'
+import { HostInit, ShowAgent, WindowAttention } from '@shared/ipc/host-process'
 import { Config, Effect, Layer, Option, References } from 'effect'
-import { app, BrowserWindow, nativeTheme, net, protocol, shell } from 'electron'
+import { app, BrowserWindow, Notification, nativeTheme, net, protocol, shell } from 'electron'
 import electronUpdater from 'electron-updater'
+import { isWindowAttended, makeAgentNotifier, watchWindowAttention } from './agent-notifications'
 import { isAppNavigation, isExternalUrl } from './external-url'
 import { resolveEsbuildBinaryPath, startHostProcess } from './host-process'
 import {
@@ -33,6 +34,15 @@ if (isDev) {
   app.setName('dia-dev')
   app.setPath('userData', join(app.getPath('appData'), 'dia-dev'))
 }
+
+// Windows shows a toast only for the AppUserModelID of a Start Menu shortcut; the NSIS installer
+// gives the shortcut electron-builder's appId (the nightly workflow overrides it).
+const APP_USER_MODEL_ID = isDev
+  ? process.execPath
+  : app.getName() === 'dia-nightly'
+    ? 'com.draekien.dia.nightly'
+    : 'com.draekien.dia'
+if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID)
 
 // The single-instance lock is keyed to userData, so dev (dia-dev) and production (dia) hold
 // separate locks and coexist; a second launch of the *same* build fails to acquire the lock,
@@ -185,8 +195,23 @@ app.whenReady().then(async () => {
             allowedOrigins
           }),
           esbuildBinaryPath: resolveEsbuildBinaryPath(app.isPackaged),
-          onRestarted: Effect.sync(() => mainWindow.webContents.reload())
+          onRestarted: Effect.sync(() => mainWindow.webContents.reload()),
+          readyMessages: Effect.sync(() => [
+            WindowAttention.make({ attended: isWindowAttended(mainWindow) })
+          ]),
+          onNotify: (notification) =>
+            Notification.isSupported()
+              ? Effect.logInfo('Showing an agent notification', notification).pipe(
+                  Effect.andThen(Effect.sync(() => showNotification(notification)))
+                )
+              : Effect.logWarning('OS notifications are not supported; dropped one', notification)
         })
+        const showNotification = makeAgentNotifier(mainWindow, (paneId) =>
+          runLog(host.send(ShowAgent.make({ paneId })))
+        )
+        watchWindowAttention(mainWindow, (attended) =>
+          runLog(host.send(WindowAttention.make({ attended })))
+        )
 
         wireGetHostConnection(host.connection)
         wireChooseDirectory(mainWindow)
