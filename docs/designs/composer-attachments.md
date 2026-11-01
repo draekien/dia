@@ -68,4 +68,5 @@ composer chips ──SendMessage{text, attachments}──▶ host ──sendText
 | The `@` index is fetched each time a menu opens | No watcher to keep fresh; one `git ls-files` per opened menu is fast at 20 000 entries. |
 | Image bytes ride in the queue snapshot and the sent-message event | The renderer shows thumbnails in the queue and the transcript; a renderer-side cache keyed by attachment would be a second store of the same bytes. |
 | `attachments` is optional on `OutgoingMessage` and `ConversationMessage` | Existing messages and history entries have none, and every existing producer stays valid. |
+| Restored history shows path attachments as the path lines in the message text, not as chips | The transcript stores only the prompt text; telling attached path lines from paths the user typed would be a guess, and the restored text is what the agent saw. |
 | A rejected (too large) chip stays visible and is not sent | The user sees why it is not attached and removes it. |

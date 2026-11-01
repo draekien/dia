@@ -50,7 +50,7 @@ describe('sessionMessagesToConversation', () => {
         role: 'user',
         content: 'what is wrong here?',
         attachments: [
-          ContentAttachment.make({ name: 'image-2', mediaType: 'image/png', data: 'AAA' })
+          ContentAttachment.make({ name: 'image-1', mediaType: 'image/png', data: 'AAA' })
         ],
         checkpointUuid: 'turn-1'
       }

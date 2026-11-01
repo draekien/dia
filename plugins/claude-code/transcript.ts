@@ -23,18 +23,15 @@ const decodeToolResult = Schema.decodeUnknownOption(
 )
 
 const imagesOf = (content: ReadonlyArray<unknown>): ReadonlyArray<Attachment> =>
-  content.flatMap((block, index) =>
-    Option.match(decodeImageBlock(block), {
-      onNone: () => [],
-      onSome: (image) => [
-        ContentAttachment.make({
-          name: `image-${index + 1}`,
-          mediaType: image.source.media_type,
-          data: image.source.data
-        })
-      ]
-    })
-  )
+  content
+    .flatMap((block) => Option.toArray(decodeImageBlock(block)))
+    .map((image, index) =>
+      ContentAttachment.make({
+        name: `image-${index + 1}`,
+        mediaType: image.source.media_type,
+        data: image.source.data
+      })
+    )
 
 const MessageEnvelope = Schema.Struct({
   role: Schema.Literals(['user', 'assistant']),
@@ -63,8 +60,8 @@ const extractText = (content: string | ReadonlyArray<unknown>): string =>
  * with no text) and any message whose shape it can't decode. Use to render a
  * restored pane's history from {@link getSessionMessages} output.
  *
- * A user turn's image blocks become its `attachments`, named `image-1`, `image-2` by block
- * position. A rewindable user turn (string content, or image blocks with no tool result) is anchored with its own uuid as
+ * A user turn's image blocks become its `attachments`, named `image-1`, `image-2` in order.
+ * A rewindable user turn (string content, or image blocks with no tool result) is anchored with its own uuid as
  * `checkpointUuid` and the most recent assistant turn's uuid as
  * `resumeAnchorUuid` (absent for the first turn), so a restored pane offers the
  * same rewind behaviour a live one does — mirroring the live reducer's anchoring.
