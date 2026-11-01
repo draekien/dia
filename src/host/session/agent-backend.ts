@@ -278,5 +278,8 @@ export const agentBackendChanges = (
 ): Stream.Stream<AgentBackend> =>
   Stream.merge(
     Stream.make(AGENT_BACKEND_KEY),
-    registry.changes.pipe(Stream.filter((key) => key === AGENT_BACKEND_KEY))
+    registry.changes.pipe(
+      Stream.filter((key) => key === AGENT_BACKEND_KEY),
+      Stream.tap(() => Effect.logInfo('The agent backend provider changed; resolving it again'))
+    )
   ).pipe(Stream.mapEffect(() => resolveAgentBackend(registry)))
