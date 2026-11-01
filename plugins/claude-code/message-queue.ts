@@ -1,4 +1,5 @@
 import { OutgoingMessage } from '@dia/plugin'
+import type { Attachment } from '@shared/domain/attachment'
 import { Schema } from 'effect'
 
 const Messages = Schema.Array(OutgoingMessage)
@@ -167,15 +168,20 @@ const replaceQueued = (state: QueueState, queued: Queued): QueueTransition => [
 ]
 
 /**
- * The user changed the text of queued message `id`. A message no longer queued is left alone, and
- * the current queue is reported so the renderer drops it.
+ * The user changed the text of queued message `id`, and its attachments when `attachments` is
+ * given. A message no longer queued is left alone, and the current queue is reported so the
+ * renderer drops it.
  */
 export const edit =
-  (id: string, text: string) =>
+  (id: string, text: string, attachments?: ReadonlyArray<Attachment>) =>
   (state: QueueState): QueueTransition =>
     replaceQueued(
       state,
-      state.queued.map((message) => (message.id === id ? { id, text } : message))
+      state.queued.map((message) =>
+        message.id === id
+          ? { ...message, text, ...(attachments !== undefined ? { attachments } : {}) }
+          : message
+      )
     )
 
 /**

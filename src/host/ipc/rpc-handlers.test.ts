@@ -1,6 +1,7 @@
 import { NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import { NoActivity, StatusIdle } from '@shared/domain/agent-summary'
+import { ContentAttachment, PathAttachment } from '@shared/domain/attachment'
 import { Deny, FreeformResponse } from '@shared/domain/attention'
 import type { SendMode } from '@shared/domain/message-queue'
 import { LastVisibleModel } from '@shared/domain/model-preferences'
@@ -44,6 +45,7 @@ import { ModelCatalogFeed } from '../services/model-catalog-feed'
 import { ModelPreferences } from '../services/model-preferences'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
+import { ProjectEntries } from '../services/project-entries'
 import { SettingsStore } from '../services/settings-store'
 import { makeDiaRpcHandlers } from './rpc-handlers'
 
@@ -111,15 +113,21 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const known = new Set(options.knownPanes ?? [...live])
 
   const handle: PaneHandle = {
-    sendMessage: (text, mode) =>
+    sendMessage: (text, mode, attachments) =>
       options.sendMessageFails
         ? Effect.die(new Error('session is gone'))
         : Effect.sync(() => {
             calls.push(`sendMessage:${text}:${mode}`)
+            if (attachments !== undefined) {
+              calls.push(`sendMessageAttachments:${JSON.stringify(attachments)}`)
+            }
           }),
-    editQueuedMessage: (messageId, text) =>
+    editQueuedMessage: (messageId, text, attachments) =>
       Effect.sync(() => {
         calls.push(`editQueuedMessage:${messageId}:${text}`)
+        if (attachments !== undefined) {
+          calls.push(`editQueuedMessageAttachments:${JSON.stringify(attachments)}`)
+        }
       }),
     removeQueuedMessage: (messageId) =>
       Effect.sync(() => {
@@ -359,7 +367,15 @@ const withHandlers = <A, E>(
   Effect.gen(function* () {
     const handlers = yield* makeDiaRpcHandlers
     return yield* use(handlers)
-  }).pipe(Effect.provide(Layer.mergeAll(harness.layer, NodePath.layer)))
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        harness.layer,
+        NodePath.layer,
+        Layer.succeed(ProjectEntries, { list: () => Effect.succeed([]) })
+      )
+    )
+  )
 
 describe('Dia RPC handlers', () => {
   it.effect('delivers the pane id and model of a SetModel unchanged, once per commandId', () =>
@@ -449,6 +465,42 @@ describe('Dia RPC handlers', () => {
       assert.deepStrictEqual(
         harness.calls.filter((call) => call.startsWith('sendMessage')),
         ['sendMessage:hello:queue']
+      )
+    })
+  )
+
+  it.effect('delivers the attachments of a SendMessage and an EditQueuedMessage unchanged', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ livePanes: [PANE_ID] })
+      const attachments = [
+        PathAttachment.make({ path: 'F:/repo/docs', kind: 'directory' }),
+        ContentAttachment.make({ name: 'a.png', mediaType: 'image/png', data: 'AAA' })
+      ]
+
+      yield* withHandlers(harness, (handlers) =>
+        Effect.gen(function* () {
+          yield* handlers.SendMessage({
+            ...SendMessage.make({ paneId: PANE_ID, text: 'look', mode: 'queue', attachments }),
+            commandId: 'req-1'
+          })
+          yield* handlers.EditQueuedMessage({
+            ...EditQueuedMessage.make({
+              paneId: PANE_ID,
+              messageId: 'm-1',
+              text: 'look',
+              attachments: attachments.slice(1)
+            }),
+            commandId: 'req-2'
+          })
+        })
+      )
+
+      assert.deepStrictEqual(
+        harness.calls.filter((call) => call.includes('Attachments:')),
+        [
+          `sendMessageAttachments:${JSON.stringify(attachments)}`,
+          `editQueuedMessageAttachments:${JSON.stringify(attachments.slice(1))}`
+        ]
       )
     })
   )

@@ -47,6 +47,8 @@ const handlersLayer = Layer.unwrap(
       SetModelPreference: unused,
       SetAgentDefaults: unused,
       GetDisabledPermissionModes: unused,
+      GetAttachmentTypes: unused,
+      ListProjectEntries: unused,
       InterruptPane: unused,
       ResumeParkedAgent: unused,
       RewindToCheckpoint: unused,

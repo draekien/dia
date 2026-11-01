@@ -35,7 +35,8 @@ describe('TranscriptReaderLive', () => {
         status: () => Stream.empty,
         checkHealth: () => Effect.void,
         setInstallPath: () => Effect.void,
-        disabledPermissionModes: () => Effect.succeed([])
+        disabledPermissionModes: () => Effect.succeed([]),
+        attachmentTypes: () => Effect.succeed([])
       }
 
       const read = yield* Effect.gen(function* () {

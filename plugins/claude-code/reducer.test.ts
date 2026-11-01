@@ -488,6 +488,20 @@ describe('makeSessionEventReducer — file-checkpoint anchoring', () => {
     expect(emitted).toEqual([{ _tag: 'CheckpointAvailable', messageUuid: uuid }])
   })
 
+  it('emits CheckpointAvailable for a replayed user prompt made of text and image blocks', () => {
+    const uuid = 'ckpt-2222-4222-8222-222222222222'
+    const image = {
+      type: 'image' as const,
+      source: { type: 'base64' as const, media_type: 'image/png' as const, data: 'AAA' }
+    }
+
+    const emitted = run([
+      userMessageWithUuid([{ type: 'text', text: 'what is wrong here?' }, image], uuid)
+    ])
+
+    expect(checkpoints(emitted)).toEqual([uuid])
+  })
+
   it('emits no CheckpointAvailable for a user prompt turn without a uuid (replay disabled)', () => {
     const emitted = run([userMessage('Refactor the auth module')])
 

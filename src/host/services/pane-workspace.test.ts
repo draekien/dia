@@ -137,7 +137,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     status: () => Stream.empty,
     checkHealth: () => Effect.void,
     setInstallPath: () => Effect.void,
-    disabledPermissionModes: () => Effect.succeed([])
+    disabledPermissionModes: () => Effect.succeed([]),
+    attachmentTypes: () => Effect.succeed([])
   }
   const provided = new Map<string, unknown>([[AGENT_BACKEND_KEY, backend]])
   if (options.gitOps !== undefined) provided.set(WORKTREES_KEY, options.gitOps(existing))

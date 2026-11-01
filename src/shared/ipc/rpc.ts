@@ -2,6 +2,7 @@ import { Schema } from 'effect'
 import { Rpc, RpcGroup } from 'effect/rpc'
 import { AdapterStatusSnapshot } from '../domain/adapter-status'
 import { AgentSummary } from '../domain/agent-summary'
+import { AttachmentType, ProjectEntry } from '../domain/attachment'
 import { ActivityId, ActivityInfo, ActivityNotFound } from '../domain/background-activity'
 import { MessageQueueSnapshot, SendMode } from '../domain/message-queue'
 import { ModelCatalogSnapshot } from '../domain/model'
@@ -46,7 +47,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.13'
+export const PROTOCOL_VERSION = '0.0.14'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -180,6 +181,11 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('GetDisabledPermissionModes', {
     payload: { cwd: Schema.String },
     success: Schema.Array(PermissionMode)
+  }),
+  Rpc.make('GetAttachmentTypes', { success: Schema.Array(AttachmentType) }),
+  Rpc.make('ListProjectEntries', {
+    payload: { cwd: Schema.String },
+    success: Schema.Array(ProjectEntry)
   }),
   Rpc.make('ListActivities', { success: Schema.Array(ActivityInfo) }),
   Rpc.make('RunActivity', {

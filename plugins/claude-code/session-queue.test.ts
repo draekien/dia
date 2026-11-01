@@ -3,6 +3,7 @@ import { setImmediate } from 'node:timers/promises'
 import type { Options, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { type OutboundMessage, RewindFailed, SessionFailed, SessionNotFound } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
+import { ContentAttachment, PathAttachment } from '@shared/domain/attachment'
 import type { PaneConfig, SessionId } from '@shared/domain/pane'
 import { Effect, Option, Queue } from 'effect'
 import { vi } from 'vitest'
@@ -18,6 +19,7 @@ interface FakeQuery {
   readonly delivered: Array<SDKUserMessage>
   interrupts: number
   readonly models: Array<string | undefined>
+  readonly flagSettings: Array<unknown>
   readonly emit: (message: SDKMessage | 'end') => void
   readonly fail: (error: Error) => void
 }
@@ -39,6 +41,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
       delivered: [],
       interrupts: 0,
       models: [],
+      flagSettings: [],
       emit: (message) => {
         Queue.offerUnsafe(pending, message)
       },
@@ -78,6 +81,10 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
       setPermissionMode: () => Promise.resolve(),
       setModel: (model?: string) => {
         record.models.push(model)
+        return Promise.resolve()
+      },
+      applyFlagSettings: (settings: unknown) => {
+        record.flagSettings.push(settings)
         return Promise.resolve()
       }
     }
@@ -671,5 +678,75 @@ describe('missing session', () => {
         assert.strictEqual((yield* session.ended)._tag, 'SessionFailed')
         assert.isTrue(tags(emitted).includes('TurnErrored'))
       })
+  )
+})
+
+describe('attachments', () => {
+  const existingFile = `${process.cwd()}/package.json`
+  const image = ContentAttachment.make({ name: 'shot.png', mediaType: 'image/png', data: 'iVBOR' })
+
+  it.effect('sends path attachments as path lines and images as image blocks', () =>
+    Effect.gen(function* () {
+      const { session, query } = yield* open
+
+      yield* session.sendText('look at these', 'queue', [
+        PathAttachment.make({ path: existingFile, kind: 'file' }),
+        image
+      ])
+      yield* settle
+
+      assert.deepStrictEqual(texts(query), [
+        [
+          { type: 'text', text: `look at these\n\n${existingFile}` },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBOR' } }
+        ]
+      ])
+    })
+  )
+
+  it.effect('marks a path that does not exist as missing and still sends it', () =>
+    Effect.gen(function* () {
+      const { session, emitted, query } = yield* open
+      const gone = `${config.cwd}/gone.txt`
+
+      yield* session.sendText('', 'queue', [PathAttachment.make({ path: gone, kind: 'file' })])
+      yield* settle
+
+      assert.deepStrictEqual(texts(query), [gone])
+      const sent = emitted.find((message) => message._tag === 'UserMessagesSent')
+      assert.deepStrictEqual(
+        sent?._tag === 'UserMessagesSent' ? sent.messages[0]?.attachments : undefined,
+        [PathAttachment.make({ path: gone, kind: 'file', missing: true })]
+      )
+    })
+  )
+
+  it.effect('adds the directory of a path outside the working directory once', () =>
+    Effect.gen(function* () {
+      const { session, query, endTurn } = yield* open
+      const outside = PathAttachment.make({ path: existingFile, kind: 'file' })
+
+      yield* session.sendText('first', 'queue', [outside])
+      yield* endTurn()
+      yield* session.sendText('second', 'queue', [outside])
+      yield* settle
+
+      assert.deepStrictEqual(query.flagSettings, [
+        { permissions: { additionalDirectories: [process.cwd()] } }
+      ])
+    })
+  )
+
+  it.effect('leaves the directories alone for a path inside the working directory', () =>
+    Effect.gen(function* () {
+      const { session, query } = yield* open
+
+      yield* session.sendText('inside', 'queue', [
+        PathAttachment.make({ path: `${config.cwd}/src`, kind: 'directory' })
+      ])
+      yield* settle
+
+      assert.deepStrictEqual(query.flagSettings, [])
+    })
   )
 })

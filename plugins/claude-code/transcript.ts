@@ -1,4 +1,5 @@
 import { getSessionMessages, type SessionMessage } from '@anthropic-ai/claude-agent-sdk'
+import { type Attachment, ContentAttachment } from '@shared/domain/attachment'
 import type { ConversationMessage, SessionId } from '@shared/domain/pane'
 import { Array as Arr, Data, Effect, Option, Schema } from 'effect'
 
@@ -7,6 +8,33 @@ const TextBlock = Schema.Struct({
   text: Schema.String
 })
 const decodeTextBlock = Schema.decodeUnknownOption(TextBlock)
+
+const ImageBlock = Schema.Struct({
+  type: Schema.Literal('image'),
+  source: Schema.Struct({
+    type: Schema.Literal('base64'),
+    media_type: Schema.String,
+    data: Schema.String
+  })
+})
+const decodeImageBlock = Schema.decodeUnknownOption(ImageBlock)
+const decodeToolResult = Schema.decodeUnknownOption(
+  Schema.Struct({ type: Schema.Literal('tool_result') })
+)
+
+const imagesOf = (content: ReadonlyArray<unknown>): ReadonlyArray<Attachment> =>
+  content.flatMap((block, index) =>
+    Option.match(decodeImageBlock(block), {
+      onNone: () => [],
+      onSome: (image) => [
+        ContentAttachment.make({
+          name: `image-${index + 1}`,
+          mediaType: image.source.media_type,
+          data: image.source.data
+        })
+      ]
+    })
+  )
 
 const MessageEnvelope = Schema.Struct({
   role: Schema.Literals(['user', 'assistant']),
@@ -35,7 +63,8 @@ const extractText = (content: string | ReadonlyArray<unknown>): string =>
  * with no text) and any message whose shape it can't decode. Use to render a
  * restored pane's history from {@link getSessionMessages} output.
  *
- * A rewindable user turn (string content) is anchored with its own uuid as
+ * A user turn's image blocks become its `attachments`, named `image-1`, `image-2` by block
+ * position. A rewindable user turn (string content, or image blocks with no tool result) is anchored with its own uuid as
  * `checkpointUuid` and the most recent assistant turn's uuid as
  * `resumeAnchorUuid` (absent for the first turn), so a restored pane offers the
  * same rewind behaviour a live one does — mirroring the live reducer's anchoring.
@@ -51,11 +80,22 @@ export const sessionMessagesToConversation = (
     const envelope = envelopeOpt.value
     if (envelope.role === 'assistant') anchorUuid = message.uuid
     const content = extractText(envelope.content)
-    if (content.length === 0) continue
-    if (envelope.role === 'user' && typeof envelope.content === 'string') {
+    const images =
+      envelope.role === 'user' && typeof envelope.content !== 'string'
+        ? imagesOf(envelope.content)
+        : []
+    const isToolResult =
+      typeof envelope.content !== 'string' &&
+      envelope.content.some((block) => Option.isSome(decodeToolResult(block)))
+    if (content.length === 0 && images.length === 0) continue
+    if (
+      envelope.role === 'user' &&
+      (typeof envelope.content === 'string' || (images.length > 0 && !isToolResult))
+    ) {
       conversation.push({
         role: 'user',
         content,
+        ...(images.length > 0 ? { attachments: images } : {}),
         checkpointUuid: message.uuid,
         ...(anchorUuid !== undefined ? { resumeAnchorUuid: anchorUuid } : {})
       })

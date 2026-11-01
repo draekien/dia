@@ -40,7 +40,8 @@ describe('resolveAgentBackend', () => {
         status: () => Stream.empty,
         checkHealth: () => Effect.void,
         setInstallPath: () => Effect.void,
-        disabledPermissionModes: () => Effect.succeed([])
+        disabledPermissionModes: () => Effect.succeed([]),
+        attachmentTypes: () => Effect.succeed([])
       }
 
       const resolved = yield* resolveAgentBackend(registryProviding(Option.some(backend)))
@@ -111,7 +112,8 @@ describe('agentBackendProblems', () => {
     status: () => Stream.empty,
     checkHealth: () => Effect.void,
     setInstallPath: () => Effect.void,
-    disabledPermissionModes: () => Effect.succeed([])
+    disabledPermissionModes: () => Effect.succeed([]),
+    attachmentTypes: () => Effect.succeed([])
   }
 
   it('reports no problem for a value with every backend method', () => {
@@ -143,7 +145,8 @@ describe('agentBackendProblems', () => {
         '"agentBackend.status" is not a function',
         '"agentBackend.checkHealth" is not a function',
         '"agentBackend.setInstallPath" is not a function',
-        '"agentBackend.disabledPermissionModes" is not a function'
+        '"agentBackend.disabledPermissionModes" is not a function',
+        '"agentBackend.attachmentTypes" is not a function'
       ]
     ],
     [
@@ -181,7 +184,8 @@ describe('adapterContract', () => {
       '"agentBackend.status" is not a function',
       '"agentBackend.checkHealth" is not a function',
       '"agentBackend.setInstallPath" is not a function',
-      '"agentBackend.disabledPermissionModes" is not a function'
+      '"agentBackend.disabledPermissionModes" is not a function',
+      '"agentBackend.attachmentTypes" is not a function'
     ])
   })
 })

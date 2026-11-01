@@ -44,6 +44,7 @@ import { ModelPreferencesLive } from './services/model-preferences'
 import { PaneSupervisor, PaneSupervisorLive, SessionFactoryLive } from './services/pane-supervisor'
 import { makePaneWorkspaceLive } from './services/pane-workspace'
 import { makePersistenceServiceLive } from './services/persistence'
+import { ProjectEntriesLive } from './services/project-entries'
 import { makeSettingsStoreLive } from './services/settings-store'
 import { TranscriptReaderLive } from './services/transcript-reader'
 import { makeWorkspaceStoreLive } from './services/workspace-store'
@@ -142,6 +143,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     adapterStatus,
     modelPreferences,
     makeCommandDeduperLive(),
+    Layer.provide(ProjectEntriesLive, NodeServices.layer),
     hostDatabase,
     NodeFileSystem.layer,
     NodePath.layer

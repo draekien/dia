@@ -1,3 +1,5 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- the session runs without platform services in its context; checking an attached path is one stat per send.
+import { stat } from 'node:fs/promises'
 import {
   type CanUseTool,
   type McpSdkServerConfigWithInstance,
@@ -37,6 +39,7 @@ import {
   type UserInputResolution,
   UserMessagesSent
 } from '@dia/plugin'
+import { type Attachment, PathAttachment } from '@shared/domain/attachment'
 import type { QuestionResponse } from '@shared/domain/attention'
 import type { OutgoingMessage, SendMode } from '@shared/domain/message-queue'
 import type { PaneConfig, SessionId, ThinkingLevel } from '@shared/domain/pane'
@@ -61,6 +64,7 @@ import {
   Semaphore,
   Stream
 } from 'effect'
+import { outsideDirectories, toUserContent } from './attachments'
 import {
   type ClaudeInstall,
   installQueryOptions,
@@ -334,12 +338,24 @@ const interruptSession = Effect.fn('ClaudeCodeSession.interruptSession')(functio
   yield* Effect.logInfo('Interrupted session', { superseded: requestIds })
 })
 
-const toSDKUserMessage = (text: string, startsTurn = true): SDKUserMessage => ({
+const toSDKUserMessage = (message: OutgoingMessage, startsTurn = true): SDKUserMessage => ({
   type: 'user',
-  message: { role: 'user', content: text },
+  message: { role: 'user', content: toUserContent(message) },
   parent_tool_use_id: null,
   ...(startsTurn ? {} : { shouldQuery: false })
 })
+
+const markMissing = (attachment: Attachment): Effect.Effect<Attachment> =>
+  attachment._tag === 'ContentAttachment'
+    ? Effect.succeed(attachment)
+    : Effect.tryPromise(() => stat(attachment.path)).pipe(
+        Effect.as<Attachment>(attachment),
+        Effect.catch(() =>
+          Effect.logInfo('An attached path does not exist', { path: attachment.path }).pipe(
+            Effect.as(PathAttachment.make({ ...attachment, missing: true }))
+          )
+        )
+      )
 
 /**
  * The prompt input of one SDK query, read from the session's prompt queue. `prompts` is
@@ -386,7 +402,7 @@ export const openPromptInput = Effect.fnUntraced(function* (
  * files on disk to a checkpoint (`rewindFiles`), aborting an in-flight turn
  * (`interrupt`) and changing the model of later turns (`setModel`). Narrowed so the current query can be held in a `Ref`.
  */
-type LiveControlQuery = Pick<Query, 'rewindFiles' | 'interrupt' | 'setModel'>
+type LiveControlQuery = Pick<Query, 'rewindFiles' | 'interrupt' | 'setModel' | 'applyFlagSettings'>
 
 const isTurnEnd = (message: OutboundMessage): boolean =>
   message._tag === 'TurnErrored' ||
@@ -459,7 +475,8 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     silentResultsRef: Ref.Ref<number>,
     onTurnEnded: (ok: boolean) => Effect.Effect<void>,
     launch: SessionLaunch,
-    notFoundRef: Ref.Ref<Option.Option<SessionId>>
+    notFoundRef: Ref.Ref<Option.Option<SessionId>>,
+    additionalDirectories: ReadonlyArray<string>
   ) {
     const continuesFrom = yield* resolveContinuesFrom(resume, branchAt, config.cwd)
     yield* Effect.logInfo('Starting query session', {
@@ -488,6 +505,9 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
           options: {
             cwd: config.cwd,
             model: config.model,
+            ...(additionalDirectories.length > 0
+              ? { additionalDirectories: [...additionalDirectories] }
+              : {}),
             includePartialMessages: true,
             allowedTools: TASK_TRACKING_TOOLS,
             canUseTool,
@@ -766,6 +786,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
   const queueRef = yield* Ref.make<QueueState>(initialQueueState)
   const silentResultsRef = yield* Ref.make(0)
   const messageCountRef = yield* Ref.make(0)
+  const directoriesRef = yield* Ref.make<ReadonlyArray<string>>([])
   const openedAtMillis = yield* Clock.currentTimeMillis
 
   const offerBatch = Effect.fnUntraced(function* (messages: ReadonlyArray<OutgoingMessage>) {
@@ -773,7 +794,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     yield* Effect.forEach(
       messages,
       (message, index) =>
-        Queue.offer(promptQueue, toSDKUserMessage(message.text, index === messages.length - 1)),
+        Queue.offer(promptQueue, toSDKUserMessage(message, index === messages.length - 1)),
       { discard: true }
     )
   })
@@ -831,7 +852,8 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
             Effect.asVoid
           ),
         launch,
-        notFoundRef
+        notFoundRef,
+        yield* Ref.get(directoriesRef)
       ).pipe(
         Effect.ensuring(Deferred.succeed(queryOpened, undefined)),
         Effect.flatMap(endOf),
@@ -1069,10 +1091,42 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
 
   yield* startQuery(options.config, options.resume, undefined)
 
-  const nextMessage = (text: string) =>
-    Ref.updateAndGet(messageCountRef, (sent) => sent + 1).pipe(
-      Effect.map((count): OutgoingMessage => ({ id: `${openedAtMillis}-${count}`, text }))
+  const nextMessage = Effect.fnUntraced(function* (
+    text: string,
+    attachments: ReadonlyArray<Attachment> = []
+  ) {
+    const count = yield* Ref.updateAndGet(messageCountRef, (sent) => sent + 1)
+    const checked = yield* Effect.forEach(attachments, markMissing, { concurrency: 'unbounded' })
+    return {
+      id: `${openedAtMillis}-${count}`,
+      text,
+      ...(checked.length > 0 ? { attachments: checked } : {})
+    } satisfies OutgoingMessage
+  })
+
+  const widenDirectories = Effect.fn('ClaudeCodeSession.widenDirectories')(function* (
+    attachments: ReadonlyArray<Attachment>
+  ) {
+    const known = yield* Ref.get(directoriesRef)
+    const added = outsideDirectories(attachments, options.config.cwd).filter(
+      (directory) => !known.includes(directory)
     )
+    if (added.length === 0) return
+    const directories = [...known, ...added]
+    yield* Ref.set(directoriesRef, directories)
+    const live = yield* Ref.get(queryRef)
+    if (Option.isNone(live)) return
+    yield* Effect.tryPromise({
+      try: () =>
+        live.value.applyFlagSettings({ permissions: { additionalDirectories: directories } }),
+      catch: (cause) => new SessionStreamError({ cause })
+    }).pipe(
+      Effect.tap(() => Effect.logInfo('Added attachment directories to the session', { added })),
+      Effect.catch((error) =>
+        Effect.logWarning('Failed to add attachment directories to the session', { added, error })
+      )
+    )
+  })
 
   const sendAndWait = Effect.fnUntraced(function* (step: (state: QueueState) => QueueTransition) {
     const dispatches = yield* performActions(yield* transition(step), steerInterrupt)
@@ -1081,10 +1135,16 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
 
   const sendText = Effect.fn('ClaudeCodeSession.sendText')(function* (
     text: string,
-    mode: SendMode
+    mode: SendMode,
+    attachments: ReadonlyArray<Attachment> = []
   ) {
-    const message = yield* nextMessage(text)
-    yield* Effect.logDebug('Accepted a user message', { messageId: message.id, mode })
+    const message = yield* nextMessage(text, attachments)
+    yield* Effect.logDebug('Accepted a user message', {
+      messageId: message.id,
+      mode,
+      attachments: attachments.length
+    })
+    yield* widenDirectories(attachments)
     yield* sendAndWait(send(message, mode))
   })
 
@@ -1117,7 +1177,8 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
 
   return {
     sendText,
-    editQueuedText: (messageId, text) => changeQueue(edit(messageId, text)),
+    editQueuedText: (messageId, text, attachments) =>
+      changeQueue(edit(messageId, text, attachments)),
     removeQueuedText: (messageId) => changeQueue(remove(messageId)),
     sendQueuedNow,
     messageQueue: Ref.get(queueRef).pipe(Effect.map(snapshotOf)),

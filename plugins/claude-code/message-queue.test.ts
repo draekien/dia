@@ -1,3 +1,4 @@
+import { PathAttachment } from '@shared/domain/attachment'
 import { describe, expect, it } from 'vitest'
 import {
   DispatchAction,
@@ -170,6 +171,18 @@ describe('edit and remove', () => {
     const queued = [{ id: a.id, text: 'changed' }, b]
     expect(actions).toEqual([QueueChangedAction.make({ queued, held: false })])
     expect(next).toEqual(runningWith({ queued }))
+  })
+
+  it('keeps the attachments of a queued message whose text is edited', () => {
+    const attached = { ...a, attachments: [PathAttachment.make({ path: 'F:/a.ts', kind: 'file' })] }
+    const [, next] = edit(a.id, 'changed')(runningWith({ queued: [attached] }))
+    expect(next).toEqual(runningWith({ queued: [{ ...attached, text: 'changed' }] }))
+  })
+
+  it('replaces the attachments of a queued message when the edit carries them', () => {
+    const attached = { ...a, attachments: [PathAttachment.make({ path: 'F:/a.ts', kind: 'file' })] }
+    const [, next] = edit(a.id, 'changed', [])(runningWith({ queued: [attached] }))
+    expect(next).toEqual(runningWith({ queued: [{ ...a, text: 'changed', attachments: [] }] }))
   })
 
   it('removes a queued message', () => {
