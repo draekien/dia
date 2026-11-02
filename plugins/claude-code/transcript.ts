@@ -54,12 +54,16 @@ const extractText = (content: string | ReadonlyArray<unknown>): string =>
         )
         .join('')
 
+const isTaskNotification = (text: string): boolean =>
+  text.trimStart().startsWith('<task-notification>')
+
 /**
  * Projects the Agent SDK's raw session transcript into dia's `ConversationMessage`
  * list: keeps user/assistant turns that carry displayable text, joining an
  * assistant turn's text blocks and dropping tool-only turns (tool calls/results
- * with no text) and any message whose shape it can't decode. Use to render a
- * restored pane's history from {@link getSessionMessages} output.
+ * with no text), background task reports (user turns starting with `<task-notification>`,
+ * which a live transcript does not show either) and any message whose shape it can't decode.
+ * Use to render a restored pane's history from {@link getSessionMessages} output.
  *
  * A user turn's image blocks become its `attachments`, named `image-1`, `image-2` in order.
  * A rewindable user turn (string content, or image blocks with no tool result) is anchored with its own uuid as
@@ -78,6 +82,7 @@ export const sessionMessagesToConversation = (
     const envelope = envelopeOpt.value
     if (envelope.role === 'assistant') anchorUuid = message.uuid
     const content = extractText(envelope.content)
+    if (envelope.role === 'user' && isTaskNotification(content)) continue
     const images =
       envelope.role === 'user' && typeof envelope.content !== 'string'
         ? imagesOf(envelope.content)

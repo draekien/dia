@@ -153,6 +153,67 @@ describe('sessionMessagesToConversation', () => {
     ])
   })
 
+  it('drops a background task notification turn, which a live transcript does not show', () => {
+    const result = sessionMessagesToConversation([
+      sessionMessage('user', { role: 'user', content: 'first' }, 'turn-1'),
+      sessionMessage(
+        'assistant',
+        { role: 'assistant', content: [{ type: 'text', text: 'started a task' }] },
+        'turn-2'
+      ),
+      sessionMessage(
+        'user',
+        {
+          role: 'user',
+          content:
+            '<task-notification> <task-id>a4eb4cdbca17de9b4</task-id> <status>completed</status> </task-notification>'
+        },
+        'turn-3'
+      ),
+      sessionMessage('user', { role: 'user', content: 'second' }, 'turn-4')
+    ])
+
+    assert.deepStrictEqual(result, [
+      { role: 'user', content: 'first', checkpointUuid: 'turn-1' },
+      { role: 'assistant', content: 'started a task' },
+      { role: 'user', content: 'second', checkpointUuid: 'turn-4', resumeAnchorUuid: 'turn-2' }
+    ])
+  })
+
+  it('drops a task notification turn whose content is a text block array', () => {
+    const result = sessionMessagesToConversation([
+      sessionMessage(
+        'user',
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: '<task-notification> <status>completed</status> </task-notification>'
+            }
+          ]
+        },
+        'turn-1'
+      )
+    ])
+
+    assert.deepStrictEqual(result, [])
+  })
+
+  it('keeps a user turn that mentions a task notification tag after other text', () => {
+    const result = sessionMessagesToConversation([
+      sessionMessage(
+        'user',
+        { role: 'user', content: 'why does <task-notification> show up?' },
+        'turn-1'
+      )
+    ])
+
+    assert.deepStrictEqual(result, [
+      { role: 'user', content: 'why does <task-notification> show up?', checkpointUuid: 'turn-1' }
+    ])
+  })
+
   it('returns an empty list for no messages', () => {
     assert.deepStrictEqual(sessionMessagesToConversation([]), [])
   })
