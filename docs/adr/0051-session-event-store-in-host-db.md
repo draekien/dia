@@ -8,7 +8,7 @@ decision-makers: William Pei
 
 ## Context and Problem Statement
 
-ADR-0011 made the Agent SDK transcript at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` the only copy of an agent's conversation. dia rebuilds history on every tab open by calling `getSessionMessages()` and `sessionMessagesToConversation` (`plugins/claude-code/transcript.ts`). That projection drops tool calls. Live events exist only in `EventHub`'s in-memory buffer of 1000 events per pane (ADR-0022), which a Host restart clears. Import runs once, when a project is registered (#96). Archive removes the agent's worktree and has no unarchive (`docs/designs/archive-delete-agents.md`). Where should dia keep an agent's conversation so that sessions can be imported and resumed, history loads fast, and agents can be archived and unarchived?
+ADR-0011 made the Agent SDK transcript at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl` the only copy of an agent's conversation. ADR-0050 seeds each tab's `PaneChatProjection` once per Host run from that transcript through `TranscriptReader.readHistory`, which calls `getSessionMessages()` and `sessionMessagesToConversation` (`plugins/claude-code/transcript.ts`). That seed is text-only: turns from before the Host started lose their tool calls. Live events exist only in `EventHub`'s in-memory buffer of 1000 events per pane (ADR-0022), which a Host restart clears. Import runs once, when a project is registered (#96). Archive removes the agent's worktree and has no unarchive (`docs/designs/archive-delete-agents.md`). Where should dia keep an agent's conversation so that sessions can be imported and resumed, history loads fast, and agents can be archived and unarchived?
 
 ## Decision Drivers
 
@@ -82,7 +82,8 @@ ADR-0042's "event table + projection table in one `sql.withTransaction`" shape:
 ### Replay to the renderer
 
 * `PaneEventFrame.seq` becomes the agent's `agent_events.sequence`. `SubscribeEvents` cursors replay from `agent_events` instead of `EventHub`'s in-memory buffer, so replay survives a Host restart.
-* When a cursor's replay would exceed a size limit, the Host sends `ReloadHistoryFrame` and the renderer pages `agent_items` instead. T3 Code uses 128 events or 1 MiB (`apps/server/src/orchestration-v2/ThreadStream.ts`). dia's limit is set at implementation.
+* `PaneChatProjection.seed` (`src/host/services/pane-chat-projection.ts`, ADR-0050) reads the tab's agent from `agent_items` instead of calling `TranscriptReader.readHistory`. `GetPaneChat` and its `{ state, seq }` snapshot are unchanged, and `seq` is an `agent_events.sequence`.
+* When a cursor's replay would exceed a size limit, the Host sends `ReloadHistoryFrame` and the renderer requests a new `GetPaneChat` snapshot instead. T3 Code uses 128 events or 1 MiB (`apps/server/src/orchestration-v2/ThreadStream.ts`). dia's limit is set at implementation.
 
 ### Consequences
 
@@ -117,6 +118,7 @@ ADR-0042's "event table + projection table in one `sql.withTransaction`" shape:
 ## More Information
 
 * Supersedes ADR-0011. Amends ADR-0022: the `EventHub` replay buffer is replaced by `agent_events` cursors. ADR-0022 named a second client, work with no window open, and a non-Claude provider as reasons to add a durable event store. This ADR adds it for import, history load time and archive instead.
+* Amends ADR-0050: `PaneChatProjection` is seeded from `agent_items` instead of the text-only transcript, so turns from before the Host started keep their tool calls.
 * Amends ADR-0042: `host.db` uses `synchronous = NORMAL` instead of the `FULL` default that ADR-0042 measured.
 * Amends `docs/designs/archive-delete-agents.md`, which has no unarchive.
 * Reference implementation: T3 Code (`F:\Dev\dia\.repos\t3code`, `apps/server/src`). `persistence/Sqlite.ts` (pragmas), `orchestration-v2/EventSink.ts` (event and projection in one transaction), `orchestration-v2/Adapters/ProviderTextDeltaCoalescer.ts` (50 ms coalescing), `project/AgentSessionImporter.ts` (Claude session import), `orchestration-v2/ProjectionMaintenance.ts` (compaction).

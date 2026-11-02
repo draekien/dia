@@ -37,7 +37,11 @@ const feedFollowing = (
         unload: () => Effect.die(new Error('unload should not be called in these tests')),
         inject: (key) => Effect.sync(() => (key === AGENT_BACKEND_KEY ? current() : Option.none()))
       }),
-      Layer.succeed(EventHub)({ publish: () => Effect.void, subscribe: () => Stream.empty })
+      Layer.succeed(EventHub)({
+        publish: () => Effect.void,
+        subscribe: () => Stream.empty,
+        lastSeq: () => Effect.succeed(0)
+      })
     )
   )
 

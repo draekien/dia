@@ -36,6 +36,7 @@ import {
   type DiscoveredSession
 } from '../session/agent-backend'
 import { EventHub } from './event-hub'
+import { PaneChatProjection } from './pane-chat-projection'
 import { type PaneCreationRequest, type PaneHandle, PaneSupervisor } from './pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
 import { TranscriptReader } from './transcript-reader'
@@ -150,7 +151,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
         published.push(event)
         log.push(`publish ${event._tag}`)
       }),
-    subscribe: () => Stream.empty
+    subscribe: () => Stream.empty,
+    lastSeq: () => Effect.succeed(0)
   })
 
   const backend: AgentBackend = {
@@ -183,6 +185,12 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       })
   })
 
+  const paneChats = Layer.succeed(PaneChatProjection, {
+    snapshot: () => Effect.die('not called'),
+    seed: (paneId) =>
+      Effect.sync(() => void log.push(`seed ${paneId} after ${requests.length} sessions`))
+  })
+
   const notFound = (path: string) =>
     PlatformError.systemError({
       _tag: 'NotFound',
@@ -207,6 +215,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       hub,
       plugins,
       transcripts,
+      paneChats,
       fs,
       NodePath.layer,
       NodeCrypto.layer
@@ -668,6 +677,7 @@ describe('PaneWorkspace.createTab', () => {
       )
 
       assert.strictEqual(harness.requests[0].sourceCwd, '/repo')
+      assert.include(harness.log, `seed ${PANE_NEW} after 0 sessions`)
       assert.deepStrictEqual(tabsOf(workspace), [PANE_A, PANE_NEW])
       assert.deepStrictEqual(workspace.visibleTab, PANE_NEW)
       assert.strictEqual(workspace.projects[0].tabs[1].name, 'heron')
@@ -1340,18 +1350,48 @@ describe('PaneWorkspace sessions', () => {
     return { events, onEvent: (event: IpcEvent) => Effect.sync(() => void events.push(event)) }
   }
 
-  it.effect('getPaneHistory reads the transcript by the tab session id and cwd', () =>
+  it.effect('resumePane seeds the tab chat state before its session starts', () =>
     Effect.gen(function* () {
-      const history: ReadonlyArray<ConversationMessage> = [{ role: 'user', content: 'hello' }]
-      const harness = makeHarness({ persisted: withSession(), history })
+      const harness = makeHarness({ persisted: withSession(), directories: ['/repo'] })
 
-      const read = yield* run(
+      yield* run(
         harness,
-        Effect.flatMap(PaneWorkspace, (s) => s.getPaneHistory(PANE_A))
+        Effect.flatMap(PaneWorkspace, (s) => s.resumePane(PANE_A, ignore))
       )
 
-      assert.deepStrictEqual(read, history)
-      assert.include(harness.log, 'readHistory restored-1 /repo')
+      assert.include(harness.log, `seed ${PANE_A} after 0 sessions`)
+      assert.strictEqual(harness.requests.length, 1)
+    })
+  )
+
+  it.effect('resumePane does not seed a tab with no recorded session', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: withoutSession, directories: ['/repo'] })
+
+      yield* run(
+        harness,
+        Effect.flatMap(PaneWorkspace, (s) => s.resumePane(PANE_A, ignore))
+      )
+
+      assert.isFalse(harness.log.some((line) => line.startsWith('seed ')))
+    })
+  )
+
+  it.effect('resumePane seeds the tab before reporting a gone working directory', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: withSession() })
+      const onEvent = (event: IpcEvent) =>
+        Effect.sync(() => void harness.log.push(`event ${event._tag}`))
+
+      yield* run(
+        harness,
+        Effect.flatMap(PaneWorkspace, (s) => s.resumePane(PANE_A, onEvent))
+      )
+
+      assert.deepStrictEqual(
+        harness.log.filter((line) => line.startsWith('seed ') || line.startsWith('event ')),
+        [`seed ${PANE_A} after 0 sessions`, 'event PaneAttentionChanged']
+      )
     })
   )
 

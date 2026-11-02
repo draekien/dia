@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 
-import { EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
 import type { ModelOption } from '@shared/domain/model'
 import {
   type AdapterPreferences,
   EMPTY_ADAPTER_PREFERENCES
 } from '@shared/domain/model-preferences'
 import type { PermissionMode } from '@shared/domain/pane'
+import { emptyPaneChatState } from '@shared/domain/pane-chat'
 import { type Project, ProjectId } from '@shared/domain/project'
 import { SessionSetupStep, WorktreeSetupStep } from '@shared/domain/tab-setup'
 import {
@@ -15,6 +15,7 @@ import {
   PaneCreateFailed,
   PaneSetupProgress
 } from '@shared/ipc/contract'
+import { PaneEventFrame } from '@shared/ipc/rpc'
 import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -107,7 +108,8 @@ const installBridge = (
   disabledModes: ReadonlyArray<PermissionMode> = []
 ) => {
   const modelListeners = new Set<(snapshot: ModelCatalogSnapshotJson) => void>()
-  const setupListeners = new Set<(event: PaneSetupProgress) => void>()
+  const frameListeners = new Set<(frame: PaneEventFrame) => void>()
+  let seq = 0
   const bridge = {
     models: {
       get: vi.fn(async () => snapshot),
@@ -131,11 +133,10 @@ const installBridge = (
       list: vi.fn(async () => plugins),
       onStatusChanged: vi.fn(() => () => undefined)
     },
-    getPaneHistory: vi.fn(async () => []),
-    getMessageQueue: vi.fn(async () => EMPTY_MESSAGE_QUEUE),
-    onSetupProgress: (listener: (event: PaneSetupProgress) => void) => {
-      setupListeners.add(listener)
-      return () => setupListeners.delete(listener)
+    getPaneChat: vi.fn(async (_paneId: string) => ({ state: emptyPaneChatState, seq: 0 })),
+    onPaneEvent: (listener: (frame: PaneEventFrame) => void) => {
+      frameListeners.add(listener)
+      return () => frameListeners.delete(listener)
     }
   }
   const noSubscription = () => () => undefined
@@ -148,7 +149,9 @@ const installBridge = (
       for (const listener of modelListeners) listener(next)
     },
     emitSetup: (event: PaneSetupProgress) => {
-      for (const listener of setupListeners) listener(event)
+      seq += 1
+      const frame = PaneEventFrame.make({ paneId: event.paneId, seq, event })
+      for (const listener of frameListeners) listener(frame)
     }
   })
 }
@@ -239,7 +242,7 @@ describe('PaneCreationForm model choice', () => {
     fireEvent.click(toggle)
     await start()
     const paneId = bridge.createTab.mock.calls[0][0].paneId
-    await waitFor(() => expect(bridge.getPaneHistory).toHaveBeenCalledWith(paneId))
+    await waitFor(() => expect(bridge.getPaneChat).toHaveBeenCalledWith(paneId))
 
     act(() => bridge.emitSetup(runningSetup(paneId)))
 

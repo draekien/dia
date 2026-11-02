@@ -392,7 +392,8 @@ function toAttentionTarget(message: OutboundMessage): Option.Option<AttentionSta
           request: PermissionRequest.make({
             requestId: m.requestId,
             toolName: m.toolName,
-            input: m.input
+            input: m.input,
+            ...(m.suggestions !== undefined ? { suggestions: m.suggestions } : {})
           })
         })
       )

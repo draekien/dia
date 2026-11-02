@@ -1,6 +1,7 @@
 import { Schema } from 'effect'
 import type { IpcEvent } from '../ipc/contract'
-import type { AttentionState, UserInputRequest } from './attention'
+import { type AttentionState, UserInputRequest } from './attention'
+import { ContextUsage } from './context-usage'
 import { ParkCause } from './parking'
 import { Uuid } from './uuid'
 
@@ -23,8 +24,14 @@ export type NoActivity = typeof NoActivity.Type
 export const Activity = Schema.Union([Todo, ToolUse, NoActivity])
 export type Activity = typeof Activity.Type
 
-/** The agent waits for the user; `reason` states what it asks. */
-export const StatusNeedsInput = Schema.TaggedStruct('StatusNeedsInput', { reason: Schema.String })
+/**
+ * The agent waits for the user; `reason` states what it asks. `request`, present while the agent
+ * waits on a permission, question or plan review, is the prompt to show and answer.
+ */
+export const StatusNeedsInput = Schema.TaggedStruct('StatusNeedsInput', {
+  reason: Schema.String,
+  request: Schema.optional(UserInputRequest)
+})
 export type StatusNeedsInput = typeof StatusNeedsInput.Type
 
 /** The agent's session failed; `reason` is the error message. */
@@ -68,14 +75,16 @@ export type AgentStatus = typeof AgentStatus.Type
  * What the overview shows for one tab: its status and its activity line. `turnStatus`, present
  * while the running turn is in a named state (retrying, compacting, thinking), replaces the
  * activity line until that state ends. `parked`, present while the tab's agent is parked, says
- * why the account refused its turn.
+ * why the account refused its turn. `contextUsage`, present once the tab's session has reported
+ * one, is the latest reading of how full its context window is.
  */
 export const AgentSummary = Schema.Struct({
   paneId: Uuid,
   status: AgentStatus,
   activity: Activity,
   turnStatus: Schema.optional(Schema.String),
-  parked: Schema.optional(ParkCause)
+  parked: Schema.optional(ParkCause),
+  contextUsage: Schema.optional(ContextUsage)
 })
 export type AgentSummary = typeof AgentSummary.Type
 
@@ -162,7 +171,10 @@ const foldAttention = (summary: AgentSummary, attention: AttentionState): AgentS
     case 'AwaitingPermission':
       return {
         ...resumed,
-        status: StatusNeedsInput.make({ reason: needsInputReason(attention.request) })
+        status: StatusNeedsInput.make({
+          reason: needsInputReason(attention.request),
+          request: attention.request
+        })
       }
     case 'Idle':
       if (isParked(summary)) return { ...resumed, status: StatusIdle.make({}) }
@@ -208,6 +220,8 @@ export const foldSummary = (summary: AgentSummary, event: IpcEvent): AgentSummar
           )
     case 'PaneAttentionChanged':
       return foldAttention(summary, event.attention)
+    case 'PaneContextUsageChanged':
+      return { ...summary, contextUsage: event.usage }
     default:
       return summary
   }

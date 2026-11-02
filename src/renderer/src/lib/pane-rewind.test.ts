@@ -1,5 +1,5 @@
+import type { PaneMessage } from '@shared/domain/pane-chat'
 import { describe, expect, it } from 'vitest'
-import type { PaneMessage } from './pane-chat'
 import {
   type RewindProgress,
   rewindFailureMessage,

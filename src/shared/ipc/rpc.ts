@@ -4,7 +4,7 @@ import { AdapterStatusSnapshot } from '../domain/adapter-status'
 import { AgentSummary } from '../domain/agent-summary'
 import { AttachmentType, ProjectEntry } from '../domain/attachment'
 import { ActivityId, ActivityInfo, ActivityNotFound } from '../domain/background-activity'
-import { MessageQueueSnapshot, SendMode } from '../domain/message-queue'
+import { SendMode } from '../domain/message-queue'
 import { MetaRepoPushResult, MetaRepoStateResult } from '../domain/meta-repo'
 import { ModelCatalogSnapshot } from '../domain/model'
 import {
@@ -13,7 +13,8 @@ import {
   ModelPreference,
   ModelPreferencesSnapshot
 } from '../domain/model-preferences'
-import { ConversationMessage, PermissionMode } from '../domain/pane'
+import { PermissionMode } from '../domain/pane'
+import { PaneChatSnapshot } from '../domain/pane-chat'
 import { UsageLimitResume } from '../domain/parking'
 import {
   ProjectId,
@@ -61,7 +62,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.20'
+export const PROTOCOL_VERSION = '0.0.22'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -152,10 +153,6 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('EditQueuedMessage', { payload: withRequestId(EditQueuedMessage) }),
   Rpc.make('RemoveQueuedMessage', { payload: withRequestId(RemoveQueuedMessage) }),
   Rpc.make('SendQueuedMessageNow', { payload: withRequestId(SendQueuedMessageNow) }),
-  Rpc.make('GetMessageQueue', {
-    payload: { paneId: Schema.String },
-    success: MessageQueueSnapshot
-  }),
   Rpc.make('GetWorkspace', { success: Workspace }),
   Rpc.make('RegisterProject', {
     payload: { projectId: ProjectId, directory: Schema.String },
@@ -171,9 +168,9 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('DeleteTab', { payload: { paneId: Uuid }, error: WorktreeNotRemovedError }),
   Rpc.make('GetAgentSummaries', { success: Schema.Array(AgentSummary) }),
   Rpc.make('GetTranscriptWidth', { success: TranscriptWidth }),
-  Rpc.make('GetPaneHistory', {
+  Rpc.make('GetPaneChat', {
     payload: { paneId: Schema.String },
-    success: Schema.Array(ConversationMessage)
+    success: PaneChatSnapshot
   }),
   Rpc.make('GetTheme', { success: ThemePreference }),
   Rpc.make('SetTheme', { payload: { theme: ThemePreference } }),

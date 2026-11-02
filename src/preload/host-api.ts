@@ -2,7 +2,6 @@ import { AdapterStatusSnapshot } from '@shared/domain/adapter-status'
 import { ActivityInfo, ActivityNotFound } from '@shared/domain/background-activity'
 import { ModelCatalogSnapshot } from '@shared/domain/model'
 import { LastVisibleModel } from '@shared/domain/model-preferences'
-import type { ConversationMessage } from '@shared/domain/pane'
 import { RegisterProjectError, type RegisterProjectRefusal } from '@shared/domain/project'
 import {
   ActivitiesChanged,
@@ -33,7 +32,7 @@ import {
   SetTranscriptWidth,
   WorkspaceChanged
 } from '@shared/ipc/contract'
-import type { DiaRpcs, EventFrame } from '@shared/ipc/rpc'
+import type { DiaRpcs, EventFrame, PaneEventFrame } from '@shared/ipc/rpc'
 import { Duration, Effect, Ref, Schedule, Schema, Stream } from 'effect'
 import type { RpcClient, RpcClientError } from 'effect/rpc'
 
@@ -107,6 +106,8 @@ const encodeLastVisibleModel = Schema.encodeSync(LastVisibleModel)
 export const makeHostApi = (deps: HostApiDeps): HostApi => {
   const reloadListeners = new Set<(paneId: string) => void>()
   const eventListeners = new Set<(event: IpcEvent) => void>()
+  const paneFrameListeners = new Set<(frame: PaneEventFrame) => void>()
+  const cursors = Ref.makeUnsafe<Record<string, number>>({})
 
   const dispatch = (event: IpcEvent): void => {
     for (const listener of eventListeners) listener(event)
@@ -132,13 +133,13 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     )
 
   const consume = Effect.gen(function* () {
-    const cursors = yield* Ref.make<Record<string, number>>({})
     const connectedBefore = yield* Ref.make(false)
 
     const handleFrame = (frame: EventFrame): Effect.Effect<void> =>
       Effect.gen(function* () {
         if (frame._tag === 'PaneEvent') {
           yield* Ref.update(cursors, (current) => ({ ...current, [frame.paneId]: frame.seq }))
+          for (const listener of paneFrameListeners) listener(frame)
           dispatch(frame.event)
         } else if (frame._tag === 'GlobalEvent') {
           dispatch(frame.event)
@@ -339,7 +340,6 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
           commandId
         })
       ),
-    getMessageQueue: (paneId) => query((client) => client.GetMessageQueue({ paneId })),
     resolvePermission: (paneId, requestId, response) =>
       command('ResolvePermission', (client, id) =>
         client.ResolvePermission({
@@ -456,8 +456,20 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       command('SetTranscriptWidth', (client, commandId) =>
         client.SetTranscriptWidth({ ...SetTranscriptWidth.make({ width }), commandId })
       ),
-    getPaneHistory: (paneId): Promise<ReadonlyArray<ConversationMessage>> =>
-      query((client) => client.GetPaneHistory({ paneId })),
+    getPaneChat: (paneId) =>
+      query((client) =>
+        client
+          .GetPaneChat({ paneId })
+          .pipe(
+            Effect.tap((snapshot) =>
+              Ref.update(cursors, (current) =>
+                (current[paneId] ?? 0) >= snapshot.seq
+                  ? current
+                  : { ...current, [paneId]: snapshot.seq }
+              )
+            )
+          )
+      ),
     pickDirectory: () => deps.pickDirectory(null),
     getTheme: () => query((client) => client.GetTheme()),
     setTheme: (theme) => query((client) => client.SetTheme({ theme })),
@@ -469,35 +481,16 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       reloadListeners.add(listener)
       return () => reloadListeners.delete(listener)
     },
-    onMessageAppended: (listener) => subscribeTo('PaneMessageAppended', listener),
+    onPaneEvent: (listener) => {
+      paneFrameListeners.add(listener)
+      return () => paneFrameListeners.delete(listener)
+    },
     onWorkspaceChanged: (listener) => subscribeTo('WorkspaceChanged', listener),
     onAgentSummaryChanged: (listener) => subscribeTo('AgentSummaryChanged', listener),
     onAgentSummariesReplaced: (listener) => subscribeTo('AgentSummariesReplaced', listener),
     onPaneCreateFailed: (listener) => subscribeTo('PaneCreateFailed', listener),
     onAttentionChanged: (listener) => subscribeTo('PaneAttentionChanged', listener),
-    onPermissionRequested: (listener) => subscribeTo('PanePermissionRequested', listener),
-    onQuestionRequested: (listener) => subscribeTo('PaneQuestionRequested', listener),
-    onPlanReviewRequested: (listener) => subscribeTo('PanePlanReviewRequested', listener),
-    onSlashCommandsWarming: (listener) => subscribeTo('PaneSlashCommandsWarming', listener),
-    onSlashCommandsAvailable: (listener) => subscribeTo('PaneSlashCommandsAvailable', listener),
-    onConversationCompacted: (listener) => subscribeTo('PaneConversationCompacted', listener),
-    onModelChanged: (listener) => subscribeTo('PaneModelChanged', listener),
-    onContextUsageChanged: (listener) => subscribeTo('PaneContextUsageChanged', listener),
-    onCompactionFailed: (listener) => subscribeTo('PaneCompactionFailed', listener),
-    onConversationReset: (listener) => subscribeTo('PaneConversationReset', listener),
-    onCheckpointAvailable: (listener) => subscribeTo('PaneCheckpointAvailable', listener),
     onRewoundToCheckpoint: (listener) => subscribeTo('PaneRewoundToCheckpoint', listener),
-    onRewindFailed: (listener) => subscribeTo('PaneRewindFailed', listener),
-    onMessageQueueChanged: (listener) => subscribeTo('PaneMessageQueueChanged', listener),
-    onUserMessagesSent: (listener) => subscribeTo('PaneUserMessagesSent', listener),
-    onAssistantTextDelta: (listener) => subscribeTo('PaneAssistantTextDelta', listener),
-    onAssistantThinkingDelta: (listener) => subscribeTo('PaneAssistantThinkingDelta', listener),
-    onToolCallStarted: (listener) => subscribeTo('PaneToolCallStarted', listener),
-    onToolCallCompleted: (listener) => subscribeTo('PaneToolCallCompleted', listener),
-    onToolCallUpdated: (listener) => subscribeTo('PaneToolCallUpdated', listener),
-    onTurnStatusChanged: (listener) => subscribeTo('PaneTurnStatusChanged', listener),
-    onSessionNotice: (listener) => subscribeTo('PaneSessionNotice', listener),
-    onSetupProgress: (listener) => subscribeTo('PaneSetupProgress', listener),
-    onBackgroundTasksChanged: (listener) => subscribeTo('PaneBackgroundTasksChanged', listener)
+    onRewindFailed: (listener) => subscribeTo('PaneRewindFailed', listener)
   }
 }

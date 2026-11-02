@@ -1,4 +1,4 @@
-import type { MessagePart, TextPart, ThinkingPart, ToolCallPart } from './pane-chat'
+import type { MessagePart, TextPart, ThinkingPart, ToolCallPart } from '@shared/domain/pane-chat'
 
 /** A thinking or tool-call part of an assistant turn: one step the agent took. */
 export type StepPart = ThinkingPart | ToolCallPart

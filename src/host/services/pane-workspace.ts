@@ -5,7 +5,6 @@ import {
 } from '@shared/domain/agent-name'
 import { Errored } from '@shared/domain/attention'
 import {
-  type ConversationMessage,
   DEFAULT_PERMISSION_MODE,
   DEFAULT_THINKING_LEVEL,
   type PaneId,
@@ -60,6 +59,7 @@ import {
 import { HostPlugins } from '../plugins/host-plugins'
 import type { DiscoveredSession } from '../session/agent-backend'
 import { EventHub } from './event-hub'
+import { PaneChatProjection } from './pane-chat-projection'
 import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
 import { probeProject } from './project-directory'
 import { TranscriptReader } from './transcript-reader'
@@ -182,7 +182,6 @@ export class PaneWorkspace extends Context.Service<
     ) => Effect.Effect<void, TabNotFoundError>
     /** Stores a tab's model and, when its session runs, makes its next turn use it. */
     readonly setModel: (paneId: PaneId, model: string) => Effect.Effect<void, TabNotFoundError>
-    readonly getPaneHistory: (paneId: PaneId) => Effect.Effect<ReadonlyArray<ConversationMessage>>
     /**
      * Resumes a cold tab's Agent SDK session, streaming its events through `onEvent`. A no-op
      * when the session already runs, when the tab is unknown or its project is being removed, or
@@ -208,7 +207,7 @@ const WORKTREES_PLUGIN_NOT_LOADED = 'Load the worktrees plugin to remove this wo
  * (sessions stay cold -- no processes are spawned here) and shows the first tab when none is
  * visible; with nothing persisted it starts empty. `worktreesRoot` is the base directory under
  * which tab worktrees are created. Requires {@link PaneSupervisor}, {@link WorkspaceStore},
- * {@link TranscriptReader}, {@link EventHub}, {@link HostPlugins} (for the worktree and agent
+ * {@link TranscriptReader}, {@link PaneChatProjection}, {@link EventHub}, {@link HostPlugins} (for the worktree and agent
  * backend services used to remove a project), {@link WorkspaceFeed} (which it keeps current),
  * `FileSystem`, `Path` and `Crypto`.
  */
@@ -219,6 +218,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       const supervisor = yield* PaneSupervisor
       const store = yield* WorkspaceStore
       const transcriptReader = yield* TranscriptReader
+      const paneChats = yield* PaneChatProjection
       const hub = yield* EventHub
       const plugins = yield* HostPlugins
       const fs = yield* FileSystem.FileSystem
@@ -608,6 +608,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           return yield* new WorktreeUnavailableError({ projectId })
         }
 
+        yield* paneChats.seed(paneId)
         const { config } = yield* supervisor.openPane(
           {
             paneId,
@@ -728,14 +729,6 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         if (Option.isSome(handle)) yield* handle.value.setModel(model)
       })
 
-      const getPaneHistory = Effect.fn('PaneWorkspace.getPaneHistory')(function* (paneId: PaneId) {
-        const found = WorkspaceOps.tabOf(yield* SubscriptionRef.get(workspaceRef), paneId)
-        if (Result.isFailure(found)) return []
-        const { sessionId, config } = found.success.tab
-        if (sessionId === undefined) return []
-        return yield* transcriptReader.readHistory(sessionId, config.cwd)
-      })
-
       const emitErrored = (paneId: PaneId, onEvent: OnEvent, message: string) =>
         onEvent(
           PaneAttentionChanged.make({ paneId, attention: Errored.make({ error: { message } }) })
@@ -768,6 +761,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           yield* Effect.logDebug('resumePane skipped; tab has no session to resume', { paneId })
           return
         }
+        yield* paneChats.seed(paneId)
 
         if (config.worktree === undefined) {
           const exists = yield* fs.exists(config.cwd).pipe(Effect.orElseSucceed(() => false))
@@ -844,7 +838,6 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         setThinkingLevel,
         setPermissionMode,
         setModel,
-        getPaneHistory,
         resumePane,
         ensureLive
       }

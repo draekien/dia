@@ -61,6 +61,54 @@ describe('composerAction', () => {
   )
 })
 
+describe('composerAction while answering a question', () => {
+  it.each([false, true])('is an enabled Answer button with text, running %s', (running) => {
+    expect(
+      composerAction({
+        running,
+        hasText: true,
+        modifierHeld: false,
+        defaultMode: 'steer',
+        answering: true
+      })
+    ).toEqual({ kind: 'submit', icon: 'sendNow', label: 'Answer', mode: 'steer', disabled: false })
+  })
+
+  it('still stops a running turn when the composer is empty', () => {
+    expect(
+      composerAction({
+        running: true,
+        hasText: false,
+        modifierHeld: false,
+        defaultMode: 'steer',
+        answering: true
+      })
+    ).toEqual({ kind: 'stop', icon: 'stop', label: 'Stop' })
+  })
+})
+
+describe('composerActionHint while answering a question', () => {
+  it('names Enter as answering and says attachments steer instead', () => {
+    expect(
+      composerActionHint({
+        running: true,
+        pending: true,
+        defaultMode: 'steer',
+        modifierKey: 'Ctrl',
+        answering: true
+      })
+    ).toEqual(['Answer this question with Enter', 'Attaching a file steers the turn instead'])
+  })
+})
+
+describe('composerPlaceholder while answering a question', () => {
+  it.each([false, true])('asks for the answer, running %s', (running) => {
+    expect(composerPlaceholder(running, 'steer', true)).toBe(
+      'Type your own answer to this question'
+    )
+  })
+})
+
 describe('composerActionHint', () => {
   it('names Enter and the other mode with the given key label while running', () => {
     expect(

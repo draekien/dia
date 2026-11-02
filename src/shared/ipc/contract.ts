@@ -12,6 +12,7 @@ import {
 import type { ActivityInfo, ActivityNotFound } from '../domain/background-activity'
 import { BackgroundTask } from '../domain/background-task'
 import { CompactionFailure, ContextUsage } from '../domain/context-usage'
+import { JsonRecord } from '../domain/json-record'
 import { MessageQueueSnapshot, OutgoingMessage, SendMode } from '../domain/message-queue'
 import type { MetaRepoPushResult, MetaRepoStateResult } from '../domain/meta-repo'
 import { ModelCatalogSnapshot } from '../domain/model'
@@ -22,6 +23,7 @@ import {
   ModelPreferencesSnapshot
 } from '../domain/model-preferences'
 import { ConversationMessage, PermissionMode, ThinkingLevel } from '../domain/pane'
+import type { PaneChatSnapshot } from '../domain/pane-chat'
 import type { UsageLimitResume } from '../domain/parking'
 import type { RegisterProjectRefusal } from '../domain/project'
 import { AgentName, CreateTabRequest, ProjectId, Workspace } from '../domain/project'
@@ -35,8 +37,7 @@ import { UpdateStatus } from '../domain/update'
 import { Uuid } from '../domain/uuid'
 import type { ImportResolution, UnreadableRow, WorkspaceProblem } from '../domain/workspace-problem'
 import { type PluginInfo, PluginName, type PluginOverrideResult } from '../plugin/manifest'
-
-const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
+import type { PaneEventFrame } from './rpc'
 
 /**
  * Electron IPC channel names shared by main, preload, and renderer. Only window duties travel
@@ -912,7 +913,6 @@ export interface DiaApi {
   removeQueuedMessage(paneId: string, messageId: string): void
   /** Sends queued message `messageId` now, steering the running turn; see {@link SendQueuedMessageNow}. */
   sendQueuedMessageNow(paneId: string, messageId: string): void
-  getMessageQueue(paneId: string): Promise<MessageQueueSnapshot>
   resolvePermission(paneId: string, requestId: string, response: PermissionResponse): void
   resolveQuestion(paneId: string, requestId: string, response: QuestionResponse): void
   setThinkingLevel(paneId: string, level: ThinkingLevel): void
@@ -961,7 +961,11 @@ export interface DiaApi {
   setTranscriptWidth(width: TranscriptWidth): void
   /** Shows `directory` in the system file manager; does nothing when it is not a directory. */
   revealPath(directory: string): Promise<void>
-  getPaneHistory(paneId: string): Promise<ReadonlyArray<ConversationMessage>>
+  /**
+   * The Host's chat state for pane `paneId` and the sequence number of the last event in it.
+   * Fold only events from {@link DiaApi.onPaneEvent} with a higher `seq` onto it.
+   */
+  getPaneChat(paneId: string): Promise<PaneChatSnapshot>
   /** Opens the native folder picker and resolves the chosen path, or `null` when the user cancels. */
   pickDirectory(): Promise<string | null>
   /** Opens the native file picker and resolves the chosen path, or `null` when the user cancels. */
@@ -983,38 +987,17 @@ export interface DiaApi {
   onUpdateStatusChanged(listener: (event: UpdateStatusChanged) => void): () => void
   /**
    * Subscribes to the Host telling the renderer it no longer holds the events the renderer
-   * missed for `paneId` while disconnected. The listener should reload that pane's history with
-   * `getPaneHistory` and replace the history it holds.
+   * missed for `paneId` while disconnected. The listener should read the pane's state again with
+   * `getPaneChat` and replace the state it holds.
    */
   onHistoryReloadRequested(listener: (paneId: string) => void): () => void
-  onMessageAppended(listener: (event: PaneMessageAppended) => void): () => void
+  /** Subscribes to every pane event with its pane's sequence number. */
+  onPaneEvent(listener: (frame: PaneEventFrame) => void): () => void
   onWorkspaceChanged(listener: (event: WorkspaceChanged) => void): () => void
   onAgentSummaryChanged(listener: (event: AgentSummaryChanged) => void): () => void
   onAgentSummariesReplaced(listener: (event: AgentSummariesReplaced) => void): () => void
   onPaneCreateFailed(listener: (event: PaneCreateFailed) => void): () => void
   onAttentionChanged(listener: (event: PaneAttentionChanged) => void): () => void
-  onPermissionRequested(listener: (event: PanePermissionRequested) => void): () => void
-  onQuestionRequested(listener: (event: PaneQuestionRequested) => void): () => void
-  onPlanReviewRequested(listener: (event: PanePlanReviewRequested) => void): () => void
-  onSlashCommandsWarming(listener: (event: PaneSlashCommandsWarming) => void): () => void
-  onSlashCommandsAvailable(listener: (event: PaneSlashCommandsAvailable) => void): () => void
-  onConversationCompacted(listener: (event: PaneConversationCompacted) => void): () => void
-  onConversationReset(listener: (event: PaneConversationReset) => void): () => void
-  onCheckpointAvailable(listener: (event: PaneCheckpointAvailable) => void): () => void
   onRewoundToCheckpoint(listener: (event: PaneRewoundToCheckpoint) => void): () => void
   onRewindFailed(listener: (event: PaneRewindFailed) => void): () => void
-  onMessageQueueChanged(listener: (event: PaneMessageQueueChanged) => void): () => void
-  onUserMessagesSent(listener: (event: PaneUserMessagesSent) => void): () => void
-  onModelChanged(listener: (event: PaneModelChanged) => void): () => void
-  onContextUsageChanged(listener: (event: PaneContextUsageChanged) => void): () => void
-  onCompactionFailed(listener: (event: PaneCompactionFailed) => void): () => void
-  onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void
-  onAssistantThinkingDelta(listener: (event: PaneAssistantThinkingDelta) => void): () => void
-  onToolCallStarted(listener: (event: PaneToolCallStarted) => void): () => void
-  onToolCallCompleted(listener: (event: PaneToolCallCompleted) => void): () => void
-  onToolCallUpdated(listener: (event: PaneToolCallUpdated) => void): () => void
-  onTurnStatusChanged(listener: (event: PaneTurnStatusChanged) => void): () => void
-  onSessionNotice(listener: (event: PaneSessionNotice) => void): () => void
-  onSetupProgress(listener: (event: PaneSetupProgress) => void): () => void
-  onBackgroundTasksChanged(listener: (event: PaneBackgroundTasksChanged) => void): () => void
 }
