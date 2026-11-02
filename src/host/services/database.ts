@@ -69,13 +69,19 @@ export const openDatabase = Effect.fn('openDatabase')(
 )
 
 /**
- * Provides `SqlClient` for `<userDataPath>/host.db` with the kernel migrations applied. A Host
- * service that keeps runtime state across a restart requires `SqlClient` from this layer.
- * Building it fails, and the Host does not start, when the file cannot be opened or a migration
- * fails.
+ * Provides `SqlClient` for `<userDataPath>/host.db` with the kernel migrations applied and
+ * `synchronous = NORMAL`: a dia crash loses no committed transaction, an OS crash or power loss can
+ * lose the commits since the last WAL checkpoint. A Host service that keeps runtime state across a
+ * restart requires `SqlClient` from this layer. Building it fails, and the Host does not start,
+ * when the file cannot be opened or a migration fails.
  */
 export const makeHostDatabaseLive = (userDataPath: string) =>
-  Layer.effect(SqlClient.SqlClient, openDatabase(`${userDataPath}/host.db`, kernelMigrations))
+  Layer.effect(
+    SqlClient.SqlClient,
+    Effect.tap(openDatabase(`${userDataPath}/host.db`, kernelMigrations), (sql) =>
+      sql.unsafe('PRAGMA synchronous = NORMAL')
+    )
+  )
 
 /**
  * Builds the `database` member of a plugin's context for the file `filename`, owned by the plugin

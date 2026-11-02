@@ -1,8 +1,10 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
-import { Cause, Data, Effect, Exit, FileSystem, Layer, Path, Scope } from 'effect'
+import { Cause, Context, Data, Effect, Exit, FileSystem, Layer, Path, Scope } from 'effect'
 import { SqlClient } from 'effect/sql'
-import { makePluginDatabase, openDatabase } from './database'
+import { TestClock } from 'effect/testing'
+import { makeHostDatabaseLive, makePluginDatabase, openDatabase } from './database'
+import { kernelMigrations } from './kernel-migrations'
 
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 
@@ -215,5 +217,92 @@ describe('makePluginDatabase', () => {
 
       assert.deepStrictEqual(tables, ['notes'])
     }).pipe(Effect.scoped, Effect.provide(platform))
+  )
+})
+
+describe('makeHostDatabaseLive', () => {
+  const openHostDatabase = (dir: string) =>
+    Effect.map(Layer.build(makeHostDatabaseLive(dir)), (context) =>
+      Context.get(context, SqlClient.SqlClient)
+    )
+
+  const insertAgentAtMigration2 = (sql: SqlClient.SqlClient, agentId: string, archived: 0 | 1) =>
+    sql`INSERT INTO agents ${sql.insert({
+      agent_id: agentId,
+      project_id: 'project',
+      position: 0,
+      name: agentId,
+      archived,
+      cwd: 'F:\\x',
+      model: 'claude-sonnet-5-5',
+      thinking_level: 'adaptive',
+      permission_mode: 'default'
+    })}`
+
+  it.effect('creates the agent event tables in a new host.db', () =>
+    Effect.gen(function* () {
+      const { dir } = yield* tempFile
+      const sql = yield* openHostDatabase(dir)
+
+      const tables = yield* tableNames(sql)
+
+      assert.includeMembers(tables, ['agent_events', 'agent_items', 'agent_transcript_cursors'])
+    }).pipe(Effect.scoped, Effect.provide(platform))
+  )
+
+  it.effect('opens host.db with write-ahead journaling and synchronous NORMAL', () =>
+    Effect.gen(function* () {
+      const { dir } = yield* tempFile
+      const sql = yield* openHostDatabase(dir)
+
+      const journal = yield* sql<{ journal_mode: string }>`PRAGMA journal_mode`
+      const synchronous = yield* sql<{ synchronous: number }>`PRAGMA synchronous`
+
+      const NORMAL = 1
+      assert.deepStrictEqual(
+        [journal[0]?.journal_mode, synchronous[0]?.synchronous],
+        ['wal', NORMAL]
+      )
+    }).pipe(Effect.scoped, Effect.provide(platform))
+  )
+
+  it.effect(
+    'gives an agent archived before the upgrade the upgrade time and keeps an active one unarchived',
+    () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path
+        const { dir } = yield* tempFile
+        const upgradeTime = 1_800_000_000_000
+        const before = yield* openIn(path.join(dir, 'host.db'), {
+          '1_workspace': kernelMigrations['1_workspace'],
+          '2_import_resolutions': kernelMigrations['2_import_resolutions']
+        })
+        yield* before.sql`INSERT INTO projects ${before.sql.insert({
+          project_id: 'project',
+          position: 0,
+          directory: 'F:\\x',
+          directory_key: 'f:\\x',
+          display_name: 'x',
+          is_git_repo: 0
+        })}`
+        yield* insertAgentAtMigration2(before.sql, 'archived-agent', 1)
+        yield* insertAgentAtMigration2(before.sql, 'active-agent', 0)
+        yield* before.close
+        yield* TestClock.setTime(upgradeTime)
+
+        const sql = yield* openHostDatabase(dir)
+        const rows = yield* sql<{
+          agent_id: string
+          archived_at: number | null
+        }>`SELECT agent_id, archived_at FROM agents ORDER BY agent_id`
+
+        assert.deepStrictEqual(
+          rows.map((row) => [row.agent_id, row.archived_at]),
+          [
+            ['active-agent', null],
+            ['archived-agent', upgradeTime]
+          ]
+        )
+      }).pipe(Effect.scoped, Effect.provide(platform))
   )
 })
