@@ -116,6 +116,7 @@ export function ClarifyingQuestionCard({
   const statusesRef = useRef<Statuses>({})
 
   function recordStatus(key: string, status: QuestionProgressStatus): void {
+    if (statusesRef.current[key] === status) return
     statusesRef.current = { ...statusesRef.current, [key]: status }
     setStatuses(statusesRef.current)
   }
@@ -155,7 +156,7 @@ export function ClarifyingQuestionCard({
     if (!question.multiSelect) {
       if (!checked) return
       setPicks((prev) => ({ ...prev, [key]: [label] }))
-      setTyped((prev) => ({ ...prev, [key]: '' }))
+      clearTyped(key)
       return
     }
     setPicks((prev) => {
