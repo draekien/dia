@@ -12,6 +12,3 @@ export function formatWhen(iso: string, now: Date = new Date()): string {
     ? timeFormat.format(when)
     : dayFormat.format(when)
 }
-
-/** The usage-limit time formatter, shared with the chat reducer in `src/shared`. */
-export { formatResetTime } from '@shared/format-reset-time'

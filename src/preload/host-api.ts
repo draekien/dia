@@ -472,35 +472,12 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       paneFrameListeners.add(listener)
       return () => paneFrameListeners.delete(listener)
     },
-    onMessageAppended: (listener) => subscribeTo('PaneMessageAppended', listener),
     onWorkspaceChanged: (listener) => subscribeTo('WorkspaceChanged', listener),
     onAgentSummaryChanged: (listener) => subscribeTo('AgentSummaryChanged', listener),
     onAgentSummariesReplaced: (listener) => subscribeTo('AgentSummariesReplaced', listener),
     onPaneCreateFailed: (listener) => subscribeTo('PaneCreateFailed', listener),
     onAttentionChanged: (listener) => subscribeTo('PaneAttentionChanged', listener),
-    onPermissionRequested: (listener) => subscribeTo('PanePermissionRequested', listener),
-    onQuestionRequested: (listener) => subscribeTo('PaneQuestionRequested', listener),
-    onPlanReviewRequested: (listener) => subscribeTo('PanePlanReviewRequested', listener),
-    onSlashCommandsWarming: (listener) => subscribeTo('PaneSlashCommandsWarming', listener),
-    onSlashCommandsAvailable: (listener) => subscribeTo('PaneSlashCommandsAvailable', listener),
-    onConversationCompacted: (listener) => subscribeTo('PaneConversationCompacted', listener),
-    onModelChanged: (listener) => subscribeTo('PaneModelChanged', listener),
-    onContextUsageChanged: (listener) => subscribeTo('PaneContextUsageChanged', listener),
-    onCompactionFailed: (listener) => subscribeTo('PaneCompactionFailed', listener),
-    onConversationReset: (listener) => subscribeTo('PaneConversationReset', listener),
-    onCheckpointAvailable: (listener) => subscribeTo('PaneCheckpointAvailable', listener),
     onRewoundToCheckpoint: (listener) => subscribeTo('PaneRewoundToCheckpoint', listener),
-    onRewindFailed: (listener) => subscribeTo('PaneRewindFailed', listener),
-    onMessageQueueChanged: (listener) => subscribeTo('PaneMessageQueueChanged', listener),
-    onUserMessagesSent: (listener) => subscribeTo('PaneUserMessagesSent', listener),
-    onAssistantTextDelta: (listener) => subscribeTo('PaneAssistantTextDelta', listener),
-    onAssistantThinkingDelta: (listener) => subscribeTo('PaneAssistantThinkingDelta', listener),
-    onToolCallStarted: (listener) => subscribeTo('PaneToolCallStarted', listener),
-    onToolCallCompleted: (listener) => subscribeTo('PaneToolCallCompleted', listener),
-    onToolCallUpdated: (listener) => subscribeTo('PaneToolCallUpdated', listener),
-    onTurnStatusChanged: (listener) => subscribeTo('PaneTurnStatusChanged', listener),
-    onSessionNotice: (listener) => subscribeTo('PaneSessionNotice', listener),
-    onSetupProgress: (listener) => subscribeTo('PaneSetupProgress', listener),
-    onBackgroundTasksChanged: (listener) => subscribeTo('PaneBackgroundTasksChanged', listener)
+    onRewindFailed: (listener) => subscribeTo('PaneRewindFailed', listener)
   }
 }

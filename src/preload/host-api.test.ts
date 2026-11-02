@@ -299,8 +299,8 @@ describe('makeHostApi', () => {
     })
     const { api } = makeApi(client)
     const received: Array<string> = []
-    api.onAssistantTextDelta((event) => {
-      received.push(event.text)
+    api.onPaneEvent((frame) => {
+      if (frame.event._tag === 'PaneAssistantTextDelta') received.push(frame.event.text)
     })
 
     await advance(1500)

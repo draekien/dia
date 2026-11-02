@@ -8,7 +8,7 @@ import {
   paneChatStateFromHistory,
   reducePaneChat
 } from '@shared/domain/pane-chat'
-import type { Workspace } from '@shared/domain/project'
+import type { Tab, Workspace } from '@shared/domain/project'
 import * as WorkspaceOps from '@shared/domain/workspace'
 import type { IpcEvent } from '@shared/ipc/contract'
 import type { EventFrame, PaneEventFrame } from '@shared/ipc/rpc'
@@ -81,10 +81,17 @@ export const PaneChatProjectionLive = Layer.effect(
         )
       )
 
-    const seed = Effect.fn('PaneChatProjection.seed')(function* (paneId: PaneId) {
+    const tabOf = (paneId: PaneId) =>
+      Effect.map(SubscriptionRef.get(workspaceFeed), (workspace) => {
+        const found = WorkspaceOps.tabOf(workspace, paneId)
+        return Result.isSuccess(found) ? found.success.tab : undefined
+      })
+
+    const seedFrom = Effect.fn('PaneChatProjection.seed')(function* (
+      paneId: PaneId,
+      tab: Tab | undefined
+    ) {
       if ((yield* Ref.get(entries)).has(paneId)) return
-      const found = WorkspaceOps.tabOf(yield* SubscriptionRef.get(workspaceFeed), paneId)
-      const tab = Result.isSuccess(found) ? found.success.tab : undefined
       const state =
         tab?.sessionId === undefined
           ? emptyPaneChatState
@@ -106,11 +113,11 @@ export const PaneChatProjectionLive = Layer.effect(
       }
     })
 
+    const seed = (paneId: PaneId) => Effect.flatMap(tabOf(paneId), (tab) => seedFrom(paneId, tab))
+
     const snapshot = Effect.fn('PaneChatProjection.snapshot')(function* (paneId: PaneId) {
-      const isTab = Result.isSuccess(
-        WorkspaceOps.tabOf(yield* SubscriptionRef.get(workspaceFeed), paneId)
-      )
-      if (isTab) yield* seed(paneId)
+      const tab = yield* tabOf(paneId)
+      if (tab !== undefined) yield* seedFrom(paneId, tab)
       const entry = (yield* Ref.get(entries)).get(paneId)
       return entry === undefined
         ? { state: emptyPaneChatState, seq: 0 }

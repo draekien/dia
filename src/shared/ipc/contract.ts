@@ -993,34 +993,11 @@ export interface DiaApi {
   onHistoryReloadRequested(listener: (paneId: string) => void): () => void
   /** Subscribes to every pane event with its pane's sequence number. */
   onPaneEvent(listener: (frame: PaneEventFrame) => void): () => void
-  onMessageAppended(listener: (event: PaneMessageAppended) => void): () => void
   onWorkspaceChanged(listener: (event: WorkspaceChanged) => void): () => void
   onAgentSummaryChanged(listener: (event: AgentSummaryChanged) => void): () => void
   onAgentSummariesReplaced(listener: (event: AgentSummariesReplaced) => void): () => void
   onPaneCreateFailed(listener: (event: PaneCreateFailed) => void): () => void
   onAttentionChanged(listener: (event: PaneAttentionChanged) => void): () => void
-  onPermissionRequested(listener: (event: PanePermissionRequested) => void): () => void
-  onQuestionRequested(listener: (event: PaneQuestionRequested) => void): () => void
-  onPlanReviewRequested(listener: (event: PanePlanReviewRequested) => void): () => void
-  onSlashCommandsWarming(listener: (event: PaneSlashCommandsWarming) => void): () => void
-  onSlashCommandsAvailable(listener: (event: PaneSlashCommandsAvailable) => void): () => void
-  onConversationCompacted(listener: (event: PaneConversationCompacted) => void): () => void
-  onConversationReset(listener: (event: PaneConversationReset) => void): () => void
-  onCheckpointAvailable(listener: (event: PaneCheckpointAvailable) => void): () => void
   onRewoundToCheckpoint(listener: (event: PaneRewoundToCheckpoint) => void): () => void
   onRewindFailed(listener: (event: PaneRewindFailed) => void): () => void
-  onMessageQueueChanged(listener: (event: PaneMessageQueueChanged) => void): () => void
-  onUserMessagesSent(listener: (event: PaneUserMessagesSent) => void): () => void
-  onModelChanged(listener: (event: PaneModelChanged) => void): () => void
-  onContextUsageChanged(listener: (event: PaneContextUsageChanged) => void): () => void
-  onCompactionFailed(listener: (event: PaneCompactionFailed) => void): () => void
-  onAssistantTextDelta(listener: (event: PaneAssistantTextDelta) => void): () => void
-  onAssistantThinkingDelta(listener: (event: PaneAssistantThinkingDelta) => void): () => void
-  onToolCallStarted(listener: (event: PaneToolCallStarted) => void): () => void
-  onToolCallCompleted(listener: (event: PaneToolCallCompleted) => void): () => void
-  onToolCallUpdated(listener: (event: PaneToolCallUpdated) => void): () => void
-  onTurnStatusChanged(listener: (event: PaneTurnStatusChanged) => void): () => void
-  onSessionNotice(listener: (event: PaneSessionNotice) => void): () => void
-  onSetupProgress(listener: (event: PaneSetupProgress) => void): () => void
-  onBackgroundTasksChanged(listener: (event: PaneBackgroundTasksChanged) => void): () => void
 }
