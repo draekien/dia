@@ -105,7 +105,7 @@ import {
   filterProjectEntries,
   removeToken
 } from './attachment-draft'
-import { ClarifyingQuestionCard } from './clarifying-question-card'
+import { ClarifyingQuestionCard, type ClarifyingQuestionHandle } from './clarifying-question-card'
 import {
   type ComposerAction,
   composerAction,
@@ -700,6 +700,7 @@ function PaneChat({
   const [dragging, setDragging] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const questionRef = useRef<ClarifyingQuestionHandle>(null)
   const attachments = useComposerAttachments(useAttachmentTypes())
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: focuses once, when the composer first mounts
@@ -736,6 +737,7 @@ function PaneChat({
   const activity = turnActivity(chat, elapsedMs, idleMs)
 
   const pendingInteraction = pendingRequest !== undefined
+  const answeringQuestion = pendingQuestion !== null && attachments.ready.length === 0
   const retryText = lastUserText(chat)
 
   const resend = (): void => {
@@ -777,6 +779,11 @@ function PaneChat({
       const text = value.text.trim()
       const ready = attachments.ready
       if (attachments.reading || (!text && ready.length === 0)) return
+      if (answeringQuestion) {
+        questionRef.current?.answerCurrent(text)
+        formApi.reset()
+        return
+      }
       const mode = pendingInteraction ? 'steer' : meta.mode
       sendMessage({ text, mode, attachments: ready })
       if (mode === 'steer' || !isLoading) clearPendingInteractions()
@@ -831,7 +838,11 @@ function PaneChat({
             <PermissionRequestCard request={pendingPermission} onResolve={respondToPermission} />
           )}
           {pendingQuestion !== null && (
-            <ClarifyingQuestionCard request={pendingQuestion} onResolve={respondToQuestion} />
+            <ClarifyingQuestionCard
+              ref={questionRef}
+              request={pendingQuestion}
+              onResolve={respondToQuestion}
+            />
           )}
           {pendingPlanReview !== null && (
             <PlanReviewCard request={pendingPlanReview} onResolve={respondToPlanReview} />
@@ -1071,7 +1082,11 @@ function PaneChat({
                               ? pathMenuOptionId(paneId, pathIndex)
                               : undefined
                         }
-                        placeholder={composerPlaceholder(isLoading, actionDefaultMode)}
+                        placeholder={composerPlaceholder(
+                          isLoading,
+                          actionDefaultMode,
+                          answeringQuestion
+                        )}
                         aria-label="Message dia"
                       />
                       {attachments.drafts.length > 0 && (
@@ -1127,11 +1142,13 @@ function PaneChat({
                             hasText:
                               field.state.value.trim() !== '' || attachments.ready.length > 0,
                             modifierHeld: modifierHeld && !pendingInteraction,
-                            defaultMode: actionDefaultMode
+                            defaultMode: actionDefaultMode,
+                            answering: answeringQuestion
                           })}
                           hint={composerActionHint({
                             running: isLoading,
                             pending: pendingInteraction,
+                            answering: answeringQuestion,
                             defaultMode: actionDefaultMode,
                             modifierKey: MODIFIER_KEY
                           })}
