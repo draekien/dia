@@ -203,33 +203,33 @@ export type PaneStreamEvent =
  */
 export type PaneModelChangeNotice = PaneModelChanged & { readonly displayName?: string }
 
-const STREAM_EVENT_TAGS: ReadonlySet<string> = new Set<PaneStreamEvent['_tag']>([
-  'PaneAssistantTextDelta',
-  'PaneAssistantThinkingDelta',
-  'PaneToolCallStarted',
-  'PaneToolCallCompleted',
-  'PaneToolCallUpdated',
-  'PaneTurnStatusChanged',
-  'PaneSessionNotice',
-  'PaneSetupProgress',
-  'PaneBackgroundTasksChanged',
-  'PaneMessageAppended',
-  'PaneAttentionChanged',
-  'PaneSlashCommandsWarming',
-  'PaneSlashCommandsAvailable',
-  'PaneConversationCompacted',
-  'PaneCompactionFailed',
-  'PaneConversationReset',
-  'PaneCheckpointAvailable',
-  'PaneRewoundToCheckpoint',
-  'PaneMessageQueueChanged',
-  'PaneUserMessagesSent',
-  'PaneModelChanged'
-])
+const STREAM_EVENT_TAGS: Readonly<Record<PaneStreamEvent['_tag'], true>> = {
+  PaneAssistantTextDelta: true,
+  PaneAssistantThinkingDelta: true,
+  PaneToolCallStarted: true,
+  PaneToolCallCompleted: true,
+  PaneToolCallUpdated: true,
+  PaneTurnStatusChanged: true,
+  PaneSessionNotice: true,
+  PaneSetupProgress: true,
+  PaneBackgroundTasksChanged: true,
+  PaneMessageAppended: true,
+  PaneAttentionChanged: true,
+  PaneSlashCommandsWarming: true,
+  PaneSlashCommandsAvailable: true,
+  PaneConversationCompacted: true,
+  PaneCompactionFailed: true,
+  PaneConversationReset: true,
+  PaneCheckpointAvailable: true,
+  PaneRewoundToCheckpoint: true,
+  PaneMessageQueueChanged: true,
+  PaneUserMessagesSent: true,
+  PaneModelChanged: true
+}
 
 /** Whether `event` is one {@link reducePaneChat} folds. */
 export const isPaneStreamEvent = (event: IpcEvent): event is PaneStreamEvent =>
-  STREAM_EVENT_TAGS.has(event._tag)
+  Object.hasOwn(STREAM_EVENT_TAGS, event._tag)
 
 /** The empty conversation state a pane starts from before history loads. */
 export const emptyPaneChatState: PaneChatState = {

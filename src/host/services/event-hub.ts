@@ -42,6 +42,8 @@ export class EventHub extends Context.Service<
      * without a cursor receive only events published after subscribing.
      */
     readonly subscribe: (cursors: Readonly<Record<string, number>>) => Stream.Stream<EventFrame>
+    /** The sequence number of the last event published for `paneId`, or 0 when none was. */
+    readonly lastSeq: (paneId: string) => Effect.Effect<number>
   }
 >()('EventHub') {}
 
@@ -117,6 +119,9 @@ export const makeEventHubLive = (bufferSize: number = DEFAULT_REPLAY_BUFFER_SIZE
           })
         )
 
-      return { publish, subscribe }
+      const lastSeq = (paneId: string): Effect.Effect<number> =>
+        Effect.sync(() => (buffers.get(paneId)?.nextSeq ?? 1) - 1)
+
+      return { publish, subscribe, lastSeq }
     })
   )

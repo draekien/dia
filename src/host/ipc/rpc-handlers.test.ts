@@ -372,7 +372,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       Effect.sync(() => {
         published.push(event)
       }),
-    subscribe: () => Stream.empty
+    subscribe: () => Stream.empty,
+    lastSeq: () => Effect.succeed(0)
   })
 
   return {

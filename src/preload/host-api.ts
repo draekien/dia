@@ -107,6 +107,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
   const reloadListeners = new Set<(paneId: string) => void>()
   const eventListeners = new Set<(event: IpcEvent) => void>()
   const paneFrameListeners = new Set<(frame: PaneEventFrame) => void>()
+  const cursors = Ref.makeUnsafe<Record<string, number>>({})
 
   const dispatch = (event: IpcEvent): void => {
     for (const listener of eventListeners) listener(event)
@@ -132,7 +133,6 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     )
 
   const consume = Effect.gen(function* () {
-    const cursors = yield* Ref.make<Record<string, number>>({})
     const connectedBefore = yield* Ref.make(false)
 
     const handleFrame = (frame: EventFrame): Effect.Effect<void> =>
@@ -456,7 +456,20 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       command('SetTranscriptWidth', (client, commandId) =>
         client.SetTranscriptWidth({ ...SetTranscriptWidth.make({ width }), commandId })
       ),
-    getPaneChat: (paneId) => query((client) => client.GetPaneChat({ paneId })),
+    getPaneChat: (paneId) =>
+      query((client) =>
+        client
+          .GetPaneChat({ paneId })
+          .pipe(
+            Effect.tap((snapshot) =>
+              Ref.update(cursors, (current) =>
+                (current[paneId] ?? 0) >= snapshot.seq
+                  ? current
+                  : { ...current, [paneId]: snapshot.seq }
+              )
+            )
+          )
+      ),
     pickDirectory: () => deps.pickDirectory(null),
     getTheme: () => query((client) => client.GetTheme()),
     setTheme: (theme) => query((client) => client.SetTheme({ theme })),

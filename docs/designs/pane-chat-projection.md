@@ -99,7 +99,8 @@ Knowledge it owns: the current `PaneChatSnapshot` of every seeded workspace tab.
 - **Seeding.** `seed(paneId)` creates the entry when it has none: it reads the tab from
   `WorkspaceFeed`; a workspace tab with a `sessionId` starts from
   `paneChatStateFromHistory(paneId, transcriptReader.readHistory(sessionId, cwd))`, any other pane
-  from `emptyPaneChatState`; `seq` starts at 0; `inWorkspace` is true when `WorkspaceFeed` holds
+  from `emptyPaneChatState`; `seq` starts at `EventHub.lastSeq(paneId)`, read under the semaphore,
+  so frames published before the entry existed are never folded onto it; `inWorkspace` is true when `WorkspaceFeed` holds
   the tab. Both session starts call it before
   anything can publish for the pane: `PaneWorkspace.startPaneSession` (resume, `selectTab`,
   `ensureLive`), before its cwd check and `emitErrored`, and
@@ -108,13 +109,18 @@ Knowledge it owns: the current `PaneChatSnapshot` of every seeded workspace tab.
   and every event the session publishes is folded on top of it. The other restarts (thinking-level
   change, rewind fork, parked resume, Retry, `/clear`) run on a pane that already has an entry.
   `snapshot` calls `seed` for a workspace tab with no entry; no session runs for such a tab.
+- **Catching up.** The projection folds on its own `EventHub` subscription, so it can be behind a
+  frame the renderer has already received. `snapshot` reads `EventHub.lastSeq(paneId)` and waits
+  until the entry's `seq` reaches it (or the entry is gone) before answering, for at most 2 s;
+  past that it logs a warning and answers with what it has.
 - **Folding.** For each `PaneEvent` frame of a pane with an entry, it folds the frame only when
   `frame.seq` is greater than the entry's `seq`: an event `isPaneStreamEvent` accepts goes through
   `reducePaneChat(state, event, now)` (`now` from `Clock`; `PaneModelChanged` gets `displayName`
   from `ModelCatalogFeed.current`), and any frame sets the entry's `seq` to `frame.seq`. A frame
   for a pane with no entry (a late event of a removed tab) is logged and ignored.
-- **Eviction.** On each `WorkspaceChanged` frame it sets `inWorkspace` to true for entries whose
-  pane is in the frame's workspace, then removes entries with `inWorkspace` true whose pane is not
+- **Eviction.** On each `WorkspaceChanged` frame it reads the current `WorkspaceFeed` (not the
+  frame's workspace, which can be older than the feed `seed` read), sets `inWorkspace` to true for
+  entries whose pane is in it, then removes entries with `inWorkspace` true whose pane is not
   in it. No previous workspace is needed, so the first frame after startup evicts correctly; an
   entry `createTab` seeded for a tab not yet added (`inWorkspace` false) is kept.
 - Logs seeding, eviction and ignored frames with Effect's logger.
@@ -163,9 +169,10 @@ before `supervisor.openPane`.
 - Permission, question and plan cards keep reading `AgentSummary.status.request`; context usage
   keeps reading `AgentSummary.contextUsage`. The overview reads attention from `AgentSummary`; the
   chat view reads it from `PaneChatState`.
-- After a dropped connection, the preload resumes only panes it holds a cursor for
-  (`host-api.ts:141`); frames for a pane it never received one for are not replayed. This is
-  unchanged by this design.
+- After a dropped connection, the preload resumes from each pane's cursor. `getPaneChat` raises the
+  pane's cursor to `snapshot.seq` when that is higher, so a pane whose atom holds a snapshot is
+  replayed from it after a dropped connection, and gets `ReloadHistory` after a Host restart
+  (the cursor is then above the new Host's last `seq`).
 
 ## Risks
 
@@ -219,7 +226,7 @@ Round 1:
   `PaneModelChangeNotice` a Schema rejected: it has no parallel schema and never crosses a boundary.
 - m1-m5 accepted. m6 (a per-pane Host stream) rejected: it would duplicate the preload's
   reconnect and cursor logic in a second stream.
-- Preload replay for panes without a cursor: recorded as out of scope; existing behaviour.
+- Preload replay for panes without a cursor: fixed after review (see Review fixes).
 
 Round 2:
 - F1 `createTab` starts a session before the tab is in the workspace: accepted. Fixed with the
@@ -243,3 +250,11 @@ Round 3 (budget spent):
   "shell": accepted.
 - Recommended-rule note on `seed`'s call-order contract: not a violation; the call sites are named
   and tested.
+
+Review fixes (after implementation, `/code-review`):
+- The snapshot could miss a frame the renderer had received before the projection folded it:
+  fixed by the catch-up wait and by seeding `seq` at `EventHub.lastSeq`.
+- After a Host restart a pane with a snapshot but no cursor dropped new frames: fixed by raising
+  the preload cursor from `getPaneChat`.
+- A delayed `WorkspaceChanged` frame could evict a freshly seeded entry: fixed by reading the
+  current `WorkspaceFeed` on eviction.

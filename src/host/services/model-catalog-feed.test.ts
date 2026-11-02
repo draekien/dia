@@ -78,7 +78,8 @@ const feedWith = (
           Effect.sync(() => {
             published.push(event)
           }),
-        subscribe: () => Stream.empty
+        subscribe: () => Stream.empty,
+        lastSeq: () => Effect.succeed(0)
       })
     )
   )

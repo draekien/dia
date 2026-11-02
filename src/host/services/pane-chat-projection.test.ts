@@ -10,7 +10,7 @@ import {
   PaneModelChanged,
   WorkspaceChanged
 } from '@shared/ipc/contract'
-import { DateTime, Effect, Layer, SubscriptionRef } from 'effect'
+import { DateTime, Deferred, Effect, Fiber, Layer, SubscriptionRef } from 'effect'
 import { EventHub, makeEventHubLive } from './event-hub'
 import { ModelCatalogFeed } from './model-catalog-feed'
 import { PaneChatProjection, PaneChatProjectionLive } from './pane-chat-projection'
@@ -68,7 +68,7 @@ const CATALOG = {
   })
 }
 
-const makeSetup = () => {
+const makeSetup = (catalogReady: Effect.Effect<void> = Effect.void) => {
   const reads: Array<string> = []
   const transcripts = Layer.succeed(TranscriptReader, {
     readHistory: (sessionId) =>
@@ -80,7 +80,7 @@ const makeSetup = () => {
   })
   const models = Layer.succeed(ModelCatalogFeed, {
     start: Effect.void,
-    current: Effect.succeed(CATALOG),
+    current: Effect.as(catalogReady, CATALOG),
     refresh: Effect.void
   })
   const layer = Layer.provideMerge(
@@ -238,6 +238,54 @@ describe('PaneChatProjection', () => {
       assert.deepStrictEqual(yield* textsOf(PANE_B), ['setting up'])
     }).pipe(Effect.provide(layer))
   })
+
+  it.effect('waits for an event still being folded before serving the snapshot', () => {
+    const catalogReady = Deferred.makeUnsafe<void>()
+    const { layer } = makeSetup(Deferred.await(catalogReady))
+    return Effect.gen(function* () {
+      yield* setWorkspace(workspaceOf([tab(PANE_A)]))
+      yield* seed(PANE_A)
+      yield* publish(PaneModelChanged.make({ paneId: PANE_A, model: 'sonnet' }))
+
+      const pending = yield* Effect.forkChild(snapshotOf(PANE_A))
+      yield* settle
+      yield* Deferred.succeed(catalogReady, undefined)
+      const snapshot = yield* Fiber.join(pending)
+
+      assert.strictEqual(snapshot.seq, 1)
+      assert.deepStrictEqual(yield* textsOf(PANE_A), ['Model → Sonnet'])
+    }).pipe(Effect.provide(layer))
+  })
+
+  it.effect('numbers a seeded tab after the events published before it was seeded', () => {
+    const { layer } = makeSetup()
+    return Effect.gen(function* () {
+      yield* setWorkspace(workspaceOf([tab(PANE_A)]))
+      yield* publish(delta(PANE_A, 'before'))
+      yield* publish(delta(PANE_A, 'seeding'))
+
+      const snapshot = yield* snapshotOf(PANE_A)
+
+      assert.strictEqual(snapshot.seq, 2)
+      assert.deepStrictEqual(yield* textsOf(PANE_A), [])
+    }).pipe(Effect.provide(layer))
+  })
+
+  it.effect(
+    'keeps a tab that a stale workspace event leaves out but the workspace still has',
+    () => {
+      const { layer } = makeSetup()
+      return Effect.gen(function* () {
+        yield* setWorkspace(workspaceOf([tab(PANE_A)]))
+        yield* seed(PANE_A)
+        yield* publish(delta(PANE_A, 'hi'))
+
+        yield* publish(WorkspaceChanged.make({ workspace: workspaceOf([]) }))
+
+        assert.deepStrictEqual(yield* textsOf(PANE_A), ['hi'])
+      }).pipe(Effect.provide(layer))
+    }
+  )
 
   it.effect('drops the state of a tab that leaves the workspace', () => {
     const { reads, layer } = makeSetup()

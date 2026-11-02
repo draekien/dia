@@ -15,9 +15,10 @@ import type { EventFrame, PaneEventFrame } from '@shared/ipc/rpc'
 import {
   Clock,
   Context,
+  Duration,
   Effect,
   Layer,
-  Ref,
+  Option,
   Result,
   Semaphore,
   Stream,
@@ -58,6 +59,8 @@ interface Entry {
   readonly inWorkspace: boolean
 }
 
+const CATCH_UP_LIMIT = Duration.seconds(2)
+
 const paneIdsOf = (workspace: Workspace): ReadonlySet<PaneId> =>
   new Set(workspace.projects.flatMap((entry) => entry.tabs.map((tab) => tab.config.paneId)))
 
@@ -69,16 +72,26 @@ export const PaneChatProjectionLive = Layer.effect(
     const workspaceFeed = yield* WorkspaceFeed
     const transcriptReader = yield* TranscriptReader
     const modelCatalog = yield* ModelCatalogFeed
-    const entries = yield* Ref.make<ReadonlyMap<PaneId, Entry>>(new Map())
+    const entries = yield* SubscriptionRef.make<ReadonlyMap<PaneId, Entry>>(new Map())
     const lock = yield* Semaphore.make(1)
 
-    const insertIfAbsent = (paneId: PaneId, entry: Entry) =>
+    const insertIfAbsent = (paneId: PaneId, state: PaneChatState, inWorkspace: boolean) =>
       lock.withPermits(1)(
-        Ref.modify(entries, (current) =>
-          current.has(paneId)
-            ? [false, current]
-            : [true, new Map(current).set(paneId, entry) as ReadonlyMap<PaneId, Entry>]
-        )
+        Effect.gen(function* () {
+          const seq = yield* hub.lastSeq(paneId)
+          return yield* SubscriptionRef.modify(entries, (current) =>
+            current.has(paneId)
+              ? [false, current]
+              : [
+                  true,
+                  new Map(current).set(paneId, {
+                    state,
+                    seq,
+                    inWorkspace
+                  }) as ReadonlyMap<PaneId, Entry>
+                ]
+          )
+        })
       )
 
     const tabOf = (paneId: PaneId) =>
@@ -91,7 +104,7 @@ export const PaneChatProjectionLive = Layer.effect(
       paneId: PaneId,
       tab: Tab | undefined
     ) {
-      if ((yield* Ref.get(entries)).has(paneId)) return
+      if ((yield* SubscriptionRef.get(entries)).has(paneId)) return
       const state =
         tab?.sessionId === undefined
           ? emptyPaneChatState
@@ -99,11 +112,7 @@ export const PaneChatProjectionLive = Layer.effect(
               paneId,
               yield* transcriptReader.readHistory(tab.sessionId, tab.config.cwd)
             )
-      const inserted = yield* insertIfAbsent(paneId, {
-        state,
-        seq: 0,
-        inWorkspace: tab !== undefined
-      })
+      const inserted = yield* insertIfAbsent(paneId, state, tab !== undefined)
       if (inserted) {
         yield* Effect.logDebug('Seeded pane chat state', {
           paneId,
@@ -115,10 +124,28 @@ export const PaneChatProjectionLive = Layer.effect(
 
     const seed = (paneId: PaneId) => Effect.flatMap(tabOf(paneId), (tab) => seedFrom(paneId, tab))
 
+    const caughtUp = Effect.fn('PaneChatProjection.caughtUp')(function* (
+      paneId: PaneId,
+      target: number
+    ) {
+      const reached = yield* SubscriptionRef.changes(entries).pipe(
+        Stream.filter((current) => (current.get(paneId)?.seq ?? target) >= target),
+        Stream.runHead,
+        Effect.timeoutOption(CATCH_UP_LIMIT)
+      )
+      if (Option.isNone(reached)) {
+        yield* Effect.logWarning('Served a pane chat snapshot behind the event stream', {
+          paneId,
+          target
+        })
+      }
+      return (yield* SubscriptionRef.get(entries)).get(paneId)
+    })
+
     const snapshot = Effect.fn('PaneChatProjection.snapshot')(function* (paneId: PaneId) {
       const tab = yield* tabOf(paneId)
       if (tab !== undefined) yield* seedFrom(paneId, tab)
-      const entry = (yield* Ref.get(entries)).get(paneId)
+      const entry = yield* caughtUp(paneId, yield* hub.lastSeq(paneId))
       return entry === undefined
         ? { state: emptyPaneChatState, seq: 0 }
         : { state: entry.state, seq: entry.seq }
@@ -138,7 +165,7 @@ export const PaneChatProjectionLive = Layer.effect(
     const foldFrame = (frame: PaneEventFrame) =>
       lock.withPermits(1)(
         Effect.gen(function* () {
-          const entry = (yield* Ref.get(entries)).get(frame.paneId)
+          const entry = (yield* SubscriptionRef.get(entries)).get(frame.paneId)
           if (entry === undefined) {
             yield* Effect.logDebug('Ignored an event for a pane with no chat state', {
               paneId: frame.paneId,
@@ -155,36 +182,35 @@ export const PaneChatProjectionLive = Layer.effect(
                 yield* Clock.currentTimeMillis
               )
             : entry.state
-          yield* Ref.update(entries, (current) =>
+          yield* SubscriptionRef.update(entries, (current) =>
             new Map(current).set(frame.paneId, { ...entry, state, seq: frame.seq })
           )
         })
       )
 
-    const applyWorkspace = (workspace: Workspace) =>
-      lock.withPermits(1)(
-        Effect.gen(function* () {
-          const tabs = paneIdsOf(workspace)
-          const evicted: Array<PaneId> = []
-          yield* Ref.update(entries, (current) => {
-            const next = new Map<PaneId, Entry>()
-            for (const [paneId, entry] of current) {
-              if (tabs.has(paneId)) next.set(paneId, { ...entry, inWorkspace: true })
-              else if (entry.inWorkspace) evicted.push(paneId)
-              else next.set(paneId, entry)
-            }
-            return next
-          })
-          if (evicted.length > 0) {
-            yield* Effect.logDebug('Dropped the chat state of removed tabs', { panes: evicted })
+    const applyWorkspace = lock.withPermits(1)(
+      Effect.gen(function* () {
+        const tabs = paneIdsOf(yield* SubscriptionRef.get(workspaceFeed))
+        const evicted: Array<PaneId> = []
+        yield* SubscriptionRef.update(entries, (current) => {
+          const next = new Map<PaneId, Entry>()
+          for (const [paneId, entry] of current) {
+            if (tabs.has(paneId)) next.set(paneId, { ...entry, inWorkspace: true })
+            else if (entry.inWorkspace) evicted.push(paneId)
+            else next.set(paneId, entry)
           }
+          return next
         })
-      )
+        if (evicted.length > 0) {
+          yield* Effect.logDebug('Dropped the chat state of removed tabs', { panes: evicted })
+        }
+      })
+    )
 
     const handle = (frame: EventFrame) => {
       if (frame._tag === 'PaneEvent') return foldFrame(frame)
       if (frame._tag === 'GlobalEvent' && frame.event._tag === 'WorkspaceChanged') {
-        return applyWorkspace(frame.event.workspace)
+        return applyWorkspace
       }
       return Effect.void
     }
