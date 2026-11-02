@@ -196,7 +196,7 @@ const makeStore = Effect.gen(function* () {
       SELECT project_id, directory, directory_key, display_name, is_git_repo
       FROM projects ORDER BY position`
     const agents = yield* sql<AgentRow>`
-      SELECT a.agent_id, a.project_id, a.name, a.archived, a.cwd, a.model, a.thinking_level,
+      SELECT a.agent_id, a.project_id, a.name, a.archived_at IS NOT NULL AS archived, a.cwd, a.model, a.thinking_level,
              a.permission_mode, w.path AS worktree_path, w.branch AS worktree_branch,
              w.source_repo AS worktree_source_repo, s.session_id
       FROM agents a
@@ -289,7 +289,8 @@ const makeStore = Effect.gen(function* () {
   })
 
   const upsertProjectsAndAgents = Effect.fn('WorkspaceStore.upsertProjectsAndAgents')(function* (
-    workspace: Workspace
+    workspace: Workspace,
+    now: number
   ) {
     for (const [position, { project }] of workspace.projects.entries()) {
       yield* sql`INSERT INTO projects ${sql.insert({
@@ -311,14 +312,15 @@ const makeStore = Effect.gen(function* () {
           project_id: project.projectId,
           position,
           name: tab.name,
-          archived: tab.archived ? 1 : 0,
+          archived_at: tab.archived ? now : null,
           cwd: tab.config.cwd,
           model: tab.config.model,
           thinking_level: tab.config.thinkingLevel,
           permission_mode: tab.config.permissionMode
         })} ON CONFLICT (agent_id) DO UPDATE SET
           project_id = excluded.project_id, position = excluded.position, name = excluded.name,
-          archived = excluded.archived, cwd = excluded.cwd, model = excluded.model,
+          archived_at = CASE WHEN excluded.archived_at IS NULL THEN NULL
+            ELSE COALESCE(agents.archived_at, excluded.archived_at) END, cwd = excluded.cwd, model = excluded.model,
           thinking_level = excluded.thinking_level, permission_mode = excluded.permission_mode`
       }
     }
@@ -390,7 +392,7 @@ const makeStore = Effect.gen(function* () {
     now: number
   ) {
     const deleted = yield* deleteGone(workspace, known)
-    yield* upsertProjectsAndAgents(workspace)
+    yield* upsertProjectsAndAgents(workspace, now)
     yield* writeWorktrees(workspace)
     const sessionChanges = yield* writeSessions(workspace, now)
     yield* sql`INSERT INTO workspace_state ${sql.insert({

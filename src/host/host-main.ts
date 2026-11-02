@@ -34,6 +34,7 @@ import { DiaRpcHandlersLive } from './ipc/rpc-handlers'
 import { HostPlugins, makeHostPluginsLive } from './plugins/host-plugins'
 import { makePluginSourcesLive } from './plugins/plugin-sources'
 import { AdapterStatusFeed, AdapterStatusFeedLive } from './services/adapter-status-feed'
+import { AgentEventStoreLive } from './services/agent-event-store'
 import { AgentSummariesLive } from './services/agent-summaries'
 import { AppWindow, makeAppWindowLive } from './services/app-window'
 import { BackgroundActivitiesLive } from './services/background-activities'
@@ -191,6 +192,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     makeCommandDeduperLive(),
     Layer.provide(ProjectEntriesLive, NodeServices.layer),
     hostDatabase,
+    Layer.provide(AgentEventStoreLive, hostDatabase),
     NodeFileSystem.layer,
     NodePath.layer
   )

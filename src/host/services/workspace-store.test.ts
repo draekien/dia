@@ -181,6 +181,73 @@ describe('WorkspaceStore round trip', () => {
   )
 })
 
+describe('WorkspaceStore archive time', () => {
+  const archivedAt = (sql: SqlClient.SqlClient) =>
+    Effect.map(
+      sql<{ readonly archived_at: number | null }>`SELECT archived_at FROM agents`,
+      (rows) => rows[0].archived_at
+    )
+
+  it.effect('records the save time when a tab is first saved archived', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store, sql } = yield* openStore(dir)
+        yield* TestClock.adjust('1 second')
+
+        yield* store.save(oneTab({ archived: true }))
+
+        assert.strictEqual(yield* archivedAt(sql), 1000)
+      })
+    )
+  )
+
+  it.effect('keeps the first archive time across later saves of the archived tab', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store, sql } = yield* openStore(dir)
+        yield* TestClock.adjust('1 second')
+        yield* store.save(oneTab({ archived: true }))
+        yield* TestClock.adjust('1 second')
+
+        yield* store.save(oneTab({ archived: true }))
+
+        assert.strictEqual(yield* archivedAt(sql), 1000)
+      })
+    )
+  )
+
+  it.effect(
+    'keeps an archive time written by an AgentArchived event when the tab is saved archived',
+    () =>
+      inTempDir((dir) =>
+        Effect.gen(function* () {
+          const { store, sql } = yield* openStore(dir)
+          yield* store.save(oneTab())
+          const eventTime = 500
+          yield* sql`UPDATE agents SET archived_at = ${eventTime}`
+          yield* TestClock.adjust('1 second')
+
+          yield* store.save(oneTab({ archived: true }))
+
+          assert.strictEqual(yield* archivedAt(sql), eventTime)
+        })
+      )
+  )
+
+  it.effect('clears the archive time when the tab is saved unarchived', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const { store, sql } = yield* openStore(dir)
+        yield* store.save(oneTab({ archived: true }))
+
+        yield* store.save(oneTab())
+
+        assert.isNull(yield* archivedAt(sql))
+      })
+    )
+  )
+})
+
 describe('WorkspaceStore sessions', () => {
   it.effect('lists superseded and current session ids', () =>
     inTempDir((dir) =>
@@ -491,7 +558,6 @@ describe('WorkspaceStore unreadable rows', () => {
           project_id: 'not-a-uuid',
           position: 0,
           name: 'kept',
-          archived: 0,
           cwd: 'F:\\old',
           model: 'claude-sonnet-5-5',
           thinking_level: 'adaptive',

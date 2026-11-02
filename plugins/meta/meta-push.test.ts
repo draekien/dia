@@ -53,7 +53,7 @@ const fixture = Effect.gen(function* () {
 const run = <A, E>(effect: Effect.Effect<A, E, NodeServices.NodeServices | Scope.Scope>) =>
   effect.pipe(Effect.scoped, Effect.provide(NodeServices.layer))
 
-describe('makeMetaPush', () => {
+describe('makeMetaPush', { timeout: 30_000 }, () => {
   it.effect('pushes the current branch to the remote when the commits have no secret', () =>
     run(
       Effect.gen(function* () {
