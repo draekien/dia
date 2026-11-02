@@ -40,13 +40,14 @@ ADR-0042's "event table + projection table in one `sql.withTransaction`" shape:
 
 | Table | Purpose | Key columns |
 | --- | --- | --- |
-| `agent_events` | Append-only event log | `sequence INTEGER PRIMARY KEY AUTOINCREMENT`, `agent_id`, `event_type`, `item_id`, `source_uuid` (SDK message uuid, `UNIQUE` where not null), `occurred_at`, `payload_json`; index `(agent_id, sequence)` |
-| `agent_items` | Projection read by history and the renderer | `item_id` primary key, `agent_id`, `position`, `kind` (`message` or `tool_call`), `streaming`, `payload_json`; index `(agent_id, position)` |
+| `agent_events` | Append-only event log | `sequence INTEGER PRIMARY KEY AUTOINCREMENT`, `agent_id`, `event_type`, `item_id`, `source_uuid` (SDK message uuid), `occurred_at`, `payload_json`; index `(agent_id, sequence)`; `UNIQUE (source_uuid, COALESCE(item_id, ''))` where `source_uuid` is not null |
+| `agent_items` | Projection read by history and the renderer | primary key `(agent_id, item_id)`, `position`, `kind` (`message`, `reasoning` or `tool_call`), `streaming`, `payload_json`; unique index `(agent_id, position)` |
 | `agent_transcript_cursors` | Catch-up position per SDK session | `session_id` primary key, `last_uuid`, `file_size`, `mtime_ms` |
 
 * An agent's archive state is `agents.archived_at`, set and cleared by the `AgentArchived` and `AgentUnarchived` events in the same transaction.
 * Each event insert and its projection upsert commit in one transaction. History reads page `agent_items` by `(agent_id, position)` and never replay `agent_events`.
-* `source_uuid` is the idempotency key for every event that came from an SDK message, live or imported. An insert whose `source_uuid` already exists is skipped.
+* `(source_uuid, item_id)` is the idempotency key for every event that came from an SDK message, live or imported. An insert whose `source_uuid` and `item_id` already exist is skipped. `item_id` is part of the key because one SDK entry yields several events: a user entry holds the `tool_result` of every parallel tool call.
+* `agent_items` is keyed by `(agent_id, item_id)` because item ids come from SDK ids, and one session's ids can reach two agents through an import of a forked session.
 
 ### Content
 
@@ -54,6 +55,7 @@ ADR-0042's "event table + projection table in one `sql.withTransaction`" shape:
 | --- | --- |
 | User and assistant messages | Per-token deltas. Streaming text is coalesced and written as one `MessageUpdated{streaming: true}` per 50 ms flush, then one final `MessageUpdated{streaming: false}` |
 | Tool call start and result, with tool output capped in size | Tool output beyond the cap |
+| Extended-thinking text, as `ReasoningUpdated` events and `reasoning` items, coalesced like message text | |
 | `SessionBound`, `AgentImported`, `AgentArchived`, `AgentUnarchived` | Raw SDK frames |
 
 ### Import
@@ -93,7 +95,7 @@ ADR-0042's "event table + projection table in one `sql.withTransaction`" shape:
 * Good, because archive and unarchive are events, and unarchive restores a resumable agent.
 * Bad, because the conversation exists twice: in `agent_events` and in the SDK JSONL. Catch-up on open reconciles the two only when an agent is opened.
 * Bad, because the screen and the model can disagree between a turn added outside dia and the next open of that agent.
-* Bad, because every streaming agent commits about 20 transactions per second on the Host's event loop. <!-- unverified: the per-commit cost at synchronous = NORMAL has not been measured in dia; ADR-0042 measured 1.9 ms at FULL -->
+* Bad, because every streaming agent commits about 20 transactions per second on the Host's event loop. 200 single-event `AgentEventStore.append` commits took 21–29 ms at `synchronous = NORMAL` (0.10–0.14 ms each) and 250–265 ms at `FULL` (1.25–1.33 ms each), measured three times on an NVMe SSD (#152), so one streaming agent costs about 3 ms of event-loop time per second.
 * Bad, because `host.db` grows with every conversation. Archive compaction removes only superseded streaming rows.
 * Bad, because the import and catch-up rely on the JSONL entry format, which the Agent SDK documents as CLI-internal (`SessionStoreEntry` in `sdk.d.ts` of `@anthropic-ai/claude-agent-sdk` 0.3.311).
 

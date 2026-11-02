@@ -70,7 +70,7 @@ export const AgentItem = Schema.Union([MessageItem, ReasoningItem, ToolCallItem]
 export type AgentItem = typeof AgentItem.Type
 ```
 
-`JsonRecord` comes from `src/shared/domain/json-record.ts`; `ConversationMessage` and `SessionId` from `src/shared/domain/pane.ts`; `Uuid` from `src/shared/domain/uuid.ts`.
+`JsonRecord` comes from `src/shared/domain/json-record.ts`; `ConversationMessage` and `SessionId` from `src/shared/domain/pane.ts`.
 
 ### Service (`src/host/services/agent-event-store.ts`)
 
@@ -90,7 +90,7 @@ export class AgentEventStore extends Context.Service<AgentEventStore, {
    * Fails with AgentEventWriteError, and then nothing from the batch is stored.
    */
   readonly append: (
-    agentId: Uuid,
+    agentId: string,
     events: ReadonlyArray<{ readonly event: AgentEvent; readonly sourceUuid?: string }>
   ) => Effect.Effect<ReadonlyArray<Option.Option<number>>, AgentEventWriteError>
   /**
@@ -99,7 +99,7 @@ export class AgentEventStore extends Context.Service<AgentEventStore, {
    * and logged.
    */
   readonly readItems: (
-    agentId: Uuid,
+    agentId: string,
     page: { readonly afterPosition?: number; readonly limit: number }
   ) => Effect.Effect<ReadonlyArray<AgentItem>, AgentEventReadError>
 }>()('AgentEventStore') {}
