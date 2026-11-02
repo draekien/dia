@@ -57,14 +57,53 @@ const encodeEventJson = Schema.encodeSync(Schema.fromJsonString(AgentEventSchema
 const decodePayload = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
 const decodeItem = Schema.decodeUnknownResult(AgentItem)
 
-const itemIdOf = (event: AgentEvent): string | null => {
+interface ItemWrite {
+  readonly itemId: string
+  readonly kind: ItemKind
+  readonly streaming: boolean
+  readonly payload: object
+  readonly keepExisting: boolean
+}
+
+const itemWriteOf = (event: AgentEvent): ItemWrite | null => {
   switch (event._tag) {
     case 'MessageUpdated':
+      return {
+        itemId: event.itemId,
+        kind: 'message',
+        streaming: event.streaming,
+        payload: { message: event.message },
+        keepExisting: false
+      }
     case 'ReasoningUpdated':
-      return event.itemId
+      return {
+        itemId: event.itemId,
+        kind: 'reasoning',
+        streaming: event.streaming,
+        payload: { text: event.text },
+        keepExisting: false
+      }
     case 'ToolCallStarted':
+      return {
+        itemId: event.toolCallId,
+        kind: 'tool_call',
+        streaming: true,
+        payload: { toolName: event.toolName },
+        keepExisting: true
+      }
     case 'ToolCallCompleted':
-      return event.toolCallId
+      return {
+        itemId: event.toolCallId,
+        kind: 'tool_call',
+        streaming: false,
+        payload: {
+          toolName: event.toolName,
+          input: event.input,
+          output: event.output,
+          isError: event.isError
+        },
+        keepExisting: false
+      }
     default:
       return null
   }
@@ -89,74 +128,30 @@ const itemFromRow = (row: ItemRow) => {
 const makeStore = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
 
-  const upsertItem = (
-    agentId: string,
-    item: {
-      readonly itemId: string
-      readonly kind: ItemKind
-      readonly streaming: boolean
-      readonly payload: object
-      readonly replace: boolean
-    }
-  ) => {
-    const values = sql`(${agentId}, ${item.itemId},
-      (SELECT COALESCE(MAX(position), -1) + 1 FROM agent_items WHERE agent_id = ${agentId}),
-      ${item.kind}, ${item.streaming ? 1 : 0}, ${JSON.stringify(item.payload)})`
-    return item.replace
-      ? sql`INSERT INTO agent_items (agent_id, item_id, position, kind, streaming, payload_json)
-          VALUES ${values}
-          ON CONFLICT (agent_id, item_id) DO UPDATE SET kind = excluded.kind,
-            streaming = excluded.streaming, payload_json = excluded.payload_json`
-      : sql`INSERT INTO agent_items (agent_id, item_id, position, kind, streaming, payload_json)
-          VALUES ${values}
-          ON CONFLICT (agent_id, item_id) DO NOTHING`
-  }
+  const writeItem = (agentId: string, item: ItemWrite) =>
+    sql`INSERT INTO agent_items (agent_id, item_id, position, kind, streaming, payload_json)
+      VALUES (${agentId}, ${item.itemId},
+        (SELECT COALESCE(MAX(position), -1) + 1 FROM agent_items WHERE agent_id = ${agentId}),
+        ${item.kind}, ${item.streaming ? 1 : 0}, ${JSON.stringify(item.payload)})
+      ON CONFLICT (agent_id, item_id) ${sql.literal(
+        item.keepExisting
+          ? 'DO NOTHING'
+          : 'DO UPDATE SET kind = excluded.kind, streaming = excluded.streaming, payload_json = excluded.payload_json'
+      )}`
 
-  const project = (agentId: string, event: AgentEvent, occurredAt: number) => {
+  const project = (
+    agentId: string,
+    event: AgentEvent,
+    item: ItemWrite | null,
+    occurredAt: number
+  ) => {
+    if (item !== null) return writeItem(agentId, item)
     switch (event._tag) {
-      case 'MessageUpdated':
-        return upsertItem(agentId, {
-          itemId: event.itemId,
-          kind: 'message',
-          streaming: event.streaming,
-          payload: { message: event.message },
-          replace: true
-        })
-      case 'ReasoningUpdated':
-        return upsertItem(agentId, {
-          itemId: event.itemId,
-          kind: 'reasoning',
-          streaming: event.streaming,
-          payload: { text: event.text },
-          replace: true
-        })
-      case 'ToolCallStarted':
-        return upsertItem(agentId, {
-          itemId: event.toolCallId,
-          kind: 'tool_call',
-          streaming: true,
-          payload: { toolName: event.toolName },
-          replace: false
-        })
-      case 'ToolCallCompleted':
-        return upsertItem(agentId, {
-          itemId: event.toolCallId,
-          kind: 'tool_call',
-          streaming: false,
-          payload: {
-            toolName: event.toolName,
-            input: event.input,
-            output: event.output,
-            isError: event.isError
-          },
-          replace: true
-        })
       case 'AgentArchived':
         return sql`UPDATE agents SET archived_at = ${occurredAt} WHERE agent_id = ${agentId}`
       case 'AgentUnarchived':
         return sql`UPDATE agents SET archived_at = NULL WHERE agent_id = ${agentId}`
-      case 'SessionBound':
-      case 'AgentImported':
+      default:
         return Effect.void
     }
   }
@@ -166,18 +161,19 @@ const makeStore = Effect.gen(function* () {
     input: { readonly event: AgentEvent; readonly sourceUuid?: string },
     occurredAt: number
   ) {
+    const item = itemWriteOf(input.event)
     const inserted = yield* sql<{
       readonly sequence: number
     }>`INSERT INTO agent_events ${sql.insert({
       agent_id: agentId,
       event_type: input.event._tag,
-      item_id: itemIdOf(input.event),
+      item_id: item?.itemId ?? null,
       source_uuid: input.sourceUuid ?? null,
       occurred_at: occurredAt,
       payload_json: encodeEventJson(input.event)
     })} ON CONFLICT DO NOTHING RETURNING sequence`
     if (inserted.length === 0) return Option.none<number>()
-    yield* project(agentId, input.event, occurredAt)
+    yield* project(agentId, input.event, item, occurredAt)
     return Option.some(inserted[0].sequence)
   })
 
