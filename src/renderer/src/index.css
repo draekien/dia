@@ -338,7 +338,8 @@
   &::-webkit-scrollbar-thumb:hover {
     background-color: color-mix(in oklch, var(--border) 65%, var(--ink));
   }
-  &::-webkit-scrollbar-track {
+  &::-webkit-scrollbar-track,
+  &::-webkit-scrollbar-corner {
     background: transparent;
   }
 }

@@ -267,7 +267,7 @@ function ToolCallRow({ part }: { part: ToolCallPart }): React.JSX.Element {
       <summary className={cn('cursor-pointer list-none hover:bg-muted/60', summaryFocus)}>
         {row}
       </summary>
-      <pre className="mt-1 max-h-64 scrollbar-app overflow-auto rounded bg-muted px-3 py-2 font-mono text-xs text-foreground/90">
+      <pre className="mt-1 max-h-64 scrollbar-app overflow-auto rounded [scrollbar-gutter:auto] bg-muted px-3 py-2 font-mono text-xs text-foreground/90">
         {output}
       </pre>
     </details>
