@@ -1,10 +1,48 @@
-import { Button, Checkbox, Input, Label, RadioGroup, RadioGroupItem } from '@dia/renderer-plugin'
+import {
+  Button,
+  Questionnaire,
+  QuestionnaireActions,
+  QuestionnaireChoice,
+  QuestionnaireChoiceDescription,
+  QuestionnaireChoices,
+  QuestionnaireError,
+  QuestionnaireItem,
+  QuestionnaireNext,
+  QuestionnairePrevious,
+  QuestionnaireSkip,
+  QuestionnaireSubmit,
+  QuestionnaireTitle
+} from '@dia/renderer-plugin'
 import { Answers, type ClarifyingQuestion, type QuestionResponse } from '@shared/domain/attention'
-import { type KeyboardEvent, useId, useState } from 'react'
+import { XIcon } from 'lucide-react'
+import { type Ref, useId, useImperativeHandle, useRef, useState } from 'react'
+import { QuestionProgress, type QuestionProgressStatus } from './question-progress'
 
 type Question = ClarifyingQuestion['questions'][number]
 
-const OTHER = '__other__'
+/**
+ * The answer sent to the agent for a question the user skipped. A multi-select question receives
+ * it as a one-element array.
+ */
+export const DECLINED_ANSWER =
+  'User declined to answer this question. Check the other answers they provided to decide if it needs to be asked in a different way'
+
+/**
+ * The answer sent for every question when the user skipped all of them, so there are no other
+ * answers to consult. A multi-select question receives it as a one-element array.
+ */
+export const DECLINED_ALL_ANSWER = 'The user declined to answer'
+
+/** Imperative handle of {@link ClarifyingQuestionCard}, for the composer that sits beside it. */
+export interface ClarifyingQuestionHandle {
+  /**
+   * Records `text` as the user's own answer to the question on screen. A single-select question
+   * drops its chosen option and moves on, or submits when nothing is left to answer. A
+   * multi-select question adds the text to its checked options and stays on the question. Blank
+   * text is ignored.
+   */
+  readonly answerCurrent: (text: string) => void
+}
 
 // The SDK's AskUserQuestionOutput keys answers by the full question text
 // (question text -> answer string); keying by header instead makes the CLI find
@@ -13,220 +51,210 @@ function questionKey(question: Question): string {
   return question.question
 }
 
+type Picks = Record<string, ReadonlyArray<string>>
+type Typed = Record<string, string>
+type Statuses = Record<string, QuestionProgressStatus>
+
 function resolveAnswers(
   questions: ClarifyingQuestion['questions'],
-  single: Record<string, string>,
-  multi: Record<string, ReadonlySet<string>>,
-  otherText: Record<string, string>
+  picks: Picks,
+  typed: Typed,
+  statuses: Statuses
 ): Record<string, string | ReadonlyArray<string>> {
   const answers: Record<string, string | ReadonlyArray<string>> = {}
+  const declined = questions.every((question) => statuses[questionKey(question)] === 'skipped')
+    ? DECLINED_ALL_ANSWER
+    : DECLINED_ANSWER
   for (const question of questions) {
     const key = questionKey(question)
-    if (question.multiSelect) {
-      const chosen = multi[key] ?? new Set<string>()
+    const custom = typed[key] ?? ''
+    if (statuses[key] === 'skipped') {
+      answers[key] = question.multiSelect ? [declined] : declined
+    } else if (question.multiSelect) {
+      const chosen = picks[key] ?? []
       const values = question.options
-        .filter((option) => chosen.has(option.label))
         .map((option) => option.label)
-      if (chosen.has(OTHER)) {
-        const custom = (otherText[key] ?? '').trim()
-        if (custom.length > 0) values.push(custom)
-      }
-      answers[key] = values
+        .filter((label) => chosen.includes(label))
+      answers[key] = custom === '' ? values : [...values, custom]
     } else {
-      const selection = single[key]
-      answers[key] = selection === OTHER ? (otherText[key] ?? '').trim() : (selection ?? '')
+      answers[key] = custom === '' ? (picks[key]?.[0] ?? '') : custom
     }
   }
   return answers
 }
 
-function isAnswered(
-  question: Question,
-  single: Record<string, string>,
-  multi: Record<string, ReadonlySet<string>>,
-  otherText: Record<string, string>
-): boolean {
-  const key = questionKey(question)
-  const hasCustom = (otherText[key] ?? '').trim().length > 0
-  if (question.multiSelect) {
-    const chosen = multi[key] ?? new Set<string>()
-    if (chosen.size === 0) return false
-    return chosen.has(OTHER) ? hasCustom : true
-  }
-  const selection = single[key]
-  if (selection === undefined || selection === '') return false
-  return selection === OTHER ? hasCustom : true
+function statusOf(all: Statuses, key: string): QuestionProgressStatus {
+  return all[key] ?? 'unanswered'
 }
 
 /**
- * Inline card that presents a pane's pending clarifying questions and collects the user's
- * answers. Each question renders its options as a radio group (single-select) or checkboxes
- * (`multiSelect`), always with an "Other" free-text option for answers that fit none of the
- * choices. Pass the pane's {@link ClarifyingQuestion} as `request`; `onResolve` is called
- * once, when every question is answered and the user submits, with an `Answers`
- * {@link QuestionResponse} keyed by each question's full text (the shape the SDK
- * matches answers against).
+ * Inline card that presents a pane's pending clarifying questions one at a time and collects the
+ * user's answers. Each question shows its options as radios (single-select) or checkboxes
+ * (`multiSelect`) and can be skipped, which answers it with {@link DECLINED_ANSWER}, or with
+ * {@link DECLINED_ALL_ANSWER} for every question when all of them were skipped. The user can
+ * also answer in the composer through the `ref` handle ({@link ClarifyingQuestionHandle}). Pass
+ * the pane's {@link ClarifyingQuestion} as `request`; `onResolve` is called once, when every
+ * question is answered or skipped and the user submits, with an `Answers`
+ * {@link QuestionResponse} keyed by each question's full text (the shape the SDK matches answers
+ * against).
  */
 export function ClarifyingQuestionCard({
   request,
-  onResolve
+  onResolve,
+  ref
 }: {
   request: ClarifyingQuestion
   onResolve: (response: QuestionResponse) => void
+  ref?: Ref<ClarifyingQuestionHandle>
 }) {
-  const idPrefix = useId()
-  const [single, setSingle] = useState<Record<string, string>>({})
-  const [multi, setMulti] = useState<Record<string, ReadonlySet<string>>>({})
-  const [otherText, setOtherText] = useState<Record<string, string>>({})
+  const titleId = useId()
+  const keys = request.questions.map(questionKey)
+  const [active, setActive] = useState(keys[0] ?? '')
+  const [picks, setPicks] = useState<Picks>({})
+  const [typed, setTyped] = useState<Typed>({})
+  const [statuses, setStatuses] = useState<Statuses>({})
+  const statusesRef = useRef<Statuses>({})
 
-  const firstUnanswered = request.questions.findIndex(
-    (question) => !isAnswered(question, single, multi, otherText)
-  )
-  const complete = firstUnanswered === -1
-
-  function toggleMulti(key: string, value: string, checked: boolean): void {
-    setMulti((prev) => {
-      const next = new Set(prev[key] ?? [])
-      if (checked) next.add(value)
-      else next.delete(value)
-      return { ...prev, [key]: next }
-    })
+  function recordStatus(key: string, status: QuestionProgressStatus): void {
+    if (statusesRef.current[key] === status) return
+    statusesRef.current = { ...statusesRef.current, [key]: status }
+    setStatuses(statusesRef.current)
   }
 
-  function submit(): void {
+  function submit(nextPicks: Picks, nextTyped: Typed, nextStatuses: Statuses): void {
     onResolve(
       Answers.make({
         questions: request.questions,
-        answers: resolveAnswers(request.questions, single, multi, otherText)
+        answers: resolveAnswers(request.questions, nextPicks, nextTyped, nextStatuses)
       })
     )
   }
 
-  function handleEnter(event: KeyboardEvent<HTMLFormElement>): void {
-    if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
-    event.preventDefault()
-    if (event.shiftKey) return
-    const target = event.target as HTMLElement
-    const role = target.getAttribute('role')
-    if ((role === 'radio' || role === 'checkbox') && target.hasAttribute('data-unchecked')) {
-      target.click()
+  function answerCurrent(text: string): void {
+    const question = request.questions.find((candidate) => questionKey(candidate) === active)
+    const custom = text.trim()
+    if (question === undefined || custom === '') return
+    const nextTyped = { ...typed, [active]: custom }
+    const nextPicks = question.multiSelect ? picks : { ...picks, [active]: [] }
+    setTyped(nextTyped)
+    setPicks(nextPicks)
+    if (question.multiSelect) return
+    const nextStatuses: Statuses = { ...statusesRef.current, [active]: 'answered' }
+    recordStatus(active, 'answered')
+    const position = keys.indexOf(active)
+    const next =
+      keys.find((key, index) => index > position && statusOf(nextStatuses, key) === 'unanswered') ??
+      keys.find((key) => statusOf(nextStatuses, key) === 'unanswered')
+    if (next === undefined) submit(nextPicks, nextTyped, nextStatuses)
+    else setActive(next)
+  }
+
+  useImperativeHandle(ref, () => ({ answerCurrent }))
+
+  function choose(question: Question, label: string, checked: boolean): void {
+    const key = questionKey(question)
+    if (!question.multiSelect) {
+      if (!checked) return
+      setPicks((prev) => ({ ...prev, [key]: [label] }))
+      clearTyped(key)
       return
     }
-    if (complete) {
-      submit()
-      return
-    }
-    const fieldset = event.currentTarget.querySelectorAll('fieldset')[firstUnanswered]
-    const field =
-      fieldset?.querySelector<HTMLElement>('input:not([aria-hidden="true"])') ??
-      fieldset?.querySelector<HTMLElement>('[role="radio"], [role="checkbox"]')
-    field?.focus()
+    setPicks((prev) => {
+      const rest = (prev[key] ?? []).filter((existing) => existing !== label)
+      return { ...prev, [key]: checked ? [...rest, label] : rest }
+    })
+  }
+
+  function clearTyped(key: string): void {
+    setTyped((prev) => ({ ...prev, [key]: '' }))
   }
 
   return (
-    <form
-      aria-label="Claude needs your input"
-      onKeyDown={handleEnter}
-      onSubmit={(event) => {
-        event.preventDefault()
-        submit()
-      }}
-      className="mt-2 flex flex-col gap-4 rounded-md border bg-muted/40 p-3"
-    >
-      <p className="text-base font-semibold text-foreground">Claude needs your input</p>
-      {request.questions.map((question, questionIndex) => {
-        const key = questionKey(question)
-        const idBase = `${idPrefix}-${questionIndex}`
-        const otherSelected = question.multiSelect
-          ? (multi[key]?.has(OTHER) ?? false)
-          : single[key] === OTHER
-        return (
-          <fieldset key={key} className="flex flex-col gap-2 border-0 p-0">
-            <legend className="mb-1 text-sm text-foreground">{question.question}</legend>
-            {question.multiSelect ? (
-              <div className="flex flex-col gap-2">
-                {question.options.map((option, optionIndex) => (
-                  <div key={option.label} className="flex items-start gap-2">
-                    <Checkbox
-                      className="mt-0.5"
-                      id={`${idBase}-${optionIndex}`}
-                      checked={multi[key]?.has(option.label) ?? false}
-                      onCheckedChange={(checked) =>
-                        toggleMulti(key, option.label, checked === true)
-                      }
-                    />
-                    <Label
-                      htmlFor={`${idBase}-${optionIndex}`}
-                      className="flex flex-col items-start gap-0.5 font-normal text-foreground"
-                    >
-                      <span>{option.label}</span>
-                      {option.description !== undefined && (
-                        <span className="text-xs text-muted-foreground">{option.description}</span>
-                      )}
-                    </Label>
-                  </div>
+    <div className="mt-2 flex flex-col gap-4 rounded-md border bg-muted/40 p-3">
+      <p id={titleId} className="font-semibold text-base text-foreground">
+        Claude needs your input
+      </p>
+      <QuestionProgress
+        statuses={keys.map((key) => statusOf(statuses, key))}
+        current={Math.max(0, keys.indexOf(active))}
+      />
+      <Questionnaire
+        aria-labelledby={titleId}
+        item={active}
+        onItemChange={setActive}
+        onSubmit={(event) => {
+          event.preventDefault()
+          submit(picks, typed, statusesRef.current)
+        }}
+      >
+        {request.questions.map((question) => {
+          const key = questionKey(question)
+          const custom = typed[key] ?? ''
+          return (
+            <QuestionnaireItem
+              key={key}
+              name={key}
+              multiple={question.multiSelect}
+              onStatusChange={(status) => recordStatus(key, status)}
+            >
+              <QuestionnaireTitle className="font-medium text-sm">
+                {question.question}
+              </QuestionnaireTitle>
+              <QuestionnaireChoices>
+                {question.options.map((option) => (
+                  <QuestionnaireChoice
+                    key={option.label}
+                    value={option.label}
+                    checked={picks[key]?.includes(option.label) ?? false}
+                    onChange={(event) => choose(question, option.label, event.target.checked)}
+                  >
+                    <span className="font-medium">{option.label}</span>
+                    {option.description !== undefined && (
+                      <QuestionnaireChoiceDescription className="text-xs">
+                        {option.description}
+                      </QuestionnaireChoiceDescription>
+                    )}
+                  </QuestionnaireChoice>
                 ))}
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id={`${idBase}-other`}
-                    checked={multi[key]?.has(OTHER) ?? false}
-                    onCheckedChange={(checked) => toggleMulti(key, OTHER, checked === true)}
-                  />
-                  <Label htmlFor={`${idBase}-other`} className="font-normal text-foreground">
-                    Other
-                  </Label>
-                </div>
-              </div>
-            ) : (
-              <RadioGroup
-                value={single[key] ?? ''}
-                onValueChange={(value) => setSingle((prev) => ({ ...prev, [key]: value }))}
-              >
-                {question.options.map((option, optionIndex) => (
-                  <div key={option.label} className="flex items-start gap-2">
-                    <RadioGroupItem
-                      className="mt-0.5"
-                      value={option.label}
-                      id={`${idBase}-${optionIndex}`}
-                    />
-                    <Label
-                      htmlFor={`${idBase}-${optionIndex}`}
-                      className="flex flex-col items-start gap-0.5 font-normal text-foreground"
+                {custom !== '' && (
+                  <div className="flex items-start gap-2">
+                    <QuestionnaireChoice
+                      className="flex-1"
+                      value={custom}
+                      checked
+                      onChange={(event) => {
+                        if (!event.target.checked) clearTyped(key)
+                      }}
                     >
-                      <span>{option.label}</span>
-                      {option.description !== undefined && (
-                        <span className="text-xs text-muted-foreground">{option.description}</span>
-                      )}
-                    </Label>
+                      <span className="font-medium">{custom}</span>
+                      <QuestionnaireChoiceDescription className="text-xs">
+                        Your answer
+                      </QuestionnaireChoiceDescription>
+                    </QuestionnaireChoice>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Remove your answer"
+                      onClick={() => clearTyped(key)}
+                    >
+                      <XIcon />
+                    </Button>
                   </div>
-                ))}
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value={OTHER} id={`${idBase}-other`} />
-                  <Label htmlFor={`${idBase}-other`} className="font-normal text-foreground">
-                    Other
-                  </Label>
-                </div>
-              </RadioGroup>
-            )}
-            {otherSelected && (
-              <Input
-                autoFocus
-                aria-label={`Custom answer for ${question.question}`}
-                placeholder="Type your answer"
-                value={otherText[key] ?? ''}
-                onChange={(event) =>
-                  setOtherText((prev) => ({ ...prev, [key]: event.target.value }))
-                }
-              />
-            )}
-          </fieldset>
-        )
-      })}
-      <div className="flex justify-end">
-        <Button type="submit" size="sm" disabled={!complete}>
-          Submit
-        </Button>
-      </div>
-    </form>
+                )}
+              </QuestionnaireChoices>
+              <QuestionnaireError />
+            </QuestionnaireItem>
+          )
+        })}
+        <QuestionnaireActions>
+          <QuestionnairePrevious variant="ghost" size="sm" />
+          <QuestionnaireSkip variant="ghost" size="sm" />
+          <QuestionnaireNext size="sm" />
+          <QuestionnaireSubmit size="sm" />
+        </QuestionnaireActions>
+        <p className="text-muted-foreground text-xs">Or type your own answer in the message box</p>
+      </Questionnaire>
+    </div>
   )
 }

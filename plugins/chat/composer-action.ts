@@ -11,7 +11,7 @@ export type ComposerAction =
   | {
       readonly kind: 'submit'
       readonly icon: 'queue' | 'sendNow'
-      readonly label: 'Send' | 'Queue' | 'Steer now'
+      readonly label: 'Send' | 'Queue' | 'Steer now' | 'Answer'
       readonly mode: SendMode
       readonly disabled: boolean
     }
@@ -21,22 +21,28 @@ const iconFor = (mode: SendMode) => (mode === 'queue' ? 'queue' : 'sendNow')
 /**
  * The action button for a composer. `running` is true while a turn runs, `hasText` when the
  * composer holds non-blank text, `modifierHeld` while Cmd (macOS) or Ctrl is held, and
- * `defaultMode` is the mode Enter sends in.
+ * `defaultMode` is the mode Enter sends in. `answering` is true while the text answers the pending
+ * clarifying question; sending it then is labelled `Answer`.
  */
 export const composerAction = ({
   running,
   hasText,
   modifierHeld,
-  defaultMode
+  defaultMode,
+  answering = false
 }: {
   readonly running: boolean
   readonly hasText: boolean
   readonly modifierHeld: boolean
   readonly defaultMode: SendMode
+  readonly answering?: boolean
 }): ComposerAction => {
   if (running && !hasText) return { kind: 'stop', icon: 'stop', label: 'Stop' }
   if (!hasText) {
     return { kind: 'submit', icon: 'sendNow', label: 'Send', mode: defaultMode, disabled: true }
+  }
+  if (answering) {
+    return { kind: 'submit', icon: 'sendNow', label: 'Answer', mode: defaultMode, disabled: false }
   }
   const mode = sendModeForEnter(defaultMode, { metaKey: modifierHeld, ctrlKey: false })
   const label = !running ? 'Send' : mode === 'queue' ? 'Queue' : 'Steer now'
@@ -47,19 +53,25 @@ export const composerAction = ({
  * The tooltip lines for the action button: what Enter does, then how to reach the other mode.
  * `modifierKey` is the key label shown to the user, `⌘` on macOS and `Ctrl` elsewhere. Use it for
  * a `submit` action; a `stop` action's tooltip is its label alone. `pending` is true while a
- * permission, question or plan card is pending, when every send steers.
+ * permission, question or plan card is pending, when every send steers. `answering` is true while
+ * the text answers the pending clarifying question.
  */
 export const composerActionHint = ({
   running,
   pending,
   defaultMode,
-  modifierKey
+  modifierKey,
+  answering = false
 }: {
   readonly running: boolean
   readonly pending: boolean
   readonly defaultMode: SendMode
   readonly modifierKey: string
+  readonly answering?: boolean
 }): readonly [string, string] => {
+  if (answering) {
+    return ['Answer this question with Enter', 'Attaching a file steers the turn instead']
+  }
   if (!running) {
     return ['Send with Enter', `${modifierKey}+Enter also sends now while no turn is running`]
   }
@@ -70,8 +82,16 @@ export const composerActionHint = ({
     : ['Steer this turn now with Enter', `Hold ${modifierKey} to queue after this turn`]
 }
 
-/** The composer's placeholder text while a turn is `running` or not, given the `defaultMode`. */
-export const composerPlaceholder = (running: boolean, defaultMode: SendMode): string => {
+/**
+ * The composer's placeholder text while a turn is `running` or not, given the `defaultMode`.
+ * `answering` is true while the text answers the pending clarifying question.
+ */
+export const composerPlaceholder = (
+  running: boolean,
+  defaultMode: SendMode,
+  answering = false
+): string => {
+  if (answering) return 'Type your own answer to this question'
   if (!running) return 'Message this agent, or type / for commands'
   return defaultMode === 'queue'
     ? 'Queue a message for after this turn, or type / for commands'
