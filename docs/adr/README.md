@@ -19,7 +19,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0008](0008-local-file-persistence-for-session-and-layout-state.md) | Use local file-based persistence for pane layout and session state | superseded by ADR-0011 |
 | [0009](0009-effect-ts-for-main-process-orchestration.md) | Use Effect TS for main-process orchestration logic | superseded by ADR-0010 |
 | [0010](0010-extend-effect-ts-to-pane-process-orchestration.md) | Extend Effect TS to pane-process orchestration | accepted, amended by ADR-0015 |
-| [0011](0011-delegate-transcript-persistence-to-agent-sdk-session-store.md) | Delegate conversation-transcript persistence to the Agent SDK session store | accepted |
+| [0011](0011-delegate-transcript-persistence-to-agent-sdk-session-store.md) | Delegate conversation-transcript persistence to the Agent SDK session store | superseded by ADR-0051 |
 | [0012](0012-effect-tsgo-for-effect-aware-typechecking.md) | Use @effect/tsgo for Effect-aware type checking | accepted |
 | [0013](0013-shared-schema-module-for-cross-process-code.md) | Extract cross-process schemas into a platform-neutral `src/shared` module | accepted |
 | [0014](0014-tanstack-ai-usechat-for-renderer-chat-state.md) | Use TanStack AI `useChat` with a custom IPC ConnectionAdapter for renderer chat state | superseded by ADR-0015 |
@@ -30,7 +30,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0019](0019-thin-plugin-kernel-on-effect.md) | Build dia as a thin plugin kernel on Effect, with every feature as a plugin | accepted, amended by ADR-0029 |
 | [0020](0020-plugin-source-loading-and-hot-reload.md) | Load first-party plugins from source in the dia repo, with per-plugin worktree overrides and hot reload | accepted |
 | [0021](0021-single-host-process-for-all-panes.md) | Run every pane's agent session and all non-UI plugins in one Host process | accepted |
-| [0022](0022-renderer-to-host-over-local-websocket.md) | Connect the renderer to the Host over an authenticated localhost WebSocket | accepted |
+| [0022](0022-renderer-to-host-over-local-websocket.md) | Connect the renderer to the Host over an authenticated localhost WebSocket | accepted, amended by ADR-0051 |
 | [0023](0023-agents-as-tabs-within-registered-projects.md) | Organise agents as tabs within registered projects, replacing the split-pane layout | accepted, amended by ADR-0046 |
 | [0024](0024-background-agents-run-in-tabs-not-on-screen.md) | Run background agents in tabs that are not on screen; closing the window still quits dia | accepted |
 | [0025](0025-meta-project-as-a-dia-owned-git-repo.md) | Run a meta project: a dia-owned git repo loaded into every agent, changed through approved proposals | accepted, amended by ADR-0036 |
@@ -50,7 +50,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0039](0039-flush-window-frame.md) | Drop the inset card and make the window frame flush with 32px top rows | accepted |
 | [0040](0040-chat-plugin-fills-a-main-tab-slot.md) | The chat plugin fills a `main.tab` slot inside the kernel's `main` default | accepted |
 | [0041](0041-park-refused-turns.md) | Park a turn the account refused instead of failing it, and resume it with `continue` | accepted |
-| [0042](0042-sqlite-for-host-runtime-state.md) | Store Host runtime state in SQLite, one database file per owner | accepted, amended by ADR-0043 |
+| [0042](0042-sqlite-for-host-runtime-state.md) | Store Host runtime state in SQLite, one database file per owner | accepted, amended by ADR-0043 and ADR-0051 |
 | [0043](0043-workspace-in-host-db.md) | Store the workspace in `host.db` as relational tables, with every session of each agent | accepted |
 | [0044](0044-nightly-build-as-side-by-side-app.md) | Publish a nightly build of `main` as a side-by-side `dia-nightly` app | accepted |
 | [0045](0045-hold-to-rewind-under-agent-turns.md) | Hold to rewind from a control under the agent turn | accepted |
@@ -58,7 +58,8 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0047](0047-built-in-secret-rules-for-meta-repo-push.md) | Scan meta repo pushes with a built-in rule set, run in the Host over `git log -p` | accepted |
 | [0048](0048-rail-cards-from-many-plugins.md) | Let many plugins add cards to the session rail | accepted |
 | [0049](0049-base-ui-primitives-under-shadcn-ui.md) | Build the shadcn/ui wrappers on Base UI instead of Radix | accepted |
-| [0050](0050-host-keeps-tab-chat-state.md) | The Host keeps each tab's chat state and serves snapshots | accepted |
+| [0050](0050-host-keeps-tab-chat-state.md) | The Host keeps each tab's chat state and serves snapshots | accepted, amended by ADR-0051 |
+| [0051](0051-session-event-store-in-host-db.md) | Store each agent's conversation as events in `host.db`, and use the Agent SDK transcript only to resume | accepted |
 
 ## Adding a new ADR
 
