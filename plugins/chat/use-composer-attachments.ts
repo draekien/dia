@@ -7,7 +7,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { Duration } from 'effect'
 import { Base64 } from 'effect/encoding'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { type DraftAttachment, planFile, readyAttachments } from './attachment-draft'
 
 /** A file from a drop, paste or file input, and whether it is a directory. */
