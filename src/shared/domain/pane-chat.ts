@@ -1,25 +1,13 @@
-import type { Attachment } from '@shared/domain/attachment'
-import {
-  type AttentionState,
-  isParkedState,
-  type PaneError,
-  type ParkedState
-} from '@shared/domain/attention'
-import type { BackgroundTask } from '@shared/domain/background-task'
-import type { CompactionFailure, ContextUsage } from '@shared/domain/context-usage'
-import type { OutgoingMessage } from '@shared/domain/message-queue'
-import type { ConversationMessage } from '@shared/domain/pane'
-import { RESUME_TEXT } from '@shared/domain/parking'
-import type { SlashCommandInfo } from '@shared/domain/slash-command'
-import type { SetupStep } from '@shared/domain/tab-setup'
+import { Schema } from 'effect'
+import { formatResetTime } from '../format-reset-time'
 import type {
+  IpcEvent,
   PaneAssistantTextDelta,
   PaneAssistantThinkingDelta,
   PaneAttentionChanged,
   PaneBackgroundTasksChanged,
   PaneCheckpointAvailable,
   PaneCompactionFailed,
-  PaneContextUsageChanged,
   PaneConversationCompacted,
   PaneConversationReset,
   PaneMessageAppended,
@@ -35,22 +23,33 @@ import type {
   PaneToolCallUpdated,
   PaneTurnStatusChanged,
   PaneUserMessagesSent
-} from '@shared/ipc/contract'
-import { formatResetTime } from './format-when'
+} from '../ipc/contract'
+import { Attachment } from './attachment'
+import { AttentionState, Idle, isParkedState, type PaneError, type ParkedState } from './attention'
+import { BackgroundTask } from './background-task'
+import { CompactionFailure } from './context-usage'
+import { JsonRecord } from './json-record'
+import { OutgoingMessage } from './message-queue'
+import type { ConversationMessage } from './pane'
+import { RESUME_TEXT } from './parking'
+import { SlashCommandInfo } from './slash-command'
+import { SetupStep } from './tab-setup'
 
 /** A streamed span of assistant answer text within a turn. */
-export interface TextPart {
-  readonly type: 'text'
-  readonly content: string
-  readonly startedAt?: number
-}
+export const TextPart = Schema.Struct({
+  type: Schema.Literal('text'),
+  content: Schema.String,
+  startedAt: Schema.optional(Schema.Number)
+})
+export type TextPart = typeof TextPart.Type
 
 /** A streamed span of assistant extended-thinking text, shown collapsed. */
-export interface ThinkingPart {
-  readonly type: 'thinking'
-  readonly content: string
-  readonly startedAt?: number
-}
+export const ThinkingPart = Schema.Struct({
+  type: Schema.Literal('thinking'),
+  content: Schema.String,
+  startedAt: Schema.optional(Schema.Number)
+})
+export type ThinkingPart = typeof ThinkingPart.Type
 
 /**
  * One tool invocation in an assistant turn. `running` while in flight; `done`
@@ -60,35 +59,38 @@ export interface ThinkingPart {
  * `detail` is a line about it (a subagent's progress, or why it was denied or failed).
  * `endedAt` is when it resolved, in epoch milliseconds, for a live turn.
  */
-export interface ToolCallPart {
-  readonly type: 'tool-call'
-  readonly toolCallId: string
-  readonly name: string
-  readonly state: 'running' | 'done'
-  readonly input?: Record<string, unknown>
-  readonly output?: string
-  readonly isError?: boolean
-  readonly elapsedSeconds?: number
-  readonly detail?: string
-  readonly startedAt?: number
-  readonly endedAt?: number
-}
+export const ToolCallPart = Schema.Struct({
+  type: Schema.Literal('tool-call'),
+  toolCallId: Schema.String,
+  name: Schema.String,
+  state: Schema.Literals(['running', 'done']),
+  input: Schema.optional(JsonRecord),
+  output: Schema.optional(Schema.String),
+  isError: Schema.optional(Schema.Boolean),
+  elapsedSeconds: Schema.optional(Schema.Number),
+  detail: Schema.optional(Schema.String),
+  startedAt: Schema.optional(Schema.Number),
+  endedAt: Schema.optional(Schema.Number)
+})
+export type ToolCallPart = typeof ToolCallPart.Type
 
 /**
  * The context size before (`preTokens`) and after (`postTokens`, absent when the
  * session did not report it) a context compaction, carried by its `notice`. The
  * view decides how to show the counts.
  */
-export interface CompactionCounts {
-  readonly preTokens: number
-  readonly postTokens?: number
-}
+export const CompactionCounts = Schema.Struct({
+  preTokens: Schema.Number,
+  postTokens: Schema.optional(Schema.Number)
+})
+export type CompactionCounts = typeof CompactionCounts.Type
 
 /**
  * An ordered fragment of an assistant turn. Branch on `type` to render. `startedAt` is when the
  * part arrived, in epoch milliseconds; parts restored from history have none.
  */
-export type MessagePart = TextPart | ThinkingPart | ToolCallPart
+export const MessagePart = Schema.Union([TextPart, ThinkingPart, ToolCallPart])
+export type MessagePart = typeof MessagePart.Type
 
 /**
  * A single rendered conversation turn: a stable pane-scoped `id`, a `role`, and
@@ -111,17 +113,18 @@ export type MessagePart = TextPart | ThinkingPart | ToolCallPart
  * control is hidden for them. It is also `false` on every user turn sent before a context
  * compaction: the compacted session no longer holds those turns, so a rewind to them fails.
  */
-export interface PaneMessage {
-  readonly id: string
-  readonly role: 'user' | 'assistant' | 'notice' | 'error'
-  readonly parts: ReadonlyArray<MessagePart>
-  readonly attachments?: ReadonlyArray<Attachment>
-  readonly checkpointUuid?: string
-  readonly resumeAnchorUuid?: string
-  readonly rewindable?: false
-  readonly resumedAt?: number
-  readonly compaction?: CompactionCounts
-}
+export const PaneMessage = Schema.Struct({
+  id: Schema.String,
+  role: Schema.Literals(['user', 'assistant', 'notice', 'error']),
+  parts: Schema.Array(MessagePart),
+  attachments: Schema.optional(Schema.Array(Attachment)),
+  checkpointUuid: Schema.optional(Schema.String),
+  resumeAnchorUuid: Schema.optional(Schema.String),
+  rewindable: Schema.optional(Schema.Literal(false)),
+  resumedAt: Schema.optional(Schema.Number),
+  compaction: Schema.optional(CompactionCounts)
+})
+export type PaneMessage = typeof PaneMessage.Type
 
 /**
  * The renderable state of a pane's conversation: the ordered `messages`,
@@ -132,27 +135,39 @@ export interface PaneMessage {
  * commands" indicator. `queued` is the pane's message queue as the Host last reported it, in send
  * order, and `queueHeld` is true when that queue waits for the next user send instead of the next
  * turn end. `turnStatus` names the state the in-flight turn is in (retrying, compacting,
- * thinking), or is null when it has none worth naming. `contextUsage` is the latest reading of
- * how full the pane's context window is, or null before the first reading arrives.
+ * thinking), or is null when it has none worth naming.
  * `compactionFailure` says why the last requested compaction did not run, until the next send or
  * compaction. `backgroundTasks` is the work the agent started that runs outside its turns, empty
  * when none runs. `setup` is the latest list of setup steps the Host reported for a worktree tab
- * being created or resumed, absent until one arrives. This is the sole contract consumers depend on — how
+ * being created or resumed, absent until one arrives. `attention` is the pane's latest attention
+ * state. This is the sole contract consumers depend on — how
  * streaming deltas are assembled into it is private to {@link reducePaneChat}.
  */
-export interface PaneChatState {
-  readonly messages: ReadonlyArray<PaneMessage>
-  readonly isLoading: boolean
-  readonly slashCommands: ReadonlyArray<SlashCommandInfo>
-  readonly warmingCommands: boolean
-  readonly queued: ReadonlyArray<OutgoingMessage>
-  readonly queueHeld: boolean
-  readonly turnStatus: string | null
-  readonly contextUsage: ContextUsage | null
-  readonly compactionFailure: CompactionFailure | null
-  readonly backgroundTasks: ReadonlyArray<BackgroundTask>
-  readonly setup?: ReadonlyArray<SetupStep>
-}
+export const PaneChatState = Schema.Struct({
+  messages: Schema.Array(PaneMessage),
+  isLoading: Schema.Boolean,
+  slashCommands: Schema.Array(SlashCommandInfo),
+  warmingCommands: Schema.Boolean,
+  queued: Schema.Array(OutgoingMessage),
+  queueHeld: Schema.Boolean,
+  turnStatus: Schema.NullOr(Schema.String),
+  compactionFailure: Schema.NullOr(CompactionFailure),
+  backgroundTasks: Schema.Array(BackgroundTask),
+  setup: Schema.optional(Schema.Array(SetupStep)),
+  attention: AttentionState
+})
+export type PaneChatState = typeof PaneChatState.Type
+
+/**
+ * A pane's chat state as the Host holds it: `state` after the pane's events numbered 1 to `seq`
+ * (the `EventHub` sequence numbers), on top of the transcript the pane was seeded from. Fold only
+ * events with a higher `seq` onto it.
+ */
+export const PaneChatSnapshot = Schema.Struct({
+  state: PaneChatState,
+  seq: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+})
+export type PaneChatSnapshot = typeof PaneChatSnapshot.Type
 
 /**
  * The subset of `IpcEvent`s that drive a pane's conversation state. Feed each
@@ -174,7 +189,6 @@ export type PaneStreamEvent =
   | PaneSlashCommandsWarming
   | PaneSlashCommandsAvailable
   | PaneConversationCompacted
-  | PaneContextUsageChanged
   | PaneCompactionFailed
   | PaneConversationReset
   | PaneCheckpointAvailable
@@ -189,6 +203,34 @@ export type PaneStreamEvent =
  */
 export type PaneModelChangeNotice = PaneModelChanged & { readonly displayName?: string }
 
+const STREAM_EVENT_TAGS: ReadonlySet<string> = new Set<PaneStreamEvent['_tag']>([
+  'PaneAssistantTextDelta',
+  'PaneAssistantThinkingDelta',
+  'PaneToolCallStarted',
+  'PaneToolCallCompleted',
+  'PaneToolCallUpdated',
+  'PaneTurnStatusChanged',
+  'PaneSessionNotice',
+  'PaneSetupProgress',
+  'PaneBackgroundTasksChanged',
+  'PaneMessageAppended',
+  'PaneAttentionChanged',
+  'PaneSlashCommandsWarming',
+  'PaneSlashCommandsAvailable',
+  'PaneConversationCompacted',
+  'PaneCompactionFailed',
+  'PaneConversationReset',
+  'PaneCheckpointAvailable',
+  'PaneRewoundToCheckpoint',
+  'PaneMessageQueueChanged',
+  'PaneUserMessagesSent',
+  'PaneModelChanged'
+])
+
+/** Whether `event` is one {@link reducePaneChat} folds. */
+export const isPaneStreamEvent = (event: IpcEvent): event is PaneStreamEvent =>
+  STREAM_EVENT_TAGS.has(event._tag)
+
 /** The empty conversation state a pane starts from before history loads. */
 export const emptyPaneChatState: PaneChatState = {
   messages: [],
@@ -198,20 +240,21 @@ export const emptyPaneChatState: PaneChatState = {
   queued: [],
   queueHeld: false,
   turnStatus: null,
-  contextUsage: null,
   compactionFailure: null,
-  backgroundTasks: []
+  backgroundTasks: [],
+  attention: Idle.make({})
 }
 
 /**
  * Projects a pane's persisted history into initial chat state: each turn
  * becomes a single-text-part message with a stable pane-scoped id, and
- * `isLoading` is false. Use to seed a pane's state atom on first mount.
+ * `isLoading` is false. Use to seed a pane's chat state from its transcript.
  */
 export const paneChatStateFromHistory = (
   paneId: string,
   history: ReadonlyArray<ConversationMessage>
 ): PaneChatState => ({
+  ...emptyPaneChatState,
   messages: history.map((message, index) => ({
     id: `${paneId}:history:${index}`,
     role: message.role,
@@ -221,19 +264,17 @@ export const paneChatStateFromHistory = (
     ...(message.resumeAnchorUuid !== undefined
       ? { resumeAnchorUuid: message.resumeAnchorUuid }
       : {})
-  })),
-  isLoading: false,
-  slashCommands: [],
-  warmingCommands: false,
-  queued: [],
-  queueHeld: false,
-  turnStatus: null,
-  contextUsage: null,
-  compactionFailure: null,
-  backgroundTasks: []
+  }))
 })
 
-const appendSentMessages = (state: PaneChatState, event: PaneUserMessagesSent): PaneChatState => {
+// @effect-diagnostics-next-line globalDate:off -- callers that pass no `now` (tests) read the wall clock; the Host and the renderer always pass one.
+const wallClock = (): number => Date.now()
+
+const appendSentMessages = (
+  state: PaneChatState,
+  event: PaneUserMessagesSent,
+  now: number | undefined
+): PaneChatState => {
   const present = new Set(state.messages.map((message) => message.id))
   const last = state.messages.at(-1)
   const resumesPark =
@@ -251,8 +292,7 @@ const appendSentMessages = (state: PaneChatState, event: PaneUserMessagesSent): 
           ? { attachments: message.attachments }
           : {}),
         ...(index > 0 ? { rewindable: false as const } : {}),
-        // @effect-diagnostics-next-line globalDate:off -- the transcript records when dia resumed the agent; the chat reducer runs outside an Effect runtime.
-        ...(resumesPark ? { resumedAt: Date.now() } : {})
+        ...(resumesPark ? { resumedAt: now ?? wallClock() } : {})
       })
     )
     .filter((message) => !present.has(message.id))
@@ -426,15 +466,18 @@ const resolveParkNotice = (messages: ReadonlyArray<PaneMessage>): ReadonlyArray<
   return [...messages.slice(0, -1), resolved]
 }
 
-const parkedMessage = (state: PaneChatState, attention: ParkedState): PaneChatState => {
+const parkedMessage = (
+  state: PaneChatState,
+  attention: ParkedState,
+  now: number | undefined
+): PaneChatState => {
   const last = state.messages.at(-1)
   const kept =
     last !== undefined && isParkNotice(last) ? state.messages.slice(0, -1) : state.messages
   const notice: PaneMessage = {
     id: `${kept.length}${PARKED_SUFFIX}`,
     role: 'notice',
-    // @effect-diagnostics-next-line globalDate:off -- the notice reads the reset time against the wall clock; the chat reducer runs outside an Effect runtime.
-    parts: [{ type: 'text', content: parkNoticeText(attention, Date.now()) }]
+    parts: [{ type: 'text', content: parkNoticeText(attention, now ?? wallClock()) }]
   }
   return { ...state, messages: [...kept, notice], isLoading: false }
 }
@@ -502,12 +545,34 @@ const compactConversation = (
   return noticeMessage({ ...state, messages }, 'Context compacted', { compaction })
 }
 
+const foldAttention = (
+  state: PaneChatState,
+  attention: AttentionState,
+  now: number | undefined
+): PaneChatState => {
+  if (attention._tag === 'Crashed' || attention._tag === 'Errored') {
+    return {
+      ...state,
+      messages: [...state.messages, errorMessage(state, attention.error)],
+      isLoading: false,
+      ...(attention._tag === 'Crashed' ? { queued: [], queueHeld: false, backgroundTasks: [] } : {})
+    }
+  }
+  if (isParkedState(attention)) return parkedMessage(state, attention, now)
+  if (attention._tag === 'Idle') {
+    const messages = resolveParkNotice(state.messages)
+    return messages === state.messages ? state : { ...state, messages }
+  }
+  return isTurnOver(attention) ? { ...state, isLoading: false } : state
+}
+
 /**
  * Folds one pane stream event into conversation state. Text and thinking deltas
  * extend the in-flight assistant turn; a tool-call start adds a running row and
  * its completion resolves it in place; a terminal attention change ends the
  * turn — `Completed` silently, `Errored`/`Crashed` by appending an `error` turn
- * carrying the failure message so the transcript records it. `PaneMessageAppended` is a backstop that only
+ * carrying the failure message so the transcript records it; every attention change replaces
+ * `attention`, which a conversation reset keeps. `PaneMessageAppended` is a backstop that only
  * adds a turn's final text when no deltas built it, and user appends are
  * ignored (`PaneUserMessagesSent` adds user turns, one per sent message, and
  * marks the pane loading; a message id already in the transcript is skipped).
@@ -516,8 +581,8 @@ const compactConversation = (
  * `PaneSlashCommandsAvailable` replaces the available command list (ending any
  * warming state); a compaction, and a model change (`Model → <name>`), append a `notice`
  * divider; a conversation reset
- * clears the transcript while keeping the available commands, the queue and the context usage.
- * `PaneContextUsageChanged` replaces `contextUsage`. `PaneCompactionFailed` sets
+ * clears the transcript while keeping the available commands and the queue.
+ * `PaneCompactionFailed` sets
  * `compactionFailure`, which `PaneUserMessagesSent`, `PaneConversationCompacted` and a reset clear.
  * `PaneCheckpointAvailable` anchors a rewindable checkpoint uuid (and its resume
  * anchor) onto the earliest user turn still lacking one, and
@@ -587,24 +652,7 @@ export const reducePaneChat = (
       }
     }
     case 'PaneAttentionChanged':
-      if (event.attention._tag === 'Crashed' || event.attention._tag === 'Errored') {
-        return {
-          ...state,
-          messages: [...state.messages, errorMessage(state, event.attention.error)],
-          isLoading: false,
-          ...(event.attention._tag === 'Crashed'
-            ? { queued: [], queueHeld: false, backgroundTasks: [] }
-            : {})
-        }
-      }
-      if (isParkedState(event.attention)) {
-        return parkedMessage(state, event.attention)
-      }
-      if (event.attention._tag === 'Idle') {
-        const messages = resolveParkNotice(state.messages)
-        return messages === state.messages ? state : { ...state, messages }
-      }
-      return isTurnOver(event.attention) ? { ...state, isLoading: false } : state
+      return foldAttention({ ...state, attention: event.attention }, event.attention, now)
     case 'PaneSlashCommandsWarming':
       return { ...state, warmingCommands: event.active }
     case 'PaneSlashCommandsAvailable':
@@ -616,10 +664,10 @@ export const reducePaneChat = (
     case 'PaneConversationReset':
       return {
         ...emptyPaneChatState,
+        attention: state.attention,
         slashCommands: state.slashCommands,
         queued: state.queued,
         queueHeld: state.queueHeld,
-        contextUsage: state.contextUsage,
         backgroundTasks: state.backgroundTasks
       }
     case 'PaneCheckpointAvailable':
@@ -631,13 +679,11 @@ export const reducePaneChat = (
       return rewindToCheckpoint({ ...state, backgroundTasks: [] }, event.messageUuid)
     case 'PaneBackgroundTasksChanged':
       return { ...state, backgroundTasks: event.tasks }
-    case 'PaneContextUsageChanged':
-      return { ...state, contextUsage: event.usage }
     case 'PaneCompactionFailed':
       return { ...state, compactionFailure: event.failure }
     case 'PaneMessageQueueChanged':
       return { ...state, queued: event.queued, queueHeld: event.held }
     case 'PaneUserMessagesSent':
-      return appendSentMessages({ ...state, compactionFailure: null, setup: undefined }, event)
+      return appendSentMessages({ ...state, compactionFailure: null, setup: undefined }, event, now)
   }
 }

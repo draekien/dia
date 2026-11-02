@@ -2,7 +2,6 @@ import { AdapterStatusSnapshot } from '@shared/domain/adapter-status'
 import { ActivityInfo, ActivityNotFound } from '@shared/domain/background-activity'
 import { ModelCatalogSnapshot } from '@shared/domain/model'
 import { LastVisibleModel } from '@shared/domain/model-preferences'
-import type { ConversationMessage } from '@shared/domain/pane'
 import { RegisterProjectError, type RegisterProjectRefusal } from '@shared/domain/project'
 import {
   ActivitiesChanged,
@@ -33,7 +32,7 @@ import {
   SetTranscriptWidth,
   WorkspaceChanged
 } from '@shared/ipc/contract'
-import type { DiaRpcs, EventFrame } from '@shared/ipc/rpc'
+import type { DiaRpcs, EventFrame, PaneEventFrame } from '@shared/ipc/rpc'
 import { Duration, Effect, Ref, Schedule, Schema, Stream } from 'effect'
 import type { RpcClient, RpcClientError } from 'effect/rpc'
 
@@ -107,6 +106,7 @@ const encodeLastVisibleModel = Schema.encodeSync(LastVisibleModel)
 export const makeHostApi = (deps: HostApiDeps): HostApi => {
   const reloadListeners = new Set<(paneId: string) => void>()
   const eventListeners = new Set<(event: IpcEvent) => void>()
+  const paneFrameListeners = new Set<(frame: PaneEventFrame) => void>()
 
   const dispatch = (event: IpcEvent): void => {
     for (const listener of eventListeners) listener(event)
@@ -139,6 +139,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       Effect.gen(function* () {
         if (frame._tag === 'PaneEvent') {
           yield* Ref.update(cursors, (current) => ({ ...current, [frame.paneId]: frame.seq }))
+          for (const listener of paneFrameListeners) listener(frame)
           dispatch(frame.event)
         } else if (frame._tag === 'GlobalEvent') {
           dispatch(frame.event)
@@ -339,7 +340,6 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
           commandId
         })
       ),
-    getMessageQueue: (paneId) => query((client) => client.GetMessageQueue({ paneId })),
     resolvePermission: (paneId, requestId, response) =>
       command('ResolvePermission', (client, id) =>
         client.ResolvePermission({
@@ -456,8 +456,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       command('SetTranscriptWidth', (client, commandId) =>
         client.SetTranscriptWidth({ ...SetTranscriptWidth.make({ width }), commandId })
       ),
-    getPaneHistory: (paneId): Promise<ReadonlyArray<ConversationMessage>> =>
-      query((client) => client.GetPaneHistory({ paneId })),
+    getPaneChat: (paneId) => query((client) => client.GetPaneChat({ paneId })),
     pickDirectory: () => deps.pickDirectory(null),
     getTheme: () => query((client) => client.GetTheme()),
     setTheme: (theme) => query((client) => client.SetTheme({ theme })),
@@ -468,6 +467,10 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     onHistoryReloadRequested: (listener) => {
       reloadListeners.add(listener)
       return () => reloadListeners.delete(listener)
+    },
+    onPaneEvent: (listener) => {
+      paneFrameListeners.add(listener)
+      return () => paneFrameListeners.delete(listener)
     },
     onMessageAppended: (listener) => subscribeTo('PaneMessageAppended', listener),
     onWorkspaceChanged: (listener) => subscribeTo('WorkspaceChanged', listener),

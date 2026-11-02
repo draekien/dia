@@ -23,7 +23,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0012](0012-effect-tsgo-for-effect-aware-typechecking.md) | Use @effect/tsgo for Effect-aware type checking | accepted |
 | [0013](0013-shared-schema-module-for-cross-process-code.md) | Extract cross-process schemas into a platform-neutral `src/shared` module | accepted |
 | [0014](0014-tanstack-ai-usechat-for-renderer-chat-state.md) | Use TanStack AI `useChat` with a custom IPC ConnectionAdapter for renderer chat state | superseded by ADR-0015 |
-| [0015](0015-effect-atom-and-direct-ipc-reducer-for-renderer-chat-state.md) | Use effect-atom and a direct IPC-event reducer for renderer chat state | accepted, amended by ADR-0030 |
+| [0015](0015-effect-atom-and-direct-ipc-reducer-for-renderer-chat-state.md) | Use effect-atom and a direct IPC-event reducer for renderer chat state | accepted, amended by ADR-0030 and ADR-0050 |
 | [0016](0016-electron-builder-distribution-and-auto-update.md) | Distribute dia as an electron-builder NSIS installer with GitHub-backed auto-update | accepted, amended by ADR-0044 |
 | [0017](0017-frameless-window-with-native-overlay-controls.md) | Replace the native window frame with a custom titlebar and native overlay controls | accepted, header strip and colour sync superseded by ADR-0038 |
 | [0018](0018-transcript-anchored-file-checkpointing-with-conversation-fork.md) | Transcript-anchored file checkpointing that forks the conversation on rewind | accepted; its rewind-control sentence superseded by ADR-0045 |
@@ -58,6 +58,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0047](0047-built-in-secret-rules-for-meta-repo-push.md) | Scan meta repo pushes with a built-in rule set, run in the Host over `git log -p` | accepted |
 | [0048](0048-rail-cards-from-many-plugins.md) | Let many plugins add cards to the session rail | accepted |
 | [0049](0049-base-ui-primitives-under-shadcn-ui.md) | Build the shadcn/ui wrappers on Base UI instead of Radix | accepted |
+| [0050](0050-host-keeps-tab-chat-state.md) | The Host keeps each tab's chat state and serves snapshots | accepted |
 
 ## Adding a new ADR
 

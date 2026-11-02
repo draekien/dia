@@ -42,6 +42,7 @@ import { makeHostDatabaseLive } from './services/database'
 import { EventHub, makeEventHubLive } from './services/event-hub'
 import { ModelCatalogFeed, ModelCatalogFeedLive } from './services/model-catalog-feed'
 import { ModelPreferencesLive } from './services/model-preferences'
+import { PaneChatProjectionLive } from './services/pane-chat-projection'
 import { PaneSupervisor, PaneSupervisorLive, SessionFactoryLive } from './services/pane-supervisor'
 import { makePaneWorkspaceLive, PaneWorkspace } from './services/pane-workspace'
 import { makePersistenceServiceLive } from './services/persistence'
@@ -140,12 +141,19 @@ const buildHostLayer = (init: HostInit, token: string) => {
     makeWorkspaceStoreLive(init.userDataPath),
     Layer.merge(hostDatabase, NodeServices.layer)
   )
+  const transcriptReader = Layer.provide(TranscriptReaderLive, hostPlugins)
+  const modelCatalog = Layer.provide(ModelCatalogFeedLive, Layer.merge(hostPlugins, eventHub))
+  const paneChats = Layer.provide(
+    PaneChatProjectionLive,
+    Layer.mergeAll(eventHub, WorkspaceFeedLive, transcriptReader, modelCatalog)
+  )
   const workspace = Layer.provide(
     makePaneWorkspaceLive(init.worktreesRoot),
     Layer.mergeAll(
       supervisor,
       workspaceStore,
-      Layer.provide(TranscriptReaderLive, hostPlugins),
+      transcriptReader,
+      paneChats,
       eventHub,
       hostPlugins,
       WorkspaceFeedLive,
@@ -160,7 +168,6 @@ const buildHostLayer = (init: HostInit, token: string) => {
     AgentSummariesLive,
     Layer.mergeAll(workspace, persistence, eventHub)
   )
-  const modelCatalog = Layer.provide(ModelCatalogFeedLive, Layer.merge(hostPlugins, eventHub))
   const adapterStatus = Layer.provide(AdapterStatusFeedLive, Layer.merge(hostPlugins, eventHub))
   const modelPreferences = Layer.provide(
     ModelPreferencesLive,
@@ -169,6 +176,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
   const state = Layer.mergeAll(
     supervisor,
     workspace,
+    paneChats,
     workspaceProblems,
     summaries,
     settings,

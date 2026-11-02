@@ -1,5 +1,5 @@
+import type { TextPart, ThinkingPart, ToolCallPart } from '@shared/domain/pane-chat'
 import { describe, expect, it } from 'vitest'
-import type { TextPart, ThinkingPart, ToolCallPart } from './pane-chat'
 import { hasSteps, sectionDurationMs, turnBlocks } from './turn-steps'
 
 const text = (content: string, startedAt?: number): TextPart => ({

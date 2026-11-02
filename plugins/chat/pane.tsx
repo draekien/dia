@@ -69,12 +69,12 @@ import {
   useTranscriptWidth
 } from '@dia/renderer-plugin'
 import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react'
+import type { AgentSummary } from '@shared/domain/agent-summary'
 import { PathAttachment, type ProjectEntry } from '@shared/domain/attachment'
-import {
-  type AttentionState,
-  Idle,
-  type PermissionResponse,
-  type QuestionResponse
+import type {
+  PermissionResponse,
+  QuestionResponse,
+  UserInputRequest
 } from '@shared/domain/attention'
 import type { SendMode } from '@shared/domain/message-queue'
 import {
@@ -84,13 +84,7 @@ import {
   type ThinkingLevel
 } from '@shared/domain/pane'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
-import type {
-  PanePermissionRequested,
-  PanePlanReviewRequested,
-  PaneQuestionRequested
-} from '@shared/ipc/contract'
 import { useForm } from '@tanstack/react-form'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { cva } from 'class-variance-authority'
 import { AsyncResult } from 'effect/reactivity'
 import {
@@ -622,6 +616,15 @@ export function ComposerActionButton({
   )
 }
 
+const unansweredRequest = (
+  summary: AgentSummary | undefined,
+  answeredRequestId: string | null
+): UserInputRequest | undefined => {
+  if (summary?.status._tag !== 'StatusNeedsInput') return undefined
+  const { request } = summary.status
+  return request?.requestId === answeredRequestId ? undefined : request
+}
+
 const messageActivitySignature = (state: PaneChatState): string => {
   const last = state.messages.at(-1)
   const lastPart = last?.parts.at(-1)
@@ -637,7 +640,6 @@ const messageActivitySignature = (state: PaneChatState): string => {
 function PaneChat({
   paneId,
   cwd,
-  attention,
   model,
   onModelChange,
   thinkingLevel,
@@ -654,7 +656,6 @@ function PaneChat({
 }: {
   paneId: string
   cwd: string
-  attention: AttentionState
   model: string
   onModelChange: (model: string) => void
   thinkingLevel: ThinkingLevel
@@ -669,12 +670,8 @@ function PaneChat({
   projectName: string | undefined
   branch: string | undefined
 }): React.JSX.Element {
-  const queryClient = useQueryClient()
-  const pendingPermissionQueryKey = ['pane', paneId, 'pendingPermission'] as const
-  const pendingQuestionQueryKey = ['pane', paneId, 'pendingQuestion'] as const
-  const pendingPlanReviewQueryKey = ['pane', paneId, 'pendingPlanReview'] as const
-
   const chat = usePaneChat(paneId)
+  const attention = chat.attention
   const sendMessage = useAtomSet(paneSendAtom(paneId))
   const editQueued = useAtomSet(paneEditQueuedAtom(paneId))
   const removeQueued = useAtomSet(paneRemoveQueuedAtom(paneId))
@@ -710,42 +707,12 @@ function PaneChat({
     if (focusComposer) textareaRef.current?.focus()
   }, [])
 
-  const { data: pendingPermission = null } = useQuery<PanePermissionRequested | null>({
-    queryKey: pendingPermissionQueryKey,
-    queryFn: () => null,
-    staleTime: Infinity
-  })
-  const { data: pendingQuestion = null } = useQuery<PaneQuestionRequested | null>({
-    queryKey: pendingQuestionQueryKey,
-    queryFn: () => null,
-    staleTime: Infinity
-  })
-  const { data: pendingPlanReview = null } = useQuery<PanePlanReviewRequested | null>({
-    queryKey: pendingPlanReviewQueryKey,
-    queryFn: () => null,
-    staleTime: Infinity
-  })
-
-  useEffect(() => {
-    return window.dia.onPermissionRequested((event) => {
-      if (event.paneId !== paneId) return
-      queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, event)
-    })
-  }, [queryClient, paneId, pendingPermissionQueryKey])
-
-  useEffect(() => {
-    return window.dia.onQuestionRequested((event) => {
-      if (event.paneId !== paneId) return
-      queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, event)
-    })
-  }, [queryClient, paneId, pendingQuestionQueryKey])
-
-  useEffect(() => {
-    return window.dia.onPlanReviewRequested((event) => {
-      if (event.paneId !== paneId) return
-      queryClient.setQueryData<PanePlanReviewRequested | null>(pendingPlanReviewQueryKey, event)
-    })
-  }, [queryClient, paneId, pendingPlanReviewQueryKey])
+  const summary = useAgentSummaries().get(paneId)
+  const [answeredRequestId, setAnsweredRequestId] = useState<string | null>(null)
+  const pendingRequest = unansweredRequest(summary, answeredRequestId)
+  const pendingPermission = pendingRequest?._tag === 'PermissionRequest' ? pendingRequest : null
+  const pendingQuestion = pendingRequest?._tag === 'ClarifyingQuestion' ? pendingRequest : null
+  const pendingPlanReview = pendingRequest?._tag === 'PlanReview' ? pendingRequest : null
 
   const isLoading = chat.isLoading
   const [paneWidth, setPaneWidth] = useState<number>()
@@ -754,22 +721,21 @@ function PaneChat({
   const emptySession = chat.messages.length === 0 && !isLoading && chat.queued.length === 0
   const contextCardShown = useRailCardShown(CONTEXT_CARD_KEY)
   const compactFailed = chat.compactionFailure?.reason === 'failed'
+  const contextUsage = summary?.contextUsage
   const contextWarning =
     !contextCardShown &&
-    chat.contextUsage !== null &&
-    contextNeedsAttention(chat.contextUsage, compactFailed)
-      ? chat.contextUsage
+    contextUsage !== undefined &&
+    contextNeedsAttention(contextUsage, compactFailed)
+      ? contextUsage
       : null
   const activitySignature = messageActivitySignature(chat)
 
   const { elapsedMs, idleMs, nowMs } = useElapsedClock(isLoading, activitySignature)
-  const summary = useAgentSummaries().get(paneId)
   const parkedForUser = summary !== undefined && awaitsUser(summary)
   const lastMessage = chat.messages.at(-1)
   const activity = turnActivity(chat, elapsedMs, idleMs)
 
-  const pendingInteraction =
-    pendingPermission !== null || pendingQuestion !== null || pendingPlanReview !== null
+  const pendingInteraction = pendingRequest !== undefined
   const retryText = lastUserText(chat)
 
   const resend = (): void => {
@@ -792,9 +758,7 @@ function PaneChat({
     runningTurn !== undefined && isLiveTurn(runningTurn) && hasSteps(runningTurn.parts)
 
   const clearPendingInteractions = (): void => {
-    queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
-    queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, null)
-    queryClient.setQueryData<PanePlanReviewRequested | null>(pendingPlanReviewQueryKey, null)
+    if (pendingRequest !== undefined) setAnsweredRequestId(pendingRequest.requestId)
   }
 
   const actionDefaultMode: SendMode = pendingInteraction ? 'steer' : defaultSendMode
@@ -831,19 +795,19 @@ function PaneChat({
   function respondToPermission(response: PermissionResponse): void {
     if (!pendingPermission) return
     window.dia.resolvePermission(paneId, pendingPermission.requestId, response)
-    queryClient.setQueryData<PanePermissionRequested | null>(pendingPermissionQueryKey, null)
+    setAnsweredRequestId(pendingPermission.requestId)
   }
 
   function respondToQuestion(response: QuestionResponse): void {
     if (!pendingQuestion) return
     window.dia.resolveQuestion(paneId, pendingQuestion.requestId, response)
-    queryClient.setQueryData<PaneQuestionRequested | null>(pendingQuestionQueryKey, null)
+    setAnsweredRequestId(pendingQuestion.requestId)
   }
 
   function respondToPlanReview(approved: boolean): void {
     if (!pendingPlanReview) return
     window.dia.resolvePlanReview(paneId, pendingPlanReview.requestId, approved)
-    queryClient.setQueryData<PanePlanReviewRequested | null>(pendingPlanReviewQueryKey, null)
+    setAnsweredRequestId(pendingPlanReview.requestId)
   }
 
   return (
@@ -1278,9 +1242,7 @@ function Pane({
   projectName,
   branch
 }: PaneProps) {
-  const queryClient = useQueryClient()
   const [width] = useTranscriptWidth()
-  const attentionQueryKey = ['pane', paneId, 'attention'] as const
 
   const [level, setLevel] = useState<ThinkingLevel>(thinkingLevel ?? DEFAULT_THINKING_LEVEL)
   const [mode, setMode] = useState<PermissionMode>(permissionMode ?? DEFAULT_PERMISSION_MODE)
@@ -1325,19 +1287,6 @@ function Pane({
 
   const thinkingLevels = thinkingLevelsFor(modelOption(chosenModel))
 
-  const { data: attention = Idle.make({}) } = useQuery<AttentionState>({
-    queryKey: attentionQueryKey,
-    queryFn: () => Idle.make({}),
-    staleTime: Infinity
-  })
-
-  useEffect(() => {
-    return window.dia.onAttentionChanged((event) => {
-      if (event.paneId !== paneId) return
-      queryClient.setQueryData<AttentionState>(attentionQueryKey, event.attention)
-    })
-  }, [queryClient, paneId, attentionQueryKey])
-
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a drop guard only, so a file dropped outside the composer does not navigate the window
     <div
@@ -1353,7 +1302,6 @@ function Pane({
         key={paneId}
         paneId={paneId}
         cwd={cwd}
-        attention={attention}
         model={chosenModel}
         onModelChange={changeModel}
         thinkingLevel={fitThinkingLevel(level, thinkingLevels)}

@@ -6,7 +6,8 @@ import {
   sendModeAtom,
   Tooltip,
   TooltipContent,
-  TooltipTrigger
+  TooltipTrigger,
+  useAgentSummaries
 } from '@dia/renderer-plugin'
 import { useAtomSet, useAtomValue } from '@effect/atom-react'
 import type { CompactionFailure, ContextUsage } from '@shared/domain/context-usage'
@@ -128,12 +129,13 @@ export function ContextUsageView({
 /** The session rail's Context card body for `paneId`. Add it to the rail with `addRailCard`. */
 export function ContextCard({ paneId }: { readonly paneId: PaneId }): React.JSX.Element {
   const chat = usePaneChat(paneId)
+  const usage = useAgentSummaries().get(paneId)?.contextUsage ?? null
   const sendMessage = useAtomSet(paneSendAtom(paneId))
   const sendMode = useAtomValue(sendModeAtom)
   const compacting = chat.isLoading && lastUserText(chat)?.trim().split(/\s/)[0] === COMPACT_COMMAND
   return (
     <ContextUsageView
-      usage={chat.contextUsage}
+      usage={usage}
       failure={chat.compactionFailure}
       compacting={compacting}
       running={chat.isLoading}

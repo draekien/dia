@@ -312,6 +312,29 @@ describe('makeHostApi', () => {
     expect(received).toEqual(['a', 'b'])
   })
 
+  it('hands each pane event to onPaneEvent with its sequence number', async () => {
+    const { client } = makeClient({
+      subscriptions: [
+        afterListenersAttach(
+          Stream.make(paneFrame(1, 'a'), paneFrame(2, 'b')).pipe(Stream.concat(dropped))
+        )
+      ]
+    })
+    const { api } = makeApi(client)
+    const received: Array<[number, string]> = []
+    api.onPaneEvent((frame) => {
+      if (frame.event._tag === 'PaneAssistantTextDelta')
+        received.push([frame.seq, frame.event.text])
+    })
+
+    await advance(1500)
+
+    expect(received).toEqual([
+      [1, 'a'],
+      [2, 'b']
+    ])
+  })
+
   it('asks the renderer to reload a pane history on ReloadHistory and forgets that pane cursor', async () => {
     const { client, subscribeEvents } = makeClient({
       subscriptions: [

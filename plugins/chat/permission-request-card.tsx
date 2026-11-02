@@ -1,6 +1,10 @@
 import { Button, Input, Label, Switch, Textarea } from '@dia/renderer-plugin'
-import { Allow, Deny, type PermissionResponse } from '@shared/domain/attention'
-import type { PanePermissionRequested } from '@shared/ipc/contract'
+import {
+  Allow,
+  Deny,
+  type PermissionRequest,
+  type PermissionResponse
+} from '@shared/domain/attention'
 import { useMemo, useState } from 'react'
 
 type FieldKind = 'text' | 'number' | 'boolean' | 'json'
@@ -81,7 +85,7 @@ function reconstructInput(
  * Inline card that prompts the user to resolve a pane's pending tool-permission request.
  * Renders the tool's proposed input as an editable per-field form (top-level primitives
  * inline, nested values as JSON), an "always allow" toggle when the SDK offered suggestions,
- * and a required note when denying. Pass the pane's {@link PanePermissionRequested} as
+ * and a required note when denying. Pass the pane's {@link PermissionRequest} as
  * `request`; `onResolve` is called once with the user's {@link PermissionResponse}. The card
  * is non-blocking, so the user may instead redirect the pane via the composer, superseding it.
  */
@@ -89,7 +93,7 @@ export function PermissionRequestCard({
   request,
   onResolve
 }: {
-  request: PanePermissionRequested
+  request: PermissionRequest
   onResolve: (response: PermissionResponse) => void
 }) {
   const fields = useMemo(() => editableFields(request.input), [request.input])

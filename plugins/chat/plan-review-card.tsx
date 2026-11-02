@@ -1,11 +1,11 @@
 import { Button } from '@dia/renderer-plugin'
-import type { PanePlanReviewRequested } from '@shared/ipc/contract'
+import type { PlanReview } from '@shared/domain/attention'
 import { Markdown } from './markdown'
 
 /**
  * Inline card that presents a pane's proposed plan (raised when its agent, in
  * `plan` mode, calls `ExitPlanMode`) for the user to approve or reject. Pass the
- * pane's {@link PanePlanReviewRequested} as `request`; `onResolve` is called once
+ * pane's {@link PlanReview} as `request`; `onResolve` is called once
  * with `true` to approve — letting the agent proceed and restoring the pane's
  * pre-plan mode — or `false` to keep the pane planning. The card is non-blocking,
  * so the user may instead redirect the pane via the composer, superseding it.
@@ -14,7 +14,7 @@ export function PlanReviewCard({
   request,
   onResolve
 }: {
-  request: PanePlanReviewRequested
+  request: PlanReview
   onResolve: (approved: boolean) => void
 }) {
   return (

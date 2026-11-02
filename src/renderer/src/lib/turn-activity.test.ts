@@ -1,3 +1,4 @@
+import { emptyPaneChatState, reducePaneChat } from '@shared/domain/pane-chat'
 import {
   PaneAssistantTextDelta,
   PaneTurnStatusChanged,
@@ -5,7 +6,6 @@ import {
 } from '@shared/ipc/contract'
 import { Duration } from 'effect'
 import { describe, expect, it } from 'vitest'
-import { emptyPaneChatState, reducePaneChat } from './pane-chat'
 import {
   ELAPSED_DELAY,
   formatElapsed,
