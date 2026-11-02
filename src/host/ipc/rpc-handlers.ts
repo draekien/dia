@@ -1,4 +1,4 @@
-import { DEFAULT_SEND_MODE, EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
+import { DEFAULT_SEND_MODE } from '@shared/domain/message-queue'
 import { DEFAULT_USAGE_LIMIT_RESUME } from '@shared/domain/parking'
 import type { TabNotFoundError, WorktreeNotRemovedError } from '@shared/domain/project'
 import { DEFAULT_THEME } from '@shared/domain/theme'
@@ -16,6 +16,7 @@ import { EventHub } from '../services/event-hub'
 import { withMetaRepo } from '../services/meta-repo-seam'
 import { ModelCatalogFeed } from '../services/model-catalog-feed'
 import { ModelPreferences } from '../services/model-preferences'
+import { PaneChatProjection } from '../services/pane-chat-projection'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { ProjectEntries } from '../services/project-entries'
@@ -51,6 +52,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
   const modelPreferences = yield* ModelPreferences
   const activities = yield* BackgroundActivities
   const problems = yield* WorkspaceProblems
+  const paneChats = yield* PaneChatProjection
 
   const publish = (event: IpcEvent): Effect.Effect<void> => hub.publish(event)
 
@@ -310,15 +312,6 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
           (handle) => handle.sendQueuedMessageNow(command.messageId)
         )
       ),
-    GetMessageQueue: ({ paneId }) =>
-      supervisor.getHandle(paneId).pipe(
-        Effect.flatMap(
-          Option.match({
-            onNone: () => Effect.succeed(EMPTY_MESSAGE_QUEUE),
-            onSome: (handle) => handle.messageQueue
-          })
-        )
-      ),
     GetWorkspace: () => workspace.getWorkspace,
     RegisterProject: ({ projectId, directory }) => workspace.registerProject(projectId, directory),
     RemoveProject: ({ projectId, force }) => workspace.removeProject(projectId, force),
@@ -329,7 +322,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
       settings
         .getTranscriptWidth()
         .pipe(Effect.map(Option.getOrElse(() => DEFAULT_TRANSCRIPT_WIDTH))),
-    GetPaneHistory: ({ paneId }) => workspace.getPaneHistory(paneId),
+    GetPaneChat: ({ paneId }) => paneChats.snapshot(paneId),
     GetTheme: () => settings.getTheme().pipe(Effect.map(Option.getOrElse(() => DEFAULT_THEME))),
     SetTheme: ({ theme }) => settings.setTheme(theme),
     GetSendMode: () =>

@@ -1,5 +1,5 @@
+import type { PaneMessage } from '@shared/domain/pane-chat'
 import type { RewindFailureCause } from '@shared/domain/rewind'
-import type { PaneMessage } from './pane-chat'
 
 /** The pair of uuids identifying a rewind target: the user turn's checkpoint id and, when a prior assistant turn exists, the branch point to resume from. */
 export interface RewindTarget {

@@ -1,6 +1,7 @@
-import { EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
-import { CopySetupStep, SessionSetupStep, WorktreeSetupStep } from '@shared/domain/tab-setup'
-import { PaneContextUsageChanged, PaneSetupProgress } from '@shared/ipc/contract'
+// @effect-diagnostics newPromise:off -- the test holds each snapshot fetch open with a manually resolved Promise.
+import { type PaneChatSnapshot, paneChatStateFromHistory } from '@shared/domain/pane-chat'
+import { PaneAssistantTextDelta } from '@shared/ipc/contract'
+import { PaneEventFrame } from '@shared/ipc/rpc'
 import { AsyncResult, AtomRegistry } from 'effect/reactivity'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { paneChatAtom } from './pane-chat-atoms'
@@ -8,77 +9,68 @@ import { paneChatAtom } from './pane-chat-atoms'
 const PANE = '00000000-0000-4000-8000-00000000000a'
 const OTHER_PANE = '00000000-0000-4000-8000-00000000000b'
 
-interface FakeDia {
-  readonly getPaneHistory: ReturnType<typeof vi.fn>
-  readonly requestReload: (paneId: string) => void
-  readonly pushContextUsage: (event: PaneContextUsageChanged) => void
-  readonly pushSetup: (event: PaneSetupProgress) => void
-  readonly reloadListenerCount: () => number
-}
+const snapshotOf = (seq: number, ...userTexts: ReadonlyArray<string>): PaneChatSnapshot => ({
+  state: paneChatStateFromHistory(
+    PANE,
+    userTexts.map((content) => ({ role: 'user', content }))
+  ),
+  seq
+})
 
-const installFakeDia = (
-  histories: ReadonlyArray<ReadonlyArray<{ role: string; content: string }>>
-) => {
+const delta = (seq: number, text: string, paneId = PANE) =>
+  PaneEventFrame.make({ paneId, seq, event: PaneAssistantTextDelta.make({ paneId, text }) })
+
+const installFakeDia = () => {
   const reloadListeners = new Set<(paneId: string) => void>()
-  const usageListeners = new Set<(event: PaneContextUsageChanged) => void>()
-  const setupListeners = new Set<(event: PaneSetupProgress) => void>()
-  let call = 0
-  const getPaneHistory = vi.fn(async () => histories[Math.min(call++, histories.length - 1)])
+  const frameListeners = new Set<(frame: PaneEventFrame) => void>()
+  const pendingSnapshots: Array<(snapshot: PaneChatSnapshot) => void> = []
+  const getPaneChat = vi.fn(
+    (_paneId: string) =>
+      new Promise<PaneChatSnapshot>((resolve) => void pendingSnapshots.push(resolve))
+  )
   const noSubscription = () => () => undefined
-  const dia = new Proxy(
-    {
-      getPaneHistory,
-      getMessageQueue: async () => EMPTY_MESSAGE_QUEUE,
+  vi.stubGlobal('window', {
+    dia: {
+      getPaneChat,
       models: { onChanged: noSubscription, get: async () => undefined },
       onHistoryReloadRequested: (listener: (paneId: string) => void) => {
         reloadListeners.add(listener)
         return () => reloadListeners.delete(listener)
       },
-      onContextUsageChanged: (listener: (event: PaneContextUsageChanged) => void) => {
-        usageListeners.add(listener)
-        return () => usageListeners.delete(listener)
-      },
-      onSetupProgress: (listener: (event: PaneSetupProgress) => void) => {
-        setupListeners.add(listener)
-        return () => setupListeners.delete(listener)
+      onPaneEvent: (listener: (frame: PaneEventFrame) => void) => {
+        frameListeners.add(listener)
+        return () => frameListeners.delete(listener)
       }
-    } as Record<string, unknown>,
-    { get: (target, key: string) => target[key] ?? noSubscription() }
-  )
-  vi.stubGlobal('window', { dia })
-  const fake: FakeDia = {
-    getPaneHistory,
-    requestReload: (paneId) => {
+    }
+  })
+  return {
+    getPaneChat,
+    answerSnapshot: async (snapshot: PaneChatSnapshot) => {
+      await vi.waitFor(() => expect(pendingSnapshots.length).toBeGreaterThan(0))
+      pendingSnapshots.shift()?.(snapshot)
+    },
+    pushFrame: (frame: PaneEventFrame) => {
+      for (const listener of frameListeners) listener(frame)
+    },
+    requestReload: (paneId: string) => {
       for (const listener of reloadListeners) listener(paneId)
     },
-    pushContextUsage: (event) => {
-      for (const listener of usageListeners) listener(event)
-    },
-    pushSetup: (event) => {
-      for (const listener of setupListeners) listener(event)
-    },
-    reloadListenerCount: () => reloadListeners.size
+    listenerCount: () => reloadListeners.size + frameListeners.size
   }
-  return fake
 }
 
 const messageTexts = (
   registry: AtomRegistry.AtomRegistry,
   paneId: string
-): ReadonlyArray<string> => {
+): ReadonlyArray<string> | undefined => {
   const result = registry.get(paneChatAtom(paneId))
-  if (!AsyncResult.isSuccess(result)) return []
+  if (!AsyncResult.isSuccess(result)) return undefined
   return result.value.messages.flatMap((message) =>
     message.parts.flatMap((part) => (part.type === 'text' ? [part.content] : []))
   )
 }
 
-const contextUsage = (registry: AtomRegistry.AtomRegistry, paneId: string) => {
-  const result = registry.get(paneChatAtom(paneId))
-  return AsyncResult.isSuccess(result) ? result.value.contextUsage : undefined
-}
-
-describe('paneChatAtom history reload', () => {
+describe('paneChatAtom', () => {
   let registry: AtomRegistry.AtomRegistry
   let unmount: () => void
 
@@ -91,86 +83,104 @@ describe('paneChatAtom history reload', () => {
     vi.unstubAllGlobals()
   })
 
-  it('replaces the pane messages with freshly fetched history when the Host requests a reload', async () => {
-    const dia = installFakeDia([
-      [{ role: 'user', content: 'before' }],
-      [
-        { role: 'user', content: 'before' },
-        { role: 'assistant', content: 'missed while disconnected' }
-      ]
-    ])
+  it('stays pending until the Host snapshot arrives, then shows it', async () => {
+    const dia = installFakeDia()
     unmount = registry.mount(paneChatAtom(PANE))
+    expect(messageTexts(registry, PANE)).toBeUndefined()
+
+    await dia.answerSnapshot(snapshotOf(4, 'hello'))
+
+    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['hello']))
+    expect(dia.getPaneChat).toHaveBeenCalledWith(PANE)
+  })
+
+  it('folds a frame numbered above the snapshot onto it', async () => {
+    const dia = installFakeDia()
+    unmount = registry.mount(paneChatAtom(PANE))
+    await dia.answerSnapshot(snapshotOf(4, 'hello'))
+    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['hello']))
+
+    dia.pushFrame(delta(5, 'hi'))
+
+    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['hello', 'hi']))
+  })
+
+  it('applies a frame that arrived during the fetch only when the snapshot does not cover it', async () => {
+    const dia = installFakeDia()
+    unmount = registry.mount(paneChatAtom(PANE))
+    await vi.waitFor(() => expect(dia.getPaneChat).toHaveBeenCalledTimes(1))
+    dia.pushFrame(delta(4, 'covered '))
+    dia.pushFrame(delta(5, 'after'))
+
+    await dia.answerSnapshot(snapshotOf(4, 'hello'))
+
+    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['hello', 'after']))
+  })
+
+  it('drops a replayed frame it has already folded', async () => {
+    const dia = installFakeDia()
+    unmount = registry.mount(paneChatAtom(PANE))
+    await dia.answerSnapshot(snapshotOf(0))
+    dia.pushFrame(delta(1, 'once'))
+    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['once']))
+
+    dia.pushFrame(delta(1, 'once'))
+    dia.pushFrame(delta(2, '!'))
+
+    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['once!']))
+  })
+
+  it('ignores frames for another pane', async () => {
+    const dia = installFakeDia()
+    unmount = registry.mount(paneChatAtom(PANE))
+    await dia.answerSnapshot(snapshotOf(0))
+
+    dia.pushFrame(delta(1, 'elsewhere', OTHER_PANE))
+    dia.pushFrame(delta(1, 'here'))
+
+    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['here']))
+  })
+
+  it('replaces its state with a fresh snapshot when the Host requests a reload', async () => {
+    const dia = installFakeDia()
+    unmount = registry.mount(paneChatAtom(PANE))
+    await dia.answerSnapshot(snapshotOf(3, 'before'))
     await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['before']))
 
     dia.requestReload(PANE)
+    await vi.waitFor(() => expect(dia.getPaneChat).toHaveBeenCalledTimes(2))
+    dia.pushFrame(delta(9, 'covered '))
+    dia.pushFrame(delta(10, 'live'))
+    await dia.answerSnapshot(snapshotOf(9, 'before', 'missed while disconnected'))
 
     await vi.waitFor(() =>
-      expect(messageTexts(registry, PANE)).toEqual(['before', 'missed while disconnected'])
+      expect(messageTexts(registry, PANE)).toEqual(['before', 'missed while disconnected', 'live'])
     )
-    expect(dia.getPaneHistory).toHaveBeenCalledTimes(2)
   })
 
   it('ignores a reload request for another pane', async () => {
-    const dia = installFakeDia([
-      [{ role: 'user', content: 'before' }],
-      [{ role: 'user', content: 'after' }]
-    ])
+    const dia = installFakeDia()
     unmount = registry.mount(paneChatAtom(PANE))
+    await dia.answerSnapshot(snapshotOf(0, 'before'))
     await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['before']))
 
     dia.requestReload(OTHER_PANE)
-    dia.requestReload(PANE)
+    dia.pushFrame(delta(1, 'live'))
 
-    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['after']))
-    expect(dia.getPaneHistory).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['before', 'live']))
+    expect(dia.getPaneChat).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the context usage reading across a history reload', async () => {
-    const usage = { totalTokens: 41_000, maxTokens: 200_000 }
-    const dia = installFakeDia([
-      [{ role: 'user', content: 'before' }],
-      [{ role: 'user', content: 'after' }]
-    ])
+  it('stops listening once the atom is released', async () => {
+    const dia = installFakeDia()
     unmount = registry.mount(paneChatAtom(PANE))
-    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['before']))
-    dia.pushContextUsage(PaneContextUsageChanged.make({ paneId: PANE, usage }))
-    await vi.waitFor(() => expect(contextUsage(registry, PANE)).toEqual(usage))
-
-    dia.requestReload(PANE)
-
-    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['after']))
-    expect(contextUsage(registry, PANE)).toEqual(usage)
-  })
-
-  it('keeps the setup steps across a history reload', async () => {
-    const steps = [
-      WorktreeSetupStep.make({ reattach: true, state: 'done', branch: 'dia/quiet-otter' }),
-      CopySetupStep.make({ state: 'running', files: [{ path: '.env' }] }),
-      SessionSetupStep.make({ state: 'pending' })
-    ]
-    const dia = installFakeDia([
-      [{ role: 'user', content: 'before' }],
-      [{ role: 'user', content: 'after' }]
-    ])
-    unmount = registry.mount(paneChatAtom(PANE))
-    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['before']))
-    dia.pushSetup(PaneSetupProgress.make({ paneId: PANE, steps }))
-
-    dia.requestReload(PANE)
-
-    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['after']))
-    const result = registry.get(paneChatAtom(PANE))
-    expect(AsyncResult.isSuccess(result) ? result.value.setup : undefined).toEqual(steps)
-  })
-
-  it('stops listening for reload requests once the atom is released', async () => {
-    const dia = installFakeDia([[{ role: 'user', content: 'before' }]])
-    unmount = registry.mount(paneChatAtom(PANE))
-    await vi.waitFor(() => expect(dia.reloadListenerCount()).toBe(1))
+    await dia.answerSnapshot(snapshotOf(0))
+    await vi.waitFor(() => expect(dia.listenerCount()).toBe(2))
 
     unmount()
+    unmount = () => undefined
     registry.dispose()
 
-    await vi.waitFor(() => expect(dia.reloadListenerCount()).toBe(0))
+    await vi.waitFor(() => expect(dia.listenerCount()).toBe(0))
   })
 })

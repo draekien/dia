@@ -1,7 +1,6 @@
 import { Data, Result, Schema } from 'effect'
+import { JsonRecord } from './json-record'
 import { ParkCause, UsageLimit } from './parking'
-
-const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
 
 /**
  * An opaque permission-rule update owned by the Agent SDK. dia carries these

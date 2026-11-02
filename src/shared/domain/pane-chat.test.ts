@@ -18,7 +18,6 @@ import {
   PaneBackgroundTasksChanged,
   PaneCheckpointAvailable,
   PaneCompactionFailed,
-  PaneContextUsageChanged,
   PaneConversationCompacted,
   PaneConversationReset,
   PaneMessageAppended,
@@ -107,13 +106,13 @@ describe('paneChatStateFromHistory', () => {
     ])
 
     expect(result).toEqual({
+      attention: Idle.make({}),
       isLoading: false,
       slashCommands: [],
       warmingCommands: false,
       queued: [],
       queueHeld: false,
       turnStatus: null,
-      contextUsage: null,
       compactionFailure: null,
       backgroundTasks: [],
       messages: [
@@ -125,6 +124,7 @@ describe('paneChatStateFromHistory', () => {
 
   it('yields no messages and a settled turn for empty history', () => {
     expect(paneChatStateFromHistory(PANE, [])).toEqual({
+      attention: Idle.make({}),
       messages: [],
       isLoading: false,
       slashCommands: [],
@@ -132,7 +132,6 @@ describe('paneChatStateFromHistory', () => {
       queued: [],
       queueHeld: false,
       turnStatus: null,
-      contextUsage: null,
       compactionFailure: null,
       backgroundTasks: []
     })
@@ -269,13 +268,13 @@ describe('reducePaneChat: text deltas', () => {
 
   it('starts a fresh assistant message when a delta arrives after the previous turn settled', () => {
     const settled: PaneChatState = {
+      attention: emptyPaneChatState.attention,
       isLoading: false,
       slashCommands: [],
       warmingCommands: false,
       queued: [],
       queueHeld: false,
       turnStatus: null,
-      contextUsage: null,
       compactionFailure: null,
       backgroundTasks: [],
       messages: [
@@ -326,13 +325,13 @@ describe('reducePaneChat: thinking deltas', () => {
 describe('reducePaneChat: tool calls', () => {
   it('appends a running tool-call part to the streaming assistant message', () => {
     const streaming = loadingWith({
+      attention: emptyPaneChatState.attention,
       isLoading: true,
       slashCommands: [],
       warmingCommands: false,
       queued: [],
       queueHeld: false,
       turnStatus: null,
-      contextUsage: null,
       compactionFailure: null,
       backgroundTasks: [],
       messages: [
@@ -350,13 +349,13 @@ describe('reducePaneChat: tool calls', () => {
 
   it('resolves the matching running tool call in place with input, output, and error flag', () => {
     const streaming: PaneChatState = {
+      attention: emptyPaneChatState.attention,
       isLoading: true,
       slashCommands: [],
       warmingCommands: false,
       queued: [],
       queueHeld: false,
       turnStatus: null,
-      contextUsage: null,
       compactionFailure: null,
       backgroundTasks: [],
       messages: [
@@ -388,13 +387,13 @@ describe('reducePaneChat: tool calls', () => {
 
   it('leaves other tool-call parts untouched when completing one by id', () => {
     const streaming: PaneChatState = {
+      attention: emptyPaneChatState.attention,
       isLoading: true,
       slashCommands: [],
       warmingCommands: false,
       queued: [],
       queueHeld: false,
       turnStatus: null,
-      contextUsage: null,
       compactionFailure: null,
       backgroundTasks: [],
       messages: [
@@ -467,13 +466,13 @@ describe('reducePaneChat: PaneMessageAppended backstop', () => {
 
   it('ignores the appended assistant turn when deltas already built the streaming message', () => {
     const streaming: PaneChatState = {
+      attention: emptyPaneChatState.attention,
       isLoading: true,
       slashCommands: [],
       warmingCommands: false,
       queued: [],
       queueHeld: false,
       turnStatus: null,
-      contextUsage: null,
       compactionFailure: null,
       backgroundTasks: [],
       messages: [
@@ -536,16 +535,13 @@ describe('reducePaneChat: attention', () => {
   it('keeps the turn loading while awaiting permission', () => {
     const streaming = loadingWith(paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }]))
 
-    const result = reducePaneChat(
-      streaming,
-      attentionChanged(
-        AwaitingPermission.make({
-          request: PermissionRequest.make({ requestId: 'r-1', toolName: 'Bash', input: {} })
-        })
-      )
-    )
+    const awaiting = AwaitingPermission.make({
+      request: PermissionRequest.make({ requestId: 'r-1', toolName: 'Bash', input: {} })
+    })
 
-    expect(result).toBe(streaming)
+    const result = reducePaneChat(streaming, attentionChanged(awaiting))
+
+    expect(result).toEqual({ ...streaming, attention: awaiting })
   })
 
   it('leaves a loading turn unchanged when attention settles to Idle', () => {
@@ -553,7 +549,7 @@ describe('reducePaneChat: attention', () => {
 
     const result = reducePaneChat(streaming, attentionChanged(Idle.make({})))
 
-    expect(result).toBe(streaming)
+    expect(result).toEqual(streaming)
   })
 })
 
@@ -706,39 +702,6 @@ describe('reducePaneChat: conversation compaction', () => {
     expect(
       result.messages.filter((message) => message.role === 'user').map((m) => m.checkpointUuid)
     ).toEqual(['summary-uuid', 'turn-c'])
-  })
-})
-
-describe('reducePaneChat: context usage', () => {
-  const usage = { totalTokens: 41_000, maxTokens: 200_000, autoCompactThreshold: 167_000 }
-
-  it('holds no reading before the first one arrives', () => {
-    expect(emptyPaneChatState.contextUsage).toBeNull()
-  })
-
-  it('replaces the held reading with the new one', () => {
-    const first = reducePaneChat(
-      emptyPaneChatState,
-      PaneContextUsageChanged.make({
-        paneId: PANE,
-        usage: { totalTokens: 9_000, maxTokens: 200_000 }
-      })
-    )
-
-    const result = reducePaneChat(first, PaneContextUsageChanged.make({ paneId: PANE, usage }))
-
-    expect(result.contextUsage).toEqual(usage)
-  })
-
-  it('keeps the reading across a conversation reset until the next one arrives', () => {
-    const read = reducePaneChat(
-      emptyPaneChatState,
-      PaneContextUsageChanged.make({ paneId: PANE, usage })
-    )
-
-    const result = reducePaneChat(read, conversationReset())
-
-    expect(result.contextUsage).toEqual(usage)
   })
 })
 

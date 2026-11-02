@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { PaneQuestionRequested } from '@shared/ipc/contract'
+import { ClarifyingQuestion } from '@shared/domain/attention'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ClarifyingQuestionCard } from './clarifying-question-card'
@@ -7,8 +7,7 @@ import { ClarifyingQuestionCard } from './clarifying-question-card'
 const SCOPE = 'Which scope?'
 const PLACEMENT = 'Where should it live?'
 
-const request = PaneQuestionRequested.make({
-  paneId: '00000000-0000-4000-8000-000000000001',
+const request = ClarifyingQuestion.make({
   requestId: 'request-1',
   questions: [
     {

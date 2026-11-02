@@ -1,9 +1,8 @@
 import { Button, Checkbox, Input, Label, RadioGroup, RadioGroupItem } from '@dia/renderer-plugin'
-import { Answers, type QuestionResponse } from '@shared/domain/attention'
-import type { PaneQuestionRequested } from '@shared/ipc/contract'
+import { Answers, type ClarifyingQuestion, type QuestionResponse } from '@shared/domain/attention'
 import { type KeyboardEvent, useId, useState } from 'react'
 
-type Question = PaneQuestionRequested['questions'][number]
+type Question = ClarifyingQuestion['questions'][number]
 
 const OTHER = '__other__'
 
@@ -15,7 +14,7 @@ function questionKey(question: Question): string {
 }
 
 function resolveAnswers(
-  questions: PaneQuestionRequested['questions'],
+  questions: ClarifyingQuestion['questions'],
   single: Record<string, string>,
   multi: Record<string, ReadonlySet<string>>,
   otherText: Record<string, string>
@@ -63,7 +62,7 @@ function isAnswered(
  * Inline card that presents a pane's pending clarifying questions and collects the user's
  * answers. Each question renders its options as a radio group (single-select) or checkboxes
  * (`multiSelect`), always with an "Other" free-text option for answers that fit none of the
- * choices. Pass the pane's {@link PaneQuestionRequested} as `request`; `onResolve` is called
+ * choices. Pass the pane's {@link ClarifyingQuestion} as `request`; `onResolve` is called
  * once, when every question is answered and the user submits, with an `Answers`
  * {@link QuestionResponse} keyed by each question's full text (the shape the SDK
  * matches answers against).
@@ -72,7 +71,7 @@ export function ClarifyingQuestionCard({
   request,
   onResolve
 }: {
-  request: PaneQuestionRequested
+  request: ClarifyingQuestion
   onResolve: (response: QuestionResponse) => void
 }) {
   const idPrefix = useId()

@@ -7,6 +7,7 @@ import {
   EMPTY_ADAPTER_PREFERENCES,
   type ModelPreferencesSnapshot
 } from '@shared/domain/model-preferences'
+import { emptyPaneChatState } from '@shared/domain/pane-chat'
 import {
   AgentName,
   DirectoryNotFoundError,
@@ -32,7 +33,7 @@ import {
   type WorkspaceChanged
 } from '@shared/ipc/contract'
 import type { EventFrame } from '@shared/ipc/rpc'
-import { Data, DateTime, Effect, Stream } from 'effect'
+import { Data, DateTime, Deferred, Effect, Stream } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type DiaRpcClient, makeHostApi } from './host-api'
 
@@ -118,6 +119,7 @@ interface ClientScript {
   readonly getModels?: Effect.Effect<ModelCatalogSnapshot, ConnectionError>
   readonly runActivity?: Effect.Effect<void, ActivityNotFound>
   readonly resolveImportConflict?: Effect.Effect<void, WorkspaceProblemError>
+  readonly paneChatSeq?: number
 }
 
 const makeClient = (script: ClientScript = {}) => {
@@ -168,6 +170,7 @@ const makeClient = (script: ClientScript = {}) => {
       script.resolveImportConflict ?? Effect.void
   )
   const client = {
+    GetPaneChat: () => Effect.succeed({ state: emptyPaneChatState, seq: script.paneChatSeq ?? 0 }),
     ResolveImportConflict: resolveImportConflict,
     LoadPlugin: loadPlugin,
     SetPluginOverride: setPluginOverride,
@@ -299,8 +302,8 @@ describe('makeHostApi', () => {
     })
     const { api } = makeApi(client)
     const received: Array<string> = []
-    api.onAssistantTextDelta((event) => {
-      received.push(event.text)
+    api.onPaneEvent((frame) => {
+      if (frame.event._tag === 'PaneAssistantTextDelta') received.push(frame.event.text)
     })
 
     await advance(1500)
@@ -310,6 +313,70 @@ describe('makeHostApi', () => {
       { [PANE]: 2 }
     ])
     expect(received).toEqual(['a', 'b'])
+  })
+
+  it('hands each pane event to onPaneEvent with its sequence number', async () => {
+    const { client } = makeClient({
+      subscriptions: [
+        afterListenersAttach(
+          Stream.make(paneFrame(1, 'a'), paneFrame(2, 'b')).pipe(Stream.concat(dropped))
+        )
+      ]
+    })
+    const { api } = makeApi(client)
+    const received: Array<[number, string]> = []
+    api.onPaneEvent((frame) => {
+      if (frame.event._tag === 'PaneAssistantTextDelta')
+        received.push([frame.seq, frame.event.text])
+    })
+
+    await advance(1500)
+
+    expect(received).toEqual([
+      [1, 'a'],
+      [2, 'b']
+    ])
+  })
+
+  it('resubscribes from a fetched chat snapshot when no later event arrived for its pane', async () => {
+    const snapshotFetched = Deferred.makeUnsafe<void>()
+    const { client, subscribeEvents } = makeClient({
+      paneChatSeq: 40,
+      subscriptions: [
+        Stream.fromEffect(Deferred.await(snapshotFetched)).pipe(
+          Stream.drain,
+          Stream.concat(dropped)
+        )
+      ]
+    })
+    const { api } = makeApi(client)
+
+    await api.getPaneChat(PANE)
+    Deferred.doneUnsafe(snapshotFetched, Effect.void)
+    await advance(1500)
+
+    expect(subscribeEvents.mock.calls[1][0].cursors).toEqual({ [PANE]: 40 })
+  })
+
+  it('keeps a pane cursor that is ahead of a fetched chat snapshot', async () => {
+    const snapshotFetched = Deferred.makeUnsafe<void>()
+    const { client, subscribeEvents } = makeClient({
+      paneChatSeq: 3,
+      subscriptions: [
+        Stream.make(paneFrame(5, 'a')).pipe(
+          Stream.concat(Stream.fromEffect(Deferred.await(snapshotFetched)).pipe(Stream.drain)),
+          Stream.concat(dropped)
+        )
+      ]
+    })
+    const { api } = makeApi(client)
+    await advance(0)
+
+    await api.getPaneChat(PANE)
+    Deferred.doneUnsafe(snapshotFetched, Effect.void)
+    await advance(1500)
+
+    expect(subscribeEvents.mock.calls[1][0].cursors).toEqual({ [PANE]: 5 })
   })
 
   it('asks the renderer to reload a pane history on ReloadHistory and forgets that pane cursor', async () => {

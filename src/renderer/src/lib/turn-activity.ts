@@ -1,5 +1,5 @@
+import type { PaneChatState } from '@shared/domain/pane-chat'
 import { Duration } from 'effect'
-import type { PaneChatState } from './pane-chat'
 
 /**
  * How long a turn must run before its elapsed-seconds counter is worth showing.

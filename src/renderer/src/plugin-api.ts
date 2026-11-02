@@ -87,6 +87,16 @@ export const actions = {
   openPluginsPage
 } as const
 
+export {
+  emptyPaneChatState,
+  isParkNotice,
+  lastUserText,
+  type MessagePart,
+  type PaneChatState,
+  type PaneMessage,
+  type ToolCallPart
+} from '@shared/domain/pane-chat'
+export { formatResetTime } from '@shared/format-reset-time'
 /**
  * Kernel UI, state, hooks and helpers a renderer plugin renders from, so that a plugin file imports
  * no `@renderer/*` path: the agent status dot and its label, shadcn primitives, `cn` to merge class
@@ -127,17 +137,7 @@ export { useDisabledPermissionModes } from './hooks/use-disabled-permission-mode
 export { useModelCatalog } from './hooks/use-model-catalog'
 export { useModelPreferences } from './hooks/use-model-preferences'
 export { awaitsUser } from './lib/account-banner'
-export { formatResetTime } from './lib/format-when'
 export { findModelOption } from './lib/model-options'
-export {
-  emptyPaneChatState,
-  isParkNotice,
-  lastUserText,
-  type MessagePart,
-  type PaneChatState,
-  type PaneMessage,
-  type ToolCallPart
-} from './lib/pane-chat'
 export {
   paneChatAtom,
   paneEditQueuedAtom,

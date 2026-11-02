@@ -5,6 +5,7 @@ import { ContentAttachment, PathAttachment } from '@shared/domain/attachment'
 import { Deny, FreeformResponse } from '@shared/domain/attention'
 import type { SendMode } from '@shared/domain/message-queue'
 import { LastVisibleModel } from '@shared/domain/model-preferences'
+import { emptyPaneChatState } from '@shared/domain/pane-chat'
 import type { UsageLimitResume } from '@shared/domain/parking'
 import {
   AgentName,
@@ -45,6 +46,7 @@ import { type CommandDeduper, makeCommandDeduperLive } from '../services/command
 import { EventHub } from '../services/event-hub'
 import { ModelCatalogFeed } from '../services/model-catalog-feed'
 import { ModelPreferences } from '../services/model-preferences'
+import { PaneChatProjection } from '../services/pane-chat-projection'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { ProjectEntries } from '../services/project-entries'
@@ -75,6 +77,7 @@ interface Harness {
     | AdapterStatusFeed
     | ModelPreferences
     | WorkspaceProblems
+    | PaneChatProjection
   >
 }
 
@@ -223,7 +226,6 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     setThinkingLevel: () => Effect.void,
     setPermissionMode: () => Effect.void,
     setModel: (paneId, model) => Effect.sync(() => void calls.push(`setModel:${paneId}:${model}`)),
-    getPaneHistory: () => Effect.succeed([]),
     resumePane: () => Effect.void,
     ensureLive: (paneId) =>
       Effect.sync(() => {
@@ -356,12 +358,22 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       Effect.sync(() => void calls.push(`resolveImportConflict:${agentId}:${resolution}`))
   })
 
+  const paneChats = Layer.succeed(PaneChatProjection, {
+    snapshot: (paneId) =>
+      Effect.sync(() => {
+        calls.push(`snapshot:${paneId}`)
+        return { state: emptyPaneChatState, seq: 7 }
+      }),
+    seed: () => Effect.void
+  })
+
   const hub = Layer.succeed(EventHub, {
     publish: (event) =>
       Effect.sync(() => {
         published.push(event)
       }),
-    subscribe: () => Stream.empty
+    subscribe: () => Stream.empty,
+    lastSeq: () => Effect.succeed(0)
   })
 
   return {
@@ -381,7 +393,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       models,
       adapterStatus,
       modelPreferences,
-      problems
+      problems,
+      paneChats
     )
   }
 }
@@ -1002,19 +1015,16 @@ describe('Dia RPC handlers', () => {
     })
   )
 
-  it.effect('returns the live pane queue, and an empty queue for a pane with no session', () =>
+  it.effect('serves the chat snapshot of the pane named in a GetPaneChat payload', () =>
     Effect.gen(function* () {
-      const harness = makeHarness({ livePanes: [PANE_ID] })
+      const harness = makeHarness()
 
-      const [live, absent] = yield* withHandlers(harness, (handlers) =>
-        Effect.all([
-          handlers.GetMessageQueue({ paneId: PANE_ID }),
-          handlers.GetMessageQueue({ paneId: OTHER_PANE_ID })
-        ])
+      const snapshot = yield* withHandlers(harness, (handlers) =>
+        handlers.GetPaneChat({ paneId: OTHER_PANE_ID })
       )
 
-      assert.deepStrictEqual(live, { queued: [{ id: 'm-1', text: 'later' }], held: true })
-      assert.deepStrictEqual(absent, { queued: [], held: false })
+      assert.deepStrictEqual(harness.calls, [`snapshot:${OTHER_PANE_ID}`])
+      assert.strictEqual(snapshot.seq, 7)
     })
   )
 

@@ -145,9 +145,7 @@ describe('foldSummary status', () => {
       }
     })
 
-    expect(foldSummary(idle, event).status).toEqual(
-      StatusNeedsInput.make({ reason: 'Allow Bash rm -rf out?' })
-    )
+    expect(foldSummary(idle, event).status).toMatchObject({ reason: 'Allow Bash rm -rf out?' })
   })
 
   it('needs input with the first question text when the agent asks a question', () => {
@@ -166,9 +164,7 @@ describe('foldSummary status', () => {
       }
     })
 
-    expect(foldSummary(idle, event).status).toEqual(
-      StatusNeedsInput.make({ reason: 'Which branch?' })
-    )
+    expect(foldSummary(idle, event).status).toMatchObject({ reason: 'Which branch?' })
   })
 
   it('needs input to review the plan when a plan review is requested', () => {
@@ -177,9 +173,41 @@ describe('foldSummary status', () => {
       request: { _tag: 'PlanReview', requestId: 'r', plan: 'p' }
     })
 
-    expect(foldSummary(idle, event).status).toEqual(
-      StatusNeedsInput.make({ reason: 'Review the plan' })
+    expect(foldSummary(idle, event).status).toMatchObject({ reason: 'Review the plan' })
+  })
+
+  it('carries the pending request so a pane shown later can still answer it', () => {
+    const request = { _tag: 'PlanReview', requestId: 'r', plan: 'p' } as const
+    const event = attention({ _tag: 'AwaitingPermission', request })
+
+    expect(foldSummary(idle, event).status).toMatchObject({ request })
+  })
+
+  it('drops the pending request when it resolves to idle', () => {
+    const awaiting = foldSummary(
+      idle,
+      attention({
+        _tag: 'AwaitingPermission',
+        request: { _tag: 'PlanReview', requestId: 'r', plan: 'p' }
+      })
     )
+
+    expect(foldSummary(awaiting, attention({ _tag: 'Idle' })).status).toEqual(
+      StatusWorking.make({})
+    )
+  })
+
+  it('holds the latest context usage reading', () => {
+    const usage = { totalTokens: 41_000, maxTokens: 200_000 }
+    const first = foldSummary(idle, {
+      _tag: 'PaneContextUsageChanged',
+      paneId,
+      usage: { totalTokens: 9_000, maxTokens: 200_000 }
+    })
+
+    const result = foldSummary(first, { _tag: 'PaneContextUsageChanged', paneId, usage })
+
+    expect(result.contextUsage).toEqual(usage)
   })
 
   it('returns to working when a pending request resolves to idle', () => {
