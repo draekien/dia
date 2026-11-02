@@ -56,9 +56,6 @@ importers:
       class-variance-authority:
         specifier: 0.7.1
         version: 0.7.1
-      clsx:
-        specifier: 2.1.1
-        version: 2.1.1
       cmdk:
         specifier: 1.1.1
         version: 1.1.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -83,9 +80,6 @@ importers:
       shadcn:
         specifier: 4.22.1
         version: 4.22.1(supports-color@7.2.0)
-      tailwind-merge:
-        specifier: 3.7.0
-        version: 3.7.0
       tsx:
         specifier: 4.23.15
         version: 4.23.15
@@ -3619,9 +3613,6 @@ packages:
     engines: {node: '>=10.0.0'}
     os: [darwin, linux, win32, freebsd, openbsd, netbsd, sunos, android]
     hasBin: true
-
-  tailwind-merge@3.7.0:
-    resolution: {integrity: sha512-XPPUyAc+cvspz3lHTcR/QgPfW2A0lv/xQNIjX3HGhLR+Nq2lHaLq5MtTesHn8GUr3W3DguT2KT5x3NVgRtYwmA==}
 
   tailwindcss@4.3.3:
     resolution: {integrity: sha512-gOhV3P7ufE62QDGg1zVaTgCR+EtPv92k2nIhVcVKcLmxT1sUBsQGhnZj175j+MqRt4zLF7ic+sCYjfhxMxj7YQ==}
@@ -7357,8 +7348,6 @@ snapshots:
       has-flag: 4.0.0
 
   systeminformation@5.33.16: {}
-
-  tailwind-merge@3.7.0: {}
 
   tailwindcss@4.3.3: {}
 
