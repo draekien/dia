@@ -68,7 +68,7 @@ const agentEvents = Effect.gen(function* () {
       payload_json TEXT    NOT NULL
     )`,
     `CREATE UNIQUE INDEX agent_events_source
-      ON agent_events (source_uuid, COALESCE(item_id, '')) WHERE source_uuid IS NOT NULL`,
+      ON agent_events (agent_id, source_uuid, COALESCE(item_id, '')) WHERE source_uuid IS NOT NULL`,
     `CREATE INDEX agent_events_by_agent ON agent_events (agent_id, sequence)`,
     `CREATE TABLE agent_items (
       agent_id     TEXT    NOT NULL,

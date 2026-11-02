@@ -138,7 +138,7 @@ CREATE TABLE agent_events (
   occurred_at  INTEGER NOT NULL,
   payload_json TEXT    NOT NULL
 );
-CREATE UNIQUE INDEX agent_events_source ON agent_events (source_uuid, COALESCE(item_id, '')) WHERE source_uuid IS NOT NULL;
+CREATE UNIQUE INDEX agent_events_source ON agent_events (agent_id, source_uuid, COALESCE(item_id, '')) WHERE source_uuid IS NOT NULL;
 CREATE INDEX agent_events_by_agent ON agent_events (agent_id, sequence);
 CREATE TABLE agent_items (
   agent_id     TEXT    NOT NULL,
@@ -197,7 +197,7 @@ The pragma runs after the migrations commit. `synchronous` is per connection, an
 
 **`Option` per input event** — #156 uses `agent_events.sequence` as `PaneEventFrame.seq`, so a writer needs the sequence each event got, matched to its input.
 
-**Idempotency key `(source_uuid, item_id)`** — one SDK transcript entry yields several events: a user entry holds the `tool_result` of every parallel tool call, each a `ToolCallCompleted` with its own `toolCallId`. A key of `source_uuid` alone would keep only the first. Amends ADR-0051's "`source_uuid` UNIQUE where not null". A streaming `MessageUpdated` that has no SDK uuid yet is written with no `sourceUuid`.
+**Idempotency key `(agent_id, source_uuid, item_id)`** — an import of a forked session repeats the source session's uuids under another agent, so the key includes `agent_id`. One SDK transcript entry yields several events: a user entry holds the `tool_result` of every parallel tool call, each a `ToolCallCompleted` with its own `toolCallId`. A key of `source_uuid` alone would keep only the first. Amends ADR-0051's "`source_uuid` UNIQUE where not null". A streaming `MessageUpdated` that has no SDK uuid yet is written with no `sourceUuid`.
 
 **Item key `(agent_id, item_id)`** — item ids come from SDK ids, and one session's ids can reach two agents (an import of a session forked from another agent's). Keying by agent keeps one agent's upsert from moving another's row. Amends ADR-0051's "`item_id` primary key".
 
@@ -221,7 +221,7 @@ The pragma runs after the migrations commit. `synchronous` is per connection, an
 
 - `database.test.ts`: a fresh `host.db` and one at migration 2 holding an archived and an active agent both apply `3_agent_events`; the new tables and indexes exist; the archived agent's `archived_at` is the `TestClock` time and the active one's is null; `PRAGMA journal_mode` is `wal` and `PRAGMA synchronous` is 1.
 - `workspace-store.test.ts`: an archived tab round-trips as archived; a second save keeps the first `archived_at`; a save of the tab with `archived` true after an `AgentArchived` keeps the event's `archived_at`.
-- `agent-event-store.test.ts`: two `MessageUpdated` for one item give one row with the first position and the latest payload; a repeated `(sourceUuid, item)` returns `None`, stores no event and leaves the item unchanged; two `ToolCallCompleted` with one `sourceUuid` and different `toolCallId`s are both stored; the same `itemId` in two agents gives two items; a failing projection write (the `agent_items` table dropped) stores no event; `readItems` returns pages in position order and leaves out an undecodable row; `AgentArchived` sets and `AgentUnarchived` clears `archived_at`; `ToolCallStarted` then `ToolCallCompleted` give one item with `running` false.
+- `agent-event-store.test.ts`: two `MessageUpdated` for one item give one row with the first position and the latest payload; a repeated `(sourceUuid, item)` returns `None`, stores no event and leaves the item unchanged; two `ToolCallCompleted` with one `sourceUuid` and different `toolCallId`s are both stored; the same `itemId` in two agents gives two items; the same `(sourceUuid, item)` in a second agent is stored; a failing projection write (the `agent_items` table dropped) stores no event; `readItems` returns pages in position order and leaves out an undecodable row; `AgentArchived` sets and `AgentUnarchived` clears `archived_at`; `ToolCallStarted` then `ToolCallCompleted` give one item with `running` false.
 
 ## Refinement Record
 

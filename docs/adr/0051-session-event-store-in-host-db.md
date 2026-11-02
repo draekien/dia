@@ -40,13 +40,13 @@ ADR-0042's "event table + projection table in one `sql.withTransaction`" shape:
 
 | Table | Purpose | Key columns |
 | --- | --- | --- |
-| `agent_events` | Append-only event log | `sequence INTEGER PRIMARY KEY AUTOINCREMENT`, `agent_id`, `event_type`, `item_id`, `source_uuid` (SDK message uuid), `occurred_at`, `payload_json`; index `(agent_id, sequence)`; `UNIQUE (source_uuid, COALESCE(item_id, ''))` where `source_uuid` is not null |
+| `agent_events` | Append-only event log | `sequence INTEGER PRIMARY KEY AUTOINCREMENT`, `agent_id`, `event_type`, `item_id`, `source_uuid` (SDK message uuid), `occurred_at`, `payload_json`; index `(agent_id, sequence)`; `UNIQUE (agent_id, source_uuid, COALESCE(item_id, ''))` where `source_uuid` is not null |
 | `agent_items` | Projection read by history and the renderer | primary key `(agent_id, item_id)`, `position`, `kind` (`message`, `reasoning` or `tool_call`), `streaming`, `payload_json`; unique index `(agent_id, position)` |
 | `agent_transcript_cursors` | Catch-up position per SDK session | `session_id` primary key, `last_uuid`, `file_size`, `mtime_ms` |
 
 * An agent's archive state is `agents.archived_at`, set and cleared by the `AgentArchived` and `AgentUnarchived` events in the same transaction.
 * Each event insert and its projection upsert commit in one transaction. History reads page `agent_items` by `(agent_id, position)` and never replay `agent_events`.
-* `(source_uuid, item_id)` is the idempotency key for every event that came from an SDK message, live or imported. An insert whose `source_uuid` and `item_id` already exist is skipped. `item_id` is part of the key because one SDK entry yields several events: a user entry holds the `tool_result` of every parallel tool call.
+* `(agent_id, source_uuid, item_id)` is the idempotency key for every event that came from an SDK message, live or imported. An insert whose `agent_id`, `source_uuid` and `item_id` already exist is skipped. `agent_id` is part of the key because an import of a forked session repeats the source session's uuids under another agent. `item_id` is part of the key because one SDK entry yields several events: a user entry holds the `tool_result` of every parallel tool call.
 * `agent_items` is keyed by `(agent_id, item_id)` because item ids come from SDK ids, and one session's ids can reach two agents through an import of a forked session.
 
 ### Content

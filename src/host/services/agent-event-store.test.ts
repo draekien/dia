@@ -222,6 +222,22 @@ describe('AgentEventStore.append', () => {
     )
   )
 
+  it.effect('stores an event of a second agent that shares the source uuid and item id', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.append(AGENT_A, [
+          { event: messageUpdated('m1', 'forked', false), sourceUuid: 'u-1' }
+        ])
+
+        const result = yield* store.append(AGENT_B, [
+          { event: messageUpdated('m1', 'forked', false), sourceUuid: 'u-1' }
+        ])
+
+        assert.deepStrictEqual(result.map(Option.isSome), [true])
+      })
+    )
+  )
+
   it.effect('stores nothing from a batch whose projection write fails', () =>
     withStore((store, sql) =>
       Effect.gen(function* () {
