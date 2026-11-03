@@ -394,6 +394,51 @@ describe('AgentEventRecorder transcript cursor', () => {
     )
   })
 
+  const THIRD_SESSION = SessionId.make('55555555-5555-4555-8555-555555555555')
+  const cursorSessions = (sql: SqlClient.SqlClient) =>
+    sql<{ readonly session_id: string }>`SELECT session_id FROM agent_transcript_cursors`.pipe(
+      Effect.orDie,
+      Effect.map((rows) => rows.map((row) => row.session_id))
+    )
+
+  it.effect('owns the session that starts right after a conversation reset', () => {
+    const reader = scriptedReader(() => Option.some(tailOf('u1', 'a1')))
+    return run(
+      { reader: reader.layer },
+      [
+        SessionStarted.make({ sessionId: SESSION }),
+        TurnCompleted.make({}),
+        ConversationReset.make({ newSessionId: OTHER_SESSION }),
+        SessionStarted.make({ sessionId: THIRD_SESSION }),
+        TurnCompleted.make({})
+      ],
+      (_store, sql) =>
+        Effect.gen(function* () {
+          assert.deepStrictEqual(
+            (yield* cursorSessions(sql)).sort(),
+            [SESSION, OTHER_SESSION, THIRD_SESSION].sort()
+          )
+        })
+    )
+  })
+
+  it.effect('leaves a session that starts after a finished turn to catch-up', () => {
+    const reader = scriptedReader(() => Option.some(tailOf('u1', 'a1')))
+    return run(
+      { reader: reader.layer },
+      [
+        SessionStarted.make({ sessionId: SESSION }),
+        TurnCompleted.make({}),
+        SessionStarted.make({ sessionId: THIRD_SESSION }),
+        TurnCompleted.make({})
+      ],
+      (_store, sql) =>
+        Effect.gen(function* () {
+          assert.deepStrictEqual(yield* cursorSessions(sql), [SESSION])
+        })
+    )
+  })
+
   it.effect('leaves the cursor of a resumed session that has none to catch-up', () => {
     const reader = scriptedReader(() => Option.some(tailOf('u1', 'a1')))
     return run(

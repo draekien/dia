@@ -61,7 +61,7 @@ A "close" writes the item's final event with `streaming:false` and the full text
 ### Cursor ownership
 
 The recorder owns the cursor of a session when:
-- the session started a new conversation (first `SessionStarted` when `resume` is none, or any `ConversationReset`), or
+- the session started a new conversation: it was bound by a `ConversationReset`, or by a `SessionStarted` before the first turn end of a new conversation (the pane's first session when `resume` is none, or the session that follows a `ConversationReset`; after `/clear` the CLI writes the conversation under the id of the next `SessionStarted`, not under `newSessionId`), or
 - it is the `resume` session, a cursor row exists for it and, checked once in `open` before the session starts, `readTranscriptAfter(sessionId, cwd, Some(cursor.lastUuid))` returns `Some` with no entries (nothing after the cursor waits for catch-up). The check runs before the session starts because the CLI may write the first turn's user entry before it emits `SessionStarted`.
 
 Any other session, including a resumed one with no cursor row or with entries after its cursor, is left for catch-up (#155).

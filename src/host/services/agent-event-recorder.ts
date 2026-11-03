@@ -82,6 +82,7 @@ interface RecordingState {
   boundSession: Option.Option<SessionId>
   ownedSession: Option.Option<SessionId>
   cursorStalled: boolean
+  newConversationPending: boolean
 }
 
 const reasoningEvent = (item: StreamingItem, streaming: boolean) =>
@@ -144,7 +145,8 @@ const makeRecorder = Effect.gen(function* () {
       awaitingCheckpoint: [],
       boundSession: Option.none(),
       ownedSession: ownsResumed ? options.resume : Option.none(),
-      cursorStalled: false
+      cursorStalled: false,
+      newConversationPending: Option.isNone(options.resume)
     }
     yield* Effect.logDebug('Recording agent events', {
       agentId,
@@ -242,9 +244,9 @@ const makeRecorder = Effect.gen(function* () {
 
     const bind = (sessionId: SessionId, newConversation: boolean): ReadonlyArray<Entry> => {
       if (Option.contains(state.boundSession, sessionId)) return []
-      const firstBind = Option.isNone(state.boundSession)
       state.boundSession = Option.some(sessionId)
-      if (newConversation || (firstBind && Option.isNone(options.resume))) {
+      if (newConversation) state.newConversationPending = true
+      if (state.newConversationPending) {
         state.ownedSession = Option.some(sessionId)
       } else if (!Option.contains(state.ownedSession, sessionId)) {
         state.ownedSession = Option.none()
@@ -363,7 +365,9 @@ const makeRecorder = Effect.gen(function* () {
           state.awaitingCheckpoint.splice(0)
           return yield* rebind(message.newSessionId, true)
         default:
-          return isTurnEnd(message) ? [...closeReasoning(), ...closeText()] : []
+          if (!isTurnEnd(message)) return []
+          state.newConversationPending = false
+          return [...closeReasoning(), ...closeText()]
       }
     })
 
