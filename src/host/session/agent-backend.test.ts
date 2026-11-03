@@ -164,6 +164,7 @@ describe('agentBackendProblems', () => {
       [
         '"agentBackend.openSession" is not a function',
         '"agentBackend.readHistory" is not a function',
+        '"agentBackend.readTranscriptAfter" is not a function',
         '"agentBackend.models" is not a function',
         '"agentBackend.refreshModels" is not a function',
         '"agentBackend.status" is not a function',
@@ -172,6 +173,11 @@ describe('agentBackendProblems', () => {
         '"agentBackend.disabledPermissionModes" is not a function',
         '"agentBackend.attachmentTypes" is not a function'
       ]
+    ],
+    [
+      'readTranscriptAfter is missing',
+      Option.some({ ...validBackend, readTranscriptAfter: undefined }),
+      ['"agentBackend.readTranscriptAfter" is not a function']
     ],
     [
       'models is missing',
@@ -203,6 +209,7 @@ describe('adapterContract', () => {
 
     assert.deepStrictEqual(adapterContract.problems(provided), [
       '"agentBackend.readHistory" is not a function',
+      '"agentBackend.readTranscriptAfter" is not a function',
       '"agentBackend.models" is not a function',
       '"agentBackend.refreshModels" is not a function',
       '"agentBackend.status" is not a function',
