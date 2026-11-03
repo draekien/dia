@@ -22,6 +22,7 @@ const pluginsProviding = (backend: Option.Option<AgentBackend>) =>
 const backendWithout: AgentBackend = {
   openSession: () => Effect.die('not called'),
   readHistory: () => Effect.die('not called'),
+  readTranscriptAfter: () => Effect.die('not called'),
   models: () => Stream.empty,
   refreshModels: () => Effect.die('not called'),
   status: () => Stream.empty,
@@ -46,6 +47,7 @@ describe('TranscriptReaderLive', () => {
             reads.push(`${sessionId}@${cwd}`)
             return history
           }),
+        readTranscriptAfter: () => Effect.die('not called'),
         models: () => Stream.empty,
         refreshModels: () => Effect.die('not called'),
         status: () => Stream.empty,

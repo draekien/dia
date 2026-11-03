@@ -35,6 +35,22 @@ export const ToolCallCompleted = Schema.TaggedStruct('ToolCallCompleted', {
 })
 export type ToolCallCompleted = typeof ToolCallCompleted.Type
 
+/** How many characters of a tool call's output an agent event keeps; {@link capToolOutput} cuts longer output to it. */
+export const TOOL_OUTPUT_LIMIT = 256 * 1024
+
+/**
+ * Returns `output` unchanged when it is at most {@link TOOL_OUTPUT_LIMIT} characters, otherwise its
+ * first {@link TOOL_OUTPUT_LIMIT} characters (one fewer when the cut would split a surrogate pair)
+ * followed by a line saying how many were cut. Apply it
+ * to a tool call's output before storing it in {@link ToolCallCompleted}.
+ */
+export const capToolOutput = (output: string): string => {
+  if (output.length <= TOOL_OUTPUT_LIMIT) return output
+  const endsInHighSurrogate = /[\uD800-\uDBFF]/.test(output[TOOL_OUTPUT_LIMIT - 1])
+  const kept = endsInHighSurrogate ? TOOL_OUTPUT_LIMIT - 1 : TOOL_OUTPUT_LIMIT
+  return `${output.slice(0, kept)}\n[output truncated: ${output.length - kept} characters omitted]`
+}
+
 /** The agent's conversation continues in SDK session `sessionId` from this event on (start, `/clear`, compaction, fork). */
 export const SessionBound = Schema.TaggedStruct('SessionBound', { sessionId: SessionId })
 export type SessionBound = typeof SessionBound.Type
