@@ -506,6 +506,7 @@ describe('AgentEventRecorder transcript cursor', () => {
       const cursorWrites: Array<string> = []
       const failingStore = Layer.succeed(AgentEventStore)({
         append: () => Effect.fail(new AgentEventWriteError({ cause: 'disk full' })),
+        appendTranscript: () => Effect.die('not called'),
         readItems: () => Effect.succeed([]),
         readCursor: () => Effect.succeed(Option.none()),
         writeCursor: (cursor) => Effect.sync(() => void cursorWrites.push(cursor.lastUuid))
