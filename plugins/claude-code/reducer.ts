@@ -55,12 +55,15 @@ type UserContentBlock = Exclude<
   string
 >[number]
 
-type ToolResultBlock = Extract<UserContentBlock, { type: 'tool_result' }>
-
-const flattenToolResultContent = (content: ToolResultBlock['content']): string => {
+/** Flattens a `tool_result` block's `content` to text: text blocks verbatim, any other block as `[type]`; empty when absent. */
+export const flattenToolResultContent = (
+  content: string | ReadonlyArray<{ readonly type: string; readonly text?: string }> | undefined
+): string => {
   if (content === undefined) return ''
   if (typeof content === 'string') return content
-  return content.map((block) => (block.type === 'text' ? block.text : `[${block.type}]`)).join('')
+  return content
+    .map((block) => (block.type === 'text' ? (block.text ?? '') : `[${block.type}]`))
+    .join('')
 }
 
 const isImagePrompt = (content: ReadonlyArray<UserContentBlock>): boolean =>

@@ -158,6 +158,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const backend: AgentBackend = {
     openSession: () => Effect.die('not called'),
     readHistory: () => Effect.succeed([]),
+    readTranscriptAfter: () => Effect.die('not called'),
     models: () => Stream.empty,
     refreshModels: () => Effect.die('not called'),
     status: () => Stream.empty,

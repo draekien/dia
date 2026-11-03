@@ -1,8 +1,19 @@
-import { getSessionMessages, type SessionMessage } from '@anthropic-ai/claude-agent-sdk'
-import { ContentAttachment } from '@dia/plugin'
+import {
+  getSessionInfo,
+  getSessionMessages,
+  type SessionMessage
+} from '@anthropic-ai/claude-agent-sdk'
+import {
+  AgentEvents,
+  ContentAttachment,
+  type TranscriptEntry,
+  type TranscriptTail
+} from '@dia/plugin'
+import type { AgentEvent } from '@shared/domain/agent-event'
 import type { Attachment } from '@shared/domain/attachment'
 import type { ConversationMessage, SessionId } from '@shared/domain/pane'
 import { Array as Arr, Data, Effect, Option, Schema } from 'effect'
+import { flattenToolResultContent } from './reducer'
 
 const TextBlock = Schema.Struct({
   type: Schema.Literal('text'),
@@ -81,32 +92,181 @@ export const sessionMessagesToConversation = (
     if (Option.isNone(envelopeOpt)) continue
     const envelope = envelopeOpt.value
     if (envelope.role === 'assistant') anchorUuid = message.uuid
-    const content = extractText(envelope.content)
-    if (envelope.role === 'user' && isTaskNotification(content)) continue
-    const images =
-      envelope.role === 'user' && typeof envelope.content !== 'string'
-        ? imagesOf(envelope.content)
-        : []
-    const isToolResult =
-      typeof envelope.content !== 'string' &&
-      envelope.content.some((block) => Option.isSome(decodeToolResult(block)))
-    if (content.length === 0 && images.length === 0) continue
-    if (
-      envelope.role === 'user' &&
-      (typeof envelope.content === 'string' || (images.length > 0 && !isToolResult))
-    ) {
-      conversation.push({
-        role: 'user',
-        content,
-        ...(images.length > 0 ? { attachments: images } : {}),
-        checkpointUuid: message.uuid,
-        ...(anchorUuid !== undefined ? { resumeAnchorUuid: anchorUuid } : {})
-      })
-    } else {
-      conversation.push({ role: envelope.role, content })
-    }
+    conversation.push(...Option.toArray(conversationMessageOf(envelope, message.uuid, anchorUuid)))
   }
   return conversation
+}
+
+const conversationMessageOf = (
+  envelope: typeof MessageEnvelope.Type,
+  uuid: string,
+  anchorUuid: string | undefined
+): Option.Option<ConversationMessage> => {
+  const content = extractText(envelope.content)
+  if (envelope.role === 'user' && isTaskNotification(content)) return Option.none()
+  const images =
+    envelope.role === 'user' && typeof envelope.content !== 'string'
+      ? imagesOf(envelope.content)
+      : []
+  const isToolResult =
+    typeof envelope.content !== 'string' &&
+    envelope.content.some((block) => Option.isSome(decodeToolResult(block)))
+  if (content.length === 0 && images.length === 0) return Option.none()
+  if (
+    envelope.role === 'user' &&
+    (typeof envelope.content === 'string' || (images.length > 0 && !isToolResult))
+  ) {
+    return Option.some({
+      role: 'user',
+      content,
+      ...(images.length > 0 ? { attachments: images } : {}),
+      checkpointUuid: uuid,
+      ...(anchorUuid !== undefined ? { resumeAnchorUuid: anchorUuid } : {})
+    })
+  }
+  return Option.some({ role: envelope.role, content })
+}
+
+const ThinkingBlock = Schema.Struct({ type: Schema.Literal('thinking'), thinking: Schema.String })
+const decodeThinkingBlock = Schema.decodeUnknownOption(ThinkingBlock)
+
+const ToolUseBlock = Schema.Struct({
+  type: Schema.Literal('tool_use'),
+  id: Schema.String,
+  name: Schema.String,
+  input: Schema.Unknown
+})
+const decodeToolUseBlock = Schema.decodeUnknownOption(ToolUseBlock)
+
+const ToolResultBlock = Schema.Struct({
+  type: Schema.Literal('tool_result'),
+  tool_use_id: Schema.String,
+  content: Schema.optional(
+    Schema.Union([
+      Schema.String,
+      Schema.Array(Schema.Struct({ type: Schema.String, text: Schema.optional(Schema.String) }))
+    ])
+  ),
+  is_error: Schema.optional(Schema.Boolean)
+})
+const decodeToolResultBlock = Schema.decodeUnknownOption(ToolResultBlock)
+
+const decodeToolInput = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))
+
+interface ToolCallStart {
+  readonly toolName: string
+  readonly input: Record<string, unknown>
+}
+
+const blocksOf = (content: string | ReadonlyArray<unknown>): ReadonlyArray<unknown> =>
+  typeof content === 'string' ? [] : content
+
+const assistantEvents = (
+  envelope: typeof MessageEnvelope.Type,
+  uuid: string,
+  toolCalls: Map<string, ToolCallStart>
+): ReadonlyArray<AgentEvent> => {
+  const blocks = blocksOf(envelope.content)
+  const thinking = blocks
+    .flatMap((block) => Option.toArray(decodeThinkingBlock(block)))
+    .map((block) => block.thinking)
+    .join('')
+  const reasoning =
+    thinking.length > 0
+      ? [
+          AgentEvents.ReasoningUpdated.make({
+            itemId: `${uuid}:thinking`,
+            text: thinking,
+            streaming: false
+          })
+        ]
+      : []
+  const message = Option.toArray(conversationMessageOf(envelope, uuid, undefined)).map(
+    (conversationMessage) =>
+      AgentEvents.MessageUpdated.make({
+        itemId: uuid,
+        message: conversationMessage,
+        streaming: false
+      })
+  )
+  const started = blocks
+    .flatMap((block) => Option.toArray(decodeToolUseBlock(block)))
+    .map((toolUse) => {
+      toolCalls.set(toolUse.id, {
+        toolName: toolUse.name,
+        input: Option.getOrElse(decodeToolInput(toolUse.input), () => ({}))
+      })
+      return AgentEvents.ToolCallStarted.make({ toolCallId: toolUse.id, toolName: toolUse.name })
+    })
+  return [...reasoning, ...message, ...started]
+}
+
+const userEvents = (
+  envelope: typeof MessageEnvelope.Type,
+  uuid: string,
+  anchorUuid: string | undefined,
+  toolCalls: ReadonlyMap<string, ToolCallStart>
+): ReadonlyArray<AgentEvent> => {
+  const message = Option.toArray(conversationMessageOf(envelope, uuid, anchorUuid)).map(
+    (conversationMessage) =>
+      AgentEvents.MessageUpdated.make({
+        itemId: uuid,
+        message: conversationMessage,
+        streaming: false
+      })
+  )
+  const completed = blocksOf(envelope.content).flatMap((block) =>
+    Option.toArray(decodeToolResultBlock(block)).flatMap((result) => {
+      const start = toolCalls.get(result.tool_use_id)
+      if (start === undefined) return []
+      return [
+        AgentEvents.ToolCallCompleted.make({
+          toolCallId: result.tool_use_id,
+          toolName: start.toolName,
+          input: start.input,
+          output: AgentEvents.capToolOutput(flattenToolResultContent(result.content)),
+          isError: result.is_error ?? false
+        })
+      ]
+    })
+  )
+  return [...message, ...completed]
+}
+
+/**
+ * Maps `messages`, the whole active chain of a session as `getSessionMessages` returns it, to
+ * agent events in transcript order, and returns those from the messages after `afterUuid`; all of
+ * them when `afterUuid` is none or not among `messages`. Each entry's `sourceUuid` is its
+ * message's uuid. User turns follow {@link sessionMessagesToConversation}'s rules; an assistant
+ * message yields its thinking (`ReasoningUpdated`, item `<uuid>:thinking`), its text
+ * (`MessageUpdated`, item `<uuid>`) and its tool calls (`ToolCallStarted`, item = tool use id), each
+ * only when present; a tool result yields `ToolCallCompleted` with the input of its tool use and
+ * its output capped by `capToolOutput`. Subagent messages are left out.
+ */
+export const transcriptEntriesAfter = (
+  messages: ReadonlyArray<SessionMessage>,
+  afterUuid: Option.Option<string>
+): ReadonlyArray<TranscriptEntry> => {
+  const start = Option.match(afterUuid, {
+    onNone: () => 0,
+    onSome: (uuid) => messages.findIndex((message) => message.uuid === uuid) + 1
+  })
+  const toolCalls = new Map<string, ToolCallStart>()
+  const entries: TranscriptEntry[] = []
+  let anchorUuid: string | undefined
+  messages.forEach((message, index) => {
+    const envelopeOpt = decodeEnvelope(message.message)
+    if (message.parent_tool_use_id !== null || Option.isNone(envelopeOpt)) return
+    const envelope = envelopeOpt.value
+    const events =
+      envelope.role === 'assistant'
+        ? assistantEvents(envelope, message.uuid, toolCalls)
+        : userEvents(envelope, message.uuid, anchorUuid, toolCalls)
+    if (envelope.role === 'assistant') anchorUuid = message.uuid
+    if (index < start) return
+    entries.push(...events.map((event) => ({ event, sourceUuid: message.uuid })))
+  })
+  return entries
 }
 
 /**
@@ -157,6 +317,52 @@ export const readLastAssistantUuid = Effect.fn('ClaudeCode.readLastAssistantUuid
   })
   return uuid
 })
+
+/**
+ * The claude-code adapter's `AgentBackend.readTranscriptAfter`: reads the transcript of
+ * `sessionId` under `cwd` and returns {@link transcriptEntriesAfter} of it with the transcript
+ * file's size and modification time, read first. None, logging a warning, when the SDK finds no
+ * transcript, reports no file size, or either read fails. Logs a warning when `afterUuid` is not in
+ * the transcript, and then returns every entry.
+ */
+export const readTranscriptAfter = Effect.fn('ClaudeCode.readTranscriptAfter')(
+  function* (sessionId: SessionId, cwd: string, afterUuid: Option.Option<string>) {
+    const info = yield* Effect.tryPromise(() => getSessionInfo(sessionId, { dir: cwd }))
+    if (info?.fileSize === undefined) {
+      yield* Effect.logWarning('Found no readable session transcript', { sessionId, cwd })
+      return Option.none<TranscriptTail>()
+    }
+    const messages = yield* Effect.tryPromise(() => getSessionMessages(sessionId, { dir: cwd }))
+    if (Option.isSome(afterUuid) && !messages.some((message) => message.uuid === afterUuid.value)) {
+      yield* Effect.logWarning(
+        'The transcript cursor is not in the transcript; reading every entry',
+        {
+          sessionId,
+          afterUuid: afterUuid.value
+        }
+      )
+    }
+    const entries = transcriptEntriesAfter(messages, afterUuid)
+    yield* Effect.logDebug('Read transcript entries', {
+      sessionId,
+      afterUuid: Option.getOrUndefined(afterUuid),
+      entries: entries.length
+    })
+    return Option.some<TranscriptTail>({
+      entries,
+      fileSize: info.fileSize,
+      mtimeMs: info.lastModified
+    })
+  },
+  (effect, sessionId) =>
+    effect.pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning('Failed to read session transcript', { sessionId, cause }).pipe(
+          Effect.as(Option.none<TranscriptTail>())
+        )
+      )
+    )
+)
 
 /**
  * Failure of {@link readTurnResumeAnchor}: the user turn `messageUuid` is not in the transcript of

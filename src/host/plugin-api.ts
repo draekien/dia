@@ -7,6 +7,7 @@ export {
   HealthReady,
   HealthUnknown
 } from '../shared/domain/adapter-status'
+export * as AgentEvents from '../shared/domain/agent-event'
 export { AGENT_NAME_ADJECTIVES, AGENT_NAME_NOUNS } from '../shared/domain/agent-name'
 export { ContentAttachment, PathAttachment } from '../shared/domain/attachment'
 export { PlanReviewResponse, Question } from '../shared/domain/attention'
@@ -48,7 +49,9 @@ export {
   type SessionAdditions,
   type SessionEnd,
   SessionFailed,
-  SessionNotFound
+  SessionNotFound,
+  type TranscriptEntry,
+  type TranscriptTail
 } from './session/agent-backend'
 export type { DiaTool, DiaToolField, DiaToolResult } from './session/dia-tools'
 export {

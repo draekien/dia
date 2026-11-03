@@ -1,6 +1,6 @@
 {
   "name": "meta",
-  "api": "0.0.17",
+  "api": "0.0.18",
   "category": "feature",
   "host": "host.ts",
   "load": "eager"
