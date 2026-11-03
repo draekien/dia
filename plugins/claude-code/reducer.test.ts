@@ -218,7 +218,8 @@ describe('makeSessionEventReducer — assistant text streaming (T1)', () => {
     expect(textDeltas(emitted).join('')).toBe(expectedText)
     expect(complete).toEqual({
       _tag: 'AssistantMessageReceived',
-      message: { role: 'assistant', content: expectedText }
+      message: { role: 'assistant', content: expectedText },
+      sourceId: '00000000-0000-0000-0000-000000000000'
     })
   })
 
@@ -448,6 +449,31 @@ describe('makeSessionEventReducer — slash commands and session lifecycle', () 
 describe('makeSessionEventReducer — tool output capture', () => {
   const completeCall = (result: ReturnType<typeof toolResult>) =>
     toolCompletions(run([toolUseStart(0, 'tool-1', 'Bash'), blockStop(0), userMessage(result)]))[0]
+
+  it('names the user message that carried the result as the completion source', () => {
+    const [completion] = toolCompletions(
+      run([
+        toolUseStart(0, 'tool-1', 'Bash'),
+        blockStop(0),
+        userMessageWithUuid(toolResult('tool-1', { content: 'ok' }), 'result-carrier')
+      ])
+    )
+
+    expect(completion?.sourceId).toBe('result-carrier')
+  })
+
+  it('gives no source to a call the turn end completes without a result', () => {
+    const [completion] = toolCompletions(
+      run([
+        toolUseStart(0, 'tool-1', 'Bash'),
+        blockStop(0),
+        sdkMessage({ type: 'result', subtype: 'success', is_error: false })
+      ])
+    )
+
+    expect(completion?.output).toBe('')
+    expect(completion?.sourceId).toBeUndefined()
+  })
 
   it('captures string tool_result content as the completion output', () => {
     const completion = completeCall(toolResult('tool-1', { content: 'hello world' }))
@@ -840,11 +866,14 @@ describe('makeSessionEventReducer — transcript notices', () => {
   })
 
   it('shows local slash command output as an assistant message', () => {
-    const emitted = stepOnce(system('local_command_output', { content: 'Session cost: $0.42' }))
+    const emitted = stepOnce(
+      system('local_command_output', { content: 'Session cost: $0.42', uuid: 'cost-output' })
+    )
     expect(emitted).toEqual([
       {
         _tag: 'AssistantMessageReceived',
-        message: { role: 'assistant', content: 'Session cost: $0.42' }
+        message: { role: 'assistant', content: 'Session cost: $0.42' },
+        sourceId: 'cost-output'
       }
     ])
   })

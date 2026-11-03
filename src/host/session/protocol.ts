@@ -10,9 +10,10 @@ import { Schema } from 'effect'
 
 const JsonRecord = Schema.Record(Schema.String, Schema.Unknown)
 
-/** Emitted by a pane's agent session when the agent has produced a complete conversation message. */
+/** Emitted by a pane's agent session when the agent has produced a complete conversation message. `sourceId` is the id of the message in the provider's transcript that the text came from, when it has one. */
 export const AssistantMessageReceived = Schema.TaggedStruct('AssistantMessageReceived', {
-  message: ConversationMessage
+  message: ConversationMessage,
+  sourceId: Schema.optional(Schema.String)
 })
 /** Emitted by a pane's agent session for each incremental chunk of assistant text as it streams in. */
 export const AssistantTextDelta = Schema.TaggedStruct('AssistantTextDelta', {
@@ -27,13 +28,14 @@ export const ToolCallStarted = Schema.TaggedStruct('ToolCallStarted', {
   toolCallId: Schema.String,
   toolName: Schema.String
 })
-/** Emitted by a pane's agent session once a tool invocation has finished, including the input it was called with, the `output` it produced (flattened to text; empty when the turn ended before a result arrived), and `isError` flagging a failed/denied result. */
+/** Emitted by a pane's agent session once a tool invocation has finished, including the input it was called with, the `output` it produced (flattened to text; empty when the turn ended before a result arrived), and `isError` flagging a failed/denied result. `sourceId` is the id of the provider transcript message that carried the result; absent for a call completed without a result. */
 export const ToolCallCompleted = Schema.TaggedStruct('ToolCallCompleted', {
   toolCallId: Schema.String,
   toolName: Schema.String,
   input: JsonRecord,
   output: Schema.String,
-  isError: Schema.Boolean
+  isError: Schema.Boolean,
+  sourceId: Schema.optional(Schema.String)
 })
 /** Emitted by a pane's agent session with news about a tool call it already reported via `ToolCallStarted`: `input` once the call's input has streamed in (before it runs), `elapsedSeconds` while it runs, and `detail` for a line to show on its row (a subagent's progress, or why it was denied or failed). An absent field leaves the row's value unchanged. */
 export const ToolCallUpdated = Schema.TaggedStruct('ToolCallUpdated', {

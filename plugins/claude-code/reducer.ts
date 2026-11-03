@@ -252,7 +252,7 @@ export const makeSessionEventReducer = (
 
   const completeToolCall = (
     toolCallId: string,
-    result?: { output: string; isError: boolean }
+    result?: { output: string; isError: boolean; sourceId: string | undefined }
   ): OutboundMessage | undefined => {
     const pending = pendingToolCalls.get(toolCallId)
     if (!pending) return undefined
@@ -262,7 +262,8 @@ export const makeSessionEventReducer = (
       toolName: pending.name,
       input: pending.input,
       output: result?.output ?? '',
-      isError: result?.isError ?? false
+      isError: result?.isError ?? false,
+      ...(result?.sourceId !== undefined ? { sourceId: result.sourceId } : {})
     })
   }
 
@@ -314,7 +315,8 @@ export const makeSessionEventReducer = (
       case 'local_command_output':
         return [
           AssistantMessageReceived.make({
-            message: { role: 'assistant', content: message.content }
+            message: { role: 'assistant', content: message.content },
+            sourceId: message.uuid
           })
         ]
       case 'api_retry':
@@ -448,7 +450,9 @@ export const makeSessionEventReducer = (
         refusal = null
       }
       const conversationMessage: ConversationMessage = { role: 'assistant', content: text }
-      return [AssistantMessageReceived.make({ message: conversationMessage })]
+      return [
+        AssistantMessageReceived.make({ message: conversationMessage, sourceId: message.uuid })
+      ]
     }
 
     if (message.type === 'result') {
@@ -495,7 +499,8 @@ export const makeSessionEventReducer = (
         if (block.type !== 'tool_result') continue
         const completion = completeToolCall(block.tool_use_id, {
           output: flattenToolResultContent(block.content),
-          isError: block.is_error ?? false
+          isError: block.is_error ?? false,
+          sourceId: message.uuid
         })
         if (completion) completed.push(completion)
       }
