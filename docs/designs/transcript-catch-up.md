@@ -88,7 +88,7 @@ Each event goes through the same insert and projection as `append`, so `(agent_i
 5. `store.appendTranscript(agentId, sessionId, tail)`. Error → logged, none.
 6. Log "Caught up from the transcript" with the entry count; some. The cursor holds the tail's size and mtime, never those of step 1, so a change between steps 1 and 4 is read at the next open.
 
-Ownership (replaces #154's `nothingFollowsCursor` and `newConversationPending`): the recorder owns the cursor of the session it last bound. When catch-up of `resume` failed, it owns no session until a `ConversationReset` is bound, because any later session of the agent (a fork, or a `SessionStarted` under another id) can contain entries of the `resume` session that were never stored, and its cursor would move past them. Before the first bind it owns the `resume` session only when catch-up succeeded. Leaving an owned session still queues its last cursor update (`rebind`).
+Ownership (replaces #154's `nothingFollowsCursor` and `newConversationPending`): the recorder owns the cursor of the session it last bound. When catch-up of `resume` failed, it owns no session until a `ConversationReset` is bound, because any later session of the agent (a fork, or a `SessionStarted` under another id) can contain entries of the `resume` session that were never stored, and its cursor would move past them. Before the first bind it owns the `resume` session only when catch-up succeeded. Leaving an owned session still queues its last cursor update (`rebind`). A cursor update whose tail has no entries writes the tail's size and mtime under the stored `lastUuid`, because the CLI changes the transcript's mtime when a resumed session starts (`docs/reasoning/2026-11-03-resume-touches-transcript.md`; found during verification).
 
 | Session bound | #154 | This spec |
 | --- | --- | --- |
@@ -124,6 +124,7 @@ Unverified: whether a restarted pane's `open` can run while the previous recorde
 | `appendTranscript` fails → not owned | recorder: `appendTranscript` fails, `readCursor` and `writeCursor` succeed → no `writeCursor` at turn end |
 | A failed catch-up keeps later sessions unowned until a reset | recorder: catch-up fails, `SessionStarted` under another id, turn end → no cursor for either; then `ConversationReset` and a `SessionStarted`, turn end → cursor for the session after the reset |
 | Another id after a successful catch-up is owned | recorder: caught up, `SessionStarted` under another id, turn end → cursor for the new id |
+| A cursor update with no new entries stores the new size and mtime | recorder: info equals the cursor, tail after `a1` empty with another size and mtime → cursor `a1` with the tail's size and mtime |
 | Rewind fork and the session after `/clear` get a cursor at turn end | recorder: flip the three #154 tests "leaves a session that starts after a finished turn to catch-up", "leaves the cursor of a resumed session that has none to catch-up", "leaves the cursor of a resumed session with unread entries to catch-up" |
 
 ## Design Rationale

@@ -473,6 +473,32 @@ describe('AgentEventRecorder transcript cursor', () => {
     )
   })
 
+  it.effect('refreshes the size and mtime of a cursor with no entries after it at turn end', () => {
+    const touched = { ...tailOf(), fileSize: 300, mtimeMs: 1_762_128_060_000 }
+    const reader = scriptedReader(
+      () => Option.some(touched),
+      () => Option.some({ fileSize: 1, mtimeMs: 1 })
+    )
+    return run(
+      { resume: SESSION, reader: reader.layer, seed: seedCursorAtA1 },
+      [SessionStarted.make({ sessionId: SESSION }), TurnCompleted.make({})],
+      (store) =>
+        Effect.gen(function* () {
+          assert.deepStrictEqual(
+            yield* readCursor(store),
+            Option.some(
+              TranscriptCursor.make({
+                sessionId: SESSION,
+                lastUuid: 'a1',
+                fileSize: 300,
+                mtimeMs: 1_762_128_060_000
+              })
+            )
+          )
+        })
+    )
+  })
+
   it.effect('stops advancing the cursor after an event write fails', () =>
     Effect.gen(function* () {
       const cursorWrites: Array<string> = []

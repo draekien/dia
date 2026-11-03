@@ -216,21 +216,19 @@ const makeRecorder = Effect.gen(function* () {
         Option.map(cursor, (stored) => stored.lastUuid)
       )
       if (Option.isNone(tail)) return
-      const last = tail.value.entries.at(-1)
-      if (last === undefined) return
+      const lastUuid =
+        tail.value.entries.at(-1)?.sourceUuid ??
+        Option.getOrUndefined(Option.map(cursor, (stored) => stored.lastUuid))
+      if (lastUuid === undefined) return
       yield* store.writeCursor(
         TranscriptCursor.make({
           sessionId,
-          lastUuid: last.sourceUuid,
+          lastUuid,
           fileSize: tail.value.fileSize,
           mtimeMs: tail.value.mtimeMs
         })
       )
-      yield* Effect.logDebug('Advanced the transcript cursor', {
-        agentId,
-        sessionId,
-        lastUuid: last.sourceUuid
-      })
+      yield* Effect.logDebug('Advanced the transcript cursor', { agentId, sessionId, lastUuid })
     })
 
     const cursorUpdates = yield* Queue.unbounded<SessionId, Cause.Done>()
