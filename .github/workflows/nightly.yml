@@ -88,6 +88,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
       - name: Create draft prerelease
         id: draft
         run: gh release create "v$VERSION" --draft --prerelease --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes
