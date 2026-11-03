@@ -260,6 +260,7 @@ const makeRecorder = Effect.gen(function* () {
     const entriesFor = Effect.fnUntraced(function* (message: OutboundMessage) {
       switch (message._tag) {
         case 'AssistantThinkingDelta': {
+          if (message.text === '') return []
           const { item, entries } = yield* streamDelta(
             state.reasoning,
             message.text,
@@ -269,6 +270,7 @@ const makeRecorder = Effect.gen(function* () {
           return entries
         }
         case 'AssistantTextDelta': {
+          if (message.text === '') return []
           const closed = closeReasoning()
           const { item, entries } = yield* streamDelta(state.text, message.text, textEvent)
           state.text = item
@@ -323,7 +325,7 @@ const makeRecorder = Effect.gen(function* () {
         case 'CheckpointAvailable': {
           const pending = state.awaitingCheckpoint.shift()
           if (pending === undefined) {
-            yield* Effect.logWarning('A checkpoint arrived with no user message awaiting one', {
+            yield* Effect.logDebug('A checkpoint arrived with no user message awaiting one', {
               agentId,
               messageUuid: message.messageUuid
             })

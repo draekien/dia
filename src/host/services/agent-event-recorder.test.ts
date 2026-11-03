@@ -201,6 +201,14 @@ describe('AgentEventRecorder messages', () => {
     )
   )
 
+  it.effect('stores no item for empty thinking and text deltas', () =>
+    run({}, [thinkingDelta(''), textDelta(''), TurnCompleted.make({})], (store) =>
+      Effect.gen(function* () {
+        assert.deepStrictEqual(yield* itemsOf(store), [])
+      })
+    )
+  )
+
   it.effect('caps a tool call output and keeps the result message as its source', () =>
     run(
       {},
