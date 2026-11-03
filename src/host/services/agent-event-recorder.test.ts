@@ -349,12 +349,20 @@ describe('AgentEventRecorder messages', () => {
   )
 })
 
-describe('AgentEventRecorder transcript cursor', () => {
-  const seedCursorAtA1 = (store: AgentEventStore['Service']) =>
-    store.writeCursor(
-      TranscriptCursor.make({ sessionId: SESSION, lastUuid: 'a1', fileSize: 1, mtimeMs: 1 })
-    )
+const THIRD_SESSION = SessionId.make('55555555-5555-4555-8555-555555555555')
 
+const seedCursorAtA1 =
+  (file: TranscriptInfo = { fileSize: 1, mtimeMs: 1 }) =>
+  (store: AgentEventStore['Service']) =>
+    store.writeCursor(TranscriptCursor.make({ sessionId: SESSION, lastUuid: 'a1', ...file }))
+
+const cursorSessions = (sql: SqlClient.SqlClient) =>
+  sql<{ readonly session_id: string }>`SELECT session_id FROM agent_transcript_cursors`.pipe(
+    Effect.orDie,
+    Effect.map((rows) => rows.map((row) => row.session_id).sort())
+  )
+
+describe('AgentEventRecorder transcript cursor', () => {
   const readCursor = (store: AgentEventStore['Service']) =>
     store.readCursor(SESSION).pipe(Effect.orDie)
 
@@ -400,13 +408,6 @@ describe('AgentEventRecorder transcript cursor', () => {
     )
   })
 
-  const THIRD_SESSION = SessionId.make('55555555-5555-4555-8555-555555555555')
-  const cursorSessions = (sql: SqlClient.SqlClient) =>
-    sql<{ readonly session_id: string }>`SELECT session_id FROM agent_transcript_cursors`.pipe(
-      Effect.orDie,
-      Effect.map((rows) => rows.map((row) => row.session_id))
-    )
-
   it.effect('owns the session that starts right after a conversation reset', () => {
     const reader = scriptedReader(() => Option.some(tailOf('u1', 'a1')))
     return run(
@@ -421,7 +422,7 @@ describe('AgentEventRecorder transcript cursor', () => {
       (_store, sql) =>
         Effect.gen(function* () {
           assert.deepStrictEqual(
-            (yield* cursorSessions(sql)).sort(),
+            yield* cursorSessions(sql),
             [SESSION, OTHER_SESSION, THIRD_SESSION].sort()
           )
         })
@@ -440,10 +441,7 @@ describe('AgentEventRecorder transcript cursor', () => {
       ],
       (_store, sql) =>
         Effect.gen(function* () {
-          assert.deepStrictEqual(
-            (yield* cursorSessions(sql)).sort(),
-            [SESSION, THIRD_SESSION].sort()
-          )
+          assert.deepStrictEqual(yield* cursorSessions(sql), [SESSION, THIRD_SESSION].sort())
         })
     )
   })
@@ -458,7 +456,7 @@ describe('AgentEventRecorder transcript cursor', () => {
       {
         resume: SESSION,
         reader: reader.layer,
-        seed: seedCursorAtA1
+        seed: seedCursorAtA1()
       },
       [SessionStarted.make({ sessionId: SESSION }), TurnCompleted.make({})],
       (store) =>
@@ -480,7 +478,7 @@ describe('AgentEventRecorder transcript cursor', () => {
       () => Option.some({ fileSize: 1, mtimeMs: 1 })
     )
     return run(
-      { resume: SESSION, reader: reader.layer, seed: seedCursorAtA1 },
+      { resume: SESSION, reader: reader.layer, seed: seedCursorAtA1() },
       [SessionStarted.make({ sessionId: SESSION }), TurnCompleted.make({})],
       (store) =>
         Effect.gen(function* () {
@@ -536,11 +534,7 @@ describe('AgentEventRecorder transcript cursor', () => {
 })
 
 describe('AgentEventRecorder catch-up', () => {
-  const THIRD_SESSION = SessionId.make('55555555-5555-4555-8555-555555555555')
   const FOURTH_SESSION = SessionId.make('66666666-6666-4666-8666-666666666666')
-  const seedCursorAtA1 = (file: TranscriptInfo) => (store: AgentEventStore['Service']) =>
-    store.writeCursor(TranscriptCursor.make({ sessionId: SESSION, lastUuid: 'a1', ...file }))
-  const STALE_FILE = { fileSize: 1, mtimeMs: 1 }
 
   const contentsOf = (store: AgentEventStore['Service']) =>
     Effect.map(itemsOf(store), (items) =>
@@ -550,11 +544,6 @@ describe('AgentEventRecorder catch-up', () => {
     Effect.map(store.readCursor(sessionId).pipe(Effect.orDie), (cursor) =>
       Option.map(cursor, (stored) => stored.lastUuid)
     )
-  const cursorSessions = (sql: SqlClient.SqlClient) =>
-    sql<{ readonly session_id: string }>`SELECT session_id FROM agent_transcript_cursors`.pipe(
-      Effect.orDie,
-      Effect.map((rows) => rows.map((row) => row.session_id).sort())
-    )
 
   it.effect('appends the turns a resumed session gained outside dia after its cursor', () => {
     const reader = scriptedReader((after) =>
@@ -562,14 +551,11 @@ describe('AgentEventRecorder catch-up', () => {
         Option.contains(after, 'a1') ? tailOf('u2', 'a2') : tailOf('u1', 'a1', 'u2', 'a2')
       )
     )
-    return run(
-      { resume: SESSION, reader: reader.layer, seed: seedCursorAtA1(STALE_FILE) },
-      [],
-      (store) =>
-        Effect.gen(function* () {
-          assert.deepStrictEqual(yield* contentsOf(store), ['u2', 'a2'])
-          assert.deepStrictEqual(yield* lastUuidOf(store, SESSION), Option.some('a2'))
-        })
+    return run({ resume: SESSION, reader: reader.layer, seed: seedCursorAtA1() }, [], (store) =>
+      Effect.gen(function* () {
+        assert.deepStrictEqual(yield* contentsOf(store), ['u2', 'a2'])
+        assert.deepStrictEqual(yield* lastUuidOf(store, SESSION), Option.some('a2'))
+      })
     )
   })
 

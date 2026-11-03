@@ -342,9 +342,8 @@ export const transcriptInfo = Effect.fn('ClaudeCode.transcriptInfo')(
  */
 export const readTranscriptAfter = Effect.fn('ClaudeCode.readTranscriptAfter')(
   function* (sessionId: SessionId, cwd: string, afterUuid: Option.Option<string>) {
-    const infoOpt = yield* transcriptInfo(sessionId, cwd)
-    if (Option.isNone(infoOpt)) return Option.none<TranscriptTail>()
-    const info = infoOpt.value
+    const info = yield* transcriptInfo(sessionId, cwd)
+    if (Option.isNone(info)) return Option.none<TranscriptTail>()
     const messages = yield* Effect.tryPromise(() => getSessionMessages(sessionId, { dir: cwd }))
     if (Option.isSome(afterUuid) && !messages.some((message) => message.uuid === afterUuid.value)) {
       yield* Effect.logWarning(
@@ -361,7 +360,7 @@ export const readTranscriptAfter = Effect.fn('ClaudeCode.readTranscriptAfter')(
       afterUuid: Option.getOrUndefined(afterUuid),
       entries: entries.length
     })
-    return Option.some<TranscriptTail>({ ...info, entries })
+    return Option.some<TranscriptTail>({ ...info.value, entries })
   },
   (effect, sessionId) =>
     effect.pipe(
