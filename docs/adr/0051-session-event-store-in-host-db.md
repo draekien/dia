@@ -67,7 +67,7 @@ ADR-0042's "event table + projection table in one `sql.withTransaction`" shape:
 
 ### Catch-up on open
 
-* Opening an agent reads its current session's JSONL size and mtime through the adapter (`AgentBackend.readTranscriptAfter`). If `file_size` or `mtime_ms` differs from `agent_transcript_cursors`, dia reads the entries after `last_uuid` through the adapter and appends them, skipping known `source_uuid`s.
+* Opening an agent reads its current session's JSONL size and mtime through the adapter (`AgentBackend.transcriptInfo`; amended by #155, which added it so the comparison does not parse the file). If `file_size` or `mtime_ms` differs from `agent_transcript_cursors`, dia reads the entries after `last_uuid` through the adapter (`AgentBackend.readTranscriptAfter`) and appends them, skipping known `source_uuid`s.
 * An agent with no cursor row has its whole JSONL imported on first open. Agents created before this ADR need no separate migration step.
 * Turns added outside dia, for example by `claude --resume <id>` in a terminal, therefore appear in dia when the agent is next opened.
 

@@ -16,7 +16,12 @@ import { SessionId } from '@shared/domain/pane'
 import { Context, Effect, FileSystem, Layer, Option } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
-import { AgentEventStore, AgentEventStoreLive, TranscriptCursor } from './agent-event-store'
+import {
+  AgentEventStore,
+  AgentEventStoreLive,
+  TRANSCRIPT_BATCH_SIZE,
+  TranscriptCursor
+} from './agent-event-store'
 import { makeHostDatabaseLive } from './database'
 
 const AGENT_A = '11111111-1111-4111-8111-111111111111'
@@ -400,6 +405,160 @@ describe('AgentEventStore cursors', () => {
         yield* store.writeCursor(cursorAt('a2', 9_000))
 
         assert.deepStrictEqual(yield* store.readCursor(SESSION), Option.some(cursorAt('a2', 9_000)))
+      })
+    )
+  )
+})
+
+describe('AgentEventStore.appendTranscript', () => {
+  const SESSION = SessionId.make('44444444-4444-4444-8444-444444444444')
+  const FILE = { fileSize: 9_000, mtimeMs: 1_762_128_000_000 }
+
+  const entryOf = (sourceUuid: string, itemId: string) => ({
+    sourceUuid,
+    event: messageUpdated(itemId, sourceUuid, false)
+  })
+  const tailOf = (...uuids: ReadonlyArray<string>) => ({
+    ...FILE,
+    entries: uuids.map((uuid) => entryOf(uuid, uuid))
+  })
+  const numbered = (count: number) => Array.from({ length: count }, (_, index) => `u${index + 1}`)
+  const cursorAt = (lastUuid: string, file: { fileSize: number; mtimeMs: number }) =>
+    Option.some(TranscriptCursor.make({ sessionId: SESSION, lastUuid, ...file }))
+  const eventsOf = (sql: SqlClient.SqlClient, sourceUuid: string) =>
+    Effect.map(
+      sql<{
+        readonly n: number
+      }>`SELECT COUNT(*) AS n FROM agent_events WHERE source_uuid = ${sourceUuid}`,
+      (rows) => rows[0].n
+    )
+
+  it.effect('skips an entry whose source uuid the agent stored under another item id', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.append(AGENT_A, [
+          { event: messageUpdated('live-1', 'u1', false), sourceUuid: 'u1' }
+        ])
+
+        yield* store.appendTranscript(AGENT_A, SESSION, tailOf('u1', 'a1'))
+
+        const items = yield* store.readItems(AGENT_A, { limit: 10 })
+        assert.deepStrictEqual(
+          items.map((item) => item.itemId),
+          ['live-1', 'a1']
+        )
+      })
+    )
+  )
+
+  it.effect('moves the cursor to the last entry when every entry is already stored', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        yield* store.appendTranscript(AGENT_A, SESSION, tailOf('u1', 'a1'))
+        const grown = { fileSize: 12_000, mtimeMs: 1_762_128_060_000 }
+
+        yield* store.appendTranscript(AGENT_A, SESSION, {
+          ...grown,
+          entries: tailOf('u1', 'a1').entries
+        })
+
+        assert.strictEqual(yield* eventCount(sql), 2)
+        assert.deepStrictEqual(yield* store.readCursor(SESSION), cursorAt('a1', grown))
+      })
+    )
+  )
+
+  it.effect(
+    'updates only the size and mtime of an existing cursor for a tail with no entries',
+    () =>
+      withStore((store) =>
+        Effect.gen(function* () {
+          yield* store.appendTranscript(AGENT_A, SESSION, tailOf('u1', 'a1'))
+          const grown = { fileSize: 9_400, mtimeMs: 1_762_128_060_000 }
+
+          yield* store.appendTranscript(AGENT_A, SESSION, { ...grown, entries: [] })
+
+          assert.deepStrictEqual(yield* store.readCursor(SESSION), cursorAt('a1', grown))
+        })
+      )
+  )
+
+  it.effect('stores no cursor for a tail with no entries when the session has none', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.appendTranscript(AGENT_A, SESSION, tailOf())
+
+        assert.deepStrictEqual(yield* store.readCursor(SESSION), Option.none())
+      })
+    )
+  )
+
+  it.effect('stores every entry of a tail longer than one batch and the cursor at its end', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        yield* store.appendTranscript(AGENT_A, SESSION, tailOf(...numbered(1_200)))
+
+        assert.strictEqual(yield* eventCount(sql), 1_200)
+        assert.deepStrictEqual(yield* store.readCursor(SESSION), cursorAt('u1200', FILE))
+      })
+    )
+  )
+
+  it.effect('keeps the batches before a failed cursor write and stores no cursor', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        yield* sql`CREATE TEMP TRIGGER fail_cursor BEFORE INSERT ON agent_transcript_cursors
+          BEGIN SELECT RAISE(ABORT, 'x'); END`
+
+        const error = yield* Effect.flip(
+          store.appendTranscript(AGENT_A, SESSION, tailOf(...numbered(1_200)))
+        )
+
+        assert.strictEqual(error._tag, 'AgentEventWriteError')
+        assert.strictEqual(yield* eventCount(sql), 2 * TRANSCRIPT_BATCH_SIZE)
+        assert.deepStrictEqual(yield* store.readCursor(SESSION), Option.none())
+      })
+    )
+  )
+
+  it.effect('keeps the batches before a failed event write and stores no cursor', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        yield* sql`CREATE TEMP TRIGGER fail_u600 BEFORE INSERT ON agent_events
+          WHEN NEW.source_uuid = 'u600' BEGIN SELECT RAISE(ABORT, 'x'); END`
+
+        const error = yield* Effect.flip(
+          store.appendTranscript(AGENT_A, SESSION, tailOf(...numbered(1_200)))
+        )
+
+        assert.strictEqual(error._tag, 'AgentEventWriteError')
+        assert.strictEqual(yield* eventCount(sql), TRANSCRIPT_BATCH_SIZE)
+        assert.deepStrictEqual(yield* store.readCursor(SESSION), Option.none())
+      })
+    )
+  )
+
+  it.effect('stores all events of a source uuid that straddles a batch boundary on retry', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        const uuids = [
+          ...numbered(TRANSCRIPT_BATCH_SIZE - 2),
+          ...Array.from({ length: 4 }, () => 'shared'),
+          ...numbered(700).slice(TRANSCRIPT_BATCH_SIZE + 2)
+        ]
+        const tail = {
+          ...FILE,
+          entries: uuids.map((uuid, index) => entryOf(uuid, `item-${index}`))
+        }
+        yield* sql`CREATE TEMP TRIGGER fail_u600 BEFORE INSERT ON agent_events
+          WHEN NEW.source_uuid = 'u600' BEGIN SELECT RAISE(ABORT, 'x'); END`
+        yield* Effect.flip(store.appendTranscript(AGENT_A, SESSION, tail))
+        yield* sql`DROP TRIGGER fail_u600`
+
+        yield* store.appendTranscript(AGENT_A, SESSION, tail)
+
+        assert.strictEqual(yield* eventsOf(sql, 'shared'), 4)
+        assert.strictEqual(yield* eventCount(sql), uuids.length)
       })
     )
   )

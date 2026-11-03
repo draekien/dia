@@ -42,7 +42,7 @@ export interface RecordingOptions {
 
 /**
  * Service tag for writing a live pane session's conversation to `AgentEventStore`, and keeping the
- * transcript cursor of each session it started at the end of the turns it wrote. Provide it with
+ * transcript cursor of each session it binds at the end of the turns it wrote. Provide it with
  * {@link AgentEventRecorderLive}.
  */
 export class AgentEventRecorder extends Context.Service<
@@ -54,6 +54,12 @@ export class AgentEventRecorder extends Context.Service<
      * surrounding scope; closing it writes the final state of unfinished items. The returned
      * function never fails: a failed write is logged, and the transcript cursor stops advancing
      * for the rest of the recording.
+     *
+     * When `resume` is some, first appends the entries of that session's transcript the agent has
+     * not stored. A failed catch-up is logged and does not fail `open`. While the pane still
+     * resumes that session, the next open retries it; once the pane persists another session id
+     * (a fork or a conversation reset), the entries of the failed session are imported only as far
+     * as that session's transcript copies them.
      */
     readonly open: (
       options: RecordingOptions
@@ -82,7 +88,7 @@ interface RecordingState {
   boundSession: Option.Option<SessionId>
   ownedSession: Option.Option<SessionId>
   cursorStalled: boolean
-  newConversationPending: boolean
+  catchUpFailed: boolean
 }
 
 const reasoningEvent = (item: StreamingItem, streaming: boolean) =>
@@ -113,30 +119,56 @@ const makeRecorder = Effect.gen(function* () {
 
   const newItemId = crypto.randomUUIDv4().pipe(Effect.orDie)
 
-  const nothingFollowsCursor = Effect.fn('AgentEventRecorder.nothingFollowsCursor')(function* (
-    sessionId: SessionId,
-    cwd: string
-  ) {
-    const cursor = yield* store.readCursor(sessionId).pipe(
-      Effect.tapError((error) =>
-        Effect.logWarning('Could not read the transcript cursor', { sessionId, error })
-      ),
-      Effect.orElseSucceed(() => Option.none<TranscriptCursor>())
-    )
-    if (Option.isNone(cursor)) return false
-    const tail = yield* reader.readTranscriptAfter(
-      sessionId,
-      cwd,
-      Option.some(cursor.value.lastUuid)
-    )
-    return Option.isSome(tail) && tail.value.entries.length === 0
-  })
+  const catchUpResumed = Effect.fn('AgentEventRecorder.catchUpResumed')(
+    function* (agentId: string, sessionId: SessionId, cwd: string) {
+      const info = yield* reader.transcriptInfo(sessionId, cwd)
+      if (Option.isNone(info)) {
+        yield* Effect.logWarning('No transcript to catch up from', { agentId, sessionId })
+        return Option.none<SessionId>()
+      }
+      const cursor = yield* store.readCursor(sessionId)
+      if (
+        Option.isSome(cursor) &&
+        cursor.value.fileSize === info.value.fileSize &&
+        cursor.value.mtimeMs === info.value.mtimeMs
+      ) {
+        yield* Effect.logDebug('The transcript has not changed since its cursor', {
+          agentId,
+          sessionId
+        })
+        return Option.some(sessionId)
+      }
+      const tail = yield* reader.readTranscriptAfter(
+        sessionId,
+        cwd,
+        Option.map(cursor, (stored) => stored.lastUuid)
+      )
+      if (Option.isNone(tail)) return Option.none<SessionId>()
+      yield* store.appendTranscript(agentId, sessionId, tail.value)
+      yield* Effect.logInfo('Caught up from the transcript', {
+        agentId,
+        sessionId,
+        entries: tail.value.entries.length
+      })
+      return Option.some(sessionId)
+    },
+    (effect, agentId, sessionId) =>
+      effect.pipe(
+        Effect.catch((error) =>
+          Effect.logWarning('Could not catch up from the transcript', {
+            agentId,
+            sessionId,
+            error
+          }).pipe(Effect.as(Option.none<SessionId>()))
+        )
+      )
+  )
 
   const open = Effect.fn('AgentEventRecorder.open')(function* (options: RecordingOptions) {
     const { agentId, cwd } = options
-    const ownsResumed = yield* Option.match(options.resume, {
-      onNone: () => Effect.succeed(false),
-      onSome: (sessionId) => nothingFollowsCursor(sessionId, cwd)
+    const caughtUp = yield* Option.match(options.resume, {
+      onNone: () => Effect.succeed(Option.none<SessionId>()),
+      onSome: (sessionId) => catchUpResumed(agentId, sessionId, cwd)
     })
     const state: RecordingState = {
       reasoning: undefined,
@@ -144,14 +176,14 @@ const makeRecorder = Effect.gen(function* () {
       openTools: new Map(),
       awaitingCheckpoint: [],
       boundSession: Option.none(),
-      ownedSession: ownsResumed ? options.resume : Option.none(),
+      ownedSession: caughtUp,
       cursorStalled: false,
-      newConversationPending: Option.isNone(options.resume)
+      catchUpFailed: Option.isSome(options.resume) && Option.isNone(caughtUp)
     }
     yield* Effect.logDebug('Recording agent events', {
       agentId,
       resume: options.resume,
-      ownsCursor: ownsResumed
+      ownsCursor: Option.isSome(caughtUp)
     })
 
     const stall = (message: string, context: object) =>
@@ -184,21 +216,19 @@ const makeRecorder = Effect.gen(function* () {
         Option.map(cursor, (stored) => stored.lastUuid)
       )
       if (Option.isNone(tail)) return
-      const last = tail.value.entries.at(-1)
-      if (last === undefined) return
+      const lastUuid =
+        tail.value.entries.at(-1)?.sourceUuid ??
+        Option.getOrUndefined(Option.map(cursor, (stored) => stored.lastUuid))
+      if (lastUuid === undefined) return
       yield* store.writeCursor(
         TranscriptCursor.make({
           sessionId,
-          lastUuid: last.sourceUuid,
+          lastUuid,
           fileSize: tail.value.fileSize,
           mtimeMs: tail.value.mtimeMs
         })
       )
-      yield* Effect.logDebug('Advanced the transcript cursor', {
-        agentId,
-        sessionId,
-        lastUuid: last.sourceUuid
-      })
+      yield* Effect.logDebug('Advanced the transcript cursor', { agentId, sessionId, lastUuid })
     })
 
     const cursorUpdates = yield* Queue.unbounded<SessionId, Cause.Done>()
@@ -245,12 +275,8 @@ const makeRecorder = Effect.gen(function* () {
     const bind = (sessionId: SessionId, newConversation: boolean): ReadonlyArray<Entry> => {
       if (Option.contains(state.boundSession, sessionId)) return []
       state.boundSession = Option.some(sessionId)
-      if (newConversation) state.newConversationPending = true
-      if (state.newConversationPending) {
-        state.ownedSession = Option.some(sessionId)
-      } else if (!Option.contains(state.ownedSession, sessionId)) {
-        state.ownedSession = Option.none()
-      }
+      if (newConversation) state.catchUpFailed = false
+      state.ownedSession = state.catchUpFailed ? Option.none() : Option.some(sessionId)
       return [{ event: SessionBound.make({ sessionId }) }]
     }
 
@@ -366,7 +392,6 @@ const makeRecorder = Effect.gen(function* () {
           return yield* rebind(message.newSessionId, true)
         default:
           if (!isTurnEnd(message)) return []
-          state.newConversationPending = false
           return [...closeReasoning(), ...closeText()]
       }
     })

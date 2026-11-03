@@ -4,6 +4,7 @@ import { HostPlugins } from '../plugins/host-plugins'
 import {
   type DiscoveredSession,
   resolveAgentBackend,
+  type TranscriptInfo,
   type TranscriptTail
 } from '../session/agent-backend'
 
@@ -33,6 +34,15 @@ export class TranscriptReader extends Context.Service<
     readonly discoverSessions: (
       directory: string
     ) => Effect.Effect<ReadonlyArray<DiscoveredSession>>
+    /**
+     * The size and mtime of `sessionId`'s transcript under `cwd`, without reading its entries.
+     * None, with a log line, when there is no readable transcript or no adapter is loaded. Never
+     * fails.
+     */
+    readonly transcriptInfo: (
+      sessionId: SessionId,
+      cwd: string
+    ) => Effect.Effect<Option.Option<TranscriptInfo>>
     /**
      * The events of `sessionId`'s transcript under `cwd` that follow the entry `afterUuid` (every
      * entry when none, or when that entry is not found), with the transcript file's size and
@@ -72,6 +82,13 @@ export const TranscriptReaderLive = Layer.effect(
           return []
         }
         return yield* backend.discoverSessions(directory)
+      }),
+      transcriptInfo: Effect.fn('TranscriptReader.transcriptInfo')(function* (
+        sessionId: SessionId,
+        cwd: string
+      ) {
+        const backend = yield* resolveAgentBackend(plugins)
+        return yield* backend.transcriptInfo(sessionId, cwd)
       }),
       readTranscriptAfter: Effect.fn('TranscriptReader.readTranscriptAfter')(function* (
         sessionId: SessionId,

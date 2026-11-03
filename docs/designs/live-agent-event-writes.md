@@ -9,7 +9,7 @@ In: the recorder service, its call from `PaneSupervisor`, protocol source-id fie
 Out:
 - Rendering or replay from the store (#156). #156 must treat a `streaming` row of an agent with no live session as final: a Host crash (not a pane close) leaves such rows.
 - Catch-up on open and interrupted tool calls in the transcript path (#155).
-- Rewind forks. A rewind forks into a new session id and emits `SessionStarted` again (`forkSession`, `plugins/claude-code/session.ts:528`); the recorder does not own that session's cursor, so #155's full import of the fork would duplicate the live items (live item ids are random, import ids are entry uuids). #155 must skip a full import for a session whose agent already has live events.
+- Rewind forks. A rewind forks into a new session id and emits `SessionStarted` again (`forkSession`, `plugins/claude-code/session.ts:528`); #155 (`docs/designs/transcript-catch-up.md`) makes the recorder own the fork's cursor and skips catch-up entries whose source uuid the agent already stored.
 - Archive (#158). `SessionBound` on compaction (the session id does not change).
 
 ## Interface
@@ -60,15 +60,11 @@ A "close" writes the item's final event with `streaming:false` and the full text
 
 ### Cursor ownership
 
-The recorder owns the cursor of a session when:
-- the session started a new conversation: it was bound by a `ConversationReset`, or by a `SessionStarted` before the first turn end of a new conversation (the pane's first session when `resume` is none, or the session that follows a `ConversationReset`; after `/clear` the CLI writes the conversation under the id of the next `SessionStarted`, not under `newSessionId`), or
-- it is the `resume` session, a cursor row exists for it and, checked once in `open` before the session starts, `readTranscriptAfter(sessionId, cwd, Some(cursor.lastUuid))` returns `Some` with no entries (nothing after the cursor waits for catch-up). The check runs before the session starts because the CLI may write the first turn's user entry before it emits `SessionStarted`.
-
-Any other session, including a resumed one with no cursor row or with entries after its cursor, is left for catch-up (#155).
+Superseded by #155: the recorder owns the cursor of the session it last bound, and of the `resume` session from `open` when catch-up of it succeeded. See "Ownership" in `docs/designs/transcript-catch-up.md`.
 
 ### Cursor updates
 
-Updates run on one fiber that drains a queue, so they apply in order. `open` forks it with `Effect.forkDetach`, so it has no finalizer of its own and only the scope-close finalizer ends it. A failed write sets the recorder's `cursorStalled` flag, which is never cleared while the recorder lives; while it is set no cursor update is offered, including the scope-close one, so the next bind finds entries after the cursor and leaves the session to catch-up. At each turn end of an owned, unstalled session, the recorder offers the session id. The fiber reads `readTranscriptAfter(sessionId, cwd, cursor.lastUuid)` (from the start when no row exists) and, on `Some(tail)` with entries, writes `{ sessionId, lastUuid: last entry's sourceUuid, fileSize, mtimeMs }`; the entries are not appended. The tail's entries are main-chain user and assistant entries only (`transcriptEntriesAfter`), so `lastUuid` is always an id catch-up can find. Each update parses the whole transcript through the SDK on the Host event loop; accepted, revisit if profiling shows it.
+Updates run on one fiber that drains a queue, so they apply in order. `open` forks it with `Effect.forkDetach`, so it has no finalizer of its own and only the scope-close finalizer ends it. A failed write sets the recorder's `cursorStalled` flag, which is never cleared while the recorder lives; while it is set no cursor update is offered, including the scope-close one, so the next `open` of the agent finds the transcript changed since the cursor and catches it up. At each turn end of an owned, unstalled session, the recorder offers the session id. The fiber reads `readTranscriptAfter(sessionId, cwd, cursor.lastUuid)` (from the start when no row exists) and, on `Some(tail)`, writes `{ sessionId, lastUuid, fileSize, mtimeMs }`, where `lastUuid` is the last entry's sourceUuid, or the stored cursor's when the tail has no entries (#155, `docs/reasoning/2026-11-03-resume-touches-transcript.md`); with no entries and no stored cursor it writes nothing. The entries are not appended. The tail's entries are main-chain user and assistant entries only (`transcriptEntriesAfter`), so `lastUuid` is always an id catch-up can find. Each update parses the whole transcript through the SDK on the Host event loop; accepted, revisit if profiling shows it.
 
 ### Scope close
 
@@ -101,7 +97,7 @@ readonly readTranscriptAfter: (sessionId: SessionId, cwd: string, afterUuid: Opt
 - `AssistantMessageReceived.sourceId: optional String` — the id of the message in the provider's transcript that the text came from.
 - `ToolCallCompleted.sourceId: optional String` — the id of the provider transcript message that carried the result; absent for a call completed without a result.
 
-`plugins/claude-code/reducer.ts` fills both (assistant `message.uuid`; `local_command_output` system message `uuid`, required at `sdk.d.ts:5531`; tool_result user `message.uuid`, optional at `sdk.d.ts:6624`). `toIpcEvent` copies fields by name (`pane-supervisor.ts:224`), so IPC events and `PROTOCOL_VERSION` are unchanged. The plugin API stays `0.0.18`, introduced by the unmerged #161.
+`plugins/claude-code/reducer.ts` fills both (assistant `message.uuid`; `local_command_output` system message `uuid`, required at `sdk.d.ts:5531`; tool_result user `message.uuid`, optional at `sdk.d.ts:6624`). `toIpcEvent` copies fields by name (`pane-supervisor.ts:224`), so IPC events and `PROTOCOL_VERSION` are unchanged. The plugin API stayed `0.0.18`, introduced by #161; #155 raised it to `0.0.19` for `AgentBackend.transcriptInfo`.
 
 ### `src/host/services/pane-supervisor.ts`
 

@@ -7,6 +7,7 @@ import {
   AgentEvents,
   ContentAttachment,
   type TranscriptEntry,
+  type TranscriptInfo,
   type TranscriptTail
 } from '@dia/plugin'
 import type { AgentEvent } from '@shared/domain/agent-event'
@@ -309,19 +310,40 @@ export const readLastAssistantUuid = Effect.fn('ClaudeCode.readLastAssistantUuid
 })
 
 /**
- * The claude-code adapter's `AgentBackend.readTranscriptAfter`: reads the transcript of
- * `sessionId` under `cwd` and returns {@link transcriptEntriesAfter} of it with the transcript
- * file's size and modification time, read first. None, logging a warning, when the SDK finds no
- * transcript, reports no file size, or either read fails. Logs a warning when `afterUuid` is not in
- * the transcript, and then returns every entry.
+ * The claude-code adapter's `AgentBackend.transcriptInfo`: the size and modification time of the
+ * transcript of `sessionId` under `cwd`, without reading its entries. None, logging a warning, when
+ * the SDK finds no transcript, reports no file size, or the read fails.
  */
-export const readTranscriptAfter = Effect.fn('ClaudeCode.readTranscriptAfter')(
-  function* (sessionId: SessionId, cwd: string, afterUuid: Option.Option<string>) {
+export const transcriptInfo = Effect.fn('ClaudeCode.transcriptInfo')(
+  function* (sessionId: SessionId, cwd: string) {
     const info = yield* Effect.tryPromise(() => getSessionInfo(sessionId, { dir: cwd }))
     if (info?.fileSize === undefined) {
       yield* Effect.logWarning('Found no readable session transcript', { sessionId, cwd })
-      return Option.none<TranscriptTail>()
+      return Option.none<TranscriptInfo>()
     }
+    return Option.some<TranscriptInfo>({ fileSize: info.fileSize, mtimeMs: info.lastModified })
+  },
+  (effect, sessionId) =>
+    effect.pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning('Failed to read session transcript info', { sessionId, cause }).pipe(
+          Effect.as(Option.none<TranscriptInfo>())
+        )
+      )
+    )
+)
+
+/**
+ * The claude-code adapter's `AgentBackend.readTranscriptAfter`: reads the transcript of
+ * `sessionId` under `cwd` and returns {@link transcriptEntriesAfter} of it with the
+ * {@link transcriptInfo} read first. None, logging a warning, when that info is none or the read of
+ * the entries fails. Logs a warning when `afterUuid` is not in the transcript, and then returns
+ * every entry.
+ */
+export const readTranscriptAfter = Effect.fn('ClaudeCode.readTranscriptAfter')(
+  function* (sessionId: SessionId, cwd: string, afterUuid: Option.Option<string>) {
+    const info = yield* transcriptInfo(sessionId, cwd)
+    if (Option.isNone(info)) return Option.none<TranscriptTail>()
     const messages = yield* Effect.tryPromise(() => getSessionMessages(sessionId, { dir: cwd }))
     if (Option.isSome(afterUuid) && !messages.some((message) => message.uuid === afterUuid.value)) {
       yield* Effect.logWarning(
@@ -338,11 +360,7 @@ export const readTranscriptAfter = Effect.fn('ClaudeCode.readTranscriptAfter')(
       afterUuid: Option.getOrUndefined(afterUuid),
       entries: entries.length
     })
-    return Option.some<TranscriptTail>({
-      entries,
-      fileSize: info.fileSize,
-      mtimeMs: info.lastModified
-    })
+    return Option.some<TranscriptTail>({ ...info.value, entries })
   },
   (effect, sessionId) =>
     effect.pipe(

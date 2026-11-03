@@ -4,15 +4,19 @@ import {
   AgentItem
 } from '@shared/domain/agent-event'
 import { SessionId } from '@shared/domain/pane'
-import { Clock, Context, Data, Effect, Layer, Option, Result, Schema } from 'effect'
+import { Array as Arr, Clock, Context, Data, Effect, Layer, Option, Result, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
+import type { TranscriptEntry, TranscriptTail } from '../session/agent-backend'
 
-/** `append` stored nothing from its batch. Carries the `SqlError`. */
+/**
+ * A write to `host.db` failed; the failing method's documentation states what stays stored.
+ * Carries the `SqlError`.
+ */
 export class AgentEventWriteError extends Data.TaggedError('AgentEventWriteError')<{
   readonly cause: unknown
 }> {}
 
-/** `readItems` could not read `host.db`. Carries the `SqlError`. */
+/** A read of `host.db` failed. Carries the `SqlError`. */
 export class AgentEventReadError extends Data.TaggedError('AgentEventReadError')<{
   readonly cause: unknown
 }> {}
@@ -30,6 +34,12 @@ export const TranscriptCursor = Schema.Struct({
 /** A transcript cursor; see {@link TranscriptCursor}. */
 export type TranscriptCursor = typeof TranscriptCursor.Type
 
+/**
+ * The least number of events one `appendTranscript` write commits together. A call that fails
+ * keeps the writes committed before the failure.
+ */
+export const TRANSCRIPT_BATCH_SIZE = 500
+
 /** Service tag for the Host's per-agent event log and its item projection in `host.db`. Provide it with {@link AgentEventStoreLive}. */
 export class AgentEventStore extends Context.Service<
   AgentEventStore,
@@ -45,6 +55,21 @@ export class AgentEventStore extends Context.Service<
       agentId: string,
       events: ReadonlyArray<{ readonly event: AgentEvent; readonly sourceUuid?: string }>
     ) => Effect.Effect<ReadonlyArray<Option.Option<number>>, AgentEventWriteError>
+    /**
+     * Appends to agent `agentId` the entries of `tail`, read from SDK session `sessionId`'s
+     * transcript, skipping each entry whose `sourceUuid` the agent already has an event for, then
+     * stores the session's cursor at the tail's last entry (skipped or not) with the tail's size
+     * and mtime. All events of one source uuid are stored together or not at all. A tail with no
+     * entries updates only the size and mtime of an existing cursor, and stores nothing when none
+     * exists. Fails with {@link AgentEventReadError} when the stored source uuids cannot be read,
+     * and with {@link AgentEventWriteError} when a write fails; the entries stored before the
+     * failure stay, the cursor is unchanged, and calling again with the same tail stores the rest.
+     */
+    readonly appendTranscript: (
+      agentId: string,
+      sessionId: SessionId,
+      tail: TranscriptTail
+    ) => Effect.Effect<void, AgentEventWriteError | AgentEventReadError>
     /**
      * Up to `limit` items of agent `agentId` whose position is above `afterPosition` (from the
      * first item when absent), in position order. A stored item that does not decode is left out
@@ -151,6 +176,24 @@ const itemFromRow = (row: ItemRow) => {
   }
 }
 
+const batchesOf = (
+  entries: ReadonlyArray<TranscriptEntry>
+): ReadonlyArray<ReadonlyArray<TranscriptEntry>> => {
+  const batches: Array<ReadonlyArray<TranscriptEntry>> = []
+  let current: Array<TranscriptEntry> = []
+  let currentUuid: string | undefined
+  for (const entry of entries) {
+    if (current.length >= TRANSCRIPT_BATCH_SIZE && entry.sourceUuid !== currentUuid) {
+      batches.push(current)
+      current = []
+    }
+    current.push(entry)
+    currentUuid = entry.sourceUuid
+  }
+  batches.push(current)
+  return batches
+}
+
 const makeStore = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
 
@@ -230,6 +273,92 @@ const makeStore = Effect.gen(function* () {
       )
   )
 
+  const upsertCursor = (cursor: TranscriptCursor) =>
+    sql`INSERT INTO agent_transcript_cursors ${sql.insert({
+      session_id: cursor.sessionId,
+      last_uuid: cursor.lastUuid,
+      file_size: cursor.fileSize,
+      mtime_ms: cursor.mtimeMs
+    })} ON CONFLICT (session_id) DO UPDATE SET last_uuid = excluded.last_uuid,
+      file_size = excluded.file_size, mtime_ms = excluded.mtime_ms`
+
+  const storedSourceUuids = (agentId: string, entries: ReadonlyArray<TranscriptEntry>) =>
+    sql<{ readonly source_uuid: string }>`SELECT DISTINCT source_uuid FROM agent_events
+      WHERE agent_id = ${agentId} AND source_uuid IN (SELECT value FROM json_each(${JSON.stringify(
+        entries.map((entry) => entry.sourceUuid)
+      )}))`.pipe(
+      Effect.map((rows) => new Set(rows.map((row) => row.source_uuid))),
+      Effect.tapError((cause) =>
+        Effect.logError('Could not read stored source uuids', { agentId, cause })
+      ),
+      Effect.mapError((cause) => new AgentEventReadError({ cause }))
+    )
+
+  const asTranscriptWrite =
+    (agentId: string, sessionId: SessionId) =>
+    <A, E, R>(write: Effect.Effect<A, E, R>) =>
+      write.pipe(
+        Effect.tapError((cause) =>
+          Effect.logError('Could not append transcript entries', { agentId, sessionId, cause })
+        ),
+        Effect.mapError((cause) => new AgentEventWriteError({ cause }))
+      )
+
+  const appendTranscript = Effect.fn('AgentEventStore.appendTranscript')(function* (
+    agentId: string,
+    sessionId: SessionId,
+    tail: TranscriptTail
+  ) {
+    const lastEntry = Arr.last(tail.entries)
+    if (Option.isNone(lastEntry)) {
+      yield* asTranscriptWrite(
+        agentId,
+        sessionId
+      )(sql`UPDATE agent_transcript_cursors SET file_size = ${tail.fileSize},
+        mtime_ms = ${tail.mtimeMs} WHERE session_id = ${sessionId}`)
+      yield* Effect.logDebug('Refreshed a transcript cursor for a tail with no entries', {
+        sessionId,
+        fileSize: tail.fileSize,
+        mtimeMs: tail.mtimeMs
+      })
+      return
+    }
+    const known = yield* storedSourceUuids(agentId, tail.entries)
+    const fresh = tail.entries.filter((entry) => !known.has(entry.sourceUuid))
+    const batches = batchesOf(fresh)
+    const cursor = TranscriptCursor.make({
+      sessionId,
+      lastUuid: lastEntry.value.sourceUuid,
+      fileSize: tail.fileSize,
+      mtimeMs: tail.mtimeMs
+    })
+    const occurredAt = yield* Clock.currentTimeMillis
+    for (const [index, batch] of batches.entries()) {
+      if (index > 0) yield* Effect.yieldNow
+      const cursorWrite =
+        index === batches.length - 1 ? Effect.asVoid(upsertCursor(cursor)) : Effect.void
+      yield* asTranscriptWrite(
+        agentId,
+        sessionId
+      )(
+        sql.withTransaction(
+          Effect.forEach(batch, (entry) => appendOne(agentId, entry, occurredAt)).pipe(
+            Effect.andThen(cursorWrite)
+          )
+        )
+      )
+    }
+    yield* Effect.logDebug('Appended transcript entries', {
+      agentId,
+      sessionId,
+      entries: tail.entries.length,
+      appended: fresh.length,
+      skipped: tail.entries.length - fresh.length,
+      batches: batches.length,
+      lastUuid: cursor.lastUuid
+    })
+  })
+
   const readItems = Effect.fn('AgentEventStore.readItems')(
     function* (agentId: string, page: { readonly afterPosition?: number; readonly limit: number }) {
       const rows = yield* sql<ItemRow>`
@@ -288,13 +417,7 @@ const makeStore = Effect.gen(function* () {
 
   const writeCursor = Effect.fn('AgentEventStore.writeCursor')(
     function* (cursor: TranscriptCursor) {
-      yield* sql`INSERT INTO agent_transcript_cursors ${sql.insert({
-        session_id: cursor.sessionId,
-        last_uuid: cursor.lastUuid,
-        file_size: cursor.fileSize,
-        mtime_ms: cursor.mtimeMs
-      })} ON CONFLICT (session_id) DO UPDATE SET last_uuid = excluded.last_uuid,
-        file_size = excluded.file_size, mtime_ms = excluded.mtime_ms`
+      yield* upsertCursor(cursor)
       yield* Effect.logDebug('Stored a transcript cursor', cursor)
     },
     (effect, cursor) =>
@@ -309,7 +432,7 @@ const makeStore = Effect.gen(function* () {
       )
   )
 
-  return AgentEventStore.of({ append, readItems, readCursor, writeCursor })
+  return AgentEventStore.of({ append, appendTranscript, readItems, readCursor, writeCursor })
 })
 
 /** Provides {@link AgentEventStore} over the Host's `SqlClient` from `makeHostDatabaseLive`. */

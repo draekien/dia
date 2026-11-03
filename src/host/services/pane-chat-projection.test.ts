@@ -77,6 +77,7 @@ const makeSetup = (catalogReady: Effect.Effect<void> = Effect.void) => {
         return [{ role: 'user' as const, content: `from ${sessionId}` }]
       }),
     discoverSessions: () => Effect.succeed([]),
+    transcriptInfo: () => Effect.die('not called'),
     readTranscriptAfter: () => Effect.die('not called')
   })
   const models = Layer.succeed(ModelCatalogFeed, {

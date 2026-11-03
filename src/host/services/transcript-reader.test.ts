@@ -23,6 +23,7 @@ const pluginsProviding = (backend: Option.Option<AgentBackend>) =>
 const backendWithout: AgentBackend = {
   openSession: () => Effect.die('not called'),
   readHistory: () => Effect.die('not called'),
+  transcriptInfo: () => Effect.die('not called'),
   readTranscriptAfter: () => Effect.die('not called'),
   models: () => Stream.empty,
   refreshModels: () => Effect.die('not called'),
@@ -48,6 +49,7 @@ describe('TranscriptReaderLive', () => {
             reads.push(`${sessionId}@${cwd}`)
             return history
           }),
+        transcriptInfo: () => Effect.die('not called'),
         readTranscriptAfter: () => Effect.die('not called'),
         models: () => Stream.empty,
         refreshModels: () => Effect.die('not called'),
@@ -147,6 +149,40 @@ describe('TranscriptReaderLive', () => {
 
       assert.deepStrictEqual(read, Option.some(tail))
       assert.deepStrictEqual(reads, ['s-1@/work after a1'])
+    })
+  )
+
+  it.effect('reads transcript info through the loaded agent backend', () =>
+    Effect.gen(function* () {
+      const reads: Array<string> = []
+      const info = { fileSize: 4_821, mtimeMs: 1_762_128_000_000 }
+      const backend: AgentBackend = {
+        ...backendWithout,
+        transcriptInfo: (sessionId, cwd) =>
+          Effect.sync(() => {
+            reads.push(`${sessionId}@${cwd}`)
+            return Option.some(info)
+          })
+      }
+
+      const read = yield* Effect.gen(function* () {
+        const reader = yield* TranscriptReader
+        return yield* reader.transcriptInfo(SessionId.make('s-1'), '/work')
+      }).pipe(Effect.provide(readerWith(Option.some(backend))))
+
+      assert.deepStrictEqual(read, Option.some(info))
+      assert.deepStrictEqual(reads, ['s-1@/work'])
+    })
+  )
+
+  it.effect('reads no transcript info when no agent backend is loaded', () =>
+    Effect.gen(function* () {
+      const read = yield* Effect.gen(function* () {
+        const reader = yield* TranscriptReader
+        return yield* reader.transcriptInfo(SessionId.make('s-1'), '/work')
+      }).pipe(Effect.provide(readerWith(Option.none())))
+
+      assert.deepStrictEqual(read, Option.none())
     })
   )
 

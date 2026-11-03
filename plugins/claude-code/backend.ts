@@ -6,7 +6,7 @@ import { discoverSessions } from './discovery'
 import type { ClaudeHealth } from './health'
 import { readDisabledPermissionModes } from './permission-settings'
 import { openClaudeCodeSession } from './session'
-import { readHistory, readTranscriptAfter } from './transcript'
+import { readHistory, readTranscriptAfter, transcriptInfo } from './transcript'
 
 /**
  * The {@link AgentBackend} that drives the user's Claude Code install through the Agent SDK.
@@ -22,6 +22,7 @@ export const makeClaudeCodeBackend = (deps: {
   openSession: (options) =>
     openClaudeCodeSession(options, deps.install, deps.health.reportStartupFailure),
   readHistory,
+  transcriptInfo,
   readTranscriptAfter,
   models: deps.catalog.models,
   refreshModels: deps.catalog.refreshModels,
