@@ -158,17 +158,27 @@ interface ToolCallStart {
   readonly input: Record<string, unknown>
 }
 
-const blocksOf = (content: string | ReadonlyArray<unknown>): ReadonlyArray<unknown> =>
-  typeof content === 'string' ? [] : content
+const decodedBlocks = <A>(
+  content: string | ReadonlyArray<unknown>,
+  decode: (block: unknown) => Option.Option<A>
+): ReadonlyArray<A> =>
+  typeof content === 'string' ? [] : Arr.getSomes(content.map((block) => decode(block)))
+
+const messageEvents = (
+  envelope: typeof MessageEnvelope.Type,
+  uuid: string,
+  anchorUuid: string | undefined
+): ReadonlyArray<AgentEvent> =>
+  Option.toArray(conversationMessageOf(envelope, uuid, anchorUuid)).map((message) =>
+    AgentEvents.MessageUpdated.make({ itemId: uuid, message, streaming: false })
+  )
 
 const assistantEvents = (
   envelope: typeof MessageEnvelope.Type,
   uuid: string,
   toolCalls: Map<string, ToolCallStart>
 ): ReadonlyArray<AgentEvent> => {
-  const blocks = blocksOf(envelope.content)
-  const thinking = blocks
-    .flatMap((block) => Option.toArray(decodeThinkingBlock(block)))
+  const thinking = decodedBlocks(envelope.content, decodeThinkingBlock)
     .map((block) => block.thinking)
     .join('')
   const reasoning =
@@ -181,24 +191,14 @@ const assistantEvents = (
           })
         ]
       : []
-  const message = Option.toArray(conversationMessageOf(envelope, uuid, undefined)).map(
-    (conversationMessage) =>
-      AgentEvents.MessageUpdated.make({
-        itemId: uuid,
-        message: conversationMessage,
-        streaming: false
-      })
-  )
-  const started = blocks
-    .flatMap((block) => Option.toArray(decodeToolUseBlock(block)))
-    .map((toolUse) => {
-      toolCalls.set(toolUse.id, {
-        toolName: toolUse.name,
-        input: Option.getOrElse(decodeToolInput(toolUse.input), () => ({}))
-      })
-      return AgentEvents.ToolCallStarted.make({ toolCallId: toolUse.id, toolName: toolUse.name })
+  const started = decodedBlocks(envelope.content, decodeToolUseBlock).map((toolUse) => {
+    toolCalls.set(toolUse.id, {
+      toolName: toolUse.name,
+      input: Option.getOrElse(decodeToolInput(toolUse.input), () => ({}))
     })
-  return [...reasoning, ...message, ...started]
+    return AgentEvents.ToolCallStarted.make({ toolCallId: toolUse.id, toolName: toolUse.name })
+  })
+  return [...reasoning, ...messageEvents(envelope, uuid, undefined), ...started]
 }
 
 const userEvents = (
@@ -207,30 +207,20 @@ const userEvents = (
   anchorUuid: string | undefined,
   toolCalls: ReadonlyMap<string, ToolCallStart>
 ): ReadonlyArray<AgentEvent> => {
-  const message = Option.toArray(conversationMessageOf(envelope, uuid, anchorUuid)).map(
-    (conversationMessage) =>
-      AgentEvents.MessageUpdated.make({
-        itemId: uuid,
-        message: conversationMessage,
-        streaming: false
+  const completed = decodedBlocks(envelope.content, decodeToolResultBlock).flatMap((result) => {
+    const start = toolCalls.get(result.tool_use_id)
+    if (start === undefined) return []
+    return [
+      AgentEvents.ToolCallCompleted.make({
+        toolCallId: result.tool_use_id,
+        toolName: start.toolName,
+        input: start.input,
+        output: AgentEvents.capToolOutput(flattenToolResultContent(result.content)),
+        isError: result.is_error ?? false
       })
-  )
-  const completed = blocksOf(envelope.content).flatMap((block) =>
-    Option.toArray(decodeToolResultBlock(block)).flatMap((result) => {
-      const start = toolCalls.get(result.tool_use_id)
-      if (start === undefined) return []
-      return [
-        AgentEvents.ToolCallCompleted.make({
-          toolCallId: result.tool_use_id,
-          toolName: start.toolName,
-          input: start.input,
-          output: AgentEvents.capToolOutput(flattenToolResultContent(result.content)),
-          isError: result.is_error ?? false
-        })
-      ]
-    })
-  )
-  return [...message, ...completed]
+    ]
+  })
+  return [...messageEvents(envelope, uuid, anchorUuid), ...completed]
 }
 
 /**
