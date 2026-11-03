@@ -16,26 +16,44 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect source changes
+        id: changes
+        shell: bash
+        run: |
+          if git diff --quiet HEAD^1 HEAD -- src plugins 'tsconfig*.json' package.json pnpm-lock.yaml pnpm-workspace.yaml biome.json vitest.config.ts electron.vite.config.ts .github/workflows/ci.yml; then
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup pnpm
+        if: steps.changes.outputs.code == 'true'
         uses: pnpm/action-setup@v4
         with:
           version: 11.13.0
 
       - name: Setup Node
+        if: steps.changes.outputs.code == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
 
       - name: Install dependencies
+        if: steps.changes.outputs.code == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Typecheck
+        if: steps.changes.outputs.code == 'true'
         run: pnpm typecheck
 
       - name: Lint
+        if: steps.changes.outputs.code == 'true'
         run: pnpm lint
 
       - name: Test
+        if: steps.changes.outputs.code == 'true'
         run: pnpm test
