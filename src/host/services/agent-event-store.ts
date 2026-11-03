@@ -3,6 +3,7 @@ import {
   AgentEvent as AgentEventSchema,
   AgentItem
 } from '@shared/domain/agent-event'
+import { SessionId } from '@shared/domain/pane'
 import { Clock, Context, Data, Effect, Layer, Option, Result, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
 
@@ -15,6 +16,19 @@ export class AgentEventWriteError extends Data.TaggedError('AgentEventWriteError
 export class AgentEventReadError extends Data.TaggedError('AgentEventReadError')<{
   readonly cause: unknown
 }> {}
+
+/**
+ * Where catch-up resumes reading SDK session `sessionId`'s transcript: after entry `lastUuid`,
+ * when the file's size (`fileSize`, bytes) or modification time (`mtimeMs`, epoch ms) differs.
+ */
+export const TranscriptCursor = Schema.Struct({
+  sessionId: SessionId,
+  lastUuid: Schema.String,
+  fileSize: Schema.Int,
+  mtimeMs: Schema.Int
+})
+/** A transcript cursor; see {@link TranscriptCursor}. */
+export type TranscriptCursor = typeof TranscriptCursor.Type
 
 /** Service tag for the Host's per-agent event log and its item projection in `host.db`. Provide it with {@link AgentEventStoreLive}. */
 export class AgentEventStore extends Context.Service<
@@ -40,6 +54,18 @@ export class AgentEventStore extends Context.Service<
       agentId: string,
       page: { readonly afterPosition?: number; readonly limit: number }
     ) => Effect.Effect<ReadonlyArray<AgentItem>, AgentEventReadError>
+    /**
+     * The stored cursor of SDK session `sessionId`, or none when there is none. Fails with
+     * {@link AgentEventReadError} when `host.db` cannot be read.
+     */
+    readonly readCursor: (
+      sessionId: SessionId
+    ) => Effect.Effect<Option.Option<TranscriptCursor>, AgentEventReadError>
+    /**
+     * Stores `cursor` as its session's cursor, replacing any earlier one. Fails with
+     * {@link AgentEventWriteError}, and then the earlier cursor stays.
+     */
+    readonly writeCursor: (cursor: TranscriptCursor) => Effect.Effect<void, AgentEventWriteError>
   }
 >()('AgentEventStore') {}
 
@@ -234,7 +260,56 @@ const makeStore = Effect.gen(function* () {
       )
   )
 
-  return AgentEventStore.of({ append, readItems })
+  const readCursor = Effect.fn('AgentEventStore.readCursor')(
+    function* (sessionId: SessionId) {
+      const rows = yield* sql<{
+        readonly last_uuid: string
+        readonly file_size: number
+        readonly mtime_ms: number
+      }>`SELECT last_uuid, file_size, mtime_ms FROM agent_transcript_cursors
+        WHERE session_id = ${sessionId}`
+      return Option.map(Option.fromNullishOr(rows[0]), (row) =>
+        TranscriptCursor.make({
+          sessionId,
+          lastUuid: row.last_uuid,
+          fileSize: row.file_size,
+          mtimeMs: row.mtime_ms
+        })
+      )
+    },
+    (effect, sessionId) =>
+      effect.pipe(
+        Effect.tapError((cause) =>
+          Effect.logError('Could not read a transcript cursor', { sessionId, cause })
+        ),
+        Effect.mapError((cause) => new AgentEventReadError({ cause }))
+      )
+  )
+
+  const writeCursor = Effect.fn('AgentEventStore.writeCursor')(
+    function* (cursor: TranscriptCursor) {
+      yield* sql`INSERT INTO agent_transcript_cursors ${sql.insert({
+        session_id: cursor.sessionId,
+        last_uuid: cursor.lastUuid,
+        file_size: cursor.fileSize,
+        mtime_ms: cursor.mtimeMs
+      })} ON CONFLICT (session_id) DO UPDATE SET last_uuid = excluded.last_uuid,
+        file_size = excluded.file_size, mtime_ms = excluded.mtime_ms`
+      yield* Effect.logDebug('Stored a transcript cursor', cursor)
+    },
+    (effect, cursor) =>
+      effect.pipe(
+        Effect.tapError((cause) =>
+          Effect.logError('Could not store a transcript cursor', {
+            sessionId: cursor.sessionId,
+            cause
+          })
+        ),
+        Effect.mapError((cause) => new AgentEventWriteError({ cause }))
+      )
+  )
+
+  return AgentEventStore.of({ append, readItems, readCursor, writeCursor })
 })
 
 /** Provides {@link AgentEventStore} over the Host's `SqlClient` from `makeHostDatabaseLive`. */
