@@ -282,9 +282,11 @@ const makeStore = Effect.gen(function* () {
     })} ON CONFLICT (session_id) DO UPDATE SET last_uuid = excluded.last_uuid,
       file_size = excluded.file_size, mtime_ms = excluded.mtime_ms`
 
-  const storedSourceUuids = (agentId: string) =>
+  const storedSourceUuids = (agentId: string, entries: ReadonlyArray<TranscriptEntry>) =>
     sql<{ readonly source_uuid: string }>`SELECT DISTINCT source_uuid FROM agent_events
-      WHERE agent_id = ${agentId} AND source_uuid IS NOT NULL`.pipe(
+      WHERE agent_id = ${agentId} AND source_uuid IN (SELECT value FROM json_each(${JSON.stringify(
+        entries.map((entry) => entry.sourceUuid)
+      )}))`.pipe(
       Effect.map((rows) => new Set(rows.map((row) => row.source_uuid))),
       Effect.tapError((cause) =>
         Effect.logError('Could not read stored source uuids', { agentId, cause })
@@ -321,7 +323,7 @@ const makeStore = Effect.gen(function* () {
       })
       return
     }
-    const known = yield* storedSourceUuids(agentId)
+    const known = yield* storedSourceUuids(agentId, tail.entries)
     const fresh = tail.entries.filter((entry) => !known.has(entry.sourceUuid))
     const batches = batchesOf(fresh)
     const cursor = TranscriptCursor.make({
@@ -333,10 +335,8 @@ const makeStore = Effect.gen(function* () {
     const occurredAt = yield* Clock.currentTimeMillis
     for (const [index, batch] of batches.entries()) {
       if (index > 0) yield* Effect.yieldNow
-      const cursorWrite = Effect.when(
-        upsertCursor(cursor),
-        Effect.succeed(index === batches.length - 1)
-      )
+      const cursorWrite =
+        index === batches.length - 1 ? Effect.asVoid(upsertCursor(cursor)) : Effect.void
       yield* asTranscriptWrite(
         agentId,
         sessionId
