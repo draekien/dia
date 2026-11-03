@@ -183,7 +183,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       Effect.sync(() => {
         log.push(`discoverSessions ${directory}`)
         return options.discovered ?? []
-      })
+      }),
+    readTranscriptAfter: () => Effect.die('not called')
   })
 
   const paneChats = Layer.succeed(PaneChatProjection, {

@@ -34,6 +34,7 @@ import { DiaRpcHandlersLive } from './ipc/rpc-handlers'
 import { HostPlugins, makeHostPluginsLive } from './plugins/host-plugins'
 import { makePluginSourcesLive } from './plugins/plugin-sources'
 import { AdapterStatusFeed, AdapterStatusFeedLive } from './services/adapter-status-feed'
+import { AgentEventRecorderLive } from './services/agent-event-recorder'
 import { AgentEventStoreLive } from './services/agent-event-store'
 import { AgentSummariesLive } from './services/agent-summaries'
 import { AppWindow, makeAppWindowLive } from './services/app-window'
@@ -129,10 +130,6 @@ const buildHostLayer = (init: HostInit, token: string) => {
     )
   )
   const sessionFactory = Layer.provide(SessionFactoryLive, Layer.merge(hostPlugins, pluginSources))
-  const supervisor = Layer.provide(
-    PaneSupervisorLive,
-    Layer.mergeAll(sessionFactory, hostPlugins, settings)
-  )
   const persistence = Layer.provide(
     makePersistenceServiceLive(init.userDataPath),
     NodeServices.layer
@@ -143,6 +140,15 @@ const buildHostLayer = (init: HostInit, token: string) => {
     Layer.merge(hostDatabase, NodeServices.layer)
   )
   const transcriptReader = Layer.provide(TranscriptReaderLive, hostPlugins)
+  const agentEventStore = Layer.provide(AgentEventStoreLive, hostDatabase)
+  const recorder = Layer.provide(
+    AgentEventRecorderLive,
+    Layer.mergeAll(agentEventStore, transcriptReader, NodeCrypto.layer)
+  )
+  const supervisor = Layer.provide(
+    PaneSupervisorLive,
+    Layer.mergeAll(sessionFactory, hostPlugins, settings, recorder)
+  )
   const modelCatalog = Layer.provide(ModelCatalogFeedLive, Layer.merge(hostPlugins, eventHub))
   const paneChats = Layer.provide(
     PaneChatProjectionLive,
@@ -192,7 +198,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     makeCommandDeduperLive(),
     Layer.provide(ProjectEntriesLive, NodeServices.layer),
     hostDatabase,
-    Layer.provide(AgentEventStoreLive, hostDatabase),
+    agentEventStore,
     NodeFileSystem.layer,
     NodePath.layer
   )

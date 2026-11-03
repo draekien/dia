@@ -93,6 +93,15 @@ const agentEvents = Effect.gen(function* () {
   yield* sql.unsafe('ALTER TABLE agents DROP COLUMN archived')
 })
 
+const agentEventCleanup = runEach([
+  `CREATE TRIGGER agents_delete_events BEFORE DELETE ON agents BEGIN
+    DELETE FROM agent_transcript_cursors
+      WHERE session_id IN (SELECT session_id FROM agent_sessions WHERE agent_id = OLD.agent_id);
+    DELETE FROM agent_events WHERE agent_id = OLD.agent_id;
+    DELETE FROM agent_items WHERE agent_id = OLD.agent_id;
+  END`
+])
+
 /**
  * The migrations of `<userData>/host.db`, keyed `<id>_<name>` and applied in id order by
  * `makeHostDatabaseLive`. Add a migration as a new key; never change an applied one.
@@ -100,5 +109,6 @@ const agentEvents = Effect.gen(function* () {
 export const kernelMigrations = {
   '1_workspace': workspaceTables,
   '2_import_resolutions': importResolutions,
-  '3_agent_events': agentEvents
+  '3_agent_events': agentEvents,
+  '4_agent_event_cleanup': agentEventCleanup
 }

@@ -16,7 +16,7 @@ import { SessionId } from '@shared/domain/pane'
 import { Context, Effect, FileSystem, Layer, Option } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
-import { AgentEventStore, AgentEventStoreLive } from './agent-event-store'
+import { AgentEventStore, AgentEventStoreLive, TranscriptCursor } from './agent-event-store'
 import { makeHostDatabaseLive } from './database'
 
 const AGENT_A = '11111111-1111-4111-8111-111111111111'
@@ -365,6 +365,136 @@ describe('AgentEventStore.readItems', () => {
           items.map((item) => item.itemId),
           ['m0', 'm2']
         )
+      })
+    )
+  )
+})
+
+describe('AgentEventStore cursors', () => {
+  const SESSION = SessionId.make('33333333-3333-4333-8333-333333333333')
+  const cursorAt = (lastUuid: string, fileSize: number) =>
+    TranscriptCursor.make({ sessionId: SESSION, lastUuid, fileSize, mtimeMs: 1_762_128_000_000 })
+
+  it.effect('reads none for a session with no cursor', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        assert.deepStrictEqual(yield* store.readCursor(SESSION), Option.none())
+      })
+    )
+  )
+
+  it.effect('reads back the cursor it stored', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.writeCursor(cursorAt('a1', 4_821))
+
+        assert.deepStrictEqual(yield* store.readCursor(SESSION), Option.some(cursorAt('a1', 4_821)))
+      })
+    )
+  )
+
+  it.effect('replaces the earlier cursor of the same session', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.writeCursor(cursorAt('a1', 4_821))
+        yield* store.writeCursor(cursorAt('a2', 9_000))
+
+        assert.deepStrictEqual(yield* store.readCursor(SESSION), Option.some(cursorAt('a2', 9_000)))
+      })
+    )
+  )
+})
+
+describe('deleting an agent row', () => {
+  const SESSION = SessionId.make('33333333-3333-4333-8333-333333333333')
+
+  const seedAgent = (sql: SqlClient.SqlClient, agentId: string, projectId: string) =>
+    Effect.gen(function* () {
+      yield* sql`INSERT INTO projects ${sql.insert({
+        project_id: projectId,
+        position: 0,
+        directory: `F:/${projectId}`,
+        directory_key: `f:/${projectId}`,
+        display_name: projectId,
+        is_git_repo: 0
+      })} ON CONFLICT DO NOTHING`
+      yield* sql`INSERT INTO agents ${sql.insert({
+        agent_id: agentId,
+        project_id: projectId,
+        position: 0,
+        name: 'agent',
+        cwd: `F:/${projectId}`,
+        model: 'sonnet',
+        thinking_level: 'off',
+        permission_mode: 'default'
+      })}`
+    })
+
+  const rowsOf = (sql: SqlClient.SqlClient, agentId: string) =>
+    Effect.gen(function* () {
+      const events = yield* sql<{ readonly n: number }>`
+        SELECT COUNT(*) AS n FROM agent_events WHERE agent_id = ${agentId}`
+      const items = yield* sql<{ readonly n: number }>`
+        SELECT COUNT(*) AS n FROM agent_items WHERE agent_id = ${agentId}`
+      const cursors = yield* sql<{ readonly n: number }>`
+        SELECT COUNT(*) AS n FROM agent_transcript_cursors WHERE session_id = ${SESSION}`
+      return { events: events[0].n, items: items[0].n, cursors: cursors[0].n }
+    })
+
+  const seedConversation = (
+    store: AgentEventStore['Service'],
+    sql: SqlClient.SqlClient,
+    agentId: string
+  ) =>
+    Effect.gen(function* () {
+      yield* sql`INSERT INTO agent_sessions ${sql.insert({
+        session_id: SESSION,
+        agent_id: agentId,
+        started_at: 0
+      })}`
+      yield* store.append(agentId, [{ event: messageUpdated('m1', 'hello', false) }])
+      yield* store.writeCursor(
+        TranscriptCursor.make({ sessionId: SESSION, lastUuid: 'a1', fileSize: 1, mtimeMs: 1 })
+      )
+    })
+
+  it.effect('deletes its events, items and transcript cursors', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        yield* seedAgent(sql, AGENT_A, 'project-1')
+        yield* seedConversation(store, sql, AGENT_A)
+
+        yield* sql`DELETE FROM agents WHERE agent_id = ${AGENT_A}`
+
+        assert.deepStrictEqual(yield* rowsOf(sql, AGENT_A), { events: 0, items: 0, cursors: 0 })
+      })
+    )
+  )
+
+  it.effect('deletes them when its project is deleted', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        yield* seedAgent(sql, AGENT_A, 'project-1')
+        yield* seedConversation(store, sql, AGENT_A)
+
+        yield* sql`DELETE FROM projects WHERE project_id = 'project-1'`
+
+        assert.deepStrictEqual(yield* rowsOf(sql, AGENT_A), { events: 0, items: 0, cursors: 0 })
+      })
+    )
+  )
+
+  it.effect("leaves another agent's events and items", () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        yield* seedAgent(sql, AGENT_A, 'project-1')
+        yield* seedAgent(sql, AGENT_B, 'project-1')
+        yield* store.append(AGENT_B, [{ event: messageUpdated('m1', 'kept', false) }])
+
+        yield* sql`DELETE FROM agents WHERE agent_id = ${AGENT_A}`
+
+        const kept = yield* rowsOf(sql, AGENT_B)
+        assert.deepStrictEqual({ events: kept.events, items: kept.items }, { events: 1, items: 1 })
       })
     )
   )

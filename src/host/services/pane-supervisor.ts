@@ -92,6 +92,7 @@ import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { type AgentSession, resolveAgentBackend, type SessionEnd } from '../session/agent-backend'
 import { makePluginTools } from '../session/dia-tools'
 import type { OutboundMessage } from '../session/protocol'
+import { AgentEventRecorder } from './agent-event-recorder'
 import { resolveSessionAdditions } from './meta-repo-seam'
 import { SettingsStore } from './settings-store'
 import { setUpWorktreeTab } from './tab-setup'
@@ -439,11 +440,13 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
   config: PaneConfig,
   factory: SessionFactory['Service'],
   settings: SettingsStore['Service'],
+  recorder: AgentEventRecorder['Service'],
   onSessionChanged: (sessionId: Option.Option<SessionId>) => Effect.Effect<void>,
   onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>,
   resume: Option.Option<SessionId>
 ) {
   const paneScope = yield* Scope.Scope
+  const record = yield* recorder.open({ agentId: config.paneId, cwd: config.cwd, resume })
   const outbound = yield* Queue.unbounded<IpcEvent, Cause.Done>()
   const recordRef = yield* Ref.make<PaneRecord>({
     config,
@@ -606,7 +609,11 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
       if (Option.isSome(attentionTarget)) yield* applyAttention(attentionTarget.value)
     })
 
-  const session = yield* factory.start({ config, resume, emit: handleSessionEvent })
+  const session = yield* factory.start({
+    config,
+    resume,
+    emit: (message) => Effect.andThen(handleSessionEvent(message), record(message))
+  })
   yield* Deferred.succeed(sessionReady, session)
   yield* Effect.logInfo('Pane agent session created', { paneId: config.paneId, resume })
 
@@ -774,6 +781,7 @@ export const PaneSupervisorLive = Layer.effect(
     const factory = yield* SessionFactory
     const plugins = yield* HostPlugins
     const settings = yield* SettingsStore
+    const recorder = yield* AgentEventRecorder
     const entriesRef = yield* Ref.make(HashMap.empty<PaneId, PaneEntry>())
 
     const teardown = Effect.fn('PaneSupervisor.teardown')(function* (paneId: PaneId) {
@@ -866,6 +874,7 @@ export const PaneSupervisorLive = Layer.effect(
         config,
         factory,
         settings,
+        recorder,
         onSessionChanged,
         onPermissionModeChanged,
         Option.fromUndefinedOr(request.resume)

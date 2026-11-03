@@ -5,7 +5,8 @@ import { HostPlugins } from '../plugins/host-plugins'
 import {
   AGENT_BACKEND_KEY,
   type AgentBackend,
-  type DiscoveredSession
+  type DiscoveredSession,
+  type TranscriptTail
 } from '../session/agent-backend'
 import { TranscriptReader, TranscriptReaderLive } from './transcript-reader'
 
@@ -123,6 +124,40 @@ describe('TranscriptReaderLive', () => {
       const found = yield* discoverIn('/work').pipe(Effect.provide(readerWith(Option.none())))
 
       assert.deepStrictEqual(found, [])
+    })
+  )
+
+  it.effect('reads a transcript tail through the loaded agent backend', () =>
+    Effect.gen(function* () {
+      const reads: Array<string> = []
+      const tail: TranscriptTail = { entries: [], fileSize: 4_821, mtimeMs: 1_762_128_000_000 }
+      const backend: AgentBackend = {
+        ...backendWithout,
+        readTranscriptAfter: (sessionId, cwd, afterUuid) =>
+          Effect.sync(() => {
+            reads.push(`${sessionId}@${cwd} after ${Option.getOrElse(afterUuid, () => '-')}`)
+            return Option.some(tail)
+          })
+      }
+
+      const read = yield* Effect.gen(function* () {
+        const reader = yield* TranscriptReader
+        return yield* reader.readTranscriptAfter(SessionId.make('s-1'), '/work', Option.some('a1'))
+      }).pipe(Effect.provide(readerWith(Option.some(backend))))
+
+      assert.deepStrictEqual(read, Option.some(tail))
+      assert.deepStrictEqual(reads, ['s-1@/work after a1'])
+    })
+  )
+
+  it.effect('reads no transcript tail when no agent backend is loaded', () =>
+    Effect.gen(function* () {
+      const read = yield* Effect.gen(function* () {
+        const reader = yield* TranscriptReader
+        return yield* reader.readTranscriptAfter(SessionId.make('s-1'), '/work', Option.none())
+      }).pipe(Effect.provide(readerWith(Option.none())))
+
+      assert.deepStrictEqual(read, Option.none())
     })
   )
 })
