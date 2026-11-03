@@ -5,7 +5,7 @@ import { SessionId } from '@shared/domain/pane'
 import { Context, Duration, Effect, FileSystem, Layer, Option } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
-import type { TranscriptEntry, TranscriptTail } from '../session/agent-backend'
+import type { TranscriptEntry, TranscriptInfo, TranscriptTail } from '../session/agent-backend'
 import {
   AssistantMessageReceived,
   AssistantTextDelta,
@@ -25,6 +25,7 @@ import {
   STREAMING_WRITE_INTERVAL
 } from './agent-event-recorder'
 import {
+  AgentEventReadError,
   AgentEventStore,
   AgentEventStoreLive,
   AgentEventWriteError,
@@ -54,17 +55,18 @@ const tailOf = (...uuids: ReadonlyArray<string>): TranscriptTail => ({
   mtimeMs: 1_762_128_000_000
 })
 
+const infoOf = ({ fileSize, mtimeMs }: TranscriptTail): TranscriptInfo => ({ fileSize, mtimeMs })
+
 const scriptedReader = (
-  tail: (afterUuid: Option.Option<string>) => Option.Option<TranscriptTail>
+  tail: (afterUuid: Option.Option<string>) => Option.Option<TranscriptTail>,
+  info: (sessionId: SessionId) => Option.Option<TranscriptInfo> = () =>
+    Option.map(tail(Option.none()), infoOf)
 ) => {
   const reads: Array<{ readonly sessionId: string; readonly afterUuid: Option.Option<string> }> = []
   const layer = Layer.succeed(TranscriptReader)({
     readHistory: () => Effect.die('not called'),
     discoverSessions: () => Effect.die('not called'),
-    transcriptInfo: () =>
-      Effect.sync(() =>
-        Option.map(tail(Option.none()), ({ fileSize, mtimeMs }) => ({ fileSize, mtimeMs }))
-      ),
+    transcriptInfo: (sessionId) => Effect.sync(() => info(sessionId)),
     readTranscriptAfter: (sessionId, _cwd, afterUuid) =>
       Effect.sync(() => {
         reads.push({ sessionId, afterUuid })
@@ -426,7 +428,7 @@ describe('AgentEventRecorder transcript cursor', () => {
     )
   })
 
-  it.effect('leaves a session that starts after a finished turn to catch-up', () => {
+  it.effect('owns a session that starts after a finished turn', () => {
     const reader = scriptedReader(() => Option.some(tailOf('u1', 'a1')))
     return run(
       { reader: reader.layer },
@@ -438,19 +440,10 @@ describe('AgentEventRecorder transcript cursor', () => {
       ],
       (_store, sql) =>
         Effect.gen(function* () {
-          assert.deepStrictEqual(yield* cursorSessions(sql), [SESSION])
-        })
-    )
-  })
-
-  it.effect('leaves the cursor of a resumed session that has none to catch-up', () => {
-    const reader = scriptedReader(() => Option.some(tailOf('u1', 'a1')))
-    return run(
-      { resume: SESSION, reader: reader.layer },
-      [SessionStarted.make({ sessionId: SESSION }), TurnCompleted.make({})],
-      (store) =>
-        Effect.gen(function* () {
-          assert.deepStrictEqual(yield* readCursor(store), Option.none())
+          assert.deepStrictEqual(
+            (yield* cursorSessions(sql)).sort(),
+            [SESSION, THIRD_SESSION].sort()
+          )
         })
     )
   })
@@ -475,27 +468,6 @@ describe('AgentEventRecorder transcript cursor', () => {
           assert.deepStrictEqual(
             Option.map(cursor, (stored) => stored.lastUuid),
             Option.some('a2')
-          )
-        })
-    )
-  })
-
-  it.effect('leaves the cursor of a resumed session with unread entries to catch-up', () => {
-    const reader = scriptedReader(() => Option.some(tailOf('u2', 'a2')))
-    return run(
-      {
-        resume: SESSION,
-        reader: reader.layer,
-        seed: seedCursorAtA1
-      },
-      [SessionStarted.make({ sessionId: SESSION }), TurnCompleted.make({})],
-      (store) =>
-        Effect.gen(function* () {
-          const cursor = yield* readCursor(store)
-
-          assert.deepStrictEqual(
-            Option.map(cursor, (stored) => stored.lastUuid),
-            Option.some('a1')
           )
         })
     )
@@ -535,4 +507,217 @@ describe('AgentEventRecorder transcript cursor', () => {
       assert.deepStrictEqual(cursorWrites, [])
     }).pipe(Effect.scoped)
   )
+})
+
+describe('AgentEventRecorder catch-up', () => {
+  const THIRD_SESSION = SessionId.make('55555555-5555-4555-8555-555555555555')
+  const FOURTH_SESSION = SessionId.make('66666666-6666-4666-8666-666666666666')
+  const seedCursorAtA1 = (file: TranscriptInfo) => (store: AgentEventStore['Service']) =>
+    store.writeCursor(TranscriptCursor.make({ sessionId: SESSION, lastUuid: 'a1', ...file }))
+  const STALE_FILE = { fileSize: 1, mtimeMs: 1 }
+
+  const contentsOf = (store: AgentEventStore['Service']) =>
+    Effect.map(itemsOf(store), (items) =>
+      items.map((item) => (item._tag === 'MessageItem' ? item.message.content : item._tag))
+    )
+  const lastUuidOf = (store: AgentEventStore['Service'], sessionId: SessionId) =>
+    Effect.map(store.readCursor(sessionId).pipe(Effect.orDie), (cursor) =>
+      Option.map(cursor, (stored) => stored.lastUuid)
+    )
+  const cursorSessions = (sql: SqlClient.SqlClient) =>
+    sql<{ readonly session_id: string }>`SELECT session_id FROM agent_transcript_cursors`.pipe(
+      Effect.orDie,
+      Effect.map((rows) => rows.map((row) => row.session_id).sort())
+    )
+
+  it.effect('appends the turns a resumed session gained outside dia after its cursor', () => {
+    const reader = scriptedReader((after) =>
+      Option.some(
+        Option.contains(after, 'a1') ? tailOf('u2', 'a2') : tailOf('u1', 'a1', 'u2', 'a2')
+      )
+    )
+    return run(
+      { resume: SESSION, reader: reader.layer, seed: seedCursorAtA1(STALE_FILE) },
+      [],
+      (store) =>
+        Effect.gen(function* () {
+          assert.deepStrictEqual(yield* contentsOf(store), ['u2', 'a2'])
+          assert.deepStrictEqual(yield* lastUuidOf(store, SESSION), Option.some('a2'))
+        })
+    )
+  })
+
+  it.effect('imports the whole transcript of a resumed session with no cursor', () => {
+    const reader = scriptedReader(() => Option.some(tailOf('u1', 'a1')))
+    return run({ resume: SESSION, reader: reader.layer }, [], (store) =>
+      Effect.gen(function* () {
+        assert.deepStrictEqual(yield* contentsOf(store), ['u1', 'a1'])
+        assert.deepStrictEqual(yield* lastUuidOf(store, SESSION), Option.some('a1'))
+      })
+    )
+  })
+
+  it.effect('appends nothing when the transcript size and mtime equal the cursor', () => {
+    const tail = tailOf('u2', 'a2')
+    const reader = scriptedReader(() => Option.some(tail))
+    return run(
+      { resume: SESSION, reader: reader.layer, seed: seedCursorAtA1(infoOf(tail)) },
+      [],
+      (_store, sql) =>
+        Effect.gen(function* () {
+          assert.deepStrictEqual(yield* eventRows(sql), [])
+        })
+    )
+  })
+
+  it.effect('owns a resumed session whose transcript equals its cursor', () => {
+    const tail = tailOf('u2', 'a2')
+    const reader = scriptedReader(() => Option.some(tail))
+    return run(
+      { resume: SESSION, reader: reader.layer, seed: seedCursorAtA1(infoOf(tail)) },
+      [SessionStarted.make({ sessionId: SESSION }), TurnCompleted.make({})],
+      (store) =>
+        Effect.gen(function* () {
+          assert.deepStrictEqual(yield* lastUuidOf(store, SESSION), Option.some('a2'))
+        })
+    )
+  })
+
+  it.effect('leaves a resumed session unowned when its tail cannot be read', () => {
+    const later = tailOf('u1', 'a1')
+    const reader = scriptedReader(
+      () => (reader.reads.length === 1 ? Option.none() : Option.some(later)),
+      () => Option.some(infoOf(later))
+    )
+    return run(
+      { resume: SESSION, reader: reader.layer },
+      [SessionStarted.make({ sessionId: SESSION }), TurnCompleted.make({})],
+      (store) =>
+        Effect.gen(function* () {
+          assert.deepStrictEqual(yield* lastUuidOf(store, SESSION), Option.none())
+        })
+    )
+  })
+
+  it.effect('stores nothing for a resumed session with no transcript', () => {
+    const reader = scriptedReader(
+      () => Option.some(tailOf('u1', 'a1')),
+      () => Option.none()
+    )
+    return run(
+      { resume: SESSION, reader: reader.layer },
+      [SessionStarted.make({ sessionId: SESSION }), TurnCompleted.make({})],
+      (store, sql) =>
+        Effect.gen(function* () {
+          assert.deepStrictEqual(
+            (yield* eventRows(sql)).map((row) => row.event_type),
+            ['SessionBound']
+          )
+          assert.deepStrictEqual(yield* lastUuidOf(store, SESSION), Option.none())
+        })
+    )
+  })
+
+  const recordWithStore = (
+    store: Partial<AgentEventStore['Service']>,
+    messages: ReadonlyArray<OutboundMessage>
+  ) =>
+    Effect.gen(function* () {
+      const cursorWrites: Array<string> = []
+      const fakeStore = Layer.succeed(AgentEventStore)({
+        append: () => Effect.succeed([]),
+        appendTranscript: () => Effect.void,
+        readItems: () => Effect.succeed([]),
+        readCursor: () => Effect.succeed(Option.none()),
+        writeCursor: (cursor) => Effect.sync(() => void cursorWrites.push(cursor.lastUuid)),
+        ...store
+      })
+      const reader = scriptedReader(() => Option.some(tailOf('u1', 'a1')))
+      const context = yield* Layer.build(
+        Layer.provide(
+          AgentEventRecorderLive,
+          Layer.mergeAll(fakeStore, reader.layer, NodeCrypto.layer)
+        )
+      )
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const record = yield* Context.get(context, AgentEventRecorder).open({
+            agentId: AGENT,
+            cwd: CWD,
+            resume: Option.some(SESSION)
+          })
+          for (const message of messages) yield* record(message)
+        })
+      )
+      return cursorWrites
+    }).pipe(Effect.scoped)
+
+  const resumedTurn = [SessionStarted.make({ sessionId: SESSION }), TurnCompleted.make({})]
+
+  it.effect('leaves a resumed session unowned when its cursor cannot be read at catch-up', () =>
+    Effect.gen(function* () {
+      let cursorReads = 0
+      const cursorWrites = yield* recordWithStore(
+        {
+          readCursor: () =>
+            cursorReads++ === 0
+              ? Effect.fail(new AgentEventReadError({ cause: 'locked' }))
+              : Effect.succeed(Option.none())
+        },
+        resumedTurn
+      )
+
+      assert.deepStrictEqual(cursorWrites, [])
+    })
+  )
+
+  it.effect('leaves a resumed session unowned when its tail cannot be stored', () =>
+    Effect.gen(function* () {
+      const cursorWrites = yield* recordWithStore(
+        { appendTranscript: () => Effect.fail(new AgentEventWriteError({ cause: 'disk full' })) },
+        resumedTurn
+      )
+
+      assert.deepStrictEqual(cursorWrites, [])
+    })
+  )
+
+  it.effect('owns no session after a failed catch-up until a conversation reset', () => {
+    const reader = scriptedReader(
+      () => Option.some(tailOf('u1', 'a1')),
+      () => Option.none()
+    )
+    return run(
+      { resume: SESSION, reader: reader.layer },
+      [
+        SessionStarted.make({ sessionId: SESSION }),
+        TurnCompleted.make({}),
+        SessionStarted.make({ sessionId: OTHER_SESSION }),
+        TurnCompleted.make({}),
+        ConversationReset.make({ newSessionId: THIRD_SESSION }),
+        SessionStarted.make({ sessionId: FOURTH_SESSION }),
+        TurnCompleted.make({})
+      ],
+      (_store, sql) =>
+        Effect.gen(function* () {
+          assert.deepStrictEqual(yield* cursorSessions(sql), [THIRD_SESSION, FOURTH_SESSION].sort())
+        })
+    )
+  })
+
+  it.effect('owns a session under another id after a successful catch-up', () => {
+    const reader = scriptedReader(() => Option.some(tailOf('u1', 'a1')))
+    return run(
+      { resume: SESSION, reader: reader.layer },
+      [
+        SessionStarted.make({ sessionId: SESSION }),
+        SessionStarted.make({ sessionId: OTHER_SESSION }),
+        TurnCompleted.make({})
+      ],
+      (store) =>
+        Effect.gen(function* () {
+          assert.deepStrictEqual(yield* lastUuidOf(store, OTHER_SESSION), Option.some('a1'))
+        })
+    )
+  })
 })
