@@ -95,7 +95,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
       }
     }
   }
-  return { ...original, query: fakeQuery }
+  return { ...original, query: fakeQuery, getSessionMessages: () => Promise.resolve([]) }
 })
 
 const config: PaneConfig = {
