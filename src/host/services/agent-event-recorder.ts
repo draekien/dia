@@ -252,6 +252,20 @@ const makeRecorder = Effect.gen(function* () {
       return [{ event: SessionBound.make({ sessionId }) }]
     }
 
+    const rebind = Effect.fnUntraced(function* (sessionId: SessionId, newConversation: boolean) {
+      const previous = state.ownedSession
+      const entries = bind(sessionId, newConversation)
+      if (Option.isNone(previous) || Option.contains(state.ownedSession, previous.value)) {
+        return entries
+      }
+      yield* Effect.logDebug('Left an owned session; queueing its last cursor update', {
+        agentId,
+        sessionId: previous.value
+      })
+      if (!state.cursorStalled) yield* Queue.offer(cursorUpdates, previous.value)
+      return entries
+    })
+
     const entriesFor = Effect.fnUntraced(function* (message: OutboundMessage) {
       switch (message._tag) {
         case 'AssistantThinkingDelta': {
@@ -344,9 +358,10 @@ const makeRecorder = Effect.gen(function* () {
           ]
         }
         case 'SessionStarted':
-          return bind(message.sessionId, false)
+          return yield* rebind(message.sessionId, false)
         case 'ConversationReset':
-          return bind(message.newSessionId, true)
+          state.awaitingCheckpoint.splice(0)
+          return yield* rebind(message.newSessionId, true)
         default:
           return isTurnEnd(message) ? [...closeReasoning(), ...closeText()] : []
       }

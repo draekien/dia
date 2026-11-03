@@ -275,6 +275,27 @@ describe('AgentEventRecorder messages', () => {
     )
   )
 
+  it.effect('gives a checkpoint after a conversation reset to a message sent after it', () =>
+    run(
+      {},
+      [
+        UserMessagesSent.make({ messages: [{ id: 'm-1', text: '/clear' }] }),
+        ConversationReset.make({ newSessionId: OTHER_SESSION }),
+        UserMessagesSent.make({ messages: [{ id: 'm-2', text: 'fresh' }] }),
+        CheckpointAvailable.make({ messageUuid: 'u2' })
+      ],
+      (store) =>
+        Effect.gen(function* () {
+          const items = yield* itemsOf(store)
+
+          assert.deepStrictEqual(
+            items.map((item) => (item._tag === 'MessageItem' ? item.message.checkpointUuid : null)),
+            [undefined, 'u2']
+          )
+        })
+    )
+  )
+
   it.effect('finalises open text and tool calls when the recording closes', () =>
     run(
       {},
@@ -348,6 +369,26 @@ describe('AgentEventRecorder transcript cursor', () => {
                 mtimeMs: 1_762_128_000_000
               })
             )
+          )
+        })
+    )
+  })
+
+  it.effect('moves the cursor of a conversation the session resets away from', () => {
+    const reader = scriptedReader(() => Option.some(tailOf('u1', 'a1')))
+    return run(
+      { reader: reader.layer },
+      [
+        SessionStarted.make({ sessionId: SESSION }),
+        ConversationReset.make({ newSessionId: OTHER_SESSION })
+      ],
+      (store) =>
+        Effect.gen(function* () {
+          const cursor = yield* readCursor(store)
+
+          assert.deepStrictEqual(
+            Option.map(cursor, (stored) => stored.lastUuid),
+            Option.some('a1')
           )
         })
     )
