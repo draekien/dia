@@ -1,7 +1,11 @@
 import type { ConversationMessage, SessionId } from '@shared/domain/pane'
-import { Context, Effect, Layer } from 'effect'
+import { Context, Effect, Layer, type Option } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import { type DiscoveredSession, resolveAgentBackend } from '../session/agent-backend'
+import {
+  type DiscoveredSession,
+  resolveAgentBackend,
+  type TranscriptTail
+} from '../session/agent-backend'
 
 /**
  * Service tag for reading a pane's past conversation, and the conversations a directory holds,
@@ -29,6 +33,17 @@ export class TranscriptReader extends Context.Service<
     readonly discoverSessions: (
       directory: string
     ) => Effect.Effect<ReadonlyArray<DiscoveredSession>>
+    /**
+     * The events of `sessionId`'s transcript under `cwd` that follow the entry `afterUuid` (every
+     * entry when none, or when that entry is not found), with the transcript file's size and
+     * mtime. None, with a log line, when the transcript cannot be read or no adapter is loaded.
+     * Never fails.
+     */
+    readonly readTranscriptAfter: (
+      sessionId: SessionId,
+      cwd: string,
+      afterUuid: Option.Option<string>
+    ) => Effect.Effect<Option.Option<TranscriptTail>>
   }
 >()('TranscriptReader') {}
 
@@ -57,6 +72,14 @@ export const TranscriptReaderLive = Layer.effect(
           return []
         }
         return yield* backend.discoverSessions(directory)
+      }),
+      readTranscriptAfter: Effect.fn('TranscriptReader.readTranscriptAfter')(function* (
+        sessionId: SessionId,
+        cwd: string,
+        afterUuid: Option.Option<string>
+      ) {
+        const backend = yield* resolveAgentBackend(plugins)
+        return yield* backend.readTranscriptAfter(sessionId, cwd, afterUuid)
       })
     }
   })
