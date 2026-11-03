@@ -20,8 +20,9 @@ Out:
 /** Service tag for writing a live pane session's conversation to `AgentEventStore`. Provide with AgentEventRecorderLive. */
 export class AgentEventRecorder extends Context.Service<AgentEventRecorder, {
   /**
-   * Starts recording the session of agent `agentId` (the pane id), working in `cwd`. `resumed`
-   * is whether the session continues an existing conversation. Returns the function to call
+   * Starts recording the session of agent `agentId` (the pane id), working in `cwd`. `resume`
+   * is the SDK session the pane resumes, or none for a new conversation. Call it before the
+   * session starts. Returns the function to call
    * with every OutboundMessage the session emits, in order. Recording lives in the surrounding
    * scope; closing it finalises open items. The returned function never fails: a failed write is
    * logged, and the transcript cursor stops advancing for the rest of the recording.
@@ -29,7 +30,7 @@ export class AgentEventRecorder extends Context.Service<AgentEventRecorder, {
   readonly open: (options: {
     readonly agentId: string
     readonly cwd: string
-    readonly resumed: boolean
+    readonly resume: Option.Option<SessionId>
   }) => Effect.Effect<(message: OutboundMessage) => Effect.Effect<void>, never, Scope.Scope>
 }>()('AgentEventRecorder') {}
 
@@ -60,8 +61,8 @@ A "close" writes the item's final event with `streaming:false` and the full text
 ### Cursor ownership
 
 The recorder owns the cursor of a session when:
-- the session started a new conversation (first `SessionStarted` with `resumed = false`, or any `ConversationReset`), or
-- a cursor row exists for it and, checked once when the session is first bound, `readTranscriptAfter(sessionId, cwd, Some(cursor.lastUuid))` returns `Some` with no entries (nothing after the cursor waits for catch-up).
+- the session started a new conversation (first `SessionStarted` when `resume` is none, or any `ConversationReset`), or
+- it is the `resume` session, a cursor row exists for it and, checked once in `open` before the session starts, `readTranscriptAfter(sessionId, cwd, Some(cursor.lastUuid))` returns `Some` with no entries (nothing after the cursor waits for catch-up). The check runs before the session starts because the CLI may write the first turn's user entry before it emits `SessionStarted`.
 
 Any other session, including a resumed one with no cursor row or with entries after its cursor, is left for catch-up (#155).
 
@@ -104,7 +105,7 @@ readonly readTranscriptAfter: (sessionId: SessionId, cwd: string, afterUuid: Opt
 
 ### `src/host/services/pane-supervisor.ts`
 
-`startPane` opens the recorder in the pane scope with `{ agentId: config.paneId, cwd: config.cwd, resumed: Option.isSome(resume) }` before `factory.start`, and `handleSessionEvent` calls it first for every message.
+`startPane` opens the recorder in the pane scope with `{ agentId: config.paneId, cwd: config.cwd, resume }` before `factory.start`, and the `emit` it passes to `factory.start` records each message before `handleSessionEvent` handles it.
 
 ### `src/host/services/kernel-migrations.ts`
 

@@ -27,6 +27,7 @@ import {
   TurnParked,
   UserMessagesSent
 } from '../session/protocol'
+import { AgentEventRecorder } from './agent-event-recorder'
 import {
   type PaneCreationRequest,
   PaneSupervisor,
@@ -192,10 +193,14 @@ function makeTestSetup(
 
   const testLayer = Layer.provide(
     PaneSupervisorLive,
-    Layer.mergeAll(factoryLayer, plugins, memorySettings(usageLimitResume))
+    Layer.mergeAll(factoryLayer, plugins, memorySettings(usageLimitResume), noRecording)
   )
   return { sessions, testLayer }
 }
+
+const noRecording = Layer.succeed(AgentEventRecorder)({
+  open: () => Effect.succeed(() => Effect.void)
+})
 
 const unusedPluginSources = Layer.succeed(PluginSources)({
   names: () => Effect.succeed([]),
@@ -210,7 +215,7 @@ describe('SessionFactoryLive without the claude-code adapter', () => {
       const factory = Layer.provide(SessionFactoryLive, Layer.merge(noPlugins, unusedPluginSources))
       const testLayer = Layer.provide(
         PaneSupervisorLive,
-        Layer.mergeAll(factory, noPlugins, memorySettings())
+        Layer.mergeAll(factory, noPlugins, memorySettings(), noRecording)
       )
       const events: Array<IpcEvent> = []
 
