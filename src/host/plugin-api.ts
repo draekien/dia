@@ -51,6 +51,7 @@ export {
   SessionFailed,
   SessionNotFound,
   type TranscriptEntry,
+  type TranscriptInfo,
   type TranscriptTail
 } from './session/agent-backend'
 export type { DiaTool, DiaToolField, DiaToolResult } from './session/dia-tools'

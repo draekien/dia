@@ -61,6 +61,10 @@ const scriptedReader = (
   const layer = Layer.succeed(TranscriptReader)({
     readHistory: () => Effect.die('not called'),
     discoverSessions: () => Effect.die('not called'),
+    transcriptInfo: () =>
+      Effect.sync(() =>
+        Option.map(tail(Option.none()), ({ fileSize, mtimeMs }) => ({ fileSize, mtimeMs }))
+      ),
     readTranscriptAfter: (sessionId, _cwd, afterUuid) =>
       Effect.sync(() => {
         reads.push({ sessionId, afterUuid })

@@ -37,6 +37,7 @@ describe('resolveAgentBackend', () => {
       const backend: AgentBackend = {
         openSession: () => Effect.die('not called'),
         readHistory: () => Effect.succeed([{ role: 'user', content: 'hi' }]),
+        transcriptInfo: () => Effect.succeed(Option.none()),
         readTranscriptAfter: () => Effect.succeed(Option.none()),
         models: () => Stream.empty,
         refreshModels: () => Effect.void,
@@ -110,6 +111,7 @@ describe('agentBackendProblems', () => {
   const validBackend = {
     openSession: () => Effect.void,
     readHistory: () => Effect.succeed([]),
+    transcriptInfo: () => Effect.succeed(Option.none()),
     readTranscriptAfter: () => Effect.succeed(Option.none()),
     models: () => Stream.empty,
     refreshModels: () => Effect.void,
@@ -164,6 +166,7 @@ describe('agentBackendProblems', () => {
       [
         '"agentBackend.openSession" is not a function',
         '"agentBackend.readHistory" is not a function',
+        '"agentBackend.transcriptInfo" is not a function',
         '"agentBackend.readTranscriptAfter" is not a function',
         '"agentBackend.models" is not a function',
         '"agentBackend.refreshModels" is not a function',
@@ -173,6 +176,11 @@ describe('agentBackendProblems', () => {
         '"agentBackend.disabledPermissionModes" is not a function',
         '"agentBackend.attachmentTypes" is not a function'
       ]
+    ],
+    [
+      'transcriptInfo is missing',
+      Option.some({ ...validBackend, transcriptInfo: undefined }),
+      ['"agentBackend.transcriptInfo" is not a function']
     ],
     [
       'readTranscriptAfter is missing',
@@ -209,6 +217,7 @@ describe('adapterContract', () => {
 
     assert.deepStrictEqual(adapterContract.problems(provided), [
       '"agentBackend.readHistory" is not a function',
+      '"agentBackend.transcriptInfo" is not a function',
       '"agentBackend.readTranscriptAfter" is not a function',
       '"agentBackend.models" is not a function',
       '"agentBackend.refreshModels" is not a function',

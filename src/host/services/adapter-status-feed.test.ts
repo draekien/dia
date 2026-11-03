@@ -13,6 +13,7 @@ const settle = Effect.gen(function* () {
 const backendWithStatus = (status: AdapterStatus): AgentBackend => ({
   openSession: () => Effect.die('not called'),
   readHistory: () => Effect.die('not called'),
+  transcriptInfo: () => Effect.die('not called'),
   readTranscriptAfter: () => Effect.die('not called'),
   models: () => Stream.empty,
   refreshModels: () => Effect.void,

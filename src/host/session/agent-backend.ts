@@ -135,15 +135,23 @@ export interface TranscriptEntry {
 }
 
 /**
- * The events of a session's transcript after a cursor, as {@link AgentBackend.readTranscriptAfter}
- * returns them, in transcript order. `fileSize` (bytes) and `mtimeMs` (epoch milliseconds) describe
- * the transcript file as it was before the events were read, so a file that grew during the read
- * differs from them at the next comparison.
+ * The size (`fileSize`, bytes) and modification time (`mtimeMs`, epoch milliseconds) of a
+ * session's transcript file, as {@link AgentBackend.transcriptInfo} returns them. Compare them with
+ * a stored cursor to tell whether the transcript changed since it was last read.
  */
-export interface TranscriptTail {
-  readonly entries: ReadonlyArray<TranscriptEntry>
+export interface TranscriptInfo {
   readonly fileSize: number
   readonly mtimeMs: number
+}
+
+/**
+ * The events of a session's transcript after a cursor, as {@link AgentBackend.readTranscriptAfter}
+ * returns them, in transcript order. `fileSize` and `mtimeMs` describe the transcript file as it
+ * was before the events were read, so a file that grew during the read differs from them at the
+ * next comparison.
+ */
+export interface TranscriptTail extends TranscriptInfo {
+  readonly entries: ReadonlyArray<TranscriptEntry>
 }
 
 /**
@@ -175,8 +183,8 @@ export interface AgentSessionOptions extends SessionAdditions {
  * settings turn off for a session started in `cwd`; it is empty when the settings cannot be read.
  * `attachmentTypes` lists the file types a session accepts as content blocks; any other attached
  * file is sent as its path. `discoverSessions` is optional: an adapter without it imports nothing
- * when a project is added. `readTranscriptAfter` reads a session's transcript without starting a
- * session; see its own documentation.
+ * when a project is added. `transcriptInfo` and `readTranscriptAfter` read a session's transcript
+ * without starting a session; see their own documentation.
  */
 export interface AgentBackend {
   readonly openSession: (
@@ -187,10 +195,18 @@ export interface AgentBackend {
     cwd: string
   ) => Effect.Effect<ReadonlyArray<ConversationMessage>>
   /**
+   * The size and modification time of session `sessionId`'s transcript under `cwd`, without
+   * reading its entries. None, logged, when there is no readable transcript file. Never fails.
+   */
+  readonly transcriptInfo: (
+    sessionId: SessionId,
+    cwd: string
+  ) => Effect.Effect<Option.Option<TranscriptInfo>>
+  /**
    * The events of session `sessionId`'s transcript under `cwd` from the entries after `afterUuid`,
    * or from every entry when `afterUuid` is none or no longer in the transcript (an already stored
-   * event is skipped by `AgentEventStore.append`). None when the transcript cannot be read; the
-   * caller then leaves its stored cursor unchanged. Never fails.
+   * entry is skipped by `AgentEventStore.appendTranscript`). None when the transcript cannot be
+   * read; the caller then leaves its stored cursor unchanged. Never fails.
    */
   readonly readTranscriptAfter: (
     sessionId: SessionId,
@@ -250,6 +266,11 @@ const unavailableBackend: AgentBackend = {
       sessionId,
       reason: ADAPTER_NOT_LOADED
     }).pipe(Effect.as([])),
+  transcriptInfo: (sessionId) =>
+    Effect.logWarning('Cannot read a session transcript', {
+      sessionId,
+      reason: ADAPTER_NOT_LOADED
+    }).pipe(Effect.as(Option.none())),
   readTranscriptAfter: (sessionId) =>
     Effect.logWarning('Cannot read a session transcript', {
       sessionId,
@@ -279,6 +300,7 @@ const unavailableBackend: AgentBackend = {
 const backendMethods = [
   'openSession',
   'readHistory',
+  'transcriptInfo',
   'readTranscriptAfter',
   'models',
   'refreshModels',
@@ -325,7 +347,7 @@ export const adapterContract: AdapterContract = {
  * It never fails: when no plugin provides one, or the value is not a backend, it logs the
  * problems and returns a backend whose sessions end at once with
  * `The claude-code adapter is not loaded`, whose `readHistory` returns an empty list, and whose
- * `readTranscriptAfter` returns none. Call it
+ * `transcriptInfo` and `readTranscriptAfter` return none. Call it
  * each time a session starts or a transcript is read; a plugin reload applies from the next call.
  */
 export const resolveAgentBackend = Effect.fn('AgentBackend.resolve')(function* (

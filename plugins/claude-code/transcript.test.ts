@@ -15,7 +15,8 @@ import {
   lastAssistantUuid,
   readTranscriptAfter,
   sessionMessagesToConversation,
-  transcriptEntriesAfter
+  transcriptEntriesAfter,
+  transcriptInfo
 } from './transcript'
 
 const sdk = vi.hoisted(() => ({
@@ -611,6 +612,48 @@ describe('readTranscriptAfter', () => {
       const tail = yield* readTranscriptAfter(SESSION, 'F:/proj', Option.none())
 
       assert.deepStrictEqual(tail, Option.none())
+    })
+  )
+})
+
+describe('transcriptInfo', () => {
+  beforeEach(() => {
+    sdk.getSessionInfo.mockReset()
+    sdk.getSessionMessages.mockReset()
+  })
+
+  it.effect('returns the size and mtime the SDK reports without reading the messages', () =>
+    Effect.gen(function* () {
+      sdk.getSessionInfo.mockResolvedValue(sessionInfo({}))
+
+      const info = yield* transcriptInfo(SESSION, 'F:/proj')
+
+      assert.deepStrictEqual(info, Option.some({ fileSize: 4_821, mtimeMs: 1_762_128_000_000 }))
+      assert.strictEqual(sdk.getSessionMessages.mock.calls.length, 0)
+    })
+  )
+
+  it.effect('returns none when the SDK finds no transcript', () =>
+    Effect.gen(function* () {
+      sdk.getSessionInfo.mockResolvedValue(undefined)
+
+      assert.deepStrictEqual(yield* transcriptInfo(SESSION, 'F:/proj'), Option.none())
+    })
+  )
+
+  it.effect('returns none when the SDK reports no file size', () =>
+    Effect.gen(function* () {
+      sdk.getSessionInfo.mockResolvedValue(sessionInfo({ fileSize: undefined }))
+
+      assert.deepStrictEqual(yield* transcriptInfo(SESSION, 'F:/proj'), Option.none())
+    })
+  )
+
+  it.effect('returns none when reading the session info fails', () =>
+    Effect.gen(function* () {
+      sdk.getSessionInfo.mockRejectedValue(new Error('EACCES'))
+
+      assert.deepStrictEqual(yield* transcriptInfo(SESSION, 'F:/proj'), Option.none())
     })
   )
 })
