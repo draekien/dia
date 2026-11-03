@@ -89,6 +89,16 @@ describe('resolveAgentBackend', () => {
       })
     )
 
+    it.effect(`returns a backend that reads no transcript info when ${name}`, () =>
+      Effect.gen(function* () {
+        const backend = yield* resolveAgentBackend(registryProviding(provided))
+
+        const info = yield* backend.transcriptInfo(SessionId.make('s-1'), '/work')
+
+        assert.deepStrictEqual(info, Option.none())
+      })
+    )
+
     it.effect(`returns a backend whose model list is unavailable when ${name}`, () =>
       Effect.gen(function* () {
         const backend = yield* resolveAgentBackend(registryProviding(provided))
