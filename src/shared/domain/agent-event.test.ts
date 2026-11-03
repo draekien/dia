@@ -17,6 +17,15 @@ describe('capToolOutput', () => {
     )
   })
 
+  it('does not split a surrogate pair that straddles the limit', () => {
+    const kept = 'a'.repeat(TOOL_OUTPUT_LIMIT - 1)
+
+    assert.strictEqual(
+      capToolOutput(`${kept}😀b`),
+      `${kept}\n[output truncated: 3 characters omitted]`
+    )
+  })
+
   it('caps at 256 KiB characters', () => {
     assert.strictEqual(TOOL_OUTPUT_LIMIT, 262_144)
   })
