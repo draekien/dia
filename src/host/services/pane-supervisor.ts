@@ -612,7 +612,7 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
   const session = yield* factory.start({
     config,
     resume,
-    emit: (message) => Effect.andThen(record(message), handleSessionEvent(message))
+    emit: (message) => Effect.andThen(handleSessionEvent(message), record(message))
   })
   yield* Deferred.succeed(sessionReady, session)
   yield* Effect.logInfo('Pane agent session created', { paneId: config.paneId, resume })

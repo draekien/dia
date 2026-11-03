@@ -105,7 +105,7 @@ readonly readTranscriptAfter: (sessionId: SessionId, cwd: string, afterUuid: Opt
 
 ### `src/host/services/pane-supervisor.ts`
 
-`startPane` opens the recorder in the pane scope with `{ agentId: config.paneId, cwd: config.cwd, resume }` before `factory.start`, and the `emit` it passes to `factory.start` records each message before `handleSessionEvent` handles it.
+`startPane` opens the recorder in the pane scope with `{ agentId: config.paneId, cwd: config.cwd, resume }` before `factory.start`, and the `emit` it passes to `factory.start` records each message after `handleSessionEvent` handles it, so the renderer receives it before the `host.db` write.
 
 ### `src/host/services/kernel-migrations.ts`
 

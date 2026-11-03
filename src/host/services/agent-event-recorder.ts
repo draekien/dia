@@ -152,19 +152,21 @@ const makeRecorder = Effect.gen(function* () {
       ownsCursor: ownsResumed
     })
 
+    const stall = (message: string, context: object) =>
+      Effect.gen(function* () {
+        state.cursorStalled = true
+        yield* Effect.logError(message, { agentId, ...context })
+      })
+
     const append = (entries: ReadonlyArray<Entry>) =>
       entries.length === 0
         ? Effect.void
         : store.append(agentId, entries).pipe(
             Effect.asVoid,
             Effect.catch((error) =>
-              Effect.gen(function* () {
-                state.cursorStalled = true
-                yield* Effect.logError('Could not record agent events; the cursor stops here', {
-                  agentId,
-                  events: entries.map(({ event }) => event._tag),
-                  error
-                })
+              stall('Could not record agent events; the cursor stops here', {
+                events: entries.map(({ event }) => event._tag),
+                error
               })
             )
           )
@@ -202,14 +204,7 @@ const makeRecorder = Effect.gen(function* () {
       Stream.runForEach(Stream.fromQueue(cursorUpdates), (sessionId) =>
         advanceCursor(sessionId).pipe(
           Effect.catch((error) =>
-            Effect.gen(function* () {
-              state.cursorStalled = true
-              yield* Effect.logError('Could not advance the transcript cursor; it stops here', {
-                agentId,
-                sessionId,
-                error
-              })
-            })
+            stall('Could not advance the transcript cursor; it stops here', { sessionId, error })
           )
         )
       )
@@ -378,7 +373,7 @@ const makeRecorder = Effect.gen(function* () {
             isError: false
           })
         }))
-      ]).pipe(Effect.ensuring(Effect.sync(() => state.openTools.clear())))
+      ])
     )
 
     return (message: OutboundMessage): Effect.Effect<void> =>

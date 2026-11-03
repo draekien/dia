@@ -54,24 +54,20 @@ const tailOf = (...uuids: ReadonlyArray<string>): TranscriptTail => ({
   mtimeMs: 1_762_128_000_000
 })
 
-interface TranscriptScript {
-  readonly reads: Array<{ readonly sessionId: string; readonly afterUuid: Option.Option<string> }>
-}
-
 const scriptedReader = (
   tail: (afterUuid: Option.Option<string>) => Option.Option<TranscriptTail>
 ) => {
-  const script: TranscriptScript = { reads: [] }
+  const reads: Array<{ readonly sessionId: string; readonly afterUuid: Option.Option<string> }> = []
   const layer = Layer.succeed(TranscriptReader)({
     readHistory: () => Effect.die('not called'),
     discoverSessions: () => Effect.die('not called'),
     readTranscriptAfter: (sessionId, _cwd, afterUuid) =>
       Effect.sync(() => {
-        script.reads.push({ sessionId, afterUuid })
+        reads.push({ sessionId, afterUuid })
         return tail(afterUuid)
       })
   })
-  return { script, layer }
+  return { reads, layer }
 }
 
 const unreadTranscript = scriptedReader(() => Option.none()).layer
@@ -327,6 +323,11 @@ describe('AgentEventRecorder messages', () => {
 })
 
 describe('AgentEventRecorder transcript cursor', () => {
+  const seedCursorAtA1 = (store: AgentEventStore['Service']) =>
+    store.writeCursor(
+      TranscriptCursor.make({ sessionId: SESSION, lastUuid: 'a1', fileSize: 1, mtimeMs: 1 })
+    )
+
   const readCursor = (store: AgentEventStore['Service']) =>
     store.readCursor(SESSION).pipe(Effect.orDie)
 
@@ -366,7 +367,7 @@ describe('AgentEventRecorder transcript cursor', () => {
 
   it.effect('advances the cursor of a resumed session with nothing after its cursor', () => {
     const reader = scriptedReader((after) =>
-      Option.contains(after, 'a1') && reader.script.reads.length === 1
+      Option.contains(after, 'a1') && reader.reads.length === 1
         ? Option.some(tailOf())
         : Option.some(tailOf('u2', 'a2'))
     )
@@ -374,10 +375,7 @@ describe('AgentEventRecorder transcript cursor', () => {
       {
         resume: SESSION,
         reader: reader.layer,
-        seed: (store) =>
-          store.writeCursor(
-            TranscriptCursor.make({ sessionId: SESSION, lastUuid: 'a1', fileSize: 1, mtimeMs: 1 })
-          )
+        seed: seedCursorAtA1
       },
       [SessionStarted.make({ sessionId: SESSION }), TurnCompleted.make({})],
       (store) =>
@@ -398,10 +396,7 @@ describe('AgentEventRecorder transcript cursor', () => {
       {
         resume: SESSION,
         reader: reader.layer,
-        seed: (store) =>
-          store.writeCursor(
-            TranscriptCursor.make({ sessionId: SESSION, lastUuid: 'a1', fileSize: 1, mtimeMs: 1 })
-          )
+        seed: seedCursorAtA1
       },
       [SessionStarted.make({ sessionId: SESSION }), TurnCompleted.make({})],
       (store) =>
