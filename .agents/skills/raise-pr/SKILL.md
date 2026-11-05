@@ -31,8 +31,9 @@ Completion criterion: all three checks pass on the committed head, the working t
 3. Title it as a conventional commit, the same form as the commit log: `fix(plugins): reattach a worktree whose directory exists but is not registered`.
 4. Create it with `gh pr create --base <base> --title <title> --body-file <file> --attach <file> ...`, passing every screenshot and recording from the proof record. Run it from the directory that holds the media: gh uploads each `--attach` file and rewrites the body's `![alt](./<file>)` reference to the uploaded URL; a video becomes a player. To add media to an open PR, run `gh pr edit <n> --body-file <file> --attach <file> ...`. `--attach` needs gh 2.100.0 or later (`gh --version`).
 5. Register the PR with the current thread through `link_pull_request` when that tool is available. If the call fails, report its error text to the user with the PR URL; do not recreate the PR.
+6. When `gh pr view <n> --json body` shows a `github.com/user-attachments/` URL for every attached file, run the steps in the "Clean up" section of the `verify-in-app` skill.
 
-Completion criterion: the PR URL is reported to the user, its body shows check results, the proof and the **Not covered** list, and `gh pr view <n> --json body` shows a `github.com/user-attachments/` URL for every attached file.
+Completion criterion: the PR URL is reported to the user, its body shows check results, the proof and the **Not covered** list, `gh pr view <n> --json body` shows a `github.com/user-attachments/` URL for every attached file, and `~/dia-verify` does not exist.
 
 ## Gotchas
 
