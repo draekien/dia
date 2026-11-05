@@ -13,6 +13,50 @@ Tests show the code does what the tests expect; this skill shows the shipped app
 - **`scripts/cdp-eval.mjs`** — evaluates one JavaScript expression in the dia window over CDP once `window.dia` exists, and prints `{"value": ...}` or `{"exception": ...}` as one JSON line. Run `node scripts/cdp-eval.mjs --help` for flags and exit codes. Requires Node 22+ (global `WebSocket`).
 - **`scripts/cdp-capture.mjs`** — writes a PNG of the dia window (`screenshot`), or records it for `--seconds` and writes an MP4 (`record`, needs `ffmpeg` on PATH). It captures only the app's page target, never other windows. Run `record` in the background and drive the app with `cdp-eval.mjs` while it records. Run `node scripts/cdp-capture.mjs --help` for flags. `scripts/` paths resolve from this skill's directory; every other command runs from the repo root.
 
+## Verify directory
+
+Every run keeps every file it creates in one fixed directory, `~/dia-verify`. Do not create a verify, scratch, fixture or backup directory anywhere else. The directory and port `9333` are shared, so run one verification at a time on a machine.
+
+```sh
+ROOT=$(cygpath -m ~/dia-verify)   # C:/Users/<user>/dia-verify
+```
+
+| Path | Holds |
+| --- | --- |
+| `$ROOT/fixture/` | the throwaway git repo that every pane opens |
+| `$ROOT/media/` | screenshots, recordings and `app.log` |
+| `$ROOT/profile-backup/` | the dev profile backup; it exists only while a dev run has not restored the profile |
+| `$ROOT/worktrees-before.txt` | the names in `%APPDATA%/dia-dev/worktrees` when the run started |
+| `$ROOT/build/` | `electron-builder` output (packaged build) |
+| `$ROOT/profile/` | the `--user-data-dir` profile (packaged build) |
+
+Start every run with these steps:
+
+1. If `$ROOT/profile-backup/` exists, an earlier dev run did not restore the profile. Restore it as in "Run a dev build", step 4, before anything else.
+2. Run the steps in the "Clean up" section of this skill.
+3. Create the fixture and record the existing dev worktrees:
+
+   ```sh
+   mkdir -p "$ROOT/media" "$ROOT/fixture"
+   git -C "$ROOT/fixture" init -q && git -C "$ROOT/fixture" commit -q --allow-empty -m init
+   command ls "$APPDATA/dia-dev/worktrees" > "$ROOT/worktrees-before.txt" 2>/dev/null || true
+   ```
+
+## Clean up
+
+Run these steps at the start of every run, and after `raise-pr` has uploaded the media of the proof record. Stop the app first (see Gotchas).
+
+```sh
+ROOT=$(cygpath -m ~/dia-verify)
+rm -rf "$ROOT"
+KEY=$(printf %s "$ROOT" | sed 's/[^A-Za-z0-9]/-/g')   # C--Users-<user>-dia-verify
+rm -rf ~/.claude/projects/"$KEY" ~/.claude/projects/"$KEY"-*
+```
+
+Claude Code keeps the sessions for a working directory in `~/.claude/projects/<key>`, where `<key>` is the directory path with every character other than `A`–`Z`, `a`–`z` and `0`–`9` replaced by `-`. A pane that opens `C:/Users/William/dia-verify/fixture` creates `~/.claude/projects/C--Users-William-dia-verify-fixture`. <!-- unverified against Claude Code documentation: observed in ~/.claude/projects on 2026-11-05 -->
+
+Completion criterion: `~/dia-verify` does not exist, and `ls ~/.claude/projects | grep -- "$KEY"` prints nothing.
+
 ## Plan the proof
 
 Before launching anything, write down each behaviour the change claims and the observable value that proves it: a `window.dia` call's return value, an event payload, a file on disk, a `git` command's output, a line in the app log. For a bug fix, include the steps that reproduced the bug, and run them on `main` as well when the before/after contrast is the proof.
@@ -32,28 +76,37 @@ If `--build` is given, use it. Otherwise pick from the table; when both rows or 
 
 ## Run a dev build
 
-1. **Back up the profile.** A dev build reads and writes the real `%APPDATA%\dia-dev` and ignores `--user-data-dir`. Copy `host.db`, `host.db-wal`, `host.db-shm`, `workspace.json`, `workspace.imported.json` and `settings.json` to a new backup directory outside the repo, and note which of them did not exist. Then move `host.db`, `host.db-wal`, `host.db-shm` and `workspace.json` away: `host.db` holds the workspace (ADR-0043), a restored workspace can hold a session id the SDK no longer has, which crashes the pane, and a `workspace.json` next to an empty `host.db` is imported on start. Without it, the initial pane `00000000-0000-0000-0000-000000000001` has status `pending`.
+1. **Back up the profile.** A dev build reads and writes the real `%APPDATA%\dia-dev` and ignores `--user-data-dir`. Copy `host.db`, `host.db-wal`, `host.db-shm`, `workspace.json`, `workspace.imported.json` and `settings.json` to `$ROOT/profile-backup/`, and note which of them did not exist. Then delete `host.db`, `host.db-wal`, `host.db-shm` and `workspace.json` from the profile: `host.db` holds the workspace (ADR-0043), a restored workspace can hold a session id the SDK no longer has, which crashes the pane, and a `workspace.json` next to an empty `host.db` is imported on start. Without it, the initial pane `00000000-0000-0000-0000-000000000001` has status `pending`.
 2. **Build and launch.**
 
    ```sh
    pnpm exec electron-vite build
-   env -u ELECTRON_RUN_AS_NODE pnpm exec electron . --remote-debugging-port=9333 > app.log 2>&1 &
+   env -u ELECTRON_RUN_AS_NODE pnpm exec electron . --remote-debugging-port=9333 > "$ROOT/media/app.log" 2>&1 &
    ```
 
 3. **Drive and observe** — see Drive the window.
-4. **Restore the profile — also when the run fails or is abandoned.** Stop the app (see Gotchas), copy each backed-up file back over the profile, and delete any profile file that had no backup.
+4. **Restore the profile — also when the run fails or is abandoned.** Stop the app (see Gotchas), copy each file in `$ROOT/profile-backup/` back over the profile, and delete any profile file that had no backup. Delete each worktree the run created in `%APPDATA%/dia-dev/worktrees`, with its Claude Code project folder:
 
-Completion criterion: the profile files match their backups byte for byte.
+   ```sh
+   W=$(cygpath -m "$APPDATA/dia-dev/worktrees")
+   for name in $(command ls "$W" 2>/dev/null | grep -vxFf "$ROOT/worktrees-before.txt"); do
+     rm -rf "$W/$name" ~/.claude/projects/"$(printf %s "$W/$name" | sed 's/[^A-Za-z0-9]/-/g')"
+   done
+   ```
+
+   When every profile file matches its backup byte for byte (`cmp`), delete `$ROOT/profile-backup/`.
+
+Completion criterion: the profile files match their backups byte for byte, `$ROOT/profile-backup/` does not exist, and `%APPDATA%/dia-dev/worktrees` holds only the names in `$ROOT/worktrees-before.txt`.
 
 ## Run a packaged build
 
 ```sh
 pnpm exec electron-vite build
-pnpm exec electron-builder --win --dir --config.directories.output=<scratch> --config.win.signAndEditExecutable=false
-env -u ELECTRON_RUN_AS_NODE <scratch>/win-unpacked/dia.exe --user-data-dir=<scratch-profile> --remote-debugging-port=9333 > app.log 2>&1 &
+pnpm exec electron-builder --win --dir --config.directories.output="$ROOT/build" --config.win.signAndEditExecutable=false
+env -u ELECTRON_RUN_AS_NODE "$ROOT/build/win-unpacked/dia.exe" --user-data-dir="$ROOT/profile" --remote-debugging-port=9333 > "$ROOT/media/app.log" 2>&1 &
 ```
 
-Put `<scratch>` and `<scratch-profile>` in a new directory outside the repo. The scratch profile needs no backup. Drive it as in Drive the window, then stop the app (see Gotchas).
+The `$ROOT/profile` profile needs no backup; its worktrees are under `$ROOT/profile/worktrees`, which "Clean up" deletes. Drive it as in Drive the window, then stop the app (see Gotchas).
 
 ## Drive the window
 
@@ -61,25 +114,25 @@ Call `window.dia` through the script. Register listeners on `window` first, act,
 
 ```sh
 node scripts/cdp-eval.mjs --port 9333 "window.__events = []; window.dia.onMessageAppended((...args) => window.__events.push(args)); true"
-node scripts/cdp-eval.mjs --port 9333 "window.dia.createPane('00000000-0000-0000-0000-000000000001', 'F:/Dev/dia', 'claude-sonnet-5', 'off', 'default', false)"
+node scripts/cdp-eval.mjs --port 9333 "window.dia.createPane('00000000-0000-0000-0000-000000000001', '$ROOT/fixture', 'claude-sonnet-5', 'off', 'default', false)"
 node scripts/cdp-eval.mjs --port 9333 "{ const box = document.querySelector('textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, 'Reply with the word ready'); box.dispatchEvent(new Event('input', { bubbles: true })); setTimeout(() => document.querySelector('button[aria-label=\"Send\"]').click(), 100); true }"
 node scripts/cdp-eval.mjs --port 9333 "window.__events.length"
 ```
 
 The pane id `00000000-0000-0000-0000-000000000001` is the initial pane only with `host.db` and `workspace.json` moved away (dev) or on a fresh scratch profile (packaged). The third command sends the prompt through the composer: it fills the `textarea` and clicks the action button, whose accessible name is `Send` while no turn runs (`Queue` or `Steer now` during a turn, `Stop` when the composer is empty). The click returns before the turn ends: re-read the collected value until it reaches the expected state, up to a stated limit such as 60 s, and record a timeout as a failed observation. `--timeout-ms` does not bound the expression itself.
 
-Read `src/preload` for the current `window.dia` surface rather than guessing a method's arguments. For a change in a git-backed feature, run it against a throwaway git repo, not this one.
+Read `src/preload` for the current `window.dia` surface rather than guessing a method's arguments. Open every pane and project at `$ROOT/fixture`, never at this repo or another directory: a `claude` session in any other directory adds a folder to `~/.claude/projects` that "Clean up" does not delete.
 
-Capture each planned screenshot and recording with `cdp-capture.mjs` into the scratch directory, numbered in the order the PR shows them (`1-imported-workspace.png`, `2-setup.mp4`). Open each file, or a frame extracted with `ffmpeg -ss <s> -i <file.mp4> -frames:v 1 <frame.png>`, and confirm it shows the claimed state before listing it.
+Capture each planned screenshot and recording with `cdp-capture.mjs` into `$ROOT/media/`, numbered in the order the PR shows them (`1-imported-workspace.png`, `2-setup.mp4`). Open each file, or a frame extracted with `ffmpeg -ss <s> -i <file.mp4> -frames:v 1 <frame.png>`, and confirm it shows the claimed state before listing it.
 
-Completion criterion: every observation named in the plan was read from the running app, every planned media file exists and shows its state, and every line of `app.log` containing `error` or `Unhandled` is listed with whether it is expected.
+Completion criterion: every observation named in the plan was read from the running app, every planned media file exists and shows its state, and every line of `$ROOT/media/app.log` containing `error` or `Unhandled` is listed with whether it is expected.
 
 ## Proof record
 
 Return this to the caller (or to the user when run on its own):
 
 ```markdown
-- Commit `<sha>`, <build: unpackaged | `electron-builder --dir`>, <profile: backed-up dia-dev | scratch>, <fixture: e.g. throwaway git repo>.
+- Commit `<sha>`, <build: unpackaged | `electron-builder --dir`>, <profile: backed-up dia-dev | scratch>, fixture `$ROOT/fixture`.
 - <behaviour> → `<absolute path of its screenshot or recording>`, or <observed value, quoted> when it has no visible effect.
 - Before the change, the same steps → <media path or observed value> (bug fixes only).
 - Not exercised: <claimed behaviour not reached, and why>.
