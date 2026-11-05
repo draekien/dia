@@ -582,7 +582,9 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
     resume,
     emit: (message) =>
       Effect.andThen(
-        Queue.offer(outbound, PaneOutput.Record({ message })),
+        Effect.flatMap(Queue.offer(outbound, PaneOutput.Record({ message })), (queued) =>
+          queued ? Effect.void : record(message)
+        ),
         handleSessionEvent(message)
       )
   })

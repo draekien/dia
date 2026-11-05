@@ -67,8 +67,7 @@ const frameOf = (committed: CommittedEvent): PaneEventFrame => {
   const event =
     'paneId' in committed.event
       ? committed.event
-      : // The stored agent id was a validated pane id when it was written.
-        PaneAgentEvent.make({ paneId, agentEvent: committed.event }, { disableChecks: true })
+      : PaneAgentEvent.make({ paneId, agentEvent: committed.event }, { disableChecks: true })
   return PaneEventFrame.make({ paneId, seq: committed.sequence, event })
 }
 

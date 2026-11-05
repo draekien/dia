@@ -9,6 +9,7 @@ import {
   ToolCallCompleted,
   ToolCallStarted
 } from '@shared/domain/agent-event'
+import type { JsonRecord } from '@shared/domain/json-record'
 import type { OutgoingMessage } from '@shared/domain/message-queue'
 import type { ConversationMessage, SessionId } from '@shared/domain/pane'
 import {
@@ -98,10 +99,15 @@ interface PendingUser {
   readonly message: ConversationMessage
 }
 
+interface OpenTool {
+  readonly toolName: string
+  input: typeof JsonRecord.Type
+}
+
 interface RecordingState {
   reasoning: StreamingItem | undefined
   text: StreamingItem | undefined
-  readonly openTools: Map<string, string>
+  readonly openTools: Map<string, OpenTool>
   readonly awaitingCheckpoint: Array<PendingUser>
   boundSession: Option.Option<SessionId>
   ownedSession: Option.Option<SessionId>
@@ -396,7 +402,7 @@ const makeRecorder = Effect.gen(function* () {
           ]
         }
         case 'ToolCallStarted': {
-          state.openTools.set(message.toolCallId, message.toolName)
+          state.openTools.set(message.toolCallId, { toolName: message.toolName, input: {} })
           return [
             ...closeReasoning(),
             {
@@ -406,6 +412,11 @@ const makeRecorder = Effect.gen(function* () {
               })
             }
           ]
+        }
+        case 'ToolCallUpdated': {
+          const tool = state.openTools.get(message.toolCallId)
+          if (tool !== undefined && message.input !== undefined) tool.input = message.input
+          return []
         }
         case 'ToolCallCompleted': {
           state.openTools.delete(message.toolCallId)
@@ -490,11 +501,11 @@ const makeRecorder = Effect.gen(function* () {
         append([
           ...closeReasoning(),
           ...closeText(),
-          ...Array.from(state.openTools, ([toolCallId, toolName]) => ({
+          ...Array.from(state.openTools, ([toolCallId, { toolName, input }]) => ({
             event: ToolCallCompleted.make({
               toolCallId,
               toolName,
-              input: {},
+              input,
               output: '',
               isError: false
             })

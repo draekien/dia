@@ -17,6 +17,7 @@ import {
   SessionStarted,
   ToolCallCompleted,
   ToolCallStarted,
+  ToolCallUpdated,
   TurnCompleted,
   UserMessagesSent
 } from '../session/protocol'
@@ -373,6 +374,25 @@ describe('AgentEventRecorder messages', () => {
             items.map((item) => (item._tag === 'MessageItem' ? item.message.content : item._tag)),
             ['first', 'reply one']
           )
+        })
+    )
+  )
+
+  it.effect('closes a tool call still running with the input it last reported', () =>
+    run(
+      {},
+      [
+        ToolCallStarted.make({ toolCallId: 'toolu_1', toolName: 'TodoWrite' }),
+        ToolCallUpdated.make({ toolCallId: 'toolu_1', input: { todos: [{ content: 'ship' }] } }),
+        ToolCallUpdated.make({ toolCallId: 'toolu_1', elapsedSeconds: 3 })
+      ],
+      (store) =>
+        Effect.gen(function* () {
+          const [tool] = yield* itemsOf(store)
+
+          assert.deepStrictEqual(tool._tag === 'ToolCallItem' ? tool.input : tool._tag, {
+            todos: [{ content: 'ship' }]
+          })
         })
     )
   )

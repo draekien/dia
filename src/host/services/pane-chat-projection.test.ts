@@ -11,6 +11,7 @@ import {
   WorkspaceChanged
 } from '@shared/ipc/contract'
 import { DateTime, Deferred, Effect, Fiber, Layer, Option, SubscriptionRef } from 'effect'
+import { SqlClient } from 'effect/sql'
 import { AgentEventRecorder } from './agent-event-recorder'
 import { AgentEventStore } from './agent-event-store'
 import { EventHub } from './event-hub'
@@ -272,6 +273,21 @@ describe('PaneChatProjection', () => {
           }
         ]
       )
+    }).pipe(Effect.provide(layer))
+  })
+
+  it.effect('reads the stored conversation again after a read of it failed', () => {
+    const { layer } = makeSetup()
+    return Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient
+      yield* setWorkspace(workspaceOf([tab(PANE_A)]))
+      yield* reply(PANE_A, 'r1', 'stored')
+      yield* sql`ALTER TABLE agent_items RENAME TO agent_items_hidden`
+      const whileUnreadable = yield* textsOf(PANE_A)
+
+      yield* sql`ALTER TABLE agent_items_hidden RENAME TO agent_items`
+
+      assert.deepStrictEqual([whileUnreadable, yield* textsOf(PANE_A)], [[], ['stored']])
     }).pipe(Effect.provide(layer))
   })
 

@@ -83,9 +83,10 @@ export const PaneChatProjectionLive = Layer.effect(
           seq: through
         })),
         Effect.catch((error) =>
-          Effect.logError('Could not read pane history; starting it empty', { paneId, error }).pipe(
-            Effect.as({ state: emptyPaneChatState, seq: 0 })
-          )
+          Effect.logError('Could not read pane history; serving it empty until a read succeeds', {
+            paneId,
+            error
+          }).pipe(Effect.as(undefined))
         )
       )
 
@@ -93,7 +94,9 @@ export const PaneChatProjectionLive = Layer.effect(
       lock.withPermits(1)(
         Effect.gen(function* () {
           if ((yield* SubscriptionRef.get(entries)).has(paneId)) return undefined
-          const { state, seq } = yield* storedHistory(paneId)
+          const history = yield* storedHistory(paneId)
+          if (history === undefined) return undefined
+          const { state, seq } = history
           yield* SubscriptionRef.update(
             entries,
             (current) =>

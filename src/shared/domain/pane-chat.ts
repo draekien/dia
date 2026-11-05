@@ -390,7 +390,6 @@ const withItemMessage = (
   }
 }
 
-// An item that is not shown yet joins the trailing assistant turn, or opens one named by its id.
 const appendAssistantPart = (
   state: PaneChatState,
   itemId: string,

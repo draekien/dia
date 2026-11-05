@@ -322,6 +322,28 @@ describe('PaneSupervisor', () => {
       })
   )
 
+  it.effect('records a message the session emits while its pane is closing', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer, log } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        yield* supervisor.openPane(
+          requestA,
+          (event) => Effect.sync(() => void log.push(`published ${event._tag}`)),
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+        yield* supervisor.closePane(requestA.paneId)
+
+        yield* sessions[0].emit({ _tag: 'TurnCompleted' })
+        yield* flush
+
+        assert.deepStrictEqual(log, ['recorded TurnCompleted'])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
   it.effect('closing a pane ends its session without marking it crashed', () =>
     Effect.gen(function* () {
       const { sessions, testLayer } = makeTestSetup()
