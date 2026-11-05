@@ -137,8 +137,16 @@ const makeRecorder = Effect.gen(function* () {
 
   const newItemId = crypto.randomUUIDv4().pipe(Effect.orDie)
 
-  const catchUpSession = Effect.fn('AgentEventRecorder.catchUp')(
-    function* (agentId: string, sessionId: SessionId, cwd: string) {
+  const catchUp = Effect.fn('AgentEventRecorder.catchUp')(
+    function* ({
+      agentId,
+      sessionId,
+      cwd
+    }: {
+      readonly agentId: string
+      readonly sessionId: SessionId
+      readonly cwd: string
+    }) {
       const info = yield* reader.transcriptInfo(sessionId, cwd)
       if (Option.isNone(info)) {
         yield* Effect.logWarning('No transcript to catch up from', { agentId, sessionId })
@@ -170,7 +178,7 @@ const makeRecorder = Effect.gen(function* () {
       })
       return Option.some(sessionId)
     },
-    (effect, agentId, sessionId) =>
+    (effect, { agentId, sessionId }) =>
       effect.pipe(
         Effect.catch((error) =>
           Effect.logWarning('Could not catch up from the transcript', {
@@ -186,7 +194,7 @@ const makeRecorder = Effect.gen(function* () {
     const { agentId, cwd } = options
     const caughtUp = yield* Option.match(options.resume, {
       onNone: () => Effect.succeed(Option.none<SessionId>()),
-      onSome: (sessionId) => catchUpSession(agentId, sessionId, cwd)
+      onSome: (sessionId) => catchUp({ agentId, sessionId, cwd })
     })
     const state: RecordingState = {
       reasoning: undefined,
@@ -503,12 +511,6 @@ const makeRecorder = Effect.gen(function* () {
         })
       )
   })
-
-  const catchUp = (options: {
-    readonly agentId: string
-    readonly sessionId: SessionId
-    readonly cwd: string
-  }) => catchUpSession(options.agentId, options.sessionId, options.cwd)
 
   return AgentEventRecorder.of({ open, catchUp })
 })

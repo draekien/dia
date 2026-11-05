@@ -1,4 +1,3 @@
-import { AgentEvent } from '@shared/domain/agent-event'
 import { type IpcEvent, PaneAgentEvent, PaneSignal } from '@shared/ipc/contract'
 import {
   type EventFrame,
@@ -61,15 +60,15 @@ const paneIdOf = (event: IpcEvent): string | undefined =>
     ? event.paneId
     : undefined
 
-const isAgentEvent = Schema.is(AgentEvent)
 const isPaneSignal = Schema.is(PaneSignal)
 
 const frameOf = (committed: CommittedEvent): PaneEventFrame => {
   const paneId = committed.agentId
-  const event = isAgentEvent(committed.event)
-    ? // The stored agent id was a validated pane id when it was written.
-      PaneAgentEvent.make({ paneId, agentEvent: committed.event }, { disableChecks: true })
-    : committed.event
+  const event =
+    'paneId' in committed.event
+      ? committed.event
+      : // The stored agent id was a validated pane id when it was written.
+        PaneAgentEvent.make({ paneId, agentEvent: committed.event }, { disableChecks: true })
   return PaneEventFrame.make({ paneId, seq: committed.sequence, event })
 }
 
