@@ -151,8 +151,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
         published.push(event)
         log.push(`publish ${event._tag}`)
       }),
-    subscribe: () => Stream.empty,
-    lastSeq: () => Effect.succeed(0)
+    subscribe: () => Stream.empty
   })
 
   const backend: AgentBackend = {

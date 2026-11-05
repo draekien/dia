@@ -1,5 +1,7 @@
 import {
   type AgentEvent,
+  ConversationCleared,
+  ConversationRewound,
   capToolOutput,
   MessageUpdated,
   ReasoningUpdated,
@@ -7,6 +9,7 @@ import {
   ToolCallCompleted,
   ToolCallStarted
 } from '@shared/domain/agent-event'
+import type { JsonRecord } from '@shared/domain/json-record'
 import type { OutgoingMessage } from '@shared/domain/message-queue'
 import type { ConversationMessage, SessionId } from '@shared/domain/pane'
 import {
@@ -21,6 +24,7 @@ import {
   Option,
   Queue,
   type Scope,
+  Semaphore,
   Stream
 } from 'effect'
 import type { OutboundMessage } from '../session/protocol'
@@ -64,6 +68,19 @@ export class AgentEventRecorder extends Context.Service<
     readonly open: (
       options: RecordingOptions
     ) => Effect.Effect<(message: OutboundMessage) => Effect.Effect<void>, never, Scope.Scope>
+    /**
+     * Appends to agent `agentId` the entries of SDK session `sessionId`'s transcript (found from
+     * `cwd`) that it has not stored, and moves the session's cursor to the transcript's end. Does
+     * nothing when the transcript's size and modification time match the cursor. Returns the
+     * session when the agent now holds every entry up to the cursor, or none when there is no
+     * transcript or the catch-up failed; a failure is logged, never raised. Call it before reading
+     * an agent's history, so turns added outside dia are included.
+     */
+    readonly catchUp: (options: {
+      readonly agentId: string
+      readonly sessionId: SessionId
+      readonly cwd: string
+    }) => Effect.Effect<Option.Option<SessionId>>
   }
 >()('AgentEventRecorder') {}
 
@@ -72,7 +89,9 @@ type Entry = { readonly event: AgentEvent; readonly sourceUuid?: string }
 interface StreamingItem {
   readonly itemId: string
   text: string
+  writtenText: string
   lastWriteAt: number
+  flushScheduled: boolean
 }
 
 interface PendingUser {
@@ -80,10 +99,15 @@ interface PendingUser {
   readonly message: ConversationMessage
 }
 
+interface OpenTool {
+  readonly toolName: string
+  input: typeof JsonRecord.Type
+}
+
 interface RecordingState {
   reasoning: StreamingItem | undefined
   text: StreamingItem | undefined
-  readonly openTools: Map<string, string>
+  readonly openTools: Map<string, OpenTool>
   readonly awaitingCheckpoint: Array<PendingUser>
   boundSession: Option.Option<SessionId>
   ownedSession: Option.Option<SessionId>
@@ -119,8 +143,16 @@ const makeRecorder = Effect.gen(function* () {
 
   const newItemId = crypto.randomUUIDv4().pipe(Effect.orDie)
 
-  const catchUpResumed = Effect.fn('AgentEventRecorder.catchUpResumed')(
-    function* (agentId: string, sessionId: SessionId, cwd: string) {
+  const catchUp = Effect.fn('AgentEventRecorder.catchUp')(
+    function* ({
+      agentId,
+      sessionId,
+      cwd
+    }: {
+      readonly agentId: string
+      readonly sessionId: SessionId
+      readonly cwd: string
+    }) {
       const info = yield* reader.transcriptInfo(sessionId, cwd)
       if (Option.isNone(info)) {
         yield* Effect.logWarning('No transcript to catch up from', { agentId, sessionId })
@@ -152,7 +184,7 @@ const makeRecorder = Effect.gen(function* () {
       })
       return Option.some(sessionId)
     },
-    (effect, agentId, sessionId) =>
+    (effect, { agentId, sessionId }) =>
       effect.pipe(
         Effect.catch((error) =>
           Effect.logWarning('Could not catch up from the transcript', {
@@ -168,7 +200,7 @@ const makeRecorder = Effect.gen(function* () {
     const { agentId, cwd } = options
     const caughtUp = yield* Option.match(options.resume, {
       onNone: () => Effect.succeed(Option.none<SessionId>()),
-      onSome: (sessionId) => catchUpResumed(agentId, sessionId, cwd)
+      onSome: (sessionId) => catchUp({ agentId, sessionId, cwd })
     })
     const state: RecordingState = {
       reasoning: undefined,
@@ -185,6 +217,8 @@ const makeRecorder = Effect.gen(function* () {
       resume: options.resume,
       ownsCursor: Option.isSome(caughtUp)
     })
+    const recordingScope = yield* Effect.scope
+    const lock = yield* Semaphore.make(1)
 
     const stall = (message: string, context: object) =>
       Effect.gen(function* () {
@@ -259,17 +293,59 @@ const makeRecorder = Effect.gen(function* () {
       return item === undefined ? [] : [{ event: textEvent(item, false) }]
     }
 
+    const closeOpenItems = (): ReadonlyArray<Entry> => {
+      state.openTools.clear()
+      return [...closeReasoning(), ...closeText()]
+    }
+
+    const flushLater = (
+      item: StreamingItem,
+      wait: Duration.Duration,
+      currentOf: () => StreamingItem | undefined,
+      eventOf: (item: StreamingItem, streaming: boolean) => AgentEvent
+    ) =>
+      Effect.sleep(wait).pipe(
+        Effect.andThen(
+          lock.withPermits(1)(
+            Effect.gen(function* () {
+              item.flushScheduled = false
+              if (currentOf() !== item || item.text === item.writtenText) return
+              item.lastWriteAt = yield* Clock.currentTimeMillis
+              item.writtenText = item.text
+              yield* append([{ event: eventOf(item, true) }])
+            })
+          )
+        )
+      )
+
     const streamDelta = Effect.fnUntraced(function* (
-      current: StreamingItem | undefined,
+      currentOf: () => StreamingItem | undefined,
       delta: string,
       eventOf: (item: StreamingItem, streaming: boolean) => AgentEvent
     ) {
       const now = yield* Clock.currentTimeMillis
-      const item = current ?? { itemId: yield* newItemId, text: '', lastWriteAt: -Infinity }
+      const item = currentOf() ?? {
+        itemId: yield* newItemId,
+        text: '',
+        writtenText: '',
+        lastWriteAt: -Infinity,
+        flushScheduled: false
+      }
       item.text += delta
       const due = now - item.lastWriteAt >= Duration.toMillis(STREAMING_WRITE_INTERVAL)
-      if (due) item.lastWriteAt = now
-      return { item, entries: due ? [{ event: eventOf(item, true) }] : [] }
+      if (due) {
+        item.lastWriteAt = now
+        item.writtenText = item.text
+        return { item, entries: [{ event: eventOf(item, true) }] }
+      }
+      if (!item.flushScheduled) {
+        item.flushScheduled = true
+        const wait = Duration.millis(
+          item.lastWriteAt + Duration.toMillis(STREAMING_WRITE_INTERVAL) - now
+        )
+        yield* flushLater(item, wait, currentOf, eventOf).pipe(Effect.forkIn(recordingScope))
+      }
+      return { item, entries: [] }
     })
 
     const bind = (sessionId: SessionId, newConversation: boolean): ReadonlyArray<Entry> => {
@@ -299,7 +375,7 @@ const makeRecorder = Effect.gen(function* () {
         case 'AssistantThinkingDelta': {
           if (message.text === '') return []
           const { item, entries } = yield* streamDelta(
-            state.reasoning,
+            () => state.reasoning,
             message.text,
             reasoningEvent
           )
@@ -309,7 +385,7 @@ const makeRecorder = Effect.gen(function* () {
         case 'AssistantTextDelta': {
           if (message.text === '') return []
           const closed = closeReasoning()
-          const { item, entries } = yield* streamDelta(state.text, message.text, textEvent)
+          const { item, entries } = yield* streamDelta(() => state.text, message.text, textEvent)
           state.text = item
           return [...closed, ...entries]
         }
@@ -326,7 +402,7 @@ const makeRecorder = Effect.gen(function* () {
           ]
         }
         case 'ToolCallStarted': {
-          state.openTools.set(message.toolCallId, message.toolName)
+          state.openTools.set(message.toolCallId, { toolName: message.toolName, input: {} })
           return [
             ...closeReasoning(),
             {
@@ -336,6 +412,11 @@ const makeRecorder = Effect.gen(function* () {
               })
             }
           ]
+        }
+        case 'ToolCallUpdated': {
+          const tool = state.openTools.get(message.toolCallId)
+          if (tool !== undefined && message.input !== undefined) tool.input = message.input
+          return []
         }
         case 'ToolCallCompleted': {
           state.openTools.delete(message.toolCallId)
@@ -387,9 +468,20 @@ const makeRecorder = Effect.gen(function* () {
         }
         case 'SessionStarted':
           return yield* rebind(message.sessionId, false)
-        case 'ConversationReset':
+        case 'ConversationReset': {
           state.awaitingCheckpoint.splice(0)
-          return yield* rebind(message.newSessionId, true)
+          const closed = closeOpenItems()
+          return [
+            ...closed,
+            { event: ConversationCleared.make({}) },
+            ...(yield* rebind(message.newSessionId, true))
+          ]
+        }
+        case 'RewoundToCheckpoint':
+          return [
+            ...closeOpenItems(),
+            { event: ConversationRewound.make({ checkpointUuid: message.messageUuid }) }
+          ]
         default:
           if (!isTurnEnd(message)) return []
           return [...closeReasoning(), ...closeText()]
@@ -405,29 +497,33 @@ const makeRecorder = Effect.gen(function* () {
       })
     )
     yield* Effect.addFinalizer(() =>
-      append([
-        ...closeReasoning(),
-        ...closeText(),
-        ...Array.from(state.openTools, ([toolCallId, toolName]) => ({
-          event: ToolCallCompleted.make({
-            toolCallId,
-            toolName,
-            input: {},
-            output: '',
-            isError: false
-          })
-        }))
-      ])
+      lock.withPermits(1)(
+        append([
+          ...closeReasoning(),
+          ...closeText(),
+          ...Array.from(state.openTools, ([toolCallId, { toolName, input }]) => ({
+            event: ToolCallCompleted.make({
+              toolCallId,
+              toolName,
+              input,
+              output: '',
+              isError: false
+            })
+          }))
+        ])
+      )
     )
 
     return (message: OutboundMessage): Effect.Effect<void> =>
-      Effect.gen(function* () {
-        yield* append(yield* entriesFor(message))
-        if (isTurnEnd(message)) yield* offerCursorUpdate
-      })
+      lock.withPermits(1)(
+        Effect.gen(function* () {
+          yield* append(yield* entriesFor(message))
+          if (isTurnEnd(message)) yield* offerCursorUpdate
+        })
+      )
   })
 
-  return AgentEventRecorder.of({ open })
+  return AgentEventRecorder.of({ open, catchUp })
 })
 
 /** The live {@link AgentEventRecorder}. Requires `AgentEventStore`, `TranscriptReader` and `Crypto`. */

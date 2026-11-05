@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0052"
 date: 2026-11-02
 decision-makers: William Pei
 ---
@@ -45,7 +45,7 @@ ADR-0042's "event table + projection table in one `sql.withTransaction`" shape:
 | `agent_transcript_cursors` | Catch-up position per SDK session | `session_id` primary key, `last_uuid`, `file_size`, `mtime_ms` |
 
 * An agent's archive state is `agents.archived_at`, set and cleared by the `AgentArchived` and `AgentUnarchived` events in the same transaction.
-* Each event insert and its projection upsert commit in one transaction. History reads page `agent_items` by `(agent_id, position)` and never replay `agent_events`.
+* Each event insert and its projection upsert commit in one transaction. History reads `agent_items` in `position` order and never replays `agent_events`.
 * `(agent_id, source_uuid, item_id)` is the idempotency key for every event that came from an SDK message, live or imported. An insert whose `agent_id`, `source_uuid` and `item_id` already exist is skipped. `agent_id` is part of the key because an import of a forked session repeats the source session's uuids under another agent. `item_id` is part of the key because one SDK entry yields several events: a user entry holds the `tool_result` of every parallel tool call.
 * `agent_items` is keyed by `(agent_id, item_id)` because item ids come from SDK ids, and one session's ids can reach two agents through an import of a forked session.
 
@@ -57,6 +57,7 @@ ADR-0042's "event table + projection table in one `sql.withTransaction`" shape:
 | Tool call start and result, with tool output capped in size | Tool output beyond the cap |
 | Extended-thinking text, as `ReasoningUpdated` events and `reasoning` items, coalesced like message text | |
 | `SessionBound`, `AgentImported`, `AgentArchived`, `AgentUnarchived` | Raw SDK frames |
+| Every other pane event (turn status, attention, queue, requests, notices), as a row with no item (amended by ADR-0052) | |
 
 ### Import
 
@@ -85,11 +86,11 @@ ADR-0042's "event table + projection table in one `sql.withTransaction`" shape:
 
 * `PaneEventFrame.seq` becomes the agent's `agent_events.sequence`. `SubscribeEvents` cursors replay from `agent_events` instead of `EventHub`'s in-memory buffer, so replay survives a Host restart.
 * `PaneChatProjection.seed` (`src/host/services/pane-chat-projection.ts`, ADR-0050) reads the tab's agent from `agent_items` instead of calling `TranscriptReader.readHistory`. `GetPaneChat` and its `{ state, seq }` snapshot are unchanged, and `seq` is an `agent_events.sequence`.
-* When a cursor's replay would exceed a size limit, the Host sends `ReloadHistoryFrame` and the renderer requests a new `GetPaneChat` snapshot instead. T3 Code uses 128 events or 1 MiB (`apps/server/src/orchestration-v2/ThreadStream.ts`). dia's limit is set at implementation.
+* When a cursor's replay would exceed a size limit, the Host sends `ReloadHistoryFrame` and the renderer requests a new `GetPaneChat` snapshot instead. The limit is 128 events or 1 MiB, as in T3 Code (`apps/server/src/orchestration-v2/ThreadStream.ts`); ADR-0052 sets it and adds the other reload cases.
 
 ### Consequences
 
-* Good, because opening an agent reads one page from `agent_items` by index instead of parsing the whole JSONL. <!-- unverified: the current getSessionMessages parse time has not been measured -->
+* Good, because opening an agent reads `agent_items` by index instead of parsing the whole JSONL: about 2 ms instead of about 60 ms for a 19.8 MB transcript (measured in ADR-0052).
 * Good, because tool calls are shown after a restart, an import or an archive.
 * Good, because any local session can be imported, and a session continued outside dia is caught up on open.
 * Good, because archive and unarchive are events, and unarchive restores a resumable agent.

@@ -1,9 +1,6 @@
+import { MessageUpdated } from '@shared/domain/agent-event'
 import { emptyPaneChatState, reducePaneChat } from '@shared/domain/pane-chat'
-import {
-  PaneAssistantTextDelta,
-  PaneTurnStatusChanged,
-  PaneUserMessagesSent
-} from '@shared/ipc/contract'
+import { PaneAgentEvent, PaneTurnStatusChanged, PaneUserMessagesSent } from '@shared/ipc/contract'
 import { Duration } from 'effect'
 import { describe, expect, it } from 'vitest'
 import {
@@ -22,7 +19,14 @@ const loadingNoAssistant = reducePaneChat(
 )
 const loadingWithAssistant = reducePaneChat(
   loadingNoAssistant,
-  PaneAssistantTextDelta.make({ paneId: PANE, text: 'on it' })
+  PaneAgentEvent.make({
+    paneId: PANE,
+    agentEvent: MessageUpdated.make({
+      itemId: 'reply-1',
+      message: { role: 'assistant', content: 'on it' },
+      streaming: true
+    })
+  })
 )
 
 const DELAY_MS = Duration.toMillis(ELAPSED_DELAY)

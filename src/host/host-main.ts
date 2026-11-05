@@ -41,7 +41,7 @@ import { AppWindow, makeAppWindowLive } from './services/app-window'
 import { BackgroundActivitiesLive } from './services/background-activities'
 import { makeCommandDeduperLive } from './services/command-deduper'
 import { makeHostDatabaseLive } from './services/database'
-import { EventHub, makeEventHubLive } from './services/event-hub'
+import { EventHub, EventHubLive } from './services/event-hub'
 import { ModelCatalogFeed, ModelCatalogFeedLive } from './services/model-catalog-feed'
 import { ModelPreferencesLive } from './services/model-preferences'
 import { PaneChatProjectionLive } from './services/pane-chat-projection'
@@ -110,7 +110,9 @@ const handleMainMessage = Effect.fn('Host.handleMainMessage')(function* (
 
 const buildHostLayer = (init: HostInit, token: string) => {
   const settings = Layer.provide(makeSettingsStoreLive(init.userDataPath), NodeServices.layer)
-  const eventHub = makeEventHubLive()
+  const hostDatabase = makeHostDatabaseLive(init.userDataPath)
+  const agentEventStore = Layer.provide(AgentEventStoreLive, hostDatabase)
+  const eventHub = Layer.provide(EventHubLive, agentEventStore)
   const appWindow = makeAppWindowLive(post)
   const pluginSources = Layer.provide(
     makePluginSourcesLive(init.pluginsRoot),
@@ -134,13 +136,11 @@ const buildHostLayer = (init: HostInit, token: string) => {
     makePersistenceServiceLive(init.userDataPath),
     NodeServices.layer
   )
-  const hostDatabase = makeHostDatabaseLive(init.userDataPath)
   const workspaceStore = Layer.provide(
     makeWorkspaceStoreLive(init.userDataPath),
     Layer.merge(hostDatabase, NodeServices.layer)
   )
   const transcriptReader = Layer.provide(TranscriptReaderLive, hostPlugins)
-  const agentEventStore = Layer.provide(AgentEventStoreLive, hostDatabase)
   const recorder = Layer.provide(
     AgentEventRecorderLive,
     Layer.mergeAll(agentEventStore, transcriptReader, NodeCrypto.layer)
@@ -152,7 +152,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
   const modelCatalog = Layer.provide(ModelCatalogFeedLive, Layer.merge(hostPlugins, eventHub))
   const paneChats = Layer.provide(
     PaneChatProjectionLive,
-    Layer.mergeAll(eventHub, WorkspaceFeedLive, transcriptReader, modelCatalog)
+    Layer.mergeAll(eventHub, WorkspaceFeedLive, agentEventStore, recorder, modelCatalog)
   )
   const workspace = Layer.provide(
     makePaneWorkspaceLive(init.worktreesRoot),

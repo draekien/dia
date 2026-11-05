@@ -29,7 +29,7 @@ import {
   type IpcEvent,
   type ModelCatalogSnapshotJson,
   ModelsChanged,
-  PaneAssistantTextDelta,
+  PaneTurnStatusChanged,
   type WorkspaceChanged
 } from '@shared/ipc/contract'
 import type { EventFrame } from '@shared/ipc/rpc'
@@ -45,12 +45,12 @@ const SUMMARY: AgentSummary = {
   activity: NoActivity.make({})
 }
 
-const textDelta = (text: string): IpcEvent => PaneAssistantTextDelta.make({ paneId: PANE, text })
+const statusEvent = (label: string): IpcEvent => PaneTurnStatusChanged.make({ paneId: PANE, label })
 const paneFrame = (seq: number, text: string): EventFrame => ({
   _tag: 'PaneEvent',
   paneId: PANE,
   seq,
-  event: textDelta(text)
+  event: statusEvent(text)
 })
 const reloadFrame: EventFrame = { _tag: 'ReloadHistory', paneId: PANE }
 
@@ -303,7 +303,7 @@ describe('makeHostApi', () => {
     const { api } = makeApi(client)
     const received: Array<string> = []
     api.onPaneEvent((frame) => {
-      if (frame.event._tag === 'PaneAssistantTextDelta') received.push(frame.event.text)
+      if (frame.event._tag === 'PaneTurnStatusChanged') received.push(frame.event.label ?? '')
     })
 
     await advance(1500)
@@ -326,8 +326,8 @@ describe('makeHostApi', () => {
     const { api } = makeApi(client)
     const received: Array<[number, string]> = []
     api.onPaneEvent((frame) => {
-      if (frame.event._tag === 'PaneAssistantTextDelta')
-        received.push([frame.seq, frame.event.text])
+      if (frame.event._tag === 'PaneTurnStatusChanged')
+        received.push([frame.seq, frame.event.label ?? ''])
     })
 
     await advance(1500)

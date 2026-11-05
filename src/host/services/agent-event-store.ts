@@ -1,12 +1,75 @@
-import {
-  type AgentEvent,
-  AgentEvent as AgentEventSchema,
-  AgentItem
-} from '@shared/domain/agent-event'
+import { AgentEvent, AgentItem } from '@shared/domain/agent-event'
 import { SessionId } from '@shared/domain/pane'
-import { Array as Arr, Clock, Context, Data, Effect, Layer, Option, Result, Schema } from 'effect'
+import { PaneSignal } from '@shared/ipc/contract'
+import {
+  Array as Arr,
+  Clock,
+  Context,
+  Data,
+  Effect,
+  Layer,
+  Option,
+  PubSub,
+  Result,
+  Schema,
+  Semaphore,
+  Stream
+} from 'effect'
 import { SqlClient } from 'effect/sql'
 import type { TranscriptEntry, TranscriptTail } from '../session/agent-backend'
+
+/**
+ * Any event an agent's stream stores: a conversation {@link AgentEvent}, which also updates the
+ * agent's items, or a {@link PaneSignal} about the agent's pane, which is stored and replayed only.
+ */
+export const StoredEvent = Schema.Union([AgentEvent, PaneSignal])
+/** A stored event; see {@link StoredEvent}. */
+export type StoredEvent = typeof StoredEvent.Type
+
+/** An event to append, with the SDK message uuid it came from when it came from one. */
+export interface AppendEntry {
+  readonly event: StoredEvent
+  readonly sourceUuid?: string
+}
+
+/** A stored event of agent `agentId` with the `sequence` its row was committed under. */
+export const CommittedEvent = Schema.Struct({
+  agentId: Schema.String,
+  sequence: Schema.Int,
+  event: StoredEvent
+})
+/** A committed event; see {@link CommittedEvent}. */
+export type CommittedEvent = typeof CommittedEvent.Type
+
+/**
+ * The events of an agent after a cursor, in sequence order, and `through`: the agent's highest
+ * sequence when they were read. Every event of the agent up to `through` is in `events` or at or
+ * before the cursor.
+ */
+export const Replay = Schema.TaggedStruct('Replay', {
+  events: Schema.Array(CommittedEvent),
+  through: Schema.Int
+})
+/** A replay; see {@link Replay}. */
+export type Replay = typeof Replay.Type
+
+/**
+ * The events after a cursor cannot be replayed, so the reader must start from the agent's history:
+ * the cursor is past the agent's last event (`ahead`), there are more events or bytes than the
+ * limits allow (`tooLarge`), one of them does not decode (`undecodable`), or `host.db` could not be
+ * read (`readFailed`).
+ */
+export const ReloadRequired = Schema.TaggedStruct('ReloadRequired', {
+  reason: Schema.Literals(['ahead', 'tooLarge', 'undecodable', 'readFailed'])
+})
+/** A reload requirement; see {@link ReloadRequired}. */
+export type ReloadRequired = typeof ReloadRequired.Type
+
+/** How many events (`maxEvents`) and payload bytes (`maxBytes`) one replay may hold. */
+export interface ReplayLimits {
+  readonly maxEvents: number
+  readonly maxBytes: number
+}
 
 /**
  * A write to `host.db` failed; the failing method's documentation states what stays stored.
@@ -46,14 +109,16 @@ export class AgentEventStore extends Context.Service<
   {
     /**
      * Appends `events` to agent `agentId`'s stream in order, in one transaction, and updates the
-     * agent's items to match. `sourceUuid` is the SDK message uuid an event came from; an event
-     * whose `sourceUuid` and item are already stored is skipped. Returns one entry per input event:
-     * `Some(sequence)` when appended, `None` when skipped. Sequences increase but are not
-     * contiguous. Fails with {@link AgentEventWriteError}, and then nothing from the batch is stored.
+     * agent's items to match its {@link AgentEvent}s. `sourceUuid` is the SDK message uuid an event
+     * came from; an event whose `sourceUuid` and item are already stored is skipped. Returns one
+     * entry per input event: `Some(sequence)` when appended, `None` when skipped. Sequences
+     * increase but are not contiguous. Every appended event is offered to `committed` once the
+     * transaction commits. Fails with {@link AgentEventWriteError}, and then nothing from the batch
+     * is stored or offered.
      */
     readonly append: (
       agentId: string,
-      events: ReadonlyArray<{ readonly event: AgentEvent; readonly sourceUuid?: string }>
+      events: ReadonlyArray<AppendEntry>
     ) => Effect.Effect<ReadonlyArray<Option.Option<number>>, AgentEventWriteError>
     /**
      * Appends to agent `agentId` the entries of `tail`, read from SDK session `sessionId`'s
@@ -64,6 +129,7 @@ export class AgentEventStore extends Context.Service<
      * exists. Fails with {@link AgentEventReadError} when the stored source uuids cannot be read,
      * and with {@link AgentEventWriteError} when a write fails; the entries stored before the
      * failure stay, the cursor is unchanged, and calling again with the same tail stores the rest.
+     * Each committed batch is offered to `committed`.
      */
     readonly appendTranscript: (
       agentId: string,
@@ -71,14 +137,44 @@ export class AgentEventStore extends Context.Service<
       tail: TranscriptTail
     ) => Effect.Effect<void, AgentEventWriteError | AgentEventReadError>
     /**
-     * Up to `limit` items of agent `agentId` whose position is above `afterPosition` (from the
-     * first item when absent), in position order. A stored item that does not decode is left out
-     * and logged. Fails with {@link AgentEventReadError} when `host.db` cannot be read.
+     * Every event committed from now on, by any agent, in commit order (which is sequence order).
+     * Each subscriber receives the events committed after it subscribed; events are never
+     * dropped, and the store never waits for a subscriber.
      */
-    readonly readItems: (
+    readonly committed: Stream.Stream<CommittedEvent>
+    /**
+     * The events of agent `agentId` after sequence `afterSequence`, read in one transaction: a
+     * {@link Replay}, or {@link ReloadRequired} when they cannot be replayed within `limits` (the
+     * byte limit counts each event's stored JSON in UTF-8). Never fails; a failed read is logged
+     * and returned as `readFailed`.
+     */
+    readonly readAfter: (
       agentId: string,
-      page: { readonly afterPosition?: number; readonly limit: number }
-    ) => Effect.Effect<ReadonlyArray<AgentItem>, AgentEventReadError>
+      afterSequence: number,
+      limits: ReplayLimits
+    ) => Effect.Effect<Replay | ReloadRequired>
+    /**
+     * All items of agent `agentId` in position order, and `through`: the agent's highest sequence
+     * (0 when it has none) when they were read, in one transaction. The items are the agent's
+     * conversation after every event up to `through`. A stored item that does not decode is left
+     * out and logged. Fails with {@link AgentEventReadError} when `host.db` cannot be read.
+     */
+    readonly readHistory: (
+      agentId: string
+    ) => Effect.Effect<
+      { readonly items: ReadonlyArray<AgentItem>; readonly through: number },
+      AgentEventReadError
+    >
+    /**
+     * The highest sequence of agent `agentId`, or 0 when it has none. Fails with
+     * {@link AgentEventReadError} when `host.db` cannot be read.
+     */
+    readonly lastSequence: (agentId: string) => Effect.Effect<number, AgentEventReadError>
+    /**
+     * The highest sequence of any agent, or 0 when none has an event. Fails with
+     * {@link AgentEventReadError} when `host.db` cannot be read.
+     */
+    readonly highestSequence: Effect.Effect<number, AgentEventReadError>
     /**
      * The stored cursor of SDK session `sessionId`, or none when there is none. Fails with
      * {@link AgentEventReadError} when `host.db` cannot be read.
@@ -104,7 +200,8 @@ interface ItemRow {
   readonly payload_json: string
 }
 
-const encodeEventJson = Schema.encodeSync(Schema.fromJsonString(AgentEventSchema))
+const encodeEventJson = Schema.encodeSync(Schema.fromJsonString(StoredEvent))
+const decodeEventJson = Schema.decodeUnknownResult(Schema.fromJsonString(StoredEvent))
 const decodePayload = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
 const decodeItem = Schema.decodeUnknownResult(AgentItem)
 
@@ -116,7 +213,7 @@ interface ItemWrite {
   readonly keepExisting: boolean
 }
 
-const itemWriteOf = (event: AgentEvent): ItemWrite | null => {
+const itemWriteOf = (event: StoredEvent): ItemWrite | null => {
   switch (event._tag) {
     case 'MessageUpdated':
       return {
@@ -194,8 +291,30 @@ const batchesOf = (
   return batches
 }
 
+const pruneOrphans = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const orphaned = yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const events = yield* sql<{ readonly sequence: number }>`DELETE FROM agent_events
+        WHERE agent_id NOT IN (SELECT agent_id FROM agents) RETURNING sequence`
+      yield* sql`DELETE FROM agent_items WHERE agent_id NOT IN (SELECT agent_id FROM agents)`
+      return events.length
+    })
+  )
+  if (orphaned > 0) {
+    yield* Effect.logInfo('Deleted the events of panes that never became agents', {
+      events: orphaned
+    })
+  }
+}).pipe(
+  Effect.catch((cause) => Effect.logError('Could not delete orphaned agent events', { cause }))
+)
+
 const makeStore = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
+  const writes = yield* Semaphore.make(1)
+  const committedEvents = yield* PubSub.unbounded<CommittedEvent>()
+  yield* pruneOrphans
 
   const writeItem = (agentId: string, item: ItemWrite) =>
     sql`INSERT INTO agent_items (agent_id, item_id, position, kind, streaming, payload_json)
@@ -210,7 +329,7 @@ const makeStore = Effect.gen(function* () {
 
   const project = (
     agentId: string,
-    event: AgentEvent,
+    event: StoredEvent,
     item: ItemWrite | null,
     occurredAt: number
   ) => {
@@ -220,6 +339,12 @@ const makeStore = Effect.gen(function* () {
         return sql`UPDATE agents SET archived_at = ${occurredAt} WHERE agent_id = ${agentId}`
       case 'AgentUnarchived':
         return sql`UPDATE agents SET archived_at = NULL WHERE agent_id = ${agentId}`
+      case 'ConversationCleared':
+        return sql`DELETE FROM agent_items WHERE agent_id = ${agentId}`
+      case 'ConversationRewound':
+        return sql`DELETE FROM agent_items WHERE agent_id = ${agentId} AND position >= (
+          SELECT position FROM agent_items WHERE agent_id = ${agentId} AND kind = 'message'
+            AND json_extract(payload_json, '$.message.checkpointUuid') = ${event.checkpointUuid})`
       default:
         return Effect.void
     }
@@ -227,7 +352,7 @@ const makeStore = Effect.gen(function* () {
 
   const appendOne = Effect.fnUntraced(function* (
     agentId: string,
-    input: { readonly event: AgentEvent; readonly sourceUuid?: string },
+    input: AppendEntry,
     occurredAt: number
   ) {
     const item = itemWriteOf(input.event)
@@ -246,15 +371,36 @@ const makeStore = Effect.gen(function* () {
     return Option.some(inserted[0].sequence)
   })
 
+  const commit = <E>(
+    agentId: string,
+    entries: ReadonlyArray<AppendEntry>,
+    occurredAt: number,
+    alsoWrite: Effect.Effect<void, E>
+  ) =>
+    writes.withPermits(1)(
+      Effect.gen(function* () {
+        const sequences = yield* sql.withTransaction(
+          Effect.forEach(entries, (input) => appendOne(agentId, input, occurredAt)).pipe(
+            Effect.tap(() => alsoWrite)
+          )
+        )
+        yield* PubSub.publishAll(
+          committedEvents,
+          entries.flatMap((entry, index) =>
+            Option.match(sequences[index] ?? Option.none(), {
+              onNone: () => [],
+              onSome: (sequence) => [CommittedEvent.make({ agentId, sequence, event: entry.event })]
+            })
+          )
+        )
+        return sequences
+      })
+    )
+
   const append = Effect.fn('AgentEventStore.append')(
-    function* (
-      agentId: string,
-      events: ReadonlyArray<{ readonly event: AgentEvent; readonly sourceUuid?: string }>
-    ) {
+    function* (agentId: string, events: ReadonlyArray<AppendEntry>) {
       const occurredAt = yield* Clock.currentTimeMillis
-      const sequences = yield* sql.withTransaction(
-        Effect.forEach(events, (input) => appendOne(agentId, input, occurredAt))
-      )
+      const sequences = yield* commit(agentId, events, occurredAt, Effect.void)
       const appended = sequences.filter(Option.isSome).length
       yield* Effect.logDebug('Appended agent events', {
         agentId,
@@ -335,16 +481,16 @@ const makeStore = Effect.gen(function* () {
     const occurredAt = yield* Clock.currentTimeMillis
     for (const [index, batch] of batches.entries()) {
       if (index > 0) yield* Effect.yieldNow
-      const cursorWrite =
-        index === batches.length - 1 ? Effect.asVoid(upsertCursor(cursor)) : Effect.void
+      const isLast = index === batches.length - 1
       yield* asTranscriptWrite(
         agentId,
         sessionId
       )(
-        sql.withTransaction(
-          Effect.forEach(batch, (entry) => appendOne(agentId, entry, occurredAt)).pipe(
-            Effect.andThen(cursorWrite)
-          )
+        commit(
+          agentId,
+          batch,
+          occurredAt,
+          isLast ? Effect.asVoid(upsertCursor(cursor)) : Effect.void
         )
       )
     }
@@ -359,34 +505,118 @@ const makeStore = Effect.gen(function* () {
     })
   })
 
-  const readItems = Effect.fn('AgentEventStore.readItems')(
-    function* (agentId: string, page: { readonly afterPosition?: number; readonly limit: number }) {
-      const rows = yield* sql<ItemRow>`
-        SELECT item_id, position, kind, streaming, payload_json FROM agent_items
-        WHERE agent_id = ${agentId} AND position > ${page.afterPosition ?? -1}
-        ORDER BY position LIMIT ${page.limit}`
-      const items: Array<AgentItem> = []
-      for (const row of rows) {
-        const item = itemFromRow(row)
-        if (Result.isSuccess(item)) {
-          items.push(item.success)
-          continue
-        }
-        yield* Effect.logWarning('Left out an agent item that does not decode', {
-          agentId,
-          itemId: row.item_id,
-          reason: item.failure.message
-        })
-      }
-      return items
-    },
-    (effect, agentId) =>
-      effect.pipe(
-        Effect.tapError((cause) =>
-          Effect.logError('Could not read agent items', { agentId, cause })
-        ),
+  const asRead =
+    (message: string, context: object) =>
+    <A, E, R>(read: Effect.Effect<A, E, R>) =>
+      read.pipe(
+        Effect.tapError((cause) => Effect.logError(message, { ...context, cause })),
         Effect.mapError((cause) => new AgentEventReadError({ cause }))
       )
+
+  const maxSequenceOf = (agentId: string) =>
+    Effect.map(
+      sql<{ readonly through: number }>`SELECT COALESCE(MAX(sequence), 0) AS through
+        FROM agent_events WHERE agent_id = ${agentId}`,
+      (rows) => rows[0]?.through ?? 0
+    )
+
+  const readHistory = Effect.fn('AgentEventStore.readHistory')(function* (agentId: string) {
+    const { rows, through } = yield* asRead('Could not read agent history', { agentId })(
+      sql.withTransaction(
+        Effect.all({
+          rows: sql<ItemRow>`SELECT item_id, position, kind, streaming, payload_json
+            FROM agent_items WHERE agent_id = ${agentId} ORDER BY position`,
+          through: maxSequenceOf(agentId)
+        })
+      )
+    )
+    const items: Array<AgentItem> = []
+    for (const row of rows) {
+      const item = itemFromRow(row)
+      if (Result.isSuccess(item)) {
+        items.push(item.success)
+        continue
+      }
+      yield* Effect.logWarning('Left out an agent item that does not decode', {
+        agentId,
+        itemId: row.item_id,
+        reason: item.failure.message
+      })
+    }
+    yield* Effect.logDebug('Read agent history', { agentId, items: items.length, through })
+    return { items, through }
+  })
+
+  const readRange = (agentId: string, afterSequence: number, limits: ReplayLimits) =>
+    sql.withTransaction(
+      Effect.gen(function* () {
+        const through = yield* maxSequenceOf(agentId)
+        if (afterSequence > through) return ReloadRequired.make({ reason: 'ahead' })
+        const [counted] = yield* sql<{ readonly events: number }>`SELECT COUNT(*) AS events
+          FROM agent_events WHERE agent_id = ${agentId}
+            AND sequence > ${afterSequence} AND sequence <= ${through}`
+        if ((counted?.events ?? 0) > limits.maxEvents) {
+          return ReloadRequired.make({ reason: 'tooLarge' })
+        }
+        const [sized] = yield* sql<{ readonly bytes: number }>`SELECT
+            COALESCE(SUM(LENGTH(CAST(payload_json AS BLOB))), 0) AS bytes
+          FROM agent_events WHERE agent_id = ${agentId}
+            AND sequence > ${afterSequence} AND sequence <= ${through}`
+        if ((sized?.bytes ?? 0) > limits.maxBytes) {
+          return ReloadRequired.make({ reason: 'tooLarge' })
+        }
+        const rows = yield* sql<{
+          readonly sequence: number
+          readonly payload_json: string
+        }>`SELECT sequence, payload_json FROM agent_events WHERE agent_id = ${agentId}
+          AND sequence > ${afterSequence} AND sequence <= ${through} ORDER BY sequence`
+        const events: Array<CommittedEvent> = []
+        for (const row of rows) {
+          const event = decodeEventJson(row.payload_json)
+          if (Result.isFailure(event)) {
+            yield* Effect.logWarning('A stored agent event does not decode', {
+              agentId,
+              sequence: row.sequence,
+              reason: event.failure.message
+            })
+            return ReloadRequired.make({ reason: 'undecodable' })
+          }
+          events.push(
+            CommittedEvent.make({ agentId, sequence: row.sequence, event: event.success })
+          )
+        }
+        return Replay.make({ events, through })
+      })
+    )
+
+  const readAfter = Effect.fn('AgentEventStore.readAfter')(function* (
+    agentId: string,
+    afterSequence: number,
+    limits: ReplayLimits
+  ) {
+    return yield* readRange(agentId, afterSequence, limits).pipe(
+      Effect.catch((cause) =>
+        Effect.logError('Could not read agent events to replay', {
+          agentId,
+          afterSequence,
+          cause
+        }).pipe(Effect.as(ReloadRequired.make({ reason: 'readFailed' })))
+      )
+    )
+  })
+
+  const lastSequence = (agentId: string) =>
+    asRead('Could not read the last agent event sequence', { agentId })(maxSequenceOf(agentId))
+
+  const highestSequence = asRead(
+    'Could not read the highest agent event sequence',
+    {}
+  )(
+    Effect.map(
+      sql<{ readonly through: number }>`SELECT COALESCE(MAX(sequence), 0) AS through
+        FROM agent_events`,
+      (rows) => rows[0]?.through ?? 0
+    )
   )
 
   const readCursor = Effect.fn('AgentEventStore.readCursor')(
@@ -432,7 +662,17 @@ const makeStore = Effect.gen(function* () {
       )
   )
 
-  return AgentEventStore.of({ append, appendTranscript, readItems, readCursor, writeCursor })
+  return AgentEventStore.of({
+    append,
+    appendTranscript,
+    committed: Stream.fromPubSub(committedEvents),
+    readAfter,
+    readHistory,
+    lastSequence,
+    highestSequence,
+    readCursor,
+    writeCursor
+  })
 })
 
 /** Provides {@link AgentEventStore} over the Host's `SqlClient` from `makeHostDatabaseLive`. */

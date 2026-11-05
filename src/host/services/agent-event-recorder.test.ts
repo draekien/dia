@@ -2,7 +2,7 @@ import { NodeCrypto, NodeServices } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import { TOOL_OUTPUT_LIMIT } from '@shared/domain/agent-event'
 import { SessionId } from '@shared/domain/pane'
-import { Context, Duration, Effect, FileSystem, Layer, Option } from 'effect'
+import { Context, Duration, Effect, FileSystem, Layer, Option, Stream } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
 import type { TranscriptEntry, TranscriptInfo, TranscriptTail } from '../session/agent-backend'
@@ -13,9 +13,11 @@ import {
   CheckpointAvailable,
   ConversationReset,
   type OutboundMessage,
+  RewoundToCheckpoint,
   SessionStarted,
   ToolCallCompleted,
   ToolCallStarted,
+  ToolCallUpdated,
   TurnCompleted,
   UserMessagesSent
 } from '../session/protocol'
@@ -113,7 +115,18 @@ const run = <A, E>(
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
 
 const itemsOf = (store: AgentEventStore['Service']) =>
-  store.readItems(AGENT, { limit: 100 }).pipe(Effect.orDie)
+  store.readHistory(AGENT).pipe(
+    Effect.map(({ items }) => items),
+    Effect.orDie
+  )
+
+const noReads = {
+  committed: Stream.empty,
+  readAfter: () => Effect.die('not called'),
+  readHistory: () => Effect.succeed({ items: [], through: 0 }),
+  lastSequence: () => Effect.succeed(0),
+  highestSequence: Effect.succeed(0)
+}
 
 const withoutIds = (
   items: ReadonlyArray<{ readonly itemId: string }>
@@ -156,38 +169,75 @@ describe('AgentEventRecorder messages', () => {
     )
   )
 
-  it.effect('writes a streaming update at most once per interval', () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem
-      const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-agent-event-recorder-' })
-      const context = yield* Layer.build(
-        Layer.provideMerge(
-          AgentEventRecorderLive,
-          Layer.mergeAll(
-            Layer.provideMerge(AgentEventStoreLive, makeHostDatabaseLive(dir)),
-            unreadTranscript,
-            NodeCrypto.layer
-          )
+  const openRecording = Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem
+    const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-agent-event-recorder-' })
+    const context = yield* Layer.build(
+      Layer.provideMerge(
+        AgentEventRecorderLive,
+        Layer.mergeAll(
+          Layer.provideMerge(AgentEventStoreLive, makeHostDatabaseLive(dir)),
+          unreadTranscript,
+          NodeCrypto.layer
         )
       )
-      const sql = Context.get(context, SqlClient.SqlClient)
-      const record = yield* Context.get(context, AgentEventRecorder).open({
-        agentId: AGENT,
-        cwd: CWD,
-        resume: Option.none()
+    )
+    const record = yield* Context.get(context, AgentEventRecorder).open({
+      agentId: AGENT,
+      cwd: CWD,
+      resume: Option.none()
+    })
+    return { record, sql: Context.get(context, SqlClient.SqlClient) }
+  })
+
+  const streamedRows = (sql: SqlClient.SqlClient) =>
+    Effect.map(eventRows(sql), (rows) =>
+      rows.map((row) => {
+        const payload = JSON.parse(row.payload_json)
+        return `${payload.message.content}${payload.streaming ? '…' : ''}`
       })
+    )
+
+  it.effect('writes streamed text once the interval since its last write has passed', () =>
+    Effect.gen(function* () {
+      const { record, sql } = yield* openRecording
 
       yield* record(textDelta('a'))
       yield* record(textDelta('b'))
       yield* TestClock.adjust(Duration.subtract(STREAMING_WRITE_INTERVAL, Duration.millis(1)))
       yield* record(textDelta('c'))
+      const beforeInterval = yield* streamedRows(sql)
       yield* TestClock.adjust(Duration.millis(1))
-      yield* record(textDelta('d'))
+      const atInterval = yield* streamedRows(sql)
 
-      const streamed = (yield* eventRows(sql)).map(
-        (row) => JSON.parse(row.payload_json).message.content
-      )
-      assert.deepStrictEqual(streamed, ['a', 'abcd'])
+      assert.deepStrictEqual([beforeInterval, atInterval], [['a…'], ['a…', 'abc…']])
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
+  )
+
+  it.effect('writes text that arrives right after a write one interval later', () =>
+    Effect.gen(function* () {
+      const { record, sql } = yield* openRecording
+      yield* record(textDelta('a'))
+
+      yield* record(textDelta('b'))
+      yield* TestClock.adjust(STREAMING_WRITE_INTERVAL)
+      yield* record(textDelta('c'))
+      yield* TestClock.adjust(STREAMING_WRITE_INTERVAL)
+
+      assert.deepStrictEqual(yield* streamedRows(sql), ['a…', 'ab…', 'abc…'])
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
+  )
+
+  it.effect('writes no streaming update after the final message', () =>
+    Effect.gen(function* () {
+      const { record, sql } = yield* openRecording
+      yield* record(textDelta('a'))
+      yield* record(textDelta('b'))
+
+      yield* record(assistantReceived('ab', 'a1'))
+      yield* TestClock.adjust(Duration.times(STREAMING_WRITE_INTERVAL, 2))
+
+      assert.deepStrictEqual(yield* streamedRows(sql), ['a…', 'ab'])
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
   )
 
@@ -281,7 +331,7 @@ describe('AgentEventRecorder messages', () => {
     )
   )
 
-  it.effect('gives a checkpoint after a conversation reset to a message sent after it', () =>
+  it.effect('drops the cleared conversation and checkpoints the message sent after the reset', () =>
     run(
       {},
       [
@@ -295,9 +345,54 @@ describe('AgentEventRecorder messages', () => {
           const items = yield* itemsOf(store)
 
           assert.deepStrictEqual(
-            items.map((item) => (item._tag === 'MessageItem' ? item.message.checkpointUuid : null)),
-            [undefined, 'u2']
+            items.map((item) =>
+              item._tag === 'MessageItem' ? [item.itemId, item.message.checkpointUuid] : null
+            ),
+            [['m-2', 'u2']]
           )
+        })
+    )
+  )
+
+  it.effect('drops the rewound turn and everything after it, open text included', () =>
+    run(
+      {},
+      [
+        UserMessagesSent.make({ messages: [{ id: 'm-1', text: 'first' }] }),
+        CheckpointAvailable.make({ messageUuid: 'u1' }),
+        assistantReceived('reply one', 'a1'),
+        UserMessagesSent.make({ messages: [{ id: 'm-2', text: 'second' }] }),
+        CheckpointAvailable.make({ messageUuid: 'u2' }),
+        textDelta('partial'),
+        RewoundToCheckpoint.make({ messageUuid: 'u2' })
+      ],
+      (store) =>
+        Effect.gen(function* () {
+          const items = yield* itemsOf(store)
+
+          assert.deepStrictEqual(
+            items.map((item) => (item._tag === 'MessageItem' ? item.message.content : item._tag)),
+            ['first', 'reply one']
+          )
+        })
+    )
+  )
+
+  it.effect('closes a tool call still running with the input it last reported', () =>
+    run(
+      {},
+      [
+        ToolCallStarted.make({ toolCallId: 'toolu_1', toolName: 'TodoWrite' }),
+        ToolCallUpdated.make({ toolCallId: 'toolu_1', input: { todos: [{ content: 'ship' }] } }),
+        ToolCallUpdated.make({ toolCallId: 'toolu_1', elapsedSeconds: 3 })
+      ],
+      (store) =>
+        Effect.gen(function* () {
+          const [tool] = yield* itemsOf(store)
+
+          assert.deepStrictEqual(tool._tag === 'ToolCallItem' ? tool.input : tool._tag, {
+            todos: [{ content: 'ship' }]
+          })
         })
     )
   )
@@ -341,7 +436,9 @@ describe('AgentEventRecorder messages', () => {
       ],
       (_store, sql) =>
         Effect.gen(function* () {
-          const bound = (yield* eventRows(sql)).map((row) => JSON.parse(row.payload_json).sessionId)
+          const bound = (yield* eventRows(sql))
+            .filter((row) => row.event_type === 'SessionBound')
+            .map((row) => JSON.parse(row.payload_json).sessionId)
 
           assert.deepStrictEqual(bound, [SESSION, OTHER_SESSION])
         })
@@ -503,7 +600,7 @@ describe('AgentEventRecorder transcript cursor', () => {
       const failingStore = Layer.succeed(AgentEventStore)({
         append: () => Effect.fail(new AgentEventWriteError({ cause: 'disk full' })),
         appendTranscript: () => Effect.die('not called'),
-        readItems: () => Effect.succeed([]),
+        ...noReads,
         readCursor: () => Effect.succeed(Option.none()),
         writeCursor: (cursor) => Effect.sync(() => void cursorWrites.push(cursor.lastUuid))
       })
@@ -639,7 +736,7 @@ describe('AgentEventRecorder catch-up', () => {
       const fakeStore = Layer.succeed(AgentEventStore)({
         append: () => Effect.succeed([]),
         appendTranscript: () => Effect.void,
-        readItems: () => Effect.succeed([]),
+        ...noReads,
         readCursor: () => Effect.succeed(Option.none()),
         writeCursor: (cursor) => Effect.sync(() => void cursorWrites.push(cursor.lastUuid)),
         ...store

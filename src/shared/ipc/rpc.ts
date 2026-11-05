@@ -62,7 +62,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.22'
+export const PROTOCOL_VERSION = '0.0.23'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -88,8 +88,9 @@ const withRequestId = <Fields extends Schema.Struct.Fields>(command: Schema.Stru
   Schema.Struct({ ...command.fields, commandId: CommandId })
 
 /**
- * Event stream item for an event that belongs to a pane. `seq` is the pane's sequence number,
- * starting at 1, which a resubscribing client names as its cursor.
+ * Event stream item for an event that belongs to a pane. `seq` is the event's sequence number in
+ * the Host's event store: it increases across a pane's events but is not contiguous, and survives a
+ * Host restart. A resubscribing client names the last one it received as its cursor.
  */
 export const PaneEventFrame = Schema.TaggedStruct('PaneEvent', {
   paneId: Schema.String,

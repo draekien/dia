@@ -30,7 +30,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0019](0019-thin-plugin-kernel-on-effect.md) | Build dia as a thin plugin kernel on Effect, with every feature as a plugin | accepted, amended by ADR-0029 |
 | [0020](0020-plugin-source-loading-and-hot-reload.md) | Load first-party plugins from source in the dia repo, with per-plugin worktree overrides and hot reload | accepted |
 | [0021](0021-single-host-process-for-all-panes.md) | Run every pane's agent session and all non-UI plugins in one Host process | accepted |
-| [0022](0022-renderer-to-host-over-local-websocket.md) | Connect the renderer to the Host over an authenticated localhost WebSocket | accepted, amended by ADR-0051 |
+| [0022](0022-renderer-to-host-over-local-websocket.md) | Connect the renderer to the Host over an authenticated localhost WebSocket | accepted, amended by ADR-0051 and ADR-0052 |
 | [0023](0023-agents-as-tabs-within-registered-projects.md) | Organise agents as tabs within registered projects, replacing the split-pane layout | accepted, amended by ADR-0046 |
 | [0024](0024-background-agents-run-in-tabs-not-on-screen.md) | Run background agents in tabs that are not on screen; closing the window still quits dia | accepted |
 | [0025](0025-meta-project-as-a-dia-owned-git-repo.md) | Run a meta project: a dia-owned git repo loaded into every agent, changed through approved proposals | accepted, amended by ADR-0036 |
@@ -58,8 +58,9 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0047](0047-built-in-secret-rules-for-meta-repo-push.md) | Scan meta repo pushes with a built-in rule set, run in the Host over `git log -p` | accepted |
 | [0048](0048-rail-cards-from-many-plugins.md) | Let many plugins add cards to the session rail | accepted |
 | [0049](0049-base-ui-primitives-under-shadcn-ui.md) | Build the shadcn/ui wrappers on Base UI instead of Radix | accepted |
-| [0050](0050-host-keeps-tab-chat-state.md) | The Host keeps each tab's chat state and serves snapshots | accepted, amended by ADR-0051 |
-| [0051](0051-session-event-store-in-host-db.md) | Store each agent's conversation as events in `host.db`, and use the Agent SDK transcript only to resume | accepted |
+| [0050](0050-host-keeps-tab-chat-state.md) | The Host keeps each tab's chat state and serves snapshots | accepted, amended by ADR-0051 and ADR-0052 |
+| [0051](0051-session-event-store-in-host-db.md) | Store each agent's conversation as events in `host.db`, and use the Agent SDK transcript only to resume | accepted, amended by ADR-0052 |
+| [0052](0052-every-pane-event-in-the-agent-event-store.md) | Store every pane event in `agent_events` and send the renderer item updates instead of deltas | accepted |
 
 ## Adding a new ADR
 

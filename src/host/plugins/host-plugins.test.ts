@@ -4,7 +4,8 @@ import { PLUGIN_API_VERSION } from '@shared/plugin/manifest'
 import { Effect, Fiber, FileSystem, Layer, Option, Path, Stream } from 'effect'
 import { makeAppWindowLive } from '../services/app-window'
 import { BackgroundActivitiesLive } from '../services/background-activities'
-import { EventHub, makeEventHubLive } from '../services/event-hub'
+import { EventHub } from '../services/event-hub'
+import { EventHubTestLayer } from '../services/event-hub-test-layer'
 import { SettingsStore } from '../services/settings-store'
 import { WorkspaceFeedLive } from '../services/workspace-feed'
 import { HostPlugins, makeHostPluginsLive } from './host-plugins'
@@ -44,7 +45,7 @@ const hostPluginsFor = (root: string) => {
     makePluginSourcesLive(root),
     Layer.mergeAll(settings, NodeFileSystem.layer, NodePath.layer)
   )
-  const hub = makeEventHubLive()
+  const hub = EventHubTestLayer
   const plugins = Layer.provide(
     makeHostPluginsLive('/not-used/plugin-api.js', root),
     Layer.mergeAll(

@@ -20,9 +20,10 @@ import {
   BackgroundActivities,
   BackgroundActivitiesLive
 } from './background-activities'
-import { EventHub, makeEventHubLive } from './event-hub'
+import { EventHub } from './event-hub'
+import { EventHubTestLayer } from './event-hub-test-layer'
 
-const layer = Layer.provideMerge(BackgroundActivitiesLive, makeEventHubLive())
+const layer = Layer.provideMerge(BackgroundActivitiesLive, EventHubTestLayer)
 
 const at = (duration: Duration.Input): DateTime.Utc =>
   DateTime.makeUnsafe(Duration.toMillis(Duration.fromInputUnsafe(duration)))

@@ -2,15 +2,12 @@ import { Schema } from 'effect'
 import { formatResetTime } from '../format-reset-time'
 import type {
   IpcEvent,
-  PaneAssistantTextDelta,
-  PaneAssistantThinkingDelta,
+  PaneAgentEvent,
   PaneAttentionChanged,
   PaneBackgroundTasksChanged,
-  PaneCheckpointAvailable,
   PaneCompactionFailed,
   PaneConversationCompacted,
   PaneConversationReset,
-  PaneMessageAppended,
   PaneMessageQueueChanged,
   PaneModelChanged,
   PaneRewoundToCheckpoint,
@@ -18,12 +15,11 @@ import type {
   PaneSetupProgress,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
-  PaneToolCallCompleted,
-  PaneToolCallStarted,
   PaneToolCallUpdated,
   PaneTurnStatusChanged,
   PaneUserMessagesSent
 } from '../ipc/contract'
+import type { AgentEvent, AgentItem, ToolCallCompleted } from './agent-event'
 import { Attachment } from './attachment'
 import { AttentionState, Idle, isParkedState, type PaneError, type ParkedState } from './attention'
 import { BackgroundTask } from './background-task'
@@ -35,18 +31,26 @@ import { RESUME_TEXT } from './parking'
 import { SlashCommandInfo } from './slash-command'
 import { SetupStep } from './tab-setup'
 
-/** A streamed span of assistant answer text within a turn. */
+/**
+ * A streamed span of assistant answer text within a turn. `itemId` names the stored conversation
+ * item the span shows; absent on a part not built from one.
+ */
 export const TextPart = Schema.Struct({
   type: Schema.Literal('text'),
   content: Schema.String,
+  itemId: Schema.optional(Schema.String),
   startedAt: Schema.optional(Schema.Number)
 })
 export type TextPart = typeof TextPart.Type
 
-/** A streamed span of assistant extended-thinking text, shown collapsed. */
+/**
+ * A streamed span of assistant extended-thinking text, shown collapsed. `itemId` names the stored
+ * conversation item the span shows; absent on a part not built from one.
+ */
 export const ThinkingPart = Schema.Struct({
   type: Schema.Literal('thinking'),
   content: Schema.String,
+  itemId: Schema.optional(Schema.String),
   startedAt: Schema.optional(Schema.Number)
 })
 export type ThinkingPart = typeof ThinkingPart.Type
@@ -175,23 +179,18 @@ export type PaneChatSnapshot = typeof PaneChatSnapshot.Type
  * are handled elsewhere.
  */
 export type PaneStreamEvent =
-  | PaneAssistantTextDelta
-  | PaneAssistantThinkingDelta
-  | PaneToolCallStarted
-  | PaneToolCallCompleted
+  | PaneAgentEvent
   | PaneToolCallUpdated
   | PaneTurnStatusChanged
   | PaneSessionNotice
   | PaneSetupProgress
   | PaneBackgroundTasksChanged
-  | PaneMessageAppended
   | PaneAttentionChanged
   | PaneSlashCommandsWarming
   | PaneSlashCommandsAvailable
   | PaneConversationCompacted
   | PaneCompactionFailed
   | PaneConversationReset
-  | PaneCheckpointAvailable
   | PaneRewoundToCheckpoint
   | PaneMessageQueueChanged
   | PaneUserMessagesSent
@@ -204,23 +203,18 @@ export type PaneStreamEvent =
 export type PaneModelChangeNotice = PaneModelChanged & { readonly displayName?: string }
 
 const STREAM_EVENT_TAGS: Readonly<Record<PaneStreamEvent['_tag'], true>> = {
-  PaneAssistantTextDelta: true,
-  PaneAssistantThinkingDelta: true,
-  PaneToolCallStarted: true,
-  PaneToolCallCompleted: true,
+  PaneAgentEvent: true,
   PaneToolCallUpdated: true,
   PaneTurnStatusChanged: true,
   PaneSessionNotice: true,
   PaneSetupProgress: true,
   PaneBackgroundTasksChanged: true,
-  PaneMessageAppended: true,
   PaneAttentionChanged: true,
   PaneSlashCommandsWarming: true,
   PaneSlashCommandsAvailable: true,
   PaneConversationCompacted: true,
   PaneCompactionFailed: true,
   PaneConversationReset: true,
-  PaneCheckpointAvailable: true,
   PaneRewoundToCheckpoint: true,
   PaneMessageQueueChanged: true,
   PaneUserMessagesSent: true,
@@ -245,27 +239,60 @@ export const emptyPaneChatState: PaneChatState = {
   attention: Idle.make({})
 }
 
-/**
- * Projects a pane's persisted history into initial chat state: each turn
- * becomes a single-text-part message with a stable pane-scoped id, and
- * `isLoading` is false. Use to seed a pane's chat state from its transcript.
- */
-export const paneChatStateFromHistory = (
-  paneId: string,
-  history: ReadonlyArray<ConversationMessage>
-): PaneChatState => ({
-  ...emptyPaneChatState,
-  messages: history.map((message, index) => ({
-    id: `${paneId}:history:${index}`,
-    role: message.role,
-    parts: [{ type: 'text', content: message.content }],
-    ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
-    ...(message.checkpointUuid !== undefined ? { checkpointUuid: message.checkpointUuid } : {}),
-    ...(message.resumeAnchorUuid !== undefined
-      ? { resumeAnchorUuid: message.resumeAnchorUuid }
-      : {})
-  }))
+const userMessage = (itemId: string, message: ConversationMessage): PaneMessage => ({
+  id: itemId,
+  role: 'user',
+  parts: [{ type: 'text', content: message.content }],
+  ...(message.attachments !== undefined && message.attachments.length > 0
+    ? { attachments: message.attachments }
+    : {}),
+  ...(message.checkpointUuid !== undefined ? { checkpointUuid: message.checkpointUuid } : {}),
+  ...(message.resumeAnchorUuid !== undefined ? { resumeAnchorUuid: message.resumeAnchorUuid } : {})
 })
+
+const partOfItem = (item: AgentItem): MessagePart => {
+  switch (item._tag) {
+    case 'MessageItem':
+      return { type: 'text', content: item.message.content, itemId: item.itemId }
+    case 'ReasoningItem':
+      return { type: 'thinking', content: item.text, itemId: item.itemId }
+    case 'ToolCallItem':
+      return {
+        type: 'tool-call',
+        toolCallId: item.itemId,
+        name: item.toolName,
+        state: 'done',
+        ...(item.input !== undefined ? { input: item.input } : {}),
+        ...(item.output !== undefined ? { output: item.output } : {}),
+        ...(item.isError !== undefined ? { isError: item.isError } : {})
+      }
+  }
+}
+
+/**
+ * The chat state of a pane with no live session, built from its stored conversation `items` in
+ * position order: each user message is one user turn whose `id` is its item id, and each run of
+ * assistant text, thinking and tool-call items between them is one assistant turn whose `id` is
+ * its first item's id. Items still streaming or running when they were stored (a Host that
+ * stopped mid-turn) are shown finished. `isLoading` is false and attention is `Idle`. Use it to
+ * seed a pane's chat state; fold the pane's later events onto it with {@link reducePaneChat}.
+ */
+export const paneChatStateFromItems = (items: ReadonlyArray<AgentItem>): PaneChatState => {
+  const messages: Array<PaneMessage> = []
+  for (const item of items) {
+    if (item._tag === 'MessageItem' && item.message.role === 'user') {
+      messages.push(userMessage(item.itemId, item.message))
+      continue
+    }
+    const last = messages.at(-1)
+    if (last?.role === 'assistant') {
+      messages[messages.length - 1] = { ...last, parts: [...last.parts, partOfItem(item)] }
+    } else {
+      messages.push({ id: item.itemId, role: 'assistant', parts: [partOfItem(item)] })
+    }
+  }
+  return { ...emptyPaneChatState, messages }
+}
 
 // @effect-diagnostics-next-line globalDate:off -- callers that pass no `now` (tests) read the wall clock; the Host and the renderer always pass one.
 const wallClock = (): number => Date.now()
@@ -275,30 +302,43 @@ const appendSentMessages = (
   event: PaneUserMessagesSent,
   now: number | undefined
 ): PaneChatState => {
-  const present = new Set(state.messages.map((message) => message.id))
-  const last = state.messages.at(-1)
+  const firstId = event.messages[0]?.id
+  const firstAt = state.messages.findIndex((message) => message.id === firstId)
+  const before = firstAt === -1 ? state.messages : state.messages.slice(0, firstAt)
+  const recorded = firstAt === -1 ? [] : state.messages.slice(firstAt)
+  const last = before.at(-1)
   const resumesPark =
     last !== undefined &&
     isParkNotice(last) &&
     event.messages.length === 1 &&
     event.messages[0]?.text === RESUME_TEXT
+  const flags = (index: number) => ({
+    ...(index > 0 ? { rewindable: false as const } : {}),
+    ...(resumesPark ? { resumedAt: now ?? wallClock() } : {})
+  })
+  const indexById = new Map(event.messages.map((message, index) => [message.id, index]))
+  const flagged = recorded.map((message) => {
+    const index = indexById.get(message.id)
+    return index === undefined || message.role !== 'user'
+      ? message
+      : { ...message, ...flags(index) }
+  })
+  const present = new Set(state.messages.map((message) => message.id))
   const sent = event.messages
     .map(
       (message, index): PaneMessage => ({
-        id: `${event.paneId}:user:${message.id}`,
-        role: 'user',
-        parts: [{ type: 'text', content: message.text }],
-        ...(message.attachments !== undefined && message.attachments.length > 0
-          ? { attachments: message.attachments }
-          : {}),
-        ...(index > 0 ? { rewindable: false as const } : {}),
-        ...(resumesPark ? { resumedAt: now ?? wallClock() } : {})
+        ...userMessage(message.id, {
+          role: 'user',
+          content: message.text,
+          ...(message.attachments !== undefined ? { attachments: message.attachments } : {})
+        }),
+        ...flags(index)
       })
     )
     .filter((message) => !present.has(message.id))
   return {
     ...state,
-    messages: [...resolveParkNotice(state.messages), ...sent],
+    messages: [...resolveParkNotice(before), ...flagged, ...sent],
     isLoading: true,
     turnStatus: null
   }
@@ -327,63 +367,81 @@ const errorMessage = (state: PaneChatState, error: PaneError): PaneMessage => ({
   parts: [{ type: 'text', content: error.message }]
 })
 
-// The turn currently being streamed is the trailing assistant message while a turn is in flight;
-// once a turn settles (isLoading false) that message is closed and the next event opens a new one.
-const isStreamingAssistant = (state: PaneChatState): boolean => {
-  const message = lastMessage(state)
-  return state.isLoading && message !== undefined && message.role === 'assistant'
-}
-
-const replaceLastMessage = (state: PaneChatState, message: PaneMessage): PaneChatState => ({
-  ...state,
-  messages: [...state.messages.slice(0, -1), message]
-})
-
-const withStreamingAssistant = (
-  state: PaneChatState,
-  update: (parts: ReadonlyArray<MessagePart>) => ReadonlyArray<MessagePart>
-): PaneChatState => {
-  if (isStreamingAssistant(state)) {
-    const message = state.messages[state.messages.length - 1]
-    return replaceLastMessage(state, { ...message, parts: update(message.parts) })
-  }
-  const opened: PaneMessage = {
-    id: `${state.messages.length}:assistant`,
-    role: 'assistant',
-    parts: update([])
-  }
-  return { ...state, messages: [...state.messages, opened], isLoading: true }
-}
-
 const startedAt = (now: number | undefined) => (now === undefined ? {} : { startedAt: now })
 
-const extendTrailingText = (
-  parts: ReadonlyArray<MessagePart>,
-  delta: string,
-  now: number | undefined
-): ReadonlyArray<MessagePart> => {
-  const last = parts.at(-1)
-  if (last?.type === 'text') {
-    return [...parts.slice(0, -1), { ...last, content: last.content + delta }]
+const partItemId = (part: MessagePart): string | undefined =>
+  part.type === 'tool-call' ? part.toolCallId : part.itemId
+
+const holdsItem = (message: PaneMessage, itemId: string): boolean =>
+  message.parts.some((part) => partItemId(part) === itemId)
+
+const withItemMessage = (
+  state: PaneChatState,
+  itemId: string,
+  update: (parts: ReadonlyArray<MessagePart>) => ReadonlyArray<MessagePart>
+): PaneChatState | undefined => {
+  const index = state.messages.findIndex((message) => holdsItem(message, itemId))
+  if (index === -1) return undefined
+  return {
+    ...state,
+    messages: state.messages.map((message, at) =>
+      at === index ? { ...message, parts: update(message.parts) } : message
+    )
   }
-  return [...parts, { type: 'text', content: delta, ...startedAt(now) }]
 }
 
-const extendTrailingThinking = (
-  parts: ReadonlyArray<MessagePart>,
-  delta: string,
-  now: number | undefined
-): ReadonlyArray<MessagePart> => {
-  const last = parts.at(-1)
-  if (last?.type === 'thinking') {
-    return [...parts.slice(0, -1), { ...last, content: last.content + delta }]
+const appendAssistantPart = (
+  state: PaneChatState,
+  itemId: string,
+  part: MessagePart,
+  opensTurn: boolean
+): PaneChatState => {
+  const last = lastMessage(state)
+  if (last?.role === 'assistant') {
+    return {
+      ...state,
+      messages: [...state.messages.slice(0, -1), { ...last, parts: [...last.parts, part] }]
+    }
   }
-  return [...parts, { type: 'thinking', content: delta, ...startedAt(now) }]
+  return {
+    ...state,
+    messages: [...state.messages, { id: itemId, role: 'assistant', parts: [part] }],
+    isLoading: opensTurn || state.isLoading
+  }
+}
+
+const foldStreamedText = (
+  state: PaneChatState,
+  type: 'text' | 'thinking',
+  itemId: string,
+  content: string,
+  streaming: boolean,
+  now: number | undefined
+): PaneChatState =>
+  withItemMessage(state, itemId, (parts) =>
+    parts.map((part) =>
+      part.type !== 'tool-call' && part.itemId === itemId ? { ...part, content } : part
+    )
+  ) ?? appendAssistantPart(state, itemId, { type, content, itemId, ...startedAt(now) }, streaming)
+
+const foldUserMessage = (
+  state: PaneChatState,
+  itemId: string,
+  message: ConversationMessage
+): PaneChatState => {
+  const at = state.messages.findIndex((existing) => existing.id === itemId)
+  if (at === -1) return { ...state, messages: [...state.messages, userMessage(itemId, message)] }
+  return {
+    ...state,
+    messages: state.messages.map((existing, index) =>
+      index === at ? { ...existing, ...userMessage(itemId, message) } : existing
+    )
+  }
 }
 
 const completeToolCall = (
   parts: ReadonlyArray<MessagePart>,
-  event: PaneToolCallCompleted,
+  event: ToolCallCompleted,
   now: number | undefined
 ): ReadonlyArray<MessagePart> =>
   parts.map((part) =>
@@ -414,21 +472,53 @@ const updateToolCall = (
       : part
   )
 
-const holdsToolCall = (message: PaneMessage, toolCallId: string): boolean =>
-  message.parts.some((part) => part.type === 'tool-call' && part.toolCallId === toolCallId)
-
-const withToolCallMessage = (
+const foldAgentEvent = (
   state: PaneChatState,
-  toolCallId: string,
-  update: (parts: ReadonlyArray<MessagePart>) => ReadonlyArray<MessagePart>
-): PaneChatState | undefined => {
-  const index = state.messages.findIndex((message) => holdsToolCall(message, toolCallId))
-  if (index === -1) return undefined
-  return {
-    ...state,
-    messages: state.messages.map((message, at) =>
-      at === index ? { ...message, parts: update(message.parts) } : message
-    )
+  event: AgentEvent,
+  now: number | undefined
+): PaneChatState => {
+  switch (event._tag) {
+    case 'MessageUpdated':
+      return event.message.role === 'user'
+        ? foldUserMessage(state, event.itemId, event.message)
+        : foldStreamedText(state, 'text', event.itemId, event.message.content, event.streaming, now)
+    case 'ReasoningUpdated':
+      return foldStreamedText(state, 'thinking', event.itemId, event.text, event.streaming, now)
+    case 'ToolCallStarted':
+      if (state.messages.some((message) => holdsItem(message, event.toolCallId))) return state
+      return appendAssistantPart(
+        state,
+        event.toolCallId,
+        {
+          type: 'tool-call',
+          toolCallId: event.toolCallId,
+          name: event.toolName,
+          state: 'running',
+          ...startedAt(now)
+        },
+        false
+      )
+    case 'ToolCallCompleted':
+      return (
+        withItemMessage(state, event.toolCallId, (parts) => completeToolCall(parts, event, now)) ??
+        appendAssistantPart(
+          state,
+          event.toolCallId,
+          {
+            type: 'tool-call',
+            toolCallId: event.toolCallId,
+            name: event.toolName,
+            state: 'done',
+            input: event.input,
+            output: event.output,
+            isError: event.isError,
+            ...(now === undefined ? {} : { endedAt: now })
+          },
+          false
+        )
+      )
+    default:
+      return state
   }
 }
 
@@ -480,30 +570,6 @@ const parkedMessage = (
     parts: [{ type: 'text', content: parkNoticeText(attention, now ?? wallClock()) }]
   }
   return { ...state, messages: [...kept, notice], isLoading: false }
-}
-
-// Checkpoint uuids arrive after their user turn is already rendered, in the
-// same order the turns were submitted, so bind each to the earliest user turn still
-// lacking one. Turns restored from history already carry their uuid and are skipped.
-// resumeAnchorUuid (the preceding assistant turn) rides along, absent for the first turn.
-const anchorCheckpoint = (
-  messages: ReadonlyArray<PaneMessage>,
-  messageUuid: string,
-  resumeAnchorUuid: string | undefined
-): ReadonlyArray<PaneMessage> => {
-  const target = messages.findIndex(
-    (message) => message.role === 'user' && message.checkpointUuid === undefined
-  )
-  if (target === -1) return messages
-  return messages.map((message, index) =>
-    index === target
-      ? {
-          ...message,
-          checkpointUuid: messageUuid,
-          ...(resumeAnchorUuid !== undefined ? { resumeAnchorUuid } : {})
-        }
-      : message
-  )
 }
 
 // Rewind branches the conversation just before the anchored turn, so the displayed
@@ -567,15 +633,17 @@ const foldAttention = (
 }
 
 /**
- * Folds one pane stream event into conversation state. Text and thinking deltas
- * extend the in-flight assistant turn; a tool-call start adds a running row and
- * its completion resolves it in place; a terminal attention change ends the
+ * Folds one pane stream event into conversation state. A `PaneAgentEvent` updates the conversation
+ * item it names: a text or thinking update replaces that span's whole text (a streaming update
+ * that opens a new assistant turn marks the pane loading); a tool-call start adds a running row
+ * and its completion resolves it in place; a user message update adds the user turn, or merges
+ * its checkpoint uuids and attachments into the turn already shown; an item not yet shown joins
+ * the trailing assistant turn or opens one. A terminal attention change ends the
  * turn — `Completed` silently, `Errored`/`Crashed` by appending an `error` turn
  * carrying the failure message so the transcript records it; every attention change replaces
- * `attention`, which a conversation reset keeps. `PaneMessageAppended` is a backstop that only
- * adds a turn's final text when no deltas built it, and user appends are
- * ignored (`PaneUserMessagesSent` adds user turns, one per sent message, and
- * marks the pane loading; a message id already in the transcript is skipped).
+ * `attention`, which a conversation reset keeps. `PaneUserMessagesSent` adds user turns, one per
+ * sent message, and marks the pane loading; a message already shown keeps its place and gets the
+ * batch and resume flags, and a park notice before the batch is resolved.
  * `PaneMessageQueueChanged` replaces `queued` and `queueHeld`; `Crashed` empties them.
  * `PaneSlashCommandsWarming` toggles the `warmingCommands` indicator, and
  * `PaneSlashCommandsAvailable` replaces the available command list (ending any
@@ -584,8 +652,6 @@ const foldAttention = (
  * clears the transcript while keeping the available commands and the queue.
  * `PaneCompactionFailed` sets
  * `compactionFailure`, which `PaneUserMessagesSent`, `PaneConversationCompacted` and a reset clear.
- * `PaneCheckpointAvailable` anchors a rewindable checkpoint uuid (and its resume
- * anchor) onto the earliest user turn still lacking one, and
  * `PaneToolCallUpdated` sets a running row's input, elapsed time or detail line, `PaneSessionNotice`
  * appends a `notice` divider, `PaneSetupProgress` replaces `setup`, and `PaneTurnStatusChanged` sets `turnStatus`, which the next
  * `PaneUserMessagesSent` also clears. `PaneBackgroundTasksChanged` replaces `backgroundTasks`; a
@@ -602,34 +668,12 @@ export const reducePaneChat = (
   now?: number
 ): PaneChatState => {
   switch (event._tag) {
-    case 'PaneAssistantThinkingDelta':
-      return withStreamingAssistant(state, (parts) =>
-        extendTrailingThinking(parts, event.text, now)
-      )
-    case 'PaneAssistantTextDelta':
-      return withStreamingAssistant(state, (parts) => extendTrailingText(parts, event.text, now))
-    case 'PaneToolCallStarted':
-      return withStreamingAssistant(state, (parts) => [
-        ...parts,
-        {
-          type: 'tool-call',
-          toolCallId: event.toolCallId,
-          name: event.toolName,
-          state: 'running',
-          ...startedAt(now)
-        }
-      ])
-    case 'PaneToolCallCompleted':
-      return (
-        withToolCallMessage(state, event.toolCallId, (parts) =>
-          completeToolCall(parts, event, now)
-        ) ?? withStreamingAssistant(state, (parts) => completeToolCall(parts, event, now))
-      )
+    case 'PaneAgentEvent':
+      return foldAgentEvent(state, event.agentEvent, now)
     case 'PaneToolCallUpdated':
       if (!state.isLoading) return state
       return (
-        withToolCallMessage(state, event.toolCallId, (parts) => updateToolCall(parts, event)) ??
-        state
+        withItemMessage(state, event.toolCallId, (parts) => updateToolCall(parts, event)) ?? state
       )
     case 'PaneTurnStatusChanged':
       return { ...state, turnStatus: event.label }
@@ -637,20 +681,6 @@ export const reducePaneChat = (
       return noticeMessage(state, event.text)
     case 'PaneSetupProgress':
       return { ...state, setup: event.steps }
-    case 'PaneMessageAppended': {
-      if (event.message.role !== 'assistant' || isStreamingAssistant(state)) return state
-      return {
-        ...state,
-        messages: [
-          ...state.messages,
-          {
-            id: `${state.messages.length}:assistant`,
-            role: 'assistant',
-            parts: [{ type: 'text', content: event.message.content }]
-          }
-        ]
-      }
-    }
     case 'PaneAttentionChanged':
       return foldAttention({ ...state, attention: event.attention }, event.attention, now)
     case 'PaneSlashCommandsWarming':
@@ -669,11 +699,6 @@ export const reducePaneChat = (
         queued: state.queued,
         queueHeld: state.queueHeld,
         backgroundTasks: state.backgroundTasks
-      }
-    case 'PaneCheckpointAvailable':
-      return {
-        ...state,
-        messages: anchorCheckpoint(state.messages, event.messageUuid, event.resumeAnchorUuid)
       }
     case 'PaneRewoundToCheckpoint':
       return rewindToCheckpoint({ ...state, backgroundTasks: [] }, event.messageUuid)

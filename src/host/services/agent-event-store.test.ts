@@ -3,6 +3,8 @@ import { assert, describe, it } from '@effect/vitest'
 import {
   AgentArchived,
   AgentUnarchived,
+  ConversationCleared,
+  ConversationRewound,
   MessageItem,
   MessageUpdated,
   ReasoningItem,
@@ -13,12 +15,15 @@ import {
   ToolCallStarted
 } from '@shared/domain/agent-event'
 import { SessionId } from '@shared/domain/pane'
-import { Context, Effect, FileSystem, Layer, Option } from 'effect'
+import { PaneTurnStatusChanged } from '@shared/ipc/contract'
+import { Context, Effect, Fiber, FileSystem, Layer, Option, type Scope, Stream } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
 import {
   AgentEventStore,
   AgentEventStoreLive,
+  ReloadRequired,
+  Replay,
   TRANSCRIPT_BATCH_SIZE,
   TranscriptCursor
 } from './agent-event-store'
@@ -45,7 +50,7 @@ const withStore = <A, E>(
   body: (
     store: AgentEventStore['Service'],
     sql: SqlClient.SqlClient
-  ) => Effect.Effect<A, E, FileSystem.FileSystem>
+  ) => Effect.Effect<A, E, FileSystem.FileSystem | Scope.Scope>
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
@@ -104,7 +109,7 @@ describe('AgentEventStore.append', () => {
           { event: messageUpdated('m1', 'Hello', false) }
         ])
 
-        const items = yield* store.readItems(AGENT_A, { limit: 10 })
+        const items = (yield* store.readHistory(AGENT_A)).items
 
         assert.deepStrictEqual(items, [
           MessageItem.make({
@@ -133,7 +138,7 @@ describe('AgentEventStore.append', () => {
           { event: ToolCallStarted.make({ toolCallId: 't1', toolName: 'Bash' }) }
         ])
 
-        const items = yield* store.readItems(AGENT_A, { limit: 10 })
+        const items = (yield* store.readHistory(AGENT_A)).items
 
         assert.deepStrictEqual(items, [
           MessageItem.make({
@@ -164,7 +169,7 @@ describe('AgentEventStore.append', () => {
 
           assert.deepStrictEqual(result, [Option.none()])
           assert.strictEqual(yield* eventCount(sql), 1)
-          const items = yield* store.readItems(AGENT_A, { limit: 10 })
+          const items = (yield* store.readHistory(AGENT_A)).items
           assert.strictEqual(items[0]._tag === 'MessageItem' && items[0].message.content, 'first')
         })
       )
@@ -199,7 +204,7 @@ describe('AgentEventStore.append', () => {
         ])
 
         assert.deepStrictEqual(result.map(Option.isSome), [true, true])
-        const items = yield* store.readItems(AGENT_A, { limit: 10 })
+        const items = (yield* store.readHistory(AGENT_A)).items
         assert.deepStrictEqual(
           items.map((item) => item.itemId),
           ['t1', 't2']
@@ -214,8 +219,8 @@ describe('AgentEventStore.append', () => {
         yield* store.append(AGENT_A, [{ event: messageUpdated('m1', 'from A', false) }])
         yield* store.append(AGENT_B, [{ event: messageUpdated('m1', 'from B', false) }])
 
-        const a = yield* store.readItems(AGENT_A, { limit: 10 })
-        const b = yield* store.readItems(AGENT_B, { limit: 10 })
+        const a = (yield* store.readHistory(AGENT_A)).items
+        const b = (yield* store.readHistory(AGENT_B)).items
 
         assert.deepStrictEqual(
           [a, b].map((items) =>
@@ -269,7 +274,7 @@ describe('AgentEventStore.append', () => {
           { event: toolCompleted('t1', 'file.txt') }
         ])
 
-        const items = yield* store.readItems(AGENT_A, { limit: 10 })
+        const items = (yield* store.readHistory(AGENT_A)).items
 
         assert.deepStrictEqual(items, [
           ToolCallItem.make({
@@ -294,7 +299,7 @@ describe('AgentEventStore.append', () => {
           { event: ToolCallStarted.make({ toolCallId: 't1', toolName: 'Bash' }) }
         ])
 
-        const items = yield* store.readItems(AGENT_A, { limit: 10 })
+        const items = (yield* store.readHistory(AGENT_A)).items
 
         assert.isTrue(items[0]._tag === 'ToolCallItem' && !items[0].running)
       })
@@ -321,39 +326,58 @@ describe('AgentEventStore.append', () => {
   )
 })
 
-describe('AgentEventStore.readItems', () => {
-  const threeMessages = [
-    { event: messageUpdated('m0', 'zero', false) },
-    { event: messageUpdated('m1', 'one', false) },
-    { event: messageUpdated('m2', 'two', false) }
-  ]
+const threeMessages = [
+  { event: messageUpdated('m0', 'zero', false) },
+  { event: messageUpdated('m1', 'one', false) },
+  { event: messageUpdated('m2', 'two', false) }
+]
 
-  it.effect('returns the first page up to the limit in position order', () =>
+const sequencesOf = (result: ReadonlyArray<Option.Option<number>>) =>
+  result.flatMap((sequence) => (Option.isSome(sequence) ? [sequence.value] : []))
+
+const turnStatus = (label: string | null) => PaneTurnStatusChanged.make({ paneId: AGENT_A, label })
+
+describe('AgentEventStore.readHistory', () => {
+  it.effect('returns every item in position order with the last sequence of the agent', () =>
     withStore((store) =>
       Effect.gen(function* () {
-        yield* store.append(AGENT_A, threeMessages)
+        const appended = sequencesOf(yield* store.append(AGENT_A, threeMessages))
 
-        const page = yield* store.readItems(AGENT_A, { limit: 2 })
+        const history = yield* store.readHistory(AGENT_A)
 
         assert.deepStrictEqual(
-          page.map((item) => item.position),
-          [0, 1]
+          history.items.map((item) => item.itemId),
+          ['m0', 'm1', 'm2']
         )
+        assert.strictEqual(history.through, appended.at(-1))
       })
     )
   )
 
-  it.effect('returns the items after the given position', () =>
+  it.effect('returns no items and sequence 0 for an agent with no events', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.append(AGENT_B, threeMessages)
+
+        const history = yield* store.readHistory(AGENT_A)
+
+        assert.deepStrictEqual(history, { items: [], through: 0 })
+      })
+    )
+  )
+
+  it.effect('counts a stored pane signal in the last sequence but adds no item', () =>
     withStore((store) =>
       Effect.gen(function* () {
         yield* store.append(AGENT_A, threeMessages)
-
-        const page = yield* store.readItems(AGENT_A, { afterPosition: 1, limit: 2 })
-
-        assert.deepStrictEqual(
-          page.map((item) => item.itemId),
-          ['m2']
+        const [signal] = sequencesOf(
+          yield* store.append(AGENT_A, [{ event: turnStatus('Thinking') }])
         )
+
+        const history = yield* store.readHistory(AGENT_A)
+
+        assert.strictEqual(history.items.length, 3)
+        assert.strictEqual(history.through, signal)
       })
     )
   )
@@ -364,7 +388,7 @@ describe('AgentEventStore.readItems', () => {
         yield* store.append(AGENT_A, threeMessages)
         yield* sql`UPDATE agent_items SET payload_json = 'not json' WHERE item_id = 'm1'`
 
-        const items = yield* store.readItems(AGENT_A, { limit: 10 })
+        const { items } = yield* store.readHistory(AGENT_A)
 
         assert.deepStrictEqual(
           items.map((item) => item.itemId),
@@ -372,6 +396,301 @@ describe('AgentEventStore.readItems', () => {
         )
       })
     )
+  )
+})
+
+describe('AgentEventStore projection of a cleared or rewound conversation', () => {
+  const userTurn = (itemId: string, checkpointUuid: string) =>
+    MessageUpdated.make({
+      itemId,
+      message: { ...userMessage(itemId), checkpointUuid },
+      streaming: false
+    })
+
+  it.effect('drops every item when the conversation is cleared', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.append(AGENT_A, threeMessages)
+        yield* store.append(AGENT_A, [{ event: ConversationCleared.make({}) }])
+        yield* store.append(AGENT_A, [{ event: messageUpdated('m3', 'after', false) }])
+
+        const { items } = yield* store.readHistory(AGENT_A)
+
+        assert.deepStrictEqual(
+          items.map((item) => [item.itemId, item.position]),
+          [['m3', 0]]
+        )
+      })
+    )
+  )
+
+  it.effect('drops the rewound user turn and every item after it', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.append(AGENT_A, [
+          { event: userTurn('u1', 'cp-1') },
+          { event: messageUpdated('a1', 'first reply', false) },
+          { event: userTurn('u2', 'cp-2') },
+          { event: messageUpdated('a2', 'second reply', false) }
+        ])
+
+        yield* store.append(AGENT_A, [
+          { event: ConversationRewound.make({ checkpointUuid: 'cp-2' }) }
+        ])
+
+        const { items } = yield* store.readHistory(AGENT_A)
+        assert.deepStrictEqual(
+          items.map((item) => item.itemId),
+          ['u1', 'a1']
+        )
+      })
+    )
+  )
+
+  it.effect('keeps every item when no user turn has the rewound checkpoint', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.append(AGENT_A, [
+          { event: userTurn('u1', 'cp-1') },
+          { event: messageUpdated('a1', 'reply', false) }
+        ])
+
+        yield* store.append(AGENT_A, [
+          { event: ConversationRewound.make({ checkpointUuid: 'cp-unknown' }) }
+        ])
+
+        const { items } = yield* store.readHistory(AGENT_A)
+        assert.deepStrictEqual(
+          items.map((item) => item.itemId),
+          ['u1', 'a1']
+        )
+      })
+    )
+  )
+})
+
+describe('AgentEventStore.readAfter', () => {
+  const roomy = { maxEvents: 100, maxBytes: 1_000_000 }
+
+  it.effect('replays the events after the cursor in sequence order, signals included', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        const [first] = sequencesOf(yield* store.append(AGENT_A, threeMessages.slice(0, 1)))
+        const later = sequencesOf(
+          yield* store.append(AGENT_A, [
+            { event: turnStatus('Thinking') },
+            { event: messageUpdated('m1', 'one', false) }
+          ])
+        )
+
+        const read = yield* store.readAfter(AGENT_A, first, roomy)
+
+        assert.deepStrictEqual(
+          read._tag === 'Replay'
+            ? read.events.map((event) => [event.sequence, event.event._tag])
+            : read,
+          [
+            [later[0], 'PaneTurnStatusChanged'],
+            [later[1], 'MessageUpdated']
+          ]
+        )
+      })
+    )
+  )
+
+  it.effect('reports the last sequence of the agent as the replay end', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        const appended = sequencesOf(yield* store.append(AGENT_A, threeMessages))
+
+        const read = yield* store.readAfter(AGENT_A, appended.at(-1) ?? 0, roomy)
+
+        assert.deepStrictEqual(read, Replay.make({ events: [], through: appended.at(-1) ?? 0 }))
+      })
+    )
+  )
+
+  it.effect('leaves out the events of other agents', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.append(AGENT_B, threeMessages)
+        const mine = sequencesOf(yield* store.append(AGENT_A, threeMessages.slice(0, 1)))
+
+        const read = yield* store.readAfter(AGENT_A, 0, roomy)
+
+        assert.deepStrictEqual(
+          read._tag === 'Replay' ? read.events.map((event) => event.sequence) : read,
+          mine
+        )
+      })
+    )
+  )
+
+  it.effect('requires a reload for a cursor past the last event of the agent', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        const appended = sequencesOf(yield* store.append(AGENT_A, threeMessages))
+
+        const read = yield* store.readAfter(AGENT_A, (appended.at(-1) ?? 0) + 1, roomy)
+
+        assert.deepStrictEqual(read, ReloadRequired.make({ reason: 'ahead' }))
+      })
+    )
+  )
+
+  it.effect('replays exactly as many events as the limit allows', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.append(AGENT_A, threeMessages)
+
+        const read = yield* store.readAfter(AGENT_A, 0, { maxEvents: 3, maxBytes: 1_000_000 })
+
+        assert.strictEqual(read._tag === 'Replay' ? read.events.length : read._tag, 3)
+      })
+    )
+  )
+
+  it.effect('requires a reload for one event more than the limit allows', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.append(AGENT_A, threeMessages)
+
+        const read = yield* store.readAfter(AGENT_A, 0, { maxEvents: 2, maxBytes: 1_000_000 })
+
+        assert.deepStrictEqual(read, ReloadRequired.make({ reason: 'tooLarge' }))
+      })
+    )
+  )
+
+  it.effect('measures the byte limit in UTF-8 bytes, not characters', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        yield* store.append(AGENT_A, [{ event: messageUpdated('m0', 'éééé', false) }])
+        const [row] = yield* sql<{ readonly payload_json: string }>`SELECT payload_json
+          FROM agent_events`
+        const bytes = Buffer.byteLength(row.payload_json, 'utf8')
+        assert.isAbove(bytes, row.payload_json.length)
+
+        const atLimit = yield* store.readAfter(AGENT_A, 0, { maxEvents: 10, maxBytes: bytes })
+        const overLimit = yield* store.readAfter(AGENT_A, 0, {
+          maxEvents: 10,
+          maxBytes: bytes - 1
+        })
+
+        assert.strictEqual(atLimit._tag, 'Replay')
+        assert.deepStrictEqual(overLimit, ReloadRequired.make({ reason: 'tooLarge' }))
+      })
+    )
+  )
+
+  it.effect('requires a reload when an event after the cursor does not decode', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        yield* store.append(AGENT_A, threeMessages)
+        yield* sql`UPDATE agent_events SET payload_json = 'not json' WHERE item_id = 'm1'`
+
+        const read = yield* store.readAfter(AGENT_A, 0, roomy)
+
+        assert.deepStrictEqual(read, ReloadRequired.make({ reason: 'undecodable' }))
+      })
+    )
+  )
+
+  it.effect('requires a reload when host.db cannot be read', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        yield* sql`DROP TABLE agent_events`
+
+        const read = yield* store.readAfter(AGENT_A, 0, roomy)
+
+        assert.deepStrictEqual(read, ReloadRequired.make({ reason: 'readFailed' }))
+      })
+    )
+  )
+})
+
+describe('AgentEventStore.committed', () => {
+  it.effect('offers every appended event after its commit, in sequence order', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        const received = yield* store.committed.pipe(
+          Stream.take(20),
+          Stream.runCollect,
+          Effect.forkScoped({ startImmediately: true })
+        )
+
+        const appended = yield* Effect.forEach(
+          Array.from({ length: 20 }, (_, index) => index),
+          (index) =>
+            store.append(index % 2 === 0 ? AGENT_A : AGENT_B, [
+              { event: messageUpdated(`m${index}`, 'x', false) }
+            ]),
+          { concurrency: 'unbounded' }
+        )
+
+        const sequences = (yield* Fiber.join(received)).map((event) => event.sequence)
+        assert.deepStrictEqual(
+          sequences,
+          appended.flatMap(sequencesOf).sort((a, b) => a - b)
+        )
+      })
+    )
+  )
+
+  it.effect('offers nothing for a skipped event or a failed batch', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        yield* store.append(AGENT_A, [
+          { event: messageUpdated('m0', 'zero', false), sourceUuid: 'u0' }
+        ])
+        const received = yield* store.committed.pipe(
+          Stream.take(1),
+          Stream.runCollect,
+          Effect.forkScoped({ startImmediately: true })
+        )
+
+        yield* store.append(AGENT_A, [
+          { event: messageUpdated('m0', 'zero', false), sourceUuid: 'u0' }
+        ])
+        yield* sql`DROP TABLE agent_items`
+        yield* Effect.flip(store.append(AGENT_A, [{ event: messageUpdated('m1', 'lost', false) }]))
+        const [marker] = sequencesOf(yield* store.append(AGENT_A, [{ event: turnStatus(null) }]))
+
+        const events = yield* Fiber.join(received)
+        assert.deepStrictEqual(
+          events.map((event) => event.sequence),
+          [marker]
+        )
+      })
+    )
+  )
+})
+
+describe('building AgentEventStore', () => {
+  it.effect('deletes the events and items of panes with no agent row and keeps the rest', () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-agent-event-store-' })
+      const build = Layer.build(Layer.provideMerge(AgentEventStoreLive, makeHostDatabaseLive(dir)))
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const context = yield* build
+          const store = Context.get(context, AgentEventStore)
+          yield* insertAgent(Context.get(context, SqlClient.SqlClient), AGENT_A)
+          yield* store.append(AGENT_A, threeMessages)
+          yield* store.append(AGENT_B, threeMessages)
+        })
+      )
+
+      const context = yield* build
+      const store = Context.get(context, AgentEventStore)
+      const kept = yield* store.readHistory(AGENT_A)
+      const orphaned = yield* store.readHistory(AGENT_B)
+
+      assert.strictEqual(kept.items.length, 3)
+      assert.deepStrictEqual(orphaned, { items: [], through: 0 })
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
   )
 })
 
@@ -442,7 +761,7 @@ describe('AgentEventStore.appendTranscript', () => {
 
         yield* store.appendTranscript(AGENT_A, SESSION, tailOf('u1', 'a1'))
 
-        const items = yield* store.readItems(AGENT_A, { limit: 10 })
+        const items = (yield* store.readHistory(AGENT_A)).items
         assert.deepStrictEqual(
           items.map((item) => item.itemId),
           ['live-1', 'a1']

@@ -5,7 +5,7 @@ import {
   type PaneChatSnapshot,
   type PaneChatState,
   type PaneStreamEvent,
-  paneChatStateFromHistory,
+  paneChatStateFromItems,
   reducePaneChat
 } from '@shared/domain/pane-chat'
 import type { Tab, Workspace } from '@shared/domain/project'
@@ -24,14 +24,15 @@ import {
   Stream,
   SubscriptionRef
 } from 'effect'
+import { AgentEventRecorder } from './agent-event-recorder'
+import { AgentEventStore } from './agent-event-store'
 import { EventHub } from './event-hub'
 import { ModelCatalogFeed } from './model-catalog-feed'
-import { TranscriptReader } from './transcript-reader'
 import { WorkspaceFeed } from './workspace-feed'
 
 /**
  * The chat state of every workspace tab, folded from the Host's pane events on top of the tab's
- * transcript. Read a tab's state with `snapshot`. Call `seed` before starting a session for a
+ * stored conversation. Read a tab's state with `snapshot`. Call `seed` before starting a session for a
  * tab. Provide it with {@link PaneChatProjectionLive}.
  */
 export class PaneChatProjection extends Context.Service<
@@ -39,15 +40,14 @@ export class PaneChatProjection extends Context.Service<
   {
     /**
      * The tab's chat state and the sequence number of the last event in it. A workspace tab with
-     * no state yet is seeded from its transcript first; an id that is not a workspace tab gets
+     * no state yet is seeded from its stored conversation first; an id that is not a workspace tab gets
      * the empty state and `seq` 0, and nothing is kept for it.
      */
     readonly snapshot: (paneId: PaneId) => Effect.Effect<PaneChatSnapshot>
     /**
-     * Gives the pane state unless it already has some: a workspace tab with a session starts from
-     * its transcript, any other pane (including one `createTab` is about to add) from the empty
-     * state. Call it before a session for the pane starts, so the transcript it reads holds no
-     * turn the session's events will also add.
+     * Gives the pane state unless it already has some, built from the pane's stored conversation.
+     * A workspace tab with a session first imports the turns its transcript holds that are not
+     * stored yet (turns added outside dia). Call it before a session for the pane starts.
      */
     readonly seed: (paneId: PaneId) => Effect.Effect<void>
   }
@@ -70,27 +70,42 @@ export const PaneChatProjectionLive = Layer.effect(
   Effect.gen(function* () {
     const hub = yield* EventHub
     const workspaceFeed = yield* WorkspaceFeed
-    const transcriptReader = yield* TranscriptReader
+    const store = yield* AgentEventStore
+    const recorder = yield* AgentEventRecorder
     const modelCatalog = yield* ModelCatalogFeed
     const entries = yield* SubscriptionRef.make<ReadonlyMap<PaneId, Entry>>(new Map())
     const lock = yield* Semaphore.make(1)
 
-    const insertIfAbsent = (paneId: PaneId, state: PaneChatState, inWorkspace: boolean) =>
+    const storedHistory = (paneId: PaneId) =>
+      store.readHistory(paneId).pipe(
+        Effect.map(({ items, through }) => ({
+          state: paneChatStateFromItems(items),
+          seq: through
+        })),
+        Effect.catch((error) =>
+          Effect.logError('Could not read pane history; serving it empty until a read succeeds', {
+            paneId,
+            error
+          }).pipe(Effect.as(undefined))
+        )
+      )
+
+    const insertIfAbsent = (paneId: PaneId, inWorkspace: boolean) =>
       lock.withPermits(1)(
         Effect.gen(function* () {
-          const seq = yield* hub.lastSeq(paneId)
-          return yield* SubscriptionRef.modify(entries, (current) =>
-            current.has(paneId)
-              ? [false, current]
-              : [
-                  true,
-                  new Map(current).set(paneId, {
-                    state,
-                    seq,
-                    inWorkspace
-                  }) as ReadonlyMap<PaneId, Entry>
-                ]
+          if ((yield* SubscriptionRef.get(entries)).has(paneId)) return undefined
+          const history = yield* storedHistory(paneId)
+          if (history === undefined) return undefined
+          const { state, seq } = history
+          yield* SubscriptionRef.update(
+            entries,
+            (current) =>
+              new Map(current).set(paneId, { state, seq, inWorkspace }) as ReadonlyMap<
+                PaneId,
+                Entry
+              >
           )
+          return state
         })
       )
 
@@ -105,15 +120,11 @@ export const PaneChatProjectionLive = Layer.effect(
       tab: Tab | undefined
     ) {
       if ((yield* SubscriptionRef.get(entries)).has(paneId)) return
-      const state =
-        tab?.sessionId === undefined
-          ? emptyPaneChatState
-          : paneChatStateFromHistory(
-              paneId,
-              yield* transcriptReader.readHistory(tab.sessionId, tab.config.cwd)
-            )
-      const inserted = yield* insertIfAbsent(paneId, state, tab !== undefined)
-      if (inserted) {
+      if (tab?.sessionId !== undefined) {
+        yield* recorder.catchUp({ agentId: paneId, sessionId: tab.sessionId, cwd: tab.config.cwd })
+      }
+      const state = yield* insertIfAbsent(paneId, tab !== undefined)
+      if (state !== undefined) {
         yield* Effect.logDebug('Seeded pane chat state', {
           paneId,
           messages: state.messages.length,
@@ -145,7 +156,16 @@ export const PaneChatProjectionLive = Layer.effect(
     const snapshot = Effect.fn('PaneChatProjection.snapshot')(function* (paneId: PaneId) {
       const tab = yield* tabOf(paneId)
       if (tab !== undefined) yield* seedFrom(paneId, tab)
-      const entry = yield* caughtUp(paneId, yield* hub.lastSeq(paneId))
+      const target = yield* store
+        .lastSequence(paneId)
+        .pipe(
+          Effect.catch((error) =>
+            Effect.logError('Could not read the last pane event sequence', { paneId, error }).pipe(
+              Effect.as(0)
+            )
+          )
+        )
+      const entry = yield* caughtUp(paneId, target)
       return entry === undefined
         ? { state: emptyPaneChatState, seq: 0 }
         : { state: entry.state, seq: entry.seq }

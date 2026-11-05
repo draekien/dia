@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
 import type { IpcEvent } from '../ipc/contract'
+import type { AgentEvent } from './agent-event'
 import { type AttentionState, UserInputRequest } from './attention'
 import { ContextUsage } from './context-usage'
 import { ParkCause } from './parking'
@@ -196,6 +197,22 @@ const withActivity = (summary: AgentSummary, activity: Activity): AgentSummary =
 export const idleSummary = (paneId: string, activity: Activity): AgentSummary =>
   AgentSummary.make({ paneId, status: StatusIdle.make({}), activity })
 
+const foldToolActivity = (summary: AgentSummary, event: AgentEvent): AgentSummary => {
+  switch (event._tag) {
+    case 'ToolCallStarted':
+      return withActivity(summary, ToolUse.make({ tool: event.toolName, target: null }))
+    case 'ToolCallCompleted':
+      return event.toolName === 'TodoWrite'
+        ? { ...summary, activity: todoActivity(event.input) }
+        : withActivity(
+            summary,
+            ToolUse.make({ tool: event.toolName, target: toolTarget(event.input) })
+          )
+    default:
+      return summary
+  }
+}
+
 /**
  * The summary after one event. Events for other panes, and events that change neither status nor
  * activity, return `summary` unchanged.
@@ -209,15 +226,8 @@ export const foldSummary = (summary: AgentSummary, event: IpcEvent): AgentSummar
         : { ...summary, turnStatus: event.label }
     case 'PaneUserMessagesSent':
       return { ...withoutParked(withoutTurnStatus(summary)), status: StatusWorking.make({}) }
-    case 'PaneToolCallStarted':
-      return withActivity(summary, ToolUse.make({ tool: event.toolName, target: null }))
-    case 'PaneToolCallCompleted':
-      return event.toolName === 'TodoWrite'
-        ? { ...summary, activity: todoActivity(event.input) }
-        : withActivity(
-            summary,
-            ToolUse.make({ tool: event.toolName, target: toolTarget(event.input) })
-          )
+    case 'PaneAgentEvent':
+      return foldToolActivity(summary, event.agentEvent)
     case 'PaneAttentionChanged':
       return foldAttention(summary, event.attention)
     case 'PaneContextUsageChanged':

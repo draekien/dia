@@ -1,6 +1,7 @@
 // @effect-diagnostics newPromise:off -- the test holds each snapshot fetch open with a manually resolved Promise.
-import { type PaneChatSnapshot, paneChatStateFromHistory } from '@shared/domain/pane-chat'
-import { PaneAssistantTextDelta } from '@shared/ipc/contract'
+import { MessageItem, MessageUpdated } from '@shared/domain/agent-event'
+import { type PaneChatSnapshot, paneChatStateFromItems } from '@shared/domain/pane-chat'
+import { PaneAgentEvent } from '@shared/ipc/contract'
 import { PaneEventFrame } from '@shared/ipc/rpc'
 import { AsyncResult, AtomRegistry } from 'effect/reactivity'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,15 +11,32 @@ const PANE = '00000000-0000-4000-8000-00000000000a'
 const OTHER_PANE = '00000000-0000-4000-8000-00000000000b'
 
 const snapshotOf = (seq: number, ...userTexts: ReadonlyArray<string>): PaneChatSnapshot => ({
-  state: paneChatStateFromHistory(
-    PANE,
-    userTexts.map((content) => ({ role: 'user', content }))
+  state: paneChatStateFromItems(
+    userTexts.map((content, position) =>
+      MessageItem.make({
+        itemId: `user-${position}`,
+        position,
+        streaming: false,
+        message: { role: 'user', content }
+      })
+    )
   ),
   seq
 })
 
-const delta = (seq: number, text: string, paneId = PANE) =>
-  PaneEventFrame.make({ paneId, seq, event: PaneAssistantTextDelta.make({ paneId, text }) })
+const reply = (seq: number, text: string, paneId = PANE) =>
+  PaneEventFrame.make({
+    paneId,
+    seq,
+    event: PaneAgentEvent.make({
+      paneId,
+      agentEvent: MessageUpdated.make({
+        itemId: `reply-${text}`,
+        message: { role: 'assistant', content: text },
+        streaming: false
+      })
+    })
+  })
 
 const installFakeDia = () => {
   const reloadListeners = new Set<(paneId: string) => void>()
@@ -100,7 +118,7 @@ describe('paneChatAtom', () => {
     await dia.answerSnapshot(snapshotOf(4, 'hello'))
     await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['hello']))
 
-    dia.pushFrame(delta(5, 'hi'))
+    dia.pushFrame(reply(5, 'hi'))
 
     await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['hello', 'hi']))
   })
@@ -109,8 +127,8 @@ describe('paneChatAtom', () => {
     const dia = installFakeDia()
     unmount = registry.mount(paneChatAtom(PANE))
     await vi.waitFor(() => expect(dia.getPaneChat).toHaveBeenCalledTimes(1))
-    dia.pushFrame(delta(4, 'covered '))
-    dia.pushFrame(delta(5, 'after'))
+    dia.pushFrame(reply(4, 'covered '))
+    dia.pushFrame(reply(5, 'after'))
 
     await dia.answerSnapshot(snapshotOf(4, 'hello'))
 
@@ -121,13 +139,13 @@ describe('paneChatAtom', () => {
     const dia = installFakeDia()
     unmount = registry.mount(paneChatAtom(PANE))
     await dia.answerSnapshot(snapshotOf(0))
-    dia.pushFrame(delta(1, 'once'))
+    dia.pushFrame(reply(1, 'once'))
     await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['once']))
 
-    dia.pushFrame(delta(1, 'once'))
-    dia.pushFrame(delta(2, '!'))
+    dia.pushFrame(reply(1, 'replayed again'))
+    dia.pushFrame(reply(2, 'next'))
 
-    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['once!']))
+    await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['once', 'next']))
   })
 
   it('ignores frames for another pane', async () => {
@@ -135,8 +153,8 @@ describe('paneChatAtom', () => {
     unmount = registry.mount(paneChatAtom(PANE))
     await dia.answerSnapshot(snapshotOf(0))
 
-    dia.pushFrame(delta(1, 'elsewhere', OTHER_PANE))
-    dia.pushFrame(delta(1, 'here'))
+    dia.pushFrame(reply(1, 'elsewhere', OTHER_PANE))
+    dia.pushFrame(reply(1, 'here'))
 
     await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['here']))
   })
@@ -149,8 +167,8 @@ describe('paneChatAtom', () => {
 
     dia.requestReload(PANE)
     await vi.waitFor(() => expect(dia.getPaneChat).toHaveBeenCalledTimes(2))
-    dia.pushFrame(delta(9, 'covered '))
-    dia.pushFrame(delta(10, 'live'))
+    dia.pushFrame(reply(9, 'covered '))
+    dia.pushFrame(reply(10, 'live'))
     await dia.answerSnapshot(snapshotOf(9, 'before', 'missed while disconnected'))
 
     await vi.waitFor(() =>
@@ -165,7 +183,7 @@ describe('paneChatAtom', () => {
     await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['before']))
 
     dia.requestReload(OTHER_PANE)
-    dia.pushFrame(delta(1, 'live'))
+    dia.pushFrame(reply(1, 'live'))
 
     await vi.waitFor(() => expect(messageTexts(registry, PANE)).toEqual(['before', 'live']))
     expect(dia.getPaneChat).toHaveBeenCalledTimes(1)
