@@ -107,11 +107,20 @@ interface AgentRowProps {
  * directory could not be restored.
  */
 const unarchive = (row: OverviewRow): Promise<void> =>
-  actions.unarchiveTab(row.paneId).then((reason) => {
-    if (reason !== null) {
-      toast.add({ title: `Could not unarchive ${row.name}`, description: reason, type: 'error' })
+  actions.unarchiveTab(row.paneId).then(
+    (reason) => {
+      if (reason !== null) {
+        toast.add({ title: `Could not unarchive ${row.name}`, description: reason, type: 'error' })
+      }
+    },
+    () => {
+      toast.add({
+        title: `Could not unarchive ${row.name}`,
+        description: "The connection to dia's background process was lost.",
+        type: 'error'
+      })
     }
-  })
+  )
 
 /**
  * One agent in the overview: its status dot, name and second line. Clicking it or pressing

@@ -250,6 +250,26 @@ describe('AgentOverview archived agents', () => {
     Reflect.deleteProperty(window, 'dia')
   })
 
+  it('shows a lost connection while unarchiving in an error toast', async () => {
+    withArchived()
+    Object.assign(window, {
+      dia: { unarchiveTab: vi.fn(async () => Promise.reject(new Error('closed'))) }
+    })
+    render(
+      <Toaster>
+        <Harness initialOpen />
+      </Toaster>
+    )
+
+    openArchivedMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Unarchive' }))
+
+    expect(
+      await screen.findByText("The connection to dia's background process was lost.")
+    ).toBeTruthy()
+    Reflect.deleteProperty(window, 'dia')
+  })
+
   it('asks before deleting an agent', () => {
     render(<Harness initialOpen />)
 

@@ -692,8 +692,12 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       ) {
         const tab = yield* markRetiring(paneId)
         yield* Effect.gen(function* () {
+          if (operation === 'archiveTab' && tab.archived) {
+            yield* Effect.logInfo('Left a tab that is already archived as it was', { paneId })
+            return
+          }
           yield* sessionStartLock.withPermits(1)(supervisor.closePane(paneId))
-          const worktree = tab.config.worktree
+          const worktree = tab.archived ? undefined : tab.config.worktree
           if (worktree !== undefined) {
             const failure = yield* removeWorktree(paneId, worktree)
             if (Option.isSome(failure)) {

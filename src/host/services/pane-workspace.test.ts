@@ -1311,6 +1311,41 @@ describe('PaneWorkspace.archiveTab and deleteTab', () => {
     })
   )
 
+  const archivedPersisted = (): Workspace => ({
+    ...persisted(),
+    projects: [
+      { project: project(PROJECT_1, '/repo'), tabs: [{ ...worktreeTab, archived: true }] },
+      persisted().projects[1]
+    ]
+  })
+
+  it.effect(
+    'deletes an archived tab without touching a directory now at its old worktree path',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({
+          persisted: archivedPersisted(),
+          files: [worktree.path],
+          gitOps: stubbornGitOps
+        })
+
+        const workspace = yield* run(harness, remove(PANE_A).pipe(Effect.andThen(current)))
+
+        assert.deepStrictEqual(tabsOf(workspace), [PANE_B])
+        assert.isTrue(harness.existing.has(worktree.path))
+      })
+  )
+
+  it.effect('archiving an archived tab again records no second AgentArchived', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: archivedPersisted(), gitOps: removingGitOps })
+
+      yield* run(harness, archive(PANE_A))
+
+      assert.isFalse(harness.log.some((line) => line.startsWith('append ')))
+    })
+  )
+
   it.effect('refuses showing, starting or retiring the tab again while it is being archived', () =>
     Effect.gen(function* () {
       const release = yield* Deferred.make<void>()
