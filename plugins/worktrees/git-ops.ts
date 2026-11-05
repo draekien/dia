@@ -59,20 +59,21 @@ export const makeGitOps = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
 
+  const verifyBranch = (sourceRepo: string, branch: string) =>
+    spawner.exitCode(
+      ChildProcess.make('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).pipe(
+        ChildProcess.setCwd(sourceRepo)
+      )
+    )
+
   const branchExists = Effect.fn('GitOps.branchExists')(function* (
     sourceRepo: string,
     paneId: PaneId,
     branch: string
   ) {
-    const command = ChildProcess.make('git', [
-      'rev-parse',
-      '--verify',
-      '--quiet',
-      `refs/heads/${branch}`
-    ]).pipe(ChildProcess.setCwd(sourceRepo))
-    const exitCode = yield* spawner
-      .exitCode(command)
-      .pipe(Effect.mapError((cause) => new WorktreeCreateError({ paneId, sourceRepo, cause })))
+    const exitCode = yield* verifyBranch(sourceRepo, branch).pipe(
+      Effect.mapError((cause) => new WorktreeCreateError({ paneId, sourceRepo, cause }))
+    )
     return exitCode === 0
   })
 
@@ -264,6 +265,25 @@ export const makeGitOps = Effect.gen(function* () {
       yield* Effect.logWarning('Reusing an empty unregistered worktree directory', {
         paneId,
         path: info.path
+      })
+    }
+
+    const verified = yield* verifyBranch(info.sourceRepo, info.branch).pipe(
+      Effect.mapError((cause) => new WorktreeReattachError({ paneId, path: info.path, cause }))
+    )
+    if (verified !== 0) {
+      yield* Effect.logWarning('Did not reattach a worktree whose branch could not be verified', {
+        paneId,
+        branch: info.branch,
+        exitCode: verified
+      })
+      return yield* new WorktreeReattachError({
+        paneId,
+        path: info.path,
+        cause:
+          verified === 1
+            ? `Branch ${info.branch} no longer exists`
+            : `git rev-parse exited with code ${verified}`
       })
     }
 
