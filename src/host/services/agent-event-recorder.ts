@@ -88,6 +88,7 @@ type Entry = { readonly event: AgentEvent; readonly sourceUuid?: string }
 interface StreamingItem {
   readonly itemId: string
   text: string
+  writtenText: string
   lastWriteAt: number
   flushScheduled: boolean
 }
@@ -294,8 +295,9 @@ const makeRecorder = Effect.gen(function* () {
           lock.withPermits(1)(
             Effect.gen(function* () {
               item.flushScheduled = false
-              if (currentOf() !== item) return
+              if (currentOf() !== item || item.text === item.writtenText) return
               item.lastWriteAt = yield* Clock.currentTimeMillis
+              item.writtenText = item.text
               yield* append([{ event: eventOf(item, true) }])
             })
           )
@@ -311,6 +313,7 @@ const makeRecorder = Effect.gen(function* () {
       const item = currentOf() ?? {
         itemId: yield* newItemId,
         text: '',
+        writtenText: '',
         lastWriteAt: -Infinity,
         flushScheduled: false
       }
@@ -318,6 +321,7 @@ const makeRecorder = Effect.gen(function* () {
       const due = now - item.lastWriteAt >= Duration.toMillis(STREAMING_WRITE_INTERVAL)
       if (due) {
         item.lastWriteAt = now
+        item.writtenText = item.text
         return { item, entries: [{ event: eventOf(item, true) }] }
       }
       if (!item.flushScheduled) {
