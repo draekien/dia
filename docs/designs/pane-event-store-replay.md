@@ -49,6 +49,7 @@ Knowledge it owns: what is committed for each agent, in commit order.
 * New `readAfter(agentId, afterSequence, limits: { maxEvents, maxBytes }): Effect<Replay | ReloadRequired>` (both `Schema.TaggedStruct`, built with `.make`). One read transaction runs: `MAX(sequence)` for the agent as `through` (0 when none); `COUNT(*)` of rows in `(afterSequence, through]`; when it is at most `maxEvents`, `SUM(LENGTH(CAST(payload_json AS BLOB)))` over those rows; then the rows. Returns `Replay{ events, through }`, or `ReloadRequired{ reason }` where `reason` is `ahead` (`afterSequence > through`), `tooLarge` (more than `maxEvents` rows, or more than `maxBytes` bytes; both checked before any row is read, the byte sum only over at most `maxEvents` rows), `undecodable` (a row in range does not decode), or `readFailed` (the read failed; logged at error).
 * New `readHistory(agentId): Effect<{ items, through }, AgentEventReadError>`: all of the agent's items in position order and `MAX(sequence)` (0 when none), in one read transaction.
 * New `lastSequence(agentId): Effect<number, AgentEventReadError>`.
+* New `highestSequence: Effect<number, AgentEventReadError>`: the highest `agent_events.sequence` of any agent, 0 when there is none.
 * At layer build, deletes `agent_events` and `agent_items` rows whose `agent_id` has no `agents` row (left by a `createTab` that failed after the pane emitted events), and logs the count.
 * `readItems` is removed; `readHistory` replaces it.
 
@@ -58,7 +59,7 @@ Knowledge it owns: which committed rows each connected client receives, and when
 
 * `publish(event)`: an event with a `paneId` must be a `PaneSignal`; it is appended with `store.append(paneId, [{ event }])`, retried 3 times on `Schedule.exponential(Duration.millis(20))`. After the retries it is logged at error and `ReloadHistoryFrame{ paneId }` is fanned out. It reaches subscribers only through `store.committed`. An event without a `paneId` is fanned out as a `GlobalEventFrame` as today.
 * Fan-out: one fiber reads `store.committed` and publishes `PaneEventFrame{ paneId: agentId, seq: sequence, event }`, where `event` is the `PaneSignal`, or `PaneAgentEvent.make({ paneId, agentEvent })`.
-* At layer build it reads `hostStartSequence`: the highest `agent_events.sequence` of any agent.
+* At layer build it reads `hostStartSequence` from `store.highestSequence` (on failure: 0).
 * `subscribe(cursors)`: subscribes to the PubSub first; then, for each cursor, calls `store.readAfter(paneId, cursor, REPLAY_LIMITS)`. On `Replay`: if `0 < cursor <= hostStartSequence`, sends `ReloadHistoryFrame`, because the client holds signal state (`isLoading`, attention, queue, open permission prompts) from a Host run that has ended and no row after the cursor corrects it; otherwise sends the replayed frames. On `ReloadRequired`, sends `ReloadHistoryFrame`. Live frames for the pane are then filtered to `seq > through`. Panes without a cursor get only live frames. Each decision is logged at debug with `paneId`, cursor, outcome (`replayed N` or `reload: <reason>`), and elapsed time.
 * `REPLAY_LIMITS = { maxEvents: 128, maxBytes: 1_048_576 }`, exported, matching T3 Code (`THREAD_RESUME_MAX_REPLAY_EVENTS`, `THREAD_RESUME_MAX_REPLAY_ENCODED_BYTES`, `apps/server/src/orchestration-v2/ThreadStream.ts:14,16`).
 * `lastSeq`, `DEFAULT_REPLAY_BUFFER_SIZE` and the in-memory buffers are removed.
@@ -125,14 +126,14 @@ Before: time `TranscriptReader.readHistory` for the longest local session. After
 
 ## JSDoc and logging
 
-Every new export has a JSDoc comment: `PaneAgentEvent`, `PaneSignal`, `ConversationCleared`, `ConversationRewound`, `StoredEvent`, `CommittedEvent`, `Replay`, `ReloadRequired`, `committed`, `readAfter`, `readHistory`, `lastSequence`, `catchUp`, `REPLAY_LIMITS`, `paneChatStateFromItems`.
+Every new export has a JSDoc comment: `PaneAgentEvent`, `PaneSignal`, `ConversationCleared`, `ConversationRewound`, `StoredEvent`, `CommittedEvent`, `Replay`, `ReloadRequired`, `committed`, `readAfter`, `readHistory`, `lastSequence`, `highestSequence`, `catchUp`, `REPLAY_LIMITS`, `paneChatStateFromItems`.
 
 ## Success criteria → tests
 
 | # | Criterion | Test |
 | --- | --- | --- |
 | 1 | Frame `seq` = row `sequence` | `event-hub.test.ts` |
-| 2 | After a Host restart over the same db, a cursor from before the restart reloads; a cursor from after it replays | `event-hub.test.ts`: two layers over one sqlite file |
+| 2 | After a Host restart over the same db, a cursor from before the restart reloads; a cursor from after it replays | `event-hub.test.ts`: a second `EventHubLive` built over a store that already holds rows |
 | 3 | >128 events, >1 MiB, cursor ahead, undecodable row → `ReloadHistory` | `agent-event-store.test.ts`, `event-hub.test.ts` |
 | 4 | Shown text ≤50 ms behind; final text whole; no `streaming:true` after the final row | `agent-event-recorder.test.ts` (TestClock), `pane-chat.test.ts`; app |
 | 5 | Tool calls from before Host start in `GetPaneChat` | `pane-chat-projection.test.ts`; app |
