@@ -41,16 +41,12 @@ import {
 } from '@shared/domain/parking'
 import {
   type IpcEvent,
-  PaneAssistantTextDelta,
-  PaneAssistantThinkingDelta,
   PaneAttentionChanged,
   PaneBackgroundTasksChanged,
-  PaneCheckpointAvailable,
   PaneCompactionFailed,
   PaneContextUsageChanged,
   PaneConversationCompacted,
   PaneConversationReset,
-  PaneMessageAppended,
   PaneMessageQueueChanged,
   PaneModelChanged,
   PanePermissionRequested,
@@ -61,8 +57,6 @@ import {
   PaneSessionNotice,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
-  PaneToolCallCompleted,
-  PaneToolCallStarted,
   PaneToolCallUpdated,
   PaneTurnStatusChanged,
   PaneUserMessagesSent
@@ -218,39 +212,15 @@ export const SessionFactoryLive = Layer.effect(
   })
 )
 
+type PaneOutput = Data.TaggedEnum<{
+  Publish: { readonly event: IpcEvent }
+  Record: { readonly message: OutboundMessage }
+}>
+const PaneOutput = Data.taggedEnum<PaneOutput>()
+
 function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<IpcEvent> {
   return Match.value(message)
     .pipe(
-      Match.tag('AssistantMessageReceived', (m) =>
-        Option.some<IpcEvent>(PaneMessageAppended.make({ paneId, message: m.message }))
-      ),
-      Match.tag('AssistantTextDelta', (m) =>
-        Option.some<IpcEvent>(PaneAssistantTextDelta.make({ paneId, text: m.text }))
-      ),
-      Match.tag('AssistantThinkingDelta', (m) =>
-        Option.some<IpcEvent>(PaneAssistantThinkingDelta.make({ paneId, text: m.text }))
-      ),
-      Match.tag('ToolCallStarted', (m) =>
-        Option.some<IpcEvent>(
-          PaneToolCallStarted.make({
-            paneId,
-            toolCallId: m.toolCallId,
-            toolName: m.toolName
-          })
-        )
-      ),
-      Match.tag('ToolCallCompleted', (m) =>
-        Option.some<IpcEvent>(
-          PaneToolCallCompleted.make({
-            paneId,
-            toolCallId: m.toolCallId,
-            toolName: m.toolName,
-            input: m.input,
-            output: m.output,
-            isError: m.isError
-          })
-        )
-      ),
       Match.tag('ToolCallUpdated', 'TurnStatusChanged', 'SessionNotice', (m) =>
         Option.some(turnProgressEvent(paneId, m))
       ),
@@ -307,15 +277,6 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
       )
     )
     .pipe(
-      Match.tag('CheckpointAvailable', (m) =>
-        Option.some<IpcEvent>(
-          PaneCheckpointAvailable.make({
-            paneId,
-            messageUuid: m.messageUuid,
-            ...(m.resumeAnchorUuid !== undefined ? { resumeAnchorUuid: m.resumeAnchorUuid } : {})
-          })
-        )
-      ),
       Match.tag('RewoundToCheckpoint', (m) =>
         Option.some<IpcEvent>(PaneRewoundToCheckpoint.make({ paneId, messageUuid: m.messageUuid }))
       ),
@@ -356,6 +317,15 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
         'TurnParked',
         'SessionStarted',
         'PermissionModeChanged',
+        () => Option.none<IpcEvent>()
+      ),
+      Match.tag(
+        'AssistantMessageReceived',
+        'AssistantTextDelta',
+        'AssistantThinkingDelta',
+        'ToolCallStarted',
+        'ToolCallCompleted',
+        'CheckpointAvailable',
         () => Option.none<IpcEvent>()
       ),
       Match.exhaustive
@@ -447,7 +417,8 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
 ) {
   const paneScope = yield* Scope.Scope
   const record = yield* recorder.open({ agentId: config.paneId, cwd: config.cwd, resume })
-  const outbound = yield* Queue.unbounded<IpcEvent, Cause.Done>()
+  const outbound = yield* Queue.unbounded<PaneOutput, Cause.Done>()
+  const publish = (event: IpcEvent) => Queue.offer(outbound, PaneOutput.Publish({ event }))
   const recordRef = yield* Ref.make<PaneRecord>({
     config,
     history: [],
@@ -484,10 +455,7 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
     }
 
     yield* Ref.update(recordRef, (r) => ({ ...r, attention: result.success }))
-    yield* Queue.offer(
-      outbound,
-      PaneAttentionChanged.make({ paneId: config.paneId, attention: result.success })
-    )
+    yield* publish(PaneAttentionChanged.make({ paneId: config.paneId, attention: result.success }))
 
     if (result.success._tag === 'Completed') {
       const fiber = yield* Effect.sleep(Duration.seconds(3)).pipe(
@@ -598,7 +566,7 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
       }
 
       const event = toIpcEvent(config.paneId, message)
-      if (Option.isSome(event)) yield* Queue.offer(outbound, event.value)
+      if (Option.isSome(event)) yield* publish(event.value)
 
       if (message._tag === 'TurnParked') {
         yield* park(message.cause, yield* currentMode)
@@ -612,7 +580,11 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
   const session = yield* factory.start({
     config,
     resume,
-    emit: (message) => Effect.andThen(handleSessionEvent(message), record(message))
+    emit: (message) =>
+      Effect.andThen(
+        Queue.offer(outbound, PaneOutput.Record({ message })),
+        handleSessionEvent(message)
+      )
   })
   yield* Deferred.succeed(sessionReady, session)
   yield* Effect.logInfo('Pane agent session created', { paneId: config.paneId, resume })
@@ -718,14 +690,19 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
     )
   }
 
-  return { handle, session, outbound, repark }
+  const drain = (onEvent: (event: IpcEvent) => Effect.Effect<void>) =>
+    Stream.runForEach(Stream.fromQueue(outbound), (output) =>
+      output._tag === 'Publish' ? onEvent(output.event) : record(output.message)
+    )
+
+  return { handle, session, outbound, publish, drain, repark }
 })
 
 interface PaneEntry {
   readonly handle: PaneHandle
   readonly repark: (mode: UsageLimitResume) => Effect.Effect<void>
   readonly scope: Scope.Closeable
-  readonly outbound: Queue.Queue<IpcEvent, Cause.Done>
+  readonly outbound: Queue.Queue<PaneOutput, Cause.Done>
   readonly subscriber: Fiber.Fiber<void>
   readonly closed: Deferred.Deferred<void>
 }
@@ -879,13 +856,11 @@ export const PaneSupervisorLive = Layer.effect(
         onPermissionModeChanged,
         Option.fromUndefinedOr(request.resume)
       ).pipe(Effect.provideService(Scope.Scope, scope))
-      const { handle, session, outbound, repark } = yield* setup === undefined
+      const { handle, session, outbound, publish, drain, repark } = yield* setup === undefined
         ? start
         : setup.startSession(start)
 
-      const subscriber = yield* Effect.forkDetach(
-        Stream.runForEach(Stream.fromQueue(outbound), onEvent)
-      )
+      const subscriber = yield* Effect.forkDetach(drain(onEvent))
       const closed = yield* Deferred.make<void>()
 
       yield* Ref.update(
@@ -899,8 +874,7 @@ export const PaneSupervisorLive = Layer.effect(
           sessionId
         })
         yield* onSessionChanged(Option.none())
-        yield* Queue.offer(
-          outbound,
+        yield* publish(
           PaneMessageQueueChanged.make({ paneId: config.paneId, ...EMPTY_MESSAGE_QUEUE })
         )
         yield* handle.markErrored({ message: SESSION_NOT_FOUND_NOTICE })

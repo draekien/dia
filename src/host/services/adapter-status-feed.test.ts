@@ -41,8 +41,7 @@ const feedFollowing = (
       }),
       Layer.succeed(EventHub)({
         publish: () => Effect.void,
-        subscribe: () => Stream.empty,
-        lastSeq: () => Effect.succeed(0)
+        subscribe: () => Stream.empty
       })
     )
   )

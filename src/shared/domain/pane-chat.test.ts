@@ -1,3 +1,13 @@
+import {
+  type AgentItem,
+  MessageItem,
+  MessageUpdated,
+  ReasoningItem,
+  ReasoningUpdated,
+  ToolCallCompleted,
+  ToolCallItem,
+  ToolCallStarted
+} from '@shared/domain/agent-event'
 import type { AttentionState } from '@shared/domain/attention'
 import {
   AwaitingPermission,
@@ -7,20 +17,17 @@ import {
   Idle,
   PermissionRequest
 } from '@shared/domain/attention'
-import { ConversationMessage } from '@shared/domain/pane'
+import type { ConversationMessage } from '@shared/domain/pane'
 import { RESUME_TEXT } from '@shared/domain/parking'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import { SessionSetupStep, WorktreeSetupStep } from '@shared/domain/tab-setup'
 import {
-  PaneAssistantTextDelta,
-  PaneAssistantThinkingDelta,
+  PaneAgentEvent,
   PaneAttentionChanged,
   PaneBackgroundTasksChanged,
-  PaneCheckpointAvailable,
   PaneCompactionFailed,
   PaneConversationCompacted,
   PaneConversationReset,
-  PaneMessageAppended,
   PaneMessageQueueChanged,
   PaneModelChanged,
   PaneRewoundToCheckpoint,
@@ -28,8 +35,6 @@ import {
   PaneSetupProgress,
   PaneSlashCommandsAvailable,
   PaneSlashCommandsWarming,
-  PaneToolCallCompleted,
-  PaneToolCallStarted,
   PaneToolCallUpdated,
   PaneTurnStatusChanged,
   PaneUserMessagesSent
@@ -40,25 +45,37 @@ import {
   emptyPaneChatState,
   isParkNotice,
   lastUserText,
-  paneChatStateFromHistory,
+  paneChatStateFromItems,
   reducePaneChat
 } from './pane-chat'
 
 const PANE = '00000000-0000-4000-8000-000000000000'
 
-const textDelta = (text: string) => PaneAssistantTextDelta.make({ paneId: PANE, text })
-const thinkingDelta = (text: string) => PaneAssistantThinkingDelta.make({ paneId: PANE, text })
+const agentEvent = (event: PaneAgentEvent['agentEvent']) =>
+  PaneAgentEvent.make({ paneId: PANE, agentEvent: event })
+const reply = (itemId: string, content: string, streaming = true) =>
+  agentEvent(MessageUpdated.make({ itemId, message: { role: 'assistant', content }, streaming }))
+const thinking = (itemId: string, text: string, streaming = true) =>
+  agentEvent(ReasoningUpdated.make({ itemId, text, streaming }))
+const userRecorded = (itemId: string, message: Omit<ConversationMessage, 'role'>) =>
+  agentEvent(
+    MessageUpdated.make({ itemId, message: { role: 'user', ...message }, streaming: false })
+  )
 const toolStarted = (toolCallId: string, toolName: string) =>
-  PaneToolCallStarted.make({ paneId: PANE, toolCallId, toolName })
+  agentEvent(ToolCallStarted.make({ toolCallId, toolName }))
 const toolCompleted = (
   toolCallId: string,
   toolName: string,
   input: Record<string, unknown>,
   output: string,
   isError: boolean
-) => PaneToolCallCompleted.make({ paneId: PANE, toolCallId, toolName, input, output, isError })
-const messageAppended = (role: 'user' | 'assistant', content: string) =>
-  PaneMessageAppended.make({ paneId: PANE, message: ConversationMessage.make({ role, content }) })
+) => agentEvent(ToolCallCompleted.make({ toolCallId, toolName, input, output, isError }))
+const historyOf = (turns: ReadonlyArray<ConversationMessage>): PaneChatState =>
+  paneChatStateFromItems(
+    turns.map((message, position) =>
+      MessageItem.make({ itemId: `h-${position}`, position, streaming: false, message })
+    )
+  )
 const attentionChanged = (attention: AttentionState) =>
   PaneAttentionChanged.make({ paneId: PANE, attention })
 const slashCommandsAvailable = (commands: ReadonlyArray<SlashCommandInfo>) =>
@@ -77,12 +94,6 @@ const conversationCompacted = (
     ...(postTokens !== undefined ? { postTokens } : {})
   })
 const conversationReset = () => PaneConversationReset.make({ paneId: PANE })
-const checkpointAvailable = (messageUuid: string, resumeAnchorUuid?: string) =>
-  PaneCheckpointAvailable.make({
-    paneId: PANE,
-    messageUuid,
-    ...(resumeAnchorUuid !== undefined ? { resumeAnchorUuid } : {})
-  })
 const rewoundToCheckpoint = (messageUuid: string) =>
   PaneRewoundToCheckpoint.make({ paneId: PANE, messageUuid })
 
@@ -97,54 +108,105 @@ const queueChanged = (texts: ReadonlyArray<string>, held: boolean) =>
     queued: texts.map((text, index) => ({ id: `q-${index}`, text })),
     held
   })
+const foldAll = (state: PaneChatState, events: ReadonlyArray<PaneAgentEvent>) =>
+  events.reduce((current, event) => reducePaneChat(current, event), state)
 
-describe('paneChatStateFromHistory', () => {
-  it('maps each turn to a message with a stable pane-scoped id and one text part', () => {
-    const result = paneChatStateFromHistory(PANE, [
-      { role: 'user', content: 'hi' },
-      { role: 'assistant', content: 'hello' }
-    ])
+describe('paneChatStateFromItems', () => {
+  it('shows each user item as a user turn and each run of assistant items as one assistant turn', () => {
+    const items: ReadonlyArray<AgentItem> = [
+      MessageItem.make({
+        itemId: 'u-1',
+        position: 0,
+        streaming: false,
+        message: { role: 'user', content: 'hi', checkpointUuid: 'turn-1' }
+      }),
+      ReasoningItem.make({ itemId: 'r-1', position: 1, streaming: false, text: 'hmm' }),
+      MessageItem.make({
+        itemId: 'a-1',
+        position: 2,
+        streaming: false,
+        message: { role: 'assistant', content: 'hello' }
+      })
+    ]
 
-    expect(result).toEqual({
-      attention: Idle.make({}),
-      isLoading: false,
-      slashCommands: [],
-      warmingCommands: false,
-      queued: [],
-      queueHeld: false,
-      turnStatus: null,
-      compactionFailure: null,
-      backgroundTasks: [],
+    expect(paneChatStateFromItems(items)).toEqual({
+      ...emptyPaneChatState,
       messages: [
-        { id: `${PANE}:history:0`, role: 'user', parts: [{ type: 'text', content: 'hi' }] },
-        { id: `${PANE}:history:1`, role: 'assistant', parts: [{ type: 'text', content: 'hello' }] }
+        {
+          id: 'u-1',
+          role: 'user',
+          parts: [{ type: 'text', content: 'hi' }],
+          checkpointUuid: 'turn-1'
+        },
+        {
+          id: 'r-1',
+          role: 'assistant',
+          parts: [
+            { type: 'thinking', content: 'hmm', itemId: 'r-1' },
+            { type: 'text', content: 'hello', itemId: 'a-1' }
+          ]
+        }
       ]
     })
   })
 
-  it('yields no messages and a settled turn for empty history', () => {
-    expect(paneChatStateFromHistory(PANE, [])).toEqual({
-      attention: Idle.make({}),
-      messages: [],
-      isLoading: false,
-      slashCommands: [],
-      warmingCommands: false,
-      queued: [],
-      queueHeld: false,
-      turnStatus: null,
-      compactionFailure: null,
-      backgroundTasks: []
-    })
+  it('yields no messages and a settled turn for no items', () => {
+    expect(paneChatStateFromItems([])).toEqual(emptyPaneChatState)
   })
 
-  it('carries a restored user turn’s checkpoint uuid onto its message', () => {
-    const result = paneChatStateFromHistory(PANE, [
-      { role: 'user', content: 'hi', checkpointUuid: 'turn-1' },
-      { role: 'assistant', content: 'hello' }
+  it('shows a tool call stored while still running as finished', () => {
+    const state = paneChatStateFromItems([
+      ToolCallItem.make({ itemId: 'call-1', position: 0, running: true, toolName: 'Bash' })
     ])
 
-    expect(result.messages[0].checkpointUuid).toBe('turn-1')
-    expect(result.messages[1].checkpointUuid).toBeUndefined()
+    expect(state.messages[0].parts).toEqual([
+      { type: 'tool-call', toolCallId: 'call-1', name: 'Bash', state: 'done' }
+    ])
+  })
+
+  it('builds the same turns the reducer builds from the events that stored those items', () => {
+    const events = [
+      userRecorded('u-1', { content: 'question' }),
+      thinking('r-1', 'weighing', false),
+      reply('a-1', 'let me look', false),
+      toolStarted('call-1', 'Bash'),
+      toolCompleted('call-1', 'Bash', { command: 'ls' }, 'out', false),
+      reply('a-2', 'done', false)
+    ]
+    const items: ReadonlyArray<AgentItem> = [
+      MessageItem.make({
+        itemId: 'u-1',
+        position: 0,
+        streaming: false,
+        message: { role: 'user', content: 'question' }
+      }),
+      ReasoningItem.make({ itemId: 'r-1', position: 1, streaming: false, text: 'weighing' }),
+      MessageItem.make({
+        itemId: 'a-1',
+        position: 2,
+        streaming: false,
+        message: { role: 'assistant', content: 'let me look' }
+      }),
+      ToolCallItem.make({
+        itemId: 'call-1',
+        position: 3,
+        running: false,
+        toolName: 'Bash',
+        input: { command: 'ls' },
+        output: 'out',
+        isError: false
+      }),
+      MessageItem.make({
+        itemId: 'a-2',
+        position: 4,
+        streaming: false,
+        message: { role: 'assistant', content: 'done' }
+      })
+    ]
+
+    expect(paneChatStateFromItems(items).messages).toEqual(
+      foldAll(emptyPaneChatState, events).messages
+    )
   })
 })
 
@@ -166,15 +228,15 @@ describe('reducePaneChat: user messages sent', () => {
     expect(result.setup).toBeUndefined()
   })
 
-  it('appends a user turn with a pane-scoped id after existing messages and marks the pane loading', () => {
-    const seeded = paneChatStateFromHistory(PANE, [{ role: 'assistant', content: 'earlier' }])
+  it('appends a user turn named by the message id after existing messages and marks the pane loading', () => {
+    const seeded = historyOf([{ role: 'assistant', content: 'earlier' }])
 
     const result = sendUser(seeded, 'u-1', 'do the thing')
 
     expect(result.isLoading).toBe(true)
     expect(result.messages).toEqual([
       seeded.messages[0],
-      { id: `${PANE}:user:u-1`, role: 'user', parts: [{ type: 'text', content: 'do the thing' }] }
+      { id: 'u-1', role: 'user', parts: [{ type: 'text', content: 'do the thing' }] }
     ])
   })
 
@@ -189,15 +251,15 @@ describe('reducePaneChat: user messages sent', () => {
     )
 
     expect(result.messages).toEqual([
-      { id: `${PANE}:user:u-1`, role: 'user', parts: [{ type: 'text', content: 'first' }] },
+      { id: 'u-1', role: 'user', parts: [{ type: 'text', content: 'first' }] },
       {
-        id: `${PANE}:user:u-2`,
+        id: 'u-2',
         role: 'user',
         parts: [{ type: 'text', content: 'second' }],
         rewindable: false
       },
       {
-        id: `${PANE}:user:u-3`,
+        id: 'u-3',
         role: 'user',
         parts: [{ type: 'text', content: 'third' }],
         rewindable: false
@@ -211,6 +273,31 @@ describe('reducePaneChat: user messages sent', () => {
     const twice = sendUser(once, 'u-1', 'hi')
 
     expect(twice.messages).toEqual(once.messages)
+  })
+
+  it('keeps a message recorded before its send event in place and marks the batch on it', () => {
+    const recorded = foldAll(emptyPaneChatState, [
+      userRecorded('u-1', { content: 'first', checkpointUuid: 'turn-1' }),
+      userRecorded('u-2', { content: 'second' })
+    ])
+
+    const result = reducePaneChat(
+      recorded,
+      userMessagesSent([
+        { id: 'u-1', text: 'first' },
+        { id: 'u-2', text: 'second' }
+      ])
+    )
+
+    expect(result.messages).toEqual([
+      {
+        id: 'u-1',
+        role: 'user',
+        parts: [{ type: 'text', content: 'first' }],
+        checkpointUuid: 'turn-1'
+      },
+      { id: 'u-2', role: 'user', parts: [{ type: 'text', content: 'second' }], rewindable: false }
+    ])
   })
 
   it('preserves the available slash commands and the queue', () => {
@@ -232,143 +319,106 @@ describe('reducePaneChat: user messages sent', () => {
   })
 })
 
-describe('reducePaneChat: text deltas', () => {
-  it('opens a new assistant message when the last turn is the user prompt', () => {
+describe('reducePaneChat: assistant text', () => {
+  it('opens an assistant turn named by the item when the last turn is the user prompt', () => {
     const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
-    const result = reducePaneChat(afterSend, textDelta('Hel'))
+    const result = reducePaneChat(afterSend, reply('a-1', 'Hel'))
 
     expect(result.isLoading).toBe(true)
     expect(result.messages).toEqual([
       afterSend.messages[0],
-      { id: '1:assistant', role: 'assistant', parts: [{ type: 'text', content: 'Hel' }] }
+      { id: 'a-1', role: 'assistant', parts: [{ type: 'text', content: 'Hel', itemId: 'a-1' }] }
     ])
   })
 
-  it('concatenates consecutive text deltas into a single text part', () => {
+  it('replaces the text of an item shown already with its latest update', () => {
     const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
-    const result = [textDelta('Hel'), textDelta('lo')].reduce(
-      (state, event) => reducePaneChat(state, event),
-      afterSend
-    )
+    const result = foldAll(afterSend, [reply('a-1', 'Hel'), reply('a-1', 'Hello', false)])
 
-    expect(result.messages.at(-1)?.parts).toEqual([{ type: 'text', content: 'Hello' }])
+    expect(result.messages.at(-1)?.parts).toEqual([
+      { type: 'text', content: 'Hello', itemId: 'a-1' }
+    ])
   })
 
-  it('keeps the same assistant message id across successive deltas', () => {
+  it('adds a second text item to the same assistant turn', () => {
     const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
-    const first = reducePaneChat(afterSend, textDelta('a'))
-    const second = reducePaneChat(first, textDelta('b'))
-
-    expect(second.messages.at(-1)?.id).toBe(first.messages.at(-1)?.id)
-    expect(second.messages).toHaveLength(2)
-  })
-
-  it('starts a fresh assistant message when a delta arrives after the previous turn settled', () => {
-    const settled: PaneChatState = {
-      attention: emptyPaneChatState.attention,
-      isLoading: false,
-      slashCommands: [],
-      warmingCommands: false,
-      queued: [],
-      queueHeld: false,
-      turnStatus: null,
-      compactionFailure: null,
-      backgroundTasks: [],
-      messages: [
-        { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'done' }] }
-      ]
-    }
-
-    const result = reducePaneChat(settled, textDelta('next'))
+    const result = foldAll(afterSend, [reply('a-1', 'one', false), reply('a-2', 'two')])
 
     expect(result.messages).toHaveLength(2)
-    expect(result.messages[0]).toBe(settled.messages[0])
-    expect(result.messages[1]).toEqual({
-      id: '1:assistant',
-      role: 'assistant',
-      parts: [{ type: 'text', content: 'next' }]
-    })
-    expect(result.isLoading).toBe(true)
+    expect(result.messages.at(-1)?.parts).toEqual([
+      { type: 'text', content: 'one', itemId: 'a-1' },
+      { type: 'text', content: 'two', itemId: 'a-2' }
+    ])
+  })
+
+  it('updates an item in an earlier turn without touching later turns', () => {
+    const twoTurns = foldAll(sendUser(emptyPaneChatState, 'u-1', 'q1'), [reply('a-1', 'draft')])
+    const asked = sendUser(twoTurns, 'u-2', 'q2')
+
+    const result = reducePaneChat(asked, reply('a-1', 'final', false))
+
+    expect(result.messages.map((message) => message.id)).toEqual(['u-1', 'a-1', 'u-2'])
+    expect(result.messages[1].parts).toEqual([{ type: 'text', content: 'final', itemId: 'a-1' }])
+  })
+
+  it('does not mark an idle pane loading for an item that arrives already finished', () => {
+    const result = reducePaneChat(emptyPaneChatState, reply('a-1', 'imported', false))
+
+    expect(result.isLoading).toBe(false)
   })
 })
 
-describe('reducePaneChat: thinking deltas', () => {
-  it('concatenates consecutive thinking deltas into a single thinking part', () => {
+describe('reducePaneChat: thinking', () => {
+  it('replaces the text of a thinking item with its latest update', () => {
     const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
-    const result = [thinkingDelta('weigh'), thinkingDelta('ing')].reduce(
-      (state, event) => reducePaneChat(state, event),
-      afterSend
-    )
+    const result = foldAll(afterSend, [thinking('r-1', 'weigh'), thinking('r-1', 'weighing')])
 
-    expect(result.messages.at(-1)?.parts).toEqual([{ type: 'thinking', content: 'weighing' }])
+    expect(result.messages.at(-1)?.parts).toEqual([
+      { type: 'thinking', content: 'weighing', itemId: 'r-1' }
+    ])
   })
 
   it('keeps thinking and text as distinct ordered parts of one message', () => {
     const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
-    const result = [thinkingDelta('hmm'), textDelta('answer')].reduce(
-      (state, event) => reducePaneChat(state, event),
-      afterSend
-    )
+    const result = foldAll(afterSend, [thinking('r-1', 'hmm'), reply('a-1', 'answer')])
 
     expect(result.messages.at(-1)?.parts).toEqual([
-      { type: 'thinking', content: 'hmm' },
-      { type: 'text', content: 'answer' }
+      { type: 'thinking', content: 'hmm', itemId: 'r-1' },
+      { type: 'text', content: 'answer', itemId: 'a-1' }
     ])
   })
 })
 
 describe('reducePaneChat: tool calls', () => {
   it('appends a running tool-call part to the streaming assistant message', () => {
-    const streaming = loadingWith({
-      attention: emptyPaneChatState.attention,
-      isLoading: true,
-      slashCommands: [],
-      warmingCommands: false,
-      queued: [],
-      queueHeld: false,
-      turnStatus: null,
-      compactionFailure: null,
-      backgroundTasks: [],
-      messages: [
-        { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'let me look' }] }
-      ]
-    })
+    const streaming = foldAll(sendUser(emptyPaneChatState, 'u-1', 'q'), [
+      reply('a-1', 'let me look')
+    ])
 
     const result = reducePaneChat(streaming, toolStarted('call-1', 'Bash'))
 
     expect(result.messages.at(-1)?.parts).toEqual([
-      { type: 'text', content: 'let me look' },
+      { type: 'text', content: 'let me look', itemId: 'a-1' },
       { type: 'tool-call', toolCallId: 'call-1', name: 'Bash', state: 'running' }
     ])
   })
 
+  it('ignores a repeated start of a tool call shown already', () => {
+    const started = reducePaneChat(loadingWith(emptyPaneChatState), toolStarted('call-1', 'Bash'))
+
+    expect(reducePaneChat(started, toolStarted('call-1', 'Bash'))).toBe(started)
+  })
+
   it('resolves the matching running tool call in place with input, output, and error flag', () => {
-    const streaming: PaneChatState = {
-      attention: emptyPaneChatState.attention,
-      isLoading: true,
-      slashCommands: [],
-      warmingCommands: false,
-      queued: [],
-      queueHeld: false,
-      turnStatus: null,
-      compactionFailure: null,
-      backgroundTasks: [],
-      messages: [
-        {
-          id: '0:assistant',
-          role: 'assistant',
-          parts: [{ type: 'tool-call', toolCallId: 'call-1', name: 'Bash', state: 'running' }]
-        }
-      ]
-    }
+    const running = reducePaneChat(loadingWith(emptyPaneChatState), toolStarted('call-1', 'Bash'))
 
     const result = reducePaneChat(
-      streaming,
+      running,
       toolCompleted('call-1', 'Bash', { command: 'ls' }, 'file.txt', false)
     )
 
@@ -386,30 +436,13 @@ describe('reducePaneChat: tool calls', () => {
   })
 
   it('leaves other tool-call parts untouched when completing one by id', () => {
-    const streaming: PaneChatState = {
-      attention: emptyPaneChatState.attention,
-      isLoading: true,
-      slashCommands: [],
-      warmingCommands: false,
-      queued: [],
-      queueHeld: false,
-      turnStatus: null,
-      compactionFailure: null,
-      backgroundTasks: [],
-      messages: [
-        {
-          id: '0:assistant',
-          role: 'assistant',
-          parts: [
-            { type: 'tool-call', toolCallId: 'call-1', name: 'Bash', state: 'running' },
-            { type: 'tool-call', toolCallId: 'call-2', name: 'Read', state: 'running' }
-          ]
-        }
-      ]
-    }
+    const running = foldAll(loadingWith(emptyPaneChatState), [
+      toolStarted('call-1', 'Bash'),
+      toolStarted('call-2', 'Read')
+    ])
 
     const result = reducePaneChat(
-      streaming,
+      running,
       toolCompleted('call-2', 'Read', { file_path: '/x' }, 'body', false)
     )
 
@@ -423,18 +456,37 @@ describe('reducePaneChat: tool calls', () => {
     expect(parts?.[1]).toMatchObject({ toolCallId: 'call-2', state: 'done', output: 'body' })
   })
 
+  it('shows a completed tool call it never saw start as a finished row', () => {
+    const result = reducePaneChat(
+      emptyPaneChatState,
+      toolCompleted('call-1', 'Bash', { command: 'ls' }, 'out', false)
+    )
+
+    expect(result.messages.at(-1)?.parts).toMatchObject([{ toolCallId: 'call-1', state: 'done' }])
+  })
+
+  it('does not mark an idle pane loading for a tool event', () => {
+    const started = reducePaneChat(emptyPaneChatState, toolStarted('call-1', 'Bash'))
+    const completed = reducePaneChat(
+      emptyPaneChatState,
+      toolCompleted('call-1', 'Bash', {}, 'out', false)
+    )
+
+    expect([started.isLoading, completed.isLoading]).toEqual([false, false])
+  })
+
   it('preserves part order across interleaved text and tool calls in one turn', () => {
     const afterSend = sendUser(emptyPaneChatState, 'u-1', 'question')
 
-    const result = [
-      textDelta('A'),
+    const result = foldAll(afterSend, [
+      reply('a-1', 'A'),
       toolStarted('call-1', 'Bash'),
       toolCompleted('call-1', 'Bash', { command: 'ls' }, 'out', false),
-      textDelta('B')
-    ].reduce((state, event) => reducePaneChat(state, event), afterSend)
+      reply('a-2', 'B')
+    ])
 
     expect(result.messages.at(-1)?.parts).toEqual([
-      { type: 'text', content: 'A' },
+      { type: 'text', content: 'A', itemId: 'a-1' },
       {
         type: 'tool-call',
         toolCallId: 'call-1',
@@ -444,59 +496,85 @@ describe('reducePaneChat: tool calls', () => {
         output: 'out',
         isError: false
       },
-      { type: 'text', content: 'B' }
+      { type: 'text', content: 'B', itemId: 'a-2' }
     ])
   })
 })
 
-describe('reducePaneChat: PaneMessageAppended backstop', () => {
-  it('appends a closed assistant turn when no deltas built one', () => {
-    const settled = paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }])
+describe('reducePaneChat: recorded user messages', () => {
+  it('merges the checkpoint and resume uuids into the sent turn with the same id', () => {
+    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'deploy')
 
-    const result = reducePaneChat(settled, messageAppended('assistant', 'full reply'))
+    const result = reducePaneChat(
+      afterSend,
+      userRecorded('u-1', {
+        content: 'deploy',
+        checkpointUuid: 'turn-1',
+        resumeAnchorUuid: 'assistant-0'
+      })
+    )
 
-    expect(result.isLoading).toBe(false)
-    expect(result.messages).toHaveLength(2)
-    expect(result.messages[1]).toEqual({
-      id: '1:assistant',
-      role: 'assistant',
-      parts: [{ type: 'text', content: 'full reply' }]
+    expect(result.messages).toEqual([
+      {
+        id: 'u-1',
+        role: 'user',
+        parts: [{ type: 'text', content: 'deploy' }],
+        checkpointUuid: 'turn-1',
+        resumeAnchorUuid: 'assistant-0'
+      }
+    ])
+  })
+
+  it('binds each checkpoint of a batch to its own turn whatever order they are recorded in', () => {
+    const batch = reducePaneChat(
+      emptyPaneChatState,
+      userMessagesSent([
+        { id: 'u-1', text: 'first' },
+        { id: 'u-2', text: 'second' }
+      ])
+    )
+
+    const result = foldAll(batch, [
+      userRecorded('u-2', { content: 'second', checkpointUuid: 'turn-2' }),
+      userRecorded('u-1', { content: 'first', checkpointUuid: 'turn-1' })
+    ])
+
+    expect(result.messages.map((message) => message.checkpointUuid)).toEqual(['turn-1', 'turn-2'])
+  })
+
+  it('keeps the batch flag on a sent turn when its checkpoint is recorded', () => {
+    const batch = reducePaneChat(
+      emptyPaneChatState,
+      userMessagesSent([
+        { id: 'u-1', text: 'first' },
+        { id: 'u-2', text: 'second' }
+      ])
+    )
+
+    const result = reducePaneChat(
+      batch,
+      userRecorded('u-2', { content: 'second', checkpointUuid: 'turn-2' })
+    )
+
+    expect(result.messages[1].rewindable).toBe(false)
+  })
+
+  it('appends a user turn recorded without a send event, such as one imported from the transcript', () => {
+    const seeded = historyOf([{ role: 'assistant', content: 'earlier' }])
+
+    const result = reducePaneChat(seeded, userRecorded('u-9', { content: 'typed in a terminal' }))
+
+    expect(result.messages.at(-1)).toEqual({
+      id: 'u-9',
+      role: 'user',
+      parts: [{ type: 'text', content: 'typed in a terminal' }]
     })
-  })
-
-  it('ignores the appended assistant turn when deltas already built the streaming message', () => {
-    const streaming: PaneChatState = {
-      attention: emptyPaneChatState.attention,
-      isLoading: true,
-      slashCommands: [],
-      warmingCommands: false,
-      queued: [],
-      queueHeld: false,
-      turnStatus: null,
-      compactionFailure: null,
-      backgroundTasks: [],
-      messages: [
-        { id: '0:assistant', role: 'assistant', parts: [{ type: 'text', content: 'streamed' }] }
-      ]
-    }
-
-    const result = reducePaneChat(streaming, messageAppended('assistant', 'streamed'))
-
-    expect(result).toBe(streaming)
-  })
-
-  it('ignores an appended user turn (PaneUserMessagesSent already added it)', () => {
-    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'hi')
-
-    const result = reducePaneChat(afterSend, messageAppended('user', 'hi'))
-
-    expect(result).toBe(afterSend)
   })
 })
 
 describe('reducePaneChat: attention', () => {
   it('ends the turn when attention reports Completed', () => {
-    const streaming = loadingWith(paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }]))
+    const streaming = loadingWith(historyOf([{ role: 'user', content: 'hi' }]))
 
     const result = reducePaneChat(streaming, attentionChanged(Completed.make({})))
 
@@ -505,7 +583,7 @@ describe('reducePaneChat: attention', () => {
   })
 
   it('ends the turn and appends a retryable error turn when attention reports Errored', () => {
-    const streaming = loadingWith(paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }]))
+    const streaming = loadingWith(historyOf([{ role: 'user', content: 'hi' }]))
 
     const result = reducePaneChat(
       streaming,
@@ -519,7 +597,7 @@ describe('reducePaneChat: attention', () => {
   })
 
   it('ends the turn and appends an error turn when attention reports Crashed', () => {
-    const streaming = loadingWith(paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }]))
+    const streaming = loadingWith(historyOf([{ role: 'user', content: 'hi' }]))
 
     const result = reducePaneChat(
       streaming,
@@ -533,7 +611,7 @@ describe('reducePaneChat: attention', () => {
   })
 
   it('keeps the turn loading while awaiting permission', () => {
-    const streaming = loadingWith(paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }]))
+    const streaming = loadingWith(historyOf([{ role: 'user', content: 'hi' }]))
 
     const awaiting = AwaitingPermission.make({
       request: PermissionRequest.make({ requestId: 'r-1', toolName: 'Bash', input: {} })
@@ -545,7 +623,7 @@ describe('reducePaneChat: attention', () => {
   })
 
   it('leaves a loading turn unchanged when attention settles to Idle', () => {
-    const streaming = loadingWith(paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }]))
+    const streaming = loadingWith(historyOf([{ role: 'user', content: 'hi' }]))
 
     const result = reducePaneChat(streaming, attentionChanged(Idle.make({})))
 
@@ -582,7 +660,7 @@ describe('lastUserText', () => {
 
 describe('reducePaneChat: slash commands', () => {
   it('sets the available slash-command list without touching the transcript', () => {
-    const seeded = paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }])
+    const seeded = historyOf([{ role: 'user', content: 'hi' }])
     const commands: ReadonlyArray<SlashCommandInfo> = [
       { name: 'compact', description: 'Compact history', argumentHint: '', aliases: [] }
     ]
@@ -640,7 +718,7 @@ describe('reducePaneChat: slash commands', () => {
 
 describe('reducePaneChat: conversation compaction', () => {
   it('appends a notice divider with the token span, keeping prior messages and load state', () => {
-    const streaming = loadingWith(paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }]))
+    const streaming = loadingWith(historyOf([{ role: 'user', content: 'hi' }]))
 
     const result = reducePaneChat(streaming, conversationCompacted('manual', 1842, 500))
 
@@ -663,7 +741,7 @@ describe('reducePaneChat: conversation compaction', () => {
   })
 
   it('hides rewind on every user turn sent before the compaction', () => {
-    const history = paneChatStateFromHistory(PANE, [
+    const history = historyOf([
       { role: 'user', content: 'write note', checkpointUuid: 'turn-a' },
       { role: 'assistant', content: 'done' },
       { role: 'user', content: '/compact' }
@@ -678,7 +756,7 @@ describe('reducePaneChat: conversation compaction', () => {
 
   it('keeps rewind on a user turn sent after the compaction', () => {
     const compacted = reducePaneChat(
-      paneChatStateFromHistory(PANE, [{ role: 'user', content: '/compact' }]),
+      historyOf([{ role: 'user', content: '/compact' }]),
       conversationCompacted('manual', 94533, 23665)
     )
 
@@ -687,21 +765,18 @@ describe('reducePaneChat: conversation compaction', () => {
     expect(result.messages.at(-1)?.rewindable).toBeUndefined()
   })
 
-  it('still anchors the next checkpoint to the compact turn so later turns keep their own', () => {
+  it('keeps a turn sent before the compaction not rewindable when its checkpoint arrives later', () => {
     const compacted = reducePaneChat(
-      paneChatStateFromHistory(PANE, [{ role: 'user', content: '/compact' }]),
+      sendUser(emptyPaneChatState, 'u-1', '/compact'),
       conversationCompacted('manual', 94533, 23665)
     )
-    const withNext = sendUser(compacted, 'm-c', 'edit note')
 
     const result = reducePaneChat(
-      reducePaneChat(withNext, checkpointAvailable('summary-uuid')),
-      checkpointAvailable('turn-c')
+      compacted,
+      userRecorded('u-1', { content: '/compact', checkpointUuid: 'summary-uuid' })
     )
 
-    expect(
-      result.messages.filter((message) => message.role === 'user').map((m) => m.checkpointUuid)
-    ).toEqual(['summary-uuid', 'turn-c'])
+    expect(result.messages[0]).toMatchObject({ checkpointUuid: 'summary-uuid', rewindable: false })
   })
 })
 
@@ -733,7 +808,7 @@ describe('reducePaneChat: compaction failure', () => {
 
 describe('reducePaneChat: model change', () => {
   it('appends a notice naming the new model by its display name', () => {
-    const history = paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }])
+    const history = historyOf([{ role: 'user', content: 'hi' }])
 
     const result = reducePaneChat(history, {
       ...PaneModelChanged.make({ paneId: PANE, model: 'claude-opus-5' }),
@@ -768,7 +843,7 @@ describe('reducePaneChat: conversation reset', () => {
       aliases: []
     }
     const active = reducePaneChat(
-      loadingWith(paneChatStateFromHistory(PANE, [{ role: 'user', content: 'hi' }])),
+      loadingWith(historyOf([{ role: 'user', content: 'hi' }])),
       slashCommandsAvailable([command])
     )
 
@@ -780,85 +855,8 @@ describe('reducePaneChat: conversation reset', () => {
   })
 })
 
-describe('reducePaneChat: checkpoint availability', () => {
-  it('anchors the uuid onto the sent user turn that had none', () => {
-    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'deploy')
-
-    const result = reducePaneChat(afterSend, checkpointAvailable('turn-1'))
-
-    expect(result.messages[0].checkpointUuid).toBe('turn-1')
-  })
-
-  it('binds to the earliest un-anchored user turn when several await one', () => {
-    const twoPending = sendUser(sendUser(emptyPaneChatState, 'u-1', 'first'), 'u-2', 'second')
-
-    const result = reducePaneChat(twoPending, checkpointAvailable('turn-1'))
-
-    expect(result.messages[0].checkpointUuid).toBe('turn-1')
-    expect(result.messages[1].checkpointUuid).toBeUndefined()
-  })
-
-  it('skips a user turn already anchored and binds the next un-anchored one', () => {
-    const restoredThenSent = sendUser(
-      paneChatStateFromHistory(PANE, [{ role: 'user', content: 'earlier', checkpointUuid: 'a' }]),
-      'u-2',
-      'later'
-    )
-
-    const result = reducePaneChat(restoredThenSent, checkpointAvailable('b'))
-
-    expect(result.messages[0].checkpointUuid).toBe('a')
-    expect(result.messages[1].checkpointUuid).toBe('b')
-  })
-
-  it('leaves messages untouched when no user turn awaits a uuid', () => {
-    const seeded = paneChatStateFromHistory(PANE, [
-      { role: 'user', content: 'hi', checkpointUuid: 'a' }
-    ])
-
-    const result = reducePaneChat(seeded, checkpointAvailable('b'))
-
-    expect(result.messages).toBe(seeded.messages)
-  })
-
-  it('anchors the resume uuid alongside the checkpoint uuid when present', () => {
-    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'deploy')
-
-    const result = reducePaneChat(afterSend, checkpointAvailable('turn-1', 'assistant-0'))
-
-    expect(result.messages[0].checkpointUuid).toBe('turn-1')
-    expect(result.messages[0].resumeAnchorUuid).toBe('assistant-0')
-  })
-
-  it('leaves the resume uuid absent when the checkpoint carries none (first turn)', () => {
-    const afterSend = sendUser(emptyPaneChatState, 'u-1', 'deploy')
-
-    const result = reducePaneChat(afterSend, checkpointAvailable('turn-1'))
-
-    expect(result.messages[0].checkpointUuid).toBe('turn-1')
-    expect(result.messages[0].resumeAnchorUuid).toBeUndefined()
-  })
-
-  it('binds the checkpoints of a batch to its user turns in send order', () => {
-    const batch = reducePaneChat(
-      emptyPaneChatState,
-      userMessagesSent([
-        { id: 'u-1', text: 'first' },
-        { id: 'u-2', text: 'second' }
-      ])
-    )
-
-    const result = [checkpointAvailable('turn-1'), checkpointAvailable('turn-2')].reduce(
-      reducePaneChat,
-      batch
-    )
-
-    expect(result.messages.map((message) => message.checkpointUuid)).toEqual(['turn-1', 'turn-2'])
-  })
-})
-
 describe('reducePaneChat: rewind to checkpoint', () => {
-  const branched = paneChatStateFromHistory(PANE, [
+  const branched = historyOf([
     { role: 'user', content: 'first', checkpointUuid: 'a' },
     { role: 'assistant', content: 'reply one' },
     { role: 'user', content: 'second', checkpointUuid: 'b' },
@@ -897,7 +895,7 @@ describe('reducePaneChat: rewind to checkpoint', () => {
     expect(result.messages).toEqual([
       ...branched.messages.slice(0, 2),
       {
-        id: `${PANE}:user:u-1`,
+        id: 'u-1',
         role: 'user',
         parts: [{ type: 'text', content: 'sent during rewind' }]
       }
@@ -906,7 +904,7 @@ describe('reducePaneChat: rewind to checkpoint', () => {
   })
 
   it('drops an assistant reply that streamed in after the anchored turn', () => {
-    const streamed = reducePaneChat(loadingWith(branched), textDelta('late reply'))
+    const streamed = reducePaneChat(loadingWith(branched), reply('late', 'late reply'))
 
     const result = reducePaneChat(streamed, rewoundToCheckpoint('b'))
 
@@ -1067,16 +1065,20 @@ describe('reducePaneChat: arrival times', () => {
   const loading = loadingWith(emptyPaneChatState)
   const partsOf = (state: PaneChatState) => state.messages.at(-1)?.parts
 
-  it('stamps a new text part with the time its first delta arrived, and keeps it as it grows', () => {
-    const opened = reducePaneChat(loading, textDelta('Hel'), 1_000)
-    const grown = reducePaneChat(opened, textDelta('lo'), 2_500)
-    expect(partsOf(grown)).toEqual([{ type: 'text', content: 'Hello', startedAt: 1_000 }])
+  it('stamps a new text part with the time its first update arrived, and keeps it as it grows', () => {
+    const opened = reducePaneChat(loading, reply('a-1', 'Hel'), 1_000)
+    const grown = reducePaneChat(opened, reply('a-1', 'Hello'), 2_500)
+    expect(partsOf(grown)).toEqual([
+      { type: 'text', content: 'Hello', itemId: 'a-1', startedAt: 1_000 }
+    ])
   })
 
-  it('stamps a new thinking part with the time its first delta arrived', () => {
-    const opened = reducePaneChat(loading, thinkingDelta('weigh'), 1_000)
-    const grown = reducePaneChat(opened, thinkingDelta('ing'), 2_500)
-    expect(partsOf(grown)).toEqual([{ type: 'thinking', content: 'weighing', startedAt: 1_000 }])
+  it('stamps a new thinking part with the time its first update arrived', () => {
+    const opened = reducePaneChat(loading, thinking('r-1', 'weigh'), 1_000)
+    const grown = reducePaneChat(opened, thinking('r-1', 'weighing'), 2_500)
+    expect(partsOf(grown)).toEqual([
+      { type: 'thinking', content: 'weighing', itemId: 'r-1', startedAt: 1_000 }
+    ])
   })
 
   it('stamps a tool call with its start time and, on completion, its end time', () => {

@@ -11,8 +11,10 @@ import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/p
 import { type IpcEvent, WorkspaceChanged } from '@shared/ipc/contract'
 import { Duration, Effect, Exit, Layer, Scope, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
+import { AgentEventStore } from './agent-event-store'
 import { ACTIVITY_SAVE_DELAY, AgentSummaries, AgentSummariesLive } from './agent-summaries'
-import { EventHub, makeEventHubLive } from './event-hub'
+import { EventHub } from './event-hub'
+import { EventHubTestLayer } from './event-hub-test-layer'
 import { PaneWorkspace } from './pane-workspace'
 import { type PersistedActivity, PersistenceService } from './persistence'
 
@@ -58,7 +60,7 @@ const makeSetup = (initial: Workspace, saved: PersistedActivity = {}) => {
   } as unknown as PaneWorkspace['Service'])
   const layer = Layer.provideMerge(
     AgentSummariesLive,
-    Layer.mergeAll(makeEventHubLive(), persistence, workspace)
+    Layer.mergeAll(EventHubTestLayer, persistence, workspace)
   )
   return { saves, layer }
 }
@@ -68,7 +70,16 @@ const settle = Effect.gen(function* () {
 })
 
 const publish = (event: IpcEvent) =>
-  Effect.flatMap(EventHub, (hub) => hub.publish(event)).pipe(Effect.andThen(settle))
+  Effect.gen(function* () {
+    if (event._tag === 'PaneAgentEvent') {
+      const store = yield* AgentEventStore
+      yield* store.append(event.paneId, [{ event: event.agentEvent }])
+    } else {
+      const hub = yield* EventHub
+      yield* hub.publish(event)
+    }
+    yield* settle
+  })
 
 const summaryOf = (paneId: string) =>
   Effect.map(
@@ -94,13 +105,16 @@ const recordChanges = Effect.gen(function* () {
 })
 
 const toolCompleted = (paneId: string, file: string): IpcEvent => ({
-  _tag: 'PaneToolCallCompleted',
+  _tag: 'PaneAgentEvent',
   paneId,
-  toolCallId: 'c',
-  toolName: 'Edit',
-  input: { file_path: file },
-  output: '',
-  isError: false
+  agentEvent: {
+    _tag: 'ToolCallCompleted',
+    toolCallId: 'c',
+    toolName: 'Edit',
+    input: { file_path: file },
+    output: '',
+    isError: false
+  }
 })
 
 const completed = (paneId: string): IpcEvent => ({

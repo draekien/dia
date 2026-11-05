@@ -23,6 +23,7 @@ import {
   MessageQueueChanged,
   type OutboundMessage,
   RewindFailed,
+  RewoundToCheckpoint,
   SessionStarted,
   TurnParked,
   UserMessagesSent
@@ -141,6 +142,7 @@ function makeTestSetup(
   usageLimitResume?: UsageLimitResume
 ) {
   const sessions: Array<FakeSession> = []
+  const log: Array<string> = []
 
   const factoryLayer = Layer.succeed(SessionFactory)({
     start: ({ config, resume, emit }) =>
@@ -193,14 +195,19 @@ function makeTestSetup(
 
   const testLayer = Layer.provide(
     PaneSupervisorLive,
-    Layer.mergeAll(factoryLayer, plugins, memorySettings(usageLimitResume), noRecording)
+    Layer.mergeAll(factoryLayer, plugins, memorySettings(usageLimitResume), recordingInto(log))
   )
-  return { sessions, testLayer }
+  return { sessions, testLayer, log }
 }
 
-const noRecording = Layer.succeed(AgentEventRecorder)({
-  open: () => Effect.succeed(() => Effect.void)
-})
+const recordingInto = (log: Array<string>) =>
+  Layer.succeed(AgentEventRecorder)({
+    open: () =>
+      Effect.succeed((message) => Effect.sync(() => void log.push(`recorded ${message._tag}`))),
+    catchUp: () => Effect.succeedNone
+  })
+
+const noRecording = recordingInto([])
 
 const unusedPluginSources = Layer.succeed(PluginSources)({
   names: () => Effect.succeed([]),
@@ -239,7 +246,7 @@ describe('SessionFactoryLive without the claude-code adapter', () => {
 describe('PaneSupervisor', () => {
   it.effect('removes a pane whose session ends on its own, leaving its sibling alive', () =>
     Effect.gen(function* () {
-      const { sessions, testLayer } = makeTestSetup()
+      const { sessions, testLayer, log } = makeTestSetup()
 
       yield* Effect.gen(function* () {
         const supervisor = yield* PaneSupervisor
@@ -274,10 +281,7 @@ describe('PaneSupervisor', () => {
         yield* openedB.handle.sendMessage('ping', 'queue')
         assert.deepStrictEqual(sessions[1].calls, ['sendText:ping:queue:'])
 
-        assert.deepStrictEqual(
-          eventsA.map((event) => event._tag),
-          ['PaneMessageAppended', 'PaneAttentionChanged']
-        )
+        assert.deepStrictEqual(log, ['recorded AssistantMessageReceived'])
         assert.deepStrictEqual(attentionTags(eventsA), ['Crashed'])
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })
@@ -287,16 +291,15 @@ describe('PaneSupervisor', () => {
     'delivers every event produced before a failure, in order, before closing the pane',
     () =>
       Effect.gen(function* () {
-        const { sessions, testLayer } = makeTestSetup()
+        const { sessions, testLayer, log } = makeTestSetup()
 
         yield* Effect.gen(function* () {
           const supervisor = yield* PaneSupervisor
-          const delivered: Array<string> = []
 
           yield* supervisor.openPane(
             requestA,
             (event) =>
-              Effect.sync(() => void delivered.push(event._tag)).pipe(
+              Effect.sync(() => void log.push(`published ${event._tag}`)).pipe(
                 Effect.andThen(Effect.yieldNow),
                 Effect.andThen(Effect.yieldNow)
               ),
@@ -309,10 +312,10 @@ describe('PaneSupervisor', () => {
           yield* sessions[0].end('boom')
           yield* flush
 
-          assert.deepStrictEqual(delivered, [
-            'PaneAssistantTextDelta',
-            'PaneAssistantTextDelta',
-            'PaneAttentionChanged'
+          assert.deepStrictEqual(log, [
+            'recorded AssistantTextDelta',
+            'recorded AssistantTextDelta',
+            'published PaneAttentionChanged'
           ])
           assert.isTrue(sessions[0].closed)
         }).pipe(Effect.scoped, Effect.provide(testLayer))
@@ -785,6 +788,35 @@ describe('PaneSupervisor', () => {
             paneId: requestA.paneId,
             messages: [{ id: 'm-1', text: 'next' }]
           }
+        )
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('records a rewind before the user message sent after it', () =>
+    Effect.gen(function* () {
+      const { sessions, testLayer, log } = makeTestSetup()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        yield* supervisor.openPane(
+          requestA,
+          (event) => Effect.sync(() => void log.push(`published ${event._tag}`)),
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+
+        yield* sessions[0].emit(RewoundToCheckpoint.make({ messageUuid: 'u-2' }))
+        yield* sessions[0].emit(UserMessagesSent.make({ messages: [{ id: 'm-3', text: 'again' }] }))
+        yield* flush
+
+        assert.deepStrictEqual(
+          log.filter((line) => line.startsWith('recorded')),
+          ['recorded RewoundToCheckpoint', 'recorded UserMessagesSent']
+        )
+        assert.isBelow(
+          log.indexOf('published PaneRewoundToCheckpoint'),
+          log.indexOf('recorded UserMessagesSent')
         )
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })

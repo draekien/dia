@@ -28,20 +28,22 @@ const withStatus = (status: AgentStatus): AgentSummary => ({ ...idle, status })
 const withTodo = (text: string): AgentSummary => ({ ...idle, activity: Todo.make({ text }) })
 
 const started = (toolName: string): IpcEvent => ({
-  _tag: 'PaneToolCallStarted',
+  _tag: 'PaneAgentEvent',
   paneId,
-  toolCallId: 'call-1',
-  toolName
+  agentEvent: { _tag: 'ToolCallStarted', toolCallId: 'call-1', toolName }
 })
 
 const completed = (toolName: string, input: Record<string, unknown>): IpcEvent => ({
-  _tag: 'PaneToolCallCompleted',
+  _tag: 'PaneAgentEvent',
   paneId,
-  toolCallId: 'call-1',
-  toolName,
-  input,
-  output: '',
-  isError: false
+  agentEvent: {
+    _tag: 'ToolCallCompleted',
+    toolCallId: 'call-1',
+    toolName,
+    input,
+    output: '',
+    isError: false
+  }
 })
 
 const attention = (state: AttentionState): IpcEvent => ({

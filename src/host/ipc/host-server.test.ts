@@ -2,7 +2,7 @@
 import { createServer } from 'node:http'
 import { NodeHttpServer, NodeSocket } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
-import { PaneAssistantTextDelta } from '@shared/ipc/contract'
+import { PaneTurnStatusChanged } from '@shared/ipc/contract'
 import {
   CLOSE_PROTOCOL_MISMATCH,
   DiaRpcs,
@@ -15,7 +15,9 @@ import { HttpServer } from 'effect/http'
 import { RpcClient, RpcSerialization } from 'effect/rpc'
 import { Socket } from 'effect/socket'
 import WS from 'ws'
-import { EventHub, makeEventHubLive } from '../services/event-hub'
+import { AgentEventStore } from '../services/agent-event-store'
+import { EventHub } from '../services/event-hub'
+import { EventHubTestLayer } from '../services/event-hub-test-layer'
 import { makeHostServerLive } from './host-server'
 
 const TOKEN = 'a'.repeat(64)
@@ -91,7 +93,7 @@ const handlersLayer = Layer.unwrap(
 
 const serverLayer = makeHostServerLive({ token: TOKEN, allowedOrigins: [ORIGIN] }).pipe(
   Layer.provide(handlersLayer),
-  Layer.provideMerge(makeEventHubLive()),
+  Layer.provideMerge(EventHubTestLayer),
   Layer.provideMerge(NodeHttpServer.layer(() => createServer(), { host: '127.0.0.1', port: 0 }))
 )
 
@@ -135,10 +137,12 @@ describe('Host server', () => {
     }).pipe(Effect.scoped, Effect.provide(serverLayer))
   )
 
-  it.live('replays buffered events to a client that subscribes with a cursor', () =>
+  it.live('replays stored events to a client that subscribes with a cursor', () =>
     Effect.gen(function* () {
       const hub = yield* EventHub
-      yield* hub.publish(PaneAssistantTextDelta.make({ paneId: PANE_ID, text: 'hello' }))
+      const store = yield* AgentEventStore
+      yield* hub.publish(PaneTurnStatusChanged.make({ paneId: PANE_ID, label: 'Thinking' }))
+      const seq = yield* store.lastSequence(PANE_ID)
       const client = yield* connect({})
 
       const frames = yield* client
@@ -149,8 +153,8 @@ describe('Host server', () => {
         {
           _tag: 'PaneEvent',
           paneId: PANE_ID,
-          seq: 1,
-          event: { _tag: 'PaneAssistantTextDelta', paneId: PANE_ID, text: 'hello' }
+          seq,
+          event: { _tag: 'PaneTurnStatusChanged', paneId: PANE_ID, label: 'Thinking' }
         }
       ])
     }).pipe(Effect.scoped, Effect.provide(serverLayer))

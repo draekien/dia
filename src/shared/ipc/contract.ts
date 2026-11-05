@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
 import { AdapterStatusSnapshot } from '../domain/adapter-status'
+import { AgentEvent } from '../domain/agent-event'
 import { AgentSummary } from '../domain/agent-summary'
 import { Attachment, type AttachmentType, type ProjectEntry } from '../domain/attachment'
 import {
@@ -22,7 +23,7 @@ import {
   type ModelPreference,
   ModelPreferencesSnapshot
 } from '../domain/model-preferences'
-import { ConversationMessage, PermissionMode, ThinkingLevel } from '../domain/pane'
+import { PermissionMode, ThinkingLevel } from '../domain/pane'
 import type { PaneChatSnapshot } from '../domain/pane-chat'
 import type { UsageLimitResume } from '../domain/parking'
 import type { RegisterProjectRefusal } from '../domain/project'
@@ -272,8 +273,7 @@ export type ResumeParkedAgent = typeof ResumeParkedAgent.Type
 
 /**
  * Command sent by the renderer to rewind pane `paneId` to a prior checkpoint:
- * `messageUuid` is a user-turn UUID previously surfaced via
- * {@link PaneCheckpointAvailable}, and `resumeAnchorUuid` (from the same event)
+ * `messageUuid` is a user turn's `checkpointUuid`, and `resumeAnchorUuid` (from the same turn)
  * is the preceding assistant turn the conversation branches at. The pane
  * restores the working tree to the user turn's pre-edit state and branches the
  * conversation just before it, so files and conversation are rewound together.
@@ -289,67 +289,16 @@ export const RewindToCheckpoint = Schema.TaggedStruct('RewindToCheckpoint', {
 export type RewindToCheckpoint = typeof RewindToCheckpoint.Type
 
 /**
- * Event pushed to the renderer to the renderer when a new
- * conversation `message` (user, assistant, or system) has been appended to
- * the pane `paneId`. Renderer should append `message` to that pane's
- * conversation history.
+ * Event pushed to the renderer with one stored event of pane `paneId`'s conversation: a message
+ * or extended-thinking span created, grown or finalised (each update carries the whole text so
+ * far, at most one per 50 ms while it streams), a tool call started or completed, or a lifecycle
+ * event. Fold it into the pane's chat state by item id.
  */
-export const PaneMessageAppended = Schema.TaggedStruct('PaneMessageAppended', {
+export const PaneAgentEvent = Schema.TaggedStruct('PaneAgentEvent', {
   paneId: Uuid,
-  message: ConversationMessage
+  agentEvent: AgentEvent
 })
-export type PaneMessageAppended = typeof PaneMessageAppended.Type
-
-/**
- * Event pushed to the renderer as the assistant streams a reply in pane
- * `paneId`. `text` is an incremental chunk to append to the in-progress
- * assistant message, not the full message so far.
- */
-export const PaneAssistantTextDelta = Schema.TaggedStruct('PaneAssistantTextDelta', {
-  paneId: Uuid,
-  text: Schema.String
-})
-export type PaneAssistantTextDelta = typeof PaneAssistantTextDelta.Type
-
-/**
- * Event pushed to the renderer as the assistant streams its extended-thinking
- * text (before the answer) in pane `paneId`. `text` is an incremental chunk to
- * append to the in-progress thinking block, not the full thinking so far.
- */
-export const PaneAssistantThinkingDelta = Schema.TaggedStruct('PaneAssistantThinkingDelta', {
-  paneId: Uuid,
-  text: Schema.String
-})
-export type PaneAssistantThinkingDelta = typeof PaneAssistantThinkingDelta.Type
-
-/**
- * Event pushed to the renderer when the agent in pane `paneId` begins
- * invoking tool `toolName`, identified by `toolCallId` for correlating with
- * the later {@link PaneToolCallCompleted} event.
- */
-export const PaneToolCallStarted = Schema.TaggedStruct('PaneToolCallStarted', {
-  paneId: Uuid,
-  toolCallId: Schema.String,
-  toolName: Schema.String
-})
-export type PaneToolCallStarted = typeof PaneToolCallStarted.Type
-
-/**
- * Event pushed to the renderer when the tool call `toolCallId` (`toolName`)
- * previously reported via {@link PaneToolCallStarted} in pane `paneId` has
- * finished, carrying the resolved `input` the tool was called with, the
- * `output` it produced (flattened to text; empty when the turn ended before a
- * result arrived), and `isError` flagging a failed or denied result.
- */
-export const PaneToolCallCompleted = Schema.TaggedStruct('PaneToolCallCompleted', {
-  paneId: Uuid,
-  toolCallId: Schema.String,
-  toolName: Schema.String,
-  input: JsonRecord,
-  output: Schema.String,
-  isError: Schema.Boolean
-})
-export type PaneToolCallCompleted = typeof PaneToolCallCompleted.Type
+export type PaneAgentEvent = typeof PaneAgentEvent.Type
 
 /**
  * Event pushed to the renderer with news about tool call `toolCallId` in pane
@@ -504,22 +453,6 @@ export const PaneConversationReset = Schema.TaggedStruct('PaneConversationReset'
   paneId: Uuid
 })
 export type PaneConversationReset = typeof PaneConversationReset.Type
-
-/**
- * Event pushed to the renderer once per user turn in pane `paneId`, carrying the
- * turn's `messageUuid` file-checkpoint id and, when a prior assistant turn
- * exists, `resumeAnchorUuid` — the assistant turn the conversation branches at
- * on rewind. The renderer associates both with the turn so a "rewind to here"
- * affordance can dispatch a {@link RewindToCheckpoint} command carrying them.
- * `resumeAnchorUuid` is absent for the first turn of a conversation. Emitted
- * only while file checkpointing is enabled.
- */
-export const PaneCheckpointAvailable = Schema.TaggedStruct('PaneCheckpointAvailable', {
-  paneId: Uuid,
-  messageUuid: Schema.String,
-  resumeAnchorUuid: Schema.optional(Schema.String)
-})
-export type PaneCheckpointAvailable = typeof PaneCheckpointAvailable.Type
 
 /**
  * Event pushed to the renderer after a {@link RewindToCheckpoint} completes for
@@ -713,16 +646,11 @@ export type ModelPreferencesChanged = typeof ModelPreferencesChanged.Type
 
 // Additional events (PaneClosed) join this union in later bullets.
 /**
- * Union of every event pushed to the renderer, by the Host's event stream or
- * by main for updater status. Renderer handlers should match on the `_tag` field to
- * dispatch.
+ * Every pane event other than {@link PaneAgentEvent}: the events that carry a `paneId` and
+ * describe the pane's session rather than its conversation items. The Host stores each one in the
+ * pane's event stream and sends it to the renderer unchanged.
  */
-export const IpcEvent = Schema.Union([
-  PaneMessageAppended,
-  PaneAssistantTextDelta,
-  PaneAssistantThinkingDelta,
-  PaneToolCallStarted,
-  PaneToolCallCompleted,
+export const PaneSignal = Schema.Union([
   PaneToolCallUpdated,
   PaneTurnStatusChanged,
   PaneSessionNotice,
@@ -735,7 +663,6 @@ export const IpcEvent = Schema.Union([
   PaneSlashCommandsAvailable,
   PaneConversationCompacted,
   PaneConversationReset,
-  PaneCheckpointAvailable,
   PaneRewoundToCheckpoint,
   PaneRewindFailed,
   PaneMessageQueueChanged,
@@ -743,11 +670,22 @@ export const IpcEvent = Schema.Union([
   PaneModelChanged,
   PaneContextUsageChanged,
   PaneCompactionFailed,
+  PaneAttentionChanged,
+  PaneCreateFailed
+])
+export type PaneSignal = typeof PaneSignal.Type
+
+/**
+ * Union of every event pushed to the renderer, by the Host's event stream or
+ * by main for updater status. Renderer handlers should match on the `_tag` field to
+ * dispatch.
+ */
+export const IpcEvent = Schema.Union([
+  PaneAgentEvent,
+  ...PaneSignal.members,
   WorkspaceChanged,
   AgentSummaryChanged,
   AgentSummariesReplaced,
-  PaneCreateFailed,
-  PaneAttentionChanged,
   PluginStatusChanged,
   ActivitiesChanged,
   ModelsChanged,

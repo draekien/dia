@@ -67,6 +67,19 @@ export type AgentArchived = typeof AgentArchived.Type
 export const AgentUnarchived = Schema.TaggedStruct('AgentUnarchived', {})
 export type AgentUnarchived = typeof AgentUnarchived.Type
 
+/** The conversation was cleared (`/clear`): the agent's items before this event are no longer shown. */
+export const ConversationCleared = Schema.TaggedStruct('ConversationCleared', {})
+export type ConversationCleared = typeof ConversationCleared.Type
+
+/**
+ * The conversation was rewound to the user message whose `checkpointUuid` this is: that message and
+ * every item after it are no longer shown. A uuid no stored message carries changes nothing.
+ */
+export const ConversationRewound = Schema.TaggedStruct('ConversationRewound', {
+  checkpointUuid: Schema.String
+})
+export type ConversationRewound = typeof ConversationRewound.Type
+
 /** Every event an agent's stream holds, in the provider-neutral shape the Host stores. Match on `_tag`. */
 export const AgentEvent = Schema.Union([
   MessageUpdated,
@@ -76,7 +89,9 @@ export const AgentEvent = Schema.Union([
   SessionBound,
   AgentImported,
   AgentArchived,
-  AgentUnarchived
+  AgentUnarchived,
+  ConversationCleared,
+  ConversationRewound
 ])
 /** An event of an agent's stream; see {@link AgentEvent}. */
 export type AgentEvent = typeof AgentEvent.Type
