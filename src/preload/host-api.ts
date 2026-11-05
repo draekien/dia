@@ -94,7 +94,7 @@ const resendSchedule = Schedule.spaced(RESEND_INTERVAL).pipe(
  * `WorkspaceChanged` and `AgentSummariesReplaced`.
  *
  * Values cross `contextBridge`, which drops prototypes, so every result is plain data: a typed
- * error (`registerProject`) resolves in its encoded form (`archiveTab` and `deleteTab` resolve its reason), and only a lost connection is retried. `removeProject` is not retried: it rejects when the connection drops.
+ * error (`registerProject`) resolves in its encoded form (`archiveTab`, `deleteTab` and `unarchiveTab` resolve its reason), and only a lost connection is retried. `removeProject` is not retried: it rejects when the connection drops.
  */
 const encodeRefusal = Schema.encodeSync(RegisterProjectError)
 const encodeSnapshot = Schema.encodeSync(ModelCatalogSnapshot)
@@ -437,6 +437,13 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         client.DeleteTab({ paneId }).pipe(
           Effect.as<string | null>(null),
           Effect.catchTag('WorktreeNotRemovedError', (error) => Effect.succeed(error.reason))
+        )
+      ),
+    unarchiveTab: (paneId) =>
+      query((client) =>
+        client.UnarchiveTab({ paneId }).pipe(
+          Effect.as<string | null>(null),
+          Effect.catchTag('WorktreeNotRestoredError', (error) => Effect.succeed(error.reason))
         )
       ),
     renameTab: (paneId, name) =>

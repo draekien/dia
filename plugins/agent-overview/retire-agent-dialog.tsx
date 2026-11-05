@@ -78,7 +78,7 @@ export function RetireAgentDialog({ tab, retirement, onClose }: RetireAgentDialo
                       : 'dia stops this agent and deletes its worktree, with any uncommitted changes in it:'}
                   </p>
                 )}
-                {worktree !== undefined && (
+                {!tab.archived && worktree !== undefined && (
                   <p className="font-mono text-xs break-all text-ink">{worktree.path}</p>
                 )}
                 <p>

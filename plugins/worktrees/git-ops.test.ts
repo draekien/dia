@@ -398,13 +398,47 @@ describe('makeGitOps', () => {
     })
   )
 
-  it.effect('reattachWorktree fails with WorktreeReattachError on a non-zero exit', () =>
+  it.effect('reattachWorktree fails with WorktreeReattachError when git worktree add fails', () =>
     Effect.gen(function* () {
-      const result = yield* Effect.result(reattach(makeTestSetup(() => 1)))
+      const result = yield* Effect.result(
+        reattach(makeTestSetup((command) => (isWorktreeAdd(command) ? 128 : 0)))
+      )
 
       assert.isTrue(Result.isFailure(result))
       if (Result.isFailure(result)) {
         assert.instanceOf(result.failure, WorktreeReattachError)
+        assert.strictEqual(result.failure.cause, 'git worktree add exited with code 128')
+      }
+    })
+  )
+
+  it.effect('reattachWorktree reports a deleted branch and adds no worktree', () =>
+    Effect.gen(function* () {
+      const commands: ChildProcess.Command[] = []
+      const setup = makeTestSetup((command) => {
+        commands.push(command)
+        return isRevParse(command) ? 1 : 0
+      })
+
+      const result = yield* Effect.result(reattach(setup))
+
+      assert.isTrue(Result.isFailure(result))
+      if (Result.isFailure(result)) {
+        assert.strictEqual(result.failure.cause, `Branch ${WORKTREE_INFO.branch} no longer exists`)
+      }
+      assert.strictEqual(commands.filter(isWorktreeAdd).length, 0)
+    })
+  )
+
+  it.effect('reattachWorktree reports any other rev-parse exit code as it is', () =>
+    Effect.gen(function* () {
+      const result = yield* Effect.result(
+        reattach(makeTestSetup((command) => (isRevParse(command) ? 128 : 0)))
+      )
+
+      assert.isTrue(Result.isFailure(result))
+      if (Result.isFailure(result)) {
+        assert.strictEqual(result.failure.cause, 'git rev-parse exited with code 128')
       }
     })
   )

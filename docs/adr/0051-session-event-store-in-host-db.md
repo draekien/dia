@@ -74,7 +74,7 @@ ADR-0042's "event table + projection table in one `sql.withTransaction`" shape:
 
 ### Archive and unarchive
 
-* Archive appends `AgentArchived`, stops the session, removes the worktree as before (the branch is kept), and deletes the agent's superseded `MessageUpdated{streaming: true}` events. One final event per message and tool call remains. The archived transcript reads from `agent_items` like an active one.
+* Archive appends `AgentArchived`, stops the session, removes the worktree as before (the branch is kept), and deletes the agent's superseded streaming `MessageUpdated` and `ReasoningUpdated` events (amended by #158). One final event per message, reasoning span and tool call remains. The archived transcript reads from `agent_items` like an active one.
 * Unarchive runs `git worktree add <original path> <kept branch>` and then appends `AgentUnarchived`. Unarchive fails with no event written if the branch no longer exists or the path is occupied. The `cwd` is unchanged, so `resume` finds the JSONL.
 * Delete hard-deletes the agent's `agent_events`, `agent_items` and `agent_transcript_cursors` rows. The SDK JSONL is kept (ADR-0046), so the session can be imported again.
 
@@ -97,7 +97,7 @@ ADR-0042's "event table + projection table in one `sql.withTransaction`" shape:
 * Bad, because the conversation exists twice: in `agent_events` and in the SDK JSONL. Catch-up on open reconciles the two only when an agent is opened.
 * Bad, because the screen and the model can disagree between a turn added outside dia and the next open of that agent.
 * Bad, because every streaming agent commits about 20 transactions per second on the Host's event loop. 200 single-event `AgentEventStore.append` commits took 21–29 ms at `synchronous = NORMAL` (0.10–0.14 ms each) and 250–265 ms at `FULL` (1.25–1.33 ms each), measured three times on an NVMe SSD (#152), so one streaming agent costs about 3 ms of event-loop time per second.
-* Bad, because `host.db` grows with every conversation. Archive compaction removes only superseded streaming rows.
+* Bad, because `host.db` grows with every conversation. Archive compaction removes only superseded streaming `MessageUpdated` and `ReasoningUpdated` rows (amended by #158).
 * Bad, because the import and catch-up rely on the JSONL entry format, which the Agent SDK documents as CLI-internal (`SessionStoreEntry` in `sdk.d.ts` of `@anthropic-ai/claude-agent-sdk` 0.3.311).
 
 ## Pros and Cons of the Options

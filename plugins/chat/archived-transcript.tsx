@@ -5,9 +5,10 @@ import { MessageView, transcriptColumn } from './pane'
 import { TranscriptItem, TranscriptScroller } from './transcript-scroller'
 
 /**
- * The transcript of the archived agent in tab `paneId`, read-only: its current session's messages
- * with no composer, settings or rewind, above a caption that says the agent is archived. Showing
- * it starts no session. `cwd` is the tab's working directory, for attachment paths.
+ * The transcript of the archived agent in tab `paneId`, read-only: the messages of its stored
+ * conversation with no composer, settings or rewind, above a caption that says the agent is
+ * archived. Showing it starts no session. `cwd` is the tab's working directory, for attachment
+ * paths.
  */
 export function ArchivedTranscript({
   paneId,
@@ -27,7 +28,7 @@ export function ArchivedTranscript({
         overlay={
           <p className="border-t border-border py-3 text-center text-xs text-ink-muted">
             {empty
-              ? 'This agent is archived. Claude Code holds no transcript for its session.'
+              ? 'This agent is archived. Its transcript is empty.'
               : 'This agent is archived. Its transcript is read-only.'}
           </p>
         }

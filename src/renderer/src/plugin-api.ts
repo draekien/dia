@@ -16,7 +16,8 @@ import {
   renameTab,
   resumeParkedAgent,
   revealProject,
-  selectTab
+  selectTab,
+  unarchiveTab
 } from './lib/actions'
 import type { View } from './lib/view'
 import {
@@ -81,6 +82,7 @@ export const actions = {
   renameTab,
   archiveTab,
   deleteTab,
+  unarchiveTab,
   resumeParkedAgent,
   removeProject,
   revealProject,
@@ -130,6 +132,7 @@ export * from './components/ui/select'
 export * from './components/ui/separator'
 export * from './components/ui/switch'
 export * from './components/ui/textarea'
+export * from './components/ui/toast'
 export * from './components/ui/tooltip'
 export { WorkspaceProblemsBanner } from './components/workspace-problems'
 export { useAdapterStatus } from './hooks/use-adapter-status'

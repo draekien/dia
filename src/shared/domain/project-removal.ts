@@ -19,11 +19,11 @@ export type RemovalItem = typeof RemovalItem.Type
 
 /**
  * Everything removing the project of `tab` deletes for that tab, in the order the Host removes
- * it: the agent, then its worktree when it has one.
+ * it: the agent, then its worktree when it has one and is not archived (archiving removed it).
  */
 export const removalItemsOf = (tab: Tab): ReadonlyArray<RemovalItem> => [
   AgentItem.make({ paneId: tab.config.paneId, name: tab.name }),
-  ...(tab.config.worktree === undefined
+  ...(tab.config.worktree === undefined || tab.archived
     ? []
     : [WorktreeItem.make({ path: tab.config.worktree.path })])
 ]

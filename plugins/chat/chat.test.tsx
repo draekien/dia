@@ -85,10 +85,10 @@ describe('Chat for an archived tab', () => {
     ]).toEqual([true, true, null])
   })
 
-  it('says Claude Code holds no transcript when the session has none', () => {
+  it('says the transcript is empty when the agent has no stored conversation', () => {
     state.messages = []
     render(<Chat />)
 
-    expect(document.body.textContent).toContain('Claude Code holds no transcript for its session.')
+    expect(document.body.textContent).toContain('This agent is archived. Its transcript is empty.')
   })
 })

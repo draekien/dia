@@ -66,6 +66,7 @@ const handlersLayer = Layer.unwrap(
       RemoveProject: unused,
       ArchiveTab: unused,
       DeleteTab: unused,
+      UnarchiveTab: unused,
       GetAgentSummaries: unused,
       GetTranscriptWidth: unused,
       GetPaneChat: unused,

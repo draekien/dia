@@ -222,6 +222,10 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     renameTab: (paneId, name) => Effect.sync(() => void calls.push(`renameTab:${paneId}:${name}`)),
     archiveTab: (paneId) => retire('archiveTab', paneId),
     deleteTab: (paneId) => retire('deleteTab', paneId),
+    unarchiveTab: (paneId) =>
+      paneId === OTHER_PANE_ID
+        ? Effect.fail(new TabNotFoundError({ paneId }))
+        : Effect.sync(() => void calls.push(`unarchiveTab:${paneId}`)),
     selectTab: (paneId) => Effect.sync(() => void calls.push(`selectTab:${paneId ?? 'none'}`)),
     setThinkingLevel: () => Effect.void,
     setPermissionMode: () => Effect.void,
@@ -790,6 +794,25 @@ describe('Dia RPC handlers', () => {
           `resolveImportConflict:${OTHER_PANE_ID}:discard`
         ])
       })
+  )
+
+  it.effect('delivers the pane id of an UnarchiveTab unchanged', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+      yield* withHandlers(harness, (handlers) => handlers.UnarchiveTab({ paneId: PANE_ID }))
+
+      assert.deepStrictEqual(harness.calls, [`unarchiveTab:${PANE_ID}`])
+    })
+  )
+
+  it.effect('succeeds an UnarchiveTab for a tab that is already gone', () =>
+    Effect.gen(function* () {
+      const result = yield* withHandlers(makeHarness(), (handlers) =>
+        Effect.result(handlers.UnarchiveTab({ paneId: OTHER_PANE_ID }))
+      )
+
+      assert.strictEqual(result._tag, 'Success')
+    })
   )
 
   it.effect('succeeds an ArchiveTab and a DeleteTab for a tab that is already gone', () =>

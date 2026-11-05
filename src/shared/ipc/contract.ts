@@ -893,6 +893,13 @@ export interface DiaApi {
    * branch and transcripts stay. Resolves as {@link DiaApi.archiveTab} does.
    */
   deleteTab(paneId: string): Promise<string | null>
+  /**
+   * Unarchives tab `paneId`: restores its worktree from its kept branch and marks it not
+   * archived; starts no session. Resolves `null` once unarchived, also when the tab is already
+   * gone or not archived, or the reason its working directory could not be restored, in which
+   * case the tab stays archived.
+   */
+  unarchiveTab(paneId: string): Promise<string | null>
   selectTab(paneId: string | null): void
   getAgentSummaries(): Promise<ReadonlyArray<AgentSummary>>
   getTranscriptWidth(): Promise<TranscriptWidth>

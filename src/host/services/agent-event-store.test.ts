@@ -326,6 +326,79 @@ describe('AgentEventStore.append', () => {
   )
 })
 
+describe('AgentEventStore compaction on AgentArchived', () => {
+  const reasoningUpdated = (itemId: string, text: string, streaming: boolean) =>
+    ReasoningUpdated.make({ itemId, text, streaming })
+
+  const conversation = [
+    { event: messageUpdated('m1', 'He', true) },
+    { event: messageUpdated('m1', 'Hel', true) },
+    { event: messageUpdated('m1', 'Hello', false) },
+    { event: reasoningUpdated('r1', 'Thin', true) },
+    { event: reasoningUpdated('r1', 'Thinking', false) },
+    { event: ToolCallStarted.make({ toolCallId: 't1', toolName: 'Bash' }) },
+    { event: toolCompleted('t1', 'ok') },
+    { event: messageUpdated('m2', 'Interrup', true) }
+  ]
+
+  const storedEvents = (sql: SqlClient.SqlClient, agentId: string) =>
+    sql<{
+      readonly event_type: string
+      readonly item_id: string | null
+      readonly streaming: number | null
+    }>`SELECT event_type, item_id, json_extract(payload_json, '$.streaming') AS streaming
+      FROM agent_events WHERE agent_id = ${agentId} ORDER BY sequence`
+
+  it.effect(
+    'keeps only the final event of each streamed message and reasoning span, tool calls and an unfinished stream',
+    () =>
+      withStore((store, sql) =>
+        Effect.gen(function* () {
+          yield* insertAgent(sql, AGENT_A)
+          yield* store.append(AGENT_A, conversation)
+
+          yield* store.append(AGENT_A, [{ event: AgentArchived.make({}) }])
+
+          assert.deepStrictEqual(yield* storedEvents(sql, AGENT_A), [
+            { event_type: 'MessageUpdated', item_id: 'm1', streaming: 0 },
+            { event_type: 'ReasoningUpdated', item_id: 'r1', streaming: 0 },
+            { event_type: 'ToolCallStarted', item_id: 't1', streaming: null },
+            { event_type: 'ToolCallCompleted', item_id: 't1', streaming: null },
+            { event_type: 'MessageUpdated', item_id: 'm2', streaming: 1 },
+            { event_type: 'AgentArchived', item_id: null, streaming: null }
+          ])
+        })
+      )
+  )
+
+  it.effect('leaves the history read from the items unchanged', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        yield* insertAgent(sql, AGENT_A)
+        yield* store.append(AGENT_A, conversation)
+        const before = (yield* store.readHistory(AGENT_A)).items
+
+        yield* store.append(AGENT_A, [{ event: AgentArchived.make({}) }])
+
+        assert.deepStrictEqual((yield* store.readHistory(AGENT_A)).items, before)
+      })
+    )
+  )
+
+  it.effect('leaves the streaming events of other agents', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        yield* insertAgent(sql, AGENT_A)
+        yield* store.append(AGENT_B, conversation)
+
+        yield* store.append(AGENT_A, [{ event: AgentArchived.make({}) }])
+
+        assert.strictEqual((yield* storedEvents(sql, AGENT_B)).length, conversation.length)
+      })
+    )
+  )
+})
+
 const threeMessages = [
   { event: messageUpdated('m0', 'zero', false) },
   { event: messageUpdated('m1', 'one', false) },

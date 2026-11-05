@@ -1,6 +1,10 @@
 import { DEFAULT_SEND_MODE } from '@shared/domain/message-queue'
 import { DEFAULT_USAGE_LIMIT_RESUME } from '@shared/domain/parking'
-import type { TabNotFoundError, WorktreeNotRemovedError } from '@shared/domain/project'
+import type {
+  TabNotFoundError,
+  WorktreeNotRemovedError,
+  WorktreeNotRestoredError
+} from '@shared/domain/project'
 import { DEFAULT_THEME } from '@shared/domain/theme'
 import { DEFAULT_TRANSCRIPT_WIDTH } from '@shared/domain/transcript-width'
 import { type IpcEvent, PaneCreateFailed } from '@shared/ipc/contract'
@@ -33,7 +37,7 @@ import { resolveAgentBackend } from '../session/agent-backend'
  *
  * Every command is applied at most once per `commandId` within its target (pane, project, or
  * `'app'`), drops with a warning when its target does not exist, and never fails the RPC:
- * failures are logged. `RegisterProject`, `RemoveProject`, `ArchiveTab`, `DeleteTab`, `SetModelPreference` and the workspace problem calls return their typed errors. `SendMessage` starts
+ * failures are logged. `RegisterProject`, `RemoveProject`, `ArchiveTab`, `DeleteTab`, `UnarchiveTab`, `SetModelPreference` and the workspace problem calls return their typed errors. `SendMessage` starts
  * the pane's session on demand when the pane has none, so a message to a pane whose session
  * ended is not lost.
  */
@@ -82,9 +86,9 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
 
   const treatGoneTabAsDone =
     (call: string) =>
-    (
-      effect: Effect.Effect<void, TabNotFoundError | WorktreeNotRemovedError>
-    ): Effect.Effect<void, WorktreeNotRemovedError> =>
+    <E extends WorktreeNotRemovedError | WorktreeNotRestoredError>(
+      effect: Effect.Effect<void, TabNotFoundError | E>
+    ): Effect.Effect<void, E> =>
       effect.pipe(
         Effect.catchTag('TabNotFoundError', (error) =>
           Effect.logInfo(`${call} found no tab to change`, { paneId: error.paneId })
@@ -317,6 +321,8 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     RemoveProject: ({ projectId, force }) => workspace.removeProject(projectId, force),
     ArchiveTab: ({ paneId }) => workspace.archiveTab(paneId).pipe(treatGoneTabAsDone('ArchiveTab')),
     DeleteTab: ({ paneId }) => workspace.deleteTab(paneId).pipe(treatGoneTabAsDone('DeleteTab')),
+    UnarchiveTab: ({ paneId }) =>
+      workspace.unarchiveTab(paneId).pipe(treatGoneTabAsDone('UnarchiveTab')),
     GetAgentSummaries: () => summaries.getAll,
     GetTranscriptWidth: () =>
       settings
