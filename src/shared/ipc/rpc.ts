@@ -21,7 +21,8 @@ import {
   ProjectNotFoundError,
   RegisterProjectError,
   Workspace,
-  WorktreeNotRemovedError
+  WorktreeNotRemovedError,
+  WorktreeNotRestoredError
 } from '../domain/project'
 import { RemovalProgress } from '../domain/project-removal'
 import { ThemePreference } from '../domain/theme'
@@ -62,7 +63,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.23'
+export const PROTOCOL_VERSION = '0.0.24'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -116,8 +117,9 @@ export type EventFrame = typeof EventFrame.Type
 
 /**
  * The Host's RPC surface. Every command takes a `commandId`; `RegisterProject`, `RemoveProject`,
- * `ArchiveTab` and `DeleteTab` are queries so their typed errors reach the caller (`ArchiveTab` and
- * `DeleteTab` succeed for a tab already gone, so repeating one is harmless); the plugin calls (`LoadPlugin`
+ * `ArchiveTab`, `DeleteTab` and `UnarchiveTab` are queries so their typed errors reach the caller
+ * (`ArchiveTab`, `DeleteTab` and `UnarchiveTab` succeed for a tab already gone, so repeating one is
+ * harmless); the plugin calls (`LoadPlugin`
  * on a loaded plugin reloads it), the model calls (`GetModels`, `RefreshModels`), the adapter calls
  * (`GetAdapterStatus`, `CheckAdapterHealth`, `SetInstallPath`, `GetModelPreferences`,
  * `SetModelPreference`, `SetAgentDefaults`, each setting a value, so repeating one is harmless,
@@ -167,6 +169,7 @@ export const DiaRpcs = RpcGroup.make(
   }),
   Rpc.make('ArchiveTab', { payload: { paneId: Uuid }, error: WorktreeNotRemovedError }),
   Rpc.make('DeleteTab', { payload: { paneId: Uuid }, error: WorktreeNotRemovedError }),
+  Rpc.make('UnarchiveTab', { payload: { paneId: Uuid }, error: WorktreeNotRestoredError }),
   Rpc.make('GetAgentSummaries', { success: Schema.Array(AgentSummary) }),
   Rpc.make('GetTranscriptWidth', { success: TranscriptWidth }),
   Rpc.make('GetPaneChat', {

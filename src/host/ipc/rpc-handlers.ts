@@ -33,7 +33,7 @@ import { resolveAgentBackend } from '../session/agent-backend'
  *
  * Every command is applied at most once per `commandId` within its target (pane, project, or
  * `'app'`), drops with a warning when its target does not exist, and never fails the RPC:
- * failures are logged. `RegisterProject`, `RemoveProject`, `ArchiveTab`, `DeleteTab`, `SetModelPreference` and the workspace problem calls return their typed errors. `SendMessage` starts
+ * failures are logged. `RegisterProject`, `RemoveProject`, `ArchiveTab`, `DeleteTab`, `UnarchiveTab`, `SetModelPreference` and the workspace problem calls return their typed errors. `SendMessage` starts
  * the pane's session on demand when the pane has none, so a message to a pane whose session
  * ended is not lost.
  */
@@ -317,6 +317,14 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     RemoveProject: ({ projectId, force }) => workspace.removeProject(projectId, force),
     ArchiveTab: ({ paneId }) => workspace.archiveTab(paneId).pipe(treatGoneTabAsDone('ArchiveTab')),
     DeleteTab: ({ paneId }) => workspace.deleteTab(paneId).pipe(treatGoneTabAsDone('DeleteTab')),
+    UnarchiveTab: ({ paneId }) =>
+      workspace
+        .unarchiveTab(paneId)
+        .pipe(
+          Effect.catchTag('TabNotFoundError', (error) =>
+            Effect.logInfo('UnarchiveTab found no tab to change', { paneId: error.paneId })
+          )
+        ),
     GetAgentSummaries: () => summaries.getAll,
     GetTranscriptWidth: () =>
       settings

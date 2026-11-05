@@ -1,3 +1,4 @@
+import { AgentArchived, AgentUnarchived } from '@shared/domain/agent-event'
 import {
   agentNameFromBranch,
   agentNameFromTitle,
@@ -26,6 +27,7 @@ import {
   TabNotFoundError,
   type Workspace,
   WorktreeNotRemovedError,
+  WorktreeNotRestoredError,
   WorktreeUnavailableError
 } from '@shared/domain/project'
 import {
@@ -58,6 +60,7 @@ import {
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import type { DiscoveredSession } from '../session/agent-backend'
+import { AgentEventStore } from './agent-event-store'
 import { EventHub } from './event-hub'
 import { PaneChatProjection } from './pane-chat-projection'
 import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
@@ -143,8 +146,8 @@ export class PaneWorkspace extends Context.Service<
     >
     readonly renameTab: (paneId: PaneId, name: AgentName) => Effect.Effect<void, TabNotFoundError>
     /**
-     * Archives a tab: stops its session, removes its worktree, and marks it archived. Its branch
-     * and transcripts stay. Fails with `WorktreeNotRemovedError`, leaving the tab unarchived with
+     * Archives a tab: stops its session, removes its worktree, records that it was archived, and
+     * marks it archived. Its branch, its worktree's path and branch, and its transcripts stay. Fails with `WorktreeNotRemovedError`, leaving the tab unarchived with
      * its session stopped, when the worktree is still on disk afterwards; a later call retries.
      * Fails with `TabNotFoundError` for an unknown tab, one whose project is being removed, or
      * one already being archived or deleted.
@@ -161,6 +164,17 @@ export class PaneWorkspace extends Context.Service<
     readonly deleteTab: (
       paneId: PaneId
     ) => Effect.Effect<void, TabNotFoundError | WorktreeNotRemovedError>
+    /**
+     * Unarchives a tab: restores its worktree from its kept branch at its original path (or checks
+     * that its working directory exists, for a tab with no worktree), records that it was
+     * unarchived, and marks it not archived. Starts no session, and does nothing for a tab that is
+     * not archived. Fails with `WorktreeNotRestoredError`, leaving the tab archived with no event
+     * written, and with `TabNotFoundError` for an unknown tab, one whose project is being removed,
+     * or one being archived, deleted or unarchived.
+     */
+    readonly unarchiveTab: (
+      paneId: PaneId
+    ) => Effect.Effect<void, TabNotFoundError | WorktreeNotRestoredError>
     /**
      * Shows the tab of `paneId`, or no tab for `null`, and resumes the shown tab's recorded
      * session when it is not running and the tab is not archived. Fails for an unknown tab, or one
@@ -207,8 +221,8 @@ const WORKTREES_PLUGIN_NOT_LOADED = 'Load the worktrees plugin to remove this wo
  * (sessions stay cold -- no processes are spawned here) and shows the first tab when none is
  * visible; with nothing persisted it starts empty. `worktreesRoot` is the base directory under
  * which tab worktrees are created. Requires {@link PaneSupervisor}, {@link WorkspaceStore},
- * {@link TranscriptReader}, {@link PaneChatProjection}, {@link EventHub}, {@link HostPlugins} (for the worktree and agent
- * backend services used to remove a project), {@link WorkspaceFeed} (which it keeps current),
+ * {@link TranscriptReader}, {@link PaneChatProjection}, {@link EventHub}, {@link AgentEventStore},
+ * {@link HostPlugins} (for the worktree and agent backend services used to remove a project), {@link WorkspaceFeed} (which it keeps current),
  * `FileSystem`, `Path` and `Crypto`.
  */
 export const makePaneWorkspaceLive = (worktreesRoot: string) =>
@@ -220,6 +234,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       const transcriptReader = yield* TranscriptReader
       const paneChats = yield* PaneChatProjection
       const hub = yield* EventHub
+      const events = yield* AgentEventStore
       const plugins = yield* HostPlugins
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
@@ -659,6 +674,17 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           return next
         })
 
+      const recordEvent = (paneId: PaneId, event: AgentArchived | AgentUnarchived) =>
+        events.append(paneId, [{ event }]).pipe(
+          Effect.catch((cause) =>
+            Effect.logError('Could not record an archive change of a tab', {
+              paneId,
+              event: event._tag,
+              cause
+            })
+          )
+        )
+
       const retireTab = Effect.fn('PaneWorkspace.retireTab')(function* (
         paneId: PaneId,
         operation: 'archiveTab' | 'deleteTab',
@@ -683,6 +709,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
               })
             }
           }
+          if (operation === 'archiveTab') yield* recordEvent(paneId, AgentArchived.make({}))
           yield* mutate(operation, (workspace) => apply(workspace, paneId))
           yield* Effect.logInfo(operation === 'archiveTab' ? 'Archived tab' : 'Deleted tab', {
             paneId,
@@ -695,6 +722,57 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         retireTab(paneId, 'archiveTab', WorkspaceOps.archiveTab)
 
       const deleteTab = (paneId: PaneId) => retireTab(paneId, 'deleteTab', WorkspaceOps.deleteTab)
+
+      const restoreDirectory = Effect.fn('PaneWorkspace.restoreDirectory')(function* (tab: Tab) {
+        const { paneId, cwd, worktree } = tab.config
+        if (worktree === undefined) {
+          const exists = yield* fs.exists(cwd).pipe(Effect.orElseSucceed(() => false))
+          return exists
+            ? Option.none<string>()
+            : Option.some(`The working directory ${cwd} no longer exists`)
+        }
+        const gitOps = yield* resolveGitOps(plugins)
+        if (Option.isNone(gitOps)) {
+          return Option.some('Load the worktrees plugin to restore this worktree')
+        }
+        const reattached = yield* gitOps.value
+          .reattachWorktree(worktree, paneId)
+          .pipe(Effect.result)
+        if (Result.isSuccess(reattached)) return Option.none<string>()
+        const { cause } = reattached.failure
+        return Option.some(typeof cause === 'string' ? cause : String(cause))
+      })
+
+      const unarchiveTab = Effect.fn('PaneWorkspace.unarchiveTab')(function* (paneId: PaneId) {
+        const tab = yield* markRetiring(paneId)
+        yield* Effect.gen(function* () {
+          if (!tab.archived) {
+            yield* Effect.logInfo('Left a tab that is not archived as it was', { paneId })
+            return
+          }
+          const failure = yield* restoreDirectory(tab)
+          if (Option.isSome(failure)) {
+            yield* Effect.logWarning(
+              'Left a tab archived; its working directory was not restored',
+              {
+                paneId,
+                reason: failure.value
+              }
+            )
+            return yield* new WorktreeNotRestoredError({
+              paneId,
+              path: tab.config.worktree?.path ?? tab.config.cwd,
+              reason: failure.value
+            })
+          }
+          yield* recordEvent(paneId, AgentUnarchived.make({}))
+          yield* mutate('unarchiveTab', (workspace) => WorkspaceOps.unarchiveTab(workspace, paneId))
+          yield* Effect.logInfo('Unarchived tab', {
+            paneId,
+            restoredWorktree: tab.config.worktree?.path
+          })
+        }).pipe(Effect.ensuring(clearRetiring(paneId)))
+      })
 
       const setThinkingLevel = Effect.fn('PaneWorkspace.setThinkingLevel')(function* (
         paneId: PaneId,
@@ -834,6 +912,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         renameTab,
         archiveTab,
         deleteTab,
+        unarchiveTab,
         selectTab,
         setThinkingLevel,
         setPermissionMode,

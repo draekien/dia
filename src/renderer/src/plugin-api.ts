@@ -16,7 +16,8 @@ import {
   renameTab,
   resumeParkedAgent,
   revealProject,
-  selectTab
+  selectTab,
+  unarchiveTab
 } from './lib/actions'
 import type { View } from './lib/view'
 import {
@@ -81,6 +82,7 @@ export const actions = {
   renameTab,
   archiveTab,
   deleteTab,
+  unarchiveTab,
   resumeParkedAgent,
   removeProject,
   revealProject,

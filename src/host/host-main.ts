@@ -162,6 +162,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
       transcriptReader,
       paneChats,
       eventHub,
+      agentEventStore,
       hostPlugins,
       WorkspaceFeedLive,
       NodeServices.layer

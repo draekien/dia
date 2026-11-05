@@ -90,6 +90,16 @@ export const deleteTab = (paneId: PaneId): Promise<string | null> => {
 }
 
 /**
+ * Unarchives tab `paneId`: restores its worktree from its kept branch and moves it out of its
+ * project's archived list; starts no session. Resolves `null` once unarchived, or the reason its
+ * working directory could not be restored, in which case the tab stays archived.
+ */
+export const unarchiveTab = (paneId: PaneId): Promise<string | null> => {
+  log('Unarchiving a tab', { paneId })
+  return window.dia.unarchiveTab(paneId)
+}
+
+/**
  * Removes project `projectId`: closes its agents and, unless `force`, deletes their worktrees and
  * transcripts. `onProgress` receives each step. Resolves once the project is gone; rejects when
  * the connection to the Host drops.
