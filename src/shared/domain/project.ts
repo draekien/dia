@@ -35,8 +35,8 @@ export type Project = typeof Project.Type
 
 /**
  * One agent in a project (ADR-0023). Its pane id is `config.paneId`. An `archived` tab is listed
- * in the project's archived list, has no worktree and never runs; showing it shows its transcript
- * read-only.
+ * in the project's archived list, has no worktree directory and never runs; showing it shows its
+ * transcript read-only. It keeps `config.worktree`, so unarchiving it can restore the worktree.
  */
 export const Tab = Schema.Struct({
   name: AgentName,
@@ -148,6 +148,16 @@ export class TabNotFoundError extends Schema.TaggedError<TabNotFoundError>()('Ta
  */
 export class WorktreeNotRemovedError extends Schema.TaggedError<WorktreeNotRemovedError>()(
   'WorktreeNotRemovedError',
+  { paneId: Schema.String, path: Schema.String, reason: Schema.String }
+) {}
+
+/**
+ * Unarchiving a tab could not restore its working directory; `path` is the worktree path, or the
+ * tab's `cwd` for a tab with no worktree, and `reason` says why. The tab stays archived and no
+ * event is written, so the request can be sent again.
+ */
+export class WorktreeNotRestoredError extends Schema.TaggedError<WorktreeNotRestoredError>()(
+  'WorktreeNotRestoredError',
   { paneId: Schema.String, path: Schema.String, reason: Schema.String }
 ) {}
 

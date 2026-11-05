@@ -165,19 +165,26 @@ export const selectTab = (
 }
 
 /**
- * Archives the tab with `paneId`: marks it archived and forgets its worktree. Its `config.cwd`
- * is kept, because the agent harness finds the tab's transcripts by it. The visible tab is
- * unchanged, so an archived tab on screen stays on screen.
+ * Archives the tab with `paneId`: marks it archived. Its `config` is kept: `config.cwd` because
+ * the agent harness finds the tab's transcripts by it, and `config.worktree` so that
+ * {@link unarchiveTab} can restore the worktree from its branch. The visible tab is unchanged, so
+ * an archived tab on screen stays on screen.
  */
 export const archiveTab = (
   workspace: Workspace,
   paneId: PaneId
 ): Result.Result<Workspace, TabNotFoundError> =>
-  mapTab(workspace, paneId, ({ config: { worktree: _worktree, ...config }, ...tab }) => ({
-    ...tab,
-    config,
-    archived: true
-  }))
+  mapTab(workspace, paneId, (tab) => ({ ...tab, archived: true }))
+
+/**
+ * Unarchives the tab with `paneId`: marks it not archived. The visible tab is unchanged. Fails
+ * for a pane id that no tab has.
+ */
+export const unarchiveTab = (
+  workspace: Workspace,
+  paneId: PaneId
+): Result.Result<Workspace, TabNotFoundError> =>
+  mapTab(workspace, paneId, (tab) => ({ ...tab, archived: false }))
 
 /**
  * Drops the tab with `paneId`. When it is the visible tab, the first non-archived tab of its

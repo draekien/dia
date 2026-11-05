@@ -15,6 +15,7 @@ import {
   renameTab,
   selectTab,
   tabOf,
+  unarchiveTab,
   updateTabConfig,
   withDefaultVisibleTab
 } from './workspace'
@@ -359,13 +360,13 @@ describe('archiveTab', () => {
     config: { ...tab(1).config, cwd: worktree.path, worktree }
   }
 
-  it('marks the tab archived, forgets its worktree and keeps its cwd and session', () => {
+  it('marks the tab archived and keeps its worktree, cwd and session', () => {
     const session = { ...worktreeTab, sessionId: SessionId.make('s-1') }
     const result = ok(archiveTab(workspaceOf([[1, [session, tab(2)]]], paneId(2)), paneId(1)))
 
     expect(result.projects[0].tabs[0]).toEqual({
       name: session.name,
-      config: { ...tab(1).config, cwd: worktree.path },
+      config: { ...tab(1).config, cwd: worktree.path, worktree },
       sessionId: session.sessionId,
       archived: true
     })
@@ -379,6 +380,22 @@ describe('archiveTab', () => {
 
   it('fails for a pane id no tab has', () => {
     expect(failureTag(archiveTab(workspaceOf([[1, [tab(1)]]]), paneId(9)))).toBe('TabNotFoundError')
+  })
+})
+
+describe('unarchiveTab', () => {
+  const archived: Tab = { ...tab(1), archived: true }
+
+  it('marks the tab not archived and keeps the visible tab', () => {
+    const result = ok(unarchiveTab(workspaceOf([[1, [archived, tab(2)]]], paneId(2)), paneId(1)))
+
+    expect(result).toEqual(workspaceOf([[1, [tab(1), tab(2)]]], paneId(2)))
+  })
+
+  it('fails for a pane id no tab has', () => {
+    expect(failureTag(unarchiveTab(workspaceOf([[1, [archived]]]), paneId(9)))).toBe(
+      'TabNotFoundError'
+    )
   })
 })
 
