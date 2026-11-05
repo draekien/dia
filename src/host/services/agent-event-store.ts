@@ -113,8 +113,10 @@ export class AgentEventStore extends Context.Service<
      * came from; an event whose `sourceUuid` and item are already stored is skipped. Returns one
      * entry per input event: `Some(sequence)` when appended, `None` when skipped. Sequences
      * increase but are not contiguous. Every appended event is offered to `committed` once the
-     * transaction commits. Fails with {@link AgentEventWriteError}, and then nothing from the batch
-     * is stored or offered.
+     * transaction commits. Appending an `AgentArchived` event also deletes, for good, the agent's
+     * `streaming` `MessageUpdated` and `ReasoningUpdated` events that a later event of the same
+     * item replaced; replay then skips their sequences. Fails with {@link AgentEventWriteError},
+     * and then nothing from the batch is stored, deleted or offered.
      */
     readonly append: (
       agentId: string,
@@ -327,6 +329,21 @@ const makeStore = Effect.gen(function* () {
           : 'DO UPDATE SET kind = excluded.kind, streaming = excluded.streaming, payload_json = excluded.payload_json'
       )}`
 
+  const deleteSupersededStreaming = (agentId: string) =>
+    sql`DELETE FROM agent_events WHERE sequence IN (
+      SELECT sequence FROM (
+        SELECT sequence, event_type,
+          json_extract(payload_json, '$.streaming') AS streaming,
+          ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY sequence DESC) AS newer
+        FROM agent_events WHERE agent_id = ${agentId} AND item_id IS NOT NULL)
+      WHERE newer > 1 AND streaming = 1
+        AND event_type IN ('MessageUpdated', 'ReasoningUpdated'))
+      RETURNING sequence`.pipe(
+      Effect.tap((deleted) =>
+        Effect.logInfo('Compacted an archived agent', { agentId, deleted: deleted.length })
+      )
+    )
+
   const project = (
     agentId: string,
     event: StoredEvent,
@@ -336,7 +353,10 @@ const makeStore = Effect.gen(function* () {
     if (item !== null) return writeItem(agentId, item)
     switch (event._tag) {
       case 'AgentArchived':
-        return sql`UPDATE agents SET archived_at = ${occurredAt} WHERE agent_id = ${agentId}`
+        return Effect.andThen(
+          sql`UPDATE agents SET archived_at = ${occurredAt} WHERE agent_id = ${agentId}`,
+          deleteSupersededStreaming(agentId)
+        )
       case 'AgentUnarchived':
         return sql`UPDATE agents SET archived_at = NULL WHERE agent_id = ${agentId}`
       case 'ConversationCleared':
