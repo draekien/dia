@@ -19,7 +19,7 @@ Governing decisions: ADR-0023 (Archive and Delete rows), ADR-0046 (dia keeps the
 | --- | --- | --- |
 | Transcripts on delete | Kept; no `deleteSession` call. The issue comment's `deleteSession` per `agent_sessions` row is not done | ADR-0046 (accepted after the comment) removed `AgentBackend.deleteSession` and states that deleting one agent keeps its transcripts |
 | Branch on archive and delete | Kept | Project removal keeps branches; the branch holds the agent's committed work |
-| Restore (unarchive) | Not offered | The worktree is gone and the tab's `cwd` is its old path, so resuming needs a worktree reattach from the branch and a new restore flow; not nearly free |
+| Restore (unarchive) | Offered since #158; see `docs/designs/unarchive-agent.md` | An archived tab keeps `config.worktree`, so unarchive reattaches the worktree from its kept branch at its original path |
 | Viewing an archived agent | `visibleTab` may name an archived tab; the Host never starts an archived tab's session; the chat plugin renders it read-only | Reuses `SelectTab`, the content header and `getPaneHistory`; no second view state in the renderer |
 | Failure | No "anyway" option; the tab stays as it was (session stopped) and the dialog offers "Try again" | One agent has one removable item; a forced drop would leave an orphaned worktree, which criterion 6 forbids |
 | Confirmation | Delete always confirms in an `AlertDialog`. Archive confirms only for an agent with a worktree, because `git worktree remove --force` discards uncommitted changes | Destructive steps confirm; archiving an agent without a worktree removes nothing |
@@ -38,12 +38,12 @@ export class WorktreeNotRemovedError extends Schema.TaggedError<WorktreeNotRemov
 ) {}
 ```
 
-`Workspace` drops its "the visible tab is archived" check; the `Tab` JSDoc changes to "archived tabs are listed in the project's archived list and never run".
+`Workspace` drops its "the visible tab is archived" check; the `Tab` JSDoc changes to "archived tabs are listed in the project's archived list and never run". Since #158 it also says an archived tab keeps `config.worktree` (`docs/designs/unarchive-agent.md`).
 
 ### Shared domain — `src/shared/domain/workspace.ts`
 
 - `selectTab` accepts an archived tab.
-- `archiveTab(workspace, paneId): Result<Workspace, TabNotFoundError>` sets `archived: true` and removes `config.worktree`; `config.cwd` keeps the old path, because the transcript is keyed by it. `visibleTab` is unchanged.
+- `archiveTab(workspace, paneId): Result<Workspace, TabNotFoundError>` sets `archived: true` and keeps `config` (since #158 including `config.worktree`, so the tab can be unarchived; `docs/designs/unarchive-agent.md`); `config.cwd` keeps the old path, because the transcript is keyed by it. `visibleTab` is unchanged.
 - `deleteTab(workspace, paneId): Result<Workspace, TabNotFoundError>` drops the tab. When it is the visible tab, `visibleTab` becomes the first non-archived tab of the same project, else of any project, else `null`.
 
 ### Host — `PaneWorkspace`
@@ -53,7 +53,7 @@ readonly archiveTab: (paneId: PaneId) => Effect<void, TabNotFoundError | Worktre
 readonly deleteTab: (paneId: PaneId) => Effect<void, TabNotFoundError | WorktreeNotRemovedError>
 ```
 
-Both: mark the pane retiring (in memory; `selectTab`, `resumePane` and `ensureLive` treat it as they treat a tab of a project being removed), `supervisor.closePane(paneId)`, then remove the worktree with the helper Remove Project uses (success once the path is gone; `WORKTREES_PLUGIN_NOT_LOADED` when the plugin is absent), then apply the pure operation and save. `WorkspaceStore.save` deletes the agent's rows for a deleted tab (`deleteGone` and `ON DELETE CASCADE`) and the `agent_worktrees` row for an archived one (`writeWorktrees`). A failed worktree removal fails with `WorktreeNotRemovedError` and leaves the workspace unchanged. A tab whose project is being removed fails with `TabNotFoundError`. `startPaneSession` returns without starting for an archived tab. A second call for a pane that is already retiring fails with `TabNotFoundError`.
+Both: mark the pane retiring (in memory; `selectTab`, `resumePane` and `ensureLive` treat it as they treat a tab of a project being removed), `supervisor.closePane(paneId)`, then remove the worktree with the helper Remove Project uses (success once the path is gone; `WORKTREES_PLUGIN_NOT_LOADED` when the plugin is absent), then apply the pure operation and save. `WorkspaceStore.save` deletes the agent's rows for a deleted tab (`deleteGone` and `ON DELETE CASCADE`) and, before #158, the `agent_worktrees` row for an archived one (`writeWorktrees`); since #158 an archived tab keeps that row (`docs/designs/unarchive-agent.md`). A failed worktree removal fails with `WorktreeNotRemovedError` and leaves the workspace unchanged. A tab whose project is being removed fails with `TabNotFoundError`. `startPaneSession` returns without starting for an archived tab. A second call for a pane that is already retiring fails with `TabNotFoundError`.
 
 ### Host — `WorkspaceStore`
 
@@ -70,11 +70,11 @@ Both: mark the pane retiring (in memory; `selectTab`, `resumePane` and `ensureLi
 - `plugins/agent-overview/agent-row.tsx`: row menu gains Archive (non-archived rows) and Delete…, separated as destructive.
 - `plugins/agent-overview/retire-agent-dialog.tsx`: `AlertDialog` for both actions. Body lists what is removed (the session, the worktree path, and for delete dia's record of the agent) and what stays (the branch, the transcripts under the Claude Code projects directory). While running, the action button reads "Archiving…"/"Deleting…"; on failure the reason shows with "Try again".
 - `plugins/agent-overview/overview.ts`: `archived` always holds the matching archived rows; `navigationOrder` takes the set of projects whose archived list is open and adds an `ArchivedTarget` (the disclosure) before those rows.
-- `plugins/chat/chat.tsx`: an archived tab renders `ArchivedTranscript` (`plugins/chat/archived-transcript.tsx`): the messages from `paneChatAtom` through `MessageView`, without rewind, composer or settings, above a caption "Archived. This transcript is read-only."
+- `plugins/chat/chat.tsx`: an archived tab renders `ArchivedTranscript` (`plugins/chat/archived-transcript.tsx`): the messages from `paneChatAtom` through `MessageView`, without rewind, composer or settings, above a caption "Archived. This transcript is read-only." Since #158 the messages come from the agent's stored conversation, and an empty one reads "This agent is archived. Its transcript is empty."
 
 ## Not changed
 
-- Remove Project. Agent summaries (an archived tab reads idle). The Host plugin API.
+- Remove Project (since #158 `removalItemsOf` lists no worktree for an archived tab). Agent summaries (an archived tab reads idle). The Host plugin API.
 
 ## Refinement record
 

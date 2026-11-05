@@ -110,6 +110,7 @@ Before `git worktree add`, runs `git rev-parse --verify --quiet refs/heads/<bran
 ### Docs
 
 - `docs/designs/archive-delete-agents.md`: the "Restore (unarchive)" row, the `Tab` JSDoc line ("never run"), the `archiveTab` line that says it removes `config.worktree`, the `WorkspaceStore.save` line that deletes the `agent_worktrees` row of an archived tab, the archived transcript caption, and the "Not changed" Remove Project line are updated and point to this spec.
+- `DESIGN.md`: the Agent Overview row menu lists Unarchive and its failure toast, and a Toast entry says when dia uses a toast.
 - `docs/adr/0051-session-event-store-in-host-db.md`: the "Archive and unarchive" bullet and the "Bad, because `host.db` grows" consequence name superseded streaming `MessageUpdated` and `ReasoningUpdated` events, marked "(amended by #158)".
 
 ## Tests
