@@ -13,6 +13,7 @@ import {
   SidebarMenuItem,
   StatusIndicator,
   statusLabel,
+  toast,
   useSidebar
 } from '@dia/renderer-plugin'
 import type { AgentSummary } from '@shared/domain/agent-summary'
@@ -102,9 +103,21 @@ interface AgentRowProps {
 }
 
 /**
+ * Unarchives the agent of `row`, and shows the reason in an error toast when its working
+ * directory could not be restored.
+ */
+const unarchive = (row: OverviewRow): Promise<void> =>
+  actions.unarchiveTab(row.paneId).then((reason) => {
+    if (reason !== null) {
+      toast.add({ title: `Could not unarchive ${row.name}`, description: reason, type: 'error' })
+    }
+  })
+
+/**
  * One agent in the overview: its status dot, name and second line. Clicking it or pressing
  * `Enter` shows the agent's tab; `F2` or the row menu renames it. The row menu also archives an
- * agent that is not `archived`, and deletes any agent, through `onRetire`.
+ * agent that is not `archived` through `onRetire`, unarchives one that is, and deletes any agent
+ * through `onRetire`.
  */
 export function AgentRow({
   row,
@@ -184,7 +197,9 @@ export function AgentRow({
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuGroup>
-            {!archived && (
+            {archived ? (
+              <ContextMenuItem onClick={() => void unarchive(row)}>Unarchive</ContextMenuItem>
+            ) : (
               <ContextMenuItem onClick={() => onRetire('archive')}>Archive</ContextMenuItem>
             )}
             <ContextMenuItem variant="destructive" onClick={() => onRetire('delete')}>

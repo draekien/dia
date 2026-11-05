@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { SidebarProvider, TooltipProvider } from '@dia/renderer-plugin'
+import { SidebarProvider, Toaster, TooltipProvider } from '@dia/renderer-plugin'
 import {
   type AgentSummary,
   NoActivity,
@@ -209,6 +209,44 @@ describe('AgentOverview archived agents', () => {
       [[paneId(3)]],
       null
     ])
+    Reflect.deleteProperty(window, 'dia')
+  })
+
+  const openArchivedMenu = () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Archived (1)' }))
+    fireEvent.contextMenu(screen.getByRole('button', { name: /^old-heron, / }))
+  }
+
+  it('offers Unarchive, not Archive, on an archived agent and unarchives it', async () => {
+    withArchived()
+    const bridge = { unarchiveTab: vi.fn(async () => null) }
+    Object.assign(window, { dia: bridge })
+    render(<Harness initialOpen />)
+
+    openArchivedMenu()
+    const archive = screen.queryByRole('menuitem', { name: 'Archive' })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Unarchive' }))
+
+    await waitFor(() => expect(bridge.unarchiveTab).toHaveBeenCalled())
+    expect([archive, bridge.unarchiveTab.mock.calls]).toEqual([null, [[paneId(4)]]])
+    Reflect.deleteProperty(window, 'dia')
+  })
+
+  it('shows why an agent could not be unarchived in an error toast', async () => {
+    withArchived()
+    const reason = 'Branch dia/old-heron no longer exists'
+    Object.assign(window, { dia: { unarchiveTab: vi.fn(async () => reason) } })
+    render(
+      <Toaster>
+        <Harness initialOpen />
+      </Toaster>
+    )
+
+    openArchivedMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Unarchive' }))
+
+    expect(await screen.findByText('Could not unarchive old-heron')).toBeTruthy()
+    expect(screen.getByText(reason)).toBeTruthy()
     Reflect.deleteProperty(window, 'dia')
   })
 

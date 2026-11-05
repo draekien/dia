@@ -8,6 +8,7 @@ import { SettingsDialog } from './components/settings/settings-dialog'
 import { TabContent } from './components/tab-content'
 import { TabHeader } from './components/tab-header'
 import { ThemeProvider } from './components/theme-provider'
+import { Toaster } from './components/ui/toast'
 import { TooltipProvider } from './components/ui/tooltip'
 import { MAIN, MAIN_HEADER, setKernelDefault, setPluginRegistry } from './lib/slots'
 import { appRegistry } from './lib/workspace-atoms'
@@ -30,9 +31,11 @@ const renderApp = () =>
         <ThemeProvider>
           <QueryClientProvider client={queryClient}>
             <TooltipProvider delay={400}>
-              <App />
-              <CommandPalette />
-              <SettingsDialog />
+              <Toaster>
+                <App />
+                <CommandPalette />
+                <SettingsDialog />
+              </Toaster>
             </TooltipProvider>
           </QueryClientProvider>
         </ThemeProvider>
