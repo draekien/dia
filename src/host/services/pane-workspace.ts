@@ -725,22 +725,29 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
 
       const restoreDirectory = Effect.fn('PaneWorkspace.restoreDirectory')(function* (tab: Tab) {
         const { paneId, cwd, worktree } = tab.config
+        const notRestored = (reason: string) =>
+          Effect.logWarning('Left a tab archived; its working directory was not restored', {
+            paneId,
+            reason
+          }).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new WorktreeNotRestoredError({ paneId, path: worktree?.path ?? cwd, reason })
+              )
+            )
+          )
         if (worktree === undefined) {
           const exists = yield* fs.exists(cwd).pipe(Effect.orElseSucceed(() => false))
-          return exists
-            ? Option.none<string>()
-            : Option.some(`The working directory ${cwd} no longer exists`)
+          if (!exists) return yield* notRestored(`The working directory ${cwd} no longer exists`)
+          return
         }
         const gitOps = yield* resolveGitOps(plugins)
         if (Option.isNone(gitOps)) {
-          return Option.some('Load the worktrees plugin to restore this worktree')
+          return yield* notRestored('Load the worktrees plugin to restore this worktree')
         }
-        const reattached = yield* gitOps.value
+        yield* gitOps.value
           .reattachWorktree(worktree, paneId)
-          .pipe(Effect.result)
-        if (Result.isSuccess(reattached)) return Option.none<string>()
-        const { cause } = reattached.failure
-        return Option.some(typeof cause === 'string' ? cause : String(cause))
+          .pipe(Effect.catch((failure) => notRestored(String(failure.cause))))
       })
 
       const unarchiveTab = Effect.fn('PaneWorkspace.unarchiveTab')(function* (paneId: PaneId) {
@@ -750,21 +757,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
             yield* Effect.logInfo('Left a tab that is not archived as it was', { paneId })
             return
           }
-          const failure = yield* restoreDirectory(tab)
-          if (Option.isSome(failure)) {
-            yield* Effect.logWarning(
-              'Left a tab archived; its working directory was not restored',
-              {
-                paneId,
-                reason: failure.value
-              }
-            )
-            return yield* new WorktreeNotRestoredError({
-              paneId,
-              path: tab.config.worktree?.path ?? tab.config.cwd,
-              reason: failure.value
-            })
-          }
+          yield* restoreDirectory(tab)
           yield* recordEvent(paneId, AgentUnarchived.make({}))
           yield* mutate('unarchiveTab', (workspace) => WorkspaceOps.unarchiveTab(workspace, paneId))
           yield* Effect.logInfo('Unarchived tab', {
