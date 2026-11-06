@@ -1732,6 +1732,20 @@ describe('whenProvided', () => {
 
   const closedSetupLog = 'Closed a setup because a service it waits for is closing'
 
+  const probeLater = <E extends { readonly _tag: string }>(
+    gate: Deferred.Deferred<void>,
+    outcome: Deferred.Deferred<string>,
+    probe: Effect.Effect<void, E, Scope.Scope>
+  ) =>
+    Effect.forkScoped(
+      Deferred.await(gate).pipe(
+        Effect.andThen(
+          Effect.match(probe, { onFailure: (error) => error._tag, onSuccess: () => 'accepted' })
+        ),
+        Effect.flatMap((result) => Deferred.succeed(outcome, result))
+      )
+    )
+
   it.effect('runs the setup once the provider loads after the plugin', () =>
     Effect.gen(function* () {
       const log: Array<string> = []
@@ -1857,17 +1871,7 @@ describe('whenProvided', () => {
       const outcome = yield* Deferred.make<string>()
       const registry = yield* makeRegistry({
         overview: plugin(manifest('overview'), (ctx) =>
-          Effect.forkScoped(
-            Deferred.await(gate).pipe(
-              Effect.andThen(
-                Effect.match(ctx.whenProvided(['org'], child('late', log)), {
-                  onFailure: (error) => error._tag,
-                  onSuccess: () => 'registered'
-                })
-              ),
-              Effect.flatMap((result) => Deferred.succeed(outcome, result))
-            )
-          )
+          probeLater(gate, outcome, ctx.whenProvided(['org'], child('late', log)))
         ),
         org: provider('org', log, 'v1')
       })
@@ -1891,19 +1895,10 @@ describe('whenProvided', () => {
         const registry = yield* makeRegistry({
           overview: plugin(manifest('overview'), (ctx) =>
             Effect.gen(function* () {
-              yield* Effect.forkScoped(
-                Deferred.await(childRunning).pipe(
-                  Effect.andThen(
-                    Effect.match(
-                      ctx.whenProvided(['meta'], () => Effect.void),
-                      {
-                        onFailure: (error) => error._tag,
-                        onSuccess: () => 'registered'
-                      }
-                    )
-                  ),
-                  Effect.flatMap((result) => Deferred.succeed(outcome, result))
-                )
+              yield* probeLater(
+                childRunning,
+                outcome,
+                ctx.whenProvided(['meta'], () => Effect.void)
               )
               yield* ctx.whenProvided(['org'], () =>
                 Deferred.succeed(childRunning, undefined).pipe(
@@ -2229,17 +2224,7 @@ describe('whenProvided', () => {
       const registry = yield* makeRegistry({
         overview: plugin(manifest('overview'), (ctx) =>
           Effect.gen(function* () {
-            yield* Effect.forkScoped(
-              Deferred.await(gate).pipe(
-                Effect.andThen(
-                  Effect.match(ctx.provide('hires', 'stray'), {
-                    onFailure: (error) => error._tag,
-                    onSuccess: () => 'provided'
-                  })
-                ),
-                Effect.flatMap((result) => Deferred.succeed(outcome, result))
-              )
-            )
+            yield* probeLater(gate, outcome, ctx.provide('hires', 'stray'))
             yield* ctx.whenProvided(['org'], () => ctx.provide('hires', 'child'))
           })
         ),

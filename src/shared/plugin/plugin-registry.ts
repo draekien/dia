@@ -249,15 +249,15 @@ const CurrentSetup = Context.Reference<SetupWindow | undefined>('dia/plugin/Curr
 
 type WhenProvidedRefusal = 'adapter' | 'no-setup' | 'other-plugin' | 'setup-ended'
 
-const refusalOf = (
+const acceptingWindow = (
   name: string,
   category: PluginCategory | undefined,
   window: SetupWindow | undefined
-): WhenProvidedRefusal | undefined => {
+): SetupWindow | WhenProvidedRefusal => {
   if (category === 'adapter') return 'adapter'
   if (window === undefined) return 'no-setup'
   if (window.plugin !== name) return 'other-plugin'
-  return window.accepting ? undefined : 'setup-ended'
+  return window.accepting ? window : 'setup-ended'
 }
 
 const makeEntry = <Context extends PluginServices>(source: PluginSource): Entry<Context> => ({
@@ -509,12 +509,12 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
             }),
       whenProvided: (keys, setup) =>
         Effect.gen(function* () {
-          const window = yield* CurrentSetup
-          const refusal = refusalOf(name, entry.category, window)
-          if (window === undefined || refusal !== undefined) {
+          const window = acceptingWindow(name, entry.category, yield* CurrentSetup)
+          if (typeof window === 'string') {
+            const refusal = window
             yield* Effect.logError('A plugin called whenProvided outside its setup', {
               plugin: name,
-              reason: refusal ?? 'no-setup'
+              reason: refusal
             })
             return yield* new WhenProvidedRefusedError({
               plugin: name,
