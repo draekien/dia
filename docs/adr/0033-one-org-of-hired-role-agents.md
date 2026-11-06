@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0053"
 date: 2026-10-28
 decision-makers: William Pei
 ---
@@ -33,11 +33,10 @@ Chosen options: "a role with named employees on top", without per-employee memor
 | --- | --- |
 | Org | One per dia installation. Spans every registered project |
 | Role | Instructions, skills, MCP servers, and an optional allow/ask/deny permission list. An empty list allows every tool |
-| Built-in roles | `planner`, `engineer`, `reviewer`, `researcher`, `retro`. The user can disable, copy and edit each one |
+| Built-in roles | `planner`, `engineer`, `reviewer`, `researcher`, `retro`, `router`. The user can disable, copy and edit each one. `router` is never hired and never counted toward a cap (ADR-0053) |
 | Hired agent | A role plus an optional name. Has no memory of its own |
 | Per-role cap | The number of hired agents of that role |
 | Overall cap | A number the user sets. Limits how many hired agents run at once across all roles |
-| Objective watcher | The role the user sets to pick up unassigned objectives. Default: `planner` |
 | Hired agent session | Opens from the agent overview like a tab: live transcript and the composer with `queue` and `steer` (`docs/designs/message-queue-and-steer.md`), so the user can check and correct a task while it runs |
 | Ad-hoc tab | A tab the user opens directly. Not a hired agent. Never counted toward a cap and never queued |
 
@@ -46,9 +45,11 @@ Example: with an overall cap of 4 and hired agents `Ada` and `Ben` (engineer), `
 ### Scheduling
 
 * Retro and planner sessions are hired agents and count toward the caps.
-* On first run, dia hires one agent of the objective watcher role and one `retro`. The user can dismiss them. While the objective watcher role or `retro` has no hired agent, the org screen shows a warning, unassigned objectives wait for an objective watcher, and finished tasks wait for a retro.
+* On first run, dia hires one `retro`. The user can dismiss it. While `retro` has no hired agent, the org screen shows a warning and finished tasks wait for a retro. An objective without an assignee goes to `planner` (ADR-0053).
 * When a cap is full, waiting tasks start by objective priority, then oldest first.
 * A hired agent that finishes a task takes the next waiting task its role can do, in any project.
+* A hired agent holds a slot while a session of its task runs a turn, and while background shell jobs or subagents that a turn started are still running. Waiting on the decision queue, waiting for a message, and a finished task free the slot.
+* When the user answers a decision queue item or sends a message to a hired agent that holds no slot, that agent starts before any waiting task, and may exceed the overall cap and its role's cap by one for that turn. New work therefore never delays the user's answer, as in dsh-superagent (`docs/003-execution.md`, "Concurrency").
 
 ### Consequences
 
@@ -98,4 +99,3 @@ Example: with an overall cap of 4 and hired agents `Ada` and `Ben` (engineer), `
 ## More Information
 
 * Related: ADR-0023 (tabs within projects), ADR-0034 (decision path), ADR-0035 (memory), `docs/prds/org.md`.
-* Open: whether a hired agent holds a slot only while a turn runs, or for the whole time it is assigned an open task (`docs/prds/org.md`, Open Questions).

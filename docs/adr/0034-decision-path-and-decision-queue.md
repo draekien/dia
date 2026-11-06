@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0053"
 date: 2026-10-28
 decision-makers: William Pei
 ---
@@ -57,7 +57,7 @@ Ship plugin marketplace                      3 agents · 14 tasks
 
 When a message the user sends to an agent (`queue` or `steer`) contradicts a recorded decision, the agent calls `record_decision` with the new choice. The new decision replaces the old one on the path, is marked as made by the user, and needs no review. Work done under the old decision is not discarded; the agent changes it as it continues.
 
-Every objective's plan goes through review, whether the user assigned it or the objective watcher picked it up. Tasks created by a routine skip review.
+Every objective's plan goes through review, whether the user assigned it or `planner` picked it up. Tasks created by a routine, and objectives the router sends on its `direct` route (ADR-0053), skip review; a decision the worker records during a `direct` objective still pauses it.
 
 ### Decision queue
 
