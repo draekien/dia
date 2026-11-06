@@ -1,0 +1,9 @@
+engine biome(1.0)
+language js(typescript, jsx)
+
+or {
+  `$obj.inject($...)`,
+  `$obj?.inject($...)`
+} as $read where {
+  register_diagnostic(span=$read, message="Read a feature plugin's service with `registry.use(key, f)`, which holds the plugin open until `f` ends. `registry.inject` holds no lease: use it only for an adapter plugin's service or for a value read again each time `changes` emits its key, and suppress this rule there with the reason (ADR-0055).", severity="error")
+}

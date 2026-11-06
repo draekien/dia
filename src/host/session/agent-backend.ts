@@ -31,7 +31,10 @@ export const SessionNotFound = Schema.TaggedStruct('SessionNotFound', { sessionI
 export const SessionEnd = Schema.Union([SessionFailed, SessionNotFound])
 export type SessionEnd = typeof SessionEnd.Type
 
-/** Service key under which the agent adapter plugin provides its {@link AgentBackend}. */
+/**
+ * Service key under which the agent adapter plugin provides its {@link AgentBackend}. Host code
+ * reads it with `registry.inject`: an adapter plugin never unloads or reloads (ADR-0055).
+ */
 export const AGENT_BACKEND_KEY = 'agentBackend'
 
 /**
@@ -356,6 +359,7 @@ export const adapterContract: AdapterContract = {
 export const resolveAgentBackend = Effect.fn('AgentBackend.resolve')(function* (
   registry: Pick<PluginRegistry, 'inject'>
 ) {
+  // biome-ignore lint/plugin/noRegistryInject: an adapter plugin never unloads or reloads (ADR-0029, ADR-0055)
   const provided = yield* registry.inject(AGENT_BACKEND_KEY)
   if (isAgentBackend(provided)) {
     yield* Effect.logDebug('Resolved the agent backend')

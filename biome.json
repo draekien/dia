@@ -10,6 +10,12 @@
     "ignoreUnknown": false,
     "includes": ["**", "!**/.impeccable"]
   },
+  "plugins": [
+    {
+      "path": "./biome-plugins/noRegistryInject.grit",
+      "includes": ["**/src/**", "!**/*.test.ts", "!**/*.test.tsx", "!**/*.fake.ts"]
+    }
+  ],
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
