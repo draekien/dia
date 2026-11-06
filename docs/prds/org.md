@@ -6,7 +6,7 @@ William is dia's developer and its first user. dia runs agents for his registere
 
 ## Goals / Success Criteria
 
-1. An objective left unassigned is picked up by the agent set to watch objectives and broken into tasks, with no action from the user other than reviewing the decision path.
+1. A request the user types in a router session becomes an objective in the right project, routed `direct` to one worker or `plan` to `planner`, with no action from the user other than reviewing the decision path of a `plan` objective. An objective left unassigned in the objective form is broken into tasks by `planner`.
 2. The decision path of an objective lists every decision its tasks depend on. In testing, each task in an approved plan traces to at least one decision on the path.
 3. Cutting the decision path at a decision resets the tasks that depend on it, discards the tasks that depend only on later decisions, leaves other tasks untouched, and produces a new plan from it that follows the user's guidance, in 100% of cuts during testing. A completed decision cannot be cut.
 4. A decision an agent records during the work pauses that agent until the user accepts it or cuts there, with zero agents continuing past an unreviewed decision during testing.
@@ -17,7 +17,9 @@ William is dia's developer and its first user. dia runs agents for his registere
 9. A harness change from an agent applies at once or waits in the decision queue according to the user's tier for its change type, with zero exceptions during testing, and every change that applied at once can be reverted from the change log.
 10. A routine runs at its configured time while dia is running, in 100% of scheduled runs during testing.
 11. Every active session of a hired agent can be opened from the agent overview, and a `steer` message sent to it interrupts the turn and runs next, in 100% of attempts during testing.
-12. All `docs/prds/agent-os.md` success criteria still hold. Its goals 6 and 7 are read with `propose_change` in place of `meta_propose` (ADR-0036).
+12. A hired agent starts in `auto` whenever its model supports `auto` and Claude Code settings do not disable it, and never starts in `bypassPermissions` unless its role or hire opts in, in 100% of sessions during testing.
+13. The worker or planner of a routed objective receives the user's words unchanged, in 100% of routed objectives during testing.
+14. All `docs/prds/agent-os.md` success criteria still hold. Its goals 6 and 7 are read with `propose_change` in place of `meta_propose` (ADR-0036).
 
 ## User Stories
 
@@ -26,9 +28,9 @@ William is dia's developer and its first user. dia runs agents for his registere
 3. As a user, I want to hire more agents of a role so that more agents of that role can run at once.
 4. As a user, I want to set an overall cap on running hired agents so that dia stays within my machine's and my plan's limits.
 5. As a user, I want ad-hoc tabs to keep working as they do today, outside the caps, so that I can always ask a quick question.
-6. As a user, I want built-in roles (planner, engineer, reviewer, researcher, retro) that I can disable, copy and edit so that I can start without writing roles and change them later.
+6. As a user, I want built-in roles (planner, engineer, reviewer, researcher, retro, router) that I can disable, copy and edit so that I can start without writing roles and change them later.
 7. As a user, I want a role to carry an optional allow/ask/deny permission list, where an empty list allows every tool, so that each role has the access its work needs.
-8. As a user, I want to create an objective in a project and either assign it to a hired agent or leave it unassigned so that the agent I set to watch objectives delegates it.
+8. As a user, I want to create an objective in a project and either assign it to a hired agent or leave it unassigned for `planner` so that I can start work without the router.
 9. As a user, I want agents to break an objective into tasks and sub-tasks so that I do not plan the work myself.
 10. As a user, I want to review an objective's plan as a path of decisions, each with the alternatives the agent rejected and how confident it was, so that I can see where the plan will go without reading every task.
 11. As a user, I want to cut the decision path at a decision and add guidance, or pick a rejected alternative, so that the team re-plans from that point.
@@ -48,6 +50,11 @@ William is dia's developer and its first user. dia runs agents for his registere
 25. As a user, I want to set per change type whether an agent's harness change applies at once or waits for my approval so that I control the risk.
 26. As a user, I want a tool an agent builds to be a plugin that adds to dia's tool set so that it follows the same rules as every other plugin.
 27. As a user, I want to open a hired agent's active session, read what it is doing, and send it a queued or steering message so that I can correct a task while it runs.
+28. As a user, I want to tell a router agent what I want in my own words, in any number of router sessions outside any project, so that it hands the work to the right agent in the right project without me filling in a form.
+29. As a user, I want the router to send a one-step request straight to a worker and a multi-step one to `planner` so that small work starts without a plan review.
+30. As a user, I want the router session I asked in to tell me when the work needs me or is done, linking to the decision queue, so that I learn about it where I asked.
+31. As a user, I want hired agents to run in `auto` mode where my model and settings allow it so that they stop for me only when the classifier cannot decide.
+32. As a user, I want `bypassPermissions` to run only for a role or hire I opted in so that no agent runs without checks unless I chose it.
 
 ## Decisions
 
@@ -55,13 +62,16 @@ William is dia's developer and its first user. dia runs agents for his registere
 | --- | --- | --- |
 | Org scope | One org across every registered project; objectives belong to a project | ADR-0033 |
 | Hiring | A hired agent has a role and an optional name; hiring another agent of a role raises that role's concurrency by one | ADR-0033 |
-| Caps | The overall cap is set by the user. Retro and planner sessions count toward the caps. Ad-hoc tabs never count | ADR-0033 |
+| Caps | The overall cap is set by the user. Retro and planner sessions count toward the caps. Ad-hoc tabs and router sessions never count | ADR-0033, ADR-0053 |
+| Slots | A hired agent holds a slot while its turn, or background work its turn started, runs. Waiting on the user frees it; the user's answer starts the agent before waiting tasks, up to one over the cap | ADR-0033 |
 | Queue order | When a cap is full, waiting tasks start by objective priority, then oldest first | ADR-0033 |
-| Unassigned objectives | Picked up by the role the user sets to watch objectives; the default is the built-in planner | ADR-0033 |
-| Plan review | Every objective's plan, assigned or not, goes through decision path review before work starts. Tasks created by a routine skip it | ADR-0034 |
+| Router | A built-in role, never hired or counted. Any number of router sessions in the `Assistant` rail group. Passes the user's words on unchanged with a routing note of at most 30 words; never plans. Routes `direct` to one worker or `plan` to `planner` | ADR-0053 |
+| Unassigned objectives | An objective form entry without an assignee goes to `planner`. There is no objective watcher setting | ADR-0053 |
+| Permission modes | Hired agents start in `auto` when the model and settings allow it, else in `bypassPermissions` if the role or hire opts in, else in `default`. Router sessions run in `dontAsk` | ADR-0054 |
+| Plan review | Every objective's plan, assigned or not, goes through decision path review before work starts. Tasks created by a routine and `direct` objectives from the router skip it | ADR-0034, ADR-0053 |
 | Cutting | A completed decision cannot be cut; cutting an in-progress decision requires confirming its work is discarded. Dependent tasks reset to the commit recorded with the decision, tasks that depend only on later decisions are discarded, others are untouched; discarded commits stay on a backup ref | ADR-0034 |
 | Steering against a decision | When a message contradicts a recorded decision, the agent records a new decision marked as made by the user | ADR-0034 |
-| Required roles | On first run dia hires one objective watcher and one `retro`; the user can dismiss them, and work then waits with a warning | ADR-0033 |
+| Required roles | On first run dia hires one `retro`; the user can dismiss it, and finished tasks then wait with a warning | ADR-0033 |
 | Steering tasks | A hired agent's active session opens like a tab: live transcript and the composer with `queue` and `steer` (`docs/designs/message-queue-and-steer.md`) | ADR-0033 |
 | Live decisions | A decision recorded during the work pauses its agent until the user accepts it or cuts there | ADR-0034 |
 | Memory | Scratchpad per task; long-term memory in project, environment and role scopes; the retro writes long-term memory by the memory tier and cites the entries each task used; staleness counts citations | ADR-0035 |
@@ -73,6 +83,7 @@ dia serves these tools from the Host's in-process MCP server (`src/host/session/
 
 | Tool | Purpose | Called by |
 | --- | --- | --- |
+| `objectives_read`, `objective_create`, `objective_attach`, `objective_stop` | Read objectives across projects; create one with the user's words, a routing note and a route; pass a message to an objective's agents; stop one | router |
 | `create_task`, `update_task` | Create and update tasks and sub-tasks of an objective | planner; any agent for sub-tasks |
 | `record_decision` | Add a decision, its rejected alternatives and a confidence to the decision path | any agent |
 | `scratchpad_read`, `scratchpad_write` | Read and write the current task's scratchpad | agents on the task |
@@ -83,7 +94,7 @@ dia serves these tools from the Host's in-process MCP server (`src/host/session/
 
 ## Testing Decisions
 
-**Approach:** Automated tests cover logic that can be checked in isolation: the scheduler (overall cap, per-role caps, queue order, ad-hoc tabs ignored), task and objective state transitions (a task cannot complete before its retro), decision path construction and cutting (which tasks and commits are discarded), memory scope selection for a new session, memory citation counts and staleness, the tier rule that routes a harness change to apply or to the queue, routine schedule evaluation with Effect's `TestClock`, and permission list evaluation for a role. Manual testing on the installed build covers a full objective: an unassigned objective planned by the planner, a cut with guidance, a live decision that pauses an agent, a retro that writes memory, and that memory loaded into an agent in a later task.
+**Approach:** Automated tests cover logic that can be checked in isolation: the scheduler (overall cap, per-role caps, queue order, ad-hoc tabs ignored), task and objective state transitions (a task cannot complete before its retro), decision path construction and cutting (which tasks and commits are discarded), the start permission mode for each combination of `autoMode`, disabled modes and bypass opt-in, slot release and the one-over-cap resume, memory scope selection for a new session, memory citation counts and staleness, the tier rule that routes a harness change to apply or to the queue, routine schedule evaluation with Effect's `TestClock`, and permission list evaluation for a role. Manual testing on the installed build covers a full objective: a request in a router session routed `direct` and another routed `plan`, an unassigned objective planned by the planner, a cut with guidance, a live decision that pauses an agent, a retro that writes memory, and that memory loaded into an agent in a later task.
 
 **Constraints:** No production or customer data is involved. Testing runs on the developer's machine against his local Claude Code installation. Transcripts used in testing can contain local paths and command output.
 
@@ -98,11 +109,10 @@ dia serves these tools from the Host's in-process MCP server (`src/host/session/
 
 ## Additional Notes
 
-This PRD extends `docs/prds/agent-os.md` and builds on the plugin platform (`docs/prds/plugin-platform.md`). Every feature in it is a built-in plugin (ADR-0019). Its plan is `docs/plans/2026-10-28-org.md`. Its decisions are ADR-0033 (org of hired role agents), ADR-0034 (decision path and decision queue), ADR-0035 (task memory and retros) and ADR-0036 (tiered self-improvement, which amends ADR-0025). The decision path and decision queue screens are designed with `/impeccable` against `DESIGN.md` before they are wired to real data.
+This PRD extends `docs/prds/agent-os.md` and builds on the plugin platform (`docs/prds/plugin-platform.md`). Every feature in it is a built-in plugin (ADR-0019). Its plan is `docs/plans/2026-10-28-org.md`. Its decisions are ADR-0033 (org of hired role agents), ADR-0034 (decision path and decision queue), ADR-0035 (task memory and retros), ADR-0036 (tiered self-improvement, which amends ADR-0025), ADR-0053 (router role) and ADR-0054 (permission modes for hired agents). The router follows DeepSeek's dsh-superagent prototype (<https://github.com/deepseek-ai/dsh-superagent-prototype>), which separates a session that only routes from sessions that do the work. The decision path and decision queue screens are designed with `/impeccable` against `DESIGN.md` before they are wired to real data.
 
 ## Open Questions
 
-- When a hired agent holds a slot: only while a session of its task is running a turn, or for the whole time it is assigned an open task, including time waiting in the decision queue.
 - How a hired agent's sessions appear in the agent overview: as tabs in the task's project labelled with the agent's name, or in a separate org group.
 - The period after which an uncited memory entry is marked stale, and whether it differs by scope.
 - How a role selects a model, and whether the model is a role setting or a hire setting.
