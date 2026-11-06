@@ -1,7 +1,17 @@
 import { assert, describe, it } from '@effect/vitest'
-import { Deferred, Duration, Effect, Fiber, Logger, Option, type Scope, Stream } from 'effect'
+import {
+  Deferred,
+  Duration,
+  Effect,
+  Fiber,
+  Logger,
+  Option,
+  Predicate,
+  type Scope,
+  Stream
+} from 'effect'
 import { TestClock } from 'effect/testing'
-import type { PluginServices, PluginSetup } from './api'
+import { type PluginServices, type PluginSetup, WhenProvidedRefusedError } from './api'
 import {
   type AdapterManifest,
   type FeatureManifest,
@@ -140,6 +150,16 @@ const statusOf = (
   name: string
 ) =>
   registry.list().pipe(Effect.map((infos) => infos.find((info) => info.name === name)?.status._tag))
+
+const capturingLogs = (messages: Array<unknown>) =>
+  Logger.layer(
+    [
+      Logger.make(({ message }) => {
+        messages.push(...(Array.isArray(message) ? message : [message]))
+      })
+    ],
+    { mergeWithExisting: true }
+  )
 
 describe('plugin registry', () => {
   it.effect('releases a plugin registrations in reverse order when it unloads', () =>
@@ -1347,16 +1367,6 @@ describe('service leases', () => {
     message: 'The "provider" plugin closed while a call using "svc" was running'
   })
 
-  const capturingLogs = (messages: Array<unknown>) =>
-    Logger.layer(
-      [
-        Logger.make(({ message }) => {
-          messages.push(...(Array.isArray(message) ? message : [message]))
-        })
-      ],
-      { mergeWithExisting: true }
-    )
-
   it.effect('closes a provider only after a running use of its service ends', () =>
     Effect.gen(function* () {
       const log: Array<string> = []
@@ -1692,4 +1702,582 @@ describe('service leases', () => {
       )
     }).pipe(Effect.scoped)
   )
+})
+
+describe('whenProvided', () => {
+  const provider = (name: string, log: Array<string>, value: unknown) =>
+    plugin(
+      manifest(name),
+      recording(name, log, (ctx) => ctx.provide(name, value))
+    )
+
+  const child =
+    (
+      label: string,
+      log: Array<string>,
+      body: Effect.Effect<void, unknown, Scope.Scope> = Effect.void
+    ) =>
+    (services: Record<string, unknown>) =>
+      Effect.gen(function* () {
+        log.push(`${label}:open:${Object.values(services).join(',')}`)
+        yield* Effect.addFinalizer(() => Effect.sync(() => void log.push(`${label}:close`)))
+        yield* body
+      })
+
+  const watchingOrg = (log: Array<string>, overrides: Partial<FeatureManifest> = {}) =>
+    plugin(
+      manifest('overview', overrides),
+      recording('overview', log, (ctx) => ctx.whenProvided(['org'], child('child', log)))
+    )
+
+  const closedSetupLog = 'Closed a setup because a service it waits for is closing'
+
+  it.effect('runs the setup once the provider loads after the plugin', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({
+        overview: watchingOrg(log),
+        org: provider('org', log, 'v1')
+      })
+
+      yield* registry.load('overview')
+      const beforeTheProvider = [...log]
+      yield* registry.load('org')
+
+      assert.deepStrictEqual(beforeTheProvider, ['overview:open'])
+      assert.deepStrictEqual(log, ['overview:open', 'org:open', 'child:open:v1'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect(
+    'closes the child before the provider unloads and runs it again when the provider returns',
+    () =>
+      Effect.gen(function* () {
+        const log: Array<string> = []
+        const plugins = { overview: watchingOrg(log), org: provider('org', log, 'v1') }
+        const registry = yield* makeRegistry(plugins)
+        yield* registry.load('overview')
+        yield* registry.load('org')
+
+        yield* registry.unload('org')
+        const whileUnloaded = [...log]
+        plugins.org = provider('org', log, 'v2')
+        yield* registry.load('org')
+
+        assert.deepStrictEqual(whileUnloaded.slice(3), ['child:close', 'org:close'])
+        assert.strictEqual(yield* statusOf(registry, 'overview'), 'Loaded')
+        assert.deepStrictEqual(log.slice(5), ['org:open', 'child:open:v2'])
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect('closes the child before the old provider and runs it once against a reload', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const plugins = { overview: watchingOrg(log), org: provider('org', log, 'v1') }
+      const registry = yield* makeRegistry(plugins)
+      yield* registry.load('overview')
+      yield* registry.load('org')
+
+      plugins.org = provider('org', log, 'v2')
+      yield* registry.load('org')
+
+      assert.deepStrictEqual(log.slice(3), [
+        'child:close',
+        'org:close',
+        'org:open',
+        'child:open:v2'
+      ])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('keeps the plugin loaded and logs when the setup fails, until its key changes', () => {
+    const messages: Array<unknown> = []
+    return Effect.gen(function* () {
+      let attempts = 0
+      const plugins = {
+        overview: plugin(manifest('overview'), (ctx) =>
+          ctx.whenProvided(['org'], () =>
+            Effect.suspend(() => {
+              attempts += 1
+              return Effect.fail('no hires')
+            })
+          )
+        ),
+        org: provider('org', [], 'v1'),
+        other: plugin(manifest('other'), () => Effect.void)
+      }
+      const registry = yield* makeRegistry(plugins)
+      yield* registry.load('overview')
+      yield* registry.load('org')
+      yield* registry.load('other')
+      const attemptsBeforeTheKeyChanges = attempts
+
+      yield* registry.load('org')
+
+      const overview = (yield* registry.list()).find((info) => info.name === 'overview')
+      assert.deepStrictEqual(overview?.status, { _tag: 'Loaded' })
+      assert.include(messages, 'A setup whose services are provided failed')
+      assert.deepInclude(
+        messages.find(
+          (message): boolean =>
+            Predicate.hasProperty(message, 'cause') && Predicate.hasProperty(message, 'keys')
+        ),
+        { plugin: 'overview', keys: ['org'] }
+      )
+      assert.strictEqual(attemptsBeforeTheKeyChanges, 1)
+      assert.strictEqual(attempts, 2)
+    }).pipe(Effect.scoped, Effect.provide(capturingLogs(messages)))
+  })
+
+  it.effect('fails a setup that does not finish within the setup time limit', () => {
+    const messages: Array<unknown> = []
+    return Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        overview: plugin(manifest('overview'), (ctx) =>
+          ctx.whenProvided(['org'], () => Effect.never)
+        ),
+        org: provider('org', [], 'v1')
+      })
+      yield* registry.load('overview')
+
+      const loading = yield* Effect.forkChild(registry.load('org'))
+      yield* TestClock.adjust(PLUGIN_SETUP_TIME_LIMIT)
+      yield* Fiber.join(loading)
+
+      assert.strictEqual(yield* statusOf(registry, 'overview'), 'Loaded')
+      assert.strictEqual(yield* statusOf(registry, 'org'), 'Loaded')
+      assert.include(messages, 'A setup whose services are provided failed')
+    }).pipe(Effect.scoped, Effect.provide(capturingLogs(messages)))
+  })
+
+  it.effect('refuses a call from a fiber that runs after the setup ended', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const gate = yield* Deferred.make<void>()
+      const outcome = yield* Deferred.make<string>()
+      const registry = yield* makeRegistry({
+        overview: plugin(manifest('overview'), (ctx) =>
+          Effect.forkScoped(
+            Deferred.await(gate).pipe(
+              Effect.andThen(
+                Effect.match(ctx.whenProvided(['org'], child('late', log)), {
+                  onFailure: (error) => error._tag,
+                  onSuccess: () => 'registered'
+                })
+              ),
+              Effect.flatMap((result) => Deferred.succeed(outcome, result))
+            )
+          )
+        ),
+        org: provider('org', log, 'v1')
+      })
+      yield* registry.load('overview')
+
+      yield* Deferred.succeed(gate, undefined)
+      const result = yield* Deferred.await(outcome)
+      yield* registry.load('org')
+
+      assert.strictEqual(result, 'WhenProvidedRefusedError')
+      assert.deepStrictEqual(log, ['org:open'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect(
+    'refuses a call from a fiber an earlier setup forked while a later child setup runs',
+    () =>
+      Effect.gen(function* () {
+        const childRunning = yield* Deferred.make<void>()
+        const outcome = yield* Deferred.make<string>()
+        const registry = yield* makeRegistry({
+          overview: plugin(manifest('overview'), (ctx) =>
+            Effect.gen(function* () {
+              yield* Effect.forkScoped(
+                Deferred.await(childRunning).pipe(
+                  Effect.andThen(
+                    Effect.match(
+                      ctx.whenProvided(['meta'], () => Effect.void),
+                      {
+                        onFailure: (error) => error._tag,
+                        onSuccess: () => 'registered'
+                      }
+                    )
+                  ),
+                  Effect.flatMap((result) => Deferred.succeed(outcome, result))
+                )
+              )
+              yield* ctx.whenProvided(['org'], () =>
+                Deferred.succeed(childRunning, undefined).pipe(
+                  Effect.andThen(Deferred.await(outcome))
+                )
+              )
+            })
+          ),
+          org: provider('org', [], 'v1')
+        })
+        yield* registry.load('overview')
+
+        yield* registry.load('org')
+
+        assert.strictEqual(yield* Deferred.await(outcome), 'WhenProvidedRefusedError')
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect('refuses a call from an adapter plugin', () =>
+    Effect.gen(function* () {
+      const refusals: Array<WhenProvidedRefusedError> = []
+      const registry = yield* makeRegistry({
+        adapter: plugin(adapterManifest('adapter'), (ctx) =>
+          Effect.gen(function* () {
+            refusals.push(yield* Effect.flip(ctx.whenProvided(['org'], () => Effect.void)))
+            yield* ctx.provide(BACKEND_KEY, 'backend')
+          })
+        )
+      })
+
+      yield* registry.load('adapter')
+
+      assert.deepStrictEqual(refusals, [
+        new WhenProvidedRefusedError({
+          plugin: 'adapter',
+          message: 'Adapter plugin "adapter" cannot call whenProvided'
+        })
+      ])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect(
+    'closes the child, without the closed-setup log, when the plugin itself unloads',
+    () => {
+      const messages: Array<unknown> = []
+      return Effect.gen(function* () {
+        const log: Array<string> = []
+        const registry = yield* makeRegistry({
+          overview: watchingOrg(log),
+          org: provider('org', log, 'v1')
+        })
+        yield* registry.load('overview')
+        yield* registry.load('org')
+
+        yield* registry.unload('overview')
+
+        assert.deepStrictEqual(log.slice(3), ['child:close', 'overview:close'])
+        assert.notInclude(messages, closedSetupLog)
+      }).pipe(Effect.scoped, Effect.provide(capturingLogs(messages)))
+    }
+  )
+
+  it.effect(
+    'opens a plugin waiting on a key the child provides, and closes it before the child',
+    () =>
+      Effect.gen(function* () {
+        const log: Array<string> = []
+        const registry = yield* makeRegistry({
+          overview: plugin(
+            manifest('overview'),
+            recording('overview', log, (ctx) =>
+              ctx.whenProvided(['org'], child('child', log, ctx.provide('hires', 'h')))
+            )
+          ),
+          consumer: plugin(manifest('consumer', { inject: ['hires'] }), recording('consumer', log)),
+          org: provider('org', log, 'v1')
+        })
+        yield* registry.load('overview')
+        yield* registry.load('consumer')
+        const consumerBeforeTheProvider = yield* statusOf(registry, 'consumer')
+        yield* registry.load('org')
+        const consumerWithTheProvider = yield* statusOf(registry, 'consumer')
+
+        yield* registry.unload('org')
+
+        assert.strictEqual(consumerBeforeTheProvider, 'Waiting')
+        assert.strictEqual(consumerWithTheProvider, 'Loaded')
+        assert.deepStrictEqual(log.slice(4), ['consumer:close', 'child:close', 'org:close'])
+        assert.strictEqual(yield* statusOf(registry, 'consumer'), 'Waiting')
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect('closes a nested child and its dependants before the outer child', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({
+        overview: plugin(
+          manifest('overview'),
+          recording('overview', log, (ctx) =>
+            ctx.whenProvided(
+              ['org'],
+              child(
+                'outer',
+                log,
+                ctx.whenProvided(['meta'], child('inner', log, ctx.provide('hires', 'h')))
+              )
+            )
+          )
+        ),
+        consumer: plugin(manifest('consumer', { inject: ['hires'] }), recording('consumer', log)),
+        org: provider('org', log, 'o'),
+        meta: provider('meta', log, 'm')
+      })
+      yield* registry.load('overview')
+      yield* registry.load('consumer')
+      yield* registry.load('meta')
+      yield* registry.load('org')
+      const opened = [...log]
+
+      yield* registry.unload('org')
+
+      assert.deepStrictEqual(opened, [
+        'overview:open',
+        'meta:open',
+        'org:open',
+        'outer:open:o',
+        'inner:open:m',
+        'consumer:open'
+      ])
+      assert.deepStrictEqual(log.slice(opened.length), [
+        'consumer:close',
+        'inner:close',
+        'outer:close',
+        'org:close'
+      ])
+      assert.strictEqual(yield* statusOf(registry, 'consumer'), 'Waiting')
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('refuses a child that provides a key its own plugin already provides', () =>
+    Effect.gen(function* () {
+      const refusals: Array<string> = []
+      const registry = yield* makeRegistry({
+        overview: plugin(manifest('overview'), (ctx) =>
+          Effect.gen(function* () {
+            yield* ctx.provide('hires', 'top')
+            yield* ctx.whenProvided(['org'], () =>
+              Effect.flip(ctx.provide('hires', 'child')).pipe(
+                Effect.flatMap((error) =>
+                  Effect.sync(() => {
+                    refusals.push(error._tag)
+                  })
+                )
+              )
+            )
+          })
+        ),
+        org: provider('org', [], 'v1')
+      })
+      yield* registry.load('overview')
+
+      yield* registry.load('org')
+
+      assert.deepStrictEqual(refusals, ['ServiceKeyTakenError'])
+      assert.deepStrictEqual(yield* registry.inject('hires'), Option.some('top'))
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('never runs the setup of a plugin whose own setup fails after registering it', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({
+        overview: plugin(manifest('overview'), (ctx) =>
+          ctx.whenProvided(['org'], child('child', log)).pipe(Effect.andThen(Effect.fail('broken')))
+        ),
+        org: provider('org', log, 'v1')
+      })
+      yield* registry.load('org')
+
+      const overview = yield* registry.load('overview')
+
+      assert.strictEqual(overview.status._tag, 'Failed')
+      assert.deepStrictEqual(log, ['org:open'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('closes a plugin that injects and watches the same key once', () => {
+    const messages: Array<unknown> = []
+    return Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({
+        overview: watchingOrg(log, { inject: ['org'] }),
+        org: provider('org', log, 'v1')
+      })
+      yield* registry.load('org')
+      yield* registry.load('overview')
+
+      yield* registry.unload('org')
+
+      assert.deepStrictEqual(log, [
+        'org:open',
+        'overview:open',
+        'child:open:v1',
+        'child:close',
+        'overview:close',
+        'org:close'
+      ])
+      assert.notInclude(messages, closedSetupLog)
+      assert.strictEqual(yield* statusOf(registry, 'overview'), 'Waiting')
+    }).pipe(Effect.scoped, Effect.provide(capturingLogs(messages)))
+  })
+
+  it.effect('runs a failed setup again only once every key is provided again', () =>
+    Effect.gen(function* () {
+      let attempts = 0
+      const registry = yield* makeRegistry({
+        overview: plugin(manifest('overview'), (ctx) =>
+          ctx.whenProvided(['org', 'meta'], () =>
+            Effect.suspend(() => {
+              attempts += 1
+              return Effect.fail('no hires')
+            })
+          )
+        ),
+        org: provider('org', [], 'o'),
+        meta: provider('meta', [], 'm')
+      })
+      yield* registry.load('overview')
+      yield* registry.load('org')
+      yield* registry.load('meta')
+      const afterTheFirstRun = attempts
+
+      yield* registry.unload('org')
+      const whileOrgIsAbsent = attempts
+      yield* registry.load('org')
+      const afterOrgReturns = attempts
+      yield* registry.unload('meta')
+      yield* registry.unload('org')
+      yield* registry.load('org')
+      const whileMetaIsAbsent = attempts
+      yield* registry.load('meta')
+
+      assert.deepStrictEqual(
+        [afterTheFirstRun, whileOrgIsAbsent, afterOrgReturns, whileMetaIsAbsent, attempts],
+        [1, 1, 2, 2, 3]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('runs the setup again against the version a failed reload rolls back to', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const plugins = { overview: watchingOrg(log), org: provider('org', log, 'v1') }
+      const registry = yield* makeRegistry(plugins)
+      yield* registry.load('overview')
+      yield* registry.load('org')
+
+      plugins.org = plugin(manifest('org'), () => Effect.fail('broken'))
+      yield* registry.load('org')
+
+      assert.deepStrictEqual(log.slice(3), [
+        'child:close',
+        'org:close',
+        'org:open',
+        'child:open:v1'
+      ])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('runs the setup against a provider that needs a restart but still runs', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const totals: Record<string, number> = {}
+      const registry = yield* makeRegistry(
+        { overview: watchingOrg(log), org: provider('org', log, 'v1') },
+        { memory: memoryGuard(100, totals) }
+      )
+      yield* registry.load('org')
+      totals.org = 100
+      const reloaded = yield* registry.load('org')
+
+      yield* registry.load('overview')
+
+      assert.strictEqual(reloaded.status._tag, 'RestartRequired')
+      assert.deepStrictEqual(log, ['org:open', 'overview:open', 'child:open:v1'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('closes a sibling child that watches a key another child provides first', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({
+        overview: plugin(manifest('overview'), (ctx) =>
+          Effect.gen(function* () {
+            yield* ctx.whenProvided(
+              ['org'],
+              child('provider-child', log, ctx.provide('hires', 'h'))
+            )
+            yield* ctx.whenProvided(['hires'], child('reader-child', log))
+          })
+        ),
+        org: provider('org', log, 'o')
+      })
+      yield* registry.load('overview')
+      yield* registry.load('org')
+      const opened = [...log]
+
+      yield* registry.unload('org')
+
+      assert.deepStrictEqual(opened, ['org:open', 'provider-child:open:o', 'reader-child:open:h'])
+      assert.deepStrictEqual(log.slice(opened.length), [
+        'reader-child:close',
+        'provider-child:close',
+        'org:close'
+      ])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('refuses a top-level fiber that provides a key a running child provides', () =>
+    Effect.gen(function* () {
+      const gate = yield* Deferred.make<void>()
+      const outcome = yield* Deferred.make<string>()
+      const registry = yield* makeRegistry({
+        overview: plugin(manifest('overview'), (ctx) =>
+          Effect.gen(function* () {
+            yield* Effect.forkScoped(
+              Deferred.await(gate).pipe(
+                Effect.andThen(
+                  Effect.match(ctx.provide('hires', 'stray'), {
+                    onFailure: (error) => error._tag,
+                    onSuccess: () => 'provided'
+                  })
+                ),
+                Effect.flatMap((result) => Deferred.succeed(outcome, result))
+              )
+            )
+            yield* ctx.whenProvided(['org'], () => ctx.provide('hires', 'child'))
+          })
+        ),
+        org: provider('org', [], 'v1')
+      })
+      yield* registry.load('overview')
+      yield* registry.load('org')
+
+      yield* Deferred.succeed(gate, undefined)
+
+      assert.strictEqual(yield* Deferred.await(outcome), 'ServiceKeyTakenError')
+      assert.deepStrictEqual(yield* registry.inject('hires'), Option.some('child'))
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('logs a refused call with its reason', () => {
+    const messages: Array<unknown> = []
+    return Effect.gen(function* () {
+      const captured: Array<PluginServices> = []
+      const registry = yield* makeRegistry({
+        overview: plugin(manifest('overview'), (ctx) => Effect.sync(() => void captured.push(ctx)))
+      })
+      yield* registry.load('overview')
+
+      const refusal = yield* Effect.flip(
+        Effect.scoped(captured[0]?.whenProvided(['org'], () => Effect.void) ?? Effect.die('no ctx'))
+      )
+
+      assert.strictEqual(refusal._tag, 'WhenProvidedRefusedError')
+      assert.include(messages, 'A plugin called whenProvided outside its setup')
+      assert.deepInclude(messages, { plugin: 'overview', reason: 'no-setup' })
+    }).pipe(Effect.scoped, Effect.provide(capturingLogs(messages)))
+  })
+
+  it('rejects an empty key list at compile time', () => {
+    const register = (ctx: PluginServices) =>
+      // @ts-expect-error whenProvided needs at least one key
+      ctx.whenProvided([], () => Effect.void)
+    assert.isFunction(register)
+  })
 })
