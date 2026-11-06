@@ -42,6 +42,7 @@ import {
 import { Uuid } from '@shared/domain/uuid'
 import * as WorkspaceOps from '@shared/domain/workspace'
 import { type IpcEvent, PaneAttentionChanged, WorkspaceChanged } from '@shared/ipc/contract'
+import { ServiceWithdrawnError } from '@shared/plugin/plugin-registry'
 import {
   Context,
   Crypto,
@@ -211,6 +212,9 @@ export class PaneWorkspace extends Context.Service<
 >()('PaneWorkspace') {}
 
 const WORKTREES_PLUGIN_NOT_LOADED = 'Load the worktrees plugin to remove this worktree'
+
+const gitOpsFailureText = (failure: ServiceWithdrawnError | { readonly cause: unknown }) =>
+  failure instanceof ServiceWithdrawnError ? failure.message : String(failure.cause)
 
 /**
  * Builds the live {@link PaneWorkspace} layer. On construction it loads the persisted workspace
@@ -493,11 +497,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         if (!(yield* stillThere())) return Option.none<string>()
         return Option.some(
           Result.isFailure(removal)
-            ? `Could not remove the worktree: ${
-                removal.failure._tag === 'ServiceWithdrawnError'
-                  ? removal.failure.message
-                  : String(removal.failure.cause)
-              }`
+            ? `Could not remove the worktree: ${gitOpsFailureText(removal.failure)}`
             : 'The worktree directory is still on disk'
         )
       })
@@ -750,13 +750,7 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
         }
         const reattached = yield* withGitOps(plugins, (gitOps) =>
           gitOps.reattachWorktree(worktree, paneId)
-        ).pipe(
-          Effect.catch((failure) =>
-            notRestored(
-              failure._tag === 'ServiceWithdrawnError' ? failure.message : String(failure.cause)
-            )
-          )
-        )
+        ).pipe(Effect.catch((failure) => notRestored(gitOpsFailureText(failure))))
         if (Option.isNone(reattached)) {
           return yield* notRestored('Load the worktrees plugin to restore this worktree')
         }
