@@ -68,11 +68,7 @@ import { probeProject } from './project-directory'
 import { TranscriptReader } from './transcript-reader'
 import { WorkspaceFeed } from './workspace-feed'
 import { WorkspaceStore } from './workspace-store'
-import {
-  resolveGitOps,
-  type WorktreeCreateError,
-  type WorktreeReattachError
-} from './worktrees-seam'
+import { type WorktreeCreateError, type WorktreeReattachError, withGitOps } from './worktrees-seam'
 
 type OnEvent = (event: IpcEvent) => Effect.Effect<void>
 
@@ -488,13 +484,20 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
       ) {
         const stillThere = () => fs.exists(worktree.path).pipe(Effect.orElseSucceed(() => true))
         if (!(yield* stillThere())) return Option.none<string>()
-        const gitOps = yield* resolveGitOps(plugins)
-        if (Option.isNone(gitOps)) return Option.some(WORKTREES_PLUGIN_NOT_LOADED)
-        const removal = yield* gitOps.value.removeWorktree(worktree, paneId).pipe(Effect.result)
+        const removal = yield* withGitOps(plugins, (gitOps) =>
+          gitOps.removeWorktree(worktree, paneId)
+        ).pipe(Effect.result)
+        if (Result.isSuccess(removal) && Option.isNone(removal.success)) {
+          return Option.some(WORKTREES_PLUGIN_NOT_LOADED)
+        }
         if (!(yield* stillThere())) return Option.none<string>()
         return Option.some(
           Result.isFailure(removal)
-            ? `Could not remove the worktree: ${String(removal.failure.cause)}`
+            ? `Could not remove the worktree: ${
+                removal.failure._tag === 'ServiceWithdrawnError'
+                  ? removal.failure.message
+                  : String(removal.failure.cause)
+              }`
             : 'The worktree directory is still on disk'
         )
       })
@@ -745,13 +748,18 @@ export const makePaneWorkspaceLive = (worktreesRoot: string) =>
           if (!exists) return yield* notRestored(`The working directory ${cwd} no longer exists`)
           return
         }
-        const gitOps = yield* resolveGitOps(plugins)
-        if (Option.isNone(gitOps)) {
+        const reattached = yield* withGitOps(plugins, (gitOps) =>
+          gitOps.reattachWorktree(worktree, paneId)
+        ).pipe(
+          Effect.catch((failure) =>
+            notRestored(
+              failure._tag === 'ServiceWithdrawnError' ? failure.message : String(failure.cause)
+            )
+          )
+        )
+        if (Option.isNone(reattached)) {
           return yield* notRestored('Load the worktrees plugin to restore this worktree')
         }
-        yield* gitOps.value
-          .reattachWorktree(worktree, paneId)
-          .pipe(Effect.catch((failure) => notRestored(String(failure.cause))))
       })
 
       const unarchiveTab = Effect.fn('PaneWorkspace.unarchiveTab')(function* (paneId: PaneId) {

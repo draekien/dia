@@ -9,6 +9,7 @@ import {
 import { SignedOut, UsageLimit, type UsageLimitResume } from '@shared/domain/parking'
 import { type IpcEvent, PaneRewindFailed } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
+import { fakeUse } from '@shared/plugin/plugin-registry.fake'
 import { Deferred, Effect, Fiber, Layer, Option, Result, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
 import { HostPlugins } from '../plugins/host-plugins'
@@ -87,7 +88,8 @@ const pluginsWith = (inject: (key: string) => Option.Option<unknown>) =>
     changes: Stream.empty,
     load: () => Effect.die(new Error('load should not be called in these tests')),
     unload: () => Effect.die(new Error('unload should not be called in these tests')),
-    inject: (key) => Effect.succeed(inject(key))
+    inject: (key) => Effect.succeed(inject(key)),
+    use: fakeUse(inject)
   })
 
 const noPlugins = pluginsWith(() => Option.none())
@@ -515,6 +517,42 @@ describe('PaneSupervisor', () => {
         yield* supervisor.closePane(requestA.paneId)
 
         assert.deepStrictEqual(lifecycleLog, ['session closed', 'worktree removed'])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('leaves the worktree when the worktrees plugin unloaded before the pane closed', () =>
+    Effect.gen(function* () {
+      const lifecycleLog: Array<string> = []
+      const info: WorktreeInfo = { path: '/wt/d', branch: 'dia/calm-fox', sourceRepo: '/repo' }
+      const gitOps: GitOps = {
+        createWorktree: () => Effect.succeed(info),
+        removeWorktree: () => Effect.sync(() => void lifecycleLog.push('worktree removed')),
+        reattachWorktree: () => Effect.die(new Error('reattachWorktree should not be called')),
+        ...withoutIncludeFile
+      }
+      let worktreesLoaded = true
+      const { testLayer } = makeTestSetup(
+        gitOps,
+        lifecycleLog,
+        pluginsWith((key) =>
+          worktreesLoaded && key === WORKTREES_KEY ? Option.some(gitOps) : Option.none()
+        )
+      )
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        yield* supervisor.openPane(
+          { ...requestA, worktree: { _tag: 'Create', worktreesRoot: '/wt' } },
+          () => Effect.void,
+          ignoreSessionId,
+          ignorePermissionMode
+        )
+        worktreesLoaded = false
+
+        yield* supervisor.closePane(requestA.paneId)
+
+        assert.deepStrictEqual(lifecycleLog, ['session closed'])
       }).pipe(Effect.scoped, Effect.provide(testLayer))
     })
   )

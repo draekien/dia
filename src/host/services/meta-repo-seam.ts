@@ -37,42 +37,45 @@ const hasMembers = (value: unknown, members: ReadonlyArray<keyof MetaRepo>): val
       (member === 'setRemote' ? Predicate.isFunction : Effect.isEffect)(value[member])
   )
 
-const resolveMetaRepo = Effect.fnUntraced(function* (
-  registry: Pick<PluginRegistry, 'inject'>,
-  members: ReadonlyArray<keyof MetaRepo>
-) {
-  const provided = yield* registry.inject(META_REPO_KEY)
-  if (Option.isNone(provided)) {
-    yield* Effect.logDebug('The meta plugin is not loaded')
-    return Option.none<MetaRepo>()
-  }
-  if (!hasMembers(provided.value, members)) {
-    yield* Effect.logError('The meta repo service lacks MetaRepo members', { members })
-    return Option.none<MetaRepo>()
-  }
-  return Option.some(provided.value)
-})
+const NOT_LOADED = MetaRepoFailed.make({ message: 'The meta plugin is not loaded.' })
+
+const lacksMembers = (members: ReadonlyArray<keyof MetaRepo>) =>
+  Effect.logError('The meta repo service lacks MetaRepo members', { members })
 
 /**
- * Runs `use` with the {@link MetaRepo} the loaded `meta` plugin provides, for the Settings page's
- * meta repo calls. It never fails: when the plugin is not loaded, what it provides is not a
- * `MetaRepo`, or `use` dies, it logs why and returns a `MetaRepoFailed` that says so.
+ * Runs `run` with the {@link MetaRepo} the loaded `meta` plugin provides, for the Settings page's
+ * meta repo calls, holding the plugin open until `run` ends. It never fails: when the plugin is
+ * not loaded, what it provides is not a `MetaRepo`, the plugin closes while `run` runs, or `run`
+ * dies, it logs why and returns a `MetaRepoFailed` that says so.
  */
 export const withMetaRepo = Effect.fn('MetaRepo.with')(function* <A>(
-  registry: Pick<PluginRegistry, 'inject'>,
-  use: (repo: MetaRepo) => Effect.Effect<A>
+  registry: Pick<PluginRegistry, 'use'>,
+  run: (repo: MetaRepo) => Effect.Effect<A>
 ) {
-  const repo = yield* resolveMetaRepo(registry, ALL_MEMBERS)
-  if (Option.isNone(repo)) {
-    return MetaRepoFailed.make({ message: 'The meta plugin is not loaded.' })
-  }
-  return yield* use(repo.value).pipe(
-    Effect.catchDefect((defect) =>
-      Effect.logError('A meta repo call died', { defect }).pipe(
-        Effect.as(MetaRepoFailed.make({ message: 'The meta repo call failed unexpectedly.' }))
+  const result = yield* registry
+    .use(META_REPO_KEY, (value) =>
+      hasMembers(value, ALL_MEMBERS)
+        ? run(value).pipe(
+            Effect.catchDefect((defect) =>
+              Effect.logError('A meta repo call died', { defect }).pipe(
+                Effect.as(
+                  MetaRepoFailed.make({ message: 'The meta repo call failed unexpectedly.' })
+                )
+              )
+            )
+          )
+        : lacksMembers(ALL_MEMBERS).pipe(Effect.as(NOT_LOADED))
+    )
+    .pipe(
+      Effect.catchTag('ServiceWithdrawnError', () =>
+        Effect.succeed(
+          Option.some(
+            MetaRepoFailed.make({ message: 'The meta plugin was unloaded during the call.' })
+          )
+        )
       )
     )
-  )
+  return Option.getOrElse(result, () => NOT_LOADED)
 })
 
 /**
@@ -83,15 +86,26 @@ export const withMetaRepo = Effect.fn('MetaRepo.with')(function* <A>(
  * per session start; a plugin reload applies from the next call.
  */
 export const resolveSessionAdditions = Effect.fn('MetaRepo.resolveSessionAdditions')(function* (
-  registry: Pick<PluginRegistry, 'inject'>
+  registry: Pick<PluginRegistry, 'use'>
 ) {
-  const repo = yield* resolveMetaRepo(registry, SESSION_MEMBERS)
-  if (Option.isNone(repo)) return NO_ADDITIONS
-  return yield* repo.value.forNewSession.pipe(
-    Effect.catchDefect((defect) =>
-      Effect.logError('The meta repo forNewSession effect died', { defect }).pipe(
-        Effect.as(NO_ADDITIONS)
+  const additions = yield* registry
+    .use(META_REPO_KEY, (value) =>
+      hasMembers(value, SESSION_MEMBERS)
+        ? value.forNewSession.pipe(
+            Effect.catchDefect((defect) =>
+              Effect.logError('The meta repo forNewSession effect died', { defect }).pipe(
+                Effect.as(NO_ADDITIONS)
+              )
+            )
+          )
+        : lacksMembers(SESSION_MEMBERS).pipe(Effect.as(NO_ADDITIONS))
+    )
+    .pipe(
+      Effect.catchTag('ServiceWithdrawnError', (error) =>
+        Effect.logWarning('Started the session without meta repo additions', {
+          message: error.message
+        }).pipe(Effect.as(Option.some(NO_ADDITIONS)))
       )
     )
-  )
+  return Option.getOrElse(additions, () => NO_ADDITIONS)
 })
