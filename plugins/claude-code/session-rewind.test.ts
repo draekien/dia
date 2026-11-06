@@ -178,6 +178,41 @@ describe('task-tracking tools', () => {
   )
 })
 
+const openInMode = (permissionMode: PaneConfig['permissionMode']) =>
+  Effect.gen(function* () {
+    sdk.queries.length = 0
+    sdk.transcript.messages = []
+    sdk.transcript.fails = false
+    yield* openSession({
+      config: { ...config, permissionMode },
+      resume: Option.none(),
+      emit: () => Effect.void,
+      tools: [],
+      systemPromptAppend: '',
+      pluginPaths: []
+    })
+    yield* settle
+  })
+
+describe('Full access permission mode', () => {
+  it.effect('lets a session started in default switch into bypassPermissions later', () =>
+    Effect.gen(function* () {
+      yield* openInMode('default')
+
+      assert.isTrue(queryAt(0).options.allowDangerouslySkipPermissions)
+    })
+  )
+
+  it.effect('starts a session created in bypassPermissions in that mode', () =>
+    Effect.gen(function* () {
+      yield* openInMode('bypassPermissions')
+
+      assert.strictEqual(queryAt(0).options.permissionMode, 'bypassPermissions')
+      assert.isTrue(queryAt(0).options.allowDangerouslySkipPermissions)
+    })
+  )
+})
+
 describe('rewindToCheckpoint', () => {
   it.effect('rewinds a resumed session before any prompt is sent to it', () =>
     Effect.gen(function* () {
