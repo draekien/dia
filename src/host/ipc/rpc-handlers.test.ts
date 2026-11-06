@@ -283,6 +283,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     list: () => Effect.succeed([pluginInfo('chat')]),
     start: () => Effect.void,
     inject: () => Effect.succeed(Option.none()),
+    use: () => Effect.succeedNone,
     changes: Stream.empty,
     load: (name) =>
       Effect.sync(() => {

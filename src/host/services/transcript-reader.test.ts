@@ -17,6 +17,7 @@ const pluginsProviding = (backend: Option.Option<AgentBackend>) =>
     changes: Stream.empty,
     load: () => Effect.die(new Error('load should not be called in these tests')),
     unload: () => Effect.die(new Error('unload should not be called in these tests')),
+    use: () => Effect.die(new Error('use should not be called in these tests')),
     inject: (key) => Effect.succeed(key === AGENT_BACKEND_KEY ? backend : Option.none())
   })
 

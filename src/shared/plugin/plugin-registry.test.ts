@@ -1,5 +1,5 @@
 import { assert, describe, it } from '@effect/vitest'
-import { Deferred, Duration, Effect, Fiber, Option, type Scope, Stream } from 'effect'
+import { Deferred, Duration, Effect, Fiber, Logger, Option, type Scope, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
 import type { PluginServices, PluginSetup } from './api'
 import {
@@ -16,7 +16,9 @@ import {
   PluginLoadError,
   type PluginLoader,
   type PluginMemoryGuard,
-  PluginRestartRequiredError
+  PluginRestartRequiredError,
+  SERVICE_USE_TIME_LIMIT,
+  ServiceWithdrawnError
 } from './plugin-registry'
 
 const manifest = (name: string, overrides: Partial<FeatureManifest> = {}): FeatureManifest => ({
@@ -1329,5 +1331,365 @@ describe('plugin setup time limit', () => {
 
         assert.deepStrictEqual(yield* registry.inject('svc'), Option.some('previous'))
       }).pipe(Effect.scoped)
+  )
+})
+
+describe('service leases', () => {
+  const providing = (log: Array<string>, value: unknown = 'value') =>
+    plugin(
+      manifest('provider'),
+      recording('provider', log, (ctx) => ctx.provide('svc', value))
+    )
+
+  const withdrawn = new ServiceWithdrawnError({
+    key: 'svc',
+    plugin: 'provider',
+    message: 'The "provider" plugin closed while a call using "svc" was running'
+  })
+
+  const capturingLogs = (messages: Array<unknown>) =>
+    Logger.layer(
+      [
+        Logger.make(({ message }) => {
+          messages.push(...(Array.isArray(message) ? message : [message]))
+        })
+      ],
+      { mergeWithExisting: true }
+    )
+
+  it.effect('closes a provider only after a running use of its service ends', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const gate = yield* Deferred.make<void>()
+      const registry = yield* makeRegistry({ provider: providing(log) })
+      yield* registry.load('provider')
+      const using = yield* Effect.forkChild(
+        registry.use('svc', (value) => Deferred.await(gate).pipe(Effect.as(value))),
+        { startImmediately: true }
+      )
+      const unloading = yield* Effect.forkChild(registry.unload('provider'), {
+        startImmediately: true
+      })
+      yield* Effect.yieldNow
+      const beforeTheUseEnds = [...log]
+
+      yield* Deferred.succeed(gate, undefined)
+
+      assert.deepStrictEqual(beforeTheUseEnds, ['provider:open'])
+      assert.deepStrictEqual(yield* Fiber.join(using), Option.some('value'))
+      assert.strictEqual((yield* Fiber.join(unloading)).status._tag, 'Unloaded')
+      assert.deepStrictEqual(log, ['provider:open', 'provider:close'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect(
+    'interrupts a use that outlives the time limit, logs it and finishes the unload',
+    () => {
+      const messages: Array<unknown> = []
+      return Effect.gen(function* () {
+        const log: Array<string> = []
+        const registry = yield* makeRegistry({ provider: providing(log) })
+        yield* registry.load('provider')
+        const using = yield* Effect.forkChild(
+          registry.use('svc', () => Effect.never),
+          {
+            startImmediately: true
+          }
+        )
+        const unloading = yield* Effect.forkChild(registry.unload('provider'), {
+          startImmediately: true
+        })
+        yield* Effect.yieldNow
+
+        yield* TestClock.adjust(SERVICE_USE_TIME_LIMIT)
+
+        assert.strictEqual((yield* Fiber.join(unloading)).status._tag, 'Unloaded')
+        assert.deepStrictEqual(log, ['provider:open', 'provider:close'])
+        assert.deepStrictEqual(yield* Fiber.join(using).pipe(Effect.flip), withdrawn)
+        assert.include(messages, 'Interrupted calls that still used a closing plugin')
+      }).pipe(Effect.scoped, Effect.provide(capturingLogs(messages)))
+    }
+  )
+
+  it.effect('returns from a withdrawn use whose call cannot be interrupted', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({ provider: providing([]) })
+      yield* registry.load('provider')
+      const using = yield* Effect.forkChild(
+        registry.use('svc', () => Effect.uninterruptible(Effect.never)),
+        { startImmediately: true }
+      )
+      const unloading = yield* Effect.forkChild(registry.unload('provider'), {
+        startImmediately: true
+      })
+      yield* Effect.yieldNow
+
+      yield* TestClock.adjust(SERVICE_USE_TIME_LIMIT)
+
+      assert.deepStrictEqual(yield* Fiber.join(using).pipe(Effect.flip), withdrawn)
+      assert.strictEqual((yield* Fiber.join(unloading)).status._tag, 'Unloaded')
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('returns None without calling f after the provider unloaded', () =>
+    Effect.gen(function* () {
+      let calls = 0
+      const registry = yield* makeRegistry({ provider: providing([]) })
+      yield* registry.load('provider')
+      yield* registry.unload('provider')
+
+      const result = yield* registry.use('svc', () => Effect.sync(() => ++calls))
+
+      assert.deepStrictEqual([result, calls], [Option.none(), 0])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('returns None without calling f while the provider is closing', () =>
+    Effect.gen(function* () {
+      let calls = 0
+      const gate = yield* Deferred.make<void>()
+      const registry = yield* makeRegistry({ provider: providing([]) })
+      yield* registry.load('provider')
+      yield* Effect.forkChild(
+        registry.use('svc', () => Deferred.await(gate)),
+        {
+          startImmediately: true
+        }
+      )
+      yield* Effect.forkChild(registry.unload('provider'), { startImmediately: true })
+      yield* Effect.yieldNow
+
+      const result = yield* registry.use('svc', () => Effect.sync(() => ++calls))
+
+      assert.deepStrictEqual([result, calls], [Option.none(), 0])
+      yield* Deferred.succeed(gate, undefined)
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('reloads a provider only after a running use of its service ends', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const gate = yield* Deferred.make<void>()
+      const registry = yield* makeRegistry({ provider: providing(log) })
+      yield* registry.load('provider')
+      yield* Effect.forkChild(
+        registry.use('svc', () => Deferred.await(gate)),
+        {
+          startImmediately: true
+        }
+      )
+      const reloading = yield* Effect.forkChild(registry.load('provider'), {
+        startImmediately: true
+      })
+      yield* Effect.yieldNow
+      const beforeTheUseEnds = [...log]
+
+      yield* Deferred.succeed(gate, undefined)
+      yield* Fiber.join(reloading)
+
+      assert.deepStrictEqual(beforeTheUseEnds, ['provider:open'])
+      assert.deepStrictEqual(log, ['provider:open', 'provider:close', 'provider:open'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('serves the rolled-back version after a reload whose new setup fails', () =>
+    Effect.gen(function* () {
+      const gate = yield* Deferred.make<void>()
+      const plugins = { provider: providing([], 'previous') }
+      const registry = yield* makeRegistry(plugins)
+      yield* registry.load('provider')
+      const using = yield* Effect.forkChild(
+        registry.use('svc', (value) => Deferred.await(gate).pipe(Effect.as(value))),
+        { startImmediately: true }
+      )
+      plugins.provider = plugin(manifest('provider'), () => Effect.fail('broken'))
+      const reloading = yield* Effect.forkChild(registry.load('provider'), {
+        startImmediately: true
+      })
+      yield* Effect.yieldNow
+
+      yield* Deferred.succeed(gate, undefined)
+      yield* Fiber.join(reloading)
+
+      assert.deepStrictEqual(yield* Fiber.join(using), Option.some('previous'))
+      assert.deepStrictEqual(
+        yield* registry.use('svc', (value) => Effect.succeed(value)),
+        Option.some('previous')
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('passes a failure of f to the caller unchanged', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({ provider: providing([]) })
+      yield* registry.load('provider')
+
+      const failure = yield* registry
+        .use('svc', () => Effect.fail('push rejected'))
+        .pipe(Effect.flip)
+
+      assert.strictEqual(failure, 'push rejected')
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('stops f and releases the lease when the caller of use is interrupted', () =>
+    Effect.gen(function* () {
+      const stopped = yield* Deferred.make<void>()
+      const registry = yield* makeRegistry({ provider: providing([]) })
+      yield* registry.load('provider')
+      const using = yield* Effect.forkChild(
+        registry.use('svc', () =>
+          Effect.never.pipe(Effect.onInterrupt(() => Deferred.succeed(stopped, undefined)))
+        ),
+        { startImmediately: true }
+      )
+
+      yield* Fiber.interrupt(using)
+      const unloaded = yield* registry.unload('provider')
+      yield* Deferred.await(stopped)
+
+      assert.strictEqual(unloaded.status._tag, 'Unloaded')
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('closes a dependant after its own running use ends and then its provider', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const gate = yield* Deferred.make<void>()
+      const registry = yield* makeRegistry({
+        provider: plugin(
+          manifest('provider'),
+          recording('provider', log, (ctx) => ctx.provide('db', 'connection'))
+        ),
+        consumer: plugin(
+          manifest('consumer', { inject: ['db'] }),
+          recording('consumer', log, (ctx) => ctx.provide('ui', 'panel'))
+        )
+      })
+      yield* registry.load('provider')
+      yield* registry.load('consumer')
+      yield* Effect.forkChild(
+        registry.use('ui', () => Deferred.await(gate)),
+        {
+          startImmediately: true
+        }
+      )
+      const unloading = yield* Effect.forkChild(registry.unload('provider'), {
+        startImmediately: true
+      })
+      yield* Effect.yieldNow
+      const beforeTheUseEnds = [...log]
+
+      yield* Deferred.succeed(gate, undefined)
+      yield* Fiber.join(unloading)
+
+      assert.deepStrictEqual(beforeTheUseEnds, ['provider:open', 'consumer:open'])
+      assert.deepStrictEqual(log, [
+        'provider:open',
+        'consumer:open',
+        'consumer:close',
+        'provider:close'
+      ])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('closes a failed setup only after a running use of a key it provided ends', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const setupGate = yield* Deferred.make<void>()
+      const useGate = yield* Deferred.make<void>()
+      const registry = yield* makeRegistry({
+        provider: plugin(
+          manifest('provider'),
+          recording('provider', log, (ctx) =>
+            Effect.gen(function* () {
+              yield* ctx.provide('svc', 'value')
+              yield* Deferred.await(setupGate)
+              return yield* Effect.fail('setup broke')
+            })
+          )
+        )
+      })
+      const loading = yield* Effect.forkChild(registry.load('provider'), {
+        startImmediately: true
+      })
+      yield* Effect.yieldNow
+      yield* Effect.forkChild(
+        registry.use('svc', () => Deferred.await(useGate)),
+        {
+          startImmediately: true
+        }
+      )
+      yield* Deferred.succeed(setupGate, undefined)
+      yield* Effect.yieldNow
+      const beforeTheUseEnds = [...log]
+
+      yield* Deferred.succeed(useGate, undefined)
+      const loaded = yield* Fiber.join(loading)
+
+      assert.deepStrictEqual(beforeTheUseEnds, ['provider:open'])
+      assert.deepStrictEqual(loaded.status, { _tag: 'Failed', message: 'setup broke' })
+      assert.deepStrictEqual(log, ['provider:open', 'provider:close'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('closes an adapter that fails its contract only after a running use ends', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const setupGate = yield* Deferred.make<void>()
+      const useGate = yield* Deferred.make<void>()
+      const registry = yield* makeRegistry({
+        adapter: plugin(
+          adapterManifest('adapter'),
+          recording('adapter', log, (ctx) =>
+            ctx.provide('svc', 'value').pipe(Effect.andThen(Deferred.await(setupGate)))
+          )
+        )
+      })
+      const loading = yield* Effect.forkChild(registry.load('adapter'), {
+        startImmediately: true
+      })
+      yield* Effect.yieldNow
+      yield* Effect.forkChild(
+        registry.use('svc', () => Deferred.await(useGate)),
+        {
+          startImmediately: true
+        }
+      )
+      yield* Deferred.succeed(setupGate, undefined)
+      yield* Effect.yieldNow
+      const beforeTheUseEnds = [...log]
+
+      yield* Deferred.succeed(useGate, undefined)
+      const loaded = yield* Fiber.join(loading)
+
+      assert.deepStrictEqual(beforeTheUseEnds, ['adapter:open'])
+      assert.strictEqual(loaded.status._tag, 'Failed')
+      assert.deepStrictEqual(log, ['adapter:open', 'adapter:close'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('still closes a plugin when its unload is interrupted while it waits', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({ provider: providing(log) })
+      yield* registry.load('provider')
+      yield* Effect.forkChild(
+        registry.use('svc', () => Effect.never),
+        { startImmediately: true }
+      )
+      const unloading = yield* Effect.forkChild(registry.unload('provider'), {
+        startImmediately: true
+      })
+      yield* Effect.yieldNow
+
+      yield* Fiber.interrupt(unloading)
+
+      assert.deepStrictEqual(log, ['provider:open', 'provider:close'])
+      assert.deepStrictEqual(
+        yield* registry.use('svc', (value) => Effect.succeed(value)),
+        Option.none()
+      )
+    }).pipe(Effect.scoped)
   )
 })

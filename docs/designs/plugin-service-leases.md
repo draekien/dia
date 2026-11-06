@@ -144,9 +144,8 @@ Known limit at pane open: the lease covers worktree creation and the `.worktreei
 8. A failure of `f` reaches the caller unchanged.
 9. Interrupting the caller of `use` interrupts `f` and lets a later `unload` close without waiting.
 10. On `unload` of a provider with a dependant whose service is in a running `use`, the dependant's finalizer waits for that `use`, and the provider closes after the dependant.
-11. A caller interrupted while its `use` is registering leaves no lease: a later `unload` closes without waiting.
-12. A setup that provides a key and then fails, while a `use` of that key runs, closes after the `use` ends; the same for an adapter whose setup does not meet the adapter contract.
-13. Interrupting an `unload` during its wait still closes the plugin: its finalizer runs and `use` of its key returns `None`.
+11. A setup that provides a key and then fails, while a `use` of that key runs, closes after the `use` ends; the same for an adapter whose setup does not meet the adapter contract.
+12. Interrupting an `unload` during its wait still closes the plugin: its finalizer runs and `use` of its key returns `None`.
 
 Seam tests (`worktrees-seam.test.ts`, `meta-repo-seam.test.ts`), `pane-workspace.test.ts` and `rpc-handlers.test.ts` replace the `inject` fake with a `use` fake; `pane-workspace.test.ts` covers `None` and `ServiceWithdrawnError` for remove and restore; `meta-repo-seam.test.ts` covers the withdrawn message. `pane-supervisor.test.ts`: closing a worktree pane after the worktrees service stops being provided does not call the `removeWorktree` of the `GitOps` provided at open and logs the warning.
 
@@ -166,10 +165,10 @@ Round 1:
 - **ADR should say plugin-to-plugin reads are covered by dependant ordering** (minor) — applied.
 
 Round 2:
-- **Registration outside `acquire` leaks a lease when the caller is interrupted** (blocker, correctness) — applied: registration and fork in the uninterruptible acquire; `active` keyed by fiber; test 11.
+- **Registration outside `acquire` leaks a lease when the caller is interrupted** (blocker, correctness) — applied: registration and fork in the uninterruptible acquire; `active` keyed by fiber. The proposed test for it was dropped at implementation: with registration inside the uninterruptible acquire no test can interrupt the caller between the two, so it could not fail.
 - **A withdrawn `None` sends `openPane` Create into the not-loaded branch** (major, correctness; Define Errors Out of Existence) — applied: `ServiceWithdrawnError` reinstated; round 1's reason ("every caller maps it to `None`") did not hold for `openPane`. Each caller's mapping is in the table.
-- **Caller tests missing** (major) — applied: `pane-workspace.test.ts`, `rpc-handlers.test.ts`; test 12 for the setup-failure and adapter-contract branches.
-- **An interrupted `unload` leaves the plugin half-closed** (major, correctness) — applied: `closePlugin` uninterruptible except the wait; test 13.
+- **Caller tests missing** (major) — applied: `pane-workspace.test.ts`, `rpc-handlers.test.ts`; test 11 for the setup-failure and adapter-contract branches.
+- **An interrupted `unload` leaves the plugin half-closed** (major, correctness) — applied: `closePlugin` uninterruptible except the wait; test 12.
 - **Comments in spec code blocks** (minor) — applied.
 - **Restore message wrong for a withdrawn call** (minor) — applied through the reinstated error.
 - **ADR: `inject` restriction is a convention** (minor) — applied in ADR-0055.

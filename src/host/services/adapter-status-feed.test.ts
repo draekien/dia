@@ -37,7 +37,8 @@ const feedFollowing = (
         changes: Stream.fromPubSub(changes),
         load: () => Effect.die(new Error('load should not be called in these tests')),
         unload: () => Effect.die(new Error('unload should not be called in these tests')),
-        inject: (key) => Effect.sync(() => (key === AGENT_BACKEND_KEY ? current() : Option.none()))
+        inject: (key) => Effect.sync(() => (key === AGENT_BACKEND_KEY ? current() : Option.none())),
+        use: () => Effect.die(new Error('use should not be called in these tests'))
       }),
       Layer.succeed(EventHub)({
         publish: () => Effect.void,
