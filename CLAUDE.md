@@ -69,3 +69,4 @@ If you realize partway through a task that a trigger applies and you skipped the
 - Run a task from request to open PR with `/implement-task`.
 - Commit every file under `.impeccable/` that `.gitignore` does not ignore. Keep `.gitignore`'s `impeccable-ignore` block identical to [impeccable's list](https://github.com/pbakaus/impeccable#project-files-and-git).
 - Raise every PR through the `raise-pr` skill. Launch and drive the app for a manual check through the `verify-in-app` skill.
+- When reviewing a change, read REVIEW.md and apply its rules.
