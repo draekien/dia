@@ -98,6 +98,7 @@ import {
 } from './permission-mode-controller'
 import { makeSessionEventReducer, toSlashCommandInfo } from './reducer'
 import { sessionAdditionsOptions } from './session-additions'
+import { sessionToolOptions } from './session-tool-options'
 import { thinkingOptions } from './thinking-options'
 import { DIA_TOOL_SERVER_KEY, isDiaToolName, makeDiaToolServer } from './tool-server'
 import { readLastAssistantUuid, readTurnResumeAnchor } from './transcript'
@@ -449,8 +450,6 @@ const isSessionNotFound = (message: SDKMessage): boolean =>
   message.num_turns === 0 &&
   message.errors.some((error) => error.startsWith('No conversation found with session ID'))
 
-const TASK_TRACKING_TOOLS = ['TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList']
-
 const resolveRewindAnchor = (
   sessionId: SessionId,
   cwd: string,
@@ -481,7 +480,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     launch: SessionLaunch,
     notFoundRef: Ref.Ref<Option.Option<SessionId>>,
     additionalDirectories: ReadonlyArray<string>,
-    additions: SessionAdditions
+    additions: SessionAdditions & Pick<AgentSessionOptions, 'role'>
   ) {
     const continuesFrom = yield* resolveContinuesFrom(resume, branchAt, config.cwd)
     yield* Effect.logInfo('Starting query session', {
@@ -489,11 +488,25 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       cwd: config.cwd,
       thinkingLevel: config.thinkingLevel,
       permissionMode: config.permissionMode,
-      allowedTools: TASK_TRACKING_TOOLS,
+      role: Option.getOrUndefined(
+        Option.map(additions.role, (role) => ({
+          ...role.permissions,
+          mcpServers: Object.keys(role.mcpServers)
+        }))
+      ),
       resume: Option.getOrUndefined(resume),
       branchAt,
       continuesFrom: Option.getOrUndefined(continuesFrom)
     })
+    if (
+      Option.isSome(newDiaToolServer) &&
+      Option.exists(additions.role, (role) => DIA_TOOL_SERVER_KEY in role.mcpServers)
+    ) {
+      yield* Effect.logWarning('Role MCP server replaced by the dia tool server', {
+        paneId: config.paneId,
+        server: DIA_TOOL_SERVER_KEY
+      })
+    }
 
     const thinking = thinkingOptions(config.thinkingLevel)
     yield* Effect.logInfo('Resolved thinking options', {
@@ -514,12 +527,11 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
               ? { additionalDirectories: [...additionalDirectories] }
               : {}),
             includePartialMessages: true,
-            allowedTools: TASK_TRACKING_TOOLS,
             canUseTool,
-            ...Option.match(newDiaToolServer, {
-              onNone: () => ({}),
-              onSome: (newServer) => ({ mcpServers: { [DIA_TOOL_SERVER_KEY]: newServer() } })
-            }),
+            ...sessionToolOptions(
+              additions.role,
+              Option.map(newDiaToolServer, (newServer) => newServer())
+            ),
             permissionMode: config.permissionMode,
             allowDangerouslySkipPermissions: true,
             enableFileCheckpointing: true,

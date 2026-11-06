@@ -143,6 +143,7 @@ const openWith = Effect.fnUntraced(function* (
       resume,
       emit: (message) => Effect.sync(() => emitted.push(message)),
       tools: [],
+      role: Option.none(),
       ...additions
     },
     installAt(Option.some(INSTALL_PATH)),
@@ -469,7 +470,8 @@ describe('install', () => {
           emit: () => Effect.void,
           tools: [],
           systemPromptAppend: '',
-          pluginPaths: []
+          pluginPaths: [],
+          role: Option.none()
         },
         installAt(Option.none()),
         () => Effect.void
@@ -493,7 +495,8 @@ describe('install', () => {
           emit: (message) => Effect.sync(() => void emitted.push(message)),
           tools: [],
           systemPromptAppend: '',
-          pluginPaths: []
+          pluginPaths: [],
+          role: Option.none()
         },
         installAt(Option.none()),
         () => Effect.void
@@ -516,7 +519,8 @@ describe('install', () => {
           emit: () => Effect.void,
           tools: [],
           systemPromptAppend: '',
-          pluginPaths: []
+          pluginPaths: [],
+          role: Option.none()
         },
         installAt(Option.none(), Option.some('D:\\claude.cmd')),
         () => Effect.void

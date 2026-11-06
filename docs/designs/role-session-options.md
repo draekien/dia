@@ -101,7 +101,7 @@ A role server named `DIA_TOOL_SERVER_KEY` is replaced only when `diaToolServer` 
 
 `TASK_TRACKING_TOOLS` moves from `session.ts` to `session-tool-options.ts` and is exported with JSDoc; `session-rewind.test.ts` imports it in place of its copy.
 
-`runSession` (`plugins/claude-code/session.ts`) takes `role` beside `additions`, so a restart builds the same options; it is appended after `additions` in the existing positional style (folding the parameters into one object is out of scope). It replaces its `allowedTools: TASK_TRACKING_TOOLS` and `mcpServers` spread with `...sessionToolOptions(role, Option.map(newDiaToolServer, (make) => make()))`, and its `Starting query session` log replaces `allowedTools: TASK_TRACKING_TOOLS` with the role's allow, ask and deny rules and MCP server names, read from `role` without building the dia tool server. `sessionToolOptions` is called once, inside the `Effect.sync` that opens the query, as the server factory is today.
+`runSession` (`plugins/claude-code/session.ts`) already receives the whole `AgentSessionOptions` as its `additions` parameter; that parameter's type widens to `SessionAdditions & Pick<AgentSessionOptions, 'role'>`, so a restart builds the same options without a new parameter. It replaces its `allowedTools: TASK_TRACKING_TOOLS` and `mcpServers` spread with `...sessionToolOptions(role, Option.map(newDiaToolServer, (make) => make()))`, and its `Starting query session` log replaces `allowedTools: TASK_TRACKING_TOOLS` with the role's allow, ask and deny rules and MCP server names, read from `role` without building the dia tool server. `sessionToolOptions` is called once, inside the `Effect.sync` that opens the query, as the server factory is today.
 
 ## Design Rationale
 
@@ -159,7 +159,7 @@ Applied
 - *Correctness, M2*: `TASK_TRACKING_TOOLS` was private to `session.ts`; it moves to `session-tool-options.ts`.
 - *m1*: a role server that `DIA_TOOL_SERVER_KEY` replaces is logged.
 - *m2*: rationale for shipping `startPermissionMode` before its caller.
-- *m3*: `role` follows the existing positional-parameter style; refactoring `runSession`'s parameters is out of scope.
+- *m3*: `role` adds no positional parameter to `runSession`; it travels in the `additions` object the caller already passes. (Changed during implementation: the code showed `openSession` passes the full options object as `additions`.)
 
 **Round 3**
 

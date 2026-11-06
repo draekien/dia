@@ -9,6 +9,7 @@ import { TestClock } from 'effect/testing'
 import { vi } from 'vitest'
 import type { ClaudeInstall } from './claude-install'
 import { openClaudeCodeSession } from './session'
+import { TASK_TRACKING_TOOLS } from './session-tool-options'
 
 const installed: ClaudeInstall = {
   resolve: Effect.succeed(Option.some('/usr/local/bin/claude')),
@@ -140,7 +141,8 @@ const openResumed = (transcript: ReadonlyArray<SessionMessage>, transcriptFails 
       emit,
       tools: [],
       systemPromptAppend: '',
-      pluginPaths: []
+      pluginPaths: [],
+      role: Option.none()
     })
     yield* settle
     return { session, emitted }
@@ -155,14 +157,12 @@ const queryAt = (index: number): FakeQuery => {
   return query
 }
 
-const TASK_TRACKING_TOOLS = ['TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList']
-
 describe('task-tracking tools', () => {
   it.effect('names the task tools in the first query so newer models keep them', () =>
     Effect.gen(function* () {
       yield* openResumed(twoTurns)
 
-      assert.includeMembers(queryAt(0).options.allowedTools ?? [], TASK_TRACKING_TOOLS)
+      assert.includeMembers(queryAt(0).options.allowedTools ?? [], [...TASK_TRACKING_TOOLS])
     })
   )
 
@@ -173,7 +173,7 @@ describe('task-tracking tools', () => {
       yield* session.rewindToCheckpoint('turn-2', 'reply-1')
       yield* settle
 
-      assert.includeMembers(queryAt(1).options.allowedTools ?? [], TASK_TRACKING_TOOLS)
+      assert.includeMembers(queryAt(1).options.allowedTools ?? [], [...TASK_TRACKING_TOOLS])
     })
   )
 })
@@ -189,7 +189,8 @@ const openInMode = (permissionMode: PaneConfig['permissionMode']) =>
       emit: () => Effect.void,
       tools: [],
       systemPromptAppend: '',
-      pluginPaths: []
+      pluginPaths: [],
+      role: Option.none()
     })
     yield* settle
   })
@@ -240,7 +241,8 @@ describe('rewindToCheckpoint', () => {
         emit: () => Effect.void,
         tools: [],
         systemPromptAppend: '',
-        pluginPaths: []
+        pluginPaths: [],
+        role: Option.none()
       })
 
       yield* session.rewindToCheckpoint('turn-2', 'reply-1')
@@ -388,7 +390,8 @@ describe('rewindToCheckpoint', () => {
         emit: (message) => Effect.sync(() => emitted.push(message)),
         tools: [],
         systemPromptAppend: '',
-        pluginPaths: []
+        pluginPaths: [],
+        role: Option.none()
       })
 
       yield* session.rewindToCheckpoint('turn-2', 'reply-1')
@@ -431,7 +434,8 @@ describe('rewindToCheckpoint', () => {
             : Effect.sync(() => emitted.push(message)),
         tools: [],
         systemPromptAppend: '',
-        pluginPaths: []
+        pluginPaths: [],
+        role: Option.none()
       })
       yield* settle
 

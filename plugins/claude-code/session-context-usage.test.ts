@@ -105,7 +105,8 @@ const open = Effect.fnUntraced(function* (readings: ReadonlyArray<Reading | Erro
       emit: (m) => Effect.sync(() => emitted.push(m)),
       tools: [],
       systemPromptAppend: '',
-      pluginPaths: []
+      pluginPaths: [],
+      role: Option.none()
     },
     {
       resolve: Effect.succeed(Option.some('/usr/local/bin/claude')),
