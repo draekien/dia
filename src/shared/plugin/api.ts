@@ -4,13 +4,22 @@ import type { AgentNotification } from '../domain/notification'
 import type { Workspace } from '../domain/project'
 import type { EventFrame } from '../ipc/rpc'
 
-/** Service key under which the `worktrees` plugin provides the Host's `GitOps`. */
+/**
+ * Service key under which the `worktrees` plugin provides the Host's `GitOps`. Host code reads it with
+ * `registry.use`, one operation per call (ADR-0055).
+ */
 export const WORKTREES_KEY = 'worktrees'
 
-/** Service key under which the `meta` plugin provides the Host's `MetaRepo`. */
+/**
+ * Service key under which the `meta` plugin provides the Host's `MetaRepo`. Host code reads it with
+ * `registry.use`, one operation per call (ADR-0055).
+ */
 export const META_REPO_KEY = 'metaRepo'
 
-/** Service key under which the `org` plugin provides the Host's `Org`. */
+/**
+ * Service key under which the `org` plugin provides the Host's `Org`. Host code reads it with
+ * `registry.use`, one operation per call (ADR-0055).
+ */
 export const ORG_KEY = 'org'
 
 /**

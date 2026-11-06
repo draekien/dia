@@ -72,6 +72,7 @@ const feedWith = (
         changes: provider.changes,
         load: () => Effect.die(new Error('load should not be called in these tests')),
         unload: () => Effect.die(new Error('unload should not be called in these tests')),
+        use: () => Effect.die(new Error('use should not be called in these tests')),
         inject: (key) =>
           Effect.sync(() => (key === AGENT_BACKEND_KEY ? provider.current() : Option.none()))
       }),

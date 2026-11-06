@@ -14,6 +14,7 @@ const makeFakeRegistry = Effect.gen(function* () {
     start: () => Effect.void,
     load: () => Effect.die(new Error('not used')),
     unload: () => Effect.die(new Error('not used')),
+    use: () => Effect.die(new Error('use should not be called in these tests')),
     inject: (key) => Effect.sync(() => Option.fromNullishOr(values.get(key))),
     changes: Stream.fromPubSub(changed)
   }

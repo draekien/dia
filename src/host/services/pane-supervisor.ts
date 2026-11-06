@@ -90,7 +90,7 @@ import { AgentEventRecorder } from './agent-event-recorder'
 import { resolveSessionAdditions } from './meta-repo-seam'
 import { SettingsStore } from './settings-store'
 import { setUpWorktreeTab } from './tab-setup'
-import { resolveGitOps, type WorktreeCreateError, WorktreeReattachError } from './worktrees-seam'
+import { WorktreeCreateError, WorktreeReattachError, withGitOps } from './worktrees-seam'
 
 /**
  * How a pane's worktree should be obtained. `Create` provisions a brand-new worktree
@@ -798,8 +798,63 @@ export const PaneSupervisorLive = Layer.effect(
         const worktreeRequest = request.worktree
         if (worktreeRequest === undefined) return { config: projectConfig, setup: undefined }
 
-        const resolved = yield* resolveGitOps(plugins)
-        if (Option.isNone(resolved)) {
+        const removeWorktree = (info: WorktreeInfo) =>
+          withGitOps(plugins, (gitOps) => gitOps.removeWorktree(info, request.paneId)).pipe(
+            Effect.flatMap((removed) =>
+              Option.isSome(removed)
+                ? Effect.void
+                : Effect.logWarning(
+                    'Left the pane worktree on disk because the worktrees plugin is not loaded',
+                    { paneId: request.paneId, path: info.path }
+                  )
+            ),
+            Effect.catchCause((cause) =>
+              Effect.logError('Failed to remove pane worktree', {
+                paneId: request.paneId,
+                cause
+              })
+            )
+          )
+
+        const opened = yield* withGitOps(plugins, (gitOps) => {
+          const acquire: Effect.Effect<WorktreeInfo, WorktreeCreateError | WorktreeReattachError> =
+            worktreeRequest._tag === 'Create'
+              ? gitOps.createWorktree(
+                  request.sourceCwd,
+                  request.paneId,
+                  worktreeRequest.worktreesRoot
+                )
+              : gitOps.reattachWorktree(worktreeRequest.info, request.paneId)
+          return setUpWorktreeTab({
+            paneId: request.paneId,
+            sourceRepo: request.sourceCwd,
+            reattach: worktreeRequest._tag === 'Reattach',
+            gitOps,
+            acquire: Effect.acquireRelease(acquire, removeWorktree),
+            emit: onEvent
+          })
+        }).pipe(
+          Effect.catchTag(
+            'ServiceWithdrawnError',
+            (error): Effect.Effect<never, WorktreeCreateError | WorktreeReattachError> =>
+              worktreeRequest._tag === 'Create'
+                ? Effect.fail(
+                    new WorktreeCreateError({
+                      paneId: request.paneId,
+                      sourceRepo: request.sourceCwd,
+                      cause: error.message
+                    })
+                  )
+                : Effect.fail(
+                    new WorktreeReattachError({
+                      paneId: request.paneId,
+                      path: worktreeRequest.info.path,
+                      cause: error.message
+                    })
+                  )
+          )
+        )
+        if (Option.isNone(opened)) {
           if (worktreeRequest._tag === 'Reattach') {
             return yield* new WorktreeReattachError({
               paneId: request.paneId,
@@ -813,34 +868,7 @@ export const PaneSupervisorLive = Layer.effect(
           )
           return { config: projectConfig, setup: undefined }
         }
-        const gitOps = resolved.value
-
-        const acquire: Effect.Effect<WorktreeInfo, WorktreeCreateError | WorktreeReattachError> =
-          worktreeRequest._tag === 'Create'
-            ? gitOps.createWorktree(
-                request.sourceCwd,
-                request.paneId,
-                worktreeRequest.worktreesRoot
-              )
-            : gitOps.reattachWorktree(worktreeRequest.info, request.paneId)
-
-        const setup = yield* setUpWorktreeTab({
-          paneId: request.paneId,
-          sourceRepo: request.sourceCwd,
-          reattach: worktreeRequest._tag === 'Reattach',
-          gitOps,
-          acquire: Effect.acquireRelease(acquire, (info) =>
-            gitOps.removeWorktree(info, request.paneId).pipe(
-              Effect.catchCause((cause) =>
-                Effect.logError('Failed to remove pane worktree', {
-                  paneId: request.paneId,
-                  cause
-                })
-              )
-            )
-          ),
-          emit: onEvent
-        })
+        const setup = opened.value
 
         const worktree = setup.worktree
         const config: PaneConfig = { ...projectConfig, cwd: worktree.path, worktree }

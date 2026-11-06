@@ -1,10 +1,12 @@
 import { assert, describe, it } from '@effect/vitest'
 import { META_REPO_KEY } from '@shared/plugin/api'
+import { ServiceWithdrawnError } from '@shared/plugin/plugin-registry'
+import { fakeUse } from '@shared/plugin/plugin-registry.fake'
 import { Effect, Option } from 'effect'
 import { type MetaRepo, resolveSessionAdditions, withMetaRepo } from './meta-repo-seam'
 
 const registryProviding = (value: Option.Option<unknown>) => ({
-  inject: (key: string) => Effect.succeed(key === META_REPO_KEY ? value : Option.none())
+  use: fakeUse((key) => (key === META_REPO_KEY ? value : Option.none()))
 })
 
 const nothingAdded = { systemPromptAppend: '', pluginPaths: [] }
@@ -123,6 +125,24 @@ describe('withMetaRepo', () => {
 
         assert.strictEqual(result._tag, 'MetaRepoFailed')
       })
+  )
+
+  it.effect('reports a call that the meta plugin unload cut off', () =>
+    Effect.gen(function* () {
+      const registry = {
+        use: () =>
+          Effect.fail(
+            new ServiceWithdrawnError({ key: META_REPO_KEY, plugin: 'meta', message: 'closed' })
+          )
+      }
+
+      const result = yield* withMetaRepo(registry, (r) => r.push)
+
+      assert.deepStrictEqual(result, {
+        _tag: 'MetaRepoFailed',
+        message: 'The meta plugin was unloaded during the call.'
+      })
+    })
   )
 
   it.effect('reports a call that dies as a failure', () =>

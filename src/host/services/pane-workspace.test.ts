@@ -16,7 +16,8 @@ import {
 import type { RemovalProgress } from '@shared/domain/project-removal'
 import type { IpcEvent } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
-import type { PluginRegistry } from '@shared/plugin/plugin-registry'
+import { type PluginRegistry, ServiceWithdrawnError } from '@shared/plugin/plugin-registry'
+import { fakeUse } from '@shared/plugin/plugin-registry.fake'
 import {
   Deferred,
   Effect,
@@ -94,7 +95,14 @@ interface HarnessOptions {
   readonly storedSessionIds?: ReadonlyArray<string>
   readonly unloadedDirectoryKeys?: ReadonlyArray<string>
   readonly failEventAppend?: boolean
+  readonly worktreesWithdrawn?: boolean
 }
+
+const withdrawn = new ServiceWithdrawnError({
+  key: WORKTREES_KEY,
+  plugin: 'worktrees',
+  message: 'The "worktrees" plugin closed while a call using "worktrees" was running'
+})
 
 const configOf = (request: PaneCreationRequest): PaneConfig => ({
   paneId: request.paneId,
@@ -172,8 +180,13 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   }
   const provided = new Map<string, unknown>([[AGENT_BACKEND_KEY, backend]])
   if (options.gitOps !== undefined) provided.set(WORKTREES_KEY, options.gitOps(existing))
+  const provideUse = fakeUse((key) => Option.fromNullishOr(provided.get(key)))
   const plugins = Layer.succeed(HostPlugins, {
-    inject: (key: string) => Effect.succeed(Option.fromNullishOr(provided.get(key)))
+    inject: (key: string) => Effect.succeed(Option.fromNullishOr(provided.get(key))),
+    use: (key: string, f: (value: unknown) => Effect.Effect<unknown>) =>
+      options.worktreesWithdrawn === true && key === WORKTREES_KEY
+        ? Effect.fail(withdrawn)
+        : provideUse(key, f)
   } as unknown as PluginRegistry)
 
   const transcripts = Layer.succeed(TranscriptReader, {
@@ -1019,6 +1032,26 @@ describe('PaneWorkspace.removeProject', () => {
     })
   )
 
+  it.effect('keeps the project when the worktrees plugin unloads during a removal', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        persisted: removable(),
+        files: [worktree.path],
+        worktreesWithdrawn: true
+      })
+
+      const progress = yield* run(harness, removeAll(PROJECT_1))
+
+      const failed = progress.find((step) => step._tag === 'RemoveFailed')
+      assert.deepStrictEqual(failed, {
+        _tag: 'RemoveFailed',
+        item: { _tag: 'WorktreeItem', path: worktree.path },
+        reason: `Could not remove the worktree: ${withdrawn.message}`
+      })
+      assert.notInclude(tags(progress), 'ProjectRemoved')
+    })
+  )
+
   it.effect(
     'keeps the project when a worktree cannot be removed because the plugin is not loaded',
     () =>
@@ -1493,6 +1526,24 @@ describe('PaneWorkspace.unarchiveTab', () => {
       assert.deepStrictEqual(workspace, persisted())
       assert.deepStrictEqual(appended(harness), [])
       assert.strictEqual(harness.saves.length, 0)
+    })
+  )
+
+  it.effect('names the closed plugin when the worktrees plugin unloads during a restore', () =>
+    Effect.gen(function* () {
+      const error = yield* run(
+        makeHarness({ persisted: persisted(), worktreesWithdrawn: true }),
+        Effect.flip(unarchive(PANE_A))
+      )
+
+      assert.deepStrictEqual(
+        error,
+        new WorktreeNotRestoredError({
+          paneId: PANE_A,
+          path: worktree.path,
+          reason: withdrawn.message
+        })
+      )
     })
   )
 

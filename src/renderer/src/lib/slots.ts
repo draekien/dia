@@ -65,6 +65,7 @@ export const fillSlot = (
 
 const fillerOf = (name: SlotName): ComponentType | undefined => {
   if (pluginRegistry === undefined) return undefined
+  // biome-ignore lint/plugin/noRegistryInject: a slot reads its filler again each time `changes` emits its key (ADR-0055)
   const filler = Effect.runSync(pluginRegistry.inject(slotKey(name)))
   return Option.getOrUndefined(filler) as ComponentType | undefined
 }

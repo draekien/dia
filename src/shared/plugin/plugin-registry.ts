@@ -1,6 +1,7 @@
 import {
   Cause,
   Data,
+  Deferred,
   Duration,
   Effect,
   Exit,
@@ -122,11 +123,19 @@ export interface PluginMemoryGuard {
  * setup does not meet the adapter contract fails to load. `unload` closes a feature plugin.
  * Plugins that inject a service the changed plugin provides are closed and wait until it is
  * provided again. `list` returns every known plugin. `inject` reads the value a loaded plugin provides
- * under a service key, for code that is not a plugin; it is empty while no plugin provides the key
- * and is not reopened when the provider changes, so call it again each time the value is needed.
+ * under a service key without holding the provider open; it is empty while no plugin provides the
+ * key. Use it only for a service an adapter plugin provides (adapters never unload) or for a value
+ * read again each time `changes` emits its key; read a feature plugin's service with `use`.
  * `changes` emits a service key each time a plugin starts or stops providing it, from the moment
  * it is subscribed; read the new value with `inject`. A plugin whose entry import, or whose setup,
  * does not finish within {@link PLUGIN_SETUP_TIME_LIMIT} fails like any other load failure.
+ * `use` runs `f` with the value a loaded plugin provides under a service key and returns `Some` of
+ * its result. It returns `None` without running `f` while no plugin provides the key or while its
+ * provider is closing. It fails with {@link ServiceWithdrawnError} when the provider closed while
+ * `f` ran and `f` did not finish within {@link SERVICE_USE_TIME_LIMIT}, and with `f`'s error when
+ * `f` fails. Closing a plugin, by `unload`, a reload or a failed setup, first waits for the `use`
+ * calls on its services to end. Do not keep the value after `f` returns; call `use` again for the
+ * next operation.
  * `start` is the startup entry point: it marks every plugin `Loading`, loads every adapter and
  * every plugin whose manifest says `load: "eager"` one after another, and resolves once each of
  * them has settled (loaded, waiting, failed or restart-required), which does not require it to be
@@ -139,6 +148,10 @@ export interface PluginRegistry {
   readonly load: (name: string) => Effect.Effect<PluginInfo>
   readonly unload: (name: string) => Effect.Effect<PluginInfo>
   readonly inject: (key: string) => Effect.Effect<Option.Option<unknown>>
+  readonly use: <A, E, R>(
+    key: string,
+    f: (value: unknown) => Effect.Effect<A, E, R>
+  ) => Effect.Effect<Option.Option<A>, E | ServiceWithdrawnError, R>
   readonly changes: Stream.Stream<string>
 }
 
@@ -147,6 +160,23 @@ export interface PluginRegistry {
  * stops waiting and fails the load.
  */
 export const PLUGIN_SETUP_TIME_LIMIT: Duration.Duration = Duration.seconds(10)
+
+/**
+ * How long closing a plugin waits for the `use` calls that hold its services before it
+ * interrupts them.
+ */
+export const SERVICE_USE_TIME_LIMIT: Duration.Duration = Duration.seconds(30)
+
+/**
+ * Failure of {@link PluginRegistry.use} when the plugin providing the service closed while `f`
+ * ran and `f` did not finish within {@link SERVICE_USE_TIME_LIMIT}; `f` may have partly run.
+ * `message` names the plugin and the key.
+ */
+export class ServiceWithdrawnError extends Data.TaggedError('ServiceWithdrawnError')<{
+  readonly key: string
+  readonly plugin: string
+  readonly message: string
+}> {}
 
 /** The `message` of an error-like value, or its string form when it has none. */
 export const errorMessage = (error: unknown): string =>
@@ -165,9 +195,24 @@ interface Entry<Context extends PluginServices> {
   manifest: PluginManifest | undefined
   setup: Option.Option<PluginSetup<Context>> | undefined
   scope: Scope.Closeable | undefined
+  leases: Leases | undefined
   status: PluginStatus
   readonly provided: Set<string>
 }
+
+interface Leases {
+  closing: boolean
+  readonly active: Map<Fiber.Fiber<unknown, unknown>, string>
+  readonly drained: Deferred.Deferred<void>
+  readonly withdrawn: Deferred.Deferred<void>
+}
+
+const makeLeases = (): Leases => ({
+  closing: false,
+  active: new Map(),
+  drained: Deferred.makeUnsafe(),
+  withdrawn: Deferred.makeUnsafe()
+})
 
 const makeEntry = <Context extends PluginServices>(source: PluginSource): Entry<Context> => ({
   origin: source.origin,
@@ -176,6 +221,7 @@ const makeEntry = <Context extends PluginServices>(source: PluginSource): Entry<
   manifest: undefined,
   setup: undefined,
   scope: undefined,
+  leases: undefined,
   status: { _tag: 'Unloaded' },
   provided: new Set()
 })
@@ -395,6 +441,109 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       return dependants
     }
 
+    const drainLeases = (
+      name: string,
+      leases: Leases,
+      restore: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+    ) =>
+      Effect.gen(function* () {
+        leases.closing = true
+        if (leases.active.size === 0) return
+        yield* Effect.logInfo("Waiting for calls that use the plugin's services", {
+          plugin: name,
+          calls: leases.active.size
+        })
+        yield* restore(
+          Deferred.await(leases.drained).pipe(Effect.timeoutOption(SERVICE_USE_TIME_LIMIT))
+        ).pipe(Effect.exit)
+        if (leases.active.size === 0) return
+        yield* Effect.logWarning('Interrupted calls that still used a closing plugin', {
+          plugin: name,
+          keys: [...leases.active.values()]
+        })
+        yield* Deferred.succeed(leases.withdrawn, undefined)
+        for (const fiber of leases.active.keys()) yield* Effect.forkDetach(Fiber.interrupt(fiber))
+      })
+
+    const closePlugin = (
+      name: string,
+      entry: Entry<Context>,
+      scope: Scope.Closeable,
+      exit: Exit.Exit<unknown, unknown>
+    ): Effect.Effect<void> =>
+      Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          const leases = entry.leases
+          if (leases !== undefined) yield* drainLeases(name, leases, restore)
+          entry.leases = undefined
+          yield* Scope.close(scope, exit)
+        })
+      )
+
+    const use = <A, E, R>(
+      key: string,
+      f: (value: unknown) => Effect.Effect<A, E, R>
+    ): Effect.Effect<Option.Option<A>, E | ServiceWithdrawnError, R> =>
+      Effect.acquireUseRelease(
+        Effect.gen(function* () {
+          const slot = slots.get(key)
+          if (slot === undefined) return { _tag: 'NotProvided' } as const
+          const leases = entries.get(slot.owner)?.leases
+          if (leases === undefined || leases.closing) {
+            return { _tag: 'Closing', plugin: slot.owner } as const
+          }
+          const fiber = yield* Effect.forkDetach(f(slot.value), { startImmediately: true })
+          leases.active.set(fiber, key)
+          return { _tag: 'Granted', plugin: slot.owner, leases, fiber } as const
+        }),
+        (grant) =>
+          Effect.gen(function* () {
+            if (grant._tag === 'NotProvided') {
+              yield* Effect.logDebug('No plugin provides the service', { key })
+              return Option.none<A>()
+            }
+            if (grant._tag === 'Closing') {
+              yield* Effect.logDebug('The plugin providing the service is closing', {
+                key,
+                plugin: grant.plugin
+              })
+              return Option.none<A>()
+            }
+            const finished = yield* Effect.raceFirst(
+              Fiber.await(grant.fiber).pipe(Effect.asSome),
+              Deferred.await(grant.leases.withdrawn).pipe(Effect.as(Option.none<Exit.Exit<A, E>>()))
+            )
+            const withdrawnMeanwhile =
+              Option.isSome(finished) &&
+              Exit.hasInterrupts(finished.value) &&
+              Deferred.isDoneUnsafe(grant.leases.withdrawn)
+            if (Option.isSome(finished) && !withdrawnMeanwhile) {
+              return Option.some(yield* finished.value)
+            }
+            yield* Effect.logWarning('A call using the service ended because its plugin closed', {
+              key,
+              plugin: grant.plugin
+            })
+            return yield* new ServiceWithdrawnError({
+              key,
+              plugin: grant.plugin,
+              message: `The "${grant.plugin}" plugin closed while a call using "${key}" was running`
+            })
+          }),
+        (grant) =>
+          grant._tag === 'Granted'
+            ? Effect.gen(function* () {
+                grant.leases.active.delete(grant.fiber)
+                if (grant.leases.closing && grant.leases.active.size === 0) {
+                  yield* Deferred.succeed(grant.leases.drained, undefined)
+                }
+                if (grant.fiber.pollUnsafe() === undefined) {
+                  yield* Effect.forkDetach(Fiber.interrupt(grant.fiber))
+                }
+              })
+            : Effect.void
+      )
+
     const closeWithDependants = (name: string): Effect.Effect<void> =>
       Effect.gen(function* () {
         const entry = entries.get(name)
@@ -409,7 +558,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         }
         const scope = entry.scope
         entry.scope = undefined
-        if (scope !== undefined) yield* Scope.close(scope, Exit.void)
+        if (scope !== undefined) yield* closePlugin(name, entry, scope, Exit.void)
       })
 
     const open = (name: string, entry: Entry<Context>): Effect.Effect<void, PluginLoadError> =>
@@ -434,6 +583,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           )
         )
         const scope = yield* Scope.fork(parentScope)
+        entry.leases = makeLeases()
         const exit = yield* Effect.exit(
           withinTimeLimit(
             name,
@@ -442,14 +592,14 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           )
         )
         if (Exit.isFailure(exit)) {
-          yield* Scope.close(scope, exit)
+          yield* closePlugin(name, entry, scope, exit)
           yield* Effect.logError('Plugin setup failed', { plugin: name, cause: exit.cause })
           return yield* new PluginLoadError({ message: describeCause(exit.cause) })
         }
         if (entry.manifest?.category === 'adapter') {
           const problems = deps.adapterContract.problems((key) => providedBy(entry, key))
           if (problems.length > 0) {
-            yield* Scope.close(scope, Exit.void)
+            yield* closePlugin(name, entry, scope, Exit.void)
             yield* Effect.logError('Adapter plugin does not meet the adapter contract', {
               plugin: name,
               problems
@@ -699,5 +849,5 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       )
     })
 
-    return { list, start, load, unload, inject, changes: Stream.fromPubSub(providedKeys) }
+    return { list, start, load, unload, inject, use, changes: Stream.fromPubSub(providedKeys) }
   })

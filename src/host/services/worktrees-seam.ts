@@ -1,6 +1,6 @@
 import type { PaneId, WorktreeInfo } from '@shared/domain/pane'
 import { WORKTREES_KEY } from '@shared/plugin/api'
-import type { PluginRegistry } from '@shared/plugin/plugin-registry'
+import type { PluginRegistry, ServiceWithdrawnError } from '@shared/plugin/plugin-registry'
 import { Data, Effect, Option, Predicate } from 'effect'
 
 /**
@@ -115,25 +115,22 @@ const hasGitOperations = (value: unknown): value is GitOps =>
   )
 
 /**
- * Resolves the {@link GitOps} the `worktrees` plugin provides under `WORKTREES_KEY`. It never
- * fails. Returns `None`, after logging why, when the plugin is not loaded or what it provides
- * lacks one of its operations; the caller then opens a new pane without a worktree and refuses to
- * resume a pane that has one. Call it once per pane open; a plugin reload applies from the next
- * call.
+ * Runs `f` with the {@link GitOps} the loaded `worktrees` plugin provides under `WORKTREES_KEY`,
+ * holding the plugin open until `f` ends. Returns `None` without running `f`, after logging why,
+ * when the plugin is not loaded, is closing, or provides a value without every `GitOps` operation.
+ * Fails with `f`'s error, or with `ServiceWithdrawnError` when the plugin closed while `f` ran. Keep
+ * no `GitOps` after `f` returns; call it again for the next git operation.
  */
-export const resolveGitOps = Effect.fn('GitOps.resolve')(function* (
-  registry: Pick<PluginRegistry, 'inject'>
-) {
-  const provided = yield* registry.inject(WORKTREES_KEY)
-  if (Option.isNone(provided)) {
-    yield* Effect.logDebug('The worktrees plugin is not loaded')
-    return Option.none<GitOps>()
-  }
-  if (!hasGitOperations(provided.value)) {
-    yield* Effect.logError('The worktrees service does not have every GitOps operation', {
-      required: gitOperations
-    })
-    return Option.none<GitOps>()
-  }
-  return Option.some(provided.value)
-})
+export const withGitOps = <A, E, R>(
+  registry: Pick<PluginRegistry, 'use'>,
+  f: (gitOps: GitOps) => Effect.Effect<A, E, R>
+): Effect.Effect<Option.Option<A>, E | ServiceWithdrawnError, R> =>
+  registry
+    .use(WORKTREES_KEY, (value) =>
+      hasGitOperations(value)
+        ? f(value).pipe(Effect.map(Option.some))
+        : Effect.logError('The worktrees service does not have every GitOps operation', {
+            required: gitOperations
+          }).pipe(Effect.as(Option.none<A>()))
+    )
+    .pipe(Effect.map(Option.flatten), Effect.withSpan('GitOps.with'))

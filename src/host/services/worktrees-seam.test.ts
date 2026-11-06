@@ -1,13 +1,14 @@
 import { assert, describe, it } from '@effect/vitest'
 import type { WorktreeInfo } from '@shared/domain/pane'
 import { WORKTREES_KEY } from '@shared/plugin/api'
+import { fakeUse } from '@shared/plugin/plugin-registry.fake'
 import { Effect, Option } from 'effect'
-import { type GitOps, resolveGitOps } from './worktrees-seam'
+import { type GitOps, withGitOps } from './worktrees-seam'
 
 const info: WorktreeInfo = { path: '/wt/a', branch: 'dia/calm-fox', sourceRepo: '/repo' }
 
 const registryProviding = (provided: Option.Option<unknown>) => ({
-  inject: (key: string) => Effect.succeed(key === WORKTREES_KEY ? provided : Option.none<unknown>())
+  use: fakeUse((key) => (key === WORKTREES_KEY ? provided : Option.none()))
 })
 
 const providedGitOps: GitOps = {
@@ -18,11 +19,13 @@ const providedGitOps: GitOps = {
   copyIncludedFiles: () => Effect.succeed([])
 }
 
-describe('resolveGitOps', () => {
-  it.effect('returns the GitOps the plugin provides', () =>
+describe('withGitOps', () => {
+  it.effect('runs f with the GitOps the plugin provides', () =>
     Effect.gen(function* () {
-      const gitOps = yield* resolveGitOps(registryProviding(Option.some(providedGitOps)))
-      assert.strictEqual(Option.getOrThrow(gitOps), providedGitOps)
+      const result = yield* withGitOps(registryProviding(Option.some(providedGitOps)), (gitOps) =>
+        Effect.succeed(gitOps)
+      )
+      assert.strictEqual(Option.getOrThrow(result), providedGitOps)
     })
   )
 
@@ -48,10 +51,13 @@ describe('resolveGitOps', () => {
   ]
 
   for (const [name, provided] of unavailableCases) {
-    it.effect(`returns none when ${name}`, () =>
+    it.effect(`returns none without running f when ${name}`, () =>
       Effect.gen(function* () {
-        const gitOps = yield* resolveGitOps(registryProviding(provided))
-        assert.isTrue(Option.isNone(gitOps))
+        let calls = 0
+        const result = yield* withGitOps(registryProviding(provided), () =>
+          Effect.sync(() => ++calls)
+        )
+        assert.deepStrictEqual([result, calls], [Option.none(), 0])
       })
     )
   }
