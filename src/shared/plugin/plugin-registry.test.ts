@@ -1156,8 +1156,8 @@ describe('plugin registry', () => {
 })
 
 describe('plugin setup time limit', () => {
-  const setupTimedOut = (name: string) => `Plugin "${name}" did not finish its setup within 10s`
-  const importTimedOut = (name: string) => `Plugin "${name}" did not finish its import within 10s`
+  const timedOut = (name: string, stage: 'import' | 'setup') =>
+    `Plugin "${name}" did not finish its ${stage} within 10s`
 
   const loadPastTheLimit = (
     registry: { readonly load: (name: string) => Effect.Effect<PluginInfo> },
@@ -1181,7 +1181,7 @@ describe('plugin setup time limit', () => {
 
       assert.deepStrictEqual(
         [stuck.status, healthy.status._tag],
-        [{ _tag: 'Failed', message: setupTimedOut('stuck') }, 'Loaded']
+        [{ _tag: 'Failed', message: timedOut('stuck', 'setup') }, 'Loaded']
       )
     }).pipe(Effect.scoped)
   )
@@ -1198,7 +1198,7 @@ describe('plugin setup time limit', () => {
 
       assert.deepStrictEqual(
         [reloaded.status, log],
-        [{ _tag: 'Loaded', reloadError: importTimedOut('alpha') }, ['alpha:open']]
+        [{ _tag: 'Loaded', reloadError: timedOut('alpha', 'import') }, ['alpha:open']]
       )
     }).pipe(Effect.scoped)
   )
@@ -1214,7 +1214,7 @@ describe('plugin setup time limit', () => {
 
       assert.deepStrictEqual(reloaded.status, {
         _tag: 'Loaded',
-        reloadError: setupTimedOut('alpha')
+        reloadError: timedOut('alpha', 'setup')
       })
     }).pipe(Effect.scoped)
   )
@@ -1243,7 +1243,7 @@ describe('plugin setup time limit', () => {
 
       const stuck = yield* loadPastTheLimit(registry, 'stuck')
 
-      assert.deepStrictEqual(stuck.status, { _tag: 'Failed', message: setupTimedOut('stuck') })
+      assert.deepStrictEqual(stuck.status, { _tag: 'Failed', message: timedOut('stuck', 'setup') })
     }).pipe(Effect.scoped)
   )
 
