@@ -12,6 +12,7 @@ import {
 import {
   type LoadedPlugin,
   makePluginRegistry,
+  PLUGIN_SETUP_TIME_LIMIT,
   PluginLoadError,
   type PluginLoader,
   type PluginMemoryGuard,
@@ -1150,6 +1151,120 @@ describe('plugin registry', () => {
       yield* registry.start()
 
       assert.strictEqual(yield* statusOf(registry, 'agent'), 'Loaded')
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe('plugin setup time limit', () => {
+  const setupTimedOut = (name: string) => `Plugin "${name}" did not finish its setup within 10s`
+  const importTimedOut = (name: string) => `Plugin "${name}" did not finish its import within 10s`
+
+  const loadPastTheLimit = (
+    registry: { readonly load: (name: string) => Effect.Effect<PluginInfo> },
+    name: string
+  ) =>
+    Effect.gen(function* () {
+      const loading = yield* Effect.forkChild(registry.load(name))
+      yield* TestClock.adjust(PLUGIN_SETUP_TIME_LIMIT)
+      return yield* Fiber.join(loading)
+    })
+
+  it.effect('fails a first load whose setup never finishes and lets the next load run', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        stuck: plugin(manifest('stuck'), () => Effect.never),
+        healthy: plugin(manifest('healthy'), () => Effect.void)
+      })
+
+      const stuck = yield* loadPastTheLimit(registry, 'stuck')
+      const healthy = yield* registry.load('healthy')
+
+      assert.deepStrictEqual(
+        [stuck.status, healthy.status._tag],
+        [{ _tag: 'Failed', message: setupTimedOut('stuck') }, 'Loaded']
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('keeps the running version open when the new entry import never finishes', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', log)) }
+      const registry = yield* makeRegistry(plugins)
+      yield* registry.load('alpha')
+      plugins.alpha = { manifest: manifest('alpha'), resolveSetup: Effect.never }
+
+      const reloaded = yield* loadPastTheLimit(registry, 'alpha')
+
+      assert.deepStrictEqual(
+        [reloaded.status, log],
+        [{ _tag: 'Loaded', reloadError: importTimedOut('alpha') }, ['alpha:open']]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('reopens the previous version when the new setup never finishes', () =>
+    Effect.gen(function* () {
+      const plugins = { alpha: plugin(manifest('alpha'), () => Effect.void) }
+      const registry = yield* makeRegistry(plugins)
+      yield* registry.load('alpha')
+      plugins.alpha = plugin(manifest('alpha'), () => Effect.never)
+
+      const reloaded = yield* loadPastTheLimit(registry, 'alpha')
+
+      assert.deepStrictEqual(reloaded.status, {
+        _tag: 'Loaded',
+        reloadError: setupTimedOut('alpha')
+      })
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('runs the finalizers a timed-out setup registered', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({
+        alpha: plugin(
+          manifest('alpha'),
+          recording('alpha', log, () => Effect.never)
+        )
+      })
+
+      yield* loadPastTheLimit(registry, 'alpha')
+
+      assert.deepStrictEqual(log, ['alpha:open', 'alpha:close'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('fails a setup stuck in an uninterruptible region once the limit passes', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        stuck: plugin(manifest('stuck'), () => Effect.uninterruptible(Effect.never))
+      })
+
+      const stuck = yield* loadPastTheLimit(registry, 'stuck')
+
+      assert.deepStrictEqual(stuck.status, { _tag: 'Failed', message: setupTimedOut('stuck') })
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('stops a fiber a timed-out setup forked before it provides a service', () =>
+    Effect.gen(function* () {
+      const providesLater = Duration.sum(PLUGIN_SETUP_TIME_LIMIT, Duration.seconds(5))
+      const registry = yield* makeRegistry({
+        alpha: plugin(manifest('alpha'), (ctx) =>
+          Effect.gen(function* () {
+            yield* Effect.forkScoped(
+              Effect.sleep(providesLater).pipe(Effect.andThen(ctx.provide('late', 1)))
+            )
+            return yield* Effect.never
+          })
+        )
+      })
+
+      yield* loadPastTheLimit(registry, 'alpha')
+      yield* TestClock.adjust(providesLater)
+
+      assert.deepStrictEqual(yield* registry.inject('late'), Option.none())
     }).pipe(Effect.scoped)
   )
 })

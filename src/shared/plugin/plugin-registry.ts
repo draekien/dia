@@ -1,8 +1,10 @@
 import {
   Cause,
   Data,
+  Duration,
   Effect,
   Exit,
+  Fiber,
   Option,
   Predicate,
   PubSub,
@@ -123,7 +125,8 @@ export interface PluginMemoryGuard {
  * under a service key, for code that is not a plugin; it is empty while no plugin provides the key
  * and is not reopened when the provider changes, so call it again each time the value is needed.
  * `changes` emits a service key each time a plugin starts or stops providing it, from the moment
- * it is subscribed; read the new value with `inject`.
+ * it is subscribed; read the new value with `inject`. A plugin whose entry import, or whose setup,
+ * does not finish within {@link PLUGIN_SETUP_TIME_LIMIT} fails like any other load failure.
  * `start` is the startup entry point: it marks every plugin `Loading`, loads every adapter and
  * every plugin whose manifest says `load: "eager"` one after another, and resolves once each of
  * them has settled (loaded, waiting, failed or restart-required), which does not require it to be
@@ -138,6 +141,12 @@ export interface PluginRegistry {
   readonly inject: (key: string) => Effect.Effect<Option.Option<unknown>>
   readonly changes: Stream.Stream<string>
 }
+
+/**
+ * How long a plugin's entry-module import, and separately its setup, may run before the registry
+ * stops waiting and fails the load.
+ */
+export const PLUGIN_SETUP_TIME_LIMIT: Duration.Duration = Duration.seconds(10)
 
 /** The `message` of an error-like value, or its string form when it has none. */
 export const errorMessage = (error: unknown): string =>
@@ -288,6 +297,23 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       return true
     }
 
+    const withinTimeLimit = <A, E>(
+      name: string,
+      stage: 'import' | 'setup',
+      effect: Effect.Effect<A, E>
+    ): Effect.Effect<A, E | PluginLoadError> =>
+      Effect.gen(function* () {
+        const exit = yield* Effect.acquireUseRelease(
+          Effect.forkDetach(effect, { startImmediately: true }),
+          (fiber) => Fiber.await(fiber).pipe(Effect.timeoutOption(PLUGIN_SETUP_TIME_LIMIT)),
+          (fiber) => Effect.forkDetach(Fiber.interrupt(fiber))
+        )
+        if (Option.isSome(exit)) return yield* exit.value
+        return yield* new PluginLoadError({
+          message: `Plugin "${name}" did not finish its ${stage} within ${Duration.format(PLUGIN_SETUP_TIME_LIMIT)}`
+        })
+      })
+
     const inject = (key: string): Effect.Effect<Option.Option<unknown>> =>
       Effect.sync(() => Option.fromNullishOr(slots.get(key)).pipe(Option.map((slot) => slot.value)))
 
@@ -386,7 +412,11 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         )
         const scope = yield* Scope.fork(parentScope)
         const exit = yield* Effect.exit(
-          Scope.provide(scope)(Effect.suspend(() => setup.value(context)))
+          withinTimeLimit(
+            name,
+            'setup',
+            Scope.provide(scope)(Effect.suspend(() => setup.value(context)))
+          )
         )
         if (Exit.isFailure(exit)) {
           yield* Scope.close(scope, exit)
@@ -445,7 +475,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
             message: `Manifest name "${loaded.manifest.name}" does not match the plugin directory "${name}"`
           })
         }
-        const setup = yield* loaded.resolveSetup
+        const setup = yield* withinTimeLimit(name, 'import', loaded.resolveSetup)
 
         const previous = {
           origin: entry.origin,
