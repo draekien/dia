@@ -378,6 +378,60 @@ describe('plugin registry', () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect('reopens a dependant when its unloaded provider loads again', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        provider: plugin(manifest('provider'), (ctx) => ctx.provide('db', 1)),
+        consumer: plugin(manifest('consumer', { inject: ['db'] }), recording('consumer', []))
+      })
+      yield* registry.load('provider')
+      yield* registry.load('consumer')
+      yield* registry.unload('provider')
+
+      yield* registry.load('provider')
+
+      assert.strictEqual(yield* statusOf(registry, 'consumer'), 'Loaded')
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('lets a plugin read a service it declares in inject', () =>
+    Effect.gen(function* () {
+      const seen: Array<unknown> = []
+      const registry = yield* makeRegistry({
+        provider: plugin(manifest('provider'), (ctx) => ctx.provide('db', 'connection')),
+        consumer: plugin(manifest('consumer', { inject: ['db'] }), (ctx) =>
+          Effect.gen(function* () {
+            seen.push(yield* ctx.inject('db'))
+          })
+        )
+      })
+      yield* registry.load('provider')
+
+      yield* registry.load('consumer')
+
+      assert.deepStrictEqual(seen, [Option.some('connection')])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('fails a plugin whose setup reads a service it does not declare in inject', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        provider: plugin(manifest('provider'), (ctx) => ctx.provide('db', 'connection')),
+        consumer: plugin(manifest('consumer'), (ctx) => ctx.inject('db'))
+      })
+      yield* registry.load('provider')
+
+      const consumer = yield* registry.load('consumer')
+
+      assert.deepStrictEqual(consumer.status, {
+        _tag: 'Failed',
+        message:
+          'Plugin "consumer" reads "db" without declaring it; add "db" to "inject" in its plugin.json'
+      })
+      assert.strictEqual(yield* statusOf(registry, 'provider'), 'Loaded')
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('lets the caller of the registry read a service a loaded plugin provides', () =>
     Effect.gen(function* () {
       const registry = yield* makeRegistry({
