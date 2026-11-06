@@ -1267,4 +1267,27 @@ describe('plugin setup time limit', () => {
       assert.deepStrictEqual(yield* registry.inject('late'), Option.none())
     }).pipe(Effect.scoped)
   )
+
+  it.effect(
+    'keeps the reopened version service when a timed-out uninterruptible setup provides it later',
+    () =>
+      Effect.gen(function* () {
+        const providesLater = Duration.sum(PLUGIN_SETUP_TIME_LIMIT, Duration.seconds(5))
+        const plugins = {
+          alpha: plugin(manifest('alpha'), (ctx) => ctx.provide('svc', 'previous'))
+        }
+        const registry = yield* makeRegistry(plugins)
+        yield* registry.load('alpha')
+        plugins.alpha = plugin(manifest('alpha'), (ctx) =>
+          Effect.uninterruptible(
+            Effect.sleep(providesLater).pipe(Effect.andThen(ctx.provide('svc', 'abandoned')))
+          )
+        )
+
+        yield* loadPastTheLimit(registry, 'alpha')
+        yield* TestClock.adjust(providesLater)
+
+        assert.deepStrictEqual(yield* registry.inject('svc'), Option.some('previous'))
+      }).pipe(Effect.scoped)
+  )
 })

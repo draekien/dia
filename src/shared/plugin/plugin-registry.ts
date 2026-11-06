@@ -331,6 +331,14 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
               message: `"${key}" can be provided only by an adapter plugin`
             })
           }
+          const scope = yield* Scope.Scope
+          if (scope.state._tag === 'Closed') {
+            yield* Effect.logWarning('A plugin provided a service after its setup was abandoned', {
+              plugin: name,
+              key
+            })
+            return
+          }
           const current = slots.get(key)
           if (current !== undefined && current.owner !== name) {
             return yield* new ServiceKeyTakenError({ key, owner: current.owner })
