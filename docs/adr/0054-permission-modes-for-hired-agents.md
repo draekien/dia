@@ -48,10 +48,10 @@ From the Agent SDK permissions page (<https://code.claude.com/docs/en/agent-sdk/
 | Entry | `default` | `auto` | `bypassPermissions` |
 | --- | --- | --- | --- |
 | `deny` | Blocks | Blocks | Blocks ("Deny rules block in every mode, including `bypassPermissions`") |
-| `ask` | `canUseTool`, so a decision queue item | Prompts ("Explicit ask rules still force a prompt") <!-- unverified: the docs do not state that this prompt reaches `canUseTool` in an SDK session; confirm in step 1 --> | `canUseTool`, so a decision queue item ("falls through to your `canUseTool` callback … even in `bypassPermissions` mode") |
+| `ask` | `canUseTool`, so a decision queue item | `canUseTool`, so a decision queue item ("Explicit ask rules still force a prompt"; confirmed by probe, `docs/reasoning/2026-11-06-auto-mode-ask-rules-and-classifier-blocks.md`) | `canUseTool`, so a decision queue item ("falls through to your `canUseTool` callback … even in `bypassPermissions` mode") |
 | `allow` | Approves | Approves, except broad rules, which `auto` drops: `Bash(*)`, wildcarded interpreters such as `Bash(python*)`, package-manager run commands, `Agent`, `Monitor` | No effect |
 
-When the `auto` classifier blocks a call, the agent receives the reason and continues; no decision queue item is created. <!-- unverified: the docs state "If the classifier blocks, Claude receives the reason" but do not state whether `canUseTool` is called in an SDK session -->
+When the `auto` classifier blocks a call, the agent receives the reason and continues; no decision queue item is created. The SDK types list the auto-mode classifier among the calls "auto-denied without an interactive permission prompt" (`sdk.d.ts`, SDK 0.3.311). Four probes on 2026-11-06 produced no classifier block to observe, so dia must not depend on `canUseTool` being called, or not called, for a block (`docs/reasoning/2026-11-06-auto-mode-ask-rules-and-classifier-blocks.md`).
 
 ### Model change during a session
 

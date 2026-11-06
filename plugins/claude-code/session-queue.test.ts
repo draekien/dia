@@ -2,8 +2,10 @@
 import { setImmediate } from 'node:timers/promises'
 import type { Options, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import {
+  type AgentSessionOptions,
   type OutboundMessage,
   RewindFailed,
+  type RoleSessionOptions,
   type SessionAdditions,
   SessionFailed,
   SessionNotFound
@@ -132,7 +134,7 @@ const nothingAdded: SessionAdditions = { systemPromptAppend: '', pluginPaths: []
 
 const openWith = Effect.fnUntraced(function* (
   resume: Option.Option<SessionId>,
-  additions: SessionAdditions = nothingAdded
+  additions: SessionAdditions & Partial<Pick<AgentSessionOptions, 'role'>> = nothingAdded
 ) {
   sdk.queries.length = 0
   const emitted: Array<OutboundMessage> = []
@@ -143,6 +145,7 @@ const openWith = Effect.fnUntraced(function* (
       resume,
       emit: (message) => Effect.sync(() => emitted.push(message)),
       tools: [],
+      role: Option.none(),
       ...additions
     },
     installAt(Option.some(INSTALL_PATH)),
@@ -469,7 +472,8 @@ describe('install', () => {
           emit: () => Effect.void,
           tools: [],
           systemPromptAppend: '',
-          pluginPaths: []
+          pluginPaths: [],
+          role: Option.none()
         },
         installAt(Option.none()),
         () => Effect.void
@@ -493,7 +497,8 @@ describe('install', () => {
           emit: (message) => Effect.sync(() => void emitted.push(message)),
           tools: [],
           systemPromptAppend: '',
-          pluginPaths: []
+          pluginPaths: [],
+          role: Option.none()
         },
         installAt(Option.none()),
         () => Effect.void
@@ -516,7 +521,8 @@ describe('install', () => {
           emit: () => Effect.void,
           tools: [],
           systemPromptAppend: '',
-          pluginPaths: []
+          pluginPaths: [],
+          role: Option.none()
         },
         installAt(Option.none(), Option.some('D:\\claude.cmd')),
         () => Effect.void
@@ -744,6 +750,47 @@ describe('session additions', () => {
       assert.isDefined(restarted)
       assert.deepStrictEqual(restarted.options.systemPrompt, query.options.systemPrompt)
       assert.deepStrictEqual(restarted.options.plugins, query.options.plugins)
+    })
+  )
+})
+
+describe('role session options', () => {
+  const role: RoleSessionOptions = {
+    permissions: { allow: ['Read'], ask: ['Bash(git status*)'], deny: ['Bash(git push *)'] },
+    mcpServers: { docs: { type: 'http', url: 'https://docs.example/mcp', headers: {} } }
+  }
+  const withRole = { ...nothingAdded, role: Option.some(role) }
+
+  it.effect('passes the role rules and MCP servers to the query', () =>
+    Effect.gen(function* () {
+      const { query } = yield* openWith(Option.none(), withRole)
+
+      assert.includeMembers(query.options.allowedTools ?? [], ['Read'])
+      assert.deepStrictEqual(query.options.disallowedTools, ['Bash(git push *)'])
+      assert.deepStrictEqual(query.options.settings, {
+        permissions: { ask: ['Bash(git status*)'] }
+      })
+      assert.deepStrictEqual(query.options.mcpServers, {
+        docs: { type: 'http', url: 'https://docs.example/mcp', headers: {} }
+      })
+    })
+  )
+
+  it.effect('keeps the role rules and MCP servers when a thinking change restarts it', () =>
+    Effect.gen(function* () {
+      const resumed = '4f1b2c3d-0000-4000-8000-000000000017' as SessionId
+      const { session, query } = yield* openWith(Option.some(resumed), withRole)
+
+      yield* session.setThinkingLevel('high')
+      yield* session.sendText('first', 'queue')
+      yield* settle
+      const restarted = sdk.queries[1]
+
+      assert.isDefined(restarted)
+      assert.deepStrictEqual(restarted.options.allowedTools, query.options.allowedTools)
+      assert.deepStrictEqual(restarted.options.disallowedTools, ['Bash(git push *)'])
+      assert.deepStrictEqual(restarted.options.settings, query.options.settings)
+      assert.deepStrictEqual(restarted.options.mcpServers, query.options.mcpServers)
     })
   )
 })

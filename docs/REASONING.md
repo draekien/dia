@@ -81,6 +81,7 @@ This is an index of non-obvious decisions, gotchas, and learnings recorded durin
 | 2026-11-03 | [After `/clear`, the conversation is written under the next `SessionStarted` id](reasoning/2026-11-03-clear-session-id.md) | `ConversationReset.newSessionId` has no transcript file; the cleared conversation goes to the session of the `SessionStarted` that follows the reset; the recorder owns the cursor of the session it last bound, so that session owns it. |
 | 2026-11-03 | [An interrupted or rejected tool call still gets a tool result](reasoning/2026-11-03-interrupted-tool-results.md) | Across 216 transcripts every `tool_use` has a `tool_result` except as the last entry of a running session; catch-up needs no rule to complete orphaned tool calls. |
 | 2026-11-03 | [Resuming a session changes its transcript's mtime without adding entries](reasoning/2026-11-03-resume-touches-transcript.md) | The CLI rewrites the transcript when a resumed session starts; a cursor update with no new entries now stores the new size and mtime, so the next open skips the read. |
+| 2026-11-06 | [In `auto`, an ask rule reaches `canUseTool`; a classifier block could not be produced](reasoning/2026-11-06-auto-mode-ask-rules-and-classifier-blocks.md) | Probe on SDK 0.3.311: `settings.permissions.ask` in an `auto` session calls `canUseTool`. A prompt that names a command (force push, `curl \| sh`) is approved by the classifier, so no block was observed; do not depend on `canUseTool` for classifier blocks. |
 
 ## Adding a new entry
 

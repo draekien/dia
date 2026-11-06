@@ -30,6 +30,7 @@ export {
 } from '../shared/domain/model'
 export { SessionId } from '../shared/domain/pane'
 export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
+export type { RoleSessionOptions } from '../shared/domain/role-session'
 export * from '../shared/plugin/api'
 export type { MetaRepo } from './services/meta-repo-seam'
 export {

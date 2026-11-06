@@ -206,7 +206,12 @@ export const SessionFactoryLive = Layer.effect(
     ) {
       const backend = yield* resolveAgentBackend(plugins)
       const additions = yield* resolveSessionAdditions(plugins)
-      return yield* backend.openSession({ ...options, ...additions, tools: pluginTools })
+      return yield* backend.openSession({
+        ...options,
+        ...additions,
+        tools: pluginTools,
+        role: Option.none()
+      })
     })
     return { start }
   })
