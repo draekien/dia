@@ -142,7 +142,7 @@ CREATE TABLE org_settings (
 );
 ```
 
-`2_seed_org` inserts the five built-in roles under their fixed ids (enabled, empty `allow`/`ask`, no skills, no MCP servers, bypass off), one unnamed `retro` hire under its fixed id with `hired_at` from `Clock.currentTimeMillis`, and `overall_cap = 4`. A migration's requirement is `SqlClient` only (`PluginMigrations`, `src/shared/plugin/api.ts`), so it cannot use `Crypto`; `Clock` is a reference with a default. `makeOrg` requires `Crypto` for the ids of copies and later hires; `host.ts` provides it with `NodeServices.layer`. Because a migration runs once per database, a dismissed `retro` is never re-hired, and a later dia version adds a built-in role through a new migration.
+`2_seed_org` inserts the five built-in roles under their fixed ids (enabled, empty `allow`/`ask`, no skills, no MCP servers, bypass off), one unnamed `retro` hire under its fixed id with `hired_at` from `Clock.currentTimeMillis`, and `overall_cap = 4`. A migration's requirement is `SqlClient` only (`PluginMigrations`, `src/shared/plugin/api.ts`), so it cannot use `Crypto`; `Clock` is a reference with a default. `makeOrg` requires `Crypto` for the ids of copies and later hires; `host.ts` provides it with `NodeCrypto.layer`. Because a migration runs once per database, a dismissed `retro` is never re-hired, and a later dia version adds a built-in role through a new migration.
 
 ## Design Rationale
 

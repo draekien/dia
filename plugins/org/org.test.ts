@@ -211,6 +211,18 @@ describe('Org.editRole', () => {
     })
   )
 
+  it.effect('keeps the id, builtIn and enabled of the role when the edit is a whole role', () =>
+    Effect.gen(function* () {
+      const { org, role: planner } = yield* builtIn('planner')
+      yield* org.setRoleEnabled(planner.id, false)
+      const copy = yield* org.copyRole(planner.id, RoleName.make('builder'))
+      const disabledPlanner = roleNamed(yield* org.roles, 'planner')
+      const edited = yield* org.editRole(copy.id, { ...disabledPlanner, name: copy.name })
+      assert.deepStrictEqual([edited.id, edited.builtIn, edited.enabled], [copy.id, null, true])
+      assert.deepStrictEqual(roleNamed(yield* org.roles, 'builder'), edited)
+    })
+  )
+
   it.effect('refuses to rename a built-in role', () =>
     Effect.gen(function* () {
       const { org, role } = yield* builtIn('engineer')

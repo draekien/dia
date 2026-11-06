@@ -1,5 +1,5 @@
 import { type HostPluginContext, ORG_KEY, type PluginSetup } from '@dia/plugin'
-import * as NodeServices from '@effect/platform-node/NodeServices'
+import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { Effect } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { orgMigrations } from './migrations'
@@ -10,7 +10,7 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     const sql = yield* ctx.database(orgMigrations)
     const org = yield* makeOrg.pipe(
       Effect.provideService(SqlClient.SqlClient, sql),
-      Effect.provide(NodeServices.layer)
+      Effect.provide(NodeCrypto.layer)
     )
     yield* ctx.provide(ORG_KEY, org)
     const roles = yield* org.roles

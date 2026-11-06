@@ -107,11 +107,6 @@ export const makeOrg = Effect.gen(function* () {
 
   const newId = crypto.randomUUIDv4().pipe(Effect.orDie)
 
-  const readRoles = Effect.gen(function* () {
-    const rows = yield* sql`SELECT * FROM roles ORDER BY rowid`
-    return (yield* decodeRoleRows(rows)).map(toRole)
-  })
-
   const findRole = Effect.fnUntraced(function* (roleId: RoleId) {
     const rows = yield* sql`SELECT * FROM roles WHERE role_id = ${roleId}`
     const [row] = yield* decodeRoleRows(rows)
@@ -133,7 +128,10 @@ export const makeOrg = Effect.gen(function* () {
   const updateRole = (role: Role) =>
     sql`UPDATE roles SET ${sql.update(toRoleRow(role), ['role_id'])} WHERE role_id = ${role.id}`
 
-  const roles = readRoles.pipe(Effect.catchTag('SqlError', Effect.die))
+  const roles = Effect.gen(function* () {
+    const rows = yield* sql`SELECT * FROM roles ORDER BY rowid`
+    return (yield* decodeRoleRows(rows)).map(toRole)
+  }).pipe(Effect.catchTag('SqlError', Effect.die))
 
   const hiredAgents = Effect.gen(function* () {
     const rows = yield* sql`SELECT * FROM hired_agents ORDER BY hired_at, rowid`
@@ -189,7 +187,13 @@ export const makeOrg = Effect.gen(function* () {
           }
           yield* ensureRoleNameFree(edit.name, roleId)
         }
-        const edited: Role = { ...current, ...edit }
+        const edited: Role = {
+          ...current,
+          ...edit,
+          id: current.id,
+          builtIn: current.builtIn,
+          enabled: current.enabled
+        }
         yield* updateRole(edited)
         return edited
       })
