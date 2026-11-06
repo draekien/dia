@@ -15,7 +15,12 @@ const addCard = (id: string, title: string) =>
   Effect.runSync(
     Scope.provide(
       addRailCard(
-        { name: 'chat', provide: () => Effect.void, inject: () => Effect.succeedNone },
+        {
+          name: 'chat',
+          provide: () => Effect.void,
+          inject: () => Effect.succeedNone,
+          whenProvided: () => Effect.void
+        },
         { id, title, component: ({ paneId }) => <p>{`${title} body for ${paneId}`}</p> }
       ),
       Effect.runSync(Scope.make())

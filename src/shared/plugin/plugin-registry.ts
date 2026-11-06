@@ -1,5 +1,6 @@
 import {
   Cause,
+  Context,
   Data,
   Deferred,
   Duration,
@@ -15,7 +16,12 @@ import {
   Stream
 } from 'effect'
 import type { PluginServices, PluginSetup } from './api'
-import { ServiceKeyReservedError, ServiceKeyTakenError, ServiceNotDeclaredError } from './api'
+import {
+  ServiceKeyReservedError,
+  ServiceKeyTakenError,
+  ServiceNotDeclaredError,
+  WhenProvidedRefusedError
+} from './api'
 import {
   formatMegabytes,
   isApiCompatible,
@@ -214,6 +220,46 @@ const makeLeases = (): Leases => ({
   withdrawn: Deferred.makeUnsafe()
 })
 
+type WatcherState = Data.TaggedEnum<{
+  Idle: Record<never, never>
+  Running: { readonly scope: Scope.Closeable }
+  Failed: Record<never, never>
+}>
+const WatcherState = Data.taggedEnum<WatcherState>()
+
+interface Watcher {
+  readonly plugin: string
+  readonly keys: ReadonlyArray<string>
+  readonly setup: (services: Record<string, unknown>) => Effect.Effect<void, unknown, Scope.Scope>
+  readonly parent: Scope.Scope
+  readonly provided: Set<string>
+  readonly nested: Set<Watcher>
+  state: WatcherState
+}
+
+interface SetupWindow {
+  readonly plugin: string
+  readonly watcher: Watcher | undefined
+  accepting: boolean
+}
+
+const CurrentSetup = Context.Reference<SetupWindow | undefined>('dia/plugin/CurrentSetup', {
+  defaultValue: () => undefined
+})
+
+type WhenProvidedRefusal = 'adapter' | 'no-setup' | 'other-plugin' | 'setup-ended'
+
+const refusalOf = (
+  name: string,
+  category: PluginCategory | undefined,
+  window: SetupWindow | undefined
+): WhenProvidedRefusal | undefined => {
+  if (category === 'adapter') return 'adapter'
+  if (window === undefined) return 'no-setup'
+  if (window.plugin !== name) return 'other-plugin'
+  return window.accepting ? undefined : 'setup-ended'
+}
+
 const makeEntry = <Context extends PluginServices>(source: PluginSource): Entry<Context> => ({
   origin: source.origin,
   root: source.root,
@@ -253,6 +299,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
     const lock = yield* Semaphore.make(1)
     const entries = new Map<string, Entry<Context>>()
     const slots = new Map<string, { readonly owner: string; readonly value: unknown }>()
+    const watchers = new Set<Watcher>()
     const providedKeys = yield* PubSub.unbounded<string>()
 
     const memoryOf = (name: string): Effect.Effect<number> =>
@@ -360,6 +407,33 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         })
       })
 
+    const withinSetupWindow = <A, E>(
+      window: SetupWindow,
+      effect: Effect.Effect<A, E>
+    ): Effect.Effect<A, E | PluginLoadError> =>
+      withinTimeLimit(
+        window.plugin,
+        'setup',
+        Effect.provideService(effect, CurrentSetup, window)
+      ).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            window.accepting = false
+          })
+        )
+      )
+
+    const watchersOf = (name: string): ReadonlyArray<Watcher> =>
+      [...watchers].filter((watcher) => watcher.plugin === name)
+
+    const providedByWatcher = (name: string, key: string): boolean =>
+      watchersOf(name).some((watcher) => watcher.provided.has(key))
+
+    const isRunningName = (name: string): boolean => {
+      const entry = entries.get(name)
+      return entry !== undefined && isRunning(entry)
+    }
+
     const inject = (key: string): Effect.Effect<Option.Option<unknown>> =>
       Effect.sync(() => Option.fromNullishOr(slots.get(key)).pipe(Option.map((slot) => slot.value)))
 
@@ -389,15 +463,29 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           if (current !== undefined && current.owner !== name) {
             return yield* new ServiceKeyTakenError({ key, owner: current.owner })
           }
+          const window = yield* CurrentSetup
+          const watcher = window?.plugin === name ? window.watcher : undefined
+          if (entry.provided.has(key) && (watcher !== undefined || providedByWatcher(name, key))) {
+            yield* Effect.logError(
+              'A plugin provided a key twice while one is in a whenProvided setup',
+              {
+                plugin: name,
+                key
+              }
+            )
+            return yield* new ServiceKeyTakenError({ key, owner: name })
+          }
           yield* Effect.acquireRelease(
             Effect.sync(() => {
               slots.set(key, { owner: name, value })
               entry.provided.add(key)
+              watcher?.provided.add(key)
             }).pipe(Effect.andThen(PubSub.publish(providedKeys, key))),
             () =>
               Effect.sync(() => {
                 if (slots.get(key)?.owner === name) slots.delete(key)
                 entry.provided.delete(key)
+                watcher?.provided.delete(key)
               }).pipe(Effect.andThen(PubSub.publish(providedKeys, key)))
           )
         }),
@@ -414,9 +502,63 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
                 message:
                   entry.category === 'adapter'
                     ? `Adapter plugin "${name}" reads "${key}", but an adapter cannot declare "inject"`
-                    : `Plugin "${name}" reads "${key}" without declaring it; add "${key}" to "inject" in its plugin.json`
+                    : watchersOf(name).some((watcher) => watcher.keys.includes(key))
+                      ? `Plugin "${name}" reads "${key}" without declaring it; use the value whenProvided passes to its setup, or add "${key}" to "inject" in its plugin.json if the plugin requires it`
+                      : `Plugin "${name}" reads "${key}" without declaring it; add "${key}" to "inject" in its plugin.json`
               })
+            }),
+      whenProvided: (keys, setup) =>
+        Effect.gen(function* () {
+          const window = yield* CurrentSetup
+          const refusal = refusalOf(name, entry.category, window)
+          if (window === undefined || refusal !== undefined) {
+            yield* Effect.logError('A plugin called whenProvided outside its setup', {
+              plugin: name,
+              reason: refusal ?? 'no-setup'
             })
+            return yield* new WhenProvidedRefusedError({
+              plugin: name,
+              message:
+                refusal === 'adapter'
+                  ? `Adapter plugin "${name}" cannot call whenProvided`
+                  : `Plugin "${name}" called whenProvided outside its setup; call it during setup or inside another whenProvided setup`
+            })
+          }
+          const parent = yield* Scope.Scope
+          if (parent.state._tag === 'Closed') {
+            yield* Effect.logWarning('A plugin called whenProvided after its setup was abandoned', {
+              plugin: name,
+              keys
+            })
+            return
+          }
+          const watcher: Watcher = {
+            plugin: name,
+            keys,
+            setup: (services) =>
+              setup(services as { readonly [K in (typeof keys)[number]]: unknown }),
+            parent,
+            provided: new Set(),
+            nested: new Set(),
+            state: WatcherState.Idle()
+          }
+          const outer = window.watcher
+          yield* Effect.acquireRelease(
+            Effect.sync(() => {
+              watchers.add(watcher)
+              outer?.nested.add(watcher)
+            }),
+            () =>
+              Effect.sync(() => {
+                watchers.delete(watcher)
+                outer?.nested.delete(watcher)
+              })
+          )
+          yield* Effect.logDebug('Registered a setup that waits for services', {
+            plugin: name,
+            keys
+          })
+        })
     })
 
     const providedBy = (entry: Entry<Context>, key: string): Option.Option<unknown> =>
@@ -544,11 +686,13 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
             : Effect.void
       )
 
-    const closeWithDependants = (name: string): Effect.Effect<void> =>
+    const closeDependantsOf = (
+      keys: ReadonlySet<string>,
+      owner: string,
+      closing: string
+    ): Effect.Effect<void> =>
       Effect.gen(function* () {
-        const entry = entries.get(name)
-        if (entry === undefined) return
-        for (const dependant of dependantsOf(name, new Set(entry.provided))) {
+        for (const dependant of dependantsOf(owner, keys)) {
           yield* closeWithDependants(dependant.name)
           dependant.entry.status = { _tag: 'Waiting', missing: dependant.missing }
           yield* Effect.logInfo('Plugin waiting for a service', {
@@ -556,10 +700,84 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
             missing: dependant.missing
           })
         }
+        for (const watcher of [...watchers]) {
+          if (!watchers.has(watcher) || !watcher.keys.some((key) => keys.has(key))) continue
+          if (watcher.state._tag === 'Running') yield* closeWatcher(watcher, closing)
+          else if (watcher.state._tag === 'Failed') watcher.state = WatcherState.Idle()
+        }
+      })
+
+    const closeWatcher = (watcher: Watcher, closing: string): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        if (watcher.state._tag !== 'Running') return
+        const scope = watcher.state.scope
+        watcher.state = WatcherState.Idle()
+        for (const nested of [...watcher.nested]) yield* closeWatcher(nested, closing)
+        yield* closeDependantsOf(new Set(watcher.provided), watcher.plugin, closing)
+        yield* Scope.close(scope, Exit.void)
+        if (watcher.plugin !== closing) {
+          yield* Effect.logInfo('Closed a setup because a service it waits for is closing', {
+            plugin: watcher.plugin,
+            keys: watcher.keys
+          })
+        }
+      })
+
+    const closeWithDependants = (name: string): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const entry = entries.get(name)
+        if (entry === undefined) return
+        yield* closeDependantsOf(new Set(entry.provided), name, name)
         const scope = entry.scope
         entry.scope = undefined
         if (scope !== undefined) yield* closePlugin(name, entry, scope, Exit.void)
       })
+
+    const isReady = (watcher: Watcher): boolean =>
+      watcher.state._tag === 'Idle' &&
+      isRunningName(watcher.plugin) &&
+      watcher.keys.every((key) => {
+        const slot = slots.get(key)
+        return slot !== undefined && isRunningName(slot.owner)
+      })
+
+    const runWatcher = (watcher: Watcher): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const scope = yield* Scope.fork(watcher.parent)
+        const services = Object.fromEntries(watcher.keys.map((key) => [key, slots.get(key)?.value]))
+        const window: SetupWindow = { plugin: watcher.plugin, watcher, accepting: true }
+        const exit = yield* Effect.exit(
+          withinSetupWindow(
+            window,
+            Scope.provide(scope)(Effect.suspend(() => watcher.setup(services)))
+          )
+        )
+        if (Exit.isSuccess(exit)) {
+          watcher.state = WatcherState.Running({ scope })
+          yield* Effect.logInfo('Started a setup whose services are provided', {
+            plugin: watcher.plugin,
+            keys: watcher.keys
+          })
+          return
+        }
+        yield* Scope.close(scope, exit)
+        watcher.state = WatcherState.Failed()
+        yield* Effect.logError('A setup whose services are provided failed', {
+          plugin: watcher.plugin,
+          keys: watcher.keys,
+          cause: exit.cause
+        })
+      })
+
+    const runWatchers: Effect.Effect<boolean> = Effect.gen(function* () {
+      let ran = false
+      for (const watcher of [...watchers]) {
+        if (!watchers.has(watcher) || !isReady(watcher)) continue
+        yield* runWatcher(watcher)
+        ran = true
+      }
+      return ran
+    })
 
     const open = (name: string, entry: Entry<Context>): Effect.Effect<void, PluginLoadError> =>
       Effect.gen(function* () {
@@ -585,9 +803,8 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         const scope = yield* Scope.fork(parentScope)
         entry.leases = makeLeases()
         const exit = yield* Effect.exit(
-          withinTimeLimit(
-            name,
-            'setup',
+          withinSetupWindow(
+            { plugin: name, watcher: undefined, accepting: true },
             Scope.provide(scope)(Effect.suspend(() => setup.value(context)))
           )
         )
@@ -633,6 +850,14 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           yield* openOrFail(name, entry)
           if (entry.status._tag !== 'Waiting') progressed = true
         }
+      }
+    })
+
+    const settle = Effect.gen(function* () {
+      let ran = true
+      while (ran) {
+        yield* openWaiting
+        ran = yield* runWatchers
       }
     })
 
@@ -715,7 +940,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
             }
             yield* Effect.logWarning('Plugin failed to load', { plugin: name, message })
           }
-          yield* openWaiting
+          yield* settle
           return yield* infoOf(name, entry)
         }).pipe(Effect.tap(publishChanges))
       )

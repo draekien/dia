@@ -53,12 +53,35 @@ export class ServiceNotDeclaredError extends Data.TaggedError('ServiceNotDeclare
 }> {}
 
 /**
+ * Failure of `ctx.whenProvided` called by an adapter plugin, or outside the plugin's own setup and
+ * the `whenProvided` setups it registered. `message` names the plugin and the reason. Nothing is
+ * registered.
+ */
+export class WhenProvidedRefusedError extends Data.TaggedError('WhenProvidedRefusedError')<{
+  readonly plugin: string
+  readonly message: string
+}> {}
+
+/**
  * What every plugin context offers, on the host and in the renderer. `provide` publishes `value`
  * under `key` for the lifetime of the scope it runs in, and fails when another plugin provides
  * `key` or when a feature plugin provides a key reserved for adapter plugins. `inject` reads the
  * value for `key`, which must be listed in the plugin's manifest `inject`: it is empty when no
  * loaded plugin provides `key`, and fails with {@link ServiceNotDeclaredError} when the manifest
  * does not list `key`. The plugin is reopened whenever the provider of a listed key changes.
+ *
+ * `whenProvided(keys, setup)` runs part of a plugin only while every key in `keys` is provided,
+ * for a service the plugin can work without. Call it during the plugin's setup, or inside another
+ * `whenProvided` setup; a feature plugin only. It registers `setup` for the lifetime of the scope it
+ * is called in and returns at once. Once that setup has succeeded and every key is provided, the
+ * registry runs `setup` with each key's value under its own name, in a child scope that is closed
+ * before a provider of any key closes; `setup` runs again when every key is provided again.
+ * `provide`, `Effect.forkScoped` and a nested `whenProvided` inside `setup` end with that child
+ * scope. A `setup` that fails or runs past the setup time limit closes its child scope and is
+ * logged, the plugin stays loaded, and it runs again only after one of its keys is withdrawn and
+ * provided again. Inside `setup`, `provide` of a key already provided fails with
+ * {@link ServiceKeyTakenError}. The keys need no entry in the manifest's `inject`. Any other call
+ * fails with {@link WhenProvidedRefusedError}.
  */
 export interface PluginServices {
   readonly name: string
@@ -67,6 +90,14 @@ export interface PluginServices {
     value: unknown
   ) => Effect.Effect<void, ServiceKeyTakenError | ServiceKeyReservedError, Scope.Scope>
   readonly inject: (key: string) => Effect.Effect<Option.Option<unknown>, ServiceNotDeclaredError>
+  readonly whenProvided: <const Keys extends readonly [string, ...Array<string>]>(
+    keys: Keys,
+    setup: (
+      services: {
+        readonly [K in Keys[number]]: unknown
+      }
+    ) => Effect.Effect<void, unknown, Scope.Scope>
+  ) => Effect.Effect<void, WhenProvidedRefusedError, Scope.Scope>
 }
 
 /**

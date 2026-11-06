@@ -21,6 +21,7 @@ const makeFakeRegistry = Effect.gen(function* () {
   const services = (name: string): PluginServices => ({
     name,
     inject: registry.inject,
+    whenProvided: () => Effect.void,
     provide: (key, value) =>
       Effect.acquireRelease(
         Effect.sync(() => values.set(key, value)).pipe(
