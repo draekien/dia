@@ -10,6 +10,9 @@ export const WORKTREES_KEY = 'worktrees'
 /** Service key under which the `meta` plugin provides the Host's `MetaRepo`. */
 export const META_REPO_KEY = 'metaRepo'
 
+/** Service key under which the `org` plugin provides the Host's `Org`. */
+export const ORG_KEY = 'org'
+
 /**
  * Failure of `ctx.provide` when another loaded plugin already provides `key`. `owner` is the
  * name of that plugin. The plugin that hit it fails to load and keeps no registrations.
