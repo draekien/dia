@@ -66,7 +66,7 @@ export const secondLine = (
 
 /**
  * The words an overview row adds after the tab name for the tab's permission mode `mode`: the
- * mode's label for `bypassPermissions`, which skips every approval, and `null` for every other mode.
+ * mode's label for `bypassPermissions`, which runs tools without asking, and `null` for every other mode.
  */
 export const modeMarker = (mode: PermissionMode): string | null =>
   mode === 'bypassPermissions' ? permissionModeLabel(mode) : null
