@@ -64,6 +64,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0053](0053-router-role-as-the-users-assistant.md) | Take the user's requests in chat through a built-in `router` role that hands work to hired agents and never plans or does the work itself | accepted |
 | [0054](0054-permission-modes-for-hired-agents.md) | Run hired agents in `auto` where the model and settings allow it, otherwise in `default`, and in `bypassPermissions` only when the user opts a role or hire in | accepted |
 | [0055](0055-lease-a-feature-plugin-service-for-one-operation.md) | Lease a feature plugin's service for one operation, and close a plugin only after its leases end or 30 seconds pass | accepted |
+| [0056](0056-run-part-of-a-plugin-while-optional-services-are-provided.md) | Run part of a plugin while optional services are provided, with `ctx.whenProvided` | accepted |
 
 ## Adding a new ADR
 

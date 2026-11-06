@@ -23,7 +23,8 @@ const Body = () => null
 const ctx = (name: string) => ({
   name,
   provide: () => Effect.void,
-  inject: () => Effect.succeedNone
+  inject: () => Effect.succeedNone,
+  whenProvided: () => Effect.void
 })
 
 beforeEach(() => {

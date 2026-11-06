@@ -84,3 +84,4 @@ The kernel also gives each pane session an in-process MCP server (Agent SDK cust
 * Related: ADR-0020 (plugin source and loading), ADR-0021 (Host process), ADR-0022 (transport).
 * Amended by ADR-0029: the Agent SDK `query()` lifetime moves from the kernel into the `plugins/claude-code` adapter, which cannot be hot reloaded, and plugins are split into an `adapter` category and a `feature` category.
 * Amended by ADR-0055: closing a plugin first waits up to 30 seconds for the `registry.use` calls on its services, and host code keeps no feature plugin service object beyond one operation.
+* Amended by ADR-0056: `ctx.whenProvided(keys, setup)` runs part of a plugin in a child scope while optional service keys are provided, and closing a provider closes those child scopes first.
