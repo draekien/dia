@@ -10,8 +10,22 @@ import {
   Todo,
   ToolUse
 } from '@shared/domain/agent-summary'
+import { PermissionMode } from '@shared/domain/pane'
 import { describe, expect, it } from 'vitest'
-import { secondLine } from './agent-row'
+import { modeMarker, secondLine } from './agent-row'
+
+describe('modeMarker', () => {
+  it('marks a tab in bypassPermissions as Full access', () => {
+    expect(modeMarker('bypassPermissions')).toBe('Full access')
+  })
+
+  it.each(PermissionMode.literals.filter((mode) => mode !== 'bypassPermissions'))(
+    'adds no marker for %s',
+    (mode) => {
+      expect(modeMarker(mode)).toBeNull()
+    }
+  )
+})
 
 const summary = (status: AgentStatus, activity: Activity) => ({
   paneId: '00000000-0000-4000-8000-000000000101',

@@ -9,6 +9,7 @@ import {
   ContextMenuTrigger,
   cn,
   formatResetTime,
+  permissionModeLabel,
   SidebarMenuButton,
   SidebarMenuItem,
   StatusIndicator,
@@ -17,6 +18,7 @@ import {
   useSidebar
 } from '@dia/renderer-plugin'
 import type { AgentSummary } from '@shared/domain/agent-summary'
+import type { PermissionMode } from '@shared/domain/pane'
 import { AgentName } from '@shared/domain/project'
 import { Option, Schema } from 'effect'
 import { useState } from 'react'
@@ -61,6 +63,13 @@ export const secondLine = (
       return { text: 'No activity yet', mono: false }
   }
 }
+
+/**
+ * The words an overview row adds after the tab name for the tab's permission mode `mode`: the
+ * mode's label for `bypassPermissions`, which runs tools without asking, and `null` for every other mode.
+ */
+export const modeMarker = (mode: PermissionMode): string | null =>
+  mode === 'bypassPermissions' ? permissionModeLabel(mode) : null
 
 function RenameField({ row, onDone }: { readonly row: OverviewRow; readonly onDone: () => void }) {
   const [value, setValue] = useState<string>(row.name)
@@ -141,8 +150,10 @@ export function AgentRow({
   const collapsed = useSidebar().state === 'collapsed'
   const line = secondLine(row.summary)
   const status = statusLabel(row.summary.status)
-  const label = `${row.name}, ${status}. ${line.text}`
-  const summaryText = `${projectName} / ${row.name} · ${status} · ${line.text}`
+  const marker = modeMarker(row.permissionMode)
+  const markerSuffix = marker === null ? '' : ` · ${marker}`
+  const label = `${row.name}, ${status}. ${line.text}${markerSuffix}`
+  const summaryText = `${projectName} / ${row.name} · ${status} · ${line.text}${markerSuffix}`
   const body = (name: React.ReactNode) => (
     <>
       <StatusIndicator status={row.summary.status} />
@@ -192,7 +203,14 @@ export function AgentRow({
               }}
               className={buttonClass}
             >
-              {body(<span className="truncate text-sm text-ink">{row.name}</span>)}
+              {body(
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-sm text-ink">{row.name}</span>
+                  {marker !== null && (
+                    <span className="ml-auto shrink-0 text-xs font-medium text-ink">{marker}</span>
+                  )}
+                </span>
+              )}
             </SidebarMenuButton>
           }
         />

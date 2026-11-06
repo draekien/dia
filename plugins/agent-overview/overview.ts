@@ -5,7 +5,7 @@ import {
   NoActivity,
   statusRank
 } from '@shared/domain/agent-summary'
-import type { PaneId } from '@shared/domain/pane'
+import { type PaneId, PermissionMode } from '@shared/domain/pane'
 import { AgentName, Project, ProjectId, type Workspace } from '@shared/domain/project'
 import { Uuid } from '@shared/domain/uuid'
 import { Schema } from 'effect'
@@ -51,11 +51,12 @@ export const NO_FILTERS: OverviewFilters = OverviewFilters.make({
 export const filtersApply = (filters: OverviewFilters): boolean =>
   filters.query.trim() !== '' || filters.statuses.length > 0
 
-/** One agent row: its tab's pane id and name, and its current summary. */
+/** One agent row: its tab's pane id, name and current permission mode, and its current summary. */
 export const OverviewRow = Schema.Struct({
   paneId: Uuid,
   name: AgentName,
-  summary: AgentSummary
+  summary: AgentSummary,
+  permissionMode: PermissionMode
 })
 export type OverviewRow = typeof OverviewRow.Type
 
@@ -114,7 +115,8 @@ export const buildOverview = (
         paneId: tab.config.paneId,
         name: tab.name,
         summary:
-          summaries.get(tab.config.paneId) ?? idleSummary(tab.config.paneId, NoActivity.make({}))
+          summaries.get(tab.config.paneId) ?? idleSummary(tab.config.paneId, NoActivity.make({})),
+        permissionMode: tab.config.permissionMode
       })
     const matches = (row: OverviewRow): boolean =>
       (projectMatches || contains(row.name, query)) &&

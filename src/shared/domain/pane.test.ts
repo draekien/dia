@@ -1,6 +1,24 @@
 import { Result, Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
-import { PaneConfig, PaneRecord, type WorktreeInfo } from './pane'
+import {
+  PaneConfig,
+  PaneRecord,
+  PermissionMode,
+  StartupPermissionMode,
+  type WorktreeInfo
+} from './pane'
+
+describe('bypassPermissions', () => {
+  it('is a permission mode a live pane can switch into', () => {
+    expect(Schema.decodeUnknownSync(PermissionMode)('bypassPermissions')).toBe('bypassPermissions')
+  })
+
+  it('is a permission mode a pane can be created in', () => {
+    expect(Schema.decodeUnknownSync(StartupPermissionMode)('bypassPermissions')).toBe(
+      'bypassPermissions'
+    )
+  })
+})
 
 describe('PaneConfig', () => {
   it('round-trips through encode/decode', () => {
