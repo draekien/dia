@@ -513,7 +513,13 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
               Fiber.await(grant.fiber).pipe(Effect.asSome),
               Deferred.await(grant.leases.withdrawn).pipe(Effect.as(Option.none<Exit.Exit<A, E>>()))
             )
-            if (Option.isSome(finished)) return Option.some(yield* finished.value)
+            const withdrawnMeanwhile =
+              Option.isSome(finished) &&
+              Exit.hasInterrupts(finished.value) &&
+              Deferred.isDoneUnsafe(grant.leases.withdrawn)
+            if (Option.isSome(finished) && !withdrawnMeanwhile) {
+              return Option.some(yield* finished.value)
+            }
             yield* Effect.logWarning('A call using the service ended because its plugin closed', {
               key,
               plugin: grant.plugin
@@ -531,7 +537,9 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
                 if (grant.leases.closing && grant.leases.active.size === 0) {
                   yield* Deferred.succeed(grant.leases.drained, undefined)
                 }
-                yield* Effect.forkDetach(Fiber.interrupt(grant.fiber))
+                if (grant.fiber.pollUnsafe() === undefined) {
+                  yield* Effect.forkDetach(Fiber.interrupt(grant.fiber))
+                }
               })
             : Effect.void
       )
