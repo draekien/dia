@@ -8,6 +8,7 @@ import {
   StatusNeedsInput,
   StatusWorking
 } from '@shared/domain/agent-summary'
+import type { PermissionMode } from '@shared/domain/pane'
 import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
 import { describe, expect, it } from 'vitest'
 import {
@@ -23,14 +24,19 @@ import {
 const projectId = (n: number) => ProjectId.make(`00000000-0000-4000-8000-00000000000${n}`)
 const paneId = (n: number) => `00000000-0000-4000-8000-0000000001${String(n).padStart(2, '0')}`
 
-const tab = (n: number, name: string, archived = false): Tab => ({
+const tab = (
+  n: number,
+  name: string,
+  archived = false,
+  permissionMode: PermissionMode = 'default'
+): Tab => ({
   name: AgentName.make(name),
   config: {
     paneId: paneId(n),
     cwd: '/repo',
     model: 'm',
     thinkingLevel: 'adaptive',
-    permissionMode: 'default'
+    permissionMode
   },
   archived
 })
@@ -64,6 +70,22 @@ const names = (workspace: Workspace, map: Map<string, AgentSummary>, filters = N
 const filters = (patch: Partial<OverviewFilters>): OverviewFilters => ({ ...NO_FILTERS, ...patch })
 
 describe('buildOverview', () => {
+  it('gives each row its tab’s current permission mode', () => {
+    const workspace: Workspace = {
+      projects: [
+        project(1, 'dia', [tab(1, 'fix-readme', false, 'bypassPermissions'), tab(2, 'notes')])
+      ],
+      visibleTab: null
+    }
+
+    const [group] = buildOverview(workspace, summaries(), NO_FILTERS)
+
+    expect(group?.rows.map((row) => [row.name, row.permissionMode])).toEqual([
+      ['fix-readme', 'bypassPermissions'],
+      ['notes', 'default']
+    ])
+  })
+
   const workspace: Workspace = {
     projects: [
       project(1, 'dia', [
