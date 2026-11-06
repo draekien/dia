@@ -13,7 +13,7 @@ const instructions = (body: string): string => `${body}\n\n${EXECUTION_CONTRACT}
  * A built-in role as the `2_seed_org` migration inserts it: its fixed `id`, which is the same on
  * every install, its `kind` (also its name), its `instructions` and its `deny` rules.
  */
-export interface BuiltInRoleSeed {
+interface BuiltInRoleSeed {
   readonly id: string
   readonly kind: BuiltInRole
   readonly instructions: string

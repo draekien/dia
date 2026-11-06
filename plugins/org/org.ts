@@ -51,8 +51,10 @@ const toRole = (row: typeof RoleRow.Type): Role => ({
   bypassOptIn: row.bypass_opt_in
 })
 
+const encodeRoleRow = Schema.encodeSync(RoleRow)
+
 const toRoleRow = (role: Role) =>
-  Schema.encodeSync(RoleRow)({
+  encodeRoleRow({
     role_id: role.id,
     name: role.name,
     built_in: role.builtIn,
@@ -72,10 +74,25 @@ const toHiredAgent = (row: typeof HireRow.Type): HiredAgent => ({
   hiredAt: row.hired_at
 })
 
-const decodeRows = <S extends Schema.Top & { readonly DecodingServices: never }>(
-  schema: S,
-  rows: ReadonlyArray<unknown>
-) => Schema.decodeUnknownEffect(Schema.Array(schema))(rows).pipe(Effect.orDie)
+const encodeHireRow = Schema.encodeSync(HireRow)
+
+const toHireRow = (agent: HiredAgent) =>
+  encodeHireRow({
+    hire_id: agent.id,
+    role_id: agent.roleId,
+    name: agent.name,
+    bypass_override: agent.bypassOverride,
+    hired_at: agent.hiredAt
+  })
+
+const rowsDecoder =
+  <S extends Schema.Top & { readonly DecodingServices: never }>(schema: S) =>
+  (rows: ReadonlyArray<unknown>) =>
+    Schema.decodeUnknownEffect(Schema.Array(schema))(rows).pipe(Effect.orDie)
+
+const decodeRoleRows = rowsDecoder(RoleRow)
+const decodeHireRows = rowsDecoder(HireRow)
+const decodeSettingsRows = rowsDecoder(SettingsRow)
 
 /**
  * Builds the {@link Org} over the `org` plugin's database, which `orgMigrations` must already have
@@ -92,12 +109,12 @@ export const makeOrg = Effect.gen(function* () {
 
   const readRoles = Effect.gen(function* () {
     const rows = yield* sql`SELECT * FROM roles ORDER BY rowid`
-    return (yield* decodeRows(RoleRow, rows)).map(toRole)
+    return (yield* decodeRoleRows(rows)).map(toRole)
   })
 
   const findRole = Effect.fnUntraced(function* (roleId: RoleId) {
     const rows = yield* sql`SELECT * FROM roles WHERE role_id = ${roleId}`
-    const [row] = yield* decodeRows(RoleRow, rows)
+    const [row] = yield* decodeRoleRows(rows)
     if (row === undefined) {
       return yield* RoleNotFound.make({ roleId })
     }
@@ -120,12 +137,12 @@ export const makeOrg = Effect.gen(function* () {
 
   const hiredAgents = Effect.gen(function* () {
     const rows = yield* sql`SELECT * FROM hired_agents ORDER BY hired_at, rowid`
-    return (yield* decodeRows(HireRow, rows)).map(toHiredAgent)
+    return (yield* decodeHireRows(rows)).map(toHiredAgent)
   }).pipe(Effect.catchTag('SqlError', Effect.die))
 
   const settings = Effect.gen(function* () {
     const rows = yield* sql`SELECT overall_cap FROM org_settings`
-    const [row] = yield* decodeRows(SettingsRow, rows)
+    const [row] = yield* decodeSettingsRows(rows)
     if (row === undefined) {
       return yield* Effect.die('The org_settings row is missing')
     }
@@ -217,15 +234,7 @@ export const makeOrg = Effect.gen(function* () {
           }
         }
         const agent = HiredAgent.make({ id, roleId, name, bypassOverride: null, hiredAt })
-        yield* sql`INSERT INTO hired_agents ${sql.insert(
-          Schema.encodeSync(HireRow)({
-            hire_id: id,
-            role_id: roleId,
-            name,
-            bypass_override: null,
-            hired_at: hiredAt
-          })
-        )}`
+        yield* sql`INSERT INTO hired_agents ${sql.insert(toHireRow(agent))}`
         return agent
       })
     )
@@ -234,15 +243,13 @@ export const makeOrg = Effect.gen(function* () {
   })
 
   const dismiss = Effect.fn('Org.dismiss')(function* (hireId: HireId) {
-    yield* transaction(
-      Effect.gen(function* () {
-        const rows = yield* sql`SELECT 1 FROM hired_agents WHERE hire_id = ${hireId}`
-        if (rows.length === 0) {
-          return yield* HireNotFound.make({ hireId })
-        }
-        yield* sql`DELETE FROM hired_agents WHERE hire_id = ${hireId}`
-      })
-    )
+    const deleted =
+      yield* sql`DELETE FROM hired_agents WHERE hire_id = ${hireId} RETURNING hire_id`.pipe(
+        Effect.catchTag('SqlError', Effect.die)
+      )
+    if (deleted.length === 0) {
+      return yield* HireNotFound.make({ hireId })
+    }
     yield* Effect.logInfo('Dismissed agent', { hireId })
   })
 
@@ -254,7 +261,7 @@ export const makeOrg = Effect.gen(function* () {
     return OrgSettings.make({ overallCap: cap })
   })
 
-  const org: Org = {
+  return {
     roles,
     hiredAgents,
     settings,
@@ -265,6 +272,5 @@ export const makeOrg = Effect.gen(function* () {
     hire,
     dismiss,
     setOverallCap
-  }
-  return org
+  } satisfies Org
 })
