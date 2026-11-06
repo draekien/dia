@@ -356,25 +356,48 @@ describe('plugin registry', () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect('sends dependants back to Waiting when their provider unloads', () =>
+  it.effect(
+    'sends dependants back to Waiting when their provider unloads and reopens them when it loads',
+    () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry({
+          provider: plugin(manifest('provider'), (ctx) => ctx.provide('db', 1)),
+          consumer: plugin(manifest('consumer', { inject: ['db'] }), recording('consumer', []))
+        })
+        yield* registry.load('provider')
+        yield* registry.load('consumer')
+
+        yield* registry.unload('provider')
+
+        const infos = yield* registry.list()
+        assert.deepStrictEqual(
+          infos.map((info) => [info.name, info.status._tag]),
+          [
+            ['consumer', 'Waiting'],
+            ['provider', 'Unloaded']
+          ]
+        )
+        yield* registry.load('provider')
+        assert.strictEqual(yield* statusOf(registry, 'consumer'), 'Loaded')
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect('fails a plugin whose setup reads a service it does not declare in inject', () =>
     Effect.gen(function* () {
       const registry = yield* makeRegistry({
-        provider: plugin(manifest('provider'), (ctx) => ctx.provide('db', 1)),
-        consumer: plugin(manifest('consumer', { inject: ['db'] }), recording('consumer', []))
+        provider: plugin(manifest('provider'), (ctx) => ctx.provide('db', 'connection')),
+        consumer: plugin(manifest('consumer'), (ctx) => ctx.inject('db'))
       })
       yield* registry.load('provider')
-      yield* registry.load('consumer')
 
-      yield* registry.unload('provider')
+      const consumer = yield* registry.load('consumer')
 
-      const infos = yield* registry.list()
-      assert.deepStrictEqual(
-        infos.map((info) => [info.name, info.status._tag]),
-        [
-          ['consumer', 'Waiting'],
-          ['provider', 'Unloaded']
-        ]
-      )
+      assert.deepStrictEqual(consumer.status, {
+        _tag: 'Failed',
+        message:
+          'Plugin "consumer" reads "db" without declaring it; add "db" to "inject" in its plugin.json'
+      })
+      assert.strictEqual(yield* statusOf(registry, 'provider'), 'Loaded')
     }).pipe(Effect.scoped)
   )
 
@@ -989,6 +1012,23 @@ describe('plugin registry', () => {
       assert.deepStrictEqual(allowed.status, { _tag: 'Unloaded' })
       assert.deepStrictEqual(log, ['agent:open', 'alpha:open', 'alpha:close'])
       assert.deepStrictEqual(yield* registry.inject(BACKEND_KEY), Option.some('agent'))
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('fails an adapter whose setup reads a service, since it cannot declare inject', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        agent: plugin(adapterManifest('agent'), (ctx) =>
+          ctx.inject('db').pipe(Effect.andThen(ctx.provide(BACKEND_KEY, 'agent')))
+        )
+      })
+
+      const agent = yield* registry.load('agent')
+
+      assert.deepStrictEqual(agent.status, {
+        _tag: 'Failed',
+        message: 'Adapter plugin "agent" reads "db", but an adapter cannot declare "inject"'
+      })
     }).pipe(Effect.scoped)
   )
 
