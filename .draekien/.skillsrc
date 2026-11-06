@@ -2,5 +2,9 @@
   "module-design": {
     "specsDir": "docs/designs",
     "subagentModel": "sonnet"
+  },
+  "todo": {
+    "backend": "github",
+    "githubLabels": "todo"
   }
 }
