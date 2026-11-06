@@ -1015,6 +1015,23 @@ describe('plugin registry', () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect('fails an adapter whose setup reads a service, since it cannot declare inject', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        agent: plugin(adapterManifest('agent'), (ctx) =>
+          ctx.inject('db').pipe(Effect.andThen(ctx.provide(BACKEND_KEY, 'agent')))
+        )
+      })
+
+      const agent = yield* registry.load('agent')
+
+      assert.deepStrictEqual(agent.status, {
+        _tag: 'Failed',
+        message: 'Adapter plugin "agent" reads "db", but an adapter cannot declare "inject"'
+      })
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('refuses to unload an adapter that has not loaded yet', () =>
     Effect.gen(function* () {
       const registry = yield* makeRegistry({

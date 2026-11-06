@@ -365,7 +365,10 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
               })
               return yield* new ServiceNotDeclaredError({
                 key,
-                message: `Plugin "${name}" reads "${key}" without declaring it; add "${key}" to "inject" in its plugin.json`
+                message:
+                  entry.category === 'adapter'
+                    ? `Adapter plugin "${name}" reads "${key}", but an adapter cannot declare "inject"`
+                    : `Plugin "${name}" reads "${key}" without declaring it; add "${key}" to "inject" in its plugin.json`
               })
             })
     })

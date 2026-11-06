@@ -34,8 +34,9 @@ export class ServiceKeyReservedError extends Data.TaggedError('ServiceKeyReserve
 
 /**
  * Failure of `ctx.inject` for a service key that the plugin's manifest does not list in `inject`.
- * `message` names the plugin and the key and says to add the key to `inject` in `plugin.json`. A
- * plugin whose setup hits it fails to load.
+ * `message` names the plugin and the key and says to add the key to `inject` in `plugin.json`, or,
+ * for an adapter plugin, that an adapter cannot declare `inject`. A plugin whose setup hits it
+ * fails to load.
  */
 export class ServiceNotDeclaredError extends Data.TaggedError('ServiceNotDeclaredError')<{
   readonly key: string
