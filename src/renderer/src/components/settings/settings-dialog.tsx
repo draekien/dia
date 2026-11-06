@@ -140,7 +140,7 @@ export function SettingsDialog() {
                 </BreadcrumbList>
               </Breadcrumb>
             </header>
-            <div className="min-h-0 flex-1 overflow-auto">
+            <div className="relative min-h-0 flex-1 overflow-auto">
               {location.page === 'general' ? <GeneralSettings /> : null}
               {location.page === 'adapters' ? (
                 <AdapterSettings
