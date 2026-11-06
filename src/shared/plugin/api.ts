@@ -33,11 +33,22 @@ export class ServiceKeyReservedError extends Data.TaggedError('ServiceKeyReserve
 }> {}
 
 /**
+ * Failure of `ctx.inject` for a service key that the plugin's manifest does not list in `inject`.
+ * `message` names the plugin and the key and says to add the key to `inject` in `plugin.json`. A
+ * plugin whose setup hits it fails to load.
+ */
+export class ServiceNotDeclaredError extends Data.TaggedError('ServiceNotDeclaredError')<{
+  readonly key: string
+  readonly message: string
+}> {}
+
+/**
  * What every plugin context offers, on the host and in the renderer. `provide` publishes `value`
  * under `key` for the lifetime of the scope it runs in, and fails when another plugin provides
- * `key` or when a feature plugin provides a key reserved for adapter plugins; `inject` reads the value for `key` and is empty when no loaded plugin provides it. A
- * plugin that lists a key in its manifest `inject` is reopened whenever that key's provider
- * changes.
+ * `key` or when a feature plugin provides a key reserved for adapter plugins. `inject` reads the
+ * value for `key`, which must be listed in the plugin's manifest `inject`: it is empty when no
+ * loaded plugin provides `key`, and fails with {@link ServiceNotDeclaredError} when the manifest
+ * does not list `key`. The plugin is reopened whenever the provider of a listed key changes.
  */
 export interface PluginServices {
   readonly name: string
@@ -45,7 +56,7 @@ export interface PluginServices {
     key: string,
     value: unknown
   ) => Effect.Effect<void, ServiceKeyTakenError | ServiceKeyReservedError, Scope.Scope>
-  readonly inject: (key: string) => Effect.Effect<Option.Option<unknown>>
+  readonly inject: (key: string) => Effect.Effect<Option.Option<unknown>, ServiceNotDeclaredError>
 }
 
 /**

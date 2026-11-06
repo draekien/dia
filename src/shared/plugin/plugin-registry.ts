@@ -14,7 +14,7 @@ import {
   Stream
 } from 'effect'
 import type { PluginServices, PluginSetup } from './api'
-import { ServiceKeyReservedError, ServiceKeyTakenError } from './api'
+import { ServiceKeyReservedError, ServiceKeyTakenError, ServiceNotDeclaredError } from './api'
 import {
   formatMegabytes,
   isApiCompatible,
@@ -355,7 +355,19 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
               }).pipe(Effect.andThen(PubSub.publish(providedKeys, key)))
           )
         }),
-      inject
+      inject: (key) =>
+        injectedKeys(entry).includes(key)
+          ? inject(key)
+          : Effect.gen(function* () {
+              yield* Effect.logError('A plugin read a service it does not declare', {
+                plugin: name,
+                key
+              })
+              return yield* new ServiceNotDeclaredError({
+                key,
+                message: `Plugin "${name}" reads "${key}" without declaring it; add "${key}" to "inject" in its plugin.json`
+              })
+            })
     })
 
     const providedBy = (entry: Entry<Context>, key: string): Option.Option<unknown> =>
