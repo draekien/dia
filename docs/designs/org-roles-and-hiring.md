@@ -75,7 +75,7 @@ export const OrgSettings = Schema.Struct({ overallCap: OverallCap })
 
 Each schema is followed by `export type X = typeof X.Type`.
 
-Errors, each `class X extends Schema.TaggedError<X>()('X', { ... })` (the form `ActivityNotFound` uses in `src/shared/domain/background-activity.ts`) with a JSDoc line naming when it fails, so #178 can send them over RPC: `RoleNotFound { roleId }`, `RoleNameTaken { name }`, `BuiltInRoleRenamed { roleId }`, `BuiltInRoleDeleted { roleId }`, `RoleHasHires { roleId, hires: Schema.Int }`, `RoleDisabled { roleId }`, `HireNotFound { hireId }`, `HireNameTaken { name }`.
+Errors, each `class X extends Schema.TaggedError<X>()('X', { ... })` (the form `ActivityNotFound` uses in `src/shared/domain/background-activity.ts`) with a JSDoc line naming when it fails, so #178 can send them over RPC: `RoleNotFound { roleId }`, `RoleNameTaken { roleName }`, `BuiltInRoleRenamed { roleId }`, `BuiltInRoleDeleted { roleId }`, `RoleHasHires { roleId, hires: Schema.Int }`, `RoleDisabled { roleId }`, `HireNotFound { hireId }`, `HireNameTaken { agentName }` (not `name`, which would shadow `Error.name`).
 
 ### `src/host/services/org-seam.ts` (exported from `@dia/plugin`)
 

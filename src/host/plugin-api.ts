@@ -28,11 +28,29 @@ export {
   ModelsReady,
   ModelsUnavailable
 } from '../shared/domain/model'
+export {
+  BuiltInRoleDeleted,
+  BuiltInRoleRenamed,
+  HiredAgent,
+  HireId,
+  HireNameTaken,
+  HireNotFound,
+  OrgSettings,
+  OverallCap,
+  Role,
+  RoleDisabled,
+  RoleHasHires,
+  RoleId,
+  RoleName,
+  RoleNameTaken,
+  RoleNotFound
+} from '../shared/domain/org'
 export { SessionId } from '../shared/domain/pane'
 export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
 export type { RoleSessionOptions } from '../shared/domain/role-session'
 export * from '../shared/plugin/api'
 export type { MetaRepo } from './services/meta-repo-seam'
+export type { Org } from './services/org-seam'
 export {
   type GitOps,
   type IncludedFileFailure,
