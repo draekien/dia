@@ -1,52 +1,38 @@
 # Org screens (#178)
 
-Scope: module. Adds the org's two screens: an **Org** page in the sidebar (roles and hired agents) and an **Org** page in the Settings dialog (the overall cap). To do that it adds a kernel extension point, `addSettingsPage`; two `Org` operations, `renameHire` and `setBypassOverride`; a renderer entry for `plugins/org`; and the org calls its host entry serves. Out of scope: objectives, tasks and the scheduler (#179 and later), a structured MCP server form (#197), model choice per role.
+Scope: module. Adds the org's two screens: an **Org** page in the sidebar (roles and hired agents) and an **Org** page in the Settings dialog (the overall cap). To do that it adds two `Org` operations, `renameHire` and `setBypassOverride`; the org calls its host entry serves; and a renderer entry for `plugins/org` that adds a page to `PagesSlot` (ADR-0061), a page to `SettingsPagesSlot` and a search-only palette command (ADR-0063). The kernel does not change. Out of scope: objectives, tasks and the scheduler (#179 and later), a structured MCP server form (#197), model choice per role.
 
 Decisions taken with the user in Understand (2026-11-07): the overall cap lives on a plugin Settings page (option C), built in this PR; bypass controls are hidden when managed or user Claude Code settings disable `bypassPermissions` (option A); MCP servers are edited as JSON (option A, #197 for a form); copied roles can be deleted.
 
 ## Interface
 
-### Kernel: `src/renderer/src/lib/settings-pages.ts` (exported from `@dia/renderer-plugin`)
+### Settings page and palette command (ADR-0063)
+
+The renderer entry adds the Org Settings page and its palette command the way `plugins/meta/renderer.ts` adds Meta repo:
 
 ```ts
-/** A page a plugin adds to the Settings dialog with {@link addSettingsPage}. */
-export interface SettingsPage {
-  /** Unique within the plugin, for example `org`. */
-  readonly id: string
-  /** The nav entry's text and the last breadcrumb item, for example `Org`. */
-  readonly label: string
-  /** The nav entry's icon. */
-  readonly icon: ComponentType<{ readonly className?: string }>
-  /** Sort position after the built-in pages; lower first. Ties keep the order pages were added. */
-  readonly order: number
-  /** Renders the page body; the dialog draws the nav and breadcrumb. */
-  readonly component: ComponentType
-}
-
-/** A {@link SettingsPage} with the plugin name and id that identify it. */
-export interface RegisteredSettingsPage extends SettingsPage {
-  readonly key: PageKey
-}
-
-/**
- * Adds `page` to the Settings dialog's nav, after Meta repo, for as long as the plugin's scope is
- * open. Its key is the plugin's name and `page.id`; adding a key again replaces the earlier entry.
- * When the scope closes the page is removed, and a dialog showing it shows General. Call it from a
- * renderer plugin's setup.
- */
-export const addSettingsPage: (ctx: PluginServices, page: SettingsPage) => Effect<void, never, Scope>
-
-/** Every Settings page plugins added, sorted by `order`. Re-renders when one is added or removed. */
-export function useSettingsPages(): ReadonlyArray<RegisteredSettingsPage>
+yield* addEntry(ctx, SettingsPagesSlot, {
+  id: 'org',
+  order: 50,
+  label: 'Org',
+  icon: UsersIcon,
+  component: OrgSettingsPage
+})
+yield* addEntry(ctx, CommandsSlot, {
+  id: 'org-settings',
+  order: 150,
+  group: 'Settings pages',
+  label: 'Settings › Org',
+  icon: SettingsIcon,
+  keywords: ['org', 'cap', 'hired agents', 'running at once'],
+  searchOnly: true,
+  run: () => openSettings({ plugin: 'org', id: 'org' })
+})
 ```
 
-`SettingsLocation` (`components/settings/open-settings.ts`) gains `{ readonly page: 'plugin'; readonly key: PageKey }`, so `openSettings({ page: 'plugin', key: { plugin: 'org', id: 'org' } })` opens it.
+Order 50 places Org after Meta repo (40). `OrgSettingsPage` takes `SettingsPageProps` and has no sections, so it ignores them. The Settings dialog draws the nav entry and breadcrumb, removes the page when the org plugin unloads, and shows `PluginFailed` if the page throws.
 
-`SettingsDialog` renders the built-in `NAV_ITEMS`, then `useSettingsPages()` in the same `SidebarMenu`. The dialog computes `shown` from `location` and `useSettingsPages()`: a `plugin` location whose key no registered page has is shown as General, so a removed page needs no listener. The nav highlight (`isActive`), the breadcrumb and the page body all read `shown`; a plugin page's breadcrumb label is its registered `label`, so the breadcrumb is `Settings › <label>`. Breadcrumb items are keyed by index, so a plugin label equal to `Settings` does not collide. `NavItem.page` becomes `Exclude<SettingsLocation['page'], 'plugin'>`. `CommandPalette` appends one link per registered page, `Settings › <label>`, to `SETTINGS_PAGE_LINKS`, with the label as its only keyword.
-
-`settings-pages.ts` repeats `addPage`'s acquire and release (`lib/pages.ts`): adding replaces an entry with the same key and sorts by `order`; release removes that exact entry by identity, so a reload that added the key again keeps the new entry. A shared helper waits for a third list. `addSettingsPage` logs `Effect.logDebug('Added a settings page' / 'Removed a settings page', { plugin, id })`, as `addPage` does (`pages.ts:56`, `:75`). `PageKey`'s JSDoc (`lib/view.ts`) names both `addPage` and `addSettingsPage`. Every new export carries JSDoc.
-
-### Org service: `src/host/services/org-seam.ts`
+### Org service: `plugins/org/service.ts`
 
 ```ts
 /** Renames hired agent `hireId` to `name`, or clears its name when null. */
@@ -55,9 +41,9 @@ readonly renameHire: (hireId: HireId, name: AgentName | null) => Effect<HiredAge
 readonly setBypassOverride: (hireId: HireId, override: boolean | null) => Effect<HiredAgent, HireNotFound>
 ```
 
-Both run in one transaction in `plugins/org/org.ts`, as the other changes do: `renameHire` checks the name is free among other hires ignoring ASCII case (the same check as `hire`, excluding `hireId`), then writes. Each logs `Effect.logInfo` with the hire id. The `Org` interface's JSDoc (`org-seam.ts:20-30`) gains a sentence for each.
+Both run in one transaction in `plugins/org/org.ts`, as the other changes do: `renameHire` checks the name is free among other hires ignoring ASCII case (the same check as `hire`, excluding `hireId`), then writes. Each logs `Effect.logInfo` with the hire id. The `Org` interface's JSDoc (`plugins/org/service.ts`) gains a sentence for each.
 
-### Org calls: `src/shared/domain/org-calls.ts`
+### Org calls: `plugins/org/calls.ts`
 
 Declared with `Rpc.make` (ADR-0057), each with a struct payload and a JSDoc line. No payload field is named `plugin`, `tag` or `payload` (the `CallPlugin` wrapper's fields, root `CLAUDE.md`).
 
@@ -90,24 +76,24 @@ export const OrgSnapshot = Schema.Struct({
 })
 ```
 
-`src/host/plugin-api.ts` re-exports every call and `OrgSnapshot`, so `plugins/org/host.ts` imports them from `@dia/plugin`; `plugins/org/renderer.ts` imports them from `@shared/domain/org-calls`, as renderer plugins import other shared schemas (`plugins/agent-overview/overview.ts:7-10`).
+`plugins/org/plugin.json` lists `calls.ts` in `exports` (ADR-0059), and `tsconfig.plugin-exports.json` and `tsconfig.web.json` include it. `calls.ts` imports the org schemas from `./domain` and `AgentName` from `@dia/plugin`. `host.ts` and the renderer files import the calls from `./calls`.
 
 ### `plugins/org`
 
 | File | Change |
 | --- | --- |
-| `plugin.json` | `"renderer": "renderer.ts"`, `"load": "eager"`, `api` bumped. No `inject`: an `inject` key without a provider puts the plugin in `Waiting` (`plugin-registry.ts:786-790`), and the renderer registry reads the same manifest with no provider of `agentBackend` |
-| `host.ts` | after providing `ORG_KEY`, `ctx.serve` each call. `ReadOrg` reads `roles`, `hiredAgents`, `settings` and `bypassAvailable`; these are separate reads, not one transaction, so a change landing between them shows after the next refresh, which every change triggers. A `Ref<Option<AgentBackend>>` is set and cleared by `ctx.whenProvided([AGENT_BACKEND_KEY], ({ agentBackend }) => Effect.acquireRelease(Ref.set(ref, Option.some(agentBackend as AgentBackend)), () => Ref.set(ref, Option.none())))` (ADR-0056); the cast is safe because `adapterContract` refuses an invalid backend (`agent-backend.ts:343-349`) |
+| `plugin.json` | `"renderer": "renderer.ts"`, `"load": "eager"`, `calls.ts` added to `exports`; `api` stays `0.0.27`. No `inject`: an `inject` key without a provider puts the plugin in `Waiting` (`plugin-registry.ts:786-790`), and the renderer registry reads the same manifest with no provider of `agentBackend` |
+| `host.ts` | after providing `OrgService`, `ctx.serve` each call. `ReadOrg` reads `roles`, `hiredAgents`, `settings` and `bypassAvailable`; these are separate reads, not one transaction, so a change landing between them shows after the next refresh, which every change triggers. A `Ref<Option<AgentBackend>>` is set and cleared by `ctx.whenProvided([AgentBackendKey], ({ agentBackend }) => Effect.acquireRelease(Ref.set(ref, Option.some(agentBackend)), () => Ref.set(ref, Option.none())))` (ADR-0056); `AgentBackendKey` types `agentBackend` as `AgentBackend` |
 | `bypass.ts` | `bypassAvailable(ref)`: while the ref is empty it returns `false` and logs at debug level (no session can start without a backend; the controls appear on the next read after a backend is provided); otherwise `!(yield* backend.disabledPermissionModes(homedir())).includes('bypassPermissions')`. `homedir` is imported from `node:os` with `// @effect-diagnostics-next-line nodeBuiltinImport:off -- <reason>`, as `plugins/claude-code/attachments.ts:1` does. The claude-code backend calls `resolveSettings({ cwd })` with every source (`permission-settings.ts:50`); `cwd` only locates project and local settings, and managed and user settings are always read (`sdk.d.ts:3403-3412`, SDK 0.3.311). At the home directory the project file `~/.claude/settings.json` is the user settings file; other directories' project and local settings are not read, which ADR-0054's per-session check covers |
-| `renderer.ts` | `addPage(ctx, { id: 'org', label: 'Org', icon: UsersIcon, order: 10, component })` and `addSettingsPage(ctx, { id: 'org', label: 'Org', icon: UsersIcon, order: 10, component })`; one `orgAtom = Atom.make(callHost(ctx, ReadOrg, {}))` shared by both pages |
+| `renderer.ts` | `addEntry(ctx, PagesSlot, { id: 'org', order: 10, label: 'Org', icon: UsersIcon, component })`, the Settings page and the palette command above; one `orgAtom = Atom.make(callHost(ctx, ReadOrg, {}))` shared by both pages |
 | `org-page.tsx` | roles and hired agents, the retro warning |
 | `role-editor.tsx` | the role edit form |
 | `org-settings-page.tsx` | the overall cap |
 | `mcp-json.ts` | turns the MCP textarea text into `RoleEdit.mcpServers`, and a role's servers back into text; added to `tsconfig.web.json`'s `include` |
 
-`renderer.ts` passes `ctx` and `orgAtom` to both page components by closure with `createElement`, because `Page.component` and `SettingsPage.component` take no props (`plugins/example/renderer.ts`).
+`renderer.ts` passes `ctx` and `orgAtom` to both page components by closure with `createElement`, because `Page.component` takes no props and `SettingsPage.component` takes only `SettingsPageProps` (`plugins/example/renderer.ts`).
 
-`src/renderer/src/plugin-api.ts` also exports `Skeleton` (`components/ui/skeleton.tsx`, installed but not exported today) and `ToggleGroup` (`components/ui/toggle-group.tsx`), and any shadcn component the `/impeccable` design adds, installed through the `shadcn` skill.
+`@dia/renderer-plugin` already exports `Skeleton`, `ToggleGroup` and `Empty` (#208). `src/renderer/src/plugin-api.ts` also exports any shadcn component the `/impeccable` design adds, installed through the `shadcn` skill.
 
 Renderer helpers are `.tsx` files or are added to `tsconfig.web.json`'s `include` (it lists `plugins/**/renderer.ts`, `plugins/**/*.tsx` and named `.ts` files).
 
@@ -138,12 +124,11 @@ The screens' visual design is made with `/impeccable` against fixture `OrgSnapsh
 
 ## Key Data Structures
 
-`OrgSnapshot` (above). `SettingsLocation`'s new `plugin` member. Every other type is existing (`Role`, `HiredAgent`, `OrgSettings`, `RoleEdit`, the org errors, `PageKey`).
+`OrgSnapshot` (above). Every other type is existing (`Role`, `HiredAgent`, `OrgSettings`, `RoleEdit`, the org errors, `Page`, `SettingsPage`, `CommandEntry`).
 
 ## Internal Decomposition
 
-- **`lib/settings-pages.ts`** — owns the Settings page list and its hook.
-- **`src/shared/domain/org-calls.ts`** — owns the wire contract between the org plugin's two entries.
+- **`plugins/org/calls.ts`** — owns the wire contract between the org plugin's two entries.
 - **`plugins/org/host.ts`** — owns serving the calls and holding the agent backend while it is provided.
 - **`plugins/org/bypass.ts`** — owns deciding whether bypass is available.
 - **`plugins/org/mcp-json.ts`** — owns the MCP servers text format: parsing, filling defaults, decoding, and printing a role's servers; the role editor knows neither the fill rules nor the JSON shape.
@@ -151,13 +136,9 @@ The screens' visual design is made with `/impeccable` against fixture `OrgSnapsh
 
 ## Design Rationale
 
-**Settings pages as a second kernel list, like `addPage`** — a Settings page and a content page share key, scope lifetime and order rules (ADR-0057), so the same shape is used. The two lists' acquire and release are written twice rather than through a helper, because `addPage`'s release also closes the open page and two uses do not yet show what a helper should cover.
-
 **The agent backend through `whenProvided`** — the org works without a backend (only `bypassAvailable` uses it), which is the case ADR-0056 covers; `inject` would stop the whole plugin, and its renderer entry, until a backend is provided.
 
-**Derived fallback to General** — the dialog computes what it shows from the location and the registered pages, so a page removed while shown needs no cleanup code and cannot leave the dialog on a missing page.
-
-**Call declarations in `src/shared`** — a plugin-local `messages.ts` cannot serve both entries: the Host's resolve hook maps only `effect` and `@dia/plugin` (`plugin-modules.ts:92-110`), and the renderer build has no `@dia/plugin` alias (`electron.vite.config.ts:35-39`), so a module shared by both entries may import only `effect` and cannot reach `Role` or the org errors (`plugins/example/messages.ts` works because it imports only `effect`). The precedent is #177, which put the org's schemas and `Org` contract in the kernel and re-exported them.
+**Call declarations in an exported plugin module** — since #207 the org schemas live in `plugins/org/domain.ts`, and an exported module resolves `@dia/plugin` in both the Host and the renderer build (ADR-0059). The calls sit beside the schemas in `plugins/org/calls.ts`, so the kernel holds no org contract.
 
 **One `ReadOrg` snapshot** — both pages need the same data, and a change can affect several parts (deleting a copy changes the role list; hiring changes a role's count), so the renderer refreshes one value after every change instead of patching parts.
 
@@ -169,21 +150,19 @@ The screens' visual design is made with `/impeccable` against fixture `OrgSnapsh
 
 - **Org settings in the Org page header, or as a second sidebar page** — rejected by the user in Understand.
 - **Structured MCP form** — deferred to #197.
-- **A plugin-local `messages.ts`** — the Host cannot resolve its `@shared` imports (above).
+- **Calls in `src/shared/domain`** — #207 moved the org domain out of the kernel; calls there would bring an org contract back into it.
+- **A kernel `addSettingsPage`** (the first version of this design, never merged) — replaced by `SettingsPagesSlot` in #204 (ADR-0063).
 
 ## ADR and versions
 
-- New ADR-0058, "Let a renderer plugin add pages to the Settings dialog", amending ADR-0031; ADR-0031's status adds ADR-0058. DESIGN.md › Navigation names plugin Settings pages.
-- `PLUGIN_API_VERSION` 0.0.22 → 0.0.23, and every `plugins/*/plugin.json` `api`. `PROTOCOL_VERSION` is unchanged: `DiaRpcs` does not change.
+- No new ADR: Settings pages and palette commands follow ADR-0063, exported modules ADR-0059.
+- `PLUGIN_API_VERSION` stays `0.0.27`: the kernel API does not change. `PROTOCOL_VERSION` is unchanged: `DiaRpcs` does not change.
 
 ## Tests
 
-- `lib/settings-pages.test.ts`: sorted by order; ties in add order; removed when the scope closes; a reload that adds the key before the old scope closes keeps the page.
-- `settings-dialog.test.tsx`: a plugin page appears after Meta repo and shows its component and breadcrumb; a `plugin` location whose page is removed shows General.
-- `command-palette.test.tsx`: a registered page's link opens `{ page: 'plugin', key }`.
 - `plugins/org/org.test.ts`: `renameHire` (rename, clear, clash ignoring case refused, own name recased allowed, unknown id refused); `setBypassOverride` (true, false, null; unknown id refused); an `editRole`, a `renameHire` and a `setOverallCap`, then the org reopened on the same temp-file database, still hold (criteria 3, 5, 7 "after a restart").
 - `plugins/org/host.test.ts` (calls through a real registry, as `plugin-messages.test.ts` does): `ReadOrg` returns the seeded snapshot; one change per call reaches the service; `bypassAvailable` is false with no backend, true with a backend whose `disabledPermissionModes` omits `bypassPermissions`, false with one that contains it, and changes when a backend is provided or withdrawn after setup.
-- `plugins/org/renderer.test.ts` (criterion 9): running the renderer setup in a scope adds key `{ plugin: 'org', id: 'org' }` to both `pagesAtom` and the settings page list; closing the scope removes both.
+- `plugins/org/renderer.test.ts` (criterion 9, through `startRendererRegistry`): loading the org renderer adds key `{ plugin: 'org', id: 'org' }` to `PagesSlot` and `SettingsPagesSlot` and `{ plugin: 'org', id: 'org-settings' }` to `CommandsSlot`; unloading the plugin removes all three.
 - `plugins/org/mcp-json.test.ts`: a stdio entry without `type` decodes as stdio; missing `args` / `env` / `headers` are filled; malformed JSON and the `mcpServers` wrapper are refused with a message; printing then parsing a role's servers gives the same value.
 - Org page component tests, against fixture snapshots: role rows show name, hire count and enabled switch, hire rows show name or `Unnamed <role>` and role (criterion 1); a disabled role shows disabled and a `RoleDisabled` failure shows under Hire (2); Rename, Dismiss and the bypass override each send their call (5); `HireNameTaken` and `RoleNameTaken` show under the name field (5, 3); Delete appears only on copies, sends only after the confirm click, and `RoleHasHires` shows in the dialog (4); the retro warning shows with no retro hired, not with one, and reads the disabled variant when retro is disabled (6); bypass controls absent when `bypassAvailable` is false (8); invalid MCP JSON shows its issue and sends nothing (3); a blank hire name sends `name: null`; Copy and Edit send `CopyRole` / `EditRole`, and a blank role name sends nothing; a failed `SetRoleEnabled` shows an error toast titled `Could not disable <name>` with the reason; a `HireNotFound` on `Dismiss` is treated as success and re-reads `ReadOrg`; a `HireNotFound` on `RenameHire` shows `This agent was dismissed` and re-reads; `Enable retro` sends `SetRoleEnabled { enabled: true }`; `Initial` shows a skeleton and `Failure` shows the message with `Try again`.
 - Org settings page: `0` and `1.5` show the error and send nothing; `6` sends `SetOverallCap { cap: 6 }` (7).
@@ -233,3 +212,7 @@ Applied
 - *Information hiding, 3*: a backend provided after a read does not refresh an open page; stated.
 
 Round 3's one major finding is applied and the round budget (3) is spent, so the rounds end here.
+
+**Revision after #204 (2026-11-07)**
+
+#204 replaced the kernel Settings dialog with the `settings` plugin and its `SettingsPagesSlot` (ADR-0063), and #207 moved the org domain into `plugins/org`. This design was revised to match: the `addSettingsPage` extension point and its planned ADR are dropped; the Org Settings page and its palette command are entries in `SettingsPagesSlot` and `CommandsSlot`; the sidebar page is an entry in `PagesSlot`; the calls move from `src/shared/domain/org-calls.ts` to the exported module `plugins/org/calls.ts`; the host entry uses `OrgService` and `AgentBackendKey`. The kernel no longer changes, so `PLUGIN_API_VERSION` is not bumped.
