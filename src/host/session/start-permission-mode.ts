@@ -9,7 +9,7 @@ export type HiredStartMode = Extract<PermissionMode, 'auto' | 'bypassPermissions
  * `bypassPermissions` when opted in and not disabled, else `default`.
  * `modelSupportsAuto` is the session model's `ModelOption.autoMode`; `disabled` is
  * `AgentBackend.disabledPermissionModes(cwd)` for the session's cwd; `bypassOptedIn` is whether
- * the hire, or its role when the hire does not override it, opts into bypass. Not for router
+ * the hire, or its job title when the hire does not override it, opts into bypass. Not for router
  * sessions or ad-hoc tabs. Pure and does not log; its caller logs the inputs and the result.
  */
 export const startPermissionMode = (input: {

@@ -1,5 +1,5 @@
 ---
-status: "accepted, amended by ADR-0053"
+status: "accepted, amended by ADR-0053 and ADR-0064"
 date: 2026-10-28
 decision-makers: William Pei
 ---
@@ -50,6 +50,8 @@ Example: with an overall cap of 4 and hired agents `Ada` and `Ben` (engineer), `
 * A hired agent that finishes a task takes the next waiting task its role can do, in any project.
 * A hired agent holds a slot while a session of its task runs a turn, and while background shell jobs or subagents that a turn started are still running. Waiting on the decision queue, waiting for a message, and a finished task free the slot.
 * When the user answers a decision queue item or sends a message to a hired agent that holds no slot, that agent starts before any waiting task, and may exceed the overall cap and its role's cap by one for that turn. New work therefore never delays the user's answer, as in dsh-superagent (`docs/003-execution.md`, "Concurrency").
+
+Amended by ADR-0064: the built-in roles are the seven built-in job titles and `router`. Planning and retro are kinds of task whose hired agent the user picks, so no planner or retro session is tied to a role; dia hires nobody on first run, the org shows no "No retro is hired" warning, and an objective without an assignee creates a planning task.
 
 ### Consequences
 

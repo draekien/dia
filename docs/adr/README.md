@@ -41,10 +41,10 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0030](0030-user-turns-appear-when-the-host-reports-them-sent.md) | Show a user turn in the transcript when the Host reports it sent, not when the composer submits it | accepted |
 | [0031](0031-renderer-plugins-fill-slots.md) | Renderer plugins draw the UI by filling slots: one root slot, and child slots declared by the plugin that fills it | accepted, amended by ADR-0038, ADR-0040, ADR-0057, ADR-0061 and ADR-0063 |
 | [0032](0032-background-activities-and-semver-plugin-api.md) | Plugins schedule background activities through the kernel, keep files in a data directory, and declare a semver plugin API version | accepted |
-| [0033](0033-one-org-of-hired-role-agents.md) | Run one org of hired agents with roles, per-role and overall concurrency caps, and ad-hoc tabs outside the caps | accepted, amended by ADR-0053 |
-| [0034](0034-decision-path-and-decision-queue.md) | Review objective plans as a live decision path, and route everything that waits on the user through one decision queue | accepted, amended by ADR-0053 |
-| [0035](0035-task-memory-and-retros.md) | Give each task a scratchpad and a transcript record, require a retro before a task completes, and let the retro write scoped long-term memory | accepted |
-| [0036](0036-tiered-self-improvement.md) | Let agents change the harness through `propose_change`, applied by a risk tier the user sets per change type | accepted |
+| [0033](0033-one-org-of-hired-role-agents.md) | Run one org of hired agents with roles, per-role and overall concurrency caps, and ad-hoc tabs outside the caps | accepted, amended by ADR-0053 and ADR-0064 |
+| [0034](0034-decision-path-and-decision-queue.md) | Review objective plans as a live decision path, and route everything that waits on the user through one decision queue | accepted, amended by ADR-0053 and ADR-0064 |
+| [0035](0035-task-memory-and-retros.md) | Give each task a scratchpad and a transcript record, require a retro before a task completes, and let the retro write scoped long-term memory | accepted, amended by ADR-0064 |
+| [0036](0036-tiered-self-improvement.md) | Let agents change the harness through `propose_change`, applied by a risk tier the user sets per change type | accepted, amended by ADR-0064 |
 | [0037](0037-run-the-users-claude-code-install.md) | Run the user's own Claude Code install, found by an override or on `PATH`, instead of the binary bundled with the Agent SDK | accepted |
 | [0038](0038-transparent-overlay-and-inset-sidebar-frame.md) | Draw the window controls over a transparent overlay and use the shadcn inset sidebar as the window frame | accepted; frame superseded by ADR-0039 |
 | [0039](0039-flush-window-frame.md) | Drop the inset card and make the window frame flush with 32px top rows | accepted |
@@ -61,7 +61,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0050](0050-host-keeps-tab-chat-state.md) | The Host keeps each tab's chat state and serves snapshots | accepted, amended by ADR-0051 and ADR-0052 |
 | [0051](0051-session-event-store-in-host-db.md) | Store each agent's conversation as events in `host.db`, and use the Agent SDK transcript only to resume | accepted, amended by ADR-0052 |
 | [0052](0052-every-pane-event-in-the-agent-event-store.md) | Store every pane event in `agent_events` and send the renderer item updates instead of deltas | accepted |
-| [0053](0053-router-role-as-the-users-assistant.md) | Take the user's requests in chat through a built-in `router` role that hands work to hired agents and never plans or does the work itself | accepted |
+| [0053](0053-router-role-as-the-users-assistant.md) | Take the user's requests in chat through a built-in `router` role that hands work to hired agents and never plans or does the work itself | accepted, amended by ADR-0064 |
 | [0054](0054-permission-modes-for-hired-agents.md) | Run hired agents in `auto` where the model and settings allow it, otherwise in `default`, and in `bypassPermissions` only when the user opts a role or hire in | accepted |
 | [0055](0055-lease-a-feature-plugin-service-for-one-operation.md) | Lease a feature plugin's service for one operation, and close a plugin only after its leases end or 30 seconds pass | accepted, amended by ADR-0060 |
 | [0056](0056-run-part-of-a-plugin-while-optional-services-are-provided.md) | Run part of a plugin while optional services are provided, with `ctx.whenProvided` | accepted, amended by ADR-0060 |
@@ -71,6 +71,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0061](0061-list-slots.md) | List slots: a plugin declares a list it draws, and other plugins add entries to it | accepted |
 | [0062](0062-host-service-keys.md) | Type the services the Host reads by keys defined in `src/` | accepted |
 | [0063](0063-settings-and-palette-plugins.md) | Plugins own the Settings dialog, the command palette and their entries | accepted |
+| [0064](0064-job-titles-and-task-kinds.md) | Name what an agent is hired as a job title, ship seven built-in job titles, and make planning and retro kinds of task | accepted |
 
 ## Adding a new ADR
 

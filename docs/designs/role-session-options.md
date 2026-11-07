@@ -1,5 +1,7 @@
 # Role session options and start permission mode (#176)
 
+Superseded in part by `docs/designs/org-job-titles.md` (#209): `RoleMcpServer` is `McpServer`, `RoleSessionOptions` is `SessionToolOptions` in `src/shared/domain/session-tools.ts`, and `AgentSessionOptions.role` is `tools` (the dia tools moved to `diaTools`).
+
 Scope: method/class. Lets the Host open an agent session with a role's permission rules and MCP servers, and picks the permission mode a hired agent session starts in (ADR-0054, "Mode at session start"). No caller passes a role yet (#179 will); ad-hoc tabs keep their current SDK options. Out of scope: the router's `dontAsk` start mode (ADR-0054; plan step 2), gathering `startPermissionMode`'s inputs and resolving a hire's bypass override over its role's (#177, #179).
 
 ## Interface

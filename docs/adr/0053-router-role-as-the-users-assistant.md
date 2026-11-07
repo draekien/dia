@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0064"
 date: 2026-11-06
 decision-makers: William Pei
 ---
@@ -76,6 +76,8 @@ The decision queue (ADR-0034) is where the user acts. When an objective a router
 ### The objective form
 
 The objective form stays. An objective the user creates there without an assignee goes to `planner` (route `plan`). The org settings no longer have an objective watcher role, and on first run dia hires one `retro` and no objective watcher (amends ADR-0033).
+
+Amended by ADR-0064: every `planner` reference in this ADR is a planning task. Route `plan` and an objective created without an assignee create a planning task, which waits until the user assigns it a hired agent; dia hires nobody on first run.
 
 ### Consequences
 
