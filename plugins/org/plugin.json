@@ -1,6 +1,6 @@
 {
   "name": "org",
-  "api": "0.0.26",
+  "api": "0.0.27",
   "category": "feature",
   "host": "host.ts",
   "exports": ["service.ts", "domain.ts"]

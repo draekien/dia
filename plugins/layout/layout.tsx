@@ -7,6 +7,8 @@ import {
   BreadcrumbPage,
   MAIN,
   MAIN_HEADER,
+  PluginBoundary,
+  PluginFailed,
   Separator,
   SIDEBAR,
   SidebarInset,
@@ -17,7 +19,7 @@ import {
   useView,
   WorkspaceProblemsBanner
 } from '@dia/renderer-plugin'
-import { PagesSlot } from '@dia-plugin/layout/slots'
+import { DialogsSlot, PagesSlot } from '@dia-plugin/layout/slots'
 import { Effect } from 'effect'
 import { useState } from 'react'
 
@@ -84,7 +86,8 @@ function useOpenPage() {
  * column; the content column holds a draggable header row (sidebar toggle, then the `main.header`
  * slot) above the `main` slot. While a page from the pages list is open, the header row shows its
  * label before the `main.header` slot and the content area shows the page instead of the `main`
- * slot. Persists the sidebar's open state and width in `localStorage`.
+ * slot. Persists the sidebar's open state and width in `localStorage`, and draws every dialog in
+ * the dialogs list.
  * Fill the `root` slot with it.
  */
 export function Layout() {
@@ -105,33 +108,62 @@ export function Layout() {
   }
 
   return (
-    <SidebarProvider
-      className="h-full min-h-0"
-      open={open}
-      onOpenChange={saveOpen}
-      resize={{
-        width,
-        defaultWidth: DEFAULT_WIDTH,
-        onWidthChange: saveWidth,
-        minWidth: MIN_WIDTH,
-        maxWidth: MAX_WIDTH
-      }}
-    >
-      <Slot name={SIDEBAR} empty={<NoSidebarPlugin />} />
-      <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
-        <header className="titlebar-drag flex h-8 shrink-0 items-center gap-2 px-2 pr-(--titlebar-controls-inset)">
-          <SidebarTrigger />
-          <Separator orientation="vertical" className="data-[orientation=vertical]:h-4" />
-          {page !== undefined && <PageCrumb label={page.label} />}
-          <Slot name={MAIN_HEADER} />
-        </header>
-        <Separator />
-        <AccountBanner />
-        <WorkspaceProblemsBanner />
-        <div className="min-h-0 flex-1">
-          {page === undefined ? <Slot name={MAIN} /> : <page.component />}
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+    <>
+      <SidebarProvider
+        className="h-full min-h-0"
+        open={open}
+        onOpenChange={saveOpen}
+        resize={{
+          width,
+          defaultWidth: DEFAULT_WIDTH,
+          onWidthChange: saveWidth,
+          minWidth: MIN_WIDTH,
+          maxWidth: MAX_WIDTH
+        }}
+      >
+        <Slot name={SIDEBAR} empty={<NoSidebarPlugin />} />
+        <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
+          <header className="titlebar-drag flex h-8 shrink-0 items-center gap-2 px-2 pr-(--titlebar-controls-inset)">
+            <SidebarTrigger />
+            <Separator orientation="vertical" className="data-[orientation=vertical]:h-4" />
+            {page !== undefined && <PageCrumb label={page.label} />}
+            <Slot name={MAIN_HEADER} />
+          </header>
+          <Separator />
+          <AccountBanner />
+          <WorkspaceProblemsBanner />
+          <div className="min-h-0 flex-1">
+            {page === undefined ? (
+              <Slot name={MAIN} />
+            ) : (
+              <PluginBoundary
+                plugin={page.key.plugin}
+                at={PagesSlot.name}
+                resetKey={page.component}
+                fallback={(error, retry) => (
+                  <PluginFailed plugin={page.key.plugin} error={error} onRetry={retry} />
+                )}
+              >
+                <page.component />
+              </PluginBoundary>
+            )}
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+      <Dialogs />
+    </>
   )
+}
+
+function Dialogs() {
+  return useList(DialogsSlot).map((dialog) => (
+    <PluginBoundary
+      key={`${dialog.key.plugin}/${dialog.key.id}`}
+      plugin={dialog.key.plugin}
+      at={DialogsSlot.name}
+      resetKey={dialog.component}
+    >
+      <dialog.component />
+    </PluginBoundary>
+  ))
 }

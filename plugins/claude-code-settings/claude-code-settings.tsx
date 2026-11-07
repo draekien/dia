@@ -1,23 +1,36 @@
+import {
+  type AdapterStatusJson,
+  Button,
+  CREATE_PERMISSION_MODE_OPTIONS,
+  cn,
+  disabledPermissionModesFor,
+  fitThinkingLevel,
+  formatWhen,
+  type ModelCatalog,
+  offeredPermissionModes,
+  PermissionModeItems,
+  permissionModeLabel,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  SettingsRow,
+  SettingsSectionHeading,
+  Skeleton,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  thinkingLevelLabel,
+  thinkingLevelsFor,
+  useAdapterStatus,
+  useModelCatalog,
+  useModelPreferences
+} from '@dia/renderer-plugin'
 // @effect-diagnostics globalDate:off -- the health check age is compared against wall-clock time; no Effect runtime exists in the renderer.
 // @effect-diagnostics asyncFunction:off -- React callbacks await the Promise-based window.dia bridge; no Effect runtime exists in the renderer.
 
-import { PermissionModeItems } from '@renderer/components/permission-mode-items'
-import { type AdapterStatusJson, useAdapterStatus } from '@renderer/hooks/use-adapter-status'
-import { type ModelCatalog, useModelCatalog } from '@renderer/hooks/use-model-catalog'
-import { useModelPreferences } from '@renderer/hooks/use-model-preferences'
-import { formatWhen } from '@renderer/lib/format-when'
-import {
-  CREATE_PERMISSION_MODE_OPTIONS,
-  disabledPermissionModesFor,
-  offeredPermissionModes,
-  permissionModeLabel
-} from '@renderer/lib/permission-modes'
-import {
-  fitThinkingLevel,
-  thinkingLevelLabel,
-  thinkingLevelsFor
-} from '@renderer/lib/thinking-levels'
-import { cn } from '@renderer/lib/utils'
 import {
   type AdapterPreferences,
   type AgentDefaults,
@@ -40,18 +53,6 @@ import {
   XIcon
 } from 'lucide-react'
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
-import { Button } from '../ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '../ui/select'
-import { Skeleton } from '../ui/skeleton'
-import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
-import { Row, SectionHeading } from './section'
 
 const STALE_CHECK = Duration.minutes(5)
 
@@ -135,7 +136,7 @@ function HealthSection({ status }: { readonly status: AdapterStatusJson | undefi
   return (
     <div className="flex flex-col gap-3">
       <dl className="flex flex-col gap-2">
-        <Row label="Status">
+        <SettingsRow label="Status">
           <span className="flex items-baseline gap-2">
             <span>{healthLabel(health, checking)}</span>
             {checkedAt === undefined ? null : (
@@ -144,12 +145,12 @@ function HealthSection({ status }: { readonly status: AdapterStatusJson | undefi
               </span>
             )}
           </span>
-        </Row>
-        <Row label="Version">
+        </SettingsRow>
+        <SettingsRow label="Version">
           <span className="font-mono text-xs">{versionOf(health) ?? '—'}</span>
-        </Row>
-        <Row label="Account">{accountOf(health) ?? '—'}</Row>
-        <Row label="Executable">
+        </SettingsRow>
+        <SettingsRow label="Account">{accountOf(health) ?? '—'}</SettingsRow>
+        <SettingsRow label="Executable">
           <span className="flex flex-col gap-0.5">
             <span className="font-mono text-xs break-all" title={installPath ?? undefined}>
               {installPath ?? 'Not found'}
@@ -162,7 +163,7 @@ function HealthSection({ status }: { readonly status: AdapterStatusJson | undefi
                   : 'Found on PATH'}
             </span>
           </span>
-        </Row>
+        </SettingsRow>
       </dl>
       {detail === undefined ? null : (
         <p className="max-h-32 overflow-y-auto font-mono text-xs break-words whitespace-pre-wrap text-ink">
@@ -660,15 +661,17 @@ export function ClaudeCodeSettings() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-6">
       <section className="flex flex-col gap-3" aria-labelledby="health-heading">
-        <SectionHeading id="health-heading">Health</SectionHeading>
+        <SettingsSectionHeading id="health-heading">Health</SettingsSectionHeading>
         <HealthSection status={status} />
       </section>
       <section className="flex flex-col gap-3 border-t pt-6" aria-labelledby="defaults-heading">
-        <SectionHeading id="defaults-heading">Defaults for new agents</SectionHeading>
+        <SettingsSectionHeading id="defaults-heading">
+          Defaults for new agents
+        </SettingsSectionHeading>
         <DefaultsSection models={models} preferences={preferences} />
       </section>
       <section className="flex flex-col gap-3 border-t pt-6" aria-labelledby="models-heading">
-        <SectionHeading id="models-heading">Models</SectionHeading>
+        <SettingsSectionHeading id="models-heading">Models</SettingsSectionHeading>
         <ModelsSection catalog={catalog} preferences={preferences} />
       </section>
     </div>

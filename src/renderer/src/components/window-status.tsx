@@ -1,7 +1,7 @@
 import type { UpdateStatus } from '@shared/domain/update'
 import { Loader2Icon, RotateCwIcon } from 'lucide-react'
 import { useUpdateStatus } from '../hooks/use-update-status'
-import { openCommandPalette } from './command-palette'
+import { openCommandPalette } from './open-command-palette'
 import { PluginLoadIndicator } from './plugin-load-indicator'
 import { Button } from './ui/button'
 

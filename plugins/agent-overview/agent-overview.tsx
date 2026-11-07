@@ -1,6 +1,7 @@
 import {
   actions,
   Button,
+  PluginBoundary,
   Sidebar,
   SidebarContent,
   SidebarGroup,
@@ -191,7 +192,9 @@ function PagesGroup() {
                 tooltip={page.label}
                 onClick={() => actions.openPage(page.key)}
               >
-                <Icon />
+                <PluginBoundary plugin={page.key.plugin} at={PagesSlot.name} resetKey={Icon}>
+                  <Icon />
+                </PluginBoundary>
                 <span>{page.label}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>

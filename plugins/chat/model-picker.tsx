@@ -1,4 +1,5 @@
 import {
+  CLAUDE_CODE_SETTINGS,
   openSettings,
   Select,
   SelectContent,
@@ -37,7 +38,7 @@ export function ModelPicker({
   const listed = label !== undefined
 
   const choose = (next: string) => {
-    if (next === MANAGE_MODELS) openSettings({ page: 'adapters', adapter: 'claude-code' })
+    if (next === MANAGE_MODELS) openSettings(CLAUDE_CODE_SETTINGS)
     else if (next !== value) onChange(next)
   }
 

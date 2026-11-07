@@ -1,5 +1,5 @@
 import type { AdapterStatusJson } from '@renderer/hooks/use-adapter-status'
-import { openSettings } from './settings/open-settings'
+import { CLAUDE_CODE_SETTINGS, openSettings } from './settings/open-settings'
 import { Button } from './ui/button'
 
 /**
@@ -37,7 +37,7 @@ export function InstallNotice({ status }: { readonly status: AdapterStatusJson |
         type="button"
         size="xs"
         variant="ghost"
-        onClick={() => openSettings({ page: 'adapters', adapter: 'claude-code' })}
+        onClick={() => openSettings(CLAUDE_CODE_SETTINGS)}
       >
         Open Settings
       </Button>

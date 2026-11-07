@@ -30,6 +30,8 @@ import {
 } from './lib/workspace-atoms'
 
 export { PluginCallInvalid, PluginNotServing } from '@shared/plugin/messages'
+export { PluginBoundary, type PluginFallback } from './components/plugin-boundary'
+export { PluginFailed } from './components/plugin-failed'
 export { SessionRail } from './components/session-rail'
 export * from './components/ui/breadcrumb'
 export * from './components/ui/sidebar'
@@ -105,6 +107,7 @@ export {
   type ToolCallPart
 } from '@shared/domain/pane-chat'
 export { formatResetTime } from '@shared/format-reset-time'
+export { AboutDialog } from './components/about-dialog'
 /**
  * Kernel UI, state, hooks and helpers a renderer plugin renders from, so that a plugin file imports
  * no `@renderer/*` path: the agent status dot and its label, shadcn primitives, `cn` to merge class
@@ -113,17 +116,31 @@ export { formatResetTime } from '@shared/format-reset-time'
  */
 export { AccountBanner } from './components/account-banner'
 export { InstallNotice } from './components/install-notice'
+export {
+  OPEN_COMMAND_PALETTE_EVENT,
+  openCommandPalette
+} from './components/open-command-palette'
 export { PermissionModeItems } from './components/permission-mode-items'
-export { openSettings } from './components/settings/open-settings'
+export {
+  CLAUDE_CODE_SETTINGS,
+  OPEN_SETTINGS_EVENT,
+  openSettings,
+  type SettingsLocation
+} from './components/settings/open-settings'
+export { SettingsRow, SettingsSectionHeading } from './components/settings-section'
 export { StatusIndicator, statusLabel } from './components/status-indicator'
 export { StepStatusIcon, showsSetup, TabSetupSteps } from './components/tab-setup-steps'
+export { useTheme } from './components/theme-provider'
+export { TranscriptWidthToggle } from './components/transcript-width-toggle'
 export * from './components/ui/alert-dialog'
 export * from './components/ui/attachment'
 export * from './components/ui/bubble'
 export * from './components/ui/button'
 export * from './components/ui/checkbox'
+export * from './components/ui/command'
 export * from './components/ui/context-menu'
 export * from './components/ui/dialog'
+export * from './components/ui/empty'
 export * from './components/ui/input'
 export * from './components/ui/input-group'
 export * from './components/ui/item'
@@ -135,17 +152,23 @@ export * from './components/ui/questionnaire'
 export * from './components/ui/scroll-area'
 export * from './components/ui/select'
 export * from './components/ui/separator'
+export * from './components/ui/skeleton'
 export * from './components/ui/switch'
 export * from './components/ui/textarea'
 export * from './components/ui/toast'
+export * from './components/ui/toggle-group'
 export * from './components/ui/tooltip'
 export { WorkspaceProblemsBanner } from './components/workspace-problems'
-export { useAdapterStatus } from './hooks/use-adapter-status'
+export { useActivities } from './hooks/use-activities'
+export { type AdapterStatusJson, useAdapterStatus } from './hooks/use-adapter-status'
 export { useAttachmentTypes } from './hooks/use-attachment-types'
 export { useDisabledPermissionModes } from './hooks/use-disabled-permission-modes'
-export { useModelCatalog } from './hooks/use-model-catalog'
+export { type ModelCatalog, useModelCatalog } from './hooks/use-model-catalog'
 export { useModelPreferences } from './hooks/use-model-preferences'
+export { usePluginList } from './hooks/use-plugin-list'
+export { type OverrideRejection, usePlugins } from './hooks/use-plugins'
 export { awaitsUser } from './lib/account-banner'
+export { formatWhen } from './lib/format-when'
 export { findModelOption } from './lib/model-options'
 export {
   paneChatAtom,
@@ -165,11 +188,13 @@ export {
   rewindTargets
 } from './lib/pane-rewind'
 export {
+  CREATE_PERMISSION_MODE_OPTIONS,
   disabledPermissionModesFor,
   offeredPermissionModes,
   PERMISSION_MODE_OPTIONS,
   permissionModeLabel
 } from './lib/permission-modes'
+export { pluginStatusLabel } from './lib/plugin-status-label'
 export { sendModeAtom, sendModeForEnter } from './lib/send-mode-atom'
 export { fitThinkingLevel, thinkingLevelLabel, thinkingLevelsFor } from './lib/thinking-levels'
 export { formatElapsed, type TurnActivity, turnActivity } from './lib/turn-activity'
@@ -181,4 +206,5 @@ export {
   type TurnBlock,
   turnBlocks
 } from './lib/turn-steps'
+export { usageLimitResumeAtom } from './lib/usage-limit-resume-atom'
 export { cn } from './lib/utils'

@@ -5,8 +5,18 @@ import { fakeInject } from '@shared/plugin/plugin-registry.fake'
 import { nameOf } from '@shared/plugin/service-key'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { Duration, Effect, Exit, Option, PubSub, Scope, Stream } from 'effect'
+import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { fillSlot, MAIN, ROOT, SIDEBAR, Slot, setKernelDefault, setPluginRegistry } from './slots'
+import {
+  fillSlot,
+  MAIN,
+  MAIN_HEADER,
+  ROOT,
+  SIDEBAR,
+  Slot,
+  setKernelDefault,
+  setPluginRegistry
+} from './slots'
 
 const makeFakeRegistry = Effect.gen(function* () {
   const values = new Map<string, unknown>()
@@ -40,6 +50,10 @@ const makeFakeRegistry = Effect.gen(function* () {
 
 const Sidebar = () => <p>overview sidebar</p>
 const Content = () => <p>kernel content</p>
+const Broken = (): never => {
+  throw new Error('broken sidebar')
+}
+const Fixed = () => <p>fixed sidebar</p>
 
 const settle = () => act(() => Effect.runPromise(Effect.sleep(Duration.millis(1))))
 
@@ -86,5 +100,60 @@ describe('Slot', () => {
 
     expect(whileFilled).toBeTruthy()
     expect(screen.getByText('no layout plugin')).toBeTruthy()
+  })
+
+  describe('when the filling component throws while rendering', () => {
+    const fill = async (plugin: string, name: typeof SIDEBAR, component: () => ReactNode) => {
+      const { registry, services } = Effect.runSync(makeFakeRegistry)
+      setPluginRegistry(registry)
+      const scope = Effect.runSync(Scope.make())
+      await act(() =>
+        Effect.runPromise(fillSlot(services(plugin), name, component).pipe(Scope.provide(scope)))
+      )
+      return { services, scope }
+    }
+
+    it('shows that the plugin failed in the slot and keeps rendering its siblings', async () => {
+      await fill('agent-overview', SIDEBAR, Broken)
+
+      render(
+        <>
+          <Slot name={SIDEBAR} />
+          <p>sibling</p>
+        </>
+      )
+      await settle()
+
+      expect([
+        screen.getByText('The agent-overview plugin failed to show this').textContent,
+        screen.getByText('sibling').textContent
+      ]).toEqual(['The agent-overview plugin failed to show this', 'sibling'])
+    })
+
+    it('shows nothing in main.header', async () => {
+      await fill('layout', MAIN_HEADER, Broken)
+
+      const { container } = render(<Slot name={MAIN_HEADER} />)
+      await settle()
+
+      expect(container.innerHTML).toBe('')
+    })
+
+    it('renders the slot again once the plugin fills it with a component that does not throw', async () => {
+      const { services, scope } = await fill('agent-overview', SIDEBAR, Broken)
+      render(<Slot name={SIDEBAR} />)
+      await settle()
+      await act(() => Effect.runPromise(Scope.close(scope, Exit.void)))
+      const reloaded = Effect.runSync(Scope.make())
+
+      await act(() =>
+        Effect.runPromise(
+          fillSlot(services('agent-overview'), SIDEBAR, Fixed).pipe(Scope.provide(reloaded))
+        )
+      )
+      await settle()
+
+      expect(screen.getByText('fixed sidebar')).toBeTruthy()
+    })
   })
 })

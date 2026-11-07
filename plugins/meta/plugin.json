@@ -1,7 +1,8 @@
 {
   "name": "meta",
-  "api": "0.0.26",
+  "api": "0.0.27",
   "category": "feature",
   "host": "host.ts",
+  "renderer": "renderer.ts",
   "load": "eager"
 }

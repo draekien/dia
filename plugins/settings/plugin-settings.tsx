@@ -1,3 +1,12 @@
+import {
+  Button,
+  formatWhen,
+  type OverrideRejection,
+  pluginStatusLabel,
+  Skeleton,
+  useActivities,
+  usePlugins
+} from '@dia/renderer-plugin'
 import type { ActivityInfoJson } from '@shared/ipc/contract'
 import {
   formatMegabytes,
@@ -8,31 +17,8 @@ import {
 import { ByteSize } from 'effect'
 import { FolderIcon, Loader2Icon, PlayIcon, RefreshCwIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { useActivities } from '../../hooks/use-activities'
-import { type OverrideRejection, usePlugins } from '../../hooks/use-plugins'
-import { formatWhen } from '../../lib/format-when'
-import { Button } from '../ui/button'
-import { Skeleton } from '../ui/skeleton'
 
 const limitBytes = ByteSize.toNumberUnsafe(PLUGIN_MEMORY_LIMIT)
-
-/** The short label for a plugin's load state, such as "Loaded" or "Failed to load". */
-export const statusLabel = (status: PluginStatus): string => {
-  switch (status._tag) {
-    case 'Unloaded':
-      return 'Not loaded'
-    case 'Loading':
-      return 'Loading…'
-    case 'Loaded':
-      return status.reloadError === undefined ? 'Loaded' : 'Loaded · last reload failed'
-    case 'Failed':
-      return 'Failed to load'
-    case 'Waiting':
-      return `Waiting for ${status.missing.join(', ')}`
-    case 'RestartRequired':
-      return 'Restart dia to reload'
-  }
-}
 
 const statusDetail = (status: PluginStatus): string | undefined => {
   switch (status._tag) {
@@ -158,7 +144,7 @@ function PluginRow({
       <div className="flex items-center gap-3">
         <div className="flex min-w-0 flex-1 items-baseline gap-3">
           <span className="text-sm font-medium text-ink">{plugin.name}</span>
-          <span className="text-xs text-ink-muted">{statusLabel(plugin.status)}</span>
+          <span className="text-xs text-ink-muted">{pluginStatusLabel(plugin.status)}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <Button

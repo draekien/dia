@@ -48,7 +48,9 @@ const registryWithMainTab = (filler: ComponentType | undefined): PluginRegistry 
   unload: () => Effect.die(new Error('not used')),
   use: () => Effect.die(new Error('use should not be called in these tests')),
   inject: fakeInject((key) =>
-    key === 'slot:main.tab' ? Option.fromNullishOr(filler) : Option.none()
+    key === 'slot:main.tab' && filler !== undefined
+      ? Option.some({ plugin: 'chat', component: filler })
+      : Option.none()
   ),
   changes: Stream.never
 })

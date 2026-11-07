@@ -13,6 +13,8 @@ import {
   showAllRailCards,
   toggleRail
 } from '../lib/session-rail'
+import { PluginBoundary } from './plugin-boundary'
+import { PluginFailed } from './plugin-failed'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
@@ -124,7 +126,16 @@ function RailCardFrame({
         </h2>
         <CardMenu title={card.title} cards={cards} />
       </header>
-      <Body paneId={paneId} />
+      <PluginBoundary
+        plugin={card.key.plugin}
+        at="chat.rail-cards"
+        resetKey={Body}
+        fallback={(error, retry) => (
+          <PluginFailed plugin={card.key.plugin} error={error} onRetry={retry} size="card" />
+        )}
+      >
+        <Body paneId={paneId} />
+      </PluginBoundary>
     </section>
   )
 }

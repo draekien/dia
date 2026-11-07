@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 // @effect-diagnostics globalDate:off -- check ages are relative to the wall clock the page reads; no Effect runtime exists in the renderer.
+
+import { TooltipProvider } from '@dia/renderer-plugin'
 import type { ModelOption } from '@shared/domain/model'
 import {
   type AdapterPreferences,
@@ -8,7 +10,6 @@ import {
 import type { AdapterStatusSnapshotJson, ModelCatalogSnapshotJson } from '@shared/ipc/contract'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { TooltipProvider } from '../ui/tooltip'
 import { ClaudeCodeSettings } from './claude-code-settings'
 
 const OPUS: ModelOption = {
