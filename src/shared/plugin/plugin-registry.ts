@@ -131,9 +131,8 @@ export interface PluginMemoryGuard {
  * `f` fails. Closing a plugin, by `unload`, a reload or a failed setup, first waits for the `use`
  * calls on its services to end. Do not keep the value after `f` returns; call `use` again for the
  * next operation.
- * `start` is the startup entry point: it marks every plugin `Loading`, loads every plugin
- * whose manifest says `load: "eager"` one after another, and resolves once each of
- * them has settled (loaded, waiting, failed or restart-required), which does not require it to be
+ * `start` is the startup entry point: it marks every plugin `Loading`, loads every plugin whose
+ * manifest says `load: "eager"` one after another, and resolves once each of them has settled (loaded, waiting, failed or restart-required), which does not require it to be
  * `Loaded`. The remaining plugins keep loading in the background, in the registry's scope, and a plugin the
  * caller unloads before its turn is skipped. Call it once per registry.
  */

@@ -34,7 +34,7 @@ Chosen option: "Adapters are ordinary plugins; `category` is a label", because i
 | `agentBackend` | Any plugin may provide it. A second provider fails with `ServiceKeyTakenError` |
 | Running sessions | A session opened before a reload keeps the adapter code it opened with until it ends. `AgentBackend.openSession` runs the session in the caller's scope, so closing the plugin scope does not end it. Sessions opened after the reload use the new backend |
 | Reading the backend | `resolveAgentBackend` reads with `inject` once per session or operation. A `use` lease is rejected: it ends when `openSession` returns, so it would not cover the session |
-| `category` readers | The Adapters settings page and model preferences |
+| `category` readers | The Adapters settings page. Model preferences belong to the loaded plugin that provides `agentBackend` |
 
 This ADR supersedes ADR-0029's category rules: the "Hot reload", "Worktree override" and "Can be unloaded" columns, the adapter contract and the `inject` ban. ADR-0029's decision to put the Agent SDK behind one adapter interface stays. It amends ADR-0019, ADR-0027, ADR-0055, ADR-0056, ADR-0059, ADR-0062 and ADR-0063 where they state an adapter rule.
 

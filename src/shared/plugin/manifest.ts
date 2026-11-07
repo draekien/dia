@@ -75,9 +75,7 @@ const CATEGORY_REQUIRED = 'plugin.json must declare "category" as "feature" or "
  * one user-facing feature. The Adapters settings page and model preferences read it; every plugin
  * loads, reloads, unloads and is overridden under the same rules whatever its category.
  */
-export const PluginCategory = Schema.Literals(['feature', 'adapter']).annotate({
-  message: CATEGORY_REQUIRED
-})
+export const PluginCategory = Schema.Literals(['feature', 'adapter'])
 export type PluginCategory = typeof PluginCategory.Type
 
 /**
@@ -102,7 +100,9 @@ export type PluginExport = typeof PluginExport.Type
 export const PluginManifest = Schema.Struct({
   name: PluginName,
   api: PluginApiVersion,
-  category: PluginCategory.pipe(Schema.annotateKey({ messageMissingKey: CATEGORY_REQUIRED })),
+  category: PluginCategory.annotate({ message: CATEGORY_REQUIRED }).pipe(
+    Schema.annotateKey({ messageMissingKey: CATEGORY_REQUIRED })
+  ),
   host: Schema.optional(Schema.String),
   renderer: Schema.optional(Schema.String),
   inject: Schema.optional(Schema.Array(Schema.String)),

@@ -1,6 +1,6 @@
 # Adapters as ordinary plugins
 
-An adapter plugin (today only `plugins/claude-code`) loads, reloads, unloads, takes a worktree override, injects services, uses `whenProvided` and imports other plugins' exports under the same rules as a feature plugin. `category` remains in `plugin.json` as a label that the Adapters settings page and model preferences read. After this change no registry, loader or source rule branches on it; the registry only copies it into `PluginInfo`.
+An adapter plugin (today only `plugins/claude-code`) loads, reloads, unloads, takes a worktree override, injects services, uses `whenProvided` and imports other plugins' exports under the same rules as a feature plugin. `category` remains in `plugin.json` as a label that the Adapters settings page and the Adapters settings page reads. After this change no registry, loader or source rule branches on it; the registry only copies it into `PluginInfo`.
 
 Scope: layer (plugin registry, plugin loader and sources, agent backend seam, plugin settings UI). Decisions confirmed by the user on 2026-11-07:
 
@@ -25,7 +25,7 @@ Scope: layer (plugin registry, plugin loader and sources, agent backend seam, pl
 | 11 | `agent-backend.ts:338-373`; `biome-plugins/noRegistryInject.grit:8` | `resolveAgentBackend` uses `inject` under a biome-ignore that says an adapter never reloads; the lint message allows `inject` "only for an adapter plugin's service" | `resolveAgentBackend` stays on `inject`. The lint message becomes: use `inject` only for a value read again each time `changes` emits its key, or for a value whose holder runs in the caller's scope. The biome-ignore reason and the JSDoc of `resolveAgentBackend` and `AgentBackendKey` say: a session runs in its caller's scope, so a reload does not end it. ADR-0065 records why `use` is rejected: its lease ends when `openSession` returns, so it would not cover the session |
 | 12 | `plugins/settings/plugin-settings.tsx:139-188` (including "Set folder" at 167) | Reload, Unload and Set folder are disabled for an adapter; "Restart dia to apply a change" | The adapter branch is deleted; an adapter row is the same as a feature row |
 
-Unchanged readers of `category` as a label: `plugins/adapters/adapter-settings.tsx:72` (lists adapters), `src/host/services/model-preferences.ts:56` (picks the loaded adapter's preferences).
+Unchanged reader of `category` as a label: `plugins/adapters/adapter-settings.tsx:72` (lists adapters). `src/host/services/model-preferences.ts:56` picked the first loaded `adapter` and now picks the loaded plugin whose `provides` includes `agentBackend`, because any plugin may provide it (code review finding).
 
 ## Why a running session survives a reload
 

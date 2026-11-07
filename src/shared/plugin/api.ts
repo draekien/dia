@@ -59,8 +59,7 @@ export class ServiceNotDeclaredError extends Data.TaggedError('ServiceNotDeclare
 
 /**
  * Failure of `ctx.whenProvided` called outside the plugin's own setup and the `whenProvided` setups
- * it registered. `message` names the plugin and the reason. Nothing is
- * registered.
+ * it registered. `message` names the plugin and the reason. Nothing is registered.
  */
 export class WhenProvidedRefusedError extends Data.TaggedError('WhenProvidedRefusedError')<{
   readonly plugin: string
@@ -70,15 +69,14 @@ export class WhenProvidedRefusedError extends Data.TaggedError('WhenProvidedRefu
 /**
  * What every plugin context offers, on the host and in the renderer. `provide` publishes `value`
  * under `key` for the lifetime of the scope it runs in, and fails when another plugin provides
- * `key`. `inject` reads the
- * value for `key`, which must be listed in the plugin's manifest `inject`: it is empty when no
- * loaded plugin provides `key`, and fails with {@link ServiceNotDeclaredError} when the manifest
+ * `key`. `inject` reads the value for `key`, which must be listed in the plugin's manifest
+ * `inject`: it is empty when no loaded plugin provides `key`, and fails with {@link ServiceNotDeclaredError} when the manifest
  * does not list `key`. The plugin is reopened whenever the provider of a listed key changes.
  *
  * `whenProvided(keys, setup)` runs part of a plugin only while every key in `keys` is provided,
  * for a service the plugin can work without. Call it during the plugin's setup, or inside another
- * `whenProvided` setup. It registers `setup` for the lifetime of the scope it
- * is called in and returns at once. Once that setup has succeeded and every key is provided, the
+ * `whenProvided` setup. It registers `setup` for the lifetime of the scope it is called in and
+ * returns at once. Once that setup has succeeded and every key is provided, the
  * registry runs `setup` with each key's value under its own name, in a child scope that is closed
  * before a provider of any key closes; `setup` runs again when every key is provided again.
  * `provide`, `Effect.forkScoped` and a nested `whenProvided` inside `setup` end with that child
