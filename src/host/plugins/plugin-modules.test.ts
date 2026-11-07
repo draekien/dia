@@ -1,7 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the test runs the module loader in a child Node process because vitest's module runner bypasses Node's resolve hooks.
 import { spawnSync } from 'node:child_process'
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the test creates a scratch plugin directory for the child process.
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the test builds paths for the scratch plugin directory.
 import { join } from 'node:path'
 import { afterAll, assert, beforeAll, describe, it } from '@effect/vitest'
@@ -164,5 +164,27 @@ describe("imports of another plugin's exports", () => {
       results.adapterImport?.failure?.message ?? '',
       'An adapter cannot import "@dia-plugin/exporter/messages"'
     )
+  })
+})
+
+describe('type-only imports under the type stripping the Host loads plugins with', () => {
+  const MISSING = 'dia-package-that-does-not-exist'
+
+  const loadWithTypeStripping = (imports: string) => {
+    const file = join(scratch, `type-only-${imports.length}.ts`)
+    writeFileSync(file, `${imports}\nexport type Card = Missing\nconsole.log('loaded')\n`)
+    return spawnSync(process.execPath, [file], { encoding: 'utf8' })
+  }
+
+  it('erases a whole import type statement, so the package it names is never loaded', () => {
+    const run = loadWithTypeStripping(`import type {\n  Missing\n} from '${MISSING}'`)
+
+    assert.strictEqual(run.stdout.trim(), 'loaded')
+  })
+
+  it('keeps an inline type import, so the package it names is loaded', () => {
+    const run = loadWithTypeStripping(`import { type Missing } from '${MISSING}'`)
+
+    assert.include(run.stderr, MISSING)
   })
 })

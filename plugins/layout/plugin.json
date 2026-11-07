@@ -1,7 +1,8 @@
 {
   "name": "layout",
-  "api": "0.0.24",
+  "api": "0.0.25",
   "category": "feature",
   "renderer": "renderer.ts",
-  "load": "eager"
+  "load": "eager",
+  "exports": ["slots.ts"]
 }

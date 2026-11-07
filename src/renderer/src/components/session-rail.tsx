@@ -5,14 +5,13 @@ import { useEffect, useId } from 'react'
 import {
   endRailPeek,
   hiddenRailCardsAtom,
-  type RegisteredRailCard,
-  railCardsAtom,
+  type RailCardView,
+  railCardKey,
   railPeekAtom,
   railShownAtom,
   setRailCardHidden,
   showAllRailCards,
-  toggleRail,
-  visibleRailCardsAtom
+  toggleRail
 } from '../lib/session-rail'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
@@ -51,7 +50,7 @@ function CardChoice({
   card,
   hidden
 }: {
-  readonly card: RegisteredRailCard
+  readonly card: RailCardView
   readonly hidden: boolean
 }): React.JSX.Element {
   const id = useId()
@@ -60,15 +59,20 @@ function CardChoice({
       <Checkbox
         id={id}
         checked={!hidden}
-        onCheckedChange={(next) => setRailCardHidden(card.key, next !== true)}
+        onCheckedChange={(next) => setRailCardHidden(railCardKey(card), next !== true)}
       />
       {card.title}
     </label>
   )
 }
 
-function CardMenu({ title }: { readonly title: string }): React.JSX.Element {
-  const cards = useAtomValue(railCardsAtom)
+function CardMenu({
+  title,
+  cards
+}: {
+  readonly title: string
+  readonly cards: ReadonlyArray<RailCardView>
+}): React.JSX.Element {
   const hidden = useAtomValue(hiddenRailCardsAtom)
   return (
     <Popover>
@@ -87,7 +91,11 @@ function CardMenu({ title }: { readonly title: string }): React.JSX.Element {
       <PopoverContent data-session-rail align="end" className="flex w-56 flex-col gap-1 p-3">
         <span className="pb-1 text-xs font-medium text-ink-muted">Cards</span>
         {cards.map((card) => (
-          <CardChoice key={card.key} card={card} hidden={hidden.includes(card.key)} />
+          <CardChoice
+            key={railCardKey(card)}
+            card={card}
+            hidden={hidden.includes(railCardKey(card))}
+          />
         ))}
       </PopoverContent>
     </Popover>
@@ -96,9 +104,11 @@ function CardMenu({ title }: { readonly title: string }): React.JSX.Element {
 
 function RailCardFrame({
   card,
+  cards,
   paneId
 }: {
-  readonly card: RegisteredRailCard
+  readonly card: RailCardView
+  readonly cards: ReadonlyArray<RailCardView>
   readonly paneId: PaneId
 }): React.JSX.Element {
   const titleId = useId()
@@ -112,7 +122,7 @@ function RailCardFrame({
         <h2 id={titleId} className="text-xs font-medium text-ink-muted">
           {card.title}
         </h2>
-        <CardMenu title={card.title} />
+        <CardMenu title={card.title} cards={cards} />
       </header>
       <Body paneId={paneId} />
     </section>
@@ -131,15 +141,21 @@ function AllCardsHidden(): React.JSX.Element {
 }
 
 /**
- * The session rail for `paneId`: the cards plugins added with `addRailCard`, stacked at the top
+ * The session rail for `paneId`: `cards`, in the order given, stacked at the top
  * right of the nearest positioned ancestor, over whatever is beneath them. Renders nothing while
  * the rail is off or the cards do not fit and are not shown temporarily. Render it inside the
  * pane's positioned container and size the transcript column with `useRailLayout`.
  */
-export function SessionRail({ paneId }: { readonly paneId: PaneId }): React.JSX.Element | null {
+export function SessionRail({
+  paneId,
+  cards
+}: {
+  readonly paneId: PaneId
+  readonly cards: ReadonlyArray<RailCardView>
+}): React.JSX.Element | null {
   const shown = useAtomValue(railShownAtom)
-  const cards = useAtomValue(railCardsAtom)
-  const visible = useAtomValue(visibleRailCardsAtom)
+  const hidden = useAtomValue(hiddenRailCardsAtom)
+  const visible = cards.filter((card) => !hidden.includes(railCardKey(card)))
   if (!shown || cards.length === 0) return null
   return (
     <aside
@@ -150,7 +166,9 @@ export function SessionRail({ paneId }: { readonly paneId: PaneId }): React.JSX.
       {visible.length === 0 ? (
         <AllCardsHidden />
       ) : (
-        visible.map((card) => <RailCardFrame key={card.key} card={card} paneId={paneId} />)
+        visible.map((card) => (
+          <RailCardFrame key={railCardKey(card)} card={card} cards={cards} paneId={paneId} />
+        ))
       )}
     </aside>
   )

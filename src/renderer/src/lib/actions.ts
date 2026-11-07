@@ -1,6 +1,7 @@
 import type { PaneId } from '@shared/domain/pane'
 import { type AgentName, ProjectId, type RegisterProjectRefusal } from '@shared/domain/project'
 import type { RemovalProgress } from '@shared/domain/project-removal'
+import { sameEntryKey } from '@shared/plugin/list-slot'
 import { Effect, Option } from 'effect'
 import { openSettings } from '../components/settings/open-settings'
 import { openNewAgentForm, type PageKey } from './view'
@@ -51,6 +52,18 @@ export const openPage = (key: PageKey): void => {
   appRegistry.set(newAgentFormAtom, Option.none())
   appRegistry.set(openPageAtom, Option.some({ key, shownBefore }))
   window.dia.selectTab(null)
+}
+
+/**
+ * Closes the page `key` names if it is the open page, and shows the tab that was visible when it
+ * opened. Does nothing when another page, or no page, is open.
+ */
+export const closePage = (key: PageKey): void => {
+  const open = appRegistry.get(openPageAtom)
+  if (Option.isNone(open) || !sameEntryKey(open.value.key, key)) return
+  log('Closing a page', { plugin: key.plugin, id: key.id })
+  appRegistry.set(openPageAtom, Option.none())
+  if (open.value.shownBefore !== null) window.dia.selectTab(open.value.shownBefore)
 }
 
 /** Closes the New agent form and shows the tab that was visible when it opened. */

@@ -63,11 +63,13 @@ import {
   useAgentSummaries,
   useAttachmentTypes,
   useDisabledPermissionModes,
+  useList,
   useModelCatalog,
   useRailCardShown,
   useRailLayout,
   useTranscriptWidth
 } from '@dia/renderer-plugin'
+import { RailCardsSlot } from '@dia-plugin/chat/slots'
 import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react'
 import type { AgentSummary } from '@shared/domain/agent-summary'
 import { PathAttachment, type ProjectEntry } from '@shared/domain/attachment'
@@ -637,6 +639,10 @@ const messageActivitySignature = (state: PaneChatState): string => {
   return `${state.messages.length}:${last?.parts.length ?? 0}:${detail}:${state.turnStatus ?? ''}`
 }
 
+function ChatSessionRail({ paneId }: { readonly paneId: string }) {
+  return <SessionRail paneId={paneId} cards={useList(RailCardsSlot)} />
+}
+
 function PaneChat({
   paneId,
   cwd,
@@ -823,7 +829,7 @@ function PaneChat({
       shiftLeft={emptySession ? 0 : rail.shiftLeft}
       centred={historyLoaded ? emptySession : null}
       onWidthChange={setPaneWidth}
-      aside={emptySession ? null : <SessionRail paneId={paneId} />}
+      aside={emptySession ? null : <ChatSessionRail paneId={paneId} />}
       lead={
         projectName === undefined ? null : (
           <p className="mb-3 flex justify-center gap-2 text-muted-foreground text-xs">

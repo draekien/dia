@@ -36,6 +36,8 @@
     "plugins/agent-overview/overview.ts",
     "plugins/example/messages.ts",
     "plugins/org/service.ts",
+    "plugins/chat/slots.ts",
+    "plugins/layout/slots.ts",
     "plugins/chat/composer-action.ts",
     "plugins/chat/attachment-draft.ts",
     "plugins/chat/composer-settings.ts",

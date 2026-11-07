@@ -23,7 +23,7 @@ export function BackgroundTaskList({
   )
 }
 
-/** The session rail's Background tasks card body for `paneId`. Add it with `addRailCard`. */
+/** The session rail's Background tasks card body for `paneId`. Add it to `RailCardsSlot` with `addEntry`. */
 export function BackgroundTasksCard({ paneId }: { readonly paneId: PaneId }): React.JSX.Element {
   return <BackgroundTaskList tasks={usePaneChat(paneId).backgroundTasks} />
 }

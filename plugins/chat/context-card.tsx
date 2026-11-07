@@ -126,7 +126,7 @@ export function ContextUsageView({
   )
 }
 
-/** The session rail's Context card body for `paneId`. Add it to the rail with `addRailCard`. */
+/** The session rail's Context card body for `paneId`. Add it to `RailCardsSlot` with `addEntry`. */
 export function ContextCard({ paneId }: { readonly paneId: PaneId }): React.JSX.Element {
   const chat = usePaneChat(paneId)
   const usage = useAgentSummaries().get(paneId)?.contextUsage ?? null

@@ -1,9 +1,12 @@
 import type {
+  AnyServiceKey,
   PluginServices,
+  ServiceKey,
   ServiceKeyReservedError,
   ServiceKeyTakenError
 } from '@shared/plugin/api'
 import type { PluginRegistry } from '@shared/plugin/plugin-registry'
+import { nameOf } from '@shared/plugin/service-key'
 import { Effect, Fiber, Option, type Scope, Stream } from 'effect'
 import { type ComponentType, createElement, type ReactNode, useEffect, useState } from 'react'
 
@@ -63,24 +66,31 @@ export const fillSlot = (
     .provide(slotKey(name), component)
     .pipe(Effect.tap(() => Effect.logDebug('Filled a slot', { slot: name, plugin: ctx.name })))
 
-const fillerOf = (name: SlotName): ComponentType | undefined => {
+const providedValue = (key: AnyServiceKey): unknown => {
   if (pluginRegistry === undefined) return undefined
-  // biome-ignore lint/plugin/noRegistryInject: a slot reads its filler again each time `changes` emits its key (ADR-0055)
-  const filler = Effect.runSync(pluginRegistry.inject(slotKey(name)))
-  return Option.getOrUndefined(filler) as ComponentType | undefined
+  // biome-ignore lint/plugin/noRegistryInject: a renderer reads a provided value again each time `changes` emits its key (ADR-0055)
+  return Option.getOrUndefined(Effect.runSync(pluginRegistry.inject(key)))
 }
 
-const useFiller = (name: SlotName): ComponentType | undefined => {
-  const [filler, setFiller] = useState(() => fillerOf(name))
+/**
+ * The value a plugin provides under `key` now, or `undefined` while none is provided or it fails a
+ * `ServiceKey`'s check. Re-renders when a plugin starts or stops providing it. Pass a key that
+ * stays the same between renders.
+ */
+export function useProvided<S>(key: ServiceKey<S>): S | undefined
+export function useProvided(key: string): unknown
+export function useProvided(key: AnyServiceKey): unknown {
+  const [value, setValue] = useState(() => providedValue(key))
   useEffect(() => {
     const registry = pluginRegistry
     if (registry === undefined) return
-    const refresh = () => setFiller(() => fillerOf(name))
+    const name = nameOf(key)
+    const refresh = () => setValue(() => providedValue(key))
     const follower = Effect.runFork(
       registry.changes.pipe(
-        Stream.filter((key) => key === slotKey(name)),
+        Stream.filter((changed) => changed === name),
         Stream.runForEach(() =>
-          Effect.logDebug('Slot filler changed', { slot: name }).pipe(
+          Effect.logDebug('Provided value changed', { key: name }).pipe(
             Effect.andThen(Effect.sync(refresh))
           )
         )
@@ -90,8 +100,8 @@ const useFiller = (name: SlotName): ComponentType | undefined => {
     return () => {
       Effect.runFork(Fiber.interrupt(follower))
     }
-  }, [name])
-  return filler
+  }, [key])
+  return value
 }
 
 /**
@@ -99,7 +109,8 @@ const useFiller = (name: SlotName): ComponentType | undefined => {
  * else `empty`. Re-renders when a plugin starts or stops filling the slot.
  */
 export function Slot({ name, empty }: { readonly name: SlotName; readonly empty?: ReactNode }) {
-  const component = useFiller(name) ?? kernelDefaults.get(name)
+  const component =
+    (useProvided(slotKey(name)) as ComponentType | undefined) ?? kernelDefaults.get(name)
   if (component === undefined) return empty ?? null
   return createElement(component)
 }

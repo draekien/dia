@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 import { RegistryContext } from '@effect/atom-react'
 import { cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react'
-import { Effect, Scope } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { addRailCard, toggleRail, useRailLayout } from '../lib/session-rail'
+import { type RailCardView, toggleRail, useRailLayout } from '../lib/session-rail'
 import { appRegistry } from '../lib/workspace-atoms'
 import { RailToggle, SessionRail } from './session-rail'
 import { TooltipProvider } from './ui/tooltip'
@@ -11,21 +10,15 @@ import { TooltipProvider } from './ui/tooltip'
 const COLUMN = 768
 const CARD_SPACE = 320
 
-const addCard = (id: string, title: string) =>
-  Effect.runSync(
-    Scope.provide(
-      addRailCard(
-        {
-          name: 'chat',
-          provide: () => Effect.void,
-          inject: () => Effect.succeedNone,
-          whenProvided: () => Effect.void
-        },
-        { id, title, component: ({ paneId }) => <p>{`${title} body for ${paneId}`}</p> }
-      ),
-      Effect.runSync(Scope.make())
-    )
-  )
+const card = (id: string, order: number, title: string): RailCardView => ({
+  key: { plugin: 'chat', id },
+  id,
+  order,
+  title,
+  component: ({ paneId }) => <p>{`${title} body for ${paneId}`}</p>
+})
+
+const CARDS = [card('context', 10, 'Context'), card('task-list', 20, 'Task list')]
 
 const fitCards = (fits: boolean) =>
   renderHook(() => useRailLayout(fits ? COLUMN + CARD_SPACE : COLUMN, COLUMN))
@@ -35,7 +28,7 @@ const showRail = () =>
     <RegistryContext.Provider value={appRegistry}>
       <TooltipProvider>
         <RailToggle />
-        <SessionRail paneId="pane-1" />
+        <SessionRail paneId="pane-1" cards={CARDS} />
         <p>transcript</p>
       </TooltipProvider>
     </RegistryContext.Provider>
@@ -52,8 +45,6 @@ beforeEach(() => {
   )
   localStorage.clear()
   appRegistry.reset()
-  addCard('context', 'Context')
-  addCard('task-list', 'Task list')
 })
 afterEach(() => {
   cleanup()
@@ -62,7 +53,7 @@ afterEach(() => {
 })
 
 describe('SessionRail', () => {
-  it('shows every card body for the pane, in the order the cards were added', () => {
+  it('shows every card body for the pane, in the order given', () => {
     fitCards(true)
     showRail()
     expect(screen.getAllByRole('heading').map((heading) => heading.textContent)).toEqual([

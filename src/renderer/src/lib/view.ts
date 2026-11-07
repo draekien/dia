@@ -4,7 +4,7 @@ import { Uuid } from '@shared/domain/uuid'
 import { PluginName } from '@shared/plugin/manifest'
 import { Option, Schema } from 'effect'
 
-/** Names a page plugin `plugin` added with `addPage` and the page `id` it gave. */
+/** Names a page plugin `plugin` added to the layout plugin's `PagesSlot` and the page `id` it gave. */
 export const PageKey = Schema.Struct({ plugin: PluginName, id: Schema.String })
 export type PageKey = typeof PageKey.Type
 

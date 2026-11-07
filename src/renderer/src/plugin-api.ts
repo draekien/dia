@@ -7,6 +7,7 @@ import { Option } from 'effect'
 import {
   archiveTab,
   cancelNewAgent,
+  closePage,
   deleteTab,
   moveProject,
   newAgent,
@@ -30,12 +31,11 @@ import {
 
 export { PluginCallInvalid, PluginNotServing } from '@shared/plugin/messages'
 export { SessionRail } from './components/session-rail'
+export * from './components/ui/breadcrumb'
 export * from './components/ui/sidebar'
-export { addPage, type Page, type RegisteredPage, usePages } from './lib/pages'
+export { addEntry, declareList, useList } from './lib/list-slots'
 export { callHost } from './lib/plugin-messages'
 export {
-  addRailCard,
-  type RailCard,
   revealRailCard,
   useRailCardShown,
   useRailLayout
@@ -82,6 +82,7 @@ export const actions = {
   newAgent,
   cancelNewAgent,
   openPage,
+  closePage,
   registerProject,
   moveProject,
   renameTab,
