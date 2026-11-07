@@ -517,7 +517,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     const toolOptions = yield* sessionToolOptions(
       additions.tools,
       Option.map(newDiaToolServer, (newServer) => newServer())
-    )
+    ).pipe(Effect.annotateLogs('paneId', config.paneId))
 
     const input = yield* openPromptInput(promptQueue)
 

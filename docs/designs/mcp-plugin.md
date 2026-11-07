@@ -129,7 +129,7 @@ export const SessionToolOptions = Schema.Struct({
   - `Draft.mcpServers` becomes `McpServersDraft`; `draftOf` uses `mcpServersDraft`.
   - The `textarea` helper's `field` becomes `Exclude<keyof Draft, 'bypassOptIn' | 'mcpServers'>`, and its `'mcpServers'` call (`:203-208`) is removed. The editor's `onChange` runs `setDraft((current) => ({ ...current, mcpServers: next }))` and `setErrors({})`.
   - `editOf(jobTitle, draft, mcpEditable)`: when `mcpEditable` is true it reads with `readMcpServersDraft` and sends `mcpServers` when `mcpServersDraft(parsed) !== mcpServersDraft(jobTitle.mcpServers)`, as today; when false it leaves `mcpServers` out of the edit and never sets `FormErrors.mcpServers`. `Editor` is read once at the top of `EditForm`, and both call sites (`pending` at `:123`, `save` at `:132`) pass `Editor !== undefined`.
-  - The field reads `const Editor = useProvided(McpServersEditorKey)`. Present: org's `Field` with the `MCP servers` label and no `caption` or `error`, holding `<Editor id draft onChange error={errors.mcpServers} />`. Absent: the label and `Load the mcp plugin to edit MCP servers` in muted text, in a paragraph with an id that the label's field names in `aria-describedby`, as `pane-creation-form.tsx:225-229` does for worktrees.
+  - The field reads `const Editor = useProvided(McpServersEditorKey)`. Present: org's `Field` with the `MCP servers` label and no `caption` or `error`, holding `<Editor id draft onChange error={errors.mcpServers} />`. Absent: the label and `Load the mcp plugin to edit MCP servers` in muted text, in muted text under the label, which then names no control (there is none to describe), in the wording `pane-creation-form.tsx:225-229` uses for worktrees.
 - `mcp-json.ts` and `mcp-json.test.ts` are deleted.
 
 ## claude-code changes
@@ -154,7 +154,7 @@ Known limit: the pane shows nothing when a server is left out; only the log does
 
 - `tsconfig.web.json`: `plugins/org/mcp-json.ts` removed from `include`; `plugins/mcp/servers.ts`, `plugins/mcp/draft.ts` and `plugins/mcp/editor.ts` added. `tsconfig.plugin-exports.json`: the same three added. `draft.ts` is listed because `tsconfig.web.json` is a composite project, which fails with TS6307 on an imported file it does not list.
 - New ADR `0066`: a kernel contract field whose shape a plugin owns is `unknown` in the kernel and decoded by its reader with the owner's export. It applies ADR-0062's rule ("a contract only plugins use lives in an exported module of the plugin that owns it") to a field inside a kernel contract. Added to `docs/adr/README.md`. ADR-0065's "Follow-up" line links to it.
-- `docs/designs/org-screens.md` lines 152, 159, 204, 237 and 278: `mcp-json.ts` references point to `plugins/mcp/servers.ts` and this spec.
+- `docs/designs/org-screens.md` gets the line "Superseded in part by `mcp-plugin.md`"; its `mcp-json.ts` references stay as the record of that design.
 - `docs/designs/adapters-as-ordinary-plugins.md:87` ("next PR") links this spec. `docs/designs/org-job-titles.md:116, 120` (`McpServer` in `@shared/domain/session-tools`) get the line "Superseded in part by `mcp-plugin.md`".
 - This spec is written to `docs/designs/mcp-plugin.md`.
 
