@@ -85,6 +85,9 @@ The one component the whole system is built around. A small dot on an agent's ov
 ### Toast
 The shadcn Base UI toast (`components/ui/toast.tsx`), stacked at the bottom right. dia uses it only for the failure of an action that has no dialog to show it in, such as Unarchive. A failure toast has `type: 'error'`: the title names the action that failed and the agent, the description gives the reason, and its icon is error red per the One Voice Rule.
 
+### Plugin failure
+Shown in place of a component a plugin supplied that threw while drawing (`PluginFailed`, the shadcn `Empty` block). In an area of the window, such as the sidebar, the content area, a Settings page or an adapter panel: an error-red warning icon tile, `The <plugin> plugin failed to show this`, the error in mono on the secondary surface (two lines at most), then an outline `Try again` and a ghost `Open Plugins`. In a session rail card: one caption line with a small error-red warning icon, the error in mono on one line, and a `Try again` link. A failed dialog, icon or status line shows nothing.
+
 ### Account Banner
 A one-line strip under the title bar, above the main tab, shown while any agent is parked because the account refused its turn. Neutral surface, caption-size muted text and ghost buttons, never amber or red. It reads, in priority order: `Claude Code is not signed in. Run claude auth login, then [Retry]`; `Usage limit has reset, 2 agents waiting [Resume all]`; `Usage limit reached, reset time unknown, 2 agents waiting [Resume all]`; `Usage limit reached. You can resume 2 agents at 14:30`; `Usage limit reached. dia resumes 2 agents at 14:30`. The wording names who resumes the agents. A parked agent's transcript ends with a notice and, when only the user can resume it, a `Resume` button. After the resume the notice keeps only its cause, and a `Resumed at 14:35` marker replaces the `continue` message dia sent.
 

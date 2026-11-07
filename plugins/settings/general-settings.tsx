@@ -1,6 +1,12 @@
+import {
+  sendModeAtom,
+  ToggleGroup,
+  ToggleGroupItem,
+  TranscriptWidthToggle,
+  usageLimitResumeAtom,
+  useTheme
+} from '@dia/renderer-plugin'
 import { useAtomSet, useAtomValue } from '@effect/atom-react'
-import { sendModeAtom } from '@renderer/lib/send-mode-atom'
-import { usageLimitResumeAtom } from '@renderer/lib/usage-limit-resume-atom'
 import type { SendMode } from '@shared/domain/message-queue'
 import type { UsageLimitResume } from '@shared/domain/parking'
 import type { ThemePreference } from '@shared/domain/theme'
@@ -14,9 +20,6 @@ import {
   SunIcon
 } from 'lucide-react'
 import type { ComponentType, ReactNode } from 'react'
-import { useTheme } from '../theme-provider'
-import { TranscriptWidthToggle } from '../transcript-width-toggle'
-import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group'
 
 interface ChoiceItem<Value extends string> {
   readonly value: Value

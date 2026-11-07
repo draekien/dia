@@ -1,3 +1,4 @@
+import { Button, Input, SettingsRow, SettingsSectionHeading, Skeleton } from '@dia/renderer-plugin'
 // @effect-diagnostics asyncFunction:off -- React callbacks await the Promise-based window.dia bridge; no Effect runtime exists in the renderer.
 import type {
   MetaRepoPushResult,
@@ -6,10 +7,6 @@ import type {
 } from '@shared/domain/meta-repo'
 import { Loader2Icon, ShieldAlertIcon, UploadIcon } from 'lucide-react'
 import { type FormEvent, useEffect, useId, useState } from 'react'
-import { Button } from '../ui/button'
-import { Input } from '../ui/input'
-import { Skeleton } from '../ui/skeleton'
-import { Row, SectionHeading } from './section'
 
 const SHORT_SHA_LENGTH = 7
 
@@ -112,20 +109,20 @@ function RemoteSection({
   return (
     <div className="flex flex-col gap-3">
       <dl className="flex flex-col gap-2">
-        <Row label="Remote">
+        <SettingsRow label="Remote">
           {state.remoteUrl === null ? (
             <span className="text-ink-muted">None</span>
           ) : (
             <span className="font-mono text-xs break-all">{state.remoteUrl}</span>
           )}
-        </Row>
-        <Row label="Branch">
+        </SettingsRow>
+        <SettingsRow label="Branch">
           {state.branch === null ? (
             <span className="text-ink-muted">No branch checked out</span>
           ) : (
             <span className="font-mono text-xs">{state.branch}</span>
           )}
-        </Row>
+        </SettingsRow>
       </dl>
       <form className="flex flex-col gap-1.5" onSubmit={(event) => void submit(event)}>
         <div className="flex items-center gap-2">
@@ -210,12 +207,12 @@ export function MetaRepoSettings() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-8 px-4 py-6">
       <section className="flex flex-col gap-3" aria-labelledby="meta-remote-heading">
-        <SectionHeading id="meta-remote-heading">Remote</SectionHeading>
+        <SettingsSectionHeading id="meta-remote-heading">Remote</SettingsSectionHeading>
         <RemoteSection state={state} onChange={setState} />
       </section>
       {state?._tag === 'MetaRepoFailed' ? null : (
         <section className="flex flex-col gap-3 border-t pt-6" aria-labelledby="meta-push-heading">
-          <SectionHeading id="meta-push-heading">Push</SectionHeading>
+          <SettingsSectionHeading id="meta-push-heading">Push</SettingsSectionHeading>
           <PushSection
             key={state?._tag === 'MetaRepoState' ? (state.remoteUrl ?? '') : ''}
             state={state}

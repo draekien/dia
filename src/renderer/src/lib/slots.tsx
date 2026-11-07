@@ -9,6 +9,8 @@ import type { PluginRegistry } from '@shared/plugin/plugin-registry'
 import { nameOf } from '@shared/plugin/service-key'
 import { Effect, Fiber, Option, type Scope, Stream } from 'effect'
 import { type ComponentType, createElement, type ReactNode, useEffect, useState } from 'react'
+import { PluginBoundary } from '../components/plugin-boundary'
+import { PluginFailed } from '../components/plugin-failed'
 
 /** A region of the window that a renderer plugin can fill. */
 export type SlotName = 'root' | 'sidebar' | 'main' | 'main.header' | 'main.tab'
@@ -33,6 +35,10 @@ export const MAIN_HEADER: SlotName = 'main.header'
 export const MAIN_TAB: SlotName = 'main.tab'
 
 const slotKey = (name: SlotName): string => `slot:${name}`
+
+type SlotFiller = { readonly plugin: string; readonly component: ComponentType }
+
+const KERNEL = 'kernel'
 
 let pluginRegistry: PluginRegistry | undefined
 const kernelDefaults = new Map<SlotName, ComponentType>()
@@ -63,7 +69,7 @@ export const fillSlot = (
   component: ComponentType
 ): Effect.Effect<void, ServiceKeyTakenError | ServiceKeyReservedError, Scope.Scope> =>
   ctx
-    .provide(slotKey(name), component)
+    .provide(slotKey(name), { plugin: ctx.name, component } satisfies SlotFiller)
     .pipe(Effect.tap(() => Effect.logDebug('Filled a slot', { slot: name, plugin: ctx.name })))
 
 const providedValue = (key: AnyServiceKey): unknown => {
@@ -109,8 +115,23 @@ export function useProvided(key: AnyServiceKey): unknown {
  * else `empty`. Re-renders when a plugin starts or stops filling the slot.
  */
 export function Slot({ name, empty }: { readonly name: SlotName; readonly empty?: ReactNode }) {
-  const component =
-    (useProvided(slotKey(name)) as ComponentType | undefined) ?? kernelDefaults.get(name)
+  const filler = useProvided(slotKey(name)) as SlotFiller | undefined
+  const kernelDefault = kernelDefaults.get(name)
+  const plugin = filler?.plugin ?? KERNEL
+  const component = filler?.component ?? kernelDefault
   if (component === undefined) return empty ?? null
-  return createElement(component)
+  return (
+    <PluginBoundary
+      plugin={plugin}
+      at={name}
+      resetKey={component}
+      fallback={
+        name === MAIN_HEADER
+          ? undefined
+          : (error, retry) => <PluginFailed plugin={plugin} error={error} onRetry={retry} />
+      }
+    >
+      {createElement(component)}
+    </PluginBoundary>
+  )
 }

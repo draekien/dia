@@ -106,8 +106,8 @@ export function NoLayoutPlugin() {
       </div>
       <div className="flex min-h-0 flex-1 items-center justify-center p-6">
         <p className="max-w-sm text-sm text-ink-muted">
-          No layout plugin is loaded. Press Ctrl K, type "plug", and load the layout plugin from
-          Settings › Plugins.
+          No layout plugin is loaded, so Settings and the command palette are unavailable. Restart
+          dia to load the layout plugin again.
         </p>
       </div>
     </div>
