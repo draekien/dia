@@ -2,7 +2,6 @@ import type {
   AnyServiceKey,
   PluginServices,
   ServiceKey,
-  ServiceKeyReservedError,
   ServiceKeyTakenError
 } from '@shared/plugin/api'
 import type { PluginRegistry } from '@shared/plugin/plugin-registry'
@@ -67,7 +66,7 @@ export const fillSlot = (
   ctx: PluginServices,
   name: SlotName,
   component: ComponentType
-): Effect.Effect<void, ServiceKeyTakenError | ServiceKeyReservedError, Scope.Scope> =>
+): Effect.Effect<void, ServiceKeyTakenError, Scope.Scope> =>
   ctx
     .provide(slotKey(name), { plugin: ctx.name, component } satisfies SlotFiller)
     .pipe(Effect.tap(() => Effect.logDebug('Filled a slot', { slot: name, plugin: ctx.name })))

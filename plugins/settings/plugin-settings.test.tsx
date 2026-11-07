@@ -287,7 +287,7 @@ describe('PluginSettings', () => {
     expect(screen.queryByLabelText('Loading plugins')).toBeNull()
   })
 
-  it('keeps a loaded adapter from being reloaded, unloaded or pointed at a folder', async () => {
+  it('lets the user reload, unload and set a folder for a loaded adapter', async () => {
     installBridge([info('claude-code', { category: 'adapter' })])
 
     render(<PluginSettings />)
@@ -296,27 +296,7 @@ describe('PluginSettings', () => {
     const row = rowOf('claude-code')
     const disabledOf = (name: string) =>
       (row.getByRole('button', { name }) as HTMLButtonElement).disabled
-    expect(disabledOf('Reload')).toBe(true)
-    expect(disabledOf('Unload')).toBe(true)
-    expect(disabledOf('Set folder')).toBe(true)
-    expect(
-      row.getByText(
-        'Adapter: it loads at startup from the bundled copy. Restart dia to apply a change.'
-      )
-    ).toBeTruthy()
-  })
-
-  it('lets the user load an adapter again after its load failed', async () => {
-    installBridge([
-      info('claude-code', { category: 'adapter', status: { _tag: 'Failed', message: 'boom' } })
-    ])
-
-    render(<PluginSettings />)
-
-    await screen.findByText('claude-code')
-    expect(
-      (rowOf('claude-code').getByRole('button', { name: 'Reload' }) as HTMLButtonElement).disabled
-    ).toBe(false)
+    expect(['Reload', 'Unload', 'Set folder'].map(disabledOf)).toEqual([false, false, false])
   })
 
   it('shows a plugin the Host is still loading as Loading with its actions disabled', async () => {

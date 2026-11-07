@@ -1,6 +1,5 @@
 import type {
   PluginServices,
-  ServiceKeyReservedError,
   ServiceKeyTakenError,
   WhenProvidedRefusedError
 } from '@shared/plugin/api'
@@ -99,7 +98,7 @@ export const declareList = <E extends ListEntryFields>(
   ctx: PluginServices,
   slot: ListSlot<E>,
   options?: { readonly onRemove?: (entry: ListEntry<E>) => Effect.Effect<void> }
-): Effect.Effect<void, ServiceKeyTakenError | ServiceKeyReservedError, Scope.Scope> =>
+): Effect.Effect<void, ServiceKeyTakenError, Scope.Scope> =>
   Effect.gen(function* () {
     const service: ListSlotService<E> = { _tag: 'ListSlotService' }
     const listeners = new Set<() => void>()

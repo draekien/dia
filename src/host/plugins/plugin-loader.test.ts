@@ -22,8 +22,8 @@ const recordingModules = (result: () => Promise<unknown>) => {
   const transactions: Array<string> = []
   const declared: Array<{ name: string; root: string; exports: ReadonlyArray<string> }> = []
   const modules: PluginModules = {
-    declare: (name, root, _category, exports) => void declared.push({ name, root, exports }),
-    transact: (_name, root, _category, _exports, use) =>
+    declare: (name, root, exports) => void declared.push({ name, root, exports }),
+    transact: (_name, root, _exports, use) =>
       Effect.sync(() => void transactions.push(root)).pipe(Effect.andThen(use(['importer']))),
     importEntry: (root, entry) => {
       calls.push({ root, entry })

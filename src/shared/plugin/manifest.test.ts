@@ -36,24 +36,18 @@ describe('PluginManifest', () => {
     assert.deepStrictEqual(Result.getOrThrow(decode(adapter)), adapter)
   })
 
-  it('reports every adapter problem in one failure', () => {
-    const message = failureOf({
+  it('decodes an adapter with a renderer entry, inject and a load mode', () => {
+    const adapter = {
       name: 'claude-code',
       api: '1.0.0',
       category: 'adapter',
+      host: 'host.ts',
       renderer: 'renderer.ts',
       inject: ['db'],
       load: 'lazy'
-    })
+    } as const
 
-    for (const problem of [
-      'an adapter needs a "host" entry, because it runs in the Host',
-      'an adapter has no UI, so it cannot declare "renderer"',
-      'an adapter cannot declare "inject": a reload of the plugin it injects from would close the adapter',
-      'an adapter always loads at startup, so it cannot declare "load"'
-    ]) {
-      assert.include(message, problem)
-    }
+    assert.deepStrictEqual(Result.getOrThrow(decode(adapter)), adapter)
   })
 
   const categoryCases: ReadonlyArray<readonly [string, Record<string, unknown>]> = [

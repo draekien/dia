@@ -136,8 +136,6 @@ function PluginRow({
   const unloaded = plugin.status._tag === 'Unloaded' || loading
   const disabled = busy || loading
   const overridden = plugin.origin === 'override'
-  const adapter = plugin.category === 'adapter'
-  const reloadLocked = adapter && plugin.status._tag !== 'Failed'
 
   return (
     <li className="flex flex-col gap-1.5 px-4 py-3" data-plugin={plugin.name}>
@@ -147,26 +145,16 @@ function PluginRow({
           <span className="text-xs text-ink-muted">{pluginStatusLabel(plugin.status)}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <Button
-            size="xs"
-            variant="outline"
-            disabled={disabled || reloadLocked}
-            onClick={onReload}
-          >
+          <Button size="xs" variant="outline" disabled={disabled} onClick={onReload}>
             {disabled ? <Loader2Icon className="motion-safe:animate-spin" /> : <RefreshCwIcon />}
             {unloaded ? 'Load' : 'Reload'}
           </Button>
           {unloaded ? null : (
-            <Button size="xs" variant="ghost" disabled={disabled || adapter} onClick={onUnload}>
+            <Button size="xs" variant="ghost" disabled={disabled} onClick={onUnload}>
               Unload
             </Button>
           )}
-          <Button
-            size="xs"
-            variant="ghost"
-            disabled={disabled || adapter}
-            onClick={onChooseOverride}
-          >
+          <Button size="xs" variant="ghost" disabled={disabled} onClick={onChooseOverride}>
             <FolderIcon />
             Set folder
           </Button>
@@ -183,11 +171,6 @@ function PluginRow({
           {plugin.root}
         </span>
       </p>
-      {adapter ? (
-        <p className="text-xs text-ink-muted">
-          Adapter: it loads at startup from the bundled copy. Restart dia to apply a change.
-        </p>
-      ) : null}
       {detail === undefined ? null : (
         <p className="max-h-32 overflow-y-auto font-mono text-xs break-words whitespace-pre-wrap text-ink">
           {detail}

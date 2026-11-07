@@ -17,7 +17,7 @@ import {
 } from '@shared/domain/pane'
 import type { SessionToolOptions } from '@shared/domain/session-tools'
 import { ServiceKey } from '@shared/plugin/api'
-import type { AdapterContract, PluginRegistry } from '@shared/plugin/plugin-registry'
+import type { PluginRegistry } from '@shared/plugin/plugin-registry'
 import { DateTime, Effect, Option, Predicate, Schema, type Scope, Stream } from 'effect'
 import type { DiaTool } from './dia-tools'
 import type { OutboundMessage } from './protocol'
@@ -336,35 +336,26 @@ const isAgentBackend = (value: unknown): value is AgentBackend =>
   agentBackendProblems(Option.some(value)).length === 0
 
 /**
- * The key the adapter plugin provides its {@link AgentBackend} under. It reads as `AgentBackend` and
+ * The key a plugin provides its {@link AgentBackend} under. It reads as `AgentBackend` and
  * accepts a value {@link agentBackendProblems} finds no problem with; any other value reads as not
- * provided. Host code reads it through {@link resolveAgentBackend}: an adapter plugin never unloads
- * or reloads (ADR-0055).
+ * provided. Host code reads it through {@link resolveAgentBackend}.
  */
 export const AgentBackendKey = ServiceKey.make(BACKEND_KEY_NAME, isAgentBackend)
 
 /**
- * The Host's {@link AdapterContract}: only an adapter plugin may provide
- * {@link AgentBackendKey}, and an adapter must provide a valid {@link AgentBackend} under it.
- * Pass it to the Host plugin registry.
- */
-export const adapterContract: AdapterContract = {
-  keys: [AgentBackendKey.name],
-  problems: (provided) => agentBackendProblems(provided(AgentBackendKey.name))
-}
-
-/**
- * Reads the {@link AgentBackend} the adapter plugin provides under {@link AgentBackendKey}.
+ * Reads the {@link AgentBackend} a plugin provides under {@link AgentBackendKey}.
  * It never fails: when no plugin provides one, or the value is not a backend, it logs an error
  * and returns a backend whose sessions end at once with
  * `The claude-code adapter is not loaded`, whose `readHistory` returns an empty list, and whose
  * `transcriptInfo` and `readTranscriptAfter` return none. Call it
  * each time a session starts or a transcript is read; a plugin reload applies from the next call.
+ * A session opened from the result runs in the caller's scope, so a reload of the provider does not
+ * end it.
  */
 export const resolveAgentBackend = Effect.fn('AgentBackend.resolve')(function* (
   registry: Pick<PluginRegistry, 'inject'>
 ) {
-  // biome-ignore lint/plugin/noRegistryInject: an adapter plugin never unloads or reloads (ADR-0029, ADR-0055)
+  // biome-ignore lint/plugin/noRegistryInject: a session opened from the backend runs in the caller's scope, which a `use` lease would not cover (ADR-0065)
   const provided = yield* registry.inject(AgentBackendKey)
   if (Option.isSome(provided)) {
     yield* Effect.logDebug('Resolved the agent backend')

@@ -48,20 +48,9 @@ export class ServiceKeyTakenError extends Data.TaggedError('ServiceKeyTakenError
 }> {}
 
 /**
- * Failure of `ctx.provide` when a feature plugin provides `key`, a service key that only an
- * adapter plugin may provide. `message` names the key. The plugin that hit it fails to load and
- * keeps no registrations.
- */
-export class ServiceKeyReservedError extends Data.TaggedError('ServiceKeyReservedError')<{
-  readonly key: string
-  readonly message: string
-}> {}
-
-/**
  * Failure of `ctx.inject` for a service key that the plugin's manifest does not list in `inject`.
- * `message` names the plugin and the key and says to add the key to `inject` in `plugin.json`, or,
- * for an adapter plugin, that an adapter cannot declare `inject`. A plugin whose setup hits it
- * fails to load.
+ * `message` names the plugin and the key and says to add the key to `inject` in `plugin.json`. A
+ * plugin whose setup hits it fails to load.
  */
 export class ServiceNotDeclaredError extends Data.TaggedError('ServiceNotDeclaredError')<{
   readonly key: string
@@ -69,8 +58,8 @@ export class ServiceNotDeclaredError extends Data.TaggedError('ServiceNotDeclare
 }> {}
 
 /**
- * Failure of `ctx.whenProvided` called by an adapter plugin, or outside the plugin's own setup and
- * the `whenProvided` setups it registered. `message` names the plugin and the reason. Nothing is
+ * Failure of `ctx.whenProvided` called outside the plugin's own setup and the `whenProvided` setups
+ * it registered. `message` names the plugin and the reason. Nothing is
  * registered.
  */
 export class WhenProvidedRefusedError extends Data.TaggedError('WhenProvidedRefusedError')<{
@@ -81,14 +70,14 @@ export class WhenProvidedRefusedError extends Data.TaggedError('WhenProvidedRefu
 /**
  * What every plugin context offers, on the host and in the renderer. `provide` publishes `value`
  * under `key` for the lifetime of the scope it runs in, and fails when another plugin provides
- * `key` or when a feature plugin provides a key reserved for adapter plugins. `inject` reads the
+ * `key`. `inject` reads the
  * value for `key`, which must be listed in the plugin's manifest `inject`: it is empty when no
  * loaded plugin provides `key`, and fails with {@link ServiceNotDeclaredError} when the manifest
  * does not list `key`. The plugin is reopened whenever the provider of a listed key changes.
  *
  * `whenProvided(keys, setup)` runs part of a plugin only while every key in `keys` is provided,
  * for a service the plugin can work without. Call it during the plugin's setup, or inside another
- * `whenProvided` setup; a feature plugin only. It registers `setup` for the lifetime of the scope it
+ * `whenProvided` setup. It registers `setup` for the lifetime of the scope it
  * is called in and returns at once. Once that setup has succeeded and every key is provided, the
  * registry runs `setup` with each key's value under its own name, in a child scope that is closed
  * before a provider of any key closes; `setup` runs again when every key is provided again.
@@ -107,14 +96,8 @@ export class WhenProvidedRefusedError extends Data.TaggedError('WhenProvidedRefu
 export interface PluginServices {
   readonly name: string
   readonly provide: {
-    <A>(
-      key: ServiceKey<A>,
-      value: A
-    ): Effect.Effect<void, ServiceKeyTakenError | ServiceKeyReservedError, Scope.Scope>
-    (
-      key: string,
-      value: unknown
-    ): Effect.Effect<void, ServiceKeyTakenError | ServiceKeyReservedError, Scope.Scope>
+    <A>(key: ServiceKey<A>, value: A): Effect.Effect<void, ServiceKeyTakenError, Scope.Scope>
+    (key: string, value: unknown): Effect.Effect<void, ServiceKeyTakenError, Scope.Scope>
   }
   readonly inject: {
     <A>(key: ServiceKey<A>): Effect.Effect<Option.Option<A>, ServiceNotDeclaredError>

@@ -1,5 +1,4 @@
 import {
-  PluginManifest,
   PluginName,
   PluginOverrideApplied,
   PluginOverrideRejected,
@@ -53,7 +52,6 @@ const isPluginName = Schema.is(PluginName)
 
 const PackageType = Schema.Struct({ type: Schema.optional(Schema.String) })
 const decodePackageType = Schema.decodeUnknownResult(Schema.fromJsonString(PackageType))
-const decodeManifest = Schema.decodeUnknownResult(Schema.fromJsonString(PluginManifest))
 
 /**
  * Builds the live {@link PluginSources} layer. `defaultRoot` is the directory holding one
@@ -69,30 +67,6 @@ export const makePluginSourcesLive = (defaultRoot: string) =>
 
       const hasManifest = (directory: string) =>
         fs.exists(path.join(directory, 'plugin.json')).pipe(Effect.orElseSucceed(() => false))
-
-      const declaresAdapter = (directory: string) =>
-        fs.readFileString(path.join(directory, 'plugin.json')).pipe(
-          Effect.map((raw) => {
-            const decoded = decodeManifest(raw)
-            return Result.isSuccess(decoded) && decoded.success.category === 'adapter'
-          }),
-          Effect.orElseSucceed(() => false)
-        )
-
-      const overrideRefusal = Effect.fn('PluginSources.overrideRefusal')(function* (
-        name: string,
-        directory: string
-      ) {
-        if (yield* declaresAdapter(path.join(defaultRoot, name))) {
-          return Option.some(`"${name}" is an adapter and cannot be overridden`)
-        }
-        if (yield* declaresAdapter(directory)) {
-          return Option.some(
-            `"${directory}" declares an adapter, and adapters load only from the shipped copy`
-          )
-        }
-        return Option.none<string>()
-      })
 
       const resolvesToModule = Effect.fn('PluginSources.resolvesToModule')(function* (
         start: string
@@ -125,16 +99,8 @@ export const makePluginSourcesLive = (defaultRoot: string) =>
       const resolve = Effect.fn('PluginSources.resolve')(function* (name: string) {
         const overrides = yield* settings.getPluginOverrides()
         const override = overrides[name]
-        if (override !== undefined) {
-          const refusal = yield* overrideRefusal(name, override)
-          if (Option.isNone(refusal))
-            return Option.some({ root: override, origin: 'override' as const })
-          yield* Effect.logWarning('Ignoring a saved override of an adapter plugin', {
-            plugin: name,
-            directory: override,
-            reason: refusal.value
-          })
-        }
+        if (override !== undefined)
+          return Option.some({ root: override, origin: 'override' as const })
         const root = path.join(defaultRoot, name)
         return (yield* hasManifest(root))
           ? Option.some({ root, origin: 'default' as const })
@@ -145,10 +111,6 @@ export const makePluginSourcesLive = (defaultRoot: string) =>
         name: string,
         directory: string
       ) {
-        const refusal = yield* overrideRefusal(name, directory)
-        if (Option.isSome(refusal)) {
-          return yield* new InvalidOverrideError({ message: refusal.value })
-        }
         if (!(yield* hasManifest(directory))) {
           return yield* new InvalidOverrideError({
             message: `"${directory}" has no plugin.json`

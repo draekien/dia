@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { PluginServices, PluginSetup } from '@shared/plugin/api'
 import { ListSlot } from '@shared/plugin/list-slot'
-import { type FeatureManifest, PLUGIN_API_VERSION } from '@shared/plugin/manifest'
+import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { Duration, Effect, Exit, Option, Scope } from 'effect'
@@ -20,7 +20,7 @@ const CardsSlot = ListSlot.make<Card>('owner.cards')
 const OWNER = 'owner'
 const CONTRIBUTOR = 'contributor'
 
-const manifest = (name: string): FeatureManifest => ({
+const manifest = (name: string): PluginManifest => ({
   name,
   api: PLUGIN_API_VERSION,
   category: 'feature',
@@ -46,8 +46,7 @@ const startRegistry = async (
             importers: []
           })
       },
-      extend: (services) => Effect.succeed(services),
-      adapterContract: { keys: [], problems: () => [] }
+      extend: (services) => Effect.succeed(services)
     }).pipe(Scope.provide(scope))
   )
   setPluginRegistry(registry)

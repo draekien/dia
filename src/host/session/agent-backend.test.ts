@@ -5,7 +5,6 @@ import { Effect, Option, Stream } from 'effect'
 import {
   type AgentBackend,
   AgentBackendKey,
-  adapterContract,
   agentBackendProblems,
   resolveAgentBackend,
   SessionFailed
@@ -216,28 +215,4 @@ describe('agentBackendProblems', () => {
       assert.deepStrictEqual(agentBackendProblems(provided), expected)
     })
   }
-})
-
-describe('adapterContract', () => {
-  it('reserves agentBackend for adapter plugins', () => {
-    assert.deepStrictEqual(adapterContract.keys, ['agentBackend'])
-  })
-
-  it('checks the value the adapter provided under agentBackend', () => {
-    const provided = (key: string) =>
-      key === AgentBackendKey.name ? Option.some({ openSession: () => Effect.void }) : Option.none()
-
-    assert.deepStrictEqual(adapterContract.problems(provided), [
-      '"agentBackend.readHistory" is not a function',
-      '"agentBackend.transcriptInfo" is not a function',
-      '"agentBackend.readTranscriptAfter" is not a function',
-      '"agentBackend.models" is not a function',
-      '"agentBackend.refreshModels" is not a function',
-      '"agentBackend.status" is not a function',
-      '"agentBackend.checkHealth" is not a function',
-      '"agentBackend.setInstallPath" is not a function',
-      '"agentBackend.disabledPermissionModes" is not a function',
-      '"agentBackend.attachmentTypes" is not a function'
-    ])
-  })
 })

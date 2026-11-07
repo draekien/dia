@@ -4,7 +4,6 @@ import { registerHooks } from 'node:module'
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the resolve hook Node calls is synchronous, so it cannot use the Effect Path service.
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import type { PluginCategory } from '@shared/plugin/manifest'
 import { resolvePluginExport } from '@shared/plugin/plugin-export'
 import { PluginRestartRequiredError } from '@shared/plugin/plugin-registry'
 import { Effect, Exit } from 'effect'
@@ -13,7 +12,7 @@ import { ModuleGenerations } from './module-generations'
 /**
  * How the Host imports plugin code.
  *
- * `declare` records that plugin `name` loads from `root`, has `category` and exports `exports`
+ * `declare` records that plugin `name` loads from `root` and exports `exports`
  * (the files its `plugin.json` lists), so `import '@dia-plugin/<name>/<file>'` from a plugin
  * resolves there, whether or not `name` has loaded. It replaces the record until `transact` has
  * run for `name`; after that only `transact` changes it, so imports resolve to the copy that
@@ -34,16 +33,10 @@ import { ModuleGenerations } from './module-generations'
  * run two `transact` calls at the same time.
  */
 export interface PluginModules {
-  readonly declare: (
-    name: string,
-    root: string,
-    category: PluginCategory,
-    exports: ReadonlyArray<string>
-  ) => void
+  readonly declare: (name: string, root: string, exports: ReadonlyArray<string>) => void
   readonly transact: <A, E, R>(
     name: string,
     root: string,
-    category: PluginCategory,
     exports: ReadonlyArray<string>,
     use: (importers: ReadonlyArray<string>) => Effect.Effect<A, E, R>
   ) => Effect.Effect<A, E | PluginRestartRequiredError, R>
@@ -58,7 +51,6 @@ interface Signature {
 interface PluginRecord {
   readonly root: string
   readonly prefix: string
-  readonly category: PluginCategory
   readonly exports: ReadonlyArray<string>
   readonly transacted: boolean
 }
@@ -140,20 +132,10 @@ export const makePluginModules = (pluginApiUrl: string | undefined): PluginModul
     if (signature !== undefined) known.set(url, signature)
   }
 
-  const exportTarget = (specifier: string, parentRoot: string): string => {
+  const exportTarget = (specifier: string): string => {
     const target = resolvePluginExport(specifier, (plugin) => records.get(plugin)?.exports)
     if (target === undefined) return specifier
     if ('message' in target) throw new Error(target.message)
-    const importer = pluginAt(parentRoot)
-    if (
-      importer !== undefined &&
-      records.get(importer)?.category === 'adapter' &&
-      importer !== target.plugin
-    ) {
-      throw new Error(
-        `An adapter cannot import "${specifier}": reloading "${target.plugin}" would close the adapter`
-      )
-    }
     const exporter = records.get(target.plugin)
     if (exporter === undefined) return specifier
     return pathToFileURL(join(exporter.root, target.file)).href
@@ -169,7 +151,7 @@ export const makePluginModules = (pluginApiUrl: string | undefined): PluginModul
         if (specifier === PLUGIN_API && pluginApiUrl !== undefined && parentRoot !== undefined) {
           return { url: pluginApiUrl, format: 'module', shortCircuit: true }
         }
-        const target = parentRoot === undefined ? specifier : exportTarget(specifier, parentRoot)
+        const target = parentRoot === undefined ? specifier : exportTarget(specifier)
         const fromHost =
           SHARED_LIBRARY.test(specifier) && parentRoot !== undefined
             ? { ...context, parentURL: import.meta.url }
@@ -260,25 +242,19 @@ export const makePluginModules = (pluginApiUrl: string | undefined): PluginModul
     return prefix
   }
 
-  const declare = (
-    name: string,
-    root: string,
-    category: PluginCategory,
-    exports: ReadonlyArray<string>
-  ): void => {
+  const declare = (name: string, root: string, exports: ReadonlyArray<string>): void => {
     const prefix = registerRoot(root)
     const previous = records.get(name)
     if (previous?.transacted === true) return
     if (previous !== undefined && previous.prefix !== prefix) {
       generations.invalidate(modulesUnder(previous.prefix))
     }
-    records.set(name, { root, prefix, category, exports, transacted: false })
+    records.set(name, { root, prefix, exports, transacted: false })
   }
 
   const transact = <A, E, R>(
     name: string,
     root: string,
-    category: PluginCategory,
     exports: ReadonlyArray<string>,
     use: (importers: ReadonlyArray<string>) => Effect.Effect<A, E, R>
   ): Effect.Effect<A, E | PluginRestartRequiredError, R> =>
@@ -314,7 +290,7 @@ export const makePluginModules = (pluginApiUrl: string | undefined): PluginModul
         if (owner !== undefined && owner !== name) importerNames.add(owner)
       }
       const importers = importOrder(importerNames, (plugin) => imports.get(plugin) ?? new Set())
-      records.set(name, { root, prefix, category, exports, transacted: true })
+      records.set(name, { root, prefix, exports, transacted: true })
       yield* Effect.logDebug('Plugin modules invalidated', {
         root,
         changed: [...changed.keys()],

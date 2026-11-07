@@ -73,7 +73,6 @@ export const makeRendererPlugins = (
         use: (loaded: LoadedPlugin<PluginServices>) => Effect.Effect<A, E, R>
       ) => read(name).pipe(Effect.flatMap((loaded) => use({ ...loaded, importers: [] })))
     },
-    extend: (services) => Effect.succeed(services),
-    adapterContract: { keys: [], problems: () => [] }
+    extend: (services) => Effect.succeed(services)
   })
 }
