@@ -315,4 +315,36 @@ describe('org host entry work calls', () => {
       assert.deepStrictEqual([atCapOne, opened.length], [1, 2])
     })
   )
+
+  it.effect('keeps a running task running when its assignment is repeated', () =>
+    Effect.gen(function* () {
+      const registry = yield* startOrg(Option.some(backendDisabling([])))
+      yield* registry.load('backend')
+      yield* call(registry, 'CreateObjective', {
+        objective: {
+          id: '00000000-0000-4000-8000-500000000001',
+          projectId: PROJECT_ID,
+          title: 'Ship it',
+          description: '',
+          priority: 'normal',
+          assignee: null
+        }
+      })
+      const ada = yield* hireEngineer(registry)
+      yield* createTask(registry, 1, ada)
+      yield* settle
+
+      yield* call(registry, 'AssignTask', {
+        taskId: '00000000-0000-4000-8000-600000000001',
+        hireId: ada
+      })
+      yield* settle
+      const work = (yield* call(registry, 'ReadWork', {})) as {
+        heldSlots: number
+        tasks: ReadonlyArray<{ state: string }>
+      }
+
+      assert.deepStrictEqual([work.heldSlots, work.tasks[0]?.state], [1, 'running'])
+    })
+  )
 })

@@ -143,7 +143,13 @@ const serveWorkCalls = (
         work.createTask(task).pipe(Effect.tap(() => dispatcher.signal))
       ),
       ctx.serve(AssignTask, ({ taskId, hireId }) =>
-        work.assignTask(taskId, hireId).pipe(Effect.tap(() => dispatcher.release(taskId)))
+        work
+          .assignTask(taskId, hireId)
+          .pipe(
+            Effect.tap((task) =>
+              task.state === 'waiting' ? dispatcher.release(taskId) : Effect.void
+            )
+          )
       ),
       ctx.serve(FinishTask, ({ taskId }) =>
         work.finishTask(taskId).pipe(Effect.tap(() => dispatcher.release(taskId)))

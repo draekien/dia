@@ -151,7 +151,7 @@ export const makeDispatcher = (deps: {
     const pluginScope = yield* Effect.scope
     const tasks = yield* SynchronizedRef.make(new Map<TaskId, LiveTask>())
     const backendRef = yield* Ref.make(Option.none<AgentBackend>())
-    const models = yield* Ref.make(Option.none<ReadonlyArray<ModelOption>>())
+    const models = yield* Ref.make(Option.none<readonly [ModelOption, ...Array<ModelOption>]>())
     const failed = yield* Ref.make(new Set<TaskId>())
     const answerOrder = yield* Ref.make(0)
     const signals = yield* Queue.sliding<void>(1)
@@ -210,7 +210,7 @@ export const makeDispatcher = (deps: {
 
     const startTask = Effect.fnUntraced(function* (
       backend: AgentBackend,
-      catalog: ReadonlyArray<ModelOption>,
+      catalog: readonly [ModelOption, ...Array<ModelOption>],
       context: StartContext
     ) {
       const { task, objective, hire, jobTitle, directory } = context
@@ -219,11 +219,7 @@ export const makeDispatcher = (deps: {
         yield* Effect.logInfo('Task changed before it started', { taskId: task.id })
         return yield* unreserve
       }
-      const model = jobTitle.model ?? catalog[0]?.value
-      if (model === undefined) {
-        yield* runs.markRequeued(task.id, true)
-        return yield* unreserve
-      }
+      const model = jobTitle.model ?? catalog[0].value
       const disabled = yield* backend.disabledPermissionModes(directory)
       const input = {
         modelSupportsAuto: catalog.find((option) => option.value === model)?.autoMode ?? false,
@@ -277,7 +273,9 @@ export const makeDispatcher = (deps: {
       })
       if (!kept) {
         yield* Fiber.interrupt(watcher)
-        return yield* Scope.close(scope, Exit.void)
+        yield* Scope.close(scope, Exit.void)
+        yield* runs.markRequeued(task.id, true)
+        return yield* signal
       }
       yield* session.sendText(promptFor(task, objective), 'queue')
     })
@@ -349,12 +347,14 @@ export const makeDispatcher = (deps: {
           heldSlots: entries.filter(([, live]) => holdsSlot(live)).length,
           busyHires: candidates.busyHires,
           answered,
-          waiting: [...contexts.values()].map(({ task, hire, objective }) => ({
-            taskId: task.id,
-            hireId: hire.id,
-            priority: objective.priority,
-            createdAt: task.createdAt
-          }))
+          waiting: [...contexts.values()]
+            .filter(({ task }) => !current.has(task.id))
+            .map(({ task, hire, objective }) => ({
+              taskId: task.id,
+              hireId: hire.id,
+              priority: objective.priority,
+              createdAt: task.createdAt
+            }))
         })
         const next = new Map(current)
         for (const taskId of chosen.start) next.set(taskId, reserved)
