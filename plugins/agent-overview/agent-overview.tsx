@@ -15,7 +15,9 @@ import {
   TooltipContent,
   TooltipTrigger,
   useAgentSummaries,
+  usePages,
   useSidebar,
+  useView,
   useWorkspace
 } from '@dia/renderer-plugin'
 import {
@@ -164,6 +166,36 @@ function MetaGroup() {
             </span>
           </SidebarMenuButton>
         </SidebarMenuItem>
+      </SidebarMenu>
+    </SidebarGroup>
+  )
+}
+
+function PagesGroup() {
+  const pages = usePages()
+  const view = useView()
+  if (pages.length === 0) return null
+  return (
+    <SidebarGroup className="pt-0">
+      <SidebarMenu>
+        {pages.map((page) => {
+          const Icon = page.icon
+          const active =
+            view?._tag === 'PageView' && view.plugin === page.key.plugin && view.id === page.key.id
+          return (
+            <SidebarMenuItem key={`${page.key.plugin}.${page.key.id}`}>
+              <SidebarMenuButton
+                isActive={active}
+                aria-current={active ? 'page' : undefined}
+                tooltip={page.label}
+                onClick={() => actions.openPage(page.key)}
+              >
+                <Icon />
+                <span>{page.label}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )
+        })}
       </SidebarMenu>
     </SidebarGroup>
   )
@@ -488,6 +520,7 @@ export function AgentOverview() {
             }}
           >
             {!narrowing && <MetaGroup />}
+            {!narrowing && <PagesGroup />}
             {workspace.projects.length === 0 ? (
               !iconMode && <NoProjects onAdd={addProject} />
             ) : groups.length === 0 ? (
