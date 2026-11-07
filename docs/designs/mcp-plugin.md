@@ -119,7 +119,7 @@ export const SessionToolOptions = Schema.Struct({
 
 - `McpServer` is deleted from `session-tools.ts` and from `src/host/plugin-api.ts:35`.
 - `useProvided` is exported from `src/renderer/src/plugin-api.ts` (`@dia/renderer-plugin`).
-- `PLUGIN_API_VERSION` (`src/shared/plugin/manifest.ts:24`) goes from 0.0.29 to 0.0.30, because `@dia/plugin` loses `McpServer` and `@dia/renderer-plugin` gains `useProvided`; its JSDoc names both. Below 0.1.0 the loader accepts only an exact match, so `api` becomes `"0.0.30"` in all 13 existing `plugins/*/plugin.json`.
+- `PLUGIN_API_VERSION` (`src/shared/plugin/manifest.ts:24`) goes from 0.0.29 to 0.0.30, because `@dia/plugin` loses `McpServer` and `@dia/renderer-plugin` gains `useProvided`. Below 0.1.0 the loader accepts only an exact match, so `api` becomes `"0.0.30"` in all 13 existing `plugins/*/plugin.json`.
 - `SessionToolOptions` is not in `DiaRpcs`, so `PROTOCOL_VERSION` stays.
 
 ## org changes
@@ -146,13 +146,13 @@ Known limit: the pane shows nothing when a server is left out; only the log does
 | org edits and saves MCP servers as before | `plugins/org/org-page.test.tsx`: a `describe` whose `beforeEach` calls `startRendererRegistry({ mcp: (ctx) => ctx.provide(McpServersEditorKey, StubEditor) })` (`renderer-registry.fake.ts:19`). `StubEditor` renders `<textarea id={id} value={draft} aria-invalid={error !== undefined}>` and the error text, casting input to `McpServersDraft`. The existing cases at `:383-391` move into it |
 | With no editor provided, the hint shows and other fields save | New `org-page.test.tsx` case with no registry started |
 | A session receives job-title servers through the real path | Existing `plugins/claude-code/session-queue.test.ts:760-793` still passes |
-| claude-code passes servers as before; an invalid entry is left out | `session-tool-options.test.ts`: every case moves to `it.effect`; the `McpServer` import moves to `@dia-plugin/mcp/servers`; a new case passes `{ type: 'ftp' }` beside a valid server and asserts the valid server alone reaches the SDK options |
+| claude-code passes servers as before; an invalid entry is left out | `session-tool-options.test.ts`: existing cases run the Effect with `Effect.runSync` through a local helper; the `McpServer` import moves to `@dia-plugin/mcp/servers`; a new case passes `{ type: 'ftp' }` beside a valid server and asserts the valid server alone reaches the SDK options |
 | The mcp renderer provides the textarea editor, and an edit reaches `onChange` | `plugins/mcp/renderer.test.tsx` |
 | No kernel or `@dia/plugin` export names `McpServer` | `pnpm typecheck` after deletion |
 
 ## Docs and config
 
-- `tsconfig.web.json`: `plugins/org/mcp-json.ts` removed from `include`; `plugins/mcp/servers.ts` and `plugins/mcp/editor.ts` added. `tsconfig.plugin-exports.json`: the same two added. `draft.ts` is reached through `servers.ts` and is not listed (`plugin-exports.test.ts:63-80` requires only manifest `exports` to be listed).
+- `tsconfig.web.json`: `plugins/org/mcp-json.ts` removed from `include`; `plugins/mcp/servers.ts`, `plugins/mcp/draft.ts` and `plugins/mcp/editor.ts` added. `tsconfig.plugin-exports.json`: the same three added. `draft.ts` is listed because `tsconfig.web.json` is a composite project, which fails with TS6307 on an imported file it does not list.
 - New ADR `0066`: a kernel contract field whose shape a plugin owns is `unknown` in the kernel and decoded by its reader with the owner's export. It applies ADR-0062's rule ("a contract only plugins use lives in an exported module of the plugin that owns it") to a field inside a kernel contract. Added to `docs/adr/README.md`. ADR-0065's "Follow-up" line links to it.
 - `docs/designs/org-screens.md` lines 152, 159, 204, 237 and 278: `mcp-json.ts` references point to `plugins/mcp/servers.ts` and this spec.
 - `docs/designs/adapters-as-ordinary-plugins.md:87` ("next PR") links this spec. `docs/designs/org-job-titles.md:116, 120` (`McpServer` in `@shared/domain/session-tools`) get the line "Superseded in part by `mcp-plugin.md`".
@@ -180,7 +180,7 @@ Known limit: the pane shows nothing when a server is left out; only the log does
 | 1 | `sameMcpServers` changes the unchanged-check to ignore key order | minor | Applied: export dropped; org compares printed drafts as today |
 | 1 | Key name `mcp.serversEditor` differs from `org`, `metaRepo` | minor | Applied: `mcpServersEditor` |
 | 2 | `export type { X } from` does not bring `McpServersDraft` into `servers.ts` scope | blocker | Applied: `import type` plus `export type { McpServersDraft }` |
-| 2 | `draft.ts` need not be listed in the tsconfigs | minor | Applied (verified `plugin-exports.test.ts:63-80`) |
+| 2 | `draft.ts` need not be listed in the tsconfigs | minor | Applied, then reverted during implementation: `pnpm typecheck` fails with TS6307 without the entry |
 | 2 | Hint precedent is at `pane-creation-form.tsx:225-229` and uses `aria-describedby` | minor | Applied |
 | 3 | Split of label, caption and error between org's `Field` and the editor unstated | major | Applied: editor draws textarea, caption and error; org's `Field` keeps the label (verified `job-title-editor.tsx:91-112`) |
 | 3 | `textarea` helper still accepts `'mcpServers'` | major | Applied |

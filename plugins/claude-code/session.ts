@@ -514,6 +514,11 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       options: thinking
     })
 
+    const toolOptions = yield* sessionToolOptions(
+      additions.tools,
+      Option.map(newDiaToolServer, (newServer) => newServer())
+    )
+
     const input = yield* openPromptInput(promptQueue)
 
     const session = yield* Effect.acquireRelease(
@@ -528,10 +533,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
               : {}),
             includePartialMessages: true,
             canUseTool,
-            ...sessionToolOptions(
-              additions.tools,
-              Option.map(newDiaToolServer, (newServer) => newServer())
-            ),
+            ...toolOptions,
             permissionMode: config.permissionMode,
             allowDangerouslySkipPermissions: true,
             enableFileCheckpointing: true,

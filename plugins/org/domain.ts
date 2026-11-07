@@ -1,4 +1,5 @@
-import { AgentName, McpServer, PermissionRules, Uuid } from '@dia/plugin'
+import { AgentName, PermissionRules, Uuid } from '@dia/plugin'
+import { McpServers } from '@dia-plugin/mcp/servers'
 import { Schema } from 'effect'
 
 /**
@@ -35,9 +36,6 @@ export type JobTitleName = typeof JobTitleName.Type
 
 /** A job title's skills: skill names as the Agent SDK's `Options.skills` takes them. */
 const Skills = Schema.Array(Schema.String)
-
-/** A job title's MCP servers, keyed by server name. */
-const McpServers = Schema.Record(Schema.String, McpServer)
 
 /**
  * A job title (ADR-0033, ADR-0064). `builtIn` is the built-in kind, or null for a copy. A disabled

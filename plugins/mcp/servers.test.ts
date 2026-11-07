@@ -1,18 +1,19 @@
 import { Result } from 'effect'
 import { describe, expect, it } from 'vitest'
-import { type McpServers, parseMcpServers, printMcpServers } from './mcp-json'
+import { draftOfText } from './draft'
+import { type McpServers, mcpServersDraft, readMcpServersDraft } from './servers'
 
 const parsed = (text: string) => {
-  const result = parseMcpServers(text)
+  const result = readMcpServersDraft(draftOfText(text))
   if (Result.isFailure(result)) throw new Error(`refused: ${result.failure}`)
   return result.success
 }
 const refusal = (text: string) => {
-  const result = parseMcpServers(text)
+  const result = readMcpServersDraft(draftOfText(text))
   return Result.isFailure(result) ? result.failure : undefined
 }
 
-describe('parseMcpServers', () => {
+describe('readMcpServersDraft', () => {
   it('reads an entry with a command and no type as stdio, with empty args and env', () => {
     expect(parsed('{ "files": { "command": "npx" } }')).toEqual({
       files: { type: 'stdio', command: 'npx', args: [], env: {} }
@@ -46,9 +47,9 @@ describe('parseMcpServers', () => {
   })
 })
 
-describe('printMcpServers', () => {
+describe('mcpServersDraft', () => {
   it('prints no servers as empty text', () => {
-    expect(printMcpServers({})).toBe('')
+    expect(mcpServersDraft({})).toBe('')
   })
 
   it('prints servers that parse back to the same value', () => {
@@ -57,6 +58,6 @@ describe('printMcpServers', () => {
       remote: { type: 'http', url: 'https://mcp.example.com', headers: { Authorization: 'x' } }
     }
 
-    expect(parsed(printMcpServers(servers))).toEqual(servers)
+    expect(parsed(mcpServersDraft(servers))).toEqual(servers)
   })
 })

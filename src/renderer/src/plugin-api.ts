@@ -50,7 +50,8 @@ export {
   ROOT,
   SIDEBAR,
   Slot,
-  type SlotName
+  type SlotName,
+  useProvided
 } from './lib/slots'
 export { useTabOpenedFromNewAgent } from './lib/tab-opened-from-new-agent'
 export type { PageKey, View } from './lib/view'

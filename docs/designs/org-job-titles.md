@@ -1,5 +1,7 @@
 # Org job titles (#209)
 
+Superseded in part by `docs/designs/mcp-plugin.md`: `McpServer` moved from `@shared/domain/session-tools` to `@dia-plugin/mcp/servers`.
+
 Scope: module. Replaces the org's five built-in roles with seven built-in job titles, renames "role" to "job title" and "instructions" to "job description" in `plugins/org` and in the kernel's session option types, and records in a new ADR that planning and retro are kinds of task whose hired agent the user picks. Out of scope: task kinds, the scheduler and the planning and retro flows (#179, #181), the router (plan step 2), the org screens (#178).
 
 Decisions confirmed with the user (2026-11-07):

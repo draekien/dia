@@ -4,8 +4,8 @@ import type {
   Options
 } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionToolOptions } from '@dia/plugin'
-import type { McpServer } from '@shared/domain/session-tools'
-import { Option } from 'effect'
+import { McpServer } from '@dia-plugin/mcp/servers'
+import { Effect, Option, Result, Schema } from 'effect'
 import { DIA_TOOL_SERVER_KEY } from './tool-server'
 
 /**
@@ -24,6 +24,8 @@ const NO_TOOLS: SessionToolOptions = {
   mcpServers: {}
 }
 
+const decodeServer = Schema.decodeUnknownResult(McpServer)
+
 const toSdkServer = (server: McpServer): McpServerConfig =>
   server.type === 'stdio' ? { ...server, args: [...server.args] } : { ...server }
 
@@ -32,29 +34,35 @@ const toSdkServer = (server: McpServer): McpServerConfig =>
  * approved: the {@link TASK_TRACKING_TOOLS} and `tools`' allow rules as `allowedTools`, its deny
  * rules as `disallowedTools`, its ask rules as `settings.permissions.ask`, and its MCP servers
  * plus `diaToolServer` (under `DIA_TOOL_SERVER_KEY`, replacing a server of that name in `tools`) as
- * `mcpServers`. Pass none for an ad-hoc tab. Keys with nothing to set are omitted. Spread the
- * result into a query's `options`.
+ * `mcpServers`. A server that does not decode as an `McpServer` is left out and logged. Pass none
+ * for an ad-hoc tab. Keys with nothing to set are omitted. Spread the result into a query's
+ * `options`.
  */
 export const sessionToolOptions = (
   tools: Option.Option<SessionToolOptions>,
   diaToolServer: Option.Option<McpSdkServerConfigWithInstance>
-): Pick<Options, 'allowedTools' | 'disallowedTools' | 'settings' | 'mcpServers'> => {
-  const { permissions, mcpServers } = Option.getOrElse(tools, () => NO_TOOLS)
-  const servers: Record<string, McpServerConfig> = {
-    ...Object.fromEntries(
-      Object.entries(mcpServers).map(([name, server]) => [name, toSdkServer(server)])
-    ),
-    ...Option.match(diaToolServer, {
-      onNone: () => ({}),
-      onSome: (server) => ({ [DIA_TOOL_SERVER_KEY]: server })
-    })
-  }
-  return {
-    allowedTools: [...TASK_TRACKING_TOOLS, ...permissions.allow],
-    ...(permissions.deny.length === 0 ? {} : { disallowedTools: [...permissions.deny] }),
-    ...(permissions.ask.length === 0
-      ? {}
-      : { settings: { permissions: { ask: [...permissions.ask] } } }),
-    ...(Object.keys(servers).length === 0 ? {} : { mcpServers: servers })
-  }
-}
+): Effect.Effect<Pick<Options, 'allowedTools' | 'disallowedTools' | 'settings' | 'mcpServers'>> =>
+  Effect.gen(function* () {
+    const { permissions, mcpServers } = Option.getOrElse(tools, () => NO_TOOLS)
+    const servers: Record<string, McpServerConfig> = {}
+    for (const [name, value] of Object.entries(mcpServers)) {
+      const server = decodeServer(value)
+      if (Result.isFailure(server)) {
+        yield* Effect.logWarning('An MCP server was left out of the session', {
+          server: name,
+          message: server.failure.message
+        })
+        continue
+      }
+      servers[name] = toSdkServer(server.success)
+    }
+    if (Option.isSome(diaToolServer)) servers[DIA_TOOL_SERVER_KEY] = diaToolServer.value
+    return {
+      allowedTools: [...TASK_TRACKING_TOOLS, ...permissions.allow],
+      ...(permissions.deny.length === 0 ? {} : { disallowedTools: [...permissions.deny] }),
+      ...(permissions.ask.length === 0
+        ? {}
+        : { settings: { permissions: { ask: [...permissions.ask] } } }),
+      ...(Object.keys(servers).length === 0 ? {} : { mcpServers: servers })
+    }
+  })
