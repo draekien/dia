@@ -46,11 +46,12 @@ export {
   RoleNameTaken,
   RoleNotFound
 } from '../shared/domain/org'
-export { SessionId } from '../shared/domain/pane'
+export { type PaneId, SessionId } from '../shared/domain/pane'
 export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
 export { AgentName } from '../shared/domain/project'
 export type { RoleSessionOptions } from '../shared/domain/role-session'
 export * from '../shared/plugin/api'
+export * from '../shared/plugin/list-slot'
 export { PluginCallInvalid, PluginNotServing } from '../shared/plugin/messages'
 export type { MetaRepo } from './services/meta-repo-seam'
 export {

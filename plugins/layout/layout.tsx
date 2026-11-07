@@ -1,5 +1,9 @@
 import {
   AccountBanner,
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
   MAIN,
   MAIN_HEADER,
   Separator,
@@ -8,8 +12,11 @@ import {
   SidebarProvider,
   SidebarTrigger,
   Slot,
+  useList,
+  useView,
   WorkspaceProblemsBanner
 } from '@dia/renderer-plugin'
+import { PagesSlot } from '@dia-plugin/layout/slots'
 import { Effect } from 'effect'
 import { useState } from 'react'
 
@@ -52,15 +59,37 @@ function NoSidebarPlugin() {
   )
 }
 
+function PageCrumb({ label }: { readonly label: string }) {
+  return (
+    <Breadcrumb className="min-w-0">
+      <BreadcrumbList className="flex-nowrap">
+        <BreadcrumbItem className="min-w-0">
+          <BreadcrumbPage className="truncate font-medium">{label}</BreadcrumbPage>
+        </BreadcrumbItem>
+      </BreadcrumbList>
+    </Breadcrumb>
+  )
+}
+
+function useOpenPage() {
+  const view = useView()
+  const pages = useList(PagesSlot)
+  if (view?._tag !== 'PageView') return undefined
+  return pages.find((page) => page.key.plugin === view.plugin && page.key.id === view.id)
+}
+
 /**
  * The window frame: a shadcn sidebar layout with no title bar. The `sidebar` slot fills the left
  * column; the content column holds a draggable header row (sidebar toggle, then the `main.header`
- * slot) above the `main` slot. Persists the sidebar's open state and width in `localStorage`.
+ * slot) above the `main` slot. While a page from the pages list is open, the header row shows its
+ * label before the `main.header` slot and the content area shows the page instead of the `main`
+ * slot. Persists the sidebar's open state and width in `localStorage`.
  * Fill the `root` slot with it.
  */
 export function Layout() {
   const [open, setOpen] = useState(readOpen)
   const [width, setWidth] = useState(readWidth)
+  const page = useOpenPage()
 
   const saveOpen = (next: boolean) => {
     setOpen(next)
@@ -92,13 +121,14 @@ export function Layout() {
         <header className="titlebar-drag flex h-8 shrink-0 items-center gap-2 px-2 pr-(--titlebar-controls-inset)">
           <SidebarTrigger />
           <Separator orientation="vertical" className="data-[orientation=vertical]:h-4" />
+          {page !== undefined && <PageCrumb label={page.label} />}
           <Slot name={MAIN_HEADER} />
         </header>
         <Separator />
         <AccountBanner />
         <WorkspaceProblemsBanner />
         <div className="min-h-0 flex-1">
-          <Slot name={MAIN} />
+          {page === undefined ? <Slot name={MAIN} /> : <page.component />}
         </div>
       </SidebarInset>
     </SidebarProvider>

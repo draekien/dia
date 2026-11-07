@@ -1,25 +1,24 @@
 import { useAtomValue } from '@effect/atom-react'
 import type { PaneId } from '@shared/domain/pane'
-import type { PluginServices } from '@shared/plugin/api'
-import { Effect, Option, Schema, type Scope } from 'effect'
+import type { ListEntry } from '@shared/plugin/list-slot'
+import { Effect, Option, Schema } from 'effect'
 import { Atom } from 'effect/reactivity'
 import { type ComponentType, useEffect } from 'react'
 import { appRegistry } from './workspace-atoms'
 
-/** A card a plugin adds to the session rail with {@link addRailCard}. */
-export interface RailCard {
-  /** Unique within the plugin, for example `context`. */
+/**
+ * A card the session rail draws: an entry of the chat plugin's rail card list. The rail draws the
+ * frame and `title`; `component` draws the body for the visible pane.
+ */
+export type RailCardView = ListEntry<{
   readonly id: string
-  /** The card's header text, for example `Context`. */
+  readonly order: number
   readonly title: string
-  /** Renders the card's body for the visible pane; the rail draws the frame and header. */
   readonly component: ComponentType<{ readonly paneId: PaneId }>
-}
+}>
 
-/** A {@link RailCard} as the rail holds it, with its app-wide `key` (`<plugin>.<id>`). */
-export interface RegisteredRailCard extends RailCard {
-  readonly key: string
-}
+/** The app-wide key of `card`, `<plugin>.<id>`, under which the user's choice to hide it is saved. */
+export const railCardKey = (card: RailCardView): string => `${card.key.plugin}.${card.key.id}`
 
 const OPEN_KEY = 'dia.rail.open'
 const HIDDEN_KEY = 'dia.rail.hidden'
@@ -31,9 +30,6 @@ const log = (message: string, annotations?: Record<string, unknown>): void =>
   Effect.runSync(Effect.logDebug(message, annotations))
 
 const decodeHidden = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
-
-/** Every card plugins added, in the order they were added. */
-export const railCardsAtom = Atom.make<ReadonlyArray<RegisteredRailCard>>([]).pipe(Atom.keepAlive)
 
 const chosenOpenAtom = Atom.make<boolean | null>(null).pipe(Atom.keepAlive)
 
@@ -70,41 +66,9 @@ export const railShownAtom = Atom.make((get): boolean =>
   get(railFitsAtom) ? get(railOpenAtom) : get(railPeekAtom)
 ).pipe(Atom.keepAlive)
 
-/** The cards the user did not hide, in order; empty while the rail is not on screen. */
-export const visibleRailCardsAtom = Atom.make((get): ReadonlyArray<RegisteredRailCard> => {
-  if (!get(railShownAtom)) return []
-  const hidden = get(hiddenRailCardsAtom)
-  return get(railCardsAtom).filter((card) => !hidden.includes(card.key))
-}).pipe(Atom.keepAlive)
-
 const railCardShownAtom = Atom.family((key: string) =>
-  Atom.make((get): boolean => get(visibleRailCardsAtom).some((card) => card.key === key))
+  Atom.make((get): boolean => get(railShownAtom) && !get(hiddenRailCardsAtom).includes(key))
 )
-
-/**
- * Adds `card` to the session rail for as long as the plugin's scope is open. Its key is
- * `<plugin name>.<card.id>`; adding the same id again, as a reload does, replaces the card in
- * place. Call it from a renderer plugin's setup.
- */
-export const addRailCard = (
-  ctx: PluginServices,
-  card: RailCard
-): Effect.Effect<void, never, Scope.Scope> => {
-  const entry: RegisteredRailCard = { ...card, key: `${ctx.name}.${card.id}` }
-  return Effect.acquireRelease(
-    Effect.sync(() =>
-      appRegistry.update(railCardsAtom, (cards) =>
-        cards.some((existing) => existing.key === entry.key)
-          ? cards.map((existing) => (existing.key === entry.key ? entry : existing))
-          : [...cards, entry]
-      )
-    ).pipe(Effect.tap(() => Effect.logDebug('Added a session rail card', { key: entry.key }))),
-    () =>
-      Effect.sync(() =>
-        appRegistry.update(railCardsAtom, (cards) => cards.filter((existing) => existing !== entry))
-      ).pipe(Effect.tap(() => Effect.logDebug('Removed a session rail card', { key: entry.key })))
-  )
-}
 
 /**
  * Where a transcript column of at most `columnMax` px sits in a pane `width` px wide, given

@@ -1,6 +1,7 @@
 import type { PluginServices, PluginSetup } from '@dia/plugin'
-import { addPage, callHost } from '@dia/renderer-plugin'
+import { addEntry, callHost } from '@dia/renderer-plugin'
 import { ReadGreeting } from '@dia-plugin/example/messages'
+import { PagesSlot } from '@dia-plugin/layout/slots'
 import { Effect } from 'effect'
 import { Atom } from 'effect/reactivity'
 import { HandIcon } from 'lucide-react'
@@ -11,7 +12,7 @@ const setup: PluginSetup<PluginServices> = (ctx) =>
   Effect.gen(function* () {
     yield* Effect.addFinalizer(() => Effect.logInfo('Example renderer plugin closed', ctx.name))
     const greeting = Atom.make(callHost(ctx, ReadGreeting, {}))
-    yield* addPage(ctx, {
+    yield* addEntry(ctx, PagesSlot, {
       id: 'greeting',
       label: 'Example',
       icon: HandIcon,

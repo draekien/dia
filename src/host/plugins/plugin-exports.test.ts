@@ -17,6 +17,8 @@ const SPECIFIER_PATTERNS = [
   /import\s*['"]([^'"]+)['"]/g,
   /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g
 ]
+const TYPE_ONLY_FROM_REACT =
+  /(?:import|export)\s+type\s+(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)\s+from\s*['"]react['"]/g
 const FORBIDDEN_FORMS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\brequire\s*\(/, 'require('],
   [/\bimport\s*\((?!\s*['"][^'"]+['"]\s*\))/, 'import() of a non-literal'],
@@ -26,8 +28,12 @@ const FORBIDDEN_FORMS: ReadonlyArray<readonly [RegExp, string]> = [
 const stripComments = (source: string): string =>
   source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
 
-const specifiersOf = (source: string): ReadonlyArray<string> =>
-  SPECIFIER_PATTERNS.flatMap((pattern) => [...source.matchAll(pattern)].map((match) => match[1]))
+const specifiersOf = (source: string): ReadonlyArray<string> => {
+  const checked = source.replace(TYPE_ONLY_FROM_REACT, '')
+  return SPECIFIER_PATTERNS.flatMap((pattern) =>
+    [...checked.matchAll(pattern)].map((match) => match[1])
+  )
+}
 
 const exportsIn = (pluginsDir: string, plugin: string): ReadonlyArray<string> | undefined => {
   const manifestPath = join(pluginsDir, plugin, 'plugin.json')
@@ -147,6 +153,15 @@ describe('the export import check', () => {
     expect(problems).toEqual([])
   })
 
+  it.each([
+    ["import type { ComponentType } from 'react'"],
+    ["import type {\n  ComponentType,\n  ReactNode\n} from 'react'"],
+    ["export type { ReactNode } from 'react'"],
+    ["import type * as React from 'react'"]
+  ])('accepts the type-only statement %s from react', (statement) => {
+    expect(fixture({ 'org/domain.ts': `${statement}\n` })).toEqual([])
+  })
+
   it('ignores an import inside a comment', () => {
     expect(
       fixture({ 'org/domain.ts': "// import React from 'react'\n/* import 'node:fs' */\n" })
@@ -154,7 +169,8 @@ describe('the export import check', () => {
   })
 
   it.each([
-    ["import type { ReactNode } from 'react'", 'imports "react"'],
+    ["import { type ReactNode } from 'react'", 'imports "react"'],
+    ["import type { Stats } from 'node:fs'", 'imports "node:fs"'],
     ["import { readFileSync } from 'node:fs'", 'imports "node:fs"'],
     ["export { Pane } from '@shared/domain/pane'", 'imports "@shared/domain/pane"'],
     ["import '@dia/renderer-plugin'", 'imports "@dia/renderer-plugin"'],

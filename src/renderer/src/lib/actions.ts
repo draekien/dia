@@ -53,6 +53,20 @@ export const openPage = (key: PageKey): void => {
   window.dia.selectTab(null)
 }
 
+/**
+ * Closes the page `key` names if it is the open page, and shows the tab that was visible when it
+ * opened. Does nothing when another page, or no page, is open.
+ */
+export const closePage = (key: PageKey): void => {
+  const open = appRegistry.get(openPageAtom)
+  if (Option.isNone(open) || open.value.key.plugin !== key.plugin || open.value.key.id !== key.id) {
+    return
+  }
+  log('Closing a page', { plugin: key.plugin, id: key.id })
+  appRegistry.set(openPageAtom, Option.none())
+  if (open.value.shownBefore !== null) window.dia.selectTab(open.value.shownBefore)
+}
+
 /** Closes the New agent form and shows the tab that was visible when it opened. */
 export const cancelNewAgent = (): void => {
   const form = appRegistry.get(newAgentFormAtom)

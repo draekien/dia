@@ -1,11 +1,9 @@
 // @vitest-environment jsdom
 import { renderHook } from '@testing-library/react'
-import { Effect, Exit, Scope } from 'effect'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
-  addRailCard,
   hiddenRailCardsAtom,
-  railCardsAtom,
+  railCardKey,
   railLayout,
   railOpenAtom,
   railPeekAtom,
@@ -20,13 +18,6 @@ import { appRegistry } from './workspace-atoms'
 const DEFAULT_COLUMN = 768
 const CARD_SPACE = 320
 const Body = () => null
-const ctx = (name: string) => ({
-  name,
-  provide: () => Effect.void,
-  inject: () => Effect.succeedNone,
-  whenProvided: () => Effect.void
-})
-
 beforeEach(() => {
   localStorage.clear()
   appRegistry.reset()
@@ -67,37 +58,17 @@ describe('railLayout', () => {
   })
 })
 
-describe('addRailCard', () => {
-  it('keys the card by plugin name and id while the scope is open, and removes it on close', () => {
-    const scope = Effect.runSync(Scope.make())
-    Effect.runSync(
-      Scope.provide(
-        addRailCard(ctx('chat'), { id: 'context', title: 'Context', component: Body }),
-        scope
-      )
-    )
-    expect(appRegistry.get(railCardsAtom).map((card) => card.key)).toEqual(['chat.context'])
+describe('railCardKey', () => {
+  it('joins the adding plugin and the card id with a dot, the form saved hidden cards use', () => {
+    const card = {
+      key: { plugin: 'chat', id: 'context' },
+      id: 'context',
+      order: 10,
+      title: 'Context',
+      component: Body
+    }
 
-    Effect.runSync(Scope.close(scope, Exit.void))
-    expect(appRegistry.get(railCardsAtom)).toEqual([])
-  })
-
-  it('keeps a reloaded card in its place after the old version closes', () => {
-    const first = Effect.runSync(Scope.make())
-    const other = Effect.runSync(Scope.make())
-    const reloaded = Effect.runSync(Scope.make())
-    const add = (name: string, id: string, title: string, scope: Scope.Closeable) =>
-      Effect.runSync(Scope.provide(addRailCard(ctx(name), { id, title, component: Body }), scope))
-
-    add('chat', 'context', 'Context', first)
-    add('notes', 'notes', 'Notes', other)
-    add('chat', 'context', 'Context v2', reloaded)
-    Effect.runSync(Scope.close(first, Exit.void))
-
-    expect(appRegistry.get(railCardsAtom).map((card) => card.title)).toEqual([
-      'Context v2',
-      'Notes'
-    ])
+    expect(railCardKey(card)).toBe('chat.context')
   })
 })
 

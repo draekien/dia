@@ -15,11 +15,12 @@ import {
   TooltipContent,
   TooltipTrigger,
   useAgentSummaries,
-  usePages,
+  useList,
   useSidebar,
   useView,
   useWorkspace
 } from '@dia/renderer-plugin'
+import { PagesSlot } from '@dia-plugin/layout/slots'
 import {
   type Announcements,
   closestCenter,
@@ -172,7 +173,7 @@ function MetaGroup() {
 }
 
 function PagesGroup() {
-  const pages = usePages()
+  const pages = useList(PagesSlot)
   const view = useView()
   if (pages.length === 0) return null
   return (

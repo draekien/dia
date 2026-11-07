@@ -2,7 +2,6 @@ import { usePrevious } from '@renderer/hooks/use-previous'
 import type { Project } from '@shared/domain/project'
 import { FolderPlusIcon, PlusIcon } from 'lucide-react'
 import { newAgent, registerProject } from '../lib/actions'
-import { findPage, usePages } from '../lib/pages'
 import { MAIN_TAB, Slot } from '../lib/slots'
 import { TabOpenedFromNewAgent } from '../lib/tab-opened-from-new-agent'
 import { useView, useWorkspace } from '../plugin-api'
@@ -61,22 +60,19 @@ function NoChatPlugin() {
 
 /**
  * The kernel's content area, shown in the `main` slot unless a plugin fills it. Renders by the
- * current view: a plugin's page, the `main.tab` slot for the visible tab (or a notice that no chat
+ * current view: nothing for a plugin's page (the layout plugin draws it), the `main.tab` slot for the visible tab (or a notice that no chat
  * plugin is loaded), the New agent form, the first-run screen, or the prompt to start an agent; the
  * startup skeleton until the workspace loads.
  */
 export function TabContent() {
   const view = useView()
   const workspace = useWorkspace()
-  const pages = usePages()
   const previousView = usePrevious(view)
   const cameFromNewAgent = previousView?._tag === 'NewAgentView'
   if (view === undefined || workspace === undefined) return <StartupSkeleton />
   switch (view._tag) {
-    case 'PageView': {
-      const page = findPage(pages, view)
-      return page === undefined ? null : <page.component />
-    }
+    case 'PageView':
+      return null
     case 'TabView':
       return (
         <TabOpenedFromNewAgent.Provider value={cameFromNewAgent}>

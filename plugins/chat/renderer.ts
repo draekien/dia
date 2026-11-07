@@ -1,5 +1,6 @@
 import type { PluginServices, PluginSetup } from '@dia/plugin'
-import { addRailCard, fillSlot, MAIN_TAB } from '@dia/renderer-plugin'
+import { addEntry, declareList, fillSlot, MAIN_TAB } from '@dia/renderer-plugin'
+import { RailCardsSlot } from '@dia-plugin/chat/slots'
 import { Effect } from 'effect'
 import { BackgroundTasksCard } from './background-tasks'
 import { Chat } from './chat'
@@ -8,14 +9,26 @@ import { TaskListCard } from './task-list-card'
 
 const setup: PluginSetup<PluginServices> = (ctx) =>
   Effect.gen(function* () {
+    yield* declareList(ctx, RailCardsSlot)
     yield* fillSlot(ctx, MAIN_TAB, Chat)
-    yield* addRailCard(ctx, { id: CONTEXT_CARD_ID, title: 'Context', component: ContextCard })
-    yield* addRailCard(ctx, {
+    yield* addEntry(ctx, RailCardsSlot, {
+      id: CONTEXT_CARD_ID,
+      order: 10,
+      title: 'Context',
+      component: ContextCard
+    })
+    yield* addEntry(ctx, RailCardsSlot, {
       id: 'background-tasks',
+      order: 20,
       title: 'Background tasks',
       component: BackgroundTasksCard
     })
-    yield* addRailCard(ctx, { id: 'task-list', title: 'Task list', component: TaskListCard })
+    yield* addEntry(ctx, RailCardsSlot, {
+      id: 'task-list',
+      order: 30,
+      title: 'Task list',
+      component: TaskListCard
+    })
   })
 
 export default setup

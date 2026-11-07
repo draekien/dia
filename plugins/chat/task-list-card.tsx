@@ -66,7 +66,7 @@ export function TaskList({ todos }: { todos: ReadonlyArray<TodoItem> }): React.J
   )
 }
 
-/** The session rail's Task list card body for `paneId`. Add it with `addRailCard`. */
+/** The session rail's Task list card body for `paneId`. Add it to `RailCardsSlot` with `addEntry`. */
 export function TaskListCard({ paneId }: { readonly paneId: PaneId }): React.JSX.Element {
   const chat = usePaneChat(paneId)
   const todos = useMemo(() => latestTodos(chat.messages), [chat.messages])

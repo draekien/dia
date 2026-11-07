@@ -15,5 +15,10 @@
     "strict": true,
     "noEmit": true
   },
-  "include": ["plugins/example/messages.ts", "plugins/org/service.ts"]
+  "include": [
+    "plugins/example/messages.ts",
+    "plugins/org/service.ts",
+    "plugins/chat/slots.ts",
+    "plugins/layout/slots.ts"
+  ]
 }
