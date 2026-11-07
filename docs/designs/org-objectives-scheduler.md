@@ -123,9 +123,9 @@ WorkSnapshot = { objectives: Objective[], tasks: Task[] }
 LiveWork     = { pendingPermissions: PendingPermission[], heldSlots: number }   // from the dispatcher
 ```
 
-`makeWork` takes the SQL client and the latest-workspace `Ref` (for `ProjectNotFound`). It has no `Org` dependency: it checks that a hire exists with `SELECT 1 FROM hired_agents`, as `org.ts` checks its own rows. It also returns `startCandidates: Effect<{ waiting: ReadonlyArray<{ task, objective }>, busyHires: ReadonlySet<HireId> }>`, read in one query pass: the waiting tasks with an assignee, and the hires with a `running` task.
+`makeWork(projectExists: (projectId) => Effect<boolean>)` runs with the SQL client and returns `{ work, runs, openTasksOf }`. `projectExists` answers from the latest workspace, so `createObjective` fails with `ProjectNotFound` for an unlisted project. `makeWork` has no `Org` dependency: it checks that a hire exists with `SELECT 1 FROM hired_agents`, as `org.ts` checks its own rows. `runs: TaskRuns` is the dispatcher's write side: `startCandidates: Effect<{ waiting, busyHires }>`, read in one query pass (the waiting tasks with an assignee, and the hires with a `running` task), and the conditional writes `markStarted`, `markSessionStarted`, `markRequeued` and `requeueRunning`.
 
-The dispatcher's members: `answerPermission(taskId, requestId, response): Effect<void, PermissionNotPending>`, `live: Effect<LiveWork>`, `signal: Effect<void>`.
+The dispatcher's members: `signal: Effect<void>`, `lendBackend(backend): Effect<void, never, Scope>` (the backend is used until the calling scope closes), `answerPermission(taskId, requestId, response): Effect<void, PermissionNotPending>`, `release(taskId): Effect<void>`, `live: Effect<LiveWork>`.
 
 Every change is safe to repeat, because `ctx.serve` can run a handler twice for one call (`src/shared/plugin/api.ts:197`):
 
@@ -142,7 +142,7 @@ Every change is safe to repeat, because `ctx.serve` can run a handler twice for 
 
 `ReadWork` (success `{ ...WorkSnapshot, ...LiveWork }`: `host.ts` joins `work.snapshot` and `dispatcher.live`), `CreateObjective`, `CreateTask`, `AssignTask`, `FinishTask`, each with the payload and errors of the `Work` member of the same name, and `AnswerPermission`, served from `dispatcher.answerPermission`, which signals itself after queuing the answer. `Dismiss` gains the error `HireHasOpenTasks`.
 
-`host.ts` signals the dispatcher after every successful `CreateTask`, `AssignTask`, `FinishTask` and `SetOverallCap` handler run. `Work` and `Org` do not know the dispatcher.
+`host.ts` calls `dispatcher.signal` after every successful `CreateTask` and `SetOverallCap` handler run, and `dispatcher.release(taskId)` after every successful `AssignTask` and `FinishTask` handler run. `Work` and `Org` do not know the dispatcher.
 
 ### Scheduler (`scheduler.ts`, pure)
 
@@ -190,7 +190,7 @@ Owns the live sessions: per running task, its `Scope`, its `AgentSession`, its `
 
 **Serialisation.** One worker fiber, forked in the plugin's scope, takes from a `Queue.sliding(1)` of signals and runs one pass per signal, so passes never overlap. The live map is a `SynchronizedRef`. A pass reads `heldSlots`, calls `nextStarts`, and sets `SlotState{ turn: 'running', background: 0 }` for every chosen task in one `SynchronizedRef.modify`, then starts or resumes them. Session `emit` handlers update the same `SynchronizedRef`, write `TaskSessionStarted` (a write failure is a defect, logged at error level), and offer a signal when a slot is freed. Signals come from `host.ts` (calls), slot releases, `Ready` catalog changes, the agent backend being provided, and workspace changes.
 
-**Starting** a task: `work.startCandidates` returns, per waiting task with an assignee, `{ task, objective }`, and `busyHires`; the dispatcher supplies `heldSlots` and `answered`. The dispatcher adds the hire and job title from `org.hiredAgents` and `org.jobTitles`, and the project from the latest workspace, into a `StartContext { task, objective, hire, jobTitle, project }`.
+**Starting** a task: `runs.startCandidates` returns, per waiting task with an assignee, `{ task, objective }`, and `busyHires`; the dispatcher supplies `heldSlots` and `answered`. The dispatcher adds the hire and job title from `org.hiredAgents` and `org.jobTitles`, and the project from the latest workspace, into a `StartContext { task, objective, hire, jobTitle, project }`.
 
 1. Model: `jobTitle.model`, or the first `ModelOption` of the latest `Ready` catalog. With no backend or no `Ready` catalog the pass skips starts.
 2. Mode: `startPermissionMode({ modelSupportsAuto, disabled: yield* backend.disabledPermissionModes(project.directory), bypassOptedIn: hire.bypassOverride ?? jobTitle.bypassOptIn })`. `modelSupportsAuto` is the matching `ModelOption.autoMode`, false when the model is not listed. Log the inputs and the result at info level.
@@ -204,11 +204,11 @@ Owns the live sessions: per running task, its `Scope`, its `AgentSession`, its `
 
 **Conditional writes.** Every dispatcher write other than `TaskStarted` is `UPDATE tasks ... WHERE task_id = ? AND state = 'running'`. A write that changes no row writes no event and is logged at debug level. So a `TaskRequeued` or `TaskSessionStarted` that arrives after `finishTask` commits changes nothing.
 
-**`finishTask`** commits, then the dispatcher drops the task's `SlotState` and pending permissions, closes its scope, and signals.
+**`release(taskId)`** runs after `finishTask` or `assignTask` commits: the dispatcher drops the task's `SlotState` and pending permissions, closes its scope, and signals.
 
 **Plugin setup** requeues every `running` task (its sessions belong to the previous setup), keeping `sessionId`. The plugin scope's finalizer closes every task scope.
 
-**Projects.** `host.ts` keeps the latest `Workspace` from `ctx.workspace` in a `Ref`, and reads the first value before it serves any call. A candidate whose project is not listed is skipped and logged at warning level.
+**Projects.** `host.ts` keeps the latest `Workspace` from `ctx.workspace` in a `Ref`, and waits for the first value before it serves any call. It passes `projectExists` to `makeWork` and the project directory lookup to `makeDispatcher`. A candidate whose project is not listed is skipped and logged at warning level.
 
 The scheduler pass logs `heldSlots`, `answered.length`, `waiting.length`, and the `resume` and `start` it picked, at debug level.
 

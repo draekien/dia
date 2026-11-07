@@ -74,6 +74,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0064](0064-job-titles-and-task-kinds.md) | Name what an agent is hired as a job title, ship seven built-in job titles, and make planning and retro kinds of task | accepted |
 | [0065](0065-adapter-plugins-are-ordinary-plugins.md) | Adapter plugins load, reload, unload and import under the same rules as feature plugins | accepted |
 | [0066](0066-plugin-owned-fields-in-kernel-contracts.md) | A kernel contract field whose shape a plugin owns is `unknown` in the kernel | accepted |
+| [0067](0067-hired-agent-sessions-run-headless-in-the-org-plugin.md) | Hired agents' sessions run headless inside the org plugin | accepted |
 
 ## Adding a new ADR
 
