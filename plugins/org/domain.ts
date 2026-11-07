@@ -1,4 +1,4 @@
-import { AgentName, PermissionRules, RoleMcpServer, Uuid } from '@dia/plugin'
+import { AgentName, McpServer, PermissionRules, Uuid } from '@dia/plugin'
 import { Schema } from 'effect'
 
 /** The built-in roles dia ships (ADR-0033, without `router`). A built-in role's name is its kind. */
@@ -32,14 +32,14 @@ export type RoleName = typeof RoleName.Type
 const Skills = Schema.Array(Schema.String)
 
 /** A role's MCP servers, keyed by server name. */
-const McpServers = Schema.Record(Schema.String, RoleMcpServer)
+const McpServers = Schema.Record(Schema.String, McpServer)
 
 /**
  * A role (ADR-0033). `builtIn` is the built-in kind, or null for a copy. A disabled role cannot be
  * hired into. `instructions` is appended to its sessions' system prompt. `skills` are skill names
  * as the Agent SDK's `Options.skills` takes them; empty means Claude Code's own skill set, so a
  * session of a role with no skills omits `Options.skills` (`[]` would enable none).
- * `permissions` and `mcpServers` are what the role adds to a session (`RoleSessionOptions`);
+ * `permissions` and `mcpServers` are what the role adds to a session (`SessionToolOptions`);
  * `bypassOptIn` is the role's `bypassPermissions` opt-in (ADR-0054).
  */
 export const Role = Schema.Struct({

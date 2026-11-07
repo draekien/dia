@@ -103,10 +103,10 @@ const open = Effect.fnUntraced(function* (readings: ReadonlyArray<Reading | Erro
       config,
       resume: Option.none(),
       emit: (m) => Effect.sync(() => emitted.push(m)),
-      tools: [],
+      diaTools: [],
       systemPromptAppend: '',
       pluginPaths: [],
-      role: Option.none()
+      tools: Option.none()
     },
     {
       resolve: Effect.succeed(Option.some('/usr/local/bin/claude')),

@@ -27,10 +27,10 @@ const openOptions = {
   config,
   resume: Option.none(),
   emit: () => Effect.void,
-  tools: [],
+  diaTools: [],
   systemPromptAppend: '',
   pluginPaths: [],
-  role: Option.none()
+  tools: Option.none()
 }
 
 describe('resolveAgentBackend', () => {

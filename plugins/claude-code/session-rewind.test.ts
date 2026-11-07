@@ -139,10 +139,10 @@ const openResumed = (transcript: ReadonlyArray<SessionMessage>, transcriptFails 
       config,
       resume: Option.some(SESSION),
       emit,
-      tools: [],
+      diaTools: [],
       systemPromptAppend: '',
       pluginPaths: [],
-      role: Option.none()
+      tools: Option.none()
     })
     yield* settle
     return { session, emitted }
@@ -187,10 +187,10 @@ const openInMode = (permissionMode: PaneConfig['permissionMode']) =>
       config: { ...config, permissionMode },
       resume: Option.none(),
       emit: () => Effect.void,
-      tools: [],
+      diaTools: [],
       systemPromptAppend: '',
       pluginPaths: [],
-      role: Option.none()
+      tools: Option.none()
     })
     yield* settle
   })
@@ -239,10 +239,10 @@ describe('rewindToCheckpoint', () => {
         config,
         resume: Option.some(SESSION),
         emit: () => Effect.void,
-        tools: [],
+        diaTools: [],
         systemPromptAppend: '',
         pluginPaths: [],
-        role: Option.none()
+        tools: Option.none()
       })
 
       yield* session.rewindToCheckpoint('turn-2', 'reply-1')
@@ -388,10 +388,10 @@ describe('rewindToCheckpoint', () => {
         config,
         resume: Option.none(),
         emit: (message) => Effect.sync(() => emitted.push(message)),
-        tools: [],
+        diaTools: [],
         systemPromptAppend: '',
         pluginPaths: [],
-        role: Option.none()
+        tools: Option.none()
       })
 
       yield* session.rewindToCheckpoint('turn-2', 'reply-1')
@@ -432,10 +432,10 @@ describe('rewindToCheckpoint', () => {
           message._tag === 'RewoundToCheckpoint'
             ? Effect.never
             : Effect.sync(() => emitted.push(message)),
-        tools: [],
+        diaTools: [],
         systemPromptAppend: '',
         pluginPaths: [],
-        role: Option.none()
+        tools: Option.none()
       })
       yield* settle
 

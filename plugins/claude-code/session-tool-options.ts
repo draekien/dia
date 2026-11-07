@@ -3,8 +3,8 @@ import type {
   McpServerConfig,
   Options
 } from '@anthropic-ai/claude-agent-sdk'
-import type { RoleSessionOptions } from '@dia/plugin'
-import type { RoleMcpServer } from '@shared/domain/role-session'
+import type { SessionToolOptions } from '@dia/plugin'
+import type { McpServer } from '@shared/domain/session-tools'
 import { Option } from 'effect'
 import { DIA_TOOL_SERVER_KEY } from './tool-server'
 
@@ -19,27 +19,27 @@ export const TASK_TRACKING_TOOLS: ReadonlyArray<string> = [
   'TaskList'
 ]
 
-const NO_ROLE: RoleSessionOptions = {
+const NO_TOOLS: SessionToolOptions = {
   permissions: { allow: [], ask: [], deny: [] },
   mcpServers: {}
 }
 
-const toSdkServer = (server: RoleMcpServer): McpServerConfig =>
+const toSdkServer = (server: McpServer): McpServerConfig =>
   server.type === 'stdio' ? { ...server, args: [...server.args] } : { ...server }
 
 /**
  * The Agent SDK query options that decide which tools a session has and how their calls are
- * approved: the {@link TASK_TRACKING_TOOLS} and `role`'s allow rules as `allowedTools`, its deny
+ * approved: the {@link TASK_TRACKING_TOOLS} and `tools`' allow rules as `allowedTools`, its deny
  * rules as `disallowedTools`, its ask rules as `settings.permissions.ask`, and its MCP servers
- * plus `diaToolServer` (under `DIA_TOOL_SERVER_KEY`, replacing a role server of that name) as
+ * plus `diaToolServer` (under `DIA_TOOL_SERVER_KEY`, replacing a server of that name in `tools`) as
  * `mcpServers`. Pass none for an ad-hoc tab. Keys with nothing to set are omitted. Spread the
  * result into a query's `options`.
  */
 export const sessionToolOptions = (
-  role: Option.Option<RoleSessionOptions>,
+  tools: Option.Option<SessionToolOptions>,
   diaToolServer: Option.Option<McpSdkServerConfigWithInstance>
 ): Pick<Options, 'allowedTools' | 'disallowedTools' | 'settings' | 'mcpServers'> => {
-  const { permissions, mcpServers } = Option.getOrElse(role, () => NO_ROLE)
+  const { permissions, mcpServers } = Option.getOrElse(tools, () => NO_TOOLS)
   const servers: Record<string, McpServerConfig> = {
     ...Object.fromEntries(
       Object.entries(mcpServers).map(([name, server]) => [name, toSdkServer(server)])

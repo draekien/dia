@@ -209,8 +209,8 @@ export const SessionFactoryLive = Layer.effect(
       return yield* backend.openSession({
         ...options,
         ...additions,
-        tools: pluginTools,
-        role: Option.none()
+        diaTools: pluginTools,
+        tools: Option.none()
       })
     })
     return { start }

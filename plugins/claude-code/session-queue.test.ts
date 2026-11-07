@@ -5,10 +5,10 @@ import {
   type AgentSessionOptions,
   type OutboundMessage,
   RewindFailed,
-  type RoleSessionOptions,
   type SessionAdditions,
   SessionFailed,
-  SessionNotFound
+  SessionNotFound,
+  type SessionToolOptions
 } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import { ContentAttachment, PathAttachment } from '@shared/domain/attachment'
@@ -134,7 +134,7 @@ const nothingAdded: SessionAdditions = { systemPromptAppend: '', pluginPaths: []
 
 const openWith = Effect.fnUntraced(function* (
   resume: Option.Option<SessionId>,
-  additions: SessionAdditions & Partial<Pick<AgentSessionOptions, 'role'>> = nothingAdded
+  additions: SessionAdditions & Partial<Pick<AgentSessionOptions, 'tools'>> = nothingAdded
 ) {
   sdk.queries.length = 0
   const emitted: Array<OutboundMessage> = []
@@ -144,8 +144,8 @@ const openWith = Effect.fnUntraced(function* (
       config,
       resume,
       emit: (message) => Effect.sync(() => emitted.push(message)),
-      tools: [],
-      role: Option.none(),
+      diaTools: [],
+      tools: Option.none(),
       ...additions
     },
     installAt(Option.some(INSTALL_PATH)),
@@ -470,10 +470,10 @@ describe('install', () => {
           config,
           resume: Option.none(),
           emit: () => Effect.void,
-          tools: [],
+          diaTools: [],
           systemPromptAppend: '',
           pluginPaths: [],
-          role: Option.none()
+          tools: Option.none()
         },
         installAt(Option.none()),
         () => Effect.void
@@ -495,10 +495,10 @@ describe('install', () => {
           config,
           resume: Option.none(),
           emit: (message) => Effect.sync(() => void emitted.push(message)),
-          tools: [],
+          diaTools: [],
           systemPromptAppend: '',
           pluginPaths: [],
-          role: Option.none()
+          tools: Option.none()
         },
         installAt(Option.none()),
         () => Effect.void
@@ -519,10 +519,10 @@ describe('install', () => {
           config,
           resume: Option.none(),
           emit: () => Effect.void,
-          tools: [],
+          diaTools: [],
           systemPromptAppend: '',
           pluginPaths: [],
-          role: Option.none()
+          tools: Option.none()
         },
         installAt(Option.none(), Option.some('D:\\claude.cmd')),
         () => Effect.void
@@ -754,16 +754,16 @@ describe('session additions', () => {
   )
 })
 
-describe('role session options', () => {
-  const role: RoleSessionOptions = {
+describe('session tool options', () => {
+  const toolOptions: SessionToolOptions = {
     permissions: { allow: ['Read'], ask: ['Bash(git status*)'], deny: ['Bash(git push *)'] },
     mcpServers: { docs: { type: 'http', url: 'https://docs.example/mcp', headers: {} } }
   }
-  const withRole = { ...nothingAdded, role: Option.some(role) }
+  const withTools = { ...nothingAdded, tools: Option.some(toolOptions) }
 
-  it.effect('passes the role rules and MCP servers to the query', () =>
+  it.effect('passes the permission rules and MCP servers to the query', () =>
     Effect.gen(function* () {
-      const { query } = yield* openWith(Option.none(), withRole)
+      const { query } = yield* openWith(Option.none(), withTools)
 
       assert.includeMembers(query.options.allowedTools ?? [], ['Read'])
       assert.deepStrictEqual(query.options.disallowedTools, ['Bash(git push *)'])
@@ -776,10 +776,10 @@ describe('role session options', () => {
     })
   )
 
-  it.effect('keeps the role rules and MCP servers when a thinking change restarts it', () =>
+  it.effect('keeps the permission rules and MCP servers when a thinking change restarts it', () =>
     Effect.gen(function* () {
       const resumed = '4f1b2c3d-0000-4000-8000-000000000017' as SessionId
-      const { session, query } = yield* openWith(Option.some(resumed), withRole)
+      const { session, query } = yield* openWith(Option.some(resumed), withTools)
 
       yield* session.setThinkingLevel('high')
       yield* session.sendText('first', 'queue')

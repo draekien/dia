@@ -119,7 +119,7 @@ JSDoc describes them as the permission rules and MCP servers a session gets in a
 
 - `session-tool-options.ts` imports `McpServer` from `@shared/domain/session-tools`; its `role` parameter and `NO_ROLE` become `tools` and `NO_TOOLS`.
 - `session.ts`: `Pick<AgentSessionOptions, 'role'>` and `additions.role` become `'tools'` and `additions.tools`, the `Starting query session` log key `role` becomes `tools`, and `const { emit, tools } = options` (`session.ts:783`) reads `diaTools`.
-- `tool-server.ts:62` reads `options.diaTools`; its JSDoc says `options.diaTools`.
+- `tool-server.ts` is unchanged: `DiaToolServerOptions.tools` (`tool-server.ts:24`) is its own interface, which `session.ts` fills from `diaTools`.
 
 Every construction of `AgentSessionOptions` passes `tools: Option.none()` or its value and `diaTools` in place of the old `tools`: `src/host/services/pane-supervisor.ts:213`, `src/host/session/agent-backend.test.ts`, `plugins/claude-code/session-context-usage.test.ts`, `session-rewind.test.ts`, `session-queue.test.ts` and `reducer.test.ts:124`.
 

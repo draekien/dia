@@ -480,7 +480,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     launch: SessionLaunch,
     notFoundRef: Ref.Ref<Option.Option<SessionId>>,
     additionalDirectories: ReadonlyArray<string>,
-    additions: SessionAdditions & Pick<AgentSessionOptions, 'role'>
+    additions: SessionAdditions & Pick<AgentSessionOptions, 'tools'>
   ) {
     const continuesFrom = yield* resolveContinuesFrom(resume, branchAt, config.cwd)
     yield* Effect.logInfo('Starting query session', {
@@ -488,10 +488,10 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       cwd: config.cwd,
       thinkingLevel: config.thinkingLevel,
       permissionMode: config.permissionMode,
-      role: Option.getOrUndefined(
-        Option.map(additions.role, (role) => ({
-          ...role.permissions,
-          mcpServers: Object.keys(role.mcpServers)
+      tools: Option.getOrUndefined(
+        Option.map(additions.tools, (tools) => ({
+          ...tools.permissions,
+          mcpServers: Object.keys(tools.mcpServers)
         }))
       ),
       resume: Option.getOrUndefined(resume),
@@ -500,9 +500,9 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     })
     if (
       Option.isSome(newDiaToolServer) &&
-      Option.exists(additions.role, (role) => DIA_TOOL_SERVER_KEY in role.mcpServers)
+      Option.exists(additions.tools, (tools) => DIA_TOOL_SERVER_KEY in tools.mcpServers)
     ) {
-      yield* Effect.logWarning('Role MCP server replaced by the dia tool server', {
+      yield* Effect.logWarning('An MCP server named dia was replaced by the dia tool server', {
         paneId: config.paneId,
         server: DIA_TOOL_SERVER_KEY
       })
@@ -529,7 +529,7 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
             includePartialMessages: true,
             canUseTool,
             ...sessionToolOptions(
-              additions.role,
+              additions.tools,
               Option.map(newDiaToolServer, (newServer) => newServer())
             ),
             permissionMode: config.permissionMode,
@@ -780,7 +780,7 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     appendLength: options.systemPromptAppend.length,
     pluginPaths: options.pluginPaths
   })
-  const { emit, tools } = options
+  const { emit, diaTools: tools } = options
   const sessionScope = yield* Scope.Scope
   const services = yield* Effect.context<never>()
   const pendingUserInput = makePendingUserInput()
