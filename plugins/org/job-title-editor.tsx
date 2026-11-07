@@ -81,7 +81,7 @@ const editOf = (
       : { jobDescription: draft.jobDescription }),
     ...(sameLines(lines(draft.skills), jobTitle.skills) ? {} : { skills: lines(draft.skills) }),
     ...(permissionsChanged ? { permissions } : {}),
-    ...(draft.mcpServers === printMcpServers(jobTitle.mcpServers)
+    ...(printMcpServers(mcpServers.success) === printMcpServers(jobTitle.mcpServers)
       ? {}
       : { mcpServers: mcpServers.success }),
     ...(draft.bypassOptIn === jobTitle.bypassOptIn ? {} : { bypassOptIn: draft.bypassOptIn })
@@ -120,7 +120,8 @@ function EditForm({
   const [errors, setErrors] = useState<FormErrors>({})
   const [busy, setBusy] = useState(false)
   const id = useId()
-  const changed = JSON.stringify(draft) !== JSON.stringify(draftOf(jobTitle))
+  const pending = editOf(jobTitle, draft)
+  const changed = Result.isFailure(pending) || Object.keys(pending.success).length > 0
   const set = (field: keyof Draft) => (value: string | boolean) => {
     setDraft((current) => ({ ...current, [field]: value }))
     setErrors({})

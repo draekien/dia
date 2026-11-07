@@ -6,7 +6,6 @@ import {
   toast
 } from '@dia/renderer-plugin'
 import { RegistryContext } from '@effect/atom-react'
-import { AGENT_NAME_MAX_LENGTH } from '@shared/domain/project'
 import { Effect, Result, Schema } from 'effect'
 import { type AsyncResult, type Atom, AtomRegistry } from 'effect/reactivity'
 import type { Rpc } from 'effect/rpc'
@@ -120,15 +119,12 @@ export const readJobTitleName = (text: string): Result.Result<JobTitleName, stri
 
 /**
  * Reads an agent name field: the trimmed name, null when blank (an unnamed agent), or the message
- * to show beside the field when it is longer than {@link AGENT_NAME_MAX_LENGTH}.
+ * to show beside the field when it is longer than `AgentName` allows.
  */
 export const readAgentName = (text: string): Result.Result<AgentName | null, string> =>
   text.trim() === ''
     ? Result.succeed(null)
-    : Result.mapError(
-        decodeAgentName(text.trim()),
-        () => `Use at most ${AGENT_NAME_MAX_LENGTH} characters`
-      )
+    : Result.mapError(decodeAgentName(text.trim()), () => 'Use a shorter name')
 
 /**
  * What every Org sub-page gets: the snapshot to draw, the org calls, a way to show another view,

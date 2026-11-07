@@ -4,7 +4,7 @@ import { Input, Label, Skeleton } from '@dia/renderer-plugin'
 import { useAtomRefresh, useAtomValue } from '@effect/atom-react'
 import { Result, Schema } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { SetOverallCap } from './calls'
 import { OverallCap } from './domain'
 import { commonFailureText, type OrgAtom, useOrgCall } from './org-actions'
@@ -23,12 +23,16 @@ function CapField({
   const [error, setError] = useState<string | undefined>(undefined)
   const inputId = useId()
   const errorId = useId()
+  const saving = useRef(false)
 
   const save = async () => {
     const next = decodeCap(text.trim() === '' ? Number.NaN : Number(text))
     if (Result.isFailure(next)) return setError('Enter a whole number of 1 or more')
-    if (next.success === cap) return
-    const result = await call(SetOverallCap, { cap: next.success }, 'overallCap')
+    if (next.success === cap || saving.current) return
+    saving.current = true
+    const result = await call(SetOverallCap, { cap: next.success }, 'overallCap').finally(() => {
+      saving.current = false
+    })
     if (Result.isFailure(result)) setError(commonFailureText(result.failure))
   }
 

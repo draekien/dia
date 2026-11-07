@@ -62,6 +62,18 @@ describe('Org settings page', () => {
     expect(host.sent).toEqual([['SetOverallCap', { cap: 6 }]])
   })
 
+  it('sends one call when Enter is followed by blur', async () => {
+    const host = await renderPage()
+
+    enter('6')
+    await act(async () => {
+      fireEvent.keyDown(screen.getByLabelText(LABEL), { key: 'Enter' })
+      fireEvent.blur(screen.getByLabelText(LABEL))
+    })
+
+    expect(host.sent).toEqual([['SetOverallCap', { cap: 6 }]])
+  })
+
   it('sends nothing when the cap is unchanged', async () => {
     const host = await renderPage()
 

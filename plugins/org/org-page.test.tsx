@@ -372,6 +372,14 @@ describe('Job titles', () => {
     ])
   })
 
+  it('keeps Save disabled when an edit changes only blank lines', async () => {
+    await showReviewer(installHost(snapshotOf()))
+
+    type('Skills', '\n\n')
+
+    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
   it('shows the MCP servers issue and sends nothing for invalid JSON', async () => {
     const host = installHost(snapshotOf())
     await showReviewer(host)

@@ -1,6 +1,5 @@
 // @effect-diagnostics asyncFunction:off -- the fake stands in for the Promise-based window.dia bridge.
 import { AgentName } from '@dia/plugin'
-import { jsonCodec } from '@shared/plugin/messages'
 import { Schema } from 'effect'
 import type { Rpc } from 'effect/rpc'
 import { vi } from 'vitest'
@@ -147,7 +146,7 @@ export const installHost = (
       reads += 1
       return {
         _tag: 'Success',
-        value: Schema.encodeSync(jsonCodec(OrgSnapshot))(host.snapshot)
+        value: Schema.encodeSync(Schema.toCodecJson(OrgSnapshot))(host.snapshot)
       }
     }
     host.sent.push([tag, payload])
@@ -163,11 +162,18 @@ export const installHost = (
         _tag: 'Failure',
         error: {
           _tag: 'PluginCallFailed',
-          error: Schema.encodeSync(jsonCodec(rpc.errorSchema))(reply.error)
+          error: Schema.encodeSync(
+            Schema.toCodecJson(rpc.errorSchema as Schema.Codec<unknown, unknown>)
+          )(reply.error)
         }
       }
     }
-    return { _tag: 'Success', value: Schema.encodeSync(jsonCodec(rpc.successSchema))(reply.value) }
+    return {
+      _tag: 'Success',
+      value: Schema.encodeSync(
+        Schema.toCodecJson(rpc.successSchema as Schema.Codec<unknown, unknown>)
+      )(reply.value)
+    }
   })
   Object.assign(window, { dia: { plugins: { call } } })
   return host
