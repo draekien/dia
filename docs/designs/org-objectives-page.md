@@ -37,13 +37,13 @@ ctx.serve(WatchWork, () => workViews)   // handler: (payload) => Stream<Success,
 `serve` (`src/shared/plugin/api.ts`) becomes an overloaded function type:
 
 * The existing request/response signature.
-* A signature whose `rpc` has a stream success schema, and whose handler returns `Stream.Stream<Rpc.SuccessChunk<R>, Rpc.Error<R>>` (`effect/rpc`, `Rpc.ts:366`).
+* A signature whose `rpc` has a stream success schema, and whose handler returns `Stream.Stream<Rpc.SuccessChunk<R>, Rpc.ErrorExit<R>>` (`effect/rpc`, `Rpc.ts:366`). For a stream rpc `Rpc.Error<R>` is `never`, because the error schema sits inside the stream schema.
 
 The `serve` JSDoc (`api.ts:205`) and the `servePluginCall` JSDoc both say a streaming `rpc` is a defect; that sentence is removed from both.
 
 `servePluginCall` (`src/host/plugins/plugin-messages.ts`) no longer dies on a stream rpc. For one, it:
 
-* takes `{ success, error }` from `RpcSchema.getStreamSchemas(rpc.successSchema)` (`RpcSchema.ts:38`);
+* takes the value and error schemas from `RpcSchema.isStreamSchema(rpc.successSchema)` (its `.success` and `.error`). `RpcSchema.getStreamSchemas` is `@internal` and missing from the published types;
 * encodes each value and each error with `jsonCodec` of those schemas;
 * provides a `PluginStreamHandler` under the same `call:<plugin>.<tag>` key, branded with its own private symbol.
 
@@ -94,14 +94,14 @@ org reloads: closed completes → PluginNotServing → followHost emits None, wa
 * **Host `rpc-handlers.ts`:** serve `SubscribePlugin` from `subscribePlugin(registry, request)`.
 * **Preload `window.dia.plugins.subscribe(plugin, tag, payload, onValue, onEnd): () => void`:**
   * `onValue` receives each encoded value.
-  * `onEnd` receives a `PluginSubscriptionEnd`: `Failure` when the stream fails with a `PluginCallError`, `Done` when it completes.
+  * `onEnd` receives the encoded form of a `PluginSubscriptionEnd` (`PluginSubscriptionEndJson`, because class instances do not cross `contextBridge`): `Failure` when the stream fails with a `PluginCallError`, `Done` when it completes. `followHost` decodes it.
   * Any other failure (a lost connection) subscribes again after `RESUBSCRIBE_INTERVAL` with no limit, and warns through `deps.warn`, as `SubscribeEvents` does (`host-api.ts:194-202`). A subscription emits its current state first, so subscribing again loses nothing.
   * The returned function interrupts the subscription.
 * **Renderer `followHost(ctx, rpc, payload)`** (`src/renderer/src/lib/plugin-messages.ts`, exported from `@dia/renderer-plugin`):
-  * Returns `Stream.Stream<Option<Rpc.SuccessChunk<R>>, Rpc.Error<R> | PluginCallInvalid>`.
+  * Returns `Stream.Stream<Option<Rpc.SuccessChunk<R>>, Rpc.ErrorExit<R> | PluginCallInvalid>`.
   * It encodes `payload` the way `callHost` does (`rpc.payloadSchema.make`, `plugin-messages.ts:31-33`) before subscribing, so an encode error is `PluginCallInvalid` on the stream.
   * It subscribes through a private `subscribeHost` built with `Stream.callback` over `window.dia.plugins.subscribe`, and decodes each value as `Some`.
-  * On `PluginNotServing` it emits `None`, and waits for the next `PluginStatusChanged` with `name === ctx.name` (the event carries only the name, `contract.ts:599-608`), or for `PLUGIN_RETRY_INTERVAL = Duration.seconds(5)`, whichever is first. The wait is `Effect.race` of the event and `Effect.sleep(PLUGIN_RETRY_INTERVAL)`, so `TestClock` drives it in tests. Then it subscribes again. A failed attempt loops back to the wait. The timed retry covers a status event lost during a reconnect, which is never replayed.
+  * On `PluginNotServing` it emits `None` (once: a failed retry emits no second `None` until a value arrives), and waits for the next `PluginStatusChanged` with `name === ctx.name` (the event carries only the name, `contract.ts:599-608`), or for `PLUGIN_RETRY_INTERVAL = Duration.seconds(5)`, whichever is first. The wait is `Effect.race` of the event and `Effect.sleep(PLUGIN_RETRY_INTERVAL)`, so `TestClock` drives it in tests. Then it subscribes again. A failed attempt loops back to the wait. The timed retry covers a status event lost during a reconnect, which is never replayed.
   * Interrupting the stream calls the function `subscribe` returned.
   * `None` means the plugin's host entry is not serving. `AsyncResult.Initial` means the first subscription has not answered yet.
 * **`PLUGIN_API_VERSION`** goes from `0.0.31` to `0.0.32`, because `serve` and `followHost` change the plugin API. Every `plugins/*/plugin.json` declares the new version.
@@ -263,5 +263,7 @@ ADR-0068, *Plugin host entries serve streaming calls, and a subscription holds n
 | 4 | major | The "next push still lacks it" fallback races the reply, and is unreachable while objectives cannot be deleted | Applied: the skeleton shows until a push holds the id |
 | 5 | minor | `closed`, the count and `drained` had no owner | Applied: private `SubscriptionTracker` |
 | 6 | minor | The `onEvent` publish could happen on every streamed event | Applied: verified that `onEvent` returns `current` when nothing changes (`dispatcher.ts:183,186`); a test pins it |
+
+Implementation changes (2026-11-08): the stream schemas come from `isStreamSchema`; the handler error is `Rpc.ErrorExit<R>`; `onEnd` takes the encoded end; `followHost` emits one `None` per outage; the serve finalizer's bounded wait is wrapped in `Effect.interruptible`, because it runs inside `closePlugin`'s `uninterruptibleMask`.
 
 Rounds ended: the budget of 3 rounds (effort medium) is spent. No finding is escalated.
