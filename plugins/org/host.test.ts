@@ -1,8 +1,13 @@
-import { type AgentBackend, AgentBackendKey, type HostPluginContext } from '@dia/plugin'
+import {
+  type AgentBackend,
+  AgentBackendKey,
+  type AgentSessionOptions,
+  type HostPluginContext
+} from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
-import { Effect, Option, Schema, Stream } from 'effect'
+import { DateTime, Effect, Option, Schema, Stream } from 'effect'
 import { callPlugin, servePluginCall } from '../../src/host/plugins/plugin-messages'
 import { makePluginDatabase } from '../../src/host/services/database'
 import { BUILT_IN_JOB_TITLES, DEFAULT_OVERALL_CAP } from './built-in-job-titles'
@@ -19,13 +24,36 @@ const manifest = (name: string): PluginManifest => ({
   host: 'host.ts'
 })
 
-const backendDisabling = (modes: ReadonlyArray<string>) =>
+const PROJECT_ID = '00000000-0000-4000-8000-400000000001'
+
+const READY = {
+  _tag: 'Ready',
+  models: [
+    {
+      value: 'default',
+      displayName: 'Default',
+      description: '',
+      adaptiveThinking: true,
+      effortLevels: [],
+      autoMode: false,
+      fastMode: false
+    }
+  ],
+  fetchedAt: DateTime.makeUnsafe(0),
+  refreshing: false
+}
+
+const backendDisabling = (modes: ReadonlyArray<string>, opened: Array<string> = []) =>
   ({
-    openSession: () => Effect.die('not called'),
+    openSession: (options: AgentSessionOptions) =>
+      Effect.sync(() => {
+        opened.push(options.config.paneId)
+        return { sendText: () => Effect.void, ended: Effect.never }
+      }),
     readHistory: () => Effect.die('not called'),
     transcriptInfo: () => Effect.die('not called'),
     readTranscriptAfter: () => Effect.die('not called'),
-    models: () => Effect.die('not called'),
+    models: () => Stream.make(READY),
     refreshModels: () => Effect.die('not called'),
     status: () => Effect.die('not called'),
     checkHealth: () => Effect.die('not called'),
@@ -64,7 +92,21 @@ const startOrg = (backend: Option.Option<AgentBackend>) =>
         return Effect.succeed({
           ...services,
           database: makePluginDatabase(':memory:', services.name),
-          workspace: Stream.make({ projects: [], visibleTab: null }),
+          workspace: Stream.make({
+            projects: [
+              {
+                project: {
+                  projectId: PROJECT_ID,
+                  directory: 'F:/repos/app',
+                  directoryKey: 'f:/repos/app',
+                  displayName: 'app',
+                  isGitRepo: true
+                },
+                tabs: []
+              }
+            ],
+            visibleTab: null
+          }),
           serve
         } as unknown as HostPluginContext)
       }
@@ -214,6 +256,63 @@ describe('org host entry bypassAvailable', () => {
       const withdrawn = yield* bypassAvailable(registry)
 
       assert.deepStrictEqual([before, provided, withdrawn], [false, true, false])
+    })
+  )
+})
+
+describe('org host entry work calls', () => {
+  const settle = Effect.gen(function* () {
+    for (let turn = 0; turn < 50; turn += 1) yield* Effect.yieldNow
+  })
+
+  const hireEngineer = (registry: PluginRegistry) =>
+    Effect.map(
+      call(registry, 'Hire', {
+        jobTitleId: BUILT_IN_JOB_TITLES[1]?.id,
+        name: null,
+        reportsTo: null
+      }),
+      (hired) => Schema.decodeUnknownSync(HiredAgent)(hired).id
+    )
+
+  const createTask = (registry: PluginRegistry, n: number, assignee: string) =>
+    call(registry, 'CreateTask', {
+      task: {
+        id: `00000000-0000-4000-8000-60000000000${n}`,
+        objectiveId: '00000000-0000-4000-8000-500000000001',
+        parentTaskId: null,
+        title: `Task ${n}`,
+        assignee
+      }
+    })
+
+  it.effect('starts a created task, and starts the next one once the overall cap is raised', () =>
+    Effect.gen(function* () {
+      const opened: Array<string> = []
+      const registry = yield* startOrg(Option.some(backendDisabling([], opened)))
+      yield* registry.load('backend')
+      yield* call(registry, 'SetOverallCap', { cap: 1 })
+      yield* call(registry, 'CreateObjective', {
+        objective: {
+          id: '00000000-0000-4000-8000-500000000001',
+          projectId: PROJECT_ID,
+          title: 'Ship it',
+          description: '',
+          priority: 'normal',
+          assignee: null
+        }
+      })
+      const ada = yield* hireEngineer(registry)
+      const ben = yield* hireEngineer(registry)
+
+      yield* createTask(registry, 1, ada)
+      yield* createTask(registry, 2, ben)
+      yield* settle
+      const atCapOne = opened.length
+      yield* call(registry, 'SetOverallCap', { cap: 2 })
+      yield* settle
+
+      assert.deepStrictEqual([atCapOne, opened.length], [1, 2])
     })
   )
 })

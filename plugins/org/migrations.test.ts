@@ -180,3 +180,15 @@ describe('4_add_reports_to on a database with hires', () => {
     }).pipe(Effect.scoped)
   )
 })
+
+describe('5_job_title_model on a database with job titles', () => {
+  it.effect('gives every existing job title no model and the medium thinking level', () =>
+    Effect.gen(function* () {
+      const { org } = yield* upgradedLegacyOrg
+      const settings = new Set(
+        (yield* org.jobTitles).map((jobTitle) => `${jobTitle.model}/${jobTitle.thinkingLevel}`)
+      )
+      assert.deepStrictEqual([...settings], ['null/medium'])
+    }).pipe(Effect.scoped)
+  )
+})
