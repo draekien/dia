@@ -2,23 +2,23 @@
 version: 1
 slug: "plugins-org-org-page-tsx"
 primary_target: "plugins/org/org-page.tsx"
-related_targets: ["plugins/org/org-settings-page.tsx","plugins/org/role-editor.tsx"]
+related_targets: ["plugins/org/org-settings-page.tsx","plugins/org/job-title-editor.tsx","plugins/org/agents-page.tsx","plugins/org/dashboard.tsx","plugins/org/org-chart.tsx"]
 ---
 
-Scope: the Org page (content area, `PagesSlot`) and the Org Settings page (`SettingsPagesSlot`) of the `org` plugin, issue #178. Mode: Operate.
+Scope: the Org page (content area, `PagesSlot`) with its four sub-pages, the Hire dialog, and the Org Settings page (`SettingsPagesSlot`) of the `org` plugin, issue #178. Mode: Operate.
 
-Audience and job: William, configuring the org he runs: which roles exist and are enabled, what each role does, and which agents are hired into it. Visited rarely and briefly; correctness and scanability outrank expression.
+Audience and job: William, running the org of hired agents: who is hired, who reports to whom, what each job title does and allows, and whether anything needs him. Visited rarely and briefly; correctness and scanability outrank expression.
 
 ## Direction contract
 
-THESIS: one role at a time, with everything about it in one place: its settings and the agents hired into it. Refuses the admin default of a long roles list and a separate hires list joined only by a caption.
+THESIS: the org as four views of one snapshot, each answering one question (what needs me, who reports to whom, what does each job title do, what is each agent set to), with every action placed on the view that owns its subject.
 
-OWN-WORLD: dia's existing world unchanged: cool-neutral ground, hairline dividers, no cards or shadows at rest, the agent overview's primary-tinted selected-row fill, sans for chrome, mono for skills, permission rules and MCP JSON, amber only on the retro warning dot, error red only for validation and failures.
+OWN-WORLD: dia's existing world unchanged: cool-neutral ground, hairline dividers, no cards or shadows at rest, the agent overview's primary-tinted selected-row fill, sans for chrome, mono for skills, permission rules and MCP JSON, error red only for validation and failures, no amber (nothing on these views is a warning).
 
-STORY: the user sees which role has no retro hire or is disabled, selects a role, reads and edits its instructions and rules in place, and hires, renames or dismisses its agents without leaving it.
+STORY: the user opens Org on Dashboard, sees the counts and whether anything needs attention, moves to Org chart to read the reporting tree, opens an agent from a node, and changes its name, manager or bypass setting in Hired agents; job titles are read and edited in Job titles.
 
-FIRST VIEWPORT: content header with the `Org` breadcrumb. Under it, when no retro is hired, one hairline-bounded strip: amber dot, the warning sentence, outline `Hire retro` or `Enable retro`. Below, a 14rem role list on the left (name, hire count right-aligned, a disabled role in muted text with `Disabled`, a copy without `Built in`) and the selected role's detail on the right, max 48rem: a heading row with the role name, its enabled switch, then outline `Copy…`, `Hire…` and, on copies, `Delete…`; the form fields (name for copies only, instructions, skills, allow / ask / deny side by side, MCP servers, bypass opt-in); `Save`; then `Hired agents in this role` rows. Below 48rem of content width the list sits above the detail.
+FIRST VIEWPORT: content header `Org`. Under it, an in-page nav column on the left, 11rem, two caption-labelled groups, Overview (Dashboard, Org chart) and Manage (Job titles, Hired agents), the current entry in the selected-row fill. To its right the sub-page under its own heading: on Dashboard a hairline-divided row of three stats, then `Needs attention` with its one row or `Nothing needs attention.`
 
-FORM: master-detail split, position 2 on the ordered list; seed:cea7de28bd90ee6d.
+FORM: in-page left nav in captioned groups (the Settings dialog's nav form), list-and-detail splits inside it; seed:d97819fee3097e563f5254977ff5a5db, dealt 6 locked by the agent on the user's instruction to proceed without stopping.
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
