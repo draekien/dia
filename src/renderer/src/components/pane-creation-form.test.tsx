@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { WorktreesKey } from '@dia/plugin'
 import type { ModelOption } from '@shared/domain/model'
 import {
   type AdapterPreferences,
@@ -16,7 +17,6 @@ import {
   PaneSetupProgress
 } from '@shared/ipc/contract'
 import { PaneEventFrame } from '@shared/ipc/rpc'
-import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Duration, Effect } from 'effect'
@@ -188,7 +188,7 @@ afterEach(() => {
 
 describe('PaneCreationForm', () => {
   it('offers no worktree option for a project that is not a git repo', async () => {
-    installBridge([plugin('worktrees', [WORKTREES_KEY])])
+    installBridge([plugin('worktrees', [WorktreesKey.name])])
     renderForm(project(false))
 
     expect(screen.queryByRole('switch')).toBeNull()
@@ -235,7 +235,7 @@ describe('PaneCreationForm', () => {
 
 describe('PaneCreationForm model choice', () => {
   it('shows the worktree tab’s setup steps once Start agent is pressed', async () => {
-    const bridge = installBridge([plugin('worktrees', [WORKTREES_KEY])])
+    const bridge = installBridge([plugin('worktrees', [WorktreesKey.name])])
     renderForm(project(true))
     const toggle = await screen.findByRole('switch')
     await waitFor(() => expect(toggle.getAttribute('aria-disabled')).not.toBe('true'))
@@ -254,7 +254,7 @@ describe('PaneCreationForm model choice', () => {
   })
 
   it('shows no setup steps for a tab started without a worktree, such as a retry after a worktree failed', async () => {
-    const bridge = installBridge([plugin('worktrees', [WORKTREES_KEY])])
+    const bridge = installBridge([plugin('worktrees', [WorktreesKey.name])])
     renderForm(project(true))
     await start()
     const paneId = bridge.createTab.mock.calls[0][0].paneId
@@ -267,7 +267,7 @@ describe('PaneCreationForm model choice', () => {
   })
 
   it('shows no setup steps before Start agent is pressed', async () => {
-    installBridge([plugin('worktrees', [WORKTREES_KEY])])
+    installBridge([plugin('worktrees', [WorktreesKey.name])])
     renderForm(project(true))
     await waitFor(() => expect(startButton().disabled).toBe(false))
 
@@ -471,7 +471,7 @@ describe('PaneCreationForm worktree option', () => {
   })
 
   it('enables the worktree switch without the hint once the worktrees plugin provides worktrees', async () => {
-    installBridge([plugin('worktrees', [WORKTREES_KEY])])
+    installBridge([plugin('worktrees', [WorktreesKey.name])])
     renderForm(project(true))
 
     const toggle = await screen.findByRole('switch')
@@ -481,7 +481,7 @@ describe('PaneCreationForm worktree option', () => {
   })
 
   it('enables the worktree switch when a plugin with another name provides worktrees', async () => {
-    installBridge([plugin('worktrees', []), plugin('my-worktrees', [WORKTREES_KEY])])
+    installBridge([plugin('worktrees', []), plugin('my-worktrees', [WorktreesKey.name])])
     renderForm(project(true))
 
     const toggle = await screen.findByRole('switch')
@@ -490,7 +490,7 @@ describe('PaneCreationForm worktree option', () => {
   })
 
   it('creates the tab with a worktree when the user turns the switch on', async () => {
-    const bridge = installBridge([plugin('worktrees', [WORKTREES_KEY])])
+    const bridge = installBridge([plugin('worktrees', [WorktreesKey.name])])
     renderForm(project(true))
     const toggle = await screen.findByRole('switch')
     await waitFor(() => expect(toggle.getAttribute('aria-disabled')).not.toBe('true'))

@@ -1,4 +1,4 @@
-import type { BuiltInRole } from '@shared/domain/org'
+import type { BuiltInRole } from './domain'
 
 const EXECUTION_CONTRACT = `## Execution contract
 - Work only on the task you are assigned.

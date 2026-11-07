@@ -1,12 +1,11 @@
 import { assert, describe, it } from '@effect/vitest'
-import { META_REPO_KEY } from '@shared/plugin/api'
 import { ServiceWithdrawnError } from '@shared/plugin/plugin-registry'
 import { fakeUse } from '@shared/plugin/plugin-registry.fake'
 import { Effect, Option } from 'effect'
-import { type MetaRepo, resolveSessionAdditions, withMetaRepo } from './meta-repo-seam'
+import { type MetaRepo, MetaRepoKey, resolveSessionAdditions, withMetaRepo } from './meta-repo-seam'
 
 const registryProviding = (value: Option.Option<unknown>) => ({
-  use: fakeUse((key) => (key === META_REPO_KEY ? value : Option.none()))
+  use: fakeUse((key) => (key === MetaRepoKey.name ? value : Option.none()))
 })
 
 const nothingAdded = { systemPromptAppend: '', pluginPaths: [] }
@@ -132,7 +131,7 @@ describe('withMetaRepo', () => {
       const registry = {
         use: () =>
           Effect.fail(
-            new ServiceWithdrawnError({ key: META_REPO_KEY, plugin: 'meta', message: 'closed' })
+            new ServiceWithdrawnError({ key: MetaRepoKey.name, plugin: 'meta', message: 'closed' })
           )
       }
 

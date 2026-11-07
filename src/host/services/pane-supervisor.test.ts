@@ -8,7 +8,6 @@ import {
 } from '@shared/domain/pane'
 import { SignedOut, UsageLimit, type UsageLimitResume } from '@shared/domain/parking'
 import { type IpcEvent, PaneRewindFailed } from '@shared/ipc/contract'
-import { WORKTREES_KEY } from '@shared/plugin/api'
 import { fakeInject, fakeUse } from '@shared/plugin/plugin-registry.fake'
 import { Deferred, Effect, Fiber, Layer, Option, Result, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
@@ -42,7 +41,8 @@ import {
   type GitOps,
   WorktreeCreateError,
   WorktreeIncludeError,
-  WorktreeReattachError
+  WorktreeReattachError,
+  WorktreesKey
 } from './worktrees-seam'
 
 interface FakeSession {
@@ -95,7 +95,7 @@ const pluginsWith = (inject: (key: string) => Option.Option<unknown>) =>
 const noPlugins = pluginsWith(() => Option.none())
 
 const pluginsProviding = (gitOps: GitOps) =>
-  pluginsWith((key) => (key === WORKTREES_KEY ? Option.some(gitOps) : Option.none()))
+  pluginsWith((key) => (key === WorktreesKey.name ? Option.some(gitOps) : Option.none()))
 
 const unusedGitOps: GitOps = {
   createWorktree: () => Effect.die(new Error('createWorktree should not be called in these tests')),
@@ -536,7 +536,7 @@ describe('PaneSupervisor', () => {
         gitOps,
         lifecycleLog,
         pluginsWith((key) =>
-          worktreesLoaded && key === WORKTREES_KEY ? Option.some(gitOps) : Option.none()
+          worktreesLoaded && key === WorktreesKey.name ? Option.some(gitOps) : Option.none()
         )
       )
 

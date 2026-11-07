@@ -1,24 +1,23 @@
-import {
-  type AgentName,
-  type BuiltInRoleDeleted,
-  type BuiltInRoleRenamed,
-  type HiredAgent,
-  type HireId,
-  type HireNameTaken,
-  type HireNotFound,
-  type OrgSettings,
-  type OverallCap,
-  type Role,
-  type RoleDisabled,
-  type RoleEdit,
-  type RoleHasHires,
-  type RoleId,
-  type RoleName,
-  type RoleNameTaken,
-  type RoleNotFound,
-  ServiceKey
-} from '@dia/plugin'
+import { type AgentName, ServiceKey } from '@dia/plugin'
 import { Effect, Predicate } from 'effect'
+import type {
+  BuiltInRoleDeleted,
+  BuiltInRoleRenamed,
+  HiredAgent,
+  HireId,
+  HireNameTaken,
+  HireNotFound,
+  OrgSettings,
+  OverallCap,
+  Role,
+  RoleDisabled,
+  RoleEdit,
+  RoleHasHires,
+  RoleId,
+  RoleName,
+  RoleNameTaken,
+  RoleNotFound
+} from './domain'
 
 /**
  * The org (ADR-0033), as the `org` plugin provides it under {@link OrgService}. Reads return the

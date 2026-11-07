@@ -6,22 +6,11 @@ import type { Workspace } from '../domain/project'
 import type { EventFrame } from '../ipc/rpc'
 
 /**
- * Service key under which the `worktrees` plugin provides the Host's `GitOps`. Host code reads it with
- * `registry.use`, one operation per call (ADR-0055).
- */
-export const WORKTREES_KEY = 'worktrees'
-
-/**
- * Service key under which the `meta` plugin provides the Host's `MetaRepo`. Host code reads it with
- * `registry.use`, one operation per call (ADR-0055).
- */
-export const META_REPO_KEY = 'metaRepo'
-
-/**
  * A typed service key (ADR-0060). `name` is the key the registry stores the service under and the
  * name a manifest's `inject` lists; `is` checks that a provided value has the shape `A`. Make one
- * with {@link ServiceKey.make} in a module the providing plugin exports (ADR-0059), and import it
- * from the provider and from every consumer.
+ * with {@link ServiceKey.make} in a module the providing plugin exports (ADR-0059), or, for a service
+ * the Host reads, in `src/` beside the interface it types (ADR-0062); import it from the provider and
+ * from every consumer.
  */
 export interface ServiceKey<A, Name extends string = string> {
   readonly name: Name

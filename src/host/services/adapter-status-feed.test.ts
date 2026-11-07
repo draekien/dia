@@ -3,7 +3,7 @@ import { type AdapterStatus, HealthReady } from '@shared/domain/adapter-status'
 import { fakeInject } from '@shared/plugin/plugin-registry.fake'
 import { DateTime, Effect, Layer, Option, PubSub, Stream } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import { AGENT_BACKEND_KEY, type AgentBackend } from '../session/agent-backend'
+import { type AgentBackend, AgentBackendKey } from '../session/agent-backend'
 import { AdapterStatusFeed, AdapterStatusFeedLive } from './adapter-status-feed'
 import { EventHub } from './event-hub'
 
@@ -38,7 +38,7 @@ const feedFollowing = (
         changes: Stream.fromPubSub(changes),
         load: () => Effect.die(new Error('load should not be called in these tests')),
         unload: () => Effect.die(new Error('unload should not be called in these tests')),
-        inject: fakeInject((key) => (key === AGENT_BACKEND_KEY ? current() : Option.none())),
+        inject: fakeInject((key) => (key === AgentBackendKey.name ? current() : Option.none())),
         use: () => Effect.die(new Error('use should not be called in these tests'))
       }),
       Layer.succeed(EventHub)({
@@ -68,7 +68,7 @@ describe('AdapterStatusFeed', () => {
         assert.strictEqual((yield* feed.current).status.health._tag, 'HealthError')
 
         provided = Option.some(backendWithStatus(loadedStatus))
-        yield* PubSub.publish(changes, AGENT_BACKEND_KEY)
+        yield* PubSub.publish(changes, AgentBackendKey.name)
         yield* settle
 
         assert.deepStrictEqual((yield* feed.current).status, loadedStatus)

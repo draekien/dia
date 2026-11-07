@@ -18,6 +18,7 @@
   "include": [
     "plugins/example/messages.ts",
     "plugins/org/service.ts",
+    "plugins/org/domain.ts",
     "plugins/chat/slots.ts",
     "plugins/layout/slots.ts"
   ]

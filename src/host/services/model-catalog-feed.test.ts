@@ -10,7 +10,7 @@ import { fakeInject } from '@shared/plugin/plugin-registry.fake'
 import { DateTime, Effect, Layer, Option, PubSub, Stream, SubscriptionRef } from 'effect'
 import { TestClock } from 'effect/testing'
 import { HostPlugins } from '../plugins/host-plugins'
-import { AGENT_BACKEND_KEY, type AgentBackend } from '../session/agent-backend'
+import { type AgentBackend, AgentBackendKey } from '../session/agent-backend'
 import { EventHub } from './event-hub'
 import { ModelCatalogFeed, ModelCatalogFeedLive } from './model-catalog-feed'
 
@@ -75,7 +75,7 @@ const feedWith = (
         unload: () => Effect.die(new Error('unload should not be called in these tests')),
         use: () => Effect.die(new Error('use should not be called in these tests')),
         inject: fakeInject((key) =>
-          key === AGENT_BACKEND_KEY ? provider.current() : Option.none()
+          key === AgentBackendKey.name ? provider.current() : Option.none()
         )
       }),
       Layer.succeed(EventHub)({
@@ -184,7 +184,7 @@ describe('ModelCatalogFeed', () => {
         const feed = yield* startFeed
 
         current = Option.some(backendWith(() => Stream.make(READY)))
-        yield* PubSub.publish(changes, AGENT_BACKEND_KEY)
+        yield* PubSub.publish(changes, AgentBackendKey.name)
         yield* settle
 
         assert.deepStrictEqual((yield* feed.current).state, READY)

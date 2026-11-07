@@ -3,8 +3,8 @@ import { type PaneConfig, SessionId } from '@shared/domain/pane'
 import { fakeInject } from '@shared/plugin/plugin-registry.fake'
 import { Effect, Option, Stream } from 'effect'
 import {
-  AGENT_BACKEND_KEY,
   type AgentBackend,
+  AgentBackendKey,
   adapterContract,
   agentBackendProblems,
   resolveAgentBackend,
@@ -12,7 +12,7 @@ import {
 } from './agent-backend'
 
 const registryProviding = (value: Option.Option<unknown>) => ({
-  inject: fakeInject((key) => (key === AGENT_BACKEND_KEY ? value : Option.none()))
+  inject: fakeInject((key) => (key === AgentBackendKey.name ? value : Option.none()))
 })
 
 const config: PaneConfig = {
@@ -225,7 +225,7 @@ describe('adapterContract', () => {
 
   it('checks the value the adapter provided under agentBackend', () => {
     const provided = (key: string) =>
-      key === AGENT_BACKEND_KEY ? Option.some({ openSession: () => Effect.void }) : Option.none()
+      key === AgentBackendKey.name ? Option.some({ openSession: () => Effect.void }) : Option.none()
 
     assert.deepStrictEqual(adapterContract.problems(provided), [
       '"agentBackend.readHistory" is not a function',

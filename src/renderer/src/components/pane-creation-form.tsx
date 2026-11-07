@@ -1,3 +1,4 @@
+import { WorktreesKey } from '@dia/plugin'
 import { useAtomValue } from '@effect/atom-react'
 import { InstallNotice, installProblem } from '@renderer/components/install-notice'
 import { isOfferedModel, ModelField } from '@renderer/components/model-field'
@@ -39,14 +40,13 @@ import {
 } from '@shared/domain/pane'
 import { AgentName, type Project } from '@shared/domain/project'
 import { CreateTab } from '@shared/ipc/contract'
-import { WORKTREES_KEY } from '@shared/plugin/api'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { Option, Schema } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
 import { useEffect, useState } from 'react'
 
 const providesWorktrees = (plugins: ReadonlyArray<PluginInfo> | undefined): boolean =>
-  plugins?.some((plugin) => plugin.provides.includes(WORKTREES_KEY)) ?? false
+  plugins?.some((plugin) => plugin.provides.includes(WorktreesKey.name)) ?? false
 
 type FormState =
   | { readonly step: 'editing' }

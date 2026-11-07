@@ -1,7 +1,8 @@
-import { type PluginMigrations, Role } from '@dia/plugin'
+import type { PluginMigrations } from '@dia/plugin'
 import { Clock, Effect, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { BUILT_IN_ROLES, DEFAULT_OVERALL_CAP, FIRST_RETRO_HIRE_ID } from './built-in-roles'
+import { Role } from './domain'
 
 const createTables = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient

@@ -1,6 +1,6 @@
 {
   "name": "claude-code",
-  "api": "0.0.25",
+  "api": "0.0.26",
   "category": "adapter",
   "host": "host.ts"
 }

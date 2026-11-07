@@ -1,6 +1,6 @@
 import { Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
-import { OverallCap, ROLE_NAME_MAX_LENGTH, RoleName } from './org'
+import { OverallCap, ROLE_NAME_MAX_LENGTH, RoleName } from './domain'
 
 const isRoleName = Schema.is(RoleName)
 const isOverallCap = Schema.is(OverallCap)
