@@ -76,17 +76,13 @@ export const makeHostPluginLoader = (
       )
     })
 
-    const peek = (name: string, root: string) =>
-      read(root).pipe(
-        Effect.map(({ manifest }) => manifest),
-        Effect.tap((manifest) =>
-          Effect.sync(() => {
-            if (manifest.name === name) {
-              modules.declare(name, root, manifest.category, manifest.exports ?? [])
-            }
-          })
-        )
-      )
+    const peek = Effect.fn('PluginLoader.peek')(function* (name: string, root: string) {
+      const { manifest } = yield* read(root)
+      if (manifest.name === name) {
+        modules.declare(name, root, manifest.category, manifest.exports ?? [])
+      }
+      return manifest
+    })
 
     return { peek, load }
   })

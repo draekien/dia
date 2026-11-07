@@ -106,7 +106,8 @@ describe('the export import check', () => {
 
   const fixture = (
     files: Record<string, string>,
-    manifests: Record<string, ReadonlyArray<string>> = { org: ['domain.ts'] }
+    manifests: Record<string, ReadonlyArray<string>> = { org: ['domain.ts'] },
+    listsExports = true
   ): ReadonlyArray<string> => {
     pluginsDir = fs.mkdtempSync(join(tmpdir(), 'dia-plugin-exports-'))
     for (const [plugin, exports] of Object.entries(manifests)) {
@@ -120,9 +121,11 @@ describe('the export import check', () => {
       fs.mkdirSync(dirname(join(pluginsDir, file)), { recursive: true })
       fs.writeFileSync(join(pluginsDir, file), source)
     }
-    const listed = Object.entries(manifests).flatMap(([plugin, exports]) =>
-      exports.map((file) => resolve(pluginsDir, plugin, file))
-    )
+    const listed = listsExports
+      ? Object.entries(manifests).flatMap(([plugin, exports]) =>
+          exports.map((file) => resolve(pluginsDir, plugin, file))
+        )
+      : []
     return exportProblems(pluginsDir, [{ config: 'tsconfig.fixture.json', files: new Set(listed) }])
   }
 
@@ -212,14 +215,11 @@ describe('the export import check', () => {
   })
 
   it('reports an export missing from a tsconfig include', () => {
-    pluginsDir = fs.mkdtempSync(join(tmpdir(), 'dia-plugin-exports-'))
-    fs.mkdirSync(join(pluginsDir, 'org'))
-    fs.writeFileSync(
-      join(pluginsDir, 'org', 'plugin.json'),
-      JSON.stringify({ exports: ['domain.ts'] })
+    const problems = fixture(
+      { 'org/domain.ts': "import { Schema } from 'effect'\n" },
+      undefined,
+      false
     )
-    fs.writeFileSync(join(pluginsDir, 'org', 'domain.ts'), "import { Schema } from 'effect'\n")
-    const problems = exportProblems(pluginsDir, [{ config: 'tsconfig.web.json', files: new Set() }])
-    expect(problems).toEqual(['org/domain.ts: not in tsconfig.web.json include'])
+    expect(problems).toEqual(['org/domain.ts: not in tsconfig.fixture.json include'])
   })
 })

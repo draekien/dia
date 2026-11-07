@@ -84,6 +84,8 @@ export type PluginCategory = typeof PluginCategory.Type
 export const PluginExport = Schema.String.check(
   Schema.isPattern(/^(?:[a-z0-9-]+\/)*[a-z0-9-]+\.ts$/)
 )
+
+const pluginExports = Schema.optional(Schema.Array(PluginExport))
 export type PluginExport = typeof PluginExport.Type
 
 /**
@@ -100,7 +102,7 @@ export const FeatureManifest = Schema.Struct({
   host: Schema.optional(Schema.String),
   renderer: Schema.optional(Schema.String),
   inject: Schema.optional(Schema.Array(Schema.String)),
-  exports: Schema.optional(Schema.Array(PluginExport)),
+  exports: pluginExports,
   load: Schema.optional(PluginLoadMode)
 })
 export type FeatureManifest = typeof FeatureManifest.Type
@@ -125,7 +127,7 @@ export const AdapterManifest = Schema.Struct({
   inject: forbidden(
     'an adapter cannot declare "inject": a reload of the plugin it injects from would close the adapter'
   ),
-  exports: Schema.optional(Schema.Array(PluginExport)),
+  exports: pluginExports,
   load: forbidden('an adapter always loads at startup, so it cannot declare "load"')
 })
 export type AdapterManifest = typeof AdapterManifest.Type
