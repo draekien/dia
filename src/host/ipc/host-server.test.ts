@@ -87,6 +87,7 @@ const handlersLayer = Layer.unwrap(
       ListWorkspaceProblems: unused,
       DeleteUnreadableRow: unused,
       ResolveImportConflict: unused,
+      CallPlugin: unused,
       SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
     })
   })

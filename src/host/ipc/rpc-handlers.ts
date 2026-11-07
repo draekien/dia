@@ -11,6 +11,7 @@ import { type IpcEvent, PaneCreateFailed } from '@shared/ipc/contract'
 import { DiaRpcs } from '@shared/ipc/rpc'
 import { Effect, Option } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
+import { callPlugin } from '../plugins/plugin-messages'
 import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { AdapterStatusFeed } from '../services/adapter-status-feed'
 import { AgentSummaries } from '../services/agent-summaries'
@@ -369,6 +370,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     DeleteUnreadableRow: (row) => problems.deleteUnreadable(row),
     ResolveImportConflict: ({ agentId, resolution }) =>
       problems.resolveImportConflict(agentId, resolution),
+    CallPlugin: (request) => callPlugin(plugins, request),
     SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
   })
 })
