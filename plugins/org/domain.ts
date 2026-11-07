@@ -89,6 +89,7 @@ export const HiredAgent = Schema.Struct({
   jobTitleId: JobTitleId,
   name: Schema.NullOr(AgentName),
   bypassOverride: Schema.NullOr(Schema.Boolean),
+  reportsTo: Schema.NullOr(HireId),
   hiredAt: Schema.Number
 })
 export type HiredAgent = typeof HiredAgent.Type
@@ -143,7 +144,10 @@ export class JobTitleDisabled extends Schema.TaggedError<JobTitleDisabled>()('Jo
   jobTitleId: JobTitleId
 }) {}
 
-/** Failure of dismissing: no hired agent has id `hireId`. */
+/**
+ * Failure of a change to a hired agent, or of a reporting line: no hired agent has id `hireId`,
+ * which is the agent changed or the manager named by `reportsTo`.
+ */
 export class HireNotFound extends Schema.TaggedError<HireNotFound>()('HireNotFound', {
   hireId: HireId
 }) {}
@@ -152,3 +156,31 @@ export class HireNotFound extends Schema.TaggedError<HireNotFound>()('HireNotFou
 export class HireNameTaken extends Schema.TaggedError<HireNameTaken>()('HireNameTaken', {
   agentName: AgentName
 }) {}
+
+/** Failure of setting a reporting line: `reportsTo` is `hireId` or already reports to `hireId`. */
+export class ReportsToCycle extends Schema.TaggedError<ReportsToCycle>()('ReportsToCycle', {
+  hireId: HireId,
+  reportsTo: HireId
+}) {}
+
+/**
+ * The ids of every agent in `hiredAgents` that reports to `hireId` through any chain of `reportsTo`
+ * values, not including `hireId`. A reporting line from `hireId` to one of them, or to itself,
+ * would form a cycle.
+ */
+export const descendantsOf = (
+  hiredAgents: ReadonlyArray<HiredAgent>,
+  hireId: HireId
+): ReadonlySet<HireId> => {
+  const below = new Set<HireId>()
+  const visit = (manager: HireId) => {
+    for (const agent of hiredAgents) {
+      if (agent.reportsTo === manager && agent.id !== hireId && !below.has(agent.id)) {
+        below.add(agent.id)
+        visit(agent.id)
+      }
+    }
+  }
+  visit(hireId)
+  return below
+}

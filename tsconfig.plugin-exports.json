@@ -19,6 +19,7 @@
     "plugins/example/messages.ts",
     "plugins/org/service.ts",
     "plugins/org/domain.ts",
+    "plugins/org/calls.ts",
     "plugins/chat/slots.ts",
     "plugins/adapters/slots.ts",
     "plugins/command-palette/slots.ts",

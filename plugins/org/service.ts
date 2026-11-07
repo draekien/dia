@@ -16,7 +16,8 @@ import type {
   JobTitleNameTaken,
   JobTitleNotFound,
   OrgSettings,
-  OverallCap
+  OverallCap,
+  ReportsToCycle
 } from './domain'
 
 /**
@@ -29,7 +30,14 @@ import type {
  * `copyJobTitle` copies every field of `jobTitleId` into a new enabled job title named `name` that
  * is not built in. `editJobTitle` applies `edit`'s present fields. `deleteJobTitle` deletes a copy
  * with no hired agents. `hire` hires an agent of an enabled job title, named `name` or unnamed when
- * null. `dismiss` removes a hired agent.
+ * null, reporting to hired agent `reportsTo` or to the user when null. `dismiss` removes a hired
+ * agent and moves its reports to its own `reportsTo`. `renameHire` names a hired agent `name`, or clears its name
+ * when null; the name must be free among the other hired agents, ignoring ASCII case.
+ * `setBypassOverride` sets a hired agent's bypass override: true or false overrides its job
+ * title's `bypassOptIn`, null follows the job title (ADR-0054). `setReportsTo` makes a hired agent
+ * report to hired agent `reportsTo`, or to the user when null; it fails with `ReportsToCycle` when
+ * `reportsTo` is the agent or reports to it. A missing hire, checked before a missing `reportsTo`,
+ * fails with `HireNotFound` naming its id.
  */
 export interface Org {
   readonly jobTitles: Effect.Effect<ReadonlyArray<JobTitle>>
@@ -52,9 +60,22 @@ export interface Org {
   ) => Effect.Effect<void, JobTitleNotFound | BuiltInJobTitleDeleted | JobTitleHasHires>
   readonly hire: (
     jobTitleId: JobTitleId,
-    name: AgentName | null
-  ) => Effect.Effect<HiredAgent, JobTitleNotFound | JobTitleDisabled | HireNameTaken>
+    name: AgentName | null,
+    reportsTo: HireId | null
+  ) => Effect.Effect<HiredAgent, JobTitleNotFound | JobTitleDisabled | HireNameTaken | HireNotFound>
   readonly dismiss: (hireId: HireId) => Effect.Effect<void, HireNotFound>
+  readonly renameHire: (
+    hireId: HireId,
+    name: AgentName | null
+  ) => Effect.Effect<HiredAgent, HireNotFound | HireNameTaken>
+  readonly setBypassOverride: (
+    hireId: HireId,
+    override: boolean | null
+  ) => Effect.Effect<HiredAgent, HireNotFound>
+  readonly setReportsTo: (
+    hireId: HireId,
+    reportsTo: HireId | null
+  ) => Effect.Effect<HiredAgent, HireNotFound | ReportsToCycle>
   readonly setOverallCap: (cap: OverallCap) => Effect.Effect<OrgSettings>
 }
 
@@ -68,6 +89,9 @@ const MEMBERS: Record<keyof Org, (member: unknown) => boolean> = {
   deleteJobTitle: Predicate.isFunction,
   hire: Predicate.isFunction,
   dismiss: Predicate.isFunction,
+  renameHire: Predicate.isFunction,
+  setBypassOverride: Predicate.isFunction,
+  setReportsTo: Predicate.isFunction,
   setOverallCap: Predicate.isFunction
 }
 
