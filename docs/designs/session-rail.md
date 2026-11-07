@@ -1,5 +1,7 @@
 # Session rail and centred composer
 
+> Superseded in part by `docs/designs/list-slots.md` (ADR-0061): `addRailCard`, `railCardsAtom`, `visibleRailCardsAtom` and `RailCard` are removed; a plugin adds a card with `addEntry(ctx, RailCardsSlot, card)`, cards are ordered by `order`, and the chat plugin passes them to `SessionRail` as `cards`.
+
 Shaped in conversation with the user on 2026-11-01 (`/impeccable shape`). The visual rules are in `DESIGN.md` > Components > Session rail and Composer. The decision to add a many-contributor extension point is ADR-0048.
 
 ## Scope

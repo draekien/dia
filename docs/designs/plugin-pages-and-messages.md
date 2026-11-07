@@ -1,5 +1,7 @@
 # Plugin pages and plugin messages
 
+> Superseded in part by `docs/designs/list-slots.md` (ADR-0061): `addPage`, `usePages`, `pagesAtom`, `Page` and `RegisteredPage` are removed; a plugin adds a page with `addEntry(ctx, PagesSlot, page)`, and the `layout` plugin draws the open page and its breadcrumb.
+
 Issue: draekien/dia#194. Blocks #178 (org screens).
 
 Lets a renderer plugin add pages to the content area, listed in the sidebar, and lets a plugin's `renderer` entry call its own `host` entry over the existing renderer-to-Host connection (ADR-0022 "Plugin messages" row).
