@@ -17,7 +17,13 @@ const write = (directory, file, source) => {
   writeFileSync(join(directory, file), source)
 }
 
-const reload = async (root, name = root, category = 'feature', exports = [], entry = 'entry.mjs') => {
+const reload = async (
+  root,
+  name = root,
+  category = 'feature',
+  exports = [],
+  entry = 'entry.mjs'
+) => {
   globalThis.__evals.length = 0
   let importers = null
   const exit = await Effect.runPromiseExit(

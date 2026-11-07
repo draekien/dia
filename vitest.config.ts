@@ -7,6 +7,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@dia/plugin': resolve('src/host/plugin-api.ts'),
+      '@dia-plugin': resolve('plugins'),
       '@dia/renderer-plugin': resolve('src/renderer/src/plugin-api.ts'),
       '@renderer': resolve('src/renderer/src'),
       '@shared': resolve('src/shared')

@@ -9,6 +9,7 @@
     "paths": {
       "@shared/*": ["./src/shared/*"],
       "@dia/plugin": ["./src/host/plugin-api.ts"],
+      "@dia-plugin/*": ["./plugins/*"],
       "@preload/*": ["./src/preload/*"],
       "@renderer/*": ["./src/renderer/src/*"]
     },
@@ -24,7 +25,8 @@
     "src/preload/**/*",
     "src/shared/**/*",
     "plugins/**/*.ts",
-    "electron.vite.config.ts"
+    "electron.vite.config.ts",
+    "vite/**/*.ts"
   ],
   "exclude": [
     "src/**/*.test.ts",

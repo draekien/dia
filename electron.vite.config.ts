@@ -4,6 +4,7 @@ import babel from '@rolldown/plugin-babel'
 import tailwindcss from '@tailwindcss/vite'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import { defineConfig } from 'electron-vite'
+import { diaPluginExports } from './vite/plugin-exports'
 
 export default defineConfig({
   main: {
@@ -39,10 +40,12 @@ export default defineConfig({
       alias: {
         '@shared': resolve('src/shared'),
         '@renderer': resolve('src/renderer/src'),
-        '@dia/renderer-plugin': resolve('src/renderer/src/plugin-api.ts')
+        '@dia/renderer-plugin': resolve('src/renderer/src/plugin-api.ts'),
+        '@dia/plugin': resolve('src/host/plugin-api.ts')
       }
     },
     plugins: [
+      diaPluginExports(resolve('plugins')),
       react(),
       babel({
         presets: [reactCompilerPreset()]
