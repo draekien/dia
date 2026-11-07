@@ -88,6 +88,7 @@ const handlersLayer = Layer.unwrap(
       DeleteUnreadableRow: unused,
       ResolveImportConflict: unused,
       CallPlugin: unused,
+      SubscribePlugin: unused,
       SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
     })
   })

@@ -38,7 +38,7 @@ import { UpdateStatus } from '../domain/update'
 import { Uuid } from '../domain/uuid'
 import type { ImportResolution, UnreadableRow, WorkspaceProblem } from '../domain/workspace-problem'
 import { type PluginInfo, PluginName, type PluginOverrideResult } from '../plugin/manifest'
-import type { PluginCallError } from '../plugin/messages'
+import type { PluginCallError, PluginSubscriptionEnd } from '../plugin/messages'
 import type { PaneEventFrame } from './rpc'
 
 /**
@@ -723,7 +723,25 @@ export interface PluginApi {
    * data; a renderer plugin calls it through `callHost`, never directly.
    */
   call(plugin: string, tag: string, payload: unknown): Promise<PluginCallResultJson>
+  /**
+   * Follows the streaming call plugin `plugin`'s `host` entry serves for `tag` with `payload`, a
+   * value encoded with the call's payload schema. `onValue` receives each encoded value,
+   * starting with the current state. `onEnd` receives how the stream ended: a failure as plain
+   * data, or completion. After a lost Host connection the subscription starts again by itself
+   * and `onEnd` is not called. A renderer plugin follows a call through `followHost`, never
+   * directly. Returns a function that ends the subscription.
+   */
+  subscribe(
+    plugin: string,
+    tag: string,
+    payload: unknown,
+    onValue: (value: unknown) => void,
+    onEnd: (end: PluginSubscriptionEndJson) => void
+  ): () => void
 }
+
+/** A `PluginSubscriptionEnd` as plain data, as `window.dia.plugins.subscribe` delivers it to `onEnd`. */
+export type PluginSubscriptionEndJson = typeof PluginSubscriptionEnd.Encoded
 
 /** The outcome of `window.dia.plugins.call`, as plain data. */
 export type PluginCallResultJson =

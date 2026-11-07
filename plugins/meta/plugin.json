@@ -1,6 +1,6 @@
 {
   "name": "meta",
-  "api": "0.0.31",
+  "api": "0.0.32",
   "category": "feature",
   "host": "host.ts",
   "renderer": "renderer.ts",

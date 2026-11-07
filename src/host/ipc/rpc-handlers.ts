@@ -9,9 +9,9 @@ import { DEFAULT_THEME } from '@shared/domain/theme'
 import { DEFAULT_TRANSCRIPT_WIDTH } from '@shared/domain/transcript-width'
 import { type IpcEvent, PaneCreateFailed } from '@shared/ipc/contract'
 import { DiaRpcs } from '@shared/ipc/rpc'
-import { Effect, Option } from 'effect'
+import { Effect, Option, Stream } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import { callPlugin } from '../plugins/plugin-messages'
+import { callPlugin, subscribePlugin } from '../plugins/plugin-messages'
 import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { AdapterStatusFeed } from '../services/adapter-status-feed'
 import { AgentSummaries } from '../services/agent-summaries'
@@ -371,6 +371,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     ResolveImportConflict: ({ agentId, resolution }) =>
       problems.resolveImportConflict(agentId, resolution),
     CallPlugin: (request) => callPlugin(plugins, request),
+    SubscribePlugin: (request) => Stream.unwrap(subscribePlugin(plugins, request)),
     SubscribeEvents: ({ cursors }) => hub.subscribe(cursors)
   })
 })

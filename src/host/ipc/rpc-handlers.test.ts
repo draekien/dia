@@ -36,8 +36,13 @@ import {
   SendQueuedMessageNow,
   SetTranscriptWidth
 } from '@shared/ipc/contract'
-import { Effect, FileSystem, Layer, Option, Stream } from 'effect'
+import type { PluginServices } from '@shared/plugin/api'
+import type { PluginRegistry } from '@shared/plugin/plugin-registry'
+import { fakeUse } from '@shared/plugin/plugin-registry.fake'
+import { Effect, FileSystem, Layer, Option, Schema, Stream } from 'effect'
+import { Rpc } from 'effect/rpc'
 import { HostPlugins } from '../plugins/host-plugins'
+import { servePluginCall } from '../plugins/plugin-messages'
 import { InvalidOverrideError, PluginSources } from '../plugins/plugin-sources'
 import { AdapterStatusFeed } from '../services/adapter-status-feed'
 import { AgentSummaries } from '../services/agent-summaries'
@@ -89,6 +94,7 @@ interface HarnessOptions {
   readonly storedSendMode?: SendMode
   readonly storedTranscriptWidth?: TranscriptWidth
   readonly storedUsageLimitResume?: UsageLimitResume
+  readonly pluginUse?: PluginRegistry['use']
 }
 
 const sendMessage = (
@@ -283,7 +289,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     list: () => Effect.succeed([pluginInfo('chat')]),
     start: () => Effect.void,
     inject: () => Effect.succeed(Option.none()),
-    use: () => Effect.succeedNone,
+    use: options.pluginUse ?? (() => Effect.succeedNone),
     changes: Stream.empty,
     load: (name) =>
       Effect.sync(() => {
@@ -1125,5 +1131,48 @@ describe('Dia RPC handlers', () => {
         assert.strictEqual(mode, 'manual')
         assert.deepStrictEqual(harness.calls, ['setUsageLimitResume:automatic'])
       })
+  )
+
+  it.effect(
+    'hands a SubscribePlugin handler the call payload, including its own payload field, unchanged',
+    () =>
+      Effect.gen(function* () {
+        const Ticks = Rpc.make('Ticks', {
+          payload: { payload: Schema.Number },
+          success: Schema.Number,
+          stream: true
+        })
+        const provided = new Map<string, unknown>()
+        const received: Array<unknown> = []
+        yield* servePluginCall(
+          {
+            name: 'example',
+            provide: (key: unknown, value: unknown) =>
+              Effect.sync(() => void provided.set(String(key), value))
+          } as unknown as PluginServices,
+          new Set(),
+          Ticks,
+          (payload) => {
+            received.push({ ...payload })
+            return Stream.make(1)
+          }
+        )
+        const harness = makeHarness({
+          pluginUse: fakeUse((key) => Option.fromNullishOr(provided.get(key)))
+        })
+
+        const values = yield* withHandlers(harness, (handlers) =>
+          Stream.runCollect(
+            handlers.SubscribePlugin({
+              plugin: 'example',
+              tag: 'Ticks',
+              payload: { payload: 1 }
+            }) as Stream.Stream<unknown, unknown>
+          )
+        )
+
+        assert.deepStrictEqual(received, [{ payload: 1 }])
+        assert.deepStrictEqual(values, [1])
+      }).pipe(Effect.scoped)
   )
 })

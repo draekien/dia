@@ -64,7 +64,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.25'
+export const PROTOCOL_VERSION = '0.0.26'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -137,6 +137,9 @@ export type EventFrame = typeof EventFrame.Type
  * `CallPlugin` takes none and runs a handler that plugin `plugin`'s `host` entry serves for `tag`,
  * with `payload` and the result encoded by the plugin's own schemas; it is resent like every query,
  * so the handler may run more than once;
+ * `SubscribePlugin` is not a query: it streams the encoded values of a streaming call that plugin
+ * `plugin`'s `host` entry serves for `tag`, the preload subscribes again after a lost connection,
+ * and its handler may run more than once;
  * `SubscribeEvents` takes the
  * last sequence number received per pane (`cursors`) and streams {@link EventFrame}s. Serve it
  * with `RpcServer` in the Host and call it with `RpcClient` from the preload.
@@ -235,6 +238,12 @@ export const DiaRpcs = RpcGroup.make(
     payload: { plugin: PluginName, tag: Schema.NonEmptyString, payload: Schema.Unknown },
     success: Schema.Unknown,
     error: PluginCallError
+  }),
+  Rpc.make('SubscribePlugin', {
+    payload: { plugin: PluginName, tag: Schema.NonEmptyString, payload: Schema.Unknown },
+    success: Schema.Unknown,
+    error: PluginCallError,
+    stream: true
   }),
   Rpc.make('SubscribeEvents', {
     payload: { cursors: Schema.Record(Schema.String, Schema.Finite) },

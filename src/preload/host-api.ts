@@ -17,6 +17,7 @@ import {
   ModelsChanged,
   MoveProject,
   type PluginCallResultJson,
+  type PluginSubscriptionEndJson,
   RemoveQueuedMessage,
   RenameTab,
   ResolvePermission,
@@ -34,8 +35,13 @@ import {
   WorkspaceChanged
 } from '@shared/ipc/contract'
 import type { DiaRpcs, EventFrame, PaneEventFrame } from '@shared/ipc/rpc'
-import { PluginCallError } from '@shared/plugin/messages'
-import { Duration, Effect, Ref, Schedule, Schema, Stream } from 'effect'
+import {
+  PluginCallError,
+  PluginSubscriptionDone,
+  PluginSubscriptionEnd,
+  PluginSubscriptionFailure
+} from '@shared/plugin/messages'
+import { Duration, Effect, Fiber, Ref, Schedule, Schema, Stream } from 'effect'
 import type { RpcClient, RpcClientError } from 'effect/rpc'
 
 /** The typed client of the Host's RPC surface. */
@@ -103,6 +109,7 @@ const encodeSnapshot = Schema.encodeSync(ModelCatalogSnapshot)
 const encodeActivities = Schema.encodeSync(Schema.Array(ActivityInfo))
 const encodeActivityNotFound = Schema.encodeSync(ActivityNotFound)
 const encodePluginCallError = Schema.encodeSync(PluginCallError)
+const encodeSubscriptionEnd = Schema.encodeSync(PluginSubscriptionEnd)
 const encodeAdapterStatus = Schema.encodeSync(AdapterStatusSnapshot)
 const encodeLastVisibleModel = Schema.encodeSync(LastVisibleModel)
 
@@ -204,6 +211,37 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
 
   void Effect.runFork(consume)
 
+  const subscribePlugin = (
+    plugin: string,
+    tag: string,
+    payload: unknown,
+    onValue: (value: unknown) => void,
+    onEnd: (end: PluginSubscriptionEndJson) => void
+  ): (() => void) => {
+    const subscribeOnce = Effect.gen(function* () {
+      const client = yield* deps.client
+      yield* client
+        .SubscribePlugin({ plugin, tag, payload })
+        .pipe(Stream.runForEach((value) => Effect.sync(() => onValue(value))))
+      return PluginSubscriptionDone.make({})
+    }).pipe(
+      Effect.catchTag(
+        ['PluginNotServing', 'PluginCallInvalid', 'PluginCallFailed'],
+        (error): Effect.Effect<PluginSubscriptionEnd> =>
+          Effect.succeed(PluginSubscriptionFailure.make({ error }))
+      ),
+      Effect.tapError((error) =>
+        Effect.sync(() =>
+          deps.warn('Plugin subscription dropped; resubscribing', { plugin, tag, error })
+        )
+      ),
+      Effect.retry(Schedule.spaced(RESUBSCRIBE_INTERVAL)),
+      Effect.flatMap((end) => Effect.sync(() => onEnd(encodeSubscriptionEnd(end))))
+    )
+    const fiber = Effect.runFork(subscribeOnce)
+    return () => void Effect.runFork(Fiber.interrupt(fiber))
+  }
+
   const subscribeTo = <E extends IpcEvent['_tag']>(
     tag: E,
     listener: (event: Extract<IpcEvent, { _tag: E }>) => void
@@ -234,7 +272,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
                 Effect.succeed({ _tag: 'Failure', error: encodePluginCallError(error) })
             )
           )
-        )
+        ),
+      subscribe: subscribePlugin
     },
     models: {
       get: () => query((client) => client.GetModels().pipe(Effect.map(encodeSnapshot))),
