@@ -59,7 +59,8 @@ const plugin = (
   setup?: PluginSetup<PluginServices>
 ): LoadedPlugin<PluginServices> => ({
   manifest: manifestFields,
-  resolveSetup: Effect.succeed(Option.fromNullishOr(setup))
+  resolveSetup: Effect.succeed(Option.fromNullishOr(setup)),
+  importers: []
 })
 
 const recording =
@@ -95,13 +96,13 @@ const makeRegistry = (
         )
     },
     loader: options.loader ?? {
-      peek: (root) => {
+      peek: (_name, root) => {
         const found = plugins[root]
         return found === undefined
           ? Effect.fail(new PluginLoadError({ message: `missing ${root}` }))
           : Effect.succeed(found.manifest)
       },
-      load: (root, use) => {
+      load: (_name, root, use) => {
         const found = plugins[root]
         return found === undefined
           ? Effect.fail(new PluginLoadError({ message: `missing ${root}` }))
@@ -524,7 +525,8 @@ describe('plugin registry', () => {
           resolveSetup: Effect.sync(() => {
             imports += 1
             return Option.none()
-          })
+          }),
+          importers: []
         }
       })
 
@@ -539,7 +541,8 @@ describe('plugin registry', () => {
       const registry = yield* makeRegistry({
         broken: {
           manifest: manifest('broken'),
-          resolveSetup: Effect.fail(new PluginLoadError({ message: 'Cannot import "host.ts"' }))
+          resolveSetup: Effect.fail(new PluginLoadError({ message: 'Cannot import "host.ts"' })),
+          importers: []
         }
       })
 
@@ -590,7 +593,8 @@ describe('plugin registry', () => {
         yield* registry.load('alpha')
         plugins.alpha = {
           manifest: manifest('alpha'),
-          resolveSetup: Effect.fail(new PluginLoadError({ message: 'Cannot import "host.ts"' }))
+          resolveSetup: Effect.fail(new PluginLoadError({ message: 'Cannot import "host.ts"' })),
+          importers: []
         }
 
         const reloaded = yield* registry.load('alpha')
@@ -723,7 +727,7 @@ describe('plugin registry', () => {
         const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', [])) }
         const loader: PluginLoader<PluginServices> = {
           peek: peekNotUsed,
-          load: (root, use) =>
+          load: (_name, root, use) =>
             use(plugins.alpha).pipe(
               Effect.tapCause(() => Effect.sync(() => void outcomes.push(`${root}:rolled-back`))),
               Effect.tap(() => Effect.sync(() => void outcomes.push(`${root}:committed`)))
@@ -748,7 +752,7 @@ describe('plugin registry', () => {
         let changedDependency = false
         const loader: PluginLoader<PluginServices> = {
           peek: peekNotUsed,
-          load: (_root, use) =>
+          load: (_name, _root, use) =>
             changedDependency
               ? Effect.fail(
                   new PluginRestartRequiredError({
@@ -779,7 +783,7 @@ describe('plugin registry', () => {
         const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', [])) }
         const loader: PluginLoader<PluginServices> = {
           peek: peekNotUsed,
-          load: (_root, use) => {
+          load: (_name, _root, use) => {
             loaderCalls += 1
             return use(plugins.alpha)
           }
@@ -1254,7 +1258,7 @@ describe('plugin setup time limit', () => {
       const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', log)) }
       const registry = yield* makeRegistry(plugins)
       yield* registry.load('alpha')
-      plugins.alpha = { manifest: manifest('alpha'), resolveSetup: Effect.never }
+      plugins.alpha = { manifest: manifest('alpha'), resolveSetup: Effect.never, importers: [] }
 
       const reloaded = yield* loadPastTheLimit(registry, 'alpha')
 

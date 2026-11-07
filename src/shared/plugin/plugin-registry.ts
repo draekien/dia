@@ -71,10 +71,14 @@ export class PluginLoadError extends Data.TaggedError('PluginLoadError')<{
  * A plugin's decoded manifest and `resolveSetup`, the effect that imports the plugin's entry for
  * this side and yields its setup function (none when the plugin has no such entry). Nothing is
  * imported until `resolveSetup` runs; the registry runs it only after the manifest passed its checks.
+ * `importers` names the other plugins that import a module this load gives a new instance,
+ * ordered so each comes after the plugins it imports; the registry loads them again after this
+ * load. It is empty when no module changed.
  */
 export interface LoadedPlugin<Context extends PluginServices> {
   readonly manifest: PluginManifest
   readonly resolveSetup: Effect.Effect<Option.Option<PluginSetup<Context>>, PluginLoadError>
+  readonly importers: ReadonlyArray<string>
 }
 
 /**
@@ -93,11 +97,13 @@ export class PluginRestartRequiredError extends Data.TaggedError('PluginRestartR
  * in the loader is restored, so a failed reload leaves later loads seeing the previous version.
  * Fails with {@link PluginRestartRequiredError} without running `use` when a dependency of the
  * plugin outside `root` changed. `peek` reads and decodes the manifest at `root` without
- * importing any entry and without changing loader state.
+ * importing any entry; a Host loader may also record the plugin's source for import resolution.
+ * `name` is the plugin's catalog name in both.
  */
 export interface PluginLoader<Context extends PluginServices> {
-  readonly peek: (root: string) => Effect.Effect<PluginManifest, PluginLoadError>
+  readonly peek: (name: string, root: string) => Effect.Effect<PluginManifest, PluginLoadError>
   readonly load: <A, E, R>(
+    name: string,
     root: string,
     use: (loaded: LoadedPlugin<Context>) => Effect.Effect<A, E, R>
   ) => Effect.Effect<A, E | PluginLoadError | PluginRestartRequiredError, R>
@@ -311,28 +317,33 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
     ): Effect.Effect<A, E, R> =>
       deps.memory === undefined ? effect : deps.memory.track(name, effect)
 
-    const peekCategory = (root: string): Effect.Effect<PluginCategory> =>
-      deps.loader.peek(root).pipe(
+    const peekCategory = (name: string, root: string): Effect.Effect<PluginCategory> =>
+      deps.loader.peek(name, root).pipe(
         Effect.map((manifest) => manifest.category),
         Effect.orElseSucceed((): PluginCategory => 'feature')
       )
 
-    const categoryOfEntry = (entry: Entry<Context>): Effect.Effect<PluginCategory> =>
-      entry.category === undefined ? peekCategory(entry.root) : Effect.succeed(entry.category)
+    const peekCatalogCategory = (name: string): Effect.Effect<PluginCategory> =>
+      Effect.gen(function* () {
+        const source = yield* deps.catalog.resolve(name)
+        if (Option.isNone(source)) return 'feature'
+        return yield* peekCategory(name, source.value.root)
+      })
+
+    const categoryOfEntry = (name: string, entry: Entry<Context>): Effect.Effect<PluginCategory> =>
+      entry.category === undefined ? peekCatalogCategory(name) : Effect.succeed(entry.category)
 
     const categoryOf = (name: string): Effect.Effect<PluginCategory> =>
       Effect.gen(function* () {
         const entry = entries.get(name)
-        if (entry !== undefined) return yield* categoryOfEntry(entry)
-        const source = yield* deps.catalog.resolve(name)
-        if (Option.isNone(source)) return 'feature'
-        return yield* peekCategory(source.value.root)
+        if (entry !== undefined) return yield* categoryOfEntry(name, entry)
+        return yield* peekCatalogCategory(name)
       })
 
     const infoOf = (name: string, entry: Entry<Context>): Effect.Effect<PluginInfo> =>
       Effect.gen(function* () {
         const memoryBytes = yield* memoryOf(name)
-        const category = yield* categoryOfEntry(entry)
+        const category = yield* categoryOfEntry(name, entry)
         return {
           name,
           category,
@@ -861,7 +872,31 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       }
     })
 
-    const swap = (name: string, source: PluginSource, entry: Entry<Context>) =>
+    const closeImporters = (
+      name: string,
+      importers: ReadonlyArray<string>,
+      closed: Array<string>
+    ) =>
+      Effect.gen(function* () {
+        const reloadable = importers.filter(
+          (importer) => entries.get(importer)?.setup !== undefined
+        )
+        for (const importer of [...reloadable].reverse()) yield* closeWithDependants(importer)
+        closed.push(...reloadable)
+        if (reloadable.length > 0) {
+          yield* Effect.logInfo('Closed plugins that import a reloading plugin', {
+            plugin: name,
+            importers: reloadable
+          })
+        }
+      })
+
+    const swap = (
+      name: string,
+      source: PluginSource,
+      entry: Entry<Context>,
+      closed: Array<string>
+    ) =>
       Effect.fnUntraced(function* (loaded: LoadedPlugin<Context>) {
         if (!isApiCompatible(PLUGIN_API_VERSION, loaded.manifest.api)) {
           return yield* new PluginLoadError({
@@ -882,6 +917,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           manifest: entry.manifest,
           setup: entry.setup
         }
+        yield* closeImporters(name, loaded.importers, closed)
         yield* closeWithDependants(name)
         entry.origin = source.origin
         entry.root = source.root
@@ -895,55 +931,76 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         return yield* Effect.failCause(opened.cause)
       })
 
+    const reloadImporters = (closed: ReadonlyArray<string>): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        for (const importer of closed) {
+          yield* loadLocked(importer, false)
+          const entry = entries.get(importer)
+          if (
+            entry?.setup !== undefined &&
+            entry.scope === undefined &&
+            (entry.status._tag === 'Loaded' || entry.status._tag === 'RestartRequired')
+          ) {
+            yield* Effect.logInfo('Reopened the previous version of an importer', {
+              plugin: importer
+            })
+            yield* openOrFail(importer, entry)
+          }
+        }
+      })
+
     const loadNamed = (name: string, fromStart: boolean): Effect.Effect<PluginInfo> =>
-      lock.withPermits(1)(
-        Effect.gen(function* () {
-          const current = entries.get(name)
-          if (fromStart && !queuedByStart.delete(name) && current !== undefined) {
-            return yield* infoOf(name, current)
-          }
-          if (current?.category === 'adapter' && isRunning(current)) {
-            yield* Effect.logWarning('Refused to reload an adapter plugin', { plugin: name })
-            return yield* infoOf(name, current)
-          }
-          const found = yield* deps.catalog.resolve(name)
-          if (Option.isNone(found)) return failedInfo(name, `No plugin named "${name}"`)
-          const source = found.value
+      lock.withPermits(1)(loadLocked(name, fromStart)).pipe(Effect.tap(publishChanges))
 
-          const entry = entryFor(name, source)
-          if (markLoading(entry)) yield* publishChanges()
+    const loadLocked = (name: string, fromStart: boolean): Effect.Effect<PluginInfo> =>
+      Effect.gen(function* () {
+        const current = entries.get(name)
+        if (fromStart && !queuedByStart.delete(name) && current !== undefined) {
+          return yield* infoOf(name, current)
+        }
+        if (current?.category === 'adapter' && isRunning(current)) {
+          yield* Effect.logWarning('Refused to reload an adapter plugin', { plugin: name })
+          return yield* infoOf(name, current)
+        }
+        const found = yield* deps.catalog.resolve(name)
+        if (Option.isNone(found)) return failedInfo(name, `No plugin named "${name}"`)
+        const source = found.value
 
-          if (deps.memory !== undefined) {
-            const used = yield* deps.memory.used(name)
-            if (used >= deps.memory.limit) {
-              const message = `Plugin "${name}" retained ${formatMegabytes(used)} across loads, over the limit of ${formatMegabytes(deps.memory.limit)}. Restart dia to reload it.`
-              entry.status = { _tag: 'RestartRequired', reason: 'memory', message }
-              yield* Effect.logWarning('Plugin reload refused', { plugin: name, used })
-              return yield* infoOf(name, entry)
-            }
-          }
+        const entry = entryFor(name, source)
+        if (markLoading(entry)) yield* publishChanges()
 
-          const exit = yield* Effect.exit(
-            tracked(name, deps.loader.load(source.root, swap(name, source, entry)))
-          )
-          if (Exit.isFailure(exit)) {
-            const error = Cause.squash(exit.cause)
-            const message = errorMessage(error)
-            if (error instanceof PluginRestartRequiredError) {
-              entry.status = { _tag: 'RestartRequired', reason: error.reason, message }
-            } else if (entry.setup === undefined) {
-              entry.origin = source.origin
-              entry.root = source.root
-              markFailed(entry, message)
-            } else if (entry.status._tag === 'Loaded') {
-              entry.status = { _tag: 'Loaded', reloadError: message }
-            }
-            yield* Effect.logWarning('Plugin failed to load', { plugin: name, message })
+        if (deps.memory !== undefined) {
+          const used = yield* deps.memory.used(name)
+          if (used >= deps.memory.limit) {
+            const message = `Plugin "${name}" retained ${formatMegabytes(used)} across loads, over the limit of ${formatMegabytes(deps.memory.limit)}. Restart dia to reload it.`
+            entry.status = { _tag: 'RestartRequired', reason: 'memory', message }
+            yield* Effect.logWarning('Plugin reload refused', { plugin: name, used })
+            return yield* infoOf(name, entry)
           }
-          yield* settle
-          return yield* infoOf(name, entry)
-        }).pipe(Effect.tap(publishChanges))
-      )
+        }
+
+        const closed: Array<string> = []
+        const exit = yield* Effect.exit(
+          tracked(name, deps.loader.load(name, source.root, swap(name, source, entry, closed)))
+        )
+        if (Exit.isFailure(exit)) {
+          const error = Cause.squash(exit.cause)
+          const message = errorMessage(error)
+          if (error instanceof PluginRestartRequiredError) {
+            entry.status = { _tag: 'RestartRequired', reason: error.reason, message }
+          } else if (entry.setup === undefined) {
+            entry.origin = source.origin
+            entry.root = source.root
+            markFailed(entry, message)
+          } else if (entry.status._tag === 'Loaded') {
+            entry.status = { _tag: 'Loaded', reloadError: message }
+          }
+          yield* Effect.logWarning('Plugin failed to load', { plugin: name, message })
+        }
+        yield* reloadImporters(closed)
+        yield* settle
+        return yield* infoOf(name, entry)
+      })
 
     const load = (name: string): Effect.Effect<PluginInfo> =>
       Effect.suspend(() => {
@@ -976,7 +1033,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
             if (Option.isNone(source)) return failedInfo(name, `No plugin named "${name}"`)
             return {
               name,
-              category: yield* peekCategory(source.value.root),
+              category: yield* peekCategory(name, source.value.root),
               origin: source.value.origin,
               root: source.value.root,
               status: { _tag: 'Unloaded' },
@@ -1007,7 +1064,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
               return {
                 name,
                 category: Option.isSome(source)
-                  ? yield* peekCategory(source.value.root)
+                  ? yield* peekCategory(name, source.value.root)
                   : 'feature',
                 origin: Option.match(source, {
                   onNone: () => 'default',
@@ -1031,7 +1088,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       Effect.gen(function* () {
         const source = yield* deps.catalog.resolve(name)
         if (Option.isNone(source)) return 'lazy'
-        return yield* deps.loader.peek(source.value.root).pipe(
+        return yield* deps.loader.peek(name, source.value.root).pipe(
           Effect.map(
             (manifest): PluginLoadMode =>
               manifest.category === 'adapter' ? 'eager' : (manifest.load ?? 'lazy')

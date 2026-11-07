@@ -17,17 +17,19 @@ const write = (directory, file, source) => {
   writeFileSync(join(directory, file), source)
 }
 
-const reload = async (root) => {
+const reload = async (root, name = root, category = 'feature', exports = [], entry = 'entry.mjs') => {
   globalThis.__evals.length = 0
+  let importers = null
   const exit = await Effect.runPromiseExit(
-    processPluginModules.transact(
-      root,
-      Effect.tryPromise(() => processPluginModules.importEntry(root, join(root, 'entry.mjs')))
-    )
+    processPluginModules.transact(name, root, category, exports, (reported) => {
+      importers = reported
+      return Effect.tryPromise(() => processPluginModules.importEntry(root, join(root, entry)))
+    })
   )
   const failure = exit._tag === 'Failure' ? Cause.squash(exit.cause) : undefined
   return {
     evaluated: [...globalThis.__evals].sort(),
+    importers,
     failure:
       failure === undefined
         ? null

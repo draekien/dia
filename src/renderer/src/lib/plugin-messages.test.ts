@@ -48,7 +48,8 @@ const makeRegistry = (setup: PluginSetup<ServingContext>) =>
     },
     loader: {
       peek: () => Effect.succeed(manifest),
-      load: (_root, use) => use({ manifest, resolveSetup: Effect.succeed(Option.some(setup)) })
+      load: (_name, _root, use) =>
+        use({ manifest, resolveSetup: Effect.succeed(Option.some(setup)), importers: [] })
     },
     extend: (services) => {
       const served = new Set<string>()
