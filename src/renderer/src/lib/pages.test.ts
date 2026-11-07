@@ -2,7 +2,7 @@ import { ProjectId } from '@shared/domain/project'
 import type { PluginServices } from '@shared/plugin/api'
 import { Effect, Exit, Option, Scope } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openPage } from './actions'
+import { cancelNewAgent, newAgent, openPage } from './actions'
 import { addPage, type Page, pagesAtom } from './pages'
 import { appRegistry, newAgentFormAtom, openPageAtom } from './workspace-atoms'
 
@@ -125,5 +125,48 @@ describe('openPage', () => {
     openPage({ plugin: 'example', id: 'greeting' })
 
     expect(selectTab).toHaveBeenCalledWith(null)
+  })
+
+  it('keeps the tab an earlier open page hid', () => {
+    vi.stubGlobal('window', { dia: { selectTab: () => {} } })
+    appRegistry.set(
+      openPageAtom,
+      Option.some({ key: { plugin: 'org', id: 'roster' }, shownBefore: PANE_A })
+    )
+
+    openPage({ plugin: 'example', id: 'greeting' })
+
+    expect(Option.map(appRegistry.get(openPageAtom), (open) => open.shownBefore)).toEqual(
+      Option.some(PANE_A)
+    )
+  })
+})
+
+describe('newAgent over an open page', () => {
+  it('returns to the tab the page hid when the form is cancelled', () => {
+    const selectTab = vi.fn()
+    vi.stubGlobal('window', { dia: { selectTab } })
+    appRegistry.set(
+      openPageAtom,
+      Option.some({ key: { plugin: 'example', id: 'greeting' }, shownBefore: PANE_A })
+    )
+
+    newAgent(PROJECT)
+    cancelNewAgent()
+
+    expect(selectTab).toHaveBeenLastCalledWith(PANE_A)
+  })
+})
+
+describe('addPage across a reload that adds the page before the old scope closes', () => {
+  it('leaves the open page open', () => {
+    vi.stubGlobal('window', { dia: { selectTab: () => {} } })
+    const old = addInScope('example', page('greeting', 10))
+    openPage({ plugin: 'example', id: 'greeting' })
+    addInScope('example', page('greeting', 10))
+
+    close(old)
+
+    expect(openPageId()).toBe('greeting')
   })
 })

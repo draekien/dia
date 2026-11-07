@@ -65,7 +65,7 @@ export interface OpenPage { readonly key: PageKey; readonly shownBefore: PaneId 
 
 | Event | Effect on `openPageAtom` |
 | --- | --- |
-| `actions.openPage(key)` | `some({ key, shownBefore })`, where `shownBefore` is the open form's `shownBefore` when the New agent form is open, else `visibleTab`. Then closes the form and calls `window.dia.selectTab(null)`, as `newAgent` does, so no tab counts as visible (or highlighted) behind the page |
+| `actions.openPage(key)` | `some({ key, shownBefore })`, where `shownBefore` is the open form's `shownBefore` when the New agent form is open, else the open page's `shownBefore` when a page is open, else `visibleTab`. `newAgent` takes its `shownBefore` the same way, so cancelling the form returns to the tab a page hid. Then closes the form and calls `window.dia.selectTab(null)`, as `newAgent` does, so no tab counts as visible (or highlighted) behind the page |
 | `actions.selectTab`, `actions.newAgent` | `none` |
 | A workspace change whose `visibleTab` is non-null and differs from `shownBefore` (a notification click, a Host-side switch) | `none` (`closesOpenPage`, as `closesNewAgentForm`) |
 | The page's plugin unloads or reloads (`addPage`'s release) | `none` when it names that page |
@@ -222,4 +222,5 @@ Rpc.make('CallPlugin', {
 - *Correctness* — `newAgent` sets the Host's visible tab to `null` (`actions.ts:30`), so a page opened from the form recorded `shownBefore: null` and dropped the form's; `openPage` keeps the form's `shownBefore` and also clears the Host's visible tab.
 - *Correctness* — `tab-content.tsx:73-92` is the only exhaustive `View` switch; named in Module layout with the JSDoc updates.
 - *Correctness* — how a component runs `callHost`, and that unmount does not cancel the handler, stated.
+- *Correctness (code review)* — a page opened over a page, or New agent opened over a page, took `visibleTab` (`null` behind a page) as `shownBefore`; both now take the open page's `shownBefore`. The release keeps the page open while another entry with its key is still registered.
 - *Correctness* — overlapping runs and the `SERVICE_USE_TIME_LIMIT` interrupt (`plugin-registry.ts:599`) stated on `serve` and `PluginNotServing`.

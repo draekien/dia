@@ -60,7 +60,11 @@ export const addPage = (
       Effect.gen(function* () {
         appRegistry.update(pagesAtom, (pages) => pages.filter((existing) => existing !== entry))
         const open = appRegistry.get(openPageAtom)
-        if (Option.isSome(open) && sameKey(open.value.key, entry.key)) {
+        if (
+          Option.isSome(open) &&
+          sameKey(open.value.key, entry.key) &&
+          findPage(appRegistry.get(pagesAtom), entry.key) === undefined
+        ) {
           appRegistry.set(openPageAtom, Option.none())
           yield* Effect.logDebug('Closed the open page its plugin removed', annotations)
         }

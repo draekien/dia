@@ -24,9 +24,14 @@ export function GreetingPage({ ctx }: { readonly ctx: Pick<PluginServices, 'name
           onFailure: (error): Greeting => ({ _tag: 'Failed', message: error.message })
         })
       )
-    ).then((result) => {
-      if (mounted) setGreeting(result)
-    })
+    ).then(
+      (result) => {
+        if (mounted) setGreeting(result)
+      },
+      (defect: unknown) => {
+        if (mounted) setGreeting({ _tag: 'Failed', message: String(defect) })
+      }
+    )
     return () => {
       mounted = false
     }

@@ -15,6 +15,12 @@ const visibleTab = (): PaneId | null =>
     onSome: (workspace) => workspace.visibleTab
   })
 
+const tabHiddenByPage = (): PaneId | null =>
+  Option.match(appRegistry.get(openPageAtom), {
+    onNone: visibleTab,
+    onSome: (page) => page.shownBefore
+  })
+
 /** Shows tab `paneId` in the content area, closing the New agent form or page if one is open. */
 export const selectTab = (paneId: PaneId): void => {
   log('Selecting a tab', { paneId })
@@ -26,7 +32,7 @@ export const selectTab = (paneId: PaneId): void => {
 /** Opens the New agent form for project `projectId` in the content area. */
 export const newAgent = (projectId: ProjectId): void => {
   log('Opening the New agent form', { projectId })
-  const form = openNewAgentForm(appRegistry.get(newAgentFormAtom), projectId, visibleTab())
+  const form = openNewAgentForm(appRegistry.get(newAgentFormAtom), projectId, tabHiddenByPage())
   appRegistry.set(openPageAtom, Option.none())
   appRegistry.set(newAgentFormAtom, Option.some(form))
   window.dia.selectTab(null)
@@ -39,7 +45,7 @@ export const newAgent = (projectId: ProjectId): void => {
 export const openPage = (key: PageKey): void => {
   log('Opening a page', { plugin: key.plugin, id: key.id })
   const shownBefore = Option.match(appRegistry.get(newAgentFormAtom), {
-    onNone: visibleTab,
+    onNone: tabHiddenByPage,
     onSome: (form) => form.shownBefore
   })
   appRegistry.set(newAgentFormAtom, Option.none())

@@ -71,8 +71,8 @@ function WorktreeChip({ worktree }: { readonly worktree: { path: string; branch:
  * The kernel's content for the card header row, shown in the `main.header` slot unless a plugin
  * fills it. A breadcrumb for the current view (`project › agent` with the worktree branch and the
  * transcript width control for a tab, `project › New agent` for the New agent form, the page's
- * label for a plugin's page, nothing for the other views) followed by {@link WindowStatus} at the right end. A plugin that fills the
- * slot owns the status items.
+ * label for a plugin's page, nothing for the other views) followed by {@link WindowStatus} at the
+ * right end. A plugin that fills the slot owns the status items.
  */
 export function TabHeader() {
   const view = useView()
