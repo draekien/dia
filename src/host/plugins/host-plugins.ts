@@ -12,7 +12,6 @@ import { BackgroundActivities } from '../services/background-activities'
 import { makePluginDatabase } from '../services/database'
 import { EventHub } from '../services/event-hub'
 import { WorkspaceFeed } from '../services/workspace-feed'
-import { adapterContract } from '../session/agent-backend'
 import { makeHostPluginLoader } from './plugin-loader'
 import { heapUsedAfterGc, makePluginMemoryGuard } from './plugin-memory-guard'
 import { servePluginCall } from './plugin-messages'
@@ -84,7 +83,6 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
             })
           )
         },
-        adapterContract,
         onChange: (changed) =>
           Effect.forEach(
             changed,

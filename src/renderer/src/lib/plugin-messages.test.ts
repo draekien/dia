@@ -1,7 +1,7 @@
 import { assert, describe, it } from '@effect/vitest'
 import type { PluginCallResultJson } from '@shared/ipc/contract'
 import type { PluginServices, PluginSetup } from '@shared/plugin/api'
-import { type FeatureManifest, PLUGIN_API_VERSION } from '@shared/plugin/manifest'
+import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
 import { PluginCallError } from '@shared/plugin/messages'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
 import { Effect, Exit, Option, Schema, Scope } from 'effect'
@@ -33,7 +33,7 @@ const CountAsText = Rpc.make('Count', { payload: { n: Schema.String }, success: 
 const EXAMPLE = 'example'
 const ctx = { name: EXAMPLE }
 
-const manifest: FeatureManifest = {
+const manifest: PluginManifest = {
   name: EXAMPLE,
   api: PLUGIN_API_VERSION,
   category: 'feature',
@@ -57,8 +57,7 @@ const makeRegistry = (setup: PluginSetup<ServingContext>) =>
         ...services,
         serve: (rpc, handler) => servePluginCall(services, served, rpc, handler)
       })
-    },
-    adapterContract: { keys: [], problems: () => [] }
+    }
   })
 
 const encodeCallError = Schema.encodeSync(PluginCallError)

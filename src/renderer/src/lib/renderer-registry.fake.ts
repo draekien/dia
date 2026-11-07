@@ -1,10 +1,10 @@
 import type { PluginServices, PluginSetup } from '@shared/plugin/api'
-import { type FeatureManifest, PLUGIN_API_VERSION } from '@shared/plugin/manifest'
+import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
 import { Effect, Option, Scope } from 'effect'
 import { setPluginRegistry } from './slots'
 
-const rendererManifest = (name: string): FeatureManifest => ({
+const rendererManifest = (name: string): PluginManifest => ({
   name,
   api: PLUGIN_API_VERSION,
   category: 'feature',
@@ -37,8 +37,7 @@ export const startRendererRegistry = (
               importers: []
             })
         },
-        extend: (services) => Effect.succeed(services),
-        adapterContract: { keys: [], problems: () => [] }
+        extend: (services) => Effect.succeed(services)
       }).pipe(Scope.provide(scope))
       setPluginRegistry(registry)
       yield* registry.start()

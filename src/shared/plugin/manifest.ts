@@ -21,7 +21,7 @@ export type PluginApiVersion = typeof PluginApiVersion.Type
  * increment the minor version when the plugin context gains something, and the major version when
  * it changes in a way an older plugin cannot use.
  */
-export const PLUGIN_API_VERSION: PluginApiVersion = '0.0.28'
+export const PLUGIN_API_VERSION: PluginApiVersion = '0.0.29'
 
 const versionParts = (version: string): ReadonlyArray<number> | undefined => {
   const match = SEMVER.exec(version)
@@ -68,10 +68,12 @@ export type PluginName = typeof PluginName.Type
 export const PluginLoadMode = Schema.Literals(['eager', 'lazy'])
 export type PluginLoadMode = typeof PluginLoadMode.Type
 
+const CATEGORY_REQUIRED = 'plugin.json must declare "category" as "feature" or "adapter"'
+
 /**
- * What a plugin is. An `adapter` translates between dia and one agent: it loads at startup from
- * the shipped copy only and is never unloaded, reloaded or overridden. A `feature` is one
- * user-facing feature and can be reloaded, unloaded and overridden.
+ * A label for what a plugin is: an `adapter` translates between dia and one agent, a `feature` is
+ * one user-facing feature. The Adapters settings page and model preferences read it; every plugin
+ * loads, reloads, unloads and is overridden under the same rules whatever its category.
  */
 export const PluginCategory = Schema.Literals(['feature', 'adapter'])
 export type PluginCategory = typeof PluginCategory.Type
@@ -84,61 +86,28 @@ export type PluginCategory = typeof PluginCategory.Type
 export const PluginExport = Schema.String.check(
   Schema.isPattern(/^(?:[a-z0-9-]+\/)*[a-z0-9-]+\.ts$/)
 )
-
-const pluginExports = Schema.optional(Schema.Array(PluginExport))
 export type PluginExport = typeof PluginExport.Type
 
 /**
- * `plugin.json` of a feature plugin. `host` and `renderer` are entry paths relative to the
- * plugin directory; a plugin may declare either or both. `inject` lists the service keys the
- * plugin reads with `ctx.inject`, so the registry reopens the plugin when a provider of one of
- * them changes. `exports` lists the {@link PluginExport} files other code may import. `load` is
- * the {@link PluginLoadMode} at startup; it defaults to `lazy`.
+ * Contents of a plugin's `plugin.json`. `category` is the plugin's {@link PluginCategory}.
+ * `host` and `renderer` are entry paths relative to the plugin directory; a plugin may declare
+ * either or both. `inject` lists the service keys the plugin reads with `ctx.inject`, so the
+ * registry reopens the plugin when a provider of one of them changes. `exports` lists the
+ * {@link PluginExport} files other code may import. `load` is the {@link PluginLoadMode} at
+ * startup; it defaults to `lazy`. Decode it with `{ errors: 'all' }` so every problem in the
+ * manifest is reported at once.
  */
-export const FeatureManifest = Schema.Struct({
+export const PluginManifest = Schema.Struct({
   name: PluginName,
   api: PluginApiVersion,
-  category: Schema.Literal('feature'),
+  category: PluginCategory.annotate({ message: CATEGORY_REQUIRED }).pipe(
+    Schema.annotateKey({ messageMissingKey: CATEGORY_REQUIRED })
+  ),
   host: Schema.optional(Schema.String),
   renderer: Schema.optional(Schema.String),
   inject: Schema.optional(Schema.Array(Schema.String)),
-  exports: pluginExports,
+  exports: Schema.optional(Schema.Array(PluginExport)),
   load: Schema.optional(PluginLoadMode)
-})
-export type FeatureManifest = typeof FeatureManifest.Type
-
-const forbidden = (message: string) => Schema.optionalKey(Schema.Never.annotate({ message }))
-
-/**
- * `plugin.json` of an adapter plugin. `host` is its required Host entry path; an adapter has no
- * `renderer`, `inject` or `load`, and decoding a manifest that declares one fails with a message
- * that says why. `exports` lists the {@link PluginExport} files other code may import.
- */
-export const AdapterManifest = Schema.Struct({
-  name: PluginName,
-  api: PluginApiVersion,
-  category: Schema.Literal('adapter'),
-  host: Schema.String.pipe(
-    Schema.annotateKey({
-      messageMissingKey: 'an adapter needs a "host" entry, because it runs in the Host'
-    })
-  ),
-  renderer: forbidden('an adapter has no UI, so it cannot declare "renderer"'),
-  inject: forbidden(
-    'an adapter cannot declare "inject": a reload of the plugin it injects from would close the adapter'
-  ),
-  exports: pluginExports,
-  load: forbidden('an adapter always loads at startup, so it cannot declare "load"')
-})
-export type AdapterManifest = typeof AdapterManifest.Type
-
-/**
- * Contents of a plugin's `plugin.json`: a {@link FeatureManifest} or an {@link AdapterManifest},
- * chosen by the required `category`. Decode it with `{ errors: 'all' }` so every problem in the
- * manifest is reported at once.
- */
-export const PluginManifest = Schema.Union([FeatureManifest, AdapterManifest]).annotate({
-  message: 'plugin.json must declare "category" as "feature" or "adapter"'
 })
 export type PluginManifest = typeof PluginManifest.Type
 

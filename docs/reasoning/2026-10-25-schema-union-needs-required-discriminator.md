@@ -4,6 +4,8 @@
 
 ## Context
 
+ADR-0065 (2026-11-07) replaced this union with one `PluginManifest` struct. The finding below still applies to any discriminated `Schema.Union` in effect v4. `category` is still required: `PluginCategory` carries the `message` annotation and the field carries `messageMissingKey` with the same text, `plugin.json must declare "category" as "feature" or "adapter"`.
+
 `PluginManifest` became a union of `FeatureManifest` and `AdapterManifest`, discriminated on `category` (`docs/designs/adapter-category.md`). The first draft kept `category` optional on the feature member, so existing `plugin.json` files without it would still decode as features. The adapter member forbids `renderer`, `inject` and `load`, and requires `host`, each with its own message, so that a developer sees every problem in an invalid adapter manifest at once.
 
 ## Reasoning / Learning

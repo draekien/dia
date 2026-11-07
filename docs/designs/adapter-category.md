@@ -1,6 +1,6 @@
 # Adapter category and kernel pending user input
 
-Status: implemented (aca6b31, ef2051a; ADR-0029).
+Status: implemented (aca6b31, ef2051a; ADR-0029). The adapter rules (`AdapterManifest`, `adapterContract`, `ServiceKeyReservedError`, no reload, unload or override) are superseded by `docs/designs/adapters-as-ordinary-plugins.md` (ADR-0065). The kernel `pending-user-input` part stays current.
 
 Issue #9, the step after `docs/designs/claude-code-adapter.md`. Implements the parts of ADR-0029 that the adapter step left: the `adapter` category, the removal of `ESSENTIAL_PLUGINS`, and `pending-user-input` in the kernel.
 

@@ -2,7 +2,7 @@
 import type { PluginServices, PluginSetup } from '@dia/plugin'
 import { addEntry } from '@dia/renderer-plugin'
 import { PagesSlot } from '@dia-plugin/layout/slots'
-import { type FeatureManifest, PLUGIN_API_VERSION } from '@shared/plugin/manifest'
+import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
 import { Effect, Option, Scope } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +13,7 @@ import layout from './renderer'
 const PANE_A = '00000000-0000-4000-8000-00000000000a'
 const GREETING = { plugin: 'example', id: 'greeting' }
 
-const manifest = (name: string): FeatureManifest => ({
+const manifest = (name: string): PluginManifest => ({
   name,
   api: PLUGIN_API_VERSION,
   category: 'feature',
@@ -50,8 +50,7 @@ const startRegistry = (setups: Record<string, PluginSetup<PluginServices>>) =>
               importers: []
             })
         },
-        extend: (services) => Effect.succeed(services),
-        adapterContract: { keys: [], problems: () => [] }
+        extend: (services) => Effect.succeed(services)
       }).pipe(Scope.provide(scope))
       yield* registry.start()
       return registry

@@ -158,13 +158,6 @@ describe("imports of another plugin's exports", () => {
       'plugin "exporter" does not export "entry.ts"'
     )
   })
-
-  it("fails an adapter that imports another plugin's export", () => {
-    assert.include(
-      results.adapterImport?.failure?.message ?? '',
-      'An adapter cannot import "@dia-plugin/exporter/messages"'
-    )
-  })
 })
 
 describe('type-only imports under the type stripping the Host loads plugins with', () => {

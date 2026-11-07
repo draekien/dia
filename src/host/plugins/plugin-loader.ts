@@ -67,19 +67,15 @@ export const makeHostPluginLoader = (
       use: (loaded: LoadedPlugin<HostPluginContext>) => Effect.Effect<A, E, R>
     ) {
       const { manifest, resolveSetup } = yield* read(root)
-      return yield* modules.transact(
-        name,
-        root,
-        manifest.category,
-        manifest.exports ?? [],
-        (importers) => use({ manifest, resolveSetup, importers })
+      return yield* modules.transact(name, root, manifest.exports ?? [], (importers) =>
+        use({ manifest, resolveSetup, importers })
       )
     })
 
     const peek = Effect.fn('PluginLoader.peek')(function* (name: string, root: string) {
       const { manifest } = yield* read(root)
       if (manifest.name === name) {
-        modules.declare(name, root, manifest.category, manifest.exports ?? [])
+        modules.declare(name, root, manifest.exports ?? [])
       }
       return manifest
     })

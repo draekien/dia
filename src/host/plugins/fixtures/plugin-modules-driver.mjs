@@ -17,11 +17,11 @@ const write = (directory, file, source) => {
   writeFileSync(join(directory, file), source)
 }
 
-const reload = async (root, name = root, category = 'feature', exports = []) => {
+const reload = async (root, name = root, exports = []) => {
   globalThis.__evals.length = 0
   let importers = null
   const exit = await Effect.runPromiseExit(
-    processPluginModules.transact(name, root, category, exports, (reported) => {
+    processPluginModules.transact(name, root, exports, (reported) => {
       importers = reported
       return Effect.tryPromise(() =>
         processPluginModules.importEntry(root, join(root, 'entry.mjs'))
@@ -108,20 +108,20 @@ write(exporterRoot, 'entry.mjs', moduleSource('entry', "import './messages.ts'")
 const importerRoot = join(base, 'importer')
 write(importerRoot, 'entry.mjs', importerSource('@dia-plugin/exporter/messages'))
 
-processPluginModules.declare('exporter', exporterRoot, 'feature', ['messages.ts'])
+processPluginModules.declare('exporter', exporterRoot, ['messages.ts'])
 results.importerBeforeExporter = await reload(importerRoot, 'importer')
-results.exporterAfterImporter = await reload(exporterRoot, 'exporter', 'feature', ['messages.ts'])
+results.exporterAfterImporter = await reload(exporterRoot, 'exporter', ['messages.ts'])
 
 write(exporterRoot, 'messages.ts', messagesSource('v2'))
-results.exporterEdited = await reload(exporterRoot, 'exporter', 'feature', ['messages.ts'])
+results.exporterEdited = await reload(exporterRoot, 'exporter', ['messages.ts'])
 results.importerAfterEdit = await reload(importerRoot, 'importer')
 
 const overrideRoot = join(base, 'exporter-override')
 write(overrideRoot, 'messages.ts', messagesSource('override'))
 write(overrideRoot, 'entry.mjs', moduleSource('entry', "import './messages.ts'"))
-processPluginModules.declare('exporter', overrideRoot, 'feature', ['messages.ts'])
+processPluginModules.declare('exporter', overrideRoot, ['messages.ts'])
 results.importerBeforeOverrideLoads = await reload(importerRoot, 'importer')
-results.exporterOverridden = await reload(overrideRoot, 'exporter', 'feature', ['messages.ts'])
+results.exporterOverridden = await reload(overrideRoot, 'exporter', ['messages.ts'])
 results.importerAfterOverride = await reload(importerRoot, 'importer')
 
 const unloadedRoot = join(base, 'unloaded')
@@ -130,9 +130,9 @@ const unloadedOverrideRoot = join(base, 'unloaded-override')
 write(unloadedOverrideRoot, 'messages.ts', messagesSource('unloaded-override'))
 const secondImporterRoot = join(base, 'second-importer')
 write(secondImporterRoot, 'entry.mjs', importerSource('@dia-plugin/unloaded/messages'))
-processPluginModules.declare('unloaded', unloadedRoot, 'feature', ['messages.ts'])
+processPluginModules.declare('unloaded', unloadedRoot, ['messages.ts'])
 results.unloadedFirst = await reload(secondImporterRoot, 'second-importer')
-processPluginModules.declare('unloaded', unloadedOverrideRoot, 'feature', ['messages.ts'])
+processPluginModules.declare('unloaded', unloadedOverrideRoot, ['messages.ts'])
 results.unloadedOverridden = await reload(secondImporterRoot, 'second-importer')
 write(unloadedOverrideRoot, 'messages.ts', messagesSource('unloaded-edited'))
 results.unloadedEdited = await reload(secondImporterRoot, 'second-importer')
@@ -144,10 +144,5 @@ results.unknownPlugin = await reload(unknownRoot, 'unknown-importer')
 const unlistedRoot = join(base, 'unlisted-importer')
 write(unlistedRoot, 'entry.mjs', importerSource('@dia-plugin/exporter/entry'))
 results.unlistedFile = await reload(unlistedRoot, 'unlisted-importer')
-
-const adapterRoot = join(base, 'adapter')
-write(adapterRoot, 'entry.mjs', importerSource('@dia-plugin/exporter/messages'))
-processPluginModules.declare('adapter', adapterRoot, 'adapter', [])
-results.adapterImport = await reload(adapterRoot, 'adapter', 'adapter')
 
 process.stdout.write(`RESULT ${JSON.stringify(results)}\n`)

@@ -11,14 +11,8 @@ import {
   Stream
 } from 'effect'
 import { TestClock } from 'effect/testing'
-import { type PluginServices, type PluginSetup, ServiceKey, WhenProvidedRefusedError } from './api'
-import {
-  type AdapterManifest,
-  type FeatureManifest,
-  PLUGIN_API_VERSION,
-  type PluginInfo,
-  type PluginManifest
-} from './manifest'
+import { type PluginServices, type PluginSetup, ServiceKey } from './api'
+import { PLUGIN_API_VERSION, type PluginInfo, type PluginManifest } from './manifest'
 import {
   type LoadedPlugin,
   makePluginRegistry,
@@ -31,7 +25,7 @@ import {
   ServiceWithdrawnError
 } from './plugin-registry'
 
-const manifest = (name: string, overrides: Partial<FeatureManifest> = {}): FeatureManifest => ({
+const manifest = (name: string, overrides: Partial<PluginManifest> = {}): PluginManifest => ({
   name,
   api: PLUGIN_API_VERSION,
   category: 'feature',
@@ -39,20 +33,10 @@ const manifest = (name: string, overrides: Partial<FeatureManifest> = {}): Featu
   ...overrides
 })
 
-const adapterManifest = (name: string): AdapterManifest => ({
-  name,
-  api: PLUGIN_API_VERSION,
-  category: 'adapter',
-  host: 'host.ts'
-})
+const adapterManifest = (name: string, overrides: Partial<PluginManifest> = {}): PluginManifest =>
+  manifest(name, { category: 'adapter', ...overrides })
 
 const BACKEND_KEY = 'backend'
-
-const requiresBackend = {
-  keys: [BACKEND_KEY],
-  problems: (provided: (key: string) => Option.Option<unknown>) =>
-    Option.isSome(provided(BACKEND_KEY)) ? [] : [`setup did not provide "${BACKEND_KEY}"`]
-}
 
 const plugin = (
   manifestFields: PluginManifest,
@@ -110,7 +94,6 @@ const makeRegistry = (
       }
     },
     extend: options.extend ?? ((services) => Effect.succeed(services)),
-    adapterContract: requiresBackend,
     ...(options.memory === undefined ? {} : { memory: options.memory }),
     ...(options.onChange === undefined ? {} : { onChange: options.onChange })
   })
@@ -281,8 +264,7 @@ describe('plugin registry', () => {
           peek: peekNotUsed,
           load: () => Effect.fail(new PluginLoadError({ message: 'unreadable plugin.json' }))
         },
-        extend: (services) => Effect.succeed(services),
-        adapterContract: requiresBackend
+        extend: (services) => Effect.succeed(services)
       })
 
       const unreadable = yield* registry.load('alpha')
@@ -1021,57 +1003,23 @@ describe('plugin registry', () => {
     (ctx) =>
       recording(name, log, () => ctx.provide(BACKEND_KEY, name))(ctx)
 
-  it.effect('keeps a loaded adapter open when it is asked to unload', () =>
+  it.effect('unloads an adapter like any other plugin', () =>
     Effect.gen(function* () {
       const log: Array<string> = []
       const registry = yield* makeRegistry({
-        agent: plugin(adapterManifest('agent'), providesBackend('agent', log)),
-        alpha: plugin(manifest('alpha'), recording('alpha', log))
+        agent: plugin(adapterManifest('agent'), providesBackend('agent', log))
       })
       yield* registry.load('agent')
-      yield* registry.load('alpha')
 
-      const refused = yield* registry.unload('agent')
-      const allowed = yield* registry.unload('alpha')
+      const unloaded = yield* registry.unload('agent')
 
-      assert.deepStrictEqual(refused.status, { _tag: 'Loaded' })
-      assert.deepStrictEqual(allowed.status, { _tag: 'Unloaded' })
-      assert.deepStrictEqual(log, ['agent:open', 'alpha:open', 'alpha:close'])
-      assert.deepStrictEqual(yield* registry.inject(BACKEND_KEY), Option.some('agent'))
+      assert.deepStrictEqual(unloaded.status, { _tag: 'Unloaded' })
+      assert.deepStrictEqual(log, ['agent:open', 'agent:close'])
+      assert.deepStrictEqual(yield* registry.inject(BACKEND_KEY), Option.none())
     }).pipe(Effect.scoped)
   )
 
-  it.effect('fails an adapter whose setup reads a service, since it cannot declare inject', () =>
-    Effect.gen(function* () {
-      const registry = yield* makeRegistry({
-        agent: plugin(adapterManifest('agent'), (ctx) =>
-          ctx.inject('db').pipe(Effect.andThen(ctx.provide(BACKEND_KEY, 'agent')))
-        )
-      })
-
-      const agent = yield* registry.load('agent')
-
-      assert.deepStrictEqual(agent.status, {
-        _tag: 'Failed',
-        message: 'Adapter plugin "agent" reads "db", but an adapter cannot declare "inject"'
-      })
-    }).pipe(Effect.scoped)
-  )
-
-  it.effect('refuses to unload an adapter that has not loaded yet', () =>
-    Effect.gen(function* () {
-      const registry = yield* makeRegistry({
-        agent: plugin(adapterManifest('agent'), providesBackend('agent', []))
-      })
-
-      const refused = yield* registry.unload('agent')
-
-      assert.strictEqual(refused.category, 'adapter')
-      assert.deepStrictEqual(refused.status, { _tag: 'Unloaded' })
-    }).pipe(Effect.scoped)
-  )
-
-  it.effect('does not run the setup of a running adapter again when it is loaded again', () =>
+  it.effect('reloads a running adapter, closing it and running its setup again', () =>
     Effect.gen(function* () {
       const log: Array<string> = []
       const registry = yield* makeRegistry({
@@ -1082,7 +1030,25 @@ describe('plugin registry', () => {
       const reloaded = yield* registry.load('agent')
 
       assert.deepStrictEqual(reloaded.status, { _tag: 'Loaded' })
-      assert.deepStrictEqual(log, ['agent:open'])
+      assert.deepStrictEqual(log, ['agent:open', 'agent:close', 'agent:open'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('lets an adapter read a service it declares in inject', () =>
+    Effect.gen(function* () {
+      const read: Array<Option.Option<unknown>> = []
+      const registry = yield* makeRegistry({
+        db: plugin(manifest('db'), (ctx) => ctx.provide('db', 'connection')),
+        agent: plugin(adapterManifest('agent', { inject: ['db'] }), (ctx) =>
+          ctx.inject('db').pipe(Effect.tap((value) => Effect.sync(() => read.push(value))))
+        )
+      })
+      yield* registry.load('db')
+
+      const agent = yield* registry.load('agent')
+
+      assert.deepStrictEqual(agent.status, { _tag: 'Loaded' })
+      assert.deepStrictEqual(read, [Option.some('connection')])
     }).pipe(Effect.scoped)
   )
 
@@ -1102,66 +1068,6 @@ describe('plugin registry', () => {
       assert.strictEqual(failed.category, 'adapter')
       assert.deepStrictEqual(retried.status, { _tag: 'Loaded' })
       assert.deepStrictEqual(log, ['agent:open'])
-    }).pipe(Effect.scoped)
-  )
-
-  it.effect('fails an adapter whose setup does not meet the adapter contract and closes it', () =>
-    Effect.gen(function* () {
-      const log: Array<string> = []
-      const registry = yield* makeRegistry({
-        agent: plugin(
-          adapterManifest('agent'),
-          recording('agent', log, (ctx) => ctx.provide('other', 1))
-        )
-      })
-
-      const result = yield* registry.load('agent')
-
-      assert.deepStrictEqual(result.status, {
-        _tag: 'Failed',
-        message: `Plugin "agent" does not meet the adapter contract:\n- setup did not provide "${BACKEND_KEY}"`
-      })
-      assert.deepStrictEqual(log, ['agent:open', 'agent:close'])
-      assert.deepStrictEqual(yield* registry.inject('other'), Option.none())
-    }).pipe(Effect.scoped)
-  )
-
-  it.effect('fails a feature plugin that provides a key reserved for adapters', () =>
-    Effect.gen(function* () {
-      const log: Array<string> = []
-      const registry = yield* makeRegistry({
-        impostor: plugin(
-          manifest('impostor'),
-          recording('impostor', log, (ctx) =>
-            Effect.gen(function* () {
-              yield* ctx.provide('other', 1)
-              yield* ctx.provide(BACKEND_KEY, 'fake')
-            })
-          )
-        )
-      })
-
-      const result = yield* registry.load('impostor')
-
-      assert.deepStrictEqual(result.status, {
-        _tag: 'Failed',
-        message: `"${BACKEND_KEY}" can be provided only by an adapter plugin`
-      })
-      assert.deepStrictEqual(log, ['impostor:open', 'impostor:close'])
-      assert.deepStrictEqual(yield* registry.inject(BACKEND_KEY), Option.none())
-      assert.deepStrictEqual(yield* registry.inject('other'), Option.none())
-    }).pipe(Effect.scoped)
-  )
-
-  it.effect('does not apply the adapter contract to a feature plugin', () =>
-    Effect.gen(function* () {
-      const registry = yield* makeRegistry({
-        alpha: plugin(manifest('alpha'), recording('alpha', []))
-      })
-
-      const result = yield* registry.load('alpha')
-
-      assert.deepStrictEqual(result.status, { _tag: 'Loaded' })
     }).pipe(Effect.scoped)
   )
 
@@ -1208,10 +1114,10 @@ describe('plugin registry', () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect('loads an adapter before start resolves', () =>
+  it.effect('loads an adapter whose manifest says eager before start resolves', () =>
     Effect.gen(function* () {
       const registry = yield* makeRegistry({
-        agent: plugin(adapterManifest('agent'), providesBackend('agent', []))
+        agent: plugin(adapterManifest('agent', { load: 'eager' }), providesBackend('agent', []))
       })
 
       yield* registry.start()
@@ -1647,42 +1553,6 @@ describe('service leases', () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect('closes an adapter that fails its contract only after a running use ends', () =>
-    Effect.gen(function* () {
-      const log: Array<string> = []
-      const setupGate = yield* Deferred.make<void>()
-      const useGate = yield* Deferred.make<void>()
-      const registry = yield* makeRegistry({
-        adapter: plugin(
-          adapterManifest('adapter'),
-          recording('adapter', log, (ctx) =>
-            ctx.provide('svc', 'value').pipe(Effect.andThen(Deferred.await(setupGate)))
-          )
-        )
-      })
-      const loading = yield* Effect.forkChild(registry.load('adapter'), {
-        startImmediately: true
-      })
-      yield* Effect.yieldNow
-      yield* Effect.forkChild(
-        registry.use('svc', () => Deferred.await(useGate)),
-        {
-          startImmediately: true
-        }
-      )
-      yield* Deferred.succeed(setupGate, undefined)
-      yield* Effect.yieldNow
-      const beforeTheUseEnds = [...log]
-
-      yield* Deferred.succeed(useGate, undefined)
-      const loaded = yield* Fiber.join(loading)
-
-      assert.deepStrictEqual(beforeTheUseEnds, ['adapter:open'])
-      assert.strictEqual(loaded.status._tag, 'Failed')
-      assert.deepStrictEqual(log, ['adapter:open', 'adapter:close'])
-    }).pipe(Effect.scoped)
-  )
-
   it.effect('still closes a plugin when its unload is interrupted while it waits', () =>
     Effect.gen(function* () {
       const log: Array<string> = []
@@ -1728,7 +1598,7 @@ describe('whenProvided', () => {
         yield* body
       })
 
-  const watchingOrg = (log: Array<string>, overrides: Partial<FeatureManifest> = {}) =>
+  const watchingOrg = (log: Array<string>, overrides: Partial<PluginManifest> = {}) =>
     plugin(
       manifest('overview', overrides),
       recording('overview', log, (ctx) => ctx.whenProvided(['org'], child('child', log)))
@@ -1921,26 +1791,20 @@ describe('whenProvided', () => {
       }).pipe(Effect.scoped)
   )
 
-  it.effect('refuses a call from an adapter plugin', () =>
+  it.effect('runs the setup an adapter plugin registers', () =>
     Effect.gen(function* () {
-      const refusals: Array<WhenProvidedRefusedError> = []
+      const ran: Array<unknown> = []
       const registry = yield* makeRegistry({
+        org: plugin(manifest('org'), (ctx) => ctx.provide('org', 'chart')),
         adapter: plugin(adapterManifest('adapter'), (ctx) =>
-          Effect.gen(function* () {
-            refusals.push(yield* Effect.flip(ctx.whenProvided(['org'], () => Effect.void)))
-            yield* ctx.provide(BACKEND_KEY, 'backend')
-          })
+          ctx.whenProvided(['org'], ({ org }) => Effect.sync(() => void ran.push(org)))
         )
       })
+      yield* registry.load('org')
 
       yield* registry.load('adapter')
 
-      assert.deepStrictEqual(refusals, [
-        new WhenProvidedRefusedError({
-          plugin: 'adapter',
-          message: 'Adapter plugin "adapter" cannot call whenProvided'
-        })
-      ])
+      assert.deepStrictEqual(ran, ['chart'])
     }).pipe(Effect.scoped)
   )
 

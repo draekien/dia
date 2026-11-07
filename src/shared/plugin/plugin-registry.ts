@@ -16,12 +16,7 @@ import {
   Stream
 } from 'effect'
 import type { AnyServiceKey, PluginServices, PluginSetup, ServiceKey } from './api'
-import {
-  ServiceKeyReservedError,
-  ServiceKeyTakenError,
-  ServiceNotDeclaredError,
-  WhenProvidedRefusedError
-} from './api'
+import { ServiceKeyTakenError, ServiceNotDeclaredError, WhenProvidedRefusedError } from './api'
 import {
   formatMegabytes,
   isApiCompatible,
@@ -35,18 +30,6 @@ import {
   type PluginStatus
 } from './manifest'
 import { nameOf, passes } from './service-key'
-
-/**
- * What the registry requires of adapter plugins. `keys` are the service keys only an adapter may
- * provide: a feature plugin that provides one fails to load with {@link ServiceKeyReservedError}.
- * `problems` checks what an adapter's setup provided, through `provided`, which reads the value the
- * plugin provided under a service key; it returns one sentence per problem, and an empty list lets
- * the adapter load.
- */
-export interface AdapterContract {
-  readonly keys: ReadonlyArray<string>
-  readonly problems: (provided: (key: string) => Option.Option<unknown>) => ReadonlyArray<string>
-}
 
 /** A plugin's code location: `root` is what the {@link PluginLoader} receives, `origin` is shown in the plugin list. */
 export interface PluginSource {
@@ -131,14 +114,13 @@ export interface PluginMemoryGuard {
  * before the running one stops. When it fails, the previous version keeps running (or is
  * reopened) with the failure in `Loaded.reloadError`; a plugin with no previous version is
  * `Failed`. A plugin whose loads reached the memory limit, or whose dependency outside its
- * directory changed, reports `RestartRequired`. An adapter plugin loads only once: `load` of a
- * running adapter and every `unload` of an adapter return its state unchanged. An adapter whose
- * setup does not meet the adapter contract fails to load. `unload` closes a feature plugin.
+ * directory changed, reports `RestartRequired`. `unload` closes a plugin.
  * Plugins that inject a service the changed plugin provides are closed and wait until it is
  * provided again. `list` returns every known plugin. `inject` reads the value a loaded plugin provides
  * under a service key without holding the provider open; it is empty while no plugin provides the
- * key. Use it only for a service an adapter plugin provides (adapters never unload) or for a value
- * read again each time `changes` emits its key; read a feature plugin's service with `use`.
+ * key. Use it only for a value read again each time `changes` emits its key, or for a value whose
+ * holder runs in the caller's scope and so outlives a reload of its provider; read any other
+ * plugin service with `use`.
  * `changes` emits a service key each time a plugin starts or stops providing it, from the moment
  * it is subscribed; read the new value with `inject`. A plugin whose entry import, or whose setup,
  * does not finish within {@link PLUGIN_SETUP_TIME_LIMIT} fails like any other load failure.
@@ -149,9 +131,8 @@ export interface PluginMemoryGuard {
  * `f` fails. Closing a plugin, by `unload`, a reload or a failed setup, first waits for the `use`
  * calls on its services to end. Do not keep the value after `f` returns; call `use` again for the
  * next operation.
- * `start` is the startup entry point: it marks every plugin `Loading`, loads every adapter and
- * every plugin whose manifest says `load: "eager"` one after another, and resolves once each of
- * them has settled (loaded, waiting, failed or restart-required), which does not require it to be
+ * `start` is the startup entry point: it marks every plugin `Loading`, loads every plugin whose
+ * manifest says `load: "eager"` one after another, and resolves once each of them has settled (loaded, waiting, failed or restart-required), which does not require it to be
  * `Loaded`. The remaining plugins keep loading in the background, in the registry's scope, and a plugin the
  * caller unloads before its turn is skipped. Call it once per registry.
  */
@@ -264,14 +245,12 @@ const CurrentSetup = Context.Reference<SetupWindow | undefined>('dia/plugin/Curr
   defaultValue: () => undefined
 })
 
-type WhenProvidedRefusal = 'adapter' | 'no-setup' | 'other-plugin' | 'setup-ended'
+type WhenProvidedRefusal = 'no-setup' | 'other-plugin' | 'setup-ended'
 
 const acceptingWindow = (
   name: string,
-  category: PluginCategory | undefined,
   window: SetupWindow | undefined
 ): SetupWindow | WhenProvidedRefusal => {
-  if (category === 'adapter') return 'adapter'
   if (window === undefined) return 'no-setup'
   if (window.plugin !== name) return 'other-plugin'
   return window.accepting ? window : 'setup-ended'
@@ -301,7 +280,6 @@ const isRunning = <Context extends PluginServices>(entry: Entry<Context>): boole
  * limits the memory each plugin's loads may retain and fills `PluginInfo.memoryBytes`.
  * `onChange`, when given, runs after every operation with the plugins whose `PluginInfo` differs
  * from the last one it reported (the first report covers every plugin the registry has seen).
- * `adapterContract` is the {@link AdapterContract} adapter plugins are held to.
  */
 export const makePluginRegistry = <Context extends PluginServices>(deps: {
   readonly catalog: PluginCatalog
@@ -309,7 +287,6 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
   readonly extend: (services: PluginServices) => Effect.Effect<Context, PluginLoadError>
   readonly memory?: PluginMemoryGuard
   readonly onChange?: (changed: ReadonlyArray<PluginInfo>) => Effect.Effect<void>
-  readonly adapterContract: AdapterContract
 }): Effect.Effect<PluginRegistry, never, Scope.Scope> =>
   Effect.gen(function* () {
     const parentScope = yield* Scope.Scope
@@ -343,13 +320,6 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
 
     const categoryOfEntry = (name: string, entry: Entry<Context>): Effect.Effect<PluginCategory> =>
       entry.category === undefined ? peekCatalogCategory(name) : Effect.succeed(entry.category)
-
-    const categoryOf = (name: string): Effect.Effect<PluginCategory> =>
-      Effect.gen(function* () {
-        const entry = entries.get(name)
-        if (entry !== undefined) return yield* categoryOfEntry(name, entry)
-        return yield* peekCatalogCategory(name)
-      })
 
     const infoOf = (name: string, entry: Entry<Context>): Effect.Effect<PluginInfo> =>
       Effect.gen(function* () {
@@ -481,16 +451,6 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       provide: (typedKey: AnyServiceKey, value: unknown) =>
         Effect.gen(function* () {
           const key = nameOf(typedKey)
-          if (entry.category !== 'adapter' && deps.adapterContract.keys.includes(key)) {
-            yield* Effect.logError('A feature plugin provided a key reserved for adapters', {
-              plugin: name,
-              key
-            })
-            return yield* new ServiceKeyReservedError({
-              key,
-              message: `"${key}" can be provided only by an adapter plugin`
-            })
-          }
           const scope = yield* Scope.Scope
           if (scope.state._tag === 'Closed') {
             yield* Effect.logWarning('A plugin provided a service after its setup was abandoned', {
@@ -540,18 +500,15 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
               })
               return yield* new ServiceNotDeclaredError({
                 key,
-                message:
-                  entry.category === 'adapter'
-                    ? `Adapter plugin "${name}" reads "${key}", but an adapter cannot declare "inject"`
-                    : watchersOf(name).some((watcher) => watcher.keys.includes(key))
-                      ? `Plugin "${name}" reads "${key}" without declaring it; use the value whenProvided passes to its setup, or add "${key}" to "inject" in its plugin.json if the plugin requires it`
-                      : `Plugin "${name}" reads "${key}" without declaring it; add "${key}" to "inject" in its plugin.json`
+                message: watchersOf(name).some((watcher) => watcher.keys.includes(key))
+                  ? `Plugin "${name}" reads "${key}" without declaring it; use the value whenProvided passes to its setup, or add "${key}" to "inject" in its plugin.json if the plugin requires it`
+                  : `Plugin "${name}" reads "${key}" without declaring it; add "${key}" to "inject" in its plugin.json`
               })
             })
       },
       whenProvided: (typedKeys, setup) =>
         Effect.gen(function* () {
-          const window = acceptingWindow(name, entry.category, yield* CurrentSetup)
+          const window = acceptingWindow(name, yield* CurrentSetup)
           if (typeof window === 'string') {
             const refusal = window
             yield* Effect.logError('A plugin called whenProvided outside its setup', {
@@ -560,10 +517,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
             })
             return yield* new WhenProvidedRefusedError({
               plugin: name,
-              message:
-                refusal === 'adapter'
-                  ? `Adapter plugin "${name}" cannot call whenProvided`
-                  : `Plugin "${name}" called whenProvided outside its setup; call it during setup or inside another whenProvided setup`
+              message: `Plugin "${name}" called whenProvided outside its setup; call it during setup or inside another whenProvided setup`
             })
           }
           const keys = typedKeys.map(nameOf)
@@ -603,11 +557,6 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           })
         })
     })
-
-    const providedBy = (entry: Entry<Context>, key: string): Option.Option<unknown> =>
-      entry.provided.has(key)
-        ? Option.fromNullishOr(slots.get(key)).pipe(Option.map((slot) => slot.value))
-        : Option.none()
 
     const injectedKeys = (entry: Entry<Context>): ReadonlyArray<string> =>
       entry.manifest?.inject ?? []
@@ -875,22 +824,6 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           yield* Effect.logError('Plugin setup failed', { plugin: name, cause: exit.cause })
           return yield* new PluginLoadError({ message: describeCause(exit.cause) })
         }
-        if (entry.manifest?.category === 'adapter') {
-          const problems = deps.adapterContract.problems((key) => providedBy(entry, key))
-          if (problems.length > 0) {
-            yield* closePlugin(name, entry, scope, Exit.void)
-            yield* Effect.logError('Adapter plugin does not meet the adapter contract', {
-              plugin: name,
-              problems
-            })
-            return yield* new PluginLoadError({
-              message: [
-                `Plugin "${name}" does not meet the adapter contract:`,
-                ...problems.map((problem) => `- ${problem}`)
-              ].join('\n')
-            })
-          }
-        }
         entry.scope = scope
         entry.status = { _tag: 'Loaded' }
         yield* Effect.logInfo('Plugin loaded', { plugin: name, origin: entry.origin })
@@ -1012,10 +945,6 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         if (fromStart && !queuedByStart.delete(name) && current !== undefined) {
           return yield* infoOf(name, current)
         }
-        if (current?.category === 'adapter' && isRunning(current)) {
-          yield* Effect.logWarning('Refused to reload an adapter plugin', { plugin: name })
-          return yield* infoOf(name, current)
-        }
         const found = yield* deps.catalog.resolve(name)
         if (Option.isNone(found)) return failedInfo(name, `No plugin named "${name}"`)
         const source = found.value
@@ -1062,18 +991,8 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         return loadNamed(name, false)
       })
 
-    const refuseUnload = (name: string): Effect.Effect<PluginInfo> =>
-      Effect.gen(function* () {
-        yield* Effect.logWarning('Refused to unload an adapter plugin', { plugin: name })
-        const infos = yield* list()
-        return (
-          infos.find((info) => info.name === name) ?? failedInfo(name, `No plugin named "${name}"`)
-        )
-      })
-
     const unload = (name: string): Effect.Effect<PluginInfo> =>
       Effect.gen(function* () {
-        if ((yield* categoryOf(name)) === 'adapter') return yield* refuseUnload(name)
         queuedByStart.delete(name)
         return yield* unloadLocked(name)
       })
@@ -1143,10 +1062,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         const source = yield* deps.catalog.resolve(name)
         if (Option.isNone(source)) return 'lazy'
         return yield* deps.loader.peek(name, source.value.root).pipe(
-          Effect.map(
-            (manifest): PluginLoadMode =>
-              manifest.category === 'adapter' ? 'eager' : (manifest.load ?? 'lazy')
-          ),
+          Effect.map((manifest): PluginLoadMode => manifest.load ?? 'lazy'),
           Effect.catchTag('PluginLoadError', (error) =>
             Effect.logDebug('Plugin manifest unreadable at startup; loading it lazily', {
               plugin: name,

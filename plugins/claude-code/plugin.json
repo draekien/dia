@@ -1,6 +1,7 @@
 {
   "name": "claude-code",
-  "api": "0.0.28",
+  "api": "0.0.29",
   "category": "adapter",
-  "host": "host.ts"
+  "host": "host.ts",
+  "load": "eager"
 }

@@ -12,13 +12,14 @@ import {
 import { ModelPreferencesChanged } from '@shared/ipc/contract'
 import { Clock, Context, Effect, Layer, Option, Ref, Semaphore } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
+import { AgentBackendKey } from '../session/agent-backend'
 import { EventHub } from './event-hub'
 import { ModelCatalogFeed } from './model-catalog-feed'
 import { SettingsStore } from './settings-store'
 
 /**
  * The model preferences and new-agent defaults of the loaded agent adapter (the loaded plugin
- * whose category is `adapter`), stored per adapter in `SettingsStore`. `current` is empty
+ * that provides `AgentBackendKey`), stored per adapter in `SettingsStore`. `current` is empty
  * preferences when no adapter is loaded, and changes are then refused with a logged warning.
  * Changes are serialised. `set` marks a model favourite or hidden, or clears it with none; hiding
  * fails with `LastVisibleModel` when the model list is not `Ready` or when no listed model would
@@ -53,7 +54,10 @@ export const ModelPreferencesLive = Layer.effect(
       .pipe(
         Effect.map((infos) =>
           Option.fromUndefinedOr(
-            infos.find((info) => info.category === 'adapter' && info.status._tag === 'Loaded')?.name
+            infos.find(
+              (info) =>
+                info.status._tag === 'Loaded' && info.provides.includes(AgentBackendKey.name)
+            )?.name
           )
         )
       )

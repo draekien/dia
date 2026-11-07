@@ -1,6 +1,6 @@
 import { type AgentBackend, AgentBackendKey, type HostPluginContext } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
-import { type FeatureManifest, PLUGIN_API_VERSION } from '@shared/plugin/manifest'
+import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
 import { Effect, Option, Schema } from 'effect'
 import { callPlugin, servePluginCall } from '../../src/host/plugins/plugin-messages'
@@ -12,7 +12,7 @@ import setup from './host'
 
 const UNKNOWN_HIRE = '00000000-0000-4000-8000-000000000000'
 
-const manifest = (name: string): FeatureManifest => ({
+const manifest = (name: string): PluginManifest => ({
   name,
   api: PLUGIN_API_VERSION,
   category: 'feature',
@@ -66,8 +66,7 @@ const startOrg = (backend: Option.Option<AgentBackend>) =>
           database: makePluginDatabase(':memory:', services.name),
           serve
         } as unknown as HostPluginContext)
-      },
-      adapterContract: { keys: [], problems: () => [] }
+      }
     })
     yield* registry.load('org')
     return registry
