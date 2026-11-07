@@ -17,7 +17,8 @@ import {
   JobTitleNameTaken,
   JobTitleNotFound,
   OrgSettings,
-  OverallCap
+  OverallCap,
+  ReportsToCycle
 } from './domain'
 
 /**
@@ -63,11 +64,18 @@ export const DeleteJobTitle = Rpc.make('DeleteJobTitle', {
   error: Schema.Union([JobTitleNotFound, BuiltInJobTitleDeleted, JobTitleHasHires])
 })
 
-/** Hires an agent of job title `jobTitleId`, named `name`, or unnamed when null. */
+/**
+ * Hires an agent of job title `jobTitleId`, named `name` or unnamed when null, reporting to hired
+ * agent `reportsTo` or to the user when null.
+ */
 export const Hire = Rpc.make('Hire', {
-  payload: { jobTitleId: JobTitleId, name: Schema.NullOr(AgentName) },
+  payload: {
+    jobTitleId: JobTitleId,
+    name: Schema.NullOr(AgentName),
+    reportsTo: Schema.NullOr(HireId)
+  },
   success: HiredAgent,
-  error: Schema.Union([JobTitleNotFound, JobTitleDisabled, HireNameTaken])
+  error: Schema.Union([JobTitleNotFound, JobTitleDisabled, HireNameTaken, HireNotFound])
 })
 
 /** Dismisses hired agent `hireId`. */
@@ -88,6 +96,13 @@ export const SetBypassOverride = Rpc.make('SetBypassOverride', {
   payload: { hireId: HireId, override: Schema.NullOr(Schema.Boolean) },
   success: HiredAgent,
   error: HireNotFound
+})
+
+/** Makes hired agent `hireId` report to hired agent `reportsTo`, or to the user when null. */
+export const SetReportsTo = Rpc.make('SetReportsTo', {
+  payload: { hireId: HireId, reportsTo: Schema.NullOr(HireId) },
+  success: HiredAgent,
+  error: Schema.Union([HireNotFound, ReportsToCycle])
 })
 
 /** Sets the org's overall cap. */

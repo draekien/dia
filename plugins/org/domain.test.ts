@@ -1,6 +1,14 @@
 import { Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
-import { JOB_TITLE_NAME_MAX_LENGTH, JobTitleName, OverallCap } from './domain'
+import {
+  descendantsOf,
+  HiredAgent,
+  HireId,
+  JOB_TITLE_NAME_MAX_LENGTH,
+  JobTitleId,
+  JobTitleName,
+  OverallCap
+} from './domain'
 
 const isJobTitleName = Schema.is(JobTitleName)
 const isOverallCap = Schema.is(OverallCap)
@@ -27,5 +35,29 @@ describe('OverallCap', () => {
     [1.5, false]
   ])('accepts %d: %s', (input, accepted) => {
     expect(isOverallCap(input)).toBe(accepted)
+  })
+})
+
+const hireId = (n: number) => HireId.make(`00000000-0000-4000-8000-00000000000${n}`)
+const agent = (n: number, reportsTo: number | null) =>
+  HiredAgent.make({
+    id: hireId(n),
+    jobTitleId: JobTitleId.make('00000000-0000-4000-8000-000000000100'),
+    name: null,
+    bypassOverride: null,
+    reportsTo: reportsTo === null ? null : hireId(reportsTo),
+    hiredAt: n
+  })
+
+describe('descendantsOf', () => {
+  const org = [agent(1, null), agent(2, 1), agent(3, 2), agent(4, null), agent(5, 4)]
+
+  it.each([
+    ['every agent below a root, through any chain', 1, [2, 3]],
+    ['the agents below a mid-chain agent', 2, [3]],
+    ['nothing for a leaf', 3, []],
+    ['only its own branch for a second root', 4, [5]]
+  ])('returns %s', (_case, root, below) => {
+    expect([...descendantsOf(org, hireId(root))].sort()).toEqual(below.map(hireId))
   })
 })

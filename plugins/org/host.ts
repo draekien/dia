@@ -18,7 +18,8 @@ import {
   RenameHire,
   SetBypassOverride,
   SetJobTitleEnabled,
-  SetOverallCap
+  SetOverallCap,
+  SetReportsTo
 } from './calls'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
@@ -57,12 +58,13 @@ const serveOrgCalls = (
       ctx.serve(CopyJobTitle, ({ jobTitleId, name }) => org.copyJobTitle(jobTitleId, name)),
       ctx.serve(EditJobTitle, ({ jobTitleId, edit }) => org.editJobTitle(jobTitleId, edit)),
       ctx.serve(DeleteJobTitle, ({ jobTitleId }) => org.deleteJobTitle(jobTitleId)),
-      ctx.serve(Hire, ({ jobTitleId, name }) => org.hire(jobTitleId, name)),
+      ctx.serve(Hire, ({ jobTitleId, name, reportsTo }) => org.hire(jobTitleId, name, reportsTo)),
       ctx.serve(Dismiss, ({ hireId }) => org.dismiss(hireId)),
       ctx.serve(RenameHire, ({ hireId, name }) => org.renameHire(hireId, name)),
       ctx.serve(SetBypassOverride, ({ hireId, override }) =>
         org.setBypassOverride(hireId, override)
       ),
+      ctx.serve(SetReportsTo, ({ hireId, reportsTo }) => org.setReportsTo(hireId, reportsTo)),
       ctx.serve(SetOverallCap, ({ cap }) => org.setOverallCap(cap))
     ],
     { discard: true }

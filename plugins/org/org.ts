@@ -4,6 +4,7 @@ import { SqlClient, type SqlError } from 'effect/sql'
 import {
   BuiltInJobTitleDeleted,
   BuiltInJobTitleRenamed,
+  descendantsOf,
   HiredAgent,
   type HireId,
   HireNameTaken,
@@ -17,7 +18,8 @@ import {
   JobTitleNameTaken,
   JobTitleNotFound,
   OrgSettings,
-  type OverallCap
+  type OverallCap,
+  ReportsToCycle
 } from './domain'
 import type { Org } from './service'
 
@@ -38,6 +40,7 @@ const HireRow = Schema.Struct({
   job_title_id: HiredAgent.fields.jobTitleId,
   name: HiredAgent.fields.name,
   bypass_override: Schema.NullOr(Schema.BooleanFromBit),
+  reports_to: HiredAgent.fields.reportsTo,
   hired_at: HiredAgent.fields.hiredAt
 })
 
@@ -75,6 +78,7 @@ const toHiredAgent = (row: typeof HireRow.Type): HiredAgent => ({
   jobTitleId: row.job_title_id,
   name: row.name,
   bypassOverride: row.bypass_override,
+  reportsTo: row.reports_to,
   hiredAt: row.hired_at
 })
 
@@ -86,6 +90,7 @@ const toHireRow = (agent: HiredAgent) =>
     job_title_id: agent.jobTitleId,
     name: agent.name,
     bypass_override: agent.bypassOverride,
+    reports_to: agent.reportsTo,
     hired_at: agent.hiredAt
   })
 
@@ -260,7 +265,11 @@ export const makeOrg = Effect.gen(function* () {
     yield* Effect.logInfo('Deleted job title', { jobTitleId })
   })
 
-  const hire = Effect.fn('Org.hire')(function* (jobTitleId: JobTitleId, name: AgentName | null) {
+  const hire = Effect.fn('Org.hire')(function* (
+    jobTitleId: JobTitleId,
+    name: AgentName | null,
+    reportsTo: HireId | null
+  ) {
     const id = HiredAgent.fields.id.make(yield* newId)
     const hiredAt = yield* Clock.currentTimeMillis
     const hired = yield* transaction(
@@ -272,24 +281,36 @@ export const makeOrg = Effect.gen(function* () {
         if (name !== null) {
           yield* ensureHireNameFree(name, null)
         }
-        const agent = HiredAgent.make({ id, jobTitleId, name, bypassOverride: null, hiredAt })
+        if (reportsTo !== null) {
+          yield* findHire(reportsTo)
+        }
+        const agent = HiredAgent.make({
+          id,
+          jobTitleId,
+          name,
+          bypassOverride: null,
+          reportsTo,
+          hiredAt
+        })
         yield* sql`INSERT INTO hired_agents ${sql.insert(toHireRow(agent))}`
         return agent
       })
     )
-    yield* Effect.logInfo('Hired agent', { jobTitleId, hireId: id })
+    yield* Effect.logInfo('Hired agent', { jobTitleId, hireId: id, reportsTo })
     return hired
   })
 
   const dismiss = Effect.fn('Org.dismiss')(function* (hireId: HireId) {
-    const deleted =
-      yield* sql`DELETE FROM hired_agents WHERE hire_id = ${hireId} RETURNING hire_id`.pipe(
-        Effect.catchTag('SqlError', Effect.die)
-      )
-    if (deleted.length === 0) {
-      return yield* HireNotFound.make({ hireId })
-    }
-    yield* Effect.logInfo('Dismissed agent', { hireId })
+    const movedReports = yield* transaction(
+      Effect.gen(function* () {
+        const dismissed = yield* findHire(hireId)
+        const moved =
+          yield* sql`UPDATE hired_agents SET reports_to = ${dismissed.reportsTo} WHERE reports_to = ${hireId} RETURNING hire_id`
+        yield* sql`DELETE FROM hired_agents WHERE hire_id = ${hireId}`
+        return moved.length
+      })
+    )
+    yield* Effect.logInfo('Dismissed agent', { hireId, movedReports })
   })
 
   const renameHire = Effect.fn('Org.renameHire')(function* (
@@ -327,6 +348,28 @@ export const makeOrg = Effect.gen(function* () {
     return changed
   })
 
+  const setReportsTo = Effect.fn('Org.setReportsTo')(function* (
+    hireId: HireId,
+    reportsTo: HireId | null
+  ) {
+    const changed = yield* transaction(
+      Effect.gen(function* () {
+        const current = yield* findHire(hireId)
+        if (reportsTo !== null) {
+          yield* findHire(reportsTo)
+          if (reportsTo === hireId || descendantsOf(yield* hiredAgents, hireId).has(reportsTo)) {
+            return yield* ReportsToCycle.make({ hireId, reportsTo })
+          }
+        }
+        const next = HiredAgent.make({ ...current, reportsTo })
+        yield* updateHire(next)
+        return next
+      })
+    )
+    yield* Effect.logInfo('Set reporting line', { hireId, reportsTo })
+    return changed
+  })
+
   const setOverallCap = Effect.fn('Org.setOverallCap')(function* (cap: OverallCap) {
     yield* sql`UPDATE org_settings SET overall_cap = ${cap}`.pipe(
       Effect.catchTag('SqlError', Effect.die)
@@ -347,6 +390,7 @@ export const makeOrg = Effect.gen(function* () {
     dismiss,
     renameHire,
     setBypassOverride,
+    setReportsTo,
     setOverallCap
   } satisfies Org
 })

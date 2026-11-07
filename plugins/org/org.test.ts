@@ -6,9 +6,10 @@ import { Duration, Effect, Exit, FileSystem, Layer, Path, Scope } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
 import { openDatabase } from '../../src/host/services/database'
-import { HireId, type JobTitle, JobTitleId, JobTitleName, OverallCap } from './domain'
+import { HireId, HireNotFound, type JobTitle, JobTitleId, JobTitleName, OverallCap } from './domain'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
+import type { Org } from './service'
 
 const openOrgIn = (filename: string) =>
   Effect.gen(function* () {
@@ -292,8 +293,8 @@ describe('Org.deleteJobTitle', () => {
     Effect.gen(function* () {
       const { org, jobTitle } = yield* builtIn('Software engineer')
       const copy = yield* org.copyJobTitle(jobTitle.id, JobTitleName.make('builder'))
-      yield* org.hire(copy.id, null)
-      yield* org.hire(copy.id, null)
+      yield* org.hire(copy.id, null, null)
+      yield* org.hire(copy.id, null, null)
       const error = yield* Effect.flip(org.deleteJobTitle(copy.id))
       assert.deepStrictEqual(
         [error._tag, error._tag === 'JobTitleHasHires' ? error.hires : undefined],
@@ -308,7 +309,7 @@ describe('Org.hire', () => {
     Effect.gen(function* () {
       const { org, jobTitle } = yield* builtIn('Software engineer')
       yield* TestClock.adjust(Duration.seconds(5))
-      const hired = yield* org.hire(jobTitle.id, AgentName.make('Ada'))
+      const hired = yield* org.hire(jobTitle.id, AgentName.make('Ada'), null)
       assert.deepStrictEqual(
         [hired.jobTitleId, hired.name, hired.bypassOverride, hired.hiredAt],
         [jobTitle.id, 'Ada', null, Duration.toMillis(Duration.seconds(5))]
@@ -320,8 +321,8 @@ describe('Org.hire', () => {
     Effect.gen(function* () {
       const { org, jobTitle } = yield* builtIn('Software engineer')
       yield* TestClock.adjust(Duration.seconds(1))
-      const first = yield* org.hire(jobTitle.id, null)
-      const second = yield* org.hire(jobTitle.id, null)
+      const first = yield* org.hire(jobTitle.id, null, null)
+      const second = yield* org.hire(jobTitle.id, null, null)
       const ids = (yield* org.hiredAgents).map((hire) => hire.id)
       assert.deepStrictEqual(ids, [first.id, second.id])
     })
@@ -330,8 +331,8 @@ describe('Org.hire', () => {
   it.effect('fails with HireNameTaken for a hired name in another case', () =>
     Effect.gen(function* () {
       const { org, jobTitle } = yield* builtIn('Software engineer')
-      yield* org.hire(jobTitle.id, AgentName.make('Ada'))
-      const error = yield* Effect.flip(org.hire(jobTitle.id, AgentName.make('ADA')))
+      yield* org.hire(jobTitle.id, AgentName.make('Ada'), null)
+      const error = yield* Effect.flip(org.hire(jobTitle.id, AgentName.make('ADA'), null))
       assert.strictEqual(error._tag, 'HireNameTaken')
     })
   )
@@ -340,7 +341,7 @@ describe('Org.hire', () => {
     Effect.gen(function* () {
       const { org, jobTitle } = yield* builtIn('Software engineer')
       yield* org.setJobTitleEnabled(jobTitle.id, false)
-      const error = yield* Effect.flip(org.hire(jobTitle.id, null))
+      const error = yield* Effect.flip(org.hire(jobTitle.id, null, null))
       assert.deepStrictEqual([error._tag, (yield* org.hiredAgents).length], ['JobTitleDisabled', 0])
     })
   )
@@ -348,7 +349,7 @@ describe('Org.hire', () => {
   it.effect('fails with JobTitleNotFound for an unknown job title', () =>
     Effect.gen(function* () {
       const org = yield* freshOrg
-      const error = yield* Effect.flip(org.hire(UNKNOWN_JOB_TITLE, null))
+      const error = yield* Effect.flip(org.hire(UNKNOWN_JOB_TITLE, null, null))
       assert.strictEqual(error._tag, 'JobTitleNotFound')
     })
   )
@@ -358,7 +359,7 @@ describe('Org.dismiss', () => {
   it.effect('removes the hired agent', () =>
     Effect.gen(function* () {
       const { org, jobTitle } = yield* builtIn('Software engineer')
-      const hired = yield* org.hire(jobTitle.id, null)
+      const hired = yield* org.hire(jobTitle.id, null, null)
       yield* org.dismiss(hired.id)
       assert.notInclude(
         (yield* org.hiredAgents).map((hire) => hire.id),
@@ -380,11 +381,140 @@ describe('Org.dismiss', () => {
 
 const UNKNOWN_HIRE = HireId.make('00000000-0000-4000-8000-000000000000')
 
+const OTHER_UNKNOWN_HIRE = HireId.make('00000000-0000-4000-8000-000000000001')
+
+const hireChain = Effect.gen(function* () {
+  const { org, jobTitle } = yield* builtIn('Software engineer')
+  const lead = yield* org.hire(jobTitle.id, AgentName.make('Lead'), null)
+  const middle = yield* org.hire(jobTitle.id, AgentName.make('Middle'), lead.id)
+  const leaf = yield* org.hire(jobTitle.id, AgentName.make('Leaf'), middle.id)
+  return { org, jobTitle, lead, middle, leaf }
+})
+
+const reportsToOf = (org: Org, hireId: HireId) =>
+  Effect.map(org.hiredAgents, (hires) => hires.find((hire) => hire.id === hireId)?.reportsTo)
+
+describe('Org.setReportsTo', () => {
+  it.effect('makes a hired agent report to another hired agent', () =>
+    Effect.gen(function* () {
+      const { org, lead, leaf } = yield* hireChain
+      yield* org.setReportsTo(leaf.id, lead.id)
+      assert.strictEqual(yield* reportsToOf(org, leaf.id), lead.id)
+    })
+  )
+
+  it.effect('makes a hired agent report to the user when reportsTo is null', () =>
+    Effect.gen(function* () {
+      const { org, middle } = yield* hireChain
+      yield* org.setReportsTo(middle.id, null)
+      assert.isNull(yield* reportsToOf(org, middle.id))
+    })
+  )
+
+  it.effect('allows reporting to an agent in another branch', () =>
+    Effect.gen(function* () {
+      const { org, jobTitle, lead, leaf } = yield* hireChain
+      const sibling = yield* org.hire(jobTitle.id, AgentName.make('Sibling'), lead.id)
+      yield* org.setReportsTo(leaf.id, sibling.id)
+      assert.strictEqual(yield* reportsToOf(org, leaf.id), sibling.id)
+    })
+  )
+
+  it.effect('fails with ReportsToCycle for an agent reporting to itself', () =>
+    Effect.gen(function* () {
+      const { org, lead } = yield* hireChain
+      const error = yield* Effect.flip(org.setReportsTo(lead.id, lead.id))
+      assert.deepStrictEqual(
+        [error._tag, error._tag === 'ReportsToCycle' ? error.reportsTo : undefined],
+        ['ReportsToCycle', lead.id]
+      )
+    })
+  )
+
+  it.effect(
+    'fails with ReportsToCycle for an agent two levels below it, and keeps the old line',
+    () =>
+      Effect.gen(function* () {
+        const { org, lead, leaf } = yield* hireChain
+        const error = yield* Effect.flip(org.setReportsTo(lead.id, leaf.id))
+        assert.deepStrictEqual(
+          [error._tag, yield* reportsToOf(org, lead.id)],
+          ['ReportsToCycle', null]
+        )
+      })
+  )
+
+  it.effect('fails with HireNotFound for an unknown hire', () =>
+    Effect.gen(function* () {
+      const { org, lead } = yield* hireChain
+      const error = yield* Effect.flip(org.setReportsTo(UNKNOWN_HIRE, lead.id))
+      assert.deepStrictEqual(error, HireNotFound.make({ hireId: UNKNOWN_HIRE }))
+    })
+  )
+
+  it.effect('fails with HireNotFound naming an unknown reportsTo', () =>
+    Effect.gen(function* () {
+      const { org, leaf } = yield* hireChain
+      const error = yield* Effect.flip(org.setReportsTo(leaf.id, UNKNOWN_HIRE))
+      assert.deepStrictEqual(error, HireNotFound.make({ hireId: UNKNOWN_HIRE }))
+    })
+  )
+
+  it.effect('names the hire, not reportsTo, when both are unknown', () =>
+    Effect.gen(function* () {
+      const org = yield* freshOrg
+      const error = yield* Effect.flip(org.setReportsTo(UNKNOWN_HIRE, OTHER_UNKNOWN_HIRE))
+      assert.deepStrictEqual(error, HireNotFound.make({ hireId: UNKNOWN_HIRE }))
+    })
+  )
+})
+
+describe('Org.hire with a reporting line', () => {
+  it.effect('stores the manager the agent reports to', () =>
+    Effect.gen(function* () {
+      const { org, middle, leaf } = yield* hireChain
+      assert.deepStrictEqual(
+        [leaf.reportsTo, yield* reportsToOf(org, leaf.id)],
+        [middle.id, middle.id]
+      )
+    })
+  )
+
+  it.effect('fails with HireNotFound for an unknown manager and hires nobody', () =>
+    Effect.gen(function* () {
+      const { org, jobTitle } = yield* builtIn('Software engineer')
+      const error = yield* Effect.flip(org.hire(jobTitle.id, null, UNKNOWN_HIRE))
+      assert.deepStrictEqual(
+        [error, (yield* org.hiredAgents).length],
+        [HireNotFound.make({ hireId: UNKNOWN_HIRE }), 0]
+      )
+    })
+  )
+})
+
+describe('Org.dismiss with reports', () => {
+  it.effect("moves a mid-chain agent's reports to its own manager", () =>
+    Effect.gen(function* () {
+      const { org, lead, middle, leaf } = yield* hireChain
+      yield* org.dismiss(middle.id)
+      assert.strictEqual(yield* reportsToOf(org, leaf.id), lead.id)
+    })
+  )
+
+  it.effect('moves the reports of an agent that reports to the user to the user', () =>
+    Effect.gen(function* () {
+      const { org, lead, middle } = yield* hireChain
+      yield* org.dismiss(lead.id)
+      assert.isNull(yield* reportsToOf(org, middle.id))
+    })
+  )
+})
+
 describe('Org.renameHire', () => {
   it.effect('names a hired agent', () =>
     Effect.gen(function* () {
       const { org, jobTitle } = yield* builtIn('Software engineer')
-      const hired = yield* org.hire(jobTitle.id, null)
+      const hired = yield* org.hire(jobTitle.id, null, null)
       yield* org.renameHire(hired.id, AgentName.make('Ada'))
       const listed = (yield* org.hiredAgents).find((hire) => hire.id === hired.id)
       assert.strictEqual(listed?.name, 'Ada')
@@ -394,7 +524,7 @@ describe('Org.renameHire', () => {
   it.effect("clears a hired agent's name when the name is null", () =>
     Effect.gen(function* () {
       const { org, jobTitle } = yield* builtIn('Software engineer')
-      const hired = yield* org.hire(jobTitle.id, AgentName.make('Ada'))
+      const hired = yield* org.hire(jobTitle.id, AgentName.make('Ada'), null)
       const renamed = yield* org.renameHire(hired.id, null)
       assert.strictEqual(renamed.name, null)
     })
@@ -403,8 +533,8 @@ describe('Org.renameHire', () => {
   it.effect("fails with HireNameTaken for another hire's name in another case", () =>
     Effect.gen(function* () {
       const { org, jobTitle } = yield* builtIn('Software engineer')
-      yield* org.hire(jobTitle.id, AgentName.make('Ada'))
-      const ben = yield* org.hire(jobTitle.id, AgentName.make('Ben'))
+      yield* org.hire(jobTitle.id, AgentName.make('Ada'), null)
+      const ben = yield* org.hire(jobTitle.id, AgentName.make('Ben'), null)
       const error = yield* Effect.flip(org.renameHire(ben.id, AgentName.make('ADA')))
       assert.strictEqual(error._tag, 'HireNameTaken')
     })
@@ -413,7 +543,7 @@ describe('Org.renameHire', () => {
   it.effect("allows recasing the hire's own name", () =>
     Effect.gen(function* () {
       const { org, jobTitle } = yield* builtIn('Software engineer')
-      const hired = yield* org.hire(jobTitle.id, AgentName.make('ada'))
+      const hired = yield* org.hire(jobTitle.id, AgentName.make('ada'), null)
       const renamed = yield* org.renameHire(hired.id, AgentName.make('Ada'))
       assert.strictEqual(renamed.name, 'Ada')
     })
@@ -432,7 +562,7 @@ describe('Org.setBypassOverride', () => {
   it.effect.each([true, false, null])('stores the override %s', (override) =>
     Effect.gen(function* () {
       const { org, jobTitle } = yield* builtIn('Software engineer')
-      const hired = yield* org.hire(jobTitle.id, null)
+      const hired = yield* org.hire(jobTitle.id, null, null)
       yield* org.setBypassOverride(hired.id, override)
       const listed = (yield* org.hiredAgents).find((hire) => hire.id === hired.id)
       assert.strictEqual(listed?.bypassOverride, override)
@@ -450,7 +580,7 @@ describe('Org.setBypassOverride', () => {
 
 describe('Org changes across a reopen', () => {
   it.effect(
-    'keeps an edited job title, a renamed hire and the overall cap after the org reopens',
+    'keeps an edited job title, a renamed hire, a reporting line and the overall cap after the org reopens',
     () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem
@@ -459,8 +589,10 @@ describe('Org changes across a reopen', () => {
         const first = yield* openOrgIn(filename)
         const engineer = jobTitleNamed(yield* first.org.jobTitles, 'Software engineer')
         yield* first.org.editJobTitle(engineer.id, { jobDescription: 'Write tests first.' })
-        const hired = yield* first.org.hire(engineer.id, null)
+        const hired = yield* first.org.hire(engineer.id, null, null)
         yield* first.org.renameHire(hired.id, AgentName.make('Ada'))
+        const report = yield* first.org.hire(engineer.id, null, hired.id)
+        yield* first.org.setReportsTo(report.id, null)
         yield* first.org.setOverallCap(OverallCap.make(6))
         yield* first.close
 
@@ -468,10 +600,11 @@ describe('Org changes across a reopen', () => {
         const reopened = [
           jobTitleNamed(yield* second.org.jobTitles, 'Software engineer').jobDescription,
           (yield* second.org.hiredAgents).find((hire) => hire.id === hired.id)?.name,
+          (yield* second.org.hiredAgents).find((hire) => hire.id === report.id)?.reportsTo,
           (yield* second.org.settings).overallCap
         ]
         yield* second.close
-        assert.deepStrictEqual(reopened, ['Write tests first.', 'Ada', OverallCap.make(6)])
+        assert.deepStrictEqual(reopened, ['Write tests first.', 'Ada', null, OverallCap.make(6)])
       }).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
   )
 })

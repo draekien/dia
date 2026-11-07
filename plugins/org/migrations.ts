@@ -136,15 +136,25 @@ const moveToJobTitles = Effect.gen(function* () {
   })
 })
 
+const addReportsTo = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql.unsafe(
+    'ALTER TABLE hired_agents ADD COLUMN reports_to TEXT REFERENCES hired_agents(hire_id)'
+  )
+  yield* Effect.logInfo('Added reporting lines to hired agents')
+})
+
 /**
  * The `org` plugin's migrations, passed to `ctx.database`. `1_create_org_tables` creates the
  * first roles, hired agents and org settings tables; `2_seed_org` inserts the default overall cap;
  * `3_job_titles` replaces the roles table with the job titles table, inserts the built-in job
  * titles, keeps the user's copies and their hires, and drops the five old built-in roles and their
- * hires. Each runs once per database.
+ * hires; `4_add_reports_to` adds each hired agent's `reportsTo`, null for existing hires. Each runs
+ * once per database.
  */
 export const orgMigrations: PluginMigrations = {
   '1_create_org_tables': createTables,
   '2_seed_org': seedOrgSettings,
-  '3_job_titles': moveToJobTitles
+  '3_job_titles': moveToJobTitles,
+  '4_add_reports_to': addReportsTo
 }

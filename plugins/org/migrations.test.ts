@@ -148,3 +148,33 @@ describe('3_job_titles on a database seeded with the old built-in roles', () => 
     }).pipe(Effect.scoped)
   )
 })
+
+describe('4_add_reports_to on a database with hires', () => {
+  it.effect('makes every existing hired agent report to the user', () =>
+    Effect.gen(function* () {
+      const { org } = yield* upgradedLegacyOrg
+      assert.deepStrictEqual(
+        (yield* org.hiredAgents).map((hired) => hired.reportsTo),
+        [null]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('refuses deleting a manager whose reports still point at it', () =>
+    Effect.gen(function* () {
+      const { sql } = yield* upgradedLegacyOrg
+      yield* sql`INSERT INTO hired_agents ${sql.insert({
+        hire_id: '00000000-0000-4000-8000-000000000204',
+        job_title_id: STRICT_ENGINEER_ID,
+        name: null,
+        bypass_override: null,
+        reports_to: BRAVE_OTTER_ID,
+        hired_at: 1
+      })}`
+      const removed = yield* Effect.exit(
+        sql`DELETE FROM hired_agents WHERE hire_id = ${BRAVE_OTTER_ID}`
+      )
+      assert.isTrue(Exit.isFailure(removed))
+    }).pipe(Effect.scoped)
+  )
+})

@@ -108,7 +108,11 @@ describe('org host entry', () => {
     Effect.gen(function* () {
       const registry = yield* startOrg(Option.none())
       const hired = Schema.decodeUnknownSync(HiredAgent)(
-        yield* call(registry, 'Hire', { jobTitleId: BUILT_IN_JOB_TITLES[0]?.id, name: null })
+        yield* call(registry, 'Hire', {
+          jobTitleId: BUILT_IN_JOB_TITLES[0]?.id,
+          name: null,
+          reportsTo: null
+        })
       )
 
       yield* call(registry, 'RenameHire', { hireId: hired.id, name: 'calm-heron' })
@@ -123,6 +127,37 @@ describe('org host entry', () => {
           cap: snapshot.settings.overallCap
         },
         { name: 'calm-heron', override: false, cap: 6 }
+      )
+    })
+  )
+
+  it.effect('serves SetReportsTo, and fails a self-report with ReportsToCycle encoded', () =>
+    Effect.gen(function* () {
+      const registry = yield* startOrg(Option.none())
+      const hireOne = (name: string) =>
+        call(registry, 'Hire', {
+          jobTitleId: BUILT_IN_JOB_TITLES[0]?.id,
+          name,
+          reportsTo: null
+        }).pipe(Effect.map(Schema.decodeUnknownSync(HiredAgent)))
+      const lead = yield* hireOne('lead')
+      const report = yield* hireOne('report')
+
+      yield* call(registry, 'SetReportsTo', { hireId: report.id, reportsTo: lead.id })
+      const cycle = yield* Effect.flip(
+        call(registry, 'SetReportsTo', { hireId: lead.id, reportsTo: lead.id })
+      )
+      const snapshot = yield* readOrg(registry)
+
+      assert.deepStrictEqual(
+        {
+          reportsTo: snapshot.hiredAgents.find((hire) => hire.id === report.id)?.reportsTo,
+          error: cycle._tag === 'PluginCallFailed' ? cycle.error : undefined
+        },
+        {
+          reportsTo: lead.id,
+          error: { _tag: 'ReportsToCycle', hireId: lead.id, reportsTo: lead.id }
+        }
       )
     })
   )
