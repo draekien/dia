@@ -1,7 +1,16 @@
 import type { PaneId } from '@shared/domain/pane'
 import { ProjectId, type Workspace } from '@shared/domain/project'
 import { Uuid } from '@shared/domain/uuid'
+import { PluginName } from '@shared/plugin/manifest'
 import { Option, Schema } from 'effect'
+
+/** Names a page plugin `plugin` added with `addPage` and the page `id` it gave. */
+export const PageKey = Schema.Struct({ plugin: PluginName, id: Schema.String })
+export type PageKey = typeof PageKey.Type
+
+/** The content area shows page `id` of plugin `plugin`. */
+export const PageView = Schema.TaggedStruct('PageView', PageKey.fields)
+export type PageView = typeof PageView.Type
 
 /** The content area shows the tab `paneId`. */
 export const TabView = Schema.TaggedStruct('TabView', { paneId: Uuid })
@@ -20,7 +29,7 @@ export const EmptyProjectView = Schema.TaggedStruct('EmptyProjectView', {})
 export type EmptyProjectView = typeof EmptyProjectView.Type
 
 /** What the content area shows. Read it with `useView()`; switch on `_tag`. */
-export const View = Schema.Union([TabView, NewAgentView, FirstRunView, EmptyProjectView])
+export const View = Schema.Union([PageView, TabView, NewAgentView, FirstRunView, EmptyProjectView])
 export type View = typeof View.Type
 
 /**
@@ -31,6 +40,22 @@ export interface NewAgentForm {
   readonly projectId: ProjectId
   readonly shownBefore: PaneId | null
 }
+
+/**
+ * The open page, and the tab that was visible before it (or before the New agent form it replaced)
+ * opened. The page closes once the workspace shows a different tab.
+ */
+export interface OpenPage {
+  readonly key: PageKey
+  readonly shownBefore: PaneId | null
+}
+
+/**
+ * Whether a workspace change closes the open page: true when the workspace now shows a tab other
+ * than the one visible before the page opened.
+ */
+export const closesOpenPage = (page: OpenPage, workspace: Workspace): boolean =>
+  workspace.visibleTab !== null && workspace.visibleTab !== page.shownBefore
 
 /**
  * The New agent form to show when the user asks for one in project `projectId`. A form opened
@@ -58,15 +83,18 @@ export const closesNewAgentForm = (form: NewAgentForm, workspace: Workspace): bo
   !workspace.projects.some((entry) => entry.project.projectId === form.projectId)
 
 /**
- * The {@link View} for a workspace and the open New agent form, in priority order: the form while
- * it is open, else the visible tab, else the first-run screen when no project exists, else the
- * empty-project prompt. `undefined` until the workspace has loaded.
+ * The {@link View} for a workspace, the open New agent form and the open page, in priority order:
+ * the page while it is open, else the form while it is open, else the visible tab, else the
+ * first-run screen when no project exists, else the empty-project prompt. `undefined` until the
+ * workspace has loaded.
  */
 export const viewOf = (
   workspace: Option.Option<Workspace>,
-  form: Option.Option<NewAgentForm>
+  form: Option.Option<NewAgentForm>,
+  page: Option.Option<OpenPage>
 ): View | undefined => {
   if (Option.isNone(workspace)) return undefined
+  if (Option.isSome(page)) return PageView.make(page.value.key)
   if (Option.isSome(form)) return NewAgentView.make({ projectId: form.value.projectId })
   if (workspace.value.visibleTab !== null) {
     return TabView.make({ paneId: workspace.value.visibleTab })

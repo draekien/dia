@@ -3,8 +3,8 @@ import { type AgentName, ProjectId, type RegisterProjectRefusal } from '@shared/
 import type { RemovalProgress } from '@shared/domain/project-removal'
 import { Effect, Option } from 'effect'
 import { openSettings } from '../components/settings/open-settings'
-import { openNewAgentForm } from './view'
-import { appRegistry, newAgentFormAtom, workspaceAtom } from './workspace-atoms'
+import { openNewAgentForm, type PageKey } from './view'
+import { appRegistry, newAgentFormAtom, openPageAtom, workspaceAtom } from './workspace-atoms'
 
 const log = (message: string, annotations: Record<string, unknown>): void =>
   Effect.runSync(Effect.logDebug(message, annotations))
@@ -15,18 +15,41 @@ const visibleTab = (): PaneId | null =>
     onSome: (workspace) => workspace.visibleTab
   })
 
-/** Shows tab `paneId` in the content area, closing the New agent form if it is open. */
+const tabHiddenByPage = (): PaneId | null =>
+  Option.match(appRegistry.get(openPageAtom), {
+    onNone: visibleTab,
+    onSome: (page) => page.shownBefore
+  })
+
+/** Shows tab `paneId` in the content area, closing the New agent form or page if one is open. */
 export const selectTab = (paneId: PaneId): void => {
   log('Selecting a tab', { paneId })
   appRegistry.set(newAgentFormAtom, Option.none())
+  appRegistry.set(openPageAtom, Option.none())
   window.dia.selectTab(paneId)
 }
 
 /** Opens the New agent form for project `projectId` in the content area. */
 export const newAgent = (projectId: ProjectId): void => {
   log('Opening the New agent form', { projectId })
-  const form = openNewAgentForm(appRegistry.get(newAgentFormAtom), projectId, visibleTab())
+  const form = openNewAgentForm(appRegistry.get(newAgentFormAtom), projectId, tabHiddenByPage())
+  appRegistry.set(openPageAtom, Option.none())
   appRegistry.set(newAgentFormAtom, Option.some(form))
+  window.dia.selectTab(null)
+}
+
+/**
+ * Shows the page `key` names in the content area, closing the New agent form if it is open. No tab
+ * is visible while the page shows; selecting a tab closes it.
+ */
+export const openPage = (key: PageKey): void => {
+  log('Opening a page', { plugin: key.plugin, id: key.id })
+  const shownBefore = Option.match(appRegistry.get(newAgentFormAtom), {
+    onNone: tabHiddenByPage,
+    onSome: (form) => form.shownBefore
+  })
+  appRegistry.set(newAgentFormAtom, Option.none())
+  appRegistry.set(openPageAtom, Option.some({ key, shownBefore }))
   window.dia.selectTab(null)
 }
 

@@ -1,4 +1,5 @@
 import { Data, type DateTime, type Effect, type Option, type Scope, type Stream } from 'effect'
+import type { Rpc } from 'effect/rpc'
 import type { SqlClient } from 'effect/sql'
 import type { AgentNotification } from '../domain/notification'
 import type { Workspace } from '../domain/project'
@@ -183,6 +184,20 @@ export interface HostPluginContext extends PluginServices {
   readonly database: (
     migrations: PluginMigrations
   ) => Effect.Effect<SqlClient.SqlClient, PluginDatabaseError, Scope.Scope>
+  /**
+   * Serves `rpc`, declared with `Rpc.make` in a module both of this plugin's entries import, for
+   * calls from this plugin's own `renderer` entry (`callHost`), until the scope it runs in closes.
+   * Declare a struct `payload` (`payload: {}` when the call takes none). The handler can run more
+   * than once for one call, and the runs can overlap: the renderer resends a call while the Host
+   * connection is down, and the first run is not cancelled, so make it safe to repeat. Closing the
+   * scope waits up to 30 seconds for running handlers, then interrupts them; the caller then sees
+   * `PluginNotServing` although the handler may have partly run. Serving a tag this plugin already
+   * serves in an open scope, a tag another plugin has taken, or a streaming `rpc` is a defect.
+   */
+  readonly serve: <R extends Rpc.AnyWithProps>(
+    rpc: R,
+    handler: (payload: Rpc.Payload<R>) => Effect.Effect<Rpc.Success<R>, Rpc.Error<R>>
+  ) => Effect.Effect<void, never, Scope.Scope>
 }
 
 /**

@@ -3,11 +3,14 @@ import { Option } from 'effect'
 import { describe, expect, it } from 'vitest'
 import {
   closesNewAgentForm,
+  closesOpenPage,
   EmptyProjectView,
   FirstRunView,
   type NewAgentForm,
   NewAgentView,
+  type OpenPage,
   openNewAgentForm,
+  PageView,
   TabView,
   viewOf
 } from './view'
@@ -44,6 +47,13 @@ const workspace = (paneIds: ReadonlyArray<string>, visibleTab: string | null): W
   visibleTab
 })
 
+const GREETING = { plugin: 'example', id: 'greeting' }
+
+const pageOpenedOver = (shownBefore: string | null): OpenPage => ({
+  key: GREETING,
+  shownBefore
+})
+
 const formOpenedOver = (shownBefore: string | null): NewAgentForm => ({
   projectId: PROJECT,
   shownBefore
@@ -51,20 +61,31 @@ const formOpenedOver = (shownBefore: string | null): NewAgentForm => ({
 
 describe('viewOf', () => {
   it('has no view until the workspace loads', () => {
-    expect(viewOf(Option.none(), Option.none())).toBeUndefined()
+    expect(viewOf(Option.none(), Option.none(), Option.none())).toBeUndefined()
+  })
+
+  it('shows the open page over the New agent form and a visible tab', () => {
+    const view = viewOf(
+      Option.some(workspace([PANE_A], PANE_A)),
+      Option.some(formOpenedOver(PANE_A)),
+      Option.some(pageOpenedOver(PANE_A))
+    )
+
+    expect(view).toEqual(PageView.make(GREETING))
   })
 
   it('shows the New agent form while it is open, even over a visible tab', () => {
     const view = viewOf(
       Option.some(workspace([PANE_A], PANE_A)),
-      Option.some(formOpenedOver(PANE_A))
+      Option.some(formOpenedOver(PANE_A)),
+      Option.none()
     )
 
     expect(view).toEqual(NewAgentView.make({ projectId: PROJECT }))
   })
 
   it('shows the visible tab when the form is closed', () => {
-    expect(viewOf(Option.some(workspace([PANE_A], PANE_A)), Option.none())).toEqual(
+    expect(viewOf(Option.some(workspace([PANE_A], PANE_A)), Option.none(), Option.none())).toEqual(
       TabView.make({ paneId: PANE_A })
     )
   })
@@ -72,13 +93,31 @@ describe('viewOf', () => {
   it('shows the first-run screen when no project is registered', () => {
     const empty: Workspace = { projects: [], visibleTab: null }
 
-    expect(viewOf(Option.some(empty), Option.none())).toEqual(FirstRunView.make({}))
+    expect(viewOf(Option.some(empty), Option.none(), Option.none())).toEqual(FirstRunView.make({}))
   })
 
   it('offers a new agent when projects exist but no tab is visible', () => {
-    expect(viewOf(Option.some(workspace([PANE_A], null)), Option.none())).toEqual(
+    expect(viewOf(Option.some(workspace([PANE_A], null)), Option.none(), Option.none())).toEqual(
       EmptyProjectView.make({})
     )
+  })
+})
+
+describe('closesOpenPage', () => {
+  it('closes the page when the workspace shows a different tab', () => {
+    expect(closesOpenPage(pageOpenedOver(PANE_A), workspace([PANE_A, PANE_B], PANE_B))).toBe(true)
+  })
+
+  it('closes the page when a tab shows after it opened over none', () => {
+    expect(closesOpenPage(pageOpenedOver(null), workspace([PANE_A], PANE_A))).toBe(true)
+  })
+
+  it('keeps the page while the workspace shows the tab it opened over', () => {
+    expect(closesOpenPage(pageOpenedOver(PANE_A), workspace([PANE_A], PANE_A))).toBe(false)
+  })
+
+  it('keeps the page while no tab is visible', () => {
+    expect(closesOpenPage(pageOpenedOver(PANE_A), workspace([PANE_A], null))).toBe(false)
   })
 })
 

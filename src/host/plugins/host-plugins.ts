@@ -15,6 +15,7 @@ import { WorkspaceFeed } from '../services/workspace-feed'
 import { adapterContract } from '../session/agent-backend'
 import { makeHostPluginLoader } from './plugin-loader'
 import { heapUsedAfterGc, makePluginMemoryGuard } from './plugin-memory-guard'
+import { servePluginCall } from './plugin-messages'
 import { makePluginModules } from './plugin-modules'
 import { PluginSources } from './plugin-sources'
 
@@ -61,6 +62,7 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
         }),
         extend: (services) => {
           const dataDir = path.join(userDataPath, 'plugins', services.name)
+          const served = new Set<string>()
           return fs.makeDirectory(dataDir, { recursive: true }).pipe(
             Effect.mapError(
               (error) =>
@@ -77,7 +79,8 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
               activities: {
                 register: (spec) => activities.register(services.name, spec)
               },
-              database: makePluginDatabase(path.join(dataDir, 'data.db'), services.name)
+              database: makePluginDatabase(path.join(dataDir, 'data.db'), services.name),
+              serve: (rpc, handler) => servePluginCall(services, served, rpc, handler)
             })
           )
         },

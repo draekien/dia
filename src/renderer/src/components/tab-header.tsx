@@ -2,6 +2,7 @@ import type { Project } from '@shared/domain/project'
 import { tabOf } from '@shared/domain/workspace'
 import { Result } from 'effect'
 import { RulerIcon } from 'lucide-react'
+import { findPage, usePages } from '../lib/pages'
 import { useView, useWorkspace } from '../plugin-api'
 import { RailToggle } from './session-rail'
 import { TranscriptWidthToggle } from './transcript-width-toggle'
@@ -35,14 +36,18 @@ function TranscriptWidthButton() {
   )
 }
 
-function Crumbs({ project, page }: { readonly project: Project; readonly page: string }) {
+function Crumbs({ project, page }: { readonly project?: Project; readonly page: string }) {
   return (
     <Breadcrumb className="min-w-0">
       <BreadcrumbList className="flex-nowrap">
-        <BreadcrumbItem className="min-w-0">
-          <span className="truncate">{project.displayName}</span>
-        </BreadcrumbItem>
-        <BreadcrumbSeparator />
+        {project !== undefined && (
+          <>
+            <BreadcrumbItem className="min-w-0">
+              <span className="truncate">{project.displayName}</span>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+          </>
+        )}
         <BreadcrumbItem className="min-w-0">
           <BreadcrumbPage className="truncate font-medium">{page}</BreadcrumbPage>
         </BreadcrumbItem>
@@ -65,13 +70,15 @@ function WorktreeChip({ worktree }: { readonly worktree: { path: string; branch:
 /**
  * The kernel's content for the card header row, shown in the `main.header` slot unless a plugin
  * fills it. A breadcrumb for the current view (`project › agent` with the worktree branch and the
- * transcript width control for a tab, `project › New agent` for the New agent form, nothing for
- * the other views) followed by {@link WindowStatus} at the right end. A plugin that fills the
- * slot owns the status items.
+ * transcript width control for a tab, `project › New agent` for the New agent form, the page's
+ * label for a plugin's page, nothing for the other views) followed by {@link WindowStatus} at the
+ * right end. A plugin that fills the slot owns the status items.
  */
 export function TabHeader() {
   const view = useView()
   const workspace = useWorkspace()
+  const pages = usePages()
+  const page = view?._tag === 'PageView' ? findPage(pages, view) : undefined
   const found =
     view?._tag === 'TabView' && workspace !== undefined ? tabOf(workspace, view.paneId) : undefined
   const tab = found !== undefined && Result.isSuccess(found) ? found.success : undefined
@@ -87,6 +94,7 @@ export function TabHeader() {
         <WorktreeChip worktree={tab.tab.config.worktree} />
       )}
       {newAgentProject !== undefined && <Crumbs project={newAgentProject} page="New agent" />}
+      {page !== undefined && <Crumbs page={page.label} />}
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {tab !== undefined && <TranscriptWidthButton />}
         {tab !== undefined && <RailToggle />}
