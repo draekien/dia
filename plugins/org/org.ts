@@ -1,20 +1,24 @@
+import type { AgentName } from '@dia/plugin'
+import { Clock, Crypto, Effect, Schema } from 'effect'
+import { SqlClient, type SqlError } from 'effect/sql'
 import {
   BuiltInRoleDeleted,
   BuiltInRoleRenamed,
   HiredAgent,
+  type HireId,
   HireNameTaken,
   HireNotFound,
   OrgSettings,
+  type OverallCap,
   Role,
   RoleDisabled,
+  type RoleEdit,
   RoleHasHires,
+  type RoleId,
+  type RoleName,
   RoleNameTaken,
   RoleNotFound
-} from '@dia/plugin'
-import type { HireId, OverallCap, RoleEdit, RoleId, RoleName } from '@shared/domain/org'
-import type { AgentName } from '@shared/domain/project'
-import { Clock, Crypto, Effect, Schema } from 'effect'
-import { SqlClient, type SqlError } from 'effect/sql'
+} from './domain'
 import type { Org } from './service'
 
 const RoleRow = Schema.Struct({

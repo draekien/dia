@@ -1,7 +1,5 @@
+import { AgentName, PermissionRules, RoleMcpServer, Uuid } from '@dia/plugin'
 import { Schema } from 'effect'
-import { AgentName } from './project'
-import { PermissionRules, RoleMcpServer } from './role-session'
-import { Uuid } from './uuid'
 
 /** The built-in roles dia ships (ADR-0033, without `router`). A built-in role's name is its kind. */
 export const BuiltInRole = Schema.Literals([

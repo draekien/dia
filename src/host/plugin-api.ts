@@ -28,43 +28,31 @@ export {
   ModelsReady,
   ModelsUnavailable
 } from '../shared/domain/model'
-export {
-  BuiltInRoleDeleted,
-  BuiltInRoleRenamed,
-  HiredAgent,
-  HireId,
-  HireNameTaken,
-  HireNotFound,
-  OrgSettings,
-  OverallCap,
-  Role,
-  RoleDisabled,
-  RoleEdit,
-  RoleHasHires,
-  RoleId,
-  RoleName,
-  RoleNameTaken,
-  RoleNotFound
-} from '../shared/domain/org'
 export { type PaneId, SessionId } from '../shared/domain/pane'
 export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
 export { AgentName } from '../shared/domain/project'
-export type { RoleSessionOptions } from '../shared/domain/role-session'
+export {
+  PermissionRules,
+  RoleMcpServer,
+  type RoleSessionOptions
+} from '../shared/domain/role-session'
+export { Uuid } from '../shared/domain/uuid'
 export * from '../shared/plugin/api'
 export * from '../shared/plugin/list-slot'
 export { PluginCallInvalid, PluginNotServing } from '../shared/plugin/messages'
-export type { MetaRepo } from './services/meta-repo-seam'
+export { type MetaRepo, MetaRepoKey } from './services/meta-repo-seam'
 export {
   type GitOps,
   type IncludedFileFailure,
   WorktreeCreateError,
   WorktreeIncludeError,
   WorktreeReattachError,
-  WorktreeRemoveError
+  WorktreeRemoveError,
+  WorktreesKey
 } from './services/worktrees-seam'
 export {
-  AGENT_BACKEND_KEY,
   type AgentBackend,
+  AgentBackendKey,
   type AgentSession,
   type AgentSessionOptions,
   type DiscoveredSession,

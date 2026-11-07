@@ -16,6 +16,7 @@ import {
   type ThinkingLevel
 } from '@shared/domain/pane'
 import type { RoleSessionOptions } from '@shared/domain/role-session'
+import { ServiceKey } from '@shared/plugin/api'
 import type { AdapterContract, PluginRegistry } from '@shared/plugin/plugin-registry'
 import { DateTime, Effect, Option, Predicate, Schema, type Scope, Stream } from 'effect'
 import type { DiaTool } from './dia-tools'
@@ -31,11 +32,7 @@ export const SessionNotFound = Schema.TaggedStruct('SessionNotFound', { sessionI
 export const SessionEnd = Schema.Union([SessionFailed, SessionNotFound])
 export type SessionEnd = typeof SessionEnd.Type
 
-/**
- * Service key under which the agent adapter plugin provides its {@link AgentBackend}. Host code
- * reads it with `registry.inject`: an adapter plugin never unloads or reloads (ADR-0055).
- */
-export const AGENT_BACKEND_KEY = 'agentBackend'
+const BACKEND_KEY_NAME = 'agentBackend'
 
 /**
  * Live control surface of one pane's agent session, returned by {@link AgentBackend.openSession}.
@@ -175,7 +172,7 @@ export interface AgentSessionOptions extends SessionAdditions {
 }
 
 /**
- * The agent dia drives, as the adapter plugin provides it under {@link AGENT_BACKEND_KEY}.
+ * The agent dia drives, as the adapter plugin provides it under {@link AgentBackendKey}.
  * `openSession` starts one pane's session; the session and every process it starts live in the
  * surrounding scope, and closing that scope ends them. `readHistory` reads a past conversation
  * without starting a session and returns an empty list when it cannot be read. `models` streams
@@ -318,11 +315,11 @@ const backendMethods = [
 ] as const
 
 /**
- * Lists what keeps `provided`, a value read under {@link AGENT_BACKEND_KEY}, from being an
+ * Lists what keeps `provided`, a value read under {@link AgentBackendKey}, from being an
  * {@link AgentBackend}, one sentence per problem. Returns an empty list when it is one.
  */
 export const agentBackendProblems = (provided: Option.Option<unknown>): ReadonlyArray<string> => {
-  if (Option.isNone(provided)) return [`setup did not provide "${AGENT_BACKEND_KEY}"`]
+  if (Option.isNone(provided)) return [`setup did not provide "${BACKEND_KEY_NAME}"`]
   const value = provided.value
   const methods =
     Predicate.hasProperty(value, 'discoverSessions') && value.discoverSessions !== undefined
@@ -332,26 +329,34 @@ export const agentBackendProblems = (provided: Option.Option<unknown>): Readonly
     .filter(
       (method) => !(Predicate.hasProperty(value, method) && Predicate.isFunction(value[method]))
     )
-    .map((method) => `"${AGENT_BACKEND_KEY}.${method}" is not a function`)
+    .map((method) => `"${BACKEND_KEY_NAME}.${method}" is not a function`)
 }
 
-const isAgentBackend = (provided: Option.Option<unknown>): provided is Option.Some<AgentBackend> =>
-  agentBackendProblems(provided).length === 0
+const isAgentBackend = (value: unknown): value is AgentBackend =>
+  agentBackendProblems(Option.some(value)).length === 0
+
+/**
+ * The key the adapter plugin provides its {@link AgentBackend} under. It reads as `AgentBackend` and
+ * accepts a value {@link agentBackendProblems} finds no problem with; any other value reads as not
+ * provided. Host code reads it through {@link resolveAgentBackend}: an adapter plugin never unloads
+ * or reloads (ADR-0055).
+ */
+export const AgentBackendKey = ServiceKey.make(BACKEND_KEY_NAME, isAgentBackend)
 
 /**
  * The Host's {@link AdapterContract}: only an adapter plugin may provide
- * {@link AGENT_BACKEND_KEY}, and an adapter must provide a valid {@link AgentBackend} under it.
+ * {@link AgentBackendKey}, and an adapter must provide a valid {@link AgentBackend} under it.
  * Pass it to the Host plugin registry.
  */
 export const adapterContract: AdapterContract = {
-  keys: [AGENT_BACKEND_KEY],
-  problems: (provided) => agentBackendProblems(provided(AGENT_BACKEND_KEY))
+  keys: [AgentBackendKey.name],
+  problems: (provided) => agentBackendProblems(provided(AgentBackendKey.name))
 }
 
 /**
- * Reads the {@link AgentBackend} the adapter plugin provides under {@link AGENT_BACKEND_KEY}.
- * It never fails: when no plugin provides one, or the value is not a backend, it logs the
- * problems and returns a backend whose sessions end at once with
+ * Reads the {@link AgentBackend} the adapter plugin provides under {@link AgentBackendKey}.
+ * It never fails: when no plugin provides one, or the value is not a backend, it logs an error
+ * and returns a backend whose sessions end at once with
  * `The claude-code adapter is not loaded`, whose `readHistory` returns an empty list, and whose
  * `transcriptInfo` and `readTranscriptAfter` return none. Call it
  * each time a session starts or a transcript is read; a plugin reload applies from the next call.
@@ -360,21 +365,18 @@ export const resolveAgentBackend = Effect.fn('AgentBackend.resolve')(function* (
   registry: Pick<PluginRegistry, 'inject'>
 ) {
   // biome-ignore lint/plugin/noRegistryInject: an adapter plugin never unloads or reloads (ADR-0029, ADR-0055)
-  const provided = yield* registry.inject(AGENT_BACKEND_KEY)
-  if (isAgentBackend(provided)) {
+  const provided = yield* registry.inject(AgentBackendKey)
+  if (Option.isSome(provided)) {
     yield* Effect.logDebug('Resolved the agent backend')
     return provided.value
   }
-  yield* Effect.logError('No valid agent backend is provided', {
-    problems: agentBackendProblems(provided),
-    reason: ADAPTER_NOT_LOADED
-  })
+  yield* Effect.logError('No valid agent backend is provided', { reason: ADAPTER_NOT_LOADED })
   return unavailableBackend
 })
 
 /**
  * Streams the agent backend: the one provided now, then the one provided after each change of the
- * plugin providing {@link AGENT_BACKEND_KEY}, each read with {@link resolveAgentBackend}. Never
+ * plugin providing {@link AgentBackendKey}, each read with {@link resolveAgentBackend}. Never
  * ends. Use it with `Stream.switchMap` to follow a stream of the backend that is loaded now,
  * including an adapter loaded after a failed start.
  */
@@ -382,9 +384,9 @@ export const agentBackendChanges = (
   registry: Pick<PluginRegistry, 'inject' | 'changes'>
 ): Stream.Stream<AgentBackend> =>
   Stream.merge(
-    Stream.make(AGENT_BACKEND_KEY),
+    Stream.make(AgentBackendKey.name),
     registry.changes.pipe(
-      Stream.filter((key) => key === AGENT_BACKEND_KEY),
+      Stream.filter((key) => key === AgentBackendKey.name),
       Stream.tap(() => Effect.logInfo('The agent backend provider changed; resolving it again'))
     )
   ).pipe(Stream.mapEffect(() => resolveAgentBackend(registry)))

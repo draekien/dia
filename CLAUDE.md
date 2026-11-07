@@ -57,7 +57,7 @@ This repository uses Effect v4. Before writing any Effect code, first read `node
 
 - An RPC wrapper field must not reuse a name a command payload already has. Add a test that the payload's own field reaches the handler unchanged. Bump `PROTOCOL_VERSION` in `src/shared/ipc/rpc.ts` whenever `DiaRpcs` changes shape.
 - `pnpm typecheck` exits 1 on Effect *warning* diagnostics (suggestions exit 0). Check its exit code, not `grep "error TS"`: lefthook's pre-commit runs it. Example: `unknownInEffectCatch` on `Effect.try({ catch: (cause) => cause })`; return a `Data.TaggedError` instead.
-- A shipped plugin cannot import `src/` (the installer packages only `out/**` and `plugins/**`). It imports host runtime values from `@dia/plugin`: `tsconfig.node.json`, `tsconfig.test.json` and `vitest.config.ts` map it to `src/host/plugin-api.ts`; at runtime the loader's resolve hook maps it to `out/main/plugin-api.js`. Export a new host value from `plugin-api.ts`. vitest never runs that hook; `plugin-modules.test.ts` covers it through a child Node process.
+- A shipped plugin cannot import `src/` (the installer packages only `out/**` and `plugins/**`). It imports host runtime values from `@dia/plugin`: `tsconfig.node.json`, `tsconfig.test.json` and `vitest.config.ts` map it to `src/host/plugin-api.ts`; at runtime the loader's resolve hook maps it to `out/main/plugin-api.js`. Export a new host value from `plugin-api.ts`. vitest never runs that hook; `plugin-modules.test.ts` covers it through a child Node process. A contract that only plugins use lives in an exported module of the plugin that owns it, not in `src/`.
 
 ### Mandatory skill invocation
 

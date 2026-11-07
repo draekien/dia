@@ -4,7 +4,7 @@ Scope: module. A new built-in feature plugin, `plugins/org`, owns the org's role
 
 ## Interface
 
-### `src/shared/domain/org.ts` (platform-neutral, ADR-0013)
+### `plugins/org/domain.ts` (exported module, ADR-0059; first built as `src/shared/domain/org.ts`, moved by ADR-0062)
 
 ```ts
 /** The built-in roles dia ships (ADR-0033, without `router`). A built-in role's name is its kind. */
@@ -99,7 +99,7 @@ export interface Org {
 }
 ```
 
-`ORG_KEY = 'org'` is added to `src/shared/plugin/api.ts` beside `META_REPO_KEY`. `org-seam.ts` imports its types from `@shared/domain/org`. A Host plugin imports runtime values only from `@dia/plugin` (root `CLAUDE.md`), so `src/host/plugin-api.ts` re-exports from `../shared/domain/org` every schema and error class `plugins/org` uses as a value (`Role`, `HiredAgent`, `OrgSettings`, `RoleName`, `OverallCap`, `RoleId`, `HireId`, the eight errors) and `type Org` from `./services/org-seam`. `ORG_KEY`, `orgMigrations`, `makeOrg`, every error class and every `Org` member carry JSDoc.
+`ORG_KEY = 'org'` is added to `src/shared/plugin/api.ts` beside the meta repo key. `org-seam.ts` imports its types from the org domain module. A Host plugin imports runtime values only from `@dia/plugin` (root `CLAUDE.md`), so `src/host/plugin-api.ts` re-exported every schema and error class `plugins/org` uses as a value (`Role`, `HiredAgent`, `OrgSettings`, `RoleName`, `OverallCap`, `RoleId`, `HireId`, the eight errors) and `type Org` from `./services/org-seam`. `ORG_KEY`, `orgMigrations`, `makeOrg`, every error class and every `Org` member carry JSDoc. Since ADR-0062, `plugins/org` imports these from `./domain` and `@dia/plugin` no longer re-exports them.
 
 Each change runs in one `sql.withTransaction`: it reads the rows its checks need (role exists, is built in, is enabled, name free, hire count), returns the tagged error when a check fails, and otherwise writes. The table constraints are a backstop: a constraint `SqlError` there is a defect, so no error is derived by parsing SQLite's message text. Values are built with `Role.make`, `HiredAgent.make` and `OrgSettings.make`. Each change logs `Effect.logInfo` with the ids it touched. `hire` sets `hiredAt` from `Clock.currentTimeMillis`, so tests can fix it with `TestClock`.
 
@@ -170,7 +170,7 @@ CREATE TABLE org_settings (
   - `hire` / `dismiss`; hire into a disabled role refused; duplicate hire name refused, ignoring case; hires per role count.
   - `setOverallCap`.
   - order: a copy is listed after the built-in roles; hires are listed in hire order.
-- `src/shared/domain/org.test.ts`: `RoleName` and `OverallCap` reject empty / over-length / 0.
+- `plugins/org/domain.test.ts`: `RoleName` and `OverallCap` reject empty / over-length / 0.
 
 ## Refinement Record
 

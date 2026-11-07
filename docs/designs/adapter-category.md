@@ -165,7 +165,7 @@ export interface AdapterContract {
 }
 
 // src/host/session/agent-backend.ts
-export const adapterContract: AdapterContract = { keys: [AGENT_BACKEND_KEY], problems: ... }
+export const adapterContract: AdapterContract = { keys: [AgentBackendKey.name], problems: ... }
 ```
 
 `ctx.provide(key, ...)` from a feature plugin, with `key` in `keys`, fails with `ServiceKeyReservedError` (`src/shared/plugin/api.ts`). The plugin's setup fails, its scope closes, and it is `Failed` with `"agentBackend" can be provided only by an adapter plugin`. The renderer registry passes `{ keys: [], problems: () => [] }`.

@@ -67,8 +67,9 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0056](0056-run-part-of-a-plugin-while-optional-services-are-provided.md) | Run part of a plugin while optional services are provided, with `ctx.whenProvided` | accepted, amended by ADR-0060 |
 | [0057](0057-plugin-pages-and-plugin-messages.md) | Let a renderer plugin add pages, and let a plugin's renderer entry call its own host entry over one `CallPlugin` RPC | accepted, amended by ADR-0061 |
 | [0059](0059-plugin-module-exports.md) | Let a plugin export source modules that other plugins import | accepted, amended by ADR-0061 |
-| [0060](0060-typed-plugin-service-keys.md) | Type a plugin service by a key its provider exports | accepted |
+| [0060](0060-typed-plugin-service-keys.md) | Type a plugin service by a key its provider exports | accepted, amended by ADR-0062 |
 | [0061](0061-list-slots.md) | List slots: a plugin declares a list it draws, and other plugins add entries to it | accepted |
+| [0062](0062-host-service-keys.md) | Type the services the Host reads by keys defined in `src/` | accepted |
 
 ## Adding a new ADR
 

@@ -15,9 +15,9 @@ import {
 } from '@shared/domain/project'
 import type { RemovalProgress } from '@shared/domain/project-removal'
 import type { IpcEvent } from '@shared/ipc/contract'
-import { WORKTREES_KEY } from '@shared/plugin/api'
+import type { ServiceKey } from '@shared/plugin/api'
 import { type PluginRegistry, ServiceWithdrawnError } from '@shared/plugin/plugin-registry'
-import { fakeUse } from '@shared/plugin/plugin-registry.fake'
+import { fakeInject, fakeUse } from '@shared/plugin/plugin-registry.fake'
 import {
   Deferred,
   Effect,
@@ -33,8 +33,8 @@ import {
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import {
-  AGENT_BACKEND_KEY,
   type AgentBackend,
+  AgentBackendKey,
   type DiscoveredSession
 } from '../session/agent-backend'
 import { AgentEventStore, AgentEventWriteError, type AppendEntry } from './agent-event-store'
@@ -45,7 +45,12 @@ import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
 import { TranscriptReader } from './transcript-reader'
 import { WorkspaceFeed, WorkspaceFeedLive } from './workspace-feed'
 import { type WorkspaceLoadError, WorkspaceStore, WorkspaceWriteError } from './workspace-store'
-import { type GitOps, WorktreeCreateError, WorktreeReattachError } from './worktrees-seam'
+import {
+  type GitOps,
+  WorktreeCreateError,
+  WorktreeReattachError,
+  WorktreesKey
+} from './worktrees-seam'
 
 const PANE_A = 'aaaaaaaa-0000-4000-8000-000000000001'
 const PANE_B = 'bbbbbbbb-0000-4000-8000-000000000002'
@@ -99,7 +104,7 @@ interface HarnessOptions {
 }
 
 const withdrawn = new ServiceWithdrawnError({
-  key: WORKTREES_KEY,
+  key: WorktreesKey.name,
   plugin: 'worktrees',
   message: 'The "worktrees" plugin closed while a call using "worktrees" was running'
 })
@@ -178,13 +183,14 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     disabledPermissionModes: () => Effect.succeed([]),
     attachmentTypes: () => Effect.succeed([])
   }
-  const provided = new Map<string, unknown>([[AGENT_BACKEND_KEY, backend]])
-  if (options.gitOps !== undefined) provided.set(WORKTREES_KEY, options.gitOps(existing))
-  const provideUse = fakeUse((key) => Option.fromNullishOr(provided.get(key)))
+  const provided = new Map<string, unknown>([[AgentBackendKey.name, backend]])
+  if (options.gitOps !== undefined) provided.set(WorktreesKey.name, options.gitOps(existing))
+  const read = (key: string) => Option.fromNullishOr(provided.get(key))
+  const provideUse = fakeUse(read)
   const plugins = Layer.succeed(HostPlugins, {
-    inject: (key: string) => Effect.succeed(Option.fromNullishOr(provided.get(key))),
-    use: (key: string, f: (value: unknown) => Effect.Effect<unknown>) =>
-      options.worktreesWithdrawn === true && key === WORKTREES_KEY
+    inject: fakeInject(read),
+    use: (key: ServiceKey<unknown>, f: (value: unknown) => Effect.Effect<unknown>) =>
+      options.worktreesWithdrawn === true && key === WorktreesKey
         ? Effect.fail(withdrawn)
         : provideUse(key, f)
   } as unknown as PluginRegistry)

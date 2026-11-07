@@ -1,14 +1,13 @@
 import { assert, describe, it } from '@effect/vitest'
 import type { WorktreeInfo } from '@shared/domain/pane'
-import { WORKTREES_KEY } from '@shared/plugin/api'
 import { fakeUse } from '@shared/plugin/plugin-registry.fake'
 import { Effect, Option } from 'effect'
-import { type GitOps, withGitOps } from './worktrees-seam'
+import { type GitOps, WorktreesKey, withGitOps } from './worktrees-seam'
 
 const info: WorktreeInfo = { path: '/wt/a', branch: 'dia/calm-fox', sourceRepo: '/repo' }
 
 const registryProviding = (provided: Option.Option<unknown>) => ({
-  use: fakeUse((key) => (key === WORKTREES_KEY ? provided : Option.none()))
+  use: fakeUse((key) => (key === WorktreesKey.name ? provided : Option.none()))
 })
 
 const providedGitOps: GitOps = {

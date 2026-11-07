@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0062"
 date: 2026-11-07
 decision-makers: William Pei
 ---
@@ -64,4 +64,4 @@ This amends ADR-0055 (`use` accepts a typed key and checks the value before taki
 
 ## More Information
 
-Issue #199; Host-consumed keys deferred in https://github.com/draekien/dia/issues/201#issuecomment-6701958969.
+Issue #199; Host-consumed keys deferred in https://github.com/draekien/dia/issues/201#issuecomment-6701958969. ADR-0062 types them with `ServiceKey`s defined in `src/`.

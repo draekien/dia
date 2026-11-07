@@ -4,8 +4,8 @@ import { fakeInject } from '@shared/plugin/plugin-registry.fake'
 import { Effect, Layer, Option, Stream } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import {
-  AGENT_BACKEND_KEY,
   type AgentBackend,
+  AgentBackendKey,
   type DiscoveredSession,
   type TranscriptTail
 } from '../session/agent-backend'
@@ -19,7 +19,7 @@ const pluginsProviding = (backend: Option.Option<AgentBackend>) =>
     load: () => Effect.die(new Error('load should not be called in these tests')),
     unload: () => Effect.die(new Error('unload should not be called in these tests')),
     use: () => Effect.die(new Error('use should not be called in these tests')),
-    inject: fakeInject((key) => (key === AGENT_BACKEND_KEY ? backend : Option.none()))
+    inject: fakeInject((key) => (key === AgentBackendKey.name ? backend : Option.none()))
   })
 
 const backendWithout: AgentBackend = {
