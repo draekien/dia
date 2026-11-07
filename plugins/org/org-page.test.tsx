@@ -391,6 +391,27 @@ describe('Job titles', () => {
     ])
   })
 
+  it('saves the chosen model and thinking level', async () => {
+    const host = installHost(snapshotOf())
+    await showReviewer(host)
+
+    await choose('Model', 'Opus')
+    await choose('Thinking', 'High')
+    await click('Save')
+
+    expect(host.sent).toEqual([
+      ['EditJobTitle', { jobTitleId: REVIEWER.id, edit: { model: 'opus', thinkingLevel: 'high' } }]
+    ])
+  })
+
+  it('names the first listed model as the default model', async () => {
+    await showReviewer(installHost(snapshotOf()))
+
+    expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toMatch(
+      /^Default \(Default model\)/
+    )
+  })
+
   it('keeps Save disabled when an edit changes only blank lines', async () => {
     await showReviewer(installHost(snapshotOf()))
 

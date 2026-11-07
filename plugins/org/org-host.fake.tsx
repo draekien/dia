@@ -112,6 +112,31 @@ export type Reply =
   | { readonly error: unknown }
   | { readonly notServing: string }
 
+const fakeModel = (value: string, displayName: string) => ({
+  value,
+  displayName,
+  description: '',
+  adaptiveThinking: true,
+  effortLevels: ['low', 'medium', 'high'],
+  autoMode: true,
+  fastMode: false
+})
+
+/** The model catalog the fake bridge reports: `Default model`, then `Opus`. */
+const FAKE_MODELS = {
+  onChanged: () => () => {},
+  get: async () => ({
+    revision: 1,
+    state: {
+      _tag: 'Ready',
+      models: [fakeModel('default', 'Default model'), fakeModel('opus', 'Opus')],
+      fetchedAt: '2026-11-08T00:00:00.000Z',
+      refreshing: false
+    }
+  }),
+  refresh: async () => {}
+}
+
 /** A fake `org` host entry behind `window.dia.plugins.call`. */
 export interface FakeHost {
   snapshot: OrgSnapshot
@@ -177,6 +202,6 @@ export const installHost = (
       )(reply.value)
     }
   })
-  Object.assign(window, { dia: { plugins: { call } } })
+  Object.assign(window, { dia: { plugins: { call }, models: FAKE_MODELS } })
   return host
 }
