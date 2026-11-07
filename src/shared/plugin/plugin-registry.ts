@@ -941,10 +941,13 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
             entry.scope === undefined &&
             (entry.status._tag === 'Loaded' || entry.status._tag === 'RestartRequired')
           ) {
-            yield* Effect.logInfo('Reopened the previous version of an importer', {
-              plugin: importer
-            })
+            const status = entry.status
             yield* openOrFail(importer, entry)
+            if (entry.scope !== undefined) entry.status = status
+            yield* Effect.logInfo('Reopened the previous version of an importer', {
+              plugin: importer,
+              status: entry.status._tag
+            })
           }
         }
       })

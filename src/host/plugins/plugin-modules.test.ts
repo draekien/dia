@@ -8,6 +8,7 @@ import { afterAll, assert, beforeAll, describe, it } from '@effect/vitest'
 
 interface Reload {
   readonly evaluated: ReadonlyArray<string>
+  readonly importers: ReadonlyArray<string> | null
   readonly failure: {
     readonly tag: string | null
     readonly reason: string | null
@@ -94,5 +95,67 @@ describe('processPluginModules', () => {
     assert.strictEqual(results.outsideEdited?.failure?.reason, 'dependency')
     assert.include(results.outsideEdited?.failure?.message ?? '', 'shared.mjs')
     assert.deepStrictEqual(results.outsideEdited?.evaluated, [])
+  })
+})
+
+describe("imports of another plugin's exports", () => {
+  it('resolves an export of a plugin that has not loaded yet', () => {
+    assert.deepStrictEqual(results.importerBeforeExporter?.evaluated, ['messages:v1', 'saw:v1'])
+  })
+
+  it('shares one module instance between an importer and the exporter that loads after it', () => {
+    assert.deepStrictEqual(results.exporterAfterImporter?.evaluated, ['entry'])
+  })
+
+  it('reports no importer when the exporter loads without changes', () => {
+    assert.deepStrictEqual(results.exporterAfterImporter?.importers, [])
+  })
+
+  it('reports the importer when the exporter loads an edited export', () => {
+    assert.deepStrictEqual(results.exporterEdited?.importers, ['importer'])
+  })
+
+  it('gives the importer the edited export when it loads again', () => {
+    assert.deepStrictEqual(results.importerAfterEdit?.evaluated, ['saw:v2'])
+  })
+
+  it('keeps the copy the exporter last loaded until the exporter loads from its override', () => {
+    assert.deepStrictEqual(results.importerBeforeOverrideLoads?.evaluated, [])
+  })
+
+  it('reports the importer when the exporter loads from an override directory', () => {
+    assert.deepStrictEqual(results.exporterOverridden?.importers, ['importer'])
+  })
+
+  it("gives the importer the override directory's export when it loads again", () => {
+    assert.deepStrictEqual(results.importerAfterOverride?.evaluated, ['saw:override'])
+  })
+
+  it('gives the importer the new directory of an exporter that never loaded', () => {
+    assert.deepStrictEqual(results.unloadedOverridden?.evaluated, [
+      'messages:unloaded-override',
+      'saw:unloaded-override'
+    ])
+  })
+
+  it('fails the importer with the specifier when no plugin has that name', () => {
+    assert.include(
+      results.unknownPlugin?.failure?.message ?? '',
+      'Cannot import "@dia-plugin/missing/messages": no plugin named "missing"'
+    )
+  })
+
+  it('fails the importer when the exporter does not list the file', () => {
+    assert.include(
+      results.unlistedFile?.failure?.message ?? '',
+      'plugin "exporter" does not export "entry.ts"'
+    )
+  })
+
+  it("fails an adapter that imports another plugin's export", () => {
+    assert.include(
+      results.adapterImport?.failure?.message ?? '',
+      'An adapter cannot import "@dia-plugin/exporter/messages"'
+    )
   })
 })
