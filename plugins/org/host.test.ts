@@ -5,8 +5,9 @@ import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-r
 import { Effect, Option, Schema } from 'effect'
 import { callPlugin, servePluginCall } from '../../src/host/plugins/plugin-messages'
 import { makePluginDatabase } from '../../src/host/services/database'
-import { BUILT_IN_ROLES, DEFAULT_OVERALL_CAP, FIRST_RETRO_HIRE_ID } from './built-in-roles'
+import { BUILT_IN_JOB_TITLES, DEFAULT_OVERALL_CAP } from './built-in-job-titles'
 import { OrgSnapshot } from './calls'
+import { HiredAgent } from './domain'
 import setup from './host'
 
 const UNKNOWN_HIRE = '00000000-0000-4000-8000-000000000000'
@@ -82,7 +83,7 @@ const bypassAvailable = (registry: PluginRegistry) =>
   Effect.map(readOrg(registry), (snapshot) => snapshot.bypassAvailable)
 
 describe('org host entry', () => {
-  it.effect('reads the seeded org: every built-in role, the first retro and the default cap', () =>
+  it.effect('reads the seeded org: every built-in job title, no hires and the default cap', () =>
     Effect.gen(function* () {
       const registry = yield* startOrg(Option.none())
 
@@ -90,13 +91,13 @@ describe('org host entry', () => {
 
       assert.deepStrictEqual(
         {
-          roles: snapshot.roles.map((role) => role.id),
+          jobTitles: snapshot.jobTitles.map((jobTitle) => jobTitle.id),
           hires: snapshot.hiredAgents.map((hire) => hire.id),
           cap: snapshot.settings.overallCap
         },
         {
-          roles: BUILT_IN_ROLES.map((role) => role.id),
-          hires: [FIRST_RETRO_HIRE_ID],
+          jobTitles: BUILT_IN_JOB_TITLES.map((seed) => seed.id),
+          hires: [],
           cap: DEFAULT_OVERALL_CAP
         }
       )
@@ -106,9 +107,12 @@ describe('org host entry', () => {
   it.effect('applies a change sent as a call, so the next read shows it', () =>
     Effect.gen(function* () {
       const registry = yield* startOrg(Option.none())
+      const hired = Schema.decodeUnknownSync(HiredAgent)(
+        yield* call(registry, 'Hire', { jobTitleId: BUILT_IN_JOB_TITLES[0]?.id, name: null })
+      )
 
-      yield* call(registry, 'RenameHire', { hireId: FIRST_RETRO_HIRE_ID, name: 'calm-heron' })
-      yield* call(registry, 'SetBypassOverride', { hireId: FIRST_RETRO_HIRE_ID, override: false })
+      yield* call(registry, 'RenameHire', { hireId: hired.id, name: 'calm-heron' })
+      yield* call(registry, 'SetBypassOverride', { hireId: hired.id, override: false })
       yield* call(registry, 'SetOverallCap', { cap: 6 })
       const snapshot = yield* readOrg(registry)
 
