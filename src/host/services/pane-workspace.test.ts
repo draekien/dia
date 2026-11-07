@@ -190,7 +190,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const plugins = Layer.succeed(HostPlugins, {
     inject: fakeInject(read),
     use: (key: ServiceKey<unknown>, f: (value: unknown) => Effect.Effect<unknown>) =>
-      options.worktreesWithdrawn === true && key.name === WorktreesKey.name
+      options.worktreesWithdrawn === true && key === WorktreesKey
         ? Effect.fail(withdrawn)
         : provideUse(key, f)
   } as unknown as PluginRegistry)

@@ -56,9 +56,6 @@ export const MetaRepoKey = ServiceKey.make('metaRepo', hasSessionMembers)
 
 const NOT_LOADED = MetaRepoFailed.make({ message: 'The meta plugin is not loaded.' })
 
-const lacksMembers = (members: ReadonlyArray<keyof MetaRepo>) =>
-  Effect.logError('The meta repo service lacks MetaRepo members', { members })
-
 /**
  * Runs `run` with the {@link MetaRepo} the loaded `meta` plugin provides, for the Settings page's
  * meta repo calls, holding the plugin open until `run` ends. It never fails: when the plugin is
@@ -81,7 +78,9 @@ export const withMetaRepo = Effect.fn('MetaRepo.with')(function* <A>(
               )
             )
           )
-        : lacksMembers(ALL_MEMBERS).pipe(Effect.as(NOT_LOADED))
+        : Effect.logError('The meta repo service lacks MetaRepo members', {
+            members: ALL_MEMBERS
+          }).pipe(Effect.as(NOT_LOADED))
     )
     .pipe(
       Effect.catchTag('ServiceWithdrawnError', () =>
