@@ -12,7 +12,7 @@ Not in this step (the next #9 item): moving `pending-user-input` into the kernel
 
 ```
 src/host/session/agent-backend.ts                         (kernel)
-  AGENT_BACKEND_KEY = 'agentBackend'                      value: AgentBackend
+  AgentBackendKey ('agentBackend')                      value: AgentBackend
   interface AgentSession { sendText, setThinkingLevel, setPermissionMode, resolvePermission,
                            resolveQuestion, resolvePlanReview, interrupt, rewindToCheckpoint,
                            ended }                        (moved unchanged from agent-session.ts)
@@ -65,7 +65,7 @@ src/host/services/transcript-reader.ts
   TranscriptReaderLive requires HostPlugins; readHistory delegates to the resolved backend
 
 plugins/claude-code/                                      { name: 'claude-code', api: '1', host: 'host.ts', load: 'eager' }
-  host.ts                          ctx.provide(AGENT_BACKEND_KEY, makeClaudeCodeBackend())
+  host.ts                          ctx.provide(AgentBackendKey, makeClaudeCodeBackend())
   backend.ts                       makeClaudeCodeBackend(): AgentBackend
   session.ts                       query() lifetime, input queue, canUseTool, restarts, rewind
                                    (from src/host/session/agent-session.ts)
@@ -84,7 +84,7 @@ plugins/permissions/
   host.ts provides only pendingUserInput; permission-mode-controller.ts and its test move out
 
 src/host/plugin-api.ts
-  re-exports AGENT_BACKEND_KEY and the agent-backend types, the pending-user-input types and
+  re-exports AgentBackendKey and the agent-backend types, the pending-user-input types and
   Superseded, the dia-tool types, and the attention schemas the adapter uses at runtime
   (Question, PlanReviewResponse); drops SESSION_REDUCER_KEY, THINKING_OPTIONS_KEY,
   PERMISSION_MODE_CONTROLLER_KEY and their types

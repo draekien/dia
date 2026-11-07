@@ -10,7 +10,7 @@ The `meta` feature plugin creates the meta repo on first start and supplies what
 
 ```
 src/shared/plugin/api.ts
-  META_REPO_KEY = 'metaRepo'
+  MetaRepoKey ('metaRepo')
 
 src/host/session/agent-backend.ts                                   (kernel)
   interface SessionAdditions {
@@ -20,17 +20,17 @@ src/host/session/agent-backend.ts                                   (kernel)
   interface AgentSessionOptions extends SessionAdditions { config, resume, emit, tools }
 
 src/host/services/meta-repo-seam.ts                                 (kernel)
-  interface MetaRepo { forNewSession: Effect<SessionAdditions> }    provided under META_REPO_KEY
+  interface MetaRepo { forNewSession: Effect<SessionAdditions> }    provided under MetaRepoKey
   resolveSessionAdditions(registry: Pick<PluginRegistry, 'inject'>): Effect<SessionAdditions>
     never fails; no provider, an invalid value or a defect in forNewSession gives
     { systemPromptAppend: '', pluginPaths: [] }
 
 src/host/plugin-api.ts
-  re-exports META_REPO_KEY (through shared api), MetaRepo, SessionAdditions
+  re-exports MetaRepoKey, MetaRepo, SessionAdditions
 
 plugins/meta/
   plugin.json   { name: 'meta', category: 'feature', host: 'host.ts', load: 'eager' }
-  host.ts       ensures the repo at <dataDir>/repo, provides META_REPO_KEY
+  host.ts       ensures the repo at <dataDir>/repo, provides MetaRepoKey
   meta-repo.ts  ensureMetaRepo(directory), makeMetaRepo(directory): MetaRepo
 
 plugins/claude-code/session-additions.ts
@@ -86,7 +86,7 @@ Rounds ran inline (no subagents in this run), effort medium; round 2 raised no b
 
 **Rejected**
 - *Define Errors Out of Existence* (round 1, minor) — `systemPromptAppend: string` admits `''`; an `Option` was proposed. Rejected: the adapter treats `''` as no append, the plugin trims, and an empty append is not an invalid state.
-- *Strategic Programming* (round 2, minor) — `META_REPO_KEY` names one provider, so a second feature cannot add a plugin path. Rejected: org step 1 supplies role instructions from the session's role, not through a service key, and the plugin registry allows one provider per key by design.
+- *Strategic Programming* (round 2, minor) — `MetaRepoKey` names one provider, so a second feature cannot add a plugin path. Rejected: org step 1 supplies role instructions from the session's role, not through a service key, and the plugin registry allows one provider per key by design.
 
 **Escalated**
 - None. Gate decisions were taken autonomously (no user in this run) and are listed in the PR.

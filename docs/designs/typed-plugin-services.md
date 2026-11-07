@@ -11,7 +11,7 @@ Lets a plugin declare a service's type and a runtime check in a module it export
 5. No file under `src/` declares `Org` or names `ORG_KEY` (a test greps for it).
 6. String keys behave as before: the existing tests pass with no assertion changed. Only the test fakes of `inject` and `provide` change, because the overloads give an unannotated fake parameter no type.
 
-Out of scope: `AGENT_BACKEND_KEY`, `META_REPO_KEY`, `WORKTREES_KEY` keep string keys and their seams (deferred to #201, comment 6701958969); the org domain schemas in `src/shared/domain/org.ts` stay (#201).
+Out of scope: the agent backend, meta repo and worktrees keys keep string keys and their seams (deferred to #201, comment 6701958969); the org domain schemas stay in `src/shared/domain` (#201). #201 later typed those keys (ADR-0062) and moved the org schemas to `plugins/org/domain.ts`.
 
 ## Part 1: `ServiceKey`
 
@@ -119,7 +119,7 @@ export const OrgService = ServiceKey.make('org', isOrg)
 
 - `plugins/org/host.ts`: `ctx.provide(OrgService, org)`.
 - `plugins/org/org.ts`: imports `Org` from `./service`; its JSDoc at line 99 says `OrgService` instead of `ORG_KEY`.
-- `src/host/plugin-api.ts` adds `RoleEdit` to its `../shared/domain/org` export and exports `AgentName` from `../shared/domain/project`, as types: `service.ts` may import only `effect` and `@dia/plugin` (ADR-0059, `plugin-exports.test.ts`), and `Org.editRole` and `Org.hire` use them.
+- `src/host/plugin-api.ts` adds `RoleEdit` to its org domain export (since moved to `plugins/org/domain.ts`, ADR-0062) and exports `AgentName` from `../shared/domain/project`, as types: `service.ts` may import only `effect` and `@dia/plugin` (ADR-0059, `plugin-exports.test.ts`), and `Org.editRole` and `Org.hire` use them.
 - Deleted: `src/host/services/org-seam.ts`; `ORG_KEY` in `src/shared/plugin/api.ts`; `export type { Org }` in `src/host/plugin-api.ts`; the `org-seam.ts` entry in `tsconfig.web.json` › `include`.
 - `PLUGIN_API_VERSION` → `0.0.24`; every `plugins/*/plugin.json` `api` → `"0.0.24"`.
 
