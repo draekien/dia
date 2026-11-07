@@ -8,7 +8,18 @@ import {
   type SessionEnd,
   startPermissionMode
 } from '@dia/plugin'
-import { Effect, Exit, Fiber, Option, Queue, Ref, Scope, Stream, SynchronizedRef } from 'effect'
+import {
+  Effect,
+  Exit,
+  Fiber,
+  Option,
+  PubSub,
+  Queue,
+  Ref,
+  Scope,
+  Stream,
+  SynchronizedRef
+} from 'effect'
 import {
   type HiredAgent,
   type JobTitle,
@@ -115,6 +126,8 @@ export type ProjectDirectory = (objective: Objective) => Effect.Effect<Option.Op
  * agent resumes ahead of waiting tasks, up to one over the overall cap. `release` stops the task's
  * session, if any, and lets a task whose session failed start again; call it after the task is
  * finished or reassigned. `live` reads the pending permission requests and the held slots.
+ * `watchChanges` subscribes when run; the stream it returns emits once each time `live` may read
+ * differently since the subscription.
  */
 export interface Dispatcher {
   readonly signal: Effect.Effect<void>
@@ -126,6 +139,7 @@ export interface Dispatcher {
   ) => Effect.Effect<void, PermissionNotPending>
   readonly release: (taskId: TaskId) => Effect.Effect<void>
   readonly live: Effect.Effect<LiveWork>
+  readonly watchChanges: Effect.Effect<Stream.Stream<void>, never, Scope.Scope>
 }
 
 interface StartContext {
@@ -156,7 +170,23 @@ export const makeDispatcher = (deps: {
     const answerOrder = yield* Ref.make(0)
     const signals = yield* Queue.sliding<void>(1)
 
+    const changes = yield* PubSub.unbounded<void>()
+
     const signal = Queue.offer(signals, undefined).pipe(Effect.asVoid)
+
+    const updateTasks = <A>(
+      f: (current: Map<TaskId, LiveTask>) => readonly [A, Map<TaskId, LiveTask> | undefined]
+    ) =>
+      SynchronizedRef.modify(tasks, (current) => {
+        const [result, next] = f(current)
+        return [[result, next !== undefined] as const, next ?? current] as const
+      }).pipe(
+        Effect.flatMap(([result, changed]) =>
+          changed
+            ? PubSub.publish(changes, undefined).pipe(Effect.as(result))
+            : Effect.succeed(result)
+        )
+      )
 
     const closeLive = (live: LiveTask) =>
       Effect.gen(function* () {
@@ -165,8 +195,9 @@ export const makeDispatcher = (deps: {
       })
 
     const drop = (taskId: TaskId) =>
-      SynchronizedRef.modify(tasks, (current) => {
+      updateTasks((current) => {
         const live = current.get(taskId)
+        if (live === undefined) return [undefined, undefined] as const
         const next = new Map(current)
         next.delete(taskId)
         return [live, next] as const
@@ -178,11 +209,11 @@ export const makeDispatcher = (deps: {
           yield* runs.markSessionStarted(taskId, message.sessionId)
           return
         }
-        const freed = yield* SynchronizedRef.modify(tasks, (current) => {
+        const freed = yield* updateTasks((current) => {
           const live = current.get(taskId)
-          if (live === undefined) return [false, current] as const
+          if (live === undefined) return [false, undefined] as const
           const changed = applyEvent(live, taskId, message)
-          if (changed === live) return [false, current] as const
+          if (changed === live) return [false, undefined] as const
           const next = new Map(current)
           next.set(taskId, changed)
           return [holdsSlot(live) && !holdsSlot(changed), next] as const
@@ -259,9 +290,9 @@ export const makeDispatcher = (deps: {
         Effect.flatMap((end) => onEnded(task.id, end)),
         Effect.forkIn(pluginScope)
       )
-      const kept = yield* SynchronizedRef.modify(tasks, (current) => {
+      const kept = yield* updateTasks((current) => {
         const live = current.get(task.id)
-        if (live === undefined) return [false, current] as const
+        if (live === undefined) return [false, undefined] as const
         const next = new Map(current)
         next.set(task.id, {
           ...live,
@@ -281,9 +312,9 @@ export const makeDispatcher = (deps: {
     })
 
     const resumeTask = Effect.fnUntraced(function* (taskId: TaskId) {
-      const answers = yield* SynchronizedRef.modify(tasks, (current) => {
+      const answers = yield* updateTasks((current) => {
         const live = current.get(taskId)
-        if (live === undefined) return [undefined, current] as const
+        if (live === undefined) return [undefined, undefined] as const
         const next = new Map(current)
         next.set(taskId, {
           ...live,
@@ -334,7 +365,7 @@ export const makeDispatcher = (deps: {
         Option.isSome(backend) && Option.isSome(catalog)
           ? yield* contextsFor(candidates.waiting)
           : new Map<TaskId, StartContext>()
-      const pick = yield* SynchronizedRef.modify(tasks, (current) => {
+      const pick = yield* updateTasks((current) => {
         const entries = [...current.entries()]
         const answered = entries
           .filter(([, live]) => live.queued.length > 0)
@@ -356,6 +387,7 @@ export const makeDispatcher = (deps: {
               createdAt: task.createdAt
             }))
         })
+        if (chosen.start.length === 0) return [chosen, undefined] as const
         const next = new Map(current)
         for (const taskId of chosen.start) next.set(taskId, reserved)
         return [chosen, next] as const
@@ -401,11 +433,11 @@ export const makeDispatcher = (deps: {
       response: PermissionResponse
     ) {
       const order = yield* Ref.getAndUpdate(answerOrder, (n) => n + 1)
-      const outcome = yield* SynchronizedRef.modify(tasks, (current) => {
+      const outcome = yield* updateTasks((current) => {
         const live = current.get(taskId)
-        if (live === undefined) return ['not-pending' as const, current] as const
-        if (live.answeredIds.has(requestId)) return ['repeated' as const, current] as const
-        if (!live.pending.has(requestId)) return ['not-pending' as const, current] as const
+        if (live === undefined) return ['not-pending' as const, undefined] as const
+        if (live.answeredIds.has(requestId)) return ['repeated' as const, undefined] as const
+        if (!live.pending.has(requestId)) return ['not-pending' as const, undefined] as const
         const pending = new Map(live.pending)
         pending.delete(requestId)
         const next = new Map(current)
@@ -458,5 +490,14 @@ export const makeDispatcher = (deps: {
       Effect.forkScoped
     )
 
-    return { signal, lendBackend, answerPermission, release, live } satisfies Dispatcher
+    const watchChanges = Effect.map(PubSub.subscribe(changes), Stream.fromSubscription)
+
+    return {
+      signal,
+      lendBackend,
+      answerPermission,
+      release,
+      live,
+      watchChanges
+    } satisfies Dispatcher
   })

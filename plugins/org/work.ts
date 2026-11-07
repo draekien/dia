@@ -1,5 +1,5 @@
 import { type ProjectId, SessionId, Uuid } from '@dia/plugin'
-import { Clock, Crypto, Effect, Schema } from 'effect'
+import { Clock, Crypto, Effect, PubSub, Schema, type Scope, Stream } from 'effect'
 import { SqlClient, type SqlError } from 'effect/sql'
 import {
   HireId,
@@ -143,10 +143,12 @@ const retroTitle = (title: WorkTitle): WorkTitle =>
  * null; giving a task its current assignee returns it unchanged in any state. `finishTask` moves a
  * running `work` task to `finished` and creates its unassigned `retro` task, or moves a running
  * `retro` task, and the task it reviews, to `completed`; on a `finished` or `completed` task it
- * returns the task unchanged.
+ * returns the task unchanged. `watchChanges` subscribes when run; the stream it returns emits
+ * once after each change committed since the subscription.
  */
 export interface Work {
   readonly snapshot: Effect.Effect<WorkSnapshot>
+  readonly watchChanges: Effect.Effect<Stream.Stream<void>, never, Scope.Scope>
   readonly createObjective: (
     input: NewObjective
   ) => Effect.Effect<Objective, ProjectNotFound | HireNotFound>
@@ -196,8 +198,13 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
     const sql = yield* SqlClient.SqlClient
     const crypto = yield* Crypto.Crypto
 
-    const transaction = <A, E>(effect: Effect.Effect<A, E | SqlError.SqlError>) =>
+    const changes = yield* PubSub.unbounded<void>()
+    const publishChange = PubSub.publish(changes, undefined)
+
+    const inTransaction = <A, E>(effect: Effect.Effect<A, E | SqlError.SqlError>) =>
       sql.withTransaction(effect).pipe(Effect.catchTag('SqlError', Effect.die))
+    const transaction = <A, E>(effect: Effect.Effect<A, E | SqlError.SqlError>) =>
+      inTransaction(effect).pipe(Effect.tap(() => publishChange))
     const orDie = <A>(effect: Effect.Effect<A, SqlError.SqlError>) =>
       effect.pipe(Effect.catchTag('SqlError', Effect.die))
 
@@ -429,7 +436,7 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
       update: Effect.Effect<ReadonlyArray<unknown>, SqlError.SqlError>,
       event: (task: Task) => OrgEvent
     ) =>
-      transaction(
+      inTransaction(
         Effect.gen(function* () {
           const changed = yield* decodeTaskRows(yield* update)
           const [row] = changed
@@ -437,7 +444,7 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
           yield* append(row.objective_id, taskId, event(toTask(row)))
           return true
         })
-      )
+      ).pipe(Effect.tap((changed) => (changed ? publishChange : Effect.void)))
 
     const markStarted = (taskId: TaskId, hireId: HireId) =>
       changeRunning(
@@ -478,7 +485,16 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
       })
     ).pipe(Effect.tap((count) => Effect.logInfo('Requeued running tasks', { count })))
 
-    const work: Work = { snapshot, createObjective, createTask, assignTask, finishTask }
+    const watchChanges = Effect.map(PubSub.subscribe(changes), Stream.fromSubscription)
+
+    const work: Work = {
+      snapshot,
+      watchChanges,
+      createObjective,
+      createTask,
+      assignTask,
+      finishTask
+    }
     const runs: TaskRuns = {
       startCandidates,
       markStarted,

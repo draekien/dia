@@ -138,6 +138,13 @@ export type WorkView = typeof WorkView.Type
 /** Reads the {@link WorkView}. */
 export const ReadWork = Rpc.make('ReadWork', { payload: {}, success: WorkView })
 
+/**
+ * Streams the {@link WorkView}: the current one when subscribed, then a new one after each change
+ * to objectives, tasks, held slots or pending permissions. Several changes during one read give
+ * one more view, so a subscriber always ends on the latest state.
+ */
+export const WatchWork = Rpc.make('WatchWork', { payload: {}, success: WorkView, stream: true })
+
 /** Creates an open objective; a repeated call with the same `id` returns the stored objective. */
 export const CreateObjective = Rpc.make('CreateObjective', {
   payload: { objective: NewObjective },
