@@ -84,7 +84,7 @@ Deleted with the contract: `plugin-registry.test.ts` 1108, 1156, 1650 and the `r
 
 ## Out of scope
 
-- The `mcp` plugin and moving `McpServer` out of the kernel (next PR).
+- The `mcp` plugin and moving `McpServer` out of the kernel: `docs/designs/mcp-plugin.md`.
 - A renderer entry for claude-code; the Claude Code settings panel stays in `plugins/claude-code-settings`.
 - Ending running sessions when their adapter is unloaded.
 

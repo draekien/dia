@@ -1,12 +1,13 @@
 // @effect-diagnostics asyncFunction:off -- React callbacks await OrgCall's Promise; components hold no Effect runtime.
-import { Button, Input, Label, Switch, Textarea } from '@dia/renderer-plugin'
+import { Button, Input, Label, Switch, Textarea, useProvided } from '@dia/renderer-plugin'
+import { McpServersEditorKey } from '@dia-plugin/mcp/editor'
+import { type McpServersDraft, mcpServersDraft, readMcpServersDraft } from '@dia-plugin/mcp/servers'
 import { Result } from 'effect'
 import { Loader2Icon } from 'lucide-react'
-import { type FormEvent, type ReactNode, useId, useState } from 'react'
+import { createElement, type FormEvent, type ReactNode, useId, useState } from 'react'
 import { CopyJobTitle, DeleteJobTitle, EditJobTitle, SetJobTitleEnabled } from './calls'
 import { ConfirmDialog } from './confirm-dialog'
 import type { JobTitle, JobTitleEdit } from './domain'
-import { parseMcpServers, printMcpServers } from './mcp-json'
 import { NameDialog } from './name-dialog'
 import {
   agentName,
@@ -36,7 +37,7 @@ interface Draft {
   readonly allow: string
   readonly ask: string
   readonly deny: string
-  readonly mcpServers: string
+  readonly mcpServers: McpServersDraft
   readonly bypassOptIn: boolean
 }
 
@@ -47,7 +48,7 @@ const draftOf = (jobTitle: JobTitle): Draft => ({
   allow: jobTitle.permissions.allow.join('\n'),
   ask: jobTitle.permissions.ask.join('\n'),
   deny: jobTitle.permissions.deny.join('\n'),
-  mcpServers: printMcpServers(jobTitle.mcpServers),
+  mcpServers: mcpServersDraft(jobTitle.mcpServers),
   bypassOptIn: jobTitle.bypassOptIn
 })
 
@@ -59,10 +60,13 @@ interface FormErrors {
 
 const editOf = (
   jobTitle: JobTitle,
-  draft: Draft
+  draft: Draft,
+  mcpEditable: boolean
 ): Result.Result<JobTitleEdit, Omit<FormErrors, 'save'>> => {
   const name = readJobTitleName(draft.name)
-  const mcpServers = parseMcpServers(draft.mcpServers)
+  const mcpServers = mcpEditable
+    ? readMcpServersDraft(draft.mcpServers)
+    : Result.succeed(jobTitle.mcpServers)
   if (Result.isFailure(name) || Result.isFailure(mcpServers)) {
     return Result.fail({
       name: Result.isFailure(name) ? name.failure : undefined,
@@ -81,7 +85,7 @@ const editOf = (
       : { jobDescription: draft.jobDescription }),
     ...(sameLines(lines(draft.skills), jobTitle.skills) ? {} : { skills: lines(draft.skills) }),
     ...(permissionsChanged ? { permissions } : {}),
-    ...(printMcpServers(mcpServers.success) === printMcpServers(jobTitle.mcpServers)
+    ...(mcpServersDraft(mcpServers.success) === mcpServersDraft(jobTitle.mcpServers)
       ? {}
       : { mcpServers: mcpServers.success }),
     ...(draft.bypassOptIn === jobTitle.bypassOptIn ? {} : { bypassOptIn: draft.bypassOptIn })
@@ -120,16 +124,18 @@ function EditForm({
   const [errors, setErrors] = useState<FormErrors>({})
   const [busy, setBusy] = useState(false)
   const id = useId()
-  const pending = editOf(jobTitle, draft)
+  const McpServersEditor = useProvided(McpServersEditorKey)
+  const mcpEditable = McpServersEditor !== undefined
+  const pending = editOf(jobTitle, draft, mcpEditable)
   const changed = Result.isFailure(pending) || Object.keys(pending.success).length > 0
-  const set = (field: keyof Draft) => (value: string | boolean) => {
+  const set = (field: Exclude<keyof Draft, 'mcpServers'>) => (value: string | boolean) => {
     setDraft((current) => ({ ...current, [field]: value }))
     setErrors({})
   }
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
-    const edit = editOf(jobTitle, draft)
+    const edit = editOf(jobTitle, draft, mcpEditable)
     if (Result.isFailure(edit)) return setErrors(edit.failure)
     setBusy(true)
     const result = await call(
@@ -150,7 +156,7 @@ function EditForm({
   }
 
   const textarea = (
-    field: Exclude<keyof Draft, 'bypassOptIn'>,
+    field: Exclude<keyof Draft, 'bypassOptIn' | 'mcpServers'>,
     label: string,
     mono: boolean,
     caption?: string,
@@ -199,13 +205,23 @@ function EditForm({
         {textarea('ask', 'Ask', true)}
         {textarea('deny', 'Deny', true)}
       </div>
-      {textarea(
-        'mcpServers',
-        'MCP servers',
-        true,
-        'A JSON object of server name to server, as in .mcp.json without the "mcpServers" key.',
-        errors.mcpServers
-      )}
+      <Field
+        label={<Label htmlFor={mcpEditable ? `${id}-mcpServers` : undefined}>MCP servers</Label>}
+      >
+        {McpServersEditor === undefined ? (
+          <p className="text-xs text-ink-muted">Load the mcp plugin to edit MCP servers</p>
+        ) : (
+          createElement(McpServersEditor, {
+            id: `${id}-mcpServers`,
+            draft: draft.mcpServers,
+            error: errors.mcpServers,
+            onChange: (mcpServers) => {
+              setDraft((current) => ({ ...current, mcpServers }))
+              setErrors({})
+            }
+          })
+        )}
+      </Field>
       {snapshot.bypassAvailable ? (
         <div className="flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1">

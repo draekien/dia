@@ -1,5 +1,7 @@
 # Org screens (#178)
 
+Superseded in part by `docs/designs/mcp-plugin.md`: `mcp-json.ts` moved to `plugins/mcp/servers.ts`, and the MCP servers textarea is the editor the mcp plugin provides; while mcp is not loaded the field shows `Load the mcp plugin to edit MCP servers`.
+
 Scope: module. Adds the org's screens: an **Org** page in the sidebar whose own sub-navigation holds four pages (Dashboard, Org chart, Job titles, Hired agents), and an **Org** page in the Settings dialog (the overall cap). To do that it adds a reporting line between hired agents (`HiredAgent.reportsTo`), three `Org` operations, `renameHire`, `setBypassOverride` and `setReportsTo`, and a `reportsTo` argument to `hire`; the org calls its host entry serves; and a renderer entry for `plugins/org` that adds a page to `PagesSlot` (ADR-0061), a page to `SettingsPagesSlot` and a search-only palette command (ADR-0063). The kernel does not change. Out of scope: objectives, tasks, planning and retro tasks, and the scheduler (#179 and later), a structured MCP server form (#197), model choice per job title.
 
 Vocabulary follows ADR-0064: a hired agent is hired into a **job title**, whose **job description** is appended to its sessions' system prompt. dia hires nobody on first run, and no screen warns about a missing retro.

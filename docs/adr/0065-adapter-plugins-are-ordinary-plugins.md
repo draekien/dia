@@ -64,4 +64,4 @@ This ADR supersedes ADR-0029's category rules: the "Hot reload", "Worktree overr
 
 * deepseek-harness facts were read from the `.repos/deepseek-harness` clone: `registerAdapter` (`packages/llm/llm/src/index.ts:401`), which is removed with the plugin's fiber, and a request bound to the adapter generation that dispatched it (`packages/llm/llm/README.md:129`).
 * The session-scope facts were read at commit `b778e2e`: `openSession` returns `Effect<AgentSession, never, Scope>` (`src/host/session/agent-backend.ts`), and `SessionFactory.start` runs it in the pane's scope (`src/host/services/pane-supervisor.ts`).
-* Follow-up: an `mcp` plugin that owns MCP server configuration, imported by `org` and `claude-code`.
+* Follow-up: an `mcp` plugin that owns MCP server configuration, imported by `org` and `claude-code`, is ADR-0066 (`docs/designs/mcp-plugin.md`).

@@ -1,6 +1,6 @@
 {
   "name": "org",
-  "api": "0.0.29",
+  "api": "0.0.30",
   "category": "feature",
   "host": "host.ts",
   "renderer": "renderer.ts",

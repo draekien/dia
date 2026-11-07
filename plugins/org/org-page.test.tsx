@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 // @effect-diagnostics newPromise:off -- the skeleton test holds the read open with a Promise that never resolves.
-import { AgentName } from '@dia/plugin'
+import { AgentName, type PluginServices, type PluginSetup } from '@dia/plugin'
 import { callHost, openSettings, toast } from '@dia/renderer-plugin'
+import { McpServersEditorKey, type McpServersEditorProps } from '@dia-plugin/mcp/editor'
+import type { McpServersDraft } from '@dia-plugin/mcp/servers'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Atom } from 'effect/reactivity'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { startRendererRegistry } from '../../src/renderer/src/lib/renderer-registry.fake'
 import { ReadOrg } from './calls'
 import {
   HiredAgent,
@@ -42,8 +45,24 @@ beforeAll(() => {
   window.HTMLElement.prototype.hasPointerCapture = () => false
   window.HTMLElement.prototype.releasePointerCapture = () => {}
 })
-beforeEach(() => {
+const StubMcpServersEditor = ({ id, draft, onChange, error }: McpServersEditorProps) => (
+  <>
+    <textarea
+      id={id}
+      value={draft}
+      aria-invalid={error !== undefined}
+      onChange={(event) => onChange(event.target.value as McpServersDraft)}
+    />
+    {error === undefined ? null : <p>{error}</p>}
+  </>
+)
+
+const mcp: PluginSetup<PluginServices> = (services) =>
+  services.provide(McpServersEditorKey, StubMcpServersEditor)
+
+beforeEach(async () => {
   vi.spyOn(toast, 'add').mockImplementation(() => '')
+  await startRendererRegistry({ mcp })
 })
 afterEach(() => {
   cleanup()
@@ -389,6 +408,43 @@ describe('Job titles', () => {
 
     expect(host.sent).toEqual([])
     expect(screen.getByLabelText('MCP servers').getAttribute('aria-invalid')).toBe('true')
+  })
+
+  it('saves edited MCP servers with stdio defaults filled', async () => {
+    const host = installHost(snapshotOf())
+    await showReviewer(host)
+
+    type('MCP servers', '{ "files": { "command": "npx" } }')
+    await click('Save')
+
+    expect(host.sent).toEqual([
+      [
+        'EditJobTitle',
+        {
+          jobTitleId: REVIEWER.id,
+          edit: { mcpServers: { files: { type: 'stdio', command: 'npx', args: [], env: {} } } }
+        }
+      ]
+    ])
+  })
+
+  it('shows a hint for MCP servers and still saves other fields while mcp is not loaded', async () => {
+    await startRendererRegistry({})
+    const host = installHost(snapshotOf())
+    await showReviewer(host)
+
+    type('Job description', 'Reviews every change.')
+    await click('Save')
+
+    expect([screen.queryByText('Load the mcp plugin to edit MCP servers'), host.sent]).toEqual([
+      expect.anything(),
+      [
+        [
+          'EditJobTitle',
+          { jobTitleId: REVIEWER.id, edit: { jobDescription: 'Reviews every change.' } }
+        ]
+      ]
+    ])
   })
 
   it('shows This job title was removed when an edit finds it gone', async () => {
