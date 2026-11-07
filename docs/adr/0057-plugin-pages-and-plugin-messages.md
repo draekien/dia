@@ -1,5 +1,5 @@
 ---
-status: "accepted, amended by ADR-0061"
+status: "accepted, amended by ADR-0061 and ADR-0068"
 date: 2026-11-07
 decision-makers: William Pei
 ---
@@ -32,7 +32,7 @@ Chosen options: "a kernel page list" and "one generic `CallPlugin` RPC", because
 | Adding a page | `addPage(ctx, { id, label, icon, order, component })` from `@dia/renderer-plugin` adds the page for the lifetime of the plugin's scope; its key is the plugin name and `id` |
 | Sidebar | `plugins/agent-overview` lists `usePages()` under the Meta group, sorted by `order`, hidden while a search or filter applies |
 | View | `View` gains `PageView { plugin, id }`; `viewOf` shows the open page before the New agent form and the visible tab. `actions.openPage` opens it; selecting a tab, New agent, a different visible tab, or the page's removal (unload or reload) closes it |
-| Declaring a call | `Rpc.make(tag, { payload, success, error })` in a module both entries import; a struct `payload`, never a stream |
+| Declaring a call | `Rpc.make(tag, { payload, success, error })` in a module both entries import; a struct `payload`, never a stream (amended by ADR-0068: a streaming call is declared with `stream: true`) |
 | Serving | `ctx.serve(rpc, handler)` on the host context, for the lifetime of the scope it runs in. The handler is provided through the plugin registry under a private key, so withdrawal, `whenProvided` scoping and leases (ADR-0055) come from the registry |
 | Calling | `callHost(ctx, rpc, payload)` from `@dia/renderer-plugin` calls the host entry of the plugin named `ctx.name` only |
 | Wire | `DiaRpcs` gains the query `CallPlugin { plugin, tag, payload }`; values are encoded with the call's own schemas. Errors: `PluginNotServing`, `PluginCallInvalid`, and the handler's own error |
