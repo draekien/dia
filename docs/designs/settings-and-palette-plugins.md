@@ -21,7 +21,7 @@ Move the Settings dialog and the command palette out of the kernel into plugins,
 | `CommandsSlot` | `command-palette.commands` | `plugins/command-palette/slots.ts` | The palette's groups and items | `CommandEntry { id, order, group, label, icon?: ComponentType<{ readonly className?: string }>, keywords?, searchOnly?, run: () => void }`; an entry with `searchOnly: true` is listed only while the query is not empty |
 | `AdapterPanelsSlot` | `adapters.panels` | `plugins/adapters/slots.ts` | The Adapters page's selected adapter | `AdapterPanel { id, order, label, component: ComponentType, statusLine: ComponentType }`; `id` is the name of the adapter plugin the panel configures; `order` is unused because adapter rows follow `usePluginList` |
 
-`SettingsPageProps` is `{ readonly requestedSection: string | undefined; readonly lastSection: string | undefined; readonly onSectionShown: (section: { readonly id: string; readonly label: string } | undefined) => void }`. `requestedSection` is the section the page should show: the `section` of the location the dialog was opened with, replaced by each `id` the page reports through `onSectionShown`, and set to `undefined` when the dialog opens on this page with a location that has no `section`. `lastSection` is the `id` this page last reported. A page calls `onSectionShown` whenever the section it shows changes; a row click calls it directly. These mirror today's `AdapterSettings` props `requested` and `lastViewed`.
+`SettingsPageProps` is `{ readonly requestedSection: string | undefined; readonly lastSection: string | undefined; readonly onSectionShown: (section: SettingsSection | undefined) => void }`, where `SettingsSection` is `{ readonly id: string; readonly label: string }`; `plugins/settings/slots.ts` exports both. `requestedSection` is the section the page should show: the `section` of the location the dialog was opened with, replaced by each `id` the page reports through `onSectionShown`, and set to `undefined` when the dialog opens on this page with a location that has no `section`. `lastSection` is the `id` this page last reported. A page calls `onSectionShown` whenever the section it shows changes; a row click calls it directly. These mirror today's `AdapterSettings` props `requested` and `lastViewed`.
 
 `icon` uses the type of `Page.icon` in `plugins/layout/slots.ts`. No entry type declares `key`: `useList` returns each entry with `key: { plugin, id }` (`ListEntryFields` reserves `key?: never`).
 
@@ -45,8 +45,8 @@ Each `slots.ts` imports only `@dia/plugin` (`ListSlot`) and type-only `react`, a
 
 `@dia/renderer-plugin` (`src/renderer/src/plugin-api.ts`) adds, and nothing else:
 
-- Values: `AboutDialog`, `SettingsSectionHeading`, `SettingsRow`, `useTheme`, `TranscriptWidthToggle`, `usageLimitResumeAtom`, `usePlugins`, `usePluginList`, `useActivities`, `formatWhen`, `pluginStatusLabel`, `CREATE_PERMISSION_MODE_OPTIONS`, `CLAUDE_CODE_SETTINGS`, `OPEN_SETTINGS_EVENT`, `OPEN_COMMAND_PALETTE_EVENT`, and `export *` from `ui/command`, `ui/skeleton` and `ui/toggle-group`.
-- Types: `SettingsLocation`, `OverrideRejection`, `ModelCatalog`, `AdapterStatusJson`.
+- Values: `PluginBoundary`, `PluginFailed`, `openCommandPalette`, `AboutDialog`, `SettingsSectionHeading`, `SettingsRow`, `useTheme`, `TranscriptWidthToggle`, `usageLimitResumeAtom`, `usePlugins`, `usePluginList`, `useActivities`, `formatWhen`, `pluginStatusLabel`, `CREATE_PERMISSION_MODE_OPTIONS`, `CLAUDE_CODE_SETTINGS`, `OPEN_SETTINGS_EVENT`, `OPEN_COMMAND_PALETTE_EVENT`, and `export *` from `ui/command`, `ui/empty`, `ui/skeleton` and `ui/toggle-group`.
+- Types: `PluginFallback`, `SettingsLocation`, `OverrideRejection`, `ModelCatalog`, `AdapterStatusJson`.
 
 Already exported and unchanged: `openSettings`, `sendModeAtom`, `cn`, the thinking-level and permission-mode helpers, `PermissionModeItems`, `useAdapterStatus`, `useModelCatalog`, `useModelPreferences`, `Select*`, `Tooltip*`, `Button`, `Sidebar*`. `plugin-api.test.ts` must still pass.
 
@@ -102,7 +102,7 @@ Moved tests:
 - Each item's cmdk `value` is its `label` and its cmdk `keywords` are the entry's `keywords`; the React key is `plugin/id`.
 - Groups are shown in the order of the lowest `order` among each group's visible items; items within a group by `order`. A group with no visible item renders no heading.
 - Selecting an item closes the palette, logs `Effect.logDebug` with the entry key, then calls `run`.
-- The `about` dialog entry is `AboutHost`, which renders `AboutDialog` and opens on `OPEN_ABOUT_EVENT`, a constant in `plugins/command-palette/open-about.ts` that the plugin does not export.
+- The `about` dialog entry is `AboutHost` (`plugins/command-palette/about-host.tsx`), which renders `AboutDialog` and opens when `openAbout()` from the same file dispatches its window event. The `About dia` command runs `openAbout`.
 
 ### Adapters page
 
@@ -119,28 +119,30 @@ Kernel, exported through `@dia/renderer-plugin`:
 
 | Export | Contract |
 | --- | --- |
-| `PluginBoundary({ plugin, at, resetKey, fallback, children })` (`components/plugin-boundary.tsx`) | Renders `children`. When a descendant throws while rendering, it renders `fallback` (default `null`) and logs `Effect.logError('A plugin component failed to render', { plugin, at, error, componentStack })`. It renders `children` again when `resetKey` changes, so a plugin that reloads with a new component is shown again. `plugin` is the supplying plugin's name; `at` is the slot name. |
-| `PluginFailed({ plugin })` (`components/plugin-failed.tsx`) | The shadcn `Empty` block: `EmptyMedia variant="icon"` with `TriangleAlertIcon`, `EmptyTitle` "The {plugin} plugin failed to show this", `EmptyDescription` "See the developer console for the error." |
+| `PluginBoundary({ plugin, at, resetKey, fallback, children })` (`components/plugin-boundary.tsx`) | Renders `children`. When a descendant throws while rendering, it renders `fallback(error, retry)` (nothing when `fallback` is omitted) and logs `Effect.logError('A plugin component failed to render', { plugin, at, error, componentStack })`. It renders `children` again when the fallback calls `retry`, or when `resetKey` changes, so a plugin that reloads with a new component is shown again. `plugin` is the supplying plugin's name; `at` is the slot name. |
+| `PluginFailed({ plugin, error, onRetry, size })` (`components/plugin-failed.tsx`) | The shadcn `Empty` block. `size: 'area'` (default): an error-red `TriangleAlertIcon` tile, the title "The {plugin} plugin failed to show this", the error (`name: message`) in mono on a secondary surface, clamped to two lines, then an outline `Try again` and a ghost `Open Plugins` (`openSettings({ plugin: 'settings', id: 'plugins' })`). `size: 'card'`: one caption line with a small error-red icon, the error in mono truncated to one line, and a link `Try again`. The variants use `cva`. |
 | `ui/empty` | Added with `pnpm dlx shadcn@latest add empty`; exported with `export *`. |
 
 Sites (`resetKey` is the component drawn):
 
 | Site | Component | `fallback` |
 | --- | --- | --- |
-| `Slot` (`lib/slots.ts`): `root`, `sidebar`, `main`, `main.header`, `main.tab` | the filling component | `<PluginFailed />`, except `main.header`: `null` |
-| `Layout`: open page (`layout.tsx:132`) | `Page.component` | `<PluginFailed />` |
-| `Layout`: `DialogsSlot` | `DialogEntry.component` | `null` |
-| `agent-overview`: page nav (`agent-overview.tsx:183`) | `Page.icon` | `null` |
-| `SessionRail` (`components/session-rail.tsx:115`) | `RailCard.component` | `<PluginFailed />` |
-| Settings dialog: nav and selected page | `SettingsPage.icon`, `SettingsPage.component` | `null`, `<PluginFailed />` |
-| Adapters page | `AdapterPanel.component`, `AdapterPanel.statusLine` | `<PluginFailed />`, `null` |
-| Palette | `CommandEntry.icon` | `null` |
+| `Slot` (`lib/slots.tsx`): `root`, `sidebar`, `main`, `main.header`, `main.tab` | the filling component | `PluginFailed`, except `main.header`: nothing |
+| `Layout`: open page (`layout.tsx:132`) | `Page.component` | `PluginFailed` |
+| `Layout`: `DialogsSlot` | `DialogEntry.component` | nothing |
+| `agent-overview`: page nav (`agent-overview.tsx:183`) | `Page.icon` | nothing |
+| `SessionRail` (`components/session-rail.tsx:115`) | `RailCard.component` | `PluginFailed size="card"` |
+| Settings dialog: nav and selected page | `SettingsPage.icon`, `SettingsPage.component` | nothing, `PluginFailed` |
+| Adapters page | `AdapterPanel.component`, `AdapterPanel.statusLine` | `PluginFailed`, nothing |
+| Palette | `CommandEntry.icon` | nothing |
 
 `fillSlot` provides `{ plugin: ctx.name, component }` under the slot key instead of the bare component, so `Slot` can name the plugin. Only `Slot` reads that value. A kernel default (`setKernelDefault`) renders with `plugin` set to `kernel`.
 
 A `CommandEntry.run` that throws is caught by the palette, which logs `Effect.logError('A palette command failed', { plugin, id, error })` and calls `toast.add({ title: 'The {plugin} plugin's command failed', description: String(error), type: 'error' })`, as `plugins/agent-overview/agent-row.tsx:122` reports a failure.
 
 Renderer logs go to the DevTools console; no code forwards them to `main.log`.
+
+Tests that need a renderer registry start one with `startRendererRegistry(setups)` (`src/renderer/src/lib/renderer-registry.fake.ts`).
 
 ## Callers
 
