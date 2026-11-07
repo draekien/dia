@@ -4,8 +4,7 @@ const StringMap = Schema.Record(Schema.String, Schema.String)
 
 /**
  * A stdio, http or sse MCP server a session gets in addition to its defaults; a subset of the
- * Agent SDK's
- * `McpServerConfig`. `args`, `env` and `headers` are required; empty means none.
+ * Agent SDK's `McpServerConfig`. `args`, `env` and `headers` are required; empty means none.
  */
 export const McpServer = Schema.Union([
   Schema.Struct({

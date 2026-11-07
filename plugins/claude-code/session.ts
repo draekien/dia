@@ -780,14 +780,14 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     appendLength: options.systemPromptAppend.length,
     pluginPaths: options.pluginPaths
   })
-  const { emit, diaTools: tools } = options
+  const { emit, diaTools } = options
   const sessionScope = yield* Scope.Scope
   const services = yield* Effect.context<never>()
   const pendingUserInput = makePendingUserInput()
   const modeController = yield* makePermissionModeController
-  const canUseTool = makeCanUseTool(tools, pendingUserInput, emit, services)
+  const canUseTool = makeCanUseTool(diaTools, pendingUserInput, emit, services)
   const newDiaToolServer = diaToolServerFactory(
-    tools,
+    diaTools,
     pendingUserInput,
     emit,
     yield* Ref.make(0),
