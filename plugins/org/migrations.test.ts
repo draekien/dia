@@ -6,6 +6,7 @@ import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
+import { makeWork } from './work'
 
 const OLD_BUILT_INS = ['planner', 'engineer', 'reviewer', 'researcher', 'retro'] as const
 const oldRoleId = (index: number) => `6f0c1a6e-4b1e-4a52-9a0e-0d6b3f1a000${index + 1}`
@@ -70,7 +71,8 @@ const upgradedLegacyOrg = Effect.gen(function* () {
   yield* legacy.sql`INSERT INTO hired_agents ${legacy.sql.insert(hire('00000000-0000-4000-8000-000000000202', OLD_ENGINEER_ID, 'calm-heron'))}`
   yield* legacy.close
   const sql = yield* openDatabase(filename, orgMigrations)
-  const org = yield* makeOrg.pipe(
+  const org = yield* makeWork(() => Effect.succeed(true)).pipe(
+    Effect.flatMap(({ openTasksOf }) => makeOrg(openTasksOf)),
     Effect.provideService(SqlClient.SqlClient, sql),
     Effect.provide(NodeCrypto.layer)
   )

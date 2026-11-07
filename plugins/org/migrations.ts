@@ -144,17 +144,64 @@ const addReportsTo = Effect.gen(function* () {
   yield* Effect.logInfo('Added reporting lines to hired agents')
 })
 
+const addJobTitleModel = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql.unsafe('ALTER TABLE job_titles ADD COLUMN model TEXT')
+  yield* sql.unsafe(
+    "ALTER TABLE job_titles ADD COLUMN thinking_level TEXT NOT NULL DEFAULT 'medium'"
+  )
+  yield* Effect.logInfo('Added a model and thinking level to job titles')
+})
+
+const createObjectivesAndTasks = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql.unsafe(`CREATE TABLE org_events (
+    seq          INTEGER PRIMARY KEY AUTOINCREMENT,
+    at           INTEGER NOT NULL,
+    objective_id TEXT    NOT NULL,
+    task_id      TEXT,
+    event        TEXT    NOT NULL
+  )`)
+  yield* sql.unsafe(`CREATE TABLE objectives (
+    objective_id TEXT    PRIMARY KEY,
+    project_id   TEXT    NOT NULL,
+    title        TEXT    NOT NULL,
+    description  TEXT    NOT NULL,
+    priority     TEXT    NOT NULL CHECK (priority IN ('high', 'normal', 'low')),
+    assignee     TEXT    REFERENCES hired_agents(hire_id) ON DELETE SET NULL,
+    state        TEXT    NOT NULL CHECK (state IN ('open', 'completed')),
+    created_at   INTEGER NOT NULL
+  )`)
+  yield* sql.unsafe(`CREATE TABLE tasks (
+    task_id        TEXT    PRIMARY KEY,
+    objective_id   TEXT    NOT NULL REFERENCES objectives,
+    parent_task_id TEXT    REFERENCES tasks(task_id),
+    kind           TEXT    NOT NULL CHECK (kind IN ('work', 'retro')),
+    title          TEXT    NOT NULL,
+    state          TEXT    NOT NULL CHECK (state IN ('waiting', 'running', 'finished', 'completed')),
+    assignee       TEXT    REFERENCES hired_agents(hire_id) ON DELETE SET NULL,
+    pane_id        TEXT    NOT NULL UNIQUE,
+    session_id     TEXT,
+    created_at     INTEGER NOT NULL
+  )`)
+  yield* Effect.logInfo('Created the objectives, tasks and org events tables')
+})
+
 /**
  * The `org` plugin's migrations, passed to `ctx.database`. `1_create_org_tables` creates the
  * first roles, hired agents and org settings tables; `2_seed_org` inserts the default overall cap;
  * `3_job_titles` replaces the roles table with the job titles table, inserts the built-in job
  * titles, keeps the user's copies and their hires, and drops the five old built-in roles and their
- * hires; `4_add_reports_to` adds each hired agent's `reportsTo`, null for existing hires. Each runs
- * once per database.
+ * hires; `4_add_reports_to` adds each hired agent's `reportsTo`, null for existing hires;
+ * `5_job_title_model` adds each job title's model, null, and thinking level, `medium`;
+ * `6_objectives_tasks` creates the objectives and tasks tables and the event table that records
+ * their changes. Each runs once per database.
  */
 export const orgMigrations: PluginMigrations = {
   '1_create_org_tables': createTables,
   '2_seed_org': seedOrgSettings,
   '3_job_titles': moveToJobTitles,
-  '4_add_reports_to': addReportsTo
+  '4_add_reports_to': addReportsTo,
+  '5_job_title_model': addJobTitleModel,
+  '6_objectives_tasks': createObjectivesAndTasks
 }

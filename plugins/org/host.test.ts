@@ -2,7 +2,7 @@ import { type AgentBackend, AgentBackendKey, type HostPluginContext } from '@dia
 import { assert, describe, it } from '@effect/vitest'
 import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
-import { Effect, Option, Schema } from 'effect'
+import { Effect, Option, Schema, Stream } from 'effect'
 import { callPlugin, servePluginCall } from '../../src/host/plugins/plugin-messages'
 import { makePluginDatabase } from '../../src/host/services/database'
 import { BUILT_IN_JOB_TITLES, DEFAULT_OVERALL_CAP } from './built-in-job-titles'
@@ -64,6 +64,7 @@ const startOrg = (backend: Option.Option<AgentBackend>) =>
         return Effect.succeed({
           ...services,
           database: makePluginDatabase(':memory:', services.name),
+          workspace: Stream.make({ projects: [], visibleTab: null }),
           serve
         } as unknown as HostPluginContext)
       }

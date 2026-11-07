@@ -19,7 +19,9 @@ const snapshot: OrgSnapshot = {
       skills: [],
       permissions: { allow: [], ask: [], deny: [] },
       mcpServers: {},
-      bypassOptIn: false
+      bypassOptIn: false,
+      model: null,
+      thinkingLevel: 'medium'
     })
   ],
   hiredAgents: [

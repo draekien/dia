@@ -42,7 +42,9 @@ const jobTitle = (n: number, name: string, builtIn: BuiltInJobTitle | null): Job
     skills: [],
     permissions: { allow: [], ask: [], deny: [] },
     mcpServers: {},
-    bypassOptIn: false
+    bypassOptIn: false,
+    model: null,
+    thinkingLevel: 'medium'
   })
 
 /** The seven built-in job titles and one copy, `Reviewer`, the last entry. */

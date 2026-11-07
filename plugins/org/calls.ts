@@ -1,10 +1,11 @@
-import { AgentName } from '@dia/plugin'
+import { AgentName, PermissionResponse } from '@dia/plugin'
 import { Schema } from 'effect'
 import { Rpc } from 'effect/rpc'
 import {
   BuiltInJobTitleDeleted,
   BuiltInJobTitleRenamed,
   HiredAgent,
+  HireHasOpenTasks,
   HireId,
   HireNameTaken,
   HireNotFound,
@@ -16,9 +17,22 @@ import {
   JobTitleName,
   JobTitleNameTaken,
   JobTitleNotFound,
+  LiveWork,
+  NewObjective,
+  NewTask,
+  Objective,
+  ObjectiveNotFound,
   OrgSettings,
   OverallCap,
-  ReportsToCycle
+  PermissionNotPending,
+  ProjectNotFound,
+  ReportsToCycle,
+  Task,
+  TaskId,
+  TaskNotFound,
+  TaskNotRunning,
+  TaskNotWaiting,
+  WorkSnapshot
 } from './domain'
 
 /**
@@ -78,10 +92,10 @@ export const Hire = Rpc.make('Hire', {
   error: Schema.Union([JobTitleNotFound, JobTitleDisabled, HireNameTaken, HireNotFound])
 })
 
-/** Dismisses hired agent `hireId`. */
+/** Dismisses hired agent `hireId`; refused while it is assigned to a task not yet completed. */
 export const Dismiss = Rpc.make('Dismiss', {
   payload: { hireId: HireId },
-  error: HireNotFound
+  error: Schema.Union([HireNotFound, HireHasOpenTasks])
 })
 
 /** Names hired agent `hireId` `name`, or clears its name when null. */
@@ -109,4 +123,55 @@ export const SetReportsTo = Rpc.make('SetReportsTo', {
 export const SetOverallCap = Rpc.make('SetOverallCap', {
   payload: { cap: OverallCap },
   success: OrgSettings
+})
+
+/**
+ * Every objective and task, the permission requests hired agents wait on, and how many slots of
+ * the overall cap are held now.
+ */
+export const WorkView = Schema.Struct({
+  ...WorkSnapshot.fields,
+  ...LiveWork.fields
+})
+export type WorkView = typeof WorkView.Type
+
+/** Reads the {@link WorkView}. */
+export const ReadWork = Rpc.make('ReadWork', { payload: {}, success: WorkView })
+
+/** Creates an open objective; a repeated call with the same `id` returns the stored objective. */
+export const CreateObjective = Rpc.make('CreateObjective', {
+  payload: { objective: NewObjective },
+  success: Objective,
+  error: Schema.Union([ProjectNotFound, HireNotFound])
+})
+
+/** Creates a waiting `work` task; a repeated call with the same `id` returns the stored task. */
+export const CreateTask = Rpc.make('CreateTask', {
+  payload: { task: NewTask },
+  success: Task,
+  error: Schema.Union([ObjectiveNotFound, TaskNotFound, HireNotFound])
+})
+
+/** Gives waiting task `taskId` to hired agent `hireId`, or takes it from its agent when null. */
+export const AssignTask = Rpc.make('AssignTask', {
+  payload: { taskId: TaskId, hireId: Schema.NullOr(HireId) },
+  success: Task,
+  error: Schema.Union([TaskNotFound, TaskNotWaiting, HireNotFound])
+})
+
+/**
+ * Finishes running task `taskId` and stops its session: a `work` task becomes `finished` and gets
+ * a retro task; a `retro` task, and the task it reviews, become `completed`.
+ */
+export const FinishTask = Rpc.make('FinishTask', {
+  payload: { taskId: TaskId },
+  success: Task,
+  error: Schema.Union([TaskNotFound, TaskNotRunning])
+})
+
+/** Answers permission request `requestId` that task `taskId`'s hired agent waits on. */
+export const AnswerPermission = Rpc.make('AnswerPermission', {
+  payload: { taskId: TaskId, requestId: Schema.String, response: PermissionResponse },
+  success: Schema.Void,
+  error: PermissionNotPending
 })
