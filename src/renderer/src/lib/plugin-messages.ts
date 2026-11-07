@@ -40,7 +40,7 @@ export const callHost = <R extends Rpc.AnyWithProps>(
       Effect.map((decoded) => decoded as PluginCallError)
     )
     yield* Effect.logDebug('A plugin host call failed', { plugin, tag, reason: failure._tag })
-    if (failure._tag !== 'PluginCallFailed') return yield* Effect.fail(failure)
+    if (failure._tag !== 'PluginCallFailed') return yield* failure
     const error = yield* decodeJson(rpc.errorSchema, failure.error)
     return yield* Effect.fail(error as Rpc.Error<R>)
   })
