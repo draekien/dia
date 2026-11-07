@@ -16,6 +16,7 @@ import {
   ModelPreferencesChanged,
   ModelsChanged,
   MoveProject,
+  type PluginCallResultJson,
   RemoveQueuedMessage,
   RenameTab,
   ResolvePermission,
@@ -33,6 +34,7 @@ import {
   WorkspaceChanged
 } from '@shared/ipc/contract'
 import type { DiaRpcs, EventFrame, PaneEventFrame } from '@shared/ipc/rpc'
+import { PluginCallError } from '@shared/plugin/messages'
 import { Duration, Effect, Ref, Schedule, Schema, Stream } from 'effect'
 import type { RpcClient, RpcClientError } from 'effect/rpc'
 
@@ -100,6 +102,7 @@ const encodeRefusal = Schema.encodeSync(RegisterProjectError)
 const encodeSnapshot = Schema.encodeSync(ModelCatalogSnapshot)
 const encodeActivities = Schema.encodeSync(Schema.Array(ActivityInfo))
 const encodeActivityNotFound = Schema.encodeSync(ActivityNotFound)
+const encodePluginCallError = Schema.encodeSync(PluginCallError)
 const encodeAdapterStatus = Schema.encodeSync(AdapterStatusSnapshot)
 const encodeLastVisibleModel = Schema.encodeSync(LastVisibleModel)
 
@@ -220,7 +223,18 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       setOverride: (name, directory) =>
         query((client) => client.SetPluginOverride({ name, directory })),
       clearOverride: (name) => query((client) => client.ClearPluginOverride({ name })),
-      onStatusChanged: (listener) => subscribeTo('PluginStatusChanged', listener)
+      onStatusChanged: (listener) => subscribeTo('PluginStatusChanged', listener),
+      call: (plugin, tag, payload) =>
+        query((client) =>
+          client.CallPlugin({ plugin, tag, payload }).pipe(
+            Effect.map((value): PluginCallResultJson => ({ _tag: 'Success', value })),
+            Effect.catchTag(
+              ['PluginNotServing', 'PluginCallInvalid', 'PluginCallFailed'],
+              (error): Effect.Effect<PluginCallResultJson> =>
+                Effect.succeed({ _tag: 'Failure', error: encodePluginCallError(error) })
+            )
+          )
+        )
     },
     models: {
       get: () => query((client) => client.GetModels().pipe(Effect.map(encodeSnapshot))),

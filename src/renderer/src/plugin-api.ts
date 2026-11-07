@@ -27,8 +27,10 @@ import {
   workspaceAtom
 } from './lib/workspace-atoms'
 
+export { PluginCallInvalid, PluginNotServing } from '@shared/plugin/messages'
 export { SessionRail } from './components/session-rail'
 export * from './components/ui/sidebar'
+export { callHost } from './lib/plugin-messages'
 export {
   addRailCard,
   type RailCard,

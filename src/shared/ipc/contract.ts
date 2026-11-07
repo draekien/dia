@@ -38,6 +38,7 @@ import { UpdateStatus } from '../domain/update'
 import { Uuid } from '../domain/uuid'
 import type { ImportResolution, UnreadableRow, WorkspaceProblem } from '../domain/workspace-problem'
 import { type PluginInfo, PluginName, type PluginOverrideResult } from '../plugin/manifest'
+import type { PluginCallError } from '../plugin/messages'
 import type { PaneEventFrame } from './rpc'
 
 /**
@@ -716,7 +717,18 @@ export interface PluginApi {
    * function that stops listening.
    */
   onStatusChanged(listener: (event: PluginStatusChanged) => void): () => void
+  /**
+   * Runs the handler plugin `plugin`'s `host` entry serves for `tag` with `payload`, a value
+   * encoded with the call's payload schema. Resolves the encoded result, or the failure as plain
+   * data; a renderer plugin calls it through `callHost`, never directly.
+   */
+  call(plugin: string, tag: string, payload: unknown): Promise<PluginCallResultJson>
 }
+
+/** The outcome of `window.dia.plugins.call`, as plain data. */
+export type PluginCallResultJson =
+  | { readonly _tag: 'Success'; readonly value: unknown }
+  | { readonly _tag: 'Failure'; readonly error: typeof PluginCallError.Encoded }
 
 /** A {@link ModelCatalogSnapshot} as plain data, with dates as ISO strings, as `window.dia.models` delivers it. */
 export type ModelCatalogSnapshotJson = typeof ModelCatalogSnapshot.Encoded
