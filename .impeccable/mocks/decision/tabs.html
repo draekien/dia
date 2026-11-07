@@ -1,0 +1,41 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Org — Roles and Hired agents tabs</title>
+<style>
+:root{--bg:oklch(0.16 0.008 255);--surface:oklch(0.21 0.01 255);--ink:oklch(0.94 0.005 255);--muted:oklch(0.64 0.015 255);--border:oklch(0.32 0.012 255);--primary:oklch(0.62 0.14 265);--secondary:oklch(0.4 0.02 250);--amber:oklch(0.75 0.16 70)}
+*{box-sizing:border-box;margin:0}
+body{width:1440px;height:900px;overflow:hidden;background:var(--bg);color:var(--ink);font:14px/1.45 ui-sans-serif,system-ui,sans-serif;display:flex}
+.side{width:288px;border-right:1px solid var(--border);padding:8px}
+.side .wm{height:32px;display:flex;align-items:center;padding:0 8px;font-weight:600}
+.side .row{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:6px;color:var(--muted)}
+.side .sel{background:color-mix(in oklch,var(--primary) 22%,transparent);color:var(--ink);font-weight:500}
+main{flex:1;display:flex;flex-direction:column}
+.hdr{height:32px;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;color:var(--muted);font-size:13px}
+.col{width:760px;margin:0 auto;padding:24px 0;display:flex;flex-direction:column;gap:18px}
+.warn{display:flex;align-items:center;gap:10px;font-size:13px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--amber)}
+.tabs{display:inline-flex;gap:2px;padding:3px;border-radius:8px;background:var(--surface);align-self:flex-start}
+.tabs span{padding:4px 12px;border-radius:6px;font-size:13px;color:var(--muted)}
+.tabs .on{background:var(--secondary);color:var(--ink)}
+.list{border-top:1px solid var(--border)}
+.r{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid var(--border)}
+.r .n{flex:1}.cap{font-size:12px;color:var(--muted)}
+.sw{width:28px;height:16px;border-radius:8px;background:var(--primary);position:relative}
+.sw:after{content:"";position:absolute;right:2px;top:2px;width:12px;height:12px;border-radius:50%;background:#fff}
+.sw.off{background:var(--secondary)}.sw.off:after{left:2px;right:auto}
+.btn{border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:12px}
+.menu{color:var(--muted);width:20px;text-align:center}
+</style></head><body>
+<div class="side"><div class="wm">dia</div><div class="row">■ Meta</div><div class="row sel">👥 Org</div><div class="row">✋ Example</div></div>
+<main><div class="hdr">Org</div>
+<div class="col">
+<div class="warn"><span class="dot"></span>No retro is hired. Finished tasks wait until one is.<span class="btn">Hire retro</span></div>
+<div class="tabs"><span class="on">Roles 6</span><span>Hired agents 3</span></div>
+<div class="list">
+<div class="r"><span class="n">Planner <span class="cap">Built in</span></span><span class="cap">No hires</span><span class="sw"></span><span class="menu">⋯</span></div>
+<div class="r"><span class="n">Engineer <span class="cap">Built in</span></span><span class="cap">2 hired</span><span class="sw"></span><span class="menu">⋯</span></div>
+<div class="r"><span class="n">Reviewer <span class="cap">Built in</span></span><span class="cap">No hires</span><span class="sw"></span><span class="menu">⋯</span></div>
+<div class="r"><span class="n">Researcher <span class="cap">Built in</span></span><span class="cap">No hires</span><span class="sw off"></span><span class="menu">⋯</span></div>
+<div class="r"><span class="n">Retro <span class="cap">Built in</span></span><span class="cap">No hires</span><span class="sw"></span><span class="menu">⋯</span></div>
+<div class="r"><span class="n">Strict engineer</span><span class="cap">1 hired</span><span class="sw"></span><span class="menu">⋯</span></div>
+</div>
+</div></main></body></html>
