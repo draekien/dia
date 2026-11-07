@@ -9,7 +9,7 @@ Lets a plugin declare a service's type and a runtime check in a module it export
 3. `ctx.inject(OrgService)` has type `Option<Org>`, and providing a value that is not an `Org` under `OrgService` is a compile error (`tsc` on `plugins/example` and `plugins/org`; a `// @ts-expect-error` line in a test).
 4. When a provider gives a value that fails the key's guard, `inject` returns `none`, `use` returns `none` without running its callback, `whenProvided` does not run its setup, and a warning names the key and the provider.
 5. No file under `src/` declares `Org` or names `ORG_KEY` (a test greps for it).
-6. String keys behave as before: existing registry and seam tests pass unchanged.
+6. String keys behave as before: the existing tests pass with no assertion changed. Only the test fakes of `inject` and `provide` change, because the overloads give an unannotated fake parameter no type.
 
 Out of scope: `AGENT_BACKEND_KEY`, `META_REPO_KEY`, `WORKTREES_KEY` keep string keys and their seams (deferred to #201, comment 6701958969); the org domain schemas in `src/shared/domain/org.ts` stay (#201).
 
@@ -87,11 +87,11 @@ The registry stores every service under the key's name, as now. A string key and
 - A `Watcher` stores `keys: ReadonlyArray<string>` (the names) and `guards: ReadonlyMap<string, (value: unknown) => boolean>` keyed by name (`() => true` for a string key), both built in `whenProvided`. `closeDependantsOf`, `closeWatcher`, the `ServiceNotDeclaredError` message and every log keep reading `keys` as names.
 - `PluginInfo.provides`, `entry.provided`, `dependantsOf` and `closeDependantsOf` are unchanged: they see names only. `ServiceKeyTakenError.key`, `ServiceKeyReservedError.key`, `ServiceNotDeclaredError.key` and `ServiceWithdrawnError.key` carry the name.
 
-`src/shared/plugin/plugin-registry.fake.ts`'s `fakeUse` takes `key: AnyServiceKey`, reads `read(nameOf(key))`, runs `key.is` for a `ServiceKey` (returning `None` when it fails), and is cast to `PluginRegistry['use']`; its callers (`meta-repo-seam.test.ts`, `worktrees-seam.test.ts`, `pane-supervisor.test.ts`, `pane-workspace.test.ts`) are unchanged. `nameOf` and `passes` are exported from a new internal module `src/shared/plugin/service-key.ts` that the registry and the fake import.
+`src/shared/plugin/plugin-registry.fake.ts`'s `fakeUse` takes `key: AnyServiceKey`, reads `read(nameOf(key))`, runs `key.is` for a `ServiceKey` (returning `None` when it fails), with no cast; its callers (`meta-repo-seam.test.ts`, `worktrees-seam.test.ts`, `pane-supervisor.test.ts`, `pane-workspace.test.ts`) are unchanged. `fakeInject` is its `inject` counterpart; the six test files that faked `inject` inline (`adapter-status-feed`, `model-catalog-feed`, `pane-supervisor`, `transcript-reader`, `agent-backend`, `tab-content`) build their fake with it, and `slots.test.tsx`'s fake `provide` takes `key: AnyServiceKey`. `nameOf` and `passes` are exported from a new internal module `src/shared/plugin/service-key.ts` that the registry and the fakes import.
 
 `nameOf = (key: AnyServiceKey) => typeof key === 'string' ? key : key.name`; neither it nor `passes` is exported from `@dia/plugin`.
 
-An arrow assigned to an overloaded property gets no contextual parameter types, so `servicesFor`'s `provide` and `inject`, and the registry's `inject` and `use`, are written with `key: AnyServiceKey` parameters, compute `const name = nameOf(key)` once, and are assigned through a cast to the overloaded type (`as PluginServices['provide']`, and so on).
+An arrow assigned to an overloaded property gets no contextual parameter types, so `servicesFor`'s `provide` and `inject`, and the registry's `inject` and `use`, are written with `key: AnyServiceKey` parameters, and compute `const name = nameOf(key)` once. They need no cast: a function whose parameter is `AnyServiceKey` is assignable to both overloads, while one whose parameter is `string` is not (TS2322), because it cannot receive the `ServiceKey<A>` the first overload passes. Cordis keys are always strings (`.repos/cordis/packages/core/src/reflect.ts:8-13`), so its implementations take `name: string`; dia's typed key is an object, so its implementations take `AnyServiceKey`.
 
 ## Part 3: `plugins/org`
 
@@ -156,7 +156,7 @@ No `inject` entry is added to `plugins/example/plugin.json`: a listed key the re
 | 3 | `src/shared/plugin/service-key.test.ts`: `expectTypeOf(ctx.inject(OrgLikeKey))`, `// @ts-expect-error` on `provide(key, wrongValue)`; `pnpm typecheck` covers the real plugins |
 | 4 | `plugin-registry.test.ts`: a provider gives a value failing the key's `is`; `inject` returns `none`; `use` returns `none` with `f` not called, and closing the provider straight afterwards completes under `TestClock` without advancing it and without logging "Waiting for calls that use the plugin's services" (`drainLeases` waits only when a lease is active); a watcher's setup does not run; the warning carries `key` and `provider`; a guard that throws behaves as failing; a running typed watcher closes before its provider closes |
 | 5 | new `src/host/plugins/org-ownership.test.ts`: no `.ts`/`.tsx` file under `src/` matches `ORG_KEY` or `(interface|type) Org\b` |
-| 6 | the existing suites, unchanged |
+| 6 | the existing suites, with only their `inject`/`provide` fakes changed |
 
 ## ADR
 

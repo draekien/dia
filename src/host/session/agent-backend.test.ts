@@ -1,5 +1,6 @@
 import { assert, describe, it } from '@effect/vitest'
 import { type PaneConfig, SessionId } from '@shared/domain/pane'
+import { fakeInject } from '@shared/plugin/plugin-registry.fake'
 import { Effect, Option, Stream } from 'effect'
 import {
   AGENT_BACKEND_KEY,
@@ -11,7 +12,7 @@ import {
 } from './agent-backend'
 
 const registryProviding = (value: Option.Option<unknown>) => ({
-  inject: (key: string) => Effect.succeed(key === AGENT_BACKEND_KEY ? value : Option.none())
+  inject: fakeInject((key) => (key === AGENT_BACKEND_KEY ? value : Option.none()))
 })
 
 const config: PaneConfig = {

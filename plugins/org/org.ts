@@ -4,7 +4,6 @@ import {
   HiredAgent,
   HireNameTaken,
   HireNotFound,
-  type Org,
   OrgSettings,
   Role,
   RoleDisabled,
@@ -16,6 +15,7 @@ import type { HireId, OverallCap, RoleEdit, RoleId, RoleName } from '@shared/dom
 import type { AgentName } from '@shared/domain/project'
 import { Clock, Crypto, Effect, Schema } from 'effect'
 import { SqlClient, type SqlError } from 'effect/sql'
+import type { Org } from './service'
 
 const RoleRow = Schema.Struct({
   role_id: Role.fields.id,
@@ -96,7 +96,7 @@ const decodeSettingsRows = rowsDecoder(SettingsRow)
 
 /**
  * Builds the {@link Org} over the `org` plugin's database, which `orgMigrations` must already have
- * migrated. Call it once in the plugin's setup and provide the result under `ORG_KEY`.
+ * migrated. Call it once in the plugin's setup and provide the result under `OrgService`.
  */
 export const makeOrg = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient

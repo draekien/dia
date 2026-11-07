@@ -9,7 +9,7 @@ import {
 import { SignedOut, UsageLimit, type UsageLimitResume } from '@shared/domain/parking'
 import { type IpcEvent, PaneRewindFailed } from '@shared/ipc/contract'
 import { WORKTREES_KEY } from '@shared/plugin/api'
-import { fakeUse } from '@shared/plugin/plugin-registry.fake'
+import { fakeInject, fakeUse } from '@shared/plugin/plugin-registry.fake'
 import { Deferred, Effect, Fiber, Layer, Option, Result, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
 import { HostPlugins } from '../plugins/host-plugins'
@@ -88,7 +88,7 @@ const pluginsWith = (inject: (key: string) => Option.Option<unknown>) =>
     changes: Stream.empty,
     load: () => Effect.die(new Error('load should not be called in these tests')),
     unload: () => Effect.die(new Error('unload should not be called in these tests')),
-    inject: (key) => Effect.succeed(inject(key)),
+    inject: fakeInject(inject),
     use: fakeUse(inject)
   })
 

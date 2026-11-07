@@ -6,6 +6,7 @@ import {
   ModelsUnavailable
 } from '@shared/domain/model'
 import { type IpcEvent, ModelsChanged } from '@shared/ipc/contract'
+import { fakeInject } from '@shared/plugin/plugin-registry.fake'
 import { DateTime, Effect, Layer, Option, PubSub, Stream, SubscriptionRef } from 'effect'
 import { TestClock } from 'effect/testing'
 import { HostPlugins } from '../plugins/host-plugins'
@@ -73,8 +74,9 @@ const feedWith = (
         load: () => Effect.die(new Error('load should not be called in these tests')),
         unload: () => Effect.die(new Error('unload should not be called in these tests')),
         use: () => Effect.die(new Error('use should not be called in these tests')),
-        inject: (key) =>
-          Effect.sync(() => (key === AGENT_BACKEND_KEY ? provider.current() : Option.none()))
+        inject: fakeInject((key) =>
+          key === AGENT_BACKEND_KEY ? provider.current() : Option.none()
+        )
       }),
       Layer.succeed(EventHub)({
         publish: (event) =>

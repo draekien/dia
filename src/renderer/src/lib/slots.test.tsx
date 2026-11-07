@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-import type { PluginServices } from '@shared/plugin/api'
+
+import type { AnyServiceKey, PluginServices } from '@shared/plugin/api'
 import type { PluginRegistry } from '@shared/plugin/plugin-registry'
+import { fakeInject } from '@shared/plugin/plugin-registry.fake'
+import { nameOf } from '@shared/plugin/service-key'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { Duration, Effect, Exit, Option, PubSub, Scope, Stream } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -15,20 +18,22 @@ const makeFakeRegistry = Effect.gen(function* () {
     load: () => Effect.die(new Error('not used')),
     unload: () => Effect.die(new Error('not used')),
     use: () => Effect.die(new Error('use should not be called in these tests')),
-    inject: (key) => Effect.sync(() => Option.fromNullishOr(values.get(key))),
+    inject: fakeInject((key) => Option.fromNullishOr(values.get(key))),
     changes: Stream.fromPubSub(changed)
   }
   const services = (name: string): PluginServices => ({
     name,
     inject: registry.inject,
     whenProvided: () => Effect.void,
-    provide: (key, value) =>
+    provide: (key: AnyServiceKey, value: unknown) =>
       Effect.acquireRelease(
-        Effect.sync(() => values.set(key, value)).pipe(
-          Effect.andThen(PubSub.publish(changed, key))
+        Effect.sync(() => values.set(nameOf(key), value)).pipe(
+          Effect.andThen(PubSub.publish(changed, nameOf(key)))
         ),
         () =>
-          Effect.sync(() => values.delete(key)).pipe(Effect.andThen(PubSub.publish(changed, key)))
+          Effect.sync(() => values.delete(nameOf(key))).pipe(
+            Effect.andThen(PubSub.publish(changed, nameOf(key)))
+          )
       )
   })
   return { registry, services }

@@ -39,6 +39,7 @@ export {
   OverallCap,
   Role,
   RoleDisabled,
+  RoleEdit,
   RoleHasHires,
   RoleId,
   RoleName,
@@ -47,11 +48,11 @@ export {
 } from '../shared/domain/org'
 export { SessionId } from '../shared/domain/pane'
 export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
+export { AgentName } from '../shared/domain/project'
 export type { RoleSessionOptions } from '../shared/domain/role-session'
 export * from '../shared/plugin/api'
 export { PluginCallInvalid, PluginNotServing } from '../shared/plugin/messages'
 export type { MetaRepo } from './services/meta-repo-seam'
-export type { Org } from './services/org-seam'
 export {
   type GitOps,
   type IncludedFileFailure,
