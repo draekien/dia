@@ -17,6 +17,10 @@ export interface ListEntryKey {
   readonly id: string
 }
 
+/** Whether `a` and `b` name the same entry: the same adding plugin and the same `id`. */
+export const sameEntryKey = (a: ListEntryKey, b: ListEntryKey): boolean =>
+  a.plugin === b.plugin && a.id === b.id
+
 /** An entry as a list holds it: the fields its plugin added, plus the {@link ListEntryKey}. */
 export type ListEntry<E extends ListEntryFields> = Omit<E, 'key'> & { readonly key: ListEntryKey }
 

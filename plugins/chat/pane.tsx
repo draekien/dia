@@ -639,6 +639,10 @@ const messageActivitySignature = (state: PaneChatState): string => {
   return `${state.messages.length}:${last?.parts.length ?? 0}:${detail}:${state.turnStatus ?? ''}`
 }
 
+function ChatSessionRail({ paneId }: { readonly paneId: string }) {
+  return <SessionRail paneId={paneId} cards={useList(RailCardsSlot)} />
+}
+
 function PaneChat({
   paneId,
   cwd,
@@ -723,7 +727,6 @@ function PaneChat({
   const historyLoaded = AsyncResult.isSuccess(useAtomValue(paneChatAtom(paneId)))
   const emptySession = chat.messages.length === 0 && !isLoading && chat.queued.length === 0
   const contextCardShown = useRailCardShown(CONTEXT_CARD_KEY)
-  const railCards = useList(RailCardsSlot)
   const compactFailed = chat.compactionFailure?.reason === 'failed'
   const contextUsage = summary?.contextUsage
   const contextWarning =
@@ -826,7 +829,7 @@ function PaneChat({
       shiftLeft={emptySession ? 0 : rail.shiftLeft}
       centred={historyLoaded ? emptySession : null}
       onWidthChange={setPaneWidth}
-      aside={emptySession ? null : <SessionRail paneId={paneId} cards={railCards} />}
+      aside={emptySession ? null : <ChatSessionRail paneId={paneId} />}
       lead={
         projectName === undefined ? null : (
           <p className="mb-3 flex justify-center gap-2 text-muted-foreground text-xs">

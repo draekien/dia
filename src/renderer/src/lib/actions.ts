@@ -1,6 +1,7 @@
 import type { PaneId } from '@shared/domain/pane'
 import { type AgentName, ProjectId, type RegisterProjectRefusal } from '@shared/domain/project'
 import type { RemovalProgress } from '@shared/domain/project-removal'
+import { sameEntryKey } from '@shared/plugin/list-slot'
 import { Effect, Option } from 'effect'
 import { openSettings } from '../components/settings/open-settings'
 import { openNewAgentForm, type PageKey } from './view'
@@ -59,9 +60,7 @@ export const openPage = (key: PageKey): void => {
  */
 export const closePage = (key: PageKey): void => {
   const open = appRegistry.get(openPageAtom)
-  if (Option.isNone(open) || open.value.key.plugin !== key.plugin || open.value.key.id !== key.id) {
-    return
-  }
+  if (Option.isNone(open) || !sameEntryKey(open.value.key, key)) return
   log('Closing a page', { plugin: key.plugin, id: key.id })
   appRegistry.set(openPageAtom, Option.none())
   if (open.value.shownBefore !== null) window.dia.selectTab(open.value.shownBefore)

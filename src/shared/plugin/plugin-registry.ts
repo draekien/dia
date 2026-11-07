@@ -162,7 +162,7 @@ export interface PluginRegistry {
   readonly unload: (name: string) => Effect.Effect<PluginInfo>
   readonly inject: {
     <S>(key: ServiceKey<S>): Effect.Effect<Option.Option<S>>
-    (key: string): Effect.Effect<Option.Option<unknown>>
+    (key: AnyServiceKey): Effect.Effect<Option.Option<unknown>>
   }
   readonly use: {
     <S, A, E, R>(

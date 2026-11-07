@@ -10,7 +10,8 @@ import type {
   ListSlot,
   ListSlotService
 } from '@shared/plugin/list-slot'
-import { Effect, type Scope } from 'effect'
+import { sameEntryKey } from '@shared/plugin/list-slot'
+import { Effect, Order, type Scope } from 'effect'
 import { useSyncExternalStore } from 'react'
 import { useProvided } from './slots'
 
@@ -29,13 +30,11 @@ const internalsOf = <E extends ListEntryFields>(
   service: ListSlotService<E>
 ): ListInternals<E> | undefined => internals.get(service) as ListInternals<E> | undefined
 
-const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
-
-const byPosition = <E extends ListEntryFields>(a: ListEntry<E>, b: ListEntry<E>): number =>
-  a.order - b.order || compareText(a.key.plugin, b.key.plugin) || compareText(a.key.id, b.key.id)
-
-const sameKey = <E extends ListEntryFields>(a: ListEntry<E>, b: ListEntry<E>): boolean =>
-  a.key.plugin === b.key.plugin && a.key.id === b.key.id
+const byPosition: Order.Order<ListEntry<ListEntryFields>> = Order.combineAll([
+  Order.mapInput(Order.Number, (entry: ListEntry<ListEntryFields>) => entry.order),
+  Order.mapInput(Order.String, (entry: ListEntry<ListEntryFields>) => entry.key.plugin),
+  Order.mapInput(Order.String, (entry: ListEntry<ListEntryFields>) => entry.key.id)
+])
 
 const publish = <E extends ListEntryFields>(
   list: ListInternals<E>,
@@ -47,10 +46,12 @@ const publish = <E extends ListEntryFields>(
 
 const put = <E extends ListEntryFields>(list: ListInternals<E>, entry: ListEntry<E>) =>
   Effect.gen(function* () {
-    const replaces = list.entries.some((existing) => sameKey(existing, entry))
+    const replaces = list.entries.some((existing) => sameEntryKey(existing.key, entry.key))
     publish(
       list,
-      [...list.entries.filter((existing) => !sameKey(existing, entry)), entry].sort(byPosition)
+      [...list.entries.filter((existing) => !sameEntryKey(existing.key, entry.key)), entry].sort(
+        byPosition
+      )
     )
     yield* Effect.logDebug(replaces ? 'Replaced a list entry' : 'Added a list entry', {
       slot: list.name,
@@ -138,7 +139,7 @@ const noListeners = (): (() => void) => () => {}
  * declared or withdrawn. Pass a key that stays the same between renders.
  */
 export function useList<E extends ListEntryFields>(slot: ListSlot<E>): ReadonlyArray<ListEntry<E>> {
-  const service = useProvided(slot) as ListSlotService<E> | undefined
+  const service = useProvided(slot)
   const list = service === undefined ? undefined : internalsOf(service)
   return useSyncExternalStore(list?.subscribe ?? noListeners, () => list?.entries ?? EMPTY)
 }

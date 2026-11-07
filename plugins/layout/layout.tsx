@@ -1,3 +1,4 @@
+import { sameEntryKey } from '@dia/plugin'
 import {
   AccountBanner,
   Breadcrumb,
@@ -75,7 +76,7 @@ function useOpenPage() {
   const view = useView()
   const pages = useList(PagesSlot)
   if (view?._tag !== 'PageView') return undefined
-  return pages.find((page) => page.key.plugin === view.plugin && page.key.id === view.id)
+  return pages.find((page) => sameEntryKey(page.key, view))
 }
 
 /**

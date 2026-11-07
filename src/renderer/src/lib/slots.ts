@@ -1,6 +1,7 @@
 import type {
   AnyServiceKey,
   PluginServices,
+  ServiceKey,
   ServiceKeyReservedError,
   ServiceKeyTakenError
 } from '@shared/plugin/api'
@@ -68,8 +69,7 @@ export const fillSlot = (
 const providedValue = (key: AnyServiceKey): unknown => {
   if (pluginRegistry === undefined) return undefined
   // biome-ignore lint/plugin/noRegistryInject: a renderer reads a provided value again each time `changes` emits its key (ADR-0055)
-  const read = typeof key === 'string' ? pluginRegistry.inject(key) : pluginRegistry.inject(key)
-  return Option.getOrUndefined(Effect.runSync(read as Effect.Effect<Option.Option<unknown>>))
+  return Option.getOrUndefined(Effect.runSync(pluginRegistry.inject(key)))
 }
 
 /**
@@ -77,6 +77,8 @@ const providedValue = (key: AnyServiceKey): unknown => {
  * `ServiceKey`'s check. Re-renders when a plugin starts or stops providing it. Pass a key that
  * stays the same between renders.
  */
+export function useProvided<S>(key: ServiceKey<S>): S | undefined
+export function useProvided(key: string): unknown
 export function useProvided(key: AnyServiceKey): unknown {
   const [value, setValue] = useState(() => providedValue(key))
   useEffect(() => {
