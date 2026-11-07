@@ -1,8 +1,8 @@
 import type { PluginMigrations } from '@dia/plugin'
-import { Clock, Effect, Schema } from 'effect'
+import { Effect, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
-import { BUILT_IN_ROLES, DEFAULT_OVERALL_CAP, FIRST_RETRO_HIRE_ID } from './built-in-roles'
-import { Role } from './domain'
+import { BUILT_IN_JOB_TITLES, DEFAULT_OVERALL_CAP } from './built-in-job-titles'
+import { JOB_TITLE_NAME_MAX_LENGTH, JobTitle } from './domain'
 
 const createTables = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
@@ -30,43 +30,121 @@ const createTables = Effect.gen(function* () {
   )`)
 })
 
-const encodePermissions = Schema.encodeSync(Schema.fromJsonString(Role.fields.permissions))
-
-const seedOrg = Effect.gen(function* () {
+const seedOrgSettings = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
-  for (const role of BUILT_IN_ROLES) {
-    yield* sql`INSERT INTO roles ${sql.insert({
-      role_id: role.id,
-      name: role.kind,
-      built_in: role.kind,
+  yield* sql`INSERT INTO org_settings ${sql.insert({ singleton: 1, overall_cap: DEFAULT_OVERALL_CAP })}`
+})
+
+const encodePermissions = Schema.encodeSync(Schema.fromJsonString(JobTitle.fields.permissions))
+
+interface CopiedRole {
+  readonly role_id: string
+  readonly name: string
+  readonly enabled: number
+  readonly instructions: string
+  readonly skills: string
+  readonly permissions: string
+  readonly mcp_servers: string
+  readonly bypass_opt_in: number
+}
+
+const freeName = (name: string, taken: ReadonlySet<string>): string => {
+  for (let n = 1; ; n += 1) {
+    const suffix = n === 1 ? ' (old)' : ` (old ${n})`
+    const candidate = `${name.slice(0, JOB_TITLE_NAME_MAX_LENGTH - suffix.length)}${suffix}`
+    if (!taken.has(candidate.toLowerCase())) return candidate
+  }
+}
+
+const namesForCopies = (copies: ReadonlyArray<CopiedRole>): ReadonlyMap<string, string> => {
+  const builtInNames = new Set(BUILT_IN_JOB_TITLES.map((seed) => seed.name.toLowerCase()))
+  const clashes = copies.filter((copy) => builtInNames.has(copy.name.toLowerCase()))
+  const taken = new Set([
+    ...builtInNames,
+    ...copies.filter((copy) => !clashes.includes(copy)).map((copy) => copy.name.toLowerCase())
+  ])
+  const names = new Map(copies.map((copy) => [copy.role_id, copy.name]))
+  for (const copy of clashes) {
+    const name = freeName(copy.name, taken)
+    taken.add(name.toLowerCase())
+    names.set(copy.role_id, name)
+  }
+  return names
+}
+
+const moveToJobTitles = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql.unsafe(`CREATE TABLE job_titles (
+    job_title_id    TEXT    PRIMARY KEY,
+    name            TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+    built_in        TEXT    UNIQUE CHECK (built_in IN ('product-manager', 'software-engineer', 'quality-engineer', 'business-analyst', 'ui-ux', 'team-lead', 'technical-lead')),
+    enabled         INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+    job_description TEXT    NOT NULL,
+    skills          TEXT    NOT NULL,
+    permissions     TEXT    NOT NULL,
+    mcp_servers     TEXT    NOT NULL,
+    bypass_opt_in   INTEGER NOT NULL CHECK (bypass_opt_in IN (0, 1))
+  )`)
+  for (const seed of BUILT_IN_JOB_TITLES) {
+    yield* sql`INSERT INTO job_titles ${sql.insert({
+      job_title_id: seed.id,
+      name: seed.name,
+      built_in: seed.kind,
       enabled: 1,
-      instructions: role.instructions,
+      job_description: seed.jobDescription,
       skills: '[]',
-      permissions: encodePermissions({ allow: [], ask: [], deny: role.deny }),
+      permissions: encodePermissions({ allow: [], ask: [], deny: seed.deny }),
       mcp_servers: '{}',
       bypass_opt_in: 0
     })}`
   }
-  const retro = BUILT_IN_ROLES.find((role) => role.kind === 'retro')
-  if (retro !== undefined) {
-    yield* sql`INSERT INTO hired_agents ${sql.insert({
-      hire_id: FIRST_RETRO_HIRE_ID,
-      role_id: retro.id,
-      name: null,
-      bypass_override: null,
-      hired_at: yield* Clock.currentTimeMillis
+  const copies = yield* sql<CopiedRole>`SELECT role_id, name, enabled, instructions, skills,
+    permissions, mcp_servers, bypass_opt_in FROM roles WHERE built_in IS NULL ORDER BY rowid`
+  const names = namesForCopies(copies)
+  for (const copy of copies) {
+    yield* sql`INSERT INTO job_titles ${sql.insert({
+      job_title_id: copy.role_id,
+      name: names.get(copy.role_id) ?? copy.name,
+      built_in: null,
+      enabled: copy.enabled,
+      job_description: copy.instructions,
+      skills: copy.skills,
+      permissions: copy.permissions,
+      mcp_servers: copy.mcp_servers,
+      bypass_opt_in: copy.bypass_opt_in
     })}`
   }
-  yield* sql`INSERT INTO org_settings ${sql.insert({ singleton: 1, overall_cap: DEFAULT_OVERALL_CAP })}`
+  yield* sql.unsafe(`CREATE TABLE hired_agents_next (
+    hire_id         TEXT    PRIMARY KEY,
+    job_title_id    TEXT    NOT NULL REFERENCES job_titles,
+    name            TEXT    UNIQUE COLLATE NOCASE,
+    bypass_override INTEGER CHECK (bypass_override IN (0, 1)),
+    hired_at        INTEGER NOT NULL
+  )`)
+  yield* sql.unsafe(`INSERT INTO hired_agents_next (hire_id, job_title_id, name, bypass_override, hired_at)
+    SELECT hire_id, role_id, name, bypass_override, hired_at FROM hired_agents
+    WHERE role_id IN (SELECT role_id FROM roles WHERE built_in IS NULL) ORDER BY rowid`)
+  const [counts] = yield* sql<{ readonly all: number; readonly copied: number }>`SELECT
+    (SELECT count(*) FROM hired_agents) AS "all", (SELECT count(*) FROM hired_agents_next) AS copied`
+  yield* sql.unsafe('DROP TABLE hired_agents')
+  yield* sql.unsafe('DROP TABLE roles')
+  yield* sql.unsafe('ALTER TABLE hired_agents_next RENAME TO hired_agents')
+  yield* Effect.logInfo('Moved the org to job titles', {
+    copiedJobTitles: copies.length,
+    copiedHires: counts?.copied ?? 0,
+    droppedHires: (counts?.all ?? 0) - (counts?.copied ?? 0)
+  })
 })
 
 /**
  * The `org` plugin's migrations, passed to `ctx.database`. `1_create_org_tables` creates the
- * roles, hired agents and org settings tables; `2_seed_org` inserts the built-in roles, one
- * unnamed `retro` hire and the default overall cap. Each runs once per database, so a dismissed
- * first `retro` is never hired again.
+ * first roles, hired agents and org settings tables; `2_seed_org` inserts the default overall cap;
+ * `3_job_titles` replaces the roles table with the job titles table, inserts the built-in job
+ * titles, keeps the user's copies and their hires, and drops the five old built-in roles and their
+ * hires. Each runs once per database.
  */
 export const orgMigrations: PluginMigrations = {
   '1_create_org_tables': createTables,
-  '2_seed_org': seedOrg
+  '2_seed_org': seedOrgSettings,
+  '3_job_titles': moveToJobTitles
 }

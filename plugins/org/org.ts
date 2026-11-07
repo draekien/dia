@@ -2,40 +2,40 @@ import type { AgentName } from '@dia/plugin'
 import { Clock, Crypto, Effect, Schema } from 'effect'
 import { SqlClient, type SqlError } from 'effect/sql'
 import {
-  BuiltInRoleDeleted,
-  BuiltInRoleRenamed,
+  BuiltInJobTitleDeleted,
+  BuiltInJobTitleRenamed,
   HiredAgent,
   type HireId,
   HireNameTaken,
   HireNotFound,
+  JobTitle,
+  JobTitleDisabled,
+  type JobTitleEdit,
+  JobTitleHasHires,
+  type JobTitleId,
+  type JobTitleName,
+  JobTitleNameTaken,
+  JobTitleNotFound,
   OrgSettings,
-  type OverallCap,
-  Role,
-  RoleDisabled,
-  type RoleEdit,
-  RoleHasHires,
-  type RoleId,
-  type RoleName,
-  RoleNameTaken,
-  RoleNotFound
+  type OverallCap
 } from './domain'
 import type { Org } from './service'
 
-const RoleRow = Schema.Struct({
-  role_id: Role.fields.id,
-  name: Role.fields.name,
-  built_in: Role.fields.builtIn,
+const JobTitleRow = Schema.Struct({
+  job_title_id: JobTitle.fields.id,
+  name: JobTitle.fields.name,
+  built_in: JobTitle.fields.builtIn,
   enabled: Schema.BooleanFromBit,
-  instructions: Role.fields.instructions,
-  skills: Schema.fromJsonString(Role.fields.skills),
-  permissions: Schema.fromJsonString(Role.fields.permissions),
-  mcp_servers: Schema.fromJsonString(Role.fields.mcpServers),
+  job_description: JobTitle.fields.jobDescription,
+  skills: Schema.fromJsonString(JobTitle.fields.skills),
+  permissions: Schema.fromJsonString(JobTitle.fields.permissions),
+  mcp_servers: Schema.fromJsonString(JobTitle.fields.mcpServers),
   bypass_opt_in: Schema.BooleanFromBit
 })
 
 const HireRow = Schema.Struct({
   hire_id: HiredAgent.fields.id,
-  role_id: HiredAgent.fields.roleId,
+  job_title_id: HiredAgent.fields.jobTitleId,
   name: HiredAgent.fields.name,
   bypass_override: Schema.NullOr(Schema.BooleanFromBit),
   hired_at: HiredAgent.fields.hiredAt
@@ -43,36 +43,36 @@ const HireRow = Schema.Struct({
 
 const SettingsRow = Schema.Struct({ overall_cap: OrgSettings.fields.overallCap })
 
-const toRole = (row: typeof RoleRow.Type): Role => ({
-  id: row.role_id,
+const toJobTitle = (row: typeof JobTitleRow.Type): JobTitle => ({
+  id: row.job_title_id,
   name: row.name,
   builtIn: row.built_in,
   enabled: row.enabled,
-  instructions: row.instructions,
+  jobDescription: row.job_description,
   skills: row.skills,
   permissions: row.permissions,
   mcpServers: row.mcp_servers,
   bypassOptIn: row.bypass_opt_in
 })
 
-const encodeRoleRow = Schema.encodeSync(RoleRow)
+const encodeJobTitleRow = Schema.encodeSync(JobTitleRow)
 
-const toRoleRow = (role: Role) =>
-  encodeRoleRow({
-    role_id: role.id,
-    name: role.name,
-    built_in: role.builtIn,
-    enabled: role.enabled,
-    instructions: role.instructions,
-    skills: role.skills,
-    permissions: role.permissions,
-    mcp_servers: role.mcpServers,
-    bypass_opt_in: role.bypassOptIn
+const toJobTitleRow = (jobTitle: JobTitle) =>
+  encodeJobTitleRow({
+    job_title_id: jobTitle.id,
+    name: jobTitle.name,
+    built_in: jobTitle.builtIn,
+    enabled: jobTitle.enabled,
+    job_description: jobTitle.jobDescription,
+    skills: jobTitle.skills,
+    permissions: jobTitle.permissions,
+    mcp_servers: jobTitle.mcpServers,
+    bypass_opt_in: jobTitle.bypassOptIn
   })
 
 const toHiredAgent = (row: typeof HireRow.Type): HiredAgent => ({
   id: row.hire_id,
-  roleId: row.role_id,
+  jobTitleId: row.job_title_id,
   name: row.name,
   bypassOverride: row.bypass_override,
   hiredAt: row.hired_at
@@ -83,7 +83,7 @@ const encodeHireRow = Schema.encodeSync(HireRow)
 const toHireRow = (agent: HiredAgent) =>
   encodeHireRow({
     hire_id: agent.id,
-    role_id: agent.roleId,
+    job_title_id: agent.jobTitleId,
     name: agent.name,
     bypass_override: agent.bypassOverride,
     hired_at: agent.hiredAt
@@ -94,7 +94,7 @@ const rowsDecoder =
   (rows: ReadonlyArray<unknown>) =>
     Schema.decodeUnknownEffect(Schema.Array(schema))(rows).pipe(Effect.orDie)
 
-const decodeRoleRows = rowsDecoder(RoleRow)
+const decodeJobTitleRows = rowsDecoder(JobTitleRow)
 const decodeHireRows = rowsDecoder(HireRow)
 const decodeSettingsRows = rowsDecoder(SettingsRow)
 
@@ -111,30 +111,35 @@ export const makeOrg = Effect.gen(function* () {
 
   const newId = crypto.randomUUIDv4().pipe(Effect.orDie)
 
-  const findRole = Effect.fnUntraced(function* (roleId: RoleId) {
-    const rows = yield* sql`SELECT * FROM roles WHERE role_id = ${roleId}`
-    const [row] = yield* decodeRoleRows(rows)
+  const findJobTitle = Effect.fnUntraced(function* (jobTitleId: JobTitleId) {
+    const rows = yield* sql`SELECT * FROM job_titles WHERE job_title_id = ${jobTitleId}`
+    const [row] = yield* decodeJobTitleRows(rows)
     if (row === undefined) {
-      return yield* RoleNotFound.make({ roleId })
+      return yield* JobTitleNotFound.make({ jobTitleId })
     }
-    return toRole(row)
+    return toJobTitle(row)
   })
 
-  const ensureRoleNameFree = Effect.fnUntraced(function* (name: RoleName, exceptId: RoleId | null) {
-    const rows = yield* sql`SELECT 1 FROM roles WHERE name = ${name} AND role_id IS NOT ${exceptId}`
+  const ensureJobTitleNameFree = Effect.fnUntraced(function* (
+    name: JobTitleName,
+    exceptId: JobTitleId | null
+  ) {
+    const rows =
+      yield* sql`SELECT 1 FROM job_titles WHERE name = ${name} AND job_title_id IS NOT ${exceptId}`
     if (rows.length > 0) {
-      return yield* RoleNameTaken.make({ roleName: name })
+      return yield* JobTitleNameTaken.make({ jobTitleName: name })
     }
   })
 
-  const insertRole = (role: Role) => sql`INSERT INTO roles ${sql.insert(toRoleRow(role))}`
+  const insertJobTitle = (jobTitle: JobTitle) =>
+    sql`INSERT INTO job_titles ${sql.insert(toJobTitleRow(jobTitle))}`
 
-  const updateRole = (role: Role) =>
-    sql`UPDATE roles SET ${sql.update(toRoleRow(role), ['role_id'])} WHERE role_id = ${role.id}`
+  const updateJobTitle = (jobTitle: JobTitle) =>
+    sql`UPDATE job_titles SET ${sql.update(toJobTitleRow(jobTitle), ['job_title_id'])} WHERE job_title_id = ${jobTitle.id}`
 
-  const roles = Effect.gen(function* () {
-    const rows = yield* sql`SELECT * FROM roles ORDER BY rowid`
-    return (yield* decodeRoleRows(rows)).map(toRole)
+  const jobTitles = Effect.gen(function* () {
+    const rows = yield* sql`SELECT * FROM job_titles ORDER BY rowid`
+    return (yield* decodeJobTitleRows(rows)).map(toJobTitle)
   }).pipe(Effect.catchTag('SqlError', Effect.die))
 
   const hiredAgents = Effect.gen(function* () {
@@ -151,89 +156,95 @@ export const makeOrg = Effect.gen(function* () {
     return OrgSettings.make({ overallCap: row.overall_cap })
   }).pipe(Effect.catchTag('SqlError', Effect.die))
 
-  const setRoleEnabled = Effect.fn('Org.setRoleEnabled')(function* (
-    roleId: RoleId,
+  const setJobTitleEnabled = Effect.fn('Org.setJobTitleEnabled')(function* (
+    jobTitleId: JobTitleId,
     enabled: boolean
   ) {
-    const role = yield* transaction(
+    const jobTitle = yield* transaction(
       Effect.gen(function* () {
-        const changed = { ...(yield* findRole(roleId)), enabled }
-        yield* updateRole(changed)
+        const changed = { ...(yield* findJobTitle(jobTitleId)), enabled }
+        yield* updateJobTitle(changed)
         return changed
       })
     )
-    yield* Effect.logInfo('Set role enabled', { roleId, enabled })
-    return role
+    yield* Effect.logInfo('Set job title enabled', { jobTitleId, enabled })
+    return jobTitle
   })
 
-  const copyRole = Effect.fn('Org.copyRole')(function* (roleId: RoleId, name: RoleName) {
-    const id = Role.fields.id.make(yield* newId)
+  const copyJobTitle = Effect.fn('Org.copyJobTitle')(function* (
+    jobTitleId: JobTitleId,
+    name: JobTitleName
+  ) {
+    const id = JobTitle.fields.id.make(yield* newId)
     const copy = yield* transaction(
       Effect.gen(function* () {
-        const source = yield* findRole(roleId)
-        yield* ensureRoleNameFree(name, null)
-        const copied: Role = { ...source, id, name, builtIn: null, enabled: true }
-        yield* insertRole(copied)
+        const source = yield* findJobTitle(jobTitleId)
+        yield* ensureJobTitleNameFree(name, null)
+        const copied: JobTitle = { ...source, id, name, builtIn: null, enabled: true }
+        yield* insertJobTitle(copied)
         return copied
       })
     )
-    yield* Effect.logInfo('Copied role', { roleId, copyId: id })
+    yield* Effect.logInfo('Copied job title', { jobTitleId, copyId: id })
     return copy
   })
 
-  const editRole = Effect.fn('Org.editRole')(function* (roleId: RoleId, edit: RoleEdit) {
-    const role = yield* transaction(
+  const editJobTitle = Effect.fn('Org.editJobTitle')(function* (
+    jobTitleId: JobTitleId,
+    edit: JobTitleEdit
+  ) {
+    const jobTitle = yield* transaction(
       Effect.gen(function* () {
-        const current = yield* findRole(roleId)
+        const current = yield* findJobTitle(jobTitleId)
         if (edit.name !== undefined && edit.name !== current.name) {
           if (current.builtIn !== null) {
-            return yield* BuiltInRoleRenamed.make({ roleId })
+            return yield* BuiltInJobTitleRenamed.make({ jobTitleId })
           }
-          yield* ensureRoleNameFree(edit.name, roleId)
+          yield* ensureJobTitleNameFree(edit.name, jobTitleId)
         }
-        const edited: Role = {
+        const edited: JobTitle = {
           ...current,
           ...edit,
           id: current.id,
           builtIn: current.builtIn,
           enabled: current.enabled
         }
-        yield* updateRole(edited)
+        yield* updateJobTitle(edited)
         return edited
       })
     )
-    yield* Effect.logInfo('Edited role', { roleId, fields: Object.keys(edit) })
-    return role
+    yield* Effect.logInfo('Edited job title', { jobTitleId, fields: Object.keys(edit) })
+    return jobTitle
   })
 
-  const deleteRole = Effect.fn('Org.deleteRole')(function* (roleId: RoleId) {
+  const deleteJobTitle = Effect.fn('Org.deleteJobTitle')(function* (jobTitleId: JobTitleId) {
     yield* transaction(
       Effect.gen(function* () {
-        const role = yield* findRole(roleId)
-        if (role.builtIn !== null) {
-          return yield* BuiltInRoleDeleted.make({ roleId })
+        const jobTitle = yield* findJobTitle(jobTitleId)
+        if (jobTitle.builtIn !== null) {
+          return yield* BuiltInJobTitleDeleted.make({ jobTitleId })
         }
         const hires = yield* sql<{
           readonly hires: number
-        }>`SELECT count(*) AS hires FROM hired_agents WHERE role_id = ${roleId}`
+        }>`SELECT count(*) AS hires FROM hired_agents WHERE job_title_id = ${jobTitleId}`
         const count = hires[0]?.hires ?? 0
         if (count > 0) {
-          return yield* RoleHasHires.make({ roleId, hires: count })
+          return yield* JobTitleHasHires.make({ jobTitleId, hires: count })
         }
-        yield* sql`DELETE FROM roles WHERE role_id = ${roleId}`
+        yield* sql`DELETE FROM job_titles WHERE job_title_id = ${jobTitleId}`
       })
     )
-    yield* Effect.logInfo('Deleted role', { roleId })
+    yield* Effect.logInfo('Deleted job title', { jobTitleId })
   })
 
-  const hire = Effect.fn('Org.hire')(function* (roleId: RoleId, name: AgentName | null) {
+  const hire = Effect.fn('Org.hire')(function* (jobTitleId: JobTitleId, name: AgentName | null) {
     const id = HiredAgent.fields.id.make(yield* newId)
     const hiredAt = yield* Clock.currentTimeMillis
     const hired = yield* transaction(
       Effect.gen(function* () {
-        const role = yield* findRole(roleId)
-        if (!role.enabled) {
-          return yield* RoleDisabled.make({ roleId })
+        const jobTitle = yield* findJobTitle(jobTitleId)
+        if (!jobTitle.enabled) {
+          return yield* JobTitleDisabled.make({ jobTitleId })
         }
         if (name !== null) {
           const taken = yield* sql`SELECT 1 FROM hired_agents WHERE name = ${name}`
@@ -241,12 +252,12 @@ export const makeOrg = Effect.gen(function* () {
             return yield* HireNameTaken.make({ agentName: name })
           }
         }
-        const agent = HiredAgent.make({ id, roleId, name, bypassOverride: null, hiredAt })
+        const agent = HiredAgent.make({ id, jobTitleId, name, bypassOverride: null, hiredAt })
         yield* sql`INSERT INTO hired_agents ${sql.insert(toHireRow(agent))}`
         return agent
       })
     )
-    yield* Effect.logInfo('Hired agent', { roleId, hireId: id })
+    yield* Effect.logInfo('Hired agent', { jobTitleId, hireId: id })
     return hired
   })
 
@@ -270,13 +281,13 @@ export const makeOrg = Effect.gen(function* () {
   })
 
   return {
-    roles,
+    jobTitles,
     hiredAgents,
     settings,
-    setRoleEnabled,
-    copyRole,
-    editRole,
-    deleteRole,
+    setJobTitleEnabled,
+    copyJobTitle,
+    editJobTitle,
+    deleteJobTitle,
     hire,
     dismiss,
     setOverallCap

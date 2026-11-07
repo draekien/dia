@@ -14,11 +14,11 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       Effect.provide(NodeCrypto.layer)
     )
     yield* ctx.provide(OrgService, org)
-    const roles = yield* org.roles
+    const jobTitles = yield* org.jobTitles
     const hires = yield* org.hiredAgents
     yield* Effect.logInfo('Org service provided', {
       plugin: ctx.name,
-      roles: roles.length,
+      jobTitles: jobTitles.length,
       hiredAgents: hires.length
     })
   })
