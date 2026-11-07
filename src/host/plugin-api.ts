@@ -32,10 +32,10 @@ export { type PaneId, SessionId } from '../shared/domain/pane'
 export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
 export { AgentName } from '../shared/domain/project'
 export {
+  McpServer,
   PermissionRules,
-  RoleMcpServer,
-  type RoleSessionOptions
-} from '../shared/domain/role-session'
+  type SessionToolOptions
+} from '../shared/domain/session-tools'
 export { Uuid } from '../shared/domain/uuid'
 export * from '../shared/plugin/api'
 export * from '../shared/plugin/list-slot'

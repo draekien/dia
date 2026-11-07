@@ -1,5 +1,7 @@
 # Plugin-owned contracts (issue #201)
 
+Superseded in part by `docs/designs/org-job-titles.md` (#209): the org contract names roles as job titles (`JobTitle`, `jobTitles`, `jobTitleId`).
+
 ## Purpose
 
 Move the contracts that only one plugin uses out of the kernel (`src/`) into that plugin, and type the three service keys the Host reads (ADR-0060), without changing what the app does.

@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0064"
 date: 2026-10-28
 decision-makers: William Pei
 ---
@@ -48,6 +48,8 @@ Chosen option: "tiers the user configures per change type, with fixed tiers as t
 ### `propose_change`
 
 `propose_change` replaces `meta_propose` from ADR-0025. It takes the change type, the change, and the tasks or transcripts that motivated it. The retro and meta agents call it. A change made in a git repo, the meta repo or dia, is made on a branch in a new worktree of that repo, as ADR-0025 defines for meta agents.
+
+Amended by ADR-0064: "the retro" is the hired agent running a task's retro task.
 
 A tool an agent builds is a plugin that registers a dia tool, so it follows the tier for plugins.
 

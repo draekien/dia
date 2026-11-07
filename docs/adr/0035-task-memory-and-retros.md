@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0064"
 date: 2026-10-28
 decision-makers: William Pei
 ---
@@ -34,6 +34,8 @@ Chosen options: "a scratchpad per task" and "a retro agent writes from the task'
 ### Retro
 
 A task cannot move to `completed` until a retro has run. The retro is a session of the `retro` role. It reads every transcript saved against the task and the task's scratchpad, and writes long-term memory with `memory_write`. A write applies at once or waits in the decision queue according to the tier the user sets for long-term memory (ADR-0036); the default applies it at once. The retro also cites the memory entries the task's sessions acted on, and can call `propose_change` (ADR-0036).
+
+Amended by ADR-0064: the retro is a retro task, run by the hired agent the user assigns to it, not a session of a `retro` role. A finished task waits until its retro task is assigned and done.
 
 ### Long-term memory
 

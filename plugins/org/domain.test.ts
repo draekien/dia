@@ -1,20 +1,20 @@
 import { Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
-import { OverallCap, ROLE_NAME_MAX_LENGTH, RoleName } from './domain'
+import { JOB_TITLE_NAME_MAX_LENGTH, JobTitleName, OverallCap } from './domain'
 
-const isRoleName = Schema.is(RoleName)
+const isJobTitleName = Schema.is(JobTitleName)
 const isOverallCap = Schema.is(OverallCap)
 
-describe('RoleName', () => {
+describe('JobTitleName', () => {
   it.each([
     ['a one-character name', 'a', true],
-    ['a name at the maximum length', 'r'.repeat(ROLE_NAME_MAX_LENGTH), true],
+    ['a name at the maximum length', 'r'.repeat(JOB_TITLE_NAME_MAX_LENGTH), true],
     ['an empty name', '', false],
-    ['a name one past the maximum length', 'r'.repeat(ROLE_NAME_MAX_LENGTH + 1), false],
+    ['a name one past the maximum length', 'r'.repeat(JOB_TITLE_NAME_MAX_LENGTH + 1), false],
     ['a name with a leading space', ' reviewer', false],
     ['a name with a trailing space', 'reviewer ', false]
   ])('accepts %s: %s', (_case, input, accepted) => {
-    expect(isRoleName(input)).toBe(accepted)
+    expect(isJobTitleName(input)).toBe(accepted)
   })
 })
 

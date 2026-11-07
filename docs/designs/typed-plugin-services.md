@@ -1,5 +1,7 @@
 # Typed plugin services
 
+Superseded in part by `docs/designs/org-job-titles.md` (#209): the `Org` members `roles`, `setRoleEnabled`, `copyRole`, `editRole` and `deleteRole` are `jobTitles`, `setJobTitleEnabled`, `copyJobTitle`, `editJobTitle` and `deleteJobTitle`, `RoleEdit` is `JobTitleEdit`, and the Example greeting ends `· <n> job titles`.
+
 Lets a plugin declare a service's type and a runtime check in a module it exports, so a consumer that imports the key reads the service with that type, and a value that fails the check is treated as not provided. Issue #199.
 
 ## Success criteria

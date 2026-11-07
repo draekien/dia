@@ -15,7 +15,7 @@ import {
   SessionId,
   type ThinkingLevel
 } from '@shared/domain/pane'
-import type { RoleSessionOptions } from '@shared/domain/role-session'
+import type { SessionToolOptions } from '@shared/domain/session-tools'
 import { ServiceKey } from '@shared/plugin/api'
 import type { AdapterContract, PluginRegistry } from '@shared/plugin/plugin-registry'
 import { DateTime, Effect, Option, Predicate, Schema, type Scope, Stream } from 'effect'
@@ -158,17 +158,17 @@ export interface TranscriptTail extends TranscriptInfo {
 /**
  * What a session opens with. `config` chooses the working directory, model and modes; `resume`
  * names the conversation to continue, or is none for a new one; `emit` receives every event the
- * session produces, in order; `tools` are the dia tools offered to the agent, each asked about
- * before it runs; `role` is the role the session runs as, or none for an ad-hoc tab. The
- * {@link SessionAdditions} and `role` apply for the session's whole life, including every restart
- * it performs itself.
+ * session produces, in order; `diaTools` are the dia tools offered to the agent, each asked about
+ * before it runs; `tools` are the permission rules and MCP servers of the hired agent's job title,
+ * or none for an ad-hoc tab. The {@link SessionAdditions} and `tools` apply for the session's whole
+ * life, including every restart it performs itself.
  */
 export interface AgentSessionOptions extends SessionAdditions {
   readonly config: PaneConfig
   readonly resume: Option.Option<SessionId>
   readonly emit: (message: OutboundMessage) => Effect.Effect<void>
-  readonly tools: ReadonlyArray<DiaTool>
-  readonly role: Option.Option<RoleSessionOptions>
+  readonly diaTools: ReadonlyArray<DiaTool>
+  readonly tools: Option.Option<SessionToolOptions>
 }
 
 /**

@@ -17,21 +17,22 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       ),
       Effect.forkScoped
     )
-    const roleCount = yield* Ref.make(Option.none<number>())
+    const jobTitleCount = yield* Ref.make(Option.none<number>())
     yield* ctx.whenProvided([OrgService], ({ org }) =>
       Effect.gen(function* () {
-        const roles = yield* org.roles
-        yield* Ref.set(roleCount, Option.some(roles.length))
-        yield* Effect.addFinalizer(() => Ref.set(roleCount, Option.none()))
-        yield* Effect.logInfo('Example plugin read the org', { roles: roles.length })
+        const jobTitles = yield* org.jobTitles
+        yield* Ref.set(jobTitleCount, Option.some(jobTitles.length))
+        yield* Effect.addFinalizer(() => Ref.set(jobTitleCount, Option.none()))
+        yield* Effect.logInfo('Example plugin read the org', { jobTitles: jobTitles.length })
       })
     )
     yield* ctx.serve(ReadGreeting, () =>
-      Ref.get(roleCount).pipe(
+      Ref.get(jobTitleCount).pipe(
         Effect.map(
           Option.match({
             onNone: () => `Hello from the ${ctx.name} plugin's host entry`,
-            onSome: (count) => `Hello from the ${ctx.name} plugin's host entry · ${count} roles`
+            onSome: (count) =>
+              `Hello from the ${ctx.name} plugin's host entry · ${count} job titles`
           })
         )
       )

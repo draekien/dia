@@ -1,5 +1,7 @@
 # Org roles and hiring (#177)
 
+Superseded in part by `docs/designs/org-job-titles.md` (#209): roles are job titles, `instructions` is `jobDescription`, the five built-in roles are replaced by seven built-in job titles, and dia no longer hires a `retro` on first run (ADR-0064).
+
 Scope: module. A new built-in feature plugin, `plugins/org`, owns the org's roles, hired agents and org settings (ADR-0033) in its own SQLite database (ADR-0042). It provides them to the Host and other plugins as an `Org` service. It has no RPCs and no screens; #178 adds them. Out of scope: objectives, tasks and the scheduler (#179); the router role (org plan step 2); choosing a model per role (open question in `docs/prds/org.md`).
 
 ## Interface
