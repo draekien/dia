@@ -29,7 +29,10 @@ import type {
  * `copyJobTitle` copies every field of `jobTitleId` into a new enabled job title named `name` that
  * is not built in. `editJobTitle` applies `edit`'s present fields. `deleteJobTitle` deletes a copy
  * with no hired agents. `hire` hires an agent of an enabled job title, named `name` or unnamed when
- * null. `dismiss` removes a hired agent.
+ * null. `dismiss` removes a hired agent. `renameHire` names a hired agent `name`, or clears its name
+ * when null; the name must be free among the other hired agents, ignoring ASCII case.
+ * `setBypassOverride` sets a hired agent's bypass override: true or false overrides its job
+ * title's `bypassOptIn`, null follows the job title (ADR-0054).
  */
 export interface Org {
   readonly jobTitles: Effect.Effect<ReadonlyArray<JobTitle>>
@@ -55,6 +58,14 @@ export interface Org {
     name: AgentName | null
   ) => Effect.Effect<HiredAgent, JobTitleNotFound | JobTitleDisabled | HireNameTaken>
   readonly dismiss: (hireId: HireId) => Effect.Effect<void, HireNotFound>
+  readonly renameHire: (
+    hireId: HireId,
+    name: AgentName | null
+  ) => Effect.Effect<HiredAgent, HireNotFound | HireNameTaken>
+  readonly setBypassOverride: (
+    hireId: HireId,
+    override: boolean | null
+  ) => Effect.Effect<HiredAgent, HireNotFound>
   readonly setOverallCap: (cap: OverallCap) => Effect.Effect<OrgSettings>
 }
 
@@ -68,6 +79,8 @@ const MEMBERS: Record<keyof Org, (member: unknown) => boolean> = {
   deleteJobTitle: Predicate.isFunction,
   hire: Predicate.isFunction,
   dismiss: Predicate.isFunction,
+  renameHire: Predicate.isFunction,
+  setBypassOverride: Predicate.isFunction,
   setOverallCap: Predicate.isFunction
 }
 

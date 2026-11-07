@@ -120,6 +120,29 @@ export const makeOrg = Effect.gen(function* () {
     return toJobTitle(row)
   })
 
+  const findHire = Effect.fnUntraced(function* (hireId: HireId) {
+    const rows = yield* sql`SELECT * FROM hired_agents WHERE hire_id = ${hireId}`
+    const [row] = yield* decodeHireRows(rows)
+    if (row === undefined) {
+      return yield* HireNotFound.make({ hireId })
+    }
+    return toHiredAgent(row)
+  })
+
+  const ensureHireNameFree = Effect.fnUntraced(function* (
+    name: AgentName,
+    exceptId: HireId | null
+  ) {
+    const rows =
+      yield* sql`SELECT 1 FROM hired_agents WHERE name = ${name} AND hire_id IS NOT ${exceptId}`
+    if (rows.length > 0) {
+      return yield* HireNameTaken.make({ agentName: name })
+    }
+  })
+
+  const updateHire = (agent: HiredAgent) =>
+    sql`UPDATE hired_agents SET ${sql.update(toHireRow(agent), ['hire_id'])} WHERE hire_id = ${agent.id}`
+
   const ensureJobTitleNameFree = Effect.fnUntraced(function* (
     name: JobTitleName,
     exceptId: JobTitleId | null
@@ -247,10 +270,7 @@ export const makeOrg = Effect.gen(function* () {
           return yield* JobTitleDisabled.make({ jobTitleId })
         }
         if (name !== null) {
-          const taken = yield* sql`SELECT 1 FROM hired_agents WHERE name = ${name}`
-          if (taken.length > 0) {
-            return yield* HireNameTaken.make({ agentName: name })
-          }
+          yield* ensureHireNameFree(name, null)
         }
         const agent = HiredAgent.make({ id, jobTitleId, name, bypassOverride: null, hiredAt })
         yield* sql`INSERT INTO hired_agents ${sql.insert(toHireRow(agent))}`
@@ -272,6 +292,41 @@ export const makeOrg = Effect.gen(function* () {
     yield* Effect.logInfo('Dismissed agent', { hireId })
   })
 
+  const renameHire = Effect.fn('Org.renameHire')(function* (
+    hireId: HireId,
+    name: AgentName | null
+  ) {
+    const renamed = yield* transaction(
+      Effect.gen(function* () {
+        const current = yield* findHire(hireId)
+        if (name !== null) {
+          yield* ensureHireNameFree(name, hireId)
+        }
+        const changed = HiredAgent.make({ ...current, name })
+        yield* updateHire(changed)
+        return changed
+      })
+    )
+    yield* Effect.logInfo('Renamed hired agent', { hireId })
+    return renamed
+  })
+
+  const setBypassOverride = Effect.fn('Org.setBypassOverride')(function* (
+    hireId: HireId,
+    override: boolean | null
+  ) {
+    const changed = yield* transaction(
+      Effect.gen(function* () {
+        const current = yield* findHire(hireId)
+        const next = HiredAgent.make({ ...current, bypassOverride: override })
+        yield* updateHire(next)
+        return next
+      })
+    )
+    yield* Effect.logInfo('Set bypass override', { hireId, override })
+    return changed
+  })
+
   const setOverallCap = Effect.fn('Org.setOverallCap')(function* (cap: OverallCap) {
     yield* sql`UPDATE org_settings SET overall_cap = ${cap}`.pipe(
       Effect.catchTag('SqlError', Effect.die)
@@ -290,6 +345,8 @@ export const makeOrg = Effect.gen(function* () {
     deleteJobTitle,
     hire,
     dismiss,
+    renameHire,
+    setBypassOverride,
     setOverallCap
   } satisfies Org
 })

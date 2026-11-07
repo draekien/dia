@@ -1,7 +1,8 @@
 import { AgentName } from '@dia/plugin'
+import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { assert, describe, it } from '@effect/vitest'
-import { Duration, Effect, Exit, Scope } from 'effect'
+import { Duration, Effect, Exit, FileSystem, Layer, Path, Scope } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
 import { openDatabase } from '../../src/host/services/database'
@@ -374,6 +375,104 @@ describe('Org.dismiss', () => {
       )
       assert.strictEqual(error._tag, 'HireNotFound')
     })
+  )
+})
+
+const UNKNOWN_HIRE = HireId.make('00000000-0000-4000-8000-000000000000')
+
+describe('Org.renameHire', () => {
+  it.effect('names a hired agent', () =>
+    Effect.gen(function* () {
+      const { org, jobTitle } = yield* builtIn('Software engineer')
+      const hired = yield* org.hire(jobTitle.id, null)
+      yield* org.renameHire(hired.id, AgentName.make('Ada'))
+      const listed = (yield* org.hiredAgents).find((hire) => hire.id === hired.id)
+      assert.strictEqual(listed?.name, 'Ada')
+    })
+  )
+
+  it.effect("clears a hired agent's name when the name is null", () =>
+    Effect.gen(function* () {
+      const { org, jobTitle } = yield* builtIn('Software engineer')
+      const hired = yield* org.hire(jobTitle.id, AgentName.make('Ada'))
+      const renamed = yield* org.renameHire(hired.id, null)
+      assert.strictEqual(renamed.name, null)
+    })
+  )
+
+  it.effect("fails with HireNameTaken for another hire's name in another case", () =>
+    Effect.gen(function* () {
+      const { org, jobTitle } = yield* builtIn('Software engineer')
+      yield* org.hire(jobTitle.id, AgentName.make('Ada'))
+      const ben = yield* org.hire(jobTitle.id, AgentName.make('Ben'))
+      const error = yield* Effect.flip(org.renameHire(ben.id, AgentName.make('ADA')))
+      assert.strictEqual(error._tag, 'HireNameTaken')
+    })
+  )
+
+  it.effect("allows recasing the hire's own name", () =>
+    Effect.gen(function* () {
+      const { org, jobTitle } = yield* builtIn('Software engineer')
+      const hired = yield* org.hire(jobTitle.id, AgentName.make('ada'))
+      const renamed = yield* org.renameHire(hired.id, AgentName.make('Ada'))
+      assert.strictEqual(renamed.name, 'Ada')
+    })
+  )
+
+  it.effect('fails with HireNotFound for an unknown hire', () =>
+    Effect.gen(function* () {
+      const org = yield* freshOrg
+      const error = yield* Effect.flip(org.renameHire(UNKNOWN_HIRE, null))
+      assert.strictEqual(error._tag, 'HireNotFound')
+    })
+  )
+})
+
+describe('Org.setBypassOverride', () => {
+  it.effect.each([true, false, null])('stores the override %s', (override) =>
+    Effect.gen(function* () {
+      const { org, jobTitle } = yield* builtIn('Software engineer')
+      const hired = yield* org.hire(jobTitle.id, null)
+      yield* org.setBypassOverride(hired.id, override)
+      const listed = (yield* org.hiredAgents).find((hire) => hire.id === hired.id)
+      assert.strictEqual(listed?.bypassOverride, override)
+    })
+  )
+
+  it.effect('fails with HireNotFound for an unknown hire', () =>
+    Effect.gen(function* () {
+      const org = yield* freshOrg
+      const error = yield* Effect.flip(org.setBypassOverride(UNKNOWN_HIRE, true))
+      assert.strictEqual(error._tag, 'HireNotFound')
+    })
+  )
+})
+
+describe('Org changes across a reopen', () => {
+  it.effect(
+    'keeps an edited job title, a renamed hire and the overall cap after the org reopens',
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem
+        const path = yield* Path.Path
+        const filename = path.join(yield* fs.makeTempDirectoryScoped(), 'data.db')
+        const first = yield* openOrgIn(filename)
+        const engineer = jobTitleNamed(yield* first.org.jobTitles, 'Software engineer')
+        yield* first.org.editJobTitle(engineer.id, { jobDescription: 'Write tests first.' })
+        const hired = yield* first.org.hire(engineer.id, null)
+        yield* first.org.renameHire(hired.id, AgentName.make('Ada'))
+        yield* first.org.setOverallCap(OverallCap.make(6))
+        yield* first.close
+
+        const second = yield* openOrgIn(filename)
+        const reopened = [
+          jobTitleNamed(yield* second.org.jobTitles, 'Software engineer').jobDescription,
+          (yield* second.org.hiredAgents).find((hire) => hire.id === hired.id)?.name,
+          (yield* second.org.settings).overallCap
+        ]
+        yield* second.close
+        assert.deepStrictEqual(reopened, ['Write tests first.', 'Ada', OverallCap.make(6)])
+      }).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
   )
 })
 
