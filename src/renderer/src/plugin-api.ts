@@ -10,6 +10,7 @@ import {
   deleteTab,
   moveProject,
   newAgent,
+  openPage,
   openPluginsPage,
   registerProject,
   removeProject,
@@ -30,6 +31,7 @@ import {
 export { PluginCallInvalid, PluginNotServing } from '@shared/plugin/messages'
 export { SessionRail } from './components/session-rail'
 export * from './components/ui/sidebar'
+export { addPage, type Page, type RegisteredPage, usePages } from './lib/pages'
 export { callHost } from './lib/plugin-messages'
 export {
   addRailCard,
@@ -49,7 +51,7 @@ export {
   type SlotName
 } from './lib/slots'
 export { useTabOpenedFromNewAgent } from './lib/tab-opened-from-new-agent'
-export type { View } from './lib/view'
+export type { PageKey, View } from './lib/view'
 
 /** The workspace (projects, tabs, visible tab); `undefined` until it first loads. */
 export function useWorkspace(): Workspace | undefined {
@@ -79,6 +81,7 @@ export const actions = {
   selectTab,
   newAgent,
   cancelNewAgent,
+  openPage,
   registerProject,
   moveProject,
   renameTab,
