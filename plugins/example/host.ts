@@ -1,6 +1,6 @@
 import type { HostPluginContext, PluginSetup } from '@dia/plugin'
+import { ReadGreeting } from '@dia-plugin/example/messages'
 import { Effect, Stream } from 'effect'
-import { ReadGreeting } from './messages'
 
 const setup: PluginSetup<HostPluginContext> = (ctx) =>
   Effect.gen(function* () {

@@ -4,5 +4,6 @@
   "category": "feature",
   "host": "host.ts",
   "renderer": "renderer.ts",
-  "load": "eager"
+  "load": "eager",
+  "exports": ["messages.ts"]
 }
