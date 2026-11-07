@@ -15,5 +15,5 @@
     "strict": true,
     "noEmit": true
   },
-  "include": ["plugins/example/messages.ts"]
+  "include": ["plugins/example/messages.ts", "plugins/org/service.ts"]
 }

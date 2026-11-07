@@ -18,10 +18,36 @@ export const WORKTREES_KEY = 'worktrees'
 export const META_REPO_KEY = 'metaRepo'
 
 /**
- * Service key under which the `org` plugin provides the Host's `Org`. Host code reads it with
- * `registry.use`, one operation per call (ADR-0055).
+ * A typed service key (ADR-0060). `name` is the key the registry stores the service under and the
+ * name a manifest's `inject` lists; `is` checks that a provided value has the shape `A`. Make one
+ * with {@link ServiceKey.make} in a module the providing plugin exports (ADR-0059), and import it
+ * from the provider and from every consumer.
  */
-export const ORG_KEY = 'org'
+export interface ServiceKey<A, Name extends string = string> {
+  readonly name: Name
+  readonly is: (value: unknown) => value is A
+}
+
+/** Constructors for {@link ServiceKey}. */
+export const ServiceKey = {
+  /**
+   * A key named `name` whose values must pass `is`. The service type `A` is inferred from `is`'s
+   * type predicate, so a key cannot claim a type its guard does not check.
+   */
+  make: <const Name extends string, A>(
+    name: Name,
+    is: (value: unknown) => value is A
+  ): ServiceKey<A, Name> => ({ name, is })
+}
+
+/** A key a plugin context accepts: a typed {@link ServiceKey} or a plain string key. */
+export type AnyServiceKey = ServiceKey<unknown> | string
+
+/** The name a key is stored under: a `ServiceKey`'s `name`, or the string itself. */
+type ServiceKeyName<K extends AnyServiceKey> = K extends ServiceKey<unknown, infer N> ? N : K
+
+/** The type a key reads as: `A` for a `ServiceKey<A>`, `unknown` for a string key. */
+type ServiceKeyValue<K extends AnyServiceKey> = K extends ServiceKey<infer A> ? A : unknown
 
 /**
  * Failure of `ctx.provide` when another loaded plugin already provides `key`. `owner` is the
@@ -83,19 +109,33 @@ export class WhenProvidedRefusedError extends Data.TaggedError('WhenProvidedRefu
  * provided again. Inside `setup`, `provide` of a key already provided fails with
  * {@link ServiceKeyTakenError}. The keys need no entry in the manifest's `inject`. Any other call
  * fails with {@link WhenProvidedRefusedError}.
+ *
+ * A key is a string or a {@link ServiceKey}. Reading with a `ServiceKey<A>` gives `A`: `inject`
+ * returns `Option<A>` and `whenProvided` passes each value under the key's name. A provided value
+ * that fails the reading key's `is`, or whose `is` throws, counts as not provided, and the
+ * registry logs a warning naming the key and the provider. A string key reads `unknown`.
  */
 export interface PluginServices {
   readonly name: string
-  readonly provide: (
-    key: string,
-    value: unknown
-  ) => Effect.Effect<void, ServiceKeyTakenError | ServiceKeyReservedError, Scope.Scope>
-  readonly inject: (key: string) => Effect.Effect<Option.Option<unknown>, ServiceNotDeclaredError>
-  readonly whenProvided: <const Keys extends readonly [string, ...Array<string>]>(
+  readonly provide: {
+    <A>(
+      key: ServiceKey<A>,
+      value: A
+    ): Effect.Effect<void, ServiceKeyTakenError | ServiceKeyReservedError, Scope.Scope>
+    (
+      key: string,
+      value: unknown
+    ): Effect.Effect<void, ServiceKeyTakenError | ServiceKeyReservedError, Scope.Scope>
+  }
+  readonly inject: {
+    <A>(key: ServiceKey<A>): Effect.Effect<Option.Option<A>, ServiceNotDeclaredError>
+    (key: string): Effect.Effect<Option.Option<unknown>, ServiceNotDeclaredError>
+  }
+  readonly whenProvided: <const Keys extends readonly [AnyServiceKey, ...Array<AnyServiceKey>]>(
     keys: Keys,
     setup: (
       services: {
-        readonly [K in Keys[number]]: unknown
+        readonly [K in Keys[number] as ServiceKeyName<K>]: ServiceKeyValue<K>
       }
     ) => Effect.Effect<void, unknown, Scope.Scope>
   ) => Effect.Effect<void, WhenProvidedRefusedError, Scope.Scope>

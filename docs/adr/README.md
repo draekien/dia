@@ -63,10 +63,11 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0052](0052-every-pane-event-in-the-agent-event-store.md) | Store every pane event in `agent_events` and send the renderer item updates instead of deltas | accepted |
 | [0053](0053-router-role-as-the-users-assistant.md) | Take the user's requests in chat through a built-in `router` role that hands work to hired agents and never plans or does the work itself | accepted |
 | [0054](0054-permission-modes-for-hired-agents.md) | Run hired agents in `auto` where the model and settings allow it, otherwise in `default`, and in `bypassPermissions` only when the user opts a role or hire in | accepted |
-| [0055](0055-lease-a-feature-plugin-service-for-one-operation.md) | Lease a feature plugin's service for one operation, and close a plugin only after its leases end or 30 seconds pass | accepted |
-| [0056](0056-run-part-of-a-plugin-while-optional-services-are-provided.md) | Run part of a plugin while optional services are provided, with `ctx.whenProvided` | accepted |
+| [0055](0055-lease-a-feature-plugin-service-for-one-operation.md) | Lease a feature plugin's service for one operation, and close a plugin only after its leases end or 30 seconds pass | accepted, amended by ADR-0060 |
+| [0056](0056-run-part-of-a-plugin-while-optional-services-are-provided.md) | Run part of a plugin while optional services are provided, with `ctx.whenProvided` | accepted, amended by ADR-0060 |
 | [0057](0057-plugin-pages-and-plugin-messages.md) | Let a renderer plugin add pages, and let a plugin's renderer entry call its own host entry over one `CallPlugin` RPC | accepted |
 | [0059](0059-plugin-module-exports.md) | Let a plugin export source modules that other plugins import | accepted |
+| [0060](0060-typed-plugin-service-keys.md) | Type a plugin service by a key its provider exports | accepted |
 
 ## Adding a new ADR
 

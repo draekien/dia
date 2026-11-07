@@ -1,5 +1,6 @@
 import { assert, describe, it } from '@effect/vitest'
 import { type AdapterStatus, HealthReady } from '@shared/domain/adapter-status'
+import { fakeInject } from '@shared/plugin/plugin-registry.fake'
 import { DateTime, Effect, Layer, Option, PubSub, Stream } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { AGENT_BACKEND_KEY, type AgentBackend } from '../session/agent-backend'
@@ -37,7 +38,7 @@ const feedFollowing = (
         changes: Stream.fromPubSub(changes),
         load: () => Effect.die(new Error('load should not be called in these tests')),
         unload: () => Effect.die(new Error('unload should not be called in these tests')),
-        inject: (key) => Effect.sync(() => (key === AGENT_BACKEND_KEY ? current() : Option.none())),
+        inject: fakeInject((key) => (key === AGENT_BACKEND_KEY ? current() : Option.none())),
         use: () => Effect.die(new Error('use should not be called in these tests'))
       }),
       Layer.succeed(EventHub)({

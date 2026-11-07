@@ -1,5 +1,6 @@
 import { assert, describe, it } from '@effect/vitest'
 import { type ConversationMessage, SessionId } from '@shared/domain/pane'
+import { fakeInject } from '@shared/plugin/plugin-registry.fake'
 import { Effect, Layer, Option, Stream } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import {
@@ -18,7 +19,7 @@ const pluginsProviding = (backend: Option.Option<AgentBackend>) =>
     load: () => Effect.die(new Error('load should not be called in these tests')),
     unload: () => Effect.die(new Error('unload should not be called in these tests')),
     use: () => Effect.die(new Error('use should not be called in these tests')),
-    inject: (key) => Effect.succeed(key === AGENT_BACKEND_KEY ? backend : Option.none())
+    inject: fakeInject((key) => (key === AGENT_BACKEND_KEY ? backend : Option.none()))
   })
 
 const backendWithout: AgentBackend = {

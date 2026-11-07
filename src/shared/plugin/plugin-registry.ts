@@ -15,7 +15,7 @@ import {
   Semaphore,
   Stream
 } from 'effect'
-import type { PluginServices, PluginSetup } from './api'
+import type { AnyServiceKey, PluginServices, PluginSetup, ServiceKey } from './api'
 import {
   ServiceKeyReservedError,
   ServiceKeyTakenError,
@@ -34,6 +34,7 @@ import {
   type PluginRestartReason,
   type PluginStatus
 } from './manifest'
+import { nameOf, passes } from './service-key'
 
 /**
  * What the registry requires of adapter plugins. `keys` are the service keys only an adapter may
@@ -159,11 +160,20 @@ export interface PluginRegistry {
   readonly start: () => Effect.Effect<void>
   readonly load: (name: string) => Effect.Effect<PluginInfo>
   readonly unload: (name: string) => Effect.Effect<PluginInfo>
-  readonly inject: (key: string) => Effect.Effect<Option.Option<unknown>>
-  readonly use: <A, E, R>(
-    key: string,
-    f: (value: unknown) => Effect.Effect<A, E, R>
-  ) => Effect.Effect<Option.Option<A>, E | ServiceWithdrawnError, R>
+  readonly inject: {
+    <S>(key: ServiceKey<S>): Effect.Effect<Option.Option<S>>
+    (key: string): Effect.Effect<Option.Option<unknown>>
+  }
+  readonly use: {
+    <S, A, E, R>(
+      key: ServiceKey<S>,
+      f: (value: S) => Effect.Effect<A, E, R>
+    ): Effect.Effect<Option.Option<A>, E | ServiceWithdrawnError, R>
+    <A, E, R>(
+      key: string,
+      f: (value: unknown) => Effect.Effect<A, E, R>
+    ): Effect.Effect<Option.Option<A>, E | ServiceWithdrawnError, R>
+  }
   readonly changes: Stream.Stream<string>
 }
 
@@ -236,6 +246,7 @@ const WatcherState = Data.taggedEnum<WatcherState>()
 interface Watcher {
   readonly plugin: string
   readonly keys: ReadonlyArray<string>
+  readonly typedKeys: ReadonlyArray<AnyServiceKey>
   readonly setup: (services: Record<string, unknown>) => Effect.Effect<void, unknown, Scope.Scope>
   readonly parent: Scope.Scope
   readonly provided: Set<string>
@@ -445,13 +456,31 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       return entry !== undefined && isRunning(entry)
     }
 
-    const inject = (key: string): Effect.Effect<Option.Option<unknown>> =>
-      Effect.sync(() => Option.fromNullishOr(slots.get(key)).pipe(Option.map((slot) => slot.value)))
+    const warnRejected = (annotations: {
+      readonly key: string
+      readonly provider: string
+      readonly plugin?: string
+    }): Effect.Effect<void> =>
+      Effect.logWarning('A provided service failed its key check', annotations)
+
+    const checkedSlot = (key: AnyServiceKey) =>
+      Effect.gen(function* () {
+        const name = nameOf(key)
+        const slot = slots.get(name)
+        if (slot === undefined) return Option.none()
+        if (passes(key, slot.value)) return Option.some(slot)
+        yield* warnRejected({ key: name, provider: slot.owner })
+        return Option.none()
+      })
+
+    const inject = (key: AnyServiceKey): Effect.Effect<Option.Option<unknown>> =>
+      checkedSlot(key).pipe(Effect.map(Option.map((slot) => slot.value)))
 
     const servicesFor = (name: string, entry: Entry<Context>): PluginServices => ({
       name,
-      provide: (key, value) =>
+      provide: (typedKey: AnyServiceKey, value: unknown) =>
         Effect.gen(function* () {
+          const key = nameOf(typedKey)
           if (entry.category !== 'adapter' && deps.adapterContract.keys.includes(key)) {
             yield* Effect.logError('A feature plugin provided a key reserved for adapters', {
               plugin: name,
@@ -500,9 +529,10 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
               }).pipe(Effect.andThen(PubSub.publish(providedKeys, key)))
           )
         }),
-      inject: (key) =>
-        injectedKeys(entry).includes(key)
-          ? inject(key)
+      inject: (typedKey: AnyServiceKey) => {
+        const key = nameOf(typedKey)
+        return injectedKeys(entry).includes(key)
+          ? inject(typedKey)
           : Effect.gen(function* () {
               yield* Effect.logError('A plugin read a service it does not declare', {
                 plugin: name,
@@ -517,8 +547,9 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
                       ? `Plugin "${name}" reads "${key}" without declaring it; use the value whenProvided passes to its setup, or add "${key}" to "inject" in its plugin.json if the plugin requires it`
                       : `Plugin "${name}" reads "${key}" without declaring it; add "${key}" to "inject" in its plugin.json`
               })
-            }),
-      whenProvided: (keys, setup) =>
+            })
+      },
+      whenProvided: (typedKeys, setup) =>
         Effect.gen(function* () {
           const window = acceptingWindow(name, entry.category, yield* CurrentSetup)
           if (typeof window === 'string') {
@@ -535,6 +566,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
                   : `Plugin "${name}" called whenProvided outside its setup; call it during setup or inside another whenProvided setup`
             })
           }
+          const keys = typedKeys.map(nameOf)
           const parent = yield* Scope.Scope
           if (parent.state._tag === 'Closed') {
             yield* Effect.logWarning('A plugin called whenProvided after its setup was abandoned', {
@@ -546,8 +578,8 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           const watcher: Watcher = {
             plugin: name,
             keys,
-            setup: (services) =>
-              setup(services as { readonly [K in (typeof keys)[number]]: unknown }),
+            typedKeys,
+            setup: (services) => setup(services as Parameters<typeof setup>[0]),
             parent,
             provided: new Set(),
             nested: new Set(),
@@ -634,13 +666,15 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       )
 
     const use = <A, E, R>(
-      key: string,
+      typedKey: AnyServiceKey,
       f: (value: unknown) => Effect.Effect<A, E, R>
-    ): Effect.Effect<Option.Option<A>, E | ServiceWithdrawnError, R> =>
-      Effect.acquireUseRelease(
+    ): Effect.Effect<Option.Option<A>, E | ServiceWithdrawnError, R> => {
+      const key = nameOf(typedKey)
+      return Effect.acquireUseRelease(
         Effect.gen(function* () {
-          const slot = slots.get(key)
-          if (slot === undefined) return { _tag: 'NotProvided' } as const
+          const checked = yield* checkedSlot(typedKey)
+          if (Option.isNone(checked)) return { _tag: 'NotProvided' } as const
+          const slot = checked.value
           const leases = entries.get(slot.owner)?.leases
           if (leases === undefined || leases.closing) {
             return { _tag: 'Closing', plugin: slot.owner } as const
@@ -696,6 +730,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
               })
             : Effect.void
       )
+    }
 
     const closeDependantsOf = (
       keys: ReadonlySet<string>,
@@ -744,13 +779,23 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         if (scope !== undefined) yield* closePlugin(name, entry, scope, Exit.void)
       })
 
-    const isReady = (watcher: Watcher): boolean =>
+    const keysProvided = (watcher: Watcher): boolean =>
       watcher.state._tag === 'Idle' &&
       isRunningName(watcher.plugin) &&
       watcher.keys.every((key) => {
         const slot = slots.get(key)
         return slot !== undefined && isRunningName(slot.owner)
       })
+
+    const rejectedSlot = (watcher: Watcher): { key: string; provider: string } | undefined => {
+      for (const key of watcher.typedKeys) {
+        const slot = slots.get(nameOf(key))
+        if (slot !== undefined && !passes(key, slot.value)) {
+          return { key: nameOf(key), provider: slot.owner }
+        }
+      }
+      return undefined
+    }
 
     const runWatcher = (watcher: Watcher): Effect.Effect<void> =>
       Effect.gen(function* () {
@@ -783,7 +828,13 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
     const runWatchers: Effect.Effect<boolean> = Effect.gen(function* () {
       let ran = false
       for (const watcher of [...watchers]) {
-        if (!watchers.has(watcher) || !isReady(watcher)) continue
+        if (!watchers.has(watcher) || !keysProvided(watcher)) continue
+        const rejected = rejectedSlot(watcher)
+        if (rejected !== undefined) {
+          watcher.state = WatcherState.Failed()
+          yield* warnRejected({ ...rejected, plugin: watcher.plugin })
+          continue
+        }
         yield* runWatcher(watcher)
         ran = true
       }

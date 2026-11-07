@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { ProjectId, type Workspace } from '@shared/domain/project'
 import type { PluginRegistry } from '@shared/plugin/plugin-registry'
+import { fakeInject } from '@shared/plugin/plugin-registry.fake'
 import { cleanup, render, screen } from '@testing-library/react'
 import { Effect, Option, Stream } from 'effect'
 import type { ComponentType } from 'react'
@@ -46,8 +47,9 @@ const registryWithMainTab = (filler: ComponentType | undefined): PluginRegistry 
   load: () => Effect.die(new Error('not used')),
   unload: () => Effect.die(new Error('not used')),
   use: () => Effect.die(new Error('use should not be called in these tests')),
-  inject: (key) =>
-    Effect.sync(() => (key === 'slot:main.tab' ? Option.fromNullishOr(filler) : Option.none())),
+  inject: fakeInject((key) =>
+    key === 'slot:main.tab' ? Option.fromNullishOr(filler) : Option.none()
+  ),
   changes: Stream.never
 })
 

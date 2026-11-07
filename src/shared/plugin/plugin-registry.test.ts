@@ -11,7 +11,7 @@ import {
   Stream
 } from 'effect'
 import { TestClock } from 'effect/testing'
-import { type PluginServices, type PluginSetup, WhenProvidedRefusedError } from './api'
+import { type PluginServices, type PluginSetup, ServiceKey, WhenProvidedRefusedError } from './api'
 import {
   type AdapterManifest,
   type FeatureManifest,
@@ -2411,6 +2411,186 @@ describe('importers of a reloading plugin', () => {
 
       assert.deepStrictEqual(log, ['a:close', 'a:open'])
       assert.strictEqual(importer?.status._tag, 'Unloaded')
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe('typed service keys', () => {
+  interface Counter {
+    readonly count: number
+  }
+
+  const CounterService = ServiceKey.make(
+    'counter',
+    (value: unknown): value is Counter =>
+      Predicate.hasProperty(value, 'count') && typeof value.count === 'number'
+  )
+
+  const counter: Counter = { count: 3 }
+  const notACounter = { count: 'three' }
+  const rejectedLog = 'A provided service failed its key check'
+
+  const providing = (log: Array<string>, value: unknown) =>
+    plugin(
+      manifest('provider'),
+      recording('provider', log, (ctx) => ctx.provide('counter', value))
+    )
+
+  const rejectionOf = (messages: ReadonlyArray<unknown>) =>
+    messages.find(
+      (message): boolean =>
+        Predicate.hasProperty(message, 'key') && Predicate.hasProperty(message, 'provider')
+    )
+
+  it.effect('injects a provided value that passes the key check', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({ provider: providing([], counter) })
+      yield* registry.load('provider')
+
+      assert.deepStrictEqual(yield* registry.inject(CounterService), Option.some(counter))
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect(
+    'injects none and warns with the key and provider when the value fails the check',
+    () => {
+      const messages: Array<unknown> = []
+      return Effect.gen(function* () {
+        const registry = yield* makeRegistry({ provider: providing([], notACounter) })
+        yield* registry.load('provider')
+
+        const read = yield* registry.inject(CounterService)
+
+        assert.deepStrictEqual(read, Option.none())
+        assert.include(messages, rejectedLog)
+        assert.deepInclude(rejectionOf(messages), { key: 'counter', provider: 'provider' })
+      }).pipe(Effect.scoped, Effect.provide(capturingLogs(messages)))
+    }
+  )
+
+  it.effect('injects the value of a failing check through a string key', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry({ provider: providing([], notACounter) })
+      yield* registry.load('provider')
+
+      assert.deepStrictEqual(yield* registry.inject('counter'), Option.some(notACounter))
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('injects none when the key check throws', () =>
+    Effect.gen(function* () {
+      const Throwing = ServiceKey.make('counter', (value: unknown): value is Counter => {
+        throw new Error(`cannot check ${String(value)}`)
+      })
+      const registry = yield* makeRegistry({ provider: providing([], counter) })
+      yield* registry.load('provider')
+
+      assert.deepStrictEqual(yield* registry.inject(Throwing), Option.none())
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('uses none without running the callback when the value fails the check', () => {
+    const messages: Array<unknown> = []
+    return Effect.gen(function* () {
+      const registry = yield* makeRegistry({ provider: providing([], notACounter) })
+      yield* registry.load('provider')
+      let calls = 0
+
+      const used = yield* registry.use(CounterService, () =>
+        Effect.sync(() => {
+          calls += 1
+        })
+      )
+
+      assert.deepStrictEqual(used, Option.none())
+      assert.strictEqual(calls, 0)
+      assert.deepInclude(rejectionOf(messages), { key: 'counter', provider: 'provider' })
+    }).pipe(Effect.scoped, Effect.provide(capturingLogs(messages)))
+  })
+
+  it.effect('closes the provider of a rejected use without waiting for a lease', () => {
+    const messages: Array<unknown> = []
+    return Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({ provider: providing(log, notACounter) })
+      yield* registry.load('provider')
+      yield* registry.use(CounterService, () => Effect.void)
+
+      const unloaded = yield* registry.unload('provider')
+
+      assert.strictEqual(unloaded.status._tag, 'Unloaded')
+      assert.deepStrictEqual(log, ['provider:open', 'provider:close'])
+      assert.notInclude(messages, "Waiting for calls that use the plugin's services")
+    }).pipe(Effect.scoped, Effect.provide(capturingLogs(messages)))
+  })
+
+  it.effect('does not run a watcher setup and warns with its plugin when the value fails', () => {
+    const messages: Array<unknown> = []
+    return Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({
+        provider: providing(log, notACounter),
+        overview: plugin(manifest('overview'), (ctx) =>
+          ctx.whenProvided([CounterService], () => Effect.sync(() => void log.push('child:open')))
+        )
+      })
+      yield* registry.load('overview')
+
+      yield* registry.load('provider')
+
+      assert.deepStrictEqual(log, ['provider:open'])
+      assert.deepInclude(rejectionOf(messages), {
+        key: 'counter',
+        provider: 'provider',
+        plugin: 'overview'
+      })
+    }).pipe(Effect.scoped, Effect.provide(capturingLogs(messages)))
+  })
+
+  it.effect('warns once about a rejected watcher while later loads settle', () => {
+    const messages: Array<unknown> = []
+    return Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        provider: providing([], notACounter),
+        overview: plugin(manifest('overview'), (ctx) =>
+          ctx.whenProvided([CounterService], () => Effect.void)
+        ),
+        bystander: plugin(manifest('bystander'), () => Effect.void)
+      })
+      yield* registry.load('overview')
+      yield* registry.load('provider')
+
+      yield* registry.load('bystander')
+
+      assert.strictEqual(messages.filter((message) => message === rejectedLog).length, 1)
+    }).pipe(Effect.scoped, Effect.provide(capturingLogs(messages)))
+  })
+
+  it.effect('closes a running typed watcher before its provider closes', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const registry = yield* makeRegistry({
+        provider: providing(log, counter),
+        overview: plugin(manifest('overview'), (ctx) =>
+          ctx.whenProvided([CounterService], ({ counter: provided }) =>
+            Effect.gen(function* () {
+              log.push(`child:open:${provided.count}`)
+              yield* Effect.addFinalizer(() => Effect.sync(() => void log.push('child:close')))
+            })
+          )
+        )
+      })
+      yield* registry.load('overview')
+      yield* registry.load('provider')
+
+      yield* registry.unload('provider')
+
+      assert.deepStrictEqual(log, [
+        'provider:open',
+        'child:open:3',
+        'child:close',
+        'provider:close'
+      ])
     }).pipe(Effect.scoped)
   )
 })
