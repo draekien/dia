@@ -51,7 +51,7 @@ State, Host calls and components other kernel screens use stay in `src/renderer/
 - Chat state: the `pane-chat` types, `emptyPaneChatState`, `lastUserText`, the six `pane*Atom`s, `sendModeAtom`, `sendModeForEnter`, `turnActivity`.
 - Pure helpers: `findModelOption`, the four permission-mode helpers, the three thinking-level helpers.
 
-- Components: `InstallNotice`, `PermissionModeItems`, `openSettings`, and the shadcn primitives `alert-dialog`, `bubble`, `input-group`, `label`, `marker`, `message`, `radio-group`, `select`, `switch`, `textarea`.
+- Components: `InstallNotice`, `PermissionModeItems`, `openSettings`, and the shadcn primitives `alert-dialog`, `bubble`, `input-group`, `label`, `marker`, `message`, `select`, `switch`, `textarea`.
 
 A non-React `.ts` module in the plugin may import only `@shared/*` and npm packages, because `tsconfig.node.json` also compiles `plugins/**/*.ts` and does not map `@dia/renderer-plugin`. `lib/turn-activity` imports the kernel's `PaneChatState`, so it stays in the kernel.
 
