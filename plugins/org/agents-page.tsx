@@ -218,7 +218,7 @@ export function AgentsPage({ hireId, ...screen }: OrgScreen & { readonly hireId:
 
   return (
     <div className="flex flex-col gap-6 @3xl:flex-row">
-      <div className="flex flex-col gap-3 @3xl:w-56 @3xl:shrink-0">
+      <div className="flex max-w-sm flex-col gap-3 @3xl:w-56 @3xl:shrink-0">
         <Button size="sm" variant="outline" className="self-start" onClick={() => openHire(null)}>
           Hire…
         </Button>

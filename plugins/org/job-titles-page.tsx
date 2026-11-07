@@ -18,25 +18,34 @@ export function JobTitlesPage({
 
   return (
     <div className="flex flex-col gap-6 @3xl:flex-row">
-      <div className="@3xl:w-56 @3xl:shrink-0">
+      <div className="max-w-sm @3xl:w-56 @3xl:shrink-0">
         <EntryList
           label="Job titles"
           selectedId={selected?.id}
           onSelect={(id) => show(JobTitlesView.make({ jobTitleId: id as JobTitleId }))}
-          entries={snapshot.jobTitles.map((jobTitle) => ({
-            id: jobTitle.id,
-            content: (
-              <>
-                <span className="truncate">{jobTitle.name}</span>
-                {jobTitle.enabled ? null : (
-                  <span className="text-xs font-normal text-ink-muted">Disabled</span>
-                )}
-                <span className="ml-auto text-xs font-normal text-ink-muted tabular-nums">
-                  {snapshot.hiredAgents.filter((agent) => agent.jobTitleId === jobTitle.id).length}
-                </span>
-              </>
-            )
-          }))}
+          entries={snapshot.jobTitles.map((jobTitle) => {
+            const hires = snapshot.hiredAgents.filter(
+              (agent) => agent.jobTitleId === jobTitle.id
+            ).length
+            return {
+              id: jobTitle.id,
+              content: (
+                <>
+                  <span className="truncate">{jobTitle.name}</span>
+                  {jobTitle.enabled ? null : (
+                    <span className="text-xs font-normal text-ink-muted">Disabled</span>
+                  )}
+                  <span
+                    className="ml-auto text-xs font-normal text-ink-muted tabular-nums"
+                    title={`${hires} hired`}
+                  >
+                    <span className="sr-only">Hired: </span>
+                    {hires}
+                  </span>
+                </>
+              )
+            }
+          })}
         />
       </div>
       {selected === undefined ? null : (

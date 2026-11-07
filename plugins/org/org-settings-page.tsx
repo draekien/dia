@@ -1,6 +1,6 @@
 // @effect-diagnostics asyncFunction:off -- React callbacks await OrgCall's Promise; components hold no Effect runtime.
 import type { PluginServices } from '@dia/plugin'
-import { Button, Input, Label, SettingsSectionHeading, Skeleton } from '@dia/renderer-plugin'
+import { Button, Input, Label, Skeleton } from '@dia/renderer-plugin'
 import { useAtomRefresh, useAtomValue } from '@effect/atom-react'
 import { Cause, Result, Schema } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
@@ -83,7 +83,6 @@ export function OrgSettingsPage({
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-4 py-6">
-      <SettingsSectionHeading id="org-cap-heading">Hired agents</SettingsSectionHeading>
       {AsyncResult.match(result, {
         onInitial: () => <Skeleton className="h-8 w-full" aria-busy="true" />,
         onFailure: ({ cause }) => (

@@ -35,11 +35,11 @@ export function Dashboard({ snapshot, openHire }: Pick<OrgScreen, 'snapshot' | '
     <div className="flex max-w-3xl flex-col gap-8">
       <dl className="grid grid-cols-3 divide-x border-y">
         <Stat label="Hired agents">
-          <span className="text-lg font-medium tabular-nums">{snapshot.hiredAgents.length}</span>
+          <span className="text-base font-medium tabular-nums">{snapshot.hiredAgents.length}</span>
         </Stat>
         <Stat label="Job titles">
           <span>
-            <span className="text-lg font-medium tabular-nums">{enabled}</span>
+            <span className="text-base font-medium tabular-nums">{enabled}</span>
             <span className="text-ink-muted">{` of ${snapshot.jobTitles.length} enabled`}</span>
           </span>
         </Stat>
@@ -55,7 +55,7 @@ export function Dashboard({ snapshot, openHire }: Pick<OrgScreen, 'snapshot' | '
             </Button>
           }
         >
-          <span className="text-lg font-medium tabular-nums">{snapshot.settings.overallCap}</span>
+          <span className="text-base font-medium tabular-nums">{snapshot.settings.overallCap}</span>
         </Stat>
       </dl>
       <section className="flex flex-col gap-2" aria-labelledby="org-attention-heading">

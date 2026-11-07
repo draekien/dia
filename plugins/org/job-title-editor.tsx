@@ -187,7 +187,7 @@ function EditForm({
         "Added to the system prompt of this job title's sessions."
       )}
       {textarea('skills', 'Skills', true, 'One skill name per line. None means every skill.')}
-      <div className="grid gap-4 @2xl:grid-cols-3">
+      <div className="grid gap-4 @2xl:grid-cols-3 @3xl:grid-cols-1 @5xl:grid-cols-3">
         {textarea('allow', 'Allow', true)}
         {textarea('ask', 'Ask', true)}
         {textarea('deny', 'Deny', true)}
@@ -297,11 +297,14 @@ export function JobTitleEditor({
         {jobTitle.builtIn === null ? null : (
           <span className="text-xs text-ink-muted">Built in</span>
         )}
-        <Switch
-          checked={jobTitle.enabled}
-          aria-label="Enabled"
-          onCheckedChange={(enabled) => void setEnabled(enabled)}
-        />
+        <span className="flex items-center gap-2 text-xs text-ink-muted">
+          <span aria-hidden="true">Enabled</span>
+          <Switch
+            checked={jobTitle.enabled}
+            aria-label="Enabled"
+            onCheckedChange={(enabled) => void setEnabled(enabled)}
+          />
+        </span>
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => setDialog('copy')}>
             Copy…

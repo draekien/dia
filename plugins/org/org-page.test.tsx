@@ -239,8 +239,8 @@ describe('Job titles', () => {
 
     await go('Job titles')
 
-    expect(screen.getByRole('option', { name: /^Team lead/ }).textContent).toBe('Team lead1')
-    expect(screen.getByRole('option', { name: /^Reviewer/ }).textContent).toBe('Reviewer0')
+    expect(screen.getByRole('option', { name: /^Team lead/ }).textContent).toBe('Team leadHired: 1')
+    expect(screen.getByRole('option', { name: /^Reviewer/ }).textContent).toBe('ReviewerHired: 0')
   })
 
   it('shows the selected job title with its enabled switch and its agents', async () => {
