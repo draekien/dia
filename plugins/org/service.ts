@@ -23,14 +23,13 @@ import type {
  * The org (ADR-0033), as the `org` plugin provides it under {@link OrgService}. Reads return the
  * current state; each change is one transaction and returns the changed value. A job title's cap is
  * the number of hired agents of that job title. `jobTitles` lists the built-in job titles in seed
- * order, then copies
- * in creation order; `hiredAgents` lists by `hiredAt`, then creation order. A database failure, or
- * a failure to generate an id, is a defect.
+ * order, then copies in creation order; `hiredAgents` lists by `hiredAt`, then creation order. A
+ * database failure, or a failure to generate an id, is a defect.
  *
- * `copyJobTitle` copies every field of `jobTitleId` into a new enabled job title named `name` that is not
- * built in. `editJobTitle` applies `edit`'s present fields. `deleteJobTitle` deletes a copy with no hired
- * agents. `hire` hires an agent of an enabled job title, named `name` or unnamed when null. `dismiss`
- * removes a hired agent.
+ * `copyJobTitle` copies every field of `jobTitleId` into a new enabled job title named `name` that
+ * is not built in. `editJobTitle` applies `edit`'s present fields. `deleteJobTitle` deletes a copy
+ * with no hired agents. `hire` hires an agent of an enabled job title, named `name` or unnamed when
+ * null. `dismiss` removes a hired agent.
  */
 export interface Org {
   readonly jobTitles: Effect.Effect<ReadonlyArray<JobTitle>>
