@@ -1,20 +1,22 @@
 import { assert, describe, it } from '@effect/vitest'
 import type { PluginCallResultJson } from '@shared/ipc/contract'
-import type { PluginServices, PluginSetup } from '@shared/plugin/api'
+import type { HostPluginContext, PluginServices, PluginSetup } from '@shared/plugin/api'
 import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
-import { PluginCallError } from '@shared/plugin/messages'
+import {
+  PluginCallError,
+  PluginSubscriptionEnd,
+  PluginSubscriptionFailure
+} from '@shared/plugin/messages'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
-import { Effect, Exit, Option, Schema, Scope } from 'effect'
+import { Duration, Effect, Exit, Fiber, Option, Queue, Schema, Scope, Stream } from 'effect'
 import { Rpc } from 'effect/rpc'
+import { TestClock } from 'effect/testing'
 import { afterEach, vi } from 'vitest'
-import { callPlugin, servePluginCall } from '../../../host/plugins/plugin-messages'
-import { callHost } from './plugin-messages'
+import { callPlugin, servePluginCall, subscribePlugin } from '../../../host/plugins/plugin-messages'
+import { callHost, followHost } from './plugin-messages'
 
 interface ServingContext extends PluginServices {
-  readonly serve: <R extends Rpc.AnyWithProps>(
-    rpc: R,
-    handler: (payload: Rpc.Payload<R>) => Effect.Effect<Rpc.Success<R>, Rpc.Error<R>>
-  ) => Effect.Effect<void, never, Scope.Scope>
+  readonly serve: HostPluginContext['serve']
 }
 
 class GreetingRefused extends Schema.TaggedError<GreetingRefused>()('GreetingRefused', {
@@ -25,6 +27,13 @@ const Greet = Rpc.make('Greet', {
   payload: { plugin: Schema.String, payload: Schema.String },
   success: Schema.String,
   error: GreetingRefused
+})
+
+const Ticks = Rpc.make('Ticks', {
+  payload: {},
+  success: Schema.Number,
+  error: GreetingRefused,
+  stream: true
 })
 
 const Count = Rpc.make('Count', { payload: { n: Schema.Number }, success: Schema.Number })
@@ -55,7 +64,10 @@ const makeRegistry = (setup: PluginSetup<ServingContext>) =>
       const served = new Set<string>()
       return Effect.succeed({
         ...services,
-        serve: (rpc, handler) => servePluginCall(services, served, rpc, handler)
+        serve: <R extends Rpc.AnyWithProps>(
+          rpc: R,
+          handler: Parameters<typeof servePluginCall<R>>[3]
+        ) => servePluginCall(services, served, rpc, handler)
       })
     }
   })
@@ -226,6 +238,173 @@ describe('servePluginCall', () => {
       const info = yield* registry.load(EXAMPLE)
 
       assert.strictEqual(info.status._tag, 'Failed')
+    })
+  )
+})
+
+const encodeSubscriptionEnd = Schema.encodeSync(PluginSubscriptionEnd)
+
+const routeSubscriptionsTo = (registry: PluginRegistry) => {
+  const statusListeners = new Set<(event: { readonly name: string }) => void>()
+  const unsubscribed = { count: 0 }
+  vi.stubGlobal('window', {
+    dia: {
+      plugins: {
+        subscribe: (
+          plugin: string,
+          tag: string,
+          payload: unknown,
+          onValue: (value: unknown) => void,
+          onEnd: (end: unknown) => void
+        ) => {
+          const fiber = Effect.runFork(
+            subscribePlugin(registry, { plugin, tag, payload }).pipe(
+              Effect.flatMap(Stream.runForEach((value) => Effect.sync(() => onValue(value)))),
+              Effect.match({
+                onSuccess: () => onEnd({ _tag: 'PluginSubscriptionDone' }),
+                onFailure: (error) =>
+                  onEnd(encodeSubscriptionEnd(PluginSubscriptionFailure.make({ error })))
+              })
+            )
+          )
+          return () => {
+            unsubscribed.count += 1
+            Effect.runFork(Fiber.interrupt(fiber))
+          }
+        },
+        onStatusChanged: (listener: (event: { readonly name: string }) => void) => {
+          statusListeners.add(listener)
+          return () => statusListeners.delete(listener)
+        }
+      }
+    }
+  })
+  return {
+    unsubscribed,
+    waiting: () => statusListeners.size > 0,
+    emitStatusChanged: (name: string) => {
+      for (const listener of statusListeners) listener({ name })
+    }
+  }
+}
+
+const tick = TestClock.withLive(Effect.sleep(Duration.millis(5)))
+
+const untilTrue = (condition: () => boolean) =>
+  Effect.gen(function* () {
+    for (let attempt = 0; attempt < 200 && !condition(); attempt += 1) yield* tick
+  })
+
+const followInto = (queue: Queue.Queue<Option.Option<number>>) =>
+  Effect.forkChild(
+    Stream.runForEach(followHost(ctx, Ticks, {}), (value) => Queue.offer(queue, value))
+  )
+
+const settle = Effect.repeat(tick, { times: 4 })
+
+const servingOneThenNever = (plugin: ServingContext) =>
+  plugin.serve(Ticks, () => Stream.concat(Stream.make(1), Stream.never))
+
+const followUntilNotServing = (registry: PluginRegistry) =>
+  Effect.gen(function* () {
+    const host = routeSubscriptionsTo(registry)
+    const queue = yield* Queue.unbounded<Option.Option<number>>()
+    yield* followInto(queue)
+    yield* Queue.take(queue)
+    yield* registry.unload(EXAMPLE)
+    yield* Queue.take(queue)
+    yield* registry.load(EXAMPLE)
+    yield* untilTrue(host.waiting)
+    yield* tick
+    return { host, queue }
+  })
+
+describe('followHost', () => {
+  it.effect('emits Some of each decoded value the host entry streams', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry((plugin) => plugin.serve(Ticks, () => Stream.make(1, 2)))
+      yield* registry.load(EXAMPLE)
+      routeSubscriptionsTo(registry)
+
+      const values = yield* Stream.runCollect(followHost(ctx, Ticks, {}))
+
+      assert.deepStrictEqual(values, [Option.some(1), Option.some(2)])
+    })
+  )
+
+  it.effect("fails with the handler's own typed error", () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry((plugin) =>
+        plugin.serve(Ticks, () => Stream.fail(new GreetingRefused({ reason: 'too early' })))
+      )
+      yield* registry.load(EXAMPLE)
+      routeSubscriptionsTo(registry)
+
+      const error = yield* Stream.runCollect(followHost(ctx, Ticks, {})).pipe(Effect.flip)
+
+      assert.instanceOf(error, GreetingRefused)
+    })
+  )
+
+  it.effect('ends the host subscription when the stream is interrupted', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry(servingOneThenNever)
+      yield* registry.load(EXAMPLE)
+      const host = routeSubscriptionsTo(registry)
+
+      const first = yield* Stream.runHead(followHost(ctx, Ticks, {}))
+
+      assert.deepStrictEqual(first, Option.some(Option.some(1)))
+      assert.strictEqual(host.unsubscribed.count, 1)
+    })
+  )
+
+  it.effect(
+    'emits None when the host entry stops serving, and subscribes again after a status change of its plugin',
+    () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry(servingOneThenNever)
+        yield* registry.load(EXAMPLE)
+        const host = routeSubscriptionsTo(registry)
+        const queue = yield* Queue.unbounded<Option.Option<number>>()
+        yield* followInto(queue)
+        const seen = [yield* Queue.take(queue)]
+
+        yield* registry.unload(EXAMPLE)
+        seen.push(yield* Queue.take(queue))
+        yield* registry.load(EXAMPLE)
+        yield* untilTrue(host.waiting)
+        yield* tick
+        host.emitStatusChanged(EXAMPLE)
+        seen.push(yield* Queue.take(queue))
+
+        assert.deepStrictEqual(seen, [Option.some(1), Option.none(), Option.some(1)])
+      })
+  )
+
+  it.effect('does not subscribe again after a status change of another plugin', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry(servingOneThenNever)
+      yield* registry.load(EXAMPLE)
+      const { host, queue } = yield* followUntilNotServing(registry)
+
+      host.emitStatusChanged('other')
+      yield* settle
+
+      assert.strictEqual(yield* Queue.size(queue), 0)
+    })
+  )
+
+  it.effect('subscribes again after the retry interval when no status change arrives', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry(servingOneThenNever)
+      yield* registry.load(EXAMPLE)
+      const { queue } = yield* followUntilNotServing(registry)
+
+      yield* TestClock.adjust(Duration.seconds(5))
+      const resumed = yield* Queue.take(queue)
+
+      assert.deepStrictEqual(resumed, Option.some(1))
     })
   )
 })
