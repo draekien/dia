@@ -4,6 +4,7 @@ import type {
   BuiltInJobTitleDeleted,
   BuiltInJobTitleRenamed,
   HiredAgent,
+  HireHasOpenTasks,
   HireId,
   HireNameTaken,
   HireNotFound,
@@ -31,7 +32,8 @@ import type {
  * is not built in. `editJobTitle` applies `edit`'s present fields. `deleteJobTitle` deletes a copy
  * with no hired agents. `hire` hires an agent of an enabled job title, named `name` or unnamed when
  * null, reporting to hired agent `reportsTo` or to the user when null. `dismiss` removes a hired
- * agent and moves its reports to its own `reportsTo`. `renameHire` names a hired agent `name`, or clears its name
+ * agent and moves its reports to its own `reportsTo`; it fails with `HireHasOpenTasks` while the
+ * agent is assigned to a task that is not completed. `renameHire` names a hired agent `name`, or clears its name
  * when null; the name must be free among the other hired agents, ignoring ASCII case.
  * `setBypassOverride` sets a hired agent's bypass override: true or false overrides its job
  * title's `bypassOptIn`, null follows the job title (ADR-0054). `setReportsTo` makes a hired agent
@@ -63,7 +65,7 @@ export interface Org {
     name: AgentName | null,
     reportsTo: HireId | null
   ) => Effect.Effect<HiredAgent, JobTitleNotFound | JobTitleDisabled | HireNameTaken | HireNotFound>
-  readonly dismiss: (hireId: HireId) => Effect.Effect<void, HireNotFound>
+  readonly dismiss: (hireId: HireId) => Effect.Effect<void, HireNotFound | HireHasOpenTasks>
   readonly renameHire: (
     hireId: HireId,
     name: AgentName | null

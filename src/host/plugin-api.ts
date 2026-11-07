@@ -10,7 +10,7 @@ export {
 export * as AgentEvents from '../shared/domain/agent-event'
 export { AGENT_NAME_ADJECTIVES, AGENT_NAME_NOUNS } from '../shared/domain/agent-name'
 export { ContentAttachment, PathAttachment } from '../shared/domain/attachment'
-export { PlanReviewResponse, Question } from '../shared/domain/attention'
+export { PermissionResponse, PlanReviewResponse, Question } from '../shared/domain/attention'
 export { OutgoingMessage } from '../shared/domain/message-queue'
 export {
   MetaRepoFailed,
@@ -28,9 +28,9 @@ export {
   ModelsReady,
   ModelsUnavailable
 } from '../shared/domain/model'
-export { type PaneId, SessionId } from '../shared/domain/pane'
+export { type PaneId, SessionId, ThinkingLevel } from '../shared/domain/pane'
 export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
-export { AgentName } from '../shared/domain/project'
+export { AgentName, ProjectId } from '../shared/domain/project'
 export { PermissionRules, type SessionToolOptions } from '../shared/domain/session-tools'
 export { Uuid } from '../shared/domain/uuid'
 export * from '../shared/plugin/api'
@@ -68,3 +68,4 @@ export {
   type UserInputResolution
 } from './session/pending-user-input'
 export * from './session/protocol'
+export { type HiredStartMode, startPermissionMode } from './session/start-permission-mode'

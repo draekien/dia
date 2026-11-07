@@ -1,5 +1,21 @@
 // @effect-diagnostics asyncFunction:off -- React callbacks await OrgCall's Promise; components hold no Effect runtime.
-import { Button, Input, Label, Switch, Textarea, useProvided } from '@dia/renderer-plugin'
+import {
+  Button,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Switch,
+  Textarea,
+  thinkingLevelLabel,
+  thinkingLevelsFor,
+  useModelCatalog,
+  useProvided
+} from '@dia/renderer-plugin'
 import { McpServersEditorKey } from '@dia-plugin/mcp/editor'
 import { type McpServersDraft, mcpServersDraft, readMcpServersDraft } from '@dia-plugin/mcp/servers'
 import { Result } from 'effect'
@@ -39,6 +55,8 @@ interface Draft {
   readonly deny: string
   readonly mcpServers: McpServersDraft
   readonly bypassOptIn: boolean
+  readonly model: JobTitle['model']
+  readonly thinkingLevel: JobTitle['thinkingLevel']
 }
 
 const draftOf = (jobTitle: JobTitle): Draft => ({
@@ -49,7 +67,9 @@ const draftOf = (jobTitle: JobTitle): Draft => ({
   ask: jobTitle.permissions.ask.join('\n'),
   deny: jobTitle.permissions.deny.join('\n'),
   mcpServers: mcpServersDraft(jobTitle.mcpServers),
-  bypassOptIn: jobTitle.bypassOptIn
+  bypassOptIn: jobTitle.bypassOptIn,
+  model: jobTitle.model,
+  thinkingLevel: jobTitle.thinkingLevel
 })
 
 interface FormErrors {
@@ -88,7 +108,11 @@ const editOf = (
     ...(mcpServersDraft(mcpServers.success) === mcpServersDraft(jobTitle.mcpServers)
       ? {}
       : { mcpServers: mcpServers.success }),
-    ...(draft.bypassOptIn === jobTitle.bypassOptIn ? {} : { bypassOptIn: draft.bypassOptIn })
+    ...(draft.bypassOptIn === jobTitle.bypassOptIn ? {} : { bypassOptIn: draft.bypassOptIn }),
+    ...(draft.model === jobTitle.model ? {} : { model: draft.model }),
+    ...(draft.thinkingLevel === jobTitle.thinkingLevel
+      ? {}
+      : { thinkingLevel: draft.thinkingLevel })
   })
 }
 
@@ -113,6 +137,81 @@ function Field({
   )
 }
 
+function ModelFields({
+  id,
+  model,
+  thinkingLevel,
+  onModelChange,
+  onThinkingLevelChange
+}: {
+  readonly id: string
+  readonly model: JobTitle['model']
+  readonly thinkingLevel: JobTitle['thinkingLevel']
+  readonly onModelChange: (model: JobTitle['model']) => void
+  readonly onThinkingLevelChange: (level: JobTitle['thinkingLevel']) => void
+}) {
+  const { state } = useModelCatalog()
+  const models = state?._tag === 'Ready' ? state.models : []
+  const option = model === null ? models[0] : models.find((candidate) => candidate.value === model)
+  const offered = thinkingLevelsFor(option)
+  const levels = offered.includes(thinkingLevel) ? offered : [thinkingLevel, ...offered]
+  const modelName = (value: string | null) =>
+    value === null
+      ? `Default${models[0] === undefined ? '' : ` (${models[0].displayName})`}`
+      : (models.find((candidate) => candidate.value === value)?.displayName ?? value)
+
+  return (
+    <div className="grid gap-4 @2xl:grid-cols-2 @3xl:grid-cols-1 @5xl:grid-cols-2">
+      <Field
+        label={<Label id={`${id}-model-label`}>Model</Label>}
+        caption="Default follows the first model Claude Code lists."
+      >
+        <Select<string | null> value={model} onValueChange={(next) => onModelChange(next)}>
+          <SelectTrigger aria-labelledby={`${id}-model-label`}>
+            <SelectValue>{modelName(model)}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value={null}>{modelName(null)}</SelectItem>
+              {model !== null && !models.some((candidate) => candidate.value === model) ? (
+                <SelectItem value={model} className="font-mono">
+                  {model}
+                </SelectItem>
+              ) : null}
+              {models.map((candidate) => (
+                <SelectItem key={candidate.value} value={candidate.value}>
+                  {candidate.displayName}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </Field>
+      <Field label={<Label id={`${id}-thinking-label`}>Thinking</Label>}>
+        <Select
+          value={thinkingLevel}
+          onValueChange={(next) => {
+            if (next !== null) onThinkingLevelChange(next)
+          }}
+        >
+          <SelectTrigger aria-labelledby={`${id}-thinking-label`}>
+            <SelectValue>{thinkingLevelLabel(thinkingLevel)}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {levels.map((level) => (
+                <SelectItem key={level} value={level}>
+                  {thinkingLevelLabel(level)}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </Field>
+    </div>
+  )
+}
+
 function EditForm({
   jobTitle,
   snapshot,
@@ -128,7 +227,7 @@ function EditForm({
   const mcpEditable = McpServersEditor !== undefined
   const pending = editOf(jobTitle, draft, mcpEditable)
   const changed = Result.isFailure(pending) || Object.keys(pending.success).length > 0
-  const set = (field: Exclude<keyof Draft, 'mcpServers'>) => (value: string | boolean) => {
+  const set = (field: Exclude<keyof Draft, 'mcpServers'>) => (value: string | boolean | null) => {
     setDraft((current) => ({ ...current, [field]: value }))
     setErrors({})
   }
@@ -156,7 +255,7 @@ function EditForm({
   }
 
   const textarea = (
-    field: Exclude<keyof Draft, 'bypassOptIn' | 'mcpServers'>,
+    field: Exclude<keyof Draft, 'bypassOptIn' | 'mcpServers' | 'model' | 'thinkingLevel'>,
     label: string,
     mono: boolean,
     caption?: string,
@@ -200,6 +299,13 @@ function EditForm({
         "Added to the system prompt of this job title's sessions."
       )}
       {textarea('skills', 'Skills', true, 'One skill name per line. None means every skill.')}
+      <ModelFields
+        id={id}
+        model={draft.model}
+        thinkingLevel={draft.thinkingLevel}
+        onModelChange={set('model')}
+        onThinkingLevelChange={set('thinkingLevel')}
+      />
       <div className="grid gap-4 @2xl:grid-cols-3 @3xl:grid-cols-1 @5xl:grid-cols-3">
         {textarea('allow', 'Allow', true)}
         {textarea('ask', 'Ask', true)}

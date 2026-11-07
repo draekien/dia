@@ -6,6 +6,7 @@ import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
+import { makeWork } from './work'
 
 const OLD_BUILT_INS = ['planner', 'engineer', 'reviewer', 'researcher', 'retro'] as const
 const oldRoleId = (index: number) => `6f0c1a6e-4b1e-4a52-9a0e-0d6b3f1a000${index + 1}`
@@ -70,7 +71,8 @@ const upgradedLegacyOrg = Effect.gen(function* () {
   yield* legacy.sql`INSERT INTO hired_agents ${legacy.sql.insert(hire('00000000-0000-4000-8000-000000000202', OLD_ENGINEER_ID, 'calm-heron'))}`
   yield* legacy.close
   const sql = yield* openDatabase(filename, orgMigrations)
-  const org = yield* makeOrg.pipe(
+  const org = yield* makeWork(() => Effect.succeed(true)).pipe(
+    Effect.flatMap(({ openTasksOf }) => makeOrg(openTasksOf)),
     Effect.provideService(SqlClient.SqlClient, sql),
     Effect.provide(NodeCrypto.layer)
   )
@@ -175,6 +177,18 @@ describe('4_add_reports_to on a database with hires', () => {
         sql`DELETE FROM hired_agents WHERE hire_id = ${BRAVE_OTTER_ID}`
       )
       assert.isTrue(Exit.isFailure(removed))
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe('5_job_title_model on a database with job titles', () => {
+  it.effect('gives every existing job title no model and the medium thinking level', () =>
+    Effect.gen(function* () {
+      const { org } = yield* upgradedLegacyOrg
+      const settings = new Set(
+        (yield* org.jobTitles).map((jobTitle) => `${jobTitle.model}/${jobTitle.thinkingLevel}`)
+      )
+      assert.deepStrictEqual([...settings], ['null/medium'])
     }).pipe(Effect.scoped)
   )
 })

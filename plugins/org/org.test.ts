@@ -10,12 +10,14 @@ import { HireId, HireNotFound, type JobTitle, JobTitleId, JobTitleName, OverallC
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import type { Org } from './service'
+import { makeWork } from './work'
 
 const openOrgIn = (filename: string) =>
   Effect.gen(function* () {
     const scope = yield* Scope.make()
     const sql = yield* openDatabase(filename, orgMigrations).pipe(Scope.provide(scope))
-    const org = yield* makeOrg.pipe(
+    const org = yield* makeWork(() => Effect.succeed(true)).pipe(
+      Effect.flatMap(({ openTasksOf }) => makeOrg(openTasksOf)),
       Effect.provideService(SqlClient.SqlClient, sql),
       Effect.provide(NodeCrypto.layer)
     )
