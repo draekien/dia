@@ -8,6 +8,13 @@
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "types": ["vite/client"],
+    "paths": {
+      "@shared/*": ["./src/shared/*"],
+      "@renderer/*": ["./src/renderer/src/*"],
+      "@dia/renderer-plugin": ["./src/renderer/src/plugin-api.ts"],
+      "@dia/plugin": ["./src/host/plugin-api.ts"],
+      "@dia-plugin/*": ["./plugins/*"]
+    },
     "skipLibCheck": true,
     "strict": true,
     "esModuleInterop": true,
@@ -17,6 +24,14 @@
   "include": [
     "src/renderer/src/**/*",
     "src/shared/**/*",
+    "src/host/plugin-api.ts",
+    "src/host/services/meta-repo-seam.ts",
+    "src/host/services/org-seam.ts",
+    "src/host/services/worktrees-seam.ts",
+    "src/host/session/agent-backend.ts",
+    "src/host/session/dia-tools.ts",
+    "src/host/session/pending-user-input.ts",
+    "src/host/session/protocol.ts",
     "plugins/**/renderer.ts",
     "plugins/**/*.tsx",
     "plugins/agent-overview/overview.ts",

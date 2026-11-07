@@ -1,11 +1,11 @@
 import type { PluginServices, PluginSetup } from '@dia/plugin'
 import { addPage, callHost } from '@dia/renderer-plugin'
+import { ReadGreeting } from '@dia-plugin/example/messages'
 import { Effect } from 'effect'
 import { Atom } from 'effect/reactivity'
 import { HandIcon } from 'lucide-react'
 import { createElement } from 'react'
 import { GreetingPage } from './greeting-page'
-import { ReadGreeting } from './messages'
 
 const setup: PluginSetup<PluginServices> = (ctx) =>
   Effect.gen(function* () {

@@ -59,7 +59,8 @@ const plugin = (
   setup?: PluginSetup<PluginServices>
 ): LoadedPlugin<PluginServices> => ({
   manifest: manifestFields,
-  resolveSetup: Effect.succeed(Option.fromNullishOr(setup))
+  resolveSetup: Effect.succeed(Option.fromNullishOr(setup)),
+  importers: []
 })
 
 const recording =
@@ -95,13 +96,13 @@ const makeRegistry = (
         )
     },
     loader: options.loader ?? {
-      peek: (root) => {
+      peek: (_name, root) => {
         const found = plugins[root]
         return found === undefined
           ? Effect.fail(new PluginLoadError({ message: `missing ${root}` }))
           : Effect.succeed(found.manifest)
       },
-      load: (root, use) => {
+      load: (_name, root, use) => {
         const found = plugins[root]
         return found === undefined
           ? Effect.fail(new PluginLoadError({ message: `missing ${root}` }))
@@ -524,7 +525,8 @@ describe('plugin registry', () => {
           resolveSetup: Effect.sync(() => {
             imports += 1
             return Option.none()
-          })
+          }),
+          importers: []
         }
       })
 
@@ -539,7 +541,8 @@ describe('plugin registry', () => {
       const registry = yield* makeRegistry({
         broken: {
           manifest: manifest('broken'),
-          resolveSetup: Effect.fail(new PluginLoadError({ message: 'Cannot import "host.ts"' }))
+          resolveSetup: Effect.fail(new PluginLoadError({ message: 'Cannot import "host.ts"' })),
+          importers: []
         }
       })
 
@@ -590,7 +593,8 @@ describe('plugin registry', () => {
         yield* registry.load('alpha')
         plugins.alpha = {
           manifest: manifest('alpha'),
-          resolveSetup: Effect.fail(new PluginLoadError({ message: 'Cannot import "host.ts"' }))
+          resolveSetup: Effect.fail(new PluginLoadError({ message: 'Cannot import "host.ts"' })),
+          importers: []
         }
 
         const reloaded = yield* registry.load('alpha')
@@ -723,7 +727,7 @@ describe('plugin registry', () => {
         const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', [])) }
         const loader: PluginLoader<PluginServices> = {
           peek: peekNotUsed,
-          load: (root, use) =>
+          load: (_name, root, use) =>
             use(plugins.alpha).pipe(
               Effect.tapCause(() => Effect.sync(() => void outcomes.push(`${root}:rolled-back`))),
               Effect.tap(() => Effect.sync(() => void outcomes.push(`${root}:committed`)))
@@ -748,7 +752,7 @@ describe('plugin registry', () => {
         let changedDependency = false
         const loader: PluginLoader<PluginServices> = {
           peek: peekNotUsed,
-          load: (_root, use) =>
+          load: (_name, _root, use) =>
             changedDependency
               ? Effect.fail(
                   new PluginRestartRequiredError({
@@ -779,7 +783,7 @@ describe('plugin registry', () => {
         const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', [])) }
         const loader: PluginLoader<PluginServices> = {
           peek: peekNotUsed,
-          load: (_root, use) => {
+          load: (_name, _root, use) => {
             loaderCalls += 1
             return use(plugins.alpha)
           }
@@ -1254,7 +1258,7 @@ describe('plugin setup time limit', () => {
       const plugins = { alpha: plugin(manifest('alpha'), recording('alpha', log)) }
       const registry = yield* makeRegistry(plugins)
       yield* registry.load('alpha')
-      plugins.alpha = { manifest: manifest('alpha'), resolveSetup: Effect.never }
+      plugins.alpha = { manifest: manifest('alpha'), resolveSetup: Effect.never, importers: [] }
 
       const reloaded = yield* loadPastTheLimit(registry, 'alpha')
 
@@ -2265,4 +2269,148 @@ describe('whenProvided', () => {
       ctx.whenProvided([], () => Effect.void)
     assert.isFunction(register)
   })
+})
+
+describe('importers of a reloading plugin', () => {
+  const importedBy = (
+    loaded: LoadedPlugin<PluginServices>,
+    importers: ReadonlyArray<string>
+  ): LoadedPlugin<PluginServices> => ({ ...loaded, importers })
+
+  it.effect(
+    'closes the importers before the exporter and opens them after it, in import order',
+    () =>
+      Effect.gen(function* () {
+        const log: Array<string> = []
+        const plugins: Record<string, LoadedPlugin<PluginServices>> = {
+          a: plugin(manifest('a'), recording('a', log)),
+          b: plugin(manifest('b'), recording('b', log)),
+          c: plugin(manifest('c'), recording('c', log))
+        }
+        const registry = yield* makeRegistry(plugins)
+        for (const name of ['a', 'b', 'c']) yield* registry.load(name)
+        log.length = 0
+        plugins.a = importedBy(plugin(manifest('a'), recording('a', log)), ['b', 'c'])
+
+        yield* registry.load('a')
+
+        assert.deepStrictEqual(log, ['c:close', 'b:close', 'a:close', 'a:open', 'b:open', 'c:open'])
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect('closes no other plugin when the load reports no importers', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const plugins: Record<string, LoadedPlugin<PluginServices>> = {
+        a: plugin(manifest('a'), recording('a', log)),
+        b: plugin(manifest('b'), recording('b', log))
+      }
+      const registry = yield* makeRegistry(plugins)
+      yield* registry.load('a')
+      yield* registry.load('b')
+      log.length = 0
+
+      yield* registry.load('a')
+
+      assert.deepStrictEqual(log, ['a:close', 'a:open'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('loads a waiting importer again, so it opens with its new setup', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const plugins: Record<string, LoadedPlugin<PluginServices>> = {
+        a: plugin(manifest('a'), recording('a', log)),
+        b: plugin(manifest('b', { inject: ['db'] }), recording('b-old', log)),
+        provider: plugin(
+          manifest('provider'),
+          recording('provider', log, (ctx) => ctx.provide('db', 'connection'))
+        )
+      }
+      const registry = yield* makeRegistry(plugins)
+      yield* registry.load('a')
+      yield* registry.load('b')
+      plugins.b = plugin(manifest('b', { inject: ['db'] }), recording('b-new', log))
+      plugins.a = importedBy(plugin(manifest('a'), recording('a', log)), ['b'])
+      yield* registry.load('a')
+      log.length = 0
+
+      yield* registry.load('provider')
+
+      assert.deepStrictEqual(log, ['provider:open', 'b-new:open'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('reopens the previous version of an importer whose load fails', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const plugins: Record<string, LoadedPlugin<PluginServices>> = {
+        a: plugin(manifest('a'), recording('a', log)),
+        b: plugin(manifest('b'), recording('b', log))
+      }
+      const registry = yield* makeRegistry(plugins)
+      yield* registry.load('a')
+      yield* registry.load('b')
+      log.length = 0
+      plugins.b = {
+        manifest: manifest('b'),
+        resolveSetup: Effect.fail(new PluginLoadError({ message: 'Cannot import "host.ts"' })),
+        importers: []
+      }
+      plugins.a = importedBy(plugin(manifest('a'), recording('a', log)), ['b'])
+
+      yield* registry.load('a')
+      const importer = (yield* registry.list()).find((info) => info.name === 'b')
+
+      assert.deepStrictEqual(log, ['b:close', 'a:close', 'a:open', 'b:open'])
+      assert.deepStrictEqual(importer?.status, {
+        _tag: 'Loaded',
+        reloadError: 'Cannot import "host.ts"'
+      })
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('loads the importers again when the new version of the exporter fails to open', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const plugins: Record<string, LoadedPlugin<PluginServices>> = {
+        a: plugin(manifest('a'), recording('a', log)),
+        b: plugin(manifest('b'), recording('b', log))
+      }
+      const registry = yield* makeRegistry(plugins)
+      yield* registry.load('a')
+      yield* registry.load('b')
+      log.length = 0
+      plugins.a = importedBy(
+        plugin(manifest('a'), () => Effect.fail(new PluginLoadError({ message: 'setup failed' }))),
+        ['b']
+      )
+
+      yield* registry.load('a')
+
+      assert.deepStrictEqual(log, ['b:close', 'a:close', 'a:open', 'b:open'])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('leaves an unloaded importer unloaded', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const plugins: Record<string, LoadedPlugin<PluginServices>> = {
+        a: plugin(manifest('a'), recording('a', log)),
+        b: plugin(manifest('b'), recording('b', log))
+      }
+      const registry = yield* makeRegistry(plugins)
+      yield* registry.load('a')
+      yield* registry.load('b')
+      yield* registry.unload('b')
+      log.length = 0
+      plugins.a = importedBy(plugin(manifest('a'), recording('a', log)), ['b'])
+
+      yield* registry.load('a')
+      const importer = (yield* registry.list()).find((info) => info.name === 'b')
+
+      assert.deepStrictEqual(log, ['a:close', 'a:open'])
+      assert.strictEqual(importer?.status._tag, 'Unloaded')
+    }).pipe(Effect.scoped)
+  )
 })

@@ -18,6 +18,11 @@ export class ModuleGenerations {
     return `${url}?gen=${this.generations.get(url) ?? 0}`
   }
 
+  /** The modules `url` imports, as recorded since `url` was last invalidated. */
+  importsOf(url: string): ReadonlySet<string> {
+    return this.imports.get(url) ?? new Set()
+  }
+
   /** Records that the module `importer` imports the module `imported`, both given without a query. */
   recordImport(importer: string, imported: string): void {
     addTo(this.imports, importer, imported)

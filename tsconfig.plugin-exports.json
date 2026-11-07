@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "types": [],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "paths": {
+      "@shared/*": ["./src/shared/*"],
+      "@dia/plugin": ["./src/host/plugin-api.ts"],
+      "@dia-plugin/*": ["./plugins/*"]
+    },
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true
+  },
+  "include": ["plugins/example/messages.ts"]
+}
