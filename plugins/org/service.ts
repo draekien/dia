@@ -56,22 +56,23 @@ export interface Org {
   readonly setOverallCap: (cap: OverallCap) => Effect.Effect<OrgSettings>
 }
 
-const READS = ['roles', 'hiredAgents', 'settings'] as const
-const CHANGES = [
-  'setRoleEnabled',
-  'copyRole',
-  'editRole',
-  'deleteRole',
-  'hire',
-  'dismiss',
-  'setOverallCap'
-] as const
+const MEMBERS: Record<keyof Org, (member: unknown) => boolean> = {
+  roles: Effect.isEffect,
+  hiredAgents: Effect.isEffect,
+  settings: Effect.isEffect,
+  setRoleEnabled: Predicate.isFunction,
+  copyRole: Predicate.isFunction,
+  editRole: Predicate.isFunction,
+  deleteRole: Predicate.isFunction,
+  hire: Predicate.isFunction,
+  dismiss: Predicate.isFunction,
+  setOverallCap: Predicate.isFunction
+}
 
 /** Whether `value` has every {@link Org} member: the reads as effects, the changes as functions. */
 export const isOrg = (value: unknown): value is Org =>
-  READS.every((member) => Predicate.hasProperty(value, member) && Effect.isEffect(value[member])) &&
-  CHANGES.every(
-    (member) => Predicate.hasProperty(value, member) && Predicate.isFunction(value[member])
+  Object.entries(MEMBERS).every(
+    ([member, check]) => Predicate.hasProperty(value, member) && check(value[member])
   )
 
 /** The key the `org` plugin provides its {@link Org} under; import it to read the org typed. */

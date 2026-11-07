@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-
 import { ProjectId, type Workspace } from '@shared/domain/project'
 import type { PluginRegistry } from '@shared/plugin/plugin-registry'
 import { fakeInject } from '@shared/plugin/plugin-registry.fake'

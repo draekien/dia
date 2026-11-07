@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-
 import type { AnyServiceKey, PluginServices } from '@shared/plugin/api'
 import type { PluginRegistry } from '@shared/plugin/plugin-registry'
 import { fakeInject } from '@shared/plugin/plugin-registry.fake'
@@ -25,16 +24,16 @@ const makeFakeRegistry = Effect.gen(function* () {
     name,
     inject: registry.inject,
     whenProvided: () => Effect.void,
-    provide: (key: AnyServiceKey, value: unknown) =>
-      Effect.acquireRelease(
-        Effect.sync(() => values.set(nameOf(key), value)).pipe(
-          Effect.andThen(PubSub.publish(changed, nameOf(key)))
+    provide: (key: AnyServiceKey, value: unknown) => {
+      const slot = nameOf(key)
+      return Effect.acquireRelease(
+        Effect.sync(() => values.set(slot, value)).pipe(
+          Effect.andThen(PubSub.publish(changed, slot))
         ),
         () =>
-          Effect.sync(() => values.delete(nameOf(key))).pipe(
-            Effect.andThen(PubSub.publish(changed, nameOf(key)))
-          )
+          Effect.sync(() => values.delete(slot)).pipe(Effect.andThen(PubSub.publish(changed, slot)))
       )
+    }
   })
   return { registry, services }
 })

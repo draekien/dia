@@ -246,7 +246,7 @@ const WatcherState = Data.taggedEnum<WatcherState>()
 interface Watcher {
   readonly plugin: string
   readonly keys: ReadonlyArray<string>
-  readonly guards: ReadonlyMap<string, (value: unknown) => boolean>
+  readonly typedKeys: ReadonlyArray<AnyServiceKey>
   readonly setup: (services: Record<string, unknown>) => Effect.Effect<void, unknown, Scope.Scope>
   readonly parent: Scope.Scope
   readonly provided: Set<string>
@@ -456,22 +456,25 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       return entry !== undefined && isRunning(entry)
     }
 
-    const warnRejected = (key: string, provider: string, reader?: string): Effect.Effect<void> =>
-      Effect.logWarning('A provided service failed its key check', {
-        key,
-        provider,
-        ...(reader === undefined ? {} : { plugin: reader })
-      })
+    const warnRejected = (annotations: {
+      readonly key: string
+      readonly provider: string
+      readonly plugin?: string
+    }): Effect.Effect<void> =>
+      Effect.logWarning('A provided service failed its key check', annotations)
 
-    const inject = (key: AnyServiceKey): Effect.Effect<Option.Option<unknown>> =>
+    const checkedSlot = (key: AnyServiceKey) =>
       Effect.gen(function* () {
         const name = nameOf(key)
         const slot = slots.get(name)
         if (slot === undefined) return Option.none()
-        if (passes(key, slot.value)) return Option.some(slot.value)
-        yield* warnRejected(name, slot.owner)
+        if (passes(key, slot.value)) return Option.some(slot)
+        yield* warnRejected({ key: name, provider: slot.owner })
         return Option.none()
       })
+
+    const inject = (key: AnyServiceKey): Effect.Effect<Option.Option<unknown>> =>
+      checkedSlot(key).pipe(Effect.map(Option.map((slot) => slot.value)))
 
     const servicesFor = (name: string, entry: Entry<Context>): PluginServices => ({
       name,
@@ -575,12 +578,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           const watcher: Watcher = {
             plugin: name,
             keys,
-            guards: new Map(
-              typedKeys.map((typedKey) => [
-                nameOf(typedKey),
-                (value: unknown) => passes(typedKey, value)
-              ])
-            ),
+            typedKeys,
             setup: (services) => setup(services as Parameters<typeof setup>[0]),
             parent,
             provided: new Set(),
@@ -674,10 +672,9 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       const key = nameOf(typedKey)
       return Effect.acquireUseRelease(
         Effect.gen(function* () {
-          const slot = slots.get(key)
-          if (slot === undefined) return { _tag: 'NotProvided' } as const
-          if (!passes(typedKey, slot.value))
-            return { _tag: 'Rejected', plugin: slot.owner } as const
+          const checked = yield* checkedSlot(typedKey)
+          if (Option.isNone(checked)) return { _tag: 'NotProvided' } as const
+          const slot = checked.value
           const leases = entries.get(slot.owner)?.leases
           if (leases === undefined || leases.closing) {
             return { _tag: 'Closing', plugin: slot.owner } as const
@@ -690,10 +687,6 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
           Effect.gen(function* () {
             if (grant._tag === 'NotProvided') {
               yield* Effect.logDebug('No plugin provides the service', { key })
-              return Option.none<A>()
-            }
-            if (grant._tag === 'Rejected') {
-              yield* warnRejected(key, grant.plugin)
               return Option.none<A>()
             }
             if (grant._tag === 'Closing') {
@@ -794,8 +787,15 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         return slot !== undefined && isRunningName(slot.owner)
       })
 
-    const rejectedKey = (watcher: Watcher): string | undefined =>
-      watcher.keys.find((key) => watcher.guards.get(key)?.(slots.get(key)?.value) === false)
+    const rejectedSlot = (watcher: Watcher): { key: string; provider: string } | undefined => {
+      for (const key of watcher.typedKeys) {
+        const slot = slots.get(nameOf(key))
+        if (slot !== undefined && !passes(key, slot.value)) {
+          return { key: nameOf(key), provider: slot.owner }
+        }
+      }
+      return undefined
+    }
 
     const runWatcher = (watcher: Watcher): Effect.Effect<void> =>
       Effect.gen(function* () {
@@ -829,9 +829,9 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       let ran = false
       for (const watcher of [...watchers]) {
         if (!watchers.has(watcher) || !keysProvided(watcher)) continue
-        const rejected = rejectedKey(watcher)
+        const rejected = rejectedSlot(watcher)
         if (rejected !== undefined) {
-          yield* warnRejected(rejected, slots.get(rejected)?.owner ?? '', watcher.plugin)
+          yield* warnRejected({ ...rejected, plugin: watcher.plugin })
           continue
         }
         yield* runWatcher(watcher)
@@ -1184,13 +1184,5 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       )
     })
 
-    return {
-      list,
-      start,
-      load,
-      unload,
-      inject,
-      use,
-      changes: Stream.fromPubSub(providedKeys)
-    }
+    return { list, start, load, unload, inject, use, changes: Stream.fromPubSub(providedKeys) }
   })
