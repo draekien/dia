@@ -2547,6 +2547,25 @@ describe('typed service keys', () => {
     }).pipe(Effect.scoped, Effect.provide(capturingLogs(messages)))
   })
 
+  it.effect('warns once about a rejected watcher while later loads settle', () => {
+    const messages: Array<unknown> = []
+    return Effect.gen(function* () {
+      const registry = yield* makeRegistry({
+        provider: providing([], notACounter),
+        overview: plugin(manifest('overview'), (ctx) =>
+          ctx.whenProvided([CounterService], () => Effect.void)
+        ),
+        bystander: plugin(manifest('bystander'), () => Effect.void)
+      })
+      yield* registry.load('overview')
+      yield* registry.load('provider')
+
+      yield* registry.load('bystander')
+
+      assert.strictEqual(messages.filter((message) => message === rejectedLog).length, 1)
+    }).pipe(Effect.scoped, Effect.provide(capturingLogs(messages)))
+  })
+
   it.effect('closes a running typed watcher before its provider closes', () =>
     Effect.gen(function* () {
       const log: Array<string> = []

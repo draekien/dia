@@ -831,6 +831,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         if (!watchers.has(watcher) || !keysProvided(watcher)) continue
         const rejected = rejectedSlot(watcher)
         if (rejected !== undefined) {
+          watcher.state = WatcherState.Failed()
           yield* warnRejected({ ...rejected, plugin: watcher.plugin })
           continue
         }
