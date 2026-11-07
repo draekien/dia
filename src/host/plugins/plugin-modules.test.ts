@@ -138,6 +138,13 @@ describe("imports of another plugin's exports", () => {
     ])
   })
 
+  it('gives the importer the edited export of an exporter that never loaded', () => {
+    assert.deepStrictEqual(results.unloadedEdited?.evaluated, [
+      'messages:unloaded-edited',
+      'saw:unloaded-edited'
+    ])
+  })
+
   it('fails the importer with the specifier when no plugin has that name', () => {
     assert.include(
       results.unknownPlugin?.failure?.message ?? '',

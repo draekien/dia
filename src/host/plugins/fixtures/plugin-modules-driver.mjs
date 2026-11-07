@@ -134,6 +134,8 @@ processPluginModules.declare('unloaded', unloadedRoot, 'feature', ['messages.ts'
 results.unloadedFirst = await reload(secondImporterRoot, 'second-importer')
 processPluginModules.declare('unloaded', unloadedOverrideRoot, 'feature', ['messages.ts'])
 results.unloadedOverridden = await reload(secondImporterRoot, 'second-importer')
+write(unloadedOverrideRoot, 'messages.ts', messagesSource('unloaded-edited'))
+results.unloadedEdited = await reload(secondImporterRoot, 'second-importer')
 
 const unknownRoot = join(base, 'unknown-importer')
 write(unknownRoot, 'entry.mjs', importerSource('@dia-plugin/missing/messages'))

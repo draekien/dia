@@ -953,7 +953,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       })
 
     const loadNamed = (name: string, fromStart: boolean): Effect.Effect<PluginInfo> =>
-      lock.withPermits(1)(loadLocked(name, fromStart)).pipe(Effect.tap(publishChanges))
+      lock.withPermits(1)(loadLocked(name, fromStart).pipe(Effect.tap(publishChanges)))
 
     const loadLocked = (name: string, fromStart: boolean): Effect.Effect<PluginInfo> =>
       Effect.gen(function* () {

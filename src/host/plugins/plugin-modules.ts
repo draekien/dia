@@ -144,11 +144,11 @@ export const makePluginModules = (pluginApiUrl: string | undefined): PluginModul
     const target = resolvePluginExport(specifier, (plugin) => records.get(plugin)?.exports)
     if (target === undefined) return specifier
     if ('message' in target) throw new Error(target.message)
-    const importer = [...records].find(([, candidate]) => candidate.prefix === parentRoot)
+    const importer = pluginAt(parentRoot)
     if (
       importer !== undefined &&
-      importer[1].category === 'adapter' &&
-      importer[0] !== target.plugin
+      records.get(importer)?.category === 'adapter' &&
+      importer !== target.plugin
     ) {
       throw new Error(
         `An adapter cannot import "${specifier}": reloading "${target.plugin}" would close the adapter`
@@ -219,10 +219,15 @@ export const makePluginModules = (pluginApiUrl: string | undefined): PluginModul
       .filter(([url, recorded]) => differs(recorded, signatureOf(url)))
       .map(([url]) => fileURLToPath(url))
 
+  const neverLoaded = (url: string): boolean => {
+    const owner = pluginAt(url)
+    return owner !== undefined && records.get(owner)?.transacted === false
+  }
+
   const changedModules = (prefix: string): ReadonlyMap<string, Signature | undefined> => {
     const changed = new Map<string, Signature | undefined>()
     for (const [url, recorded] of signatures) {
-      if (!url.startsWith(prefix)) continue
+      if (!url.startsWith(prefix) && !neverLoaded(url)) continue
       const current = signatureOf(url)
       if (differs(recorded, current)) changed.set(url, current)
     }
