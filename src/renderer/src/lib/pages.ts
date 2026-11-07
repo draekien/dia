@@ -27,6 +27,12 @@ export interface RegisteredPage extends Page {
 
 const sameKey = (a: PageKey, b: PageKey): boolean => a.plugin === b.plugin && a.id === b.id
 
+/** The page among `pages` that `key` names, or `undefined` when no plugin has added it. */
+export const findPage = (
+  pages: ReadonlyArray<RegisteredPage>,
+  key: PageKey
+): RegisteredPage | undefined => pages.find((page) => sameKey(page.key, key))
+
 /** Every page plugins added, sorted by `order`, ties in the order they were added. */
 export const pagesAtom = Atom.make<ReadonlyArray<RegisteredPage>>([]).pipe(Atom.keepAlive)
 

@@ -2,7 +2,7 @@ import type { Project } from '@shared/domain/project'
 import { tabOf } from '@shared/domain/workspace'
 import { Result } from 'effect'
 import { RulerIcon } from 'lucide-react'
-import { usePages } from '../lib/pages'
+import { findPage, usePages } from '../lib/pages'
 import { useView, useWorkspace } from '../plugin-api'
 import { RailToggle } from './session-rail'
 import { TranscriptWidthToggle } from './transcript-width-toggle'
@@ -36,28 +36,20 @@ function TranscriptWidthButton() {
   )
 }
 
-function Crumbs({ project, page }: { readonly project: Project; readonly page: string }) {
+function Crumbs({ project, page }: { readonly project?: Project; readonly page: string }) {
   return (
     <Breadcrumb className="min-w-0">
       <BreadcrumbList className="flex-nowrap">
-        <BreadcrumbItem className="min-w-0">
-          <span className="truncate">{project.displayName}</span>
-        </BreadcrumbItem>
-        <BreadcrumbSeparator />
+        {project !== undefined && (
+          <>
+            <BreadcrumbItem className="min-w-0">
+              <span className="truncate">{project.displayName}</span>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+          </>
+        )}
         <BreadcrumbItem className="min-w-0">
           <BreadcrumbPage className="truncate font-medium">{page}</BreadcrumbPage>
-        </BreadcrumbItem>
-      </BreadcrumbList>
-    </Breadcrumb>
-  )
-}
-
-function PageCrumb({ label }: { readonly label: string }) {
-  return (
-    <Breadcrumb className="min-w-0">
-      <BreadcrumbList className="flex-nowrap">
-        <BreadcrumbItem className="min-w-0">
-          <BreadcrumbPage className="truncate font-medium">{label}</BreadcrumbPage>
         </BreadcrumbItem>
       </BreadcrumbList>
     </Breadcrumb>
@@ -86,10 +78,7 @@ export function TabHeader() {
   const view = useView()
   const workspace = useWorkspace()
   const pages = usePages()
-  const page =
-    view?._tag === 'PageView'
-      ? pages.find((entry) => entry.key.plugin === view.plugin && entry.key.id === view.id)
-      : undefined
+  const page = view?._tag === 'PageView' ? findPage(pages, view) : undefined
   const found =
     view?._tag === 'TabView' && workspace !== undefined ? tabOf(workspace, view.paneId) : undefined
   const tab = found !== undefined && Result.isSuccess(found) ? found.success : undefined
@@ -105,7 +94,7 @@ export function TabHeader() {
         <WorktreeChip worktree={tab.tab.config.worktree} />
       )}
       {newAgentProject !== undefined && <Crumbs project={newAgentProject} page="New agent" />}
-      {page !== undefined && <PageCrumb label={page.label} />}
+      {page !== undefined && <Crumbs page={page.label} />}
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {tab !== undefined && <TranscriptWidthButton />}
         {tab !== undefined && <RailToggle />}

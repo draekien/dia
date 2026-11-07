@@ -1,5 +1,10 @@
 import type { PluginServices } from '@shared/plugin/api'
-import { PluginCallFailed, PluginCallInvalid, PluginNotServing } from '@shared/plugin/messages'
+import {
+  jsonCodec,
+  PluginCallFailed,
+  PluginCallInvalid,
+  PluginNotServing
+} from '@shared/plugin/messages'
 import type { PluginRegistry } from '@shared/plugin/plugin-registry'
 import { Effect, Option, Predicate, Schema, type Scope } from 'effect'
 import { type Rpc, RpcSchema } from 'effect/rpc'
@@ -16,10 +21,6 @@ const isHandler = (value: unknown): value is PluginCallHandler =>
   Predicate.hasProperty(value, HANDLER) && Predicate.isFunction(value[HANDLER])
 
 const callKey = (plugin: string, tag: string): string => `call:${plugin}.${tag}`
-
-type AnyCodec = Schema.Codec<unknown, unknown>
-
-const jsonCodec = (schema: Schema.Top): AnyCodec => Schema.toCodecJson(schema as AnyCodec)
 
 /**
  * Serves `rpc` for calls from the `renderer` entry of the plugin `services` belongs to, until the

@@ -2,7 +2,7 @@ import { usePrevious } from '@renderer/hooks/use-previous'
 import type { Project } from '@shared/domain/project'
 import { FolderPlusIcon, PlusIcon } from 'lucide-react'
 import { newAgent, registerProject } from '../lib/actions'
-import { usePages } from '../lib/pages'
+import { findPage, usePages } from '../lib/pages'
 import { MAIN_TAB, Slot } from '../lib/slots'
 import { TabOpenedFromNewAgent } from '../lib/tab-opened-from-new-agent'
 import { useView, useWorkspace } from '../plugin-api'
@@ -74,9 +74,7 @@ export function TabContent() {
   if (view === undefined || workspace === undefined) return <StartupSkeleton />
   switch (view._tag) {
     case 'PageView': {
-      const page = pages.find(
-        (candidate) => candidate.key.plugin === view.plugin && candidate.key.id === view.id
-      )
+      const page = findPage(pages, view)
       return page === undefined ? null : <page.component />
     }
     case 'TabView':

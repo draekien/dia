@@ -34,6 +34,13 @@ export class PluginCallFailed extends Schema.TaggedError<PluginCallFailed>()('Pl
   error: Schema.Unknown
 }) {}
 
+/**
+ * The JSON codec of a plugin call's payload, success or error schema: what crosses the `CallPlugin`
+ * wire as `Schema.Unknown`. A call's schemas take no services.
+ */
+export const jsonCodec = (schema: Schema.Top): Schema.Codec<unknown, unknown> =>
+  Schema.toCodecJson(schema as Schema.Codec<unknown, unknown>)
+
 /** Every failure `CallPlugin` reports. */
 export const PluginCallError = Schema.Union([PluginNotServing, PluginCallInvalid, PluginCallFailed])
 export type PluginCallError = typeof PluginCallError.Type

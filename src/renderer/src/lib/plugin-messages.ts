@@ -1,13 +1,12 @@
 import type { PluginServices } from '@shared/plugin/api'
-import { PluginCallError, PluginCallInvalid, type PluginNotServing } from '@shared/plugin/messages'
+import {
+  jsonCodec,
+  PluginCallError,
+  PluginCallInvalid,
+  type PluginNotServing
+} from '@shared/plugin/messages'
 import { Effect, Schema } from 'effect'
 import type { Rpc } from 'effect/rpc'
-
-type AnyCodec = Schema.Codec<unknown, unknown>
-
-const jsonCodec = (schema: Schema.Top): AnyCodec => Schema.toCodecJson(schema as AnyCodec)
-
-const decodeCallError = Schema.decodeUnknownEffect(PluginCallError)
 
 /**
  * Calls `rpc` on the `host` entry of the plugin named `ctx.name`, which serves it with
@@ -27,22 +26,21 @@ export const callHost = <R extends Rpc.AnyWithProps>(
     const tag = rpc._tag
     const invalid = (error: Schema.SchemaError) =>
       new PluginCallInvalid({ plugin, tag, message: error.message })
+    const decodeJson = (schema: Schema.Top, value: unknown) =>
+      Schema.decodeUnknownEffect(jsonCodec(schema))(value).pipe(Effect.mapError(invalid))
     const encoded = yield* Schema.encodeUnknownEffect(jsonCodec(rpc.payloadSchema))(
       rpc.payloadSchema.make(payload)
     ).pipe(Effect.mapError(invalid))
     yield* Effect.logDebug('Calling a plugin host entry', { plugin, tag })
     const result = yield* Effect.promise(() => window.dia.plugins.call(plugin, tag, encoded))
     if (result._tag === 'Success') {
-      const value = yield* Schema.decodeUnknownEffect(jsonCodec(rpc.successSchema))(
-        result.value
-      ).pipe(Effect.mapError(invalid))
-      return value as Rpc.Success<R>
+      return (yield* decodeJson(rpc.successSchema, result.value)) as Rpc.Success<R>
     }
-    const failure = yield* decodeCallError(result.error).pipe(Effect.mapError(invalid))
+    const failure = yield* decodeJson(PluginCallError, result.error).pipe(
+      Effect.map((decoded) => decoded as PluginCallError)
+    )
     yield* Effect.logDebug('A plugin host call failed', { plugin, tag, reason: failure._tag })
     if (failure._tag !== 'PluginCallFailed') return yield* Effect.fail(failure)
-    const error = yield* Schema.decodeUnknownEffect(jsonCodec(rpc.errorSchema))(failure.error).pipe(
-      Effect.mapError(invalid)
-    )
+    const error = yield* decodeJson(rpc.errorSchema, failure.error)
     return yield* Effect.fail(error as Rpc.Error<R>)
   })
