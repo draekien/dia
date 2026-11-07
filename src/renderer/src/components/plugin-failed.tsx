@@ -1,6 +1,6 @@
 import { cva, type VariantProps } from 'class-variance-authority'
 import { TriangleAlertIcon } from 'lucide-react'
-import { openSettings } from './settings/open-settings'
+import { openPluginsPage } from '../lib/actions'
 import { Button } from './ui/button'
 import {
   Empty,
@@ -73,11 +73,7 @@ export function PluginFailed({ plugin, error, onRetry, size }: PluginFailedProps
         <Button variant="outline" size="sm" onClick={onRetry}>
           Try again
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => openSettings({ plugin: 'settings', id: 'plugins' })}
-        >
+        <Button variant="ghost" size="sm" onClick={openPluginsPage}>
           Open Plugins
         </Button>
       </EmptyContent>

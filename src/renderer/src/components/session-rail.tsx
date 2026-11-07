@@ -128,7 +128,7 @@ function RailCardFrame({
       </header>
       <PluginBoundary
         plugin={card.key.plugin}
-        at="chat.rail-cards"
+        at="chat.railCards"
         resetKey={Body}
         fallback={(error, retry) => (
           <PluginFailed plugin={card.key.plugin} error={error} onRetry={retry} size="card" />

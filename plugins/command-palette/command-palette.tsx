@@ -19,8 +19,11 @@ type Command = ListEntry<CommandEntry>
 
 const groupsOf = (commands: ReadonlyArray<Command>) => {
   const groups = new Map<string, Array<Command>>()
-  for (const command of commands)
-    groups.set(command.group, [...(groups.get(command.group) ?? []), command])
+  for (const command of commands) {
+    const group = groups.get(command.group)
+    if (group === undefined) groups.set(command.group, [command])
+    else group.push(command)
+  }
   return [...groups.entries()]
 }
 
