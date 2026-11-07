@@ -1,6 +1,6 @@
 {
   "name": "notifications",
-  "api": "0.0.22",
+  "api": "0.0.23",
   "category": "feature",
   "host": "host.ts",
   "load": "eager"

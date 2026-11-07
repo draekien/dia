@@ -21,7 +21,7 @@ export type PluginApiVersion = typeof PluginApiVersion.Type
  * increment the minor version when the plugin context gains something, and the major version when
  * it changes in a way an older plugin cannot use.
  */
-export const PLUGIN_API_VERSION: PluginApiVersion = '0.0.22'
+export const PLUGIN_API_VERSION: PluginApiVersion = '0.0.23'
 
 const versionParts = (version: string): ReadonlyArray<number> | undefined => {
   const match = SEMVER.exec(version)
@@ -77,10 +77,21 @@ export const PluginCategory = Schema.Literals(['feature', 'adapter'])
 export type PluginCategory = typeof PluginCategory.Type
 
 /**
+ * A file a plugin lets other code import, listed in `plugin.json` `exports`: a `.ts` path
+ * relative to the plugin directory, without `..`, for example `messages.ts` or `domain/role.ts`.
+ * Other code imports it as `@dia-plugin/<plugin name>/<path without .ts>`.
+ */
+export const PluginExport = Schema.String.check(
+  Schema.isPattern(/^(?:[a-z0-9-]+\/)*[a-z0-9-]+\.ts$/)
+)
+export type PluginExport = typeof PluginExport.Type
+
+/**
  * `plugin.json` of a feature plugin. `host` and `renderer` are entry paths relative to the
  * plugin directory; a plugin may declare either or both. `inject` lists the service keys the
  * plugin reads with `ctx.inject`, so the registry reopens the plugin when a provider of one of
- * them changes. `load` is the {@link PluginLoadMode} at startup; it defaults to `lazy`.
+ * them changes. `exports` lists the {@link PluginExport} files other code may import. `load` is
+ * the {@link PluginLoadMode} at startup; it defaults to `lazy`.
  */
 export const FeatureManifest = Schema.Struct({
   name: PluginName,
@@ -89,6 +100,7 @@ export const FeatureManifest = Schema.Struct({
   host: Schema.optional(Schema.String),
   renderer: Schema.optional(Schema.String),
   inject: Schema.optional(Schema.Array(Schema.String)),
+  exports: Schema.optional(Schema.Array(PluginExport)),
   load: Schema.optional(PluginLoadMode)
 })
 export type FeatureManifest = typeof FeatureManifest.Type
@@ -98,7 +110,7 @@ const forbidden = (message: string) => Schema.optionalKey(Schema.Never.annotate(
 /**
  * `plugin.json` of an adapter plugin. `host` is its required Host entry path; an adapter has no
  * `renderer`, `inject` or `load`, and decoding a manifest that declares one fails with a message
- * that says why.
+ * that says why. `exports` lists the {@link PluginExport} files other code may import.
  */
 export const AdapterManifest = Schema.Struct({
   name: PluginName,
@@ -113,6 +125,7 @@ export const AdapterManifest = Schema.Struct({
   inject: forbidden(
     'an adapter cannot declare "inject": a reload of the plugin it injects from would close the adapter'
   ),
+  exports: Schema.optional(Schema.Array(PluginExport)),
   load: forbidden('an adapter always loads at startup, so it cannot declare "load"')
 })
 export type AdapterManifest = typeof AdapterManifest.Type
