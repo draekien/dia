@@ -194,7 +194,7 @@ function AgentDetail({
           description={
             reports.length === 0
               ? 'dia removes this agent from the org.'
-              : `Its ${reports.length} reports will report to ${nameOf(agent.reportsTo)}.`
+              : `${reports.length === 1 ? 'Its report' : `Its ${reports.length} reports`} will report to ${nameOf(agent.reportsTo)}.`
           }
           confirmLabel="Dismiss"
           onConfirm={dismiss}

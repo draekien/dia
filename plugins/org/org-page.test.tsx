@@ -482,12 +482,12 @@ describe('Hired agents', () => {
 
     await click('Dismiss…')
     const beforeConfirm = sentTags(host)
-    const description = screen.getByText(/reports will report to/).textContent
+    const description = screen.getByText(/will report to/).textContent
     await click('Dismiss')
 
     expect([beforeConfirm, description, host.sent]).toEqual([
       [],
-      'Its 1 reports will report to Ada.',
+      'Its report will report to Ada.',
       [['Dismiss', { hireId: hireId(2) }]]
     ])
   })
