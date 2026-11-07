@@ -55,6 +55,9 @@ const holdAgentBackend = (
     )
     .pipe(Effect.orDie)
 
+const projectDirectories = (workspace: Workspace) =>
+  workspace.projects.map(({ project }) => `${project.projectId}=${project.directory}`).join('\n')
+
 const followWorkspace = (
   ctx: HostPluginContext,
   workspace: Ref.Ref<Option.Option<Workspace>>,
@@ -63,6 +66,9 @@ const followWorkspace = (
   Effect.gen(function* () {
     const first = yield* Deferred.make<void>()
     yield* ctx.workspace.pipe(
+      Stream.changesWith(
+        (previous, current) => projectDirectories(previous) === projectDirectories(current)
+      ),
       Stream.runForEach((current) =>
         Ref.set(workspace, Option.some(current)).pipe(
           Effect.andThen(Deferred.succeed(first, undefined)),

@@ -456,9 +456,7 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
     const markRequeued = (taskId: TaskId, keepSession: boolean) =>
       changeRunning(
         taskId,
-        keepSession
-          ? sql`UPDATE tasks SET state = 'waiting' WHERE task_id = ${taskId} AND state = 'running' RETURNING *`
-          : sql`UPDATE tasks SET state = 'waiting', session_id = NULL WHERE task_id = ${taskId} AND state = 'running' RETURNING *`,
+        sql`UPDATE tasks SET state = 'waiting', session_id = CASE WHEN ${keepSession ? 1 : 0} THEN session_id END WHERE task_id = ${taskId} AND state = 'running' RETURNING *`,
         (task) => TaskRequeued.make({ sessionId: task.sessionId })
       ).pipe(
         Effect.tap((changed) => Effect.logInfo('Requeued task', { taskId, keepSession, changed }))
