@@ -9,13 +9,15 @@ import { Dashboard } from './dashboard'
 import type { JobTitleId } from './domain'
 import { HireDialog } from './hire-dialog'
 import { JobTitlesPage } from './job-titles-page'
-import { type OrgAtom, type OrgScreen, useOrgCall } from './org-actions'
+import { ObjectivesPage } from './objectives-page'
+import { type OrgAtom, type OrgScreen, useOrgCall, type WorkAtom } from './org-actions'
 import { OrgChart } from './org-chart'
 import { LoadFailure } from './org-fields'
 import {
   DashboardView,
   HiredAgentsView,
   JobTitlesView,
+  ObjectivesView,
   OrgChartView,
   type OrgView,
   showView
@@ -26,6 +28,11 @@ const NAV = [
     group: 'Overview',
     pages: [
       { tag: 'DashboardView', label: 'Dashboard', view: () => DashboardView.make({}) },
+      {
+        tag: 'ObjectivesView',
+        label: 'Objectives',
+        view: () => ObjectivesView.make({ objectiveId: null })
+      },
       { tag: 'OrgChartView', label: 'Org chart', view: () => OrgChartView.make({}) }
     ]
   },
@@ -82,10 +89,20 @@ function SubNav({
   )
 }
 
-function SubPage({ view, screen }: { readonly view: OrgView; readonly screen: OrgScreen }) {
+function SubPage({
+  view,
+  screen,
+  workAtom
+}: {
+  readonly view: OrgView
+  readonly screen: OrgScreen
+  readonly workAtom: WorkAtom
+}) {
   switch (view._tag) {
     case 'DashboardView':
       return <Dashboard snapshot={screen.snapshot} openHire={screen.openHire} />
+    case 'ObjectivesView':
+      return <ObjectivesPage objectiveId={view.objectiveId} workAtom={workAtom} {...screen} />
     case 'OrgChartView':
       return <OrgChart snapshot={screen.snapshot} show={screen.show} openHire={screen.openHire} />
     case 'JobTitlesView':
@@ -99,12 +116,14 @@ function Loaded({
   snapshot,
   view,
   setView,
-  call
+  call,
+  workAtom
 }: {
   readonly snapshot: OrgSnapshot
   readonly view: OrgView
   readonly setView: (view: OrgView) => void
   readonly call: OrgScreen['call']
+  readonly workAtom: WorkAtom
 }) {
   const [hiring, setHiring] = useState<{ readonly jobTitleId: JobTitleId | null } | undefined>(
     undefined
@@ -119,7 +138,7 @@ function Loaded({
 
   return (
     <>
-      <SubPage view={shown} screen={screen} />
+      <SubPage view={shown} screen={screen} workAtom={workAtom} />
       {hiring === undefined ? null : (
         <HireDialog
           snapshot={snapshot}
@@ -137,16 +156,19 @@ function Loaded({
 }
 
 /**
- * The Org page in the content area: a sub-navigation of Dashboard, Org chart, Job titles and
- * Hired agents beside the current sub-page under its own heading. It reads `orgAtom` while shown
- * and opens on Dashboard each time; `ctx` is the `org` renderer entry the calls go through.
+ * The Org page in the content area: a sub-navigation of Dashboard, Objectives, Org chart, Job
+ * titles and Hired agents beside the current sub-page under its own heading. It reads `orgAtom`
+ * while shown, and `workAtom` while Objectives is shown, and opens on Dashboard each time; `ctx`
+ * is the `org` renderer entry the calls go through.
  */
 export function OrgPage({
   ctx,
-  orgAtom
+  orgAtom,
+  workAtom
 }: {
   readonly ctx: Pick<PluginServices, 'name'>
   readonly orgAtom: OrgAtom
+  readonly workAtom: WorkAtom
 }) {
   const result = useAtomValue(orgAtom)
   const retry = useAtomRefresh(orgAtom)
@@ -168,7 +190,13 @@ export function OrgPage({
             ),
             onFailure: ({ cause }) => <LoadFailure cause={cause} retry={retry} />,
             onSuccess: ({ value }) => (
-              <Loaded snapshot={value} view={view} setView={setView} call={call} />
+              <Loaded
+                snapshot={value}
+                view={view}
+                setView={setView}
+                call={call}
+                workAtom={workAtom}
+              />
             )
           })}
         </div>

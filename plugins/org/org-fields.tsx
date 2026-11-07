@@ -53,6 +53,55 @@ export function ReportsToSelect({
   )
 }
 
+const NONE = 'none'
+
+/**
+ * A select of `none` (the label of no agent) and every agent of `hiredAgents`, showing `value`
+ * (null is `none`) and named `label`. `onChange` gets the chosen agent's id, or null for `none`.
+ */
+export function AssigneeSelect({
+  label,
+  none,
+  value,
+  hiredAgents,
+  jobTitles,
+  disabled = false,
+  className,
+  onChange
+}: {
+  readonly label: string
+  readonly none: string
+  readonly value: HireId | null
+  readonly hiredAgents: ReadonlyArray<HiredAgent>
+  readonly jobTitles: ReadonlyArray<JobTitle>
+  readonly disabled?: boolean
+  readonly className?: string
+  readonly onChange: (hireId: HireId | null) => void
+}) {
+  const assignee = hiredAgents.find((agent) => agent.id === value)
+  return (
+    <Select
+      value={value ?? NONE}
+      disabled={disabled}
+      onValueChange={(next) => onChange(next === NONE || next === null ? null : (next as HireId))}
+    >
+      <SelectTrigger aria-label={label} className={className}>
+        <SelectValue>{assignee === undefined ? none : agentName(assignee, jobTitles)}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          <SelectItem value={NONE}>{none}</SelectItem>
+          {hiredAgents.map((agent) => (
+            <SelectItem key={agent.id} value={agent.id}>
+              {agentName(agent, jobTitles)}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  )
+}
+
 /** The failed read of an org page: the first error's message in error red, and `Try again`. */
 export function LoadFailure({
   cause,

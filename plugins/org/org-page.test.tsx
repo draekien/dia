@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 // @effect-diagnostics newPromise:off -- the skeleton test holds the read open with a Promise that never resolves.
 import { AgentName, type PluginServices, type PluginSetup } from '@dia/plugin'
-import { callHost, openSettings, toast } from '@dia/renderer-plugin'
+import { callHost, followHost, openSettings, toast } from '@dia/renderer-plugin'
 import { McpServersEditorKey, type McpServersEditorProps } from '@dia-plugin/mcp/editor'
 import type { McpServersDraft } from '@dia-plugin/mcp/servers'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Atom } from 'effect/reactivity'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startRendererRegistry } from '../../src/renderer/src/lib/renderer-registry.fake'
-import { ReadOrg } from './calls'
+import { ReadOrg, WatchWork } from './calls'
 import {
   HiredAgent,
   HireNameTaken,
@@ -26,8 +26,12 @@ import {
   installHost,
   JOB_TITLES,
   jobTitleNamed,
+  objectiveId,
+  PROJECTS,
   type Reply,
-  snapshotOf
+  snapshotOf,
+  taskId,
+  WORK
 } from './org-host.fake'
 import { OrgPage } from './org-page'
 
@@ -73,7 +77,9 @@ afterEach(() => {
 
 const renderOrg = async (host: FakeHost) => {
   const orgAtom = Atom.make(callHost(ctx, ReadOrg, {}))
-  render(<OrgPage ctx={ctx} orgAtom={orgAtom} />)
+  render(
+    <OrgPage ctx={ctx} orgAtom={orgAtom} workAtom={Atom.make(followHost(ctx, WatchWork, {}))} />
+  )
   await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).toBeNull())
   await act(async () => {})
   return host
@@ -131,7 +137,7 @@ describe('Org page', () => {
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Dashboard')
   })
 
-  it.each(['Org chart', 'Job titles', 'Hired agents', 'Dashboard'])(
+  it.each(['Objectives', 'Org chart', 'Job titles', 'Hired agents', 'Dashboard'])(
     'shows %s with a heading naming it',
     async (page) => {
       await renderOrg(installHost(snapshotOf()))
@@ -158,7 +164,13 @@ describe('Org page', () => {
         }
       }
     })
-    render(<OrgPage ctx={ctx} orgAtom={Atom.make(callHost(ctx, ReadOrg, {}))} />)
+    render(
+      <OrgPage
+        ctx={ctx}
+        orgAtom={Atom.make(callHost(ctx, ReadOrg, {}))}
+        workAtom={Atom.make(followHost(ctx, WatchWork, {}))}
+      />
+    )
 
     expect(await screen.findByText('The org plugin is not loaded')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
@@ -167,7 +179,11 @@ describe('Org page', () => {
   it('shows a skeleton until the first read arrives', () => {
     Object.assign(window, { dia: { plugins: { call: () => new Promise(() => {}) } } })
     const { container } = render(
-      <OrgPage ctx={ctx} orgAtom={Atom.make(callHost(ctx, ReadOrg, {}))} />
+      <OrgPage
+        ctx={ctx}
+        orgAtom={Atom.make(callHost(ctx, ReadOrg, {}))}
+        workAtom={Atom.make(followHost(ctx, WatchWork, {}))}
+      />
     )
 
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull()
@@ -720,6 +736,283 @@ describe('Hired agents', () => {
     await click('Hire…')
 
     expect(screen.getByRole('dialog', { name: 'Hire an agent' })).toBeTruthy()
+  })
+})
+
+describe('Objectives', () => {
+  const openObjectives = async (host: FakeHost) => {
+    await renderOrg(host)
+    await go('Objectives')
+    await screen.findByRole('heading', { level: 3 })
+    return host
+  }
+
+  const facts = () =>
+    Object.fromEntries(
+      [...document.querySelectorAll('dl > div')].map((row) => [
+        row.querySelector('dt')?.textContent,
+        row.querySelector('dd')?.textContent
+      ])
+    )
+
+  const detailTitle = () => screen.getByRole('heading', { level: 3 }).textContent
+
+  const task = (title: string) => screen.getByRole('listitem', { name: title })
+
+  const selectObjective = (title: string) =>
+    act(async () => {
+      fireEvent.click(screen.getByRole('option', { name: new RegExp(`^${title}`) }))
+    })
+
+  const create = () =>
+    act(async () => {
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create' }))
+    })
+
+  it('lists open objectives by priority with their project, and completed ones last', async () => {
+    await openObjectives(installHost(snapshotOf()))
+
+    const rows = within(screen.getByRole('listbox', { name: 'Objectives' })).getAllByRole('option')
+
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'Ship the objective screendia',
+      'Tidy release noteswebsite',
+      'Move settings to SQLitedia'
+    ])
+  })
+
+  it('shows the high-priority objective first, with its facts', async () => {
+    await openObjectives(installHost(snapshotOf()))
+
+    expect(detailTitle()).toBe('Ship the objective screen')
+    expect(facts()).toEqual({
+      Project: 'dia',
+      Priority: 'High',
+      State: 'Open',
+      Assignee: 'Ada',
+      Description: 'List objectives beside a detail, and show every task with its state.'
+    })
+  })
+
+  it('shows Unassigned and No description for an objective with neither', async () => {
+    await openObjectives(installHost(snapshotOf()))
+
+    await selectObjective('Tidy release notes')
+
+    expect(detailTitle()).toBe('Tidy release notes')
+    expect(facts()).toEqual({
+      Project: 'website',
+      Priority: 'Normal',
+      State: 'Open',
+      Assignee: 'Unassigned',
+      Description: 'No description'
+    })
+  })
+
+  it('shows a completed objective as Completed, without Add task', async () => {
+    await openObjectives(installHost(snapshotOf()))
+
+    await selectObjective('Move settings to SQLite')
+
+    expect(facts().State).toBe('Completed')
+    expect(screen.queryByRole('button', { name: 'Add task' })).toBeNull()
+  })
+
+  it('shows the empty state when there are no objectives', async () => {
+    await renderOrg(installHost(snapshotOf(), {}, { ...WORK, objectives: [], tasks: [] }))
+    await go('Objectives')
+
+    expect(await screen.findByText('No objectives yet')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'New objective…' })).toBeTruthy()
+  })
+
+  it('says the host entry is not loaded when it is not serving WatchWork', async () => {
+    const host = installHost(snapshotOf())
+    Object.assign(window.dia.plugins, {
+      subscribe: (
+        _plugin: string,
+        tag: string,
+        _payload: unknown,
+        _onValue: unknown,
+        onEnd: (end: unknown) => void
+      ) => {
+        queueMicrotask(() =>
+          onEnd({
+            _tag: 'PluginSubscriptionFailure',
+            error: { _tag: 'PluginNotServing', plugin: 'org', tag, message: 'not loaded' }
+          })
+        )
+        return () => {}
+      }
+    })
+    await renderOrg(host)
+    await go('Objectives')
+
+    expect(await screen.findByText("The org plugin's host entry is not loaded.")).toBeTruthy()
+  })
+
+  it('nests a sub-task under its parent and a marked retro task under the task it reviews', async () => {
+    await openObjectives(installHost(snapshotOf()))
+
+    expect(
+      within(task('Build the objective screen')).queryByText('Test the task tree')
+    ).not.toBeNull()
+    expect(
+      within(task('Stream the work view')).queryByText('Retro: Stream the work view')
+    ).not.toBeNull()
+    expect(within(task('Retro: Stream the work view')).queryByText('Retro')).not.toBeNull()
+    expect(within(task('Build the objective screen')).queryByText('Retro')).toBeNull()
+    expect(
+      within(task('Build the objective screen')).queryByText('Write the release note')
+    ).toBeNull()
+  })
+
+  it('shows a task state the host pushes without any user action', async () => {
+    const host = await openObjectives(installHost(snapshotOf()))
+    const before = within(task('Write the release note')).queryByText('Running')
+
+    await act(async () => {
+      host.push({
+        ...WORK,
+        tasks: WORK.tasks.map((existing) =>
+          existing.id === taskId(5) ? { ...existing, state: 'running' as const } : existing
+        )
+      })
+    })
+
+    expect(before).toBeNull()
+    expect(within(task('Write the release note')).queryByText('Running')).not.toBeNull()
+  })
+
+  it('sends AssignTask when a waiting task gets an assignee', async () => {
+    const host = await openObjectives(installHost(snapshotOf()))
+
+    await choose('Assignee of Write the release note', 'Bea')
+
+    await waitFor(() =>
+      expect(host.sent).toContainEqual(['AssignTask', { taskId: taskId(5), hireId: hireId(2) }])
+    )
+  })
+
+  it('disables the assignee of a running task only', async () => {
+    await openObjectives(installHost(snapshotOf()))
+
+    const disabled = (title: string) =>
+      screen.getByRole('combobox', { name: `Assignee of ${title}` }).hasAttribute('disabled')
+
+    expect([disabled('Build the objective screen'), disabled('Write the release note')]).toEqual([
+      true,
+      false
+    ])
+  })
+
+  it('offers Finish only on the running task, and sends FinishTask from it', async () => {
+    const host = await openObjectives(installHost(snapshotOf()))
+    const finishes = screen.getAllByRole('button', { name: 'Finish' })
+
+    await act(async () => {
+      fireEvent.click(
+        within(task('Build the objective screen')).getByRole('button', { name: 'Finish' })
+      )
+    })
+
+    expect(finishes).toHaveLength(1)
+    await waitFor(() => expect(host.sent).toContainEqual(['FinishTask', { taskId: taskId(1) }]))
+  })
+
+  it('sends CreateTask from Add task and shows the new task', async () => {
+    const host = await openObjectives(installHost(snapshotOf()))
+
+    type('Task title', '  Review the screen  ')
+    await choose('Assignee of the new task', 'Cy')
+    await click('Add task')
+
+    const [, payload] = host.sent.find(([tag]) => tag === 'CreateTask') ?? []
+    expect(payload).toEqual({
+      task: {
+        id: expect.any(String),
+        objectiveId: objectiveId(1),
+        parentTaskId: null,
+        title: 'Review the screen',
+        assignee: hireId(4)
+      }
+    })
+    expect(await screen.findByRole('listitem', { name: 'Review the screen' })).toBeTruthy()
+  })
+
+  it('rejects an empty task title without a call', async () => {
+    const host = await openObjectives(installHost(snapshotOf()))
+
+    await click('Add task')
+
+    expect(screen.getByRole('alert').textContent).toBe('Enter a title')
+    expect(sentTags(host)).not.toContain('CreateTask')
+  })
+
+  it('offers only the registered projects', async () => {
+    await openObjectives(installHost(snapshotOf()))
+    await click('New objective…')
+
+    await openSelect('Project')
+
+    const projectOptions = screen
+      .getAllByRole('option', { hidden: true })
+      .filter((option) => option.closest('[aria-label="Objectives"]') === null)
+    expect(projectOptions.map((option) => option.textContent)).toEqual(
+      PROJECTS.map((project) => project.name)
+    )
+  })
+
+  it('sends CreateObjective with the form and selects the new objective', async () => {
+    const host = await openObjectives(installHost(snapshotOf()))
+    await click('New objective…')
+
+    await choose('Project', 'website')
+    type('Title', '  Launch the docs site  ')
+    type('Description', 'Write the getting started guide.')
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'High' }))
+    })
+    await choose('Assignee', 'Ada')
+    await create()
+
+    const [, payload] = host.sent.find(([tag]) => tag === 'CreateObjective') ?? []
+    expect(payload).toEqual({
+      objective: {
+        id: expect.any(String),
+        projectId: PROJECTS[1].id,
+        title: 'Launch the docs site',
+        description: 'Write the getting started guide.',
+        priority: 'high',
+        assignee: hireId(1)
+      }
+    })
+    await waitFor(() => expect(detailTitle()).toBe('Launch the docs site'))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it.each([
+    ['an empty title', '   ', 'Enter a title'],
+    ['a 121-character title', 'x'.repeat(121), 'Use at most 120 characters']
+  ])('rejects %s without a call', async (_case, title, message) => {
+    const host = await openObjectives(installHost(snapshotOf()))
+    await click('New objective…')
+
+    type('Title', title)
+    await create()
+
+    expect(within(screen.getByRole('dialog')).getByText(message)).toBeTruthy()
+    expect(sentTags(host)).not.toContain('CreateObjective')
+  })
+
+  it('accepts a 120-character title', async () => {
+    const host = await openObjectives(installHost(snapshotOf()))
+    await click('New objective…')
+
+    type('Title', 'x'.repeat(120))
+    await create()
+
+    await waitFor(() => expect(sentTags(host)).toContain('CreateObjective'))
   })
 })
 
