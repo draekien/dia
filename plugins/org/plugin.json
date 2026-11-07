@@ -3,5 +3,5 @@
   "api": "0.0.28",
   "category": "feature",
   "host": "host.ts",
-  "exports": ["service.ts", "domain.ts"]
+  "exports": ["service.ts", "domain.ts", "calls.ts"]
 }
