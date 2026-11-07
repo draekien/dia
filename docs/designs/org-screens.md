@@ -152,6 +152,7 @@ export const OrgSnapshot = Schema.Struct({
 | `mcp-json.ts` | turns the MCP textarea text into `JobTitleEdit.mcpServers`, and a job title's servers back into text |
 | `org-actions.ts` | `useOrgCall` (sends a call, logs it, and resolves after the refresh of `orgAtom` that follows a success or a not-found error), the shared failure text, name field readers, `agentName`, and `OrgScreen`, the props every sub-page takes |
 | `entry-list.tsx` | the `listbox` both list and detail pages use |
+| `org-fields.tsx` | `ReportsToSelect`, used by the Hire dialog and the Hired agents detail, and `LoadFailure`, the failed-read message with `Try again` both pages show |
 | `name-dialog.tsx`, `confirm-dialog.tsx` | the one-name-field dialog (`Copy…`, `Rename`) and the confirm alert dialog (`Delete…`, `Dismiss…`) |
 | `org-host.fake.tsx` | a fake `org` host entry behind `window.dia.plugins.call`, and the fixture snapshot, for the component tests |
 

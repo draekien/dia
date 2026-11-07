@@ -8,7 +8,7 @@ import {
 } from '@dia/renderer-plugin'
 import { UserIcon } from 'lucide-react'
 import type { JobTitle } from './domain'
-import { agentName, type OrgScreen } from './org-actions'
+import { agentName, jobTitleName, type OrgScreen } from './org-actions'
 import { type OrgNode, orgTree } from './org-tree'
 import { HiredAgentsView } from './org-view'
 
@@ -50,7 +50,7 @@ function Reports({
           >
             <span className="truncate font-medium">{agentName(node.agent, jobTitles)}</span>
             <span className="truncate text-xs text-ink-muted">
-              {jobTitles.find((jobTitle) => jobTitle.id === node.agent.jobTitleId)?.name}
+              {jobTitleName(node.agent, jobTitles)}
             </span>
           </button>
           <Reports nodes={node.reports} jobTitles={jobTitles} show={show} />

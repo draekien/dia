@@ -1,16 +1,5 @@
 // @effect-diagnostics asyncFunction:off -- React callbacks await OrgCall's Promise; components hold no Effect runtime.
-import {
-  Button,
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  SettingsRow,
-  ToggleGroup,
-  ToggleGroupItem
-} from '@dia/renderer-plugin'
+import { Button, SettingsRow, ToggleGroup, ToggleGroupItem } from '@dia/renderer-plugin'
 import { Result } from 'effect'
 import { useState } from 'react'
 import { Dismiss, RenameHire, SetBypassOverride, SetReportsTo } from './calls'
@@ -21,15 +10,15 @@ import { NameDialog } from './name-dialog'
 import {
   agentName,
   commonFailureText,
+  jobTitleName,
   type OrgScreen,
   readAgentName,
   toastFailure
 } from './org-actions'
 import { NoHires } from './org-chart'
+import { ReportsToSelect } from './org-fields'
 import { reportsToChoices } from './org-tree'
 import { HiredAgentsView, JobTitlesView } from './org-view'
-
-const YOU = 'you'
 
 const BYPASS = [
   { value: 'follow', label: 'Follow job title', override: null },
@@ -52,7 +41,6 @@ function AgentDetail({
     const other = snapshot.hiredAgents.find((candidate) => candidate.id === hireId)
     return other === undefined ? 'You' : agentName(other, snapshot.jobTitles)
   }
-  const jobTitle = snapshot.jobTitles.find((candidate) => candidate.id === agent.jobTitleId)
   const reports = snapshot.hiredAgents.filter((other) => other.reportsTo === agent.id)
   const bypass = BYPASS.find((option) => option.override === agent.bypassOverride) ?? BYPASS[0]
 
@@ -124,32 +112,20 @@ function AgentDetail({
             className="h-auto p-0"
             onClick={() => show(JobTitlesView.make({ jobTitleId: agent.jobTitleId }))}
           >
-            {jobTitle?.name}
+            {jobTitleName(agent, snapshot.jobTitles)}
           </Button>
         </SettingsRow>
         <SettingsRow label="Reports to">
           <div className="flex max-w-xs flex-col gap-1.5">
-            <Select
-              value={agent.reportsTo ?? YOU}
-              onValueChange={(value) => {
-                const next = value === YOU || value === null ? null : (value as HireId)
+            <ReportsToSelect
+              value={agent.reportsTo}
+              choices={reportsToChoices(snapshot.hiredAgents, agent.id)}
+              hiredAgents={snapshot.hiredAgents}
+              jobTitles={snapshot.jobTitles}
+              onChange={(next) => {
                 if (next !== agent.reportsTo) void setReportsTo(next)
               }}
-            >
-              <SelectTrigger aria-label="Reports to" className="w-full">
-                <SelectValue>{nameOf(agent.reportsTo)}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value={YOU}>You</SelectItem>
-                  {reportsToChoices(snapshot.hiredAgents, agent.id).map((choice) => (
-                    <SelectItem key={choice.id} value={choice.id}>
-                      {agentName(choice, snapshot.jobTitles)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+            />
             {reportsToError === undefined ? null : (
               <p className="text-xs text-error">{reportsToError}</p>
             )}
@@ -232,7 +208,7 @@ export function AgentsPage({ hireId, ...screen }: OrgScreen & { readonly hireId:
               <>
                 <span className="truncate">{agentName(agent, snapshot.jobTitles)}</span>
                 <span className="ml-auto truncate text-xs font-normal text-ink-muted">
-                  {snapshot.jobTitles.find((jobTitle) => jobTitle.id === agent.jobTitleId)?.name}
+                  {jobTitleName(agent, snapshot.jobTitles)}
                 </span>
               </>
             )

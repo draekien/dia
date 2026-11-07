@@ -45,12 +45,15 @@ const serveOrgCalls = (
   Effect.all(
     [
       ctx.serve(ReadOrg, () =>
-        Effect.all({
-          jobTitles: org.jobTitles,
-          hiredAgents: org.hiredAgents,
-          settings: org.settings,
-          bypassAvailable: bypassAvailable(backend)
-        })
+        Effect.all(
+          {
+            jobTitles: org.jobTitles,
+            hiredAgents: org.hiredAgents,
+            settings: org.settings,
+            bypassAvailable: bypassAvailable(backend)
+          },
+          { concurrency: 'unbounded' }
+        )
       ),
       ctx.serve(SetJobTitleEnabled, ({ jobTitleId, enabled }) =>
         org.setJobTitleEnabled(jobTitleId, enabled)

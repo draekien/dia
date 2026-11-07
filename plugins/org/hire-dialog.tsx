@@ -21,9 +21,8 @@ import { Loader2Icon } from 'lucide-react'
 import { type FormEvent, useId, useState } from 'react'
 import { Hire, type OrgSnapshot } from './calls'
 import type { HiredAgent, HireId, JobTitleId } from './domain'
-import { agentName, commonFailureText, type OrgCall, readAgentName } from './org-actions'
-
-const YOU = 'you'
+import { commonFailureText, type OrgCall, readAgentName } from './org-actions'
+import { ReportsToSelect } from './org-fields'
 
 interface Errors {
   readonly name?: string
@@ -58,7 +57,6 @@ export function HireDialog({
   const nameId = useId()
   const enabled = snapshot.jobTitles.filter((jobTitle) => jobTitle.enabled)
   const chosenTitle = snapshot.jobTitles.find((jobTitle) => jobTitle.id === chosen)
-  const manager = snapshot.hiredAgents.find((agent) => agent.id === reportsTo)
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -145,29 +143,16 @@ export function HireDialog({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Reports to</Label>
-            <Select
-              value={reportsTo ?? YOU}
-              onValueChange={(value) => {
-                setReportsTo(value === YOU || value === null ? null : (value as HireId))
+            <ReportsToSelect
+              value={reportsTo}
+              choices={snapshot.hiredAgents}
+              hiredAgents={snapshot.hiredAgents}
+              jobTitles={snapshot.jobTitles}
+              onChange={(next) => {
+                setReportsTo(next)
                 setErrors({})
               }}
-            >
-              <SelectTrigger aria-label="Reports to" className="w-full">
-                <SelectValue>
-                  {manager === undefined ? 'You' : agentName(manager, snapshot.jobTitles)}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value={YOU}>You</SelectItem>
-                  {snapshot.hiredAgents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      {agentName(agent, snapshot.jobTitles)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
+            />
             {errors.reportsTo === undefined ? null : (
               <p className="text-xs text-error">{errors.reportsTo}</p>
             )}

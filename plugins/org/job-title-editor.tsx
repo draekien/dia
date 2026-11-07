@@ -148,17 +148,23 @@ function EditForm({
     }
   }
 
-  const textarea = (field: keyof Draft, label: string, mono: boolean, caption?: string) => (
+  const textarea = (
+    field: Exclude<keyof Draft, 'bypassOptIn'>,
+    label: string,
+    mono: boolean,
+    caption?: string,
+    error?: string
+  ) => (
     <Field
       label={<Label htmlFor={`${id}-${field}`}>{label}</Label>}
       caption={caption}
-      error={field === 'mcpServers' ? errors.mcpServers : undefined}
+      error={error}
     >
       <Textarea
         id={`${id}-${field}`}
-        value={draft[field] as string}
+        value={draft[field]}
         spellCheck={!mono}
-        aria-invalid={field === 'mcpServers' && errors.mcpServers !== undefined}
+        aria-invalid={error !== undefined}
         onChange={(event) => set(field)(event.target.value)}
         className={mono ? 'min-h-16 font-mono text-xs md:text-xs' : 'min-h-28'}
       />
@@ -196,7 +202,8 @@ function EditForm({
         'mcpServers',
         'MCP servers',
         true,
-        'A JSON object of server name to server, as in .mcp.json without the "mcpServers" key.'
+        'A JSON object of server name to server, as in .mcp.json without the "mcpServers" key.',
+        errors.mcpServers
       )}
       {snapshot.bypassAvailable ? (
         <div className="flex items-start justify-between gap-4">

@@ -1,7 +1,6 @@
 import type { PluginServices } from '@dia/plugin'
-import { Button, cn, Skeleton } from '@dia/renderer-plugin'
+import { cn, Skeleton } from '@dia/renderer-plugin'
 import { useAtomRefresh, useAtomValue } from '@effect/atom-react'
-import { Cause } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
 import { useState } from 'react'
 import { AgentsPage } from './agents-page'
@@ -12,6 +11,7 @@ import { HireDialog } from './hire-dialog'
 import { JobTitlesPage } from './job-titles-page'
 import { type OrgAtom, type OrgScreen, useOrgCall } from './org-actions'
 import { OrgChart } from './org-chart'
+import { LoadFailure } from './org-fields'
 import {
   DashboardView,
   HiredAgentsView,
@@ -46,12 +46,9 @@ const NAV = [
   }
 ] as const
 
-const LABELS: Record<OrgView['_tag'], string> = {
-  DashboardView: 'Dashboard',
-  OrgChartView: 'Org chart',
-  JobTitlesView: 'Job titles',
-  HiredAgentsView: 'Hired agents'
-}
+const LABELS: Record<OrgView['_tag'], string> = Object.fromEntries(
+  NAV.flatMap((section) => section.pages.map((page) => [page.tag, page.label]))
+) as Record<OrgView['_tag'], string>
 
 function SubNav({
   view,
@@ -169,14 +166,7 @@ export function OrgPage({
                 <Skeleton className="h-4 w-64" />
               </div>
             ),
-            onFailure: ({ cause }) => (
-              <div className="flex flex-col items-start gap-3">
-                <p className="text-sm text-error">{Cause.prettyErrors(cause)[0]?.message}</p>
-                <Button size="sm" variant="outline" onClick={retry}>
-                  Try again
-                </Button>
-              </div>
-            ),
+            onFailure: ({ cause }) => <LoadFailure cause={cause} retry={retry} />,
             onSuccess: ({ value }) => (
               <Loaded snapshot={value} view={view} setView={setView} call={call} />
             )

@@ -1,13 +1,14 @@
 // @effect-diagnostics asyncFunction:off -- React callbacks await OrgCall's Promise; components hold no Effect runtime.
 import type { PluginServices } from '@dia/plugin'
-import { Button, Input, Label, Skeleton } from '@dia/renderer-plugin'
+import { Input, Label, Skeleton } from '@dia/renderer-plugin'
 import { useAtomRefresh, useAtomValue } from '@effect/atom-react'
-import { Cause, Result, Schema } from 'effect'
+import { Result, Schema } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
 import { useId, useState } from 'react'
 import { SetOverallCap } from './calls'
 import { OverallCap } from './domain'
 import { commonFailureText, type OrgAtom, useOrgCall } from './org-actions'
+import { LoadFailure } from './org-fields'
 
 const decodeCap = Schema.decodeUnknownResult(OverallCap)
 
@@ -85,14 +86,7 @@ export function OrgSettingsPage({
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-3 px-4 py-6">
       {AsyncResult.match(result, {
         onInitial: () => <Skeleton className="h-8 w-full" aria-busy="true" />,
-        onFailure: ({ cause }) => (
-          <div className="flex flex-col items-start gap-3">
-            <p className="text-sm text-error">{Cause.prettyErrors(cause)[0]?.message}</p>
-            <Button size="sm" variant="outline" onClick={retry}>
-              Try again
-            </Button>
-          </div>
-        ),
+        onFailure: ({ cause }) => <LoadFailure cause={cause} retry={retry} />,
         onSuccess: ({ value }) => (
           <CapField key={value.settings.overallCap} cap={value.settings.overallCap} call={call} />
         )
