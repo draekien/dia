@@ -27,8 +27,8 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0016](0016-electron-builder-distribution-and-auto-update.md) | Distribute dia as an electron-builder NSIS installer with GitHub-backed auto-update | accepted, amended by ADR-0044 |
 | [0017](0017-frameless-window-with-native-overlay-controls.md) | Replace the native window frame with a custom titlebar and native overlay controls | accepted, header strip and colour sync superseded by ADR-0038 |
 | [0018](0018-transcript-anchored-file-checkpointing-with-conversation-fork.md) | Transcript-anchored file checkpointing that forks the conversation on rewind | accepted; its rewind-control sentence superseded by ADR-0045 |
-| [0019](0019-thin-plugin-kernel-on-effect.md) | Build dia as a thin plugin kernel on Effect, with every feature as a plugin | accepted, amended by ADR-0029 |
-| [0020](0020-plugin-source-loading-and-hot-reload.md) | Load first-party plugins from source in the dia repo, with per-plugin worktree overrides and hot reload | accepted |
+| [0019](0019-thin-plugin-kernel-on-effect.md) | Build dia as a thin plugin kernel on Effect, with every feature as a plugin | accepted, amended by ADR-0029 and ADR-0059 |
+| [0020](0020-plugin-source-loading-and-hot-reload.md) | Load first-party plugins from source in the dia repo, with per-plugin worktree overrides and hot reload | accepted, amended by ADR-0059 |
 | [0021](0021-single-host-process-for-all-panes.md) | Run every pane's agent session and all non-UI plugins in one Host process | accepted |
 | [0022](0022-renderer-to-host-over-local-websocket.md) | Connect the renderer to the Host over an authenticated localhost WebSocket | accepted, amended by ADR-0051 and ADR-0052 |
 | [0023](0023-agents-as-tabs-within-registered-projects.md) | Organise agents as tabs within registered projects, replacing the split-pane layout | accepted, amended by ADR-0046 and ADR-0053 |
@@ -66,6 +66,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0055](0055-lease-a-feature-plugin-service-for-one-operation.md) | Lease a feature plugin's service for one operation, and close a plugin only after its leases end or 30 seconds pass | accepted |
 | [0056](0056-run-part-of-a-plugin-while-optional-services-are-provided.md) | Run part of a plugin while optional services are provided, with `ctx.whenProvided` | accepted |
 | [0057](0057-plugin-pages-and-plugin-messages.md) | Let a renderer plugin add pages, and let a plugin's renderer entry call its own host entry over one `CallPlugin` RPC | accepted |
+| [0059](0059-plugin-module-exports.md) | Let a plugin export source modules that other plugins import | accepted |
 
 ## Adding a new ADR
 
