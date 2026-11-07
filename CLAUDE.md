@@ -26,6 +26,15 @@ Keep every entry consistent with the current code. An out-of-date entry is worse
 
 - `docs/llms/electron-vite.txt` — an [llms.txt](https://llmstxt.org/#proposal) index of the electron-vite guide (build tool chosen in ADR-0004). Consult it before making electron-vite config, dev/HMR, build, or packaging changes.
 - `docs/llms/agent-sdk.txt` — an [llms.txt](https://llmstxt.org/#proposal) index of the Claude Agent SDK docs, linking the full TypeScript/Python API reference. **Read it first for any Agent SDK question or task** (sessions, permissions, hooks, MCP, subagents), whether answering, debugging or writing code, before general Claude API knowledge, a skill, or a subagent.
+- `.repos/` in the main checkout (the parent of `git rev-parse --path-format=absolute --git-common-dir`; a worktree has no `.repos/` of its own) holds git-ignored clones of reference projects. **Before putting a design question to the user, search these clones for how they solve it, and cite the files you found in the question.**
+
+  | Clone | Origin | Read it for |
+  | --- | --- | --- |
+  | `cordis` | `cordiverse/cordis` | the plugin and service model dia's plugin registry follows: `ctx.provide`, `inject`, `ctx.inject(deps, cb)` |
+  | `deepseek-harness` | `deepseek-ai/deepseek-harness` | an agent harness built on cordis: client plugins, slots, main-area panels, plugin RPC (Typert) |
+  | `paperclip` | `paperclipai/paperclip` | an app that runs a company of AI agents: agent roster, hiring, org chart, plugin pages |
+  | `t3code` | `pingdotgg/t3code` | an Electron agent GUI on `effect/rpc` over a local WebSocket (compared in ADR-0022) |
+  | `effect`, `effect-v3` | `Effect-TS/effect` (`main`, `v3`) | Effect v4 source and migration guides, and v3 for old semantics |
 
 ## Coding
 
