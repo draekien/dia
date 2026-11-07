@@ -1,8 +1,29 @@
 # Org screens (#178)
 
-Scope: module. Adds the org's two screens: an **Org** page in the sidebar (roles and hired agents) and an **Org** page in the Settings dialog (the overall cap). To do that it adds two `Org` operations, `renameHire` and `setBypassOverride`; the org calls its host entry serves; and a renderer entry for `plugins/org` that adds a page to `PagesSlot` (ADR-0061), a page to `SettingsPagesSlot` and a search-only palette command (ADR-0063). The kernel does not change. Out of scope: objectives, tasks and the scheduler (#179 and later), a structured MCP server form (#197), model choice per role.
+Scope: module. Adds the org's screens: an **Org** page in the sidebar whose own sub-navigation holds four pages (Dashboard, Org chart, Roles, Hired agents), and an **Org** page in the Settings dialog (the overall cap). To do that it adds a reporting line between hired agents (`HiredAgent.reportsTo`) and three `Org` operations, `renameHire`, `setBypassOverride` and `setReportsTo`; the org calls its host entry serves; and a renderer entry for `plugins/org` that adds a page to `PagesSlot` (ADR-0061), a page to `SettingsPagesSlot` and a search-only palette command (ADR-0063). The kernel does not change. Out of scope: objectives, tasks and the scheduler (#179 and later), a structured MCP server form (#197), model choice per role.
 
 Decisions taken with the user in Understand (2026-11-07): the overall cap lives on a plugin Settings page (option C), built in this PR; bypass controls are hidden when managed or user Claude Code settings disable `bypassPermissions` (option A); MCP servers are edited as JSON (option A, #197 for a form); copied roles can be deleted.
+
+Decisions taken with the user on 2026-11-07, after the role list and detail layout was chosen:
+
+| Decision | Choice |
+| --- | --- |
+| How to move between org pages | one `Org` sidebar entry; the Org page draws its own sub-navigation (no layout change) |
+| Which pages #178 builds | Dashboard, Org chart, Roles, Hired agents. Each later #40 sub-issue adds its page or section to the same sub-navigation (see Later pages) |
+| Org chart | a tree of hired agents only; a role is an attribute shown on each agent, never a node |
+| Where the tree's edges come from | a new `reportsTo` field on `HiredAgent`; null means the agent reports to the user |
+| Dashboard | a stat row, then a "Needs attention" list with a fix button per item |
+| Hired agents page | a list and detail page, the same form as Roles; every agent action lives only there |
+
+### Later pages
+
+| Issue | Adds to the Org page |
+| --- | --- |
+| #179 | Dashboard: `Running now (<n> of <cap>)` in the stat row and a Waiting tasks section. Hired agents detail and Org chart nodes: the agent's current task |
+| #180 | an Objectives page in the sub-navigation, between Dashboard and Org chart, with the objective form and objective screen |
+| #181 | Dashboard: a "Task lists to approve" section |
+| #182 | Hired agents detail: open the agent's session |
+| #197 | Roles detail: the structured MCP server form |
 
 ## Interface
 
@@ -39,9 +60,38 @@ Order 50 places Org after Meta repo (40). `OrgSettingsPage` takes `SettingsPageP
 readonly renameHire: (hireId: HireId, name: AgentName | null) => Effect<HiredAgent, HireNotFound | HireNameTaken>
 /** Sets hired agent `hireId`'s bypass override: true or false overrides its role's `bypassOptIn`; null follows the role. */
 readonly setBypassOverride: (hireId: HireId, override: boolean | null) => Effect<HiredAgent, HireNotFound>
+/** Makes hired agent `hireId` report to hired agent `reportsTo`, or to the user when null. */
+readonly setReportsTo: (hireId: HireId, reportsTo: HireId | null) => Effect<HiredAgent, HireNotFound | ReportsToCycle>
+/** (changed) Hires an agent of role `roleId`, named `name` or unnamed when null, reporting to `reportsTo` or to the user when null. */
+readonly hire: (roleId: RoleId, name: AgentName | null, reportsTo: HireId | null) => Effect<HiredAgent, RoleNotFound | RoleDisabled | HireNameTaken | HireNotFound>
 ```
 
-Both run in one transaction in `plugins/org/org.ts`, as the other changes do: `renameHire` checks the name is free among other hires ignoring ASCII case (the same check as `hire`, excluding `hireId`), then writes. Each logs `Effect.logInfo` with the hire id. The `Org` interface's JSDoc (`plugins/org/service.ts`) gains a sentence for each.
+Each runs in one transaction in `plugins/org/org.ts`, as the other changes do, and logs `Effect.logInfo` with the hire id. The `Org` interface's JSDoc (`plugins/org/service.ts`) gains a sentence for each, and `service.ts`'s `MEMBERS` record lists `setReportsTo`.
+
+- `renameHire` checks the name is free among other hires ignoring ASCII case (the same check as `hire`, excluding `hireId`), then writes.
+- `setReportsTo` and `hire` fail with `HireNotFound { hireId: reportsTo }` when `reportsTo` is not a hire. `setReportsTo` fails with `ReportsToCycle { hireId, reportsTo }` when `reportsTo` is `hireId` or reports to `hireId` through any chain of `reportsTo` values.
+- `dismiss` (changed) first sets every hire that reports to the dismissed hire to report to the dismissed hire's own `reportsTo`, then deletes it, in one transaction.
+
+`plugins/org/domain.ts` changes:
+
+```ts
+export const HiredAgent = Schema.Struct({
+  id: HireId,
+  roleId: RoleId,
+  name: Schema.NullOr(AgentName),
+  bypassOverride: Schema.NullOr(Schema.Boolean),
+  reportsTo: Schema.NullOr(HireId),
+  hiredAt: Schema.Number
+})
+
+/** Failure of setting a reporting line: `reportsTo` is `hireId` or already reports to `hireId`. */
+export class ReportsToCycle extends Schema.TaggedError<ReportsToCycle>()('ReportsToCycle', {
+  hireId: HireId,
+  reportsTo: HireId
+}) {}
+```
+
+`plugins/org/migrations.ts` gains `'3_add_reports_to'`: `ALTER TABLE hired_agents ADD COLUMN reports_to TEXT REFERENCES hired_agents(hire_id)`. Existing hires get null, so they report to the user. `HireRow` in `org.ts` gains `reports_to`.
 
 ### Org calls: `plugins/org/calls.ts`
 
@@ -54,13 +104,14 @@ Declared with `Rpc.make` (ADR-0057), each with a struct payload and a JSDoc line
 | `CopyRole` | `{ roleId, name: RoleName }` | `Role` | `RoleNotFound \| RoleNameTaken` |
 | `EditRole` | `{ roleId, edit: RoleEdit }` | `Role` | `RoleNotFound \| RoleNameTaken \| BuiltInRoleRenamed` |
 | `DeleteRole` | `{ roleId }` | `Void` | `RoleNotFound \| BuiltInRoleDeleted \| RoleHasHires` |
-| `Hire` | `{ roleId, name: NullOr(AgentName) }` | `HiredAgent` | `RoleNotFound \| RoleDisabled \| HireNameTaken` |
+| `Hire` | `{ roleId, name: NullOr(AgentName), reportsTo: NullOr(HireId) }` | `HiredAgent` | `RoleNotFound \| RoleDisabled \| HireNameTaken \| HireNotFound` |
 | `Dismiss` | `{ hireId }` | `Void` | `HireNotFound` |
 | `RenameHire` | `{ hireId, name: NullOr(AgentName) }` | `HiredAgent` | `HireNotFound \| HireNameTaken` |
 | `SetBypassOverride` | `{ hireId, override: NullOr(Boolean) }` | `HiredAgent` | `HireNotFound` |
+| `SetReportsTo` | `{ hireId, reportsTo: NullOr(HireId) }` | `HiredAgent` | `HireNotFound \| ReportsToCycle` |
 | `SetOverallCap` | `{ cap: OverallCap }` | `OrgSettings` | none |
 
-ADR-0057 allows a call to be resent while the Host connection is down, so a handler can run more than once (`docs/adr/0057-plugin-pages-and-plugin-messages.md:45`). `SetRoleEnabled`, `EditRole`, `RenameHire`, `SetBypassOverride` and `SetOverallCap` set a value and are safe to repeat. `Dismiss` and `DeleteRole` fail with `HireNotFound` / `RoleNotFound` on a repeat; the renderer treats that error as success for these two calls and refreshes `orgAtom`. `Hire` with a null name and `CopyRole` are not safe to repeat: a resent call can add a second hire, or fail with `RoleNameTaken` after the first copy succeeded. This is accepted; the user removes a duplicate with `Dismiss` or `Delete…`.
+ADR-0057 allows a call to be resent while the Host connection is down, so a handler can run more than once (`docs/adr/0057-plugin-pages-and-plugin-messages.md:45`). `SetRoleEnabled`, `EditRole`, `RenameHire`, `SetBypassOverride`, `SetReportsTo` and `SetOverallCap` set a value and are safe to repeat. `Dismiss` and `DeleteRole` fail with `HireNotFound` / `RoleNotFound` on a repeat; the renderer treats that error as success for these two calls and refreshes `orgAtom`. `Hire` with a null name and `CopyRole` are not safe to repeat: a resent call can add a second hire, or fail with `RoleNameTaken` after the first copy succeeded. This is accepted; the user removes a duplicate with `Dismiss` or `Delete…`.
 
 ```ts
 /**
@@ -86,8 +137,14 @@ export const OrgSnapshot = Schema.Struct({
 | `host.ts` | after providing `OrgService`, `ctx.serve` each call. `ReadOrg` reads `roles`, `hiredAgents`, `settings` and `bypassAvailable`; these are separate reads, not one transaction, so a change landing between them shows after the next refresh, which every change triggers. A `Ref<Option<AgentBackend>>` is set and cleared by `ctx.whenProvided([AgentBackendKey], ({ agentBackend }) => Effect.acquireRelease(Ref.set(ref, Option.some(agentBackend)), () => Ref.set(ref, Option.none())))` (ADR-0056); `AgentBackendKey` types `agentBackend` as `AgentBackend` |
 | `bypass.ts` | `bypassAvailable(ref)`: while the ref is empty it returns `false` and logs at debug level (no session can start without a backend; the controls appear on the next read after a backend is provided); otherwise `!(yield* backend.disabledPermissionModes(homedir())).includes('bypassPermissions')`. `homedir` is imported from `node:os` with `// @effect-diagnostics-next-line nodeBuiltinImport:off -- <reason>`, as `plugins/claude-code/attachments.ts:1` does. The claude-code backend calls `resolveSettings({ cwd })` with every source (`permission-settings.ts:50`); `cwd` only locates project and local settings, and managed and user settings are always read (`sdk.d.ts:3403-3412`, SDK 0.3.311). At the home directory the project file `~/.claude/settings.json` is the user settings file; other directories' project and local settings are not read, which ADR-0054's per-session check covers |
 | `renderer.ts` | `addEntry(ctx, PagesSlot, { id: 'org', order: 10, label: 'Org', icon: UsersIcon, component })`, the Settings page and the palette command above; one `orgAtom = Atom.make(callHost(ctx, ReadOrg, {}))` shared by both pages |
-| `org-page.tsx` | the retro warning, the role list and the selected role's detail |
-| `role-editor.tsx` | the selected role's detail: heading row, edit form and its hired agents |
+| `org-page.tsx` | the Org page: its sub-navigation, the read states, and which sub-page and which agent are selected |
+| `dashboard.tsx` | the stat row and the Needs attention list |
+| `org-chart.tsx` | the tree of hired agents |
+| `roles-page.tsx` | the role list and the selected role's detail |
+| `role-editor.tsx` | the selected role's detail: heading row, edit form and the names of its hired agents |
+| `agents-page.tsx` | the hired agent list and the selected agent's detail |
+| `hire-dialog.tsx` | the Hire dialog (name, Reports to), opened from Roles and from Dashboard |
+| `org-tree.ts` | turns `hiredAgents` into the tree the chart draws and the Reports to choices a hire may take; added to `tsconfig.web.json`'s `include` |
 | `org-settings-page.tsx` | the overall cap |
 | `mcp-json.ts` | turns the MCP textarea text into `RoleEdit.mcpServers`, and a role's servers back into text; added to `tsconfig.web.json`'s `include` |
 
@@ -110,6 +167,7 @@ Renderer helpers are `.tsx` files or are added to `tsconfig.web.json`'s `include
   | `Hire`, `RenameHire` | under the name field | `An agent named "<name>" already exists` (`HireNameTaken`) |
   | `Hire` | under the Hire button | `This role is disabled` (`RoleDisabled`) |
   | `DeleteRole` | in the delete dialog | `Dismiss its <n> hired agents first` (`Dismiss its hired agent first` when 1) (`RoleHasHires`) |
+  | `SetReportsTo` | under the Reports to field | `<name> already reports to <agent>` (`ReportsToCycle`); the field keeps the agent's saved value |
   | `SetRoleEnabled`, `Dismiss`, `SetBypassOverride`, `Hire retro` | error toast (DESIGN.md › Toast) | title `Could not <action> <name>`, the reason as description |
   | any | as the call's row above, or a toast | `RoleNotFound` / `HireNotFound`: `This role was removed` / `This agent was dismissed`, and `orgAtom` is refreshed because the screen is out of date |
   | any | as the call's row above, or a toast | `PluginNotServing` / `PluginCallInvalid`: their `message` |
