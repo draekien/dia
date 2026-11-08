@@ -26,7 +26,8 @@ import {
   SetBypassOverride,
   SetJobTitleEnabled,
   SetOverallCap,
-  SetReportsTo
+  SetReportsTo,
+  WatchWork
 } from './calls'
 import { type Dispatcher, makeDispatcher } from './dispatcher'
 import { orgMigrations } from './migrations'
@@ -35,6 +36,25 @@ import { type Org, OrgService } from './service'
 import { makeWork, type Work } from './work'
 
 type Workspace = Stream.Success<HostPluginContext['workspace']>
+
+const readWorkView = (work: Work, dispatcher: Dispatcher) =>
+  Effect.map(Effect.all([work.snapshot, dispatcher.live]), ([snapshot, live]) => ({
+    ...snapshot,
+    ...live
+  }))
+
+const watchWork = (work: Work, dispatcher: Dispatcher) =>
+  Stream.unwrap(
+    Effect.gen(function* () {
+      const works = yield* work.watchChanges
+      const lives = yield* dispatcher.watchChanges
+      yield* Effect.logDebug('Watching org work')
+      return Stream.concat(
+        Stream.make(undefined),
+        Stream.merge(works, lives).pipe(Stream.buffer({ capacity: 1, strategy: 'sliding' }))
+      ).pipe(Stream.mapEffect(() => readWorkView(work, dispatcher)))
+    })
+  )
 
 const holdAgentBackend = (
   ctx: HostPluginContext,
@@ -132,12 +152,8 @@ const serveWorkCalls = (
 ): Effect.Effect<void, never, Scope.Scope> =>
   Effect.all(
     [
-      ctx.serve(ReadWork, () =>
-        Effect.map(Effect.all([work.snapshot, dispatcher.live]), ([snapshot, live]) => ({
-          ...snapshot,
-          ...live
-        }))
-      ),
+      ctx.serve(ReadWork, () => readWorkView(work, dispatcher)),
+      ctx.serve(WatchWork, () => watchWork(work, dispatcher)),
       ctx.serve(CreateObjective, ({ objective }) => work.createObjective(objective)),
       ctx.serve(CreateTask, ({ task }) =>
         work.createTask(task).pipe(Effect.tap(() => dispatcher.signal))

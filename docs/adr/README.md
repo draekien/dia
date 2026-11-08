@@ -65,7 +65,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0054](0054-permission-modes-for-hired-agents.md) | Run hired agents in `auto` where the model and settings allow it, otherwise in `default`, and in `bypassPermissions` only when the user opts a role or hire in | accepted |
 | [0055](0055-lease-a-feature-plugin-service-for-one-operation.md) | Lease a feature plugin's service for one operation, and close a plugin only after its leases end or 30 seconds pass | accepted, amended by ADR-0060 and ADR-0065 |
 | [0056](0056-run-part-of-a-plugin-while-optional-services-are-provided.md) | Run part of a plugin while optional services are provided, with `ctx.whenProvided` | accepted, amended by ADR-0060 and ADR-0065 |
-| [0057](0057-plugin-pages-and-plugin-messages.md) | Let a renderer plugin add pages, and let a plugin's renderer entry call its own host entry over one `CallPlugin` RPC | accepted, amended by ADR-0061 |
+| [0057](0057-plugin-pages-and-plugin-messages.md) | Let a renderer plugin add pages, and let a plugin's renderer entry call its own host entry over one `CallPlugin` RPC | accepted, amended by ADR-0061 and ADR-0068 |
 | [0059](0059-plugin-module-exports.md) | Let a plugin export source modules that other plugins import | accepted, amended by ADR-0061 and ADR-0065 |
 | [0060](0060-typed-plugin-service-keys.md) | Type a plugin service by a key its provider exports | accepted, amended by ADR-0062 |
 | [0061](0061-list-slots.md) | List slots: a plugin declares a list it draws, and other plugins add entries to it | accepted |
@@ -75,6 +75,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0065](0065-adapter-plugins-are-ordinary-plugins.md) | Adapter plugins load, reload, unload and import under the same rules as feature plugins | accepted |
 | [0066](0066-plugin-owned-fields-in-kernel-contracts.md) | A kernel contract field whose shape a plugin owns is `unknown` in the kernel | accepted |
 | [0067](0067-hired-agent-sessions-run-headless-in-the-org-plugin.md) | Hired agents' sessions run headless inside the org plugin | accepted |
+| [0068](0068-plugin-host-entries-serve-streaming-calls.md) | Plugin host entries serve streaming calls, and a subscription holds no lease | accepted |
 
 ## Adding a new ADR
 

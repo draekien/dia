@@ -1,4 +1,10 @@
-import type { HireId, ObjectivePriority, OverallCap, TaskId } from './domain'
+import {
+  type HireId,
+  type ObjectivePriority,
+  type OverallCap,
+  PRIORITY_RANK,
+  type TaskId
+} from './domain'
 
 /** A waiting task the scheduler may start: its assignee, its objective's priority and its age. */
 export interface StartCandidate {
@@ -26,8 +32,6 @@ export interface SchedulerPick {
   readonly resume: ReadonlyArray<TaskId>
   readonly start: ReadonlyArray<TaskId>
 }
-
-const PRIORITY_RANK: Record<ObjectivePriority, number> = { high: 0, normal: 1, low: 2 }
 
 const byStartOrder = (left: StartCandidate, right: StartCandidate): number =>
   PRIORITY_RANK[left.priority] - PRIORITY_RANK[right.priority] ||

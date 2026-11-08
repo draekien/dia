@@ -33,6 +33,7 @@ import {
   type WorkspaceChanged
 } from '@shared/ipc/contract'
 import type { EventFrame } from '@shared/ipc/rpc'
+import { PluginNotServing } from '@shared/plugin/messages'
 import { Data, DateTime, Deferred, Effect, Stream } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type DiaRpcClient, makeHostApi } from './host-api'
@@ -120,6 +121,7 @@ interface ClientScript {
   readonly runActivity?: Effect.Effect<void, ActivityNotFound>
   readonly resolveImportConflict?: Effect.Effect<void, WorkspaceProblemError>
   readonly paneChatSeq?: number
+  readonly pluginSubscriptions?: ReadonlyArray<Stream.Stream<unknown, unknown>>
 }
 
 const makeClient = (script: ClientScript = {}) => {
@@ -135,6 +137,11 @@ const makeClient = (script: ClientScript = {}) => {
     const next = script.subscriptions?.[subscribeAttempts++]
     return next ?? Stream.never
   })
+  let pluginSubscribeAttempts = 0
+  const subscribePlugin = vi.fn(
+    (_payload: { plugin: string; tag: string; payload: unknown }) =>
+      script.pluginSubscriptions?.[pluginSubscribeAttempts++] ?? Stream.never
+  )
   const getWorkspace = vi.fn(() => Effect.succeed(EMPTY_WORKSPACE))
   const getAgentSummaries = vi.fn(() => Effect.succeed([SUMMARY]))
   const registerProject = vi.fn(
@@ -179,6 +186,7 @@ const makeClient = (script: ClientScript = {}) => {
     ResolveQuestion: resolvePrompt,
     ResolvePlanReview: resolvePrompt,
     SubscribeEvents: subscribeEvents,
+    SubscribePlugin: subscribePlugin,
     GetWorkspace: getWorkspace,
     GetAgentSummaries: getAgentSummaries,
     RegisterProject: registerProject,
@@ -194,6 +202,7 @@ const makeClient = (script: ClientScript = {}) => {
     sendMessage,
     resolvePrompt,
     subscribeEvents,
+    subscribePlugin,
     getWorkspace,
     getAgentSummaries,
     registerProject,
@@ -617,6 +626,117 @@ describe('makeHostApi', () => {
       { name: 'example', directory: '/tree/example' }
     ])
     expect(result).toEqual({ _tag: 'Rejected', message: 'no plugin.json' })
+  })
+})
+
+describe('plugins.subscribe', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const follow = (api: ReturnType<typeof makeApi>['api']) => {
+    const values: Array<unknown> = []
+    const ends: Array<unknown> = []
+    const unsubscribe = api.plugins.subscribe(
+      'example',
+      'Ticks',
+      { payload: 1 },
+      (value) => values.push(value),
+      (end) => ends.push(end)
+    )
+    return { values, ends, unsubscribe }
+  }
+
+  it('hands each value to onValue, then Done to onEnd, sending the plugin, tag and payload unchanged', async () => {
+    const { client, subscribePlugin } = makeClient({ pluginSubscriptions: [Stream.make('a', 'b')] })
+    const { api } = makeApi(client)
+
+    const { values, ends } = follow(api)
+    await advance(0)
+
+    expect(subscribePlugin.mock.calls.map(([payload]) => payload)).toEqual([
+      { plugin: 'example', tag: 'Ticks', payload: { payload: 1 } }
+    ])
+    expect(values).toEqual(['a', 'b'])
+    expect(ends).toEqual([{ _tag: 'PluginSubscriptionDone' }])
+  })
+
+  it('hands a PluginCallError to onEnd as plain Failure data and does not resubscribe', async () => {
+    const notServing = new PluginNotServing({ plugin: 'example', tag: 'Ticks', message: 'gone' })
+    const { client, subscribePlugin } = makeClient({
+      pluginSubscriptions: [Stream.fail(notServing)]
+    })
+    const { api } = makeApi(client)
+
+    const { ends } = follow(api)
+    await advance(5_000)
+
+    expect(ends).toEqual([
+      {
+        _tag: 'PluginSubscriptionFailure',
+        error: { _tag: 'PluginNotServing', plugin: 'example', tag: 'Ticks', message: 'gone' }
+      }
+    ])
+    expect(subscribePlugin).toHaveBeenCalledTimes(1)
+  })
+
+  it('subscribes again after a lost connection, warns, and does not call onEnd', async () => {
+    const { client, subscribePlugin } = makeClient({
+      pluginSubscriptions: [Stream.make('a').pipe(Stream.concat(dropped)), Stream.make('b')]
+    })
+    const { api, warn } = makeApi(client)
+
+    const { values, ends } = follow(api)
+    await advance(1_500)
+
+    expect(subscribePlugin).toHaveBeenCalledTimes(2)
+    expect(values).toEqual(['a', 'b'])
+    expect(warn).toHaveBeenCalledWith(
+      'Plugin subscription dropped; resubscribing',
+      expect.objectContaining({ plugin: 'example', tag: 'Ticks' })
+    )
+    expect(ends).toEqual([{ _tag: 'PluginSubscriptionDone' }])
+  })
+
+  it('keeps resubscribing beyond the resend window', async () => {
+    const drops = Array.from({ length: 40 }, () => dropped)
+    const { client, subscribePlugin } = makeClient({
+      pluginSubscriptions: [...drops, Stream.make('late')]
+    })
+    const { api } = makeApi(client)
+
+    const { values } = follow(api)
+    await advance(41_000)
+
+    expect(subscribePlugin).toHaveBeenCalledTimes(41)
+    expect(values).toEqual(['late'])
+  })
+
+  it('stops the subscription when the returned function is called', async () => {
+    let interrupted = false
+    const { client } = makeClient({
+      pluginSubscriptions: [
+        Stream.never.pipe(
+          Stream.ensuring(
+            Effect.sync(() => {
+              interrupted = true
+            })
+          )
+        )
+      ]
+    })
+    const { api } = makeApi(client)
+    const { unsubscribe } = follow(api)
+    await advance(0)
+
+    unsubscribe()
+    await advance(0)
+
+    expect(interrupted).toBe(true)
   })
 })
 

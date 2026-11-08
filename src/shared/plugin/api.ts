@@ -196,18 +196,36 @@ export interface HostPluginContext extends PluginServices {
   ) => Effect.Effect<SqlClient.SqlClient, PluginDatabaseError, Scope.Scope>
   /**
    * Serves `rpc`, declared with `Rpc.make` in a module both of this plugin's entries import, for
-   * calls from this plugin's own `renderer` entry (`callHost`), until the scope it runs in closes.
-   * Declare a struct `payload` (`payload: {}` when the call takes none). The handler can run more
-   * than once for one call, and the runs can overlap: the renderer resends a call while the Host
-   * connection is down, and the first run is not cancelled, so make it safe to repeat. Closing the
-   * scope waits up to 30 seconds for running handlers, then interrupts them; the caller then sees
-   * `PluginNotServing` although the handler may have partly run. Serving a tag this plugin already
-   * serves in an open scope, a tag another plugin has taken, or a streaming `rpc` is a defect.
+   * calls from this plugin's own `renderer` entry, until the scope it runs in closes. Declare a
+   * struct `payload` (`payload: {}` when the call takes none).
+   *
+   * A request/response `rpc` takes a handler returning an effect and is called with `callHost`.
+   * The handler can run more than once for one call, and the runs can overlap: the renderer resends
+   * a call while the Host connection is down, and the first run is not cancelled, so make it safe
+   * to repeat. Closing the scope waits up to 30 seconds for running handlers, then interrupts
+   * them; the caller then sees `PluginNotServing` although the handler may have partly run.
+   *
+   * A streaming `rpc` (`Rpc.make(tag, { ..., stream: true })`) takes a handler returning a stream
+   * and is followed with `followHost`. The handler runs once per subscription, and again for each
+   * resubscription, so each run must start from the current state. A subscription holds no lease
+   * on the plugin: closing the scope ends every subscription with `PluginNotServing`, interrupts
+   * the effects they run, and waits up to 30 seconds for them to end. The handler stream may use
+   * only resources of the scope that serves it or of an enclosing scope, never a service held
+   * in a `whenProvided` or `inject` scope, which closes first.
+   *
+   * Serving a tag this plugin already serves in an open scope, or a tag another plugin has taken,
+   * is a defect.
    */
-  readonly serve: <R extends Rpc.AnyWithProps>(
-    rpc: R,
-    handler: (payload: Rpc.Payload<R>) => Effect.Effect<Rpc.Success<R>, Rpc.Error<R>>
-  ) => Effect.Effect<void, never, Scope.Scope>
+  readonly serve: {
+    <R extends Rpc.AnyWithProps>(
+      rpc: R,
+      handler: (payload: Rpc.Payload<R>) => Effect.Effect<Rpc.Success<R>, Rpc.Error<R>>
+    ): Effect.Effect<void, never, Scope.Scope>
+    <R extends Rpc.AnyWithProps>(
+      rpc: R,
+      handler: (payload: Rpc.Payload<R>) => Stream.Stream<Rpc.SuccessChunk<R>, Rpc.ErrorExit<R>>
+    ): Effect.Effect<void, never, Scope.Scope>
+  }
 }
 
 /**

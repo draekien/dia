@@ -44,3 +44,24 @@ export const jsonCodec = (schema: Schema.Top): Schema.Codec<unknown, unknown> =>
 /** Every failure `CallPlugin` reports. */
 export const PluginCallError = Schema.Union([PluginNotServing, PluginCallInvalid, PluginCallFailed])
 export type PluginCallError = typeof PluginCallError.Type
+
+/**
+ * End of a plugin subscription whose stream failed with `error`, a {@link PluginCallError}. Sent
+ * to the `onEnd` callback of `window.dia.plugins.subscribe`.
+ */
+export const PluginSubscriptionFailure = Schema.TaggedStruct('PluginSubscriptionFailure', {
+  error: PluginCallError
+})
+
+/**
+ * End of a plugin subscription whose stream completed with no failure. Sent to the `onEnd`
+ * callback of `window.dia.plugins.subscribe`.
+ */
+export const PluginSubscriptionDone = Schema.TaggedStruct('PluginSubscriptionDone', {})
+
+/** How a plugin subscription ended: {@link PluginSubscriptionFailure} or {@link PluginSubscriptionDone}. */
+export const PluginSubscriptionEnd = Schema.Union([
+  PluginSubscriptionFailure,
+  PluginSubscriptionDone
+])
+export type PluginSubscriptionEnd = typeof PluginSubscriptionEnd.Type

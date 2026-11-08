@@ -8,10 +8,14 @@ import { assert, describe, it } from '@effect/vitest'
 import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
 import { DateTime, Effect, Option, Schema, Stream } from 'effect'
-import { callPlugin, servePluginCall } from '../../src/host/plugins/plugin-messages'
+import {
+  callPlugin,
+  servePluginCall,
+  subscribePlugin
+} from '../../src/host/plugins/plugin-messages'
 import { makePluginDatabase } from '../../src/host/services/database'
 import { BUILT_IN_JOB_TITLES, DEFAULT_OVERALL_CAP } from './built-in-job-titles'
-import { OrgSnapshot } from './calls'
+import { OrgSnapshot, WorkView } from './calls'
 import { HiredAgent } from './domain'
 import setup from './host'
 
@@ -346,5 +350,51 @@ describe('org host entry work calls', () => {
 
       assert.deepStrictEqual([work.heldSlots, work.tasks[0]?.state], [1, 'running'])
     })
+  )
+
+  it.effect(
+    'pushes the work view when subscribed, after a task is created and after it starts',
+    () =>
+      Effect.gen(function* () {
+        const registry = yield* startOrg(Option.some(backendDisabling([])))
+        yield* registry.load('backend')
+        yield* call(registry, 'CreateObjective', {
+          objective: {
+            id: '00000000-0000-4000-8000-500000000001',
+            projectId: PROJECT_ID,
+            title: 'Ship it',
+            description: '',
+            priority: 'normal',
+            assignee: null
+          }
+        })
+        const ada = yield* hireEngineer(registry)
+        const views: Array<WorkView> = []
+        const stream = yield* subscribePlugin(registry, {
+          plugin: 'org',
+          tag: 'WatchWork',
+          payload: {}
+        })
+        yield* stream.pipe(
+          Stream.runForEach((value) =>
+            Effect.sync(() => views.push(Schema.decodeUnknownSync(WorkView)(value)))
+          ),
+          Effect.forkScoped
+        )
+        yield* settle
+        const onSubscribe = views.map((view) => view.tasks.length)
+
+        yield* createTask(registry, 1, ada)
+        yield* settle
+
+        assert.deepStrictEqual(
+          {
+            onSubscribe,
+            last: views.at(-1)?.tasks.map((task) => task.state),
+            held: views.at(-1)?.heldSlots
+          },
+          { onSubscribe: [0], last: ['running'], held: 1 }
+        )
+      }).pipe(Effect.scoped)
   )
 })

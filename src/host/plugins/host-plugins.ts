@@ -7,6 +7,7 @@ import {
   type PluginRegistry
 } from '@shared/plugin/plugin-registry'
 import { ByteSize, Context, Effect, FileSystem, Layer, Path, SubscriptionRef } from 'effect'
+import type { Rpc } from 'effect/rpc'
 import { AppWindow } from '../services/app-window'
 import { BackgroundActivities } from '../services/background-activities'
 import { makePluginDatabase } from '../services/database'
@@ -79,7 +80,10 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
                 register: (spec) => activities.register(services.name, spec)
               },
               database: makePluginDatabase(path.join(dataDir, 'data.db'), services.name),
-              serve: (rpc, handler) => servePluginCall(services, served, rpc, handler)
+              serve: <R extends Rpc.AnyWithProps>(
+                rpc: R,
+                handler: Parameters<typeof servePluginCall<R>>[3]
+              ) => servePluginCall(services, served, rpc, handler)
             })
           )
         },

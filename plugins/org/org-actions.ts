@@ -6,17 +6,19 @@ import {
   toast
 } from '@dia/renderer-plugin'
 import { RegistryContext } from '@effect/atom-react'
-import { Effect, Result, Schema } from 'effect'
+import { type Cause, Effect, type Option, Result, Schema } from 'effect'
 import { type AsyncResult, type Atom, AtomRegistry } from 'effect/reactivity'
 import type { Rpc } from 'effect/rpc'
 import { useContext } from 'react'
-import type { OrgSnapshot } from './calls'
+import type { OrgSnapshot, WorkView } from './calls'
 import {
   type HiredAgent,
   JOB_TITLE_NAME_MAX_LENGTH,
   type JobTitle,
   type JobTitleId,
-  JobTitleName
+  JobTitleName,
+  WORK_TITLE_MAX_LENGTH,
+  WorkTitle
 } from './domain'
 import type { OrgView } from './org-view'
 
@@ -41,6 +43,14 @@ export type OrgCall = <R extends Rpc.AnyWithProps>(
   payload: Rpc.PayloadConstructor<R>,
   target: string
 ) => Promise<Result.Result<Rpc.Success<R>, OrgCallFailure<R>>>
+
+/**
+ * The atom following the org's `WatchWork` stream: `None` while the org host entry is not
+ * serving, otherwise the latest `WorkView`. The Objectives page reads it.
+ */
+export type WorkAtom = Atom.Atom<
+  AsyncResult.AsyncResult<Option.Option<WorkView>, PluginCallInvalid | Cause.NoSuchElementError>
+>
 
 const STALE = new Set(['JobTitleNotFound', 'HireNotFound'])
 
@@ -107,6 +117,7 @@ export const agentName = (agent: HiredAgent, jobTitles: ReadonlyArray<JobTitle>)
 
 const decodeJobTitleName = Schema.decodeUnknownResult(JobTitleName)
 const decodeAgentName = Schema.decodeUnknownResult(AgentName)
+const decodeWorkTitle = Schema.decodeUnknownResult(WorkTitle)
 
 /**
  * Reads a job title name field: the trimmed name, or the message to show beside the field when it
@@ -115,6 +126,20 @@ const decodeAgentName = Schema.decodeUnknownResult(AgentName)
 export const readJobTitleName = (text: string): Result.Result<JobTitleName, string> =>
   Result.mapError(decodeJobTitleName(text.trim()), () =>
     text.trim() === '' ? 'Enter a name' : `Use at most ${JOB_TITLE_NAME_MAX_LENGTH} characters`
+  )
+
+/** A new random id for an objective or task the user creates; call it in a React handler. */
+export const newId = (): string =>
+  // @effect-diagnostics-next-line cryptoRandomUUID:off -- a React handler outside any Effect; the id only has to be unique.
+  crypto.randomUUID()
+
+/**
+ * Reads an objective or task title field: the trimmed title, or the message to show beside the
+ * field when it is blank or longer than {@link WORK_TITLE_MAX_LENGTH}.
+ */
+export const readWorkTitle = (text: string): Result.Result<WorkTitle, string> =>
+  Result.mapError(decodeWorkTitle(text.trim()), () =>
+    text.trim() === '' ? 'Enter a title' : `Use at most ${WORK_TITLE_MAX_LENGTH} characters`
   )
 
 /**

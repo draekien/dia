@@ -486,3 +486,90 @@ describe('dispatcher session end', () => {
     }).pipe(Effect.scoped)
   )
 })
+
+const countChanges = (watchChanges: Effect.Effect<Stream.Stream<void>, never, Scope.Scope>) =>
+  Effect.gen(function* () {
+    const changes = yield* watchChanges
+    let count = 0
+    yield* changes.pipe(
+      Stream.runForEach(() =>
+        Effect.sync(() => {
+          count += 1
+        })
+      ),
+      Effect.forkScoped
+    )
+    yield* settle
+    return () => count
+  })
+
+const changesDuring = <A, E, R>(count: () => number, action: Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const before = count()
+    yield* action
+    yield* settle
+    return count() - before
+  })
+
+describe('dispatcher change signal', () => {
+  it.effect(
+    'emits when a task is reserved, waits on a permission, is answered and is dropped',
+    () =>
+      Effect.gen(function* () {
+        const env = yield* setUp({ cap: 1 })
+        const count = yield* countChanges(env.dispatcher.watchChanges)
+        const engineer = env.jobTitles[1] as JobTitle
+        const hire = yield* env.hireOf(engineer)
+        let task: Task | undefined
+        const reserved = yield* changesDuring(
+          count,
+          Effect.map(env.addTask(hire), (added) => {
+            task = added
+          })
+        )
+        const session = env.sessions[0] as FakeSession
+        const pending = yield* changesDuring(
+          count,
+          env.emit(
+            session,
+            PermissionRequested.make({ requestId: 'r1', toolName: 'Bash', input: {} })
+          )
+        )
+        const answered = yield* changesDuring(
+          count,
+          env.dispatcher.answerPermission((task as Task).id, 'r1', ALLOW)
+        )
+        const dropped = yield* changesDuring(count, env.dispatcher.release((task as Task).id))
+
+        assert.deepStrictEqual(
+          [reserved > 0, pending > 0, answered > 0, dropped > 0],
+          [true, true, true, true]
+        )
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect(
+    'does not emit for activity during a running turn, a pass that starts nothing, or dropping an absent task',
+    () =>
+      Effect.gen(function* () {
+        const env = yield* setUp({ cap: 1 })
+        const engineer = env.jobTitles[1] as JobTitle
+        yield* env.addTask(yield* env.hireOf(engineer))
+        const session = env.sessions[0] as FakeSession
+        yield* env.emit(session, ToolCallStarted.make({ toolCallId: 't0', toolName: 'Read' }))
+        const count = yield* countChanges(env.dispatcher.watchChanges)
+
+        const activity = yield* changesDuring(
+          count,
+          env.emit(session, ToolCallStarted.make({ toolCallId: 't1', toolName: 'Read' }))
+        )
+        const idlePass = yield* changesDuring(count, env.dispatcher.signal)
+        const absent = yield* changesDuring(
+          count,
+          env.dispatcher.release(TaskId.make('00000000-0000-4000-8000-699999999999'))
+        )
+
+        assert.deepStrictEqual([activity, idlePass, absent], [0, 0, 0])
+      }).pipe(Effect.scoped)
+  )
+})
