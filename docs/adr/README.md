@@ -71,14 +71,15 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0061](0061-list-slots.md) | List slots: a plugin declares a list it draws, and other plugins add entries to it | accepted |
 | [0062](0062-host-service-keys.md) | Type the services the Host reads by keys defined in `src/` | accepted, amended by ADR-0065 |
 | [0063](0063-settings-and-palette-plugins.md) | Plugins own the Settings dialog, the command palette and their entries | accepted, amended by ADR-0065 |
-| [0064](0064-job-titles-and-task-kinds.md) | Name what an agent is hired as a job title, ship seven built-in job titles, and make planning and retro kinds of task | accepted, amended by ADR-0069 and ADR-0071 |
+| [0064](0064-job-titles-and-task-kinds.md) | Name what an agent is hired as a job title, ship seven built-in job titles, and make planning and retro kinds of task | accepted, amended by ADR-0069, ADR-0071 and ADR-0072 |
 | [0065](0065-adapter-plugins-are-ordinary-plugins.md) | Adapter plugins load, reload, unload and import under the same rules as feature plugins | accepted |
 | [0066](0066-plugin-owned-fields-in-kernel-contracts.md) | A kernel contract field whose shape a plugin owns is `unknown` in the kernel | accepted |
 | [0067](0067-hired-agent-sessions-run-headless-in-the-org-plugin.md) | Hired agents' sessions run headless inside the org plugin | accepted, amended by ADR-0070 |
 | [0068](0068-plugin-host-entries-serve-streaming-calls.md) | Plugin host entries serve streaming calls, and a subscription holds no lease | accepted |
-| [0069](0069-org-work-is-issues-with-implement-task-statuses.md) | Make org work issues with implement-task statuses, and make dia tools follow the session's permission rules | accepted, amended by ADR-0071 |
+| [0069](0069-org-work-is-issues-with-implement-task-statuses.md) | Make org work issues with implement-task statuses, and make dia tools follow the session's permission rules | accepted, amended by ADR-0071 and ADR-0072 |
 | [0070](0070-plugins-attach-sessions-to-the-host.md) | Plugins attach the sessions they open to the Host, which shows each as a row in its project | accepted |
-| [0071](0071-executive-assistant-session.md) | Run one Executive assistant session in the org plugin, and route a direct request to one work issue | accepted |
+| [0071](0071-executive-assistant-session.md) | Run one Executive assistant session in the org plugin, and route a direct request to one work issue | accepted, amended by ADR-0072 |
+| [0072](0072-org-composes-capability-plugins.md) | Split the org plugin into capability plugins that own registries, and make the org compose them | accepted |
 
 ## Adding a new ADR
 
