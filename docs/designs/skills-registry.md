@@ -173,12 +173,12 @@ export const WatchSkills = Rpc.make('WatchSkills', {
 
 ```ts
 /**
- * Props of the skill picker. `id` is the id of the control a `<label htmlFor>` names. `value` is
- * the chosen skill names; `onChange` receives the next list. `cwd`, when set, adds that
- * project's skills.
+ * Props of the skill picker. `label` is the accessible name of its search box; the picker's
+ * search box takes no external `<label htmlFor>`. `value` is the chosen skill names; `onChange`
+ * receives the next list. `cwd`, when set, adds that project's skills.
  */
 export interface SkillPickerProps {
-  readonly id: string
+  readonly label: string
   readonly value: ReadonlyArray<string>
   readonly onChange: (value: ReadonlyArray<string>) => void
   readonly cwd?: string
@@ -222,9 +222,9 @@ An install from `installed_plugins.json` counts for a context when its `scope` i
 
 `renderer.ts` builds an `Atom.family` keyed by `cwd` from its own `ctx`, each atom `followHost(ctx, WatchSkills, cwd === undefined ? {} : { cwd })` (`followHost` calls `payloadSchema.make`, and `optionalKey` rejects `{ cwd: undefined }`), as `makeServersAtom(ctx)` in `plugins/mcp/settings-page.tsx:24`. It provides `SkillPickerKey` as `(props) => createElement(SkillPicker, { ...props, skillsFamily })`, so a consumer passes only `SkillPickerProps`.
 
-`skill-picker.tsx` renders a shadcn `Command` (exported by `@dia/renderer-plugin`) with a search input and one `CommandGroup` per `group`, in a list with a fixed `max-h-64` that scrolls. `id` is set on `CommandInput`, the only labelable element. Each `CommandItem` has `value={`${group}/${name}`}` and `keywords={[name, description]}`, shows a check when its name is in `value`, the name in mono and the description truncated, and toggles the name on select; two rows with one name both show the check. Names in `value` that no skill has are listed first in a `Missing` group as `<name> (missing)`, so they can be removed (ADR-0072 "Missing references"). Under the list: `None selected: sessions get every skill.` while `value` is empty. While loading: a `Skeleton`; when the host entry is not serving: `The skills plugin's host entry is not loaded.`
+`skill-picker.tsx` renders a shadcn `Command` (exported by `@dia/renderer-plugin`) with a search input and one `CommandGroup` per `group`, in a list with a fixed `max-h-64` that scrolls. `label` is passed to `Command`, which renders it as the visually hidden `<label>` of its input: cmdk sets the input's `id` and `aria-labelledby` itself (`node_modules/cmdk/dist/index.mjs`, `Input`), so an `id` from the consumer cannot reach the input. Each `CommandItem` has `value={`${group}/${name}`}` and `keywords={[name, description]}`, shows a check when its name is in `value`, the name in mono and the description truncated, and toggles the name on select; two rows with one name both show the check. Names in `value` that no skill has are listed first in a `Missing` group as `<name> (missing)`, so they can be removed (ADR-0072 "Missing references"). Under the list: `None selected: sessions get every skill.` while `value` is empty. While loading: a `Skeleton`; when the host entry is not serving: `The skills plugin's host entry is not loaded.`
 
-**Org.** `job-title-editor.tsx` reads `useProvided(SkillPickerKey)`. When defined, it renders its own `Field` with `<Label htmlFor={`${id}-skills`}>Skills</Label>` and the picker with `id={`${id}-skills`}`, `value={lines(draft.skills)}` and `onChange={(next) => set('skills')(next.join('\n'))}`, and no caption (the picker's `None selected` line replaces it); otherwise the existing textarea. Enter in the picker's search input selects the highlighted row and does not submit the form. `Draft`, `editOf` and storage do not change.
+**Org.** `job-title-editor.tsx` reads `useProvided(SkillPickerKey)`. When defined, it renders its own `Field` with `<Label>Skills</Label>` (as its MCP servers field does when no editor is provided) and the picker with `label="Skills"`, `value={lines(draft.skills)}` and `onChange={(next) => set('skills')(next.join('\n'))}`, and no caption (the picker's `None selected` line replaces it); otherwise the existing textarea. Enter in the picker's search input selects the highlighted row and does not submit the form, because cmdk calls `preventDefault` on Enter. `Draft`, `editOf` and storage do not change.
 
 ## Logging
 
