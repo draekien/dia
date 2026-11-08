@@ -55,7 +55,7 @@ const decodeOptional = <S extends Schema.Top & { readonly DecodingServices: neve
 ) => (value === undefined ? Effect.undefined : decodeField(schema, field, value))
 
 const decodeIssueId = (field: string, value: string) =>
-  Schema.decodeEffect(IssueId)(value).pipe(
+  Schema.decodeEffect(IssueId)(value.toLowerCase()).pipe(
     Effect.mapError(
       () =>
         new InvalidInput({ message: `Invalid ${field}: "${value}" is not an issue id (a UUID).` })

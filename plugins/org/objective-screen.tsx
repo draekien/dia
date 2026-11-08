@@ -81,7 +81,9 @@ interface IssueNode {
 const issueTree = (issues: ReadonlyArray<Issue>): ReadonlyArray<IssueNode> => {
   const byParent = new Map<IssueId | null, Array<Issue>>()
   for (const issue of [...issues].sort((a, b) => a.createdAt - b.createdAt)) {
-    byParent.set(issue.parentIssueId, [...(byParent.get(issue.parentIssueId) ?? []), issue])
+    const siblings = byParent.get(issue.parentIssueId)
+    if (siblings === undefined) byParent.set(issue.parentIssueId, [issue])
+    else siblings.push(issue)
   }
   const build = (parent: IssueId | null): ReadonlyArray<IssueNode> =>
     (byParent.get(parent) ?? []).map((issue) => ({ issue, children: build(issue.id) }))
@@ -93,7 +95,7 @@ const issueFailureText = (failure: { readonly _tag: string }): string => {
     case 'IssueNotFound':
       return 'This issue was removed'
     case 'IssueNotAssignable':
-      return 'This issue has already started'
+      return 'This issue has started or is closed'
     case 'IssueNotStarted':
       return 'This issue has not started'
     case 'IssueNotInTriage':
@@ -445,7 +447,9 @@ export function ObjectiveScreen({
   const assignee = objective.assignee === null ? undefined : agents.get(objective.assignee)
   const commentsByIssue = new Map<IssueId, Array<IssueComment>>()
   for (const comment of comments) {
-    commentsByIssue.set(comment.issueId, [...(commentsByIssue.get(comment.issueId) ?? []), comment])
+    const onIssue = commentsByIssue.get(comment.issueId)
+    if (onIssue === undefined) commentsByIssue.set(comment.issueId, [comment])
+    else onIssue.push(comment)
   }
 
   return (

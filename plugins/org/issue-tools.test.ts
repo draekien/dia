@@ -160,6 +160,14 @@ describe('update_issue', () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect("sets the session's own issue status when issue_id names it in upper case", () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      yield* env.run('update_issue', { issue_id: env.own.id.toUpperCase(), status: 'testing' })
+      assert.strictEqual((yield* env.issueOf(env.own.id))?.status, 'testing')
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('refuses a status for another issue, leaving it as it is', () =>
     Effect.gen(function* () {
       const env = yield* setUp
