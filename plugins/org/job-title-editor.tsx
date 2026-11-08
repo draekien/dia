@@ -23,15 +23,9 @@ import { Loader2Icon } from 'lucide-react'
 import { createElement, type FormEvent, type ReactNode, useId, useState } from 'react'
 import { CopyJobTitle, DeleteJobTitle, EditJobTitle, SetJobTitleEnabled } from './calls'
 import { ConfirmDialog } from './confirm-dialog'
-import type { JobTitle, JobTitleEdit } from './domain'
+import { agentName, type JobTitle, type JobTitleEdit } from './domain'
 import { NameDialog } from './name-dialog'
-import {
-  agentName,
-  commonFailureText,
-  type OrgScreen,
-  readJobTitleName,
-  toastFailure
-} from './org-actions'
+import { commonFailureText, type OrgScreen, readJobTitleName, toastFailure } from './org-actions'
 import { HiredAgentsView, JobTitlesView } from './org-view'
 
 const BYPASS_CAPTION =

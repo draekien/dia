@@ -7,6 +7,7 @@ import { Loader2Icon } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { AssignIssue, CreateIssue, FinishIssue, type OrgSnapshot, TriageIssues } from './calls'
 import {
+  agentName,
   type HiredAgent,
   type HireId,
   type Issue,
@@ -19,7 +20,7 @@ import {
   PRIORITY_LABELS,
   type TriageDecision
 } from './domain'
-import { agentName, commonFailureText, newId, type OrgCall, readWorkTitle } from './org-actions'
+import { commonFailureText, newId, type OrgCall, readWorkTitle } from './org-actions'
 import { AssigneeSelect } from './org-fields'
 
 const STATUS_LABELS: Record<IssueStatus, string> = {

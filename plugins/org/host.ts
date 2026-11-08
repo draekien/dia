@@ -200,7 +200,8 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       runs,
       org,
       projectDirectory: (objective) => directoryOf(workspace, objective.projectId),
-      issueTools: (scope) => makeIssueTools(work, scope)
+      issueTools: (scope) => makeIssueTools(work, scope),
+      attach: ctx.sessions.attach
     })
     yield* followWorkspace(ctx, workspace, dispatcher)
     const backend = yield* Ref.make(Option.none<AgentBackend>())

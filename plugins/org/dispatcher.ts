@@ -1,7 +1,9 @@
 import {
   type AgentBackend,
   type AgentSession,
+  AttachedSession,
   type DiaTool,
+  type HostSessions,
   type ModelOption,
   type OutboundMessage,
   type PermissionResponse,
@@ -10,6 +12,7 @@ import {
   startPermissionMode
 } from '@dia/plugin'
 import {
+  Deferred,
   Effect,
   Exit,
   Fiber,
@@ -22,6 +25,7 @@ import {
   SynchronizedRef
 } from 'effect'
 import {
+  agentName,
   type HiredAgent,
   type Issue,
   type IssueId,
@@ -171,16 +175,19 @@ interface StartContext {
  * Builds the {@link Dispatcher} for the `org` plugin's setup scope. It requeues every started issue
  * other than `in_review` left by an earlier setup, so each resumes its session when it next
  * starts, and it closes every session when the scope closes. `issueTools` builds the dia tools a
- * hired agent's session gets for its issue.
+ * hired agent's session gets for its issue. `attach` shows each session in the agent overview
+ * while it runs (ADR-0070); a permission answered from its pane is routed through
+ * `answerPermission`.
  */
 export const makeDispatcher = (deps: {
   readonly runs: IssueRuns
   readonly org: Pick<Org, 'jobTitles' | 'hiredAgents' | 'settings'>
   readonly projectDirectory: ProjectDirectory
   readonly issueTools: (scope: IssueToolScope) => ReadonlyArray<DiaTool>
+  readonly attach: HostSessions['attach']
 }) =>
   Effect.gen(function* () {
-    const { runs, org, projectDirectory, issueTools } = deps
+    const { runs, org, projectDirectory, issueTools, attach } = deps
     const pluginScope = yield* Effect.scope
     const issues = yield* SynchronizedRef.make(new Map<IssueId, LiveIssue>())
     const backendRef = yield* Ref.make(Option.none<AgentBackend>())
@@ -285,30 +292,47 @@ export const makeDispatcher = (deps: {
         permissionMode
       })
       const scope = yield* Scope.make()
-      const session = yield* backend
-        .openSession({
-          config: {
-            paneId: issue.paneId,
-            cwd: directory,
-            model,
-            thinkingLevel: jobTitle.thinkingLevel,
-            permissionMode
-          },
-          resume: Option.fromNullishOr(issue.sessionId),
-          emit: onEvent(issue.id),
-          systemPromptAppend: jobTitle.jobDescription,
-          pluginPaths: [],
-          diaTools: issueTools({
-            issueId: issue.id,
-            objectiveId: issue.objectiveId,
-            hireId: hire.id
-          }),
-          tools: Option.some({
-            permissions: jobTitle.permissions,
-            mcpServers: jobTitle.mcpServers
-          })
-        })
-        .pipe(Scope.provide(scope))
+      const config = {
+        paneId: issue.paneId,
+        cwd: directory,
+        model,
+        thinkingLevel: jobTitle.thinkingLevel,
+        permissionMode
+      }
+      const resume = Option.fromNullishOr(issue.sessionId)
+      const raw = yield* Deferred.make<AgentSession>()
+      yield* attach({
+        display: AttachedSession.make({
+          config,
+          projectId: objective.projectId,
+          label: agentName(hire, [jobTitle]),
+          caption: jobTitle.name
+        }),
+        resume,
+        open: (emit) =>
+          backend
+            .openSession({
+              config,
+              resume,
+              emit: (message) => emit(message).pipe(Effect.andThen(onEvent(issue.id)(message))),
+              systemPromptAppend: jobTitle.jobDescription,
+              pluginPaths: [],
+              diaTools: issueTools({
+                issueId: issue.id,
+                objectiveId: issue.objectiveId,
+                hireId: hire.id
+              }),
+              tools: Option.some({
+                permissions: jobTitle.permissions,
+                mcpServers: jobTitle.mcpServers
+              })
+            })
+            .pipe(
+              Effect.tap((session) => Deferred.succeed(raw, session)),
+              Effect.map((session) => answeringThroughDispatcher(session, issue.id))
+            )
+      }).pipe(Scope.provide(scope))
+      const session = yield* Deferred.await(raw)
       const watcher = yield* session.ended.pipe(
         Effect.flatMap((end) => onEnded(issue.id, end)),
         Effect.forkIn(pluginScope)
@@ -332,6 +356,19 @@ export const makeDispatcher = (deps: {
         return yield* signal
       }
       yield* session.sendText(promptFor(issue, objective), 'queue')
+    })
+
+    const answeringThroughDispatcher = (session: AgentSession, issueId: IssueId): AgentSession => ({
+      ...session,
+      resolvePermission: (requestId, response) =>
+        answerPermission(issueId, requestId, response).pipe(
+          Effect.catchTag('PermissionNotPending', (error) =>
+            Effect.logWarning('Ignored an answer to a permission request that is not pending', {
+              issueId: error.issueId,
+              requestId: error.requestId
+            })
+          )
+        )
     })
 
     const resumeIssue = Effect.fnUntraced(function* (issueId: IssueId) {

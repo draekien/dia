@@ -105,16 +105,6 @@ export const toastFailure = (title: string, failure: { readonly _tag: string }):
   toast.add({ title, description: commonFailureText(failure) ?? failure._tag, type: 'error' })
 }
 
-/** The name of `agent`'s job title in `jobTitles`, or undefined when `jobTitles` lacks it. */
-export const jobTitleName = (
-  agent: HiredAgent,
-  jobTitles: ReadonlyArray<JobTitle>
-): string | undefined => jobTitles.find((jobTitle) => jobTitle.id === agent.jobTitleId)?.name
-
-/** The name the org screens show for `agent`: its name, or `Unnamed <job title name>`. */
-export const agentName = (agent: HiredAgent, jobTitles: ReadonlyArray<JobTitle>): string =>
-  agent.name ?? `Unnamed ${jobTitleName(agent, jobTitles) ?? 'agent'}`
-
 const decodeJobTitleName = Schema.decodeUnknownResult(JobTitleName)
 const decodeAgentName = Schema.decodeUnknownResult(AgentName)
 const decodeWorkTitle = Schema.decodeUnknownResult(WorkTitle)

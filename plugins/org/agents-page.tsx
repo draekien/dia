@@ -4,17 +4,10 @@ import { Result } from 'effect'
 import { useState } from 'react'
 import { Dismiss, RenameHire, SetBypassOverride, SetReportsTo } from './calls'
 import { ConfirmDialog } from './confirm-dialog'
-import type { HiredAgent, HireId } from './domain'
+import { agentName, type HiredAgent, type HireId, jobTitleName } from './domain'
 import { EntryList } from './entry-list'
 import { NameDialog } from './name-dialog'
-import {
-  agentName,
-  commonFailureText,
-  jobTitleName,
-  type OrgScreen,
-  readAgentName,
-  toastFailure
-} from './org-actions'
+import { commonFailureText, type OrgScreen, readAgentName, toastFailure } from './org-actions'
 import { NoHires } from './org-chart'
 import { ReportsToSelect } from './org-fields'
 import { reportsToChoices } from './org-tree'

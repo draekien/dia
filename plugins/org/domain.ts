@@ -98,6 +98,16 @@ export const HiredAgent = Schema.Struct({
 })
 export type HiredAgent = typeof HiredAgent.Type
 
+/** The name of `agent`'s job title in `jobTitles`, or undefined when `jobTitles` lacks it. */
+export const jobTitleName = (
+  agent: HiredAgent,
+  jobTitles: ReadonlyArray<JobTitle>
+): string | undefined => jobTitles.find((jobTitle) => jobTitle.id === agent.jobTitleId)?.name
+
+/** The name the org screens show for `agent`: its name, or `Unnamed <job title name>`. */
+export const agentName = (agent: HiredAgent, jobTitles: ReadonlyArray<JobTitle>): string =>
+  agent.name ?? `Unnamed ${jobTitleName(agent, jobTitles) ?? 'agent'}`
+
 /** The most hired agents that run at once across every job title (ADR-0033); an integer of at least 1. */
 export const OverallCap = Schema.Int.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(1)),
