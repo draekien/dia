@@ -1,5 +1,4 @@
 import { assert, describe, it } from '@effect/vitest'
-import { ProjectId } from '@shared/domain/project'
 import { Effect, Exit, Layer, Option, Ref, Scope } from 'effect'
 import type { AgentSession } from '../session/agent-backend'
 import { AttachedSessions, AttachedSessionsLive, SessionAttacherLive } from './attached-sessions'
