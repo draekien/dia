@@ -1,5 +1,5 @@
-import type { DiaTool, DiaToolField, DiaToolResult } from '@dia/plugin'
-import { Data, Effect, Schema } from 'effect'
+import type { DiaTool, DiaToolResult } from '@dia/plugin'
+import { Effect, Schema } from 'effect'
 import {
   CommentBody,
   type HireId,
@@ -11,6 +11,16 @@ import {
   StartedStatus,
   WorkTitle
 } from './domain'
+import {
+  decodeField,
+  decodeOptional,
+  type Input,
+  InvalidInput,
+  optional,
+  present,
+  required,
+  result
+} from './tool-input'
 import type { Work } from './work'
 
 /** Where a hired agent's session works: its issue, that issue's objective, and the hired agent. */
@@ -19,40 +29,6 @@ export interface IssueToolScope {
   readonly objectiveId: ObjectiveId
   readonly hireId: HireId
 }
-
-class InvalidInput extends Data.TaggedError('InvalidInput')<{ readonly message: string }> {}
-
-type Input = Readonly<Partial<Record<string, string>>>
-
-const result = (text: string, isError = false): DiaToolResult => ({ text, isError })
-
-const required = (description: string): DiaToolField => ({ description, pattern: /[\s\S]/ })
-
-const optional = (description: string): DiaToolField => ({
-  description,
-  pattern: /^[\s\S]*$/,
-  optional: true
-})
-
-const present = (input: Input, field: string): string | undefined => {
-  const value = input[field]
-  return value === undefined || value === '' ? undefined : value
-}
-
-const decodeField = <S extends Schema.Top & { readonly DecodingServices: never }>(
-  schema: S,
-  field: string,
-  value: string
-) =>
-  Schema.decodeEffect(schema)(value).pipe(
-    Effect.mapError((error) => new InvalidInput({ message: `Invalid ${field}: ${error.message}` }))
-  )
-
-const decodeOptional = <S extends Schema.Top & { readonly DecodingServices: never }>(
-  schema: S,
-  field: string,
-  value: string | undefined
-) => (value === undefined ? Effect.undefined : decodeField(schema, field, value))
 
 const decodeIssueId = (field: string, value: string) =>
   Schema.decodeEffect(IssueId)(value.toLowerCase()).pipe(
