@@ -4,6 +4,7 @@ import { AgentName, type PluginServices, type PluginSetup } from '@dia/plugin'
 import { callHost, followHost, openSettings, toast } from '@dia/renderer-plugin'
 import { McpServersEditorKey, type McpServersEditorProps } from '@dia-plugin/mcp/editor'
 import type { McpServersDraft } from '@dia-plugin/mcp/servers'
+import { SkillPickerKey, type SkillPickerProps } from '@dia-plugin/skills/picker'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Atom } from 'effect/reactivity'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -60,6 +61,12 @@ const StubMcpServersEditor = ({ id, draft, onChange, error }: McpServersEditorPr
     />
     {error === undefined ? null : <p>{error}</p>}
   </>
+)
+
+const StubSkillPicker = ({ label, value, onChange }: SkillPickerProps) => (
+  <button type="button" aria-label={label} onClick={() => onChange([...value, 'review'])}>
+    {value.join(',')}
+  </button>
 )
 
 const mcp: PluginSetup<PluginServices> = (services) =>
@@ -440,6 +447,25 @@ describe('Job titles', () => {
     type('Skills', '\n\n')
 
     expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('saves a skill chosen in the provided skill picker as the skills list', async () => {
+    await startRendererRegistry({
+      mcp,
+      skills: (services) => services.provide(SkillPickerKey, StubSkillPicker)
+    })
+    const host = installHost(snapshotOf())
+    await showReviewer(host)
+
+    await click('Skills')
+    await click('Save')
+
+    expect(host.sent).toEqual([
+      [
+        'EditJobTitle',
+        { jobTitleId: REVIEWER.id, edit: { skills: [...REVIEWER.skills, 'review'] } }
+      ]
+    ])
   })
 
   it('shows the MCP servers issue and sends nothing for invalid JSON', async () => {
