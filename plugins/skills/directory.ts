@@ -101,9 +101,15 @@ const watched = (
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
       const ready = yield* Deferred.make<void>()
+      const targetRemoved = (event: FileSystem.WatchEvent) =>
+        event._tag === 'Remove'
+          ? Effect.map(fs.exists(target), (exists) => !exists).pipe(
+              Effect.orElseSucceed(() => false)
+            )
+          : Effect.succeed(false)
       const events = fs
         .watch(target, { recursive, onReady: () => Deferred.doneUnsafe(ready, Exit.void) })
-        .pipe(Stream.filter(keep), Stream.debounce(DEBOUNCE))
+        .pipe(Stream.takeUntilEffect(targetRemoved), Stream.filter(keep), Stream.debounce(DEBOUNCE))
       return Stream.merge(Stream.fromEffect(Deferred.await(ready)), Stream.as(events, undefined))
     })
   )
@@ -121,7 +127,8 @@ const endOnWatchFailure =
  * Emits once when its watcher is installed, then once after changes at `path` (recursive for a
  * directory) pause for 200 ms. While `path` does not exist it watches the parent directory
  * non-recursively, emits nothing for siblings, and switches to `path` when an event names it; if
- * the parent does not exist either it emits once and ends. Exported for sources that follow files
+ * the parent does not exist either it emits once and ends. When `path` is removed while watched,
+ * it follows `path` again as a missing path. Exported for sources that follow files
  * other than a skills directory, such as Claude Code's settings files.
  */
 export const pathChanges = (
@@ -133,8 +140,15 @@ export const pathChanges = (
       const paths = yield* Path.Path
       const info = yield* fs.stat(path).pipe(Effect.option)
       if (Option.isSome(info)) {
+        const removed = fs.exists(path).pipe(
+          Effect.orElseSucceed(() => true),
+          Effect.map((exists) => !exists)
+        )
         return watched(path, info.value.type === 'Directory', () => true).pipe(
-          endOnWatchFailure(path)
+          endOnWatchFailure(path),
+          Stream.concat(
+            Stream.unwrap(Effect.map(removed, (gone) => (gone ? pathChanges(path) : Stream.empty)))
+          )
         )
       }
       const parent = paths.dirname(path)
@@ -144,9 +158,10 @@ export const pathChanges = (
       }
       yield* Effect.logDebug('Watching the parent of a missing path', { path, parent })
       const untilCreated = watched(parent, false, (event) => paths.basename(event.path) === name)
-      return Stream.concat(
-        untilCreated.pipe(Stream.take(2), endOnWatchFailure(parent)),
-        Stream.suspend(() => pathChanges(path))
+      return untilCreated.pipe(
+        Stream.take(2),
+        Stream.concat(Stream.suspend(() => pathChanges(path))),
+        endOnWatchFailure(parent)
       )
     })
   )

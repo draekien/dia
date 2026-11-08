@@ -148,8 +148,9 @@ export const directorySource: (
  * Emits once when its watcher is installed, then once after changes at `path` (recursive for a
  * directory) pause for `Duration.millis(200)`. While `path` does not exist it watches the parent
  * directory non-recursively, emits nothing for siblings, and switches to `path` when an event names
- * `basename(path)`; if the parent does not exist either it emits once and ends. Exported for sources that follow files other than a skills directory, such
- * as `claude-code`'s settings files.
+ * `basename(path)`; if the parent does not exist either it emits once and ends. When `path` is
+ * removed while watched, it follows `path` again as a missing path. Exported for sources that
+ * follow files other than a skills directory, such as `claude-code`'s settings files.
  */
 export const pathChanges: (
   path: string
@@ -193,7 +194,7 @@ export const SkillPickerKey = ServiceKey.make(
 
 ## Behaviour
 
-**Registry.** The state is one `SubscriptionRef<ReadonlyMap<string, SkillSource>>`. `register` is `Effect.acquireRelease` of a `modifyEffect` that fails with `SkillSourceIdTaken` when the id is held, and a release that deletes the entry only if it is still the same source. `skills(context)` is `SubscriptionRef.changes(ref)` (which emits the current map first) with `Stream.switchMap((entries) => entries.size === 0 ? Stream.make([]) : Stream.zipLatestAll(...[...entries.values()].map((source) => source.skills(context))))`, flattened and sorted by `group` then `name`. `zipLatestAll` takes its streams as arguments and waits for each to emit once, which every source does at once. A reload closes the old plugin scope, which releases its source, before the new setup registers the same id, so the id is free (`src/shared/plugin/plugin-registry.ts`, `closePlugin` then `open`). When `skills` unloads, `followHost` emits `None` and `SkillPickerKey` is withdrawn, so org shows the textarea; `followHost` subscribes again when `skills` is serving. Editing an `@dia-plugin/skills/*` module in development reloads its importers `meta`, `claude-code` and `org`, as an edit to `@dia-plugin/mcp/*` reloads `org`.
+**Registry.** The state is one `SubscriptionRef<ReadonlyMap<string, SkillSource>>`. `register` is `Effect.acquireRelease` of a `modifyEffect` that fails with `SkillSourceIdTaken` when the id is held, and a release that deletes the entry only if it is still the same source. `skills(context)` is `SubscriptionRef.changes(ref)` (which emits the current map first) with `Stream.switchMap((entries) => entries.size === 0 ? Stream.make([]) : Stream.zipLatestAll(...[...entries.values()].map((source) => source.skills(context))))`, flattened, sorted by `group` then `name`, and passed through `Stream.changesWith` so a list equal to the one before it is not emitted again. `zipLatestAll` takes its streams as arguments and waits for each to emit once, which every source does at once. A reload closes the old plugin scope, which releases its source, before the new setup registers the same id, so the id is free (`src/shared/plugin/plugin-registry.ts`, `closePlugin` then `open`). When `skills` unloads, `followHost` emits `None` and `SkillPickerKey` is withdrawn, so org shows the textarea; `followHost` subscribes again when `skills` is serving. Editing an `@dia-plugin/skills/*` module in development reloads its importers `meta`, `claude-code` and `org`, as an edit to `@dia-plugin/mcp/*` reloads `org`.
 
 **Names.** A subdirectory without a `SKILL.md` is skipped. Without `plugin`, the name is the subdirectory name. With `plugin`, it is `<plugin>:<name>`, where `<name>` is the frontmatter `name`, or the subdirectory name when absent. `description` is the frontmatter `description`, or `""`. Two sources may list the same name; the picker shows both rows.
 
@@ -207,7 +208,7 @@ export const SkillPickerKey = ServiceKey.make(
 |---|---|---|---|
 | `meta` | `meta` | `Meta repo` | `directorySource('meta', { directory: <dataDir>/repo/plugin/skills, plugin: Some('dia-meta') })` |
 | `claude-code` | `claude-code/user` | `Your skills` | `directorySource` of `<home>/.claude/skills`, no plugin |
-| `claude-code` | `claude-code/project` | `Project` | with `cwd`: `directorySkills` of `<dir>/.claude/skills` for `cwd` and each parent up to the first directory that holds `.git`, or `cwd` alone when none does; without `cwd`: `[]` |
+| `claude-code` | `claude-code/project` | `Project` | with `cwd`: `directorySkills` of `<dir>/.claude/skills` for `cwd` and each parent up to the first directory that holds `.git`, or `cwd` alone when none does, each name once, from the directory nearest `cwd`; without `cwd`: `[]` |
 | `claude-code` | `claude-code/plugins` | `Plugin › <name>` | `pathChanges` of `<home>/.claude/plugins/installed_plugins.json`, `<home>/.claude/settings.json` and, with `cwd`, `<cwd>/.claude/settings.json` and `<cwd>/.claude/settings.local.json`; on each change, `readSkills` of `<installPath>/skills` for every install that counts for the context (below) and whose key is `true` in `enabledPlugins`, with `<name>` the `name` in `<installPath>/.claude-plugin/plugin.json`, or the key before `@`. Install directories are not watched: an install changes only through a new `installPath` or `version` in `installed_plugins.json` |
 
 `plugins/claude-code/skills.ts` exports `claudeCodeSources(home: string): Effect<ReadonlyArray<SkillSource>, never, FileSystem | Path>` (the three sources above); `host.ts` passes `os.homedir()`. Tests pass a temp directory, so no test reads the real `~/.claude` (`.claude/rules/tests-run-without-claude.md`).
@@ -279,7 +280,8 @@ Also: reloading `meta` registers `meta` again without `SkillSourceIdTaken`; `fro
 
 ### Round 2
 
-- *Correctness* major: CRLF and a byte order mark broke the `---` match; the reader now strips the mark, splits on `?
+- *Correctness* major: CRLF and a byte order mark broke the `---` match; the reader now strips the mark, splits on `
+?
 ` and trims delimiter lines, with tests. Applied.
 - *Correctness* major: the missing-path fallback could watch a repository root recursively; the parent watch is now non-recursive and filtered to `basename(path)`. Applied.
 - *Design* major: about 30 recursive watchers over immutable plugin cache directories, rebuilt on every settings change. Applied with a different fix: instead of a `watch: boolean` parameter that one caller uses (Strategic Programming), `directory.ts` exports `readSkills`, and `claude-code/plugins` calls it on each change to its JSON files.

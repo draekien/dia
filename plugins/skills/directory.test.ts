@@ -129,6 +129,36 @@ describe('directorySkills', () => {
   )
 })
 
+describe('directorySkills after removal', () => {
+  it.live('emits the skills of a directory removed and created again', () =>
+    Effect.gen(function* () {
+      const { fs, path, root, writeSkill } = yield* scratch
+      const directory = path.join(root, 'skills')
+      yield* writeSkill(directory, 'old', '---\ndescription: Old\n---\n')
+      const emitted = yield* follow(directorySkills(userSkills(directory)))
+      yield* next(emitted)
+
+      yield* fs.remove(directory, { recursive: true })
+      yield* Stream.fromQueue(emitted).pipe(
+        Stream.filter((list) => list.length === 0),
+        Stream.runHead,
+        Effect.timeout(WAIT)
+      )
+      yield* writeSkill(directory, 'review', '---\ndescription: Reviews a diff\n---\n')
+
+      const skills = yield* Stream.fromQueue(emitted).pipe(
+        Stream.filter((list) => list.length > 0),
+        Stream.runHead,
+        Effect.timeout(WAIT)
+      )
+      assert.deepStrictEqual(
+        skills,
+        Option.some([{ name: 'review', description: 'Reviews a diff', group: 'Your skills' }])
+      )
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
+  )
+})
+
 describe('pathChanges', () => {
   it.live('does not emit for a sibling of a missing path', () =>
     Effect.gen(function* () {

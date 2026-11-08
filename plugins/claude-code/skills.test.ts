@@ -78,6 +78,22 @@ describe('claudeCodeSources', () => {
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
     )
 
+    it.effect('lists a skill name found in the cwd and a parent once', () =>
+      Effect.gen(function* () {
+        const { fs, path, root, home, writeSkill } = yield* scratch
+        const repo = path.join(root, 'repo')
+        const cwd = path.join(repo, 'app')
+        yield* fs.makeDirectory(path.join(repo, '.git'), { recursive: true })
+        yield* writeSkill(path.join(repo, '.claude', 'skills'), 'review')
+        yield* writeSkill(path.join(cwd, '.claude', 'skills'), 'review')
+        const sources = yield* claudeCodeSources(home)
+
+        const skills = yield* firstList(sources, 'claude-code/project', { cwd: Option.some(cwd) })
+
+        assert.deepStrictEqual(names(skills), [{ name: 'review', group: 'Project' }])
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
+    )
+
     it.effect('lists only the cwd when no parent holds .git', () =>
       Effect.gen(function* () {
         const { path, root, home, writeSkill } = yield* scratch

@@ -6,6 +6,7 @@ import {
 } from '@dia-plugin/skills/directory'
 import type { Skill, SkillContext, SkillSource } from '@dia-plugin/skills/registry'
 import { Effect, FileSystem, Option, Path, Schema, Stream } from 'effect'
+import * as Arr from 'effect/Array'
 
 const Install = Schema.Struct({
   scope: Schema.String,
@@ -72,7 +73,11 @@ const projectSkills = (cwd: string) =>
             plugin: Option.none()
           })
         )
-      ).pipe(Stream.map((lists) => lists.flat()))
+      ).pipe(
+        Stream.map((lists) =>
+          Arr.dedupeWith(lists.flat(), (left, right) => left.name === right.name)
+        )
+      )
     })
   )
 
@@ -150,9 +155,9 @@ const installedPluginSkills = (home: string, context: SkillContext) =>
 /**
  * The skill sources Claude Code reads under the home directory `home`: `claude-code/user`
  * (`<home>/.claude/skills`), `claude-code/project` (each context's `<cwd>/.claude/skills` and its
- * parents up to the repository root) and `claude-code/plugins` (the skills of every installed
- * plugin that `enabledPlugins` turns on for the context). Each source keeps the `FileSystem` and
- * `Path` it was built with.
+ * parents up to the repository root, each name once, from the directory nearest `cwd`) and
+ * `claude-code/plugins` (the skills of every installed plugin that `enabledPlugins` turns on for the
+ * context). Each source keeps the `FileSystem` and `Path` it was built with.
  */
 export const claudeCodeSources = Effect.fnUntraced(function* (home: string) {
   const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
