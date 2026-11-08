@@ -76,10 +76,15 @@ afterEach(() => {
   Reflect.deleteProperty(window, 'dia')
 })
 
-const renderOrg = async (host: FakeHost) => {
+const renderOrg = async (host: FakeHost, target?: string) => {
   const orgAtom = Atom.make(callHost(ctx, ReadOrg, {}))
   render(
-    <OrgPage ctx={ctx} orgAtom={orgAtom} workAtom={Atom.make(followHost(ctx, WatchWork, {}))} />
+    <OrgPage
+      ctx={ctx}
+      orgAtom={orgAtom}
+      workAtom={Atom.make(followHost(ctx, WatchWork, {}))}
+      target={target}
+    />
   )
   await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).toBeNull())
   await act(async () => {})
@@ -769,6 +774,22 @@ describe('Objectives', () => {
     act(async () => {
       fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create' }))
     })
+
+  it('opens on the objective a link targets', async () => {
+    await renderOrg(installHost(snapshotOf()), objectiveId(2))
+    await screen.findByRole('heading', { level: 3 })
+
+    expect([screen.getByRole('heading', { level: 2 }).textContent, detailTitle()]).toEqual([
+      'Objectives',
+      'Tidy release notes'
+    ])
+  })
+
+  it('opens on Dashboard for a target that is not an objective id', async () => {
+    await renderOrg(installHost(snapshotOf()), 'not-an-objective')
+
+    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Dashboard')
+  })
 
   it('lists open objectives by priority with their project, and completed ones last', async () => {
     await openObjectives(installHost(snapshotOf()))

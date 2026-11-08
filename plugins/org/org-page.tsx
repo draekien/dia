@@ -1,12 +1,13 @@
 import type { PluginServices } from '@dia/plugin'
 import { cn, Skeleton } from '@dia/renderer-plugin'
 import { useAtomRefresh, useAtomValue } from '@effect/atom-react'
+import { Schema } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
 import { useState } from 'react'
 import { AgentsPage } from './agents-page'
 import type { OrgSnapshot } from './calls'
 import { Dashboard } from './dashboard'
-import type { JobTitleId } from './domain'
+import { type JobTitleId, ObjectiveId } from './domain'
 import { HireDialog } from './hire-dialog'
 import { JobTitlesPage } from './job-titles-page'
 import { ObjectivesPage } from './objectives-page'
@@ -155,25 +156,35 @@ function Loaded({
   )
 }
 
+const isObjectiveId = Schema.is(ObjectiveId)
+
+const initialView = (target: string | undefined): OrgView =>
+  target !== undefined && isObjectiveId(target)
+    ? ObjectivesView.make({ objectiveId: target })
+    : DashboardView.make({})
+
 /**
  * The Org page in the content area: a sub-navigation of Dashboard, Objectives, Org chart, Job
  * titles and Hired agents beside the current sub-page under its own heading. It reads `orgAtom`
- * while shown, and `workAtom` while Objectives is shown, and opens on Dashboard each time; `ctx`
- * is the `org` renderer entry the calls go through.
+ * while shown, and `workAtom` while Objectives is shown. It opens on Dashboard, or on the
+ * objective whose id is `target` when `target` is an objective id; `ctx` is the `org` renderer
+ * entry the calls go through.
  */
 export function OrgPage({
   ctx,
   orgAtom,
-  workAtom
+  workAtom,
+  target
 }: {
   readonly ctx: Pick<PluginServices, 'name'>
   readonly orgAtom: OrgAtom
   readonly workAtom: WorkAtom
+  readonly target?: string | undefined
 }) {
   const result = useAtomValue(orgAtom)
   const retry = useAtomRefresh(orgAtom)
   const call = useOrgCall(ctx, orgAtom)
-  const [view, setView] = useState<OrgView>(() => DashboardView.make({}))
+  const [view, setView] = useState<OrgView>(() => initialView(target))
 
   return (
     <div className="flex h-full min-h-0">
