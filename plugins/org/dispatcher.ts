@@ -145,7 +145,8 @@ export type ProjectDirectory = (objective: Objective) => Effect.Effect<Option.Op
  * nothing starts. `answerPermission` queues the user's answer to a pending permission request; the
  * agent resumes ahead of `todo` issues, up to one over the overall cap. `release` stops the issue's
  * session, if any, and lets an issue whose session failed start again; call it after the issue is
- * finished or reassigned. `live` reads the pending permission requests and the held slots.
+ * finished or reassigned. `message` sends `text` as a `queue` message to the issue's live session,
+ * returning false when it has none. `live` reads the pending permission requests and the held slots.
  * `watchChanges` subscribes when run; the stream it returns emits once each time `live` may read
  * differently since the subscription.
  */
@@ -158,6 +159,7 @@ export interface Dispatcher {
     response: PermissionResponse
   ) => Effect.Effect<void, PermissionNotPending>
   readonly release: (issueId: IssueId) => Effect.Effect<void>
+  readonly message: (issueId: IssueId, text: string) => Effect.Effect<boolean>
   readonly live: Effect.Effect<LiveWork>
   readonly watchChanges: Effect.Effect<Stream.Stream<void>, never, Scope.Scope>
 }
@@ -530,6 +532,20 @@ export const makeDispatcher = (deps: {
       yield* signal
     })
 
+    const message = Effect.fn('Dispatcher.message')(function* (issueId: IssueId, text: string) {
+      const session = Option.flatMap(
+        Option.fromNullishOr((yield* SynchronizedRef.get(issues)).get(issueId)),
+        (entry) => entry.session
+      )
+      if (Option.isNone(session)) {
+        yield* Effect.logInfo('No live session to message', { issueId })
+        return false
+      }
+      yield* session.value.sendText(text, 'queue')
+      yield* Effect.logInfo('Queued a message for a hired agent session', { issueId })
+      return true
+    })
+
     const live = Effect.map(SynchronizedRef.get(issues), (current) =>
       LiveWork.make({
         pendingPermissions: [...current.values()].flatMap((entry) => [...entry.pending.values()]),
@@ -557,6 +573,7 @@ export const makeDispatcher = (deps: {
       lendBackend,
       answerPermission,
       release,
+      message,
       live,
       watchChanges
     } satisfies Dispatcher

@@ -1,5 +1,5 @@
 import { type AgentName, ServiceKey } from '@dia/plugin'
-import { Effect, Predicate } from 'effect'
+import { Effect, Predicate, type Scope, type Stream } from 'effect'
 import type {
   BuiltInJobTitleDeleted,
   BuiltInJobTitleRenamed,
@@ -29,6 +29,9 @@ import type {
  * order, then copies in creation order; `hiredAgents` lists by `hiredAt`, then creation order. A
  * database failure, or a failure to generate an id, is a defect.
  *
+ * `watchJobTitleChanges` subscribes when run; the stream it returns emits once after each
+ * `setJobTitleEnabled` and `editJobTitle` since the subscription.
+ *
  * `copyJobTitle` copies every field of `jobTitleId` into a new enabled job title named `name` that
  * is not built in. `editJobTitle` applies `edit`'s present fields. `deleteJobTitle` deletes a copy
  * with no hired agents. `hire` hires an agent of an enabled job title, named `name` or unnamed when
@@ -44,6 +47,7 @@ import type {
  */
 export interface Org {
   readonly jobTitles: Effect.Effect<ReadonlyArray<JobTitle>>
+  readonly watchJobTitleChanges: Effect.Effect<Stream.Stream<void>, never, Scope.Scope>
   readonly hiredAgents: Effect.Effect<ReadonlyArray<HiredAgent>>
   readonly settings: Effect.Effect<OrgSettings>
   readonly setJobTitleEnabled: (
@@ -87,6 +91,7 @@ export interface Org {
 
 const MEMBERS: Record<keyof Org, (member: unknown) => boolean> = {
   jobTitles: Effect.isEffect,
+  watchJobTitleChanges: Effect.isEffect,
   hiredAgents: Effect.isEffect,
   settings: Effect.isEffect,
   setJobTitleEnabled: Predicate.isFunction,

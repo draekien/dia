@@ -369,6 +369,35 @@ describe('dispatcher session start', () => {
   )
 })
 
+describe('dispatcher message', () => {
+  it.effect("queues the text on a running issue's session and reports it was delivered", () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 1 })
+      const engineer = env.jobTitles[1] as JobTitle
+      const task = yield* env.addTask(yield* env.hireOf(engineer))
+
+      const delivered = yield* env.dispatcher.message(task.id, 'Use the staging bucket')
+
+      const [session] = env.sessions
+      assert.deepStrictEqual(
+        [delivered, (session as FakeSession).sent.at(-1)],
+        [true, 'Use the staging bucket']
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('reports false for an issue waiting for a slot, which has no live session', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 1 })
+      const engineer = env.jobTitles[1] as JobTitle
+      yield* env.addTask(yield* env.hireOf(engineer))
+      const waiting = yield* env.addTask(yield* env.hireOf(engineer))
+
+      assert.isFalse(yield* env.dispatcher.message(waiting.id, 'Use the staging bucket'))
+    }).pipe(Effect.scoped)
+  )
+})
+
 describe('dispatcher planning issue', () => {
   it.effect("starts the objective's assignee on its planning issue with the planning prompt", () =>
     Effect.gen(function* () {

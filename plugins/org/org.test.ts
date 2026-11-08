@@ -2,7 +2,7 @@ import { AgentName } from '@dia/plugin'
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { assert, describe, it } from '@effect/vitest'
-import { Duration, Effect, Exit, FileSystem, Layer, Path, Scope } from 'effect'
+import { Duration, Effect, Exit, FileSystem, Layer, Path, Scope, Stream } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
 import { openDatabase } from '../../src/host/services/database'
@@ -46,6 +46,20 @@ const workerBuiltIns = (org: Org) =>
       jobTitles.filter((jobTitle) => jobTitle.builtIn !== 'executive-assistant')
     )
   )
+
+describe('Org.watchJobTitleChanges', () => {
+  it.effect('emits once after enabling and once after editing a job title', () =>
+    Effect.gen(function* () {
+      const { org, jobTitle } = yield* builtIn('Executive assistant')
+      const changes = yield* org.watchJobTitleChanges
+
+      yield* org.setJobTitleEnabled(jobTitle.id, false)
+      yield* org.editJobTitle(jobTitle.id, { thinkingLevel: 'high' })
+
+      assert.strictEqual((yield* Stream.runCollect(Stream.take(changes, 2))).length, 2)
+    }).pipe(Effect.scoped)
+  )
+})
 
 describe('org seed', () => {
   it.effect('lists the eight built-in job titles in seed order, enabled, with their kinds', () =>
