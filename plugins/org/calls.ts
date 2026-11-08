@@ -23,6 +23,7 @@ import {
   JobTitleName,
   JobTitleNameTaken,
   JobTitleNotFound,
+  JobTitleNotHireable,
   LiveWork,
   NewIssue,
   NewObjective,
@@ -91,7 +92,13 @@ export const Hire = Rpc.make('Hire', {
     reportsTo: Schema.NullOr(HireId)
   },
   success: HiredAgent,
-  error: Schema.Union([JobTitleNotFound, JobTitleDisabled, HireNameTaken, HireNotFound])
+  error: Schema.Union([
+    JobTitleNotFound,
+    JobTitleDisabled,
+    JobTitleNotHireable,
+    HireNameTaken,
+    HireNotFound
+  ])
 })
 
 /**

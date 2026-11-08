@@ -14,6 +14,7 @@ import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/p
 import { describe, expect, it } from 'vitest'
 import {
   ArchivedTarget,
+  assistantRows,
   buildOverview,
   HeaderTarget,
   NO_FILTERS,
@@ -81,7 +82,8 @@ const attachedTo = (n: number, project: number, label: string, caption: string) 
     },
     projectId: projectId(project),
     label,
-    caption
+    caption,
+    resettable: false
   })
 
 describe('buildOverview with attached sessions', () => {
@@ -143,6 +145,23 @@ describe('buildOverview with attached sessions', () => {
     const [dia] = buildOverview(workspace, summaries(), filters({ query: 'ada' }), [ada])
 
     expect(dia.rows.map((row) => row.name)).toEqual(['Ada'])
+  })
+})
+
+describe('assistantRows', () => {
+  it('lists only the attached sessions with no project, with their summaries', () => {
+    const assistant = AttachedSession.make({
+      ...attachedTo(8, 1, 'Executive assistant', ''),
+      projectId: null
+    })
+    const needsInput = StatusNeedsInput.make({ reason: 'Approve Bash' })
+
+    expect(
+      assistantRows(
+        [attachedTo(9, 1, 'Ada', 'Software engineer'), assistant],
+        summaries(summary(8, needsInput))
+      ).map((row) => [row.name, row.summary.status])
+    ).toEqual([['Executive assistant', needsInput]])
   })
 })
 

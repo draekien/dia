@@ -117,7 +117,8 @@ const hired = AttachedSession.make({
   },
   projectId: PROJECT,
   label: 'Ada',
-  caption: 'Software engineer'
+  caption: 'Software engineer',
+  resettable: false
 })
 
 describe('viewOf with an attached session', () => {

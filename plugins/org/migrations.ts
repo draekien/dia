@@ -1,7 +1,11 @@
 import type { PluginMigrations } from '@dia/plugin'
 import { Effect, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
-import { BUILT_IN_JOB_TITLES, DEFAULT_OVERALL_CAP } from './built-in-job-titles'
+import {
+  BUILT_IN_JOB_TITLES,
+  DEFAULT_OVERALL_CAP,
+  EXECUTIVE_ASSISTANT
+} from './built-in-job-titles'
 import { JOB_TITLE_NAME_MAX_LENGTH, JobTitle } from './domain'
 
 const createTables = Effect.gen(function* () {
@@ -246,6 +250,62 @@ const moveToIssues = Effect.gen(function* () {
   })
 })
 
+const BUILT_IN_KINDS = [...BUILT_IN_JOB_TITLES.map((seed) => seed.kind), EXECUTIVE_ASSISTANT.kind]
+
+const addExecutiveAssistant = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql.unsafe('PRAGMA defer_foreign_keys = ON')
+  yield* sql.unsafe('CREATE TEMP TABLE job_titles_before AS SELECT * FROM job_titles')
+  yield* sql.unsafe('DROP TABLE job_titles')
+  yield* sql.unsafe(`CREATE TABLE job_titles (
+    job_title_id    TEXT    PRIMARY KEY,
+    name            TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+    built_in        TEXT    UNIQUE CHECK (built_in IN (${BUILT_IN_KINDS.map((kind) => `'${kind}'`).join(', ')})),
+    enabled         INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+    job_description TEXT    NOT NULL,
+    skills          TEXT    NOT NULL,
+    permissions     TEXT    NOT NULL,
+    mcp_servers     TEXT    NOT NULL,
+    bypass_opt_in   INTEGER NOT NULL CHECK (bypass_opt_in IN (0, 1)),
+    model           TEXT,
+    thinking_level  TEXT    NOT NULL DEFAULT 'medium'
+  )`)
+  yield* sql.unsafe(`INSERT INTO job_titles (job_title_id, name, built_in, enabled, job_description,
+    skills, permissions, mcp_servers, bypass_opt_in, model, thinking_level)
+    SELECT job_title_id, name, built_in, enabled, job_description, skills, permissions,
+    mcp_servers, bypass_opt_in, model, thinking_level FROM job_titles_before ORDER BY rowid`)
+  yield* sql.unsafe('DROP TABLE job_titles_before')
+  const [clash] = yield* sql<{
+    readonly job_title_id: string
+    readonly name: string
+  }>`SELECT job_title_id, name FROM job_titles WHERE name = ${EXECUTIVE_ASSISTANT.name} COLLATE NOCASE`
+  if (clash !== undefined) {
+    const taken = yield* sql<{ readonly name: string }>`SELECT name FROM job_titles`
+    const name = freeName(clash.name, new Set(taken.map((row) => row.name.toLowerCase())))
+    yield* sql`UPDATE job_titles SET name = ${name} WHERE job_title_id = ${clash.job_title_id}`
+  }
+  yield* sql`INSERT INTO job_titles ${sql.insert({
+    job_title_id: EXECUTIVE_ASSISTANT.id,
+    name: EXECUTIVE_ASSISTANT.name,
+    built_in: EXECUTIVE_ASSISTANT.kind,
+    enabled: 1,
+    job_description: EXECUTIVE_ASSISTANT.jobDescription,
+    skills: '[]',
+    permissions: encodePermissions({ allow: [...EXECUTIVE_ASSISTANT.allow], ask: [], deny: [] }),
+    mcp_servers: '{}',
+    bypass_opt_in: 0
+  })}`
+  yield* sql.unsafe(`CREATE TABLE assistant_session (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    pane_id    TEXT    NOT NULL,
+    session_id TEXT
+  )`)
+  yield* sql.unsafe('CREATE TABLE assistant_objectives (objective_id TEXT PRIMARY KEY)')
+  yield* Effect.logInfo('Added the Executive assistant job title and its session tables', {
+    renamedCopy: clash?.job_title_id ?? null
+  })
+})
+
 /**
  * The `org` plugin's migrations, passed to `ctx.database`. `1_create_org_tables` creates the
  * first roles, hired agents and org settings tables; `2_seed_org` inserts the default overall cap;
@@ -256,7 +316,10 @@ const moveToIssues = Effect.gen(function* () {
  * `6_objectives_tasks` creates the objectives and tasks tables and the event table that records
  * their changes; `7_issues` replaces the tasks table with the issues table (`waiting` and
  * `running` tasks become `todo`, the rest `done`), adds the issue comments table, and adds the
- * three org issue tools to each built-in job title's allowed tools. Each runs once per database.
+ * three org issue tools to each built-in job title's allowed tools; `8_executive_assistant` widens
+ * the built-in kinds to include `executive-assistant`, inserts that job title (renaming a copy that
+ * has its name), and creates the assistant's session and objectives tables. Each runs once per
+ * database.
  */
 export const orgMigrations: PluginMigrations = {
   '1_create_org_tables': createTables,
@@ -265,5 +328,6 @@ export const orgMigrations: PluginMigrations = {
   '4_add_reports_to': addReportsTo,
   '5_job_title_model': addJobTitleModel,
   '6_objectives_tasks': createObjectivesAndTasks,
-  '7_issues': moveToIssues
+  '7_issues': moveToIssues,
+  '8_executive_assistant': addExecutiveAssistant
 }

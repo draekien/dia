@@ -77,8 +77,8 @@ function PageCrumb({ label }: { readonly label: string }) {
 function useOpenPage() {
   const view = useView()
   const pages = useList(PagesSlot)
-  if (view?._tag !== 'PageView') return undefined
-  return pages.find((page) => sameEntryKey(page.key, view))
+  if (view?._tag !== 'PageView') return { page: undefined, target: undefined }
+  return { page: pages.find((page) => sameEntryKey(page.key, view)), target: view.target }
 }
 
 /**
@@ -93,7 +93,7 @@ function useOpenPage() {
 export function Layout() {
   const [open, setOpen] = useState(readOpen)
   const [width, setWidth] = useState(readWidth)
-  const page = useOpenPage()
+  const { page, target } = useOpenPage()
 
   const saveOpen = (next: boolean) => {
     setOpen(next)
@@ -144,7 +144,7 @@ export function Layout() {
                   <PluginFailed plugin={page.key.plugin} error={error} onRetry={retry} />
                 )}
               >
-                <page.component />
+                <page.component target={target} />
               </PluginBoundary>
             )}
           </div>

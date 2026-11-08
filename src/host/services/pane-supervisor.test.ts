@@ -1,5 +1,4 @@
 import { assert, describe, it } from '@effect/vitest'
-import { AttachedSession } from '@shared/domain/attached-session'
 import type { OutgoingMessage } from '@shared/domain/message-queue'
 import {
   type PaneConfig,
@@ -1585,7 +1584,7 @@ const recordingAttachment = () => {
     ended: Effect.never
   }
   const attachment: SessionAttachment = {
-    display: AttachedSession.make({
+    display: {
       config: {
         paneId: ATTACHED_PANE,
         cwd: '/repo',
@@ -1596,8 +1595,9 @@ const recordingAttachment = () => {
       projectId: ProjectId.make('11111111-0000-4000-8000-000000000001'),
       label: 'Ada',
       caption: 'Software engineer'
-    }),
+    },
     resume: Option.none(),
+    reset: Option.none(),
     open: (emit) => Effect.sync(() => void emits.push(emit)).pipe(Effect.as(session))
   }
   return { calls, emits, attachment }

@@ -6,7 +6,9 @@ import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
 import {
   CommentBody,
+  DirectRoute,
   HireHasOpenIssues,
+  HireId,
   type Issue,
   IssueClosed,
   IssueId,
@@ -16,6 +18,7 @@ import {
   IssueNotStarted,
   ObjectiveId,
   ObjectiveNotFound,
+  PlanRoute,
   ProjectNotFound,
   WorkTitle
 } from './domain'
@@ -56,7 +59,7 @@ const newObjective = (n: number, assignee: Env['ada'] | null = null) => ({
   title: WorkTitle.make('Ship the marketplace'),
   description: 'Let users install plugins.',
   priority: 'normal' as const,
-  assignee
+  route: PlanRoute.make({ assignee })
 })
 
 const withObjective = Effect.gen(function* () {
@@ -182,6 +185,112 @@ describe('Work.createObjective', () => {
         [yield* countRows(sql, 'objectives'), yield* countRows(sql, 'issues')],
         [1, 1]
       )
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe('Work.createObjective with a DirectRoute', () => {
+  it.effect(
+    "creates one work issue for the route's assignee, with the objective's title and description, and no planning issue",
+    () =>
+      Effect.gen(function* () {
+        const env = yield* openWork
+        const objective = yield* env.work.createObjective({
+          ...newObjective(1),
+          route: DirectRoute.make({ assignee: env.ada })
+        })
+        assert.deepStrictEqual(
+          [
+            objective.assignee,
+            (yield* env.work.snapshot).issues.map((issue) => [
+              issue.kind,
+              issue.title,
+              issue.description,
+              issue.status,
+              issue.assignee
+            ])
+          ],
+          [
+            env.ada,
+            [['work', 'Ship the marketplace', 'Let users install plugins.', 'todo', env.ada]]
+          ]
+        )
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect('makes the work issue startable at once', () =>
+    Effect.gen(function* () {
+      const env = yield* openWork
+      yield* env.work.createObjective({
+        ...newObjective(1),
+        route: DirectRoute.make({ assignee: env.ada })
+      })
+      const { startable } = yield* env.runs.startCandidates
+      assert.deepStrictEqual(
+        startable.map(({ issue }) => [issue.kind, issue.assignee]),
+        [['work', env.ada]]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('refuses an assignee that is not hired and creates nothing', () =>
+    Effect.gen(function* () {
+      const env = yield* openWork
+      const error = yield* env.work
+        .createObjective({
+          ...newObjective(1),
+          route: DirectRoute.make({ assignee: HireId.make('00000000-0000-4000-8000-700000000009') })
+        })
+        .pipe(Effect.flip)
+      assert.deepStrictEqual(
+        [error._tag, yield* countRows(env.sql, 'objectives'), yield* countRows(env.sql, 'issues')],
+        ['HireNotFound', 0, 0]
+      )
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe('Work.stopObjective', () => {
+  it.effect('cancels every open issue, leaves a done one, and completes the objective', () =>
+    Effect.gen(function* () {
+      const env = yield* withObjective
+      yield* env.work.assignIssue(env.planning.id, env.ada)
+      yield* env.runs.markStarted(env.planning.id, env.ada)
+      yield* env.work.finishIssue(env.planning.id)
+      const open = yield* createWorkIssue(env, 2, env.objective.id)
+      const canceled = yield* env.work.stopObjective(env.objective.id)
+      const snapshot = yield* env.work.snapshot
+      assert.deepStrictEqual(
+        [
+          canceled.map((issue) => [issue.id, issue.status]),
+          snapshot.issues.map((issue) => [issue.id, issue.status]),
+          snapshot.objectives.map((objective) => objective.state)
+        ],
+        [
+          [[open.id, 'canceled']],
+          [
+            [env.planning.id, 'done'],
+            [open.id, 'canceled']
+          ],
+          ['completed']
+        ]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('returns no issues for an objective that is already completed', () =>
+    Effect.gen(function* () {
+      const env = yield* withObjective
+      yield* env.work.stopObjective(env.objective.id)
+      assert.deepStrictEqual(yield* env.work.stopObjective(env.objective.id), [])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('refuses an unknown objective', () =>
+    Effect.gen(function* () {
+      const env = yield* openWork
+      const error = yield* env.work.stopObjective(objectiveId(9)).pipe(Effect.flip)
+      assert.deepStrictEqual(error, ObjectiveNotFound.make({ objectiveId: objectiveId(9) }))
     }).pipe(Effect.scoped)
   )
 })

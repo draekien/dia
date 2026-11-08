@@ -1,5 +1,5 @@
 import type { AgentName } from '@dia/plugin'
-import { Clock, Crypto, Effect, Schema } from 'effect'
+import { Clock, Crypto, Effect, PubSub, Schema, Stream } from 'effect'
 import { SqlClient, type SqlError } from 'effect/sql'
 import {
   BuiltInJobTitleDeleted,
@@ -18,6 +18,7 @@ import {
   type JobTitleName,
   JobTitleNameTaken,
   JobTitleNotFound,
+  JobTitleNotHireable,
   OrgSettings,
   type OverallCap,
   ReportsToCycle
@@ -120,6 +121,9 @@ export const makeOrg = (openIssuesOf: (hireId: HireId) => Effect.Effect<number>)
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const crypto = yield* Crypto.Crypto
+    const jobTitleChanges = yield* PubSub.unbounded<void>()
+    const publishJobTitleChange = <A>(changed: A) =>
+      PubSub.publish(jobTitleChanges, undefined).pipe(Effect.as(changed))
 
     const transaction = <A, E>(effect: Effect.Effect<A, E | SqlError.SqlError>) =>
       sql.withTransaction(effect).pipe(Effect.catchTag('SqlError', Effect.die))
@@ -176,7 +180,7 @@ export const makeOrg = (openIssuesOf: (hireId: HireId) => Effect.Effect<number>)
       sql`UPDATE job_titles SET ${sql.update(toJobTitleRow(jobTitle), ['job_title_id'])} WHERE job_title_id = ${jobTitle.id}`
 
     const jobTitles = Effect.gen(function* () {
-      const rows = yield* sql`SELECT * FROM job_titles ORDER BY rowid`
+      const rows = yield* sql`SELECT * FROM job_titles ORDER BY built_in IS NULL, rowid`
       return (yield* decodeJobTitleRows(rows)).map(toJobTitle)
     }).pipe(Effect.catchTag('SqlError', Effect.die))
 
@@ -288,6 +292,9 @@ export const makeOrg = (openIssuesOf: (hireId: HireId) => Effect.Effect<number>)
           if (!jobTitle.enabled) {
             return yield* JobTitleDisabled.make({ jobTitleId })
           }
+          if (jobTitle.builtIn === 'executive-assistant') {
+            return yield* JobTitleNotHireable.make({ jobTitleId })
+          }
           if (name !== null) {
             yield* ensureHireNameFree(name, null)
           }
@@ -394,11 +401,14 @@ export const makeOrg = (openIssuesOf: (hireId: HireId) => Effect.Effect<number>)
 
     return {
       jobTitles,
+      watchJobTitleChanges: Effect.map(PubSub.subscribe(jobTitleChanges), Stream.fromSubscription),
       hiredAgents,
       settings,
-      setJobTitleEnabled,
+      setJobTitleEnabled: (jobTitleId, enabled) =>
+        setJobTitleEnabled(jobTitleId, enabled).pipe(Effect.flatMap(publishJobTitleChange)),
       copyJobTitle,
-      editJobTitle,
+      editJobTitle: (jobTitleId, edit) =>
+        editJobTitle(jobTitleId, edit).pipe(Effect.flatMap(publishJobTitleChange)),
       deleteJobTitle,
       hire,
       dismiss,

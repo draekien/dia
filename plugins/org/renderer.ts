@@ -20,7 +20,8 @@ const setup: PluginSetup<PluginServices> = (ctx) =>
       order: 10,
       label: 'Org',
       icon: UsersIcon,
-      component: () => createElement(OrgPage, { ctx, orgAtom, workAtom })
+      component: ({ target }) =>
+        createElement(OrgPage, { ctx, orgAtom, workAtom, target, key: target })
     })
     yield* addEntry(ctx, SettingsPagesSlot, {
       id: 'org',

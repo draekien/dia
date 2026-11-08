@@ -413,6 +413,7 @@ export function JobTitleEditor({
   }
 
   const editKey = JSON.stringify({ ...jobTitle, enabled: undefined })
+  const hireable = jobTitle.builtIn !== 'executive-assistant'
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -433,14 +434,16 @@ export function JobTitleEditor({
           <Button size="sm" variant="outline" onClick={() => setDialog('copy')}>
             Copy…
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!jobTitle.enabled}
-            onClick={() => openHire(jobTitle.id)}
-          >
-            Hire…
-          </Button>
+          {hireable ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!jobTitle.enabled}
+              onClick={() => openHire(jobTitle.id)}
+            >
+              Hire…
+            </Button>
+          ) : null}
           {jobTitle.builtIn === null ? (
             <Button size="sm" variant="outline" onClick={() => setDialog('delete')}>
               Delete…
@@ -449,28 +452,30 @@ export function JobTitleEditor({
         </div>
       </div>
       <EditForm key={editKey} jobTitle={jobTitle} snapshot={snapshot} call={call} />
-      <section className="flex flex-col gap-2 border-t pt-5" aria-labelledby="org-hired-as">
-        <h4 id="org-hired-as" className="text-sm font-medium text-ink">
-          {`Hired as ${jobTitle.name}`}
-        </h4>
-        {hires.length === 0 ? (
-          <p className="text-sm text-ink-muted">No agent is hired as {jobTitle.name}.</p>
-        ) : (
-          <ul className="flex flex-wrap gap-2">
-            {hires.map((agent) => (
-              <li key={agent.id}>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  onClick={() => show(HiredAgentsView.make({ hireId: agent.id }))}
-                >
-                  {agentName(agent, snapshot.jobTitles)}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {hireable ? (
+        <section className="flex flex-col gap-2 border-t pt-5" aria-labelledby="org-hired-as">
+          <h4 id="org-hired-as" className="text-sm font-medium text-ink">
+            {`Hired as ${jobTitle.name}`}
+          </h4>
+          {hires.length === 0 ? (
+            <p className="text-sm text-ink-muted">No agent is hired as {jobTitle.name}.</p>
+          ) : (
+            <ul className="flex flex-wrap gap-2">
+              {hires.map((agent) => (
+                <li key={agent.id}>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    onClick={() => show(HiredAgentsView.make({ hireId: agent.id }))}
+                  >
+                    {agentName(agent, snapshot.jobTitles)}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
       {dialog === 'copy' ? (
         <NameDialog
           title={`Copy ${jobTitle.name}`}

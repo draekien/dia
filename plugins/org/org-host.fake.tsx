@@ -372,8 +372,10 @@ const workReply = (
 ): Reply | undefined => {
   switch (tag) {
     case 'CreateObjective': {
+      const { route, ...fields } = decodeObjective(payload.objective)
       const created = Objective.make({
-        ...decodeObjective(payload.objective),
+        ...fields,
+        assignee: route.assignee,
         state: 'open',
         createdAt: FAKE_NOW
       })

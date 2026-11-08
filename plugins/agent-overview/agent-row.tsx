@@ -102,13 +102,14 @@ function RenameField({ row, onDone }: { readonly row: OverviewRow; readonly onDo
 
 interface AgentRowProps {
   readonly row: OverviewRow
-  readonly projectName: string
+  readonly projectName: string | null
   readonly selected: boolean
   readonly renaming: boolean
   readonly tabbable: boolean
   readonly archived: boolean
   readonly onRename: (renaming: boolean) => void
   readonly onRetire: (retirement: Retirement) => void
+  readonly onStartOver?: (() => void) | undefined
 }
 
 /**
@@ -135,8 +136,10 @@ const unarchive = (row: OverviewRow): Promise<void> =>
  * One agent in the overview: its status dot, name and second line. Clicking it or pressing
  * `Enter` shows the agent's tab; `F2` or the row menu renames it. The row menu also archives an
  * agent that is not `archived` through `onRetire`, unarchives one that is, and deletes any agent
- * through `onRetire`. A row with a `caption` is an attached session (ADR-0070): it shows the
- * caption after the name, opens the session, and its menu only shows it.
+ * through `onRetire`. A row with a `caption` is an attached session (ADR-0070): it shows a
+ * non-empty caption after the name, opens the session, and its menu shows it and, when
+ * `onStartOver` is given, offers Start over. A `projectName` of null leaves the project out of the
+ * tooltip and accessible name.
  */
 export function AgentRow({
   row,
@@ -146,7 +149,8 @@ export function AgentRow({
   tabbable,
   archived,
   onRename,
-  onRetire
+  onRetire,
+  onStartOver
 }: AgentRowProps) {
   const collapsed = useSidebar().state === 'collapsed'
   const line = secondLine(row.summary)
@@ -154,9 +158,10 @@ export function AgentRow({
   const marker = modeMarker(row.permissionMode)
   const markerSuffix = marker === null ? '' : ` · ${marker}`
   const attached = row.caption !== null
-  const fullName = attached ? `${row.name} (${row.caption})` : row.name
+  const fullName = row.caption ? `${row.name} (${row.caption})` : row.name
+  const place = projectName === null ? fullName : `${projectName} / ${fullName}`
   const label = `${fullName}, ${status}. ${line.text}${markerSuffix}`
-  const summaryText = `${projectName} / ${fullName} · ${status} · ${line.text}${markerSuffix}`
+  const summaryText = `${place} · ${status} · ${line.text}${markerSuffix}`
   const show = () => (attached ? actions.selectAttached(row.paneId) : actions.selectTab(row.paneId))
   const body = (name: React.ReactNode) => (
     <>
@@ -197,7 +202,7 @@ export function AgentRow({
               tabIndex={tabbable ? 0 : -1}
               aria-label={collapsed ? summaryText : label}
               aria-current={selected ? 'page' : undefined}
-              title={collapsed ? undefined : `${projectName} / ${fullName}`}
+              title={collapsed ? undefined : place}
               onClick={show}
               onKeyDown={(event) => {
                 if (event.key === 'F2' && !attached) {
@@ -210,7 +215,7 @@ export function AgentRow({
               {body(
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span className="truncate text-sm text-ink">{row.name}</span>
-                  {attached && (
+                  {row.caption && (
                     <span className="min-w-0 truncate text-xs text-ink-muted">{row.caption}</span>
                   )}
                   {marker !== null && (
@@ -231,6 +236,14 @@ export function AgentRow({
               </ContextMenuItem>
             )}
           </ContextMenuGroup>
+          {onStartOver !== undefined && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuGroup>
+                <ContextMenuItem onClick={onStartOver}>Start over</ContextMenuItem>
+              </ContextMenuGroup>
+            </>
+          )}
           {!attached && <ContextMenuSeparator />}
           {!attached && (
             <ContextMenuGroup>

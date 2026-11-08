@@ -17,6 +17,7 @@ import {
   registerProject,
   removeProject,
   renameTab,
+  resetAttached,
   resumeParkedAgent,
   revealProject,
   selectAttached,
@@ -90,6 +91,7 @@ export function useTranscriptWidth(): readonly [TranscriptWidth, (width: Transcr
  */
 export const actions = {
   selectTab,
+  resetAttached,
   selectAttached,
   newAgent,
   cancelNewAgent,

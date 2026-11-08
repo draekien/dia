@@ -165,6 +165,28 @@ export const buildOverview = (
   })
 }
 
+/**
+ * The rows of the Assistant group: each of `attached` with no project (ADR-0071), in the order
+ * given. A session with no summary yet shows as idle with no activity.
+ */
+export const assistantRows = (
+  attached: ReadonlyArray<AttachedSession>,
+  summaries: ReadonlyMap<PaneId, AgentSummary>
+): ReadonlyArray<OverviewRow> =>
+  attached
+    .filter((session) => session.projectId === null)
+    .map((session) =>
+      OverviewRow.make({
+        paneId: session.config.paneId,
+        name: session.label,
+        caption: session.caption,
+        summary:
+          summaries.get(session.config.paneId) ??
+          idleSummary(session.config.paneId, NoActivity.make({})),
+        permissionMode: session.config.permissionMode
+      })
+    )
+
 /** The `data-nav` key of the header of project `projectId`, which keyboard navigation focuses. */
 export const headerKey = (projectId: ProjectId): string => `header:${projectId}`
 

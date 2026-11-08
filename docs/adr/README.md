@@ -61,7 +61,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0050](0050-host-keeps-tab-chat-state.md) | The Host keeps each tab's chat state and serves snapshots | accepted, amended by ADR-0051 and ADR-0052 |
 | [0051](0051-session-event-store-in-host-db.md) | Store each agent's conversation as events in `host.db`, and use the Agent SDK transcript only to resume | accepted, amended by ADR-0052 |
 | [0052](0052-every-pane-event-in-the-agent-event-store.md) | Store every pane event in `agent_events` and send the renderer item updates instead of deltas | accepted |
-| [0053](0053-router-role-as-the-users-assistant.md) | Take the user's requests in chat through a built-in `router` role that hands work to hired agents and never plans or does the work itself | accepted, amended by ADR-0064 and ADR-0069 |
+| [0053](0053-router-role-as-the-users-assistant.md) | Take the user's requests in chat through a built-in `router` role that hands work to hired agents and never plans or does the work itself | accepted, amended by ADR-0064, ADR-0069 and ADR-0071 |
 | [0054](0054-permission-modes-for-hired-agents.md) | Run hired agents in `auto` where the model and settings allow it, otherwise in `default`, and in `bypassPermissions` only when the user opts a role or hire in | accepted |
 | [0055](0055-lease-a-feature-plugin-service-for-one-operation.md) | Lease a feature plugin's service for one operation, and close a plugin only after its leases end or 30 seconds pass | accepted, amended by ADR-0060 and ADR-0065 |
 | [0056](0056-run-part-of-a-plugin-while-optional-services-are-provided.md) | Run part of a plugin while optional services are provided, with `ctx.whenProvided` | accepted, amended by ADR-0060 and ADR-0065 |
@@ -71,13 +71,14 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0061](0061-list-slots.md) | List slots: a plugin declares a list it draws, and other plugins add entries to it | accepted |
 | [0062](0062-host-service-keys.md) | Type the services the Host reads by keys defined in `src/` | accepted, amended by ADR-0065 |
 | [0063](0063-settings-and-palette-plugins.md) | Plugins own the Settings dialog, the command palette and their entries | accepted, amended by ADR-0065 |
-| [0064](0064-job-titles-and-task-kinds.md) | Name what an agent is hired as a job title, ship seven built-in job titles, and make planning and retro kinds of task | accepted, amended by ADR-0069 |
+| [0064](0064-job-titles-and-task-kinds.md) | Name what an agent is hired as a job title, ship seven built-in job titles, and make planning and retro kinds of task | accepted, amended by ADR-0069 and ADR-0071 |
 | [0065](0065-adapter-plugins-are-ordinary-plugins.md) | Adapter plugins load, reload, unload and import under the same rules as feature plugins | accepted |
 | [0066](0066-plugin-owned-fields-in-kernel-contracts.md) | A kernel contract field whose shape a plugin owns is `unknown` in the kernel | accepted |
 | [0067](0067-hired-agent-sessions-run-headless-in-the-org-plugin.md) | Hired agents' sessions run headless inside the org plugin | accepted, amended by ADR-0070 |
 | [0068](0068-plugin-host-entries-serve-streaming-calls.md) | Plugin host entries serve streaming calls, and a subscription holds no lease | accepted |
-| [0069](0069-org-work-is-issues-with-implement-task-statuses.md) | Make org work issues with implement-task statuses, and make dia tools follow the session's permission rules | accepted |
+| [0069](0069-org-work-is-issues-with-implement-task-statuses.md) | Make org work issues with implement-task statuses, and make dia tools follow the session's permission rules | accepted, amended by ADR-0071 |
 | [0070](0070-plugins-attach-sessions-to-the-host.md) | Plugins attach the sessions they open to the Host, which shows each as a row in its project | accepted |
+| [0071](0071-executive-assistant-session.md) | Run one Executive assistant session in the org plugin, and route a direct request to one work issue | accepted |
 
 ## Adding a new ADR
 

@@ -97,6 +97,7 @@ describe('3_job_titles on a database seeded with the old built-in roles', () => 
           ['UI/UX designer', 'ui-ux'],
           ['Team lead', 'team-lead'],
           ['Technical lead', 'technical-lead'],
+          ['Executive assistant', 'executive-assistant'],
           ['Strict engineer', null],
           ['team LEAD (old 2)', null],
           ['Team lead (old)', null]
@@ -194,7 +195,11 @@ describe('5_job_title_model on a database with job titles', () => {
   )
 })
 
-const { '7_issues': _issues, ...migrationsBeforeIssues } = orgMigrations
+const {
+  '7_issues': _issues,
+  '8_executive_assistant': _laterAssistant,
+  ...migrationsBeforeIssues
+} = orgMigrations
 const OBJECTIVE_ID = '00000000-0000-4000-8000-000000000301'
 const COPY_ID = '00000000-0000-4000-8000-000000000302'
 const taskRowId = (n: number) => `00000000-0000-4000-8000-00000000040${n}`
@@ -327,13 +332,13 @@ describe('7_issues on a database with tasks', () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect('allows the three issue tools on every built-in job title and not on a copy', () =>
+  it.effect('allows the three issue tools on the seven worker built-ins and not on a copy', () =>
     Effect.gen(function* () {
       const { sql } = yield* upgradedTasks
       const rows = yield* sql<{
         readonly built_in: string | null
         readonly permissions: string
-      }>`SELECT built_in, permissions FROM job_titles`
+      }>`SELECT built_in, permissions FROM job_titles WHERE built_in IS NOT 'executive-assistant'`
       const allowed = rows.map((row): [boolean, ReadonlyArray<string>] => [
         row.built_in !== null,
         (JSON.parse(row.permissions) as { allow: ReadonlyArray<string> }).allow
@@ -351,6 +356,153 @@ describe('7_issues on a database with tasks', () => {
         allowed.filter(([builtIn]) => !builtIn).map(([, allow]) => allow),
         [[]]
       )
+    }).pipe(Effect.scoped)
+  )
+})
+
+const { '8_executive_assistant': _assistant, ...migrationsBeforeAssistant } = orgMigrations
+const ASSISTANT_NAMED_COPY_ID = '00000000-0000-4000-8000-000000000601'
+const HIRE_ON_COPY_ID = '00000000-0000-4000-8000-000000000602'
+const ASSIGNED_ISSUE_ID = '00000000-0000-4000-8000-000000000603'
+
+const upgradedToAssistant = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const filename = path.join(yield* fs.makeTempDirectoryScoped(), 'data.db')
+  const before = yield* openIn(filename, migrationsBeforeAssistant)
+  const old = before.sql
+  yield* old`INSERT INTO job_titles ${old.insert({
+    job_title_id: ASSISTANT_NAMED_COPY_ID,
+    name: 'executive ASSISTANT',
+    built_in: null,
+    enabled: 1,
+    job_description: 'mine',
+    skills: '[]',
+    permissions: NO_RULES,
+    mcp_servers: '{}',
+    bypass_opt_in: 0,
+    model: 'claude-sonnet-5',
+    thinking_level: 'high'
+  })}`
+  yield* old`INSERT INTO hired_agents ${old.insert({
+    hire_id: HIRE_ON_COPY_ID,
+    job_title_id: ASSISTANT_NAMED_COPY_ID,
+    name: 'quiet-wren',
+    bypass_override: null,
+    hired_at: 0,
+    reports_to: null
+  })}`
+  yield* old`INSERT INTO objectives ${old.insert({
+    objective_id: OBJECTIVE_ID,
+    project_id: '00000000-0000-4000-8000-000000000300',
+    title: 'Ship',
+    description: '',
+    priority: 'normal',
+    assignee: HIRE_ON_COPY_ID,
+    state: 'open',
+    created_at: 0
+  })}`
+  yield* old`INSERT INTO issues ${old.insert({
+    issue_id: ASSIGNED_ISSUE_ID,
+    objective_id: OBJECTIVE_ID,
+    parent_issue_id: null,
+    kind: 'work',
+    title: 'Fix the typo',
+    description: '',
+    status: 'todo',
+    assignee: HIRE_ON_COPY_ID,
+    pane_id: '00000000-0000-4000-8000-000000000604',
+    session_id: null,
+    created_at: 0
+  })}`
+  yield* before.close
+  return yield* openDatabase(filename, orgMigrations)
+}).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
+
+describe('8_executive_assistant on a database with a hire on a copy', () => {
+  it.effect('adds the enabled Executive assistant allowing only the four routing tools', () =>
+    Effect.gen(function* () {
+      const sql = yield* upgradedToAssistant
+      const [row] = yield* sql<{
+        readonly name: string
+        readonly enabled: number
+        readonly permissions: string
+      }>`SELECT name, enabled, permissions FROM job_titles WHERE built_in = 'executive-assistant'`
+      assert.deepStrictEqual(
+        [row?.name, row?.enabled, JSON.parse(row?.permissions ?? '{}')],
+        [
+          'Executive assistant',
+          1,
+          {
+            allow: [
+              'mcp__dia__objectives_read',
+              'mcp__dia__objective_create',
+              'mcp__dia__objective_attach',
+              'mcp__dia__objective_stop'
+            ],
+            ask: [],
+            deny: []
+          }
+        ]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('renames a copy that has its name and keeps its fields', () =>
+    Effect.gen(function* () {
+      const sql = yield* upgradedToAssistant
+      const [copy] = yield* sql<{
+        readonly name: string
+        readonly job_description: string
+        readonly model: string | null
+        readonly thinking_level: string
+      }>`SELECT name, job_description, model, thinking_level FROM job_titles WHERE job_title_id = ${ASSISTANT_NAMED_COPY_ID}`
+      assert.deepStrictEqual(copy === undefined ? undefined : { ...copy }, {
+        name: 'executive ASSISTANT (old)',
+        job_description: 'mine',
+        model: 'claude-sonnet-5',
+        thinking_level: 'high'
+      })
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('keeps every hire, assignee and foreign key across the job titles rebuild', () =>
+    Effect.gen(function* () {
+      const sql = yield* upgradedToAssistant
+      const hires = yield* sql<{
+        readonly job_title_id: string
+      }>`SELECT job_title_id FROM hired_agents WHERE hire_id = ${HIRE_ON_COPY_ID}`
+      const assignees = yield* sql<{ readonly assignee: string | null }>`SELECT assignee FROM issues
+        UNION ALL SELECT assignee FROM objectives`
+      const violations = yield* sql.unsafe('PRAGMA foreign_key_check')
+      assert.deepStrictEqual(
+        [hires, assignees, violations],
+        [
+          [{ job_title_id: ASSISTANT_NAMED_COPY_ID }],
+          [{ assignee: HIRE_ON_COPY_ID }, { assignee: HIRE_ON_COPY_ID }],
+          []
+        ]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('refuses a second built-in of the same kind', () =>
+    Effect.gen(function* () {
+      const sql = yield* upgradedToAssistant
+      const second = yield* Effect.exit(
+        sql`INSERT INTO job_titles ${sql.insert({
+          job_title_id: '00000000-0000-4000-8000-000000000605',
+          name: 'Another assistant',
+          built_in: 'executive-assistant',
+          enabled: 1,
+          job_description: '',
+          skills: '[]',
+          permissions: NO_RULES,
+          mcp_servers: '{}',
+          bypass_opt_in: 0
+        })}`
+      )
+      assert.isTrue(Exit.isFailure(second))
     }).pipe(Effect.scoped)
   )
 })

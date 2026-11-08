@@ -1,5 +1,5 @@
 ---
-status: "accepted, amended by ADR-0064 and ADR-0069"
+status: "accepted, amended by ADR-0064, ADR-0069 and ADR-0071"
 date: 2026-11-06
 decision-makers: William Pei
 ---
@@ -80,6 +80,8 @@ The objective form stays. An objective the user creates there without an assigne
 Amended by ADR-0064: every `planner` reference in this ADR is a planning task. Route `plan` and an objective created without an assignee create a planning task, which waits until the user assigns it a hired agent; dia hires nobody on first run.
 
 Amended by ADR-0069: route `plan` creates an objective, whose planning issue follows ADR-0069.
+
+Amended by ADR-0071: the router is the built-in `Executive assistant` job title, not a role. The org plugin runs one assistant session in the `Assistant` group, with Start over, instead of any number of router tabs. Route `direct` creates the objective and one `work` issue for the named hired agent, with no planning issue. A notice links to the objective on the Org page, not to a decision queue item, and its text is prefixed to the user's next message.
 
 ### Consequences
 

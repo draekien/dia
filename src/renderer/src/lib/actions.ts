@@ -60,6 +60,15 @@ export const selectAttached = (paneId: PaneId): void => {
   window.dia.selectTab(null)
 }
 
+/**
+ * Replaces the session a plugin attached as `paneId` with a fresh one that has an empty transcript
+ * (ADR-0071); does nothing for a session its plugin cannot reset.
+ */
+export const resetAttached = (paneId: PaneId): void => {
+  log('Resetting an attached session', { paneId })
+  window.dia.resetAttachedSession(paneId)
+}
+
 /** Opens the New agent form for project `projectId` in the content area. */
 export const newAgent = (projectId: ProjectId): void => {
   log('Opening the New agent form', { projectId })
@@ -71,11 +80,11 @@ export const newAgent = (projectId: ProjectId): void => {
 }
 
 /**
- * Shows the page `key` names in the content area, closing the New agent form if it is open. No tab
- * is visible while the page shows; selecting a tab closes it.
+ * Shows the page `key` names in the content area, passing it `key.target`, and closes the New
+ * agent form if it is open. No tab is visible while the page shows; selecting a tab closes it.
  */
 export const openPage = (key: PageKey): void => {
-  log('Opening a page', { plugin: key.plugin, id: key.id })
+  log('Opening a page', { plugin: key.plugin, id: key.id, target: key.target })
   const shownBefore = shownBeforeOpening()
   appRegistry.set(newAgentFormAtom, Option.none())
   appRegistry.set(openAttachedAtom, Option.none())

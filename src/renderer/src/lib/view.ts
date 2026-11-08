@@ -5,8 +5,15 @@ import { Uuid } from '@shared/domain/uuid'
 import { PluginName } from '@shared/plugin/manifest'
 import { Option, Schema } from 'effect'
 
-/** Names a page plugin `plugin` added to the layout plugin's `PagesSlot` and the page `id` it gave. */
-export const PageKey = Schema.Struct({ plugin: PluginName, id: Schema.String })
+/**
+ * Names a page plugin `plugin` added to the layout plugin's `PagesSlot` and the page `id` it gave.
+ * `target`, when present, is passed to the page, which reads it to choose what it shows.
+ */
+export const PageKey = Schema.Struct({
+  plugin: PluginName,
+  id: Schema.String,
+  target: Schema.optional(Schema.String)
+})
 export type PageKey = typeof PageKey.Type
 
 /** The content area shows page `id` of plugin `plugin`. */

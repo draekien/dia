@@ -15,7 +15,11 @@ import {
   subscribePlugin
 } from '../../src/host/plugins/plugin-messages'
 import { makePluginDatabase } from '../../src/host/services/database'
-import { BUILT_IN_JOB_TITLES, DEFAULT_OVERALL_CAP } from './built-in-job-titles'
+import {
+  BUILT_IN_JOB_TITLES,
+  DEFAULT_OVERALL_CAP,
+  EXECUTIVE_ASSISTANT
+} from './built-in-job-titles'
 import { OrgSnapshot, WorkView } from './calls'
 import { HiredAgent } from './domain'
 import setup from './host'
@@ -147,7 +151,7 @@ describe('org host entry', () => {
           cap: snapshot.settings.overallCap
         },
         {
-          jobTitles: BUILT_IN_JOB_TITLES.map((seed) => seed.id),
+          jobTitles: [...BUILT_IN_JOB_TITLES.map((seed) => seed.id), EXECUTIVE_ASSISTANT.id],
           hires: [],
           cap: DEFAULT_OVERALL_CAP
         }
@@ -312,7 +316,7 @@ describe('org host entry work calls', () => {
           title: 'Ship it',
           description: '',
           priority: 'normal',
-          assignee: null
+          route: { _tag: 'PlanRoute', assignee: null }
         }
       })
       const ada = yield* hireEngineer(registry)
@@ -340,7 +344,7 @@ describe('org host entry work calls', () => {
           title: 'Ship it',
           description: '',
           priority: 'normal',
-          assignee: null
+          route: { _tag: 'PlanRoute', assignee: null }
         }
       })
       const ada = yield* hireEngineer(registry)
@@ -374,7 +378,7 @@ describe('org host entry work calls', () => {
             title: 'Ship it',
             description: '',
             priority: 'normal',
-            assignee: null
+            route: { _tag: 'PlanRoute', assignee: null }
           }
         })
         const ada = yield* hireEngineer(registry)
@@ -419,7 +423,7 @@ describe('org host entry work calls', () => {
           title: 'Ship it',
           description: '',
           priority: 'normal',
-          assignee: null
+          route: { _tag: 'PlanRoute', assignee: null }
         }
       })
       const ada = yield* hireEngineer(registry)
@@ -449,7 +453,7 @@ describe('org host entry work calls', () => {
           title: 'Ship it',
           description: '',
           priority: 'normal',
-          assignee: null
+          route: { _tag: 'PlanRoute', assignee: null }
         }
       })
       const ada = yield* hireEngineer(registry)

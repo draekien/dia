@@ -38,6 +38,7 @@ const handlersLayer = Layer.unwrap(
       MoveProject: unused,
       RenameTab: unused,
       SelectTab: unused,
+      ResetAttachedSession: unused,
       SetTranscriptWidth: unused,
       SetThinkingLevel: unused,
       SetPermissionMode: unused,

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { type PaneMessage, TooltipProvider } from '@dia/renderer-plugin'
-import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { actions, type PaneMessage, TooltipProvider } from '@dia/renderer-plugin'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { dirName, MessageView } from './pane'
 
 afterEach(cleanup)
@@ -445,5 +445,31 @@ describe('MessageView: failed steps', () => {
     render(<MessageView message={message} />)
 
     expect(screen.getByText('make').getAttribute('title')).toBe('make')
+  })
+})
+
+describe('MessageView: notice with a link', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  const linked: PaneMessage = {
+    id: '4:notice',
+    role: 'notice',
+    parts: [{ type: 'text', content: 'Ada moved "Fix the typo" to in review.' }],
+    link: { label: 'Open', plugin: 'org', page: 'org', target: 'objective-1' }
+  }
+
+  it('opens the linked page with its target when the link is clicked', () => {
+    const openPage = vi.spyOn(actions, 'openPage').mockImplementation(() => undefined)
+    render(<MessageView message={linked} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }))
+
+    expect(openPage).toHaveBeenCalledWith({ plugin: 'org', id: 'org', target: 'objective-1' })
+  })
+
+  it('shows no button for a notice without a link', () => {
+    render(<MessageView message={{ ...linked, link: undefined }} />)
+
+    expect(screen.queryByRole('button')).toBeNull()
   })
 })

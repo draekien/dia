@@ -1046,6 +1046,15 @@ describe('reducePaneChat — turn status, tool row updates and notices', () => {
     ])
   })
 
+  it("keeps a session notice's link on its notice divider", () => {
+    const link = { label: 'Open', plugin: 'org', page: 'org', target: 'objective-1' }
+    const state = reducePaneChat(
+      emptyPaneChatState,
+      PaneSessionNotice.make({ paneId: PANE, text: 'Ada moved "Fix the typo" to in review.', link })
+    )
+    expect(state.messages.map((message) => message.link)).toEqual([link])
+  })
+
   it('appends a session notice as a notice divider', () => {
     const state = reducePaneChat(
       emptyPaneChatState,

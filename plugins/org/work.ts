@@ -15,6 +15,7 @@ import {
   CommentId,
   HireId,
   HireNotFound,
+  ISSUE_DESCRIPTION_MAX_LENGTH,
   Issue,
   IssueChange,
   IssueClosed,
@@ -54,6 +55,7 @@ const IssueUpdated = Schema.TaggedStruct('IssueUpdated', { change: IssueChange }
 const IssueTriaged = Schema.TaggedStruct('IssueTriaged', { decision: TriageDecision })
 const IssueCommented = Schema.TaggedStruct('IssueCommented', { commentId: CommentId })
 const IssueFinished = Schema.TaggedStruct('IssueFinished', {})
+const IssueCanceled = Schema.TaggedStruct('IssueCanceled', {})
 
 const OrgEvent = Schema.Union([
   ObjectiveCreated,
@@ -67,7 +69,8 @@ const OrgEvent = Schema.Union([
   IssueUpdated,
   IssueTriaged,
   IssueCommented,
-  IssueFinished
+  IssueFinished,
+  IssueCanceled
 ])
 type OrgEvent = typeof OrgEvent.Type
 
@@ -199,9 +202,12 @@ const TRIAGE_TARGET: Record<TriageDecision, IssueStatus> = { accept: 'todo', dec
  * writes its events and the changed rows, and is safe to repeat. A database failure, or a failure
  * to generate an id, is a defect.
  *
- * `createObjective` creates an open objective and its `planning` issue, `Plan: <title>`, in `todo`
- * and assigned to the objective's assignee; a repeated `id` returns the stored objective and
- * creates nothing. `createIssue` creates a `work` issue in `todo`, or returns the stored one when
+ * `createObjective` creates an open objective assigned to its route's assignee, and its first
+ * issue in `todo`: for a `PlanRoute`, the `planning` issue `Plan: <title>`; for a `DirectRoute`, one
+ * `work` issue with the objective's title and description (its first
+ * {@link ISSUE_DESCRIPTION_MAX_LENGTH} characters; the objective keeps all of it). A repeated `id` returns the stored
+ * objective and creates nothing. `stopObjective` cancels every issue of an objective that is not
+ * `done` or `canceled` and returns them; the caller releases their sessions. `createIssue` creates a `work` issue in `todo`, or returns the stored one when
  * `id` exists; it reopens a completed objective. `proposeIssue` creates an unassigned `work` issue
  * in `triage`. `assignIssue` sets a `triage` or `todo` issue's assignee, or clears it when null;
  * giving an issue its current assignee returns it unchanged in any status. `triageIssues` moves
@@ -248,6 +254,9 @@ export interface Work {
     body: CommentBody
   ) => Effect.Effect<IssueComment, IssueNotFound>
   readonly finishIssue: (issueId: IssueId) => Effect.Effect<Issue, IssueNotFound | IssueNotStarted>
+  readonly stopObjective: (
+    objectiveId: ObjectiveId
+  ) => Effect.Effect<ReadonlyArray<Issue>, ObjectiveNotFound>
 }
 
 /** A `todo` issue with an assignee, and its objective: one candidate for the scheduler. */
@@ -388,8 +397,8 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
 
     const createObjective = Effect.fn('Work.createObjective')(function* (input: NewObjective) {
       const createdAt = yield* Clock.currentTimeMillis
-      const planningId = Issue.fields.id.make(yield* newUuid)
-      const planningPaneId = Uuid.make(yield* newUuid)
+      const firstIssueId = Issue.fields.id.make(yield* newUuid)
+      const firstPaneId = Uuid.make(yield* newUuid)
       const registered = yield* projectExists(input.projectId)
       const objective = yield* transaction(
         Effect.gen(function* () {
@@ -398,21 +407,28 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
           if (!registered) {
             return yield* ProjectNotFound.make({ projectId: input.projectId })
           }
-          yield* ensureHire(input.assignee)
-          const created = Objective.make({ ...input, state: 'open', createdAt })
+          const { route, ...fields } = input
+          yield* ensureHire(route.assignee)
+          const created = Objective.make({
+            ...fields,
+            assignee: route.assignee,
+            state: 'open',
+            createdAt
+          })
           yield* sql`INSERT INTO objectives ${sql.insert(toObjectiveRow(created))}`
           yield* append(created.id, null, ObjectiveCreated.make({ objective: created }))
+          const direct = route._tag === 'DirectRoute'
           yield* insertIssue(
             Issue.make({
-              id: planningId,
+              id: firstIssueId,
               objectiveId: created.id,
               parentIssueId: null,
-              kind: 'planning',
-              title: prefixedTitle('Plan', created.title),
-              description: '',
+              kind: direct ? 'work' : 'planning',
+              title: direct ? created.title : prefixedTitle('Plan', created.title),
+              description: direct ? created.description.slice(0, ISSUE_DESCRIPTION_MAX_LENGTH) : '',
               status: 'todo',
               assignee: created.assignee,
-              paneId: planningPaneId,
+              paneId: firstPaneId,
               sessionId: null,
               createdAt
             })
@@ -420,7 +436,10 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
           return created
         })
       )
-      yield* Effect.logInfo('Created objective', { objectiveId: objective.id })
+      yield* Effect.logInfo('Created objective', {
+        objectiveId: objective.id,
+        route: input.route._tag
+      })
       return objective
     })
 
@@ -629,6 +648,27 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
       return issue
     })
 
+    const stopObjective = Effect.fn('Work.stopObjective')(function* (objectiveId: ObjectiveId) {
+      const canceled = yield* transaction(
+        Effect.gen(function* () {
+          if ((yield* findObjective(objectiveId)) === undefined) {
+            return yield* ObjectiveNotFound.make({ objectiveId })
+          }
+          const rows = yield* sql`SELECT * FROM issues WHERE objective_id = ${objectiveId}
+            AND status NOT IN ('done', 'canceled') ORDER BY created_at, rowid`
+          const open = (yield* decodeIssueRows(rows)).map(toIssue)
+          for (const issue of open) {
+            yield* setIssueStatus(issue.id, 'canceled')
+            yield* append(objectiveId, issue.id, IssueCanceled.make({}))
+          }
+          yield* completeObjectiveIfDone(objectiveId)
+          return open.map((issue) => Issue.make({ ...issue, status: 'canceled' }))
+        })
+      )
+      yield* Effect.logInfo('Stopped objective', { objectiveId, canceled: canceled.length })
+      return canceled
+    })
+
     const openIssuesOf = (hireId: HireId) =>
       sql<{
         readonly open: number
@@ -721,7 +761,8 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
       triageIssues,
       updateIssue,
       commentIssue,
-      finishIssue
+      finishIssue,
+      stopObjective
     }
     const runs: IssueRuns = {
       startCandidates,
