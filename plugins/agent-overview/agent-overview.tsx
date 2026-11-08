@@ -5,6 +5,7 @@ import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarInput,
   SidebarMenu,
@@ -46,9 +47,11 @@ import { tabOf } from '@shared/domain/workspace'
 import { Option, Result, Schema } from 'effect'
 import { FolderPlusIcon, SearchIcon } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { AgentRow } from './agent-row'
 import { FilterPopover } from './filter-popover'
 import {
   archivedKey,
+  assistantRows,
   buildOverview,
   filtersApply,
   headerKey,
@@ -180,6 +183,53 @@ function MetaGroup() {
         </SidebarMenuItem>
       </SidebarMenu>
     </SidebarGroup>
+  )
+}
+
+const ignore = () => {}
+
+function AssistantGroup({
+  attached,
+  summaries,
+  visibleTab,
+  iconMode
+}: {
+  readonly attached: ReturnType<typeof useAttachedSessions>
+  readonly summaries: ReturnType<typeof useAgentSummaries>
+  readonly visibleTab: PaneId | null
+  readonly iconMode: boolean
+}) {
+  const rows = assistantRows(attached, summaries)
+  if (rows.length === 0) return null
+  return (
+    <>
+      {iconMode && <SidebarSeparator />}
+      <SidebarGroup role="group" aria-label="Assistant" className="pt-0">
+        <SidebarGroupLabel>Assistant</SidebarGroupLabel>
+        <SidebarMenu className="gap-0">
+          {rows.map((row) => (
+            <AgentRow
+              key={row.paneId}
+              row={row}
+              projectName={null}
+              selected={row.paneId === visibleTab}
+              renaming={false}
+              tabbable
+              archived={false}
+              onRename={ignore}
+              onRetire={ignore}
+              onStartOver={
+                attached.some(
+                  (session) => session.config.paneId === row.paneId && session.resettable
+                )
+                  ? () => actions.resetAttached(row.paneId)
+                  : undefined
+              }
+            />
+          ))}
+        </SidebarMenu>
+      </SidebarGroup>
+    </>
   )
 }
 
@@ -539,6 +589,14 @@ export function AgentOverview() {
           >
             {!narrowing && <MetaGroup />}
             {!narrowing && <PagesGroup />}
+            {!narrowing && (
+              <AssistantGroup
+                attached={attached}
+                summaries={summaries}
+                visibleTab={view?._tag === 'AttachedView' ? view.paneId : null}
+                iconMode={iconMode}
+              />
+            )}
             {workspace.projects.length === 0 ? (
               !iconMode && <NoProjects onAdd={addProject} />
             ) : groups.length === 0 ? (
