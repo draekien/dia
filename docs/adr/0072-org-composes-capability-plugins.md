@@ -139,5 +139,5 @@ The extraction moves data out of `org.db` without loss. Each job title becomes a
 ## More Information
 
 * Amends ADR-0064 (job titles are agent definitions in the `agent-definitions` plugin), ADR-0069 (objectives and issues move to the `issues` plugin) and ADR-0071 (the Executive assistant session moves to the `assistant` plugin).
-* Epic: https://github.com/draekien/dia/issues/39.
+* Epic: https://github.com/draekien/dia/issues/39. The steps in "Order" are #220 (`mcp`), #221 (`skills`), #222 (`agent-definitions`), #223 (`issues`) and #224 (`assistant`); #41–#46 follow.
 * Reference: `.repos/deepseek-harness/packages/{skill,mcp,preset,schedule}` and `.repos/cordis/packages/core/src/{fiber,service,reflect}.ts`.
