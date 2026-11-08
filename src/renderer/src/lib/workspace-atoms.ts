@@ -8,7 +8,6 @@ import { Effect, Option, Queue, Stream, SubscriptionRef } from 'effect'
 import { AsyncResult, Atom, AtomRegistry } from 'effect/reactivity'
 import {
   closesNewAgentForm,
-  closesOpenAttached,
   closesOpenPage,
   type NewAgentForm,
   type OpenAttached,
@@ -81,7 +80,7 @@ const loadedWorkspaceAtom = Atom.subscriptionRef((get) =>
             get.registry.set(openPageAtom, Option.none())
           }
           const attached = get.registry.get(openAttachedAtom)
-          if (Option.isSome(attached) && closesOpenAttached(attached.value, workspace)) {
+          if (Option.isSome(attached) && closesOpenPage(attached.value, workspace)) {
             yield* Effect.logDebug('The workspace showed a tab, closing the attached session')
             get.registry.set(openAttachedAtom, Option.none())
           }

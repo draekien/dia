@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import {
   AttachedView,
   closesNewAgentForm,
-  closesOpenAttached,
   closesOpenPage,
   EmptyProjectView,
   FirstRunView,
@@ -159,19 +158,16 @@ describe('viewOf with an attached session', () => {
   })
 })
 
-describe('closesOpenAttached', () => {
+describe('closesOpenPage for an attached session', () => {
   it('closes the session when the workspace shows a different tab', () => {
     expect(
-      closesOpenAttached(
-        { paneId: HIRED, shownBefore: PANE_A },
-        workspace([PANE_A, PANE_B], PANE_B)
-      )
+      closesOpenPage({ paneId: HIRED, shownBefore: PANE_A }, workspace([PANE_A, PANE_B], PANE_B))
     ).toBe(true)
   })
 
   it('keeps the session while the workspace shows the tab it opened over', () => {
     expect(
-      closesOpenAttached({ paneId: HIRED, shownBefore: PANE_A }, workspace([PANE_A], PANE_A))
+      closesOpenPage({ paneId: HIRED, shownBefore: PANE_A }, workspace([PANE_A], PANE_A))
     ).toBe(false)
   })
 })

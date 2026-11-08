@@ -73,18 +73,11 @@ export interface OpenAttached {
 }
 
 /**
- * Whether a workspace change closes the open attached session: true when the workspace now shows
- * a tab other than the one visible before it opened.
+ * Whether a workspace change closes the open page or attached session: true when the workspace
+ * now shows a tab other than the one visible before it opened.
  */
-export const closesOpenAttached = (attached: OpenAttached, workspace: Workspace): boolean =>
-  workspace.visibleTab !== null && workspace.visibleTab !== attached.shownBefore
-
-/**
- * Whether a workspace change closes the open page: true when the workspace now shows a tab other
- * than the one visible before the page opened.
- */
-export const closesOpenPage = (page: OpenPage, workspace: Workspace): boolean =>
-  workspace.visibleTab !== null && workspace.visibleTab !== page.shownBefore
+export const closesOpenPage = (open: OpenPage | OpenAttached, workspace: Workspace): boolean =>
+  workspace.visibleTab !== null && workspace.visibleTab !== open.shownBefore
 
 /**
  * The New agent form to show when the user asks for one in project `projectId`. A form opened

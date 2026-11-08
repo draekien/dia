@@ -32,6 +32,12 @@ const tabHiddenByPage = (): PaneId | null =>
     onSome: (page) => page.shownBefore
   })
 
+const shownBeforeOpening = (): PaneId | null =>
+  Option.match(appRegistry.get(newAgentFormAtom), {
+    onNone: tabHiddenByPage,
+    onSome: (form) => form.shownBefore
+  })
+
 /** Shows tab `paneId` in the content area, closing the New agent form or page if one is open. */
 export const selectTab = (paneId: PaneId): void => {
   log('Selecting a tab', { paneId })
@@ -47,10 +53,7 @@ export const selectTab = (paneId: PaneId): void => {
  */
 export const selectAttached = (paneId: PaneId): void => {
   log('Selecting an attached session', { paneId })
-  const shownBefore = Option.match(appRegistry.get(newAgentFormAtom), {
-    onNone: tabHiddenByPage,
-    onSome: (form) => form.shownBefore
-  })
+  const shownBefore = shownBeforeOpening()
   appRegistry.set(newAgentFormAtom, Option.none())
   appRegistry.set(openPageAtom, Option.none())
   appRegistry.set(openAttachedAtom, Option.some({ paneId, shownBefore }))
@@ -73,10 +76,7 @@ export const newAgent = (projectId: ProjectId): void => {
  */
 export const openPage = (key: PageKey): void => {
   log('Opening a page', { plugin: key.plugin, id: key.id })
-  const shownBefore = Option.match(appRegistry.get(newAgentFormAtom), {
-    onNone: tabHiddenByPage,
-    onSome: (form) => form.shownBefore
-  })
+  const shownBefore = shownBeforeOpening()
   appRegistry.set(newAgentFormAtom, Option.none())
   appRegistry.set(openAttachedAtom, Option.none())
   appRegistry.set(openPageAtom, Option.some({ key, shownBefore }))
