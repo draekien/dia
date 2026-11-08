@@ -18,6 +18,7 @@ import {
   type JobTitleName,
   JobTitleNameTaken,
   JobTitleNotFound,
+  JobTitleNotHireable,
   OrgSettings,
   type OverallCap,
   ReportsToCycle
@@ -176,7 +177,7 @@ export const makeOrg = (openIssuesOf: (hireId: HireId) => Effect.Effect<number>)
       sql`UPDATE job_titles SET ${sql.update(toJobTitleRow(jobTitle), ['job_title_id'])} WHERE job_title_id = ${jobTitle.id}`
 
     const jobTitles = Effect.gen(function* () {
-      const rows = yield* sql`SELECT * FROM job_titles ORDER BY rowid`
+      const rows = yield* sql`SELECT * FROM job_titles ORDER BY built_in IS NULL, rowid`
       return (yield* decodeJobTitleRows(rows)).map(toJobTitle)
     }).pipe(Effect.catchTag('SqlError', Effect.die))
 
@@ -287,6 +288,9 @@ export const makeOrg = (openIssuesOf: (hireId: HireId) => Effect.Effect<number>)
           const jobTitle = yield* findJobTitle(jobTitleId)
           if (!jobTitle.enabled) {
             return yield* JobTitleDisabled.make({ jobTitleId })
+          }
+          if (jobTitle.builtIn === 'executive-assistant') {
+            return yield* JobTitleNotHireable.make({ jobTitleId })
           }
           if (name !== null) {
             yield* ensureHireNameFree(name, null)

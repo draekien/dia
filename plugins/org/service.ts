@@ -16,6 +16,7 @@ import type {
   JobTitleName,
   JobTitleNameTaken,
   JobTitleNotFound,
+  JobTitleNotHireable,
   OrgSettings,
   OverallCap,
   ReportsToCycle
@@ -64,7 +65,10 @@ export interface Org {
     jobTitleId: JobTitleId,
     name: AgentName | null,
     reportsTo: HireId | null
-  ) => Effect.Effect<HiredAgent, JobTitleNotFound | JobTitleDisabled | HireNameTaken | HireNotFound>
+  ) => Effect.Effect<
+    HiredAgent,
+    JobTitleNotFound | JobTitleDisabled | JobTitleNotHireable | HireNameTaken | HireNotFound
+  >
   readonly dismiss: (hireId: HireId) => Effect.Effect<void, HireNotFound | HireHasOpenIssues>
   readonly renameHire: (
     hireId: HireId,

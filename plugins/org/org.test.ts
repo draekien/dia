@@ -40,8 +40,15 @@ const builtIn = (name: string) =>
 
 const UNKNOWN_JOB_TITLE = JobTitleId.make('00000000-0000-4000-8000-000000000000')
 
+const workerBuiltIns = (org: Org) =>
+  org.jobTitles.pipe(
+    Effect.map((jobTitles) =>
+      jobTitles.filter((jobTitle) => jobTitle.builtIn !== 'executive-assistant')
+    )
+  )
+
 describe('org seed', () => {
-  it.effect('lists the seven built-in job titles in seed order, enabled, with their kinds', () =>
+  it.effect('lists the eight built-in job titles in seed order, enabled, with their kinds', () =>
     Effect.gen(function* () {
       const org = yield* freshOrg
       const jobTitles = yield* org.jobTitles
@@ -58,7 +65,8 @@ describe('org seed', () => {
           ['Business analyst', 'business-analyst', true],
           ['UI/UX designer', 'ui-ux', true],
           ['Team lead', 'team-lead', true],
-          ['Technical lead', 'technical-lead', true]
+          ['Technical lead', 'technical-lead', true],
+          ['Executive assistant', 'executive-assistant', true]
         ]
       )
     })
@@ -81,18 +89,19 @@ describe('org seed', () => {
           ['Business analyst', readOnly],
           ['UI/UX designer', []],
           ['Team lead', readOnly],
-          ['Technical lead', readOnly]
+          ['Technical lead', readOnly],
+          ['Executive assistant', []]
         ]
       )
     })
   )
 
   it.effect(
-    'gives every built-in job title no skills, MCP servers, ask rules or bypass, and allows only the issue tools',
+    'gives every worker built-in job title no skills, MCP servers, ask rules or bypass, and allows only the issue tools',
     () =>
       Effect.gen(function* () {
         const org = yield* freshOrg
-        for (const jobTitle of yield* org.jobTitles) {
+        for (const jobTitle of yield* workerBuiltIns(org)) {
           assert.deepStrictEqual(
             [
               jobTitle.skills,
@@ -114,10 +123,29 @@ describe('org seed', () => {
       })
   )
 
-  it.effect('appends the execution contract to every built-in job description', () =>
+  it.effect('allows the Executive assistant only the four routing tools', () =>
     Effect.gen(function* () {
       const org = yield* freshOrg
-      for (const jobTitle of yield* org.jobTitles) {
+      const assistant = (yield* org.jobTitles).find(
+        (jobTitle) => jobTitle.builtIn === 'executive-assistant'
+      )
+      assert.deepStrictEqual(assistant?.permissions, {
+        allow: [
+          'mcp__dia__objectives_read',
+          'mcp__dia__objective_create',
+          'mcp__dia__objective_attach',
+          'mcp__dia__objective_stop'
+        ],
+        ask: [],
+        deny: []
+      })
+    })
+  )
+
+  it.effect('appends the execution contract to every worker built-in job description', () =>
+    Effect.gen(function* () {
+      const org = yield* freshOrg
+      for (const jobTitle of yield* workerBuiltIns(org)) {
         assert.include(jobTitle.jobDescription, '## Execution contract', jobTitle.name)
       }
     })
@@ -189,7 +217,7 @@ describe('Org.copyJobTitle', () => {
       const error = yield* Effect.flip(
         org.copyJobTitle(jobTitle.id, JobTitleName.make('SOFTWARE ENGINEER'))
       )
-      assert.deepStrictEqual([error._tag, (yield* org.jobTitles).length], ['JobTitleNameTaken', 7])
+      assert.deepStrictEqual([error._tag, (yield* org.jobTitles).length], ['JobTitleNameTaken', 8])
     })
   )
 
@@ -342,6 +370,26 @@ describe('Org.hire', () => {
       yield* org.hire(jobTitle.id, AgentName.make('Ada'), null)
       const error = yield* Effect.flip(org.hire(jobTitle.id, AgentName.make('ADA'), null))
       assert.strictEqual(error._tag, 'HireNameTaken')
+    })
+  )
+
+  it.effect('fails with JobTitleNotHireable for the Executive assistant', () =>
+    Effect.gen(function* () {
+      const { org, jobTitle } = yield* builtIn('Executive assistant')
+      const error = yield* Effect.flip(org.hire(jobTitle.id, null, null))
+      assert.deepStrictEqual(
+        [error._tag, (yield* org.hiredAgents).length],
+        ['JobTitleNotHireable', 0]
+      )
+    })
+  )
+
+  it.effect('hires into a copy of the Executive assistant', () =>
+    Effect.gen(function* () {
+      const { org, jobTitle } = yield* builtIn('Executive assistant')
+      const copy = yield* org.copyJobTitle(jobTitle.id, JobTitleName.make('Release assistant'))
+      const hired = yield* org.hire(copy.id, null, null)
+      assert.strictEqual(hired.jobTitleId, copy.id)
     })
   )
 

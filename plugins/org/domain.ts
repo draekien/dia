@@ -3,8 +3,9 @@ import { McpServers } from '@dia-plugin/mcp/servers'
 import { Schema } from 'effect'
 
 /**
- * The kinds of the built-in job titles dia ships (ADR-0064; `router`, ADR-0053, is not one). A
- * built-in job title keeps its fixed name; its kind identifies it.
+ * The kinds of the built-in job titles dia ships (ADR-0064, ADR-0071). A built-in job title keeps
+ * its fixed name; its kind identifies it. `executive-assistant` is never hired: it runs the org's
+ * one assistant session.
  */
 export const BuiltInJobTitle = Schema.Literals([
   'product-manager',
@@ -13,7 +14,8 @@ export const BuiltInJobTitle = Schema.Literals([
   'business-analyst',
   'ui-ux',
   'team-lead',
-  'technical-lead'
+  'technical-lead',
+  'executive-assistant'
 ])
 export type BuiltInJobTitle = typeof BuiltInJobTitle.Type
 
@@ -157,6 +159,15 @@ export class JobTitleHasHires extends Schema.TaggedError<JobTitleHasHires>()('Jo
 export class JobTitleDisabled extends Schema.TaggedError<JobTitleDisabled>()('JobTitleDisabled', {
   jobTitleId: JobTitleId
 }) {}
+
+/**
+ * Failure of hiring: job title `jobTitleId` is the built-in Executive assistant, which runs the
+ * org's one assistant session and is never hired (ADR-0071).
+ */
+export class JobTitleNotHireable extends Schema.TaggedError<JobTitleNotHireable>()(
+  'JobTitleNotHireable',
+  { jobTitleId: JobTitleId }
+) {}
 
 /**
  * Failure of a change to a hired agent, or of a reporting line: no hired agent has id `hireId`,

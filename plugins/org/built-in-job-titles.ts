@@ -23,7 +23,10 @@ export interface BuiltInJobTitleSeed {
 
 const READ_ONLY_DENY = ['Edit', 'Write', 'NotebookEdit']
 
-/** The seven built-in job titles (ADR-0064), in the order the org lists them. */
+/**
+ * The seven built-in job titles the `3_job_titles` migration inserts (ADR-0064), in the order the
+ * org lists them. The eighth, {@link EXECUTIVE_ASSISTANT}, is inserted by `8_executive_assistant`.
+ */
 export const BUILT_IN_JOB_TITLES: ReadonlyArray<BuiltInJobTitleSeed> = [
   {
     id: '6f0c1a6e-4b1e-4a52-9a0e-0d6b3f1a0011',
@@ -133,6 +136,41 @@ export const BUILT_IN_JOB_TITLES: ReadonlyArray<BuiltInJobTitleSeed> = [
 - Do not change code or files; propose changes and decisions in your reply instead.`)
   }
 ]
+
+/** The dia tools the Executive assistant uses to route requests (ADR-0053), as permission rule names. */
+export const ROUTING_TOOLS = [
+  'mcp__dia__objectives_read',
+  'mcp__dia__objective_create',
+  'mcp__dia__objective_attach',
+  'mcp__dia__objective_stop'
+] as const
+
+/**
+ * The Executive assistant (ADR-0053, ADR-0071) as the `8_executive_assistant` migration inserts it:
+ * the built-in job title of the org's one assistant session, which is never hired. It allows
+ * {@link ROUTING_TOOLS}; its session runs in `dontAsk`, so every other tool is denied.
+ */
+export const EXECUTIVE_ASSISTANT = {
+  id: '6f0c1a6e-4b1e-4a52-9a0e-0d6b3f1a0018',
+  kind: 'executive-assistant',
+  name: 'Executive assistant',
+  allow: ROUTING_TOOLS,
+  jobDescription: `You are the executive assistant of dia's org. The user tells you what they want; you hand it to the right hired agent in the right project. You never plan the work and never do it.
+
+## How to route
+- Call objectives_read before you create an objective. If an open objective already covers the request, tell the user and do not create another.
+- Take the project from the conversation. If it names no registered project, ask the user once which one.
+- Use route direct when the request is one piece of work for one agent, such as "fix the typo in the README". Name the hired agent as assignee.
+- Use route plan when the request needs several issues or several agents, such as "ship the plugin marketplace". Its planning issue waits for the user to assign it.
+- Pass the user's words in request exactly as they wrote them. Do not rewrite, summarise or expand them.
+- Add a routing note of at most 30 words only for routing facts, such as "the user wants this before the release". Write no plan, task list, acceptance criteria or examples.
+- Call objective_attach only when the user's message names an existing objective, or refers to work you just started and exactly one objective fits. A message on a similar subject is a new request.
+- Call objective_stop only when the user asks to stop an objective.
+
+## Replies
+- After each tool call, tell the user in one or two sentences what you did, naming the objective and the agent.
+- A message that starts with a notice line reports a change to an objective you created. Mention it to the user if it needs them.`
+} as const
 
 /** The overall cap a new org starts with. */
 export const DEFAULT_OVERALL_CAP = 4

@@ -55,7 +55,9 @@ export function HireDialog({
   const [errors, setErrors] = useState<Errors>({})
   const [busy, setBusy] = useState(false)
   const nameId = useId()
-  const enabled = snapshot.jobTitles.filter((jobTitle) => jobTitle.enabled)
+  const enabled = snapshot.jobTitles.filter(
+    (jobTitle) => jobTitle.enabled && jobTitle.builtIn !== 'executive-assistant'
+  )
   const chosenTitle = snapshot.jobTitles.find((jobTitle) => jobTitle.id === chosen)
 
   const submit = async (event: FormEvent) => {
@@ -78,6 +80,8 @@ export function HireDialog({
         return setErrors({ reportsTo: 'The selected manager was dismissed' })
       case 'JobTitleDisabled':
         return setErrors({ hire: 'This job title is disabled' })
+      case 'JobTitleNotHireable':
+        return setErrors({ hire: 'The Executive assistant is not hired' })
       default:
         return setErrors({ hire: commonFailureText(failure) })
     }
