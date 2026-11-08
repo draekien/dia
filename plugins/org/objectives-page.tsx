@@ -123,6 +123,7 @@ function Objectives({
                 objective={selected}
                 projectName={projectName(selected)}
                 issues={work.issues}
+                comments={work.comments}
                 snapshot={snapshot}
                 call={call}
               />

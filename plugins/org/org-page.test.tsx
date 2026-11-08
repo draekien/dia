@@ -13,6 +13,7 @@ import {
   HiredAgent,
   HireNameTaken,
   HireNotFound,
+  IssueNotInTriage,
   JobTitleDisabled,
   JobTitleHasHires,
   JobTitleNameTaken,
@@ -948,6 +949,136 @@ describe('Objectives', () => {
 
     expect(finishes).toEqual(['Build the objective screen', 'Show the status labels'])
     await waitFor(() => expect(host.sent).toContainEqual(['FinishIssue', { issueId: issueId(2) }]))
+  })
+
+  const press = (name: string, scope?: HTMLElement) =>
+    act(async () => {
+      fireEvent.click((scope ? within(scope) : screen).getByRole('button', { name }))
+    })
+
+  it.each([
+    ['Accept', 'accept', 'Todo'],
+    ['Decline', 'decline', 'Canceled']
+  ])(
+    'sends TriageIssues from %s on a triage issue and the issue moves',
+    async (name, decision, label) => {
+      const host = await openObjectives(installHost(snapshotOf()))
+
+      await press(name, issueRow('Add keyboard shortcuts'))
+
+      await waitFor(() =>
+        expect(host.sent).toContainEqual(['TriageIssues', { issueIds: [issueId(7)], decision }])
+      )
+      await waitFor(() =>
+        expect(within(issueRow('Add keyboard shortcuts')).queryByText(label)).not.toBeNull()
+      )
+    }
+  )
+
+  it('offers Accept and Decline on triage issues only', async () => {
+    await openObjectives(installHost(snapshotOf()))
+
+    const rowsWith = (name: string) =>
+      screen
+        .getAllByRole('button', { name })
+        .map((button) => button.closest('li')?.getAttribute('aria-label'))
+
+    expect(rowsWith('Accept')).toEqual(['Add keyboard shortcuts', 'Document the statuses'])
+    expect(rowsWith('Decline')).toEqual(['Add keyboard shortcuts', 'Document the statuses'])
+  })
+
+  it.each([
+    ['Accept all', 'accept'],
+    ['Decline all', 'decline']
+  ])('sends TriageIssues with every triage issue from %s', async (name, decision) => {
+    const host = await openObjectives(installHost(snapshotOf()))
+
+    await press(name)
+
+    await waitFor(() =>
+      expect(host.sent).toContainEqual([
+        'TriageIssues',
+        { issueIds: [issueId(7), issueId(8)], decision }
+      ])
+    )
+  })
+
+  it('counts the triage issues in the bar, singular for one', async () => {
+    const host = await openObjectives(installHost(snapshotOf()))
+    const before = screen.queryByText('2 issues in Triage')
+
+    await press('Accept', issueRow('Add keyboard shortcuts'))
+
+    expect(before).not.toBeNull()
+    expect(await screen.findByText('1 issue in Triage')).toBeTruthy()
+    expect(host.sent).toHaveLength(1)
+  })
+
+  it('hides the Triage bar when no issue is in triage', async () => {
+    await openObjectives(installHost(snapshotOf()))
+
+    await press('Accept all')
+
+    await waitFor(() => expect(screen.queryByText(/in Triage$/)).toBeNull())
+    expect(screen.queryByRole('button', { name: 'Accept all' })).toBeNull()
+  })
+
+  it('shows the first line of an issue description and none for an empty one', async () => {
+    await openObjectives(installHost(snapshotOf()))
+
+    expect(
+      within(issueRow('Build the objective screen')).queryByText(
+        'A list of objectives beside the selected one.'
+      )
+    ).not.toBeNull()
+    expect(within(issueRow('Build the objective screen')).queryByText(/Show its issues/)).toBeNull()
+  })
+
+  it('shows a comment under its issue with its author, and Dismissed agent for a null author', async () => {
+    await openObjectives(installHost(snapshotOf()))
+
+    const commentOf = (body: string) => within(screen.getByText(body).closest('li') as HTMLElement)
+
+    const bea = commentOf('The tree nests sub-issues under their parent.')
+    const dismissed = commentOf('Ready for review.')
+
+    expect(bea.getByText('Bea')).toBeTruthy()
+    expect(dismissed.getByText('Dismissed agent')).toBeTruthy()
+    expect(
+      issueRow('Build the objective screen').contains(screen.getByText('Ready for review.'))
+    ).toBe(false)
+  })
+
+  it('toasts why accepting an issue failed when it is no longer in Triage', async () => {
+    await openObjectives(
+      installHost(snapshotOf(), {
+        TriageIssues: failWith(
+          IssueNotInTriage.make({ issueId: issueId(7), status: 'implementing' })
+        )
+      })
+    )
+
+    await press('Accept', issueRow('Add keyboard shortcuts'))
+
+    expect(vi.mocked(toast.add).mock.calls[0]?.[0]).toMatchObject({
+      title: 'Could not accept Add keyboard shortcuts',
+      description: 'This issue is no longer in Triage'
+    })
+  })
+
+  it('toasts why declining all failed', async () => {
+    await openObjectives(
+      installHost(snapshotOf(), {
+        TriageIssues: failWith(IssueNotInTriage.make({ issueId: issueId(7), status: 'done' }))
+      })
+    )
+
+    await press('Decline all')
+
+    expect(vi.mocked(toast.add).mock.calls[0]?.[0]).toMatchObject({
+      title: 'Could not decline the issues',
+      description: 'This issue is no longer in Triage'
+    })
   })
 
   it('sends CreateIssue with an empty description from Add issue and shows the new issue', async () => {

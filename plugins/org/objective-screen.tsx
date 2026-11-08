@@ -2,17 +2,20 @@
 import { Button, Input, SettingsRow, toast } from '@dia/renderer-plugin'
 import { cva } from 'class-variance-authority'
 import { Result } from 'effect'
+import { isReadonlyArrayNonEmpty } from 'effect/Array'
 import { Loader2Icon } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
-import { AssignIssue, CreateIssue, FinishIssue, type OrgSnapshot } from './calls'
+import { AssignIssue, CreateIssue, FinishIssue, type OrgSnapshot, TriageIssues } from './calls'
 import {
   type HireId,
   type Issue,
+  type IssueComment,
   IssueId,
   type IssueStatus,
   isStarted,
   type Objective,
-  PRIORITY_LABELS
+  PRIORITY_LABELS,
+  type TriageDecision
 } from './domain'
 import { agentName, commonFailureText, newId, type OrgCall, readWorkTitle } from './org-actions'
 import { AssigneeSelect } from './org-fields'
@@ -59,6 +62,15 @@ export const issueStatusVariants = cva('w-24 shrink-0 text-xs', {
   }
 })
 
+const issueTitleVariants = cva('min-w-0 truncate text-sm', {
+  variants: {
+    canceled: {
+      true: 'text-ink-muted line-through',
+      false: 'text-ink'
+    }
+  }
+})
+
 interface IssueNode {
   readonly issue: Issue
   readonly children: ReadonlyArray<IssueNode>
@@ -94,6 +106,92 @@ const toastIssueFailure = (title: string, failure: { readonly _tag: string }) =>
   toast.add({ title, description: issueFailureText(failure), type: 'error' })
 }
 
+const triageIssues = async (
+  call: OrgCall,
+  ids: readonly [IssueId, ...Array<IssueId>],
+  decision: TriageDecision,
+  failureTitle: string
+) => {
+  const result = await call(TriageIssues, { issueIds: ids, decision }, ids.join(','))
+  if (Result.isFailure(result)) toastIssueFailure(failureTitle, result.failure)
+}
+
+function Pending({ busy }: { readonly busy: boolean }) {
+  return busy ? <Loader2Icon data-icon="inline-start" className="motion-safe:animate-spin" /> : null
+}
+
+function TriageBar({
+  triage,
+  call
+}: {
+  readonly triage: ReadonlyArray<Issue>
+  readonly call: OrgCall
+}) {
+  const [busy, setBusy] = useState<TriageDecision | null>(null)
+  if (!isReadonlyArrayNonEmpty(triage)) return null
+  const ids = [triage[0].id, ...triage.slice(1).map((issue) => issue.id)] as const
+
+  const decide = async (decision: TriageDecision) => {
+    setBusy(decision)
+    await triageIssues(call, ids, decision, `Could not ${decision} the issues`).finally(() =>
+      setBusy(null)
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2 border-b pb-2">
+      <span className="min-w-0 flex-1 text-sm text-ink-muted">
+        {triage.length === 1 ? '1 issue in Triage' : `${triage.length} issues in Triage`}
+      </span>
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={busy !== null}
+        onClick={() => void decide('accept')}
+      >
+        <Pending busy={busy === 'accept'} />
+        Accept all
+      </Button>
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={busy !== null}
+        onClick={() => void decide('decline')}
+      >
+        <Pending busy={busy === 'decline'} />
+        Decline all
+      </Button>
+    </div>
+  )
+}
+
+const firstLine = (text: string): string => text.split('\n', 1)[0]?.trim() ?? ''
+
+function IssueComments({
+  comments,
+  snapshot
+}: {
+  readonly comments: ReadonlyArray<IssueComment>
+  readonly snapshot: OrgSnapshot
+}) {
+  if (comments.length === 0) return null
+  return (
+    <ul className="flex flex-col gap-1.5 py-1 pl-3">
+      {comments.map((comment) => {
+        const author = snapshot.hiredAgents.find((agent) => agent.id === comment.author)
+        return (
+          <li key={comment.id} className="flex flex-col text-xs">
+            <span className="font-medium text-ink">
+              {author === undefined ? 'Dismissed agent' : agentName(author, snapshot.jobTitles)}
+            </span>
+            <span className="max-w-prose whitespace-pre-wrap text-ink-muted">{comment.body}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
 function IssueRow({
   issue,
   snapshot,
@@ -104,6 +202,7 @@ function IssueRow({
   readonly call: OrgCall
 }) {
   const [finishing, setFinishing] = useState(false)
+  const [deciding, setDeciding] = useState<TriageDecision | null>(null)
 
   const assign = async (hireId: HireId | null) => {
     if (hireId === issue.assignee) return
@@ -123,9 +222,23 @@ function IssueRow({
     }
   }
 
+  const decide = async (decision: TriageDecision) => {
+    setDeciding(decision)
+    await triageIssues(call, [issue.id], decision, `Could not ${decision} ${issue.title}`).finally(
+      () => setDeciding(null)
+    )
+  }
+
+  const summary = firstLine(issue.description)
+
   return (
     <div className="flex min-w-0 items-center gap-3 py-1">
-      <span className="min-w-0 flex-1 truncate text-sm text-ink">{issue.title}</span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className={issueTitleVariants({ canceled: issue.status === 'canceled' })}>
+          {issue.title}
+        </span>
+        {summary === '' ? null : <span className="truncate text-xs text-ink-muted">{summary}</span>}
+      </span>
       {KIND_LABELS[issue.kind] === null ? null : (
         <span className="text-xs text-ink-muted">{KIND_LABELS[issue.kind]}</span>
       )}
@@ -142,12 +255,32 @@ function IssueRow({
         className="h-8 w-40"
         onChange={(next) => void assign(next)}
       />
-      <span className="flex w-16 shrink-0 justify-end">
+      <span className="flex w-36 shrink-0 justify-end gap-1.5">
+        {issue.status === 'triage' ? (
+          <>
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={deciding !== null}
+              onClick={() => void decide('accept')}
+            >
+              <Pending busy={deciding === 'accept'} />
+              Accept
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={deciding !== null}
+              onClick={() => void decide('decline')}
+            >
+              <Pending busy={deciding === 'decline'} />
+              Decline
+            </Button>
+          </>
+        ) : null}
         {isStarted(issue.status) ? (
           <Button size="xs" variant="outline" disabled={finishing} onClick={() => void finish()}>
-            {finishing ? (
-              <Loader2Icon data-icon="inline-start" className="motion-safe:animate-spin" />
-            ) : null}
+            <Pending busy={finishing} />
             Finish
           </Button>
         ) : null}
@@ -159,11 +292,13 @@ function IssueRow({
 function IssueList({
   nodes,
   nested,
+  comments,
   snapshot,
   call
 }: {
   readonly nodes: ReadonlyArray<IssueNode>
   readonly nested: boolean
+  readonly comments: ReadonlyArray<IssueComment>
   readonly snapshot: OrgSnapshot
   readonly call: OrgCall
 }) {
@@ -173,7 +308,19 @@ function IssueList({
       {nodes.map((node) => (
         <li key={node.issue.id} aria-label={node.issue.title} className="flex flex-col">
           <IssueRow issue={node.issue} snapshot={snapshot} call={call} />
-          <IssueList nodes={node.children} nested snapshot={snapshot} call={call} />
+          <IssueComments
+            comments={comments
+              .filter((comment) => comment.issueId === node.issue.id)
+              .sort((a, b) => a.createdAt - b.createdAt)}
+            snapshot={snapshot}
+          />
+          <IssueList
+            nodes={node.children}
+            nested
+            comments={comments}
+            snapshot={snapshot}
+            call={call}
+          />
         </li>
       ))}
     </ul>
@@ -262,19 +409,23 @@ function AddIssue({
 /**
  * The detail of `objective`: its title, project (`projectName`), priority, state, assignee and
  * description, then the tree of its issues among `issues`, each sub-issue under its parent and each
- * retro issue under the issue it reviews. A `triage` or `todo` issue's assignee can change and a
- * started issue can be finished; an open objective takes new issues. Calls go through `call`.
+ * retro issue under the issue it reviews, with its `comments` under it. A `triage` or `todo`
+ * issue's assignee can change, a `triage` issue can be accepted or declined singly or all at once
+ * from the Triage bar, and a started issue can be finished; an open objective takes new issues.
+ * Calls go through `call`.
  */
 export function ObjectiveScreen({
   objective,
   projectName,
   issues,
+  comments,
   snapshot,
   call
 }: {
   readonly objective: Objective
   readonly projectName: string
   readonly issues: ReadonlyArray<Issue>
+  readonly comments: ReadonlyArray<IssueComment>
   readonly snapshot: OrgSnapshot
   readonly call: OrgCall
 }) {
@@ -306,7 +457,16 @@ export function ObjectiveScreen({
         {own.length === 0 ? (
           <p className="text-sm text-ink-muted">No issues yet.</p>
         ) : (
-          <IssueList nodes={issueTree(own, null)} nested={false} snapshot={snapshot} call={call} />
+          <>
+            <TriageBar triage={own.filter((issue) => issue.status === 'triage')} call={call} />
+            <IssueList
+              nodes={issueTree(own, null)}
+              nested={false}
+              comments={comments}
+              snapshot={snapshot}
+              call={call}
+            />
+          </>
         )}
         {objective.state === 'open' ? (
           <AddIssue objective={objective} snapshot={snapshot} call={call} />
