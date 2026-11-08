@@ -158,8 +158,8 @@ export interface TranscriptTail extends TranscriptInfo {
 /**
  * What a session opens with. `config` chooses the working directory, model and modes; `resume`
  * names the conversation to continue, or is none for a new one; `emit` receives every event the
- * session produces, in order; `diaTools` are the dia tools offered to the agent, each asked about
- * before it runs; `tools` are the permission rules and MCP servers of the hired agent's job title,
+ * session produces, in order; `diaTools` are the dia tools offered to the agent, whose calls follow
+ * the session's permission rules and mode; `tools` are the permission rules and MCP servers of the hired agent's job title,
  * or none for an ad-hoc tab. The {@link SessionAdditions} and `tools` apply for the session's whole
  * life, including every restart it performs itself.
  */

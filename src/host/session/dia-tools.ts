@@ -1,10 +1,11 @@
 import type { PluginInfo, PluginOverrideResult } from '@shared/plugin/manifest'
 import { Effect } from 'effect'
 
-/** One input field of a {@link DiaTool}: a required string the agent supplies, which must match `pattern`. */
+/** One input field of a {@link DiaTool}: a string the agent supplies, required unless `optional` is true, which must match `pattern`. */
 export interface DiaToolField {
   readonly description: string
   readonly pattern: RegExp
+  readonly optional?: boolean
 }
 
 /** What a {@link DiaTool} call returns to the agent. `isError` tells the agent the call did not do what it asked. */
@@ -15,16 +16,16 @@ export interface DiaToolResult {
 
 /**
  * A tool dia offers the agent in every session. `name` is unqualified (`plugin_reload`); the
- * agent backend exposes it under its own naming. `input` lists every field, each a required
- * string. The backend must ask the user before every call to `run`, whatever the permission
- * mode, and must not call `run` when the user declines; `run` receives input that matches every
- * field's pattern.
+ * agent backend exposes it under its own naming. `input` lists every field, each a string. The
+ * backend applies the session's permission rules and mode to each call as it does to its own
+ * tools, and calls `run` only for an allowed call; `run` receives every field that lacks
+ * `optional: true`, and each present field matches its pattern.
  */
 export interface DiaTool {
   readonly name: string
   readonly description: string
   readonly input: Readonly<Record<string, DiaToolField>>
-  readonly run: (input: Readonly<Record<string, string>>) => Effect.Effect<DiaToolResult>
+  readonly run: (input: Readonly<Partial<Record<string, string>>>) => Effect.Effect<DiaToolResult>
 }
 
 /**
@@ -81,13 +82,13 @@ const directory: DiaToolField = {
  * `plugin_override` (set a source folder, then reload), `plugin_reload` and
  * `plugin_clear_override` (return to the bundled copy, then reload). A result with `isError` set
  * tells the agent the plugin did not end up loaded cleanly. Create them once per session and
- * pass them to the agent backend, which asks the user before each call.
+ * pass them to the agent backend.
  */
 export const makePluginTools = (host: PluginToolHost): ReadonlyArray<DiaTool> => [
   {
     name: 'plugin_override',
     description:
-      "Point a dia plugin at a source folder on disk and reload it, so the plugin runs that folder's code. The folder must hold a plugin.json and resolve to a package with type module. Asks the user to approve.",
+      "Point a dia plugin at a source folder on disk and reload it, so the plugin runs that folder's code. The folder must hold a plugin.json and resolve to a package with type module.",
     input: { name: pluginName, directory },
     run: Effect.fn('PluginTools.override')(function* (input) {
       const name = input.name ?? ''
@@ -99,14 +100,13 @@ export const makePluginTools = (host: PluginToolHost): ReadonlyArray<DiaTool> =>
   {
     name: 'plugin_reload',
     description:
-      'Reload a dia plugin so it runs its current source. If the new version fails, the previous one keeps running and the failure is reported. Asks the user to approve.',
+      'Reload a dia plugin so it runs its current source. If the new version fails, the previous one keeps running and the failure is reported.',
     input: { name: pluginName },
     run: (input) => host.reload(input.name ?? '').pipe(Effect.map(report))
   },
   {
     name: 'plugin_clear_override',
-    description:
-      'Return a dia plugin to the copy that ships with dia and reload it. Asks the user to approve.',
+    description: 'Return a dia plugin to the copy that ships with dia and reload it.',
     input: { name: pluginName },
     run: Effect.fn('PluginTools.clearOverride')(function* (input) {
       const name = input.name ?? ''

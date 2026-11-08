@@ -1,11 +1,11 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the test yields to Node's event loop so the plugin's non-Effect callbacks run.
 import { setImmediate } from 'node:timers/promises'
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import { type DiaTool, makePendingUserInput, type OutboundMessage } from '@dia/plugin'
+import { makePendingUserInput, type OutboundMessage } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import { Allow, Deny } from '@shared/domain/attention'
-import { Deferred, Effect, Fiber, Queue, Ref } from 'effect'
-import { makeApproveDiaTool, makeCanUseTool, openPromptInput, type PromptInput } from './session'
+import { Deferred, Effect, Fiber, Queue } from 'effect'
+import { makeCanUseTool, openPromptInput, type PromptInput } from './session'
 
 const options = (toolUseID: string) =>
   ({ toolUseID, signal: new AbortController().signal, suggestions: undefined }) as never
@@ -21,27 +21,26 @@ const recordingEmit = Effect.gen(function* () {
   return { emitted, first, emit }
 })
 
-const reloadTool: DiaTool = {
-  name: 'plugin_reload',
-  description: 'Reload a plugin.',
-  input: { name: { description: 'Plugin name.', pattern: /^[a-z]+$/ } },
-  run: () => Effect.succeed({ text: 'ok', isError: false })
-}
-
 describe('canUseTool', () => {
-  it.effect('allows a dia tool without asking, because the tool asks the user itself', () =>
+  it.effect('asks the user about a dia tool like any other tool', () =>
     Effect.gen(function* () {
-      const { emitted, emit } = yield* recordingEmit
+      const { first, emit } = yield* recordingEmit
       const pending = makePendingUserInput()
-      const canUseTool = makeCanUseTool([reloadTool], pending, emit, yield* Effect.context<never>())
+      const canUseTool = makeCanUseTool(pending, emit, yield* Effect.context<never>())
 
-      const result = yield* Effect.promise(() =>
-        canUseTool('mcp__dia__plugin_reload', { name: 'x' }, options('t2'))
+      const answer = yield* Effect.forkChild(
+        Effect.promise(() => canUseTool('mcp__dia__plugin_reload', { name: 'x' }, options('t2')))
       )
+      const request = yield* Deferred.await(first)
+      yield* pending.resolve('t2', Deny.make({ message: 'no' }))
+      const result = yield* Fiber.join(answer)
 
-      assert.deepStrictEqual(result, { behavior: 'allow' })
-      assert.deepStrictEqual(emitted, [])
-      assert.isFalse(yield* pending.isPending('t2'))
+      assert.strictEqual(request._tag, 'PermissionRequested')
+      assert.strictEqual(
+        request._tag === 'PermissionRequested' ? request.toolName : '',
+        'mcp__dia__plugin_reload'
+      )
+      assert.strictEqual(result?.behavior, 'deny')
     })
   )
 
@@ -49,7 +48,7 @@ describe('canUseTool', () => {
     Effect.gen(function* () {
       const { first, emit } = yield* recordingEmit
       const pending = makePendingUserInput()
-      const canUseTool = makeCanUseTool([reloadTool], pending, emit, yield* Effect.context<never>())
+      const canUseTool = makeCanUseTool(pending, emit, yield* Effect.context<never>())
 
       const answer = yield* Effect.forkChild(
         Effect.promise(() => canUseTool('Bash', { command: 'ls' }, options('t3')))
@@ -61,62 +60,6 @@ describe('canUseTool', () => {
       assert.strictEqual(request._tag, 'PermissionRequested')
       assert.isTrue(matched)
       assert.strictEqual(result?.behavior, 'allow')
-    })
-  )
-
-  it.effect('asks about a dia-shaped name that is not among the offered tools', () =>
-    Effect.gen(function* () {
-      const { first, emit } = yield* recordingEmit
-      const canUseTool = makeCanUseTool(
-        [],
-        makePendingUserInput(),
-        emit,
-        yield* Effect.context<never>()
-      )
-
-      yield* Effect.forkChild(
-        Effect.promise(() => canUseTool('mcp__dia__plugin_reload', { name: 'x' }, options('t4')))
-      )
-      const request = yield* Deferred.await(first)
-
-      assert.strictEqual(request._tag, 'PermissionRequested')
-    })
-  )
-})
-
-describe('approveDiaTool', () => {
-  it.effect('resolves true once the user allows the request', () =>
-    Effect.gen(function* () {
-      const { first, emit } = yield* recordingEmit
-      const pending = makePendingUserInput()
-      const approve = makeApproveDiaTool(pending, emit, yield* Ref.make(0))
-
-      const approval = yield* Effect.forkChild(approve('mcp__dia__plugin_reload', { name: 'x' }))
-      const request = yield* Deferred.await(first)
-      assert.strictEqual(request._tag, 'PermissionRequested')
-      yield* pending.resolve(
-        request._tag === 'PermissionRequested' ? request.requestId : '',
-        Allow.make({})
-      )
-
-      assert.isTrue(yield* Fiber.join(approval))
-    })
-  )
-
-  it.effect('resolves false when the user denies the request', () =>
-    Effect.gen(function* () {
-      const { first, emit } = yield* recordingEmit
-      const pending = makePendingUserInput()
-      const approve = makeApproveDiaTool(pending, emit, yield* Ref.make(0))
-
-      const approval = yield* Effect.forkChild(approve('mcp__dia__plugin_reload', { name: 'x' }))
-      const request = yield* Deferred.await(first)
-      yield* pending.resolve(
-        request._tag === 'PermissionRequested' ? request.requestId : '',
-        Deny.make({ message: 'no' })
-      )
-
-      assert.isFalse(yield* Fiber.join(approval))
     })
   )
 })

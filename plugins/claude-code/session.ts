@@ -100,7 +100,7 @@ import { makeSessionEventReducer, toSlashCommandInfo } from './reducer'
 import { sessionAdditionsOptions } from './session-additions'
 import { sessionToolOptions } from './session-tool-options'
 import { thinkingOptions } from './thinking-options'
-import { DIA_TOOL_SERVER_KEY, isDiaToolName, makeDiaToolServer } from './tool-server'
+import { DIA_TOOL_SERVER_KEY, makeDiaToolServer } from './tool-server'
 import { readLastAssistantUuid, readTurnResumeAnchor } from './transcript'
 
 /**
@@ -232,47 +232,22 @@ const askUser = Effect.fn('ClaudeCodeSession.askUser')(function* (
 })
 
 /**
- * Creates the SDK `canUseTool` callback for one agent session. A call to one of the dia `tools`
- * is allowed, because the tool asks the user itself. Every other call is registered in
- * `pendingUserInput`, emitted as a permission, question or plan-review request through `emit`,
- * and answered with the user's resolution.
+ * Creates the SDK `canUseTool` callback for one agent session. Every call, including a call to a
+ * dia tool, is registered in `pendingUserInput`, emitted as a permission, question or plan-review
+ * request through `emit`, and answered with the user's resolution.
  */
 export const makeCanUseTool =
   (
-    tools: ReadonlyArray<DiaTool>,
     pendingUserInput: PendingUserInput,
     emit: (message: OutboundMessage) => Effect.Effect<void>,
     services: Context.Context<never>
   ): CanUseTool =>
   (toolName, input, options) =>
     Effect.runPromiseWith(services)(
-      (isDiaToolName(tools, toolName)
-        ? Effect.succeed<PermissionResult>({ behavior: 'allow' })
-        : askUser(pendingUserInput, emit, toolName, input, options)
-      ).pipe(Effect.withSpan('ClaudeCodeSession.canUseTool'))
+      askUser(pendingUserInput, emit, toolName, input, options).pipe(
+        Effect.withSpan('ClaudeCodeSession.canUseTool')
+      )
     )
-
-/**
- * Creates the approval step for a dia tool: it emits a permission request for the call and
- * resolves `true` when the user allows it. Request ids are unique within the session.
- */
-export const makeApproveDiaTool = (
-  pendingUserInput: PendingUserInput,
-  emit: (message: OutboundMessage) => Effect.Effect<void>,
-  counter: Ref.Ref<number>
-) =>
-  Effect.fn('ClaudeCodeSession.approveDiaTool')(function* (
-    toolName: string,
-    input: Record<string, string>
-  ) {
-    const sequence = yield* Ref.updateAndGet(counter, (value) => value + 1)
-    const now = yield* Clock.currentTimeMillis
-    const requestId = `plugin-tool-${now}-${sequence}`
-    const deferred = yield* pendingUserInput.register(requestId)
-    yield* emit(PermissionRequested.make({ requestId, toolName, input }))
-    const resolution = yield* Deferred.await(deferred)
-    return resolution._tag === 'Allow'
-  })
 
 const resolveRequest = Effect.fn('ClaudeCodeSession.resolveRequest')(function* (
   pendingUserInput: PendingUserInput,
@@ -709,15 +684,11 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
 
 const diaToolServerFactory = (
   tools: ReadonlyArray<DiaTool>,
-  pendingUserInput: PendingUserInput,
-  emit: (message: OutboundMessage) => Effect.Effect<void>,
-  counter: Ref.Ref<number>,
   services: Context.Context<never>
 ): Option.Option<() => McpSdkServerConfigWithInstance> => {
   if (tools.length === 0) return Option.none()
   const serverOptions = {
     tools,
-    approve: makeApproveDiaTool(pendingUserInput, emit, counter),
     run: <A>(effect: Effect.Effect<A>) => Effect.runPromiseWith(services)(effect)
   }
   return Option.some(() => makeDiaToolServer(serverOptions))
@@ -787,14 +758,8 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
   const services = yield* Effect.context<never>()
   const pendingUserInput = makePendingUserInput()
   const modeController = yield* makePermissionModeController
-  const canUseTool = makeCanUseTool(diaTools, pendingUserInput, emit, services)
-  const newDiaToolServer = diaToolServerFactory(
-    diaTools,
-    pendingUserInput,
-    emit,
-    yield* Ref.make(0),
-    services
-  )
+  const canUseTool = makeCanUseTool(pendingUserInput, emit, services)
+  const newDiaToolServer = diaToolServerFactory(diaTools, services)
   const promptQueue = yield* Queue.unbounded<SDKUserMessage>()
   const sessionIdRef = yield* Ref.make<Option.Option<SessionId>>(Option.none())
   const branchAtRef = yield* Ref.make<Option.Option<string>>(Option.none())
