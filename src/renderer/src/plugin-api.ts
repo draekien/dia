@@ -1,5 +1,6 @@
 import { useAtomSet, useAtomValue } from '@effect/atom-react'
 import type { AgentSummary } from '@shared/domain/agent-summary'
+import type { AttachedSession } from '@shared/domain/attached-session'
 import type { PaneId } from '@shared/domain/pane'
 import type { Workspace } from '@shared/domain/project'
 import type { TranscriptWidth } from '@shared/domain/transcript-width'
@@ -18,12 +19,14 @@ import {
   renameTab,
   resumeParkedAgent,
   revealProject,
+  selectAttached,
   selectTab,
   unarchiveTab
 } from './lib/actions'
 import type { View } from './lib/view'
 import {
   agentSummariesAtom,
+  attachedSessionsAtom,
   transcriptWidthAtom,
   viewAtom,
   workspaceAtom
@@ -66,6 +69,11 @@ export function useAgentSummaries(): ReadonlyMap<PaneId, AgentSummary> {
   return useAtomValue(agentSummariesAtom)
 }
 
+/** Every session a plugin has attached (ADR-0070); empty until it first loads. */
+export function useAttachedSessions(): ReadonlyArray<AttachedSession> {
+  return useAtomValue(attachedSessionsAtom)
+}
+
 /** What the content area shows; `undefined` until the workspace loads. */
 export function useView(): View | undefined {
   return useAtomValue(viewAtom)
@@ -82,6 +90,7 @@ export function useTranscriptWidth(): readonly [TranscriptWidth, (width: Transcr
  */
 export const actions = {
   selectTab,
+  selectAttached,
   newAgent,
   cancelNewAgent,
   openPage,

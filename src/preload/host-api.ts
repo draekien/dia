@@ -8,6 +8,7 @@ import {
   type ActivityNotFoundJson,
   AdapterStatusChanged,
   AgentSummariesReplaced,
+  AttachedSessionsChanged,
   type DiaApi,
   EditQueuedMessage,
   InterruptPane,
@@ -164,11 +165,12 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
 
     const refreshWorkspace = Effect.gen(function* () {
       const client = yield* deps.client
-      const [workspace, summaries] = yield* Effect.all(
-        [client.GetWorkspace(), client.GetAgentSummaries()],
+      const [workspace, summaries, sessions] = yield* Effect.all(
+        [client.GetWorkspace(), client.GetAgentSummaries(), client.GetAttachedSessions()],
         { concurrency: 'unbounded' }
       )
       dispatch(WorkspaceChanged.make({ workspace }))
+      dispatch(AttachedSessionsChanged.make({ sessions }))
       dispatch(AgentSummariesReplaced.make({ summaries }))
     }).pipe(
       Effect.catch((error) => Effect.sync(() => deps.warn('Workspace refresh failed', error)))

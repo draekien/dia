@@ -1,8 +1,11 @@
+import { AttachedSession } from '@shared/domain/attached-session'
 import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
 import { Option } from 'effect'
 import { describe, expect, it } from 'vitest'
 import {
+  AttachedView,
   closesNewAgentForm,
+  closesOpenAttached,
   closesOpenPage,
   EmptyProjectView,
   FirstRunView,
@@ -100,6 +103,76 @@ describe('viewOf', () => {
     expect(viewOf(Option.some(workspace([PANE_A], null)), Option.none(), Option.none())).toEqual(
       EmptyProjectView.make({})
     )
+  })
+})
+
+const HIRED = '00000000-0000-4000-8000-00000000000c'
+
+const hired = AttachedSession.make({
+  config: {
+    paneId: HIRED,
+    cwd: '/repo',
+    model: 'm',
+    thinkingLevel: 'adaptive',
+    permissionMode: 'default'
+  },
+  projectId: PROJECT,
+  label: 'Ada',
+  caption: 'Software engineer'
+})
+
+describe('viewOf with an attached session', () => {
+  it('shows the open attached session over the visible tab', () => {
+    const view = viewOf(
+      Option.some(workspace([PANE_A], PANE_A)),
+      Option.none(),
+      Option.none(),
+      Option.some({ paneId: HIRED, shownBefore: PANE_A }),
+      [hired]
+    )
+
+    expect(view).toEqual(AttachedView.make({ paneId: HIRED }))
+  })
+
+  it('shows the visible tab again once the open session is no longer attached', () => {
+    const view = viewOf(
+      Option.some(workspace([PANE_A], PANE_A)),
+      Option.none(),
+      Option.none(),
+      Option.some({ paneId: HIRED, shownBefore: PANE_A }),
+      []
+    )
+
+    expect(view).toEqual(TabView.make({ paneId: PANE_A }))
+  })
+
+  it('shows the New agent form over the open attached session', () => {
+    const view = viewOf(
+      Option.some(workspace([PANE_A], PANE_A)),
+      Option.some(formOpenedOver(PANE_A)),
+      Option.none(),
+      Option.some({ paneId: HIRED, shownBefore: PANE_A }),
+      [hired]
+    )
+
+    expect(view).toEqual(NewAgentView.make({ projectId: PROJECT }))
+  })
+})
+
+describe('closesOpenAttached', () => {
+  it('closes the session when the workspace shows a different tab', () => {
+    expect(
+      closesOpenAttached(
+        { paneId: HIRED, shownBefore: PANE_A },
+        workspace([PANE_A, PANE_B], PANE_B)
+      )
+    ).toBe(true)
+  })
+
+  it('keeps the session while the workspace shows the tab it opened over', () => {
+    expect(
+      closesOpenAttached({ paneId: HIRED, shownBefore: PANE_A }, workspace([PANE_A], PANE_A))
+    ).toBe(false)
   })
 })
 

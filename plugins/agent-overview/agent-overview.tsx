@@ -16,6 +16,7 @@ import {
   TooltipContent,
   TooltipTrigger,
   useAgentSummaries,
+  useAttachedSessions,
   useList,
   useSidebar,
   useView,
@@ -94,14 +95,19 @@ const REFUSAL_TEXT: Record<RegisterProjectRefusal['_tag'], string> = {
     'A stored project for that directory could not be loaded. Resolve it under workspace problems first.'
 }
 
-const statusCounts = (workspace: Workspace, summaries: ReturnType<typeof useAgentSummaries>) => {
+const statusCounts = (
+  workspace: Workspace,
+  summaries: ReturnType<typeof useAgentSummaries>,
+  attached: ReturnType<typeof useAttachedSessions>
+) => {
   const counts = Object.fromEntries(STATUS_TAGS.map((tag) => [tag, 0])) as Record<StatusTag, number>
-  for (const entry of workspace.projects) {
-    for (const tab of entry.tabs) {
-      if (tab.archived) continue
-      counts[summaries.get(tab.config.paneId)?.status._tag ?? 'StatusIdle'] += 1
-    }
+  const count = (paneId: PaneId) => {
+    counts[summaries.get(paneId)?.status._tag ?? 'StatusIdle'] += 1
   }
+  for (const entry of workspace.projects) {
+    for (const tab of entry.tabs) if (!tab.archived) count(tab.config.paneId)
+  }
+  for (const session of attached) count(session.config.paneId)
   return counts
 }
 
@@ -251,6 +257,8 @@ function NoMatches({
 export function AgentOverview() {
   const workspace = useWorkspace()
   const summaries = useAgentSummaries()
+  const attached = useAttachedSessions()
+  const view = useView()
   const { state, setOpen } = useSidebar()
   const iconMode = state === 'collapsed'
   const [filters, setFilters] = useState<OverviewFilters>(NO_FILTERS)
@@ -287,8 +295,8 @@ export function AgentOverview() {
     () =>
       workspace === undefined
         ? []
-        : orderGroups(buildOverview(workspace, summaries, activeFilters), order),
-    [workspace, summaries, activeFilters, order]
+        : orderGroups(buildOverview(workspace, summaries, activeFilters, attached), order),
+    [workspace, summaries, activeFilters, attached, order]
   )
   const effectiveCollapsed = narrowing || iconMode ? NO_COLLAPSED : collapsed
   const effectiveArchivedOpen = useMemo(
@@ -441,7 +449,9 @@ export function AgentOverview() {
     const firstRow = targets.find((target) => target._tag === 'RowTarget')
     if (event.key === 'Enter' && filters.query.trim() !== '' && firstRow !== undefined) {
       event.preventDefault()
-      actions.selectTab(firstRow.paneId)
+      if (attached.some((session) => session.config.paneId === firstRow.paneId)) {
+        actions.selectAttached(firstRow.paneId)
+      } else actions.selectTab(firstRow.paneId)
       focusNav(listRef.current, navKey(firstRow))
     }
   }
@@ -484,7 +494,7 @@ export function AgentOverview() {
                 </div>
                 <FilterPopover
                   filters={filters}
-                  counts={statusCounts(workspace, summaries)}
+                  counts={statusCounts(workspace, summaries, attached)}
                   onChange={setFilters}
                 />
                 <Tooltip>
@@ -559,7 +569,9 @@ export function AgentOverview() {
                         narrowing={narrowing}
                         dragging={dragging}
                         iconMode={iconMode}
-                        visibleTab={workspace.visibleTab}
+                        visibleTab={
+                          view?._tag === 'AttachedView' ? view.paneId : workspace.visibleTab
+                        }
                         renaming={renaming}
                         tabStop={currentStop}
                         onToggle={() => toggle(group.project.projectId)}

@@ -2,7 +2,7 @@ import type { Project } from '@shared/domain/project'
 import { tabOf } from '@shared/domain/workspace'
 import { Result } from 'effect'
 import { RulerIcon } from 'lucide-react'
-import { useView, useWorkspace } from '../plugin-api'
+import { useAttachedSessions, useView, useWorkspace } from '../plugin-api'
 import { RailToggle } from './session-rail'
 import { TranscriptWidthToggle } from './transcript-width-toggle'
 import {
@@ -69,7 +69,8 @@ function WorktreeChip({ worktree }: { readonly worktree: { path: string; branch:
 /**
  * The kernel's content for the card header row, shown in the `main.header` slot unless a plugin
  * fills it. A breadcrumb for the current view (`project › agent` with the worktree branch and the
- * transcript width control for a tab, `project › New agent` for the New agent form, nothing for
+ * transcript width control for a tab, `project › label` with the same control for an attached
+ * session, `project › New agent` for the New agent form, nothing for
  * the other views; the layout plugin draws a page's label) followed by {@link WindowStatus} at the
  * right end. A plugin that fills the slot owns the status items.
  */
@@ -79,6 +80,16 @@ export function TabHeader() {
   const found =
     view?._tag === 'TabView' && workspace !== undefined ? tabOf(workspace, view.paneId) : undefined
   const tab = found !== undefined && Result.isSuccess(found) ? found.success : undefined
+  const attachedSessions = useAttachedSessions()
+  const attached =
+    view?._tag === 'AttachedView'
+      ? attachedSessions.find((session) => session.config.paneId === view.paneId)
+      : undefined
+  const attachedProject =
+    attached === undefined
+      ? undefined
+      : workspace?.projects.find((entry) => entry.project.projectId === attached.projectId)?.project
+  const showsChat = tab !== undefined || attached !== undefined
   const newAgentProject =
     view?._tag === 'NewAgentView'
       ? workspace?.projects.find((entry) => entry.project.projectId === view.projectId)?.project
@@ -90,10 +101,11 @@ export function TabHeader() {
       {tab?.tab.config.worktree !== undefined && (
         <WorktreeChip worktree={tab.tab.config.worktree} />
       )}
+      {attached !== undefined && <Crumbs project={attachedProject} page={attached.label} />}
       {newAgentProject !== undefined && <Crumbs project={newAgentProject} page="New agent" />}
       <div className="ml-auto flex shrink-0 items-center gap-2">
-        {tab !== undefined && <TranscriptWidthButton />}
-        {tab !== undefined && <RailToggle />}
+        {showsChat && <TranscriptWidthButton />}
+        {showsChat && <RailToggle />}
         <WindowStatus />
       </div>
     </div>
