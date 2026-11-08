@@ -8,6 +8,7 @@ import {
   type ActivityNotFoundJson,
   AdapterStatusChanged,
   AgentSummariesReplaced,
+  AttachedSessionsChanged,
   type DiaApi,
   EditQueuedMessage,
   InterruptPane,
@@ -164,11 +165,12 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
 
     const refreshWorkspace = Effect.gen(function* () {
       const client = yield* deps.client
-      const [workspace, summaries] = yield* Effect.all(
-        [client.GetWorkspace(), client.GetAgentSummaries()],
+      const [workspace, summaries, sessions] = yield* Effect.all(
+        [client.GetWorkspace(), client.GetAgentSummaries(), client.GetAttachedSessions()],
         { concurrency: 'unbounded' }
       )
       dispatch(WorkspaceChanged.make({ workspace }))
+      dispatch(AttachedSessionsChanged.make({ sessions }))
       dispatch(AgentSummariesReplaced.make({ summaries }))
     }).pipe(
       Effect.catch((error) => Effect.sync(() => deps.warn('Workspace refresh failed', error)))
@@ -511,6 +513,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         })
       ),
     getAgentSummaries: () => query((client) => client.GetAgentSummaries()),
+    getAttachedSessions: () => query((client) => client.GetAttachedSessions()),
     getTranscriptWidth: () => query((client) => client.GetTranscriptWidth()),
     setTranscriptWidth: (width) =>
       command('SetTranscriptWidth', (client, commandId) =>
@@ -546,6 +549,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       return () => paneFrameListeners.delete(listener)
     },
     onWorkspaceChanged: (listener) => subscribeTo('WorkspaceChanged', listener),
+    onAttachedSessionsChanged: (listener) => subscribeTo('AttachedSessionsChanged', listener),
     onAgentSummaryChanged: (listener) => subscribeTo('AgentSummaryChanged', listener),
     onAgentSummariesReplaced: (listener) => subscribeTo('AgentSummariesReplaced', listener),
     onPaneCreateFailed: (listener) => subscribeTo('PaneCreateFailed', listener),

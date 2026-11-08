@@ -8,7 +8,8 @@ import {
 } from '@dia/renderer-plugin'
 import { UserIcon } from 'lucide-react'
 import type { JobTitle } from './domain'
-import { agentName, jobTitleName, type OrgScreen } from './org-actions'
+import { agentName, jobTitleName } from './domain'
+import type { OrgScreen } from './org-actions'
 import { type OrgNode, orgTree } from './org-tree'
 import { HiredAgentsView } from './org-view'
 

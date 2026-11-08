@@ -139,6 +139,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     getHandle: (paneId) =>
       Effect.succeed(options.live?.has(paneId) === true ? Option.some(fakeHandle) : Option.none()),
     closeAll: () => Effect.void,
+    attachPane: () => Effect.die(new Error('attachPane is not used by the workspace')),
     setUsageLimitResume: () => Effect.void
   })
 
@@ -223,7 +224,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const paneChats = Layer.succeed(PaneChatProjection, {
     snapshot: () => Effect.die('not called'),
     seed: (paneId) =>
-      Effect.sync(() => void log.push(`seed ${paneId} after ${requests.length} sessions`))
+      Effect.sync(() => void log.push(`seed ${paneId} after ${requests.length} sessions`)),
+    release: () => Effect.void
   })
 
   const notFound = (path: string) =>

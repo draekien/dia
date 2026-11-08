@@ -74,6 +74,7 @@ export function TabContent() {
     case 'PageView':
       return null
     case 'TabView':
+    case 'AttachedView':
       return (
         <TabOpenedFromNewAgent.Provider value={cameFromNewAgent}>
           <Slot name={MAIN_TAB} empty={<NoChatPlugin />} />

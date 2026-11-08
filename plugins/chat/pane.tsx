@@ -153,6 +153,8 @@ interface PaneProps {
   focusComposer?: boolean
   projectName?: string
   branch?: string
+  /** The session's owner sets its model, thinking level and permission mode; hides their pickers and rewind. */
+  fixedSettings?: boolean
 }
 
 const CONTEXT_CARD_KEY = `chat.${CONTEXT_CARD_ID}`
@@ -658,7 +660,8 @@ function PaneChat({
   columnMax,
   focusComposer,
   projectName,
-  branch
+  branch,
+  fixedSettings
 }: {
   paneId: string
   cwd: string
@@ -675,6 +678,7 @@ function PaneChat({
   focusComposer: boolean
   projectName: string | undefined
   branch: string | undefined
+  fixedSettings: boolean
 }): React.JSX.Element {
   const chat = usePaneChat(paneId)
   const attention = chat.attention
@@ -688,7 +692,7 @@ function PaneChat({
   const targets = useMemo(() => rewindTargets(chat.messages), [chat.messages])
   const rewindRowFor = (message: PaneMessage): RewindActionProps | undefined => {
     const target = targets.get(message.id)
-    if (target === undefined) return undefined
+    if (target === undefined || fixedSettings) return undefined
     return {
       state: rewindRowState(rewindProgress, target),
       onStart: () => commandRewind({ type: 'start', target }),
@@ -1168,17 +1172,21 @@ function PaneChat({
                       </InputGroupAddon>
                     </InputGroup>
                     <div className="mt-1 flex min-w-0 items-center gap-0.5 pl-[5px]">
-                      <ModelPicker value={model} onChange={onModelChange} />
-                      <ThinkingLevelSelect
-                        value={thinkingLevel}
-                        levels={thinkingLevels}
-                        onChange={onThinkingLevelChange}
-                      />
-                      <PermissionModeSelect
-                        value={permissionMode}
-                        disabledModes={disabledPermissionModes}
-                        onChange={onPermissionModeChange}
-                      />
+                      {!fixedSettings && (
+                        <>
+                          <ModelPicker value={model} onChange={onModelChange} />
+                          <ThinkingLevelSelect
+                            value={thinkingLevel}
+                            levels={thinkingLevels}
+                            onChange={onThinkingLevelChange}
+                          />
+                          <PermissionModeSelect
+                            value={permissionMode}
+                            disabledModes={disabledPermissionModes}
+                            onChange={onPermissionModeChange}
+                          />
+                        </>
+                      )}
                       {contextWarning !== null && (
                         <Button
                           type="button"
@@ -1263,7 +1271,8 @@ function Pane({
   permissionMode,
   focusComposer = false,
   projectName,
-  branch
+  branch,
+  fixedSettings = false
 }: PaneProps) {
   const [width] = useTranscriptWidth()
 
@@ -1341,6 +1350,7 @@ function Pane({
         focusComposer={focusComposer}
         projectName={projectName}
         branch={branch}
+        fixedSettings={fixedSettings}
       />
     </div>
   )

@@ -40,16 +40,24 @@ export class PaneChatProjection extends Context.Service<
   {
     /**
      * The tab's chat state and the sequence number of the last event in it. A workspace tab with
-     * no state yet is seeded from its stored conversation first; an id that is not a workspace tab gets
-     * the empty state and `seq` 0, and nothing is kept for it.
+     * no state yet is seeded from its stored conversation first. Any other id that was seeded, such
+     * as an attached session's (ADR-0070), keeps its state; an id never seeded gets the empty state
+     * and `seq` 0, and nothing is kept for it.
      */
     readonly snapshot: (paneId: PaneId) => Effect.Effect<PaneChatSnapshot>
     /**
      * Gives the pane state unless it already has some, built from the pane's stored conversation.
      * A workspace tab with a session first imports the turns its transcript holds that are not
-     * stored yet (turns added outside dia). Call it before a session for the pane starts.
+     * stored yet (turns added outside dia). A pane that is not a workspace tab keeps its state
+     * after workspace changes. Call it before a session for the pane starts.
      */
     readonly seed: (paneId: PaneId) => Effect.Effect<void>
+    /**
+     * Drops the state of a pane that is not a workspace tab, such as a detached session's
+     * (ADR-0070). Does nothing for a workspace tab or an id with no state. Call it once no session
+     * for the pane runs.
+     */
+    readonly release: (paneId: PaneId) => Effect.Effect<void>
   }
 >()('PaneChatProjection') {}
 
@@ -227,6 +235,19 @@ export const PaneChatProjectionLive = Layer.effect(
       })
     )
 
+    const release = Effect.fn('PaneChatProjection.release')(function* (paneId: PaneId) {
+      const released = yield* lock.withPermits(1)(
+        SubscriptionRef.modify(entries, (current) => {
+          const entry = current.get(paneId)
+          if (entry === undefined || entry.inWorkspace) return [false, current] as const
+          const next = new Map(current)
+          next.delete(paneId)
+          return [true, next] as const
+        })
+      )
+      if (released) yield* Effect.logDebug('Released the chat state of a detached pane', { paneId })
+    })
+
     const handle = (frame: EventFrame) => {
       if (frame._tag === 'PaneEvent') return foldFrame(frame)
       if (frame._tag === 'GlobalEvent' && frame.event._tag === 'WorkspaceChanged') {
@@ -240,6 +261,6 @@ export const PaneChatProjectionLive = Layer.effect(
       .pipe(Stream.runForEach(handle), Effect.forkScoped({ startImmediately: true }))
     yield* Effect.logDebug('Following pane events for chat state')
 
-    return PaneChatProjection.of({ snapshot, seed })
+    return PaneChatProjection.of({ snapshot, seed, release })
   })
 )

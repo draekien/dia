@@ -176,7 +176,7 @@ export function ProjectGroup({
         <SidebarGroupContent>
           <SidebarMenu className="gap-0">
             {group.rows.map((row) => renderRow(row, false))}
-            {group.total === 0 && !narrowing && (
+            {group.rows.length === 0 && !narrowing && (
               <li className="flex list-none items-center gap-2 py-1 pl-2">
                 <span className="text-xs text-ink-muted">No agents</span>
                 <Button

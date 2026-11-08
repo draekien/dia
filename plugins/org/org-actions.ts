@@ -12,9 +12,7 @@ import type { Rpc } from 'effect/rpc'
 import { useContext } from 'react'
 import type { OrgSnapshot, WorkView } from './calls'
 import {
-  type HiredAgent,
   JOB_TITLE_NAME_MAX_LENGTH,
-  type JobTitle,
   type JobTitleId,
   JobTitleName,
   WORK_TITLE_MAX_LENGTH,
@@ -104,16 +102,6 @@ export const commonFailureText = (failure: { readonly _tag: string }): string | 
 export const toastFailure = (title: string, failure: { readonly _tag: string }): void => {
   toast.add({ title, description: commonFailureText(failure) ?? failure._tag, type: 'error' })
 }
-
-/** The name of `agent`'s job title in `jobTitles`, or undefined when `jobTitles` lacks it. */
-export const jobTitleName = (
-  agent: HiredAgent,
-  jobTitles: ReadonlyArray<JobTitle>
-): string | undefined => jobTitles.find((jobTitle) => jobTitle.id === agent.jobTitleId)?.name
-
-/** The name the org screens show for `agent`: its name, or `Unnamed <job title name>`. */
-export const agentName = (agent: HiredAgent, jobTitles: ReadonlyArray<JobTitle>): string =>
-  agent.name ?? `Unnamed ${jobTitleName(agent, jobTitles) ?? 'agent'}`
 
 const decodeJobTitleName = Schema.decodeUnknownResult(JobTitleName)
 const decodeAgentName = Schema.decodeUnknownResult(AgentName)

@@ -2,12 +2,14 @@ import {
   type AgentBackend,
   type AgentSession,
   type AgentSessionOptions,
+  type AttachedSession,
   BackgroundTasksChanged,
   type ModelOption,
   type OutboundMessage,
   PermissionRequested,
   ProjectId,
   QuestionRequested,
+  type SessionAttachment,
   type SessionEnd,
   SessionId,
   SessionNotFound,
@@ -99,6 +101,40 @@ const fakeBackend = (disabled: ReadonlyArray<'auto' | 'bypassPermissions'> = [])
   return { backend, sessions }
 }
 
+interface Attached {
+  readonly display: AttachedSession
+  readonly session: AgentSession
+  readonly paneEvents: Array<OutboundMessage>
+  detached: boolean
+}
+
+const fakeAttach = () => {
+  const attachments: Array<Attached> = []
+  const attach = (attachment: SessionAttachment) =>
+    Effect.gen(function* () {
+      const paneEvents: Array<OutboundMessage> = []
+      const session = yield* attachment.open((message) =>
+        Effect.sync(() => paneEvents.push(message))
+      )
+      const attached: Attached = {
+        display: attachment.display,
+        session,
+        paneEvents,
+        detached: false
+      }
+      attachments.push(attached)
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          attached.detached = true
+        })
+      )
+    })
+  return { attach, attachments }
+}
+
+const shown = (attachments: ReadonlyArray<Attached>) =>
+  attachments.filter((attached) => !attached.detached)
+
 const settle = Effect.gen(function* () {
   for (let turn = 0; turn < 50; turn += 1) yield* Effect.yieldNow
 })
@@ -116,12 +152,14 @@ const setUp = (options: {
       return { ...made, org: yield* makeOrg(made.openIssuesOf) }
     }).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
     yield* org.setOverallCap(OverallCap.make(options.cap))
+    const { attach, attachments } = fakeAttach()
     const dispatcher = yield* makeDispatcher({
       runs,
       org,
       projectDirectory: (objective) =>
         Effect.succeed(objective.projectId === PROJECT ? Option.some(DIRECTORY) : Option.none()),
-      issueTools: (scope) => makeIssueTools(work, scope)
+      issueTools: (scope) => makeIssueTools(work, scope),
+      attach
     })
     const fake = fakeBackend(options.disabled)
     yield* dispatcher.lendBackend(fake.backend)
@@ -183,6 +221,8 @@ const setUp = (options: {
       org,
       dispatcher,
       ...fake,
+      attach,
+      attachments,
       jobTitles,
       hireOf,
       addTask,
@@ -513,7 +553,8 @@ describe('dispatcher session end', () => {
         runs: env.runs,
         org: env.org,
         projectDirectory: () => Effect.succeed(Option.some(DIRECTORY)),
-        issueTools: () => []
+        issueTools: () => [],
+        attach: env.attach
       })
       yield* nextSetup.lendBackend(env.backend)
       yield* settle
@@ -535,7 +576,8 @@ describe('dispatcher in_review issue', () => {
         runs: env.runs,
         org: env.org,
         projectDirectory: () => Effect.succeed(Option.some(DIRECTORY)),
-        issueTools: () => []
+        issueTools: () => [],
+        attach: env.attach
       })
       yield* nextSetup.lendBackend(env.backend)
       yield* settle
@@ -629,6 +671,95 @@ describe('dispatcher change signal', () => {
         )
 
         assert.deepStrictEqual([activity, idlePass, absent], [0, 0, 0])
+      }).pipe(Effect.scoped)
+  )
+})
+
+describe('dispatcher attached sessions', () => {
+  it.effect('shows a running issue in its project, named after its hire, with the job title', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 1 })
+      const engineer = env.jobTitles[1] as JobTitle
+      const task = yield* env.addTask(yield* env.hireOf(engineer))
+
+      const [attached] = shown(env.attachments)
+      assert.deepStrictEqual(
+        {
+          paneId: attached?.display.config.paneId,
+          projectId: attached?.display.projectId,
+          label: attached?.display.label,
+          caption: attached?.display.caption
+        },
+        {
+          paneId: task.paneId,
+          projectId: PROJECT,
+          label: `Unnamed ${engineer.name}`,
+          caption: engineer.name
+        }
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect("passes every event of the agent's session to its pane", () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 1 })
+      yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
+      const status = TurnStatusChanged.make({ label: 'Thinking' })
+
+      yield* env.emit(env.sessions[0] as FakeSession, status)
+
+      assert.deepStrictEqual(env.attachments[0]?.paneEvents, [status])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('removes the attached session when the issue is released', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 1 })
+      const task = yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
+
+      yield* env.finish(task)
+
+      assert.deepStrictEqual(shown(env.attachments), [])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('removes the attached session when its session ends', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 1 })
+      yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
+      const session = env.sessions[0] as FakeSession
+
+      yield* Deferred.succeed(
+        session.end,
+        SessionNotFound.make({ sessionId: SessionId.make('00000000-0000-4000-8000-700000000003') })
+      )
+      yield* settle
+
+      assert.isTrue(env.attachments[0]?.detached)
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect(
+    'routes a permission answered from the pane through the dispatcher, reaching the agent once',
+    () =>
+      Effect.gen(function* () {
+        const env = yield* setUp({ cap: 1 })
+        yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
+        yield* env.emit(
+          env.sessions[0] as FakeSession,
+          PermissionRequested.make({ requestId: 'r1', toolName: 'Bash', input: {} })
+        )
+
+        yield* (env.attachments[0] as Attached).session.resolvePermission('r1', ALLOW)
+        yield* settle
+
+        assert.deepStrictEqual(
+          {
+            resolved: env.sessions[0]?.resolved,
+            pending: (yield* env.dispatcher.live).pendingPermissions.length
+          },
+          { resolved: ['r1'], pending: 0 }
+        )
       }).pipe(Effect.scoped)
   )
 })

@@ -135,7 +135,8 @@ const unarchive = (row: OverviewRow): Promise<void> =>
  * One agent in the overview: its status dot, name and second line. Clicking it or pressing
  * `Enter` shows the agent's tab; `F2` or the row menu renames it. The row menu also archives an
  * agent that is not `archived` through `onRetire`, unarchives one that is, and deletes any agent
- * through `onRetire`.
+ * through `onRetire`. A row with a `caption` is an attached session (ADR-0070): it shows the
+ * caption after the name, opens the session, and its menu only shows it.
  */
 export function AgentRow({
   row,
@@ -152,8 +153,11 @@ export function AgentRow({
   const status = statusLabel(row.summary.status)
   const marker = modeMarker(row.permissionMode)
   const markerSuffix = marker === null ? '' : ` · ${marker}`
-  const label = `${row.name}, ${status}. ${line.text}${markerSuffix}`
-  const summaryText = `${projectName} / ${row.name} · ${status} · ${line.text}${markerSuffix}`
+  const attached = row.caption !== null
+  const fullName = attached ? `${row.name} (${row.caption})` : row.name
+  const label = `${fullName}, ${status}. ${line.text}${markerSuffix}`
+  const summaryText = `${projectName} / ${fullName} · ${status} · ${line.text}${markerSuffix}`
+  const show = () => (attached ? actions.selectAttached(row.paneId) : actions.selectTab(row.paneId))
   const body = (name: React.ReactNode) => (
     <>
       <StatusIndicator status={row.summary.status} />
@@ -193,10 +197,10 @@ export function AgentRow({
               tabIndex={tabbable ? 0 : -1}
               aria-label={collapsed ? summaryText : label}
               aria-current={selected ? 'page' : undefined}
-              title={collapsed ? undefined : `${projectName} / ${row.name}`}
-              onClick={() => actions.selectTab(row.paneId)}
+              title={collapsed ? undefined : `${projectName} / ${fullName}`}
+              onClick={show}
               onKeyDown={(event) => {
-                if (event.key === 'F2') {
+                if (event.key === 'F2' && !attached) {
                   event.preventDefault()
                   onRename(true)
                 }
@@ -206,6 +210,9 @@ export function AgentRow({
               {body(
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span className="truncate text-sm text-ink">{row.name}</span>
+                  {attached && (
+                    <span className="min-w-0 truncate text-xs text-ink-muted">{row.caption}</span>
+                  )}
                   {marker !== null && (
                     <span className="ml-auto shrink-0 text-xs font-medium text-ink">{marker}</span>
                   )}
@@ -216,23 +223,27 @@ export function AgentRow({
         />
         <ContextMenuContent className="w-48">
           <ContextMenuGroup>
-            <ContextMenuItem onClick={() => actions.selectTab(row.paneId)}>Show</ContextMenuItem>
-            <ContextMenuItem onClick={() => onRename(true)}>
-              Rename
-              <ContextMenuShortcut>F2</ContextMenuShortcut>
-            </ContextMenuItem>
-          </ContextMenuGroup>
-          <ContextMenuSeparator />
-          <ContextMenuGroup>
-            {archived ? (
-              <ContextMenuItem onClick={() => void unarchive(row)}>Unarchive</ContextMenuItem>
-            ) : (
-              <ContextMenuItem onClick={() => onRetire('archive')}>Archive</ContextMenuItem>
+            <ContextMenuItem onClick={show}>Show</ContextMenuItem>
+            {!attached && (
+              <ContextMenuItem onClick={() => onRename(true)}>
+                Rename
+                <ContextMenuShortcut>F2</ContextMenuShortcut>
+              </ContextMenuItem>
             )}
-            <ContextMenuItem variant="destructive" onClick={() => onRetire('delete')}>
-              Delete…
-            </ContextMenuItem>
           </ContextMenuGroup>
+          {!attached && <ContextMenuSeparator />}
+          {!attached && (
+            <ContextMenuGroup>
+              {archived ? (
+                <ContextMenuItem onClick={() => void unarchive(row)}>Unarchive</ContextMenuItem>
+              ) : (
+                <ContextMenuItem onClick={() => onRetire('archive')}>Archive</ContextMenuItem>
+              )}
+              <ContextMenuItem variant="destructive" onClick={() => onRetire('delete')}>
+                Delete…
+              </ContextMenuItem>
+            </ContextMenuGroup>
+          )}
         </ContextMenuContent>
       </ContextMenu>
     </SidebarMenuItem>

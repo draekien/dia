@@ -1,4 +1,5 @@
 import { assert, describe, it } from '@effect/vitest'
+import { AttachedSession } from '@shared/domain/attached-session'
 import type { OutgoingMessage } from '@shared/domain/message-queue'
 import {
   type PaneConfig,
@@ -7,10 +8,12 @@ import {
   type WorktreeInfo
 } from '@shared/domain/pane'
 import { SignedOut, UsageLimit, type UsageLimitResume } from '@shared/domain/parking'
+import { ProjectId } from '@shared/domain/project'
 import { type IpcEvent, PaneRewindFailed } from '@shared/ipc/contract'
 import { fakeInject, fakeUse } from '@shared/plugin/plugin-registry.fake'
 import { Deferred, Effect, Fiber, Layer, Option, Result, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
+import type { SessionAttachment } from '../plugins/host-plugin-context'
 import { HostPlugins } from '../plugins/host-plugins'
 import { PluginSources } from '../plugins/plugin-sources'
 import {
@@ -1552,5 +1555,131 @@ describe('PaneSupervisor tab setup progress', () => {
           })
         }).pipe(Effect.scoped, Effect.provide(testLayer))
       })
+  )
+})
+
+const ATTACHED_PANE = 'dddddddd-0000-4000-8000-000000000004'
+
+const recordingAttachment = () => {
+  const calls: Array<string> = []
+  const emits: Array<(message: OutboundMessage) => Effect.Effect<void>> = []
+  const record =
+    (name: string) =>
+    (...args: ReadonlyArray<unknown>) =>
+      Effect.sync(() => void calls.push([name, ...args.map(String)].join(':')))
+  const session: AgentSession = {
+    sendText: record('sendText'),
+    editQueuedText: record('editQueuedText'),
+    removeQueuedText: record('removeQueuedText'),
+    sendQueuedNow: record('sendQueuedNow'),
+    messageQueue: Effect.succeed({ queued: [], held: false }),
+    setThinkingLevel: record('setThinkingLevel'),
+    setPermissionMode: record('setPermissionMode'),
+    setModel: record('setModel'),
+    resolvePermission: record('resolvePermission'),
+    resolveQuestion: record('resolveQuestion'),
+    resolvePlanReview: record('resolvePlanReview'),
+    interrupt: () => record('interrupt')(),
+    rewindToCheckpoint: record('rewindToCheckpoint'),
+    resume: record('resume')(),
+    ended: Effect.never
+  }
+  const attachment: SessionAttachment = {
+    display: AttachedSession.make({
+      config: {
+        paneId: ATTACHED_PANE,
+        cwd: '/repo',
+        model: 'm',
+        thinkingLevel: 'adaptive',
+        permissionMode: 'default'
+      },
+      projectId: ProjectId.make('11111111-0000-4000-8000-000000000001'),
+      label: 'Ada',
+      caption: 'Software engineer'
+    }),
+    resume: Option.none(),
+    open: (emit) => Effect.sync(() => void emits.push(emit)).pipe(Effect.as(session))
+  }
+  return { calls, emits, attachment }
+}
+
+describe('PaneSupervisor.attachPane', () => {
+  it.effect('routes queued and steered messages to the attached session', () =>
+    Effect.gen(function* () {
+      const { testLayer } = makeTestSetup()
+      const { calls, attachment } = recordingAttachment()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        yield* supervisor.attachPane(attachment, () => Effect.void)
+        const handle = yield* supervisor
+          .getHandle(ATTACHED_PANE)
+          .pipe(Effect.flatMap(Effect.fromOption))
+
+        yield* handle.sendMessage('after you finish', 'queue')
+        yield* handle.sendMessage('take this instead', 'steer')
+
+        assert.deepStrictEqual(calls, [
+          'sendText:after you finish:queue:',
+          'sendText:take this instead:steer:'
+        ])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('refuses to rewind an attached session', () =>
+    Effect.gen(function* () {
+      const { testLayer } = makeTestSetup()
+      const { calls, attachment } = recordingAttachment()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        yield* supervisor.attachPane(attachment, () => Effect.void)
+        const handle = yield* supervisor
+          .getHandle(ATTACHED_PANE)
+          .pipe(Effect.flatMap(Effect.fromOption))
+
+        yield* handle.rewindToCheckpoint('u-2', undefined)
+
+        assert.deepStrictEqual(calls, [])
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('records and publishes what the attached session emits', () =>
+    Effect.gen(function* () {
+      const { testLayer, log } = makeTestSetup()
+      const { emits, attachment } = recordingAttachment()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        yield* supervisor.attachPane(attachment, (event) =>
+          Effect.sync(() => void log.push(`published ${event._tag}`))
+        )
+
+        yield* emits[0](
+          UserMessagesSent.make({ messages: [{ id: 'm-1', text: 'start the issue' }] })
+        )
+        yield* flush
+
+        assert.include(log, 'recorded UserMessagesSent')
+        assert.include(log, 'published PaneUserMessagesSent')
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
+  )
+
+  it.effect('removes the pane when the attaching scope closes', () =>
+    Effect.gen(function* () {
+      const { testLayer } = makeTestSetup()
+      const { attachment } = recordingAttachment()
+
+      yield* Effect.gen(function* () {
+        const supervisor = yield* PaneSupervisor
+        yield* supervisor.attachPane(attachment, () => Effect.void).pipe(Effect.scoped)
+        yield* flush
+
+        assert.isTrue(Option.isNone(yield* supervisor.getHandle(ATTACHED_PANE)))
+      }).pipe(Effect.scoped, Effect.provide(testLayer))
+    })
   )
 })

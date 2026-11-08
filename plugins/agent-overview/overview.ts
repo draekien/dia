@@ -5,8 +5,9 @@ import {
   NoActivity,
   statusRank
 } from '@shared/domain/agent-summary'
+import type { AttachedSession } from '@shared/domain/attached-session'
 import { type PaneId, PermissionMode } from '@shared/domain/pane'
-import { AgentName, Project, ProjectId, type Workspace } from '@shared/domain/project'
+import { Project, ProjectId, type Workspace } from '@shared/domain/project'
 import { Uuid } from '@shared/domain/uuid'
 import { Schema } from 'effect'
 
@@ -51,10 +52,14 @@ export const NO_FILTERS: OverviewFilters = OverviewFilters.make({
 export const filtersApply = (filters: OverviewFilters): boolean =>
   filters.query.trim() !== '' || filters.statuses.length > 0
 
-/** One agent row: its tab's pane id, name and current permission mode, and its current summary. */
+/**
+ * One agent row: its pane id, name and current permission mode, and its current summary.
+ * `caption` is the job title of a session a plugin attached (ADR-0070) and `null` for a tab.
+ */
 export const OverviewRow = Schema.Struct({
   paneId: Uuid,
-  name: AgentName,
+  name: Schema.String,
+  caption: Schema.NullOr(Schema.String),
   summary: AgentSummary,
   permissionMode: PermissionMode
 })
@@ -64,7 +69,7 @@ export type OverviewRow = typeof OverviewRow.Type
  * One project group. `rows` are the matching non-archived agents, most urgent first and then in
  * creation order; `archived` the matching archived agents, in creation order. `mostUrgent`
  * is the most urgent status among all the project's non-archived agents, `null` without any.
- * `shown` counts `rows`; `total` counts every non-archived agent.
+ * `shown` counts `rows`; `total` counts every non-archived tab and attached session.
  */
 export const OverviewGroup = Schema.Struct({
   project: Project,
@@ -99,30 +104,45 @@ const contains = (text: string, query: string): boolean => text.toLocaleLowerCas
 /**
  * The project groups the overview lists, in the user's project order, with their rows filtered
  * by `filters`. A status change reorders rows inside a group but never moves a group. A tab with
- * no summary yet shows as idle with no activity.
+ * no summary yet shows as idle with no activity. Each of `attached` is a row in the group of its
+ * project, sorted with the tabs; one whose project is not in the workspace is not shown.
  */
 export const buildOverview = (
   workspace: Workspace,
   summaries: ReadonlyMap<PaneId, AgentSummary>,
-  filters: OverviewFilters
+  filters: OverviewFilters,
+  attached: ReadonlyArray<AttachedSession> = []
 ): ReadonlyArray<OverviewGroup> => {
   const query = filters.query.trim().toLocaleLowerCase()
   const narrowing = filtersApply(filters)
   return workspace.projects.flatMap((entry) => {
     const projectMatches = query === '' || contains(entry.project.displayName, query)
+    const summaryOf = (paneId: PaneId) =>
+      summaries.get(paneId) ?? idleSummary(paneId, NoActivity.make({}))
     const toRow = (tab: (typeof entry.tabs)[number]): OverviewRow =>
       OverviewRow.make({
         paneId: tab.config.paneId,
         name: tab.name,
-        summary:
-          summaries.get(tab.config.paneId) ?? idleSummary(tab.config.paneId, NoActivity.make({})),
+        caption: null,
+        summary: summaryOf(tab.config.paneId),
         permissionMode: tab.config.permissionMode
       })
+    const attachedRows = attached
+      .filter((session) => session.projectId === entry.project.projectId)
+      .map((session) =>
+        OverviewRow.make({
+          paneId: session.config.paneId,
+          name: session.label,
+          caption: session.caption,
+          summary: summaryOf(session.config.paneId),
+          permissionMode: session.config.permissionMode
+        })
+      )
     const matches = (row: OverviewRow): boolean =>
       (projectMatches || contains(row.name, query)) &&
       (filters.statuses.length === 0 || filters.statuses.includes(row.summary.status._tag))
     const active = entry.tabs.filter((tab) => !tab.archived).map(toRow)
-    const rows = byUrgency(active.filter(matches))
+    const rows = byUrgency([...active, ...attachedRows].filter(matches))
     const archived = entry.tabs
       .filter((tab) => tab.archived)
       .map(toRow)
@@ -137,9 +157,9 @@ export const buildOverview = (
         project: entry.project,
         rows,
         archived,
-        mostUrgent: mostUrgentOf(active),
+        mostUrgent: mostUrgentOf([...active, ...attachedRows]),
         shown: rows.length,
-        total: active.length
+        total: active.length + attachedRows.length
       })
     ]
   })

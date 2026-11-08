@@ -1,18 +1,28 @@
 import { PluginStatusChanged } from '@shared/ipc/contract'
-import type { HostPluginContext } from '@shared/plugin/api'
 import { PLUGIN_MEMORY_LIMIT } from '@shared/plugin/manifest'
 import {
   makePluginRegistry,
   PluginLoadError,
   type PluginRegistry
 } from '@shared/plugin/plugin-registry'
-import { ByteSize, Context, Effect, FileSystem, Layer, Path, SubscriptionRef } from 'effect'
+import {
+  ByteSize,
+  Context,
+  Deferred,
+  Effect,
+  FileSystem,
+  Layer,
+  Path,
+  SubscriptionRef
+} from 'effect'
 import type { Rpc } from 'effect/rpc'
 import { AppWindow } from '../services/app-window'
+import { SessionAttacher } from '../services/attached-sessions'
 import { BackgroundActivities } from '../services/background-activities'
 import { makePluginDatabase } from '../services/database'
 import { EventHub } from '../services/event-hub'
 import { WorkspaceFeed } from '../services/workspace-feed'
+import type { HostPluginContext, SessionAttachment } from './host-plugin-context'
 import { makeHostPluginLoader } from './plugin-loader'
 import { heapUsedAfterGc, makePluginMemoryGuard } from './plugin-memory-guard'
 import { servePluginCall } from './plugin-messages'
@@ -33,12 +43,13 @@ export class HostPlugins extends Context.Service<HostPlugins, PluginRegistry>()(
  * `<userDataPath>/plugins/<name>`, created before the plugin's setup runs; `activities`,
  * registration with {@link BackgroundActivities} under the plugin's name; and `database`, which
  * opens `<dataDir>/data.db` only when the plugin calls it; `workspace`, following
- * {@link WorkspaceFeed}; and `window`, backed by {@link AppWindow}. Every plugin state
+ * {@link WorkspaceFeed}; `window`, backed by {@link AppWindow}; and `sessions`, which waits
+ * for {@link SessionAttacher} on each call. Every plugin state
  * change is published to the hub as a `PluginStatusChanged` event. `pluginApiPath` is the
  * absolute path of the built module that `import '@dia/plugin'` resolves to inside a plugin
  * (`out/main/plugin-api.js`). Build the layer once per process, because it installs a
  * process-wide resolution hook. Requires `PluginSources`, `EventHub`, `BackgroundActivities`,
- * `WorkspaceFeed`, `AppWindow`, `FileSystem` and `Path`.
+ * `WorkspaceFeed`, `AppWindow`, `SessionAttacher`, `FileSystem` and `Path`.
  */
 export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string) =>
   Layer.effect(
@@ -49,6 +60,7 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
       const activities = yield* BackgroundActivities
       const workspaceFeed = yield* WorkspaceFeed
       const appWindow = yield* AppWindow
+      const attacher = yield* SessionAttacher
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
       const pluginApiUrl = yield* path.toFileUrl(pluginApiPath).pipe(Effect.orDie)
@@ -75,6 +87,10 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
               events: hub.subscribe({}),
               workspace: SubscriptionRef.changes(workspaceFeed),
               window: { attended: appWindow.attended, notify: appWindow.notify },
+              sessions: {
+                attach: (attachment: SessionAttachment) =>
+                  Deferred.await(attacher).pipe(Effect.flatMap((attach) => attach(attachment)))
+              },
               dataDir,
               activities: {
                 register: (spec) => activities.register(services.name, spec)

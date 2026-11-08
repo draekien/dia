@@ -38,6 +38,7 @@ import { AgentEventRecorderLive } from './services/agent-event-recorder'
 import { AgentEventStoreLive } from './services/agent-event-store'
 import { AgentSummariesLive } from './services/agent-summaries'
 import { AppWindow, makeAppWindowLive } from './services/app-window'
+import { AttachedSessionsLive, SessionAttacherLive } from './services/attached-sessions'
 import { BackgroundActivitiesLive } from './services/background-activities'
 import { makeCommandDeduperLive } from './services/command-deduper'
 import { makeHostDatabaseLive } from './services/database'
@@ -119,6 +120,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     Layer.mergeAll(settings, NodeFileSystem.layer, NodePath.layer)
   )
   const backgroundActivities = Layer.provide(BackgroundActivitiesLive, eventHub)
+  const sessionAttacher = SessionAttacherLive
   const hostPlugins = Layer.provide(
     makeHostPluginsLive(init.pluginApiPath, init.userDataPath),
     Layer.mergeAll(
@@ -127,6 +129,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
       backgroundActivities,
       WorkspaceFeedLive,
       appWindow,
+      sessionAttacher,
       NodeFileSystem.layer,
       NodePath.layer
     )
@@ -153,6 +156,10 @@ const buildHostLayer = (init: HostInit, token: string) => {
   const paneChats = Layer.provide(
     PaneChatProjectionLive,
     Layer.mergeAll(eventHub, WorkspaceFeedLive, agentEventStore, recorder, modelCatalog)
+  )
+  const attachedSessions = Layer.provide(
+    AttachedSessionsLive,
+    Layer.mergeAll(supervisor, paneChats, eventHub, sessionAttacher)
   )
   const workspace = Layer.provide(
     makePaneWorkspaceLive(init.worktreesRoot),
@@ -183,6 +190,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
   )
   const state = Layer.mergeAll(
     supervisor,
+    attachedSessions,
     workspace,
     paneChats,
     workspaceProblems,

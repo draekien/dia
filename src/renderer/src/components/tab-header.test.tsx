@@ -12,6 +12,7 @@ const shown = vi.hoisted(() => ({
 }))
 
 vi.mock('../plugin-api', () => ({
+  useAttachedSessions: () => [],
   useView: () => shown.view,
   useWorkspace: () => shown.workspace
 }))

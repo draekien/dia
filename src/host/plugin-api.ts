@@ -9,6 +9,7 @@ export {
 } from '../shared/domain/adapter-status'
 export * as AgentEvents from '../shared/domain/agent-event'
 export { AGENT_NAME_ADJECTIVES, AGENT_NAME_NOUNS } from '../shared/domain/agent-name'
+export { AttachedSession } from '../shared/domain/attached-session'
 export { ContentAttachment, PathAttachment } from '../shared/domain/attachment'
 export { PermissionResponse, PlanReviewResponse, Question } from '../shared/domain/attention'
 export { OutgoingMessage } from '../shared/domain/message-queue'
@@ -36,6 +37,11 @@ export { Uuid } from '../shared/domain/uuid'
 export * from '../shared/plugin/api'
 export * from '../shared/plugin/list-slot'
 export { PluginCallInvalid, PluginNotServing } from '../shared/plugin/messages'
+export type {
+  HostPluginContext,
+  HostSessions,
+  SessionAttachment
+} from './plugins/host-plugin-context'
 export { type MetaRepo, MetaRepoKey } from './services/meta-repo-seam'
 export {
   type GitOps,

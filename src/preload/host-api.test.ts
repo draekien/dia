@@ -189,6 +189,7 @@ const makeClient = (script: ClientScript = {}) => {
     SubscribePlugin: subscribePlugin,
     GetWorkspace: getWorkspace,
     GetAgentSummaries: getAgentSummaries,
+    GetAttachedSessions: () => Effect.succeed([]),
     RegisterProject: registerProject,
     RemoveProject: removeProject,
     GetModels: getModels,

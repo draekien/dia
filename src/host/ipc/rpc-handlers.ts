@@ -15,6 +15,7 @@ import { callPlugin, subscribePlugin } from '../plugins/plugin-messages'
 import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { AdapterStatusFeed } from '../services/adapter-status-feed'
 import { AgentSummaries } from '../services/agent-summaries'
+import { AttachedSessions } from '../services/attached-sessions'
 import { BackgroundActivities } from '../services/background-activities'
 import { CommandDeduper } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
@@ -45,6 +46,7 @@ import { resolveAgentBackend } from '../session/agent-backend'
 export const makeDiaRpcHandlers = Effect.gen(function* () {
   const workspace = yield* PaneWorkspace
   const summaries = yield* AgentSummaries
+  const attached = yield* AttachedSessions
   const supervisor = yield* PaneSupervisor
   const settings = yield* SettingsStore
   const hub = yield* EventHub
@@ -325,6 +327,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     UnarchiveTab: ({ paneId }) =>
       workspace.unarchiveTab(paneId).pipe(treatGoneTabAsDone('UnarchiveTab')),
     GetAgentSummaries: () => summaries.getAll,
+    GetAttachedSessions: () => attached.current,
     GetTranscriptWidth: () =>
       settings
         .getTranscriptWidth()

@@ -9,7 +9,7 @@ import {
 } from '@dia/renderer-plugin'
 import { Cause } from 'effect'
 import type { HiredAgent, HireId, JobTitle } from './domain'
-import { agentName } from './org-actions'
+import { agentName } from './domain'
 
 /**
  * A `Reports to` select of `You` and `choices`, showing `value` (null is `You`). `onChange` gets

@@ -81,6 +81,7 @@ import {
   Scope,
   Stream
 } from 'effect'
+import type { SessionAttachment } from '../plugins/host-plugin-context'
 import { HostPlugins } from '../plugins/host-plugins'
 import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { type AgentSession, resolveAgentBackend, type SessionEnd } from '../session/agent-backend'
@@ -740,6 +741,17 @@ export class PaneSupervisor extends Context.Service<
       { readonly handle: PaneHandle; readonly config: PaneConfig },
       WorktreeCreateError | WorktreeReattachError
     >
+    /**
+     * Starts `attachment`'s session in a scope of its own that closes when the calling scope
+     * closes, as an attached pane: its events are recorded and reach `onEvent` in order, and
+     * `getHandle(attachment.display.config.paneId)` returns its handle until then. The handle
+     * refuses rewind. The session's end is the caller's to handle; the pane is removed only when
+     * the calling scope closes, or by `closeAll`.
+     */
+    readonly attachPane: (
+      attachment: SessionAttachment,
+      onEvent: (event: IpcEvent) => Effect.Effect<void>
+    ) => Effect.Effect<void, never, Scope.Scope>
     /** Ends the given pane's session and removes its worktree, delivering its pending events first. */
     readonly closePane: (paneId: PaneId) => Effect.Effect<void>
     /** Looks up the live {@link PaneHandle} for an open pane, if any. */
@@ -938,6 +950,46 @@ export const PaneSupervisorLive = Layer.effect(
       return { handle, config }
     })
 
+    const attachPane = Effect.fn('PaneSupervisor.attachPane')(function* (
+      attachment: SessionAttachment,
+      onEvent: (event: IpcEvent) => Effect.Effect<void>
+    ) {
+      const { config } = attachment.display
+      const scope = yield* Scope.make()
+      const started = yield* startPane(
+        config,
+        { start: ({ emit }) => attachment.open(emit) },
+        settings,
+        recorder,
+        () => Effect.void,
+        () => Effect.void,
+        attachment.resume
+      ).pipe(
+        Effect.provideService(Scope.Scope, scope),
+        Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : Scope.close(scope, exit)))
+      )
+      const handle: PaneHandle = {
+        ...started.handle,
+        rewindToCheckpoint: () =>
+          Effect.logWarning('Refused rewind for an attached session', { paneId: config.paneId })
+      }
+      const subscriber = yield* Effect.forkDetach(started.drain(onEvent))
+      const closed = yield* Deferred.make<void>()
+      yield* Ref.update(
+        entriesRef,
+        HashMap.set(config.paneId, {
+          handle,
+          repark: started.repark,
+          scope,
+          outbound: started.outbound,
+          subscriber,
+          closed
+        })
+      )
+      yield* Effect.addFinalizer(() => teardown(config.paneId))
+      yield* Effect.logInfo('Attached a plugin session', { paneId: config.paneId })
+    })
+
     const closePane = (paneId: PaneId) => teardown(paneId)
 
     const getHandle = (paneId: PaneId) =>
@@ -962,6 +1014,6 @@ export const PaneSupervisorLive = Layer.effect(
       })
     })
 
-    return { openPane, closePane, getHandle, closeAll, setUsageLimitResume }
+    return { openPane, attachPane, closePane, getHandle, closeAll, setUsageLimitResume }
   })
 )

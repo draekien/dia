@@ -7,8 +7,9 @@ import {
   Todo,
   ToolUse
 } from '@shared/domain/agent-summary'
+import { AttachedSession } from '@shared/domain/attached-session'
 import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
-import { type IpcEvent, WorkspaceChanged } from '@shared/ipc/contract'
+import { AttachedSessionsChanged, type IpcEvent, WorkspaceChanged } from '@shared/ipc/contract'
 import { Duration, Effect, Exit, Layer, Scope, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
 import { AgentEventStore } from './agent-event-store'
@@ -123,6 +124,20 @@ const completed = (paneId: string): IpcEvent => ({
   attention: { _tag: 'Completed' }
 })
 
+const HIRED = 'cccccccc-0000-4000-8000-000000000003'
+
+const attached = (paneIds: ReadonlyArray<string>): IpcEvent =>
+  AttachedSessionsChanged.make({
+    sessions: paneIds.map((paneId) =>
+      AttachedSession.make({
+        config: tab(paneId).config,
+        projectId: ProjectId.make('11111111-0000-4000-8000-000000000001'),
+        label: 'Ada',
+        caption: 'Software engineer'
+      })
+    )
+  })
+
 describe('AgentSummaries', () => {
   it.effect('seeds every tab as idle with its saved activity line', () =>
     Effect.gen(function* () {
@@ -216,6 +231,78 @@ describe('AgentSummaries', () => {
       ).pipe(Effect.andThen(summaryOf(PANE_B)), Effect.provide(layer))
 
       assert.isUndefined(summary)
+    })
+  )
+
+  it.effect('keeps an attached session’s summary when the workspace changes', () =>
+    Effect.gen(function* () {
+      const { layer } = makeSetup(workspaceWith([PANE_A], PANE_A))
+
+      const summary = yield* Effect.gen(function* () {
+        yield* publish(attached([HIRED]))
+        yield* publish(toolCompleted(HIRED, 'b.ts'))
+        yield* publish(
+          WorkspaceChanged.make({ workspace: workspaceWith([PANE_A, PANE_B], PANE_B) })
+        )
+        return yield* summaryOf(HIRED)
+      }).pipe(Effect.provide(layer))
+
+      assert.deepStrictEqual(summary?.activity, ToolUse.make({ tool: 'Edit', target: 'b.ts' }))
+    })
+  )
+
+  it.effect('marks an attached session finished when its turn completes', () =>
+    Effect.gen(function* () {
+      const { layer } = makeSetup(workspaceWith([PANE_A], PANE_A))
+
+      const summary = yield* Effect.gen(function* () {
+        yield* publish(attached([HIRED]))
+        yield* publish(completed(HIRED))
+        return yield* summaryOf(HIRED)
+      }).pipe(Effect.provide(layer))
+
+      assert.deepStrictEqual(summary?.status, StatusFinished.make({}))
+    })
+  )
+
+  it.effect('turns a detached session idle and keeps its activity line', () =>
+    Effect.gen(function* () {
+      const { layer } = makeSetup(workspaceWith([PANE_A], PANE_A))
+
+      const [summary, changes] = yield* Effect.gen(function* () {
+        const changes = yield* recordChanges
+        yield* publish(attached([HIRED]))
+        yield* publish(toolCompleted(HIRED, 'b.ts'))
+        yield* publish(completed(HIRED))
+        yield* publish(attached([]))
+        return [yield* summaryOf(HIRED), changes] as const
+      }).pipe(Effect.scoped, Effect.provide(layer))
+
+      const idle = {
+        paneId: HIRED,
+        status: StatusIdle.make({}),
+        activity: ToolUse.make({ tool: 'Edit', target: 'b.ts' })
+      }
+      assert.deepStrictEqual(summary, idle)
+      assert.deepStrictEqual(changes.at(-1), idle)
+    })
+  )
+
+  it.effect('never saves an attached session’s activity line', () =>
+    Effect.gen(function* () {
+      const { layer, saves } = makeSetup(workspaceWith([PANE_A]))
+
+      yield* Effect.gen(function* () {
+        yield* publish(attached([HIRED]))
+        yield* publish(toolCompleted(PANE_A, 'a.ts'))
+        yield* publish(toolCompleted(HIRED, 'b.ts'))
+        yield* TestClock.adjust(ACTIVITY_SAVE_DELAY)
+        yield* settle
+      }).pipe(Effect.provide(layer))
+
+      assert.deepStrictEqual(saves.at(-1), {
+        [PANE_A]: ToolUse.make({ tool: 'Edit', target: 'a.ts' })
+      })
     })
   )
 

@@ -2,7 +2,8 @@ import {
   type AgentBackend,
   AgentBackendKey,
   type AgentSessionOptions,
-  type HostPluginContext
+  type HostPluginContext,
+  type SessionAttachment
 } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
 import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
@@ -111,6 +112,10 @@ const startOrg = (backend: Option.Option<AgentBackend>) =>
             ],
             visibleTab: null
           }),
+          sessions: {
+            attach: (attachment: SessionAttachment) =>
+              attachment.open(() => Effect.void).pipe(Effect.asVoid)
+          },
           serve
         } as unknown as HostPluginContext)
       }
