@@ -437,10 +437,23 @@ export function MessageView({
   if (message.role === 'notice') {
     const text = message.parts.find((part) => part.type === 'text')?.content ?? ''
     const compaction = message.compaction
+    const link = message.link
     return (
       <Marker variant="separator" className="py-1 text-xs">
         <MarkerContent>
           {text}
+          {link !== undefined && (
+            <Button
+              variant="link"
+              size="xs"
+              className="h-auto px-1 py-0"
+              onClick={() =>
+                actions.openPage({ plugin: link.plugin, id: link.page, target: link.target })
+              }
+            >
+              {link.label}
+            </Button>
+          )}
           {compaction?.postTokens !== undefined && (
             <>
               {' — '}

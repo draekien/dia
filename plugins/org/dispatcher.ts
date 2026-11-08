@@ -1,7 +1,6 @@
 import {
   type AgentBackend,
   type AgentSession,
-  AttachedSession,
   type DiaTool,
   type HostSessions,
   type ModelOption,
@@ -302,13 +301,14 @@ export const makeDispatcher = (deps: {
       const resume = Option.fromNullishOr(issue.sessionId)
       const raw = yield* Deferred.make<AgentSession>()
       yield* attach({
-        display: AttachedSession.make({
+        display: {
           config,
           projectId: objective.projectId,
           label: agentName(hire, [jobTitle]),
           caption: jobTitle.name
-        }),
+        },
         resume,
+        reset: Option.none(),
         open: (emit) =>
           backend
             .openSession({

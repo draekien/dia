@@ -45,6 +45,7 @@ import {
   MoveProject,
   RemoveQueuedMessage,
   RenameTab,
+  ResetAttachedSession,
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
@@ -65,7 +66,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.27'
+export const PROTOCOL_VERSION = '0.0.28'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -154,6 +155,7 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('MoveProject', { payload: withRequestId(MoveProject) }),
   Rpc.make('RenameTab', { payload: withRequestId(RenameTab) }),
   Rpc.make('SelectTab', { payload: withRequestId(SelectTab) }),
+  Rpc.make('ResetAttachedSession', { payload: withRequestId(ResetAttachedSession) }),
   Rpc.make('SetTranscriptWidth', { payload: withRequestId(SetTranscriptWidth) }),
   Rpc.make('SetThinkingLevel', { payload: withRequestId(SetThinkingLevel) }),
   Rpc.make('SetPermissionMode', { payload: withRequestId(SetPermissionMode) }),

@@ -26,6 +26,7 @@ import {
   type PaneCreateFailed,
   RemoveQueuedMessage,
   RenameTab,
+  ResetAttachedSession,
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
@@ -250,7 +251,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const attached = Layer.succeed(AttachedSessions, {
     attach: () => Effect.die(new Error('attach is not used by the handlers')),
     current: Effect.succeed([]),
-    changes: Stream.empty
+    changes: Stream.empty,
+    reset: (paneId) => Effect.sync(() => void calls.push(`resetAttached:${paneId}`))
   })
 
   const summaries = Layer.succeed(AgentSummaries, {
@@ -744,6 +746,22 @@ describe('Dia RPC handlers', () => {
       )
 
       assert.deepStrictEqual(harness.calls, [`selectTab:${PANE_ID}`, 'selectTab:none'])
+    })
+  )
+
+  it.effect('resets the attached session a ResetAttachedSession names, once per commandId', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness()
+      const command = { ...ResetAttachedSession.make({ paneId: PANE_ID }), commandId: 'c-1' }
+
+      yield* withHandlers(harness, (handlers) =>
+        Effect.gen(function* () {
+          yield* handlers.ResetAttachedSession(command)
+          yield* handlers.ResetAttachedSession(command)
+        })
+      )
+
+      assert.deepStrictEqual(harness.calls, [`resetAttached:${PANE_ID}`])
     })
   )
 

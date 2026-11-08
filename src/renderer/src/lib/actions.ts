@@ -71,11 +71,11 @@ export const newAgent = (projectId: ProjectId): void => {
 }
 
 /**
- * Shows the page `key` names in the content area, closing the New agent form if it is open. No tab
- * is visible while the page shows; selecting a tab closes it.
+ * Shows the page `key` names in the content area, passing it `key.target`, and closes the New
+ * agent form if it is open. No tab is visible while the page shows; selecting a tab closes it.
  */
 export const openPage = (key: PageKey): void => {
-  log('Opening a page', { plugin: key.plugin, id: key.id })
+  log('Opening a page', { plugin: key.plugin, id: key.id, target: key.target })
   const shownBefore = shownBeforeOpening()
   appRegistry.set(newAgentFormAtom, Option.none())
   appRegistry.set(openAttachedAtom, Option.none())

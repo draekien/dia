@@ -133,7 +133,8 @@ const attached = (paneIds: ReadonlyArray<string>): IpcEvent =>
         config: tab(paneId).config,
         projectId: ProjectId.make('11111111-0000-4000-8000-000000000001'),
         label: 'Ada',
-        caption: 'Software engineer'
+        caption: 'Software engineer',
+        resettable: false
       })
     )
   })

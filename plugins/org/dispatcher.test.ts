@@ -2,7 +2,6 @@ import {
   type AgentBackend,
   type AgentSession,
   type AgentSessionOptions,
-  type AttachedSession,
   BackgroundTasksChanged,
   type ModelOption,
   type OutboundMessage,
@@ -103,7 +102,7 @@ const fakeBackend = (disabled: ReadonlyArray<'auto' | 'bypassPermissions'> = [])
 }
 
 interface Attached {
-  readonly display: AttachedSession
+  readonly display: SessionAttachment['display']
   readonly session: AgentSession
   readonly paneEvents: Array<OutboundMessage>
   detached: boolean

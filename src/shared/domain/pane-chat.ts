@@ -26,6 +26,7 @@ import { BackgroundTask } from './background-task'
 import { CompactionFailure } from './context-usage'
 import { JsonRecord } from './json-record'
 import { OutgoingMessage } from './message-queue'
+import { NoticeLink } from './notice-link'
 import type { ConversationMessage } from './pane'
 import { RESUME_TEXT } from './parking'
 import { SlashCommandInfo } from './slash-command'
@@ -102,7 +103,7 @@ export type MessagePart = typeof MessagePart.Type
  * assistant turns interleave thinking, text, and tool-call parts; a `notice`
  * turn is a system-generated marker (e.g. a context-compaction divider) with a
  * single text part and no conversational author; a compaction notice also carries
- * its `compaction` counts; an `error` turn is a failed
+ * its `compaction` counts, and a plugin's notice may carry a `link` to show after its text; an `error` turn is a failed
  * turn's message (its single text part is the error message). Whether an error
  * is retryable is a property of the pane's live attention state (`Errored` is
  * recoverable, `Crashed` is terminal), not of this row. `checkpointUuid`,
@@ -126,7 +127,8 @@ export const PaneMessage = Schema.Struct({
   resumeAnchorUuid: Schema.optional(Schema.String),
   rewindable: Schema.optional(Schema.Literal(false)),
   resumedAt: Schema.optional(Schema.Number),
-  compaction: Schema.optional(CompactionCounts)
+  compaction: Schema.optional(CompactionCounts),
+  link: Schema.optional(NoticeLink)
 })
 export type PaneMessage = typeof PaneMessage.Type
 
@@ -583,7 +585,7 @@ const rewindToCheckpoint = (state: PaneChatState, messageUuid: string): PaneChat
 const noticeMessage = (
   state: PaneChatState,
   content: string,
-  extra: Pick<PaneMessage, 'compaction'> = {}
+  extra: Pick<PaneMessage, 'compaction' | 'link'> = {}
 ): PaneChatState => ({
   ...state,
   messages: [
@@ -678,7 +680,7 @@ export const reducePaneChat = (
     case 'PaneTurnStatusChanged':
       return { ...state, turnStatus: event.label }
     case 'PaneSessionNotice':
-      return noticeMessage(state, event.text)
+      return noticeMessage(state, event.text, event.link === undefined ? {} : { link: event.link })
     case 'PaneSetupProgress':
       return { ...state, setup: event.steps }
     case 'PaneAttentionChanged':

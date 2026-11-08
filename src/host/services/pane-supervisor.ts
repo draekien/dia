@@ -357,7 +357,11 @@ function turnProgressEvent(
     case 'TurnStatusChanged':
       return PaneTurnStatusChanged.make({ paneId, label: message.label })
     case 'SessionNotice':
-      return PaneSessionNotice.make({ paneId, text: message.text })
+      return PaneSessionNotice.make({
+        paneId,
+        text: message.text,
+        ...(message.link !== undefined ? { link: message.link } : {})
+      })
   }
 }
 

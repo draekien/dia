@@ -81,7 +81,8 @@ const attachedTo = (n: number, project: number, label: string, caption: string) 
     },
     projectId: projectId(project),
     label,
-    caption
+    caption,
+    resettable: false
   })
 
 describe('buildOverview with attached sessions', () => {

@@ -21,6 +21,7 @@ import {
   type PluginSubscriptionEndJson,
   RemoveQueuedMessage,
   RenameTab,
+  ResetAttachedSession,
   ResolvePermission,
   ResolvePlanReview,
   ResolveQuestion,
@@ -514,6 +515,10 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       ),
     getAgentSummaries: () => query((client) => client.GetAgentSummaries()),
     getAttachedSessions: () => query((client) => client.GetAttachedSessions()),
+    resetAttachedSession: (paneId) =>
+      command('ResetAttachedSession', (client, commandId) =>
+        client.ResetAttachedSession({ ...ResetAttachedSession.make({ paneId }), commandId })
+      ),
     getTranscriptWidth: () => query((client) => client.GetTranscriptWidth()),
     setTranscriptWidth: (width) =>
       command('SetTranscriptWidth', (client, commandId) =>

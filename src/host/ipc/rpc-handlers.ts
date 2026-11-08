@@ -216,6 +216,13 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
           .selectTab(command.paneId, publish)
           .pipe(warnOnFailure('SelectTab', { paneId: command.paneId }))
       ),
+    ResetAttachedSession: (command) =>
+      once(
+        command.paneId,
+        command.commandId,
+        'ResetAttachedSession',
+        attached.reset(command.paneId)
+      ),
     SetTranscriptWidth: (command) =>
       once(
         'app',

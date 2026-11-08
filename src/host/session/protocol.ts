@@ -2,6 +2,7 @@ import { PaneError, PermissionUpdate, Question } from '@shared/domain/attention'
 import { BackgroundTask } from '@shared/domain/background-task'
 import { CompactionFailure, ContextUsage } from '@shared/domain/context-usage'
 import { OutgoingMessage } from '@shared/domain/message-queue'
+import { NoticeLink } from '@shared/domain/notice-link'
 import { ConversationMessage, PermissionMode, SessionId } from '@shared/domain/pane'
 import { ParkCause } from '@shared/domain/parking'
 import { RewindFailureCause } from '@shared/domain/rewind'
@@ -48,8 +49,11 @@ export const ToolCallUpdated = Schema.TaggedStruct('ToolCallUpdated', {
 export const TurnStatusChanged = Schema.TaggedStruct('TurnStatusChanged', {
   label: Schema.NullOr(Schema.String)
 })
-/** Emitted by a pane's agent session for an event the transcript should record as a one-line notice (a model fallback, a usage-limit warning, a message from Claude Code itself). */
-export const SessionNotice = Schema.TaggedStruct('SessionNotice', { text: Schema.String })
+/** Emitted by a pane's agent session for an event the transcript should record as a one-line notice (a model fallback, a usage-limit warning, a message from Claude Code itself); `link`, when present, is shown after the text. */
+export const SessionNotice = Schema.TaggedStruct('SessionNotice', {
+  text: Schema.String,
+  link: Schema.optional(NoticeLink)
+})
 /** Emitted by a pane's agent session when the set of work running outside its turns changes; `tasks` is the full set, empty when none runs. */
 export const BackgroundTasksChanged = Schema.TaggedStruct('BackgroundTasksChanged', {
   tasks: Schema.Array(BackgroundTask)

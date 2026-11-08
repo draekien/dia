@@ -24,6 +24,7 @@ import {
   type ModelPreference,
   ModelPreferencesSnapshot
 } from '../domain/model-preferences'
+import { NoticeLink } from '../domain/notice-link'
 import { PermissionMode, ThinkingLevel } from '../domain/pane'
 import type { PaneChatSnapshot } from '../domain/pane-chat'
 import type { UsageLimitResume } from '../domain/parking'
@@ -200,6 +201,15 @@ export const SelectTab = Schema.TaggedStruct('SelectTab', {
 })
 export type SelectTab = typeof SelectTab.Type
 
+/**
+ * Command sent by the renderer to replace attached session `paneId` with a fresh one (ADR-0071).
+ * The Host runs the attachment's reset; it does nothing for a pane that has none.
+ */
+export const ResetAttachedSession = Schema.TaggedStruct('ResetAttachedSession', {
+  paneId: Uuid
+})
+export type ResetAttachedSession = typeof ResetAttachedSession.Type
+
 /** Command sent by the renderer to change the app-wide transcript width. */
 export const SetTranscriptWidth = Schema.TaggedStruct('SetTranscriptWidth', {
   width: TranscriptWidth
@@ -336,7 +346,8 @@ export type PaneTurnStatusChanged = typeof PaneTurnStatusChanged.Type
  */
 export const PaneSessionNotice = Schema.TaggedStruct('PaneSessionNotice', {
   paneId: Uuid,
-  text: Schema.String
+  text: Schema.String,
+  link: Schema.optional(NoticeLink)
 })
 export type PaneSessionNotice = typeof PaneSessionNotice.Type
 
@@ -945,6 +956,8 @@ export interface DiaApi {
   getAgentSummaries(): Promise<ReadonlyArray<AgentSummary>>
   /** Every session a plugin has attached (ADR-0070). */
   getAttachedSessions(): Promise<ReadonlyArray<AttachedSession>>
+  /** Replaces attached session `paneId` with a fresh one, when its plugin allows it (ADR-0071). */
+  resetAttachedSession(paneId: string): void
   getTranscriptWidth(): Promise<TranscriptWidth>
   setTranscriptWidth(width: TranscriptWidth): void
   /** Shows `directory` in the system file manager; does nothing when it is not a directory. */
