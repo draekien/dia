@@ -12,9 +12,7 @@ import type { Rpc } from 'effect/rpc'
 import { useContext } from 'react'
 import type { OrgSnapshot, WorkView } from './calls'
 import {
-  type HiredAgent,
   JOB_TITLE_NAME_MAX_LENGTH,
-  type JobTitle,
   type JobTitleId,
   JobTitleName,
   WORK_TITLE_MAX_LENGTH,
