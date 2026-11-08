@@ -108,7 +108,7 @@ function Objectives({
                     >
                       {objective.title}
                     </span>
-                    <span className="ml-auto shrink-0 text-xs font-normal text-ink-muted">
+                    <span className="ml-auto truncate text-xs font-normal text-ink-muted">
                       {projectName(objective)}
                     </span>
                   </>
