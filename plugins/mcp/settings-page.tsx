@@ -36,6 +36,11 @@ const userServersOf = (servers: ReadonlyArray<RegisteredServer>): McpServers =>
       .map((entry) => [entry.name, entry.server])
   )
 
+const sortedByName = (servers: McpServers): McpServers =>
+  Object.fromEntries(
+    Object.entries(servers).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+  )
+
 const failureText = (failure: SaveFailure): string => {
   switch (failure._tag) {
     case 'McpServerNameTaken':
@@ -87,7 +92,7 @@ function UserServers({
     if (result === undefined) return setError('Could not save the servers.')
     if (Result.isFailure(result)) return setError(failureText(result.failure))
     setError(undefined)
-    setDraft(mcpServersDraft(parsed.success))
+    setDraft(mcpServersDraft(sortedByName(parsed.success)))
   }
 
   return (

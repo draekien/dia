@@ -169,6 +169,19 @@ describe('MCP servers settings page', () => {
     )
   })
 
+  it('disables Save once the saved list arrives when the names were typed out of order', async () => {
+    const host = installHost([])
+    const editor = await renderPage()
+
+    type(editor, JSON.stringify({ linear: LINEAR, github: GITHUB }))
+    await clickSave()
+    host.push([user('github', GITHUB), user('linear', LINEAR)])
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty('disabled', true)
+    )
+  })
+
   it('disables Save while the text matches the saved servers', async () => {
     installHost([user('github', GITHUB)])
     await renderPage()
