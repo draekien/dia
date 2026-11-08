@@ -189,7 +189,7 @@ export class SessionFactory extends Context.Service<
  * session. Each session also gets what the loaded `meta` plugin adds to new sessions, read at
  * that start. When the registry is available the agent gets the plugin tools, backed by
  * `HostPlugins` and `PluginSources`, so it can point a plugin at a source folder and reload it
- * after the user approves; otherwise every tool call is denied.
+ * under the session's permission rules; otherwise every tool call is denied.
  */
 export const SessionFactoryLive = Layer.effect(
   SessionFactory,

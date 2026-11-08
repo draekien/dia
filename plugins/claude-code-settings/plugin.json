@@ -1,6 +1,6 @@
 {
   "name": "claude-code-settings",
-  "api": "0.0.32",
+  "api": "0.0.33",
   "category": "feature",
   "renderer": "renderer.ts",
   "load": "eager"

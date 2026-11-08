@@ -128,13 +128,13 @@ export const readJobTitleName = (text: string): Result.Result<JobTitleName, stri
     text.trim() === '' ? 'Enter a name' : `Use at most ${JOB_TITLE_NAME_MAX_LENGTH} characters`
   )
 
-/** A new random id for an objective or task the user creates; call it in a React handler. */
+/** A new random id for an objective or issue the user creates; call it in a React handler. */
 export const newId = (): string =>
   // @effect-diagnostics-next-line cryptoRandomUUID:off -- a React handler outside any Effect; the id only has to be unique.
   crypto.randomUUID()
 
 /**
- * Reads an objective or task title field: the trimmed title, or the message to show beside the
+ * Reads an objective or issue title field: the trimmed title, or the message to show beside the
  * field when it is blank or longer than {@link WORK_TITLE_MAX_LENGTH}.
  */
 export const readWorkTitle = (text: string): Result.Result<WorkTitle, string> =>

@@ -35,7 +35,9 @@ const seedOrgSettings = Effect.gen(function* () {
   yield* sql`INSERT INTO org_settings ${sql.insert({ singleton: 1, overall_cap: DEFAULT_OVERALL_CAP })}`
 })
 
-const encodePermissions = Schema.encodeSync(Schema.fromJsonString(JobTitle.fields.permissions))
+const PermissionsJson = Schema.fromJsonString(JobTitle.fields.permissions)
+const encodePermissions = Schema.encodeSync(PermissionsJson)
+const decodePermissions = Schema.decodeUnknownEffect(PermissionsJson)
 
 interface CopiedRole {
   readonly role_id: string
@@ -187,6 +189,63 @@ const createObjectivesAndTasks = Effect.gen(function* () {
   yield* Effect.logInfo('Created the objectives, tasks and org events tables')
 })
 
+const ISSUE_TOOLS = ['mcp__dia__create_issue', 'mcp__dia__update_issue', 'mcp__dia__comment_issue']
+
+const allowIssueToolsOnBuiltIns = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const rows = yield* sql<{
+    readonly job_title_id: string
+    readonly permissions: string
+  }>`SELECT job_title_id, permissions FROM job_titles WHERE built_in IS NOT NULL`
+  for (const row of rows) {
+    const permissions = yield* decodePermissions(row.permissions).pipe(Effect.orDie)
+    const allow = [
+      ...permissions.allow,
+      ...ISSUE_TOOLS.filter((tool) => !permissions.allow.includes(tool))
+    ]
+    yield* sql`UPDATE job_titles SET permissions = ${encodePermissions({ ...permissions, allow })} WHERE job_title_id = ${row.job_title_id}`
+  }
+  return rows.length
+})
+
+const moveToIssues = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql.unsafe(`CREATE TABLE issues (
+    issue_id        TEXT    PRIMARY KEY,
+    objective_id    TEXT    NOT NULL REFERENCES objectives,
+    parent_issue_id TEXT    REFERENCES issues(issue_id),
+    kind            TEXT    NOT NULL CHECK (kind IN ('work', 'retro', 'planning')),
+    title           TEXT    NOT NULL,
+    description     TEXT    NOT NULL DEFAULT '',
+    status          TEXT    NOT NULL CHECK (status IN ('triage','todo','understanding','designing','implementing','testing','verifying','in_review','done','canceled')),
+    assignee        TEXT    REFERENCES hired_agents(hire_id) ON DELETE SET NULL,
+    pane_id         TEXT    NOT NULL UNIQUE,
+    session_id      TEXT,
+    created_at      INTEGER NOT NULL
+  )`)
+  yield* sql.unsafe(`INSERT INTO issues (issue_id, objective_id, parent_issue_id, kind, title, status, assignee, pane_id, session_id, created_at)
+    SELECT task_id, objective_id, parent_task_id, kind, title,
+           CASE state WHEN 'waiting' THEN 'todo' WHEN 'running' THEN 'todo' ELSE 'done' END,
+           assignee, pane_id, session_id, created_at
+    FROM tasks ORDER BY rowid`)
+  yield* sql.unsafe('DROP TABLE tasks')
+  yield* sql.unsafe('CREATE INDEX issues_objective ON issues(objective_id)')
+  yield* sql.unsafe('CREATE INDEX issues_status_assignee ON issues(status, assignee)')
+  yield* sql.unsafe(`CREATE TABLE issue_comments (
+    comment_id TEXT    PRIMARY KEY,
+    issue_id   TEXT    NOT NULL REFERENCES issues,
+    author     TEXT    REFERENCES hired_agents(hire_id) ON DELETE SET NULL,
+    body       TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
+  )`)
+  yield* sql.unsafe('CREATE INDEX issue_comments_issue ON issue_comments(issue_id)')
+  yield* sql.unsafe('ALTER TABLE org_events RENAME COLUMN task_id TO issue_id')
+  const builtIns = yield* allowIssueToolsOnBuiltIns
+  yield* Effect.logInfo('Moved org tasks to issues', {
+    builtInJobTitlesAllowingIssueTools: builtIns
+  })
+})
+
 /**
  * The `org` plugin's migrations, passed to `ctx.database`. `1_create_org_tables` creates the
  * first roles, hired agents and org settings tables; `2_seed_org` inserts the default overall cap;
@@ -195,7 +254,9 @@ const createObjectivesAndTasks = Effect.gen(function* () {
  * hires; `4_add_reports_to` adds each hired agent's `reportsTo`, null for existing hires;
  * `5_job_title_model` adds each job title's model, null, and thinking level, `medium`;
  * `6_objectives_tasks` creates the objectives and tasks tables and the event table that records
- * their changes. Each runs once per database.
+ * their changes; `7_issues` replaces the tasks table with the issues table (`waiting` and
+ * `running` tasks become `todo`, the rest `done`), adds the issue comments table, and adds the
+ * three org issue tools to each built-in job title's allowed tools. Each runs once per database.
  */
 export const orgMigrations: PluginMigrations = {
   '1_create_org_tables': createTables,
@@ -203,5 +264,6 @@ export const orgMigrations: PluginMigrations = {
   '3_job_titles': moveToJobTitles,
   '4_add_reports_to': addReportsTo,
   '5_job_title_model': addJobTitleModel,
-  '6_objectives_tasks': createObjectivesAndTasks
+  '6_objectives_tasks': createObjectivesAndTasks,
+  '7_issues': moveToIssues
 }

@@ -21,6 +21,8 @@ Phase 3 of `docs/plans/2026-10-22-plugin-platform.md` (issue #8) was built and t
 
 ### Approval of the agent tools by permission mode
 
+This section records a run made before ADR-0069. Each tool's handler then asked the user in every mode. Now the tools follow the session's permission rules and mode: in `bypassPermissions` they run without a request, in `auto` the classifier decides, and in `default`, `acceptEdits` and `plan` with no matching allow rule `canUseTool` raises one request. The table shows the old behaviour.
+
 Tested with a real agent in dia (a pane created from a `splitPane` placeholder, model `claude-haiku-4-5-20251001`), calling `mcp__dia__plugin_reload`, with the script answering each permission request.
 
 | Pane mode | Permission request shown to the user | Result for the agent |
@@ -30,9 +32,9 @@ Tested with a real agent in dia (a pane created from a `splitPane` placeholder, 
 | `acceptEdits` | one | the tool ran |
 | `dontAsk` | none | the SDK refused the call before the handler; the agent reported it needed permission |
 
-- **`auto` asks.** The SDK documentation leaves `auto` for MCP tools unverified; the tool's own approval made the question moot, and it was asked once.
-- **`bypassPermissions` was not tested in this run.** dia had no such pane mode then; it now offers it as "Full access". Because the approval is inside the tool handler, it does not depend on the SDK calling `canUseTool`.
-- **`canUseTool` must let the tools through.** The handler asks, so `makeCanUseTool` returns `allow` for these tool names; otherwise `default` mode would ask twice.
+- **`auto` asked in this run.** The tool's own approval, not the classifier, raised the request.
+- **`bypassPermissions` was not tested in this run.** The handler's approval did not depend on the SDK calling `canUseTool`. Since ADR-0069 the mode runs the tools without a request.
+- **The double request no longer exists.** `makeCanUseTool` no longer allows dia tool names, because no handler asks.
 
 ### Traps while driving the app
 

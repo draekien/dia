@@ -279,18 +279,22 @@ describe('org host entry work calls', () => {
       (hired) => Schema.decodeUnknownSync(HiredAgent)(hired).id
     )
 
-  const createTask = (registry: PluginRegistry, n: number, assignee: string) =>
-    call(registry, 'CreateTask', {
-      task: {
+  const createIssue = (registry: PluginRegistry, n: number, assignee: string) =>
+    call(registry, 'CreateIssue', {
+      issue: {
         id: `00000000-0000-4000-8000-60000000000${n}`,
         objectiveId: '00000000-0000-4000-8000-500000000001',
-        parentTaskId: null,
-        title: `Task ${n}`,
+        parentIssueId: null,
+        title: `Issue ${n}`,
+        description: '',
         assignee
       }
     })
 
-  it.effect('starts a created task, and starts the next one once the overall cap is raised', () =>
+  const readIssues = (registry: PluginRegistry) =>
+    Effect.map(call(registry, 'ReadWork', {}), (value) => Schema.decodeUnknownSync(WorkView)(value))
+
+  it.effect('starts a created issue, and starts the next one once the overall cap is raised', () =>
     Effect.gen(function* () {
       const opened: Array<string> = []
       const registry = yield* startOrg(Option.some(backendDisabling([], opened)))
@@ -309,8 +313,8 @@ describe('org host entry work calls', () => {
       const ada = yield* hireEngineer(registry)
       const ben = yield* hireEngineer(registry)
 
-      yield* createTask(registry, 1, ada)
-      yield* createTask(registry, 2, ben)
+      yield* createIssue(registry, 1, ada)
+      yield* createIssue(registry, 2, ben)
       yield* settle
       const atCapOne = opened.length
       yield* call(registry, 'SetOverallCap', { cap: 2 })
@@ -320,7 +324,7 @@ describe('org host entry work calls', () => {
     })
   )
 
-  it.effect('keeps a running task running when its assignment is repeated', () =>
+  it.effect('keeps a started issue started when its assignment is repeated', () =>
     Effect.gen(function* () {
       const registry = yield* startOrg(Option.some(backendDisabling([])))
       yield* registry.load('backend')
@@ -335,25 +339,25 @@ describe('org host entry work calls', () => {
         }
       })
       const ada = yield* hireEngineer(registry)
-      yield* createTask(registry, 1, ada)
+      yield* createIssue(registry, 1, ada)
       yield* settle
 
-      yield* call(registry, 'AssignTask', {
-        taskId: '00000000-0000-4000-8000-600000000001',
+      yield* call(registry, 'AssignIssue', {
+        issueId: '00000000-0000-4000-8000-600000000001',
         hireId: ada
       })
       yield* settle
-      const work = (yield* call(registry, 'ReadWork', {})) as {
-        heldSlots: number
-        tasks: ReadonlyArray<{ state: string }>
-      }
+      const work = yield* readIssues(registry)
 
-      assert.deepStrictEqual([work.heldSlots, work.tasks[0]?.state], [1, 'running'])
+      assert.deepStrictEqual(
+        [work.heldSlots, work.issues.find((issue) => issue.kind === 'work')?.status],
+        [1, 'understanding']
+      )
     })
   )
 
   it.effect(
-    'pushes the work view when subscribed, after a task is created and after it starts',
+    'pushes the work view when subscribed, after an issue is created and after it starts',
     () =>
       Effect.gen(function* () {
         const registry = yield* startOrg(Option.some(backendDisabling([])))
@@ -382,19 +386,86 @@ describe('org host entry work calls', () => {
           Effect.forkScoped
         )
         yield* settle
-        const onSubscribe = views.map((view) => view.tasks.length)
+        const onSubscribe = views.map((view) => view.issues.length)
 
-        yield* createTask(registry, 1, ada)
+        yield* createIssue(registry, 1, ada)
         yield* settle
 
         assert.deepStrictEqual(
           {
             onSubscribe,
-            last: views.at(-1)?.tasks.map((task) => task.state),
+            last: views.at(-1)?.issues.map((issue) => issue.status),
             held: views.at(-1)?.heldSlots
           },
-          { onSubscribe: [0], last: ['running'], held: 1 }
+          { onSubscribe: [1], last: ['todo', 'understanding'], held: 1 }
         )
       }).pipe(Effect.scoped)
+  )
+
+  it.effect('starts a todo planning issue once it is assigned', () =>
+    Effect.gen(function* () {
+      const opened: Array<string> = []
+      const registry = yield* startOrg(Option.some(backendDisabling([], opened)))
+      yield* registry.load('backend')
+      yield* call(registry, 'CreateObjective', {
+        objective: {
+          id: '00000000-0000-4000-8000-500000000001',
+          projectId: PROJECT_ID,
+          title: 'Ship it',
+          description: '',
+          priority: 'normal',
+          assignee: null
+        }
+      })
+      const ada = yield* hireEngineer(registry)
+      yield* settle
+      const [planning] = (yield* readIssues(registry)).issues
+      const beforeAssign = opened.length
+
+      yield* call(registry, 'AssignIssue', { issueId: planning?.id, hireId: ada })
+      yield* settle
+
+      const [started] = (yield* readIssues(registry)).issues
+      assert.deepStrictEqual(
+        [beforeAssign, opened.length, started?.kind, started?.status],
+        [0, 1, 'planning', 'understanding']
+      )
+    })
+  )
+
+  it.effect('finishes a started issue to done and stops its session', () =>
+    Effect.gen(function* () {
+      const registry = yield* startOrg(Option.some(backendDisabling([])))
+      yield* registry.load('backend')
+      yield* call(registry, 'CreateObjective', {
+        objective: {
+          id: '00000000-0000-4000-8000-500000000001',
+          projectId: PROJECT_ID,
+          title: 'Ship it',
+          description: '',
+          priority: 'normal',
+          assignee: null
+        }
+      })
+      const ada = yield* hireEngineer(registry)
+      yield* createIssue(registry, 1, ada)
+      yield* settle
+
+      yield* call(registry, 'FinishIssue', { issueId: '00000000-0000-4000-8000-600000000001' })
+      yield* settle
+
+      const work = yield* readIssues(registry)
+      assert.deepStrictEqual(
+        [work.heldSlots, work.issues.map((issue) => [issue.kind, issue.status])],
+        [
+          0,
+          [
+            ['planning', 'todo'],
+            ['work', 'done'],
+            ['retro', 'todo']
+          ]
+        ]
+      )
+    })
   )
 })

@@ -1,3 +1,4 @@
+import type { PluginMigrations } from '@dia/plugin'
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { assert, describe, it } from '@effect/vitest'
@@ -52,7 +53,7 @@ const legacyMigrations = {
   '2_seed_org': oldSeed
 }
 
-const openIn = (filename: string, migrations: typeof legacyMigrations) =>
+const openIn = (filename: string, migrations: PluginMigrations) =>
   Effect.gen(function* () {
     const scope = yield* Scope.make()
     const sql = yield* openDatabase(filename, migrations).pipe(Scope.provide(scope))
@@ -72,7 +73,7 @@ const upgradedLegacyOrg = Effect.gen(function* () {
   yield* legacy.close
   const sql = yield* openDatabase(filename, orgMigrations)
   const org = yield* makeWork(() => Effect.succeed(true)).pipe(
-    Effect.flatMap(({ openTasksOf }) => makeOrg(openTasksOf)),
+    Effect.flatMap(({ openIssuesOf }) => makeOrg(openIssuesOf)),
     Effect.provideService(SqlClient.SqlClient, sql),
     Effect.provide(NodeCrypto.layer)
   )
@@ -189,6 +190,167 @@ describe('5_job_title_model on a database with job titles', () => {
         (yield* org.jobTitles).map((jobTitle) => `${jobTitle.model}/${jobTitle.thinkingLevel}`)
       )
       assert.deepStrictEqual([...settings], ['null/medium'])
+    }).pipe(Effect.scoped)
+  )
+})
+
+const { '7_issues': _issues, ...migrationsBeforeIssues } = orgMigrations
+const OBJECTIVE_ID = '00000000-0000-4000-8000-000000000301'
+const COPY_ID = '00000000-0000-4000-8000-000000000302'
+const taskRowId = (n: number) => `00000000-0000-4000-8000-00000000040${n}`
+
+const task = (
+  n: number,
+  state: string,
+  options: { parent?: number; kind?: string; session?: string } = {}
+) => ({
+  task_id: taskRowId(n),
+  objective_id: OBJECTIVE_ID,
+  parent_task_id: options.parent === undefined ? null : taskRowId(options.parent),
+  kind: options.kind ?? 'work',
+  title: `Task ${n}`,
+  state,
+  assignee: null,
+  pane_id: `00000000-0000-4000-8000-00000000050${n}`,
+  session_id: options.session ?? null,
+  created_at: n
+})
+
+const upgradedTasks = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const filename = path.join(yield* fs.makeTempDirectoryScoped(), 'data.db')
+  const before = yield* openIn(filename, migrationsBeforeIssues)
+  const old = before.sql
+  yield* old`INSERT INTO objectives ${old.insert({
+    objective_id: OBJECTIVE_ID,
+    project_id: '00000000-0000-4000-8000-000000000300',
+    title: 'Ship',
+    description: '',
+    priority: 'normal',
+    assignee: null,
+    state: 'open',
+    created_at: 0
+  })}`
+  yield* old`INSERT INTO job_titles ${old.insert({
+    job_title_id: COPY_ID,
+    name: 'My copy',
+    built_in: null,
+    enabled: 1,
+    job_description: '',
+    skills: '[]',
+    permissions: NO_RULES,
+    mcp_servers: '{}',
+    bypass_opt_in: 0
+  })}`
+  for (const row of [
+    task(1, 'waiting'),
+    task(2, 'running', { parent: 1, session: 'session-2' }),
+    task(3, 'finished'),
+    task(4, 'completed', { parent: 3, kind: 'retro' })
+  ]) {
+    yield* old`INSERT INTO tasks ${old.insert(row)}`
+  }
+  yield* before.close
+  const sql = yield* openDatabase(filename, orgMigrations)
+  return { sql }
+}).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
+
+describe('7_issues on a database with tasks', () => {
+  it.effect('maps waiting and running tasks to todo and finished and completed ones to done', () =>
+    Effect.gen(function* () {
+      const { sql } = yield* upgradedTasks
+      const rows = yield* sql<{
+        readonly issue_id: string
+        readonly status: string
+      }>`SELECT issue_id, status FROM issues ORDER BY created_at`
+      assert.deepStrictEqual(
+        rows.map((row) => [row.issue_id, row.status]),
+        [
+          [taskRowId(1), 'todo'],
+          [taskRowId(2), 'todo'],
+          [taskRowId(3), 'done'],
+          [taskRowId(4), 'done']
+        ]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect("keeps a running task's session, parent and kind, with an empty description", () =>
+    Effect.gen(function* () {
+      const { sql } = yield* upgradedTasks
+      const [row] = yield* sql<{
+        readonly session_id: string | null
+        readonly parent_issue_id: string | null
+        readonly description: string
+      }>`SELECT session_id, parent_issue_id, description FROM issues WHERE issue_id = ${taskRowId(2)}`
+      const [retro] = yield* sql<{
+        readonly kind: string
+      }>`SELECT kind FROM issues WHERE issue_id = ${taskRowId(4)}`
+      assert.deepStrictEqual(
+        [row?.session_id, row?.parent_issue_id, row?.description, retro?.kind],
+        ['session-2', taskRowId(1), '', 'retro']
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect(
+    'leaves sub-issues and retros referencing their parents, and drops the tasks table',
+    () =>
+      Effect.gen(function* () {
+        const { sql } = yield* upgradedTasks
+        const violations = yield* sql`PRAGMA foreign_key_check`
+        const tasks = yield* sql`SELECT name FROM sqlite_master WHERE name = 'tasks'`
+        assert.deepStrictEqual([violations.length, tasks.length], [0, 0])
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect('takes a comment on a migrated issue and refuses one on a missing issue', () =>
+    Effect.gen(function* () {
+      const { sql } = yield* upgradedTasks
+      const comment = (issueId: string, commentId: string) =>
+        Effect.exit(
+          sql`INSERT INTO issue_comments ${sql.insert({
+            comment_id: commentId,
+            issue_id: issueId,
+            author: null,
+            body: 'Looks good.',
+            created_at: 1
+          })}`
+        )
+      const stored = yield* comment(taskRowId(1), '00000000-0000-4000-8000-000000000601')
+      const orphan = yield* comment(
+        '00000000-0000-4000-8000-000000000699',
+        '00000000-0000-4000-8000-000000000602'
+      )
+      assert.deepStrictEqual([Exit.isSuccess(stored), Exit.isFailure(orphan)], [true, true])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('allows the three issue tools on every built-in job title and not on a copy', () =>
+    Effect.gen(function* () {
+      const { sql } = yield* upgradedTasks
+      const rows = yield* sql<{
+        readonly built_in: string | null
+        readonly permissions: string
+      }>`SELECT built_in, permissions FROM job_titles`
+      const allowed = rows.map((row): [boolean, ReadonlyArray<string>] => [
+        row.built_in !== null,
+        (JSON.parse(row.permissions) as { allow: ReadonlyArray<string> }).allow
+      ])
+      const issueTools = [
+        'mcp__dia__create_issue',
+        'mcp__dia__update_issue',
+        'mcp__dia__comment_issue'
+      ]
+      assert.deepStrictEqual(
+        allowed.filter(([builtIn]) => builtIn).map(([, allow]) => allow),
+        Array.from({ length: 7 }, () => issueTools)
+      )
+      assert.deepStrictEqual(
+        allowed.filter(([builtIn]) => !builtIn).map(([, allow]) => allow),
+        [[]]
+      )
     }).pipe(Effect.scoped)
   )
 })

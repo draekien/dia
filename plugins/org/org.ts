@@ -6,7 +6,7 @@ import {
   BuiltInJobTitleRenamed,
   descendantsOf,
   HiredAgent,
-  HireHasOpenTasks,
+  HireHasOpenIssues,
   type HireId,
   HireNameTaken,
   HireNotFound,
@@ -112,11 +112,11 @@ const decodeSettingsRows = rowsDecoder(SettingsRow)
 
 /**
  * Builds the {@link Org} over the `org` plugin's database, which `orgMigrations` must already have
- * migrated. `openTasksOf` counts the tasks assigned to a hired agent that are not completed; it is
+ * migrated. `openIssuesOf` counts the issues assigned to a hired agent that are neither `done` nor `canceled`; it is
  * read inside `dismiss`'s transaction, so it must use the same SQL client. Call it once in the
  * plugin's setup and provide the result under `OrgService`.
  */
-export const makeOrg = (openTasksOf: (hireId: HireId) => Effect.Effect<number>) =>
+export const makeOrg = (openIssuesOf: (hireId: HireId) => Effect.Effect<number>) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const crypto = yield* Crypto.Crypto
@@ -314,9 +314,9 @@ export const makeOrg = (openTasksOf: (hireId: HireId) => Effect.Effect<number>) 
       const movedReports = yield* transaction(
         Effect.gen(function* () {
           const dismissed = yield* findHire(hireId)
-          const openTasks = yield* openTasksOf(hireId)
-          if (openTasks > 0) {
-            return yield* HireHasOpenTasks.make({ hireId, tasks: openTasks })
+          const openIssues = yield* openIssuesOf(hireId)
+          if (openIssues > 0) {
+            return yield* HireHasOpenIssues.make({ hireId, issues: openIssues })
           }
           const moved =
             yield* sql`UPDATE hired_agents SET reports_to = ${dismissed.reportsTo} WHERE reports_to = ${hireId} RETURNING hire_id`

@@ -12,7 +12,7 @@ William is the sole user and developer of dia. Every dia feature (pane sessions,
 4. A plugin that fails to load or reload leaves every other plugin and every pane session running, and its error is shown in the plugin panel, in 100% of failures observed during testing.
 5. Dogfooding milestone: an agent in a dia pane, working in a worktree of the dia repo, edits a plugin, loads it with `plugin_override`, checks the changed behaviour, and opens a pull request with `gh pr create`, with no action from William other than approving permission prompts.
 6. Two panes in two worktrees refine two different plugins at the same time, and each refinement becomes its own pull request containing only that plugin's changes.
-7. Every `plugin_*` tool call produces a permission prompt in the calling pane unless that pane's permission mode auto-approves it, with zero calls that change plugins without approval observed during testing.
+7. Every `plugin_*` tool call produces a permission prompt in the calling pane unless that pane's permission mode or rules approve it (ADR-0069), with zero calls that change plugins without approval observed during testing.
 8. The installed app with no overrides set starts and runs every built-in plugin with no dia checkout present on the machine.
 9. All `docs/prds/mvp.md` success criteria that held before the platform work still hold after Phase 1 and after each Phase 4 feature migration in `docs/plans/2026-10-22-plugin-platform.md`.
 

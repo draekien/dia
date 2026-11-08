@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0069"
 date: 2026-10-24
 decision-makers: William Pei
 ---
@@ -32,7 +32,7 @@ Chosen option: "Reload as a transaction", because it keeps the running version o
 * The loader restores its generations, importer links and file signatures when the reload fails.
 * A changed file outside the plugin directory that a plugin module imports directly gives `RestartRequired` with reason `dependency`; the running version stays.
 * The registry totals, per plugin, the growth of the Host's heap across each load and unload, measured after a forced garbage collection. At 100 MB the plugin's `load` imports nothing and returns `RestartRequired` with reason `memory`; `unload` still works; a restart resets the totals.
-* Agents reload plugins through three in-process MCP tools (`plugin_override`, `plugin_reload`, `plugin_clear_override`). Each tool asks the user itself, so approval holds in every permission mode that lets the tool run.
+* Agents reload plugins through three in-process MCP tools (`plugin_override`, `plugin_reload`, `plugin_clear_override`). Each tool asks the user itself, so approval holds in every permission mode that lets the tool run. (Amended by ADR-0069: the tools follow the session's permission rules and mode, and in `bypassPermissions` they run without a request.)
 
 This supersedes the "Failed reload" row and the module-eviction wording of the HMR rows in ADR-0020. The Host file watcher and the renderer's Vite dev server in ADR-0020 are not built yet (paused by the user, 2026-10-24).
 

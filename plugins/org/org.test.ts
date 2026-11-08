@@ -17,7 +17,7 @@ const openOrgIn = (filename: string) =>
     const scope = yield* Scope.make()
     const sql = yield* openDatabase(filename, orgMigrations).pipe(Scope.provide(scope))
     const org = yield* makeWork(() => Effect.succeed(true)).pipe(
-      Effect.flatMap(({ openTasksOf }) => makeOrg(openTasksOf)),
+      Effect.flatMap(({ openIssuesOf }) => makeOrg(openIssuesOf)),
       Effect.provideService(SqlClient.SqlClient, sql),
       Effect.provide(NodeCrypto.layer)
     )
@@ -88,7 +88,7 @@ describe('org seed', () => {
   )
 
   it.effect(
-    'gives every built-in job title no skills, MCP servers, allow or ask rules, or bypass',
+    'gives every built-in job title no skills, MCP servers, ask rules or bypass, and allows only the issue tools',
     () =>
       Effect.gen(function* () {
         const org = yield* freshOrg
@@ -101,7 +101,13 @@ describe('org seed', () => {
               jobTitle.permissions.ask,
               jobTitle.bypassOptIn
             ],
-            [[], {}, [], [], false],
+            [
+              [],
+              {},
+              ['mcp__dia__create_issue', 'mcp__dia__update_issue', 'mcp__dia__comment_issue'],
+              [],
+              false
+            ],
             jobTitle.name
           )
         }
