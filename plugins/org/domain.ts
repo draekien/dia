@@ -211,6 +211,16 @@ export type WorkTitle = typeof WorkTitle.Type
 export const ObjectivePriority = Schema.Literals(['high', 'normal', 'low'])
 export type ObjectivePriority = typeof ObjectivePriority.Type
 
+/** The order objectives of each priority come in, lowest first: `high` is 0, `low` is 2. */
+export const PRIORITY_RANK: Record<ObjectivePriority, number> = { high: 0, normal: 1, low: 2 }
+
+/** The label the org screens show for each priority. */
+export const PRIORITY_LABELS: Record<ObjectivePriority, string> = {
+  high: 'High',
+  normal: 'Normal',
+  low: 'Low'
+}
+
 /** An objective is `completed` when it has tasks and every one is `completed`; otherwise `open`. */
 export const ObjectiveState = Schema.Literals(['open', 'completed'])
 export type ObjectiveState = typeof ObjectiveState.Type

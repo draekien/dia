@@ -8,19 +8,13 @@ import { AssignTask, CreateTask, FinishTask, type OrgSnapshot } from './calls'
 import {
   type HireId,
   type Objective,
-  type ObjectivePriority,
+  PRIORITY_LABELS,
   type Task,
   TaskId,
   type TaskState
 } from './domain'
-import { agentName, commonFailureText, type OrgCall, readWorkTitle } from './org-actions'
+import { agentName, commonFailureText, newId, type OrgCall, readWorkTitle } from './org-actions'
 import { AssigneeSelect } from './org-fields'
-
-const PRIORITY_LABELS: Record<ObjectivePriority, string> = {
-  high: 'High',
-  normal: 'Normal',
-  low: 'Low'
-}
 
 const STATE_LABELS: Record<TaskState, string> = {
   waiting: 'Waiting',
@@ -172,8 +166,7 @@ function AddTask({
     const readTitle = readWorkTitle(title)
     if (Result.isFailure(readTitle)) return setError(readTitle.failure)
     setBusy(true)
-    // @effect-diagnostics-next-line cryptoRandomUUID:off -- a React handler outside any Effect; the id only has to be unique.
-    const id = TaskId.make(crypto.randomUUID())
+    const id = TaskId.make(newId())
     const result = await call(
       CreateTask,
       {

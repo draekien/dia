@@ -14,15 +14,13 @@ import { Option } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
 import { useState } from 'react'
 import type { WorkView } from './calls'
-import type { Objective, ObjectiveId, ObjectivePriority } from './domain'
+import { type Objective, type ObjectiveId, PRIORITY_RANK } from './domain'
 import { EntryList } from './entry-list'
 import { ObjectiveDialog, type ProjectChoice } from './objective-dialog'
 import { ObjectiveScreen } from './objective-screen'
 import type { OrgScreen, WorkAtom } from './org-actions'
 import { LoadFailure } from './org-fields'
 import { ObjectivesView } from './org-view'
-
-const PRIORITY_RANK: Record<ObjectivePriority, number> = { high: 0, normal: 1, low: 2 }
 
 const listOrder = (a: Objective, b: Objective): number =>
   Number(a.state === 'completed') - Number(b.state === 'completed') ||

@@ -24,8 +24,14 @@ import { Result } from 'effect'
 import { Loader2Icon } from 'lucide-react'
 import { type FormEvent, useId, useState } from 'react'
 import { CreateObjective, type OrgSnapshot } from './calls'
-import { type HireId, type Objective, ObjectiveId, type ObjectivePriority } from './domain'
-import { commonFailureText, type OrgCall, readWorkTitle } from './org-actions'
+import {
+  type HireId,
+  type Objective,
+  ObjectiveId,
+  ObjectivePriority,
+  PRIORITY_LABELS
+} from './domain'
+import { commonFailureText, newId, type OrgCall, readWorkTitle } from './org-actions'
 import { AssigneeSelect } from './org-fields'
 
 /** A registered project the objective form offers: its id and the name to show. */
@@ -33,12 +39,6 @@ export interface ProjectChoice {
   readonly id: ProjectId
   readonly name: string
 }
-
-const PRIORITIES: ReadonlyArray<{ readonly value: ObjectivePriority; readonly label: string }> = [
-  { value: 'high', label: 'High' },
-  { value: 'normal', label: 'Normal' },
-  { value: 'low', label: 'Low' }
-]
 
 interface Errors {
   readonly project?: string
@@ -83,8 +83,7 @@ export function ObjectiveDialog({
     const readTitle = readWorkTitle(title)
     if (Result.isFailure(readTitle)) return setErrors({ title: readTitle.failure })
     setBusy(true)
-    // @effect-diagnostics-next-line cryptoRandomUUID:off -- a React handler outside any Effect; the id only has to be unique.
-    const id = ObjectiveId.make(crypto.randomUUID())
+    const id = ObjectiveId.make(newId())
     const result = await call(
       CreateObjective,
       {
@@ -205,9 +204,9 @@ export function ObjectiveDialog({
                 size="sm"
                 aria-label="Priority"
               >
-                {PRIORITIES.map((option) => (
-                  <ToggleGroupItem key={option.value} value={option.value}>
-                    {option.label}
+                {ObjectivePriority.literals.map((value) => (
+                  <ToggleGroupItem key={value} value={value}>
+                    {PRIORITY_LABELS[value]}
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
