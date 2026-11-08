@@ -2,7 +2,8 @@
   "name": "mcp",
   "api": "0.0.34",
   "category": "feature",
+  "host": "host.ts",
   "renderer": "renderer.ts",
   "load": "eager",
-  "exports": ["servers.ts", "editor.ts"]
+  "exports": ["servers.ts", "editor.ts", "registry.ts"]
 }

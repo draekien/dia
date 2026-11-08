@@ -59,7 +59,7 @@ decision-queue, memory, propose-change, workflows, kpis   (#41–#46, one plugin
 
 ### Contribution contract
 
-A registry's `register` returns `Effect<void, never, Scope.Scope>`. A contributor calls it inside `whenProvided([RegistryKey], …)`, so the entry is removed when the contributor or the registry closes, and registered again when both are open.
+A registry's `register` returns `Effect<void, E, Scope.Scope>`, where `E` is that registry's name-taken error. A contributor calls it inside `whenProvided([RegistryKey], …)`, so the entry is removed when the contributor or the registry closes, and registered again when both are open. The first registration of a name holds it: a later `register` of the name fails with `E`, as `deepseek-harness`'s `mcpManager.register` does (`packages/mcp/mcp-manager/src/index.ts:288-303`).
 
 ### References
 
