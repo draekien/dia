@@ -26,6 +26,7 @@ Keep every entry consistent with the current code. An out-of-date entry is worse
 
 - `docs/llms/electron-vite.txt` — an [llms.txt](https://llmstxt.org/#proposal) index of the electron-vite guide (build tool chosen in ADR-0004). Consult it before making electron-vite config, dev/HMR, build, or packaging changes.
 - `docs/llms/agent-sdk.txt` — an [llms.txt](https://llmstxt.org/#proposal) index of the Claude Agent SDK docs, linking the full TypeScript/Python API reference. **Read it first for any Agent SDK question or task** (sessions, permissions, hooks, MCP, subagents), whether answering, debugging or writing code, before general Claude API knowledge, a skill, or a subagent.
+- `docs/glossary.md` — the org plugin's vocabulary (objective, issue, planning issue, triage) and its ten issue statuses. Use these terms in code, UI copy and docs.
 - `.repos/` in the main checkout (the parent of `git rev-parse --path-format=absolute --git-common-dir`; a worktree has no `.repos/` of its own) holds git-ignored clones of reference projects. **Before putting a design question to the user, search these clones for how they solve it, and cite the files you found in the question.**
 
   | Clone | Origin | Read it for |

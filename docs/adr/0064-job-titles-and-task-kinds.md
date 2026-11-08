@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0069"
 date: 2026-11-07
 decision-makers: William Pei
 ---
@@ -54,8 +54,8 @@ ADR-0042, ADR-0043, ADR-0054 and ADR-0056 keep the word "role"; read it as "job 
 
 * A planning task breaks an objective into tasks. A retro task reads a finished task's transcripts and scratchpad and writes long-term memory (ADR-0035).
 * The user picks the hired agent of each planning task and each retro task, as for any task. No job title is tied to either.
-* Route `plan` (ADR-0053) and an objective the user leaves unassigned in the objective form create a planning task, which waits until the user assigns it.
-* A finished task waits until its retro task is assigned and done.
+* Route `plan` (ADR-0053) and an objective the user leaves unassigned in the objective form create a planning task, which waits until the user assigns it. (Amended by ADR-0069: every objective creates a planning issue, and an objective with an assignee starts it at once.)
+* A finished task waits until its retro task is assigned and done. (Amended by ADR-0069: finishing a `work` issue moves it to `done` and creates its retro issue; it does not wait for the retro.)
 * dia hires nobody on first run, and the org shows no "No retro is hired" warning.
 
 ### Consequences

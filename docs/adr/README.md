@@ -27,14 +27,14 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0016](0016-electron-builder-distribution-and-auto-update.md) | Distribute dia as an electron-builder NSIS installer with GitHub-backed auto-update | accepted, amended by ADR-0044 |
 | [0017](0017-frameless-window-with-native-overlay-controls.md) | Replace the native window frame with a custom titlebar and native overlay controls | accepted, header strip and colour sync superseded by ADR-0038 |
 | [0018](0018-transcript-anchored-file-checkpointing-with-conversation-fork.md) | Transcript-anchored file checkpointing that forks the conversation on rewind | accepted; its rewind-control sentence superseded by ADR-0045 |
-| [0019](0019-thin-plugin-kernel-on-effect.md) | Build dia as a thin plugin kernel on Effect, with every feature as a plugin | accepted, amended by ADR-0029, ADR-0059 and ADR-0065 |
+| [0019](0019-thin-plugin-kernel-on-effect.md) | Build dia as a thin plugin kernel on Effect, with every feature as a plugin | accepted, amended by ADR-0029, ADR-0059, ADR-0065 and ADR-0069 |
 | [0020](0020-plugin-source-loading-and-hot-reload.md) | Load first-party plugins from source in the dia repo, with per-plugin worktree overrides and hot reload | accepted, amended by ADR-0059 |
 | [0021](0021-single-host-process-for-all-panes.md) | Run every pane's agent session and all non-UI plugins in one Host process | accepted |
 | [0022](0022-renderer-to-host-over-local-websocket.md) | Connect the renderer to the Host over an authenticated localhost WebSocket | accepted, amended by ADR-0051 and ADR-0052 |
 | [0023](0023-agents-as-tabs-within-registered-projects.md) | Organise agents as tabs within registered projects, replacing the split-pane layout | accepted, amended by ADR-0046 and ADR-0053 |
 | [0024](0024-background-agents-run-in-tabs-not-on-screen.md) | Run background agents in tabs that are not on screen; closing the window still quits dia | accepted |
 | [0025](0025-meta-project-as-a-dia-owned-git-repo.md) | Run a meta project: a dia-owned git repo loaded into every agent, changed through approved proposals | accepted, amended by ADR-0036 |
-| [0026](0026-plugin-reload-as-a-transaction-with-rollback-and-a-memory-limit.md) | Reload a plugin as a transaction with rollback, per-module generations and a memory limit | accepted |
+| [0026](0026-plugin-reload-as-a-transaction-with-rollback-and-a-memory-limit.md) | Reload a plugin as a transaction with rollback, per-module generations and a memory limit | accepted, amended by ADR-0069 |
 | [0027](0027-eager-and-lazy-plugin-startup.md) | Load plugins as eager or lazy at startup, and report each plugin's progress to the renderer | accepted, amended by ADR-0065 |
 | [0028](0028-essential-plugins-and-the-permissions-plugin.md) | Keep essential plugins loaded and un-overridable, and move permission handling into one | superseded by ADR-0029 |
 | [0029](0029-plugin-categories-adapter-and-feature.md) | Split plugins into one adapter category and one feature category, and move the Agent SDK into a Claude Code adapter | accepted, category rules superseded by ADR-0065 |
@@ -43,7 +43,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0032](0032-background-activities-and-semver-plugin-api.md) | Plugins schedule background activities through the kernel, keep files in a data directory, and declare a semver plugin API version | accepted |
 | [0033](0033-one-org-of-hired-role-agents.md) | Run one org of hired agents with roles, per-role and overall concurrency caps, and ad-hoc tabs outside the caps | accepted, amended by ADR-0053 and ADR-0064 |
 | [0034](0034-decision-path-and-decision-queue.md) | Review objective plans as a live decision path, and route everything that waits on the user through one decision queue | accepted, amended by ADR-0053 and ADR-0064 |
-| [0035](0035-task-memory-and-retros.md) | Give each task a scratchpad and a transcript record, require a retro before a task completes, and let the retro write scoped long-term memory | accepted, amended by ADR-0064 |
+| [0035](0035-task-memory-and-retros.md) | Give each task a scratchpad and a transcript record, require a retro before a task completes, and let the retro write scoped long-term memory | accepted, amended by ADR-0064 and ADR-0069 |
 | [0036](0036-tiered-self-improvement.md) | Let agents change the harness through `propose_change`, applied by a risk tier the user sets per change type | accepted, amended by ADR-0064 |
 | [0037](0037-run-the-users-claude-code-install.md) | Run the user's own Claude Code install, found by an override or on `PATH`, instead of the binary bundled with the Agent SDK | accepted |
 | [0038](0038-transparent-overlay-and-inset-sidebar-frame.md) | Draw the window controls over a transparent overlay and use the shadcn inset sidebar as the window frame | accepted; frame superseded by ADR-0039 |
@@ -61,7 +61,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0050](0050-host-keeps-tab-chat-state.md) | The Host keeps each tab's chat state and serves snapshots | accepted, amended by ADR-0051 and ADR-0052 |
 | [0051](0051-session-event-store-in-host-db.md) | Store each agent's conversation as events in `host.db`, and use the Agent SDK transcript only to resume | accepted, amended by ADR-0052 |
 | [0052](0052-every-pane-event-in-the-agent-event-store.md) | Store every pane event in `agent_events` and send the renderer item updates instead of deltas | accepted |
-| [0053](0053-router-role-as-the-users-assistant.md) | Take the user's requests in chat through a built-in `router` role that hands work to hired agents and never plans or does the work itself | accepted, amended by ADR-0064 |
+| [0053](0053-router-role-as-the-users-assistant.md) | Take the user's requests in chat through a built-in `router` role that hands work to hired agents and never plans or does the work itself | accepted, amended by ADR-0064 and ADR-0069 |
 | [0054](0054-permission-modes-for-hired-agents.md) | Run hired agents in `auto` where the model and settings allow it, otherwise in `default`, and in `bypassPermissions` only when the user opts a role or hire in | accepted |
 | [0055](0055-lease-a-feature-plugin-service-for-one-operation.md) | Lease a feature plugin's service for one operation, and close a plugin only after its leases end or 30 seconds pass | accepted, amended by ADR-0060 and ADR-0065 |
 | [0056](0056-run-part-of-a-plugin-while-optional-services-are-provided.md) | Run part of a plugin while optional services are provided, with `ctx.whenProvided` | accepted, amended by ADR-0060 and ADR-0065 |
@@ -71,11 +71,12 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0061](0061-list-slots.md) | List slots: a plugin declares a list it draws, and other plugins add entries to it | accepted |
 | [0062](0062-host-service-keys.md) | Type the services the Host reads by keys defined in `src/` | accepted, amended by ADR-0065 |
 | [0063](0063-settings-and-palette-plugins.md) | Plugins own the Settings dialog, the command palette and their entries | accepted, amended by ADR-0065 |
-| [0064](0064-job-titles-and-task-kinds.md) | Name what an agent is hired as a job title, ship seven built-in job titles, and make planning and retro kinds of task | accepted |
+| [0064](0064-job-titles-and-task-kinds.md) | Name what an agent is hired as a job title, ship seven built-in job titles, and make planning and retro kinds of task | accepted, amended by ADR-0069 |
 | [0065](0065-adapter-plugins-are-ordinary-plugins.md) | Adapter plugins load, reload, unload and import under the same rules as feature plugins | accepted |
 | [0066](0066-plugin-owned-fields-in-kernel-contracts.md) | A kernel contract field whose shape a plugin owns is `unknown` in the kernel | accepted |
 | [0067](0067-hired-agent-sessions-run-headless-in-the-org-plugin.md) | Hired agents' sessions run headless inside the org plugin | accepted |
 | [0068](0068-plugin-host-entries-serve-streaming-calls.md) | Plugin host entries serve streaming calls, and a subscription holds no lease | accepted |
+| [0069](0069-org-work-is-issues-with-implement-task-statuses.md) | Make org work issues with implement-task statuses, and make dia tools follow the session's permission rules | accepted |
 
 ## Adding a new ADR
 
