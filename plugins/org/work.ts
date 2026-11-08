@@ -25,6 +25,7 @@ import {
   IssueNotInTriage,
   IssueNotStarted,
   type IssueStatus,
+  isAssignable,
   isClosed,
   isStarted,
   type NewIssue,
@@ -352,8 +353,8 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
       yield* append(issue.objectiveId, issue.id, IssueCreated.make({ issue }))
     })
 
-    const setIssueStatus = (issue: Issue, status: IssueStatus) =>
-      sql`UPDATE issues SET status = ${status} WHERE issue_id = ${issue.id}`
+    const setIssueStatus = (issueId: IssueId, status: IssueStatus) =>
+      sql`UPDATE issues SET status = ${status} WHERE issue_id = ${issueId}`
 
     const completeObjectiveIfDone = Effect.fnUntraced(function* (objectiveId: ObjectiveId) {
       const [counts] = yield* sql<{
@@ -496,7 +497,7 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
         Effect.gen(function* () {
           const current = yield* requireIssue(issueId)
           if (current.assignee === hireId) return current
-          if (current.status !== 'triage' && current.status !== 'todo') {
+          if (!isAssignable(current.status)) {
             return yield* IssueNotAssignable.make({ issueId, status: current.status })
           }
           yield* ensureHire(hireId)
@@ -527,7 +528,7 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
             if (current.status !== 'triage') {
               return yield* IssueNotInTriage.make({ issueId, status: current.status })
             }
-            yield* setIssueStatus(current, target)
+            yield* setIssueStatus(issueId, target)
             yield* append(current.objectiveId, issueId, IssueTriaged.make({ decision }))
             objectives.add(current.objectiveId)
             result.push(Issue.make({ ...current, status: target }))
@@ -601,7 +602,7 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
           if (!isStarted(current.status)) {
             return yield* IssueNotStarted.make({ issueId, status: current.status })
           }
-          yield* setIssueStatus(current, 'done')
+          yield* setIssueStatus(issueId, 'done')
           yield* append(current.objectiveId, issueId, IssueFinished.make({}))
           if (current.kind === 'work') {
             yield* insertIssue(

@@ -27,6 +27,7 @@ import {
   type ObjectiveState,
   OverallCap,
   TriageDecision,
+  WORK_TITLE_MAX_LENGTH,
   WorkTitle
 } from './domain'
 
@@ -330,7 +331,7 @@ const newIssue = (fields: Omit<Issue, 'paneId' | 'sessionId' | 'createdAt'>): Is
   })
 
 const prefixed = (prefix: string, title: string) =>
-  WorkTitle.make(`${prefix}: ${title}`.slice(0, 120).trimEnd())
+  WorkTitle.make(`${prefix}: ${title}`.slice(0, WORK_TITLE_MAX_LENGTH).trimEnd())
 
 const changeIssues = (
   host: FakeHost,

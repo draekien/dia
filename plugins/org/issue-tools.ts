@@ -6,6 +6,7 @@ import {
   IssueChange,
   IssueDescription,
   IssueId,
+  type IssueNotFound,
   type ObjectiveId,
   StartedStatus,
   WorkTitle
@@ -61,10 +62,8 @@ const decodeIssueId = (field: string, value: string) =>
     )
   )
 
-const isStartedStatus = Schema.is(StartedStatus)
-
 const decodeStatus = (value: string | undefined) =>
-  value === undefined || isStartedStatus(value)
+  value === undefined || Schema.is(StartedStatus)(value)
     ? Effect.succeed(value)
     : Effect.fail(
         new InvalidInput({
@@ -72,16 +71,33 @@ const decodeStatus = (value: string | undefined) =>
         })
       )
 
+const notInObjective = (issueId: IssueId) => `Issue ${issueId} is not in this objective.`
+
+type SharedError = InvalidInput | IssueNotFound
+
+const isSharedError = (error: { readonly _tag: string }): error is SharedError =>
+  error._tag === 'InvalidInput' || error._tag === 'IssueNotFound'
+
+const describeShared = (error: SharedError): string =>
+  error._tag === 'InvalidInput' ? error.message : notInObjective(error.issueId)
+
 const recover =
   (tool: string, action: string) =>
   <E extends { readonly _tag: string }>(
     effect: Effect.Effect<DiaToolResult, E>,
-    describe: (error: E) => string
+    describe: (error: Exclude<E, SharedError>) => string = () => `Could not ${action}.`
   ): Effect.Effect<DiaToolResult> =>
     effect.pipe(
       Effect.catch((error) =>
         Effect.logInfo('Issue tool refused the call', { tool, error: error._tag }).pipe(
-          Effect.as(result(describe(error), true))
+          Effect.as(
+            result(
+              isSharedError(error)
+                ? describeShared(error)
+                : describe(error as Exclude<E, SharedError>),
+              true
+            )
+          )
         )
       ),
       Effect.catchCause((cause) =>
@@ -91,7 +107,10 @@ const recover =
       )
     )
 
-const notInObjective = (issueId: IssueId) => `Issue ${issueId} is not in this objective.`
+const issueIdOrOwn = (input: Input, scope: IssueToolScope) => {
+  const raw = present(input, 'issue_id')
+  return raw === undefined ? Effect.succeed(scope.issueId) : decodeIssueId('issue_id', raw)
+}
 
 /**
  * The dia tools a hired agent's session gets: create_issue, update_issue and comment_issue,
@@ -135,10 +154,6 @@ export const makeIssueTools = (
         }),
         (error) => {
           switch (error._tag) {
-            case 'InvalidInput':
-              return error.message
-            case 'IssueNotFound':
-              return notInObjective(error.issueId)
             case 'ObjectiveNotFound':
               return `Objective ${error.objectiveId} no longer exists.`
           }
@@ -160,8 +175,7 @@ export const makeIssueTools = (
     run: (input) =>
       recover('update_issue', 'update the issue')(
         Effect.gen(function* () {
-          const raw = present(input, 'issue_id')
-          const issueId = raw === undefined ? scope.issueId : yield* decodeIssueId('issue_id', raw)
+          const issueId = yield* issueIdOrOwn(input, scope)
           const title = yield* decodeOptional(WorkTitle, 'title', present(input, 'title')?.trim())
           const description = yield* decodeOptional(
             IssueDescription,
@@ -179,9 +193,9 @@ export const makeIssueTools = (
           })
           yield* work.updateIssue(scope.objectiveId, issueId, change)
           const changed = [
-            ...(title === undefined ? [] : ['title']),
-            ...(description === undefined ? [] : ['description']),
-            ...(status === undefined ? [] : [`status ${status}`])
+            ...(change.title === undefined ? [] : ['title']),
+            ...(change.description === undefined ? [] : ['description']),
+            ...(change.status === undefined ? [] : [`status ${change.status}`])
           ]
           return result(
             changed.length === 0
@@ -191,10 +205,6 @@ export const makeIssueTools = (
         }),
         (error) => {
           switch (error._tag) {
-            case 'InvalidInput':
-              return error.message
-            case 'IssueNotFound':
-              return notInObjective(error.issueId)
             case 'IssueNotStarted':
               return `Issue ${error.issueId} is in ${error.status}; only a started issue's status can change.`
             case 'IssueClosed':
@@ -212,22 +222,16 @@ export const makeIssueTools = (
       body: required('Text of the comment.')
     },
     run: (input) =>
-      recover('comment_issue', 'comment on the issue')(
+      recover(
+        'comment_issue',
+        'comment on the issue'
+      )(
         Effect.gen(function* () {
-          const raw = present(input, 'issue_id')
-          const issueId = raw === undefined ? scope.issueId : yield* decodeIssueId('issue_id', raw)
+          const issueId = yield* issueIdOrOwn(input, scope)
           const body = yield* decodeField(CommentBody, 'body', (input.body ?? '').trim())
           yield* work.commentIssue(scope.objectiveId, issueId, scope.hireId, body)
           return result(`Commented on issue ${issueId}.`)
-        }),
-        (error) => {
-          switch (error._tag) {
-            case 'InvalidInput':
-              return error.message
-            case 'IssueNotFound':
-              return notInObjective(error.issueId)
-          }
-        }
+        })
       )
   }
 ]

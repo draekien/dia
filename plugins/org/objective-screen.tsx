@@ -7,11 +7,13 @@ import { Loader2Icon } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { AssignIssue, CreateIssue, FinishIssue, type OrgSnapshot, TriageIssues } from './calls'
 import {
+  type HiredAgent,
   type HireId,
   type Issue,
   type IssueComment,
   IssueId,
   type IssueStatus,
+  isAssignable,
   isStarted,
   type Objective,
   PRIORITY_LABELS,
@@ -76,14 +78,15 @@ interface IssueNode {
   readonly children: ReadonlyArray<IssueNode>
 }
 
-const issueTree = (
-  issues: ReadonlyArray<Issue>,
-  parent: IssueId | null
-): ReadonlyArray<IssueNode> =>
-  issues
-    .filter((issue) => issue.parentIssueId === parent)
-    .sort((a, b) => a.createdAt - b.createdAt)
-    .map((issue) => ({ issue, children: issueTree(issues, issue.id) }))
+const issueTree = (issues: ReadonlyArray<Issue>): ReadonlyArray<IssueNode> => {
+  const byParent = new Map<IssueId | null, Array<Issue>>()
+  for (const issue of [...issues].sort((a, b) => a.createdAt - b.createdAt)) {
+    byParent.set(issue.parentIssueId, [...(byParent.get(issue.parentIssueId) ?? []), issue])
+  }
+  const build = (parent: IssueId | null): ReadonlyArray<IssueNode> =>
+    (byParent.get(parent) ?? []).map((issue) => ({ issue, children: build(issue.id) }))
+  return build(null)
+}
 
 const issueFailureText = (failure: { readonly _tag: string }): string => {
   switch (failure._tag) {
@@ -120,29 +123,28 @@ function Pending({ busy }: { readonly busy: boolean }) {
   return busy ? <Loader2Icon data-icon="inline-start" className="motion-safe:animate-spin" /> : null
 }
 
-function TriageBar({
-  triage,
-  call
+function TriageButtons({
+  ids,
+  call,
+  acceptLabel,
+  declineLabel,
+  failureTitle
 }: {
-  readonly triage: ReadonlyArray<Issue>
+  readonly ids: readonly [IssueId, ...Array<IssueId>]
   readonly call: OrgCall
+  readonly acceptLabel: string
+  readonly declineLabel: string
+  readonly failureTitle: (decision: TriageDecision) => string
 }) {
   const [busy, setBusy] = useState<TriageDecision | null>(null)
-  if (!isReadonlyArrayNonEmpty(triage)) return null
-  const ids = [triage[0].id, ...triage.slice(1).map((issue) => issue.id)] as const
 
   const decide = async (decision: TriageDecision) => {
     setBusy(decision)
-    await triageIssues(call, ids, decision, `Could not ${decision} the issues`).finally(() =>
-      setBusy(null)
-    )
+    await triageIssues(call, ids, decision, failureTitle(decision)).finally(() => setBusy(null))
   }
 
   return (
-    <div className="flex items-center gap-2 border-b pb-2">
-      <span className="min-w-0 flex-1 text-sm text-ink-muted">
-        {triage.length === 1 ? '1 issue in Triage' : `${triage.length} issues in Triage`}
-      </span>
+    <>
       <Button
         size="xs"
         variant="outline"
@@ -150,7 +152,7 @@ function TriageBar({
         onClick={() => void decide('accept')}
       >
         <Pending busy={busy === 'accept'} />
-        Accept all
+        {acceptLabel}
       </Button>
       <Button
         size="xs"
@@ -159,8 +161,34 @@ function TriageBar({
         onClick={() => void decide('decline')}
       >
         <Pending busy={busy === 'decline'} />
-        Decline all
+        {declineLabel}
       </Button>
+    </>
+  )
+}
+
+function TriageBar({
+  triage,
+  call
+}: {
+  readonly triage: ReadonlyArray<Issue>
+  readonly call: OrgCall
+}) {
+  if (!isReadonlyArrayNonEmpty(triage)) return null
+  const ids = [triage[0].id, ...triage.slice(1).map((issue) => issue.id)] as const
+
+  return (
+    <div className="flex items-center gap-2 border-b pb-2">
+      <span className="min-w-0 flex-1 text-sm text-ink-muted">
+        {triage.length === 1 ? '1 issue in Triage' : `${triage.length} issues in Triage`}
+      </span>
+      <TriageButtons
+        ids={ids}
+        call={call}
+        acceptLabel="Accept all"
+        declineLabel="Decline all"
+        failureTitle={(decision) => `Could not ${decision} the issues`}
+      />
     </div>
   )
 }
@@ -169,16 +197,18 @@ const firstLine = (text: string): string => text.split('\n', 1)[0]?.trim() ?? ''
 
 function IssueComments({
   comments,
-  snapshot
+  snapshot,
+  agents
 }: {
   readonly comments: ReadonlyArray<IssueComment>
   readonly snapshot: OrgSnapshot
+  readonly agents: ReadonlyMap<HireId, HiredAgent>
 }) {
   if (comments.length === 0) return null
   return (
     <ul className="flex flex-col gap-1.5 py-1 pl-3">
       {comments.map((comment) => {
-        const author = snapshot.hiredAgents.find((agent) => agent.id === comment.author)
+        const author = comment.author === null ? undefined : agents.get(comment.author)
         return (
           <li key={comment.id} className="flex flex-col text-xs">
             <span className="font-medium text-ink">
@@ -202,7 +232,6 @@ function IssueRow({
   readonly call: OrgCall
 }) {
   const [finishing, setFinishing] = useState(false)
-  const [deciding, setDeciding] = useState<TriageDecision | null>(null)
 
   const assign = async (hireId: HireId | null) => {
     if (hireId === issue.assignee) return
@@ -220,13 +249,6 @@ function IssueRow({
     if (Result.isFailure(result)) {
       toastIssueFailure(`Could not finish ${issue.title}`, result.failure)
     }
-  }
-
-  const decide = async (decision: TriageDecision) => {
-    setDeciding(decision)
-    await triageIssues(call, [issue.id], decision, `Could not ${decision} ${issue.title}`).finally(
-      () => setDeciding(null)
-    )
   }
 
   const summary = firstLine(issue.description)
@@ -251,32 +273,19 @@ function IssueRow({
         value={issue.assignee}
         hiredAgents={snapshot.hiredAgents}
         jobTitles={snapshot.jobTitles}
-        disabled={issue.status !== 'triage' && issue.status !== 'todo'}
+        disabled={!isAssignable(issue.status)}
         className="h-8 w-40"
         onChange={(next) => void assign(next)}
       />
       <span className="flex w-36 shrink-0 justify-end gap-1.5">
         {issue.status === 'triage' ? (
-          <>
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={deciding !== null}
-              onClick={() => void decide('accept')}
-            >
-              <Pending busy={deciding === 'accept'} />
-              Accept
-            </Button>
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={deciding !== null}
-              onClick={() => void decide('decline')}
-            >
-              <Pending busy={deciding === 'decline'} />
-              Decline
-            </Button>
-          </>
+          <TriageButtons
+            ids={[issue.id]}
+            call={call}
+            acceptLabel="Accept"
+            declineLabel="Decline"
+            failureTitle={(decision) => `Could not ${decision} ${issue.title}`}
+          />
         ) : null}
         {isStarted(issue.status) ? (
           <Button size="xs" variant="outline" disabled={finishing} onClick={() => void finish()}>
@@ -292,13 +301,15 @@ function IssueRow({
 function IssueList({
   nodes,
   nested,
-  comments,
+  commentsByIssue,
+  agents,
   snapshot,
   call
 }: {
   readonly nodes: ReadonlyArray<IssueNode>
   readonly nested: boolean
-  readonly comments: ReadonlyArray<IssueComment>
+  readonly commentsByIssue: ReadonlyMap<IssueId, ReadonlyArray<IssueComment>>
+  readonly agents: ReadonlyMap<HireId, HiredAgent>
   readonly snapshot: OrgSnapshot
   readonly call: OrgCall
 }) {
@@ -309,15 +320,15 @@ function IssueList({
         <li key={node.issue.id} aria-label={node.issue.title} className="flex flex-col">
           <IssueRow issue={node.issue} snapshot={snapshot} call={call} />
           <IssueComments
-            comments={comments
-              .filter((comment) => comment.issueId === node.issue.id)
-              .sort((a, b) => a.createdAt - b.createdAt)}
+            comments={commentsByIssue.get(node.issue.id) ?? []}
             snapshot={snapshot}
+            agents={agents}
           />
           <IssueList
             nodes={node.children}
             nested
-            comments={comments}
+            commentsByIssue={commentsByIssue}
+            agents={agents}
             snapshot={snapshot}
             call={call}
           />
@@ -430,7 +441,12 @@ export function ObjectiveScreen({
   readonly call: OrgCall
 }) {
   const own = issues.filter((issue) => issue.objectiveId === objective.id)
-  const assignee = snapshot.hiredAgents.find((agent) => agent.id === objective.assignee)
+  const agents = new Map(snapshot.hiredAgents.map((agent) => [agent.id, agent]))
+  const assignee = objective.assignee === null ? undefined : agents.get(objective.assignee)
+  const commentsByIssue = new Map<IssueId, Array<IssueComment>>()
+  for (const comment of comments) {
+    commentsByIssue.set(comment.issueId, [...(commentsByIssue.get(comment.issueId) ?? []), comment])
+  }
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -460,9 +476,10 @@ export function ObjectiveScreen({
           <>
             <TriageBar triage={own.filter((issue) => issue.status === 'triage')} call={call} />
             <IssueList
-              nodes={issueTree(own, null)}
+              nodes={issueTree(own)}
               nested={false}
-              comments={comments}
+              commentsByIssue={commentsByIssue}
+              agents={agents}
               snapshot={snapshot}
               call={call}
             />

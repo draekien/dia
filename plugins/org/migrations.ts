@@ -229,6 +229,8 @@ const moveToIssues = Effect.gen(function* () {
            assignee, pane_id, session_id, created_at
     FROM tasks ORDER BY rowid`)
   yield* sql.unsafe('DROP TABLE tasks')
+  yield* sql.unsafe('CREATE INDEX issues_objective ON issues(objective_id)')
+  yield* sql.unsafe('CREATE INDEX issues_status_assignee ON issues(status, assignee)')
   yield* sql.unsafe(`CREATE TABLE issue_comments (
     comment_id TEXT    PRIMARY KEY,
     issue_id   TEXT    NOT NULL REFERENCES issues,
@@ -236,6 +238,7 @@ const moveToIssues = Effect.gen(function* () {
     body       TEXT    NOT NULL,
     created_at INTEGER NOT NULL
   )`)
+  yield* sql.unsafe('CREATE INDEX issue_comments_issue ON issue_comments(issue_id)')
   yield* sql.unsafe('ALTER TABLE org_events RENAME COLUMN task_id TO issue_id')
   const builtIns = yield* allowIssueToolsOnBuiltIns
   yield* Effect.logInfo('Moved org tasks to issues', {

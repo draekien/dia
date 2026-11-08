@@ -266,6 +266,10 @@ export type IssueStatus = typeof IssueStatus.Type
 
 const isStartedStatus = Schema.is(StartedStatus)
 
+/** Whether an issue in `status` can be given to or taken from a hired agent: `triage` or `todo`. */
+export const isAssignable = (status: IssueStatus): boolean =>
+  status === 'triage' || status === 'todo'
+
 /** Whether `status` is a {@link StartedStatus}: the issue's hired agent works on it. */
 export const isStarted = (status: IssueStatus): status is StartedStatus => isStartedStatus(status)
 

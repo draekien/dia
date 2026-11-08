@@ -10,9 +10,6 @@ import { z } from 'zod'
 /** Key under which the dia tools' MCP server is passed in `mcpServers`; it is the server segment of every tool name. */
 export const DIA_TOOL_SERVER_KEY = 'dia'
 
-/** The name the SDK reports for the dia tool `name` (`mcp__dia__plugin_reload`). */
-export const qualifiedToolName = (name: string): string => `mcp__${DIA_TOOL_SERVER_KEY}__${name}`
-
 /** Collaborators of {@link makeDiaToolServer}. */
 export interface DiaToolServerOptions {
   readonly tools: ReadonlyArray<DiaTool>
