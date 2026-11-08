@@ -257,9 +257,8 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (deps: Assista
       Effect.flatMap((current) => (Option.isSome(current) ? detach(current.value) : Effect.void))
     )
   )
-  yield* followJobTitle
-  yield* jobTitleChanges.pipe(
-    Stream.runForEach(() => followJobTitle),
+  yield* followJobTitle.pipe(
+    Effect.andThen(jobTitleChanges.pipe(Stream.runForEach(() => followJobTitle))),
     Effect.forkScoped
   )
   yield* workChanges.pipe(

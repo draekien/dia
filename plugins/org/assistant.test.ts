@@ -123,6 +123,7 @@ const setUp = Effect.gen(function* () {
         directory: 'C:/dia/plugins/org/assistant'
       })
     ).pipe(Scope.provide(scope))
+    yield* settle
     return { assistant, stop: Scope.close(scope, Exit.void) }
   })
   const engineer = (yield* org.jobTitles).find(
@@ -235,6 +236,18 @@ describe('Assistant session', () => {
       yield* env.org.setJobTitleEnabled(ASSISTANT_JOB_TITLE, false)
       yield* env.start
 
+      assert.strictEqual(env.host.attachments.length, 0)
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('returns from setup while the model catalog is not ready', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      Object.assign(env.host.backend, { models: () => Stream.never })
+
+      const started = yield* env.start.pipe(Effect.timeoutOption('1 second'))
+
+      assert.isTrue(Option.isSome(started))
       assert.strictEqual(env.host.attachments.length, 0)
     }).pipe(Effect.scoped)
   )
