@@ -14,7 +14,7 @@ const namesAndSources = (list: ReadonlyArray<{ name: string; source: unknown }>)
 describe('makeRegistry', () => {
   it.effect('lists a registered server under the plugin that registered it', () =>
     Effect.gen(function* () {
-      const { registry } = yield* makeRegistry
+      const { registry } = yield* makeRegistry({})
       const scope = yield* Scope.make()
 
       yield* registry.register('github', GITHUB, 'gh-tools').pipe(Scope.provide(scope))
@@ -27,7 +27,7 @@ describe('makeRegistry', () => {
 
   it.effect("removes a registered server when the registration's scope closes", () =>
     Effect.gen(function* () {
-      const { registry } = yield* makeRegistry
+      const { registry } = yield* makeRegistry({})
       const scope = yield* Scope.make()
       yield* registry.register('github', GITHUB, 'gh-tools').pipe(Scope.provide(scope))
 
@@ -39,7 +39,7 @@ describe('makeRegistry', () => {
 
   it.effect('refuses a second plugin the name the first holds and keeps the first', () =>
     Effect.gen(function* () {
-      const { registry } = yield* makeRegistry
+      const { registry } = yield* makeRegistry({})
       const scope = yield* Scope.make()
       yield* registry.register('github', GITHUB, 'gh-tools').pipe(Scope.provide(scope))
 
@@ -62,7 +62,7 @@ describe('makeRegistry', () => {
 
   it.effect('refuses a plugin a name the user holds, naming the user as holder', () =>
     Effect.gen(function* () {
-      const { registry, replaceUser } = yield* makeRegistry
+      const { registry, replaceUser } = yield* makeRegistry({})
       yield* replaceUser({ github: GITHUB }, Effect.void)
 
       const refused = yield* registry
@@ -78,7 +78,7 @@ describe('makeRegistry', () => {
 
   it.effect("a refused registration's scope closing does not remove the holder's server", () =>
     Effect.gen(function* () {
-      const { registry } = yield* makeRegistry
+      const { registry } = yield* makeRegistry({})
       yield* registry
         .register('github', GITHUB, 'gh-tools')
         .pipe(Scope.provide(yield* Scope.make()))
@@ -97,7 +97,7 @@ describe('makeRegistry', () => {
 
   it.effect("replaces the user's servers and keeps every plugin's server", () =>
     Effect.gen(function* () {
-      const { registry, replaceUser } = yield* makeRegistry
+      const { registry, replaceUser } = yield* makeRegistry({})
       yield* registry
         .register('linear', LINEAR, 'gh-tools')
         .pipe(Scope.provide(yield* Scope.make()))
@@ -114,7 +114,7 @@ describe('makeRegistry', () => {
 
   it.effect("refuses a user save that uses a plugin's name without persisting or changing it", () =>
     Effect.gen(function* () {
-      const { registry, replaceUser } = yield* makeRegistry
+      const { registry, replaceUser } = yield* makeRegistry({})
       yield* registry
         .register('linear', LINEAR, 'gh-tools')
         .pipe(Scope.provide(yield* Scope.make()))
@@ -145,7 +145,7 @@ describe('makeRegistry', () => {
 
   it.effect("leaves the user's servers unchanged when persisting fails", () =>
     Effect.gen(function* () {
-      const { registry, replaceUser } = yield* makeRegistry
+      const { registry, replaceUser } = yield* makeRegistry({})
       yield* replaceUser({ jira: JIRA }, Effect.void)
 
       const exit = yield* replaceUser({ github: GITHUB }, Effect.die('disk full')).pipe(Effect.exit)
@@ -159,7 +159,7 @@ describe('makeRegistry', () => {
 
   it.effect('lists servers ordered by name, whatever order they were added in', () =>
     Effect.gen(function* () {
-      const { registry, replaceUser } = yield* makeRegistry
+      const { registry, replaceUser } = yield* makeRegistry({})
       yield* replaceUser({ linear: LINEAR }, Effect.void)
       yield* registry.register('jira', JIRA, 'atlassian').pipe(Scope.provide(yield* Scope.make()))
       yield* registry
@@ -175,7 +175,7 @@ describe('makeRegistry', () => {
 
   it.effect('changes emits the current list first, then the list after a change', () =>
     Effect.gen(function* () {
-      const { registry, replaceUser } = yield* makeRegistry
+      const { registry, replaceUser } = yield* makeRegistry({})
       yield* replaceUser({ jira: JIRA }, Effect.void)
       const scope = yield* Scope.make()
 

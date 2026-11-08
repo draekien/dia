@@ -9,9 +9,8 @@ import { mcpMigrations, readUserServers, writeUserServers } from './store'
 const setup: PluginSetup<HostPluginContext> = (ctx) =>
   Effect.gen(function* () {
     const sql = yield* ctx.database(mcpMigrations)
-    const { registry, replaceUser } = yield* makeRegistry
     const stored = yield* readUserServers.pipe(Effect.provideService(SqlClient.SqlClient, sql))
-    yield* replaceUser(stored, Effect.void).pipe(Effect.orDie)
+    const { registry, replaceUser } = yield* makeRegistry(stored)
     yield* ctx.provide(McpServerRegistryKey, registry)
     yield* ctx.serve(WatchServers, () => registry.changes)
     yield* ctx.serve(SaveUserServers, ({ servers }) =>
