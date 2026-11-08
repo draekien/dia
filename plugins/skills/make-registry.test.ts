@@ -96,6 +96,21 @@ describe('makeRegistry', () => {
     })
   )
 
+  it.effect('does not repeat a list equal to the one before it', () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry
+      const repeating: SkillSource = {
+        id: 'user',
+        skills: () => Stream.make([review], [{ ...review }], [deploy])
+      }
+      yield* registry.register(repeating).pipe(Scope.provide(yield* Scope.make()))
+
+      const emitted = yield* registry.skills(NO_PROJECT).pipe(Stream.take(2), Stream.runCollect)
+
+      assert.deepStrictEqual(emitted, [[review], [deploy]])
+    })
+  )
+
   it.effect('passes the context to each source', () =>
     Effect.gen(function* () {
       const registry = yield* makeRegistry

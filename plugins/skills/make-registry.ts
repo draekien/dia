@@ -12,6 +12,13 @@ type Sources = ReadonlyMap<string, SkillSource>
 const byGroupThenName = (left: Skill, right: Skill): number =>
   left.group.localeCompare(right.group) || left.name.localeCompare(right.name)
 
+const sameSkill = (left: Skill, right: Skill): boolean =>
+  left.name === right.name && left.description === right.description && left.group === right.group
+
+const sameSkills = (left: ReadonlyArray<Skill>, right: ReadonlyArray<Skill>): boolean =>
+  left.length === right.length &&
+  left.every((skill, index) => sameSkill(skill, right[index] as Skill))
+
 const skillsOf = (sources: Sources, context: SkillContext): Stream.Stream<ReadonlyArray<Skill>> => {
   if (sources.size === 0) return Stream.make([])
   const streams = [...sources.values()].map((source) => source.skills(context))
@@ -49,6 +56,9 @@ export const makeRegistry: Effect.Effect<SkillSourceRegistry> = Effect.gen(funct
   return {
     register,
     skills: (context) =>
-      SubscriptionRef.changes(ref).pipe(Stream.switchMap((sources) => skillsOf(sources, context)))
+      SubscriptionRef.changes(ref).pipe(
+        Stream.switchMap((sources) => skillsOf(sources, context)),
+        Stream.changesWith(sameSkills)
+      )
   }
 })

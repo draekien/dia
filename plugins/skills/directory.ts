@@ -9,6 +9,7 @@ import {
   type PlatformError,
   Stream
 } from 'effect'
+import * as Arr from 'effect/Array'
 import { readFrontmatter } from './frontmatter'
 import type { Skill, SkillSource } from './registry'
 
@@ -88,7 +89,7 @@ export const readSkills = Effect.fnUntraced(function* (options: SkillDirectory) 
   const skills = yield* Effect.forEach(entries, (entry) => readSkill(options, entry), {
     concurrency: 8
   })
-  return skills.flatMap((skill) => Option.toArray(skill)) as ReadonlyArray<Skill>
+  return Arr.getSomes(skills)
 })
 
 const watched = (

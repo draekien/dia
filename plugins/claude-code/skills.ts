@@ -1,4 +1,9 @@
-import { directorySkills, pathChanges, readSkills } from '@dia-plugin/skills/directory'
+import {
+  directorySkills,
+  directorySource,
+  pathChanges,
+  readSkills
+} from '@dia-plugin/skills/directory'
 import type { Skill, SkillContext, SkillSource } from '@dia-plugin/skills/registry'
 import { Effect, FileSystem, Option, Path, Schema, Stream } from 'effect'
 
@@ -38,8 +43,6 @@ const readJson = <S extends Schema.Top & { readonly DecodingServices: never }>(
     )
   })
 
-const flat = (lists: ReadonlyArray<ReadonlyArray<Skill>>): ReadonlyArray<Skill> => lists.flat()
-
 const projectDirectories = Effect.fnUntraced(function* (cwd: string) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
@@ -69,7 +72,7 @@ const projectSkills = (cwd: string) =>
             plugin: Option.none()
           })
         )
-      ).pipe(Stream.map(flat))
+      ).pipe(Stream.map((lists) => lists.flat()))
     })
   )
 
@@ -122,7 +125,7 @@ const pluginSkills = Effect.fnUntraced(function* (
     }),
     { concurrency: 8 }
   )
-  return flat(lists)
+  return lists.flat()
 })
 
 const installedPluginSkills = (home: string, context: SkillContext) =>
@@ -133,13 +136,10 @@ const installedPluginSkills = (home: string, context: SkillContext) =>
       const installedFile = path.join(claude, 'plugins', 'installed_plugins.json')
       const settingsFiles = [
         path.join(claude, 'settings.json'),
-        ...Option.match(context.cwd, {
-          onNone: () => [],
-          onSome: (cwd) => [
-            path.join(cwd, '.claude', 'settings.json'),
-            path.join(cwd, '.claude', 'settings.local.json')
-          ]
-        })
+        ...Option.toArray(context.cwd).flatMap((cwd) => [
+          path.join(cwd, '.claude', 'settings.json'),
+          path.join(cwd, '.claude', 'settings.local.json')
+        ])
       ]
       return Stream.zipLatestAll(...[installedFile, ...settingsFiles].map(pathChanges)).pipe(
         Stream.mapEffect(() => pluginSkills(installedFile, settingsFiles, context.cwd))
@@ -157,26 +157,25 @@ const installedPluginSkills = (home: string, context: SkillContext) =>
 export const claudeCodeSources = Effect.fnUntraced(function* (home: string) {
   const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
   const path = yield* Path.Path
-  const user = directorySkills({
-    directory: path.join(home, '.claude', 'skills'),
-    group: 'Your skills',
-    plugin: Option.none()
+  const provided = (
+    id: string,
+    skills: (
+      context: SkillContext
+    ) => Stream.Stream<ReadonlyArray<Skill>, never, FileSystem.FileSystem | Path.Path>
+  ): SkillSource => ({
+    id,
+    skills: (context) => skills(context).pipe(Stream.provideContext(services))
   })
   const sources: ReadonlyArray<SkillSource> = [
-    { id: 'claude-code/user', skills: () => user.pipe(Stream.provideContext(services)) },
-    {
-      id: 'claude-code/project',
-      skills: (context) =>
-        Option.match(context.cwd, {
-          onNone: () => Stream.make([]),
-          onSome: (cwd) => projectSkills(cwd).pipe(Stream.provideContext(services))
-        })
-    },
-    {
-      id: 'claude-code/plugins',
-      skills: (context) =>
-        installedPluginSkills(home, context).pipe(Stream.provideContext(services))
-    }
+    yield* directorySource('claude-code/user', {
+      directory: path.join(home, '.claude', 'skills'),
+      group: 'Your skills',
+      plugin: Option.none()
+    }),
+    provided('claude-code/project', (context) =>
+      Option.match(context.cwd, { onNone: () => Stream.make([]), onSome: projectSkills })
+    ),
+    provided('claude-code/plugins', (context) => installedPluginSkills(home, context))
   ]
   return sources
 })
