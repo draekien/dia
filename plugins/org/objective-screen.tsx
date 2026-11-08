@@ -275,7 +275,7 @@ export function ObjectiveScreen({
           <TaskList nodes={taskTree(own, null)} nested={false} snapshot={snapshot} call={call} />
         )}
         {objective.state === 'open' ? (
-          <AddTask key={objective.id} objective={objective} snapshot={snapshot} call={call} />
+          <AddTask objective={objective} snapshot={snapshot} call={call} />
         ) : null}
       </section>
     </div>

@@ -129,60 +129,47 @@ export const followHost = <R extends Rpc.AnyWithProps>(
       const encoded = yield* Schema.encodeUnknownEffect(jsonCodec(rpc.payloadSchema))(
         rpc.payloadSchema.make(payload)
       ).pipe(Effect.mapError(invalidOf(plugin, tag)))
-      const follow = (
-        announce: boolean
-      ): Stream.Stream<Option.Option<Rpc.SuccessChunk<R>>, unknown> =>
-        Stream.suspend(() => {
+      type Value = Option.Option<Rpc.SuccessChunk<R>>
+      const subscribeOnce = (emit: (value: Value) => Effect.Effect<boolean>) =>
+        Effect.gen(function* () {
           let received = false
-          return subscribeHost(plugin, tag, encoded).pipe(
+          const served = yield* subscribeHost(plugin, tag, encoded).pipe(
             Stream.mapEffect((value) => decodeJson(plugin, tag, streamSchema.success, value)),
-            Stream.tap(() =>
-              received
-                ? Effect.void
-                : Effect.suspend(() => {
-                    received = true
-                    return Effect.logDebug('A plugin host entry is serving', { plugin, tag })
-                  })
+            Stream.runForEach((value) =>
+              Effect.gen(function* () {
+                if (!received) {
+                  received = true
+                  yield* Effect.logDebug('A plugin host entry is serving', { plugin, tag })
+                }
+                yield* emit(Option.some(value as Rpc.SuccessChunk<R>))
+              })
             ),
-            Stream.map((value) => Option.some(value as Rpc.SuccessChunk<R>)),
-            Stream.catchTag('SubscriptionFailed', (failed) =>
-              Stream.unwrap(
-                failFromWire<unknown>(plugin, tag, streamSchema.error, failed.error).pipe(
-                  Effect.catch(
-                    (
-                      error
-                    ): Effect.Effect<
-                      Stream.Stream<Option.Option<Rpc.SuccessChunk<R>>, unknown>,
-                      unknown
-                    > =>
-                      Predicate.isTagged(error, 'PluginNotServing')
-                        ? Effect.logDebug('A plugin host entry is not serving', {
-                            plugin,
-                            tag
-                          }).pipe(
-                            Effect.as(
-                              (announce || received
-                                ? Stream.make(Option.none<Rpc.SuccessChunk<R>>())
-                                : Stream.empty
-                              ).pipe(
-                                Stream.concat(
-                                  Stream.fromEffect(untilPluginStatusChanges(plugin)).pipe(
-                                    Stream.drain
-                                  )
-                                ),
-                                Stream.concat(follow(false))
-                              )
-                            )
-                          )
-                        : Effect.fail(error)
-                  )
+            Effect.as(true),
+            Effect.catchTag('SubscriptionFailed', (failed) =>
+              failFromWire<unknown>(plugin, tag, streamSchema.error, failed.error).pipe(
+                Effect.catch((error) =>
+                  Predicate.isTagged(error, 'PluginNotServing')
+                    ? Effect.succeed(false)
+                    : Effect.fail(error)
                 )
               )
             )
           )
+          return { served, received }
         })
-      return follow(true).pipe(
-        Stream.mapError((error) => error as Rpc.ErrorExit<R> | PluginCallInvalid)
+      const follow = Stream.callback<Value, unknown>((queue) =>
+        Effect.gen(function* () {
+          let announce = true
+          while (true) {
+            const { served, received } = yield* subscribeOnce((value) => Queue.offer(queue, value))
+            if (served) return yield* Queue.end(queue)
+            yield* Effect.logDebug('A plugin host entry is not serving', { plugin, tag })
+            if (announce || received) yield* Queue.offer(queue, Option.none())
+            announce = false
+            yield* untilPluginStatusChanges(plugin)
+          }
+        }).pipe(Effect.catch((error) => Queue.fail(queue, error)))
       )
+      return follow.pipe(Stream.mapError((error) => error as Rpc.ErrorExit<R> | PluginCallInvalid))
     })
   )

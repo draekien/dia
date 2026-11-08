@@ -55,20 +55,22 @@ const makeSubscriptionTracker = (plugin: string, tag: string): Effect.Effect<Sub
     })
     const guard: SubscriptionTracker['guard'] = (stream) =>
       Stream.unwrap(
-        Effect.suspend(() => {
-          if (Deferred.isDoneUnsafe(closed)) return Effect.succeed(Stream.fail(notServing))
-          running += 1
-          return Effect.succeed(
-            stream.pipe(
-              Stream.interruptWhen(Deferred.await(closed)),
-              Stream.concat(
-                Stream.unwrap(
-                  Effect.map(Deferred.isDone(closed), (done) =>
-                    done ? Stream.fail(notServing) : Stream.empty
-                  )
+        Effect.gen(function* () {
+          if (Deferred.isDoneUnsafe(closed)) return Stream.fail(notServing)
+          yield* Effect.acquireRelease(
+            Effect.sync(() => {
+              running += 1
+            }),
+            () => release
+          )
+          return stream.pipe(
+            Stream.interruptWhen(Deferred.await(closed)),
+            Stream.concat(
+              Stream.unwrap(
+                Effect.map(Deferred.isDone(closed), (done) =>
+                  done ? Stream.fail(notServing) : Stream.empty
                 )
-              ),
-              Stream.ensuring(release)
+              )
             )
           )
         })
