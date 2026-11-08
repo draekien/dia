@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0070"
 date: 2026-11-08
 decision-makers: William Pei
 ---
@@ -29,7 +29,7 @@ Chosen option: "The org plugin calls `AgentBackend.openSession` itself", because
 
 * Good, because the slot rules live in one place, `plugins/org/dispatcher.ts`, and are testable with a fake `AgentBackend`.
 * Good, because the org plugin needs only `AgentBackendKey` from `ctx.whenProvided`, and no new kernel contract.
-* Bad, because a permission request from a hired agent is not shown in any pane. The org plugin holds it, and `AnswerPermission` answers it, until #182 shows these sessions.
+* Bad, because a permission request from a hired agent is not shown in any pane. The org plugin holds it, and `AnswerPermission` answers it. ADR-0070 amends this: the session is attached to the Host and the request is shown in its pane.
 * Bad, because unloading the backend plugin closes every running task's session. At the next load, running tasks are requeued and resume their saved session id.
 
 ## Pros and Cons of the Options

@@ -72,7 +72,7 @@ William is dia's developer and its first user. dia runs agents for his registere
 | Cutting | A completed decision cannot be cut; cutting an in-progress decision requires confirming its work is discarded. Dependent tasks reset to the commit recorded with the decision, tasks that depend only on later decisions are discarded, others are untouched; discarded commits stay on a backup ref | ADR-0034 |
 | Steering against a decision | When a message contradicts a recorded decision, the agent records a new decision marked as made by the user | ADR-0034 |
 | Planning and retro | Planning and retro are kinds of issue. The user picks the hired agent of each. dia hires nobody on first run; finishing a `work` issue moves it to `done` and creates its retro issue | ADR-0064, ADR-0069 |
-| Steering tasks | A hired agent's active session opens like a tab: live transcript and the composer with `queue` and `steer` (`docs/designs/message-queue-and-steer.md`) | ADR-0033 |
+| Steering tasks | A hired agent's active session is a row in its issue's project group, labelled with the hire's name, and opens like a tab: live transcript and the composer with `queue` and `steer` (`docs/designs/message-queue-and-steer.md`, `docs/designs/attached-sessions.md`) | ADR-0033, ADR-0070 |
 | Live decisions | A decision recorded during the work pauses its agent until the user accepts it or cuts there | ADR-0034 |
 | Memory | Scratchpad per task; long-term memory in project, environment and job title scopes; the retro task writes long-term memory by the memory tier and cites the entries each task used; staleness counts citations | ADR-0035 |
 | Self-improvement | Change types are tiered; the user sets each tier. Agents change workflows and job titles through `propose_change` like any other harness change | ADR-0036 |
@@ -113,6 +113,5 @@ This PRD extends `docs/prds/agent-os.md` and builds on the plugin platform (`doc
 
 ## Open Questions
 
-- How a hired agent's sessions appear in the agent overview: as tabs in the task's project labelled with the agent's name, or in a separate org group.
 - The period after which an uncited memory entry is marked stale, and whether it differs by scope.
 - How a job title selects a model, and whether the model is a job title setting or a hire setting.
