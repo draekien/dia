@@ -28,8 +28,8 @@ export const SessionAttacherLive = Layer.effect(
  * The sessions plugins have attached to the Host (ADR-0070). `attach` behaves as
  * `HostSessions['attach']`; `current` reads the attached sessions; `changes` emits them now and
  * after each change; `reset` runs the `reset` of the session attached as `paneId`, and does
- * nothing when it has none or no session is attached there. Each change is also published as `AttachedSessionsChanged`, before the
- * attached session can emit its first event. Provide with {@link AttachedSessionsLive}.
+ * nothing when it has none or no session is attached there. Each change is also published as
+ * `AttachedSessionsChanged`, before the attached session can emit its first event. Provide with {@link AttachedSessionsLive}.
  */
 export class AttachedSessions extends Context.Service<
   AttachedSessions,

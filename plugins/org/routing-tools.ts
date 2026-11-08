@@ -5,6 +5,7 @@ import {
   DirectRoute,
   type HireId,
   type Issue,
+  isStarted,
   type Objective,
   type ObjectiveId,
   ObjectivePriority,
@@ -52,15 +53,6 @@ export interface RoutingToolDeps {
   readonly claim: (objectiveId: ObjectiveId) => Effect.Effect<void>
   readonly dispatcher: Pick<Dispatcher, 'signal' | 'message' | 'release'>
 }
-
-const STARTED = new Set([
-  'understanding',
-  'designing',
-  'implementing',
-  'testing',
-  'verifying',
-  'in_review'
-])
 
 const byIdOrName = <A extends { readonly id: string; readonly name: string }>(
   entries: ReadonlyArray<A>,
@@ -165,7 +157,7 @@ const decodeRoute = (deps: RoutingToolDeps, input: Input) =>
             'Route plan takes no assignee: its planning issue waits for the user to assign it.'
         })
       }
-      return PlanRoute.make({ assignee: null })
+      return { route: PlanRoute.make({ assignee: null }), assigneeName: undefined }
     }
     if (route !== 'direct') {
       return yield* new InvalidInput({ message: 'Invalid route: use direct or plan.' })
@@ -177,7 +169,7 @@ const decodeRoute = (deps: RoutingToolDeps, input: Input) =>
     if (hire === undefined) {
       return yield* new InvalidInput({ message: `No hired agent is called "${assignee}".` })
     }
-    return DirectRoute.make({ assignee: hire.id })
+    return { route: DirectRoute.make({ assignee: hire.id }), assigneeName: hire.name }
   })
 
 const decodeNote = (input: Input) =>
@@ -217,7 +209,7 @@ const createTool = (deps: RoutingToolDeps): DiaTool => ({
           })
         }
         const title = yield* decodeField(WorkTitle, 'title', (input.title ?? '').trim())
-        const route = yield* decodeRoute(deps, input)
+        const { route, assigneeName } = yield* decodeRoute(deps, input)
         const note = yield* decodeNote(input)
         const priority =
           (yield* decodeOptional(ObjectivePriority, 'priority', present(input, 'priority'))) ??
@@ -252,7 +244,7 @@ const createTool = (deps: RoutingToolDeps): DiaTool => ({
         })
         return result(
           route._tag === 'DirectRoute'
-            ? `Created objective ${created.id} "${created.title}" in ${project.name}, with one issue for ${(yield* deps.hires).find((hire) => hire.id === route.assignee)?.name ?? 'the agent'}.`
+            ? `Created objective ${created.id} "${created.title}" in ${project.name}, with one issue for ${assigneeName}.`
             : `Created objective ${created.id} "${created.title}" in ${project.name}. Its planning issue waits for the user to assign it.`
         )
       })
@@ -271,7 +263,7 @@ const attachTool = (deps: RoutingToolDeps): DiaTool => ({
     recover('objective_attach')(
       Effect.gen(function* () {
         const { issues } = yield* findObjective(deps.work, input.objective ?? '')
-        const running = issues.filter((issue) => STARTED.has(issue.status))
+        const running = issues.filter((issue) => isStarted(issue.status))
         const delivered = yield* Effect.forEach(running, (issue) =>
           deps.dispatcher.message(issue.id, input.message ?? '')
         )

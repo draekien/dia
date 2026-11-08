@@ -73,8 +73,10 @@ const noticesBetween = (
   return [...issueNotices, ...objectiveNotices]
 }
 
-const builtInOf = (jobTitles: ReadonlyArray<JobTitle>) =>
-  Option.fromNullishOr(jobTitles.find((jobTitle) => jobTitle.builtIn === 'executive-assistant'))
+const enabledBuiltInOf = (jobTitles: ReadonlyArray<JobTitle>) =>
+  Option.fromNullishOr(
+    jobTitles.find((jobTitle) => jobTitle.builtIn === 'executive-assistant' && jobTitle.enabled)
+  )
 
 /**
  * Builds the org's Executive assistant inside the calling scope (ADR-0071). While the built-in
@@ -205,8 +207,8 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (deps: Assista
       yield* Effect.logInfo('Executive assistant starts over', { paneId })
       if (Option.isNone(current)) return current
       yield* detach(current.value)
-      const jobTitle = builtInOf(yield* deps.org.jobTitles)
-      return Option.isSome(jobTitle) && jobTitle.value.enabled
+      const jobTitle = enabledBuiltInOf(yield* deps.org.jobTitles)
+      return Option.isSome(jobTitle)
         ? Option.some(yield* attachNow(jobTitle.value, startOver))
         : Option.none()
     }).pipe(Effect.uninterruptible)
@@ -214,12 +216,11 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (deps: Assista
 
   const followJobTitle = SynchronizedRef.updateEffect(attached, (current) =>
     Effect.gen(function* () {
-      const jobTitle = builtInOf(yield* deps.org.jobTitles)
-      const enabled = Option.isSome(jobTitle) && jobTitle.value.enabled
-      if (enabled && Option.isNone(current)) {
+      const jobTitle = enabledBuiltInOf(yield* deps.org.jobTitles)
+      if (Option.isSome(jobTitle) && Option.isNone(current)) {
         return Option.some(yield* attachNow(jobTitle.value, startOver))
       }
-      if (!enabled && Option.isSome(current)) {
+      if (Option.isNone(jobTitle) && Option.isSome(current)) {
         yield* detach(current.value)
         return Option.none()
       }
