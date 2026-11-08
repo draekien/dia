@@ -300,6 +300,8 @@ const pruneOrphans = Effect.gen(function* () {
       const events = yield* sql<{ readonly sequence: number }>`DELETE FROM agent_events
         WHERE agent_id NOT IN (SELECT agent_id FROM agents) RETURNING sequence`
       yield* sql`DELETE FROM agent_items WHERE agent_id NOT IN (SELECT agent_id FROM agents)`
+      yield* sql`DELETE FROM agent_transcript_cursors
+        WHERE session_id NOT IN (SELECT session_id FROM agent_sessions)`
       return events.length
     })
   )

@@ -767,6 +767,35 @@ describe('building AgentEventStore', () => {
   )
 })
 
+describe('building AgentEventStore after a session that was never an agent', () => {
+  const ATTACHED_SESSION = SessionId.make('44444444-4444-4444-8444-444444444444')
+
+  it.effect('drops the cursor of a session no agent owns, so its transcript is read again', () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-agent-event-store-' })
+      const build = Layer.build(Layer.provideMerge(AgentEventStoreLive, makeHostDatabaseLive(dir)))
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const store = Context.get(yield* build, AgentEventStore)
+          yield* store.writeCursor(
+            TranscriptCursor.make({
+              sessionId: ATTACHED_SESSION,
+              lastUuid: 'a1',
+              fileSize: 4_821,
+              mtimeMs: 1_762_128_000_000
+            })
+          )
+        })
+      )
+
+      const store = Context.get(yield* build, AgentEventStore)
+      assert.deepStrictEqual(yield* store.readCursor(ATTACHED_SESSION), Option.none())
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
+  )
+})
+
 describe('AgentEventStore cursors', () => {
   const SESSION = SessionId.make('33333333-3333-4333-8333-333333333333')
   const cursorAt = (lastUuid: string, fileSize: number) =>
