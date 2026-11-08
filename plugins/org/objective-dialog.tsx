@@ -29,6 +29,7 @@ import {
   type Objective,
   ObjectiveId,
   ObjectivePriority,
+  PlanRoute,
   PRIORITY_LABELS
 } from './domain'
 import { commonFailureText, newId, type OrgCall, readWorkTitle } from './org-actions'
@@ -94,7 +95,7 @@ export function ObjectiveDialog({
           title: readTitle.success,
           description: description.trim(),
           priority,
-          assignee
+          route: PlanRoute.make({ assignee })
         }
       },
       id

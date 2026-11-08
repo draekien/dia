@@ -1146,7 +1146,7 @@ describe('Objectives', () => {
         title: 'Launch the docs site',
         description: 'Write the getting started guide.',
         priority: 'high',
-        assignee: hireId(1)
+        route: { _tag: 'PlanRoute', assignee: hireId(1) }
       }
     })
     await waitFor(() => expect(detailTitle()).toBe('Launch the docs site'))

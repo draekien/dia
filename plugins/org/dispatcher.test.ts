@@ -32,6 +32,7 @@ import {
   ObjectiveId,
   type ObjectivePriority,
   OverallCap,
+  PlanRoute,
   WorkTitle
 } from './domain'
 import { makeIssueTools } from './issue-tools'
@@ -169,7 +170,7 @@ const setUp = (options: {
       title: WorkTitle.make('Ship the marketplace'),
       description: 'Let users install plugins.',
       priority: 'normal',
-      assignee: null
+      route: PlanRoute.make({ assignee: null })
     })
     yield* settle
     const jobTitles = yield* org.jobTitles
@@ -189,7 +190,7 @@ const setUp = (options: {
                 title: WorkTitle.make(`A ${priority} objective`),
                 description: '',
                 priority,
-                assignee: null
+                route: PlanRoute.make({ assignee: null })
               })).id
         const task = yield* work.createIssue({
           id: IssueId.make(`00000000-0000-4000-8000-6${String(taskCount).padStart(11, '0')}`),
@@ -380,7 +381,7 @@ describe('dispatcher planning issue', () => {
         title: WorkTitle.make('Add search'),
         description: 'Find plugins by name.',
         priority: 'normal',
-        assignee: lead.id
+        route: PlanRoute.make({ assignee: lead.id })
       })
       yield* env.dispatcher.signal
       yield* settle

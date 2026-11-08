@@ -4,7 +4,7 @@ import { assert, describe, it } from '@effect/vitest'
 import { Effect, Exit, Scope } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
-import { HireId, IssueId, ObjectiveId, StartedStatus, WorkTitle } from './domain'
+import { HireId, IssueId, ObjectiveId, PlanRoute, StartedStatus, WorkTitle } from './domain'
 import { type IssueToolScope, makeIssueTools } from './issue-tools'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
@@ -21,7 +21,7 @@ const objective = (id: ObjectiveId) => ({
   title: WorkTitle.make('Ship the marketplace'),
   description: '',
   priority: 'normal' as const,
-  assignee: null
+  route: PlanRoute.make({ assignee: null })
 })
 
 const setUp = Effect.gen(function* () {

@@ -316,7 +316,7 @@ describe('org host entry work calls', () => {
           title: 'Ship it',
           description: '',
           priority: 'normal',
-          assignee: null
+          route: { _tag: 'PlanRoute', assignee: null }
         }
       })
       const ada = yield* hireEngineer(registry)
@@ -344,7 +344,7 @@ describe('org host entry work calls', () => {
           title: 'Ship it',
           description: '',
           priority: 'normal',
-          assignee: null
+          route: { _tag: 'PlanRoute', assignee: null }
         }
       })
       const ada = yield* hireEngineer(registry)
@@ -378,7 +378,7 @@ describe('org host entry work calls', () => {
             title: 'Ship it',
             description: '',
             priority: 'normal',
-            assignee: null
+            route: { _tag: 'PlanRoute', assignee: null }
           }
         })
         const ada = yield* hireEngineer(registry)
@@ -423,7 +423,7 @@ describe('org host entry work calls', () => {
           title: 'Ship it',
           description: '',
           priority: 'normal',
-          assignee: null
+          route: { _tag: 'PlanRoute', assignee: null }
         }
       })
       const ada = yield* hireEngineer(registry)
@@ -453,7 +453,7 @@ describe('org host entry work calls', () => {
           title: 'Ship it',
           description: '',
           priority: 'normal',
-          assignee: null
+          route: { _tag: 'PlanRoute', assignee: null }
         }
       })
       const ada = yield* hireEngineer(registry)
