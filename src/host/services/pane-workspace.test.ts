@@ -139,6 +139,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     getHandle: (paneId) =>
       Effect.succeed(options.live?.has(paneId) === true ? Option.some(fakeHandle) : Option.none()),
     closeAll: () => Effect.void,
+    attachPane: () => Effect.die(new Error('attachPane is not used by the workspace')),
     setUsageLimitResume: () => Effect.void
   })
 

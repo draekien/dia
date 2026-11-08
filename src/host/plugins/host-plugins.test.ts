@@ -3,6 +3,7 @@ import { assert, describe, it } from '@effect/vitest'
 import { PLUGIN_API_VERSION } from '@shared/plugin/manifest'
 import { Effect, Fiber, FileSystem, Layer, Option, Path, Stream } from 'effect'
 import { makeAppWindowLive } from '../services/app-window'
+import { SessionAttacherLive } from '../services/attached-sessions'
 import { BackgroundActivitiesLive } from '../services/background-activities'
 import { EventHub } from '../services/event-hub'
 import { EventHubTestLayer } from '../services/event-hub-test-layer'
@@ -53,7 +54,8 @@ const hostPluginsFor = (root: string) => {
       platform,
       Layer.provide(BackgroundActivitiesLive, hub),
       WorkspaceFeedLive,
-      makeAppWindowLive(() => Effect.void)
+      makeAppWindowLive(() => Effect.void),
+      SessionAttacherLive
     )
   )
   return Layer.provideMerge(plugins, hub)

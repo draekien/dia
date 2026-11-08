@@ -68,6 +68,7 @@ const handlersLayer = Layer.unwrap(
       DeleteTab: unused,
       UnarchiveTab: unused,
       GetAgentSummaries: unused,
+      GetAttachedSessions: unused,
       GetTranscriptWidth: unused,
       GetPaneChat: unused,
       GetTheme: () => Effect.succeed('dark' as const),

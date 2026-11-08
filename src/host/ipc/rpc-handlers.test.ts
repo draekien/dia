@@ -46,6 +46,7 @@ import { servePluginCall } from '../plugins/plugin-messages'
 import { InvalidOverrideError, PluginSources } from '../plugins/plugin-sources'
 import { AdapterStatusFeed } from '../services/adapter-status-feed'
 import { AgentSummaries } from '../services/agent-summaries'
+import { AttachedSessions } from '../services/attached-sessions'
 import { BackgroundActivities } from '../services/background-activities'
 import { type CommandDeduper, makeCommandDeduperLive } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
@@ -70,6 +71,7 @@ interface Harness {
   readonly layer: Layer.Layer<
     | PaneWorkspace
     | AgentSummaries
+    | AttachedSessions
     | PaneSupervisor
     | SettingsStore
     | EventHub
@@ -181,6 +183,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
 
   const supervisor = Layer.succeed(PaneSupervisor, {
     openPane: () => Effect.die(new Error('openPane is not used by the handlers')),
+    attachPane: () => Effect.die(new Error('attachPane is not used by the handlers')),
     closePane: () => Effect.void,
     getHandle: (paneId) =>
       Effect.sync(() => (live.has(paneId) ? Option.some(handle) : Option.none())),
@@ -242,6 +245,12 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
         calls.push(`ensureLive:${paneId}`)
         if (known.has(paneId)) live.add(paneId)
       })
+  })
+
+  const attached = Layer.succeed(AttachedSessions, {
+    attach: () => Effect.die(new Error('attach is not used by the handlers')),
+    current: Effect.succeed([]),
+    changes: Stream.empty
   })
 
   const summaries = Layer.succeed(AgentSummaries, {
@@ -391,6 +400,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     published,
     layer: Layer.mergeAll(
       supervisor,
+      attached,
       workspace,
       summaries,
       settings,

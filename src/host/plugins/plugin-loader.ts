@@ -1,4 +1,3 @@
-import type { HostPluginContext } from '@shared/plugin/api'
 import { importSetup } from '@shared/plugin/entry'
 import { PluginManifest } from '@shared/plugin/manifest'
 import {
@@ -7,6 +6,7 @@ import {
   type PluginLoader
 } from '@shared/plugin/plugin-registry'
 import { Effect, FileSystem, Option, Path, Result, Schema } from 'effect'
+import type { HostPluginContext } from './host-plugin-context'
 import { type PluginModules, processPluginModules } from './plugin-modules'
 
 const decodeManifest = Schema.decodeUnknownResult(Schema.fromJsonString(PluginManifest), {

@@ -2,6 +2,7 @@ import { Schema } from 'effect'
 import { AdapterStatusSnapshot } from '../domain/adapter-status'
 import { AgentEvent } from '../domain/agent-event'
 import { AgentSummary } from '../domain/agent-summary'
+import { AttachedSession } from '../domain/attached-session'
 import { Attachment, type AttachmentType, type ProjectEntry } from '../domain/attachment'
 import {
   AttentionState,
@@ -545,6 +546,15 @@ export const WorkspaceChanged = Schema.TaggedStruct('WorkspaceChanged', {
 export type WorkspaceChanged = typeof WorkspaceChanged.Type
 
 /**
+ * Event pushed to the renderer whenever a plugin attaches or detaches a session (ADR-0070).
+ * `sessions` is every attached session and replaces the renderer's list. Never replayed.
+ */
+export const AttachedSessionsChanged = Schema.TaggedStruct('AttachedSessionsChanged', {
+  sessions: Schema.Array(AttachedSession)
+})
+export type AttachedSessionsChanged = typeof AttachedSessionsChanged.Type
+
+/**
  * Event pushed to the renderer when one tab's status or activity line changes. `summary`
  * replaces the renderer's summary for `summary.paneId`. Never replayed.
  */
@@ -685,6 +695,7 @@ export const IpcEvent = Schema.Union([
   PaneAgentEvent,
   ...PaneSignal.members,
   WorkspaceChanged,
+  AttachedSessionsChanged,
   AgentSummaryChanged,
   AgentSummariesReplaced,
   PluginStatusChanged,
@@ -932,6 +943,8 @@ export interface DiaApi {
   unarchiveTab(paneId: string): Promise<string | null>
   selectTab(paneId: string | null): void
   getAgentSummaries(): Promise<ReadonlyArray<AgentSummary>>
+  /** Every session a plugin has attached (ADR-0070). */
+  getAttachedSessions(): Promise<ReadonlyArray<AttachedSession>>
   getTranscriptWidth(): Promise<TranscriptWidth>
   setTranscriptWidth(width: TranscriptWidth): void
   /** Shows `directory` in the system file manager; does nothing when it is not a directory. */
@@ -969,6 +982,7 @@ export interface DiaApi {
   /** Subscribes to every pane event with its pane's sequence number. */
   onPaneEvent(listener: (frame: PaneEventFrame) => void): () => void
   onWorkspaceChanged(listener: (event: WorkspaceChanged) => void): () => void
+  onAttachedSessionsChanged(listener: (event: AttachedSessionsChanged) => void): () => void
   onAgentSummaryChanged(listener: (event: AgentSummaryChanged) => void): () => void
   onAgentSummariesReplaced(listener: (event: AgentSummariesReplaced) => void): () => void
   onPaneCreateFailed(listener: (event: PaneCreateFailed) => void): () => void

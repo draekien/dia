@@ -25,6 +25,7 @@
     "src/renderer/src/**/*",
     "src/shared/**/*",
     "src/host/plugin-api.ts",
+    "src/host/plugins/host-plugin-context.ts",
     "src/host/services/meta-repo-seam.ts",
     "src/host/services/worktrees-seam.ts",
     "src/host/session/agent-backend.ts",

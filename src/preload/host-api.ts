@@ -511,6 +511,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         })
       ),
     getAgentSummaries: () => query((client) => client.GetAgentSummaries()),
+    getAttachedSessions: () => query((client) => client.GetAttachedSessions()),
     getTranscriptWidth: () => query((client) => client.GetTranscriptWidth()),
     setTranscriptWidth: (width) =>
       command('SetTranscriptWidth', (client, commandId) =>
@@ -546,6 +547,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       return () => paneFrameListeners.delete(listener)
     },
     onWorkspaceChanged: (listener) => subscribeTo('WorkspaceChanged', listener),
+    onAttachedSessionsChanged: (listener) => subscribeTo('AttachedSessionsChanged', listener),
     onAgentSummaryChanged: (listener) => subscribeTo('AgentSummaryChanged', listener),
     onAgentSummariesReplaced: (listener) => subscribeTo('AgentSummariesReplaced', listener),
     onPaneCreateFailed: (listener) => subscribeTo('PaneCreateFailed', listener),
