@@ -18,6 +18,7 @@ import {
 } from '@dia/renderer-plugin'
 import { McpServersEditorKey } from '@dia-plugin/mcp/editor'
 import { type McpServersDraft, mcpServersDraft, readMcpServersDraft } from '@dia-plugin/mcp/servers'
+import { SkillPickerKey } from '@dia-plugin/skills/picker'
 import { Result } from 'effect'
 import { Loader2Icon } from 'lucide-react'
 import { createElement, type FormEvent, type ReactNode, useId, useState } from 'react'
@@ -219,6 +220,7 @@ function EditForm({
   const id = useId()
   const McpServersEditor = useProvided(McpServersEditorKey)
   const mcpEditable = McpServersEditor !== undefined
+  const SkillPicker = useProvided(SkillPickerKey)
   const pending = editOf(jobTitle, draft, mcpEditable)
   const changed = Result.isFailure(pending) || Object.keys(pending.success).length > 0
   const set = (field: Exclude<keyof Draft, 'mcpServers'>) => (value: string | boolean | null) => {
@@ -292,7 +294,17 @@ function EditForm({
         false,
         "Added to the system prompt of this job title's sessions."
       )}
-      {textarea('skills', 'Skills', true, 'One skill name per line. None means every skill.')}
+      {SkillPicker === undefined ? (
+        textarea('skills', 'Skills', true, 'One skill name per line. None means every skill.')
+      ) : (
+        <Field label={<Label>Skills</Label>}>
+          {createElement(SkillPicker, {
+            label: 'Skills',
+            value: lines(draft.skills),
+            onChange: (next) => set('skills')(next.join('\n'))
+          })}
+        </Field>
+      )}
       <ModelFields
         id={id}
         model={draft.model}
