@@ -66,7 +66,8 @@ export function ObjectiveDialog({
   readonly onCreated: (objective: Objective) => void
   readonly onClose: () => void
 }) {
-  const [projectId, setProjectId] = useState<ProjectId | null>(projects[0]?.id ?? null)
+  const [chosenProject, setProjectId] = useState<ProjectId | null>(null)
+  const projectId = chosenProject ?? projects[0]?.id ?? null
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<ObjectivePriority>('normal')
