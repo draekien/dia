@@ -6,8 +6,21 @@ import {
   type ProjectId
 } from '@dia/plugin'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
-import { Deferred, Effect, Option, Ref, type Scope, Stream } from 'effect'
+import * as NodeServices from '@effect/platform-node/NodeServices'
+import {
+  Crypto,
+  Deferred,
+  Effect,
+  FileSystem,
+  Layer,
+  Option,
+  Path,
+  Ref,
+  type Scope,
+  Stream
+} from 'effect'
 import { SqlClient } from 'effect/sql'
+import { makeAssistant } from './assistant'
 import { bypassAvailable } from './bypass'
 import {
   AnswerPermission,
@@ -31,9 +44,11 @@ import {
   WatchWork
 } from './calls'
 import { type Dispatcher, makeDispatcher } from './dispatcher'
+import { agentName, jobTitleName, ObjectiveId } from './domain'
 import { makeIssueTools } from './issue-tools'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
+import { makeRoutingTools } from './routing-tools'
 import { type Org, OrgService } from './service'
 import { makeWork, type Work } from './work'
 
@@ -74,6 +89,65 @@ const holdAgentBackend = (
         )
         yield* dispatcher.lendBackend(agentBackend)
       })
+    )
+    .pipe(Effect.orDie)
+
+const routingHires = (org: Org) =>
+  Effect.map(Effect.all([org.hiredAgents, org.jobTitles]), ([hires, jobTitles]) =>
+    hires.map((hire) => ({
+      id: hire.id,
+      name: agentName(hire, jobTitles),
+      jobTitle: jobTitleName(hire, jobTitles) ?? 'agent'
+    }))
+  )
+
+const routingProjects = (workspace: Ref.Ref<Option.Option<Workspace>>) =>
+  Effect.map(Ref.get(workspace), (current) =>
+    Option.match(current, {
+      onNone: () => [],
+      onSome: (value) =>
+        value.projects.map(({ project }) => ({
+          id: project.projectId,
+          name: project.displayName
+        }))
+    })
+  )
+
+const runAssistant = (
+  ctx: HostPluginContext,
+  deps: {
+    readonly sql: SqlClient.SqlClient
+    readonly org: Org
+    readonly work: Work
+    readonly workspace: Ref.Ref<Option.Option<Workspace>>
+    readonly dispatcher: Dispatcher
+  }
+) =>
+  ctx
+    .whenProvided([AgentBackendKey], ({ agentBackend }) =>
+      Effect.gen(function* () {
+        const directory = (yield* Path.Path).join(ctx.dataDir, 'assistant')
+        yield* (yield* FileSystem.FileSystem).makeDirectory(directory, { recursive: true })
+        const crypto = yield* Crypto.Crypto
+        yield* makeAssistant({
+          org: deps.org,
+          work: deps.work,
+          backend: agentBackend,
+          tools: (claim) =>
+            makeRoutingTools({
+              work: deps.work,
+              projects: routingProjects(deps.workspace),
+              hires: routingHires(deps.org),
+              newObjectiveId: crypto
+                .randomUUIDv4()
+                .pipe(Effect.orDie, Effect.map(ObjectiveId.make)),
+              claim,
+              dispatcher: deps.dispatcher
+            }),
+          attach: ctx.sessions.attach,
+          directory
+        }).pipe(Effect.provideService(SqlClient.SqlClient, deps.sql))
+      }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodeCrypto.layer)))
     )
     .pipe(Effect.orDie)
 
@@ -206,6 +280,7 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     yield* followWorkspace(ctx, workspace, dispatcher)
     const backend = yield* Ref.make(Option.none<AgentBackend>())
     yield* holdAgentBackend(ctx, backend, dispatcher)
+    yield* runAssistant(ctx, { sql, org, work, workspace, dispatcher })
     yield* serveOrgCalls(ctx, org, backend, dispatcher)
     yield* serveWorkCalls(ctx, work, dispatcher)
     const jobTitles = yield* org.jobTitles
