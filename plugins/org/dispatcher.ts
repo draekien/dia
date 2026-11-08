@@ -1,6 +1,7 @@
 import {
   type AgentBackend,
   type AgentSession,
+  type DiaTool,
   type ModelOption,
   type OutboundMessage,
   type PermissionResponse,
@@ -22,17 +23,18 @@ import {
 } from 'effect'
 import {
   type HiredAgent,
+  type Issue,
+  type IssueId,
   type JobTitle,
   LiveWork,
   type Objective,
   PendingPermission,
-  PermissionNotPending,
-  type Task,
-  type TaskId
+  PermissionNotPending
 } from './domain'
+import type { IssueToolScope } from './issue-tools'
 import { nextStarts } from './scheduler'
 import type { Org } from './service'
-import type { TaskRuns, WaitingTask } from './work'
+import type { IssueRuns, StartableIssue } from './work'
 
 type Turn = 'running' | 'awaiting-user' | 'idle'
 
@@ -42,7 +44,7 @@ interface QueuedAnswer {
   readonly order: number
 }
 
-interface LiveTask {
+interface LiveIssue {
   readonly scope: Option.Option<Scope.Closeable>
   readonly session: Option.Option<AgentSession>
   readonly watcher: Option.Option<Fiber.Fiber<void>>
@@ -53,7 +55,7 @@ interface LiveTask {
   readonly answeredIds: ReadonlySet<string>
 }
 
-const reserved: LiveTask = {
+const reserved: LiveIssue = {
   scope: Option.none(),
   session: Option.none(),
   watcher: Option.none(),
@@ -64,7 +66,7 @@ const reserved: LiveTask = {
   answeredIds: new Set()
 }
 
-const holdsSlot = (live: LiveTask) => live.turn === 'running' || live.background > 0
+const holdsSlot = (live: LiveIssue) => live.turn === 'running' || live.background > 0
 
 const ACTIVITY_EVENTS: ReadonlySet<OutboundMessage['_tag']> = new Set([
   'AssistantMessageReceived',
@@ -76,14 +78,14 @@ const ACTIVITY_EVENTS: ReadonlySet<OutboundMessage['_tag']> = new Set([
   'UserMessagesSent'
 ])
 
-const applyEvent = (live: LiveTask, taskId: TaskId, message: OutboundMessage): LiveTask => {
+const applyEvent = (live: LiveIssue, issueId: IssueId, message: OutboundMessage): LiveIssue => {
   switch (message._tag) {
     case 'PermissionRequested': {
       const pending = new Map(live.pending)
       pending.set(
         message.requestId,
         PendingPermission.make({
-          taskId,
+          issueId,
           requestId: message.requestId,
           toolName: message.toolName,
           input: message.input
@@ -110,21 +112,36 @@ const applyEvent = (live: LiveTask, taskId: TaskId, message: OutboundMessage): L
   }
 }
 
-const promptFor = (task: Task, objective: Objective) =>
-  task.sessionId !== null
-    ? RESUME_TEXT
-    : `${task.title}\n\nObjective: ${objective.title}\n\n${objective.description}`
+const PLANNING_STEPS = `Break it into issues with create_issue: one per piece of work another agent can finish on its own,
+each with a description it can act on. They go to Triage for the user to accept.
+When the plan is complete, set this issue to in_review with update_issue.`
 
-/** Where a task's session runs: the registered directory of its objective's project. */
+const paragraphs = (...parts: ReadonlyArray<string>) =>
+  parts.filter((part) => part !== '').join('\n\n')
+
+const newPrompt = (issue: Issue, objective: Objective) =>
+  issue.kind === 'planning'
+    ? paragraphs(`Plan the objective "${objective.title}".`, objective.description, PLANNING_STEPS)
+    : paragraphs(
+        issue.title,
+        issue.description,
+        `Issue: ${issue.id}\nObjective: ${objective.title}`,
+        objective.description
+      )
+
+const promptFor = (issue: Issue, objective: Objective) =>
+  issue.sessionId !== null ? RESUME_TEXT : newPrompt(issue, objective)
+
+/** Where an issue's session runs: the registered directory of its objective's project. */
 export type ProjectDirectory = (objective: Objective) => Effect.Effect<Option.Option<string>>
 
 /**
- * Runs hired agents' tasks as headless sessions within the overall cap (ADR-0033, ADR-0067).
- * `signal` asks for a scheduling pass; call it after any change that can start or resume a task.
+ * Runs hired agents' issues as headless sessions within the overall cap (ADR-0033, ADR-0067).
+ * `signal` asks for a scheduling pass; call it after any change that can start or resume an issue.
  * `lendBackend` lends the dispatcher an agent backend until the calling scope closes; with none,
  * nothing starts. `answerPermission` queues the user's answer to a pending permission request; the
- * agent resumes ahead of waiting tasks, up to one over the overall cap. `release` stops the task's
- * session, if any, and lets a task whose session failed start again; call it after the task is
+ * agent resumes ahead of `todo` issues, up to one over the overall cap. `release` stops the issue's
+ * session, if any, and lets an issue whose session failed start again; call it after the issue is
  * finished or reassigned. `live` reads the pending permission requests and the held slots.
  * `watchChanges` subscribes when run; the stream it returns emits once each time `live` may read
  * differently since the subscription.
@@ -133,17 +150,17 @@ export interface Dispatcher {
   readonly signal: Effect.Effect<void>
   readonly lendBackend: (backend: AgentBackend) => Effect.Effect<void, never, Scope.Scope>
   readonly answerPermission: (
-    taskId: TaskId,
+    issueId: IssueId,
     requestId: string,
     response: PermissionResponse
   ) => Effect.Effect<void, PermissionNotPending>
-  readonly release: (taskId: TaskId) => Effect.Effect<void>
+  readonly release: (issueId: IssueId) => Effect.Effect<void>
   readonly live: Effect.Effect<LiveWork>
   readonly watchChanges: Effect.Effect<Stream.Stream<void>, never, Scope.Scope>
 }
 
 interface StartContext {
-  readonly task: Task
+  readonly issue: Issue
   readonly objective: Objective
   readonly hire: HiredAgent
   readonly jobTitle: JobTitle
@@ -151,22 +168,24 @@ interface StartContext {
 }
 
 /**
- * Builds the {@link Dispatcher} for the `org` plugin's setup scope. It requeues every task left
- * `running` by an earlier setup, so each resumes its session when it next starts, and it closes
- * every session when the scope closes.
+ * Builds the {@link Dispatcher} for the `org` plugin's setup scope. It requeues every started issue
+ * other than `in_review` left by an earlier setup, so each resumes its session when it next
+ * starts, and it closes every session when the scope closes. `issueTools` builds the dia tools a
+ * hired agent's session gets for its issue.
  */
 export const makeDispatcher = (deps: {
-  readonly runs: TaskRuns
+  readonly runs: IssueRuns
   readonly org: Pick<Org, 'jobTitles' | 'hiredAgents' | 'settings'>
   readonly projectDirectory: ProjectDirectory
+  readonly issueTools: (scope: IssueToolScope) => ReadonlyArray<DiaTool>
 }) =>
   Effect.gen(function* () {
-    const { runs, org, projectDirectory } = deps
+    const { runs, org, projectDirectory, issueTools } = deps
     const pluginScope = yield* Effect.scope
-    const tasks = yield* SynchronizedRef.make(new Map<TaskId, LiveTask>())
+    const issues = yield* SynchronizedRef.make(new Map<IssueId, LiveIssue>())
     const backendRef = yield* Ref.make(Option.none<AgentBackend>())
     const models = yield* Ref.make(Option.none<readonly [ModelOption, ...Array<ModelOption>]>())
-    const failed = yield* Ref.make(new Set<TaskId>())
+    const failed = yield* Ref.make(new Set<IssueId>())
     const answerOrder = yield* Ref.make(0)
     const signals = yield* Queue.sliding<void>(1)
 
@@ -174,10 +193,10 @@ export const makeDispatcher = (deps: {
 
     const signal = Queue.offer(signals, undefined).pipe(Effect.asVoid)
 
-    const updateTasks = <A>(
-      f: (current: Map<TaskId, LiveTask>) => readonly [A, Map<TaskId, LiveTask> | undefined]
+    const updateIssues = <A>(
+      f: (current: Map<IssueId, LiveIssue>) => readonly [A, Map<IssueId, LiveIssue> | undefined]
     ) =>
-      SynchronizedRef.modify(tasks, (current) => {
+      SynchronizedRef.modify(issues, (current) => {
         const [result, next] = f(current)
         return [[result, next !== undefined] as const, next ?? current] as const
       }).pipe(
@@ -188,66 +207,66 @@ export const makeDispatcher = (deps: {
         )
       )
 
-    const closeLive = (live: LiveTask) =>
+    const closeLive = (live: LiveIssue) =>
       Effect.gen(function* () {
         if (Option.isSome(live.watcher)) yield* Fiber.interrupt(live.watcher.value)
         if (Option.isSome(live.scope)) yield* Scope.close(live.scope.value, Exit.void)
       })
 
-    const drop = (taskId: TaskId) =>
-      updateTasks((current) => {
-        const live = current.get(taskId)
+    const drop = (issueId: IssueId) =>
+      updateIssues((current) => {
+        const live = current.get(issueId)
         if (live === undefined) return [undefined, undefined] as const
         const next = new Map(current)
-        next.delete(taskId)
+        next.delete(issueId)
         return [live, next] as const
       })
 
-    const onEvent = (taskId: TaskId) => (message: OutboundMessage) =>
+    const onEvent = (issueId: IssueId) => (message: OutboundMessage) =>
       Effect.gen(function* () {
         if (message._tag === 'SessionStarted') {
-          yield* runs.markSessionStarted(taskId, message.sessionId)
+          yield* runs.markSessionStarted(issueId, message.sessionId)
           return
         }
-        const freed = yield* updateTasks((current) => {
-          const live = current.get(taskId)
+        const freed = yield* updateIssues((current) => {
+          const live = current.get(issueId)
           if (live === undefined) return [false, undefined] as const
-          const changed = applyEvent(live, taskId, message)
+          const changed = applyEvent(live, issueId, message)
           if (changed === live) return [false, undefined] as const
           const next = new Map(current)
-          next.set(taskId, changed)
+          next.set(issueId, changed)
           return [holdsSlot(live) && !holdsSlot(changed), next] as const
         })
         if (freed) {
-          yield* Effect.logDebug('Hired agent freed its slot', { taskId, event: message._tag })
+          yield* Effect.logDebug('Hired agent freed its slot', { issueId, event: message._tag })
           yield* signal
         }
       })
 
-    const onEnded = (taskId: TaskId, end: SessionEnd) =>
+    const onEnded = (issueId: IssueId, end: SessionEnd) =>
       Effect.gen(function* () {
         const keepSession = end._tag !== 'SessionNotFound'
         if (end._tag === 'SessionFailed') {
-          yield* Ref.update(failed, (current) => new Set(current).add(taskId))
+          yield* Ref.update(failed, (current) => new Set(current).add(issueId))
         }
-        yield* Effect.logWarning('Hired agent session ended', { taskId, end: end._tag })
-        yield* runs.markRequeued(taskId, keepSession)
-        const live = yield* drop(taskId)
+        yield* Effect.logWarning('Hired agent session ended', { issueId, end: end._tag })
+        yield* runs.markRequeued(issueId, keepSession)
+        const live = yield* drop(issueId)
         if (live !== undefined && Option.isSome(live.scope)) {
           yield* Scope.close(live.scope.value, Exit.void)
         }
         yield* signal
       })
 
-    const startTask = Effect.fnUntraced(function* (
+    const startIssue = Effect.fnUntraced(function* (
       backend: AgentBackend,
       catalog: readonly [ModelOption, ...Array<ModelOption>],
       context: StartContext
     ) {
-      const { task, objective, hire, jobTitle, directory } = context
-      const unreserve = drop(task.id).pipe(Effect.andThen(signal))
-      if (!(yield* runs.markStarted(task.id, hire.id))) {
-        yield* Effect.logInfo('Task changed before it started', { taskId: task.id })
+      const { issue, objective, hire, jobTitle, directory } = context
+      const unreserve = drop(issue.id).pipe(Effect.andThen(signal))
+      if (!(yield* runs.markStarted(issue.id, hire.id))) {
+        yield* Effect.logInfo('Issue changed before it started', { issueId: issue.id })
         return yield* unreserve
       }
       const model = jobTitle.model ?? catalog[0].value
@@ -259,7 +278,7 @@ export const makeDispatcher = (deps: {
       }
       const permissionMode = startPermissionMode(input)
       yield* Effect.logInfo('Starting hired agent session', {
-        taskId: task.id,
+        issueId: issue.id,
         hireId: hire.id,
         model,
         ...input,
@@ -269,17 +288,21 @@ export const makeDispatcher = (deps: {
       const session = yield* backend
         .openSession({
           config: {
-            paneId: task.paneId,
+            paneId: issue.paneId,
             cwd: directory,
             model,
             thinkingLevel: jobTitle.thinkingLevel,
             permissionMode
           },
-          resume: Option.fromNullishOr(task.sessionId),
-          emit: onEvent(task.id),
+          resume: Option.fromNullishOr(issue.sessionId),
+          emit: onEvent(issue.id),
           systemPromptAppend: jobTitle.jobDescription,
           pluginPaths: [],
-          diaTools: [],
+          diaTools: issueTools({
+            issueId: issue.id,
+            objectiveId: issue.objectiveId,
+            hireId: hire.id
+          }),
           tools: Option.some({
             permissions: jobTitle.permissions,
             mcpServers: jobTitle.mcpServers
@@ -287,14 +310,14 @@ export const makeDispatcher = (deps: {
         })
         .pipe(Scope.provide(scope))
       const watcher = yield* session.ended.pipe(
-        Effect.flatMap((end) => onEnded(task.id, end)),
+        Effect.flatMap((end) => onEnded(issue.id, end)),
         Effect.forkIn(pluginScope)
       )
-      const kept = yield* updateTasks((current) => {
-        const live = current.get(task.id)
+      const kept = yield* updateIssues((current) => {
+        const live = current.get(issue.id)
         if (live === undefined) return [false, undefined] as const
         const next = new Map(current)
-        next.set(task.id, {
+        next.set(issue.id, {
           ...live,
           scope: Option.some(scope),
           session: Option.some(session),
@@ -305,18 +328,18 @@ export const makeDispatcher = (deps: {
       if (!kept) {
         yield* Fiber.interrupt(watcher)
         yield* Scope.close(scope, Exit.void)
-        yield* runs.markRequeued(task.id, true)
+        yield* runs.markRequeued(issue.id, true)
         return yield* signal
       }
-      yield* session.sendText(promptFor(task, objective), 'queue')
+      yield* session.sendText(promptFor(issue, objective), 'queue')
     })
 
-    const resumeTask = Effect.fnUntraced(function* (taskId: TaskId) {
-      const answers = yield* updateTasks((current) => {
-        const live = current.get(taskId)
+    const resumeIssue = Effect.fnUntraced(function* (issueId: IssueId) {
+      const answers = yield* updateIssues((current) => {
+        const live = current.get(issueId)
         if (live === undefined) return [undefined, undefined] as const
         const next = new Map(current)
-        next.set(taskId, {
+        next.set(issueId, {
           ...live,
           queued: [],
           turn: live.pending.size > 0 ? 'awaiting-user' : 'running'
@@ -326,7 +349,7 @@ export const makeDispatcher = (deps: {
       if (answers === undefined || Option.isNone(answers.session)) return
       const session = answers.session.value
       yield* Effect.logInfo('Resuming hired agent after an answer', {
-        taskId,
+        issueId,
         answers: answers.queued.length
       })
       for (const answer of answers.queued) {
@@ -334,24 +357,24 @@ export const makeDispatcher = (deps: {
       }
     })
 
-    const contextsFor = Effect.fnUntraced(function* (waiting: ReadonlyArray<WaitingTask>) {
+    const contextsFor = Effect.fnUntraced(function* (startable: ReadonlyArray<StartableIssue>) {
       const hires = new Map((yield* org.hiredAgents).map((hire) => [hire.id, hire]))
       const jobTitles = new Map((yield* org.jobTitles).map((jobTitle) => [jobTitle.id, jobTitle]))
       const skipped = yield* Ref.get(failed)
-      const contexts = new Map<TaskId, StartContext>()
-      for (const { task, objective } of waiting) {
-        const hire = task.assignee === null ? undefined : hires.get(task.assignee)
+      const contexts = new Map<IssueId, StartContext>()
+      for (const { issue, objective } of startable) {
+        const hire = issue.assignee === null ? undefined : hires.get(issue.assignee)
         const jobTitle = hire === undefined ? undefined : jobTitles.get(hire.jobTitleId)
-        if (hire === undefined || jobTitle === undefined || skipped.has(task.id)) continue
+        if (hire === undefined || jobTitle === undefined || skipped.has(issue.id)) continue
         const directory = yield* projectDirectory(objective)
         if (Option.isNone(directory)) {
-          yield* Effect.logWarning('Skipped a task whose project is not registered', {
-            taskId: task.id,
+          yield* Effect.logWarning('Skipped an issue whose project is not registered', {
+            issueId: issue.id,
             projectId: objective.projectId
           })
           continue
         }
-        contexts.set(task.id, { task, objective, hire, jobTitle, directory: directory.value })
+        contexts.set(issue.id, { issue, objective, hire, jobTitle, directory: directory.value })
       }
       return contexts
     })
@@ -363,46 +386,46 @@ export const makeDispatcher = (deps: {
       const candidates = yield* runs.startCandidates
       const contexts =
         Option.isSome(backend) && Option.isSome(catalog)
-          ? yield* contextsFor(candidates.waiting)
-          : new Map<TaskId, StartContext>()
-      const pick = yield* updateTasks((current) => {
+          ? yield* contextsFor(candidates.startable)
+          : new Map<IssueId, StartContext>()
+      const pick = yield* updateIssues((current) => {
         const entries = [...current.entries()]
         const answered = entries
           .filter(([, live]) => live.queued.length > 0)
           .sort(
             ([, left], [, right]) => (left.queued[0]?.order ?? 0) - (right.queued[0]?.order ?? 0)
           )
-          .map(([taskId]) => taskId)
+          .map(([issueId]) => issueId)
         const chosen = nextStarts({
           overallCap,
           heldSlots: entries.filter(([, live]) => holdsSlot(live)).length,
           busyHires: candidates.busyHires,
           answered,
           waiting: [...contexts.values()]
-            .filter(({ task }) => !current.has(task.id))
-            .map(({ task, hire, objective }) => ({
-              taskId: task.id,
+            .filter(({ issue }) => !current.has(issue.id))
+            .map(({ issue, hire, objective }) => ({
+              issueId: issue.id,
               hireId: hire.id,
               priority: objective.priority,
-              createdAt: task.createdAt
+              createdAt: issue.createdAt
             }))
         })
         if (chosen.start.length === 0) return [chosen, undefined] as const
         const next = new Map(current)
-        for (const taskId of chosen.start) next.set(taskId, reserved)
+        for (const issueId of chosen.start) next.set(issueId, reserved)
         return [chosen, next] as const
       })
       yield* Effect.logDebug('Scheduling pass', {
         overallCap,
-        waiting: contexts.size,
+        startable: contexts.size,
         resume: pick.resume,
         start: pick.start
       })
-      for (const taskId of pick.resume) yield* resumeTask(taskId)
+      for (const issueId of pick.resume) yield* resumeIssue(issueId)
       if (Option.isNone(backend) || Option.isNone(catalog)) return
-      for (const taskId of pick.start) {
-        const context = contexts.get(taskId)
-        if (context !== undefined) yield* startTask(backend.value, catalog.value, context)
+      for (const issueId of pick.start) {
+        const context = contexts.get(issueId)
+        if (context !== undefined) yield* startIssue(backend.value, catalog.value, context)
       }
     })
 
@@ -428,20 +451,20 @@ export const makeDispatcher = (deps: {
       })
 
     const answerPermission = Effect.fn('Dispatcher.answerPermission')(function* (
-      taskId: TaskId,
+      issueId: IssueId,
       requestId: string,
       response: PermissionResponse
     ) {
       const order = yield* Ref.getAndUpdate(answerOrder, (n) => n + 1)
-      const outcome = yield* updateTasks((current) => {
-        const live = current.get(taskId)
+      const outcome = yield* updateIssues((current) => {
+        const live = current.get(issueId)
         if (live === undefined) return ['not-pending' as const, undefined] as const
         if (live.answeredIds.has(requestId)) return ['repeated' as const, undefined] as const
         if (!live.pending.has(requestId)) return ['not-pending' as const, undefined] as const
         const pending = new Map(live.pending)
         pending.delete(requestId)
         const next = new Map(current)
-        next.set(taskId, {
+        next.set(issueId, {
           ...live,
           pending,
           queued: [...live.queued, { requestId, response, order }],
@@ -450,27 +473,27 @@ export const makeDispatcher = (deps: {
         return ['queued' as const, next] as const
       })
       if (outcome === 'not-pending') {
-        return yield* PermissionNotPending.make({ taskId, requestId })
+        return yield* PermissionNotPending.make({ issueId, requestId })
       }
-      yield* Effect.logInfo('Queued a permission answer', { taskId, requestId, outcome })
+      yield* Effect.logInfo('Queued a permission answer', { issueId, requestId, outcome })
       yield* signal
     })
 
-    const release = Effect.fn('Dispatcher.release')(function* (taskId: TaskId) {
+    const release = Effect.fn('Dispatcher.release')(function* (issueId: IssueId) {
       yield* Ref.update(failed, (current) => {
         const next = new Set(current)
-        next.delete(taskId)
+        next.delete(issueId)
         return next
       })
-      const live = yield* drop(taskId)
+      const live = yield* drop(issueId)
       if (live !== undefined) {
         yield* closeLive(live)
-        yield* Effect.logInfo('Released hired agent session', { taskId })
+        yield* Effect.logInfo('Released hired agent session', { issueId })
       }
       yield* signal
     })
 
-    const live = Effect.map(SynchronizedRef.get(tasks), (current) =>
+    const live = Effect.map(SynchronizedRef.get(issues), (current) =>
       LiveWork.make({
         pendingPermissions: [...current.values()].flatMap((entry) => [...entry.pending.values()]),
         heldSlots: [...current.values()].filter(holdsSlot).length
@@ -479,7 +502,7 @@ export const makeDispatcher = (deps: {
 
     yield* runs.requeueRunning
     yield* Effect.addFinalizer(() =>
-      SynchronizedRef.get(tasks).pipe(
+      SynchronizedRef.get(issues).pipe(
         Effect.flatMap((current) => Effect.forEach(current.values(), closeLive, { discard: true }))
       )
     )

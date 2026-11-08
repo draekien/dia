@@ -193,21 +193,21 @@ export const descendantsOf = (
 export const ObjectiveId = Uuid.pipe(Schema.brand('ObjectiveId'))
 export type ObjectiveId = typeof ObjectiveId.Type
 
-/** Identifies a task; a UUID the caller generates, so creating it again is harmless. */
-export const TaskId = Uuid.pipe(Schema.brand('TaskId'))
-export type TaskId = typeof TaskId.Type
+/** Identifies an issue; a UUID the caller generates, so creating it again is harmless. */
+export const IssueId = Uuid.pipe(Schema.brand('IssueId'))
+export type IssueId = typeof IssueId.Type
 
 /** The longest a {@link WorkTitle} may be, in characters. */
 export const WORK_TITLE_MAX_LENGTH = 120
 
-/** An objective's or a task's title: trimmed, 1 to {@link WORK_TITLE_MAX_LENGTH} characters. */
+/** An objective's or an issue's title: trimmed, 1 to {@link WORK_TITLE_MAX_LENGTH} characters. */
 export const WorkTitle = Schema.Trimmed.pipe(
   Schema.check(Schema.isNonEmpty(), Schema.isMaxLength(WORK_TITLE_MAX_LENGTH)),
   Schema.brand('WorkTitle')
 )
 export type WorkTitle = typeof WorkTitle.Type
 
-/** How soon an objective's tasks start when the overall cap is full: `high` first, `low` last. */
+/** How soon an objective's issues start when the overall cap is full: `high` first, `low` last. */
 export const ObjectivePriority = Schema.Literals(['high', 'normal', 'low'])
 export type ObjectivePriority = typeof ObjectivePriority.Type
 
@@ -221,22 +221,65 @@ export const PRIORITY_LABELS: Record<ObjectivePriority, string> = {
   low: 'Low'
 }
 
-/** An objective is `completed` when it has tasks and every one is `completed`; otherwise `open`. */
+/**
+ * An objective is `completed` when it has issues and every one is `done` or `canceled`; otherwise
+ * `open`.
+ */
 export const ObjectiveState = Schema.Literals(['open', 'completed'])
 export type ObjectiveState = typeof ObjectiveState.Type
 
-/** A `work` task does the objective's work; a `retro` task reviews a finished task (ADR-0064). */
-export const TaskKind = Schema.Literals(['work', 'retro'])
-export type TaskKind = typeof TaskKind.Type
+/**
+ * A `work` issue does the objective's work; a `retro` issue reviews a finished `work` issue
+ * (ADR-0064); the `planning` issue, one per objective, breaks the objective into `triage` issues.
+ */
+export const IssueKind = Schema.Literals(['work', 'retro', 'planning'])
+export type IssueKind = typeof IssueKind.Type
 
 /**
- * A task's progress. `waiting`: not started, or its session ended; it starts when it has an
- * assignee whose other tasks are not `running` and the overall cap has a free slot. `running`: its
- * hired agent has a session for it. `finished`: its work is done and its retro task is not yet
- * completed. `completed`: done. A `retro` task goes from `running` to `completed`.
+ * The statuses a hired agent moves its own issue through while its session works on it, in
+ * implement-task order; any order is allowed. An issue in one of them holds its assignee.
  */
-export const TaskState = Schema.Literals(['waiting', 'running', 'finished', 'completed'])
-export type TaskState = typeof TaskState.Type
+export const StartedStatus = Schema.Literals([
+  'understanding',
+  'designing',
+  'implementing',
+  'testing',
+  'verifying',
+  'in_review'
+])
+export type StartedStatus = typeof StartedStatus.Type
+
+/**
+ * An issue's status. `triage`: an agent proposed it and the user has not accepted it. `todo`: not
+ * started, or its session ended; it starts when it has an assignee with no started issue and the
+ * overall cap has a free slot. A {@link StartedStatus}: its hired agent works on it. `done` and
+ * `canceled` are closed.
+ */
+export const IssueStatus = Schema.Literals([
+  'triage',
+  'todo',
+  ...StartedStatus.literals,
+  'done',
+  'canceled'
+])
+export type IssueStatus = typeof IssueStatus.Type
+
+const isStartedStatus = Schema.is(StartedStatus)
+
+/** Whether `status` is a {@link StartedStatus}: the issue's hired agent works on it. */
+export const isStarted = (status: IssueStatus): status is StartedStatus => isStartedStatus(status)
+
+/** Whether `status` is closed: `done` or `canceled`. */
+export const isClosed = (status: IssueStatus): boolean => status === 'done' || status === 'canceled'
+
+/** The longest an {@link IssueDescription} may be, in characters. */
+export const ISSUE_DESCRIPTION_MAX_LENGTH = 10_000
+
+/** An issue's description: up to {@link ISSUE_DESCRIPTION_MAX_LENGTH} characters; may be empty. */
+export const IssueDescription = Schema.String.pipe(
+  Schema.check(Schema.isMaxLength(ISSUE_DESCRIPTION_MAX_LENGTH))
+)
+export type IssueDescription = typeof IssueDescription.Type
 
 /**
  * An objective in a registered project (ADR-0033). `assignee` is the hired agent the objective is
@@ -255,24 +298,26 @@ export const Objective = Schema.Struct({
 export type Objective = typeof Objective.Type
 
 /**
- * A task of an objective. `parentTaskId` is the task it belongs under; for a `retro` task, the task
- * it reviews. `assignee` is the hired agent that runs it, or null; a task with no assignee never
- * starts. `paneId` is fixed when the task is created and names its session's pane. `sessionId` is
- * the session its next start resumes, or null for a new session. `createdAt` is epoch milliseconds.
+ * An issue of an objective. `parentIssueId` is the issue it belongs under; for a `retro` issue, the
+ * issue it reviews. `assignee` is the hired agent that runs it, or null; an issue with no assignee
+ * never starts. `paneId` is fixed when the issue is created and names its session's pane.
+ * `sessionId` is the session its next start resumes, or null for a new session. `createdAt` is
+ * epoch milliseconds.
  */
-export const Task = Schema.Struct({
-  id: TaskId,
+export const Issue = Schema.Struct({
+  id: IssueId,
   objectiveId: ObjectiveId,
-  parentTaskId: Schema.NullOr(TaskId),
-  kind: TaskKind,
+  parentIssueId: Schema.NullOr(IssueId),
+  kind: IssueKind,
   title: WorkTitle,
-  state: TaskState,
+  description: IssueDescription,
+  status: IssueStatus,
   assignee: Schema.NullOr(HireId),
   paneId: Uuid,
   sessionId: Schema.NullOr(SessionId),
   createdAt: Schema.Number
 })
-export type Task = typeof Task.Type
+export type Issue = typeof Issue.Type
 
 /** What creating an objective takes; `id` is generated by the caller. */
 export const NewObjective = Schema.Struct({
@@ -286,34 +331,91 @@ export const NewObjective = Schema.Struct({
 export type NewObjective = typeof NewObjective.Type
 
 /**
- * What creating a `work` task takes; `id` is generated by the caller. `parentTaskId`, when set,
- * must be a task of the same objective.
+ * What the user's creating a `work` issue takes; it lands in `todo`. `id` is generated by the
+ * caller. `parentIssueId`, when set, must be an issue of the same objective.
  */
-export const NewTask = Schema.Struct({
-  id: TaskId,
+export const NewIssue = Schema.Struct({
+  id: IssueId,
   objectiveId: ObjectiveId,
-  parentTaskId: Schema.NullOr(TaskId),
+  parentIssueId: Schema.NullOr(IssueId),
   title: WorkTitle,
+  description: IssueDescription,
   assignee: Schema.NullOr(HireId)
 })
-export type NewTask = typeof NewTask.Type
+export type NewIssue = typeof NewIssue.Type
+
+/**
+ * What a hired agent's proposing a `work` issue takes; it lands in `triage`, unassigned.
+ * `parentIssueId`, when set, must be an issue of the same objective.
+ */
+export const ProposedIssue = Schema.Struct({
+  parentIssueId: Schema.NullOr(IssueId),
+  title: WorkTitle,
+  description: IssueDescription
+})
+export type ProposedIssue = typeof ProposedIssue.Type
+
+/**
+ * What a hired agent's updating an issue may change; an absent field is left as it is. `status`
+ * applies only to a started issue; `title` and `description` only to an issue that is not closed.
+ */
+export const IssueChange = Schema.Struct({
+  title: Schema.optionalKey(WorkTitle),
+  description: Schema.optionalKey(IssueDescription),
+  status: Schema.optionalKey(StartedStatus)
+})
+export type IssueChange = typeof IssueChange.Type
+
+/** The user's decision on `triage` issues: `accept` moves them to `todo`, `decline` to `canceled`. */
+export const TriageDecision = Schema.Literals(['accept', 'decline'])
+export type TriageDecision = typeof TriageDecision.Type
+
+/** Identifies a comment on an issue; a UUID. */
+export const CommentId = Uuid.pipe(Schema.brand('CommentId'))
+export type CommentId = typeof CommentId.Type
+
+/** The longest a {@link CommentBody} may be, in characters. */
+export const COMMENT_BODY_MAX_LENGTH = 10_000
+
+/**
+ * A comment's text: trimmed, 1 to {@link COMMENT_BODY_MAX_LENGTH} characters. Decode trimmed input:
+ * the schema rejects leading or trailing spaces.
+ */
+export const CommentBody = Schema.Trimmed.pipe(
+  Schema.check(Schema.isNonEmpty(), Schema.isMaxLength(COMMENT_BODY_MAX_LENGTH))
+)
+export type CommentBody = typeof CommentBody.Type
+
+/**
+ * Text a hired agent attached to issue `issueId`. `author` is the hired agent, or null once it was
+ * dismissed. `createdAt` is epoch milliseconds.
+ */
+export const IssueComment = Schema.Struct({
+  id: CommentId,
+  issueId: IssueId,
+  author: Schema.NullOr(HireId),
+  body: CommentBody,
+  createdAt: Schema.Number
+})
+export type IssueComment = typeof IssueComment.Type
 
 /**
  * A permission request a hired agent's session waits on: the tool `toolName` with `input`. Answer
- * it with the `AnswerPermission` call, naming `taskId` and `requestId`.
+ * it with the `AnswerPermission` call, naming `issueId` and `requestId`.
  */
 export const PendingPermission = Schema.Struct({
-  taskId: TaskId,
+  issueId: IssueId,
   requestId: Schema.String,
   toolName: Schema.String,
   input: Schema.Record(Schema.String, Schema.Unknown)
 })
 export type PendingPermission = typeof PendingPermission.Type
 
-/** Every objective and task, in creation order. */
+/** Every objective, issue and comment, in creation order. */
 export const WorkSnapshot = Schema.Struct({
   objectives: Schema.Array(Objective),
-  tasks: Schema.Array(Task)
+  issues: Schema.Array(Issue),
+  comments: Schema.Array(IssueComment)
 })
 export type WorkSnapshot = typeof WorkSnapshot.Type
 
@@ -327,15 +429,18 @@ export const LiveWork = Schema.Struct({
 })
 export type LiveWork = typeof LiveWork.Type
 
-/** Failure of creating a task: no objective has id `objectiveId`. */
+/** Failure of creating an issue: no objective has id `objectiveId`. */
 export class ObjectiveNotFound extends Schema.TaggedError<ObjectiveNotFound>()(
   'ObjectiveNotFound',
   { objectiveId: ObjectiveId }
 ) {}
 
-/** Failure of a task change: no task has id `taskId`, or a parent task is in another objective. */
-export class TaskNotFound extends Schema.TaggedError<TaskNotFound>()('TaskNotFound', {
-  taskId: TaskId
+/**
+ * Failure of an issue change: no issue has id `issueId`, or it is in another objective than the
+ * one the change names (a parent issue's, or a hired agent's session's).
+ */
+export class IssueNotFound extends Schema.TaggedError<IssueNotFound>()('IssueNotFound', {
+  issueId: IssueId
 }) {}
 
 /** Failure of creating an objective: no registered project has id `projectId`. */
@@ -343,25 +448,47 @@ export class ProjectNotFound extends Schema.TaggedError<ProjectNotFound>()('Proj
   projectId: ProjectId
 }) {}
 
-/** Failure of assigning: task `taskId` has started (`state`), so its assignee cannot change. */
-export class TaskNotWaiting extends Schema.TaggedError<TaskNotWaiting>()('TaskNotWaiting', {
-  taskId: TaskId,
-  state: TaskState
-}) {}
-
-/** Failure of finishing: task `taskId` is `waiting`, so it has not run. */
-export class TaskNotRunning extends Schema.TaggedError<TaskNotRunning>()('TaskNotRunning', {
-  taskId: TaskId
-}) {}
-
-/** Failure of answering: task `taskId`'s live session never asked permission `requestId`. */
-export class PermissionNotPending extends Schema.TaggedError<PermissionNotPending>()(
-  'PermissionNotPending',
-  { taskId: TaskId, requestId: Schema.String }
+/** Failure of assigning: issue `issueId` is in `status`, neither `triage` nor `todo`. */
+export class IssueNotAssignable extends Schema.TaggedError<IssueNotAssignable>()(
+  'IssueNotAssignable',
+  { issueId: IssueId, status: IssueStatus }
 ) {}
 
-/** Failure of dismissing: hired agent `hireId` is assigned to `tasks` tasks not yet completed. */
-export class HireHasOpenTasks extends Schema.TaggedError<HireHasOpenTasks>()('HireHasOpenTasks', {
-  hireId: HireId,
-  tasks: Schema.Int
+/**
+ * Failure of finishing an issue, or of changing its status: issue `issueId` is in `status`, which
+ * is not started.
+ */
+export class IssueNotStarted extends Schema.TaggedError<IssueNotStarted>()('IssueNotStarted', {
+  issueId: IssueId,
+  status: IssueStatus
 }) {}
+
+/**
+ * Failure of a triage decision: issue `issueId` is in `status`, neither `triage` nor the
+ * decision's target.
+ */
+export class IssueNotInTriage extends Schema.TaggedError<IssueNotInTriage>()('IssueNotInTriage', {
+  issueId: IssueId,
+  status: IssueStatus
+}) {}
+
+/** Failure of changing an issue's title or description: issue `issueId` is closed (`status`). */
+export class IssueClosed extends Schema.TaggedError<IssueClosed>()('IssueClosed', {
+  issueId: IssueId,
+  status: IssueStatus
+}) {}
+
+/** Failure of answering: issue `issueId`'s live session never asked permission `requestId`. */
+export class PermissionNotPending extends Schema.TaggedError<PermissionNotPending>()(
+  'PermissionNotPending',
+  { issueId: IssueId, requestId: Schema.String }
+) {}
+
+/**
+ * Failure of dismissing: hired agent `hireId` is assigned to `issues` issues that are neither
+ * `done` nor `canceled`.
+ */
+export class HireHasOpenIssues extends Schema.TaggedError<HireHasOpenIssues>()(
+  'HireHasOpenIssues',
+  { hireId: HireId, issues: Schema.Int }
+) {}

@@ -7,22 +7,26 @@ import * as calls from './calls'
 import { OrgSnapshot, WorkView } from './calls'
 import {
   type BuiltInJobTitle,
+  CommentBody,
+  CommentId,
   HiredAgent,
   HireId,
+  Issue,
+  IssueComment,
+  IssueId,
+  type IssueKind,
+  type IssueStatus,
   JobTitle,
   JobTitleId,
   JobTitleName,
+  NewIssue,
   NewObjective,
-  NewTask,
   Objective,
   ObjectiveId,
   type ObjectivePriority,
   type ObjectiveState,
   OverallCap,
-  Task,
-  TaskId,
-  type TaskKind,
-  type TaskState,
+  TriageDecision,
   WorkTitle
 } from './domain'
 
@@ -111,9 +115,9 @@ export const PROJECTS = [
 export const objectiveId = (n: number) =>
   ObjectiveId.make(`00000000-0000-4000-8000-4000000000${String(n).padStart(2, '0')}`)
 
-/** A task id for fixture task `n`. */
-export const taskId = (n: number) =>
-  TaskId.make(`00000000-0000-4000-8000-5000000000${String(n).padStart(2, '0')}`)
+/** An issue id for fixture issue `n`. */
+export const issueId = (n: number) =>
+  IssueId.make(`00000000-0000-4000-8000-5000000000${String(n).padStart(2, '0')}`)
 
 const objective = (
   n: number,
@@ -137,35 +141,48 @@ const objective = (
     createdAt: Date.UTC(2026, 10, 1, n)
   })
 
-const task = (
+const issue = (
   n: number,
   objectiveN: number,
   title: string,
   options: {
-    readonly state: TaskState
+    readonly status: IssueStatus
     readonly assignee: number | null
     readonly parent?: number
-    readonly kind?: TaskKind
+    readonly kind?: IssueKind
+    readonly description?: string
   }
 ) =>
-  Task.make({
-    id: taskId(n),
+  Issue.make({
+    id: issueId(n),
     objectiveId: objectiveId(objectiveN),
-    parentTaskId: options.parent === undefined ? null : taskId(options.parent),
+    parentIssueId: options.parent === undefined ? null : issueId(options.parent),
     kind: options.kind ?? 'work',
     title: WorkTitle.make(title),
-    state: options.state,
+    description: options.description ?? '',
+    status: options.status,
     assignee: options.assignee === null ? null : hireId(options.assignee),
     paneId: `00000000-0000-4000-8000-6000000000${String(n).padStart(2, '0')}`,
     sessionId: null,
     createdAt: Date.UTC(2026, 10, 2, n)
   })
 
+const comment = (n: number, issueN: number, author: number | null, body: string) =>
+  IssueComment.make({
+    id: CommentId.make(`00000000-0000-4000-8000-7000000000${String(n).padStart(2, '0')}`),
+    issueId: issueId(issueN),
+    author: author === null ? null : hireId(author),
+    body: CommentBody.make(body),
+    createdAt: Date.UTC(2026, 10, 3, n)
+  })
+
 /**
  * Three objectives: `Tidy release notes` (normal, website, unassigned, objective 2), `Ship the
  * objective screen` (high, dia, Ada, objective 1) and the completed `Move settings to SQLite`
- * (low, dia, objective 3). Objective 1 has a running task 1 with a waiting sub-task 2, a finished
- * task 3 with its waiting retro task 4, and an unassigned waiting task 5.
+ * (low, dia, objective 3). Objective 1 has its done planning issue 1; an `implementing` issue 2
+ * (Bea) with a `todo` sub-issue 3; a done issue 4 with its `todo` retro issue 5 (Ada); an
+ * unassigned `todo` issue 6; `triage` issues 7 and 8; an `in_review` issue 9 (agent 3); and a
+ * `canceled` issue 10. Issue 2 has a comment by Bea and issue 9 one by a dismissed agent.
  */
 export const WORK: WorkView = {
   objectives: [
@@ -173,7 +190,7 @@ export const WORK: WorkView = {
       project: 0,
       priority: 'high',
       assignee: 1,
-      description: 'List objectives beside a detail, and show every task with its state.'
+      description: 'List objectives beside a detail, and show every issue with its status.'
     }),
     objective(2, 'Tidy release notes', { project: 1, priority: 'normal', assignee: null }),
     objective(3, 'Move settings to SQLite', {
@@ -183,17 +200,38 @@ export const WORK: WorkView = {
       state: 'completed'
     })
   ],
-  tasks: [
-    task(1, 1, 'Build the objective screen', { state: 'running', assignee: 2 }),
-    task(2, 1, 'Test the task tree', { state: 'waiting', assignee: null, parent: 1 }),
-    task(3, 1, 'Stream the work view', { state: 'finished', assignee: 1 }),
-    task(4, 1, 'Retro: Stream the work view', {
-      state: 'waiting',
+  issues: [
+    issue(1, 1, 'Plan: Ship the objective screen', {
+      status: 'done',
       assignee: 1,
-      parent: 3,
+      kind: 'planning'
+    }),
+    issue(2, 1, 'Build the objective screen', {
+      status: 'implementing',
+      assignee: 2,
+      description: 'A list of objectives beside the selected one.\nShow its issues as a tree.'
+    }),
+    issue(3, 1, 'Test the issue tree', { status: 'todo', assignee: null, parent: 2 }),
+    issue(4, 1, 'Stream the work view', { status: 'done', assignee: 1 }),
+    issue(5, 1, 'Retro: Stream the work view', {
+      status: 'todo',
+      assignee: 1,
+      parent: 4,
       kind: 'retro'
     }),
-    task(5, 1, 'Write the release note', { state: 'waiting', assignee: null })
+    issue(6, 1, 'Write the release note', { status: 'todo', assignee: null }),
+    issue(7, 1, 'Add keyboard shortcuts', {
+      status: 'triage',
+      assignee: null,
+      description: 'Arrow keys move between objectives.'
+    }),
+    issue(8, 1, 'Document the statuses', { status: 'triage', assignee: null }),
+    issue(9, 1, 'Show the status labels', { status: 'in_review', assignee: 3 }),
+    issue(10, 1, 'Export objectives as CSV', { status: 'canceled', assignee: null })
+  ],
+  comments: [
+    comment(1, 2, 2, 'The tree nests sub-issues under their parent.'),
+    comment(2, 9, null, 'Ready for review.')
   ],
   pendingPermissions: [],
   heldSlots: 1
@@ -217,9 +255,10 @@ const RPCS: Record<string, Rpc.AnyWithProps> = Object.fromEntries(
   [
     calls.ReadOrg,
     calls.CreateObjective,
-    calls.CreateTask,
-    calls.AssignTask,
-    calls.FinishTask,
+    calls.CreateIssue,
+    calls.AssignIssue,
+    calls.TriageIssues,
+    calls.FinishIssue,
     calls.SetJobTitleEnabled,
     calls.CopyJobTitle,
     calls.EditJobTitle,
@@ -277,48 +316,101 @@ export interface FakeHost {
 }
 
 const decodeObjective = Schema.decodeUnknownSync(Schema.toCodecJson(NewObjective))
-const decodeTask = Schema.decodeUnknownSync(Schema.toCodecJson(NewTask))
+const decodeIssue = Schema.decodeUnknownSync(Schema.toCodecJson(NewIssue))
+const decodeDecision = Schema.decodeUnknownSync(TriageDecision)
+
+const FAKE_NOW = Date.UTC(2026, 10, 8)
+
+const newIssue = (fields: Omit<Issue, 'paneId' | 'sessionId' | 'createdAt'>): Issue =>
+  Issue.make({
+    ...fields,
+    paneId: '00000000-0000-4000-8000-600000000099',
+    sessionId: null,
+    createdAt: FAKE_NOW
+  })
+
+const prefixed = (prefix: string, title: string) =>
+  WorkTitle.make(`${prefix}: ${title}`.slice(0, 120).trimEnd())
+
+const changeIssues = (
+  host: FakeHost,
+  ids: ReadonlyArray<unknown>,
+  change: (existing: Issue) => Issue
+): ReadonlyArray<Issue> => {
+  const issues = host.work.issues.map((existing) =>
+    ids.includes(existing.id) ? change(existing) : existing
+  )
+  host.push({ ...host.work, issues })
+  return issues.filter((existing) => ids.includes(existing.id))
+}
+
+const finishIssue = (host: FakeHost, id: unknown): Issue | undefined => {
+  const [finished] = changeIssues(host, [id], (existing) =>
+    Issue.make({ ...existing, status: 'done' })
+  )
+  if (finished?.kind === 'work') {
+    const retro = newIssue({
+      id: IssueId.make('00000000-0000-4000-8000-500000000098'),
+      objectiveId: finished.objectiveId,
+      parentIssueId: finished.id,
+      kind: 'retro',
+      title: prefixed('Retro', finished.title),
+      description: '',
+      status: 'todo',
+      assignee: null
+    })
+    host.push({ ...host.work, issues: [...host.work.issues, retro] })
+  }
+  return finished
+}
 
 const workReply = (
   host: FakeHost,
   tag: string,
   payload: Record<string, unknown>
 ): Reply | undefined => {
-  const now = Date.UTC(2026, 10, 8)
   switch (tag) {
     case 'CreateObjective': {
       const created = Objective.make({
         ...decodeObjective(payload.objective),
         state: 'open',
-        createdAt: now
+        createdAt: FAKE_NOW
       })
-      host.push({ ...host.work, objectives: [...host.work.objectives, created] })
+      const planning = newIssue({
+        id: IssueId.make('00000000-0000-4000-8000-500000000097'),
+        objectiveId: created.id,
+        parentIssueId: null,
+        kind: 'planning',
+        title: prefixed('Plan', created.title),
+        description: '',
+        status: 'todo',
+        assignee: created.assignee
+      })
+      host.push({
+        ...host.work,
+        objectives: [...host.work.objectives, created],
+        issues: [...host.work.issues, planning]
+      })
       return { value: created }
     }
-    case 'CreateTask': {
-      const created = Task.make({
-        ...decodeTask(payload.task),
-        kind: 'work',
-        state: 'waiting',
-        paneId: '00000000-0000-4000-8000-600000000099',
-        sessionId: null,
-        createdAt: now
-      })
-      host.push({ ...host.work, tasks: [...host.work.tasks, created] })
+    case 'CreateIssue': {
+      const created = newIssue({ ...decodeIssue(payload.issue), kind: 'work', status: 'todo' })
+      host.push({ ...host.work, issues: [...host.work.issues, created] })
       return { value: created }
     }
-    case 'AssignTask':
-    case 'FinishTask': {
-      const changed = host.work.tasks.map((existing) =>
-        existing.id !== payload.taskId
-          ? existing
-          : tag === 'FinishTask'
-            ? Task.make({ ...existing, state: 'finished' })
-            : Task.make({ ...existing, assignee: (payload.hireId as HireId | null) ?? null })
+    case 'AssignIssue': {
+      const [changed] = changeIssues(host, [payload.issueId], (existing) =>
+        Issue.make({ ...existing, assignee: (payload.hireId as HireId | null) ?? null })
       )
-      host.push({ ...host.work, tasks: changed })
-      return { value: changed.find((existing) => existing.id === payload.taskId) }
+      return { value: changed }
     }
+    case 'TriageIssues': {
+      const status = decodeDecision(payload.decision) === 'accept' ? 'todo' : 'canceled'
+      const ids = Array.isArray(payload.issueIds) ? payload.issueIds : []
+      return { value: changeIssues(host, ids, (existing) => Issue.make({ ...existing, status })) }
+    }
+    case 'FinishIssue':
+      return { value: finishIssue(host, payload.issueId) }
     default:
       return undefined
   }
@@ -343,7 +435,7 @@ const encodeWork = Schema.encodeSync(Schema.toCodecJson(WorkView))
  * Installs a fake `org` host entry holding `snapshot` and `work`, and a workspace of
  * {@link PROJECTS}. `ReadOrg` answers the current snapshot and `WatchWork` sends the current
  * work, then each pushed one. Every other call is recorded in `sent` with its encoded payload and
- * answered by `replies[tag]`, or else by the matching snapshot entry; the objective and task
+ * answered by `replies[tag]`, or else by the matching snapshot entry; the objective and issue
  * calls also push the changed work.
  */
 export const installHost = (

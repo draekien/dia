@@ -24,13 +24,13 @@ import {
   HIRES,
   hireId,
   installHost,
+  issueId,
   JOB_TITLES,
   jobTitleNamed,
   objectiveId,
   PROJECTS,
   type Reply,
   snapshotOf,
-  taskId,
   WORK
 } from './org-host.fake'
 import { OrgPage } from './org-page'
@@ -757,7 +757,7 @@ describe('Objectives', () => {
 
   const detailTitle = () => screen.getByRole('heading', { level: 3 }).textContent
 
-  const task = (title: string) => screen.getByRole('listitem', { name: title })
+  const issueRow = (title: string) => screen.getByRole('listitem', { name: title })
 
   const selectObjective = (title: string) =>
     act(async () => {
@@ -790,7 +790,7 @@ describe('Objectives', () => {
       Priority: 'High',
       State: 'Open',
       Assignee: 'Ada',
-      Description: 'List objectives beside a detail, and show every task with its state.'
+      Description: 'List objectives beside a detail, and show every issue with its status.'
     })
   })
 
@@ -809,17 +809,19 @@ describe('Objectives', () => {
     })
   })
 
-  it('shows a completed objective as Completed, without Add task', async () => {
+  it('shows a completed objective as Completed, without Add issue', async () => {
     await openObjectives(installHost(snapshotOf()))
 
     await selectObjective('Move settings to SQLite')
 
     expect(facts().State).toBe('Completed')
-    expect(screen.queryByRole('button', { name: 'Add task' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Add issue' })).toBeNull()
   })
 
   it('shows the empty state when there are no objectives', async () => {
-    await renderOrg(installHost(snapshotOf(), {}, { ...WORK, objectives: [], tasks: [] }))
+    await renderOrg(
+      installHost(snapshotOf(), {}, { ...WORK, objectives: [], issues: [], comments: [] })
+    )
     await go('Objectives')
 
     expect(await screen.findByText('No objectives yet')).toBeTruthy()
@@ -851,102 +853,131 @@ describe('Objectives', () => {
     expect(await screen.findByText("The org plugin's host entry is not loaded.")).toBeTruthy()
   })
 
-  it('nests a sub-task under its parent and a marked retro task under the task it reviews', async () => {
+  it('nests a sub-issue under its parent and a marked retro issue under the issue it reviews', async () => {
     await openObjectives(installHost(snapshotOf()))
 
     expect(
-      within(task('Build the objective screen')).queryByText('Test the task tree')
+      within(issueRow('Build the objective screen')).queryByText('Test the issue tree')
     ).not.toBeNull()
     expect(
-      within(task('Stream the work view')).queryByText('Retro: Stream the work view')
+      within(issueRow('Stream the work view')).queryByText('Retro: Stream the work view')
     ).not.toBeNull()
-    expect(within(task('Retro: Stream the work view')).queryByText('Retro')).not.toBeNull()
-    expect(within(task('Build the objective screen')).queryByText('Retro')).toBeNull()
+    expect(within(issueRow('Retro: Stream the work view')).queryByText('Retro')).not.toBeNull()
+    expect(within(issueRow('Build the objective screen')).queryByText('Retro')).toBeNull()
     expect(
-      within(task('Build the objective screen')).queryByText('Write the release note')
+      within(issueRow('Build the objective screen')).queryByText('Write the release note')
     ).toBeNull()
   })
 
-  it('shows a task state the host pushes without any user action', async () => {
+  it('marks the planning issue as Planning', async () => {
+    await openObjectives(installHost(snapshotOf()))
+
+    expect(
+      within(issueRow('Plan: Ship the objective screen')).queryByText('Planning')
+    ).not.toBeNull()
+  })
+
+  it.each([
+    ['Add keyboard shortcuts', 'Triage'],
+    ['Write the release note', 'Todo'],
+    ['Build the objective screen', 'Implementing'],
+    ['Show the status labels', 'In Review'],
+    ['Stream the work view', 'Done'],
+    ['Export objectives as CSV', 'Canceled']
+  ])('labels %s with its status %s', async (title, label) => {
+    await openObjectives(installHost(snapshotOf()))
+
+    expect(within(issueRow(title)).queryByText(label)).not.toBeNull()
+  })
+
+  it('shows an issue status the host pushes without any user action', async () => {
     const host = await openObjectives(installHost(snapshotOf()))
-    const before = within(task('Write the release note')).queryByText('Running')
+    const before = within(issueRow('Write the release note')).queryByText('Implementing')
 
     await act(async () => {
       host.push({
         ...WORK,
-        tasks: WORK.tasks.map((existing) =>
-          existing.id === taskId(5) ? { ...existing, state: 'running' as const } : existing
+        issues: WORK.issues.map((existing) =>
+          existing.id === issueId(6) ? { ...existing, status: 'implementing' as const } : existing
         )
       })
     })
 
     expect(before).toBeNull()
-    expect(within(task('Write the release note')).queryByText('Running')).not.toBeNull()
+    expect(within(issueRow('Write the release note')).queryByText('Implementing')).not.toBeNull()
   })
 
-  it('sends AssignTask when a waiting task gets an assignee', async () => {
+  it('sends AssignIssue when a todo issue gets an assignee', async () => {
     const host = await openObjectives(installHost(snapshotOf()))
 
     await choose('Assignee of Write the release note', 'Bea')
 
     await waitFor(() =>
-      expect(host.sent).toContainEqual(['AssignTask', { taskId: taskId(5), hireId: hireId(2) }])
+      expect(host.sent).toContainEqual(['AssignIssue', { issueId: issueId(6), hireId: hireId(2) }])
     )
   })
 
-  it('disables the assignee of a running task only', async () => {
+  it('enables the assignee of triage and todo issues only', async () => {
     await openObjectives(installHost(snapshotOf()))
 
     const disabled = (title: string) =>
       screen.getByRole('combobox', { name: `Assignee of ${title}` }).hasAttribute('disabled')
 
-    expect([disabled('Build the objective screen'), disabled('Write the release note')]).toEqual([
-      true,
-      false
-    ])
+    expect(
+      [
+        'Add keyboard shortcuts',
+        'Write the release note',
+        'Build the objective screen',
+        'Show the status labels',
+        'Stream the work view'
+      ].map(disabled)
+    ).toEqual([false, false, true, true, true])
   })
 
-  it('offers Finish only on the running task, and sends FinishTask from it', async () => {
+  it('offers Finish on every started issue, and sends FinishIssue from it', async () => {
     const host = await openObjectives(installHost(snapshotOf()))
-    const finishes = screen.getAllByRole('button', { name: 'Finish' })
+    const finishes = screen
+      .getAllByRole('button', { name: 'Finish' })
+      .map((button) => button.closest('li')?.getAttribute('aria-label'))
 
     await act(async () => {
       fireEvent.click(
-        within(task('Build the objective screen')).getByRole('button', { name: 'Finish' })
+        within(issueRow('Build the objective screen')).getByRole('button', { name: 'Finish' })
       )
     })
 
-    expect(finishes).toHaveLength(1)
-    await waitFor(() => expect(host.sent).toContainEqual(['FinishTask', { taskId: taskId(1) }]))
+    expect(finishes).toEqual(['Build the objective screen', 'Show the status labels'])
+    await waitFor(() => expect(host.sent).toContainEqual(['FinishIssue', { issueId: issueId(2) }]))
   })
 
-  it('sends CreateTask from Add task and shows the new task', async () => {
+  it('sends CreateIssue with an empty description from Add issue and shows the new issue', async () => {
     const host = await openObjectives(installHost(snapshotOf()))
 
-    type('Task title', '  Review the screen  ')
-    await choose('Assignee of the new task', 'Cy')
-    await click('Add task')
+    type('Issue title', '  Review the screen  ')
+    await choose('Assignee of the new issue', 'Cy')
+    await click('Add issue')
 
-    const [, payload] = host.sent.find(([tag]) => tag === 'CreateTask') ?? []
+    const [, payload] = host.sent.find(([tag]) => tag === 'CreateIssue') ?? []
     expect(payload).toEqual({
-      task: {
+      issue: {
         id: expect.any(String),
         objectiveId: objectiveId(1),
-        parentTaskId: null,
+        parentIssueId: null,
         title: 'Review the screen',
+        description: '',
         assignee: hireId(4)
       }
     })
     expect(await screen.findByRole('listitem', { name: 'Review the screen' })).toBeTruthy()
   })
 
-  it('rejects an empty task title without a call', async () => {
+  it('rejects an empty issue title without a call', async () => {
     const host = await openObjectives(installHost(snapshotOf()))
 
-    await click('Add task')
+    await click('Add issue')
 
     expect(screen.getByRole('alert').textContent).toBe('Enter a title')
-    expect(sentTags(host)).not.toContain('CreateTask')
+    expect(sentTags(host)).not.toContain('CreateIssue')
   })
 
   it('offers only the registered projects', async () => {

@@ -5,10 +5,16 @@ import {
   BuiltInJobTitleDeleted,
   BuiltInJobTitleRenamed,
   HiredAgent,
-  HireHasOpenTasks,
+  HireHasOpenIssues,
   HireId,
   HireNameTaken,
   HireNotFound,
+  Issue,
+  IssueId,
+  IssueNotAssignable,
+  IssueNotFound,
+  IssueNotInTriage,
+  IssueNotStarted,
   JobTitle,
   JobTitleDisabled,
   JobTitleEdit,
@@ -18,8 +24,8 @@ import {
   JobTitleNameTaken,
   JobTitleNotFound,
   LiveWork,
+  NewIssue,
   NewObjective,
-  NewTask,
   Objective,
   ObjectiveNotFound,
   OrgSettings,
@@ -27,11 +33,7 @@ import {
   PermissionNotPending,
   ProjectNotFound,
   ReportsToCycle,
-  Task,
-  TaskId,
-  TaskNotFound,
-  TaskNotRunning,
-  TaskNotWaiting,
+  TriageDecision,
   WorkSnapshot
 } from './domain'
 
@@ -92,10 +94,13 @@ export const Hire = Rpc.make('Hire', {
   error: Schema.Union([JobTitleNotFound, JobTitleDisabled, HireNameTaken, HireNotFound])
 })
 
-/** Dismisses hired agent `hireId`; refused while it is assigned to a task not yet completed. */
+/**
+ * Dismisses hired agent `hireId`; refused while it is assigned to an issue that is neither `done`
+ * nor `canceled`.
+ */
 export const Dismiss = Rpc.make('Dismiss', {
   payload: { hireId: HireId },
-  error: Schema.Union([HireNotFound, HireHasOpenTasks])
+  error: Schema.Union([HireNotFound, HireHasOpenIssues])
 })
 
 /** Names hired agent `hireId` `name`, or clears its name when null. */
@@ -126,7 +131,7 @@ export const SetOverallCap = Rpc.make('SetOverallCap', {
 })
 
 /**
- * Every objective and task, the permission requests hired agents wait on, and how many slots of
+ * Every objective, issue and comment, the permission requests hired agents wait on, and how many slots of
  * the overall cap are held now.
  */
 export const WorkView = Schema.Struct({
@@ -140,45 +145,65 @@ export const ReadWork = Rpc.make('ReadWork', { payload: {}, success: WorkView })
 
 /**
  * Streams the {@link WorkView}: the current one when subscribed, then a new one after each change
- * to objectives, tasks, held slots or pending permissions. Several changes during one read give
+ * to objectives, issues and comments, held slots or pending permissions. Several changes during one read give
  * one more view, so a subscriber always ends on the latest state.
  */
 export const WatchWork = Rpc.make('WatchWork', { payload: {}, success: WorkView, stream: true })
 
-/** Creates an open objective; a repeated call with the same `id` returns the stored objective. */
+/**
+ * Creates an open objective and its `planning` issue, assigned to the objective's assignee; a
+ * repeated call with the same `id` returns the stored objective.
+ */
 export const CreateObjective = Rpc.make('CreateObjective', {
   payload: { objective: NewObjective },
   success: Objective,
   error: Schema.Union([ProjectNotFound, HireNotFound])
 })
 
-/** Creates a waiting `work` task; a repeated call with the same `id` returns the stored task. */
-export const CreateTask = Rpc.make('CreateTask', {
-  payload: { task: NewTask },
-  success: Task,
-  error: Schema.Union([ObjectiveNotFound, TaskNotFound, HireNotFound])
-})
-
-/** Gives waiting task `taskId` to hired agent `hireId`, or takes it from its agent when null. */
-export const AssignTask = Rpc.make('AssignTask', {
-  payload: { taskId: TaskId, hireId: Schema.NullOr(HireId) },
-  success: Task,
-  error: Schema.Union([TaskNotFound, TaskNotWaiting, HireNotFound])
+/**
+ * Creates a `work` issue in `todo`, reopening a completed objective; a repeated call with the same
+ * `id` returns the stored issue.
+ */
+export const CreateIssue = Rpc.make('CreateIssue', {
+  payload: { issue: NewIssue },
+  success: Issue,
+  error: Schema.Union([ObjectiveNotFound, IssueNotFound, HireNotFound])
 })
 
 /**
- * Finishes running task `taskId` and stops its session: a `work` task becomes `finished` and gets
- * a retro task; a `retro` task, and the task it reviews, become `completed`.
+ * Gives `triage` or `todo` issue `issueId` to hired agent `hireId`, or takes it from its agent when
+ * null.
  */
-export const FinishTask = Rpc.make('FinishTask', {
-  payload: { taskId: TaskId },
-  success: Task,
-  error: Schema.Union([TaskNotFound, TaskNotRunning])
+export const AssignIssue = Rpc.make('AssignIssue', {
+  payload: { issueId: IssueId, hireId: Schema.NullOr(HireId) },
+  success: Issue,
+  error: Schema.Union([IssueNotFound, IssueNotAssignable, HireNotFound])
 })
 
-/** Answers permission request `requestId` that task `taskId`'s hired agent waits on. */
+/**
+ * Accepts (to `todo`) or declines (to `canceled`) every `triage` issue in `issueIds`, all or none;
+ * an issue already in the decision's target is left as it is. Returns the issues in `issueIds`
+ * order.
+ */
+export const TriageIssues = Rpc.make('TriageIssues', {
+  payload: { issueIds: Schema.NonEmptyArray(IssueId), decision: TriageDecision },
+  success: Schema.Array(Issue),
+  error: Schema.Union([IssueNotFound, IssueNotInTriage])
+})
+
+/**
+ * Finishes started issue `issueId` and stops its session: it becomes `done`, and a `work` issue
+ * gets a `retro` sub-issue in `todo`.
+ */
+export const FinishIssue = Rpc.make('FinishIssue', {
+  payload: { issueId: IssueId },
+  success: Issue,
+  error: Schema.Union([IssueNotFound, IssueNotStarted])
+})
+
+/** Answers permission request `requestId` that issue `issueId`'s hired agent waits on. */
 export const AnswerPermission = Rpc.make('AnswerPermission', {
-  payload: { taskId: TaskId, requestId: Schema.String, response: PermissionResponse },
+  payload: { issueId: IssueId, requestId: Schema.String, response: PermissionResponse },
   success: Schema.Void,
   error: PermissionNotPending
 })

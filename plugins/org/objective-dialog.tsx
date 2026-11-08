@@ -122,7 +122,7 @@ export function ObjectiveDialog({
         <DialogHeader>
           <DialogTitle>New objective</DialogTitle>
           <DialogDescription>
-            A goal in one project. Its tasks run as the agents they are assigned to.
+            Its planning issue goes to the assignee, or waits until you assign it.
           </DialogDescription>
         </DialogHeader>
         {projects.length === 0 ? (
@@ -216,7 +216,7 @@ export function ObjectiveDialog({
               <Label>Assignee</Label>
               <AssigneeSelect
                 label="Assignee"
-                none="None (planning task)"
+                none="Unassigned"
                 value={assignee}
                 hiredAgents={snapshot.hiredAgents}
                 jobTitles={snapshot.jobTitles}

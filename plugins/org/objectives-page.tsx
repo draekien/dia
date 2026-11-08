@@ -42,7 +42,7 @@ function NoObjectives({ create }: { readonly create: () => void }) {
       <EmptyHeader>
         <EmptyTitle>No objectives yet</EmptyTitle>
         <EmptyDescription>
-          An objective is a goal in one of your projects, worked through as tasks by hired agents.
+          An objective is a goal in one of your projects, worked through as issues by hired agents.
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
@@ -122,7 +122,7 @@ function Objectives({
                 key={selected.id}
                 objective={selected}
                 projectName={projectName(selected)}
-                tasks={work.tasks}
+                issues={work.issues}
                 snapshot={snapshot}
                 call={call}
               />

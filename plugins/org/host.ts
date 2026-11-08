@@ -11,14 +11,14 @@ import { SqlClient } from 'effect/sql'
 import { bypassAvailable } from './bypass'
 import {
   AnswerPermission,
-  AssignTask,
+  AssignIssue,
   CopyJobTitle,
+  CreateIssue,
   CreateObjective,
-  CreateTask,
   DeleteJobTitle,
   Dismiss,
   EditJobTitle,
-  FinishTask,
+  FinishIssue,
   Hire,
   ReadOrg,
   ReadWork,
@@ -27,9 +27,11 @@ import {
   SetJobTitleEnabled,
   SetOverallCap,
   SetReportsTo,
+  TriageIssues,
   WatchWork
 } from './calls'
 import { type Dispatcher, makeDispatcher } from './dispatcher'
+import { makeIssueTools } from './issue-tools'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { type Org, OrgService } from './service'
@@ -154,24 +156,29 @@ const serveWorkCalls = (
     [
       ctx.serve(ReadWork, () => readWorkView(work, dispatcher)),
       ctx.serve(WatchWork, () => watchWork(work, dispatcher)),
-      ctx.serve(CreateObjective, ({ objective }) => work.createObjective(objective)),
-      ctx.serve(CreateTask, ({ task }) =>
-        work.createTask(task).pipe(Effect.tap(() => dispatcher.signal))
+      ctx.serve(CreateObjective, ({ objective }) =>
+        work.createObjective(objective).pipe(Effect.tap(() => dispatcher.signal))
       ),
-      ctx.serve(AssignTask, ({ taskId, hireId }) =>
+      ctx.serve(CreateIssue, ({ issue }) =>
+        work.createIssue(issue).pipe(Effect.tap(() => dispatcher.signal))
+      ),
+      ctx.serve(AssignIssue, ({ issueId, hireId }) =>
         work
-          .assignTask(taskId, hireId)
+          .assignIssue(issueId, hireId)
           .pipe(
-            Effect.tap((task) =>
-              task.state === 'waiting' ? dispatcher.release(taskId) : Effect.void
+            Effect.tap((issue) =>
+              issue.status === 'todo' ? dispatcher.release(issueId) : Effect.void
             )
           )
       ),
-      ctx.serve(FinishTask, ({ taskId }) =>
-        work.finishTask(taskId).pipe(Effect.tap(() => dispatcher.release(taskId)))
+      ctx.serve(TriageIssues, ({ issueIds, decision }) =>
+        work.triageIssues(issueIds, decision).pipe(Effect.tap(() => dispatcher.signal))
       ),
-      ctx.serve(AnswerPermission, ({ taskId, requestId, response }) =>
-        dispatcher.answerPermission(taskId, requestId, response)
+      ctx.serve(FinishIssue, ({ issueId }) =>
+        work.finishIssue(issueId).pipe(Effect.tap(() => dispatcher.release(issueId)))
+      ),
+      ctx.serve(AnswerPermission, ({ issueId, requestId, response }) =>
+        dispatcher.answerPermission(issueId, requestId, response)
       )
     ],
     { discard: true }
@@ -181,10 +188,10 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
   Effect.gen(function* () {
     const sql = yield* ctx.database(orgMigrations)
     const workspace = yield* Ref.make(Option.none<Workspace>())
-    const { work, runs, openTasksOf } = yield* makeWork((projectId) =>
+    const { work, runs, openIssuesOf } = yield* makeWork((projectId) =>
       Effect.map(directoryOf(workspace, projectId), Option.isSome)
     ).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
-    const org = yield* makeOrg(openTasksOf).pipe(
+    const org = yield* makeOrg(openIssuesOf).pipe(
       Effect.provideService(SqlClient.SqlClient, sql),
       Effect.provide(NodeCrypto.layer)
     )
@@ -192,7 +199,8 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     const dispatcher = yield* makeDispatcher({
       runs,
       org,
-      projectDirectory: (objective) => directoryOf(workspace, objective.projectId)
+      projectDirectory: (objective) => directoryOf(workspace, objective.projectId),
+      issueTools: (scope) => makeIssueTools(work, scope)
     })
     yield* followWorkspace(ctx, workspace, dispatcher)
     const backend = yield* Ref.make(Option.none<AgentBackend>())

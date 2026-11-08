@@ -24,14 +24,15 @@ import { openDatabase } from '../../src/host/services/database'
 import { makeDispatcher } from './dispatcher'
 import {
   type HiredAgent,
+  type Issue,
+  IssueId,
   type JobTitle,
   ObjectiveId,
   type ObjectivePriority,
   OverallCap,
-  type Task,
-  TaskId,
   WorkTitle
 } from './domain'
+import { makeIssueTools } from './issue-tools'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { makeWork } from './work'
@@ -112,14 +113,15 @@ const setUp = (options: {
     const sql = yield* openDatabase(':memory:', orgMigrations).pipe(Scope.provide(dbScope))
     const { work, runs, org } = yield* Effect.gen(function* () {
       const made = yield* makeWork((projectId) => Effect.succeed(projectId === PROJECT))
-      return { ...made, org: yield* makeOrg(made.openTasksOf) }
+      return { ...made, org: yield* makeOrg(made.openIssuesOf) }
     }).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
     yield* org.setOverallCap(OverallCap.make(options.cap))
     const dispatcher = yield* makeDispatcher({
       runs,
       org,
       projectDirectory: (objective) =>
-        Effect.succeed(objective.projectId === PROJECT ? Option.some(DIRECTORY) : Option.none())
+        Effect.succeed(objective.projectId === PROJECT ? Option.some(DIRECTORY) : Option.none()),
+      issueTools: (scope) => makeIssueTools(work, scope)
     })
     const fake = fakeBackend(options.disabled)
     yield* dispatcher.lendBackend(fake.backend)
@@ -151,11 +153,12 @@ const setUp = (options: {
                 priority,
                 assignee: null
               })).id
-        const task = yield* work.createTask({
-          id: TaskId.make(`00000000-0000-4000-8000-6${String(taskCount).padStart(11, '0')}`),
+        const task = yield* work.createIssue({
+          id: IssueId.make(`00000000-0000-4000-8000-6${String(taskCount).padStart(11, '0')}`),
           objectiveId,
-          parentTaskId: null,
+          parentIssueId: null,
           title: WorkTitle.make(`Task ${taskCount}`),
+          description: '',
           assignee: assignee.id
         })
         yield* dispatcher.signal
@@ -164,15 +167,15 @@ const setUp = (options: {
       })
     const taskOf = (session: FakeSession) =>
       Effect.map(work.snapshot, (snapshot) => {
-        const task = snapshot.tasks.find((entry) => entry.paneId === session.options.config.paneId)
-        assert.isDefined(task, 'the task of an opened session')
-        return task as Task
+        const task = snapshot.issues.find((entry) => entry.paneId === session.options.config.paneId)
+        assert.isDefined(task, 'the issue of an opened session')
+        return task as Issue
       })
     const emit = (session: FakeSession, message: OutboundMessage) =>
       session.options.emit(message).pipe(Effect.andThen(settle))
-    const finish = (task: Task) =>
+    const finish = (task: Issue) =>
       work
-        .finishTask(task.id)
+        .finishIssue(task.id)
         .pipe(Effect.andThen(dispatcher.release(task.id)), Effect.andThen(settle))
     return {
       work,
@@ -193,7 +196,7 @@ const open = (sessions: ReadonlyArray<FakeSession>) => sessions.filter((session)
 
 describe('dispatcher caps', () => {
   it.effect(
-    'never holds more slots than the cap, nor runs more agents of a job title than it has hires, across 60 tasks',
+    'never holds more slots than the cap, nor runs more agents of a job title than it has hires, across 60 issues',
     () =>
       Effect.gen(function* () {
         const env = yield* setUp({ cap: 3 })
@@ -232,7 +235,7 @@ describe('dispatcher caps', () => {
             assert.isAtMost(count, hiresByJobTitle.get(jobTitleId) ?? 0)
           }
           const [session] = open(env.sessions)
-          assert.isDefined(session, `no session open after ${finished} finished tasks`)
+          assert.isDefined(session, `no session open after ${finished} finished issues`)
           const task = yield* env.taskOf(session as FakeSession)
           if (finished % 3 === 0) {
             yield* env.emit(
@@ -288,8 +291,12 @@ describe('dispatcher session start', () => {
         )
         assert.isTrue(Option.isNone(options.resume))
         assert.deepStrictEqual(sent, [
-          'Task 1\n\nObjective: Ship the marketplace\n\nLet users install plugins.'
+          `Task 1\n\nIssue: ${task.id}\nObjective: Ship the marketplace\n\nLet users install plugins.`
         ])
+        assert.deepStrictEqual(
+          options.diaTools.map((tool) => tool.name),
+          ['create_issue', 'update_issue', 'comment_issue']
+        )
       }).pipe(Effect.scoped)
   )
 
@@ -322,8 +329,38 @@ describe('dispatcher session start', () => {
   )
 })
 
+describe('dispatcher planning issue', () => {
+  it.effect("starts the objective's assignee on its planning issue with the planning prompt", () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 2 })
+      const lead = yield* env.hireOf(env.jobTitles[5] as JobTitle)
+      yield* env.work.createObjective({
+        id: ObjectiveId.make('00000000-0000-4000-8000-500000000002'),
+        projectId: PROJECT,
+        title: WorkTitle.make('Add search'),
+        description: 'Find plugins by name.',
+        priority: 'normal',
+        assignee: lead.id
+      })
+      yield* env.dispatcher.signal
+      yield* settle
+
+      const [session] = env.sessions
+      assert.isDefined(session)
+      const issue = yield* env.taskOf(session as FakeSession)
+      assert.deepStrictEqual([issue.kind, issue.status], ['planning', 'understanding'])
+      assert.deepStrictEqual((session as FakeSession).sent, [
+        'Plan the objective "Add search".\n\nFind plugins by name.\n\n' +
+          'Break it into issues with create_issue: one per piece of work another agent can finish on its own,\n' +
+          'each with a description it can act on. They go to Triage for the user to accept.\n' +
+          'When the plan is complete, set this issue to in_review with update_issue.'
+      ])
+    }).pipe(Effect.scoped)
+  )
+})
+
 describe('dispatcher slots', () => {
-  it.effect('starts the next waiting task when a running agent waits on a permission request', () =>
+  it.effect('starts the next todo issue when a running agent waits on a permission request', () =>
     Effect.gen(function* () {
       const env = yield* setUp({ cap: 1 })
       const engineer = env.jobTitles[1] as JobTitle
@@ -344,7 +381,7 @@ describe('dispatcher slots', () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect('resumes an answered agent one over the cap, ahead of a waiting task', () =>
+  it.effect('resumes an answered agent one over the cap, ahead of a todo issue', () =>
     Effect.gen(function* () {
       const env = yield* setUp({ cap: 1 })
       const engineer = env.jobTitles[1] as JobTitle
@@ -466,7 +503,7 @@ describe('dispatcher session end', () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect('resumes the stored session when a new setup starts the task again', () =>
+  it.effect('resumes the stored session when a new setup starts the issue again', () =>
     Effect.gen(function* () {
       const env = yield* setUp({ cap: 1 })
       yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
@@ -475,7 +512,8 @@ describe('dispatcher session end', () => {
       const nextSetup = yield* makeDispatcher({
         runs: env.runs,
         org: env.org,
-        projectDirectory: () => Effect.succeed(Option.some(DIRECTORY))
+        projectDirectory: () => Effect.succeed(Option.some(DIRECTORY)),
+        issueTools: () => []
       })
       yield* nextSetup.lendBackend(env.backend)
       yield* settle
@@ -483,6 +521,27 @@ describe('dispatcher session end', () => {
       const resumed = env.sessions[1] as FakeSession
       assert.deepStrictEqual(resumed.options.resume, Option.some(sessionId))
       assert.deepStrictEqual(resumed.sent, ['continue'])
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe('dispatcher in_review issue', () => {
+  it.effect('neither requeues nor restarts an in_review issue on a new setup', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 2 })
+      const task = yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
+      yield* env.work.updateIssue(OBJECTIVE, task.id, { status: 'in_review' })
+      const nextSetup = yield* makeDispatcher({
+        runs: env.runs,
+        org: env.org,
+        projectDirectory: () => Effect.succeed(Option.some(DIRECTORY)),
+        issueTools: () => []
+      })
+      yield* nextSetup.lendBackend(env.backend)
+      yield* settle
+
+      const stored = yield* env.taskOf(env.sessions[0] as FakeSession)
+      assert.deepStrictEqual([stored.status, env.sessions.length], ['in_review', 1])
     }).pipe(Effect.scoped)
   )
 })
@@ -513,14 +572,14 @@ const changesDuring = <A, E, R>(count: () => number, action: Effect.Effect<A, E,
 
 describe('dispatcher change signal', () => {
   it.effect(
-    'emits when a task is reserved, waits on a permission, is answered and is dropped',
+    'emits when an issue is reserved, waits on a permission, is answered and is dropped',
     () =>
       Effect.gen(function* () {
         const env = yield* setUp({ cap: 1 })
         const count = yield* countChanges(env.dispatcher.watchChanges)
         const engineer = env.jobTitles[1] as JobTitle
         const hire = yield* env.hireOf(engineer)
-        let task: Task | undefined
+        let task: Issue | undefined
         const reserved = yield* changesDuring(
           count,
           Effect.map(env.addTask(hire), (added) => {
@@ -537,9 +596,9 @@ describe('dispatcher change signal', () => {
         )
         const answered = yield* changesDuring(
           count,
-          env.dispatcher.answerPermission((task as Task).id, 'r1', ALLOW)
+          env.dispatcher.answerPermission((task as Issue).id, 'r1', ALLOW)
         )
-        const dropped = yield* changesDuring(count, env.dispatcher.release((task as Task).id))
+        const dropped = yield* changesDuring(count, env.dispatcher.release((task as Issue).id))
 
         assert.deepStrictEqual(
           [reserved > 0, pending > 0, answered > 0, dropped > 0],
@@ -549,7 +608,7 @@ describe('dispatcher change signal', () => {
   )
 
   it.effect(
-    'does not emit for activity during a running turn, a pass that starts nothing, or dropping an absent task',
+    'does not emit for activity during a running turn, a pass that starts nothing, or dropping an absent issue',
     () =>
       Effect.gen(function* () {
         const env = yield* setUp({ cap: 1 })
@@ -566,7 +625,7 @@ describe('dispatcher change signal', () => {
         const idlePass = yield* changesDuring(count, env.dispatcher.signal)
         const absent = yield* changesDuring(
           count,
-          env.dispatcher.release(TaskId.make('00000000-0000-4000-8000-699999999999'))
+          env.dispatcher.release(IssueId.make('00000000-0000-4000-8000-699999999999'))
         )
 
         assert.deepStrictEqual([activity, idlePass, absent], [0, 0, 0])

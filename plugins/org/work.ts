@@ -1,20 +1,41 @@
 import { type ProjectId, SessionId, Uuid } from '@dia/plugin'
-import { Clock, Crypto, Effect, PubSub, Schema, type Scope, Stream } from 'effect'
+import {
+  type Array as Arr,
+  Clock,
+  Crypto,
+  Effect,
+  PubSub,
+  Schema,
+  type Scope,
+  Stream
+} from 'effect'
 import { SqlClient, type SqlError } from 'effect/sql'
 import {
+  type CommentBody,
+  CommentId,
   HireId,
   HireNotFound,
+  Issue,
+  IssueChange,
+  IssueClosed,
+  IssueComment,
+  type IssueId,
+  IssueNotAssignable,
+  IssueNotFound,
+  IssueNotInTriage,
+  IssueNotStarted,
+  type IssueStatus,
+  isClosed,
+  isStarted,
+  type NewIssue,
   type NewObjective,
-  type NewTask,
   Objective,
   type ObjectiveId,
   ObjectiveNotFound,
   ProjectNotFound,
-  Task,
-  type TaskId,
-  TaskNotFound,
-  TaskNotRunning,
-  TaskNotWaiting,
+  type ProposedIssue,
+  StartedStatus,
+  TriageDecision,
   WORK_TITLE_MAX_LENGTH,
   WorkSnapshot,
   WorkTitle
@@ -23,25 +44,29 @@ import {
 const ObjectiveCreated = Schema.TaggedStruct('ObjectiveCreated', { objective: Objective })
 const ObjectiveReopened = Schema.TaggedStruct('ObjectiveReopened', {})
 const ObjectiveCompleted = Schema.TaggedStruct('ObjectiveCompleted', {})
-const TaskCreated = Schema.TaggedStruct('TaskCreated', { task: Task })
-const TaskAssigned = Schema.TaggedStruct('TaskAssigned', { assignee: Task.fields.assignee })
-const TaskStarted = Schema.TaggedStruct('TaskStarted', { assignee: HireId })
-const TaskSessionStarted = Schema.TaggedStruct('TaskSessionStarted', { sessionId: SessionId })
-const TaskRequeued = Schema.TaggedStruct('TaskRequeued', { sessionId: Task.fields.sessionId })
-const TaskFinished = Schema.TaggedStruct('TaskFinished', {})
-const TaskCompleted = Schema.TaggedStruct('TaskCompleted', {})
+const IssueCreated = Schema.TaggedStruct('IssueCreated', { issue: Issue })
+const IssueAssigned = Schema.TaggedStruct('IssueAssigned', { assignee: Issue.fields.assignee })
+const IssueStarted = Schema.TaggedStruct('IssueStarted', { assignee: HireId })
+const IssueSessionStarted = Schema.TaggedStruct('IssueSessionStarted', { sessionId: SessionId })
+const IssueRequeued = Schema.TaggedStruct('IssueRequeued', { sessionId: Issue.fields.sessionId })
+const IssueUpdated = Schema.TaggedStruct('IssueUpdated', { change: IssueChange })
+const IssueTriaged = Schema.TaggedStruct('IssueTriaged', { decision: TriageDecision })
+const IssueCommented = Schema.TaggedStruct('IssueCommented', { commentId: CommentId })
+const IssueFinished = Schema.TaggedStruct('IssueFinished', {})
 
 const OrgEvent = Schema.Union([
   ObjectiveCreated,
   ObjectiveReopened,
   ObjectiveCompleted,
-  TaskCreated,
-  TaskAssigned,
-  TaskStarted,
-  TaskSessionStarted,
-  TaskRequeued,
-  TaskFinished,
-  TaskCompleted
+  IssueCreated,
+  IssueAssigned,
+  IssueStarted,
+  IssueSessionStarted,
+  IssueRequeued,
+  IssueUpdated,
+  IssueTriaged,
+  IssueCommented,
+  IssueFinished
 ])
 type OrgEvent = typeof OrgEvent.Type
 
@@ -58,17 +83,26 @@ const ObjectiveRow = Schema.Struct({
   created_at: Objective.fields.createdAt
 })
 
-const TaskRow = Schema.Struct({
-  task_id: Task.fields.id,
-  objective_id: Task.fields.objectiveId,
-  parent_task_id: Task.fields.parentTaskId,
-  kind: Task.fields.kind,
-  title: Task.fields.title,
-  state: Task.fields.state,
-  assignee: Task.fields.assignee,
-  pane_id: Task.fields.paneId,
-  session_id: Task.fields.sessionId,
-  created_at: Task.fields.createdAt
+const IssueRow = Schema.Struct({
+  issue_id: Issue.fields.id,
+  objective_id: Issue.fields.objectiveId,
+  parent_issue_id: Issue.fields.parentIssueId,
+  kind: Issue.fields.kind,
+  title: Issue.fields.title,
+  description: Issue.fields.description,
+  status: Issue.fields.status,
+  assignee: Issue.fields.assignee,
+  pane_id: Issue.fields.paneId,
+  session_id: Issue.fields.sessionId,
+  created_at: Issue.fields.createdAt
+})
+
+const CommentRow = Schema.Struct({
+  comment_id: IssueComment.fields.id,
+  issue_id: IssueComment.fields.issueId,
+  author: IssueComment.fields.author,
+  body: IssueComment.fields.body,
+  created_at: IssueComment.fields.createdAt
 })
 
 const toObjective = (row: typeof ObjectiveRow.Type): Objective => ({
@@ -82,21 +116,31 @@ const toObjective = (row: typeof ObjectiveRow.Type): Objective => ({
   createdAt: row.created_at
 })
 
-const toTask = (row: typeof TaskRow.Type): Task => ({
-  id: row.task_id,
+const toIssue = (row: typeof IssueRow.Type): Issue => ({
+  id: row.issue_id,
   objectiveId: row.objective_id,
-  parentTaskId: row.parent_task_id,
+  parentIssueId: row.parent_issue_id,
   kind: row.kind,
   title: row.title,
-  state: row.state,
+  description: row.description,
+  status: row.status,
   assignee: row.assignee,
   paneId: row.pane_id,
   sessionId: row.session_id,
   createdAt: row.created_at
 })
 
+const toComment = (row: typeof CommentRow.Type): IssueComment => ({
+  id: row.comment_id,
+  issueId: row.issue_id,
+  author: row.author,
+  body: row.body,
+  createdAt: row.created_at
+})
+
 const encodeObjectiveRow = Schema.encodeSync(ObjectiveRow)
-const encodeTaskRow = Schema.encodeSync(TaskRow)
+const encodeIssueRow = Schema.encodeSync(IssueRow)
+const encodeCommentRow = Schema.encodeSync(CommentRow)
 
 const toObjectiveRow = (objective: Objective) =>
   encodeObjectiveRow({
@@ -110,41 +154,65 @@ const toObjectiveRow = (objective: Objective) =>
     created_at: objective.createdAt
   })
 
-const toTaskRow = (task: Task) =>
-  encodeTaskRow({
-    task_id: task.id,
-    objective_id: task.objectiveId,
-    parent_task_id: task.parentTaskId,
-    kind: task.kind,
-    title: task.title,
-    state: task.state,
-    assignee: task.assignee,
-    pane_id: task.paneId,
-    session_id: task.sessionId,
-    created_at: task.createdAt
+const toIssueRow = (issue: Issue) =>
+  encodeIssueRow({
+    issue_id: issue.id,
+    objective_id: issue.objectiveId,
+    parent_issue_id: issue.parentIssueId,
+    kind: issue.kind,
+    title: issue.title,
+    description: issue.description,
+    status: issue.status,
+    assignee: issue.assignee,
+    pane_id: issue.paneId,
+    session_id: issue.sessionId,
+    created_at: issue.createdAt
+  })
+
+const toCommentRow = (comment: IssueComment) =>
+  encodeCommentRow({
+    comment_id: comment.id,
+    issue_id: comment.issueId,
+    author: comment.author,
+    body: comment.body,
+    created_at: comment.createdAt
   })
 
 const decodeObjectiveRows = (rows: ReadonlyArray<unknown>) =>
   Schema.decodeUnknownEffect(Schema.Array(ObjectiveRow))(rows).pipe(Effect.orDie)
-const decodeTaskRows = (rows: ReadonlyArray<unknown>) =>
-  Schema.decodeUnknownEffect(Schema.Array(TaskRow))(rows).pipe(Effect.orDie)
+const decodeIssueRows = (rows: ReadonlyArray<unknown>) =>
+  Schema.decodeUnknownEffect(Schema.Array(IssueRow))(rows).pipe(Effect.orDie)
+const decodeCommentRows = (rows: ReadonlyArray<unknown>) =>
+  Schema.decodeUnknownEffect(Schema.Array(CommentRow))(rows).pipe(Effect.orDie)
 
-const retroTitle = (title: WorkTitle): WorkTitle =>
-  WorkTitle.make(`Retro: ${title}`.slice(0, WORK_TITLE_MAX_LENGTH).trimEnd())
+const prefixedTitle = (prefix: string, title: WorkTitle): WorkTitle =>
+  WorkTitle.make(`${prefix}: ${title}`.slice(0, WORK_TITLE_MAX_LENGTH).trimEnd())
+
+const REQUEUEABLE_STATUSES = StartedStatus.literals.filter((status) => status !== 'in_review')
+
+const TRIAGE_TARGET: Record<TriageDecision, IssueStatus> = { accept: 'todo', decline: 'canceled' }
 
 /**
- * The objectives and tasks (ADR-0033, ADR-0064), as the `org` plugin's calls read and change them.
- * Each change is one transaction that writes its events and the changed rows, and is safe to
- * repeat. A database failure, or a failure to generate an id, is a defect.
+ * The objectives, issues and comments (ADR-0033, ADR-0064, ADR-0069), as the `org` plugin's calls
+ * and a hired agent's issue tools read and change them. Each change is one transaction that
+ * writes its events and the changed rows, and is safe to repeat. A database failure, or a failure
+ * to generate an id, is a defect.
  *
- * `createObjective` creates an open objective, or returns the stored one when `id` exists.
- * `createTask` creates a waiting `work` task, or returns the stored one when `id` exists; it
- * reopens a completed objective. `assignTask` sets a waiting task's assignee, or clears it when
- * null; giving a task its current assignee returns it unchanged in any state. `finishTask` moves a
- * running `work` task to `finished` and creates its unassigned `retro` task, or moves a running
- * `retro` task, and the task it reviews, to `completed`; on a `finished` or `completed` task it
- * returns the task unchanged. `watchChanges` subscribes when run; the stream it returns emits
- * once after each change committed since the subscription.
+ * `createObjective` creates an open objective and its `planning` issue, `Plan: <title>`, in `todo`
+ * and assigned to the objective's assignee; a repeated `id` returns the stored objective and
+ * creates nothing. `createIssue` creates a `work` issue in `todo`, or returns the stored one when
+ * `id` exists; it reopens a completed objective. `proposeIssue` creates an unassigned `work` issue
+ * in `triage`. `assignIssue` sets a `triage` or `todo` issue's assignee, or clears it when null;
+ * giving an issue its current assignee returns it unchanged in any status. `triageIssues` moves
+ * each `triage` issue to `todo` (accept) or `canceled` (decline), leaves one already there
+ * unchanged, and fails the whole call, changing nothing, on any other status. `updateIssue`
+ * applies the change's present fields: `status` needs a started issue (checked first), `title` and
+ * `description` an issue that is not closed. `commentIssue` stores a comment on an issue in any
+ * status. `finishIssue` moves a started issue to `done`, and gives a `work` issue an unassigned
+ * `retro` sub-issue in `todo`; on a `done` issue it returns the issue unchanged. `updateIssue` and
+ * `commentIssue` fail with `IssueNotFound` when the issue is not in `objectiveId`. An objective
+ * completes once it has issues and every one is `done` or `canceled`. `watchChanges` subscribes
+ * when run; the stream it returns emits once after each change committed since the subscription.
  */
 export interface Work {
   readonly snapshot: Effect.Effect<WorkSnapshot>
@@ -152,46 +220,67 @@ export interface Work {
   readonly createObjective: (
     input: NewObjective
   ) => Effect.Effect<Objective, ProjectNotFound | HireNotFound>
-  readonly createTask: (
-    input: NewTask
-  ) => Effect.Effect<Task, ObjectiveNotFound | TaskNotFound | HireNotFound>
-  readonly assignTask: (
-    taskId: TaskId,
+  readonly createIssue: (
+    input: NewIssue
+  ) => Effect.Effect<Issue, ObjectiveNotFound | IssueNotFound | HireNotFound>
+  readonly proposeIssue: (
+    objectiveId: ObjectiveId,
+    input: ProposedIssue
+  ) => Effect.Effect<Issue, ObjectiveNotFound | IssueNotFound>
+  readonly assignIssue: (
+    issueId: IssueId,
     hireId: HireId | null
-  ) => Effect.Effect<Task, TaskNotFound | TaskNotWaiting | HireNotFound>
-  readonly finishTask: (taskId: TaskId) => Effect.Effect<Task, TaskNotFound | TaskNotRunning>
+  ) => Effect.Effect<Issue, IssueNotFound | IssueNotAssignable | HireNotFound>
+  readonly triageIssues: (
+    issueIds: Arr.NonEmptyReadonlyArray<IssueId>,
+    decision: TriageDecision
+  ) => Effect.Effect<ReadonlyArray<Issue>, IssueNotFound | IssueNotInTriage>
+  readonly updateIssue: (
+    objectiveId: ObjectiveId,
+    issueId: IssueId,
+    change: IssueChange
+  ) => Effect.Effect<Issue, IssueNotFound | IssueNotStarted | IssueClosed>
+  readonly commentIssue: (
+    objectiveId: ObjectiveId,
+    issueId: IssueId,
+    author: HireId,
+    body: CommentBody
+  ) => Effect.Effect<IssueComment, IssueNotFound>
+  readonly finishIssue: (issueId: IssueId) => Effect.Effect<Issue, IssueNotFound | IssueNotStarted>
 }
 
-/** A waiting task with an assignee, and its objective: one candidate for the scheduler. */
-export interface WaitingTask {
-  readonly task: Task
+/** A `todo` issue with an assignee, and its objective: one candidate for the scheduler. */
+export interface StartableIssue {
+  readonly issue: Issue
   readonly objective: Objective
 }
 
 /**
- * The task changes only the dispatcher makes, as it starts and loses sessions. Each changes a task
- * only in the state it expects and reports whether it did. `markStarted` moves a waiting task
- * assigned to `hireId` to `running`. `markSessionStarted` stores the session a running task
- * resumes next. `markRequeued` moves a running task back to `waiting`, keeping its session, or
- * clearing it when `keepSession` is false. `requeueRunning` moves every running task back to
- * `waiting` and returns how many it moved.
+ * The issue changes only the dispatcher makes, as it starts and loses sessions. Each changes an
+ * issue only in the status it expects and reports whether it did. `startCandidates` reads the
+ * `todo` issues that have an assignee, and the hired agents with a started issue. `markStarted`
+ * moves a `todo` issue assigned to `hireId` to `understanding`. `markSessionStarted` stores the
+ * session a started issue resumes next. `markRequeued` moves a started issue other than
+ * `in_review` back to `todo`, keeping its session, or clearing it when `keepSession` is false.
+ * `requeueRunning` moves every started issue other than `in_review` back to `todo` and returns how
+ * many it moved; an `in_review` issue is never requeued.
  */
-export interface TaskRuns {
+export interface IssueRuns {
   readonly startCandidates: Effect.Effect<{
-    readonly waiting: ReadonlyArray<WaitingTask>
+    readonly startable: ReadonlyArray<StartableIssue>
     readonly busyHires: ReadonlySet<HireId>
   }>
-  readonly markStarted: (taskId: TaskId, hireId: HireId) => Effect.Effect<boolean>
-  readonly markSessionStarted: (taskId: TaskId, sessionId: SessionId) => Effect.Effect<boolean>
-  readonly markRequeued: (taskId: TaskId, keepSession: boolean) => Effect.Effect<boolean>
+  readonly markStarted: (issueId: IssueId, hireId: HireId) => Effect.Effect<boolean>
+  readonly markSessionStarted: (issueId: IssueId, sessionId: SessionId) => Effect.Effect<boolean>
+  readonly markRequeued: (issueId: IssueId, keepSession: boolean) => Effect.Effect<boolean>
   readonly requeueRunning: Effect.Effect<number>
 }
 
 /**
- * Builds the {@link Work}, the dispatcher's {@link TaskRuns}, and `openTasksOf` (the number of
- * tasks assigned to a hired agent that are not completed, which `makeOrg` takes) over the `org`
- * plugin's database, which `orgMigrations` must already have migrated. `projectExists` says
- * whether a project is registered now. Call it once in the plugin's setup.
+ * Builds the {@link Work}, the dispatcher's {@link IssueRuns}, and `openIssuesOf` (the number of
+ * issues assigned to a hired agent that are neither `done` nor `canceled`, which `makeOrg` takes)
+ * over the `org` plugin's database, which `orgMigrations` must already have migrated.
+ * `projectExists` says whether a project is registered now. Call it once in the plugin's setup.
  */
 export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<boolean>) =>
   Effect.gen(function* () {
@@ -209,14 +298,16 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
       effect.pipe(Effect.catchTag('SqlError', Effect.die))
 
     const newUuid = crypto.randomUUIDv4().pipe(Effect.orDie)
+    const started = sql.in('status', StartedStatus.literals)
+    const requeueable = sql.in('status', REQUEUEABLE_STATUSES)
 
-    const append = (objectiveId: ObjectiveId, taskId: TaskId | null, event: OrgEvent) =>
+    const append = (objectiveId: ObjectiveId, issueId: IssueId | null, event: OrgEvent) =>
       Effect.gen(function* () {
         const at = yield* Clock.currentTimeMillis
         yield* sql`INSERT INTO org_events ${sql.insert({
           at,
           objective_id: objectiveId,
-          task_id: taskId,
+          issue_id: issueId,
           event: encodeEvent(event)
         })}`
       })
@@ -227,18 +318,25 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
       return row === undefined ? undefined : toObjective(row)
     })
 
-    const findTask = Effect.fnUntraced(function* (taskId: TaskId) {
-      const rows = yield* sql`SELECT * FROM tasks WHERE task_id = ${taskId}`
-      const [row] = yield* decodeTaskRows(rows)
-      return row === undefined ? undefined : toTask(row)
+    const findIssue = Effect.fnUntraced(function* (issueId: IssueId) {
+      const rows = yield* sql`SELECT * FROM issues WHERE issue_id = ${issueId}`
+      const [row] = yield* decodeIssueRows(rows)
+      return row === undefined ? undefined : toIssue(row)
     })
 
-    const requireTask = Effect.fnUntraced(function* (taskId: TaskId) {
-      const task = yield* findTask(taskId)
-      if (task === undefined) {
-        return yield* TaskNotFound.make({ taskId })
+    const requireIssue = Effect.fnUntraced(function* (issueId: IssueId, objectiveId?: ObjectiveId) {
+      const issue = yield* findIssue(issueId)
+      if (issue === undefined || (objectiveId !== undefined && issue.objectiveId !== objectiveId)) {
+        return yield* IssueNotFound.make({ issueId })
       }
-      return task
+      return issue
+    })
+
+    const ensureParent = Effect.fnUntraced(function* (
+      objectiveId: ObjectiveId,
+      parentIssueId: IssueId | null
+    ) {
+      if (parentIssueId !== null) yield* requireIssue(parentIssueId, objectiveId)
     })
 
     const ensureHire = Effect.fnUntraced(function* (hireId: HireId | null) {
@@ -249,15 +347,20 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
       }
     })
 
-    const setTaskState = (task: Task, state: Task['state']) =>
-      sql`UPDATE tasks SET state = ${state} WHERE task_id = ${task.id}`
+    const insertIssue = Effect.fnUntraced(function* (issue: Issue) {
+      yield* sql`INSERT INTO issues ${sql.insert(toIssueRow(issue))}`
+      yield* append(issue.objectiveId, issue.id, IssueCreated.make({ issue }))
+    })
+
+    const setIssueStatus = (issue: Issue, status: IssueStatus) =>
+      sql`UPDATE issues SET status = ${status} WHERE issue_id = ${issue.id}`
 
     const completeObjectiveIfDone = Effect.fnUntraced(function* (objectiveId: ObjectiveId) {
       const [counts] = yield* sql<{
         readonly total: number
         readonly open: number
-      }>`SELECT count(*) AS total, count(*) FILTER (WHERE state <> 'completed') AS open
-        FROM tasks WHERE objective_id = ${objectiveId}`
+      }>`SELECT count(*) AS total, count(*) FILTER (WHERE status NOT IN ('done', 'canceled')) AS open
+        FROM issues WHERE objective_id = ${objectiveId}`
       if (counts !== undefined && counts.total > 0 && counts.open === 0) {
         yield* sql`UPDATE objectives SET state = 'completed' WHERE objective_id = ${objectiveId}`
         yield* append(objectiveId, null, ObjectiveCompleted.make({}))
@@ -269,17 +372,23 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
       const objectives = yield* decodeObjectiveRows(
         yield* sql`SELECT * FROM objectives ORDER BY created_at, rowid`
       )
-      const tasks = yield* decodeTaskRows(
-        yield* sql`SELECT * FROM tasks ORDER BY created_at, rowid`
+      const issues = yield* decodeIssueRows(
+        yield* sql`SELECT * FROM issues ORDER BY created_at, rowid`
+      )
+      const comments = yield* decodeCommentRows(
+        yield* sql`SELECT * FROM issue_comments ORDER BY created_at, rowid`
       )
       return WorkSnapshot.make({
         objectives: objectives.map(toObjective),
-        tasks: tasks.map(toTask)
+        issues: issues.map(toIssue),
+        comments: comments.map(toComment)
       })
     }).pipe(orDie)
 
     const createObjective = Effect.fn('Work.createObjective')(function* (input: NewObjective) {
       const createdAt = yield* Clock.currentTimeMillis
+      const planningId = Issue.fields.id.make(yield* newUuid)
+      const planningPaneId = Uuid.make(yield* newUuid)
       const registered = yield* projectExists(input.projectId)
       const objective = yield* transaction(
         Effect.gen(function* () {
@@ -292,6 +401,21 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
           const created = Objective.make({ ...input, state: 'open', createdAt })
           yield* sql`INSERT INTO objectives ${sql.insert(toObjectiveRow(created))}`
           yield* append(created.id, null, ObjectiveCreated.make({ objective: created }))
+          yield* insertIssue(
+            Issue.make({
+              id: planningId,
+              objectiveId: created.id,
+              parentIssueId: null,
+              kind: 'planning',
+              title: prefixedTitle('Plan', created.title),
+              description: '',
+              status: 'todo',
+              assignee: created.assignee,
+              paneId: planningPaneId,
+              sessionId: null,
+              createdAt
+            })
+          )
           return created
         })
       )
@@ -299,34 +423,28 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
       return objective
     })
 
-    const createTask = Effect.fn('Work.createTask')(function* (input: NewTask) {
+    const createIssue = Effect.fn('Work.createIssue')(function* (input: NewIssue) {
       const createdAt = yield* Clock.currentTimeMillis
       const paneId = Uuid.make(yield* newUuid)
-      const task = yield* transaction(
+      const issue = yield* transaction(
         Effect.gen(function* () {
-          const stored = yield* findTask(input.id)
+          const stored = yield* findIssue(input.id)
           if (stored !== undefined) return stored
           const objective = yield* findObjective(input.objectiveId)
           if (objective === undefined) {
             return yield* ObjectiveNotFound.make({ objectiveId: input.objectiveId })
           }
-          if (input.parentTaskId !== null) {
-            const parent = yield* findTask(input.parentTaskId)
-            if (parent === undefined || parent.objectiveId !== input.objectiveId) {
-              return yield* TaskNotFound.make({ taskId: input.parentTaskId })
-            }
-          }
+          yield* ensureParent(input.objectiveId, input.parentIssueId)
           yield* ensureHire(input.assignee)
-          const created = Task.make({
+          const created = Issue.make({
             ...input,
             kind: 'work',
-            state: 'waiting',
+            status: 'todo',
             paneId,
             sessionId: null,
             createdAt
           })
-          yield* sql`INSERT INTO tasks ${sql.insert(toTaskRow(created))}`
-          yield* append(created.objectiveId, created.id, TaskCreated.make({ task: created }))
+          yield* insertIssue(created)
           if (objective.state === 'completed') {
             yield* sql`UPDATE objectives SET state = 'open' WHERE objective_id = ${objective.id}`
             yield* append(objective.id, null, ObjectiveReopened.make({}))
@@ -334,156 +452,261 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
           return created
         })
       )
-      yield* Effect.logInfo('Created task', { taskId: task.id, objectiveId: task.objectiveId })
-      return task
+      yield* Effect.logInfo('Created issue', { issueId: issue.id, objectiveId: issue.objectiveId })
+      return issue
     })
 
-    const assignTask = Effect.fn('Work.assignTask')(function* (
-      taskId: TaskId,
+    const proposeIssue = Effect.fn('Work.proposeIssue')(function* (
+      objectiveId: ObjectiveId,
+      input: ProposedIssue
+    ) {
+      const createdAt = yield* Clock.currentTimeMillis
+      const id = Issue.fields.id.make(yield* newUuid)
+      const paneId = Uuid.make(yield* newUuid)
+      const issue = yield* transaction(
+        Effect.gen(function* () {
+          if ((yield* findObjective(objectiveId)) === undefined) {
+            return yield* ObjectiveNotFound.make({ objectiveId })
+          }
+          yield* ensureParent(objectiveId, input.parentIssueId)
+          const created = Issue.make({
+            ...input,
+            id,
+            objectiveId,
+            kind: 'work',
+            status: 'triage',
+            assignee: null,
+            paneId,
+            sessionId: null,
+            createdAt
+          })
+          yield* insertIssue(created)
+          return created
+        })
+      )
+      yield* Effect.logInfo('Proposed issue', { issueId: issue.id, objectiveId })
+      return issue
+    })
+
+    const assignIssue = Effect.fn('Work.assignIssue')(function* (
+      issueId: IssueId,
       hireId: HireId | null
     ) {
-      const task = yield* transaction(
+      const issue = yield* transaction(
         Effect.gen(function* () {
-          const current = yield* requireTask(taskId)
+          const current = yield* requireIssue(issueId)
           if (current.assignee === hireId) return current
-          if (current.state !== 'waiting') {
-            return yield* TaskNotWaiting.make({ taskId, state: current.state })
+          if (current.status !== 'triage' && current.status !== 'todo') {
+            return yield* IssueNotAssignable.make({ issueId, status: current.status })
           }
           yield* ensureHire(hireId)
-          yield* sql`UPDATE tasks SET assignee = ${hireId} WHERE task_id = ${taskId}`
-          yield* append(current.objectiveId, taskId, TaskAssigned.make({ assignee: hireId }))
-          return Task.make({ ...current, assignee: hireId })
+          yield* sql`UPDATE issues SET assignee = ${hireId} WHERE issue_id = ${issueId}`
+          yield* append(current.objectiveId, issueId, IssueAssigned.make({ assignee: hireId }))
+          return Issue.make({ ...current, assignee: hireId })
         })
       )
-      yield* Effect.logInfo('Assigned task', { taskId, hireId })
-      return task
+      yield* Effect.logInfo('Assigned issue', { issueId, hireId })
+      return issue
     })
 
-    const finishTask = Effect.fn('Work.finishTask')(function* (taskId: TaskId) {
-      const createdAt = yield* Clock.currentTimeMillis
-      const retroId = Task.fields.id.make(yield* newUuid)
-      const retroPaneId = Uuid.make(yield* newUuid)
-      const task = yield* transaction(
+    const triageIssues = Effect.fn('Work.triageIssues')(function* (
+      issueIds: Arr.NonEmptyReadonlyArray<IssueId>,
+      decision: TriageDecision
+    ) {
+      const target = TRIAGE_TARGET[decision]
+      const issues = yield* transaction(
         Effect.gen(function* () {
-          const current = yield* requireTask(taskId)
-          if (current.state === 'finished' || current.state === 'completed') return current
-          if (current.state === 'waiting') {
-            return yield* TaskNotRunning.make({ taskId })
+          const result: Array<Issue> = []
+          const objectives = new Set<ObjectiveId>()
+          for (const issueId of issueIds) {
+            const current = yield* requireIssue(issueId)
+            if (current.status === target) {
+              result.push(current)
+              continue
+            }
+            if (current.status !== 'triage') {
+              return yield* IssueNotInTriage.make({ issueId, status: current.status })
+            }
+            yield* setIssueStatus(current, target)
+            yield* append(current.objectiveId, issueId, IssueTriaged.make({ decision }))
+            objectives.add(current.objectiveId)
+            result.push(Issue.make({ ...current, status: target }))
           }
+          if (decision === 'decline') {
+            for (const objectiveId of objectives) yield* completeObjectiveIfDone(objectiveId)
+          }
+          return result
+        })
+      )
+      yield* Effect.logInfo('Triaged issues', { issueIds, decision })
+      return issues
+    })
+
+    const updateIssue = Effect.fn('Work.updateIssue')(function* (
+      objectiveId: ObjectiveId,
+      issueId: IssueId,
+      change: IssueChange
+    ) {
+      const issue = yield* transaction(
+        Effect.gen(function* () {
+          const current = yield* requireIssue(issueId, objectiveId)
+          if (Object.keys(change).length === 0) return current
+          if (change.status !== undefined && !isStarted(current.status)) {
+            return yield* IssueNotStarted.make({ issueId, status: current.status })
+          }
+          if (
+            (change.title !== undefined || change.description !== undefined) &&
+            isClosed(current.status)
+          ) {
+            return yield* IssueClosed.make({ issueId, status: current.status })
+          }
+          yield* sql`UPDATE issues SET ${sql.update(change)} WHERE issue_id = ${issueId}`
+          yield* append(objectiveId, issueId, IssueUpdated.make({ change }))
+          return Issue.make({ ...current, ...change })
+        })
+      )
+      yield* Effect.logInfo('Updated issue', { issueId, fields: Object.keys(change) })
+      return issue
+    })
+
+    const commentIssue = Effect.fn('Work.commentIssue')(function* (
+      objectiveId: ObjectiveId,
+      issueId: IssueId,
+      author: HireId,
+      body: CommentBody
+    ) {
+      const createdAt = yield* Clock.currentTimeMillis
+      const id = CommentId.make(yield* newUuid)
+      const comment = yield* transaction(
+        Effect.gen(function* () {
+          yield* requireIssue(issueId, objectiveId)
+          const created = IssueComment.make({ id, issueId, author, body, createdAt })
+          yield* sql`INSERT INTO issue_comments ${sql.insert(toCommentRow(created))}`
+          yield* append(objectiveId, issueId, IssueCommented.make({ commentId: id }))
+          return created
+        })
+      )
+      yield* Effect.logInfo('Commented on issue', { issueId, commentId: comment.id, author })
+      return comment
+    })
+
+    const finishIssue = Effect.fn('Work.finishIssue')(function* (issueId: IssueId) {
+      const createdAt = yield* Clock.currentTimeMillis
+      const retroId = Issue.fields.id.make(yield* newUuid)
+      const retroPaneId = Uuid.make(yield* newUuid)
+      const issue = yield* transaction(
+        Effect.gen(function* () {
+          const current = yield* requireIssue(issueId)
+          if (current.status === 'done') return current
+          if (!isStarted(current.status)) {
+            return yield* IssueNotStarted.make({ issueId, status: current.status })
+          }
+          yield* setIssueStatus(current, 'done')
+          yield* append(current.objectiveId, issueId, IssueFinished.make({}))
           if (current.kind === 'work') {
-            yield* setTaskState(current, 'finished')
-            yield* append(current.objectiveId, taskId, TaskFinished.make({}))
-            const retro = Task.make({
-              id: retroId,
-              objectiveId: current.objectiveId,
-              parentTaskId: taskId,
-              kind: 'retro',
-              title: retroTitle(current.title),
-              state: 'waiting',
-              assignee: null,
-              paneId: retroPaneId,
-              sessionId: null,
-              createdAt
-            })
-            yield* sql`INSERT INTO tasks ${sql.insert(toTaskRow(retro))}`
-            yield* append(retro.objectiveId, retro.id, TaskCreated.make({ task: retro }))
-            return Task.make({ ...current, state: 'finished' })
-          }
-          yield* setTaskState(current, 'completed')
-          yield* append(current.objectiveId, taskId, TaskCompleted.make({}))
-          const parent =
-            current.parentTaskId === null ? undefined : yield* findTask(current.parentTaskId)
-          if (parent !== undefined && parent.state === 'finished') {
-            yield* setTaskState(parent, 'completed')
-            yield* append(parent.objectiveId, parent.id, TaskCompleted.make({}))
+            yield* insertIssue(
+              Issue.make({
+                id: retroId,
+                objectiveId: current.objectiveId,
+                parentIssueId: issueId,
+                kind: 'retro',
+                title: prefixedTitle('Retro', current.title),
+                description: '',
+                status: 'todo',
+                assignee: null,
+                paneId: retroPaneId,
+                sessionId: null,
+                createdAt
+              })
+            )
           }
           yield* completeObjectiveIfDone(current.objectiveId)
-          return Task.make({ ...current, state: 'completed' })
+          return Issue.make({ ...current, status: 'done' })
         })
       )
-      yield* Effect.logInfo('Finished task', { taskId, kind: task.kind, state: task.state })
-      return task
+      yield* Effect.logInfo('Finished issue', { issueId, kind: issue.kind })
+      return issue
     })
 
-    const openTasksOf = (hireId: HireId) =>
+    const openIssuesOf = (hireId: HireId) =>
       sql<{
         readonly open: number
-      }>`SELECT count(*) AS open FROM tasks WHERE assignee = ${hireId} AND state <> 'completed'`.pipe(
+      }>`SELECT count(*) AS open FROM issues WHERE assignee = ${hireId} AND status NOT IN ('done', 'canceled')`.pipe(
         Effect.map((rows) => rows[0]?.open ?? 0),
         orDie
       )
 
     const startCandidates = Effect.gen(function* () {
-      const taskRows = yield* decodeTaskRows(
-        yield* sql`SELECT * FROM tasks WHERE state = 'waiting' AND assignee IS NOT NULL ORDER BY created_at, rowid`
+      const issueRows = yield* decodeIssueRows(
+        yield* sql`SELECT * FROM issues WHERE status = 'todo' AND assignee IS NOT NULL ORDER BY created_at, rowid`
       )
       const objectiveRows = yield* decodeObjectiveRows(
-        yield* sql`SELECT * FROM objectives WHERE objective_id IN (SELECT objective_id FROM tasks WHERE state = 'waiting' AND assignee IS NOT NULL)`
+        yield* sql`SELECT * FROM objectives WHERE objective_id IN (SELECT objective_id FROM issues WHERE status = 'todo' AND assignee IS NOT NULL)`
       )
       const objectives = new Map(objectiveRows.map((row) => [row.objective_id, toObjective(row)]))
       const busy = yield* sql<{
         readonly assignee: HireId
-      }>`SELECT DISTINCT assignee FROM tasks WHERE state = 'running' AND assignee IS NOT NULL`
-      const waiting = taskRows.flatMap((row) => {
+      }>`SELECT DISTINCT assignee FROM issues WHERE ${started} AND assignee IS NOT NULL`
+      const startable = issueRows.flatMap((row) => {
         const objective = objectives.get(row.objective_id)
-        return objective === undefined ? [] : [{ task: toTask(row), objective }]
+        return objective === undefined ? [] : [{ issue: toIssue(row), objective }]
       })
-      return { waiting, busyHires: new Set(busy.map((row) => row.assignee)) }
+      return { startable, busyHires: new Set(busy.map((row) => row.assignee)) }
     }).pipe(orDie)
 
-    const changeRunning = (
-      taskId: TaskId,
+    const changeRun = (
+      issueId: IssueId,
       update: Effect.Effect<ReadonlyArray<unknown>, SqlError.SqlError>,
-      event: (task: Task) => OrgEvent
+      event: (issue: Issue) => OrgEvent
     ) =>
       inTransaction(
         Effect.gen(function* () {
-          const changed = yield* decodeTaskRows(yield* update)
+          const changed = yield* decodeIssueRows(yield* update)
           const [row] = changed
           if (row === undefined) return false
-          yield* append(row.objective_id, taskId, event(toTask(row)))
+          yield* append(row.objective_id, issueId, event(toIssue(row)))
           return true
         })
       ).pipe(Effect.tap((changed) => (changed ? publishChange : Effect.void)))
 
-    const markStarted = (taskId: TaskId, hireId: HireId) =>
-      changeRunning(
-        taskId,
-        sql`UPDATE tasks SET state = 'running' WHERE task_id = ${taskId} AND state = 'waiting' AND assignee = ${hireId} RETURNING *`,
-        () => TaskStarted.make({ assignee: hireId })
-      ).pipe(Effect.tap((changed) => Effect.logInfo('Marked task started', { taskId, changed })))
+    const markStarted = (issueId: IssueId, hireId: HireId) =>
+      changeRun(
+        issueId,
+        sql`UPDATE issues SET status = 'understanding' WHERE issue_id = ${issueId} AND status = 'todo' AND assignee = ${hireId} RETURNING *`,
+        () => IssueStarted.make({ assignee: hireId })
+      ).pipe(Effect.tap((changed) => Effect.logInfo('Marked issue started', { issueId, changed })))
 
-    const markSessionStarted = (taskId: TaskId, sessionId: SessionId) =>
-      changeRunning(
-        taskId,
-        sql`UPDATE tasks SET session_id = ${sessionId} WHERE task_id = ${taskId} AND state = 'running' AND session_id IS NOT ${sessionId} RETURNING *`,
-        () => TaskSessionStarted.make({ sessionId })
-      ).pipe(Effect.tap((changed) => Effect.logDebug('Stored task session', { taskId, changed })))
+    const markSessionStarted = (issueId: IssueId, sessionId: SessionId) =>
+      changeRun(
+        issueId,
+        sql`UPDATE issues SET session_id = ${sessionId} WHERE issue_id = ${issueId} AND ${started} AND session_id IS NOT ${sessionId} RETURNING *`,
+        () => IssueSessionStarted.make({ sessionId })
+      ).pipe(Effect.tap((changed) => Effect.logDebug('Stored issue session', { issueId, changed })))
 
-    const markRequeued = (taskId: TaskId, keepSession: boolean) =>
-      changeRunning(
-        taskId,
-        sql`UPDATE tasks SET state = 'waiting', session_id = CASE WHEN ${keepSession ? 1 : 0} THEN session_id END WHERE task_id = ${taskId} AND state = 'running' RETURNING *`,
-        (task) => TaskRequeued.make({ sessionId: task.sessionId })
+    const markRequeued = (issueId: IssueId, keepSession: boolean) =>
+      changeRun(
+        issueId,
+        sql`UPDATE issues SET status = 'todo', session_id = CASE WHEN ${keepSession ? 1 : 0} THEN session_id END WHERE issue_id = ${issueId} AND ${requeueable} RETURNING *`,
+        (issue) => IssueRequeued.make({ sessionId: issue.sessionId })
       ).pipe(
-        Effect.tap((changed) => Effect.logInfo('Requeued task', { taskId, keepSession, changed }))
+        Effect.tap((changed) => Effect.logInfo('Requeued issue', { issueId, keepSession, changed }))
       )
 
     const requeueRunning = transaction(
       Effect.gen(function* () {
-        const rows = yield* decodeTaskRows(
-          yield* sql`UPDATE tasks SET state = 'waiting' WHERE state = 'running' RETURNING *`
+        const rows = yield* decodeIssueRows(
+          yield* sql`UPDATE issues SET status = 'todo' WHERE ${requeueable} RETURNING *`
         )
         for (const row of rows) {
           yield* append(
             row.objective_id,
-            row.task_id,
-            TaskRequeued.make({ sessionId: row.session_id })
+            row.issue_id,
+            IssueRequeued.make({ sessionId: row.session_id })
           )
         }
         return rows.length
       })
-    ).pipe(Effect.tap((count) => Effect.logInfo('Requeued running tasks', { count })))
+    ).pipe(Effect.tap((count) => Effect.logInfo('Requeued started issues', { count })))
 
     const watchChanges = Effect.map(PubSub.subscribe(changes), Stream.fromSubscription)
 
@@ -491,16 +714,20 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
       snapshot,
       watchChanges,
       createObjective,
-      createTask,
-      assignTask,
-      finishTask
+      createIssue,
+      proposeIssue,
+      assignIssue,
+      triageIssues,
+      updateIssue,
+      commentIssue,
+      finishIssue
     }
-    const runs: TaskRuns = {
+    const runs: IssueRuns = {
       startCandidates,
       markStarted,
       markSessionStarted,
       markRequeued,
       requeueRunning
     }
-    return { work, runs, openTasksOf }
+    return { work, runs, openIssuesOf }
   })
