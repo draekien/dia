@@ -384,7 +384,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
         calls.push(`snapshot:${paneId}`)
         return { state: emptyPaneChatState, seq: 7 }
       }),
-    seed: () => Effect.void
+    seed: () => Effect.void,
+    release: () => Effect.void
   })
 
   const hub = Layer.succeed(EventHub, {

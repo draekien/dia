@@ -4,7 +4,7 @@ import type { AttachedSession } from '@shared/domain/attached-session'
 import type { PaneId } from '@shared/domain/pane'
 import type { Workspace } from '@shared/domain/project'
 import { DEFAULT_TRANSCRIPT_WIDTH, type TranscriptWidth } from '@shared/domain/transcript-width'
-import { Effect, Option, Queue, Stream, SubscriptionRef } from 'effect'
+import { Effect, Option, Queue, Ref, Stream, SubscriptionRef } from 'effect'
 import { AsyncResult, Atom, AtomRegistry } from 'effect/reactivity'
 import {
   closesNewAgentForm,
@@ -129,18 +129,20 @@ const closeDetached = (
 const loadedAttachedSessionsAtom = Atom.subscriptionRef((get) =>
   Effect.gen(function* () {
     const ref = yield* SubscriptionRef.make<ReadonlyArray<AttachedSession>>([])
+    const pushed = yield* Ref.make(false)
     yield* fromListener<ReadonlyArray<AttachedSession>>((push) =>
       window.dia.onAttachedSessionsChanged((event) => push(event.sessions))
     ).pipe(
       Stream.runForEach((sessions) =>
-        SubscriptionRef.set(ref, sessions).pipe(
+        Ref.set(pushed, true).pipe(
+          Effect.andThen(SubscriptionRef.set(ref, sessions)),
           Effect.andThen(closeDetached(get.registry, sessions))
         )
       ),
       Effect.forkScoped
     )
     const fetched = yield* Effect.promise(() => window.dia.getAttachedSessions())
-    yield* SubscriptionRef.set(ref, fetched)
+    if (!(yield* Ref.get(pushed))) yield* SubscriptionRef.set(ref, fetched)
     yield* Effect.logDebug('Loaded attached sessions', { count: fetched.length })
     return ref
   })

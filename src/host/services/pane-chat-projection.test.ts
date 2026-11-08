@@ -350,6 +350,33 @@ describe('PaneChatProjection', () => {
     }).pipe(Effect.provide(layer))
   })
 
+  it.effect('drops the state of a seeded pane that is not a tab once released', () => {
+    const { layer } = makeSetup()
+    return Effect.gen(function* () {
+      yield* setWorkspace(workspaceOf([tab(PANE_A)]))
+      yield* seed(PANE_B)
+      yield* reply(PANE_B, 'r1', 'hired agent reply')
+      const before = yield* textsOf(PANE_B)
+
+      yield* Effect.flatMap(PaneChatProjection, (projection) => projection.release(PANE_B))
+
+      assert.deepStrictEqual([before, yield* textsOf(PANE_B)], [['hired agent reply'], []])
+    }).pipe(Effect.provide(layer))
+  })
+
+  it.effect('keeps the state of a workspace tab when released', () => {
+    const { layer } = makeSetup()
+    return Effect.gen(function* () {
+      yield* setWorkspace(workspaceOf([tab(PANE_A)]))
+      yield* seed(PANE_A)
+      yield* reply(PANE_A, 'r1', 'tab reply')
+
+      yield* Effect.flatMap(PaneChatProjection, (projection) => projection.release(PANE_A))
+
+      assert.deepStrictEqual(yield* textsOf(PANE_A), ['tab reply'])
+    }).pipe(Effect.provide(layer))
+  })
+
   it.effect('follows a tab seeded before it joins the workspace', () => {
     const { layer } = makeSetup()
     return Effect.gen(function* () {

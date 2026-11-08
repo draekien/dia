@@ -62,6 +62,7 @@ export const AttachedSessionsLive = Layer.effect(
         update((current) => [...current.filter((s) => s.config.paneId !== paneId), display]),
         () =>
           update((current) => current.filter((s) => s.config.paneId !== paneId)).pipe(
+            Effect.andThen(paneChats.release(paneId)),
             Effect.andThen(Effect.logInfo('Detached a plugin session', { paneId }))
           )
       )

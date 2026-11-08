@@ -69,8 +69,7 @@ export type OverviewRow = typeof OverviewRow.Type
  * One project group. `rows` are the matching non-archived agents, most urgent first and then in
  * creation order; `archived` the matching archived agents, in creation order. `mostUrgent`
  * is the most urgent status among all the project's non-archived agents, `null` without any.
- * `shown` counts `rows`; `total` counts every non-archived tab. Attached sessions are rows but
- * never counted in `total`.
+ * `shown` counts `rows`; `total` counts every non-archived tab and attached session.
  */
 export const OverviewGroup = Schema.Struct({
   project: Project,
@@ -160,7 +159,7 @@ export const buildOverview = (
         archived,
         mostUrgent: mostUrgentOf([...active, ...attachedRows]),
         shown: rows.length,
-        total: active.length
+        total: active.length + attachedRows.length
       })
     ]
   })

@@ -12,7 +12,7 @@ Confirmed with the user before design.
 2. Selecting the row shows the live transcript, which grows as the agent works. *(app)*
 3. A `queue` message from the composer reaches `session.sendText(text, 'queue')`; a `steer` message reaches `session.sendText(text, 'steer')`, interrupts the turn and runs next. *(test + app; PRD goal 11)*
 4. Answering a permission card in the hired pane clears the dispatcher's pending entry and resumes the agent through `answerPermission`, reaching the SDK session's `resolvePermission` exactly once. *(test)*
-5. Attached sessions never enter `Workspace`: `tabIdsOf(workspace)` and the persisted workspace exclude them, and a project group's count counts tabs only. *(test)*
+5. Attached sessions never enter `Workspace`: `tabIdsOf(workspace)` and the persisted workspace exclude them, and a project group's count counts its tabs and attached sessions. *(test)*
 6. `docs/prds/org.md` has no open question on placement. *(diff)*
 
 ## Settled product decisions
@@ -125,16 +125,16 @@ export class AttachedSessions extends Context.Service<AttachedSessions, {
 |---|---|
 | `AgentSummaries` | `State` gains `tabIds` and `attachedIds`. `handle` sets `attachedIds` from each `AttachedSessionsChanged` frame; `applyWorkspace` sets `tabIds` and keeps every summary whose id is in `tabIds ∪ attachedIds`. When an `AttachedSessionsChanged` frame removes an id that is not a tab, its summary becomes `idleSummary(paneId, previous.activity)` and `AgentSummaryChanged` is published, which clears a pending request in the renderer's map before the id can be attached again; the summary is dropped at the next `WorkspaceChanged`. `flush` writes only summaries whose id is in `tabIds`. No new layer dependency |
 | `rpc.ts` | new RPC `GetAttachedSessions` → `Array(AttachedSession)`; `contract.ts` global event `AttachedSessionsChanged`; `PROTOCOL_VERSION` bumps |
-| `PaneChatProjection` | code unchanged: `seed` keeps a non-tab entry (`inWorkspace: false`); the `seed` and `snapshot` JSDoc now say a seeded non-tab id keeps its state |
+| `PaneChatProjection` | `seed` keeps a non-tab entry (`inWorkspace: false`); the `seed` and `snapshot` JSDoc now say a seeded non-tab id keeps its state; new `release(paneId)` drops a non-tab entry, and `AttachedSessions` calls it when a session detaches |
 
 ### Org plugin — `plugins/org/dispatcher.ts`
 
-`makeDispatcher` takes `attach: HostSessions['attach']`. `hireLabel(hire, jobTitles)` moves from `org-actions.ts` (`agent.name ?? \`Unnamed ${jobTitle}\``) to `domain.ts`, and both use it. `startIssue` replaces `backend.openSession(...)`:
+`makeDispatcher` takes `attach: HostSessions['attach']`. `agentName(hire, jobTitles)` moves from `org-actions.ts` (`agent.name ?? \`Unnamed ${jobTitle}\``) to `domain.ts`, and both use it. `startIssue` replaces `backend.openSession(...)`:
 
 ```ts
 const raw = yield* Deferred.make<AgentSession>()
 yield* attach({
-  display: AttachedSession.make({ config, projectId: objective.projectId, label: hireLabel(hire, [jobTitle]), caption: jobTitle.name }),
+  display: AttachedSession.make({ config, projectId: objective.projectId, label: agentName(hire, [jobTitle]), caption: jobTitle.name }),
   resume: Option.fromNullishOr(issue.sessionId),
   open: (emit) =>
     backend.openSession({ ...options, emit: (m) => emit(m).pipe(Effect.andThen(onEvent(issue.id)(m))) }).pipe(
@@ -161,7 +161,7 @@ const session = yield* Deferred.await(raw)
 | `workspace-atoms.ts` | `attachedSessionsAtom` follows `getAttachedSessions` and `AttachedSessionsChanged`. `closesOpenAttached(attached, workspace)` is true when `visibleTab` is not null and not `attached.shownBefore`; `loadedWorkspaceAtom` applies it on every `WorkspaceChanged`, as for the page. When the open id leaves the attached list, the atom is set to `None` and `window.dia.selectTab(shownBefore)` runs if `shownBefore` is not null |
 | `src/preload/host-api.ts`, `window.dia` type | `getAttachedSessions()` and `onAttachedSessionsChanged(listener)`; `refreshWorkspace` also fetches the list after a reconnect and dispatches `AttachedSessionsChanged` |
 | `@dia/renderer-plugin` | exports `useAttachedSessions()` and `actions.selectAttached` |
-| `plugins/agent-overview/overview.ts` | `OverviewRow.name` widens to `string` (a tab's `AgentName` or an attachment's `label`) and the row gains `attached: Option.Option<{ readonly caption: string }>`; `buildOverview` takes the attached list and adds rows to the group with the same `projectId`; sort unchanged; `total` counts tabs only |
+| `plugins/agent-overview/overview.ts` | `OverviewRow.name` widens to `string` (a tab's `AgentName` or an attachment's `label`) and the row gains `caption: string | null` (the job title of an attached session, `null` for a tab); `buildOverview` takes the attached list and adds rows to the group with the same `projectId`; sort unchanged; `total` counts tabs and attached rows |
 | `agent-row.tsx` | an attached row shows its caption after the name, its menu has Show only, `F2` does nothing, and selecting calls `selectAttached` |
 | `plugins/chat/chat.tsx` | for `AttachedView`, renders `Pane` from the attached session's `config` with `fixedSettings` |
 | `plugins/chat/pane.tsx` | `fixedSettings?: boolean`: hides the model, thinking and permission pickers and the rewind rows |

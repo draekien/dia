@@ -224,7 +224,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const paneChats = Layer.succeed(PaneChatProjection, {
     snapshot: () => Effect.die('not called'),
     seed: (paneId) =>
-      Effect.sync(() => void log.push(`seed ${paneId} after ${requests.length} sessions`))
+      Effect.sync(() => void log.push(`seed ${paneId} after ${requests.length} sessions`)),
+    release: () => Effect.void
   })
 
   const notFound = (path: string) =>

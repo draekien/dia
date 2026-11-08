@@ -116,10 +116,10 @@ describe('buildOverview with attached sessions', () => {
     ])
   })
 
-  it('does not count an attached session in the group total', () => {
+  it('counts an attached session in the group total', () => {
     const [dia] = buildOverview(workspace, summaries(), NO_FILTERS, [ada])
 
-    expect([dia.shown, dia.total]).toEqual([2, 1])
+    expect([dia.shown, dia.total]).toEqual([2, 2])
   })
 
   it('takes the group urgency from an attached session that needs input', () => {

@@ -107,7 +107,11 @@ const statusCounts = (
   for (const entry of workspace.projects) {
     for (const tab of entry.tabs) if (!tab.archived) count(tab.config.paneId)
   }
-  for (const session of attached) count(session.config.paneId)
+  for (const session of attached) {
+    if (workspace.projects.some((entry) => entry.project.projectId === session.projectId)) {
+      count(session.config.paneId)
+    }
+  }
   return counts
 }
 
