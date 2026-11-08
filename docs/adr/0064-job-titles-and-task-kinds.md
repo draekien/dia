@@ -1,5 +1,5 @@
 ---
-status: "accepted, amended by ADR-0069"
+status: "accepted, amended by ADR-0069 and ADR-0071"
 date: 2026-11-07
 decision-makers: William Pei
 ---
@@ -33,6 +33,8 @@ Chosen option: "Seven built-in job titles, with planning and retro as kinds of t
 | Job title | What an agent is hired as: a job description, skills, MCP servers, an optional allow/ask/deny permission list and a bypass opt-in (ADR-0054) | role |
 | Job description | The text appended to the system prompt of every session of a job title | instructions |
 | Hired agent | A job title plus an optional name (ADR-0033) | unchanged |
+
+Amended by ADR-0071: an eighth built-in job title, `Executive assistant`, runs the org's assistant session; it is never hired and never counted.
 
 ADR-0042, ADR-0043, ADR-0054 and ADR-0056 keep the word "role"; read it as "job title". They are not amended.
 

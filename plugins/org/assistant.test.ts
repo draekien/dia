@@ -217,6 +217,18 @@ describe('Assistant session', () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect('keeps the running session open when the built-in is edited', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      yield* env.start
+
+      yield* env.org.editJobTitle(ASSISTANT_JOB_TITLE, { thinkingLevel: 'high' })
+      yield* settle
+
+      assert.deepStrictEqual([env.host.attachments.length, env.host.shown().length], [1, 1])
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('attaches nothing while the built-in is disabled at start', () =>
     Effect.gen(function* () {
       const env = yield* setUp

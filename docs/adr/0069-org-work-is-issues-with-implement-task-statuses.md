@@ -1,5 +1,5 @@
 ---
-status: "accepted"
+status: "accepted, amended by ADR-0071"
 date: 2026-11-08
 decision-makers: William Pei
 ---
@@ -30,7 +30,7 @@ Chosen option: "Rename tasks to issues, use ten statuses, add a planning issue a
 
 * **Vocabulary.** `docs/glossary.md` defines Objective, Issue, Sub-issue, Planning issue, Retro issue, Assignee, Triage and Comment, aligned with Linear.
 * **Statuses.** An issue has one of ten statuses: `triage`, `todo`, `understanding`, `designing`, `implementing`, `testing`, `verifying`, `in_review`, `done`, `canceled`. The six started statuses map to the phases of `implement-task`. The old `finished` state is dropped: finishing a `work` issue moves it to `done` and creates its `retro` sub-issue in `todo`. An objective is `completed` when it has issues and every one is `done` or `canceled`.
-* **Planning issue.** `CreateObjective` creates the objective and its `planning` issue "Plan: <title>" in `todo`, assigned to the objective's assignee. The dispatcher starts the planning issue at once when it has an assignee. With no assignee it waits until the user assigns it.
+* **Planning issue.** (Amended by ADR-0071: route `direct` creates one `work` issue for the named hired agent instead.) `CreateObjective` creates the objective and its `planning` issue "Plan: <title>" in `todo`, assigned to the objective's assignee. The dispatcher starts the planning issue at once when it has an assignee. With no assignee it waits until the user assigns it.
 * **Agent tools.** A hired agent's session gets `create_issue` (adds a `triage` issue to the session's objective), `update_issue` (changes title, description, or the status of the session's own issue to a started status) and `comment_issue`. Each acts only within the session's objective.
 * **Triage.** The user accepts a `triage` issue (to `todo`) or declines it (to `canceled`), one at a time or for every `triage` issue of the objective.
 * **Dia tool permissions.** A dia tool call goes through the SDK's permission evaluation like any other tool call: deny rules, ask rules, permission mode, allow rules, then `canUseTool`. The `DiaTool` contract no longer asks the user. `PLUGIN_API_VERSION` goes from `0.0.32` to `0.0.33`.

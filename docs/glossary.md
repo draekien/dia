@@ -1,6 +1,6 @@
 # Glossary
 
-Scope: the org plugin (`plugins/org`) as of ADR-0069. Terms follow Linear where Linear has the concept.
+Scope: the org plugin (`plugins/org`) as of ADR-0071. Terms follow Linear where Linear has the concept.
 
 ## Vocabulary
 
@@ -9,7 +9,9 @@ Scope: the org plugin (`plugins/org`) as of ADR-0069. Terms follow Linear where 
 | Objective | A goal in one registered project, worked through as issues | (none; Linear's Project would clash with dia's project) |
 | Issue | A unit of work in one objective | Issue |
 | Sub-issue | An issue whose `parentIssueId` names another issue of the same objective | Sub-issue |
-| Planning issue | The `planning` issue every objective creates. Its agent breaks the objective into `triage` issues | (none) |
+| Planning issue | The `planning` issue an objective creates, except one created by route `direct`. Its agent breaks the objective into `triage` issues | (none) |
+| Executive assistant | The built-in job title, never hired, that runs the org's one assistant session and routes the user's requests (ADR-0071) | (none) |
+| Route | How the Executive assistant hands a request on: `direct` creates the objective and one `work` issue for a named hired agent; `plan` creates the objective and its unassigned planning issue | (none) |
 | Retro issue | The `retro` sub-issue that finishing a `work` issue creates (ADR-0035) | (none) |
 | Assignee | The one hired agent that runs an issue, or none | Assignee (Linear assigns people and delegates agents; dia assigns only agents) |
 | Triage | The status of an issue an agent proposed. The user accepts it (to `todo`) or declines it (to `canceled`) | Triage |
