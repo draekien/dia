@@ -1,0 +1,8 @@
+{
+  "name": "agent-definitions",
+  "api": "0.0.35",
+  "category": "feature",
+  "host": "host.ts",
+  "load": "eager",
+  "exports": ["registry.ts"]
+}
