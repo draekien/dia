@@ -128,6 +128,7 @@ export { AboutDialog } from './components/about-dialog'
  */
 export { AccountBanner } from './components/account-banner'
 export { InstallNotice } from './components/install-notice'
+export * from './components/list'
 export {
   OPEN_COMMAND_PALETTE_EVENT,
   openCommandPalette
