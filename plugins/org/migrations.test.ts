@@ -48,6 +48,21 @@ const oldSeed = Effect.gen(function* () {
   yield* sql`INSERT INTO org_settings ${sql.insert({ singleton: 1, overall_cap: 4 })}`
 })
 
+const { '9_agent_definitions': _definitions, ...migrationsBeforeDefinitions } = orgMigrations
+
+interface JobTitleRow {
+  readonly job_title_id: string
+  readonly name: string
+  readonly built_in: string | null
+  readonly job_description: string
+  readonly model: string | null
+  readonly thinking_level: string
+}
+
+const jobTitleRows = (sql: SqlClient.SqlClient) =>
+  sql<JobTitleRow>`SELECT job_title_id, name, built_in, job_description, model, thinking_level
+    FROM job_titles ORDER BY built_in IS NULL, rowid`
+
 const legacyMigrations = {
   '1_create_org_tables': orgMigrations['1_create_org_tables'],
   '2_seed_org': oldSeed
@@ -71,7 +86,7 @@ const upgradedLegacyOrg = Effect.gen(function* () {
   yield* legacy.sql`INSERT INTO hired_agents ${legacy.sql.insert(hire(BRAVE_OTTER_ID, STRICT_ENGINEER_ID, 'brave-otter'))}`
   yield* legacy.sql`INSERT INTO hired_agents ${legacy.sql.insert(hire('00000000-0000-4000-8000-000000000202', OLD_ENGINEER_ID, 'calm-heron'))}`
   yield* legacy.close
-  const sql = yield* openDatabase(filename, orgMigrations)
+  const sql = yield* openDatabase(filename, migrationsBeforeDefinitions)
   const org = yield* makeWork(() => Effect.succeed(true)).pipe(
     Effect.flatMap(({ openIssuesOf }) => makeOrg(openIssuesOf)),
     Effect.provideService(SqlClient.SqlClient, sql),
@@ -83,11 +98,11 @@ const upgradedLegacyOrg = Effect.gen(function* () {
 describe('3_job_titles on a database seeded with the old built-in roles', () => {
   it.effect('keeps the seven built-ins and the copies, renaming copies that clash', () =>
     Effect.gen(function* () {
-      const { org } = yield* upgradedLegacyOrg
+      const { sql } = yield* upgradedLegacyOrg
       assert.deepStrictEqual(
-        (yield* org.jobTitles).map((jobTitle): [string, string | null] => [
+        (yield* jobTitleRows(sql)).map((jobTitle): [string, string | null] => [
           jobTitle.name,
-          jobTitle.builtIn
+          jobTitle.built_in
         ]),
         [
           ['Product manager', 'product-manager'],
@@ -108,10 +123,10 @@ describe('3_job_titles on a database seeded with the old built-in roles', () => 
 
   it.effect("keeps each copy's id and moves its instructions into its job description", () =>
     Effect.gen(function* () {
-      const { org } = yield* upgradedLegacyOrg
-      const copies = (yield* org.jobTitles).filter((jobTitle) => jobTitle.builtIn === null)
+      const { sql } = yield* upgradedLegacyOrg
+      const copies = (yield* jobTitleRows(sql)).filter((jobTitle) => jobTitle.built_in === null)
       assert.deepStrictEqual(
-        copies.map((copy): [string, string] => [copy.id, copy.jobDescription]),
+        copies.map((copy): [string, string] => [copy.job_title_id, copy.job_description]),
         [
           [STRICT_ENGINEER_ID, 'Strict engineer instructions'],
           [TEAM_LEAD_COPY_ID, 'team LEAD instructions'],
@@ -186,9 +201,9 @@ describe('4_add_reports_to on a database with hires', () => {
 describe('5_job_title_model on a database with job titles', () => {
   it.effect('gives every existing job title no model and the medium thinking level', () =>
     Effect.gen(function* () {
-      const { org } = yield* upgradedLegacyOrg
+      const { sql } = yield* upgradedLegacyOrg
       const settings = new Set(
-        (yield* org.jobTitles).map((jobTitle) => `${jobTitle.model}/${jobTitle.thinkingLevel}`)
+        (yield* jobTitleRows(sql)).map((jobTitle) => `${jobTitle.model}/${jobTitle.thinking_level}`)
       )
       assert.deepStrictEqual([...settings], ['null/medium'])
     }).pipe(Effect.scoped)
@@ -199,7 +214,7 @@ const {
   '7_issues': _issues,
   '8_executive_assistant': _laterAssistant,
   ...migrationsBeforeIssues
-} = orgMigrations
+} = migrationsBeforeDefinitions
 const OBJECTIVE_ID = '00000000-0000-4000-8000-000000000301'
 const COPY_ID = '00000000-0000-4000-8000-000000000302'
 const taskRowId = (n: number) => `00000000-0000-4000-8000-00000000040${n}`
@@ -257,7 +272,7 @@ const upgradedTasks = Effect.gen(function* () {
     yield* old`INSERT INTO tasks ${old.insert(row)}`
   }
   yield* before.close
-  const sql = yield* openDatabase(filename, orgMigrations)
+  const sql = yield* openDatabase(filename, migrationsBeforeDefinitions)
   return { sql }
 }).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
 
@@ -360,7 +375,8 @@ describe('7_issues on a database with tasks', () => {
   )
 })
 
-const { '8_executive_assistant': _assistant, ...migrationsBeforeAssistant } = orgMigrations
+const { '8_executive_assistant': _assistant, ...migrationsBeforeAssistant } =
+  migrationsBeforeDefinitions
 const ASSISTANT_NAMED_COPY_ID = '00000000-0000-4000-8000-000000000601'
 const HIRE_ON_COPY_ID = '00000000-0000-4000-8000-000000000602'
 const ASSIGNED_ISSUE_ID = '00000000-0000-4000-8000-000000000603'
@@ -416,7 +432,7 @@ const upgradedToAssistant = Effect.gen(function* () {
     created_at: 0
   })}`
   yield* before.close
-  return yield* openDatabase(filename, orgMigrations)
+  return yield* openDatabase(filename, migrationsBeforeDefinitions)
 }).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
 
 describe('8_executive_assistant on a database with a hire on a copy', () => {
@@ -503,6 +519,217 @@ describe('8_executive_assistant on a database with a hire on a copy', () => {
         })}`
       )
       assert.isTrue(Exit.isFailure(second))
+    }).pipe(Effect.scoped)
+  )
+})
+
+const LEAD_ID = '00000000-0000-4000-8000-000000000701'
+const REPORT_ID = '00000000-0000-4000-8000-000000000702'
+const LEAD_ISSUE_ID = '00000000-0000-4000-8000-000000000703'
+const REPORT_ISSUE_ID = '00000000-0000-4000-8000-000000000704'
+const COMMENT_ID = '00000000-0000-4000-8000-000000000705'
+const DEFINITIONS_OBJECTIVE_ID = '00000000-0000-4000-8000-000000000706'
+const DISABLED_COPY_ID = '00000000-0000-4000-8000-000000000707'
+const ENGINEER_ID = '6f0c1a6e-4b1e-4a52-9a0e-0d6b3f1a0012'
+
+const upgradedToDefinitions = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const filename = path.join(yield* fs.makeTempDirectoryScoped(), 'data.db')
+  const before = yield* openIn(filename, migrationsBeforeDefinitions)
+  const old = before.sql
+  yield* old`INSERT INTO job_titles ${old.insert({
+    job_title_id: DISABLED_COPY_ID,
+    name: 'Night shift',
+    built_in: null,
+    enabled: 0,
+    job_description: '',
+    skills: '[]',
+    permissions: NO_RULES,
+    mcp_servers: '{}',
+    bypass_opt_in: 0
+  })}`
+  yield* old`INSERT INTO hired_agents ${old.insert({
+    hire_id: LEAD_ID,
+    job_title_id: ENGINEER_ID,
+    name: 'lead',
+    bypass_override: null,
+    hired_at: 0,
+    reports_to: null
+  })}`
+  yield* old`INSERT INTO hired_agents ${old.insert({
+    hire_id: REPORT_ID,
+    job_title_id: DISABLED_COPY_ID,
+    name: 'report',
+    bypass_override: 1,
+    hired_at: 1,
+    reports_to: LEAD_ID
+  })}`
+  yield* old`INSERT INTO objectives ${old.insert({
+    objective_id: DEFINITIONS_OBJECTIVE_ID,
+    project_id: '00000000-0000-4000-8000-000000000300',
+    title: 'Ship',
+    description: '',
+    priority: 'normal',
+    assignee: LEAD_ID,
+    state: 'open',
+    created_at: 0
+  })}`
+  for (const [issueId, assignee, n] of [
+    [LEAD_ISSUE_ID, LEAD_ID, 1],
+    [REPORT_ISSUE_ID, REPORT_ID, 2]
+  ] as const) {
+    yield* old`INSERT INTO issues ${old.insert({
+      issue_id: issueId,
+      objective_id: DEFINITIONS_OBJECTIVE_ID,
+      parent_issue_id: null,
+      kind: 'work',
+      title: `Issue ${n}`,
+      description: '',
+      status: 'todo',
+      assignee,
+      pane_id: `00000000-0000-4000-8000-00000000080${n}`,
+      session_id: null,
+      created_at: n
+    })}`
+  }
+  yield* old`INSERT INTO issue_comments ${old.insert({
+    comment_id: COMMENT_ID,
+    issue_id: LEAD_ISSUE_ID,
+    author: REPORT_ID,
+    body: 'On it.',
+    created_at: 3
+  })}`
+  yield* before.close
+  return yield* openDatabase(filename, orgMigrations)
+}).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
+
+describe('9_agent_definitions on a database with hires, assigned issues and comments', () => {
+  it.effect(
+    'keeps every issue and objective assignee, comment author and reporting line of existing hires',
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* upgradedToDefinitions
+        const issues = yield* sql<{
+          readonly issue_id: string
+          readonly assignee: string | null
+        }>`SELECT issue_id, assignee FROM issues ORDER BY created_at`
+        const objectives = yield* sql<{
+          readonly assignee: string | null
+        }>`SELECT assignee FROM objectives`
+        const comments = yield* sql<{
+          readonly author: string | null
+        }>`SELECT author FROM issue_comments`
+        const hires = yield* sql<{
+          readonly hire_id: string
+          readonly job_title_id: string
+          readonly bypass_override: number | null
+          readonly reports_to: string | null
+        }>`SELECT hire_id, job_title_id, bypass_override, reports_to FROM hired_agents ORDER BY hired_at`
+        assert.deepStrictEqual(
+          {
+            issues: issues.map((row) => [row.issue_id, row.assignee]),
+            objectives: objectives.map((row) => row.assignee),
+            comments: comments.map((row) => row.author),
+            hires: hires.map((row) => [
+              row.hire_id,
+              row.job_title_id,
+              row.bypass_override,
+              row.reports_to
+            ])
+          },
+          {
+            issues: [
+              [LEAD_ISSUE_ID, LEAD_ID],
+              [REPORT_ISSUE_ID, REPORT_ID]
+            ],
+            objectives: [LEAD_ID],
+            comments: [REPORT_ID],
+            hires: [
+              [LEAD_ID, ENGINEER_ID, null, null],
+              [REPORT_ID, DISABLED_COPY_ID, 1, LEAD_ID]
+            ]
+          }
+        )
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect(
+    'leaves no foreign key violation, and still nulls an assignee when its hire is deleted',
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* upgradedToDefinitions
+        const violations = yield* sql.unsafe('PRAGMA foreign_key_check')
+        yield* sql`UPDATE hired_agents SET reports_to = NULL WHERE reports_to = ${REPORT_ID}`
+        yield* sql`DELETE FROM hired_agents WHERE hire_id = ${REPORT_ID}`
+        const [issue] = yield* sql<{
+          readonly assignee: string | null
+        }>`SELECT assignee FROM issues WHERE issue_id = ${REPORT_ISSUE_ID}`
+        assert.deepStrictEqual([violations, issue?.assignee], [[], null])
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect('hires into a job title id no table holds', () =>
+    Effect.gen(function* () {
+      const sql = yield* upgradedToDefinitions
+      const hired = yield* Effect.exit(
+        sql`INSERT INTO hired_agents ${sql.insert({
+          hire_id: '00000000-0000-4000-8000-000000000708',
+          job_title_id: '00000000-0000-4000-8000-000000000709',
+          name: null,
+          bypass_override: null,
+          hired_at: 2,
+          reports_to: null
+        })}`
+      )
+      assert.isTrue(Exit.isSuccess(hired))
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('keeps only the disabled job titles in job_title_settings', () =>
+    Effect.gen(function* () {
+      const sql = yield* upgradedToDefinitions
+      const settings = yield* sql<{
+        readonly job_title_id: string
+        readonly enabled: number
+      }>`SELECT job_title_id, enabled FROM job_title_settings`
+      assert.deepStrictEqual(
+        settings.map((row) => [row.job_title_id, row.enabled]),
+        [[DISABLED_COPY_ID, 0]]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('renames the job titles table for the handover and keeps every row', () =>
+    Effect.gen(function* () {
+      const sql = yield* upgradedToDefinitions
+      const tables = yield* sql<{
+        readonly name: string
+      }>`SELECT name FROM sqlite_master WHERE name IN ('job_titles', 'job_titles_handover')`
+      const [handover] = yield* sql<{
+        readonly count: number
+      }>`SELECT count(*) AS count FROM job_titles_handover`
+      assert.deepStrictEqual(
+        [tables.map((row) => row.name), handover?.count],
+        [['job_titles_handover'], 9]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('gives each issue no missing names and refuses missing names outside triage', () =>
+    Effect.gen(function* () {
+      const sql = yield* upgradedToDefinitions
+      const missing = yield* sql<{ readonly missing: string }>`SELECT missing FROM issues`
+      const outside = yield* Effect.exit(
+        sql`UPDATE issues SET missing = '[{"kind":"skill","name":"plan"}]' WHERE issue_id = ${LEAD_ISSUE_ID}`
+      )
+      const inTriage = yield* Effect.exit(
+        sql`UPDATE issues SET status = 'triage', missing = '[{"kind":"skill","name":"plan"}]' WHERE issue_id = ${LEAD_ISSUE_ID}`
+      )
+      assert.deepStrictEqual(
+        [missing.map((row) => row.missing), Exit.isFailure(outside), Exit.isSuccess(inTriage)],
+        [['[]', '[]'], true, true]
+      )
     }).pipe(Effect.scoped)
   )
 })

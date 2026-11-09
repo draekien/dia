@@ -23,6 +23,14 @@ export interface SkillDirectory {
   readonly plugin: Option.Option<string>
 }
 
+/**
+ * A {@link SkillDirectory} as a registered source: `pluginPath` is the local Claude Code plugin
+ * directory a session must load for these skills, or none when Claude Code finds them itself.
+ */
+export interface DirectorySourceOptions extends SkillDirectory {
+  readonly pluginPath: Option.Option<string>
+}
+
 const DEBOUNCE = Duration.millis(200)
 
 const isNotFound = (error: PlatformError.PlatformError): boolean => error.reason._tag === 'NotFound'
@@ -176,10 +184,14 @@ export const directorySkills = (
  * A source with id `id` whose skills are `directorySkills(options)` for every context. The source
  * keeps the `FileSystem` and `Path` it was built with, so its stream needs no services.
  */
-export const directorySource = Effect.fnUntraced(function* (id: string, options: SkillDirectory) {
+export const directorySource = Effect.fnUntraced(function* (
+  id: string,
+  options: DirectorySourceOptions
+) {
   const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
   const source: SkillSource = {
     id,
+    pluginPath: options.pluginPath,
     skills: () => directorySkills(options).pipe(Stream.provideContext(services))
   }
   return source

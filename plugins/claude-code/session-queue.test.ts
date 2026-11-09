@@ -757,7 +757,8 @@ describe('session additions', () => {
 describe('session tool options', () => {
   const toolOptions: SessionToolOptions = {
     permissions: { allow: ['Read'], ask: ['Bash(git status*)'], deny: ['Bash(git push *)'] },
-    mcpServers: { docs: { type: 'http', url: 'https://docs.example/mcp', headers: {} } }
+    mcpServers: { docs: { type: 'http', url: 'https://docs.example/mcp', headers: {} } },
+    skills: ['dia-meta:plan']
   }
   const withTools = { ...nothingAdded, tools: Option.some(toolOptions) }
 
@@ -773,6 +774,7 @@ describe('session tool options', () => {
       assert.deepStrictEqual(query.options.mcpServers, {
         docs: { type: 'http', url: 'https://docs.example/mcp', headers: {} }
       })
+      assert.deepStrictEqual(query.options.skills, ['dia-meta:plan'])
     })
   )
 

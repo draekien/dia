@@ -9,6 +9,10 @@ const PLUGIN_DIRECTORY = 'plugin'
 /** The name of the Claude Code plugin the meta repo holds; its skills are named `dia-meta:<skill>`. */
 export const META_PLUGIN_NAME = 'dia-meta'
 
+/** The local Claude Code plugin directory of the meta repo at `directory`; sessions load it as a plugin. */
+export const metaPluginDirectory = (path: Path.Path, directory: string): string =>
+  path.join(directory, PLUGIN_DIRECTORY)
+
 /** The directory of the meta repo at `directory` that holds its plugin's skills. */
 export const metaSkillsDirectory = (path: Path.Path, directory: string): string =>
   path.join(directory, PLUGIN_DIRECTORY, 'skills')

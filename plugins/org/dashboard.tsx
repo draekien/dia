@@ -1,6 +1,10 @@
 import { Button, openSettings } from '@dia/renderer-plugin'
+import { useAtomValue } from '@effect/atom-react'
+import { Option } from 'effect'
+import { AsyncResult } from 'effect/reactivity'
 import type { ReactNode } from 'react'
-import type { OrgScreen } from './org-actions'
+import { describeMissing } from './domain'
+import type { OrgScreen, WorkAtom } from './org-actions'
 
 function Stat({
   label,
@@ -24,12 +28,21 @@ function Stat({
 
 /**
  * The Org Dashboard: the number of hired agents, how many job titles are enabled, and the overall
- * cap with a `Change` button that opens Settings › Org; then `Needs attention`, which while no
- * agent is hired holds one item whose `Hire…` opens the Hire dialog.
+ * cap with a `Change` button that opens Settings › Org; then `Needs attention`, which holds one
+ * item whose `Hire…` opens the Hire dialog while no agent is hired, and one alert naming what the
+ * Executive assistant definition holds that resolves to nothing while `workAtom` reports any.
  */
-export function Dashboard({ snapshot, openHire }: Pick<OrgScreen, 'snapshot' | 'openHire'>) {
+export function Dashboard({
+  snapshot,
+  openHire,
+  workAtom
+}: Pick<OrgScreen, 'snapshot' | 'openHire'> & { readonly workAtom: WorkAtom }) {
   const enabled = snapshot.jobTitles.filter((jobTitle) => jobTitle.enabled).length
   const noHires = snapshot.hiredAgents.length === 0
+  const work = useAtomValue(workAtom)
+  const assistantMissing = AsyncResult.isSuccess(work)
+    ? Option.match(work.value, { onNone: () => [], onSome: (view) => view.assistantMissing })
+    : []
 
   return (
     <div className="flex max-w-3xl flex-col gap-8">
@@ -62,16 +75,23 @@ export function Dashboard({ snapshot, openHire }: Pick<OrgScreen, 'snapshot' | '
         <h3 id="org-attention-heading" className="text-sm font-medium text-ink">
           Needs attention
         </h3>
-        {noHires ? (
+        {noHires || assistantMissing.length > 0 ? (
           <ul className="flex flex-col divide-y border-y">
-            <li className="flex items-center justify-between gap-4 py-2.5">
-              <span className="text-sm text-ink">
-                No agents are hired. Hire one to start building the org.
-              </span>
-              <Button size="sm" variant="outline" onClick={() => openHire(null)}>
-                Hire…
-              </Button>
-            </li>
+            {assistantMissing.length > 0 ? (
+              <li role="alert" className="py-2.5 text-sm text-error">
+                {`Executive assistant cannot start: missing ${describeMissing(assistantMissing)}`}
+              </li>
+            ) : null}
+            {noHires ? (
+              <li className="flex items-center justify-between gap-4 py-2.5">
+                <span className="text-sm text-ink">
+                  No agents are hired. Hire one to start building the org.
+                </span>
+                <Button size="sm" variant="outline" onClick={() => openHire(null)}>
+                  Hire…
+                </Button>
+              </li>
+            ) : null}
           </ul>
         ) : (
           <p className="text-sm text-ink-muted">Nothing needs attention.</p>

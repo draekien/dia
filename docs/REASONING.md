@@ -87,6 +87,7 @@ This is an index of non-obvious decisions, gotchas, and learnings recorded durin
 | 2026-11-08 | [Attached sessions rely on global frames reaching subscribers before later pane frames](reasoning/2026-11-08-attached-session-frame-ordering.md) | `AttachedSessions.attach` publishes `AttachedSessionsChanged` before the pane starts, and global frames skip the store, so `AgentSummaries` folds that frame instead of reading `AttachedSessions.current`. `SessionAttacher` breaks the `HostPlugins` dependency cycle. |
 | 2026-11-08 | [An attached session's transcript is pruned on every start](reasoning/2026-11-08-attached-session-transcript-pruned-on-start.md) | `pruneOrphans` deletes events of panes with no agent row and now also their sessions' cursors, so a resumed attached session re-imports its Claude Code transcript. |
 | 2026-11-08 | [A recursive watch on Windows emits `rename` events without end after its directory is deleted](reasoning/2026-11-08-windows-recursive-watch-on-deleted-directory.md) | `pathChanges` ends a watch at a `Remove` event whose target no longer exists, and follows the path again as missing. |
+| 2026-11-09 | [Dropping a parent table in SQLite runs its `ON DELETE SET NULL` actions at once](reasoning/2026-11-09-sqlite-parent-table-rebuild.md) | `9_agent_definitions` saves `issues.assignee`, `objectives.assignee` and `issue_comments.author` in TEMP tables before it rebuilds `hired_agents`, and restores them after. |
 
 ## Adding a new entry
 

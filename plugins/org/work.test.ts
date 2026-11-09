@@ -24,6 +24,7 @@ import {
 } from './domain'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
+import { holdBuiltInDefinitions } from './registries.fake'
 import { makeWork } from './work'
 
 const PROJECT = ProjectId.make('00000000-0000-4000-8000-400000000001')
@@ -44,6 +45,7 @@ const openWork = Effect.gen(function* () {
     const org = yield* makeOrg(made.openIssuesOf)
     return { ...made, org }
   }).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
+  yield* holdBuiltInDefinitions(built.org).pipe(Scope.provide(scope))
   const engineer = present((yield* built.org.jobTitles)[0], 'a built-in job title')
   const ada = yield* built.org.hire(engineer.id, null, null)
   const ben = yield* built.org.hire(engineer.id, null, null)

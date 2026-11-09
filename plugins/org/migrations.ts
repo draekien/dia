@@ -4,7 +4,8 @@ import { SqlClient } from 'effect/sql'
 import {
   BUILT_IN_JOB_TITLES,
   DEFAULT_OVERALL_CAP,
-  EXECUTIVE_ASSISTANT
+  EXECUTIVE_ASSISTANT,
+  ISSUE_TOOLS
 } from './built-in-job-titles'
 import { JOB_TITLE_NAME_MAX_LENGTH, JobTitle } from './domain'
 
@@ -193,8 +194,6 @@ const createObjectivesAndTasks = Effect.gen(function* () {
   yield* Effect.logInfo('Created the objectives, tasks and org events tables')
 })
 
-const ISSUE_TOOLS = ['mcp__dia__create_issue', 'mcp__dia__update_issue', 'mcp__dia__comment_issue']
-
 const allowIssueToolsOnBuiltIns = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient
   const rows = yield* sql<{
@@ -306,6 +305,62 @@ const addExecutiveAssistant = Effect.gen(function* () {
   })
 })
 
+const SAVED_REFERENCES = [
+  { table: 'issues', key: 'issue_id', column: 'assignee' },
+  { table: 'objectives', key: 'objective_id', column: 'assignee' },
+  { table: 'issue_comments', key: 'comment_id', column: 'author' }
+] as const
+
+const savedTable = (table: string) => `saved_${table}_hires`
+
+const moveToAgentDefinitions = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql.unsafe('PRAGMA defer_foreign_keys = ON')
+  for (const { table, key, column } of SAVED_REFERENCES) {
+    yield* sql.unsafe(`CREATE TEMP TABLE ${savedTable(table)} AS
+      SELECT ${key} AS saved_key, ${column} AS saved_hire FROM ${table} WHERE ${column} IS NOT NULL`)
+  }
+  yield* sql.unsafe(`CREATE TABLE hired_agents_next (
+    hire_id         TEXT    PRIMARY KEY,
+    job_title_id    TEXT    NOT NULL,
+    name            TEXT    UNIQUE COLLATE NOCASE,
+    bypass_override INTEGER CHECK (bypass_override IN (0, 1)),
+    hired_at        INTEGER NOT NULL,
+    reports_to      TEXT    REFERENCES hired_agents_next(hire_id)
+  )`)
+  yield* sql.unsafe(`INSERT INTO hired_agents_next (hire_id, job_title_id, name, bypass_override, hired_at, reports_to)
+    SELECT hire_id, job_title_id, name, bypass_override, hired_at, reports_to FROM hired_agents ORDER BY rowid`)
+  yield* sql.unsafe('DROP TABLE hired_agents')
+  yield* sql.unsafe('ALTER TABLE hired_agents_next RENAME TO hired_agents')
+  for (const { table, key, column } of SAVED_REFERENCES) {
+    yield* sql.unsafe(`UPDATE ${table} SET ${column} = saved.saved_hire
+      FROM ${savedTable(table)} AS saved WHERE ${table}.${key} = saved.saved_key`)
+    yield* sql.unsafe(`DROP TABLE ${savedTable(table)}`)
+  }
+  yield* sql.unsafe(`CREATE TABLE job_title_settings (
+    job_title_id TEXT    PRIMARY KEY,
+    enabled      INTEGER NOT NULL CHECK (enabled IN (0, 1))
+  )`)
+  yield* sql.unsafe(`INSERT INTO job_title_settings (job_title_id, enabled)
+    SELECT job_title_id, 0 FROM job_titles WHERE enabled = 0`)
+  yield* sql.unsafe('ALTER TABLE job_titles RENAME TO job_titles_handover')
+  yield* sql.unsafe(
+    "ALTER TABLE issues ADD COLUMN missing TEXT NOT NULL DEFAULT '[]' CHECK (status = 'triage' OR missing = '[]')"
+  )
+  const [counts] = yield* sql<{
+    readonly hires: number
+    readonly disabled: number
+    readonly handover: number
+  }>`SELECT (SELECT count(*) FROM hired_agents) AS hires,
+    (SELECT count(*) FROM job_title_settings) AS disabled,
+    (SELECT count(*) FROM job_titles_handover) AS handover`
+  yield* Effect.logInfo('Prepared the org to hand its job titles to agent-definitions', {
+    hires: counts?.hires ?? 0,
+    disabledJobTitles: counts?.disabled ?? 0,
+    jobTitlesToHandOver: counts?.handover ?? 0
+  })
+})
+
 /**
  * The `org` plugin's migrations, passed to `ctx.database`. `1_create_org_tables` creates the
  * first roles, hired agents and org settings tables; `2_seed_org` inserts the default overall cap;
@@ -318,8 +373,12 @@ const addExecutiveAssistant = Effect.gen(function* () {
  * `running` tasks become `todo`, the rest `done`), adds the issue comments table, and adds the
  * three org issue tools to each built-in job title's allowed tools; `8_executive_assistant` widens
  * the built-in kinds to include `executive-assistant`, inserts that job title (renaming a copy that
- * has its name), and creates the assistant's session and objectives tables. Each runs once per
- * database.
+ * has its name), and creates the assistant's session and objectives tables;
+ * `9_agent_definitions` drops the hired agents' reference to the job titles table (keeping every
+ * issue and objective assignee, comment author and reporting line), moves each disabled job
+ * title's flag to `job_title_settings`, renames the job titles table to `job_titles_handover` for
+ * `org`'s host to hand over to `agent-definitions` and `mcp`, and adds each issue's `missing`
+ * names, which must be `[]` unless the issue is in `triage`. Each runs once per database.
  */
 export const orgMigrations: PluginMigrations = {
   '1_create_org_tables': createTables,
@@ -329,5 +388,6 @@ export const orgMigrations: PluginMigrations = {
   '5_job_title_model': addJobTitleModel,
   '6_objectives_tasks': createObjectivesAndTasks,
   '7_issues': moveToIssues,
-  '8_executive_assistant': addExecutiveAssistant
+  '8_executive_assistant': addExecutiveAssistant,
+  '9_agent_definitions': moveToAgentDefinitions
 }

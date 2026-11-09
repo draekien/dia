@@ -1,5 +1,6 @@
 import { assert, describe, it } from '@effect/vitest'
-import { Effect, Exit, Option, Scope, Stream } from 'effect'
+import { Duration, Effect, Exit, Fiber, Option, Scope, Stream } from 'effect'
+import { TestClock } from 'effect/testing'
 import { makeRegistry } from './make-registry'
 import { type Skill, type SkillSource, SkillSourceIdTaken } from './registry'
 
@@ -9,8 +10,13 @@ const review: Skill = { name: 'review', description: 'Reviews a diff', group: 'Y
 const plan: Skill = { name: 'dia-meta:plan', description: 'Plans work', group: 'Meta repo' }
 const deploy: Skill = { name: 'deploy', description: '', group: 'Your skills' }
 
-const fixed = (id: string, skills: ReadonlyArray<Skill>): SkillSource => ({
+const fixed = (
+  id: string,
+  skills: ReadonlyArray<Skill>,
+  pluginPath: Option.Option<string> = Option.none()
+): SkillSource => ({
   id,
+  pluginPath,
   skills: () => Stream.make(skills)
 })
 
@@ -101,6 +107,7 @@ describe('makeRegistry', () => {
       const registry = yield* makeRegistry
       const repeating: SkillSource = {
         id: 'user',
+        pluginPath: Option.none(),
         skills: () => Stream.make([review], [{ ...review }], [deploy])
       }
       yield* registry.register(repeating).pipe(Scope.provide(yield* Scope.make()))
@@ -116,6 +123,7 @@ describe('makeRegistry', () => {
       const registry = yield* makeRegistry
       const project: SkillSource = {
         id: 'project',
+        pluginPath: Option.none(),
         skills: (context) =>
           Stream.make(
             Option.match(context.cwd, {
@@ -133,4 +141,101 @@ describe('makeRegistry', () => {
       assert.deepStrictEqual(listed, [{ name: 'F:/Dev/dia', description: '', group: 'Project' }])
     })
   )
+
+  describe('resolve', () => {
+    const META_PLUGIN = 'C:/Users/me/AppData/Roaming/dia/plugins/meta/repo/plugin'
+
+    it.effect("returns a plugin source's directory for a name it lists, and no missing name", () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry
+        const scope = yield* Scope.make()
+        yield* registry.register(fixed('user', [review])).pipe(Scope.provide(scope))
+        yield* registry
+          .register(fixed('meta', [plan], Option.some(META_PLUGIN)))
+          .pipe(Scope.provide(scope))
+
+        const resolution = yield* registry.resolve(['dia-meta:plan', 'review'], NO_PROJECT)
+
+        assert.deepStrictEqual(resolution, Option.some({ missing: [], pluginPaths: [META_PLUGIN] }))
+      })
+    )
+
+    it.effect('loads no plugin directory when no named skill comes from that source', () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry
+        const scope = yield* Scope.make()
+        yield* registry.register(fixed('user', [review])).pipe(Scope.provide(scope))
+        yield* registry
+          .register(fixed('meta', [plan], Option.some(META_PLUGIN)))
+          .pipe(Scope.provide(scope))
+
+        const resolution = yield* registry.resolve(['review'], NO_PROJECT)
+
+        assert.deepStrictEqual(resolution, Option.some({ missing: [], pluginPaths: [] }))
+      })
+    )
+
+    it.effect('lists each name no source has as missing', () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry
+        yield* registry.register(fixed('user', [review])).pipe(Scope.provide(yield* Scope.make()))
+
+        const resolution = yield* registry.resolve(
+          ['review', 'deploy', 'dia-meta:plan'],
+          NO_PROJECT
+        )
+
+        assert.deepStrictEqual(
+          resolution,
+          Option.some({ missing: ['deploy', 'dia-meta:plan'], pluginPaths: [] })
+        )
+      })
+    )
+
+    it.effect('resolves nothing while no source is registered', () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry
+
+        assert.deepStrictEqual(yield* registry.resolve(['review'], NO_PROJECT), Option.none())
+      })
+    )
+
+    it.effect('resolves nothing when a source has not listed its skills within 2 seconds', () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry
+        const silent: SkillSource = {
+          id: 'slow',
+          pluginPath: Option.none(),
+          skills: () => Stream.never
+        }
+        yield* registry.register(silent).pipe(Scope.provide(yield* Scope.make()))
+
+        const resolving = yield* registry.resolve(['review'], NO_PROJECT).pipe(Effect.forkChild)
+        yield* TestClock.adjust(Duration.seconds(2))
+
+        assert.deepStrictEqual(yield* Fiber.join(resolving), Option.none())
+      })
+    )
+
+    it.effect('resolves against the context it is given', () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry
+        const project: SkillSource = {
+          id: 'project',
+          pluginPath: Option.none(),
+          skills: (context) => Stream.make(Option.isSome(context.cwd) ? [deploy] : [])
+        }
+        yield* registry.register(project).pipe(Scope.provide(yield* Scope.make()))
+
+        assert.deepStrictEqual(
+          yield* registry.resolve(['deploy'], { cwd: Option.some('F:/Dev/dia') }),
+          Option.some({ missing: [], pluginPaths: [] })
+        )
+        assert.deepStrictEqual(
+          yield* registry.resolve(['deploy'], NO_PROJECT),
+          Option.some({ missing: ['deploy'], pluginPaths: [] })
+        )
+      })
+    )
+  })
 })

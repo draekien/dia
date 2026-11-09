@@ -101,7 +101,7 @@ function SubPage({
 }) {
   switch (view._tag) {
     case 'DashboardView':
-      return <Dashboard snapshot={screen.snapshot} openHire={screen.openHire} />
+      return <Dashboard snapshot={screen.snapshot} openHire={screen.openHire} workAtom={workAtom} />
     case 'ObjectivesView':
       return <ObjectivesPage objectiveId={view.objectiveId} workAtom={workAtom} {...screen} />
     case 'OrgChartView':
@@ -166,7 +166,7 @@ const initialView = (target: string | undefined): OrgView =>
 /**
  * The Org page in the content area: a sub-navigation of Dashboard, Objectives, Org chart, Job
  * titles and Hired agents beside the current sub-page under its own heading. It reads `orgAtom`
- * while shown, and `workAtom` while Objectives is shown. It opens on Dashboard, or on the
+ * while shown, and `workAtom` while Dashboard or Objectives is shown. It opens on Dashboard, or on the
  * objective whose id is `target` when `target` is an objective id; `ctx` is the `org` renderer
  * entry the calls go through.
  */

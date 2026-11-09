@@ -2,8 +2,7 @@
 // @effect-diagnostics newPromise:off -- the skeleton test holds the read open with a Promise that never resolves.
 import { AgentName, type PluginServices, type PluginSetup } from '@dia/plugin'
 import { callHost, followHost, openSettings, toast } from '@dia/renderer-plugin'
-import { McpServersEditorKey, type McpServersEditorProps } from '@dia-plugin/mcp/editor'
-import type { McpServersDraft } from '@dia-plugin/mcp/servers'
+import { McpServerPickerKey, type McpServerPickerProps } from '@dia-plugin/mcp/picker'
 import { SkillPickerKey, type SkillPickerProps } from '@dia-plugin/skills/picker'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Atom } from 'effect/reactivity'
@@ -51,16 +50,10 @@ beforeAll(() => {
   window.HTMLElement.prototype.hasPointerCapture = () => false
   window.HTMLElement.prototype.releasePointerCapture = () => {}
 })
-const StubMcpServersEditor = ({ id, draft, onChange, error }: McpServersEditorProps) => (
-  <>
-    <textarea
-      id={id}
-      value={draft}
-      aria-invalid={error !== undefined}
-      onChange={(event) => onChange(event.target.value as McpServersDraft)}
-    />
-    {error === undefined ? null : <p>{error}</p>}
-  </>
+const StubMcpServerPicker = ({ label, value, onChange }: McpServerPickerProps) => (
+  <button type="button" aria-label={label} onClick={() => onChange([...value, 'github'])}>
+    {value.join(',')}
+  </button>
 )
 
 const StubSkillPicker = ({ label, value, onChange }: SkillPickerProps) => (
@@ -70,7 +63,7 @@ const StubSkillPicker = ({ label, value, onChange }: SkillPickerProps) => (
 )
 
 const mcp: PluginSetup<PluginServices> = (services) =>
-  services.provide(McpServersEditorKey, StubMcpServersEditor)
+  services.provide(McpServerPickerKey, StubMcpServerPicker)
 
 beforeEach(async () => {
   vi.spyOn(toast, 'add').mockImplementation(() => '')
@@ -232,6 +225,26 @@ describe('Dashboard', () => {
     await renderOrg(installHost(snapshotOf()))
 
     expect(screen.getByText('Nothing needs attention.')).toBeTruthy()
+  })
+
+  it('alerts that the Executive assistant cannot start while it names missing items', async () => {
+    await renderOrg(
+      installHost(
+        snapshotOf(),
+        {},
+        {
+          ...WORK,
+          assistantMissing: [
+            { kind: 'mcp-server', name: 'github' },
+            { kind: 'skill', name: 'dia-meta:plan' }
+          ]
+        }
+      )
+    )
+
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Executive assistant cannot start: missing github (MCP server), dia-meta:plan (skill)'
+    )
   })
 
   it('shows the no-hires item, whose Hire… opens the Hire dialog', async () => {
@@ -468,51 +481,28 @@ describe('Job titles', () => {
     ])
   })
 
-  it('shows the MCP servers issue and sends nothing for invalid JSON', async () => {
+  it('saves a server chosen in the provided MCP server picker as the server names', async () => {
     const host = installHost(snapshotOf())
     await showReviewer(host)
 
-    type('MCP servers', '{ "files": ')
-    await click('Save')
-
-    expect(host.sent).toEqual([])
-    expect(screen.getByLabelText('MCP servers').getAttribute('aria-invalid')).toBe('true')
-  })
-
-  it('saves edited MCP servers with stdio defaults filled', async () => {
-    const host = installHost(snapshotOf())
-    await showReviewer(host)
-
-    type('MCP servers', '{ "files": { "command": "npx" } }')
+    await click('MCP servers')
     await click('Save')
 
     expect(host.sent).toEqual([
-      [
-        'EditJobTitle',
-        {
-          jobTitleId: REVIEWER.id,
-          edit: { mcpServers: { files: { type: 'stdio', command: 'npx', args: [], env: {} } } }
-        }
-      ]
+      ['EditJobTitle', { jobTitleId: REVIEWER.id, edit: { mcpServers: ['github'] } }]
     ])
   })
 
-  it('shows a hint for MCP servers and still saves other fields while mcp is not loaded', async () => {
+  it('saves MCP server names typed one per line while mcp is not loaded', async () => {
     await startRendererRegistry({})
     const host = installHost(snapshotOf())
     await showReviewer(host)
 
-    type('Job description', 'Reviews every change.')
+    type('MCP servers', 'github\nlinear\n')
     await click('Save')
 
-    expect([screen.queryByText('Load the mcp plugin to edit MCP servers'), host.sent]).toEqual([
-      expect.anything(),
-      [
-        [
-          'EditJobTitle',
-          { jobTitleId: REVIEWER.id, edit: { jobDescription: 'Reviews every change.' } }
-        ]
-      ]
+    expect(host.sent).toEqual([
+      ['EditJobTitle', { jobTitleId: REVIEWER.id, edit: { mcpServers: ['github', 'linear'] } }]
     ])
   })
 
@@ -936,6 +926,29 @@ describe('Objectives', () => {
     await openObjectives(installHost(snapshotOf()))
 
     expect(within(issueRow(title)).queryByText(label)).not.toBeNull()
+  })
+
+  it('says a triage issue cannot start while its job title names missing items', async () => {
+    await openObjectives(
+      installHost(
+        snapshotOf(),
+        {},
+        {
+          ...WORK,
+          issues: WORK.issues.map((existing) =>
+            existing.id === issueId(8)
+              ? { ...existing, missing: [{ kind: 'mcp-server' as const, name: 'github' }] }
+              : existing
+          )
+        }
+      )
+    )
+
+    expect(
+      within(issueRow('Document the statuses')).queryByText(
+        'Cannot start: missing github (MCP server)'
+      )
+    ).not.toBeNull()
   })
 
   it('shows an issue status the host pushes without any user action', async () => {

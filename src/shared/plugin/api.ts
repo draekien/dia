@@ -185,6 +185,12 @@ export interface HostPluginContext extends PluginServices {
   readonly dataDir: string
   readonly activities: PluginActivities
   /**
+   * Succeeds once the Host's startup has settled every eager plugin (loaded, waiting, failed or
+   * restart-required); at once in a plugin loaded after that. Wait on it to tell a contribution
+   * that another plugin has not registered yet from one that is absent.
+   */
+  readonly pluginsSettled: Effect.Effect<void>
+  /**
    * Opens this plugin's SQLite database, `<dataDir>/data.db`, applies `migrations`, and returns a
    * client for it. The connection closes when the scope it runs in (the plugin's setup scope)
    * closes. The file is created on the first call and kept across reloads, overrides and

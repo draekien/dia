@@ -1,6 +1,14 @@
 import type { AgentName } from '@dia/plugin'
-import { Clock, Crypto, Effect, PubSub, Schema, Stream } from 'effect'
+import type {
+  AgentDefinition,
+  AgentDefinitionNameTaken,
+  AgentDefinitionNotFound,
+  AgentDefinitionRegistry,
+  ContributedDefinitionRenamed
+} from '@dia-plugin/agent-definitions/registry'
+import { Clock, Crypto, Effect, Option, PubSub, Ref, Schema, Semaphore, Stream } from 'effect'
 import { SqlClient, type SqlError } from 'effect/sql'
+import { BUILT_IN_DEFINITIONS, BUILT_IN_KIND_BY_ID } from './built-in-job-titles'
 import {
   BuiltInJobTitleDeleted,
   BuiltInJobTitleRenamed,
@@ -10,7 +18,7 @@ import {
   type HireId,
   HireNameTaken,
   HireNotFound,
-  JobTitle,
+  type JobTitle,
   JobTitleDisabled,
   type JobTitleEdit,
   JobTitleHasHires,
@@ -25,20 +33,6 @@ import {
 } from './domain'
 import type { Org } from './service'
 
-const JobTitleRow = Schema.Struct({
-  job_title_id: JobTitle.fields.id,
-  name: JobTitle.fields.name,
-  built_in: JobTitle.fields.builtIn,
-  enabled: Schema.BooleanFromBit,
-  job_description: JobTitle.fields.jobDescription,
-  skills: Schema.fromJsonString(JobTitle.fields.skills),
-  permissions: Schema.fromJsonString(JobTitle.fields.permissions),
-  mcp_servers: Schema.fromJsonString(JobTitle.fields.mcpServers),
-  bypass_opt_in: Schema.BooleanFromBit,
-  model: JobTitle.fields.model,
-  thinking_level: JobTitle.fields.thinkingLevel
-})
-
 const HireRow = Schema.Struct({
   hire_id: HiredAgent.fields.id,
   job_title_id: HiredAgent.fields.jobTitleId,
@@ -50,36 +44,10 @@ const HireRow = Schema.Struct({
 
 const SettingsRow = Schema.Struct({ overall_cap: OrgSettings.fields.overallCap })
 
-const toJobTitle = (row: typeof JobTitleRow.Type): JobTitle => ({
-  id: row.job_title_id,
-  name: row.name,
-  builtIn: row.built_in,
-  enabled: row.enabled,
-  jobDescription: row.job_description,
-  skills: row.skills,
-  permissions: row.permissions,
-  mcpServers: row.mcp_servers,
-  bypassOptIn: row.bypass_opt_in,
-  model: row.model,
-  thinkingLevel: row.thinking_level
+const JobTitleSettingsRow = Schema.Struct({
+  job_title_id: Schema.String,
+  enabled: Schema.BooleanFromBit
 })
-
-const encodeJobTitleRow = Schema.encodeSync(JobTitleRow)
-
-const toJobTitleRow = (jobTitle: JobTitle) =>
-  encodeJobTitleRow({
-    job_title_id: jobTitle.id,
-    name: jobTitle.name,
-    built_in: jobTitle.builtIn,
-    enabled: jobTitle.enabled,
-    job_description: jobTitle.jobDescription,
-    skills: jobTitle.skills,
-    permissions: jobTitle.permissions,
-    mcp_servers: jobTitle.mcpServers,
-    bypass_opt_in: jobTitle.bypassOptIn,
-    model: jobTitle.model,
-    thinking_level: jobTitle.thinkingLevel
-  })
 
 const toHiredAgent = (row: typeof HireRow.Type): HiredAgent => ({
   id: row.hire_id,
@@ -107,37 +75,117 @@ const rowsDecoder =
   (rows: ReadonlyArray<unknown>) =>
     Schema.decodeUnknownEffect(Schema.Array(schema))(rows).pipe(Effect.orDie)
 
-const decodeJobTitleRows = rowsDecoder(JobTitleRow)
 const decodeHireRows = rowsDecoder(HireRow)
 const decodeSettingsRows = rowsDecoder(SettingsRow)
+const decodeJobTitleSettingsRows = rowsDecoder(JobTitleSettingsRow)
+
+const BUILT_IN_ORDER: ReadonlyMap<string, number> = new Map(
+  BUILT_IN_DEFINITIONS.map((definition, index) => [definition.id, index])
+)
+
+const listOrder = (left: JobTitle, right: JobTitle): number => {
+  const leftIndex = BUILT_IN_ORDER.get(left.id) ?? BUILT_IN_ORDER.size
+  const rightIndex = BUILT_IN_ORDER.get(right.id) ?? BUILT_IN_ORDER.size
+  if (leftIndex !== rightIndex) return leftIndex - rightIndex
+  return left.name < right.name ? -1 : left.name > right.name ? 1 : 0
+}
+
+const toJobTitle = (definition: AgentDefinition, enabled: boolean): JobTitle => ({
+  ...definition,
+  builtIn: BUILT_IN_KIND_BY_ID.get(definition.id) ?? null,
+  enabled
+})
+
+const fromRegistry = <A>(
+  jobTitleId: JobTitleId,
+  effect: Effect.Effect<
+    A,
+    AgentDefinitionNameTaken | AgentDefinitionNotFound | ContributedDefinitionRenamed
+  >
+) =>
+  effect.pipe(
+    Effect.catchTag('AgentDefinitionNameTaken', (error) =>
+      Effect.fail(JobTitleNameTaken.make({ jobTitleName: error.name }))
+    ),
+    Effect.catchTag('AgentDefinitionNotFound', () =>
+      Effect.fail(JobTitleNotFound.make({ jobTitleId }))
+    ),
+    Effect.catchTag('ContributedDefinitionRenamed', () =>
+      Effect.fail(BuiltInJobTitleRenamed.make({ jobTitleId }))
+    )
+  )
 
 /**
  * Builds the {@link Org} over the `org` plugin's database, which `orgMigrations` must already have
- * migrated. `openIssuesOf` counts the issues assigned to a hired agent that are neither `done` nor `canceled`; it is
- * read inside `dismiss`'s transaction, so it must use the same SQL client. Call it once in the
- * plugin's setup and provide the result under `OrgService`.
+ * migrated. The job titles are the agent definitions of the registry `holdDefinitions` holds;
+ * while none is held, there are none. `openIssuesOf` counts the issues assigned to a hired agent
+ * that are neither `done` nor `canceled`; it is read inside `dismiss`'s transaction, so it must use
+ * the same SQL client. Call it once in the plugin's setup and provide the result under
+ * `OrgService`.
  */
 export const makeOrg = (openIssuesOf: (hireId: HireId) => Effect.Effect<number>) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const crypto = yield* Crypto.Crypto
     const jobTitleChanges = yield* PubSub.unbounded<void>()
-    const publishJobTitleChange = <A>(changed: A) =>
-      PubSub.publish(jobTitleChanges, undefined).pipe(Effect.as(changed))
+    const publishJobTitleChange = PubSub.publish(jobTitleChanges, undefined)
+    const definitions = yield* Ref.make(Option.none<AgentDefinitionRegistry>())
+    const hireLock = yield* Semaphore.make(1)
 
     const transaction = <A, E>(effect: Effect.Effect<A, E | SqlError.SqlError>) =>
       sql.withTransaction(effect).pipe(Effect.catchTag('SqlError', Effect.die))
+    const orDie = <A>(effect: Effect.Effect<A, SqlError.SqlError>) =>
+      effect.pipe(Effect.catchTag('SqlError', Effect.die))
 
     const newId = crypto.randomUUIDv4().pipe(Effect.orDie)
 
+    const jobTitles = Effect.gen(function* () {
+      const registry = yield* Ref.get(definitions)
+      if (Option.isNone(registry)) return []
+      const listed = yield* registry.value.list
+      const settings = yield* decodeJobTitleSettingsRows(
+        yield* orDie(sql`SELECT job_title_id, enabled FROM job_title_settings`)
+      )
+      const enabled = new Map(settings.map((row) => [row.job_title_id, row.enabled]))
+      return listed
+        .map(({ definition }) => toJobTitle(definition, enabled.get(definition.id) ?? true))
+        .sort(listOrder)
+    })
+
     const findJobTitle = Effect.fnUntraced(function* (jobTitleId: JobTitleId) {
-      const rows = yield* sql`SELECT * FROM job_titles WHERE job_title_id = ${jobTitleId}`
-      const [row] = yield* decodeJobTitleRows(rows)
-      if (row === undefined) {
+      const jobTitle = (yield* jobTitles).find((candidate) => candidate.id === jobTitleId)
+      if (jobTitle === undefined) {
         return yield* JobTitleNotFound.make({ jobTitleId })
       }
-      return toJobTitle(row)
+      return jobTitle
     })
+
+    const registryFor = Effect.fnUntraced(function* (jobTitleId: JobTitleId) {
+      const registry = yield* Ref.get(definitions)
+      if (Option.isNone(registry)) {
+        return yield* JobTitleNotFound.make({ jobTitleId })
+      }
+      return registry.value
+    })
+
+    const holdDefinitions = (registry: AgentDefinitionRegistry) =>
+      Effect.gen(function* () {
+        yield* Effect.acquireRelease(
+          Ref.set(definitions, Option.some(registry)).pipe(
+            Effect.andThen(publishJobTitleChange),
+            Effect.andThen(Effect.logDebug('Org holds the agent definition registry'))
+          ),
+          () =>
+            Ref.set(definitions, Option.none()).pipe(
+              Effect.andThen(publishJobTitleChange),
+              Effect.andThen(Effect.logDebug('Org released the agent definition registry'))
+            )
+        )
+        yield* registry.changes.pipe(
+          Stream.runForEach(() => publishJobTitleChange),
+          Effect.forkScoped
+        )
+      })
 
     const findHire = Effect.fnUntraced(function* (hireId: HireId) {
       const rows = yield* sql`SELECT * FROM hired_agents WHERE hire_id = ${hireId}`
@@ -162,28 +210,6 @@ export const makeOrg = (openIssuesOf: (hireId: HireId) => Effect.Effect<number>)
     const updateHire = (agent: HiredAgent) =>
       sql`UPDATE hired_agents SET ${sql.update(toHireRow(agent), ['hire_id'])} WHERE hire_id = ${agent.id}`
 
-    const ensureJobTitleNameFree = Effect.fnUntraced(function* (
-      name: JobTitleName,
-      exceptId: JobTitleId | null
-    ) {
-      const rows =
-        yield* sql`SELECT 1 FROM job_titles WHERE name = ${name} AND job_title_id IS NOT ${exceptId}`
-      if (rows.length > 0) {
-        return yield* JobTitleNameTaken.make({ jobTitleName: name })
-      }
-    })
-
-    const insertJobTitle = (jobTitle: JobTitle) =>
-      sql`INSERT INTO job_titles ${sql.insert(toJobTitleRow(jobTitle))}`
-
-    const updateJobTitle = (jobTitle: JobTitle) =>
-      sql`UPDATE job_titles SET ${sql.update(toJobTitleRow(jobTitle), ['job_title_id'])} WHERE job_title_id = ${jobTitle.id}`
-
-    const jobTitles = Effect.gen(function* () {
-      const rows = yield* sql`SELECT * FROM job_titles ORDER BY built_in IS NULL, rowid`
-      return (yield* decodeJobTitleRows(rows)).map(toJobTitle)
-    }).pipe(Effect.catchTag('SqlError', Effect.die))
-
     const hiredAgents = Effect.gen(function* () {
       const rows = yield* sql`SELECT * FROM hired_agents ORDER BY hired_at, rowid`
       return (yield* decodeHireRows(rows)).map(toHiredAgent)
@@ -202,78 +228,74 @@ export const makeOrg = (openIssuesOf: (hireId: HireId) => Effect.Effect<number>)
       jobTitleId: JobTitleId,
       enabled: boolean
     ) {
-      const jobTitle = yield* transaction(
-        Effect.gen(function* () {
-          const changed = { ...(yield* findJobTitle(jobTitleId)), enabled }
-          yield* updateJobTitle(changed)
-          return changed
-        })
-      )
+      const jobTitle = yield* findJobTitle(jobTitleId)
+      yield* orDie(sql`INSERT INTO job_title_settings (job_title_id, enabled)
+        VALUES (${jobTitleId}, ${enabled ? 1 : 0})
+        ON CONFLICT (job_title_id) DO UPDATE SET enabled = excluded.enabled`)
+      yield* publishJobTitleChange
       yield* Effect.logInfo('Set job title enabled', { jobTitleId, enabled })
-      return jobTitle
+      return { ...jobTitle, enabled }
     })
 
     const copyJobTitle = Effect.fn('Org.copyJobTitle')(function* (
       jobTitleId: JobTitleId,
       name: JobTitleName
     ) {
-      const id = JobTitle.fields.id.make(yield* newId)
-      const copy = yield* transaction(
-        Effect.gen(function* () {
-          const source = yield* findJobTitle(jobTitleId)
-          yield* ensureJobTitleNameFree(name, null)
-          const copied: JobTitle = { ...source, id, name, builtIn: null, enabled: true }
-          yield* insertJobTitle(copied)
-          return copied
-        })
-      )
-      yield* Effect.logInfo('Copied job title', { jobTitleId, copyId: id })
-      return copy
+      const {
+        id: _id,
+        builtIn: _builtIn,
+        enabled: _enabled,
+        ...fields
+      } = yield* findJobTitle(jobTitleId)
+      const registry = yield* registryFor(jobTitleId)
+      const created = yield* registry
+        .create({ ...fields, name })
+        .pipe(
+          Effect.catchTag('AgentDefinitionNameTaken', (error) =>
+            Effect.fail(JobTitleNameTaken.make({ jobTitleName: error.name }))
+          )
+        )
+      yield* Effect.logInfo('Copied job title', { jobTitleId, copyId: created.id })
+      return toJobTitle(created, true)
     })
 
     const editJobTitle = Effect.fn('Org.editJobTitle')(function* (
       jobTitleId: JobTitleId,
       edit: JobTitleEdit
     ) {
-      const jobTitle = yield* transaction(
-        Effect.gen(function* () {
-          const current = yield* findJobTitle(jobTitleId)
-          if (edit.name !== undefined && edit.name !== current.name) {
-            if (current.builtIn !== null) {
-              return yield* BuiltInJobTitleRenamed.make({ jobTitleId })
-            }
-            yield* ensureJobTitleNameFree(edit.name, jobTitleId)
-          }
-          const edited: JobTitle = {
-            ...current,
-            ...edit,
-            id: current.id,
-            builtIn: current.builtIn,
-            enabled: current.enabled
-          }
-          yield* updateJobTitle(edited)
-          return edited
-        })
-      )
+      const current = yield* findJobTitle(jobTitleId)
+      const registry = yield* registryFor(jobTitleId)
+      const edited = yield* fromRegistry(jobTitleId, registry.edit(jobTitleId, edit))
       yield* Effect.logInfo('Edited job title', { jobTitleId, fields: Object.keys(edit) })
-      return jobTitle
+      return toJobTitle(edited, current.enabled)
     })
 
     const deleteJobTitle = Effect.fn('Org.deleteJobTitle')(function* (jobTitleId: JobTitleId) {
-      yield* transaction(
+      yield* hireLock.withPermits(1)(
         Effect.gen(function* () {
           const jobTitle = yield* findJobTitle(jobTitleId)
           if (jobTitle.builtIn !== null) {
             return yield* BuiltInJobTitleDeleted.make({ jobTitleId })
           }
-          const hires = yield* sql<{
-            readonly hires: number
-          }>`SELECT count(*) AS hires FROM hired_agents WHERE job_title_id = ${jobTitleId}`
+          const hires = yield* orDie(
+            sql<{
+              readonly hires: number
+            }>`SELECT count(*) AS hires FROM hired_agents WHERE job_title_id = ${jobTitleId}`
+          )
           const count = hires[0]?.hires ?? 0
           if (count > 0) {
             return yield* JobTitleHasHires.make({ jobTitleId, hires: count })
           }
-          yield* sql`DELETE FROM job_titles WHERE job_title_id = ${jobTitleId}`
+          const registry = yield* registryFor(jobTitleId)
+          yield* registry.delete(jobTitleId).pipe(
+            Effect.catchTag('AgentDefinitionNotFound', () =>
+              Effect.fail(JobTitleNotFound.make({ jobTitleId }))
+            ),
+            Effect.catchTag('ContributedDefinitionDeleted', () =>
+              Effect.fail(BuiltInJobTitleDeleted.make({ jobTitleId }))
+            )
+          )
+          yield* orDie(sql`DELETE FROM job_title_settings WHERE job_title_id = ${jobTitleId}`)
         })
       )
       yield* Effect.logInfo('Deleted job title', { jobTitleId })
@@ -286,7 +308,7 @@ export const makeOrg = (openIssuesOf: (hireId: HireId) => Effect.Effect<number>)
     ) {
       const id = HiredAgent.fields.id.make(yield* newId)
       const hiredAt = yield* Clock.currentTimeMillis
-      const hired = yield* transaction(
+      const hired = yield* hireLock.withPermits(1)(
         Effect.gen(function* () {
           const jobTitle = yield* findJobTitle(jobTitleId)
           if (!jobTitle.enabled) {
@@ -295,22 +317,26 @@ export const makeOrg = (openIssuesOf: (hireId: HireId) => Effect.Effect<number>)
           if (jobTitle.builtIn === 'executive-assistant') {
             return yield* JobTitleNotHireable.make({ jobTitleId })
           }
-          if (name !== null) {
-            yield* ensureHireNameFree(name, null)
-          }
-          if (reportsTo !== null) {
-            yield* findHire(reportsTo)
-          }
-          const agent = HiredAgent.make({
-            id,
-            jobTitleId,
-            name,
-            bypassOverride: null,
-            reportsTo,
-            hiredAt
-          })
-          yield* sql`INSERT INTO hired_agents ${sql.insert(toHireRow(agent))}`
-          return agent
+          return yield* transaction(
+            Effect.gen(function* () {
+              if (name !== null) {
+                yield* ensureHireNameFree(name, null)
+              }
+              if (reportsTo !== null) {
+                yield* findHire(reportsTo)
+              }
+              const agent = HiredAgent.make({
+                id,
+                jobTitleId,
+                name,
+                bypassOverride: null,
+                reportsTo,
+                hiredAt
+              })
+              yield* sql`INSERT INTO hired_agents ${sql.insert(toHireRow(agent))}`
+              return agent
+            })
+          )
         })
       )
       yield* Effect.logInfo('Hired agent', { jobTitleId, hireId: id, reportsTo })
@@ -402,13 +428,12 @@ export const makeOrg = (openIssuesOf: (hireId: HireId) => Effect.Effect<number>)
     return {
       jobTitles,
       watchJobTitleChanges: Effect.map(PubSub.subscribe(jobTitleChanges), Stream.fromSubscription),
+      holdDefinitions,
       hiredAgents,
       settings,
-      setJobTitleEnabled: (jobTitleId, enabled) =>
-        setJobTitleEnabled(jobTitleId, enabled).pipe(Effect.flatMap(publishJobTitleChange)),
+      setJobTitleEnabled,
       copyJobTitle,
-      editJobTitle: (jobTitleId, edit) =>
-        editJobTitle(jobTitleId, edit).pipe(Effect.flatMap(publishJobTitleChange)),
+      editJobTitle,
       deleteJobTitle,
       hire,
       dismiss,

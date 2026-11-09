@@ -24,6 +24,8 @@
     "plugins/mcp/draft.ts",
     "plugins/mcp/editor.ts",
     "plugins/mcp/registry.ts",
+    "plugins/agent-definitions/registry.ts",
+    "plugins/mcp/picker.ts",
     "plugins/skills/registry.ts",
     "plugins/skills/directory.ts",
     "plugins/skills/frontmatter.ts",

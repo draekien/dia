@@ -1,3 +1,8 @@
+import {
+  type AgentDefinition,
+  AgentDefinitionId,
+  AgentDefinitionName
+} from '@dia-plugin/agent-definitions/registry'
 import type { BuiltInJobTitle } from './domain'
 
 const EXECUTION_CONTRACT = `## Execution contract
@@ -171,6 +176,47 @@ export const EXECUTIVE_ASSISTANT = {
 - After each tool call, tell the user in one or two sentences what you did, naming the objective and the agent.
 - A message that starts with a notice line reports a change to an objective you created. Mention it to the user if it needs them.`
 } as const
+
+/** The org issue tools every worker built-in job title allows, as permission rule names. */
+export const ISSUE_TOOLS = [
+  'mcp__dia__create_issue',
+  'mcp__dia__update_issue',
+  'mcp__dia__comment_issue'
+] as const
+
+const builtInDefinition = (
+  seed: { readonly id: string; readonly name: string; readonly jobDescription: string },
+  allow: ReadonlyArray<string>,
+  deny: ReadonlyArray<string>
+): AgentDefinition => ({
+  id: AgentDefinitionId.make(seed.id),
+  name: AgentDefinitionName.make(seed.name),
+  jobDescription: seed.jobDescription,
+  skills: [],
+  permissions: { allow, ask: [], deny },
+  mcpServers: [],
+  bypassOptIn: false,
+  model: null,
+  thinkingLevel: 'medium'
+})
+
+/**
+ * The agent definitions `org` contributes, in the order the org lists them: the seven
+ * {@link BUILT_IN_JOB_TITLES}, each allowing {@link ISSUE_TOOLS}, then the
+ * {@link EXECUTIVE_ASSISTANT}, allowing {@link ROUTING_TOOLS}. Each has the values a fresh org
+ * database gave it: no skills, MCP servers, ask rules or bypass opt-in, no model, and the medium
+ * thinking level.
+ */
+export const BUILT_IN_DEFINITIONS: ReadonlyArray<AgentDefinition> = [
+  ...BUILT_IN_JOB_TITLES.map((seed) => builtInDefinition(seed, ISSUE_TOOLS, seed.deny)),
+  builtInDefinition(EXECUTIVE_ASSISTANT, EXECUTIVE_ASSISTANT.allow, [])
+]
+
+/** The built-in kind of each fixed id in {@link BUILT_IN_DEFINITIONS}. */
+export const BUILT_IN_KIND_BY_ID: ReadonlyMap<string, BuiltInJobTitle> = new Map([
+  ...BUILT_IN_JOB_TITLES.map((seed) => [seed.id, seed.kind] as const),
+  [EXECUTIVE_ASSISTANT.id, EXECUTIVE_ASSISTANT.kind] as const
+])
 
 /** The overall cap a new org starts with. */
 export const DEFAULT_OVERALL_CAP = 4

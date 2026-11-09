@@ -57,7 +57,7 @@ const jobTitle = (n: number, name: string, builtIn: BuiltInJobTitle | null): Job
     jobDescription: `Works as a ${name}.`,
     skills: [],
     permissions: { allow: [], ask: [], deny: [] },
-    mcpServers: {},
+    mcpServers: [],
     bypassOptIn: false,
     model: null,
     thinkingLevel: 'medium'
@@ -152,6 +152,7 @@ const issue = (
     readonly parent?: number
     readonly kind?: IssueKind
     readonly description?: string
+    readonly missing?: Issue['missing']
   }
 ) =>
   Issue.make({
@@ -165,6 +166,7 @@ const issue = (
     assignee: options.assignee === null ? null : hireId(options.assignee),
     paneId: `00000000-0000-4000-8000-6000000000${String(n).padStart(2, '0')}`,
     sessionId: null,
+    missing: options.missing ?? [],
     createdAt: Date.UTC(2026, 10, 2, n)
   })
 
@@ -235,7 +237,8 @@ export const WORK: WorkView = {
     comment(2, 9, null, 'Ready for review.')
   ],
   pendingPermissions: [],
-  heldSlots: 1
+  heldSlots: 1,
+  assistantMissing: []
 }
 
 const WORKSPACE = {
@@ -322,11 +325,12 @@ const decodeDecision = Schema.decodeUnknownSync(TriageDecision)
 
 const FAKE_NOW = Date.UTC(2026, 10, 8)
 
-const newIssue = (fields: Omit<Issue, 'paneId' | 'sessionId' | 'createdAt'>): Issue =>
+const newIssue = (fields: Omit<Issue, 'paneId' | 'sessionId' | 'missing' | 'createdAt'>): Issue =>
   Issue.make({
     ...fields,
     paneId: '00000000-0000-4000-8000-600000000099',
     sessionId: null,
+    missing: [],
     createdAt: FAKE_NOW
   })
 
@@ -410,7 +414,11 @@ const workReply = (
     case 'TriageIssues': {
       const status = decodeDecision(payload.decision) === 'accept' ? 'todo' : 'canceled'
       const ids = Array.isArray(payload.issueIds) ? payload.issueIds : []
-      return { value: changeIssues(host, ids, (existing) => Issue.make({ ...existing, status })) }
+      return {
+        value: changeIssues(host, ids, (existing) =>
+          Issue.make({ ...existing, status, missing: [] })
+        )
+      }
     }
     case 'FinishIssue':
       return { value: finishIssue(host, payload.issueId) }

@@ -21,7 +21,8 @@ export const TASK_TRACKING_TOOLS: ReadonlyArray<string> = [
 
 const NO_TOOLS: SessionToolOptions = {
   permissions: { allow: [], ask: [], deny: [] },
-  mcpServers: {}
+  mcpServers: {},
+  skills: []
 }
 
 const decodeServer = Schema.decodeUnknownResult(McpServer)
@@ -34,16 +35,18 @@ const toSdkServer = (server: McpServer): McpServerConfig =>
  * approved: the {@link TASK_TRACKING_TOOLS} and `tools`' allow rules as `allowedTools`, its deny
  * rules as `disallowedTools`, its ask rules as `settings.permissions.ask`, and its MCP servers
  * plus `diaToolServer` (under `DIA_TOOL_SERVER_KEY`, replacing a server of that name in `tools`) as
- * `mcpServers`. A server that does not decode as an `McpServer` is left out and logged. Pass none
+ * `mcpServers`, and its skill names as `skills`. A server that does not decode as an `McpServer` is left out and logged. Pass none
  * for an ad-hoc tab. Keys with nothing to set are omitted. Spread the result into a query's
  * `options`.
  */
 export const sessionToolOptions = (
   tools: Option.Option<SessionToolOptions>,
   diaToolServer: Option.Option<McpSdkServerConfigWithInstance>
-): Effect.Effect<Pick<Options, 'allowedTools' | 'disallowedTools' | 'settings' | 'mcpServers'>> =>
+): Effect.Effect<
+  Pick<Options, 'allowedTools' | 'disallowedTools' | 'settings' | 'mcpServers' | 'skills'>
+> =>
   Effect.gen(function* () {
-    const { permissions, mcpServers } = Option.getOrElse(tools, () => NO_TOOLS)
+    const { permissions, mcpServers, skills } = Option.getOrElse(tools, () => NO_TOOLS)
     const servers: Record<string, McpServerConfig> = {}
     for (const [name, value] of Object.entries(mcpServers)) {
       const server = decodeServer(value)
@@ -63,6 +66,7 @@ export const sessionToolOptions = (
       ...(permissions.ask.length === 0
         ? {}
         : { settings: { permissions: { ask: [...permissions.ask] } } }),
-      ...(Object.keys(servers).length === 0 ? {} : { mcpServers: servers })
+      ...(Object.keys(servers).length === 0 ? {} : { mcpServers: servers }),
+      ...(skills.length === 0 ? {} : { skills: [...skills] })
     }
   })

@@ -8,6 +8,7 @@ import { type FormEvent, useState } from 'react'
 import { AssignIssue, CreateIssue, FinishIssue, type OrgSnapshot, TriageIssues } from './calls'
 import {
   agentName,
+  describeMissing,
   type HiredAgent,
   type HireId,
   type Issue,
@@ -263,6 +264,11 @@ function IssueRow({
           {issue.title}
         </span>
         {summary === '' ? null : <span className="truncate text-xs text-ink-muted">{summary}</span>}
+        {issue.status === 'triage' && issue.missing.length > 0 ? (
+          <span className="text-xs text-error">
+            {`Cannot start: missing ${describeMissing(issue.missing)}`}
+          </span>
+        ) : null}
       </span>
       {KIND_LABELS[issue.kind] === null ? null : (
         <span className="text-xs text-ink-muted">{KIND_LABELS[issue.kind]}</span>

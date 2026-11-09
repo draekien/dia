@@ -8,6 +8,7 @@ import { HireId, IssueId, ObjectiveId, PlanRoute, StartedStatus, WorkTitle } fro
 import { type IssueToolScope, makeIssueTools } from './issue-tools'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
+import { holdBuiltInDefinitions } from './registries.fake'
 import { makeWork, type Work } from './work'
 
 const PROJECT = ProjectId.make('00000000-0000-4000-8000-400000000001')
@@ -32,6 +33,7 @@ const setUp = Effect.gen(function* () {
     const made = yield* makeWork(() => Effect.succeed(true))
     return { ...made, org: yield* makeOrg(made.openIssuesOf) }
   }).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
+  yield* holdBuiltInDefinitions(org).pipe(Scope.provide(scope))
   const jobTitle = (yield* org.jobTitles)[0]
   assert.isDefined(jobTitle)
   const hire = yield* org.hire(jobTitle.id, null, null)

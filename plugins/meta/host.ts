@@ -3,7 +3,13 @@ import { directorySource } from '@dia-plugin/skills/directory'
 import { SkillSourceRegistryKey } from '@dia-plugin/skills/registry'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { Effect, Option, Path } from 'effect'
-import { ensureMetaRepo, META_PLUGIN_NAME, makeMetaRepo, metaSkillsDirectory } from './meta-repo'
+import {
+  ensureMetaRepo,
+  META_PLUGIN_NAME,
+  makeMetaRepo,
+  metaPluginDirectory,
+  metaSkillsDirectory
+} from './meta-repo'
 
 const setup: PluginSetup<HostPluginContext> = (ctx) =>
   Effect.gen(function* () {
@@ -14,7 +20,8 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     const skills = yield* directorySource('meta', {
       directory: metaSkillsDirectory(path, directory),
       group: 'Meta repo',
-      plugin: Option.some(META_PLUGIN_NAME)
+      plugin: Option.some(META_PLUGIN_NAME),
+      pluginPath: Option.some(metaPluginDirectory(path, directory))
     })
     yield* ctx.whenProvided([SkillSourceRegistryKey], ({ skillSourceRegistry }) =>
       skillSourceRegistry.register(skills)

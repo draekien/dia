@@ -8,6 +8,7 @@ import {
   type PermissionResponse,
   RESUME_TEXT,
   type SessionEnd,
+  type SessionToolOptions,
   startPermissionMode
 } from '@dia/plugin'
 import {
@@ -26,10 +27,12 @@ import {
 import {
   agentName,
   type HiredAgent,
+  type HireId,
   type Issue,
   type IssueId,
   type JobTitle,
   LiveWork,
+  type MissingReference,
   type Objective,
   PendingPermission,
   PermissionNotPending
@@ -37,6 +40,7 @@ import {
 import type { IssueToolScope } from './issue-tools'
 import { nextStarts } from './scheduler'
 import type { Org } from './service'
+import type { SessionTools, SessionToolsResult } from './session-tools'
 import type { IssueRuns, StartableIssue } from './work'
 
 type Turn = 'running' | 'awaiting-user' | 'idle'
@@ -170,6 +174,13 @@ interface StartContext {
   readonly hire: HiredAgent
   readonly jobTitle: JobTitle
   readonly directory: string
+  readonly tools: SessionToolOptions
+  readonly pluginPaths: ReadonlyArray<string>
+}
+
+interface RefusedIssue {
+  readonly issueId: IssueId
+  readonly missing: ReadonlyArray<MissingReference>
 }
 
 /**
@@ -178,22 +189,27 @@ interface StartContext {
  * starts, and it closes every session when the scope closes. `issueTools` builds the dia tools a
  * hired agent's session gets for its issue. `attach` shows each session in the agent overview
  * while it runs (ADR-0070); a permission answered from its pane is routed through
- * `answerPermission`.
+ * `answerPermission`. `sessionTools` resolves each job title's MCP servers and skills before an
+ * issue takes a slot: an issue whose job title names a missing one moves to `triage` with the
+ * missing names, and one whose names cannot be resolved yet waits for the next pass. A pass runs
+ * after each change to the job titles or to the registries `sessionTools` holds.
  */
 export const makeDispatcher = (deps: {
   readonly runs: IssueRuns
-  readonly org: Pick<Org, 'jobTitles' | 'hiredAgents' | 'settings'>
+  readonly org: Pick<Org, 'jobTitles' | 'hiredAgents' | 'settings' | 'watchJobTitleChanges'>
   readonly projectDirectory: ProjectDirectory
   readonly issueTools: (scope: IssueToolScope) => ReadonlyArray<DiaTool>
   readonly attach: HostSessions['attach']
+  readonly sessionTools: SessionTools
 }) =>
   Effect.gen(function* () {
-    const { runs, org, projectDirectory, issueTools, attach } = deps
+    const { runs, org, projectDirectory, issueTools, attach, sessionTools } = deps
     const pluginScope = yield* Effect.scope
     const issues = yield* SynchronizedRef.make(new Map<IssueId, LiveIssue>())
     const backendRef = yield* Ref.make(Option.none<AgentBackend>())
     const models = yield* Ref.make(Option.none<readonly [ModelOption, ...Array<ModelOption>]>())
     const failed = yield* Ref.make(new Set<IssueId>())
+    const unlistedHires = yield* Ref.make(new Set<HireId>())
     const answerOrder = yield* Ref.make(0)
     const signals = yield* Queue.sliding<void>(1)
 
@@ -271,7 +287,7 @@ export const makeDispatcher = (deps: {
       catalog: readonly [ModelOption, ...Array<ModelOption>],
       context: StartContext
     ) {
-      const { issue, objective, hire, jobTitle, directory } = context
+      const { issue, objective, hire, jobTitle, directory, tools, pluginPaths } = context
       const unreserve = drop(issue.id).pipe(Effect.andThen(signal))
       if (!(yield* runs.markStarted(issue.id, hire.id))) {
         yield* Effect.logInfo('Issue changed before it started', { issueId: issue.id })
@@ -318,16 +334,13 @@ export const makeDispatcher = (deps: {
               resume,
               emit: (message) => emit(message).pipe(Effect.andThen(onEvent(issue.id)(message))),
               systemPromptAppend: jobTitle.jobDescription,
-              pluginPaths: [],
+              pluginPaths,
               diaTools: issueTools({
                 issueId: issue.id,
                 objectiveId: issue.objectiveId,
                 hireId: hire.id
               }),
-              tools: Option.some({
-                permissions: jobTitle.permissions,
-                mcpServers: jobTitle.mcpServers
-              })
+              tools: Option.some(tools)
             })
             .pipe(
               Effect.tap((session) => Deferred.succeed(raw, session)),
@@ -396,15 +409,40 @@ export const makeDispatcher = (deps: {
       }
     })
 
-    const contextsFor = Effect.fnUntraced(function* (startable: ReadonlyArray<StartableIssue>) {
+    const warnUnlisted = Effect.fnUntraced(function* (hire: HiredAgent, listed: boolean) {
+      const warned = (yield* Ref.get(unlistedHires)).has(hire.id)
+      if (listed === !warned) return
+      yield* Ref.update(unlistedHires, (current) => {
+        const next = new Set(current)
+        if (listed) next.delete(hire.id)
+        else next.add(hire.id)
+        return next
+      })
+      if (!listed) {
+        yield* Effect.logWarning('Skipped the issues of a hire whose job title is not listed', {
+          hireId: hire.id,
+          jobTitleId: hire.jobTitleId
+        })
+      }
+    })
+
+    const contextsFor = Effect.fnUntraced(function* (
+      startable: ReadonlyArray<StartableIssue>,
+      live: ReadonlyMap<IssueId, LiveIssue>
+    ) {
       const hires = new Map((yield* org.hiredAgents).map((hire) => [hire.id, hire]))
       const jobTitles = new Map((yield* org.jobTitles).map((jobTitle) => [jobTitle.id, jobTitle]))
       const skipped = yield* Ref.get(failed)
       const contexts = new Map<IssueId, StartContext>()
+      const refused: Array<RefusedIssue> = []
+      const resolutions = new Map<string, SessionToolsResult>()
       for (const { issue, objective } of startable) {
+        if (live.has(issue.id) || skipped.has(issue.id)) continue
         const hire = issue.assignee === null ? undefined : hires.get(issue.assignee)
-        const jobTitle = hire === undefined ? undefined : jobTitles.get(hire.jobTitleId)
-        if (hire === undefined || jobTitle === undefined || skipped.has(issue.id)) continue
+        if (hire === undefined) continue
+        const jobTitle = jobTitles.get(hire.jobTitleId)
+        yield* warnUnlisted(hire, jobTitle !== undefined)
+        if (jobTitle === undefined) continue
         const directory = yield* projectDirectory(objective)
         if (Option.isNone(directory)) {
           yield* Effect.logWarning('Skipped an issue whose project is not registered', {
@@ -413,9 +451,41 @@ export const makeDispatcher = (deps: {
           })
           continue
         }
-        contexts.set(issue.id, { issue, objective, hire, jobTitle, directory: directory.value })
+        const key = `${jobTitle.id} ${directory.value}`
+        const resolved =
+          resolutions.get(key) ?? (yield* sessionTools.forDefinition(jobTitle, directory.value))
+        resolutions.set(key, resolved)
+        switch (resolved._tag) {
+          case 'Unavailable':
+            yield* Effect.logDebug('Issue waits for its session tools to resolve', {
+              issueId: issue.id,
+              jobTitleId: jobTitle.id
+            })
+            break
+          case 'Missing':
+            refused.push({ issueId: issue.id, missing: resolved.missing })
+            break
+          case 'Ready':
+            contexts.set(issue.id, {
+              issue,
+              objective,
+              hire,
+              jobTitle,
+              directory: directory.value,
+              tools: resolved.tools,
+              pluginPaths: resolved.pluginPaths
+            })
+        }
       }
-      return contexts
+      return { contexts, refused }
+    })
+
+    const refuse = Effect.fnUntraced(function* (refused: ReadonlyArray<RefusedIssue>) {
+      let changed = false
+      for (const { issueId, missing } of refused) {
+        if (yield* runs.markRefused(issueId, missing)) changed = true
+      }
+      if (changed) yield* signal
     })
 
     const pass = Effect.gen(function* () {
@@ -423,10 +493,11 @@ export const makeDispatcher = (deps: {
       const catalog = yield* Ref.get(models)
       const { overallCap } = yield* org.settings
       const candidates = yield* runs.startCandidates
-      const contexts =
+      const { contexts, refused } =
         Option.isSome(backend) && Option.isSome(catalog)
-          ? yield* contextsFor(candidates.startable)
-          : new Map<IssueId, StartContext>()
+          ? yield* contextsFor(candidates.startable, yield* SynchronizedRef.get(issues))
+          : { contexts: new Map<IssueId, StartContext>(), refused: [] }
+      yield* refuse(refused)
       const pick = yield* updateIssues((current) => {
         const entries = [...current.entries()]
         const answered = entries
@@ -457,6 +528,7 @@ export const makeDispatcher = (deps: {
       yield* Effect.logDebug('Scheduling pass', {
         overallCap,
         startable: contexts.size,
+        refused: refused.length,
         resume: pick.resume,
         start: pick.start
       })
@@ -558,6 +630,12 @@ export const makeDispatcher = (deps: {
       SynchronizedRef.get(issues).pipe(
         Effect.flatMap((current) => Effect.forEach(current.values(), closeLive, { discard: true }))
       )
+    )
+    const jobTitleChanges = yield* org.watchJobTitleChanges
+    const toolChanges = yield* sessionTools.changes
+    yield* Stream.merge(jobTitleChanges, toolChanges).pipe(
+      Stream.runForEach(() => signal),
+      Effect.forkScoped
     )
     yield* Queue.take(signals).pipe(
       Effect.andThen(pass),

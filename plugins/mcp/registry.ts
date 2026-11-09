@@ -46,6 +46,17 @@ export interface McpServerRegistry {
     server: McpServer,
     plugin: (typeof PluginSource.Type)['plugin']
   ) => Effect.Effect<void, McpServerNameTaken, Scope.Scope>
+  /**
+   * Adds `servers` to the user's servers, in order, and returns the name each one is held under.
+   * A server keeps its name when no user or contributed server holds that name, or the holder has
+   * an equal config; otherwise it takes the first of `<name>-2`, `<name>-3`, … that is free or
+   * holds an equal config. Running it again with the same input returns the same names and adds
+   * nothing. Only for a one-time move from another store; it returns the names because the caller
+   * must rewrite its references.
+   */
+  readonly importServers: (
+    servers: ReadonlyArray<{ readonly name: string; readonly server: McpServer }>
+  ) => Effect.Effect<ReadonlyArray<string>>
   /** The servers held now, ordered by name. */
   readonly list: Effect.Effect<ReadonlyArray<RegisteredServer>>
   /** The servers held now, ordered by name, then the whole list again after each change. */
@@ -54,6 +65,7 @@ export interface McpServerRegistry {
 
 const MEMBERS: Record<keyof McpServerRegistry, (member: unknown) => boolean> = {
   register: Predicate.isFunction,
+  importServers: Predicate.isFunction,
   list: Effect.isEffect,
   changes: Stream.isStream
 }

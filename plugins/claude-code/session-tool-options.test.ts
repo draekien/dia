@@ -29,6 +29,7 @@ const github: McpServer = {
 const toolsWith = (overrides: Partial<SessionToolOptions>): SessionToolOptions => ({
   permissions: { allow: [], ask: [], deny: [] },
   mcpServers: {},
+  skills: [],
   ...overrides
 })
 
@@ -48,6 +49,19 @@ describe('sessionToolOptions for an ad-hoc tab', () => {
 })
 
 describe('sessionToolOptions with session tool options', () => {
+  it('enables only the listed skills', () => {
+    const tools = toolsWith({ skills: ['review', 'dia-meta:plan'] })
+
+    assert.deepStrictEqual(options(Option.some(tools), Option.none()).skills, [
+      'review',
+      'dia-meta:plan'
+    ])
+  })
+
+  it('leaves every skill enabled when the list is empty', () => {
+    assert.notProperty(options(Option.some(toolsWith({})), Option.none()), 'skills')
+  })
+
   it('gives tool options with no rules or servers the same options as an ad-hoc tab', () => {
     assert.deepStrictEqual(
       options(Option.some(toolsWith({})), Option.some(diaServer)),

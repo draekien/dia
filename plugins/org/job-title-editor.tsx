@@ -16,8 +16,7 @@ import {
   useModelCatalog,
   useProvided
 } from '@dia/renderer-plugin'
-import { McpServersEditorKey } from '@dia-plugin/mcp/editor'
-import { type McpServersDraft, mcpServersDraft, readMcpServersDraft } from '@dia-plugin/mcp/servers'
+import { McpServerPickerKey } from '@dia-plugin/mcp/picker'
 import { SkillPickerKey } from '@dia-plugin/skills/picker'
 import { Result } from 'effect'
 import { Loader2Icon } from 'lucide-react'
@@ -48,7 +47,7 @@ interface Draft {
   readonly allow: string
   readonly ask: string
   readonly deny: string
-  readonly mcpServers: McpServersDraft
+  readonly mcpServers: string
   readonly bypassOptIn: boolean
   readonly model: JobTitle['model']
   readonly thinkingLevel: JobTitle['thinkingLevel']
@@ -61,7 +60,7 @@ const draftOf = (jobTitle: JobTitle): Draft => ({
   allow: jobTitle.permissions.allow.join('\n'),
   ask: jobTitle.permissions.ask.join('\n'),
   deny: jobTitle.permissions.deny.join('\n'),
-  mcpServers: mcpServersDraft(jobTitle.mcpServers),
+  mcpServers: jobTitle.mcpServers.join('\n'),
   bypassOptIn: jobTitle.bypassOptIn,
   model: jobTitle.model,
   thinkingLevel: jobTitle.thinkingLevel
@@ -69,25 +68,15 @@ const draftOf = (jobTitle: JobTitle): Draft => ({
 
 interface FormErrors {
   readonly name?: string
-  readonly mcpServers?: string
   readonly save?: string
 }
 
 const editOf = (
   jobTitle: JobTitle,
-  draft: Draft,
-  mcpEditable: boolean
+  draft: Draft
 ): Result.Result<JobTitleEdit, Omit<FormErrors, 'save'>> => {
   const name = readJobTitleName(draft.name)
-  const mcpServers = mcpEditable
-    ? readMcpServersDraft(draft.mcpServers)
-    : Result.succeed(jobTitle.mcpServers)
-  if (Result.isFailure(name) || Result.isFailure(mcpServers)) {
-    return Result.fail({
-      name: Result.isFailure(name) ? name.failure : undefined,
-      mcpServers: Result.isFailure(mcpServers) ? mcpServers.failure : undefined
-    })
-  }
+  if (Result.isFailure(name)) return Result.fail({ name: name.failure })
   const permissions = { allow: lines(draft.allow), ask: lines(draft.ask), deny: lines(draft.deny) }
   const permissionsChanged =
     !sameLines(permissions.allow, jobTitle.permissions.allow) ||
@@ -100,9 +89,9 @@ const editOf = (
       : { jobDescription: draft.jobDescription }),
     ...(sameLines(lines(draft.skills), jobTitle.skills) ? {} : { skills: lines(draft.skills) }),
     ...(permissionsChanged ? { permissions } : {}),
-    ...(mcpServersDraft(mcpServers.success) === mcpServersDraft(jobTitle.mcpServers)
+    ...(sameLines(lines(draft.mcpServers), jobTitle.mcpServers)
       ? {}
-      : { mcpServers: mcpServers.success }),
+      : { mcpServers: lines(draft.mcpServers) }),
     ...(draft.bypassOptIn === jobTitle.bypassOptIn ? {} : { bypassOptIn: draft.bypassOptIn }),
     ...(draft.model === jobTitle.model ? {} : { model: draft.model }),
     ...(draft.thinkingLevel === jobTitle.thinkingLevel
@@ -218,19 +207,18 @@ function EditForm({
   const [errors, setErrors] = useState<FormErrors>({})
   const [busy, setBusy] = useState(false)
   const id = useId()
-  const McpServersEditor = useProvided(McpServersEditorKey)
-  const mcpEditable = McpServersEditor !== undefined
+  const McpServerPicker = useProvided(McpServerPickerKey)
   const SkillPicker = useProvided(SkillPickerKey)
-  const pending = editOf(jobTitle, draft, mcpEditable)
+  const pending = editOf(jobTitle, draft)
   const changed = Result.isFailure(pending) || Object.keys(pending.success).length > 0
-  const set = (field: Exclude<keyof Draft, 'mcpServers'>) => (value: string | boolean | null) => {
+  const set = (field: keyof Draft) => (value: string | boolean | null) => {
     setDraft((current) => ({ ...current, [field]: value }))
     setErrors({})
   }
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
-    const edit = editOf(jobTitle, draft, mcpEditable)
+    const edit = editOf(jobTitle, draft)
     if (Result.isFailure(edit)) return setErrors(edit.failure)
     setBusy(true)
     const result = await call(
@@ -251,7 +239,7 @@ function EditForm({
   }
 
   const textarea = (
-    field: Exclude<keyof Draft, 'bypassOptIn' | 'mcpServers' | 'model' | 'thinkingLevel'>,
+    field: Exclude<keyof Draft, 'bypassOptIn' | 'model' | 'thinkingLevel'>,
     label: string,
     mono: boolean,
     caption?: string,
@@ -317,23 +305,17 @@ function EditForm({
         {textarea('ask', 'Ask', true)}
         {textarea('deny', 'Deny', true)}
       </div>
-      <Field
-        label={<Label htmlFor={mcpEditable ? `${id}-mcpServers` : undefined}>MCP servers</Label>}
-      >
-        {McpServersEditor === undefined ? (
-          <p className="text-xs text-ink-muted">Load the mcp plugin to edit MCP servers</p>
-        ) : (
-          createElement(McpServersEditor, {
-            id: `${id}-mcpServers`,
-            draft: draft.mcpServers,
-            error: errors.mcpServers,
-            onChange: (mcpServers) => {
-              setDraft((current) => ({ ...current, mcpServers }))
-              setErrors({})
-            }
-          })
-        )}
-      </Field>
+      {McpServerPicker === undefined ? (
+        textarea('mcpServers', 'MCP servers', true, 'One MCP server name per line.')
+      ) : (
+        <Field label={<Label>MCP servers</Label>}>
+          {createElement(McpServerPicker, {
+            label: 'MCP servers',
+            value: lines(draft.mcpServers),
+            onChange: (next) => set('mcpServers')(next.join('\n'))
+          })}
+        </Field>
+      )}
       {snapshot.bypassAvailable ? (
         <div className="flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1">

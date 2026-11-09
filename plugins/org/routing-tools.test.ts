@@ -8,6 +8,7 @@ import { openDatabase } from '../../src/host/services/database'
 import { type IssueId, ObjectiveId, PlanRoute, WorkTitle } from './domain'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
+import { holdBuiltInDefinitions } from './registries.fake'
 import { makeRoutingTools } from './routing-tools'
 import { makeWork } from './work'
 
@@ -23,6 +24,7 @@ const setUp = Effect.gen(function* () {
     const made = yield* makeWork(() => Effect.succeed(true))
     return { ...made, org: yield* makeOrg(made.openIssuesOf) }
   }).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
+  yield* holdBuiltInDefinitions(org).pipe(Scope.provide(scope))
   const engineer = (yield* org.jobTitles)[1]
   assert.isDefined(engineer)
   const ada = yield* org.hire(engineer.id, AgentName.make('Ada'), null)
