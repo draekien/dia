@@ -159,7 +159,11 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (deps: Assista
           systemPromptAppend: jobTitle.jobDescription,
           pluginPaths: [],
           diaTools: tools,
-          tools: Option.some({ permissions: jobTitle.permissions, mcpServers: jobTitle.mcpServers })
+          tools: Option.some({
+            permissions: jobTitle.permissions,
+            mcpServers: jobTitle.mcpServers,
+            skills: jobTitle.skills
+          })
         })
         return withNotices(session)
       })

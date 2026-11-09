@@ -466,7 +466,8 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       tools: Option.getOrUndefined(
         Option.map(additions.tools, (tools) => ({
           ...tools.permissions,
-          mcpServers: Object.keys(tools.mcpServers)
+          mcpServers: Object.keys(tools.mcpServers),
+          skills: tools.skills
         }))
       ),
       resume: Option.getOrUndefined(resume),

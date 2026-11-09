@@ -326,7 +326,8 @@ export const makeDispatcher = (deps: {
               }),
               tools: Option.some({
                 permissions: jobTitle.permissions,
-                mcpServers: jobTitle.mcpServers
+                mcpServers: jobTitle.mcpServers,
+                skills: jobTitle.skills
               })
             })
             .pipe(

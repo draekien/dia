@@ -327,7 +327,11 @@ describe('dispatcher session start', () => {
         assert.strictEqual(options.systemPromptAppend, edited.jobDescription)
         assert.deepStrictEqual(
           options.tools,
-          Option.some({ permissions: edited.permissions, mcpServers: edited.mcpServers })
+          Option.some({
+            permissions: edited.permissions,
+            mcpServers: edited.mcpServers,
+            skills: edited.skills
+          })
         )
         assert.isTrue(Option.isNone(options.resume))
         assert.deepStrictEqual(sent, [
