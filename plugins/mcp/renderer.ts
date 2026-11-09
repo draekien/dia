@@ -6,14 +6,20 @@ import { Effect } from 'effect'
 import { PlugIcon, SettingsIcon } from 'lucide-react'
 import { createElement } from 'react'
 import { McpServersEditorKey } from './editor'
+import { McpServerPickerKey, type McpServerPickerProps } from './picker'
+import { McpServerPicker } from './server-picker'
 import { McpServersEditor } from './servers-editor'
 import { McpServersSettings, makeServersAtom } from './settings-page'
 
 const setup: PluginSetup<PluginServices> = (ctx) =>
   Effect.gen(function* () {
+    const serversAtom = makeServersAtom(ctx)
     yield* ctx.provide(McpServersEditorKey, McpServersEditor)
     yield* Effect.logDebug('MCP servers editor provided', { key: McpServersEditorKey.name })
-    const serversAtom = makeServersAtom(ctx)
+    yield* ctx.provide(McpServerPickerKey, (props: McpServerPickerProps) =>
+      createElement(McpServerPicker, { ...props, serversAtom })
+    )
+    yield* Effect.logDebug('MCP server picker provided', { key: McpServerPickerKey.name })
     yield* addEntry(ctx, SettingsPagesSlot, {
       id: 'mcp',
       order: 45,

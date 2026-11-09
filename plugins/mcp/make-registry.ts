@@ -1,4 +1,4 @@
-import { Effect, Stream, SubscriptionRef } from 'effect'
+import { Effect, Schema, Stream, SubscriptionRef } from 'effect'
 import {
   McpServerNameTaken,
   type McpServerRegistry,
@@ -6,7 +6,9 @@ import {
   type RegisteredServer,
   UserSource
 } from './registry'
-import type { McpServer, McpServers } from './servers'
+import { McpServer, type McpServers } from './servers'
+
+const sameServer = Schema.toEquivalence(McpServer)
 
 type Entries = ReadonlyMap<string, RegisteredServer>
 
@@ -41,9 +43,13 @@ const withUser = (entries: Entries, servers: McpServers): Entries => {
 
 /**
  * Makes a registry that holds the user's servers `initial` and no plugin's server. Call it once, in
- * `mcp`'s host setup, with the servers the user saved.
+ * `mcp`'s host setup, with the servers the user saved and `writeUsers`, which persists the whole
+ * user list for `importServers`.
  */
-export const makeRegistry = (initial: McpServers): Effect.Effect<Registry> =>
+export const makeRegistry = (
+  initial: McpServers,
+  writeUsers: (servers: McpServers) => Effect.Effect<void>
+): Effect.Effect<Registry> =>
   Effect.gen(function* () {
     const ref = yield* SubscriptionRef.make(withUser(new Map(), initial))
 
@@ -82,6 +88,45 @@ export const makeRegistry = (initial: McpServers): Effect.Effect<Registry> =>
         Effect.asVoid
       )
 
+    const importServers: McpServerRegistry['importServers'] = (servers) =>
+      SubscriptionRef.modifyEffect(ref, (entries) =>
+        Effect.gen(function* () {
+          const next = new Map(entries)
+          const user = UserSource.make({})
+          const names: Array<string> = []
+          let added = 0
+          for (const { name, server } of servers) {
+            let candidate = name
+            for (let n = 2; ; n++) {
+              const held = next.get(candidate)
+              if (held === undefined) {
+                next.set(candidate, { name: candidate, server, source: user })
+                added++
+                break
+              }
+              if (sameServer(held.server, server)) break
+              candidate = `${name}-${n}`
+            }
+            names.push(candidate)
+          }
+          if (added === 0) return [names, entries] as const
+          const users = Object.fromEntries(
+            [...next.values()]
+              .filter((entry) => entry.source._tag === 'User')
+              .map((entry) => [entry.name, entry.server])
+          )
+          yield* writeUsers(users)
+          return [names, next] as const
+        })
+      ).pipe(
+        Effect.tap((names) =>
+          Effect.logInfo('MCP servers imported', {
+            requested: servers.length,
+            names: names.length
+          })
+        )
+      )
+
     const replaceUser: Registry['replaceUser'] = (servers, persist) =>
       SubscriptionRef.modifyEffect(ref, (entries) =>
         Effect.gen(function* () {
@@ -106,6 +151,7 @@ export const makeRegistry = (initial: McpServers): Effect.Effect<Registry> =>
     return {
       registry: {
         register,
+        importServers,
         list: Effect.map(SubscriptionRef.get(ref), sortedList),
         changes: SubscriptionRef.changes(ref).pipe(Stream.map(sortedList))
       },
