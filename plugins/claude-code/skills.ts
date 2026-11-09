@@ -169,13 +169,15 @@ export const claudeCodeSources = Effect.fnUntraced(function* (home: string) {
     ) => Stream.Stream<ReadonlyArray<Skill>, never, FileSystem.FileSystem | Path.Path>
   ): SkillSource => ({
     id,
+    pluginPath: Option.none(),
     skills: (context) => skills(context).pipe(Stream.provideContext(services))
   })
   const sources: ReadonlyArray<SkillSource> = [
     yield* directorySource('claude-code/user', {
       directory: path.join(home, '.claude', 'skills'),
       group: 'Your skills',
-      plugin: Option.none()
+      plugin: Option.none(),
+      pluginPath: Option.none()
     }),
     provided('claude-code/project', (context) =>
       Option.match(context.cwd, { onNone: () => Stream.make([]), onSome: projectSkills })

@@ -53,7 +53,7 @@ Out of scope: a Settings page for agent definitions, the `issues` plugin (#223),
 
 ```
 plugins/agent-definitions/
-  plugin.json        name "agent-definitions", api "0.0.34", category "feature", host "host.ts",
+  plugin.json        name "agent-definitions", api "0.0.35", category "feature", host "host.ts",
                      load "eager", exports ["registry.ts"]
   registry.ts        export @dia-plugin/agent-definitions/registry
   store.ts           internal: migrations; read (skips and logs undecodable rows), insert, upsert, delete
@@ -69,7 +69,7 @@ plugins/mcp/
   renderer.ts        + provides McpServerPickerKey
 plugins/skills/
   registry.ts        + SkillSource.pluginPath, SkillResolution, resolve (and in MEMBERS)
-  directory.ts       SkillDirectory.pluginPath; directorySource copies it
+  directory.ts       DirectorySourceOptions; directorySource copies pluginPath
   make-registry.ts   + resolve
 plugins/meta/host.ts             passes pluginPath = <repo>/plugin
 src/shared/domain/session-tools.ts   + skills
@@ -265,15 +265,14 @@ readonly resolve: (
 ) => Effect.Effect<Option.Option<SkillResolution>>
 
 // directory.ts
-export interface SkillDirectory {
-  readonly directory: string
-  readonly group: string
-  readonly plugin: Option.Option<string>
+export interface DirectorySourceOptions extends SkillDirectory {
   readonly pluginPath: Option.Option<string>
 }
 ```
 
-`meta/host.ts` passes `pluginPath: Option.some(path.join(directory, PLUGIN_DIRECTORY))`; `claude-code`'s sources pass `Option.none()` (Claude Code loads them through its own settings).
+`directorySource(id, options: DirectorySourceOptions)` copies `pluginPath` onto the source. `SkillDirectory` itself is unchanged: `claude-code` also uses it to read plugin skill directories, where a plugin path has no meaning.
+
+`meta/host.ts` passes `pluginPath: Option.some(metaPluginDirectory(path, directory))`, a new export of `meta-repo.ts`; `claude-code`'s sources pass `Option.none()` (Claude Code loads them through its own settings).
 
 ### `SessionToolOptions`
 

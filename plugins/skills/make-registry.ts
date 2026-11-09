@@ -1,7 +1,9 @@
-import { Effect, Stream, SubscriptionRef } from 'effect'
+import { Duration, Effect, Option, Stream, SubscriptionRef } from 'effect'
+import * as Arr from 'effect/Array'
 import {
   type Skill,
   type SkillContext,
+  SkillResolution,
   type SkillSource,
   SkillSourceIdTaken,
   type SkillSourceRegistry
@@ -26,6 +28,40 @@ const skillsOf = (sources: Sources, context: SkillContext): Stream.Stream<Readon
     Stream.map((lists: ReadonlyArray<ReadonlyArray<Skill>>) => lists.flat().sort(byGroupThenName))
   )
 }
+
+const RESOLVE_TIME_LIMIT = Duration.seconds(2)
+
+const resolveIn = (
+  sources: Sources,
+  names: ReadonlyArray<string>,
+  context: SkillContext
+): Effect.Effect<Option.Option<SkillResolution>> =>
+  Effect.forEach(
+    [...sources.values()],
+    (source) =>
+      source.skills(context).pipe(
+        Stream.runHead,
+        Effect.map((skills) => ({
+          source,
+          names: new Set(Option.getOrElse(skills, () => []).map((skill) => skill.name))
+        }))
+      ),
+    { concurrency: 'unbounded' }
+  ).pipe(
+    Effect.map((listed) =>
+      SkillResolution.make({
+        missing: names.filter((name) => !listed.some((entry) => entry.names.has(name))),
+        pluginPaths: Arr.dedupe(
+          Arr.getSomes(
+            listed
+              .filter((entry) => names.some((name) => entry.names.has(name)))
+              .map((entry) => entry.source.pluginPath)
+          )
+        )
+      })
+    ),
+    Effect.timeoutOption(RESOLVE_TIME_LIMIT)
+  )
 
 /** Makes an empty skill source registry. Call it once, in `skills`' host setup. */
 export const makeRegistry: Effect.Effect<SkillSourceRegistry> = Effect.gen(function* () {
@@ -59,6 +95,18 @@ export const makeRegistry: Effect.Effect<SkillSourceRegistry> = Effect.gen(funct
       SubscriptionRef.changes(ref).pipe(
         Stream.switchMap((sources) => skillsOf(sources, context)),
         Stream.changesWith(sameSkills)
-      )
+      ),
+    resolve: (names, context) =>
+      Effect.gen(function* () {
+        const sources = yield* SubscriptionRef.get(ref)
+        const resolution =
+          sources.size === 0 ? Option.none() : yield* resolveIn(sources, names, context)
+        yield* Effect.logDebug('Resolved skill names', {
+          names: names.length,
+          sources: sources.size,
+          resolved: Option.isSome(resolution)
+        })
+        return resolution
+      })
   }
 })
