@@ -87,6 +87,8 @@ export const makeRegistry: Effect.Effect<
 
   const persist = (entry: StoredDefinition) =>
     saveDefinition(entry).pipe(Effect.provideService(SqlClient.SqlClient, sql))
+  const unpersist = (id: AgentDefinitionId) =>
+    deleteDefinition(id).pipe(Effect.provideService(SqlClient.SqlClient, sql))
 
   const register: AgentDefinitionRegistry['register'] = (definition, plugin) => {
     const contribution: Contribution = { definition, plugin }
@@ -111,13 +113,13 @@ export const makeRegistry: Effect.Effect<
         ] as const)
       }
     )
-    const remove = SubscriptionRef.update(ref, (state) => ({
+    const release = SubscriptionRef.update(ref, (state) => ({
       ...state,
       contributions: state.contributions.filter((held) => held !== contribution)
     })).pipe(
       Effect.tap(() => Effect.logInfo('Agent definition removed', { id: definition.id, plugin }))
     )
-    return Effect.acquireRelease(add, () => remove).pipe(
+    return Effect.acquireRelease(add, () => release).pipe(
       Effect.tap(() =>
         Effect.logInfo('Agent definition registered', { id: definition.id, plugin })
       ),
@@ -174,7 +176,7 @@ export const makeRegistry: Effect.Effect<
       )
     )
 
-  const remove: AgentDefinitionRegistry['delete'] = (id) =>
+  const forget: AgentDefinitionRegistry['delete'] = (id) =>
     SubscriptionRef.modifyEffect(ref, (state) =>
       Effect.gen(function* () {
         const current = listed(state).find((entry) => entry.definition.id === id)
@@ -182,7 +184,7 @@ export const makeRegistry: Effect.Effect<
         if (current.source._tag === 'Plugin') {
           return yield* new ContributedDefinitionDeleted({ id })
         }
-        yield* deleteDefinition(id).pipe(Effect.provideService(SqlClient.SqlClient, sql))
+        yield* unpersist(id)
         const stored = new Map(state.stored)
         stored.delete(id)
         return [undefined, { ...state, stored }] as const
@@ -231,7 +233,7 @@ export const makeRegistry: Effect.Effect<
     changes: SubscriptionRef.changes(ref).pipe(Stream.map(listed)),
     create,
     edit,
-    delete: remove,
+    delete: forget,
     importDefinitions: (definitions) => importAll(definitions, false),
     importOverrides: (overrides) => importAll(overrides, true)
   }

@@ -52,7 +52,13 @@ import {
   WatchWork
 } from './calls'
 import { type Dispatcher, makeDispatcher } from './dispatcher'
-import { agentName, jobTitleName, type MissingReference, ObjectiveId } from './domain'
+import {
+  agentName,
+  jobTitleName,
+  type MissingReference,
+  ObjectiveId,
+  sameMissingReferences
+} from './domain'
 import { handOverJobTitles, handoverPending } from './handover'
 import { makeIssueTools } from './issue-tools'
 import { orgMigrations } from './migrations'
@@ -85,7 +91,7 @@ const watchWork = (work: Work, dispatcher: Dispatcher, assistantMissing: Assista
             works,
             lives,
             SubscriptionRef.changes(assistantMissing).pipe(
-              Stream.changesWith((left, right) => JSON.stringify(left) === JSON.stringify(right)),
+              Stream.changesWith(sameMissingReferences),
               Stream.drop(1),
               Stream.as(undefined)
             )

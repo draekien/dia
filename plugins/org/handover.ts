@@ -14,7 +14,6 @@ const HANDOVER_TABLE = 'job_titles_handover'
 const HandoverRow = Schema.Struct({
   job_title_id: AgentDefinitionSchema.fields.id,
   name: AgentDefinitionSchema.fields.name,
-  built_in: Schema.NullOr(Schema.String),
   job_description: Schema.String,
   skills: Schema.fromJsonString(AgentDefinitionSchema.fields.skills),
   permissions: Schema.fromJsonString(AgentDefinitionSchema.fields.permissions),
@@ -98,7 +97,7 @@ export const handOverJobTitles = (
       return
     }
     const rows = yield* decodeRows(
-      yield* sql`SELECT job_title_id, name, built_in, job_description, skills, permissions,
+      yield* sql`SELECT job_title_id, name, job_description, skills, permissions,
         mcp_servers, bypass_opt_in, model, thinking_level FROM job_titles_handover ORDER BY rowid`
     )
     const servers = rows.map(serverEntries)

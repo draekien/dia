@@ -20,7 +20,13 @@ import {
   SynchronizedRef
 } from 'effect'
 import { SqlClient } from 'effect/sql'
-import type { JobTitle, MissingReference, ObjectiveId, WorkSnapshot } from './domain'
+import {
+  type JobTitle,
+  type MissingReference,
+  type ObjectiveId,
+  sameMissingReferences,
+  type WorkSnapshot
+} from './domain'
 import type { Org } from './service'
 import type { SessionTools, SessionToolsResult } from './session-tools'
 import type { Work } from './work'
@@ -233,7 +239,7 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (deps: Assista
   const setMissing = (missing: ReadonlyArray<MissingReference>) =>
     SubscriptionRef.getAndSet(deps.missing, missing).pipe(
       Effect.tap((before) =>
-        missing.length > 0 && JSON.stringify(before) !== JSON.stringify(missing)
+        missing.length > 0 && !sameMissingReferences(before, missing)
           ? Effect.logWarning('Executive assistant cannot start: names are missing', { missing })
           : Effect.void
       )

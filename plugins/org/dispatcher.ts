@@ -40,7 +40,7 @@ import {
 import type { IssueToolScope } from './issue-tools'
 import { nextStarts } from './scheduler'
 import type { Org } from './service'
-import type { SessionTools } from './session-tools'
+import type { SessionTools, SessionToolsResult } from './session-tools'
 import type { IssueRuns, StartableIssue } from './work'
 
 type Turn = 'running' | 'awaiting-user' | 'idle'
@@ -435,6 +435,7 @@ export const makeDispatcher = (deps: {
       const skipped = yield* Ref.get(failed)
       const contexts = new Map<IssueId, StartContext>()
       const refused: Array<RefusedIssue> = []
+      const resolutions = new Map<string, SessionToolsResult>()
       for (const { issue, objective } of startable) {
         if (live.has(issue.id) || skipped.has(issue.id)) continue
         const hire = issue.assignee === null ? undefined : hires.get(issue.assignee)
@@ -450,7 +451,10 @@ export const makeDispatcher = (deps: {
           })
           continue
         }
-        const resolved = yield* sessionTools.forDefinition(jobTitle, directory.value)
+        const key = `${jobTitle.id} ${directory.value}`
+        const resolved =
+          resolutions.get(key) ?? (yield* sessionTools.forDefinition(jobTitle, directory.value))
+        resolutions.set(key, resolved)
         switch (resolved._tag) {
           case 'Unavailable':
             yield* Effect.logDebug('Issue waits for its session tools to resolve', {

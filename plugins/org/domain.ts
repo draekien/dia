@@ -73,6 +73,9 @@ export const MissingReference = Schema.Struct({
 })
 export type MissingReference = typeof MissingReference.Type
 
+/** Whether two lists hold the same {@link MissingReference}s in the same order. */
+export const sameMissingReferences = Schema.toEquivalence(Schema.Array(MissingReference))
+
 const MISSING_KIND_LABELS: Record<MissingReference['kind'], string> = {
   'mcp-server': 'MCP server',
   skill: 'skill'
