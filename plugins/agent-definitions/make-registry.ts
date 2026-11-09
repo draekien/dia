@@ -206,6 +206,15 @@ export const makeRegistry: Effect.Effect<
         const added = yield* SubscriptionRef.modifyEffect(ref, (state) =>
           Effect.gen(function* () {
             if (state.stored.has(definition.id)) return [false, state] as const
+            if (
+              !override &&
+              state.contributions.some((held) => held.definition.id === definition.id)
+            ) {
+              yield* Effect.logWarning('Agent definition import skipped: id contributed', {
+                id: definition.id
+              })
+              return [false, state] as const
+            }
             if (!override && nameHeldBy(state, definition.name, null)) {
               yield* Effect.logWarning('Agent definition import skipped: name taken', {
                 id: definition.id,

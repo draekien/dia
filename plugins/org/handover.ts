@@ -101,10 +101,11 @@ export const handOverJobTitles = (
         mcp_servers, bypass_opt_in, model, thinking_level FROM job_titles_handover ORDER BY rowid`
     )
     const servers = rows.map(serverEntries)
-    const names = yield* mcp.importServers(servers.flat())
+    const offered = servers.flat()
+    const names = yield* mcp.importServers(offered)
     yield* Effect.logInfo('Handed org MCP servers to mcp', {
       servers: names.length,
-      renamed: names.filter((name, index) => name !== servers.flat()[index]?.name).length
+      renamed: names.filter((name, index) => name !== offered[index]?.name).length
     })
     let offset = 0
     const overrides: Array<AgentDefinition> = []

@@ -527,6 +527,21 @@ describe('agent definition registry', () => {
     })
   )
 
+  it.effect('importDefinitions skips an id a plugin contributes', () =>
+    Effect.gen(function* () {
+      const { open } = yield* inMemory
+      const registry = yield* open
+      yield* contribute(registry, yield* Scope.make(), definition(ID_A, 'Contributed'))
+
+      yield* registry.importDefinitions([definition(ID_A, 'Imported')])
+
+      assert.deepStrictEqual(
+        (yield* registry.list).map((entry) => entry.definition.name),
+        ['Contributed']
+      )
+    })
+  )
+
   it.effect(
     'importOverrides edits the contributed definition with the same id once and is idempotent',
     () =>

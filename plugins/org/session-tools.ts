@@ -25,6 +25,7 @@ export const SessionToolsResult = Schema.Union([
   SessionToolsMissing,
   SessionToolsUnavailable
 ])
+/** The decoded type of {@link SessionToolsResult}. */
 export type SessionToolsResult = typeof SessionToolsResult.Type
 
 /** Resolves agent definitions' names for sessions, against the registries `org` currently holds. */
