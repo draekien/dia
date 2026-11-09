@@ -42,7 +42,7 @@ export class HostPlugins extends Context.Service<HostPlugins, PluginRegistry>()(
  * subscription to the Host's {@link EventHub}; `dataDir`, the directory
  * `<userDataPath>/plugins/<name>`, created before the plugin's setup runs; `activities`,
  * registration with {@link BackgroundActivities} under the plugin's name; and `database`, which
- * opens `<dataDir>/data.db` only when the plugin calls it; `workspace`, following
+ * opens `<dataDir>/data.db` only when the plugin calls it; `pluginsSettled`, which succeeds once `start` has settled every eager plugin; `workspace`, following
  * {@link WorkspaceFeed}; `window`, backed by {@link AppWindow}; and `sessions`, which waits
  * for {@link SessionAttacher} on each call. Every plugin state
  * change is published to the hub as a `PluginStatusChanged` event. `pluginApiPath` is the
@@ -65,7 +65,8 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
       const path = yield* Path.Path
       const pluginApiUrl = yield* path.toFileUrl(pluginApiPath).pipe(Effect.orDie)
       const loader = yield* makeHostPluginLoader(makePluginModules(pluginApiUrl.href))
-      return yield* makePluginRegistry<HostPluginContext>({
+      const settled = yield* Deferred.make<void>()
+      const registry = yield* makePluginRegistry<HostPluginContext>({
         catalog: sources,
         loader,
         memory: makePluginMemoryGuard({
@@ -92,6 +93,7 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
                   Deferred.await(attacher).pipe(Effect.flatMap((attach) => attach(attachment)))
               },
               dataDir,
+              pluginsSettled: Deferred.await(settled),
               activities: {
                 register: (spec) => activities.register(services.name, spec)
               },
@@ -112,5 +114,13 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
             }
           )
       })
+      return {
+        ...registry,
+        start: () =>
+          registry.start().pipe(
+            Effect.ensuring(Deferred.succeed(settled, undefined)),
+            Effect.tap(() => Effect.logDebug('Plugins settled signalled'))
+          )
+      }
     })
   )
