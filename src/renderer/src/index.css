@@ -52,6 +52,10 @@
     env(titlebar-area-x, 0px) +
     0.75rem
   );
+  --avatar-overlap: 0.5;
+  --meter-value-min: 4ch;
+  --preview-card-enter-scale: 0.97;
+  --status-media-ring: 1.5px;
 }
 
 /* Dark theme -- the original Control Room palette. */
