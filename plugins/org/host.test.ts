@@ -5,6 +5,8 @@ import {
   type HostPluginContext,
   type SessionAttachment
 } from '@dia/plugin'
+import agentDefinitionsSetup from '@dia-plugin/agent-definitions/host'
+import mcpSetup from '@dia-plugin/mcp/host'
 import { assert, describe, it } from '@effect/vitest'
 import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
@@ -74,7 +76,9 @@ const backendDisabling = (modes: ReadonlyArray<string>, opened: Array<string> = 
 const startOrg = (backend: Option.Option<AgentBackend>) =>
   Effect.gen(function* () {
     const setups: Record<string, (ctx: HostPluginContext) => Effect.Effect<void, never, never>> = {
-      org: setup as never
+      org: setup as never,
+      'agent-definitions': agentDefinitionsSetup as never,
+      mcp: mcpSetup as never
     }
     if (Option.isSome(backend)) {
       setups.backend = ((ctx: HostPluginContext) =>
@@ -101,6 +105,7 @@ const startOrg = (backend: Option.Option<AgentBackend>) =>
         return Effect.succeed({
           ...services,
           database: makePluginDatabase(':memory:', services.name),
+          pluginsSettled: Effect.void,
           workspace: Stream.make({
             projects: [
               {
@@ -124,6 +129,8 @@ const startOrg = (backend: Option.Option<AgentBackend>) =>
         } as unknown as HostPluginContext)
       }
     })
+    yield* registry.load('agent-definitions')
+    yield* registry.load('mcp')
     yield* registry.load('org')
     return registry
   })

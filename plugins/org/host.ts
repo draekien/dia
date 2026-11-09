@@ -5,6 +5,12 @@ import {
   type PluginSetup,
   type ProjectId
 } from '@dia/plugin'
+import {
+  type AgentDefinitionRegistry,
+  AgentDefinitionRegistryKey
+} from '@dia-plugin/agent-definitions/registry'
+import { McpServerRegistryKey } from '@dia-plugin/mcp/registry'
+import { SkillSourceRegistryKey } from '@dia-plugin/skills/registry'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import {
@@ -17,10 +23,12 @@ import {
   Path,
   Ref,
   type Scope,
-  Stream
+  Stream,
+  SubscriptionRef
 } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { makeAssistant } from './assistant'
+import { BUILT_IN_DEFINITIONS } from './built-in-job-titles'
 import { bypassAvailable } from './bypass'
 import {
   AnswerPermission,
@@ -44,23 +52,27 @@ import {
   WatchWork
 } from './calls'
 import { type Dispatcher, makeDispatcher } from './dispatcher'
-import { agentName, jobTitleName, ObjectiveId } from './domain'
+import { agentName, jobTitleName, type MissingReference, ObjectiveId } from './domain'
+import { handOverJobTitles, handoverPending } from './handover'
 import { makeIssueTools } from './issue-tools'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { makeRoutingTools } from './routing-tools'
 import { type Org, OrgService } from './service'
+import { makeSessionTools, type SessionTools } from './session-tools'
 import { makeWork, type Work } from './work'
 
 type Workspace = Stream.Success<HostPluginContext['workspace']>
 
-const readWorkView = (work: Work, dispatcher: Dispatcher) =>
-  Effect.map(Effect.all([work.snapshot, dispatcher.live]), ([snapshot, live]) => ({
-    ...snapshot,
-    ...live
-  }))
+type AssistantMissing = SubscriptionRef.SubscriptionRef<ReadonlyArray<MissingReference>>
 
-const watchWork = (work: Work, dispatcher: Dispatcher) =>
+const readWorkView = (work: Work, dispatcher: Dispatcher, assistantMissing: AssistantMissing) =>
+  Effect.map(
+    Effect.all([work.snapshot, dispatcher.live, SubscriptionRef.get(assistantMissing)]),
+    ([snapshot, live, missing]) => ({ ...snapshot, ...live, assistantMissing: missing })
+  )
+
+const watchWork = (work: Work, dispatcher: Dispatcher, assistantMissing: AssistantMissing) =>
   Stream.unwrap(
     Effect.gen(function* () {
       const works = yield* work.watchChanges
@@ -68,8 +80,19 @@ const watchWork = (work: Work, dispatcher: Dispatcher) =>
       yield* Effect.logDebug('Watching org work')
       return Stream.concat(
         Stream.make(undefined),
-        Stream.merge(works, lives).pipe(Stream.buffer({ capacity: 1, strategy: 'sliding' }))
-      ).pipe(Stream.mapEffect(() => readWorkView(work, dispatcher)))
+        Stream.mergeAll(
+          [
+            works,
+            lives,
+            SubscriptionRef.changes(assistantMissing).pipe(
+              Stream.changesWith((left, right) => JSON.stringify(left) === JSON.stringify(right)),
+              Stream.drop(1),
+              Stream.as(undefined)
+            )
+          ],
+          { concurrency: 'unbounded' }
+        ).pipe(Stream.buffer({ capacity: 1, strategy: 'sliding' }))
+      ).pipe(Stream.mapEffect(() => readWorkView(work, dispatcher, assistantMissing)))
     })
   )
 
@@ -121,6 +144,8 @@ const runAssistant = (
     readonly work: Work
     readonly workspace: Ref.Ref<Option.Option<Workspace>>
     readonly dispatcher: Dispatcher
+    readonly sessionTools: SessionTools
+    readonly assistantMissing: AssistantMissing
   }
 ) =>
   ctx
@@ -145,11 +170,64 @@ const runAssistant = (
               dispatcher: deps.dispatcher
             }),
           attach: ctx.sessions.attach,
-          directory
+          directory,
+          sessionTools: deps.sessionTools,
+          missing: deps.assistantMissing
         }).pipe(Effect.provideService(SqlClient.SqlClient, deps.sql))
       }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodeCrypto.layer)))
     )
     .pipe(Effect.orDie)
+
+const registerBuiltIns = (ctx: HostPluginContext, registry: AgentDefinitionRegistry) =>
+  Effect.forEach(
+    BUILT_IN_DEFINITIONS,
+    (definition) =>
+      registry.register(definition, ctx.name).pipe(
+        Effect.catchTag('AgentDefinitionIdTaken', () =>
+          Effect.logWarning('Another plugin holds a built-in job title id', {
+            jobTitleId: definition.id
+          })
+        ),
+        Effect.catchTag('AgentDefinitionNameTaken', () =>
+          Effect.logWarning('Another definition holds a built-in job title name', {
+            jobTitleId: definition.id,
+            name: definition.name
+          })
+        )
+      ),
+    { discard: true }
+  )
+
+const holdRegistries = (
+  ctx: HostPluginContext,
+  org: Org,
+  sessionTools: SessionTools,
+  sql: SqlClient.SqlClient
+) =>
+  Effect.gen(function* () {
+    yield* ctx.whenProvided([AgentDefinitionRegistryKey], ({ agentDefinitionRegistry }) =>
+      Effect.gen(function* () {
+        yield* org.holdDefinitions(agentDefinitionRegistry)
+        yield* registerBuiltIns(ctx, agentDefinitionRegistry)
+      })
+    )
+    yield* ctx.whenProvided([McpServerRegistryKey], ({ mcpServerRegistry }) =>
+      sessionTools.holdMcp(mcpServerRegistry)
+    )
+    yield* ctx.whenProvided([SkillSourceRegistryKey], ({ skillSourceRegistry }) =>
+      sessionTools.holdSkills(skillSourceRegistry)
+    )
+    if (yield* handoverPending.pipe(Effect.provideService(SqlClient.SqlClient, sql))) {
+      yield* Effect.logInfo('Org job titles wait for agent-definitions and mcp to hand over')
+    }
+    yield* ctx.whenProvided(
+      [AgentDefinitionRegistryKey, McpServerRegistryKey],
+      ({ agentDefinitionRegistry, mcpServerRegistry }) =>
+        handOverJobTitles(agentDefinitionRegistry, mcpServerRegistry).pipe(
+          Effect.provideService(SqlClient.SqlClient, sql)
+        )
+    )
+  }).pipe(Effect.orDie)
 
 const projectDirectories = (workspace: Workspace) =>
   workspace.projects.map(({ project }) => `${project.projectId}=${project.directory}`).join('\n')
@@ -224,12 +302,13 @@ const serveOrgCalls = (
 const serveWorkCalls = (
   ctx: HostPluginContext,
   work: Work,
-  dispatcher: Dispatcher
+  dispatcher: Dispatcher,
+  assistantMissing: AssistantMissing
 ): Effect.Effect<void, never, Scope.Scope> =>
   Effect.all(
     [
-      ctx.serve(ReadWork, () => readWorkView(work, dispatcher)),
-      ctx.serve(WatchWork, () => watchWork(work, dispatcher)),
+      ctx.serve(ReadWork, () => readWorkView(work, dispatcher, assistantMissing)),
+      ctx.serve(WatchWork, () => watchWork(work, dispatcher, assistantMissing)),
       ctx.serve(CreateObjective, ({ objective }) =>
         work.createObjective(objective).pipe(Effect.tap(() => dispatcher.signal))
       ),
@@ -270,19 +349,31 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       Effect.provide(NodeCrypto.layer)
     )
     yield* ctx.provide(OrgService, org)
+    const sessionTools = yield* makeSessionTools(ctx.pluginsSettled)
+    const assistantMissing = yield* SubscriptionRef.make<ReadonlyArray<MissingReference>>([])
     const dispatcher = yield* makeDispatcher({
       runs,
       org,
       projectDirectory: (objective) => directoryOf(workspace, objective.projectId),
       issueTools: (scope) => makeIssueTools(work, scope),
-      attach: ctx.sessions.attach
+      attach: ctx.sessions.attach,
+      sessionTools
     })
     yield* followWorkspace(ctx, workspace, dispatcher)
     const backend = yield* Ref.make(Option.none<AgentBackend>())
     yield* holdAgentBackend(ctx, backend, dispatcher)
-    yield* runAssistant(ctx, { sql, org, work, workspace, dispatcher })
+    yield* holdRegistries(ctx, org, sessionTools, sql)
+    yield* runAssistant(ctx, {
+      sql,
+      org,
+      work,
+      workspace,
+      dispatcher,
+      sessionTools,
+      assistantMissing
+    })
     yield* serveOrgCalls(ctx, org, backend, dispatcher)
-    yield* serveWorkCalls(ctx, work, dispatcher)
+    yield* serveWorkCalls(ctx, work, dispatcher, assistantMissing)
     const jobTitles = yield* org.jobTitles
     const hires = yield* org.hiredAgents
     yield* Effect.logInfo('Org service provided', {

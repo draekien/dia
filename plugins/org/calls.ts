@@ -25,6 +25,7 @@ import {
   JobTitleNotFound,
   JobTitleNotHireable,
   LiveWork,
+  MissingReference,
   NewIssue,
   NewObjective,
   Objective,
@@ -138,12 +139,14 @@ export const SetOverallCap = Rpc.make('SetOverallCap', {
 })
 
 /**
- * Every objective, issue and comment, the permission requests hired agents wait on, and how many slots of
- * the overall cap are held now.
+ * Every objective, issue and comment, the permission requests hired agents wait on, how many slots of
+ * the overall cap are held now, and `assistantMissing`: the names the Executive assistant definition
+ * holds that resolve to nothing, so its session cannot start; empty otherwise.
  */
 export const WorkView = Schema.Struct({
   ...WorkSnapshot.fields,
-  ...LiveWork.fields
+  ...LiveWork.fields,
+  assistantMissing: Schema.Array(MissingReference)
 })
 export type WorkView = typeof WorkView.Type
 

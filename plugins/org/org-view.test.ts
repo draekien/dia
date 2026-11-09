@@ -18,7 +18,7 @@ const snapshot: OrgSnapshot = {
       jobDescription: '',
       skills: [],
       permissions: { allow: [], ask: [], deny: [] },
-      mcpServers: {},
+      mcpServers: [],
       bypassOptIn: false,
       model: null,
       thinkingLevel: 'medium'

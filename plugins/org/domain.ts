@@ -1,5 +1,10 @@
-import { AgentName, PermissionRules, ProjectId, SessionId, ThinkingLevel, Uuid } from '@dia/plugin'
-import { McpServers } from '@dia-plugin/mcp/servers'
+import { AgentName, ProjectId, SessionId, Uuid } from '@dia/plugin'
+import {
+  AgentDefinition,
+  AgentDefinitionEdit,
+  AgentDefinitionId,
+  AgentDefinitionName
+} from '@dia-plugin/agent-definitions/registry'
 import { Schema } from 'effect'
 
 /**
@@ -19,67 +24,66 @@ export const BuiltInJobTitle = Schema.Literals([
 ])
 export type BuiltInJobTitle = typeof BuiltInJobTitle.Type
 
-/** Identifies a job title; a UUID. Built-in job titles have the same id on every install. */
-export const JobTitleId = Uuid.pipe(Schema.brand('JobTitleId'))
+/** A job title's id: the id of the agent definition it is. Built-in job titles have the same id on every install. */
+export const JobTitleId = AgentDefinitionId
 export type JobTitleId = typeof JobTitleId.Type
 
 /** The longest a {@link JobTitleName} may be, in characters. */
 export const JOB_TITLE_NAME_MAX_LENGTH = 40
 
 /**
- * A job title's name: trimmed, 1 to {@link JOB_TITLE_NAME_MAX_LENGTH} characters, unique across job titles
- * ignoring ASCII case. Decode trimmed input: the schema rejects leading or trailing spaces.
+ * A job title's name: an agent definition name, trimmed, 1 to {@link JOB_TITLE_NAME_MAX_LENGTH}
+ * characters, unique across job titles ignoring ASCII case. Decode trimmed input: the schema
+ * rejects leading or trailing spaces.
  */
-export const JobTitleName = Schema.Trimmed.pipe(
-  Schema.check(Schema.isNonEmpty(), Schema.isMaxLength(JOB_TITLE_NAME_MAX_LENGTH)),
-  Schema.brand('JobTitleName')
-)
+export const JobTitleName = AgentDefinitionName
 export type JobTitleName = typeof JobTitleName.Type
 
-/** A job title's skills: skill names as the Agent SDK's `Options.skills` takes them. */
-const Skills = Schema.Array(Schema.String)
-
 /**
- * A job title (ADR-0033, ADR-0064). `builtIn` is the built-in kind, or null for a copy. A disabled
- * job title cannot be hired into. `jobDescription` is appended to its sessions' system prompt. `skills` are skill names
- * as the Agent SDK's `Options.skills` takes them; empty means Claude Code's own skill set, so a
- * session of a job title with no skills omits `Options.skills` (`[]` would enable none).
- * `permissions` and `mcpServers` are what the job title adds to a session (`SessionToolOptions`);
- * `bypassOptIn` is the job title's `bypassPermissions` opt-in (ADR-0054). `model` is the model
- * value its sessions open with, or null for the first model the agent backend lists;
- * `thinkingLevel` is the thinking level they open with.
+ * A job title (ADR-0033, ADR-0064, ADR-0072): an agent definition plus what only the org knows
+ * about it. `builtIn` is the built-in kind, or null for any other definition. A disabled job title
+ * cannot be hired into. The definition fields are what its sessions run with: `jobDescription` is
+ * appended to the system prompt, `skills` and `mcpServers` are names a session resolves when it
+ * starts (empty `skills` means Claude Code's own skill set), `permissions` are added to the
+ * session, `bypassOptIn` is the `bypassPermissions` opt-in (ADR-0054), and `model` (null for the
+ * first model the agent backend lists) and `thinkingLevel` are what its sessions open with.
  */
 export const JobTitle = Schema.Struct({
-  id: JobTitleId,
-  name: JobTitleName,
+  ...AgentDefinition.fields,
   builtIn: Schema.NullOr(BuiltInJobTitle),
-  enabled: Schema.Boolean,
-  jobDescription: Schema.String,
-  skills: Skills,
-  permissions: PermissionRules,
-  mcpServers: McpServers,
-  bypassOptIn: Schema.Boolean,
-  model: Schema.NullOr(Schema.NonEmptyString),
-  thinkingLevel: ThinkingLevel
+  enabled: Schema.Boolean
 })
 export type JobTitle = typeof JobTitle.Type
 
 /**
- * A change to a job title's editable fields; an absent field is left as it is. On a built-in job
- * title, `name` is refused when it differs from the current name. The name-taken check ignores the job title
- * being edited, so recasing a copy's own name is allowed.
+ * A change to a job title's definition fields; an absent field is left as it is. On a built-in job
+ * title, `name` is refused when it differs from the current name. The name-taken check ignores the
+ * job title being edited, so recasing a copy's own name is allowed.
  */
-export const JobTitleEdit = Schema.Struct({
-  name: Schema.optionalKey(JobTitleName),
-  jobDescription: Schema.optionalKey(Schema.String),
-  skills: Schema.optionalKey(Skills),
-  permissions: Schema.optionalKey(PermissionRules),
-  mcpServers: Schema.optionalKey(McpServers),
-  bypassOptIn: Schema.optionalKey(Schema.Boolean),
-  model: Schema.optionalKey(JobTitle.fields.model),
-  thinkingLevel: Schema.optionalKey(ThinkingLevel)
-})
+export const JobTitleEdit = AgentDefinitionEdit
 export type JobTitleEdit = typeof JobTitleEdit.Type
+
+/**
+ * A name an agent definition holds that resolves to nothing: an MCP server the `mcp` registry
+ * does not list, or a skill no skill source lists.
+ */
+export const MissingReference = Schema.Struct({
+  kind: Schema.Literals(['mcp-server', 'skill']),
+  name: Schema.String
+})
+export type MissingReference = typeof MissingReference.Type
+
+const MISSING_KIND_LABELS: Record<MissingReference['kind'], string> = {
+  'mcp-server': 'MCP server',
+  skill: 'skill'
+}
+
+/**
+ * The text the org screens show after `missing `: each name with its kind, for example
+ * `github (MCP server), dia-meta:plan (skill)`.
+ */
+export const describeMissing = (missing: ReadonlyArray<MissingReference>): string =>
+  missing.map((entry) => `${entry.name} (${MISSING_KIND_LABELS[entry.kind]})`).join(', ')
 
 /** Identifies a hired agent; a UUID. */
 export const HireId = Uuid.pipe(Schema.brand('HireId'))
@@ -326,8 +330,10 @@ export type Objective = typeof Objective.Type
  * An issue of an objective. `parentIssueId` is the issue it belongs under; for a `retro` issue, the
  * issue it reviews. `assignee` is the hired agent that runs it, or null; an issue with no assignee
  * never starts. `paneId` is fixed when the issue is created and names its session's pane.
- * `sessionId` is the session its next start resumes, or null for a new session. `createdAt` is
- * epoch milliseconds.
+ * `sessionId` is the session its next start resumes, or null for a new session. `missing` names
+ * what its assignee's job title holds that resolves to nothing; it is non-empty only while
+ * `status` is `triage`, after the dispatcher refused to start the issue. `createdAt` is epoch
+ * milliseconds.
  */
 export const Issue = Schema.Struct({
   id: IssueId,
@@ -340,6 +346,7 @@ export const Issue = Schema.Struct({
   assignee: Schema.NullOr(HireId),
   paneId: Uuid,
   sessionId: Schema.NullOr(SessionId),
+  missing: Schema.Array(MissingReference),
   createdAt: Schema.Number
 })
 export type Issue = typeof Issue.Type

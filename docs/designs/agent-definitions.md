@@ -364,6 +364,11 @@ export interface SessionTools {
   readonly holdSkills: (registry: SkillSourceRegistry) => Effect.Effect<void, never, Scope.Scope>
   /** Emits after each hold, each release, and once when `ctx.pluginsSettled` resolves. */
   readonly changes: Effect.Effect<Stream.Stream<void>, never, Scope.Scope>
+  /**
+   * Emits at once, then after each emission of `changes`, each change to the held `mcp`
+   * registry's servers, and each change to the held skill sources' skills for `cwd`.
+   */
+  readonly references: (cwd: string) => Stream.Stream<void>
 }
 
 /** Makes the {@link SessionTools} for `org`'s setup scope. */
@@ -404,7 +409,7 @@ Order in `org`'s `setup`: `makeOrg`, `makeSessionTools(ctx.pluginsSettled)`, `ma
 `handover.ts`, run by `org`'s host inside `whenProvided([AgentDefinitionRegistryKey, McpServerRegistryKey], …)` while `job_titles_handover` exists:
 
 1. Read the rows in `rowid` order.
-2. `importServers` with every inline server of every row, row by row, in key order; map each row's servers to the returned names.
+2. `importServers` with every inline server of every row, row by row, each row's servers in sorted name order; map each row's servers to the returned names.
 3. Built-in rows: compare each with its `BUILT_IN_DEFINITIONS` entry field by field (`skills`, `permissions.allow`, `ask` and `deny` as sets; `jobDescription` trimmed); `importOverrides` with the rows that differ. Other rows: `importDefinitions`. Both with `mcpServers` set to the names from step 2. A built-in seeded by an older dia version whose seed text differs from today's is imported as an override, which keeps the text the user had.
 4. `DROP TABLE job_titles_handover`.
 
@@ -419,19 +424,19 @@ Record the SQLite finding (step 1: dropping a parent table fires `ON DELETE SET 
   - `Missing`: the issue goes in `refused` with its names.
   - `Ready`: `tools` and `pluginPaths` go in its `StartContext`; `startIssue` passes them to `openSession` and does not resolve again.
 - `pass` calls `runs.markRefused(issueId, missing)` for each refused issue, then signals once if any changed. `IssueRuns` gains `markRefused: (issueId, missing) => Effect<boolean>`: an update `WHERE status = 'todo'` that sets `status = 'triage'` and `missing`, appends `IssueRefused`, publishes `changes`, and returns false (logged at info, no signal) when the issue is no longer `todo`.
-- The assistant calls `sessionTools.forDefinition(definition, directory)` before taking its `SynchronizedRef`, and `open` uses the `tools` and `pluginPaths` of that `Ready` result. `startOver` resolves first and, on `Missing`, returns without resetting the session row. Results:
+- The assistant calls `sessionTools.forDefinition(definition, directory)` before taking its `SynchronizedRef`, and `open` uses the `tools` and `pluginPaths` of that `Ready` result. `startOver` resolves first and, on `Missing` or `Unavailable`, returns without resetting the session row. Results:
   - `Ready` while detached: attach and clear the list.
   - `Missing`: detach if attached, set the list, log a warning.
   - `Unavailable`: leave the attachment as it is and the list unchanged.
-- The assistant re-checks on each emission of the definition registry's `changes`, `sessionTools.changes`, the held `mcp` registry's `changes`, and `skillSourceRegistry.skills({ cwd: Option.some(directory) })`.
-- `Assistant` gains `missing: Effect<ReadonlyArray<MissingReference>>` and `watchMissing` (a change stream). `org`'s host passes them to `readWorkView` and merges `watchMissing` into `watchWork`; `WorkView` gains `assistantMissing`.
+- The assistant re-checks on each emission of `watchJobTitleChanges` and of `sessionTools.references(directory)`, which covers `sessionTools.changes`, the held `mcp` registry's `changes`, and `skillSourceRegistry.skills({ cwd: Option.some(directory) })`.
+- `org`'s host owns a `SubscriptionRef<ReadonlyArray<MissingReference>>` and passes it to `runAssistant`, which sets it. The host reads it in `readWorkView` and merges its changes into `watchWork`; `WorkView` gains `assistantMissing`. `makeAssistant` runs only while an agent backend is provided, and `readWorkView` must answer without one, so the host-owned ref replaces the planned `Assistant.missing` and `watchMissing`.
 - Known risk: a lazy plugin's contribution is not covered by `pluginsSettled` (it settles eager plugins only); a definition naming it is refused if dispatched before that plugin loads. The proof run restarts the app with a `dia-meta:*` skill on a hired agent's job title.
 
 ### UI
 
 - `job-title-editor.tsx`: the MCP servers field renders `McpServerPicker` through `useProvided(McpServerPickerKey)`; without it, a textarea with one name per line. `Draft.mcpServers` becomes the names.
 - `objective-screen.tsx`: an issue in triage with `missing` shows "Cannot start: missing github (MCP server), dia-meta:plan (skill)".
-- `dashboard.tsx`: when `assistantMissing` is non-empty, an `Alert` reads "Executive assistant cannot start: missing …".
+- `dashboard.tsx`: when `assistantMissing` is non-empty, the Needs attention list shows an item with `role="alert"` reading "Executive assistant cannot start: missing …". The renderer has no `Alert` component, so the item follows the list's existing item pattern.
 
 ### Glossary
 

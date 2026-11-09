@@ -29,6 +29,7 @@ import {
   isAssignable,
   isClosed,
   isStarted,
+  MissingReference,
   type NewIssue,
   type NewObjective,
   Objective,
@@ -56,6 +57,9 @@ const IssueTriaged = Schema.TaggedStruct('IssueTriaged', { decision: TriageDecis
 const IssueCommented = Schema.TaggedStruct('IssueCommented', { commentId: CommentId })
 const IssueFinished = Schema.TaggedStruct('IssueFinished', {})
 const IssueCanceled = Schema.TaggedStruct('IssueCanceled', {})
+const IssueRefused = Schema.TaggedStruct('IssueRefused', {
+  missing: Schema.Array(MissingReference)
+})
 
 const OrgEvent = Schema.Union([
   ObjectiveCreated,
@@ -70,7 +74,8 @@ const OrgEvent = Schema.Union([
   IssueTriaged,
   IssueCommented,
   IssueFinished,
-  IssueCanceled
+  IssueCanceled,
+  IssueRefused
 ])
 type OrgEvent = typeof OrgEvent.Type
 
@@ -98,6 +103,7 @@ const IssueRow = Schema.Struct({
   assignee: Issue.fields.assignee,
   pane_id: Issue.fields.paneId,
   session_id: Issue.fields.sessionId,
+  missing: Schema.fromJsonString(Issue.fields.missing),
   created_at: Issue.fields.createdAt
 })
 
@@ -131,6 +137,7 @@ const toIssue = (row: typeof IssueRow.Type): Issue => ({
   assignee: row.assignee,
   paneId: row.pane_id,
   sessionId: row.session_id,
+  missing: row.missing,
   createdAt: row.created_at
 })
 
@@ -145,6 +152,7 @@ const toComment = (row: typeof CommentRow.Type): IssueComment => ({
 const encodeObjectiveRow = Schema.encodeSync(ObjectiveRow)
 const encodeIssueRow = Schema.encodeSync(IssueRow)
 const encodeCommentRow = Schema.encodeSync(CommentRow)
+const encodeMissing = Schema.encodeSync(IssueRow.fields.missing)
 
 const toObjectiveRow = (objective: Objective) =>
   encodeObjectiveRow({
@@ -170,6 +178,7 @@ const toIssueRow = (issue: Issue) =>
     assignee: issue.assignee,
     pane_id: issue.paneId,
     session_id: issue.sessionId,
+    missing: issue.missing,
     created_at: issue.createdAt
   })
 
@@ -273,7 +282,8 @@ export interface StartableIssue {
  * session a started issue resumes next. `markRequeued` moves a started issue other than
  * `in_review` back to `todo`, keeping its session, or clearing it when `keepSession` is false.
  * `requeueRunning` moves every started issue other than `in_review` back to `todo` and returns how
- * many it moved; an `in_review` issue is never requeued.
+ * many it moved; an `in_review` issue is never requeued. `markRefused` moves a `todo` issue to
+ * `triage` with the `missing` names its job title holds, so it waits for the user.
  */
 export interface IssueRuns {
   readonly startCandidates: Effect.Effect<{
@@ -284,6 +294,10 @@ export interface IssueRuns {
   readonly markSessionStarted: (issueId: IssueId, sessionId: SessionId) => Effect.Effect<boolean>
   readonly markRequeued: (issueId: IssueId, keepSession: boolean) => Effect.Effect<boolean>
   readonly requeueRunning: Effect.Effect<number>
+  readonly markRefused: (
+    issueId: IssueId,
+    missing: ReadonlyArray<MissingReference>
+  ) => Effect.Effect<boolean>
 }
 
 /**
@@ -363,7 +377,7 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
     })
 
     const setIssueStatus = (issueId: IssueId, status: IssueStatus) =>
-      sql`UPDATE issues SET status = ${status} WHERE issue_id = ${issueId}`
+      sql`UPDATE issues SET status = ${status}, missing = '[]' WHERE issue_id = ${issueId}`
 
     const completeObjectiveIfDone = Effect.fnUntraced(function* (objectiveId: ObjectiveId) {
       const [counts] = yield* sql<{
@@ -430,6 +444,7 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
               assignee: created.assignee,
               paneId: firstPaneId,
               sessionId: null,
+              missing: [],
               createdAt
             })
           )
@@ -462,6 +477,7 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
             status: 'todo',
             paneId,
             sessionId: null,
+            missing: [],
             createdAt
           })
           yield* insertIssue(created)
@@ -498,6 +514,7 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
             assignee: null,
             paneId,
             sessionId: null,
+            missing: [],
             createdAt
           })
           yield* insertIssue(created)
@@ -550,7 +567,7 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
             yield* setIssueStatus(issueId, target)
             yield* append(current.objectiveId, issueId, IssueTriaged.make({ decision }))
             objectives.add(current.objectiveId)
-            result.push(Issue.make({ ...current, status: target }))
+            result.push(Issue.make({ ...current, status: target, missing: [] }))
           }
           if (decision === 'decline') {
             for (const objectiveId of objectives) yield* completeObjectiveIfDone(objectiveId)
@@ -636,6 +653,7 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
                 assignee: null,
                 paneId: retroPaneId,
                 sessionId: null,
+                missing: [],
                 createdAt
               })
             )
@@ -662,7 +680,7 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
             yield* append(objectiveId, issue.id, IssueCanceled.make({}))
           }
           yield* completeObjectiveIfDone(objectiveId)
-          return open.map((issue) => Issue.make({ ...issue, status: 'canceled' }))
+          return open.map((issue) => Issue.make({ ...issue, status: 'canceled', missing: [] }))
         })
       )
       yield* Effect.logInfo('Stopped objective', { objectiveId, canceled: canceled.length })
@@ -733,6 +751,17 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
         Effect.tap((changed) => Effect.logInfo('Requeued issue', { issueId, keepSession, changed }))
       )
 
+    const markRefused = (issueId: IssueId, missing: ReadonlyArray<MissingReference>) =>
+      changeRun(
+        issueId,
+        sql`UPDATE issues SET status = 'triage', missing = ${encodeMissing(missing)} WHERE issue_id = ${issueId} AND status = 'todo' RETURNING *`,
+        () => IssueRefused.make({ missing })
+      ).pipe(
+        Effect.tap((changed) =>
+          Effect.logInfo('Refused to start issue', { issueId, missing, changed })
+        )
+      )
+
     const requeueRunning = transaction(
       Effect.gen(function* () {
         const rows = yield* decodeIssueRows(
@@ -769,7 +798,8 @@ export const makeWork = (projectExists: (projectId: ProjectId) => Effect.Effect<
       markStarted,
       markSessionStarted,
       markRequeued,
-      requeueRunning
+      requeueRunning,
+      markRefused
     }
     return { work, runs, openIssuesOf }
   })

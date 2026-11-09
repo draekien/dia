@@ -32,7 +32,7 @@ export {
 export { type PaneId, SessionId, ThinkingLevel } from '../shared/domain/pane'
 export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
 export { AgentName, ProjectId } from '../shared/domain/project'
-export { PermissionRules, type SessionToolOptions } from '../shared/domain/session-tools'
+export { PermissionRules, SessionToolOptions } from '../shared/domain/session-tools'
 export { Uuid } from '../shared/domain/uuid'
 export * from '../shared/plugin/api'
 export * from '../shared/plugin/list-slot'

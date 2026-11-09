@@ -17,6 +17,8 @@ import {
   TurnCompleted,
   TurnStatusChanged
 } from '@dia/plugin'
+import type { McpServers } from '@dia-plugin/mcp/servers'
+import type { Skill } from '@dia-plugin/skills/registry'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { assert, describe, it } from '@effect/vitest'
 import { DateTime, Deferred, Effect, Exit, Option, Scope, Stream } from 'effect'
@@ -37,6 +39,8 @@ import {
 import { makeIssueTools } from './issue-tools'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
+import { holdBuiltInDefinitions, mcpRegistry, skillRegistry } from './registries.fake'
+import { makeSessionTools } from './session-tools'
 import { makeWork } from './work'
 
 const PROJECT = ProjectId.make('00000000-0000-4000-8000-400000000001')
@@ -139,9 +143,21 @@ const settle = Effect.gen(function* () {
   for (let turn = 0; turn < 50; turn += 1) yield* Effect.yieldNow
 })
 
+const GITHUB: McpServers[string] = {
+  type: 'http',
+  url: 'https://api.githubcopilot.com/mcp/',
+  headers: {}
+}
+const META_PLUGIN = 'C:/dia/meta/plugin'
+const PLAN: Skill = { name: 'dia-meta:plan', description: 'Plans work', group: 'Meta repo' }
+
 const setUp = (options: {
   readonly cap: number
   readonly disabled?: ReadonlyArray<'auto' | 'bypassPermissions'>
+  readonly servers?: McpServers
+  readonly withMcp?: boolean
+  readonly skills?: ReadonlyArray<Skill>
+  readonly settled?: boolean
 }) =>
   Effect.gen(function* () {
     const dbScope = yield* Scope.make()
@@ -151,7 +167,16 @@ const setUp = (options: {
       const made = yield* makeWork((projectId) => Effect.succeed(projectId === PROJECT))
       return { ...made, org: yield* makeOrg(made.openIssuesOf) }
     }).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
+    yield* holdBuiltInDefinitions(org)
     yield* org.setOverallCap(OverallCap.make(options.cap))
+    const pluginsSettled = yield* Deferred.make<void>()
+    if (options.settled ?? true) yield* Deferred.succeed(pluginsSettled, undefined)
+    const sessionTools = yield* makeSessionTools(Deferred.await(pluginsSettled))
+    const mcp = yield* mcpRegistry(options.servers)
+    if (options.withMcp ?? true) yield* sessionTools.holdMcp(mcp.registry)
+    yield* sessionTools.holdSkills(
+      yield* skillRegistry('meta', options.skills ?? [], Option.some(META_PLUGIN))
+    )
     const { attach, attachments } = fakeAttach()
     const dispatcher = yield* makeDispatcher({
       runs,
@@ -159,7 +184,8 @@ const setUp = (options: {
       projectDirectory: (objective) =>
         Effect.succeed(objective.projectId === PROJECT ? Option.some(DIRECTORY) : Option.none()),
       issueTools: (scope) => makeIssueTools(work, scope),
-      attach
+      attach,
+      sessionTools
     })
     const fake = fakeBackend(options.disabled)
     yield* dispatcher.lendBackend(fake.backend)
@@ -216,10 +242,14 @@ const setUp = (options: {
         .finishIssue(task.id)
         .pipe(Effect.andThen(dispatcher.release(task.id)), Effect.andThen(settle))
     return {
+      sql,
       work,
       runs,
       org,
       dispatcher,
+      sessionTools,
+      mcp,
+      pluginsSettled,
       ...fake,
       attach,
       attachments,
@@ -329,7 +359,7 @@ describe('dispatcher session start', () => {
           options.tools,
           Option.some({
             permissions: edited.permissions,
-            mcpServers: edited.mcpServers,
+            mcpServers: {},
             skills: edited.skills
           })
         )
@@ -587,7 +617,8 @@ describe('dispatcher session end', () => {
         org: env.org,
         projectDirectory: () => Effect.succeed(Option.some(DIRECTORY)),
         issueTools: () => [],
-        attach: env.attach
+        attach: env.attach,
+        sessionTools: env.sessionTools
       })
       yield* nextSetup.lendBackend(env.backend)
       yield* settle
@@ -610,7 +641,8 @@ describe('dispatcher in_review issue', () => {
         org: env.org,
         projectDirectory: () => Effect.succeed(Option.some(DIRECTORY)),
         issueTools: () => [],
-        attach: env.attach
+        attach: env.attach,
+        sessionTools: env.sessionTools
       })
       yield* nextSetup.lendBackend(env.backend)
       yield* settle
@@ -794,5 +826,163 @@ describe('dispatcher attached sessions', () => {
           { resolved: ['r1'], pending: 0 }
         )
       }).pipe(Effect.scoped)
+  )
+})
+
+const engineerNaming = (
+  env: Effect.Success<ReturnType<typeof setUp>>,
+  edit: { readonly mcpServers?: ReadonlyArray<string>; readonly skills?: ReadonlyArray<string> }
+) =>
+  Effect.gen(function* () {
+    const engineer = env.jobTitles.find((jobTitle) => jobTitle.builtIn === 'software-engineer')
+    assert.isDefined(engineer)
+    return yield* env.org.editJobTitle((engineer as JobTitle).id, edit)
+  })
+
+const issueNow = (env: Effect.Success<ReturnType<typeof setUp>>, issue: Issue) =>
+  Effect.map(env.work.snapshot, (snapshot) => {
+    const found = snapshot.issues.find((entry) => entry.id === issue.id)
+    assert.isDefined(found)
+    return found as Issue
+  })
+
+describe('dispatcher session tools', () => {
+  it.effect(
+    "opens a hired agent's session with its MCP servers' configs, its skills and their plugin directory",
+    () =>
+      Effect.gen(function* () {
+        const env = yield* setUp({ cap: 1, servers: { github: GITHUB }, skills: [PLAN] })
+        const engineer = yield* engineerNaming(env, {
+          mcpServers: ['github'],
+          skills: ['dia-meta:plan']
+        })
+        yield* env.addTask(yield* env.hireOf(engineer))
+
+        const [session] = env.sessions
+        assert.isDefined(session)
+        assert.deepStrictEqual(
+          [(session as FakeSession).options.tools, (session as FakeSession).options.pluginPaths],
+          [
+            Option.some({
+              permissions: engineer.permissions,
+              mcpServers: { github: GITHUB },
+              skills: ['dia-meta:plan']
+            }),
+            [META_PLUGIN]
+          ]
+        )
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect(
+    'moves an issue whose MCP server is missing to triage naming it, and opens no session',
+    () =>
+      Effect.gen(function* () {
+        const env = yield* setUp({ cap: 1 })
+        const engineer = yield* engineerNaming(env, { mcpServers: ['github'] })
+        const task = yield* env.addTask(yield* env.hireOf(engineer))
+
+        const stored = yield* issueNow(env, task)
+        assert.deepStrictEqual(
+          [stored.status, stored.missing, env.sessions.length],
+          ['triage', [{ kind: 'mcp-server', name: 'github' }], 0]
+        )
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect('moves an issue whose skill no source lists to triage naming it', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 1, skills: [PLAN] })
+      const engineer = yield* engineerNaming(env, { skills: ['dia-meta:ship'] })
+      const task = yield* env.addTask(yield* env.hireOf(engineer))
+
+      const stored = yield* issueNow(env, task)
+      assert.deepStrictEqual(
+        [stored.status, stored.missing, env.sessions.length],
+        ['triage', [{ kind: 'skill', name: 'dia-meta:ship' }], 0]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('clears the missing names when the refused issue is accepted', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 1 })
+      const engineer = yield* engineerNaming(env, { mcpServers: ['github'] })
+      const task = yield* env.addTask(yield* env.hireOf(engineer))
+
+      const [accepted] = yield* env.work.triageIssues([task.id], 'accept')
+      assert.deepStrictEqual([accepted?.status, accepted?.missing], ['todo', []])
+      const stored = yield* issueNow(env, task)
+      assert.deepStrictEqual([stored.status, stored.missing], ['todo', []])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect(
+    'leaves an issue in todo while mcp is not provided, and starts a later issue that needs nothing',
+    () =>
+      Effect.gen(function* () {
+        const env = yield* setUp({ cap: 1, withMcp: false })
+        const engineer = yield* engineerNaming(env, { mcpServers: ['github'] })
+        const waiting = yield* env.addTask(yield* env.hireOf(engineer))
+        const productManager = env.jobTitles.find(
+          (jobTitle) => jobTitle.builtIn === 'product-manager'
+        )
+        assert.isDefined(productManager)
+        const ready = yield* env.addTask(yield* env.hireOf(productManager as JobTitle))
+
+        const stored = yield* issueNow(env, waiting)
+        const [session] = env.sessions
+        assert.isDefined(session)
+        assert.deepStrictEqual(
+          [stored.status, env.sessions.length, (yield* env.taskOf(session as FakeSession)).id],
+          ['todo', 1, ready.id]
+        )
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect(
+    'starts an issue whose server is registered before plugins settle, without refusing it',
+    () =>
+      Effect.gen(function* () {
+        const env = yield* setUp({ cap: 1, settled: false })
+        const engineer = yield* engineerNaming(env, { mcpServers: ['github'] })
+        const task = yield* env.addTask(yield* env.hireOf(engineer))
+        const beforeSettled = (yield* issueNow(env, task)).status
+
+        yield* env.mcp.replaceUser({ github: GITHUB }, Effect.void)
+        yield* Deferred.succeed(env.pluginsSettled, undefined)
+        yield* settle
+
+        const events = yield* env.sql<{
+          readonly event: string
+        }>`SELECT event FROM org_events WHERE issue_id = ${task.id}`
+        assert.deepStrictEqual(
+          [
+            beforeSettled,
+            env.sessions.length,
+            events.some((row) => row.event.includes('IssueRefused'))
+          ],
+          ['todo', 1, false]
+        )
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect('leaves a todo issue the live map holds in todo when its server is deleted', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 1, servers: { github: GITHUB } })
+      const engineer = yield* engineerNaming(env, { mcpServers: ['github'] })
+      const task = yield* env.addTask(yield* env.hireOf(engineer))
+      yield* env.sql`UPDATE issues SET status = 'todo' WHERE issue_id = ${task.id}`
+
+      yield* env.mcp.replaceUser({}, Effect.void)
+      yield* env.dispatcher.signal
+      yield* settle
+
+      const stored = yield* issueNow(env, task)
+      assert.deepStrictEqual(
+        [stored.status, stored.missing, (env.sessions[0] as FakeSession).closed],
+        ['todo', [], false]
+      )
+    }).pipe(Effect.scoped)
   )
 })

@@ -11,17 +11,27 @@ import {
   SessionNotice,
   SessionStarted
 } from '@dia/plugin'
+import type { McpServers } from '@dia-plugin/mcp/servers'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { assert, describe, it } from '@effect/vitest'
 import { AgentName } from '@shared/domain/project'
-import { DateTime, Effect, Exit, Option, Scope, Stream } from 'effect'
+import { DateTime, Deferred, Effect, Exit, Option, Scope, Stream, SubscriptionRef } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
 import { makeAssistant } from './assistant'
 import { EXECUTIVE_ASSISTANT } from './built-in-job-titles'
-import { DirectRoute, type JobTitleId, ObjectiveId, PlanRoute, WorkTitle } from './domain'
+import {
+  DirectRoute,
+  type JobTitleId,
+  type MissingReference,
+  ObjectiveId,
+  PlanRoute,
+  WorkTitle
+} from './domain'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
+import { holdBuiltInDefinitions, mcpRegistry, skillRegistry } from './registries.fake'
+import { makeSessionTools } from './session-tools'
 import { makeWork } from './work'
 
 const PROJECT = ProjectId.make('00000000-0000-4000-8000-400000000001')
@@ -98,41 +108,56 @@ const settle = Effect.gen(function* () {
   for (let turn = 0; turn < 50; turn += 1) yield* Effect.yieldNow
 })
 
-const setUp = Effect.gen(function* () {
-  const dbScope = yield* Scope.make()
-  yield* Effect.addFinalizer(() => Scope.close(dbScope, Exit.void))
-  const sql = yield* openDatabase(':memory:', orgMigrations).pipe(Scope.provide(dbScope))
-  const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-    effect.pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
-  const { work, runs, org } = yield* provide(
-    Effect.gen(function* () {
-      const made = yield* makeWork(() => Effect.succeed(true))
-      return { ...made, org: yield* makeOrg(made.openIssuesOf) }
-    })
-  )
-  const host = fakeHost()
-  const start = Effect.gen(function* () {
-    const scope = yield* Scope.make()
-    const assistant = yield* provide(
-      makeAssistant({
-        org,
-        work,
-        backend: host.backend,
-        tools: () => TOOLS,
-        attach: host.attach,
-        directory: 'C:/dia/plugins/org/assistant'
+const GITHUB: McpServers[string] = { type: 'http', url: 'https://example.com/mcp', headers: {} }
+
+const setUpWith = (options: { readonly settled: boolean }) =>
+  Effect.gen(function* () {
+    const dbScope = yield* Scope.make()
+    yield* Effect.addFinalizer(() => Scope.close(dbScope, Exit.void))
+    const sql = yield* openDatabase(':memory:', orgMigrations).pipe(Scope.provide(dbScope))
+    const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      effect.pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
+    const { work, runs, org } = yield* provide(
+      Effect.gen(function* () {
+        const made = yield* makeWork(() => Effect.succeed(true))
+        return { ...made, org: yield* makeOrg(made.openIssuesOf) }
       })
-    ).pipe(Scope.provide(scope))
-    yield* settle
-    return { assistant, stop: Scope.close(scope, Exit.void) }
+    )
+    yield* holdBuiltInDefinitions(org)
+    const pluginsSettled = yield* Deferred.make<void>()
+    if (options.settled) yield* Deferred.succeed(pluginsSettled, undefined)
+    const sessionTools = yield* makeSessionTools(Deferred.await(pluginsSettled))
+    const mcp = yield* mcpRegistry()
+    yield* sessionTools.holdMcp(mcp.registry)
+    yield* sessionTools.holdSkills(yield* skillRegistry('user', []))
+    const missing = yield* SubscriptionRef.make<ReadonlyArray<MissingReference>>([])
+    const host = fakeHost()
+    const start = Effect.gen(function* () {
+      const scope = yield* Scope.make()
+      const assistant = yield* provide(
+        makeAssistant({
+          org,
+          work,
+          backend: host.backend,
+          tools: () => TOOLS,
+          attach: host.attach,
+          directory: 'C:/dia/plugins/org/assistant',
+          sessionTools,
+          missing
+        })
+      ).pipe(Scope.provide(scope))
+      yield* settle
+      return { assistant, stop: Scope.close(scope, Exit.void) }
+    })
+    const engineer = (yield* org.jobTitles).find(
+      (jobTitle) => jobTitle.builtIn === 'software-engineer'
+    )
+    assert.isDefined(engineer)
+    const ada = yield* org.hire(engineer.id, AgentName.make('Ada'), null)
+    return { sql, work, runs, org, host, start, ada, mcp, pluginsSettled, missing }
   })
-  const engineer = (yield* org.jobTitles).find(
-    (jobTitle) => jobTitle.builtIn === 'software-engineer'
-  )
-  assert.isDefined(engineer)
-  const ada = yield* org.hire(engineer.id, AgentName.make('Ada'), null)
-  return { work, runs, org, host, start, ada }
-})
+
+const setUp = setUpWith({ settled: true })
 
 const startSession = (env: Effect.Success<typeof setUp>) => {
   const [opened] = env.host.opened
@@ -412,6 +437,91 @@ describe('Assistant notices', () => {
       yield* fresh.session.sendText('hello', 'queue')
 
       assert.deepStrictEqual(env.host.opened[1]?.sent, ['hello'])
+    }).pipe(Effect.scoped)
+  )
+})
+
+const GITHUB_MISSING: ReadonlyArray<MissingReference> = [{ kind: 'mcp-server', name: 'github' }]
+
+const assistantNaming = (env: Effect.Success<typeof setUp>, servers: ReadonlyArray<string>) =>
+  env.org.editJobTitle(ASSISTANT_JOB_TITLE, { mcpServers: servers })
+
+describe('Assistant with missing names', () => {
+  it.effect('stays detached and reports the missing server once plugins settle', () =>
+    Effect.gen(function* () {
+      const env = yield* setUpWith({ settled: false })
+      yield* assistantNaming(env, ['github'])
+      yield* env.start
+      const beforeSettled = yield* SubscriptionRef.get(env.missing)
+
+      yield* Deferred.succeed(env.pluginsSettled, undefined)
+      yield* settle
+
+      assert.deepStrictEqual(
+        [beforeSettled, yield* SubscriptionRef.get(env.missing), env.host.attachments.length],
+        [[], GITHUB_MISSING, 0]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('attaches and clears the missing names once the server is registered', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      yield* assistantNaming(env, ['github'])
+      yield* env.start
+
+      yield* env.mcp.replaceUser({ github: GITHUB }, Effect.void)
+      yield* settle
+
+      const [opened] = env.host.opened
+      assert.deepStrictEqual(
+        [
+          env.host.shown().length,
+          yield* SubscriptionRef.get(env.missing),
+          Option.map(opened?.options.tools ?? Option.none(), (tools) => tools.mcpServers)
+        ],
+        [1, [], Option.some({ github: GITHUB })]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('detaches when a server it names is deleted while attached', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      yield* env.mcp.replaceUser({ github: GITHUB }, Effect.void)
+      yield* assistantNaming(env, ['github'])
+      yield* env.start
+      const attachedBefore = env.host.shown().length
+
+      yield* env.mcp.replaceUser({}, Effect.void)
+      yield* settle
+
+      assert.deepStrictEqual(
+        [attachedBefore, env.host.shown().length, yield* SubscriptionRef.get(env.missing)],
+        [1, 0, GITHUB_MISSING]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('keeps the stored session when asked to start over while a name is missing', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const { assistant } = yield* env.start
+      yield* startSession(env)
+      const before = yield* env.sql<{
+        readonly pane_id: string
+        readonly session_id: string | null
+      }>`SELECT pane_id, session_id FROM assistant_session`
+      yield* assistantNaming(env, ['github'])
+      yield* settle
+
+      yield* assistant.startOver
+
+      const after = yield* env.sql<{
+        readonly pane_id: string
+        readonly session_id: string | null
+      }>`SELECT pane_id, session_id FROM assistant_session`
+      assert.deepStrictEqual([after, after[0]?.session_id], [before, SESSION])
     }).pipe(Effect.scoped)
   )
 })

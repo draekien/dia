@@ -9,10 +9,11 @@ import { openDatabase } from '../../src/host/services/database'
 import { HireId, HireNotFound, type JobTitle, JobTitleId, JobTitleName, OverallCap } from './domain'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
+import { holdBuiltInDefinitions } from './registries.fake'
 import type { Org } from './service'
 import { makeWork } from './work'
 
-const openOrgIn = (filename: string) =>
+const openOrgIn = (filename: string, definitionsFilename = ':memory:') =>
   Effect.gen(function* () {
     const scope = yield* Scope.make()
     const sql = yield* openDatabase(filename, orgMigrations).pipe(Scope.provide(scope))
@@ -21,7 +22,10 @@ const openOrgIn = (filename: string) =>
       Effect.provideService(SqlClient.SqlClient, sql),
       Effect.provide(NodeCrypto.layer)
     )
-    return { org, close: Scope.close(scope, Exit.void) }
+    const definitions = yield* holdBuiltInDefinitions(org, definitionsFilename).pipe(
+      Scope.provide(scope)
+    )
+    return { org, definitions, close: Scope.close(scope, Exit.void) }
   })
 
 const freshOrg = Effect.map(openOrgIn(':memory:'), ({ org }) => org)
@@ -126,7 +130,7 @@ describe('org seed', () => {
             ],
             [
               [],
-              {},
+              [],
               ['mcp__dia__create_issue', 'mcp__dia__update_issue', 'mcp__dia__comment_issue'],
               [],
               false
@@ -177,6 +181,63 @@ describe('org seed', () => {
       const org = yield* freshOrg
       assert.strictEqual((yield* org.settings).overallCap, 4)
     })
+  )
+})
+
+describe('Org job titles from the agent definition registry', () => {
+  it.effect('lists no job titles while no registry is held', () =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make()
+      const sql = yield* openDatabase(':memory:', orgMigrations).pipe(Scope.provide(scope))
+      const org = yield* makeWork(() => Effect.succeed(true)).pipe(
+        Effect.flatMap(({ openIssuesOf }) => makeOrg(openIssuesOf)),
+        Effect.provideService(SqlClient.SqlClient, sql),
+        Effect.provide(NodeCrypto.layer)
+      )
+      const held = yield* Scope.make()
+      yield* holdBuiltInDefinitions(org).pipe(Scope.provide(held))
+      const whileHeld = (yield* org.jobTitles).length
+      yield* Scope.close(held, Exit.void)
+      assert.deepStrictEqual([whileHeld, (yield* org.jobTitles).length], [8, 0])
+    })
+  )
+
+  it.effect('lists a user definition after the built-ins, with no built-in kind, enabled', () =>
+    Effect.gen(function* () {
+      const { org, definitions } = yield* openOrgIn(':memory:')
+      const engineer = jobTitleNamed(yield* org.jobTitles, 'Software engineer')
+      const { id: _id, ...fields } = engineer
+      const added = yield* definitions.create({
+        ...fields,
+        name: JobTitleName.make('Archivist')
+      })
+      const listed = (yield* org.jobTitles).at(-1)
+      assert.deepStrictEqual([listed?.id, listed?.builtIn, listed?.enabled], [added.id, null, true])
+    })
+  )
+
+  it.effect('emits a job title change when another plugin changes a definition', () =>
+    Effect.gen(function* () {
+      const { org, definitions } = yield* openOrgIn(':memory:')
+      const engineer = jobTitleNamed(yield* org.jobTitles, 'Software engineer')
+      const changes = yield* org.watchJobTitleChanges
+      yield* definitions.edit(engineer.id, { thinkingLevel: 'high' })
+      assert.strictEqual((yield* Stream.runCollect(Stream.take(changes, 1))).length, 1)
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('refuses to delete a definition another plugin contributes', () =>
+    Effect.gen(function* () {
+      const { org, definitions } = yield* openOrgIn(':memory:')
+      const engineer = jobTitleNamed(yield* org.jobTitles, 'Software engineer')
+      const contributed = JobTitleId.make('00000000-0000-4000-8000-0000000000c1')
+      yield* definitions.register(
+        { ...engineer, id: contributed, name: JobTitleName.make('Contributed') },
+        'example'
+      )
+      const error = yield* Effect.flip(org.deleteJobTitle(contributed))
+      assert.strictEqual(error._tag, 'BuiltInJobTitleDeleted')
+    }).pipe(Effect.scoped)
   )
 })
 
@@ -319,13 +380,14 @@ describe('Org.editJobTitle', () => {
 })
 
 describe('Org.deleteJobTitle', () => {
-  it.effect('deletes a copy with no hires', () =>
+  it.effect('deletes a copy with no hires from the registry', () =>
     Effect.gen(function* () {
-      const { org, jobTitle } = yield* builtIn('Software engineer')
+      const { org, definitions } = yield* openOrgIn(':memory:')
+      const jobTitle = jobTitleNamed(yield* org.jobTitles, 'Software engineer')
       const copy = yield* org.copyJobTitle(jobTitle.id, JobTitleName.make('builder'))
       yield* org.deleteJobTitle(copy.id)
       assert.notInclude(
-        (yield* org.jobTitles).map((listed) => listed.id),
+        (yield* definitions.list).map((listed) => listed.definition.id),
         copy.id
       )
     })
@@ -650,15 +712,19 @@ describe('Org.setBypassOverride', () => {
 
 describe('Org changes across a reopen', () => {
   it.effect(
-    'keeps an edited job title, a renamed hire, a reporting line and the overall cap after the org reopens',
+    'keeps an edited job title, a disabled job title, a renamed hire, a reporting line and the overall cap after the org reopens',
     () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem
         const path = yield* Path.Path
-        const filename = path.join(yield* fs.makeTempDirectoryScoped(), 'data.db')
-        const first = yield* openOrgIn(filename)
+        const directory = yield* fs.makeTempDirectoryScoped()
+        const filename = path.join(directory, 'data.db')
+        const definitionsFilename = path.join(directory, 'definitions.db')
+        const first = yield* openOrgIn(filename, definitionsFilename)
         const engineer = jobTitleNamed(yield* first.org.jobTitles, 'Software engineer')
         yield* first.org.editJobTitle(engineer.id, { jobDescription: 'Write tests first.' })
+        const tester = jobTitleNamed(yield* first.org.jobTitles, 'Quality engineer')
+        yield* first.org.setJobTitleEnabled(tester.id, false)
         const hired = yield* first.org.hire(engineer.id, null, null)
         yield* first.org.renameHire(hired.id, AgentName.make('Ada'))
         const report = yield* first.org.hire(engineer.id, null, hired.id)
@@ -666,15 +732,22 @@ describe('Org changes across a reopen', () => {
         yield* first.org.setOverallCap(OverallCap.make(6))
         yield* first.close
 
-        const second = yield* openOrgIn(filename)
+        const second = yield* openOrgIn(filename, definitionsFilename)
         const reopened = [
           jobTitleNamed(yield* second.org.jobTitles, 'Software engineer').jobDescription,
+          jobTitleNamed(yield* second.org.jobTitles, 'Quality engineer').enabled,
           (yield* second.org.hiredAgents).find((hire) => hire.id === hired.id)?.name,
           (yield* second.org.hiredAgents).find((hire) => hire.id === report.id)?.reportsTo,
           (yield* second.org.settings).overallCap
         ]
         yield* second.close
-        assert.deepStrictEqual(reopened, ['Write tests first.', 'Ada', null, OverallCap.make(6)])
+        assert.deepStrictEqual(reopened, [
+          'Write tests first.',
+          false,
+          'Ada',
+          null,
+          OverallCap.make(6)
+        ])
       }).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
   )
 })

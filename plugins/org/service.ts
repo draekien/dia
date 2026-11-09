@@ -1,4 +1,5 @@
 import { type AgentName, ServiceKey } from '@dia/plugin'
+import type { AgentDefinitionRegistry } from '@dia-plugin/agent-definitions/registry'
 import { Effect, Predicate, type Scope, type Stream } from 'effect'
 import type {
   BuiltInJobTitleDeleted,
@@ -24,13 +25,17 @@ import type {
 
 /**
  * The org (ADR-0033), as the `org` plugin provides it under {@link OrgService}. Reads return the
- * current state; each change is one transaction and returns the changed value. A job title's cap is
- * the number of hired agents of that job title. `jobTitles` lists the built-in job titles in seed
- * order, then copies in creation order; `hiredAgents` lists by `hiredAt`, then creation order. A
+ * current state; each change returns the changed value. A job title's cap is the number of hired
+ * agents of that job title. The job titles are the agent definitions of the registry
+ * `holdDefinitions` holds (ADR-0072); with none held, `jobTitles` is empty and every job title
+ * change fails with `JobTitleNotFound`. `jobTitles` lists the built-in job titles in seed order,
+ * then the other definitions by name; `hiredAgents` lists by `hiredAt`, then creation order. A
  * database failure, or a failure to generate an id, is a defect.
  *
  * `watchJobTitleChanges` subscribes when run; the stream it returns emits once after each
- * `setJobTitleEnabled` and `editJobTitle` since the subscription.
+ * `setJobTitleEnabled`, each change to the held registry's definitions, and each hold and release
+ * of a registry since the subscription. `holdDefinitions` holds `registry` until the calling scope
+ * closes; call it inside `whenProvided([AgentDefinitionRegistryKey], …)`.
  *
  * `copyJobTitle` copies every field of `jobTitleId` into a new enabled job title named `name` that
  * is not built in. `editJobTitle` applies `edit`'s present fields. `deleteJobTitle` deletes a copy
@@ -48,6 +53,9 @@ import type {
 export interface Org {
   readonly jobTitles: Effect.Effect<ReadonlyArray<JobTitle>>
   readonly watchJobTitleChanges: Effect.Effect<Stream.Stream<void>, never, Scope.Scope>
+  readonly holdDefinitions: (
+    registry: AgentDefinitionRegistry
+  ) => Effect.Effect<void, never, Scope.Scope>
   readonly hiredAgents: Effect.Effect<ReadonlyArray<HiredAgent>>
   readonly settings: Effect.Effect<OrgSettings>
   readonly setJobTitleEnabled: (
@@ -92,6 +100,7 @@ export interface Org {
 const MEMBERS: Record<keyof Org, (member: unknown) => boolean> = {
   jobTitles: Effect.isEffect,
   watchJobTitleChanges: Effect.isEffect,
+  holdDefinitions: Predicate.isFunction,
   hiredAgents: Effect.isEffect,
   settings: Effect.isEffect,
   setJobTitleEnabled: Predicate.isFunction,
