@@ -1,48 +1,173 @@
-<!-- SEED: re-run /impeccable document once there's code to capture the actual tokens and components. -->
-
 ---
 name: dia
 description: A desktop app that runs Claude Agent SDK agents for many projects in the background, notifies the user when an agent needs input, and shows what every agent is doing.
+colors:
+  signal-indigo: "oklch(0.52 0.18 265)"
+  indigo-ink: "oklch(0.99 0.01 265)"
+  cool-ground: "oklch(0.97 0.004 255)"
+  raised-sheet: "oklch(0.995 0.001 255)"
+  slate-ink: "oklch(0.25 0.015 255)"
+  muted-slate: "oklch(0.5 0.02 255)"
+  hairline: "oklch(0.9 0.006 255)"
+  quiet-fill: "oklch(0.93 0.008 255)"
+  error-red: "oklch(0.52 0.2 25)"
+  needs-input-amber: "oklch(0.7 0.15 70)"
+  failed-red: "oklch(0.55 0.22 25)"
+  finished-green: "oklch(0.55 0.15 145)"
+typography:
+  display:
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1.25rem"
+    fontWeight: 600
+  heading:
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "1rem"
+    fontWeight: 600
+  title:
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.875rem"
+    fontWeight: 600
+    lineHeight: 1.43
+  body:
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.875rem"
+    fontWeight: 400
+    lineHeight: 1.43
+  label:
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.75rem"
+    fontWeight: 500
+    lineHeight: 1.33
+  micro:
+    fontFamily: "Geist Variable, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "0.625rem"
+    fontWeight: 500
+    lineHeight: 1.4
+  mono:
+    fontFamily: "Geist Mono Variable, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+    fontSize: "0.75rem"
+    fontWeight: 400
+rounded:
+  checkbox: "5px"
+  sm: "6px"
+  floor: "6px"
+  md: "8px"
+  lg: "10px"
+  xl: "14px"
+  card: "18px"
+  panel: "34px"
+  full: "9999px"
+spacing:
+  run: "0px"
+  related: "8px"
+  row-inset: "8px"
+  hit-min: "24px"
+  section: "24px"
+  row: "44px"
+  hit-coarse: "44px"
+components:
+  button-primary:
+    backgroundColor: "{colors.signal-indigo}"
+    textColor: "{colors.indigo-ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.md}"
+    padding: "8px 16px"
+    height: "36px"
+  button-outline:
+    backgroundColor: "{colors.cool-ground}"
+    textColor: "{colors.slate-ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.md}"
+    padding: "0 12px"
+    height: "32px"
+  button-ghost:
+    backgroundColor: "transparent"
+    textColor: "{colors.slate-ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.md}"
+    padding: "0 12px"
+    height: "32px"
+  input:
+    backgroundColor: "transparent"
+    textColor: "{colors.slate-ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.md}"
+    padding: "4px 12px"
+    height: "36px"
+  list-row:
+    backgroundColor: "transparent"
+    textColor: "{colors.slate-ink}"
+    typography: "{typography.body}"
+    rounded: "{rounded.floor}"
+    padding: "0 {spacing.row-inset}"
+    height: "{spacing.row}"
+  status-dot:
+    textColor: "{colors.muted-slate}"
+    rounded: "{rounded.full}"
+    size: "10px"
+  entity-media:
+    backgroundColor: "{colors.raised-sheet}"
+    textColor: "{colors.muted-slate}"
+    typography: "{typography.micro}"
+    rounded: "{rounded.full}"
+    size: "24px"
+  tooltip:
+    backgroundColor: "{colors.slate-ink}"
+    textColor: "{colors.cool-ground}"
+    typography: "{typography.label}"
+    rounded: "{rounded.md}"
+    padding: "6px 12px"
 ---
 
 # Design System: dia
 
-## 1. Overview
+## Overview
 
 **Creative North Star: "The Dispatch Desk"**
 
 dia is a polished native desktop app in the lineage of Linear, Arc, and Raycast: crisp, cool-neutral surfaces; deliberate, sparing color; motion that responds to what the user just did rather than performing for its own sake. The user sends agents out to work and does not watch them. The UI's first job is to show, in one list, which agents need the user and what the others are doing, and then to get out of the way: one agent's tab fills the window at a time, and the rest keep working out of view.
 
+The colour palette is named **Control Room**: many status lights on a quiet cool-neutral ground, with one operator watching them. Density is that of a desktop tool: 14px body text, 44px record rows, hairline dividers instead of cards, and one accent.
+
 This system explicitly rejects two adjacent aesthetics: the generic AI-chat-SaaS look (gradient hero treatments, bubbly chat-marketing polish, anything that reads as a hosted product's landing page) and the raw terminal-multiplexer look (bare ASCII borders, zero-chrome, tmux-default starkness). dia is a native app that happens to run agent sessions — not a wrapped terminal, and not a product being sold.
 
 **Key Characteristics:**
-- Cool-neutral, full-palette surface with each color role used deliberately
+- Cool-neutral Control Room palette, in a light and a dark theme, with each color role used deliberately
 - Sans + mono pairing: sans for chrome and UI copy, mono for session/code content
 - Amber, red and green carry severity only: amber for a warning or alert, red for an error, green for a finished agent
+- Records are drawn with the draekien/design-system components (`List`, `Status`, `Entity`, `Figure`, `RelativeTime`) on dia's own tokens
 - Responsive, non-choreographed motion: transitions confirm actions, they don't perform
 
-## 2. Colors
+## Colors
 
-A full-palette, cool-neutral strategy: several named roles, each with one deliberate job, so a scan down the agent overview reads every agent's status correctly without any of them shouting.
+The Control Room palette: a cool-neutral ramp (hue 255) with one indigo accent and three severity colours. The frontmatter holds the light theme; the `.dark` block in `src/renderer/src/index.css` redefines every role at the dark end of the same ramp, and `.impeccable/design.json` lists both values.
 
 ### Primary
-- **[to be resolved during implementation]** — a single restrained accent (deep blue/indigo family) for the selected tab, the selected overview row, primary actions, and focus rings. Used sparingly; never for status.
-
-### Secondary
-- **[to be resolved during implementation]** — a secondary role reserved for structural chrome (the sidebar's project group dividers, panel borders) distinct from the primary accent.
+- **Signal Indigo** (`--primary`): the selected sidebar row and sub-navigation entry (as a `bg-primary/10` tint), the one primary action in a dialog, the composer's send button when it can send, links, and every focus ring (`--ring` has the same value). Never used for status.
+- **Indigo Ink** (`--primary-ink`): text and icons on a Signal Indigo fill.
 
 ### Tertiary
-- **[to be resolved during implementation]** — the severity colours, per the One Voice Rule: amber (a warning or alert, such as an agent that needs input or a context window near its auto-compact threshold), red (an error, such as a failed agent or a failed `/compact`), green (a finished agent).
+- **Needs-input Amber** (`--pulse-amber`): an agent that needs input, a context window near its auto-compact threshold, and other warnings.
+- **Failed Red** (`--pulse-red`): a failed agent's status dot.
+- **Error Red** (`--error`): error text, a failed plugin's status dot, destructive buttons, invalid fields, and the error toast icon.
+- **Finished Green** (`--pulse-green`): a finished agent, until the user shows its tab.
 
 ### Neutral
-- **[to be resolved during implementation]** — cool-toned (graphite/slate) background, surface, text, and border ramp. Backgrounds sit at the dark-to-light ends depending on OS light/dark mode; body text and dividers are drawn from the same cool ramp, never warm-tinted.
+- **Cool Ground** (`--background`): the window background and the content area.
+- **Raised Sheet** (`--surface`): the sidebar, cards, popovers, the session rail cards and avatar backgrounds.
+- **Slate Ink** (`--ink`): body text and icons.
+- **Muted Slate** (`--ink-muted`): captions, metadata, hints, the working and idle status dots.
+- **Hairline** (`--border`): 1px dividers, field borders and the scrollbar thumb.
+- **Quiet Fill** (`--secondary`): hover fills, the neutral `secondary` button and the code surface.
+
+Charts use `--chart-1` to `--chart-5`, and code highlighting uses the `--syntax-*` set; neither set is used for chrome.
 
 ### Named Rules
 **The One Voice Rule.** Amber marks every warning and alert. Red marks every error. Green marks a finished agent. No element uses these colours for decoration or emphasis: diff added and removed lines are neither warnings nor errors, so they do not use them. Amber and red pulse only on the status indicator. The OS-drawn close button's red hover is not dia's and does not follow this rule (ADR-0039).
 
 **The No Middle Dot Rule.** Text dia writes never uses the middle dot (U+00B7) as a separator. Use layout spacing, a line break, a comma or a sentence instead: `3 steps, Bash failed, 12s`, not the same parts joined by middle dots. Data from elsewhere shown verbatim, such as a skill's `argumentHint`, keeps its own characters.
 
-## 3. Typography
+## Typography
 
 **Display/UI Font:** Geist Sans (`Geist Variable`, self-hosted via `@fontsource-variable/geist`) — a technical/geometric sans for chrome, labels, and UI copy. Wired as `--font-sans` in `src/renderer/src/index.css`.
 **Mono Font:** Geist Mono (`Geist Mono Variable`, self-hosted via `@fontsource-variable/geist-mono`) — for code, file paths, tool names, and other literal agent output. Wired as `--font-mono`. Paired with Geist Sans as one metric-matched superfamily, so sans and mono read as one system.
@@ -51,36 +176,62 @@ A full-palette, cool-neutral strategy: several named roles, each with one delibe
 
 ### Hierarchy
 
-A fixed `rem` scale (Tailwind v4 defaults, product-appropriate ~1.125–1.2 ratio); no fluid `clamp()`. Hierarchy is carried by size **and** weight together, not size alone.
+A fixed `rem` scale (Tailwind v4 defaults, product-appropriate ~1.125–1.2 ratio); no fluid `clamp()`. Hierarchy is carried by size **and** weight together, not size alone. The design-system components use the named sizes `text-title`, `text-body`, `text-label` and `text-micro`, defined in `@theme`.
 
 - **Display** — `text-xl`+ / semibold: reserved for empty-state or first-run moments only; dia has no marketing headlines.
 - **Heading** — `text-base` (1rem) / semibold: card, section, and form titles (e.g. "Permission requested", "New agent"). This is the top of the shipped chrome hierarchy.
+- **Title** — `text-title` (0.875rem / semibold): a record's name in a list row.
 - **Body** — `text-sm` (0.875rem): UI copy and chrome, and agent **prose** message bodies; all sans. Weight `font-medium` marks a label within body-size text.
-- **Caption** — `text-xs` (0.75rem): status labels, overview activity lines, metadata, field hints, tool-event rows, path chips.
+- **Caption** — `text-xs` (0.75rem): status labels, overview activity lines, metadata, field hints, tool-event rows, path chips. `text-label` is the same size at medium weight.
+- **Micro** — `text-micro` (0.625rem / medium): avatar initials only.
+
+Numbers compared down a column use tabular figures (`tabular-nums`, which `Figure` sets).
 
 ### Named Rules
 **The Content-Is-Mono Rule.** The agent's *literal output* — code, file paths, tool names, command strings, and other verbatim snippets — renders in the mono family. Everything else, including the agent's *prose* (paragraphs, lists, and headings inside a Markdown message) and all of dia's own chrome (buttons, labels, dialogs), renders in the sans family. The two are never mixed within one span of text: mono is a signal that "this is a literal string," so widening it to whole prose bodies would drain that signal. An overview activity line follows the same rule: a `TodoWrite` item is sans, a tool call such as `Edit src/main/index.ts` is mono.
 
-## 4. Elevation
+## Layout
 
-The window has one resting level. The sidebar and the content area both fill the window from its top edge with no title bar strip; a 1px border separates them (ADR-0039). Their 32px top rows share one line with the native window controls, whose hover background fills the content's top row. Any elevation is a state response — an open dialog, a permission prompt, a command palette — never ambient decoration.
+The window is a resizable sidebar (14rem to 32rem, default 18rem) beside one content area; both start at the window's top edge, and their 32px top rows share one line with the native window controls (ADR-0039). The content area shows one tab, page or Settings dialog at a time.
+
+Spacing follows named steps from `@theme`: `run` (0) between parts that read as one, `related` (8px) between related items, `section` (24px) between sections, and a record row of 44px (`row`) with an 8px inset (`row-inset`). A pointer target is at least 24px (`hit-min`), and 44px on a coarse pointer (`hit-coarse`).
+
+Lists of records are container-aware: below 768px (`--container-abbreviate`) a `ListRowFact` set to `abbreviate` shows its short form, and below 640px (`--container-hide`) a fact set to `hide` is removed. Pages are `@container`s, so this follows the page width, not the window width.
+
+The transcript and composer sit in one centred column capped at Narrow, Default or Wide. Settings pages are centred columns of at most `max-w-2xl`; org sub-pages cap wide bodies at `max-w-3xl`.
+
+## Elevation & Depth
+
+The window has one resting level. The sidebar and the content area are separated by a 1px Hairline border, and regions inside them by hairline dividers, not shadows. Elevation is a state response — an open dialog, popover, tooltip or command palette — never ambient decoration.
 
 ### Shadow Vocabulary
-- **Dialog lift** (`[value to be resolved]`): applied only to modal/dialog and overlay surfaces, to distinguish "what needs my answer now" from the flat resting surface.
+- **Field rest** (`shadow-xs`): inputs and outline buttons, so a control reads as pressable on the flat ground.
+- **Popover lift** (`shadow-md`; the design-system preview card uses `--shadow-popover`): popovers, menus, selects and preview cards.
+- **Dialog lift** (`shadow-lg`): modal dialogs and alert dialogs, to distinguish "what needs my answer now" from the flat resting surface.
 
 ### Named Rules
 **The Flat Frame Rule.** At rest there is one level. The sidebar and the content area, and the regions inside them, are separated by borders and dividers, not shadows. Elevation appears only in direct response to an open dialog or overlay.
 
-## 5. Components
+## Shapes
+
+Corners come from one base radius, `--radius` (10px), scaled: controls (buttons, inputs, popovers, tooltips) use 8px (`rounded-md`), dialogs 10px (`rounded-lg`), list rows 6px (`rounded-floor`), checkboxes 5px, and cards 18px (`rounded-card`). Status dots, avatars and scrollbar thumbs are full circles or pills. Borders are 1px Hairline; a status dot's ring is 1.5px (`--status-media-ring`). Nothing uses a sharp 0px corner or a pill-shaped button.
+
+The status dot's fill tells states apart by shape before colour: a dashed ring (not started or idle), a half-filled dot (in progress or parked), a full dot (every other state).
+
+## Components
 
 ### Buttons
-- **Shape:** [radius to be resolved at implementation] — small, consistent with a native-app control, not sharp/terminal square and not pill-rounded/marketing-soft.
-- **Primary:** primary accent background, used only for the single clear primary action in a given dialog (e.g. "Approve" in a permission prompt).
-- **Hover / Focus:** subtle background shift + visible focus ring; no scale/bounce.
-- **Secondary / Ghost:** neutral-bordered or text-only, for all non-primary actions (the majority of buttons in a dense UI like this).
+- **Shape:** gently rounded (8px, `rounded-md`), small and consistent with a native-app control, never sharp-square and never pill-shaped.
+- **Primary** (`default`): Signal Indigo fill with Indigo Ink text, 36px tall, used only for the single clear primary action in a given dialog (e.g. "Approve" in a permission prompt). Hover darkens the fill to 90%.
+- **Outline:** a 1px border on the background with a `shadow-xs`, for secondary actions that need a visible edge (`Try again`, `Hire…`, `Change`).
+- **Ghost:** text only, with a Quiet Fill on hover, for the majority of buttons in dense rows and menus.
+- **Secondary:** a Quiet Fill button, used where an action must read as neutral, such as the composer's action button while there is nothing to send.
+- **Destructive:** an Error Red fill, only inside an alert dialog that confirms the deletion.
+- **Sizes:** `xs` 24px, `sm` 32px, `default` 36px, `lg` 40px, and square `icon` sizes of the same heights.
+- **Focus:** the border turns to the ring colour and a 3px ring at 50% opacity (`focus-visible:ring-[3px] ring-ring/50`); no scale or bounce. Disabled is 50% opacity.
 
 ### Status Indicator (signature component)
-The one component the whole system is built around. A small dot on an agent's overview row and its place in the collapsed rail, in six states: amber with a pulsing ring (needs input), red with a pulsing ring (failed), a neutral dot with a slow opacity pulse (working), a steady half-filled neutral dot (parked: the agent waits for its usage limit to reset), green steady (finished, until the user shows the tab), and a hollow neutral ring (idle). A parked agent turns amber (needs input) only when the user can resume it: its limit has reset, its reset time is unknown, or Claude Code is not signed in. Only amber and red get the ring, because only those states block on the user and also raise an OS notification; the working pulse is slow and neutral so it reads as activity, not as a call for attention. All motion stops under reduced-motion settings, leaving the color. A legend or filter sample renders the dot still (`still`), because it stands for a status rather than reporting one. This is the system's single sanctioned "loud" element per the One Voice Rule.
+The one component the whole system is built around. A small dot on an agent's overview row and its place in the collapsed rail, in six states: amber with a pulsing ring (needs input), red with a pulsing ring (failed), a neutral dot with a slow opacity pulse (working), a steady half-filled neutral dot (parked: the agent waits for its usage limit to reset), green steady (finished, until the user shows the tab), and a dashed neutral ring (idle). A parked agent turns amber (needs input) only when the user can resume it: its limit has reset, its reset time is unknown, or Claude Code is not signed in. Only amber and red get the ring, because only those states block on the user and also raise an OS notification; the working pulse is slow and neutral so it reads as activity, not as a call for attention. All motion stops under reduced-motion settings, leaving the color. A legend or filter sample renders the dot still (`still`), because it stands for a status rather than reporting one. This is the system's single sanctioned "loud" element per the One Voice Rule. The dot is the design-system `StatusMedia` (10px, a 1.5px ring) coloured per state, so its shapes match every other status dot: full, half-filled (parked) and dashed (idle).
 
 ### Toast
 The shadcn Base UI toast (`components/ui/toast.tsx`), stacked at the bottom right. dia uses it only for the failure of an action that has no dialog to show it in, such as Unarchive. A failure toast has `type: 'error'`: the title names the action that failed and the agent, the description gives the reason, and its icon is error red per the One Voice Rule.
@@ -116,9 +267,9 @@ A one-line strip under the Account Banner, shown while dia holds a stored agent 
 A page the `org` plugin adds to the `PagesSlot` list (Agent Overview › Pages). It fills the content area as a left sub-navigation beside the current sub-page, and opens on Dashboard each time it is shown.
 - **Sub-navigation:** `w-44` (11rem) with a right hairline, in two groups under caption-size muted labels, `Overview` (Dashboard, Objectives, Org chart) and `Manage` (Job titles, Hired agents). Entries are `text-sm` buttons with `aria-current="page"`; hover uses the secondary fill and the selected entry uses the primary-tinted fill (`bg-primary/10`) with `font-medium`, never a status color and never an edge stripe, as in the Agent Overview.
 - **Sub-page:** a `text-base font-semibold` `h2` naming the page, then the body, in a `px-6 py-5` column that is a container (`@container`). Wide bodies cap at `max-w-3xl`. Loading shows skeletons; a failure shows the reason in error red and an outline `Try again`.
-- **Dashboard:** one stat row, `dl grid-cols-3 divide-x border-y`: a caption-size muted term, then a `text-base font-medium tabular-nums` value with `text-sm` muted words after it (`2 of 5 enabled`); the row is divided by hairlines, not cards. `Running at once` carries an outline `xs` `Change` button that opens Settings › Org. Under it, `Needs attention` is a `text-sm font-medium` `h3` over a `divide-y border-y` list of items, each a sentence with an outline `sm` action (`Hire…`); while the Executive assistant cannot start, the first item is a `role="alert"` `text-sm text-error` sentence with no action, `Executive assistant cannot start: missing github (MCP server), dia-meta:plan (skill)`; with nothing to show it reads one muted line.
+- **Dashboard:** one stat row, `dl grid-cols-3 divide-x border-y`: a caption-size muted term, then a `text-base font-medium tabular-nums` value with `text-sm` muted words after it (`2 of 5 enabled`); the row is divided by hairlines, not cards. `Running at once` carries an outline `xs` `Change` button that opens Settings › Org. Under it, `Needs attention` is a `text-sm font-medium` `h3` over a `List` of items, each a sentence with an outline `sm` action (`Hire…`) in the row's action slot; while the Executive assistant cannot start, the first item is a `role="alert"` `text-sm text-error` sentence with no action, `Executive assistant cannot start: missing github (MCP server), dia-meta:plan (skill)`; with nothing to show it reads one muted line.
 - **Org chart:** a tree, not boxes: the `You` root (user icon, medium weight), then nested `ul` levels, each indented `ml-3 pl-3` behind a `border-l` hairline. A node is a button with the agent name in `font-medium` and its job title in caption size, muted; selecting it shows that agent on Hired agents.
-- **List and detail:** Job titles and Hired agents share one layout. Stacked, the list is `max-w-sm` above the detail; when the container is `@3xl` or wider, the list is `w-56` beside a detail of at most `max-w-3xl`. The list is a single-select `listbox` (`EntryList`): rows `px-2 py-1.5 text-sm`, the selected row in the same primary-tinted fill with `font-medium`, Arrow Up and Down, Home and End move the selection, and one tab stop. A row's second fact (a hire count in `tabular-nums`, `Disabled`, a job title) is caption size, muted, normal weight, at the row's right end.
+- **List and detail:** Job titles and Hired agents share one layout. Stacked, the list is `max-w-sm` above the detail; when the container is `@3xl` or wider, the list is `w-56` beside a detail of at most `max-w-3xl`. The list is a single-select `listbox` (`EntryList`): rows `px-2 py-1.5 text-sm`, the selected row in the same primary-tinted fill with `font-medium`, Arrow Up and Down, Home and End move the selection, and one tab stop. A row's second fact (a hire count in `tabular-nums`, `Disabled`, a job title) is caption size, muted, normal weight, at the row's right end. A Hired agents row is an `Entity`: a 24px avatar with the agent's initials (the job title's initials for an unnamed agent), the name, and the job title as its description.
 - **Detail:** a `text-base font-semibold` `h3` name with caption-size muted facts (`Built in`) and actions at the right end of the same line, then sections separated by a `border-t` and titled by a `text-sm font-medium` heading. Fields are the shared input, select and textarea; a hint is caption size muted, a validation error is caption size in error red under its field, and a failed save is a `role="alert"` caption in error red beside the buttons.
 - **Objectives:** the list and detail layout, with an outline `sm` `New objective…` above the list. A row shows the objective title and its project as the caption fact; open objectives come first by priority (high, normal, low), then newest, and completed objectives come last with the title muted. The detail is the `h3` title over a `dl` of `SettingsRow`s (Project, Priority, State, Assignee, Description), then an `Issues` section. Issues are a tree in the Org chart's indentation (`ml-3 pl-3 border-l` per level); a row is the title (`text-sm`, muted with a line through it when `Canceled`), under it the first line of the description as a muted caption-size truncated line when the description is not empty, then, on a `Triage` issue the dispatcher refused, a caption-size `text-error` line `Cannot start: missing github (MCP server), dia-meta:plan (skill)`, a caption-size muted `Retro` or `Planning` for those kinds, the status as a `w-24` caption (`issueStatusVariants`: started statuses in full ink and medium weight, every other status muted, `Canceled` struck through, never a status color), an `h-8 w-40` assignee select that is enabled only in `Triage` and `Todo`, and a `w-36` slot holding outline `xs` buttons: `Accept` and `Decline` on a `Triage` issue, `Finish` on a started issue. A comment sits under its issue row before its sub-issues, oldest first, as caption-size text indented `pl-3` without a rule: the author in medium ink (`Dismissed agent` when the agent is gone) over the body in muted `whitespace-pre-wrap`. When the objective has `Triage` issues, a Triage bar sits above the tree, closed by a hairline: the muted count (`2 issues in Triage`, `1 issue in Triage`) and outline `xs` `Accept all` and `Decline all`; it is absent otherwise. A pending decision shows a spinning `Loader2` in its button and disables both buttons of that row or bar. Under the tree, an open objective has one inline row: a `New issue` input, an assignee select and an outline `sm` `Add issue`. With no objectives the page shows the `Empty` block with `No objectives yet` and `New objective…`. While the org host entry is not serving, the page shows one muted `text-sm` line, `The org plugin's host entry is not loaded.`
 - **Dialogs:** Hire, New objective and Rename are `Dialog`s (`sm:max-w-md`, `sm:max-w-md` and `sm:max-w-sm`) with a stacked form of `gap-4`; confirmations (dismiss, delete) are alert dialogs (`sm:max-w-md`) that show a failure in error red above the buttons. A pending action shows a spinning `Loader2` in the button, still under reduced motion.
@@ -157,20 +308,29 @@ A page the `org` plugin adds to the `PagesSlot` list (Agent Overview › Pages).
 - **Plugins:** a plugin adds a card to the `chat` plugin's `RailCardsSlot` list (ADR-0061). Cards are ordered by their `order`, then by plugin name and id; which cards are hidden is saved app-wide.
 
 ### Inputs / Fields
-- **Style:** [to be resolved] — flat, bordered, neutral background.
-- **Focus:** border shift to primary accent + focus ring, matching button focus treatment.
-- **Error / Disabled:** an error state, such as a validation error, uses red, per the One Voice Rule. It does not pulse.
+- **Style:** a 1px Hairline border on a transparent background (`bg-input/30` in the dark theme), 8px corners, 36px tall, `shadow-xs`, muted placeholder.
+- **Focus:** the border turns to the ring colour and a 3px ring at 50% opacity, the same treatment as buttons.
+- **Error / Disabled:** an invalid field (`aria-invalid`) has an Error Red border and ring, per the One Voice Rule, with the message in caption size Error Red under it; it does not pulse. Disabled is 50% opacity.
+
+### Record lists
+Lists of comparable records use the draekien/design-system registry components in `src/renderer/src/components` (`list.tsx`, `status.tsx`, `entity.tsx`, `figure.tsx`, `relative-time.tsx`, `meter.tsx`, `table.tsx`, `preview-card.tsx`), which plugins import from `@dia/renderer-plugin`. They draw on dia's tokens, not the registry's own theme.
+- **List:** 44px rows with 6px corners and no dividers, one tab stop, `↑`/`↓`/`Home`/`End` between rows of that list only (a `List` nested in a row is its own list). A row is `ListRowSubject` (name, then a muted description), one `ListRowFact` per compared value, and buttons or a menu in `ListRowAction`. A row with no page of its own renders its `ListRowLink` as a `div`. Loading rows are `ListRowLoading` with the same parts. Free-form detail under a row spans the grid with `col-span-full`.
+- **Status:** a `StatusMedia` dot, then `StatusName`, then an optional muted `StatusDescription`. The dot's fill is the state's progress (`none`, `half`, `full`); its colour is Muted Slate or Slate Ink, and Error Red only for a failed state.
+- **Entity:** a 24px `EntityMedia` avatar with initials (`initials()` from `@dia/renderer-plugin`) on Raised Sheet, then `EntityName` and an optional `EntityDescription`.
+- **Figure** and **RelativeTime:** a number in tabular figures and a moment relative to now; both switch to a short form in an abbreviated fact.
+- **Where:** Settings › Plugins, MCP servers, Meta repo findings, Worktrees and Claude Code; the Org dashboard's Needs attention; the Issues page and objective screen. The Org page's Job titles and Hired agents lists stay a single-select `listbox` (`EntryList`), because `List` moves focus without selecting.
 
 ### Navigation
 The sidebar is the primary navigation. Any command palette or agent switcher reads as an overlay (Raycast-style), not a further persistent chrome element. Every setting lives in one Settings dialog (General, Adapters, Plugins and Meta repo in a left nav, plus one page per plugin that adds one, such as Org, a breadcrumb over the page). The Org settings page is a centred `max-w-2xl` column of labelled number fields, each with a caption-size muted hint and an error-red message. Meta repo shows the remote and branch, adds or changes the remote, and pushes; a refused push lists each finding by description, `file:line` and short commit in mono, under one line in error red, and never the secret; the command palette has one Settings item, and its search also lists each Settings page.
 
-## 6. Do's and Don'ts
+## Do's and Don'ts
 
 ### Do:
-- **Do** keep color roles deliberate: primary for action/selection, secondary for structure, amber for warnings, red for errors and green for a finished agent, per the One Voice Rule.
+- **Do** keep color roles deliberate: primary for action/selection, the cool neutrals for structure, amber for warnings, red for errors and green for a finished agent, per the One Voice Rule.
 - **Do** use mono for all literal agent/session content and sans for all dia chrome, per the Content-Is-Mono Rule.
 - **Do** keep to the one resting level, reserving elevation for dialogs and overlays, per the Flat Frame Rule.
 - **Do** make motion responsive to real actions (tab switch, row selection, status change) — confirm, don't choreograph.
+- **Do** draw a list of comparable records with `List`, its states with `Status`, people and agents with `Entity`, and compared numbers with `Figure`, per Record lists.
 
 ### Don't:
 - **Don't** build a generic AI-chat-SaaS look — no gradient hero treatments, no bubble-chat marketing polish, nothing that reads as a hosted product's landing page.
@@ -178,3 +338,4 @@ The sidebar is the primary navigation. Any command palette or agent switcher rea
 - **Don't** use amber, red or green for decoration or emphasis; they mean warning, error and finished.
 - **Don't** separate text with a middle dot (U+00B7), per the No Middle Dot Rule.
 - **Don't** pulse for a finished agent; a finished agent does not need the user, and a pulse there makes the needs-input pulse easier to ignore.
+- **Don't** hand-roll a record list as a `<ul className="divide-y">` with its own row markup, or draw a status as a bespoke dot; use the Record lists components.
