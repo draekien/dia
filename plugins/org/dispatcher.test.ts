@@ -6,10 +6,10 @@ import {
   type ModelOption,
   type OutboundMessage,
   PermissionRequested,
-  ProjectId,
   QuestionRequested,
   type SessionAttachment,
   type SessionEnd,
+  SessionFailed,
   SessionId,
   SessionNotFound,
   SessionStarted,
@@ -17,6 +17,16 @@ import {
   TurnCompleted,
   TurnStatusChanged
 } from '@dia/plugin'
+import {
+  AssigneeRef,
+  FirstIssue,
+  type Issue,
+  IssueId,
+  type IssueStatus,
+  ObjectiveId,
+  type ObjectivePriority,
+  WorkTitle
+} from '@dia-plugin/issues/domain'
 import type { McpServers } from '@dia-plugin/mcp/servers'
 import type { Skill } from '@dia-plugin/skills/registry'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
@@ -24,26 +34,15 @@ import { assert, describe, it } from '@effect/vitest'
 import { DateTime, Deferred, Effect, Exit, Option, Scope, Stream } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
+import { openIssues, PROJECT } from '../issues/issues.fake'
+import { orgAssignees } from './assignees'
 import { makeDispatcher } from './dispatcher'
-import {
-  type HiredAgent,
-  type Issue,
-  IssueId,
-  type JobTitle,
-  ObjectiveId,
-  type ObjectivePriority,
-  OverallCap,
-  PlanRoute,
-  WorkTitle
-} from './domain'
-import { makeIssueTools } from './issue-tools'
+import { type HiredAgent, type JobTitle, ORG_PROVIDER, OverallCap } from './domain'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { holdBuiltInDefinitions, mcpRegistry, skillRegistry } from './registries.fake'
 import { makeSessionTools } from './session-tools'
-import { makeWork } from './work'
 
-const PROJECT = ProjectId.make('00000000-0000-4000-8000-400000000001')
 const DIRECTORY = 'F:/repos/marketplace'
 const OBJECTIVE = ObjectiveId.make('00000000-0000-4000-8000-500000000001')
 const ALLOW = { _tag: 'Allow' } as const
@@ -158,17 +157,25 @@ const setUp = (options: {
   readonly withMcp?: boolean
   readonly skills?: ReadonlyArray<Skill>
   readonly settled?: boolean
+  readonly lent?: boolean
 }) =>
   Effect.gen(function* () {
     const dbScope = yield* Scope.make()
     yield* Effect.addFinalizer(() => Scope.close(dbScope, Exit.void))
     const sql = yield* openDatabase(':memory:', orgMigrations).pipe(Scope.provide(dbScope))
-    const { work, runs, org } = yield* Effect.gen(function* () {
-      const made = yield* makeWork((projectId) => Effect.succeed(projectId === PROJECT))
-      return { ...made, org: yield* makeOrg(made.openIssuesOf) }
-    }).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
+    const org = yield* makeOrg.pipe(
+      Effect.provideService(SqlClient.SqlClient, sql),
+      Effect.provide(NodeCrypto.layer)
+    )
     yield* holdBuiltInDefinitions(org)
     yield* org.setOverallCap(OverallCap.make(options.cap))
+    const { issues: work, sql: issuesSql } = yield* openIssues
+    const runs = yield* work.registerProvider({
+      id: ORG_PROVIDER,
+      label: 'Org',
+      assignees: orgAssignees(org)
+    })
+    yield* org.holdIssues(runs)
     const pluginsSettled = yield* Deferred.make<void>()
     if (options.settled ?? true) yield* Deferred.succeed(pluginsSettled, undefined)
     const sessionTools = yield* makeSessionTools(Deferred.await(pluginsSettled))
@@ -179,27 +186,35 @@ const setUp = (options: {
     )
     const { attach, attachments } = fakeAttach()
     const dispatcher = yield* makeDispatcher({
-      runs,
       org,
       projectDirectory: (objective) =>
         Effect.succeed(objective.projectId === PROJECT ? Option.some(DIRECTORY) : Option.none()),
-      issueTools: (scope) => makeIssueTools(work, scope),
       attach,
       sessionTools
     })
     const fake = fakeBackend(options.disabled)
     yield* dispatcher.lendBackend(fake.backend)
-    yield* work.createObjective({
-      id: OBJECTIVE,
-      projectId: PROJECT,
-      title: WorkTitle.make('Ship the marketplace'),
-      description: 'Let users install plugins.',
-      priority: 'normal',
-      route: PlanRoute.make({ assignee: null })
-    })
+    const lendScope = yield* Scope.make()
+    yield* Effect.addFinalizer(() => Scope.close(lendScope, Exit.void))
+    const lend = dispatcher
+      .lendIssues(work, runs)
+      .pipe(Scope.provide(lendScope), Effect.andThen(settle))
+    if (options.lent ?? true) yield* lend
+    yield* work.createObjective(
+      {
+        id: OBJECTIVE,
+        projectId: PROJECT,
+        title: WorkTitle.make('Ship the marketplace'),
+        description: 'Let users install plugins.',
+        priority: 'normal',
+        assignee: null
+      },
+      []
+    )
     yield* settle
     const jobTitles = yield* org.jobTitles
-    const hireOf = (jobTitle: JobTitle) => org.hire(jobTitle.id, null, null)
+    const hireOf = (jobTitle: JobTitle) =>
+      org.hire(jobTitle.id, null, null).pipe(Effect.tap(() => settle))
     let taskCount = 0
     const addTask = (assignee: HiredAgent, priority: ObjectivePriority = 'normal') =>
       Effect.gen(function* () {
@@ -207,23 +222,26 @@ const setUp = (options: {
         const objectiveId =
           priority === 'normal'
             ? OBJECTIVE
-            : (yield* work.createObjective({
-                id: ObjectiveId.make(
-                  `00000000-0000-4000-8000-5${String(taskCount).padStart(11, '0')}`
-                ),
-                projectId: PROJECT,
-                title: WorkTitle.make(`A ${priority} objective`),
-                description: '',
-                priority,
-                route: PlanRoute.make({ assignee: null })
-              })).id
+            : (yield* work.createObjective(
+                {
+                  id: ObjectiveId.make(
+                    `00000000-0000-4000-8000-5${String(taskCount).padStart(11, '0')}`
+                  ),
+                  projectId: PROJECT,
+                  title: WorkTitle.make(`A ${priority} objective`),
+                  description: '',
+                  priority,
+                  assignee: null
+                },
+                []
+              )).id
         const task = yield* work.createIssue({
           id: IssueId.make(`00000000-0000-4000-8000-6${String(taskCount).padStart(11, '0')}`),
           objectiveId,
           parentIssueId: null,
           title: WorkTitle.make(`Task ${taskCount}`),
           description: '',
-          assignee: assignee.id
+          assignee: refOf(assignee)
         })
         yield* dispatcher.signal
         yield* settle
@@ -237,12 +255,22 @@ const setUp = (options: {
       })
     const emit = (session: FakeSession, message: OutboundMessage) =>
       session.options.emit(message).pipe(Effect.andThen(settle))
-    const finish = (task: Issue) =>
-      work
-        .finishIssue(task.id)
-        .pipe(Effect.andThen(dispatcher.release(task.id)), Effect.andThen(settle))
+    const finish = (task: Issue) => work.finishIssue(task.id).pipe(Effect.andThen(settle))
+    const setStatus = (task: Issue, status: IssueStatus) =>
+      Effect.gen(function* () {
+        const tool = runs
+          .issueTools(task.id, task.assignee?.id ?? '')
+          .find((entry) => entry.name === 'update_issue')
+        assert.isDefined(tool)
+        const result = yield* tool.run({ status })
+        assert.isFalse(result.isError, result.text)
+      })
     return {
       sql,
+      issuesSql,
+      lend,
+      lendScope,
+      setStatus,
       work,
       runs,
       org,
@@ -261,6 +289,8 @@ const setUp = (options: {
       finish
     }
   })
+
+const refOf = (hire: HiredAgent) => AssigneeRef.make({ provider: ORG_PROVIDER, id: hire.id })
 
 const open = (sessions: ReadonlyArray<FakeSession>) => sessions.filter((session) => !session.closed)
 
@@ -283,7 +313,9 @@ describe('dispatcher caps', () => {
           hiresByJobTitle.set(jobTitle.id, count)
           for (let n = 0; n < count; n += 1) hires.push(yield* env.hireOf(jobTitle))
         }
-        const jobTitleOfHire = new Map(hires.map((hire) => [hire.id, hire.jobTitleId]))
+        const jobTitleOfHire = new Map<string, string>(
+          hires.map((hire) => [hire.id, hire.jobTitleId])
+        )
         const priorities: ReadonlyArray<ObjectivePriority> = ['normal', 'high', 'low']
         for (let n = 0; n < 60; n += 1) {
           const hire = hires[n % hires.length]
@@ -298,7 +330,7 @@ describe('dispatcher caps', () => {
           for (const session of open(env.sessions)) {
             const task = yield* env.taskOf(session)
             const jobTitleId =
-              task.assignee === null ? '' : (jobTitleOfHire.get(task.assignee) ?? '')
+              task.assignee === null ? '' : (jobTitleOfHire.get(task.assignee.id) ?? '')
             running.set(jobTitleId, (running.get(jobTitleId) ?? 0) + 1)
           }
           for (const [jobTitleId, count] of running) {
@@ -437,14 +469,24 @@ describe('dispatcher planning issue', () => {
     Effect.gen(function* () {
       const env = yield* setUp({ cap: 2 })
       const lead = yield* env.hireOf(env.jobTitles[5] as JobTitle)
-      yield* env.work.createObjective({
-        id: ObjectiveId.make('00000000-0000-4000-8000-500000000002'),
-        projectId: PROJECT,
-        title: WorkTitle.make('Add search'),
-        description: 'Find plugins by name.',
-        priority: 'normal',
-        route: PlanRoute.make({ assignee: lead.id })
-      })
+      yield* env.work.createObjective(
+        {
+          id: ObjectiveId.make('00000000-0000-4000-8000-500000000002'),
+          projectId: PROJECT,
+          title: WorkTitle.make('Add search'),
+          description: 'Find plugins by name.',
+          priority: 'normal',
+          assignee: null
+        },
+        [
+          FirstIssue.make({
+            kind: 'planning',
+            title: WorkTitle.make('Plan: Add search'),
+            description: '',
+            assignee: refOf(lead)
+          })
+        ]
+      )
       yield* env.dispatcher.signal
       yield* settle
 
@@ -612,15 +654,15 @@ describe('dispatcher session end', () => {
       yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
       const sessionId = SessionId.make('00000000-0000-4000-8000-700000000002')
       yield* env.emit(env.sessions[0] as FakeSession, SessionStarted.make({ sessionId }))
+      yield* Scope.close(env.lendScope, Exit.void)
       const nextSetup = yield* makeDispatcher({
-        runs: env.runs,
         org: env.org,
         projectDirectory: () => Effect.succeed(Option.some(DIRECTORY)),
-        issueTools: () => [],
         attach: env.attach,
         sessionTools: env.sessionTools
       })
       yield* nextSetup.lendBackend(env.backend)
+      yield* nextSetup.lendIssues(env.work, env.runs)
       yield* settle
 
       const resumed = env.sessions[1] as FakeSession
@@ -635,19 +677,19 @@ describe('dispatcher in_review issue', () => {
     Effect.gen(function* () {
       const env = yield* setUp({ cap: 2 })
       const task = yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
-      yield* env.work.updateIssue(OBJECTIVE, task.id, { status: 'in_review' })
+      yield* env.setStatus(task, 'in_review')
+      yield* Scope.close(env.lendScope, Exit.void)
       const nextSetup = yield* makeDispatcher({
-        runs: env.runs,
         org: env.org,
         projectDirectory: () => Effect.succeed(Option.some(DIRECTORY)),
-        issueTools: () => [],
         attach: env.attach,
         sessionTools: env.sessionTools
       })
       yield* nextSetup.lendBackend(env.backend)
+      yield* nextSetup.lendIssues(env.work, env.runs)
       yield* settle
 
-      const stored = yield* env.taskOf(env.sessions[0] as FakeSession)
+      const stored = yield* issueNow(env, task)
       assert.deepStrictEqual([stored.status, env.sessions.length], ['in_review', 1])
     }).pipe(Effect.scoped)
   )
@@ -679,7 +721,7 @@ const changesDuring = <A, E, R>(count: () => number, action: Effect.Effect<A, E,
 
 describe('dispatcher change signal', () => {
   it.effect(
-    'emits when an issue is reserved, waits on a permission, is answered and is dropped',
+    'emits when an issue is reserved, waits on a permission, is answered and is finished',
     () =>
       Effect.gen(function* () {
         const env = yield* setUp({ cap: 1 })
@@ -705,7 +747,7 @@ describe('dispatcher change signal', () => {
           count,
           env.dispatcher.answerPermission((task as Issue).id, 'r1', ALLOW)
         )
-        const dropped = yield* changesDuring(count, env.dispatcher.release((task as Issue).id))
+        const dropped = yield* changesDuring(count, env.finish(task as Issue))
 
         assert.deepStrictEqual(
           [reserved > 0, pending > 0, answered > 0, dropped > 0],
@@ -714,29 +756,23 @@ describe('dispatcher change signal', () => {
       }).pipe(Effect.scoped)
   )
 
-  it.effect(
-    'does not emit for activity during a running turn, a pass that starts nothing, or dropping an absent issue',
-    () =>
-      Effect.gen(function* () {
-        const env = yield* setUp({ cap: 1 })
-        const engineer = env.jobTitles[1] as JobTitle
-        yield* env.addTask(yield* env.hireOf(engineer))
-        const session = env.sessions[0] as FakeSession
-        yield* env.emit(session, ToolCallStarted.make({ toolCallId: 't0', toolName: 'Read' }))
-        const count = yield* countChanges(env.dispatcher.watchChanges)
+  it.effect('does not emit for activity during a running turn or a pass that starts nothing', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 1 })
+      const engineer = env.jobTitles[1] as JobTitle
+      yield* env.addTask(yield* env.hireOf(engineer))
+      const session = env.sessions[0] as FakeSession
+      yield* env.emit(session, ToolCallStarted.make({ toolCallId: 't0', toolName: 'Read' }))
+      const count = yield* countChanges(env.dispatcher.watchChanges)
 
-        const activity = yield* changesDuring(
-          count,
-          env.emit(session, ToolCallStarted.make({ toolCallId: 't1', toolName: 'Read' }))
-        )
-        const idlePass = yield* changesDuring(count, env.dispatcher.signal)
-        const absent = yield* changesDuring(
-          count,
-          env.dispatcher.release(IssueId.make('00000000-0000-4000-8000-699999999999'))
-        )
+      const activity = yield* changesDuring(
+        count,
+        env.emit(session, ToolCallStarted.make({ toolCallId: 't1', toolName: 'Read' }))
+      )
+      const idlePass = yield* changesDuring(count, env.dispatcher.signal)
 
-        assert.deepStrictEqual([activity, idlePass, absent], [0, 0, 0])
-      }).pipe(Effect.scoped)
+      assert.deepStrictEqual([activity, idlePass], [0, 0])
+    }).pipe(Effect.scoped)
   )
 })
 
@@ -777,14 +813,14 @@ describe('dispatcher attached sessions', () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect('removes the attached session when the issue is released', () =>
+  it.effect('closes the session and removes the attached session when the issue is finished', () =>
     Effect.gen(function* () {
       const env = yield* setUp({ cap: 1 })
       const task = yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
 
       yield* env.finish(task)
 
-      assert.deepStrictEqual(shown(env.attachments), [])
+      assert.deepStrictEqual([shown(env.attachments), open(env.sessions)], [[], []])
     }).pipe(Effect.scoped)
   )
 
@@ -884,8 +920,8 @@ describe('dispatcher session tools', () => {
 
         const stored = yield* issueNow(env, task)
         assert.deepStrictEqual(
-          [stored.status, stored.missing, env.sessions.length],
-          ['triage', [{ kind: 'mcp-server', name: 'github' }], 0]
+          [stored.status, stored.refusal, env.sessions.length],
+          ['triage', 'Cannot start: missing github (MCP server)', 0]
         )
       }).pipe(Effect.scoped)
   )
@@ -898,22 +934,22 @@ describe('dispatcher session tools', () => {
 
       const stored = yield* issueNow(env, task)
       assert.deepStrictEqual(
-        [stored.status, stored.missing, env.sessions.length],
-        ['triage', [{ kind: 'skill', name: 'dia-meta:ship' }], 0]
+        [stored.status, stored.refusal, env.sessions.length],
+        ['triage', 'Cannot start: missing dia-meta:ship (skill)', 0]
       )
     }).pipe(Effect.scoped)
   )
 
-  it.effect('clears the missing names when the refused issue is accepted', () =>
+  it.effect('clears the refusal when the refused issue is accepted', () =>
     Effect.gen(function* () {
       const env = yield* setUp({ cap: 1 })
       const engineer = yield* engineerNaming(env, { mcpServers: ['github'] })
       const task = yield* env.addTask(yield* env.hireOf(engineer))
 
       const [accepted] = yield* env.work.triageIssues([task.id], 'accept')
-      assert.deepStrictEqual([accepted?.status, accepted?.missing], ['todo', []])
+      assert.deepStrictEqual([accepted?.status, accepted?.refusal], ['todo', null])
       const stored = yield* issueNow(env, task)
-      assert.deepStrictEqual([stored.status, stored.missing], ['todo', []])
+      assert.deepStrictEqual([stored.status, stored.refusal], ['todo', null])
     }).pipe(Effect.scoped)
   )
 
@@ -953,9 +989,9 @@ describe('dispatcher session tools', () => {
         yield* Deferred.succeed(env.pluginsSettled, undefined)
         yield* settle
 
-        const events = yield* env.sql<{
+        const events = yield* env.issuesSql<{
           readonly event: string
-        }>`SELECT event FROM org_events WHERE issue_id = ${task.id}`
+        }>`SELECT event FROM issue_events WHERE issue_id = ${task.id}`
         assert.deepStrictEqual(
           [
             beforeSettled,
@@ -966,22 +1002,96 @@ describe('dispatcher session tools', () => {
         )
       }).pipe(Effect.scoped)
   )
+})
 
-  it.effect('leaves a todo issue the live map holds in todo when its server is deleted', () =>
+describe('dispatcher issues lend', () => {
+  it.effect('closes every session when the issues are withdrawn', () =>
     Effect.gen(function* () {
-      const env = yield* setUp({ cap: 1, servers: { github: GITHUB } })
-      const engineer = yield* engineerNaming(env, { mcpServers: ['github'] })
-      const task = yield* env.addTask(yield* env.hireOf(engineer))
-      yield* env.sql`UPDATE issues SET status = 'todo' WHERE issue_id = ${task.id}`
+      const env = yield* setUp({ cap: 1 })
+      yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
+      const before = open(env.sessions).length
 
-      yield* env.mcp.replaceUser({}, Effect.void)
-      yield* env.dispatcher.signal
+      yield* Scope.close(env.lendScope, Exit.void)
       yield* settle
 
-      const stored = yield* issueNow(env, task)
       assert.deepStrictEqual(
-        [stored.status, stored.missing, (env.sessions[0] as FakeSession).closed],
-        ['todo', [], false]
+        [before, open(env.sessions).length, (yield* env.dispatcher.live).heldSlots],
+        [1, 0, 0]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('starts a todo issue present when lent, without a further change', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 1, lent: false })
+      const hire = yield* env.hireOf(env.jobTitles[1] as JobTitle)
+      const task = yield* env.work.createIssue({
+        id: IssueId.make('00000000-0000-4000-8000-600000000001'),
+        objectiveId: OBJECTIVE,
+        parentIssueId: null,
+        title: WorkTitle.make('Waiting'),
+        description: '',
+        assignee: refOf(hire)
+      })
+      yield* settle
+      const before = env.sessions.length
+
+      yield* env.lend
+
+      assert.deepStrictEqual(
+        [before, env.sessions.length, (yield* issueNow(env, task)).status],
+        [0, 1, 'understanding']
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('requeues an issue left started when lent', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 1, lent: false })
+      const hire = yield* env.hireOf(env.jobTitles[1] as JobTitle)
+      const task = yield* env.work.createIssue({
+        id: IssueId.make('00000000-0000-4000-8000-600000000001'),
+        objectiveId: OBJECTIVE,
+        parentIssueId: null,
+        title: WorkTitle.make('Left running'),
+        description: '',
+        assignee: refOf(hire)
+      })
+      assert.isTrue(yield* env.runs.markStarted(task.id, hire.id))
+
+      yield* env.lend
+
+      const events = yield* env.issuesSql<{
+        readonly event: string
+      }>`SELECT event FROM issue_events WHERE issue_id = ${task.id}`
+      assert.deepStrictEqual(
+        [events.filter((row) => row.event.includes('IssueRequeued')).length, env.sessions.length],
+        [1, 1]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('retries an issue whose session failed only once it is reassigned', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp({ cap: 1 })
+      const engineer = env.jobTitles[1] as JobTitle
+      const first = yield* env.hireOf(engineer)
+      const second = yield* env.hireOf(engineer)
+      const task = yield* env.addTask(first)
+      yield* Deferred.succeed(
+        (env.sessions[0] as FakeSession).end,
+        SessionFailed.make({ reason: 'claude exited' })
+      )
+      yield* settle
+      const afterFailure = env.sessions.length
+
+      yield* env.work.assignIssue(task.id, refOf(second))
+      yield* settle
+
+      const retried = yield* env.taskOf(env.sessions[1] as FakeSession)
+      assert.deepStrictEqual(
+        [afterFailure, env.sessions.length, retried.assignee],
+        [1, 2, refOf(second)]
       )
     }).pipe(Effect.scoped)
   )

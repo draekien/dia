@@ -1,10 +1,5 @@
-import {
-  type HireId,
-  type IssueId,
-  type ObjectivePriority,
-  type OverallCap,
-  PRIORITY_RANK
-} from './domain'
+import { type IssueId, type ObjectivePriority, PRIORITY_RANK } from '@dia-plugin/issues/domain'
+import type { HireId, OverallCap } from './domain'
 
 /** A waiting issue the scheduler may start: its assignee, its objective's priority and its age. */
 export interface StartCandidate {

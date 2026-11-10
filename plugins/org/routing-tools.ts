@@ -1,17 +1,19 @@
 import type { DiaTool, DiaToolResult, ProjectId } from '@dia/plugin'
-import { Effect } from 'effect'
-import type { Dispatcher } from './dispatcher'
 import {
-  DirectRoute,
-  type HireId,
+  AssigneeRef,
+  type FirstIssue,
+  ISSUE_DESCRIPTION_MAX_LENGTH,
   type Issue,
   isStarted,
   type Objective,
   type ObjectiveId,
   ObjectivePriority,
-  PlanRoute,
   WorkTitle
-} from './domain'
+} from '@dia-plugin/issues/domain'
+import type { Issues } from '@dia-plugin/issues/service'
+import { Effect } from 'effect'
+import type { Dispatcher } from './dispatcher'
+import { DirectRoute, type HireId, ORG_PROVIDER, PlanRoute, prefixedTitle } from './domain'
 import {
   decodeField,
   decodeOptional,
@@ -22,7 +24,6 @@ import {
   required,
   result
 } from './tool-input'
-import type { Work } from './work'
 
 /** The most words a routing note may have (ADR-0053). */
 export const ROUTING_NOTE_MAX_WORDS = 30
@@ -46,12 +47,12 @@ export interface RoutingHire {
  * records that the Executive assistant created an objective, before it is created.
  */
 export interface RoutingToolDeps {
-  readonly work: Pick<Work, 'snapshot' | 'createObjective' | 'stopObjective'>
+  readonly work: Pick<Issues, 'snapshot' | 'createObjective' | 'stopObjective'>
   readonly projects: Effect.Effect<ReadonlyArray<RoutingProject>>
   readonly hires: Effect.Effect<ReadonlyArray<RoutingHire>>
   readonly newObjectiveId: Effect.Effect<ObjectiveId>
   readonly claim: (objectiveId: ObjectiveId) => Effect.Effect<void>
-  readonly dispatcher: Pick<Dispatcher, 'signal' | 'message' | 'release'>
+  readonly dispatcher: Pick<Dispatcher, 'message'>
 }
 
 const byIdOrName = <A extends { readonly id: string; readonly name: string }>(
@@ -94,8 +95,16 @@ const recover =
       )
     )
 
+const assigneeName = (issue: Issue, hires: ReadonlyArray<RoutingHire>) => {
+  if (issue.assignee === null) return 'nobody'
+  const { provider, id } = issue.assignee
+  return (
+    (provider === ORG_PROVIDER ? hires.find((hire) => hire.id === id)?.name : undefined) ?? provider
+  )
+}
+
 const issueLine = (issue: Issue, hires: ReadonlyArray<RoutingHire>) => {
-  const assignee = hires.find((hire) => hire.id === issue.assignee)?.name ?? 'nobody'
+  const assignee = assigneeName(issue, hires)
   return `  - ${issue.kind} issue "${issue.title}": ${issue.status}, assigned to ${assignee}`
 }
 
@@ -215,17 +224,26 @@ const createTool = (deps: RoutingToolDeps): DiaTool => ({
           (yield* decodeOptional(ObjectivePriority, 'priority', present(input, 'priority'))) ??
           'normal'
         const request = input.request ?? ''
+        const description = note === undefined ? request : `${request}\n\nRouting note: ${note}`
+        const assignee =
+          route._tag === 'DirectRoute'
+            ? AssigneeRef.make({ provider: ORG_PROVIDER, id: route.assignee })
+            : null
+        const firstIssue: FirstIssue =
+          assignee === null
+            ? { kind: 'planning', title: prefixedTitle('Plan', title), description: '', assignee }
+            : {
+                kind: 'work',
+                title,
+                description: description.slice(0, ISSUE_DESCRIPTION_MAX_LENGTH),
+                assignee
+              }
         const id = yield* deps.newObjectiveId
         yield* deps.claim(id)
         const created = yield* deps.work
-          .createObjective({
-            id,
-            projectId: project.id,
-            title,
-            description: note === undefined ? request : `${request}\n\nRouting note: ${note}`,
-            priority,
-            route
-          })
+          .createObjective({ id, projectId: project.id, title, description, priority, assignee }, [
+            firstIssue
+          ])
           .pipe(
             Effect.mapError(
               (error) =>
@@ -237,7 +255,6 @@ const createTool = (deps: RoutingToolDeps): DiaTool => ({
                 })
             )
           )
-        yield* deps.dispatcher.signal
         yield* Effect.logInfo('Executive assistant created an objective', {
           objectiveId: created.id,
           route: route._tag
@@ -294,9 +311,6 @@ const stopTool = (deps: RoutingToolDeps): DiaTool => ({
               () => new InvalidInput({ message: `No objective has id "${objective.id}".` })
             )
           )
-        yield* Effect.forEach(canceled, (issue) => deps.dispatcher.release(issue.id), {
-          discard: true
-        })
         return result(
           canceled.length === 0
             ? `Objective "${objective.title}" had no open issues.`

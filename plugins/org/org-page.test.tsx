@@ -8,12 +8,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { Atom } from 'effect/reactivity'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startRendererRegistry } from '../../src/renderer/src/lib/renderer-registry.fake'
-import { ReadOrg, WatchWork } from './calls'
+import { ReadOrg, WatchOrgLive } from './calls'
 import {
   HiredAgent,
+  HireHasOpenIssues,
   HireNameTaken,
   HireNotFound,
-  IssueNotInTriage,
+  IssuesNotLoaded,
   JobTitleDisabled,
   JobTitleHasHires,
   JobTitleNameTaken,
@@ -25,14 +26,10 @@ import {
   HIRES,
   hireId,
   installHost,
-  issueId,
   JOB_TITLES,
   jobTitleNamed,
-  objectiveId,
-  PROJECTS,
   type Reply,
-  snapshotOf,
-  WORK
+  snapshotOf
 } from './org-host.fake'
 import { OrgPage } from './org-page'
 
@@ -76,15 +73,10 @@ afterEach(() => {
   Reflect.deleteProperty(window, 'dia')
 })
 
-const renderOrg = async (host: FakeHost, target?: string) => {
+const renderOrg = async (host: FakeHost) => {
   const orgAtom = Atom.make(callHost(ctx, ReadOrg, {}))
   render(
-    <OrgPage
-      ctx={ctx}
-      orgAtom={orgAtom}
-      workAtom={Atom.make(followHost(ctx, WatchWork, {}))}
-      target={target}
-    />
+    <OrgPage ctx={ctx} orgAtom={orgAtom} liveAtom={Atom.make(followHost(ctx, WatchOrgLive, {}))} />
   )
   await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).toBeNull())
   await act(async () => {})
@@ -143,7 +135,7 @@ describe('Org page', () => {
     expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Dashboard')
   })
 
-  it.each(['Objectives', 'Org chart', 'Job titles', 'Hired agents', 'Dashboard'])(
+  it.each(['Org chart', 'Job titles', 'Hired agents', 'Dashboard'])(
     'shows %s with a heading naming it',
     async (page) => {
       await renderOrg(installHost(snapshotOf()))
@@ -174,7 +166,7 @@ describe('Org page', () => {
       <OrgPage
         ctx={ctx}
         orgAtom={Atom.make(callHost(ctx, ReadOrg, {}))}
-        workAtom={Atom.make(followHost(ctx, WatchWork, {}))}
+        liveAtom={Atom.make(followHost(ctx, WatchOrgLive, {}))}
       />
     )
 
@@ -188,7 +180,7 @@ describe('Org page', () => {
       <OrgPage
         ctx={ctx}
         orgAtom={Atom.make(callHost(ctx, ReadOrg, {}))}
-        workAtom={Atom.make(followHost(ctx, WatchWork, {}))}
+        liveAtom={Atom.make(followHost(ctx, WatchOrgLive, {}))}
       />
     )
 
@@ -233,7 +225,6 @@ describe('Dashboard', () => {
         snapshotOf(),
         {},
         {
-          ...WORK,
           assistantMissing: [
             { kind: 'mcp-server', name: 'github' },
             { kind: 'skill', name: 'dia-meta:plan' }
@@ -643,6 +634,36 @@ describe('Hired agents', () => {
     expect(screen.getByRole('alert').textContent).toBe('The org plugin is not loaded')
   })
 
+  it('says how many open issues stop a dismiss', async () => {
+    await showAgent(
+      installHost(snapshotOf(), {
+        Dismiss: failWith(HireHasOpenIssues.make({ hireId: hireId(4), issues: 2 }))
+      }),
+      /^Cy/
+    )
+
+    await click('Dismiss…')
+    await click('Dismiss')
+
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Cy is assigned to 2 open issues; assign them to someone else first'
+    )
+  })
+
+  it('says a dismiss waits for issues while it is not loaded', async () => {
+    await showAgent(
+      installHost(snapshotOf(), { Dismiss: failWith(IssuesNotLoaded.make({})) }),
+      /^Cy/
+    )
+
+    await click('Dismiss…')
+    await click('Dismiss')
+
+    expect(screen.getByRole('alert').textContent).toBe(
+      'Issues is not ready; it cannot be checked whether this agent has open issues'
+    )
+  })
+
   it('selects the first agent after the selected one is dismissed', async () => {
     const host = await showAgent(
       installHost(snapshotOf(), {
@@ -758,483 +779,6 @@ describe('Hired agents', () => {
     await click('Hire…')
 
     expect(screen.getByRole('dialog', { name: 'Hire an agent' })).toBeTruthy()
-  })
-})
-
-describe('Objectives', () => {
-  const openObjectives = async (host: FakeHost) => {
-    await renderOrg(host)
-    await go('Objectives')
-    await screen.findByRole('heading', { level: 3 })
-    return host
-  }
-
-  const facts = () =>
-    Object.fromEntries(
-      [...document.querySelectorAll('dl > div')].map((row) => [
-        row.querySelector('dt')?.textContent,
-        row.querySelector('dd')?.textContent
-      ])
-    )
-
-  const detailTitle = () => screen.getByRole('heading', { level: 3 }).textContent
-
-  const issueRow = (title: string) => screen.getByRole('listitem', { name: title })
-
-  const selectObjective = (title: string) =>
-    act(async () => {
-      fireEvent.click(screen.getByRole('option', { name: new RegExp(`^${title}`) }))
-    })
-
-  const create = () =>
-    act(async () => {
-      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Create' }))
-    })
-
-  it('opens on the objective a link targets', async () => {
-    await renderOrg(installHost(snapshotOf()), objectiveId(2))
-    await screen.findByRole('heading', { level: 3 })
-
-    expect([screen.getByRole('heading', { level: 2 }).textContent, detailTitle()]).toEqual([
-      'Objectives',
-      'Tidy release notes'
-    ])
-  })
-
-  it('opens on Dashboard for a target that is not an objective id', async () => {
-    await renderOrg(installHost(snapshotOf()), 'not-an-objective')
-
-    expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Dashboard')
-  })
-
-  it('lists open objectives by priority with their project, and completed ones last', async () => {
-    await openObjectives(installHost(snapshotOf()))
-
-    const rows = within(screen.getByRole('listbox', { name: 'Objectives' })).getAllByRole('option')
-
-    expect(rows.map((row) => row.textContent)).toEqual([
-      'Ship the objective screendia',
-      'Tidy release noteswebsite',
-      'Move settings to SQLitedia'
-    ])
-  })
-
-  it('shows the high-priority objective first, with its facts', async () => {
-    await openObjectives(installHost(snapshotOf()))
-
-    expect(detailTitle()).toBe('Ship the objective screen')
-    expect(facts()).toEqual({
-      Project: 'dia',
-      Priority: 'High',
-      State: 'Open',
-      Assignee: 'Ada',
-      Description: 'List objectives beside a detail, and show every issue with its status.'
-    })
-  })
-
-  it('shows Unassigned and No description for an objective with neither', async () => {
-    await openObjectives(installHost(snapshotOf()))
-
-    await selectObjective('Tidy release notes')
-
-    expect(detailTitle()).toBe('Tidy release notes')
-    expect(facts()).toEqual({
-      Project: 'website',
-      Priority: 'Normal',
-      State: 'Open',
-      Assignee: 'Unassigned',
-      Description: 'No description'
-    })
-  })
-
-  it('shows a completed objective as Completed, without Add issue', async () => {
-    await openObjectives(installHost(snapshotOf()))
-
-    await selectObjective('Move settings to SQLite')
-
-    expect(facts().State).toBe('Completed')
-    expect(screen.queryByRole('button', { name: 'Add issue' })).toBeNull()
-  })
-
-  it('shows the empty state when there are no objectives', async () => {
-    await renderOrg(
-      installHost(snapshotOf(), {}, { ...WORK, objectives: [], issues: [], comments: [] })
-    )
-    await go('Objectives')
-
-    expect(await screen.findByText('No objectives yet')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'New objective…' })).toBeTruthy()
-  })
-
-  it('says the host entry is not loaded when it is not serving WatchWork', async () => {
-    const host = installHost(snapshotOf())
-    Object.assign(window.dia.plugins, {
-      subscribe: (
-        _plugin: string,
-        tag: string,
-        _payload: unknown,
-        _onValue: unknown,
-        onEnd: (end: unknown) => void
-      ) => {
-        queueMicrotask(() =>
-          onEnd({
-            _tag: 'PluginSubscriptionFailure',
-            error: { _tag: 'PluginNotServing', plugin: 'org', tag, message: 'not loaded' }
-          })
-        )
-        return () => {}
-      }
-    })
-    await renderOrg(host)
-    await go('Objectives')
-
-    expect(await screen.findByText("The org plugin's host entry is not loaded.")).toBeTruthy()
-  })
-
-  it('nests a sub-issue under its parent and a marked retro issue under the issue it reviews', async () => {
-    await openObjectives(installHost(snapshotOf()))
-
-    expect(
-      within(issueRow('Build the objective screen')).queryByText('Test the issue tree')
-    ).not.toBeNull()
-    expect(
-      within(issueRow('Stream the work view')).queryByText('Retro: Stream the work view')
-    ).not.toBeNull()
-    expect(within(issueRow('Retro: Stream the work view')).queryByText('Retro')).not.toBeNull()
-    expect(within(issueRow('Build the objective screen')).queryByText('Retro')).toBeNull()
-    expect(
-      within(issueRow('Build the objective screen')).queryByText('Write the release note')
-    ).toBeNull()
-  })
-
-  it('marks the planning issue as Planning', async () => {
-    await openObjectives(installHost(snapshotOf()))
-
-    expect(
-      within(issueRow('Plan: Ship the objective screen')).queryByText('Planning')
-    ).not.toBeNull()
-  })
-
-  it.each([
-    ['Add keyboard shortcuts', 'Triage'],
-    ['Write the release note', 'Todo'],
-    ['Build the objective screen', 'Implementing'],
-    ['Show the status labels', 'In Review'],
-    ['Stream the work view', 'Done'],
-    ['Export objectives as CSV', 'Canceled']
-  ])('labels %s with its status %s', async (title, label) => {
-    await openObjectives(installHost(snapshotOf()))
-
-    expect(within(issueRow(title)).queryByText(label)).not.toBeNull()
-  })
-
-  it('says a triage issue cannot start while its job title names missing items', async () => {
-    await openObjectives(
-      installHost(
-        snapshotOf(),
-        {},
-        {
-          ...WORK,
-          issues: WORK.issues.map((existing) =>
-            existing.id === issueId(8)
-              ? { ...existing, missing: [{ kind: 'mcp-server' as const, name: 'github' }] }
-              : existing
-          )
-        }
-      )
-    )
-
-    expect(
-      within(issueRow('Document the statuses')).queryByText(
-        'Cannot start: missing github (MCP server)'
-      )
-    ).not.toBeNull()
-  })
-
-  it('shows an issue status the host pushes without any user action', async () => {
-    const host = await openObjectives(installHost(snapshotOf()))
-    const before = within(issueRow('Write the release note')).queryByText('Implementing')
-
-    await act(async () => {
-      host.push({
-        ...WORK,
-        issues: WORK.issues.map((existing) =>
-          existing.id === issueId(6) ? { ...existing, status: 'implementing' as const } : existing
-        )
-      })
-    })
-
-    expect(before).toBeNull()
-    expect(within(issueRow('Write the release note')).queryByText('Implementing')).not.toBeNull()
-  })
-
-  it('sends AssignIssue when a todo issue gets an assignee', async () => {
-    const host = await openObjectives(installHost(snapshotOf()))
-
-    await choose('Assignee of Write the release note', 'Bea')
-
-    await waitFor(() =>
-      expect(host.sent).toContainEqual(['AssignIssue', { issueId: issueId(6), hireId: hireId(2) }])
-    )
-  })
-
-  it('enables the assignee of triage and todo issues only', async () => {
-    await openObjectives(installHost(snapshotOf()))
-
-    const disabled = (title: string) =>
-      screen.getByRole('combobox', { name: `Assignee of ${title}` }).hasAttribute('disabled')
-
-    expect(
-      [
-        'Add keyboard shortcuts',
-        'Write the release note',
-        'Build the objective screen',
-        'Show the status labels',
-        'Stream the work view'
-      ].map(disabled)
-    ).toEqual([false, false, true, true, true])
-  })
-
-  it('offers Finish on every started issue, and sends FinishIssue from it', async () => {
-    const host = await openObjectives(installHost(snapshotOf()))
-    const finishes = screen
-      .getAllByRole('button', { name: 'Finish' })
-      .map((button) => button.closest('li')?.getAttribute('aria-label'))
-
-    await act(async () => {
-      fireEvent.click(
-        within(issueRow('Build the objective screen')).getByRole('button', { name: 'Finish' })
-      )
-    })
-
-    expect(finishes).toEqual(['Build the objective screen', 'Show the status labels'])
-    await waitFor(() => expect(host.sent).toContainEqual(['FinishIssue', { issueId: issueId(2) }]))
-  })
-
-  const press = (name: string, scope?: HTMLElement) =>
-    act(async () => {
-      fireEvent.click((scope ? within(scope) : screen).getByRole('button', { name }))
-    })
-
-  it.each([
-    ['Accept', 'accept', 'Todo'],
-    ['Decline', 'decline', 'Canceled']
-  ])(
-    'sends TriageIssues from %s on a triage issue and the issue moves',
-    async (name, decision, label) => {
-      const host = await openObjectives(installHost(snapshotOf()))
-
-      await press(name, issueRow('Add keyboard shortcuts'))
-
-      await waitFor(() =>
-        expect(host.sent).toContainEqual(['TriageIssues', { issueIds: [issueId(7)], decision }])
-      )
-      await waitFor(() =>
-        expect(within(issueRow('Add keyboard shortcuts')).queryByText(label)).not.toBeNull()
-      )
-    }
-  )
-
-  it('offers Accept and Decline on triage issues only', async () => {
-    await openObjectives(installHost(snapshotOf()))
-
-    const rowsWith = (name: string) =>
-      screen
-        .getAllByRole('button', { name })
-        .map((button) => button.closest('li')?.getAttribute('aria-label'))
-
-    expect(rowsWith('Accept')).toEqual(['Add keyboard shortcuts', 'Document the statuses'])
-    expect(rowsWith('Decline')).toEqual(['Add keyboard shortcuts', 'Document the statuses'])
-  })
-
-  it.each([
-    ['Accept all', 'accept'],
-    ['Decline all', 'decline']
-  ])('sends TriageIssues with every triage issue from %s', async (name, decision) => {
-    const host = await openObjectives(installHost(snapshotOf()))
-
-    await press(name)
-
-    await waitFor(() =>
-      expect(host.sent).toContainEqual([
-        'TriageIssues',
-        { issueIds: [issueId(7), issueId(8)], decision }
-      ])
-    )
-  })
-
-  it('counts the triage issues in the bar, singular for one', async () => {
-    const host = await openObjectives(installHost(snapshotOf()))
-    const before = screen.queryByText('2 issues in Triage')
-
-    await press('Accept', issueRow('Add keyboard shortcuts'))
-
-    expect(before).not.toBeNull()
-    expect(await screen.findByText('1 issue in Triage')).toBeTruthy()
-    expect(host.sent).toHaveLength(1)
-  })
-
-  it('hides the Triage bar when no issue is in triage', async () => {
-    await openObjectives(installHost(snapshotOf()))
-
-    await press('Accept all')
-
-    await waitFor(() => expect(screen.queryByText(/in Triage$/)).toBeNull())
-    expect(screen.queryByRole('button', { name: 'Accept all' })).toBeNull()
-  })
-
-  it('shows the first line of an issue description and none for an empty one', async () => {
-    await openObjectives(installHost(snapshotOf()))
-
-    expect(
-      within(issueRow('Build the objective screen')).queryByText(
-        'A list of objectives beside the selected one.'
-      )
-    ).not.toBeNull()
-    expect(within(issueRow('Build the objective screen')).queryByText(/Show its issues/)).toBeNull()
-  })
-
-  it('shows a comment under its issue with its author, and Dismissed agent for a null author', async () => {
-    await openObjectives(installHost(snapshotOf()))
-
-    const commentOf = (body: string) => within(screen.getByText(body).closest('li') as HTMLElement)
-
-    const bea = commentOf('The tree nests sub-issues under their parent.')
-    const dismissed = commentOf('Ready for review.')
-
-    expect(bea.getByText('Bea')).toBeTruthy()
-    expect(dismissed.getByText('Dismissed agent')).toBeTruthy()
-    expect(
-      issueRow('Build the objective screen').contains(screen.getByText('Ready for review.'))
-    ).toBe(false)
-  })
-
-  it('toasts why accepting an issue failed when it is no longer in Triage', async () => {
-    await openObjectives(
-      installHost(snapshotOf(), {
-        TriageIssues: failWith(
-          IssueNotInTriage.make({ issueId: issueId(7), status: 'implementing' })
-        )
-      })
-    )
-
-    await press('Accept', issueRow('Add keyboard shortcuts'))
-
-    expect(vi.mocked(toast.add).mock.calls[0]?.[0]).toMatchObject({
-      title: 'Could not accept Add keyboard shortcuts',
-      description: 'This issue is no longer in Triage'
-    })
-  })
-
-  it('toasts why declining all failed', async () => {
-    await openObjectives(
-      installHost(snapshotOf(), {
-        TriageIssues: failWith(IssueNotInTriage.make({ issueId: issueId(7), status: 'done' }))
-      })
-    )
-
-    await press('Decline all')
-
-    expect(vi.mocked(toast.add).mock.calls[0]?.[0]).toMatchObject({
-      title: 'Could not decline the issues',
-      description: 'This issue is no longer in Triage'
-    })
-  })
-
-  it('sends CreateIssue with an empty description from Add issue and shows the new issue', async () => {
-    const host = await openObjectives(installHost(snapshotOf()))
-
-    type('Issue title', '  Review the screen  ')
-    await choose('Assignee of the new issue', 'Cy')
-    await click('Add issue')
-
-    const [, payload] = host.sent.find(([tag]) => tag === 'CreateIssue') ?? []
-    expect(payload).toEqual({
-      issue: {
-        id: expect.any(String),
-        objectiveId: objectiveId(1),
-        parentIssueId: null,
-        title: 'Review the screen',
-        description: '',
-        assignee: hireId(4)
-      }
-    })
-    expect(await screen.findByRole('listitem', { name: 'Review the screen' })).toBeTruthy()
-  })
-
-  it('rejects an empty issue title without a call', async () => {
-    const host = await openObjectives(installHost(snapshotOf()))
-
-    await click('Add issue')
-
-    expect(screen.getByRole('alert').textContent).toBe('Enter a title')
-    expect(sentTags(host)).not.toContain('CreateIssue')
-  })
-
-  it('offers only the registered projects', async () => {
-    await openObjectives(installHost(snapshotOf()))
-    await click('New objective…')
-
-    await openSelect('Project')
-
-    const projectOptions = screen
-      .getAllByRole('option', { hidden: true })
-      .filter((option) => option.closest('[aria-label="Objectives"]') === null)
-    expect(projectOptions.map((option) => option.textContent)).toEqual(
-      PROJECTS.map((project) => project.name)
-    )
-  })
-
-  it('sends CreateObjective with the form and selects the new objective', async () => {
-    const host = await openObjectives(installHost(snapshotOf()))
-    await click('New objective…')
-
-    await choose('Project', 'website')
-    type('Title', '  Launch the docs site  ')
-    type('Description', 'Write the getting started guide.')
-    await act(async () => {
-      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'High' }))
-    })
-    await choose('Assignee', 'Ada')
-    await create()
-
-    const [, payload] = host.sent.find(([tag]) => tag === 'CreateObjective') ?? []
-    expect(payload).toEqual({
-      objective: {
-        id: expect.any(String),
-        projectId: PROJECTS[1].id,
-        title: 'Launch the docs site',
-        description: 'Write the getting started guide.',
-        priority: 'high',
-        route: { _tag: 'PlanRoute', assignee: hireId(1) }
-      }
-    })
-    await waitFor(() => expect(detailTitle()).toBe('Launch the docs site'))
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-
-  it.each([
-    ['an empty title', '   ', 'Enter a title'],
-    ['a 121-character title', 'x'.repeat(121), 'Use at most 120 characters']
-  ])('rejects %s without a call', async (_case, title, message) => {
-    const host = await openObjectives(installHost(snapshotOf()))
-    await click('New objective…')
-
-    type('Title', title)
-    await create()
-
-    expect(within(screen.getByRole('dialog')).getByText(message)).toBeTruthy()
-    expect(sentTags(host)).not.toContain('CreateObjective')
-  })
-
-  it('accepts a 120-character title', async () => {
-    const host = await openObjectives(installHost(snapshotOf()))
-    await click('New objective…')
-
-    type('Title', 'x'.repeat(120))
-    await create()
-
-    await waitFor(() => expect(sentTags(host)).toContain('CreateObjective'))
   })
 })
 

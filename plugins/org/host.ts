@@ -9,6 +9,8 @@ import {
   type AgentDefinitionRegistry,
   AgentDefinitionRegistryKey
 } from '@dia-plugin/agent-definitions/registry'
+import { ObjectiveId } from '@dia-plugin/issues/domain'
+import { type Issues, IssuesKey } from '@dia-plugin/issues/service'
 import { McpServerRegistryKey } from '@dia-plugin/mcp/registry'
 import { SkillSourceRegistryKey } from '@dia-plugin/skills/registry'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
@@ -27,79 +29,48 @@ import {
   SubscriptionRef
 } from 'effect'
 import { SqlClient } from 'effect/sql'
+import { orgAssignees } from './assignees'
 import { makeAssistant } from './assistant'
 import { BUILT_IN_DEFINITIONS } from './built-in-job-titles'
 import { bypassAvailable } from './bypass'
 import {
   AnswerPermission,
-  AssignIssue,
   CopyJobTitle,
-  CreateIssue,
-  CreateObjective,
   DeleteJobTitle,
   Dismiss,
   EditJobTitle,
-  FinishIssue,
   Hire,
   ReadOrg,
-  ReadWork,
   RenameHire,
   SetBypassOverride,
   SetJobTitleEnabled,
   SetOverallCap,
   SetReportsTo,
-  TriageIssues,
-  WatchWork
+  WatchOrgLive
 } from './calls'
 import { type Dispatcher, makeDispatcher } from './dispatcher'
 import {
   agentName,
   jobTitleName,
   type MissingReference,
-  ObjectiveId,
+  ORG_PROVIDER,
   sameMissingReferences
 } from './domain'
-import { handOverJobTitles, handoverPending } from './handover'
-import { makeIssueTools } from './issue-tools'
+import { handOverJobTitles, handOverWork, handoverPending, workHandoverPending } from './handover'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { makeRoutingTools } from './routing-tools'
 import { type Org, OrgService } from './service'
 import { makeSessionTools, type SessionTools } from './session-tools'
-import { makeWork, type Work } from './work'
 
 type Workspace = Stream.Success<HostPluginContext['workspace']>
 
 type AssistantMissing = SubscriptionRef.SubscriptionRef<ReadonlyArray<MissingReference>>
 
-const readWorkView = (work: Work, dispatcher: Dispatcher, assistantMissing: AssistantMissing) =>
-  Effect.map(
-    Effect.all([work.snapshot, dispatcher.live, SubscriptionRef.get(assistantMissing)]),
-    ([snapshot, live, missing]) => ({ ...snapshot, ...live, assistantMissing: missing })
-  )
-
-const watchWork = (work: Work, dispatcher: Dispatcher, assistantMissing: AssistantMissing) =>
-  Stream.unwrap(
-    Effect.gen(function* () {
-      const works = yield* work.watchChanges
-      const lives = yield* dispatcher.watchChanges
-      yield* Effect.logDebug('Watching org work')
-      return Stream.concat(
-        Stream.make(undefined),
-        Stream.mergeAll(
-          [
-            works,
-            lives,
-            SubscriptionRef.changes(assistantMissing).pipe(
-              Stream.changesWith(sameMissingReferences),
-              Stream.drop(1),
-              Stream.as(undefined)
-            )
-          ],
-          { concurrency: 'unbounded' }
-        ).pipe(Stream.buffer({ capacity: 1, strategy: 'sliding' }))
-      ).pipe(Stream.mapEffect(() => readWorkView(work, dispatcher, assistantMissing)))
-    })
+const watchOrgLive = (assistantMissing: AssistantMissing) =>
+  SubscriptionRef.changes(assistantMissing).pipe(
+    Stream.changesWith(sameMissingReferences),
+    Stream.map((missing) => ({ assistantMissing: missing }))
   )
 
 const holdAgentBackend = (
@@ -147,7 +118,7 @@ const runAssistant = (
   deps: {
     readonly sql: SqlClient.SqlClient
     readonly org: Org
-    readonly work: Work
+    readonly work: Issues
     readonly workspace: Ref.Ref<Option.Option<Workspace>>
     readonly dispatcher: Dispatcher
     readonly sessionTools: SessionTools
@@ -183,6 +154,30 @@ const runAssistant = (
       }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodeCrypto.layer)))
     )
     .pipe(Effect.orDie)
+
+const runIssues = (
+  ctx: HostPluginContext,
+  deps: Omit<Parameters<typeof runAssistant>[1], 'work'>
+) =>
+  Effect.gen(function* () {
+    if (yield* workHandoverPending.pipe(Effect.provideService(SqlClient.SqlClient, deps.sql))) {
+      yield* Effect.logInfo('Org objectives and issues wait for issues to hand over')
+    }
+    yield* ctx.whenProvided([IssuesKey], ({ issues }) =>
+      Effect.gen(function* () {
+        yield* handOverWork(issues).pipe(Effect.provideService(SqlClient.SqlClient, deps.sql))
+        const runs = yield* issues.registerProvider({
+          id: ORG_PROVIDER,
+          label: 'Org',
+          assignees: orgAssignees(deps.org)
+        })
+        yield* deps.org.holdIssues(runs)
+        yield* deps.dispatcher.lendIssues(issues, runs)
+        yield* runAssistant(ctx, { ...deps, work: issues })
+        yield* Effect.logInfo('Org runs its hired agents through issues')
+      })
+    )
+  }).pipe(Effect.orDie)
 
 const registerBuiltIns = (ctx: HostPluginContext, registry: AgentDefinitionRegistry) =>
   Effect.forEach(
@@ -305,37 +300,14 @@ const serveOrgCalls = (
     { discard: true }
   )
 
-const serveWorkCalls = (
+const serveLiveCalls = (
   ctx: HostPluginContext,
-  work: Work,
   dispatcher: Dispatcher,
   assistantMissing: AssistantMissing
 ): Effect.Effect<void, never, Scope.Scope> =>
   Effect.all(
     [
-      ctx.serve(ReadWork, () => readWorkView(work, dispatcher, assistantMissing)),
-      ctx.serve(WatchWork, () => watchWork(work, dispatcher, assistantMissing)),
-      ctx.serve(CreateObjective, ({ objective }) =>
-        work.createObjective(objective).pipe(Effect.tap(() => dispatcher.signal))
-      ),
-      ctx.serve(CreateIssue, ({ issue }) =>
-        work.createIssue(issue).pipe(Effect.tap(() => dispatcher.signal))
-      ),
-      ctx.serve(AssignIssue, ({ issueId, hireId }) =>
-        work
-          .assignIssue(issueId, hireId)
-          .pipe(
-            Effect.tap((issue) =>
-              issue.status === 'todo' ? dispatcher.release(issueId) : Effect.void
-            )
-          )
-      ),
-      ctx.serve(TriageIssues, ({ issueIds, decision }) =>
-        work.triageIssues(issueIds, decision).pipe(Effect.tap(() => dispatcher.signal))
-      ),
-      ctx.serve(FinishIssue, ({ issueId }) =>
-        work.finishIssue(issueId).pipe(Effect.tap(() => dispatcher.release(issueId)))
-      ),
+      ctx.serve(WatchOrgLive, () => watchOrgLive(assistantMissing)),
       ctx.serve(AnswerPermission, ({ issueId, requestId, response }) =>
         dispatcher.answerPermission(issueId, requestId, response)
       )
@@ -347,10 +319,7 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
   Effect.gen(function* () {
     const sql = yield* ctx.database(orgMigrations)
     const workspace = yield* Ref.make(Option.none<Workspace>())
-    const { work, runs, openIssuesOf } = yield* makeWork((projectId) =>
-      Effect.map(directoryOf(workspace, projectId), Option.isSome)
-    ).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
-    const org = yield* makeOrg(openIssuesOf).pipe(
+    const org = yield* makeOrg.pipe(
       Effect.provideService(SqlClient.SqlClient, sql),
       Effect.provide(NodeCrypto.layer)
     )
@@ -358,10 +327,8 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     const sessionTools = yield* makeSessionTools(ctx.pluginsSettled)
     const assistantMissing = yield* SubscriptionRef.make<ReadonlyArray<MissingReference>>([])
     const dispatcher = yield* makeDispatcher({
-      runs,
       org,
       projectDirectory: (objective) => directoryOf(workspace, objective.projectId),
-      issueTools: (scope) => makeIssueTools(work, scope),
       attach: ctx.sessions.attach,
       sessionTools
     })
@@ -369,17 +336,9 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     const backend = yield* Ref.make(Option.none<AgentBackend>())
     yield* holdAgentBackend(ctx, backend, dispatcher)
     yield* holdRegistries(ctx, org, sessionTools, sql)
-    yield* runAssistant(ctx, {
-      sql,
-      org,
-      work,
-      workspace,
-      dispatcher,
-      sessionTools,
-      assistantMissing
-    })
+    yield* runIssues(ctx, { sql, org, workspace, dispatcher, sessionTools, assistantMissing })
     yield* serveOrgCalls(ctx, org, backend, dispatcher)
-    yield* serveWorkCalls(ctx, work, dispatcher, assistantMissing)
+    yield* serveLiveCalls(ctx, dispatcher, assistantMissing)
     const jobTitles = yield* org.jobTitles
     const hires = yield* org.hiredAgents
     yield* Effect.logInfo('Org service provided', {

@@ -50,8 +50,18 @@ function AgentDetail({
 
   const dismiss = async (): Promise<string | undefined> => {
     const result = await call(Dismiss, { hireId: agent.id }, agent.id)
-    if (Result.isSuccess(result) || result.failure._tag === 'HireNotFound') return undefined
-    return commonFailureText(result.failure)
+    if (Result.isSuccess(result)) return undefined
+    const failure = result.failure
+    switch (failure._tag) {
+      case 'HireNotFound':
+        return undefined
+      case 'HireHasOpenIssues':
+        return `${name} is assigned to ${failure.issues === 1 ? '1 open issue' : `${failure.issues} open issues`}; assign them to someone else first`
+      case 'IssuesNotLoaded':
+        return 'Issues is not ready; it cannot be checked whether this agent has open issues'
+      default:
+        return commonFailureText(failure)
+    }
   }
 
   const setReportsTo = async (reportsTo: HireId | null) => {

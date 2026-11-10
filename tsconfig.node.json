@@ -34,6 +34,7 @@
     "plugins/**/*.test.ts",
     "plugins/**/renderer.ts",
     "plugins/org/org-actions.ts",
+    "plugins/issues/issue-actions.ts",
     "plugins/chat/composer-action.ts",
     "plugins/chat/composer-settings.ts",
     "plugins/chat/use-composer-attachments.ts",

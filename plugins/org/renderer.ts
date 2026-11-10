@@ -7,21 +7,20 @@ import { Effect } from 'effect'
 import { Atom } from 'effect/reactivity'
 import { SettingsIcon, UsersIcon } from 'lucide-react'
 import { createElement } from 'react'
-import { ReadOrg, WatchWork } from './calls'
+import { ReadOrg, WatchOrgLive } from './calls'
 import { OrgPage } from './org-page'
 import { OrgSettingsPage } from './org-settings-page'
 
 const setup: PluginSetup<PluginServices> = (ctx) =>
   Effect.gen(function* () {
     const orgAtom = Atom.make(callHost(ctx, ReadOrg, {}))
-    const workAtom = Atom.make(followHost(ctx, WatchWork, {}))
+    const liveAtom = Atom.make(followHost(ctx, WatchOrgLive, {}))
     yield* addEntry(ctx, PagesSlot, {
       id: 'org',
       order: 10,
       label: 'Org',
       icon: UsersIcon,
-      component: ({ target }) =>
-        createElement(OrgPage, { ctx, orgAtom, workAtom, target, key: target })
+      component: ({ target }) => createElement(OrgPage, { ctx, orgAtom, liveAtom, key: target })
     })
     yield* addEntry(ctx, SettingsPagesSlot, {
       id: 'org',

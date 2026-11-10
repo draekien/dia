@@ -5,12 +5,20 @@ import {
   type DiaTool,
   type ModelOption,
   type OutboundMessage,
-  ProjectId,
+  type ProjectId,
   type SessionAttachment,
   SessionId,
   SessionNotice,
   SessionStarted
 } from '@dia/plugin'
+import {
+  AssigneeRef,
+  FirstIssue,
+  type Issue,
+  type IssueStatus,
+  ObjectiveId,
+  WorkTitle
+} from '@dia-plugin/issues/domain'
 import type { McpServers } from '@dia-plugin/mcp/servers'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { assert, describe, it } from '@effect/vitest'
@@ -18,23 +26,16 @@ import { AgentName } from '@shared/domain/project'
 import { DateTime, Deferred, Effect, Exit, Option, Scope, Stream, SubscriptionRef } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
+import { openIssues, PROJECT } from '../issues/issues.fake'
+import { orgAssignees } from './assignees'
 import { makeAssistant } from './assistant'
 import { EXECUTIVE_ASSISTANT } from './built-in-job-titles'
-import {
-  DirectRoute,
-  type JobTitleId,
-  type MissingReference,
-  ObjectiveId,
-  PlanRoute,
-  WorkTitle
-} from './domain'
+import { type JobTitleId, type MissingReference, ORG_PROVIDER } from './domain'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { holdBuiltInDefinitions, mcpRegistry, skillRegistry } from './registries.fake'
 import { makeSessionTools } from './session-tools'
-import { makeWork } from './work'
 
-const PROJECT = ProjectId.make('00000000-0000-4000-8000-400000000001')
 const CLAIMED = ObjectiveId.make('00000000-0000-4000-8000-500000000001')
 const UNCLAIMED = ObjectiveId.make('00000000-0000-4000-8000-500000000002')
 const SESSION = SessionId.make('5e551011-0000-4000-8000-000000000001')
@@ -117,13 +118,14 @@ const setUpWith = (options: { readonly settled: boolean }) =>
     const sql = yield* openDatabase(':memory:', orgMigrations).pipe(Scope.provide(dbScope))
     const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       effect.pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
-    const { work, runs, org } = yield* provide(
-      Effect.gen(function* () {
-        const made = yield* makeWork(() => Effect.succeed(true))
-        return { ...made, org: yield* makeOrg(made.openIssuesOf) }
-      })
-    )
+    const org = yield* provide(makeOrg)
     yield* holdBuiltInDefinitions(org)
+    const { issues: work } = yield* openIssues
+    const runs = yield* work.registerProvider({
+      id: ORG_PROVIDER,
+      label: 'Org',
+      assignees: orgAssignees(org)
+    })
     const pluginsSettled = yield* Deferred.make<void>()
     if (options.settled) yield* Deferred.succeed(pluginsSettled, undefined)
     const sessionTools = yield* makeSessionTools(Deferred.await(pluginsSettled))
@@ -154,7 +156,32 @@ const setUpWith = (options: { readonly settled: boolean }) =>
     )
     assert.isDefined(engineer)
     const ada = yield* org.hire(engineer.id, AgentName.make('Ada'), null)
-    return { sql, work, runs, org, host, start, ada, mcp, pluginsSettled, missing }
+    yield* settle
+    const adaRef = AssigneeRef.make({ provider: ORG_PROVIDER, id: ada.id })
+    const runTool = (issue: Issue, name: string, input: Record<string, string>) =>
+      Effect.gen(function* () {
+        const tool = runs.issueTools(issue.id, ada.id).find((entry) => entry.name === name)
+        assert.isDefined(tool, name)
+        const result = yield* tool.run(input)
+        assert.isFalse(result.isError, result.text)
+      })
+    const setStatus = (issue: Issue, status: IssueStatus) =>
+      runTool(issue, 'update_issue', { status })
+    return {
+      sql,
+      work,
+      runs,
+      org,
+      host,
+      start,
+      ada,
+      adaRef,
+      runTool,
+      setStatus,
+      mcp,
+      pluginsSettled,
+      missing
+    }
   })
 
 const setUp = setUpWith({ settled: true })
@@ -303,14 +330,24 @@ describe('Assistant session', () => {
 
 describe('Assistant notices', () => {
   const createDirect = (env: Effect.Success<typeof setUp>, id: ObjectiveId) =>
-    env.work.createObjective({
-      id,
-      projectId: PROJECT,
-      title: WorkTitle.make('Fix the typo in the README'),
-      description: 'fix the typo in the README',
-      priority: 'normal',
-      route: DirectRoute.make({ assignee: env.ada.id })
-    })
+    env.work.createObjective(
+      {
+        id,
+        projectId: PROJECT,
+        title: WorkTitle.make('Fix the typo in the README'),
+        description: 'fix the typo in the README',
+        priority: 'normal',
+        assignee: env.adaRef
+      },
+      [
+        FirstIssue.make({
+          kind: 'work',
+          title: WorkTitle.make('Fix the typo in the README'),
+          description: 'fix the typo in the README',
+          assignee: env.adaRef
+        })
+      ]
+    )
 
   const startedIssue = (env: Effect.Success<typeof setUp>, objectiveId: ObjectiveId) =>
     Effect.gen(function* () {
@@ -338,7 +375,7 @@ describe('Assistant notices', () => {
         yield* createDirect(env, CLAIMED)
         const issue = yield* startedIssue(env, CLAIMED)
 
-        yield* env.work.updateIssue(CLAIMED, issue.id, { status: 'in_review' })
+        yield* env.setStatus(issue, 'in_review')
         yield* settle
         const [attached] = env.host.shown()
         assert.isDefined(attached)
@@ -351,7 +388,7 @@ describe('Assistant notices', () => {
             [
               SessionNotice.make({
                 text: '"Fix the typo in the README" is in review.',
-                link: { label: 'Open', plugin: 'org', page: 'org', target: CLAIMED }
+                link: { label: 'Open', plugin: 'issues', page: 'issues', target: CLAIMED }
               })
             ],
             ['"Fix the typo in the README" is in review.\nwhat else is open?', 'thanks']
@@ -384,11 +421,11 @@ describe('Assistant notices', () => {
       const { assistant } = yield* env.start
       yield* assistant.claim(CLAIMED)
       yield* createDirect(env, CLAIMED)
+      const issue = yield* startedIssue(env, CLAIMED)
       yield* settle
 
-      yield* env.work.proposeIssue(CLAIMED, {
-        parentIssueId: null,
-        title: WorkTitle.make('Fix the typo in CONTRIBUTING'),
+      yield* env.runTool(issue, 'create_issue', {
+        title: 'Fix the typo in CONTRIBUTING',
         description: 'Same typo.'
       })
       yield* settle
@@ -404,17 +441,27 @@ describe('Assistant notices', () => {
     Effect.gen(function* () {
       const env = yield* setUp
       yield* env.start
-      yield* env.work.createObjective({
-        id: UNCLAIMED,
-        projectId: PROJECT,
-        title: WorkTitle.make('Ship the marketplace'),
-        description: 'Let users install plugins.',
-        priority: 'normal',
-        route: PlanRoute.make({ assignee: env.ada.id })
-      })
+      yield* env.work.createObjective(
+        {
+          id: UNCLAIMED,
+          projectId: PROJECT,
+          title: WorkTitle.make('Ship the marketplace'),
+          description: 'Let users install plugins.',
+          priority: 'normal',
+          assignee: null
+        },
+        [
+          FirstIssue.make({
+            kind: 'planning',
+            title: WorkTitle.make('Plan: Ship the marketplace'),
+            description: '',
+            assignee: env.adaRef
+          })
+        ]
+      )
       const issue = yield* startedIssue(env, UNCLAIMED)
 
-      yield* env.work.updateIssue(UNCLAIMED, issue.id, { status: 'in_review' })
+      yield* env.setStatus(issue, 'in_review')
       yield* settle
 
       assert.deepStrictEqual(notices(env), [])
@@ -428,7 +475,7 @@ describe('Assistant notices', () => {
       yield* assistant.claim(CLAIMED)
       yield* createDirect(env, CLAIMED)
       const issue = yield* startedIssue(env, CLAIMED)
-      yield* env.work.updateIssue(CLAIMED, issue.id, { status: 'in_review' })
+      yield* env.setStatus(issue, 'in_review')
       yield* settle
 
       yield* assistant.startOver

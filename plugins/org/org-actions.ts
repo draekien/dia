@@ -10,14 +10,8 @@ import { type Cause, Effect, type Option, Result, Schema } from 'effect'
 import { type AsyncResult, type Atom, AtomRegistry } from 'effect/reactivity'
 import type { Rpc } from 'effect/rpc'
 import { useContext } from 'react'
-import type { OrgSnapshot, WorkView } from './calls'
-import {
-  JOB_TITLE_NAME_MAX_LENGTH,
-  type JobTitleId,
-  JobTitleName,
-  WORK_TITLE_MAX_LENGTH,
-  WorkTitle
-} from './domain'
+import type { OrgLive, OrgSnapshot } from './calls'
+import { JOB_TITLE_NAME_MAX_LENGTH, type JobTitleId, JobTitleName } from './domain'
 import type { OrgView } from './org-view'
 
 /** Why a call to the org's host entry failed: its own error, or the plugin call failures. */
@@ -43,11 +37,11 @@ export type OrgCall = <R extends Rpc.AnyWithProps>(
 ) => Promise<Result.Result<Rpc.Success<R>, OrgCallFailure<R>>>
 
 /**
- * The atom following the org's `WatchWork` stream: `None` while the org host entry is not
- * serving, otherwise the latest `WorkView`. The Objectives page reads it.
+ * The atom following the org's `WatchOrgLive` stream: `None` while the org host entry is not
+ * serving, otherwise the latest `OrgLive`. The Dashboard reads it.
  */
-export type WorkAtom = Atom.Atom<
-  AsyncResult.AsyncResult<Option.Option<WorkView>, PluginCallInvalid | Cause.NoSuchElementError>
+export type LiveAtom = Atom.Atom<
+  AsyncResult.AsyncResult<Option.Option<OrgLive>, PluginCallInvalid | Cause.NoSuchElementError>
 >
 
 const STALE = new Set(['JobTitleNotFound', 'HireNotFound'])
@@ -105,7 +99,6 @@ export const toastFailure = (title: string, failure: { readonly _tag: string }):
 
 const decodeJobTitleName = Schema.decodeUnknownResult(JobTitleName)
 const decodeAgentName = Schema.decodeUnknownResult(AgentName)
-const decodeWorkTitle = Schema.decodeUnknownResult(WorkTitle)
 
 /**
  * Reads a job title name field: the trimmed name, or the message to show beside the field when it
@@ -114,20 +107,6 @@ const decodeWorkTitle = Schema.decodeUnknownResult(WorkTitle)
 export const readJobTitleName = (text: string): Result.Result<JobTitleName, string> =>
   Result.mapError(decodeJobTitleName(text.trim()), () =>
     text.trim() === '' ? 'Enter a name' : `Use at most ${JOB_TITLE_NAME_MAX_LENGTH} characters`
-  )
-
-/** A new random id for an objective or issue the user creates; call it in a React handler. */
-export const newId = (): string =>
-  // @effect-diagnostics-next-line cryptoRandomUUID:off -- a React handler outside any Effect; the id only has to be unique.
-  crypto.randomUUID()
-
-/**
- * Reads an objective or issue title field: the trimmed title, or the message to show beside the
- * field when it is blank or longer than {@link WORK_TITLE_MAX_LENGTH}.
- */
-export const readWorkTitle = (text: string): Result.Result<WorkTitle, string> =>
-  Result.mapError(decodeWorkTitle(text.trim()), () =>
-    text.trim() === '' ? 'Enter a title' : `Use at most ${WORK_TITLE_MAX_LENGTH} characters`
   )
 
 /**

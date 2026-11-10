@@ -1,24 +1,21 @@
 import type { PluginServices } from '@dia/plugin'
 import { cn, Skeleton } from '@dia/renderer-plugin'
 import { useAtomRefresh, useAtomValue } from '@effect/atom-react'
-import { Schema } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
 import { useState } from 'react'
 import { AgentsPage } from './agents-page'
 import type { OrgSnapshot } from './calls'
 import { Dashboard } from './dashboard'
-import { type JobTitleId, ObjectiveId } from './domain'
+import type { JobTitleId } from './domain'
 import { HireDialog } from './hire-dialog'
 import { JobTitlesPage } from './job-titles-page'
-import { ObjectivesPage } from './objectives-page'
-import { type OrgAtom, type OrgScreen, useOrgCall, type WorkAtom } from './org-actions'
+import { type LiveAtom, type OrgAtom, type OrgScreen, useOrgCall } from './org-actions'
 import { OrgChart } from './org-chart'
 import { LoadFailure } from './org-fields'
 import {
   DashboardView,
   HiredAgentsView,
   JobTitlesView,
-  ObjectivesView,
   OrgChartView,
   type OrgView,
   showView
@@ -29,11 +26,6 @@ const NAV = [
     group: 'Overview',
     pages: [
       { tag: 'DashboardView', label: 'Dashboard', view: () => DashboardView.make({}) },
-      {
-        tag: 'ObjectivesView',
-        label: 'Objectives',
-        view: () => ObjectivesView.make({ objectiveId: null })
-      },
       { tag: 'OrgChartView', label: 'Org chart', view: () => OrgChartView.make({}) }
     ]
   },
@@ -93,17 +85,15 @@ function SubNav({
 function SubPage({
   view,
   screen,
-  workAtom
+  liveAtom
 }: {
   readonly view: OrgView
   readonly screen: OrgScreen
-  readonly workAtom: WorkAtom
+  readonly liveAtom: LiveAtom
 }) {
   switch (view._tag) {
     case 'DashboardView':
-      return <Dashboard snapshot={screen.snapshot} openHire={screen.openHire} workAtom={workAtom} />
-    case 'ObjectivesView':
-      return <ObjectivesPage objectiveId={view.objectiveId} workAtom={workAtom} {...screen} />
+      return <Dashboard snapshot={screen.snapshot} openHire={screen.openHire} liveAtom={liveAtom} />
     case 'OrgChartView':
       return <OrgChart snapshot={screen.snapshot} show={screen.show} openHire={screen.openHire} />
     case 'JobTitlesView':
@@ -118,13 +108,13 @@ function Loaded({
   view,
   setView,
   call,
-  workAtom
+  liveAtom
 }: {
   readonly snapshot: OrgSnapshot
   readonly view: OrgView
   readonly setView: (view: OrgView) => void
   readonly call: OrgScreen['call']
-  readonly workAtom: WorkAtom
+  readonly liveAtom: LiveAtom
 }) {
   const [hiring, setHiring] = useState<{ readonly jobTitleId: JobTitleId | null } | undefined>(
     undefined
@@ -139,7 +129,7 @@ function Loaded({
 
   return (
     <>
-      <SubPage view={shown} screen={screen} workAtom={workAtom} />
+      <SubPage view={shown} screen={screen} liveAtom={liveAtom} />
       {hiring === undefined ? null : (
         <HireDialog
           snapshot={snapshot}
@@ -156,35 +146,25 @@ function Loaded({
   )
 }
 
-const isObjectiveId = Schema.is(ObjectiveId)
-
-const initialView = (target: string | undefined): OrgView =>
-  target !== undefined && isObjectiveId(target)
-    ? ObjectivesView.make({ objectiveId: target })
-    : DashboardView.make({})
-
 /**
- * The Org page in the content area: a sub-navigation of Dashboard, Objectives, Org chart, Job
- * titles and Hired agents beside the current sub-page under its own heading. It reads `orgAtom`
- * while shown, and `workAtom` while Dashboard or Objectives is shown. It opens on Dashboard, or on the
- * objective whose id is `target` when `target` is an objective id; `ctx` is the `org` renderer
- * entry the calls go through.
+ * The Org page in the content area: a sub-navigation of Dashboard, Org chart, Job titles and Hired
+ * agents beside the current sub-page under its own heading. It reads `orgAtom` while shown, and
+ * `liveAtom` while Dashboard is shown. It opens on Dashboard; `ctx` is the `org` renderer entry the
+ * calls go through.
  */
 export function OrgPage({
   ctx,
   orgAtom,
-  workAtom,
-  target
+  liveAtom
 }: {
   readonly ctx: Pick<PluginServices, 'name'>
   readonly orgAtom: OrgAtom
-  readonly workAtom: WorkAtom
-  readonly target?: string | undefined
+  readonly liveAtom: LiveAtom
 }) {
   const result = useAtomValue(orgAtom)
   const retry = useAtomRefresh(orgAtom)
   const call = useOrgCall(ctx, orgAtom)
-  const [view, setView] = useState<OrgView>(() => initialView(target))
+  const [view, setView] = useState<OrgView>(() => DashboardView.make({}))
 
   return (
     <div className="flex h-full min-h-0">
@@ -206,7 +186,7 @@ export function OrgPage({
                 view={view}
                 setView={setView}
                 call={call}
-                workAtom={workAtom}
+                liveAtom={liveAtom}
               />
             )
           })}

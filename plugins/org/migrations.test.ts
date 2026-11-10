@@ -7,7 +7,6 @@ import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
-import { makeWork } from './work'
 
 const OLD_BUILT_INS = ['planner', 'engineer', 'reviewer', 'researcher', 'retro'] as const
 const oldRoleId = (index: number) => `6f0c1a6e-4b1e-4a52-9a0e-0d6b3f1a000${index + 1}`
@@ -48,7 +47,9 @@ const oldSeed = Effect.gen(function* () {
   yield* sql`INSERT INTO org_settings ${sql.insert({ singleton: 1, overall_cap: 4 })}`
 })
 
-const { '9_agent_definitions': _definitions, ...migrationsBeforeDefinitions } = orgMigrations
+const { '10_issues_handover': _handover, ...migrationsBeforeHandover } = orgMigrations
+const { '9_agent_definitions': _definitions, ...migrationsBeforeDefinitions } =
+  migrationsBeforeHandover
 
 interface JobTitleRow {
   readonly job_title_id: string
@@ -87,8 +88,7 @@ const upgradedLegacyOrg = Effect.gen(function* () {
   yield* legacy.sql`INSERT INTO hired_agents ${legacy.sql.insert(hire('00000000-0000-4000-8000-000000000202', OLD_ENGINEER_ID, 'calm-heron'))}`
   yield* legacy.close
   const sql = yield* openDatabase(filename, migrationsBeforeDefinitions)
-  const org = yield* makeWork(() => Effect.succeed(true)).pipe(
-    Effect.flatMap(({ openIssuesOf }) => makeOrg(openIssuesOf)),
+  const org = yield* makeOrg.pipe(
     Effect.provideService(SqlClient.SqlClient, sql),
     Effect.provide(NodeCrypto.layer)
   )
@@ -601,7 +601,7 @@ const upgradedToDefinitions = Effect.gen(function* () {
     created_at: 3
   })}`
   yield* before.close
-  return yield* openDatabase(filename, orgMigrations)
+  return yield* openDatabase(filename, migrationsBeforeHandover)
 }).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
 
 describe('9_agent_definitions on a database with hires, assigned issues and comments', () => {
@@ -729,6 +729,47 @@ describe('9_agent_definitions on a database with hires, assigned issues and comm
       assert.deepStrictEqual(
         [missing.map((row) => row.missing), Exit.isFailure(outside), Exit.isSuccess(inTriage)],
         [['[]', '[]'], true, true]
+      )
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe('10_issues_handover on a database with objectives, issues and comments', () => {
+  it.effect('renames the four work tables to their handover names and keeps every row', () =>
+    Effect.gen(function* () {
+      const before = yield* upgradedToDefinitions
+      const counts = (table: string) =>
+        before.unsafe<{ readonly count: number }>(`SELECT count(*) AS count FROM ${table}`)
+      const [issuesBefore] = yield* counts('issues')
+      const [objectivesBefore] = yield* counts('objectives')
+      const [commentsBefore] = yield* counts('issue_comments')
+      yield* orgMigrations['10_issues_handover'].pipe(
+        Effect.provideService(SqlClient.SqlClient, before)
+      )
+      const tables = yield* before<{ readonly name: string }>`SELECT name FROM sqlite_master
+        WHERE type = 'table' AND name IN ('objectives', 'issues', 'issue_comments', 'org_events',
+          'objectives_handover', 'issues_handover', 'issue_comments_handover', 'org_events_handover')
+        ORDER BY name`
+      const [issuesAfter] = yield* counts('issues_handover')
+      const [objectivesAfter] = yield* counts('objectives_handover')
+      const [commentsAfter] = yield* counts('issue_comments_handover')
+      const violations = yield* before.unsafe('PRAGMA foreign_key_check')
+      assert.deepStrictEqual(
+        {
+          tables: tables.map((row) => row.name),
+          counts: [issuesAfter?.count, objectivesAfter?.count, commentsAfter?.count],
+          violations: violations.length
+        },
+        {
+          tables: [
+            'issue_comments_handover',
+            'issues_handover',
+            'objectives_handover',
+            'org_events_handover'
+          ],
+          counts: [issuesBefore?.count, objectivesBefore?.count, commentsBefore?.count],
+          violations: 0
+        }
       )
     }).pipe(Effect.scoped)
   )

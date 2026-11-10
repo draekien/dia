@@ -6,23 +6,21 @@ import {
   type SessionAttachment
 } from '@dia/plugin'
 import agentDefinitionsSetup from '@dia-plugin/agent-definitions/host'
+import { IssuesView } from '@dia-plugin/issues/calls'
+import issuesSetup from '@dia-plugin/issues/host'
 import mcpSetup from '@dia-plugin/mcp/host'
 import { assert, describe, it } from '@effect/vitest'
 import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
 import { DateTime, Effect, Option, Schema, Stream } from 'effect'
-import {
-  callPlugin,
-  servePluginCall,
-  subscribePlugin
-} from '../../src/host/plugins/plugin-messages'
+import { callPlugin, servePluginCall } from '../../src/host/plugins/plugin-messages'
 import { makePluginDatabase } from '../../src/host/services/database'
 import {
   BUILT_IN_JOB_TITLES,
   DEFAULT_OVERALL_CAP,
   EXECUTIVE_ASSISTANT
 } from './built-in-job-titles'
-import { OrgSnapshot, WorkView } from './calls'
+import { OrgSnapshot } from './calls'
 import { HiredAgent } from './domain'
 import setup from './host'
 
@@ -78,7 +76,8 @@ const startOrg = (backend: Option.Option<AgentBackend>) =>
     const setups: Record<string, (ctx: HostPluginContext) => Effect.Effect<void, never, never>> = {
       org: setup as never,
       'agent-definitions': agentDefinitionsSetup as never,
-      mcp: mcpSetup as never
+      mcp: mcpSetup as never,
+      issues: issuesSetup as never
     }
     if (Option.isSome(backend)) {
       setups.backend = ((ctx: HostPluginContext) =>
@@ -132,6 +131,7 @@ const startOrg = (backend: Option.Option<AgentBackend>) =>
     yield* registry.load('agent-definitions')
     yield* registry.load('mcp')
     yield* registry.load('org')
+    yield* registry.load('issues')
     return registry
   })
 
@@ -280,10 +280,16 @@ describe('org host entry bypassAvailable', () => {
   )
 })
 
-describe('org host entry work calls', () => {
+describe('org host entry work through issues', () => {
+  const OBJECTIVE_ID = '00000000-0000-4000-8000-500000000001'
+  const issueId = (n: number) => `00000000-0000-4000-8000-60000000000${n}`
+
   const settle = Effect.gen(function* () {
     for (let turn = 0; turn < 50; turn += 1) yield* Effect.yieldNow
   })
+
+  const callIssues = (registry: PluginRegistry, tag: string, payload: unknown) =>
+    callPlugin(registry, { plugin: 'issues', tag, payload })
 
   const hireEngineer = (registry: PluginRegistry) =>
     Effect.map(
@@ -295,20 +301,42 @@ describe('org host entry work calls', () => {
       (hired) => Schema.decodeUnknownSync(HiredAgent)(hired).id
     )
 
-  const createIssue = (registry: PluginRegistry, n: number, assignee: string) =>
-    call(registry, 'CreateIssue', {
+  const createObjective = (registry: PluginRegistry) =>
+    callIssues(registry, 'CreateObjective', {
+      objective: {
+        id: OBJECTIVE_ID,
+        projectId: PROJECT_ID,
+        title: 'Ship it',
+        description: '',
+        priority: 'normal',
+        assignee: null
+      }
+    })
+
+  const orgRef = (hireId: string) => ({ provider: 'org', id: hireId })
+
+  const createIssue = (registry: PluginRegistry, n: number, hireId: string | null) =>
+    callIssues(registry, 'CreateIssue', {
       issue: {
-        id: `00000000-0000-4000-8000-60000000000${n}`,
-        objectiveId: '00000000-0000-4000-8000-500000000001',
+        id: issueId(n),
+        objectiveId: OBJECTIVE_ID,
         parentIssueId: null,
         title: `Issue ${n}`,
         description: '',
-        assignee
+        assignee: hireId === null ? null : orgRef(hireId)
       }
     })
 
   const readIssues = (registry: PluginRegistry) =>
-    Effect.map(call(registry, 'ReadWork', {}), (value) => Schema.decodeUnknownSync(WorkView)(value))
+    Effect.map(callIssues(registry, 'ReadIssues', {}), (value) =>
+      Schema.decodeUnknownSync(IssuesView)(value)
+    )
+
+  const statusOf = (registry: PluginRegistry, n: number) =>
+    Effect.map(
+      readIssues(registry),
+      (view) => view.issues.find((issue) => issue.id === issueId(n))?.status
+    )
 
   it.effect('starts a created issue, and starts the next one once the overall cap is raised', () =>
     Effect.gen(function* () {
@@ -316,18 +344,10 @@ describe('org host entry work calls', () => {
       const registry = yield* startOrg(Option.some(backendDisabling([], opened)))
       yield* registry.load('backend')
       yield* call(registry, 'SetOverallCap', { cap: 1 })
-      yield* call(registry, 'CreateObjective', {
-        objective: {
-          id: '00000000-0000-4000-8000-500000000001',
-          projectId: PROJECT_ID,
-          title: 'Ship it',
-          description: '',
-          priority: 'normal',
-          route: { _tag: 'PlanRoute', assignee: null }
-        }
-      })
+      yield* createObjective(registry)
       const ada = yield* hireEngineer(registry)
       const ben = yield* hireEngineer(registry)
+      yield* settle
 
       yield* createIssue(registry, 1, ada)
       yield* createIssue(registry, 2, ben)
@@ -340,147 +360,78 @@ describe('org host entry work calls', () => {
     })
   )
 
-  it.effect('keeps a started issue started when its assignment is repeated', () =>
-    Effect.gen(function* () {
-      const registry = yield* startOrg(Option.some(backendDisabling([])))
-      yield* registry.load('backend')
-      yield* call(registry, 'CreateObjective', {
-        objective: {
-          id: '00000000-0000-4000-8000-500000000001',
-          projectId: PROJECT_ID,
-          title: 'Ship it',
-          description: '',
-          priority: 'normal',
-          route: { _tag: 'PlanRoute', assignee: null }
-        }
-      })
-      const ada = yield* hireEngineer(registry)
-      yield* createIssue(registry, 1, ada)
-      yield* settle
-
-      yield* call(registry, 'AssignIssue', {
-        issueId: '00000000-0000-4000-8000-600000000001',
-        hireId: ada
-      })
-      yield* settle
-      const work = yield* readIssues(registry)
-
-      assert.deepStrictEqual(
-        [work.heldSlots, work.issues.find((issue) => issue.kind === 'work')?.status],
-        [1, 'understanding']
-      )
-    })
-  )
-
-  it.effect(
-    'pushes the work view when subscribed, after an issue is created and after it starts',
-    () =>
-      Effect.gen(function* () {
-        const registry = yield* startOrg(Option.some(backendDisabling([])))
-        yield* registry.load('backend')
-        yield* call(registry, 'CreateObjective', {
-          objective: {
-            id: '00000000-0000-4000-8000-500000000001',
-            projectId: PROJECT_ID,
-            title: 'Ship it',
-            description: '',
-            priority: 'normal',
-            route: { _tag: 'PlanRoute', assignee: null }
-          }
-        })
-        const ada = yield* hireEngineer(registry)
-        const views: Array<WorkView> = []
-        const stream = yield* subscribePlugin(registry, {
-          plugin: 'org',
-          tag: 'WatchWork',
-          payload: {}
-        })
-        yield* stream.pipe(
-          Stream.runForEach((value) =>
-            Effect.sync(() => views.push(Schema.decodeUnknownSync(WorkView)(value)))
-          ),
-          Effect.forkScoped
-        )
-        yield* settle
-        const onSubscribe = views.map((view) => view.issues.length)
-
-        yield* createIssue(registry, 1, ada)
-        yield* settle
-
-        assert.deepStrictEqual(
-          {
-            onSubscribe,
-            last: views.at(-1)?.issues.map((issue) => issue.status),
-            held: views.at(-1)?.heldSlots
-          },
-          { onSubscribe: [1], last: ['todo', 'understanding'], held: 1 }
-        )
-      }).pipe(Effect.scoped)
-  )
-
-  it.effect('starts a todo planning issue once it is assigned', () =>
+  it.effect('keeps a started issue on one session when its assignment is repeated', () =>
     Effect.gen(function* () {
       const opened: Array<string> = []
       const registry = yield* startOrg(Option.some(backendDisabling([], opened)))
       yield* registry.load('backend')
-      yield* call(registry, 'CreateObjective', {
-        objective: {
-          id: '00000000-0000-4000-8000-500000000001',
-          projectId: PROJECT_ID,
-          title: 'Ship it',
-          description: '',
-          priority: 'normal',
-          route: { _tag: 'PlanRoute', assignee: null }
-        }
-      })
+      yield* createObjective(registry)
       const ada = yield* hireEngineer(registry)
       yield* settle
-      const [planning] = (yield* readIssues(registry)).issues
-      const beforeAssign = opened.length
-
-      yield* call(registry, 'AssignIssue', { issueId: planning?.id, hireId: ada })
+      yield* createIssue(registry, 1, ada)
       yield* settle
 
-      const [started] = (yield* readIssues(registry)).issues
+      yield* callIssues(registry, 'AssignIssue', { issueId: issueId(1), assignee: orgRef(ada) })
+      yield* settle
+
+      assert.deepStrictEqual([yield* statusOf(registry, 1), opened.length], ['understanding', 1])
+    })
+  )
+
+  it.effect('starts an unassigned todo issue once it is assigned to a hire', () =>
+    Effect.gen(function* () {
+      const opened: Array<string> = []
+      const registry = yield* startOrg(Option.some(backendDisabling([], opened)))
+      yield* registry.load('backend')
+      yield* createObjective(registry)
+      const ada = yield* hireEngineer(registry)
+      yield* createIssue(registry, 1, null)
+      yield* settle
+      const beforeAssign = [yield* statusOf(registry, 1), opened.length]
+
+      yield* callIssues(registry, 'AssignIssue', { issueId: issueId(1), assignee: orgRef(ada) })
+      yield* settle
+
       assert.deepStrictEqual(
-        [beforeAssign, opened.length, started?.kind, started?.status],
-        [0, 1, 'planning', 'understanding']
+        [beforeAssign, [yield* statusOf(registry, 1), opened.length]],
+        [
+          ['todo', 0],
+          ['understanding', 1]
+        ]
       )
     })
   )
 
-  it.effect('finishes a started issue to done and stops its session', () =>
+  it.effect('finishes a started issue to done with no retro, and frees its slot', () =>
     Effect.gen(function* () {
-      const registry = yield* startOrg(Option.some(backendDisabling([])))
+      const opened: Array<string> = []
+      const registry = yield* startOrg(Option.some(backendDisabling([], opened)))
       yield* registry.load('backend')
-      yield* call(registry, 'CreateObjective', {
-        objective: {
-          id: '00000000-0000-4000-8000-500000000001',
-          projectId: PROJECT_ID,
-          title: 'Ship it',
-          description: '',
-          priority: 'normal',
-          route: { _tag: 'PlanRoute', assignee: null }
-        }
-      })
+      yield* call(registry, 'SetOverallCap', { cap: 1 })
+      yield* createObjective(registry)
       const ada = yield* hireEngineer(registry)
+      const ben = yield* hireEngineer(registry)
+      yield* settle
       yield* createIssue(registry, 1, ada)
+      yield* createIssue(registry, 2, ben)
       yield* settle
 
-      yield* call(registry, 'FinishIssue', { issueId: '00000000-0000-4000-8000-600000000001' })
+      yield* callIssues(registry, 'FinishIssue', { issueId: issueId(1) })
       yield* settle
 
-      const work = yield* readIssues(registry)
+      const view = yield* readIssues(registry)
       assert.deepStrictEqual(
-        [work.heldSlots, work.issues.map((issue) => [issue.kind, issue.status])],
-        [
-          0,
-          [
-            ['planning', 'todo'],
+        {
+          issues: view.issues.map((issue) => [issue.kind, issue.status]),
+          opened: opened.length
+        },
+        {
+          issues: [
             ['work', 'done'],
-            ['retro', 'todo']
-          ]
-        ]
+            ['work', 'understanding']
+          ],
+          opened: 2
+        }
       )
     })
   )

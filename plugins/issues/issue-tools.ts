@@ -1,13 +1,18 @@
 import type { DiaTool, DiaToolResult } from '@dia/plugin'
 import { Effect, Schema } from 'effect'
 import {
+  type AssigneeRef,
   CommentBody,
-  type HireId,
+  type Issue,
   IssueChange,
+  type IssueClosed,
+  type IssueComment,
   IssueDescription,
   IssueId,
   type IssueNotFound,
-  type ObjectiveId,
+  type IssueNotStarted,
+  type ObjectiveNotFound,
+  type ProposedIssue,
   StartedStatus,
   WorkTitle
 } from './domain'
@@ -21,13 +26,34 @@ import {
   required,
   result
 } from './tool-input'
-import type { Work } from './work'
 
-/** Where a hired agent's session works: its issue, that issue's objective, and the hired agent. */
+/**
+ * The changes the agent issue tools make, each within the objective of the session's issue
+ * `fromIssueId`: an issue outside it, or a `fromIssueId` that no longer exists, fails with
+ * `IssueNotFound`.
+ */
+export interface IssueToolWork {
+  readonly proposeIssue: (
+    fromIssueId: IssueId,
+    input: ProposedIssue
+  ) => Effect.Effect<Issue, ObjectiveNotFound | IssueNotFound>
+  readonly updateIssue: (
+    fromIssueId: IssueId,
+    issueId: IssueId,
+    change: IssueChange
+  ) => Effect.Effect<Issue, IssueNotFound | IssueNotStarted | IssueClosed>
+  readonly commentIssue: (
+    fromIssueId: IssueId,
+    issueId: IssueId,
+    author: AssigneeRef,
+    body: CommentBody
+  ) => Effect.Effect<IssueComment, IssueNotFound>
+}
+
+/** Where an assignee's session works: its issue, and the assignee that authors its comments. */
 export interface IssueToolScope {
   readonly issueId: IssueId
-  readonly objectiveId: ObjectiveId
-  readonly hireId: HireId
+  readonly author: AssigneeRef
 }
 
 const decodeIssueId = (field: string, value: string) =>
@@ -89,14 +115,14 @@ const issueIdOrOwn = (input: Input, scope: IssueToolScope) => {
 }
 
 /**
- * The dia tools a hired agent's session gets: create_issue, update_issue and comment_issue,
- * each acting only within `scope.objectiveId`, with comments authored by `scope.hireId`.
+ * The dia tools an assignee's session gets: create_issue, update_issue and comment_issue,
+ * each acting only within the objective of `scope.issueId`, with comments authored by `scope.author`.
  * `update_issue` and `comment_issue` default to `scope.issueId`; only that issue's status can
  * change. A refused call returns its reason to the agent with `isError` set and writes nothing.
  * Build them once per hired agent session and pass them as the session's dia tools.
  */
 export const makeIssueTools = (
-  work: Pick<Work, 'proposeIssue' | 'updateIssue' | 'commentIssue'>,
+  work: IssueToolWork,
   scope: IssueToolScope
 ): ReadonlyArray<DiaTool> => [
   {
@@ -121,7 +147,7 @@ export const makeIssueTools = (
           const parent = present(input, 'parent_issue_id')
           const parentIssueId =
             parent === undefined ? null : yield* decodeIssueId('parent_issue_id', parent)
-          const issue = yield* work.proposeIssue(scope.objectiveId, {
+          const issue = yield* work.proposeIssue(scope.issueId, {
             parentIssueId,
             title,
             description
@@ -167,7 +193,7 @@ export const makeIssueTools = (
             ...(description === undefined ? {} : { description }),
             ...(status === undefined ? {} : { status })
           })
-          yield* work.updateIssue(scope.objectiveId, issueId, change)
+          yield* work.updateIssue(scope.issueId, issueId, change)
           const changed = [
             ...(change.title === undefined ? [] : ['title']),
             ...(change.description === undefined ? [] : ['description']),
@@ -205,7 +231,7 @@ export const makeIssueTools = (
         Effect.gen(function* () {
           const issueId = yield* issueIdOrOwn(input, scope)
           const body = yield* decodeField(CommentBody, 'body', (input.body ?? '').trim())
-          yield* work.commentIssue(scope.objectiveId, issueId, scope.hireId, body)
+          yield* work.commentIssue(scope.issueId, issueId, scope.author, body)
           return result(`Commented on issue ${issueId}.`)
         })
       )
