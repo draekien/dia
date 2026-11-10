@@ -1,4 +1,16 @@
-import { Button, Input, SettingsRow, SettingsSectionHeading, Skeleton } from '@dia/renderer-plugin'
+import {
+  Button,
+  Input,
+  List,
+  ListRow,
+  ListRowFact,
+  ListRowLink,
+  ListRowName,
+  ListRowSubject,
+  SettingsRow,
+  SettingsSectionHeading,
+  Skeleton
+} from '@dia/renderer-plugin'
 // @effect-diagnostics asyncFunction:off -- React callbacks await the Promise-based window.dia bridge; no Effect runtime exists in the renderer.
 import type {
   MetaRepoPushResult,
@@ -13,21 +25,28 @@ const SHORT_SHA_LENGTH = 7
 const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? '' : 's'}`
 
 function FindingRow({ finding }: { readonly finding: SecretFinding }) {
+  const location =
+    finding.file === null
+      ? `commit message, line ${finding.line}`
+      : `${finding.file}:${finding.line}`
   return (
-    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-0.5 py-2">
-      <span className="text-sm text-ink">{finding.description}</span>
-      <span
-        className="font-mono text-xs text-ink-muted tabular-nums"
-        title={`Commit ${finding.commit}`}
-      >
-        {finding.commit.slice(0, SHORT_SHA_LENGTH)}
-      </span>
-      <span className="col-span-2 font-mono text-xs break-all text-ink-muted">
-        {finding.file === null
-          ? `commit message, line ${finding.line}`
-          : `${finding.file}:${finding.line}`}
-      </span>
-    </li>
+    <ListRow value={`${finding.commit}:${finding.file ?? ''}:${finding.line}`}>
+      <ListRowLink render={<div />}>
+        <ListRowSubject>
+          <ListRowName>{finding.description}</ListRowName>
+        </ListRowSubject>
+        <ListRowFact className="font-mono text-xs text-ink-muted tabular-nums">
+          <span title={`Commit ${finding.commit}`}>
+            {finding.commit.slice(0, SHORT_SHA_LENGTH)}
+          </span>
+        </ListRowFact>
+        <ListRowFact className="font-mono text-xs text-ink-muted">
+          <span className="truncate" title={location}>
+            {location}
+          </span>
+        </ListRowFact>
+      </ListRowLink>
+    </ListRow>
   )
 }
 
@@ -53,14 +72,14 @@ function PushOutcome({ result }: { readonly result: MetaRepoPushResult }) {
               commits to push, and sent nothing.
             </span>
           </p>
-          <ul aria-label="Findings" className="flex flex-col divide-y border-y">
+          <List aria-label="Findings">
             {result.findings.map((finding) => (
               <FindingRow
                 key={`${finding.commit}:${finding.file ?? ''}:${finding.line}`}
                 finding={finding}
               />
             ))}
-          </ul>
+          </List>
           <p className="text-xs text-ink-muted">
             A later commit that deletes the value does not help: the commit that added it would
             still be pushed. Rewrite the commits that add it, then push again.

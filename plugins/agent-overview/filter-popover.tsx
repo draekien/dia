@@ -1,11 +1,14 @@
 import {
   Button,
   Checkbox,
+  Figure,
   Popover,
   PopoverContent,
   PopoverTrigger,
   Separator,
+  Status,
   StatusIndicator,
+  StatusName,
   statusLabel
 } from '@dia/renderer-plugin'
 import {
@@ -98,9 +101,11 @@ export function FilterPopover({ filters, counts, onChange }: FilterPopoverProps)
             checked={filters.statuses.includes(tag)}
             onChange={(checked) => toggleStatus(tag, checked)}
           >
-            <StatusIndicator status={SAMPLE_STATUS[tag]} still />
-            <span className="flex-1">{statusLabel(SAMPLE_STATUS[tag])}</span>
-            <span className="text-xs tabular-nums text-ink-muted">{counts[tag]}</span>
+            <Status className="flex-1">
+              <StatusIndicator status={SAMPLE_STATUS[tag]} still />
+              <StatusName>{statusLabel(SAMPLE_STATUS[tag])}</StatusName>
+            </Status>
+            <Figure value={counts[tag]} className="text-xs text-ink-muted" />
           </CheckRow>
         ))}
         <Separator className="my-1.5" />

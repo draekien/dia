@@ -1,4 +1,13 @@
-import { Button, openSettings } from '@dia/renderer-plugin'
+import {
+  Button,
+  List,
+  ListRow,
+  ListRowAction,
+  ListRowLink,
+  ListRowName,
+  ListRowSubject,
+  openSettings
+} from '@dia/renderer-plugin'
 import { useAtomValue } from '@effect/atom-react'
 import { Option } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
@@ -76,23 +85,35 @@ export function Dashboard({
           Needs attention
         </h3>
         {noHires || assistantMissing.length > 0 ? (
-          <ul className="flex flex-col divide-y border-y">
+          <List aria-labelledby="org-attention-heading">
             {assistantMissing.length > 0 ? (
-              <li role="alert" className="py-2.5 text-sm text-error">
-                {`Executive assistant cannot start: missing ${describeMissing(assistantMissing)}`}
-              </li>
+              <ListRow value="assistant-missing" role="alert">
+                <ListRowLink render={<div />}>
+                  <ListRowSubject>
+                    <ListRowName className="whitespace-normal font-normal text-error">
+                      {`Executive assistant cannot start: missing ${describeMissing(assistantMissing)}`}
+                    </ListRowName>
+                  </ListRowSubject>
+                </ListRowLink>
+              </ListRow>
             ) : null}
             {noHires ? (
-              <li className="flex items-center justify-between gap-4 py-2.5">
-                <span className="text-sm text-ink">
-                  No agents are hired. Hire one to start building the org.
-                </span>
-                <Button size="sm" variant="outline" onClick={() => openHire(null)}>
-                  Hire…
-                </Button>
-              </li>
+              <ListRow value="no-hires">
+                <ListRowLink render={<div />}>
+                  <ListRowSubject>
+                    <ListRowName className="whitespace-normal font-normal">
+                      No agents are hired. Hire one to start building the org.
+                    </ListRowName>
+                  </ListRowSubject>
+                </ListRowLink>
+                <ListRowAction>
+                  <Button size="sm" variant="outline" onClick={() => openHire(null)}>
+                    Hire…
+                  </Button>
+                </ListRowAction>
+              </ListRow>
             ) : null}
-          </ul>
+          </List>
         ) : (
           <p className="text-sm text-ink-muted">Nothing needs attention.</p>
         )}

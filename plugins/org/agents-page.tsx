@@ -1,5 +1,15 @@
 // @effect-diagnostics asyncFunction:off -- React callbacks await OrgCall's Promise; components hold no Effect runtime.
-import { Button, SettingsRow, ToggleGroup, ToggleGroupItem } from '@dia/renderer-plugin'
+import {
+  AvatarFallback,
+  Button,
+  Entity,
+  EntityDescription,
+  EntityMedia,
+  EntityName,
+  SettingsRow,
+  ToggleGroup,
+  ToggleGroupItem
+} from '@dia/renderer-plugin'
 import { Result } from 'effect'
 import { useState } from 'react'
 import { Dismiss, RenameHire, SetBypassOverride, SetReportsTo } from './calls'
@@ -18,6 +28,14 @@ const BYPASS = [
   { value: 'on', label: 'On', override: true },
   { value: 'off', label: 'Off', override: false }
 ] as const
+
+const initials = (name: string): string =>
+  name
+    .split(/\s+/)
+    .filter((word) => word !== '')
+    .slice(0, 2)
+    .map((word) => word.charAt(0))
+    .join('')
 
 const hiredDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
 
@@ -208,12 +226,17 @@ export function AgentsPage({ hireId, ...screen }: OrgScreen & { readonly hireId:
           entries={snapshot.hiredAgents.map((agent) => ({
             id: agent.id,
             content: (
-              <>
-                <span className="truncate">{agentName(agent, snapshot.jobTitles)}</span>
-                <span className="ml-auto truncate text-xs font-normal text-ink-muted">
+              <Entity className="flex-1">
+                <EntityMedia>
+                  <AvatarFallback>
+                    {initials(agent.name ?? jobTitleName(agent, snapshot.jobTitles) ?? '')}
+                  </AvatarFallback>
+                </EntityMedia>
+                <EntityName>{agentName(agent, snapshot.jobTitles)}</EntityName>
+                <EntityDescription className="text-right text-xs font-normal">
                   {jobTitleName(agent, snapshot.jobTitles)}
-                </span>
-              </>
+                </EntityDescription>
+              </Entity>
             )
           }))}
         />
