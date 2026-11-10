@@ -38,6 +38,7 @@ import { openIssues, PROJECT } from '../issues/issues.fake'
 import { orgAssignees } from './assignees'
 import { makeDispatcher } from './dispatcher'
 import { type HiredAgent, type JobTitle, ORG_PROVIDER, OverallCap } from './domain'
+import { type IssueCwd, IssueDirectory, IssueWaiting, type IssueWorkspace } from './issue-workspace'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { holdBuiltInDefinitions, mcpRegistry, skillRegistry } from './registries.fake'
@@ -150,7 +151,13 @@ const GITHUB: McpServers[string] = {
 const META_PLUGIN = 'C:/dia/meta/plugin'
 const PLAN: Skill = { name: 'dia-meta:plan', description: 'Plans work', group: 'Meta repo' }
 
+const inProjectDirectory: IssueWorkspace = {
+  open: () => Effect.succeed(IssueDirectory.make({ path: DIRECTORY })),
+  retain: () => Effect.void
+}
+
 const setUp = (options: {
+  readonly workspace?: IssueWorkspace
   readonly cap: number
   readonly disabled?: ReadonlyArray<'auto' | 'bypassPermissions'>
   readonly servers?: McpServers
@@ -189,6 +196,7 @@ const setUp = (options: {
       org,
       projectDirectory: (objective) =>
         Effect.succeed(objective.projectId === PROJECT ? Option.some(DIRECTORY) : Option.none()),
+      issueWorkspace: options.workspace ?? inProjectDirectory,
       attach,
       sessionTools
     })
@@ -658,6 +666,7 @@ describe('dispatcher session end', () => {
       const nextSetup = yield* makeDispatcher({
         org: env.org,
         projectDirectory: () => Effect.succeed(Option.some(DIRECTORY)),
+        issueWorkspace: inProjectDirectory,
         attach: env.attach,
         sessionTools: env.sessionTools
       })
@@ -682,6 +691,7 @@ describe('dispatcher in_review issue', () => {
       const nextSetup = yield* makeDispatcher({
         org: env.org,
         projectDirectory: () => Effect.succeed(Option.some(DIRECTORY)),
+        issueWorkspace: inProjectDirectory,
         attach: env.attach,
         sessionTools: env.sessionTools
       })
@@ -1093,6 +1103,107 @@ describe('dispatcher issues lend', () => {
         [afterFailure, env.sessions.length, retried.assignee],
         [1, 2, refOf(second)]
       )
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe('dispatcher issue workspace', () => {
+  const recordingWorkspace = (
+    cwd: (n: number) => IssueCwd = () => IssueDirectory.make({ path: DIRECTORY })
+  ) => {
+    const opened: Array<IssueId> = []
+    const retained: Array<ReadonlySet<IssueId>> = []
+    const workspace: IssueWorkspace = {
+      open: (issue) =>
+        Effect.sync(() => {
+          opened.push(issue.id)
+          return cwd(opened.length)
+        }),
+      retain: (ids) => Effect.sync(() => void retained.push(ids))
+    }
+    return { workspace, opened, retained }
+  }
+
+  it.effect('runs a session in the directory open returned', () =>
+    Effect.gen(function* () {
+      const { workspace } = recordingWorkspace(() => IssueDirectory.make({ path: 'C:/trees/one' }))
+      const env = yield* setUp({ cap: 1, workspace })
+
+      yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
+
+      assert.strictEqual((env.sessions[0] as FakeSession).options.config.cwd, 'C:/trees/one')
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('opens only the issues the scheduler picks: at most the cap of 20 todo issues', () =>
+    Effect.gen(function* () {
+      const { workspace, opened } = recordingWorkspace()
+      const env = yield* setUp({ cap: 3, workspace })
+      const hires: Array<HiredAgent> = []
+      for (let n = 0; n < 20; n += 1) hires.push(yield* env.hireOf(env.jobTitles[1] as JobTitle))
+      for (const hire of hires) yield* env.addTask(hire)
+
+      assert.deepStrictEqual([opened.length, env.sessions.length], [3, 3])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('leaves a waiting issue todo, opens it once per pass, and does not signal itself', () =>
+    Effect.gen(function* () {
+      const { workspace, opened } = recordingWorkspace(() => IssueWaiting.make({ reason: 'later' }))
+      const env = yield* setUp({ cap: 1, workspace })
+      const task = yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
+      yield* settle
+      const afterFirst = opened.length
+
+      yield* env.dispatcher.signal
+      yield* settle
+
+      assert.deepStrictEqual(
+        [afterFirst, opened.length, env.sessions.length, (yield* issueNow(env, task)).status],
+        [1, 2, 0, 'todo']
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('starts a waiting issue on the next signal once open succeeds', () =>
+    Effect.gen(function* () {
+      let ready = false
+      const { workspace } = recordingWorkspace(() =>
+        ready ? IssueDirectory.make({ path: DIRECTORY }) : IssueWaiting.make({ reason: 'later' })
+      )
+      const env = yield* setUp({ cap: 1, workspace })
+      yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
+
+      ready = true
+      yield* env.dispatcher.signal
+      yield* settle
+
+      assert.strictEqual(env.sessions.length, 1)
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('retains the startable and started issues each pass', () =>
+    Effect.gen(function* () {
+      const { workspace, retained } = recordingWorkspace()
+      const env = yield* setUp({ cap: 1, workspace })
+      const first = yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
+      const second = yield* env.addTask(yield* env.hireOf(env.jobTitles[1] as JobTitle))
+
+      const last = retained[retained.length - 1]
+
+      assert.deepStrictEqual([...(last ?? [])].sort(), [first.id, second.id].sort())
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('retains nothing while no issues are lent', () =>
+    Effect.gen(function* () {
+      const { workspace, retained } = recordingWorkspace()
+      const env = yield* setUp({ cap: 1, workspace, lent: false })
+
+      yield* env.dispatcher.signal
+      yield* settle
+
+      assert.strictEqual(retained.length, 0)
     }).pipe(Effect.scoped)
   )
 })

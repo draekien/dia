@@ -47,7 +47,8 @@ const oldSeed = Effect.gen(function* () {
   yield* sql`INSERT INTO org_settings ${sql.insert({ singleton: 1, overall_cap: 4 })}`
 })
 
-const { '10_issues_handover': _handover, ...migrationsBeforeHandover } = orgMigrations
+const { '11_worktrees': _worktrees, ...migrationsBeforeWorktrees } = orgMigrations
+const { '10_issues_handover': _handover, ...migrationsBeforeHandover } = migrationsBeforeWorktrees
 const { '9_agent_definitions': _definitions, ...migrationsBeforeDefinitions } =
   migrationsBeforeHandover
 
@@ -771,6 +772,21 @@ describe('10_issues_handover on a database with objectives, issues and comments'
           violations: 0
         }
       )
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe('11_worktrees', () => {
+  it.effect('creates worktree tables where a new issue row is not released', () =>
+    Effect.gen(function* () {
+      const { sql } = yield* openIn(':memory:', orgMigrations)
+      yield* sql`INSERT INTO issue_worktrees ${sql.insert({ issue_id: 'i', path: '/p', branch: 'dia/b', source_repo: '/r' })}`
+      yield* sql`INSERT INTO project_worktrees ${sql.insert({ project_id: 'p' })}`
+      const duplicate = yield* Effect.exit(
+        sql`INSERT INTO project_worktrees ${sql.insert({ project_id: 'p' })}`
+      )
+      const [row] = yield* sql<{ readonly released: number }>`SELECT released FROM issue_worktrees`
+      assert.deepStrictEqual([row?.released, Exit.isFailure(duplicate)], [0, true])
     }).pipe(Effect.scoped)
   )
 })

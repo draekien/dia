@@ -151,6 +151,19 @@ Org: `project_worktrees(project_id PRIMARY KEY)` (presence = on); `issue_worktre
 
 **Owner on create only** — the label is known where the worktree is created; reattach and release find the row by path.
 
+## Implementation notes
+
+Decisions the code made where this spec was silent or could not be followed as written:
+
+- `open` returns `IssueWaiting` when `projectOf` is `None`. `ServiceWithdrawnError` never reaches `open`: `whenProvided` closes its scope before the provider closes, so the held `GitOps` is `None` and `open` returns `IssueWaiting` for a missing plugin.
+- The missing-branch case matches the cause string `Branch <branch> no longer exists` exactly; any other `WorktreeReattachError` is `IssueWaiting`.
+- `retain` passes the issue id as `releaseWorktree`'s `paneId`. The ledger finds rows by path, so the id appears only in logs.
+- `releaseWorktree` on a missing path takes the normal path (non-zero remove, failing `git status`, prune) and returns `WorktreeReleased`; there is no separate existence check.
+- `releaseWorktree` with no ledger row writes nothing for `WorktreeReleased` and adopts the row as `NeedsDecision` with label `Pane <paneId>` for `WorktreeKept`.
+- `DiscardWorktree` and `KeepWorktree` on a path with no row fail with `LedgerStateChanged{ state: Removed }`.
+- `makePaneWorkspaceLive(worktreesRoot)` is now the constant layer `PaneWorkspaceLive`.
+- Known limit: when `git worktree remove` fails for a reason other than changed files (for example a locked file on Windows) and the directory still holds files, the row becomes `Removed` while the directory stays. No file is deleted: the leftover step deletes only an empty directory.
+
 ## Rejected Alternatives
 
 - A pre-close hook on `AssigneeProvider` to ask before Finish — grows the generic issues contract (ADR-0072).

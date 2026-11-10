@@ -2,8 +2,11 @@ import {
   type AgentBackend,
   AgentBackendKey,
   type AgentSessionOptions,
+  type GitOps,
   type HostPluginContext,
-  type SessionAttachment
+  type SessionAttachment,
+  WorktreeReleased,
+  WorktreesKey
 } from '@dia/plugin'
 import agentDefinitionsSetup from '@dia-plugin/agent-definitions/host'
 import { IssuesView } from '@dia-plugin/issues/calls'
@@ -71,13 +74,32 @@ const backendDisabling = (modes: ReadonlyArray<string>, opened: Array<string> = 
     attachmentTypes: () => Effect.die('not called')
   }) as unknown as AgentBackend
 
-const startOrg = (backend: Option.Option<AgentBackend>) =>
+const fakeGitOps = (log: Array<string>): GitOps => ({
+  createWorktree: (repo, owner) =>
+    Effect.sync(() => {
+      log.push(`create ${owner.label}`)
+      return { path: 'C:/trees/one', branch: 'dia/one', sourceRepo: repo }
+    }),
+  reattachWorktree: (info) => Effect.succeed(info),
+  releaseWorktree: () => Effect.succeed(WorktreeReleased.make({})),
+  findIncludedFiles: () => Effect.succeed(Option.none()),
+  copyIncludedFiles: () => Effect.succeed([])
+})
+
+const startOrg = (
+  backend: Option.Option<AgentBackend>,
+  gitOps: Option.Option<GitOps> = Option.none()
+) =>
   Effect.gen(function* () {
     const setups: Record<string, (ctx: HostPluginContext) => Effect.Effect<void, never, never>> = {
       org: setup as never,
       'agent-definitions': agentDefinitionsSetup as never,
       mcp: mcpSetup as never,
       issues: issuesSetup as never
+    }
+    if (Option.isSome(gitOps)) {
+      setups.worktrees = ((ctx: HostPluginContext) =>
+        ctx.provide(WorktreesKey, gitOps.value)) as never
     }
     if (Option.isSome(backend)) {
       setups.backend = ((ctx: HostPluginContext) =>
@@ -432,6 +454,81 @@ describe('org host entry work through issues', () => {
           ],
           opened: 2
         }
+      )
+    })
+  )
+})
+
+describe('org host entry issue worktrees', () => {
+  const OBJECTIVE_ID = '00000000-0000-4000-8000-500000000001'
+  const settle = Effect.gen(function* () {
+    for (let turn = 0; turn < 50; turn += 1) yield* Effect.yieldNow
+  })
+  const callIssues = (registry: PluginRegistry, tag: string, payload: unknown) =>
+    callPlugin(registry, { plugin: 'issues', tag, payload })
+
+  it.effect('lists a project the switch is on for, and a switch that is turned off is gone', () =>
+    Effect.gen(function* () {
+      const registry = yield* startOrg(Option.none())
+
+      yield* call(registry, 'SetProjectWorktrees', { projectId: PROJECT_ID, enabled: true })
+      const on = (yield* readOrg(registry)).worktreeProjects
+      yield* call(registry, 'SetProjectWorktrees', { projectId: PROJECT_ID, enabled: false })
+
+      assert.deepStrictEqual([on, (yield* readOrg(registry)).worktreeProjects], [[PROJECT_ID], []])
+    })
+  )
+
+  it.effect('keeps the issue todo until the worktrees plugin is provided, then starts it', () =>
+    Effect.gen(function* () {
+      const opened: Array<string> = []
+      const log: Array<string> = []
+      const registry = yield* startOrg(
+        Option.some(backendDisabling([], opened)),
+        Option.some(fakeGitOps(log))
+      )
+      yield* registry.load('backend')
+      yield* call(registry, 'SetProjectWorktrees', { projectId: PROJECT_ID, enabled: true })
+      yield* callIssues(registry, 'CreateObjective', {
+        objective: {
+          id: OBJECTIVE_ID,
+          projectId: PROJECT_ID,
+          title: 'Ship it',
+          description: '',
+          priority: 'normal',
+          assignee: null
+        }
+      })
+      const hire = Schema.decodeUnknownSync(HiredAgent)(
+        yield* call(registry, 'Hire', {
+          jobTitleId: BUILT_IN_JOB_TITLES[1]?.id,
+          name: null,
+          reportsTo: null
+        })
+      )
+      yield* settle
+      yield* callIssues(registry, 'CreateIssue', {
+        issue: {
+          id: '00000000-0000-4000-8000-600000000001',
+          objectiveId: OBJECTIVE_ID,
+          parentIssueId: null,
+          title: 'Fix login',
+          description: '',
+          assignee: { provider: 'org', id: hire.id }
+        }
+      })
+      yield* settle
+      const before = [opened.length, log.length]
+
+      yield* registry.load('worktrees')
+      yield* settle
+
+      assert.deepStrictEqual(
+        [before, [opened.length, log]],
+        [
+          [0, 0],
+          [1, ['create Issue · Fix login']]
+        ]
       )
     })
   )

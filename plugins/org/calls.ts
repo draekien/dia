@@ -1,4 +1,4 @@
-import { AgentName, PermissionResponse } from '@dia/plugin'
+import { AgentName, PermissionResponse, ProjectId } from '@dia/plugin'
 import { IssueId } from '@dia-plugin/issues/domain'
 import { Schema } from 'effect'
 import { Rpc } from 'effect/rpc'
@@ -30,13 +30,15 @@ import {
 /**
  * What the org screens show: every job title, every hired agent, the org settings, and whether any
  * session could start in `bypassPermissions` (false when managed or user Claude Code settings
- * disable it, or no agent backend is provided; ADR-0054).
+ * disable it, or no agent backend is provided; ADR-0054), and `worktreeProjects`, the projects whose
+ * issues run in their own git worktrees.
  */
 export const OrgSnapshot = Schema.Struct({
   jobTitles: Schema.Array(JobTitle),
   hiredAgents: Schema.Array(HiredAgent),
   settings: OrgSettings,
-  bypassAvailable: Schema.Boolean
+  bypassAvailable: Schema.Boolean,
+  worktreeProjects: Schema.Array(ProjectId)
 })
 export type OrgSnapshot = typeof OrgSnapshot.Type
 
@@ -124,6 +126,15 @@ export const SetReportsTo = Rpc.make('SetReportsTo', {
 export const SetOverallCap = Rpc.make('SetOverallCap', {
   payload: { cap: OverallCap },
   success: OrgSettings
+})
+
+/**
+ * Sets whether issues of project `projectId` run in their own git worktrees; the setting applies
+ * to projects that are git repositories. Returns the projects that now run issues in worktrees.
+ */
+export const SetProjectWorktrees = Rpc.make('SetProjectWorktrees', {
+  payload: { projectId: ProjectId, enabled: Schema.Boolean },
+  success: Schema.Array(ProjectId)
 })
 
 /**
