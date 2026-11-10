@@ -69,7 +69,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0059](0059-plugin-module-exports.md) | Let a plugin export source modules that other plugins import | accepted, amended by ADR-0061 and ADR-0065 |
 | [0060](0060-typed-plugin-service-keys.md) | Type a plugin service by a key its provider exports | accepted, amended by ADR-0062 |
 | [0061](0061-list-slots.md) | List slots: a plugin declares a list it draws, and other plugins add entries to it | accepted |
-| [0062](0062-host-service-keys.md) | Type the services the Host reads by keys defined in `src/` | accepted, amended by ADR-0065 |
+| [0062](0062-host-service-keys.md) | Type the services the Host reads by keys defined in `src/` | accepted, amended by ADR-0065 and ADR-0073 |
 | [0063](0063-settings-and-palette-plugins.md) | Plugins own the Settings dialog, the command palette and their entries | accepted, amended by ADR-0065 |
 | [0064](0064-job-titles-and-task-kinds.md) | Name what an agent is hired as a job title, ship seven built-in job titles, and make planning and retro kinds of task | accepted, amended by ADR-0069, ADR-0071 and ADR-0072 |
 | [0065](0065-adapter-plugins-are-ordinary-plugins.md) | Adapter plugins load, reload, unload and import under the same rules as feature plugins | accepted |
@@ -79,7 +79,8 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0069](0069-org-work-is-issues-with-implement-task-statuses.md) | Make org work issues with implement-task statuses, and make dia tools follow the session's permission rules | accepted, amended by ADR-0071 and ADR-0072 |
 | [0070](0070-plugins-attach-sessions-to-the-host.md) | Plugins attach the sessions they open to the Host, which shows each as a row in its project | accepted |
 | [0071](0071-executive-assistant-session.md) | Run one Executive assistant session in the org plugin, and route a direct request to one work issue | accepted, amended by ADR-0072 |
-| [0072](0072-org-composes-capability-plugins.md) | Split the org plugin into capability plugins that own registries, and make the org compose them | accepted |
+| [0072](0072-org-composes-capability-plugins.md) | Split the org plugin into capability plugins that own registries, and make the org compose them | accepted, amended by ADR-0073 |
+| [0073](0073-worktree-ledger-and-issue-worktrees.md) | The worktrees plugin keeps a ledger of every worktree, and org issues run in their own worktree when a project opts in | accepted |
 
 ## Adding a new ADR
 
