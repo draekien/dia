@@ -135,6 +135,8 @@ export interface PluginMemoryGuard {
  * manifest says `load: "eager"` one after another, and resolves once each of them has settled (loaded, waiting, failed or restart-required), which does not require it to be
  * `Loaded`. The remaining plugins keep loading in the background, in the registry's scope, and a plugin the
  * caller unloads before its turn is skipped. Call it once per registry.
+ * Closing the scope the registry was made in unloads every plugin, the last loaded first, each
+ * after the plugins and `whenProvided` setups that depend on its services.
  */
 export interface PluginRegistry {
   readonly list: () => Effect.Effect<ReadonlyArray<PluginInfo>>
@@ -290,6 +292,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
 }): Effect.Effect<PluginRegistry, never, Scope.Scope> =>
   Effect.gen(function* () {
     const parentScope = yield* Scope.Scope
+    const pluginsScope = yield* Scope.fork(parentScope)
     const lock = yield* Semaphore.make(1)
     const entries = new Map<string, Entry<Context>>()
     const slots = new Map<string, { readonly owner: string; readonly value: unknown }>()
@@ -811,7 +814,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
             })
           )
         )
-        const scope = yield* Scope.fork(parentScope)
+        const scope = yield* Scope.fork(pluginsScope)
         entry.leases = makeLeases()
         const exit = yield* Effect.exit(
           withinSetupWindow(
@@ -1100,6 +1103,15 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
         Effect.forkIn(parentScope)
       )
     })
+
+    const closeAll = lock.withPermits(1)(
+      Effect.gen(function* () {
+        const names = [...entries.keys()].reverse()
+        yield* Effect.forEach(names, closeWithDependants, { discard: true })
+        yield* Effect.logInfo('Closed every plugin with the registry', { count: names.length })
+      })
+    )
+    yield* Effect.addFinalizer(() => closeAll)
 
     return { list, start, load, unload, inject, use, changes: Stream.fromPubSub(providedKeys) }
   })

@@ -1637,6 +1637,24 @@ describe('whenProvided', () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect('closes the child before its provider when the registry scope closes', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const registry = yield* makeRegistry({
+            overview: watchingOrg(log),
+            org: provider('org', log, 'v1')
+          })
+          yield* registry.load('overview')
+          yield* registry.load('org')
+        })
+      )
+
+      assert.deepStrictEqual(log.slice(3), ['child:close', 'org:close', 'overview:close'])
+    })
+  )
+
   it.effect(
     'closes the child before the provider unloads and runs it again when the provider returns',
     () =>
