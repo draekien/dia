@@ -87,7 +87,11 @@ function ObjectiveList({
     <List aria-label="Objectives">
       {objectives.map((objective) => (
         <ListRow key={objective.id} value={objective.id}>
-          <ListRowLink render={<button type="button" />} onClick={() => open(objective.id)}>
+          <ListRowLink
+            render={<button type="button" />}
+            className="text-start"
+            onClick={() => open(objective.id)}
+          >
             <ListRowSubject>
               <ListRowName>{objective.title}</ListRowName>
               <ListRowDescription>{projectName(objective)}</ListRowDescription>
