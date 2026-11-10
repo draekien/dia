@@ -4,7 +4,16 @@ import { pathToFileURL } from 'node:url'
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem'
 import { HostInit, ShowAgent, WindowAttention } from '@shared/ipc/host-process'
 import { Config, Effect, Layer, Option, References } from 'effect'
-import { app, BrowserWindow, Notification, nativeTheme, net, protocol, shell } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  Notification,
+  nativeTheme,
+  net,
+  protocol,
+  screen,
+  shell
+} from 'electron'
 import electronUpdater from 'electron-updater'
 import { isWindowAttended, makeAgentNotifier, watchWindowAttention } from './agent-notifications'
 import { isAppNavigation, isExternalUrl } from './external-url'
@@ -22,6 +31,7 @@ import {
 } from './ipc/window-ipc'
 import { DEFAULT_LOG_RETENTION, makeLoggerLive, pruneOldLogEntries } from './logger'
 import { makeUpdaterBridge, type UpdaterSignal } from './services/updater'
+import { loadWindowState, saveWindowStateOnClose } from './window-state'
 
 const isDev = !app.isPackaged
 
@@ -116,9 +126,15 @@ const initialOverlay = {
 }
 
 function createWindow(): BrowserWindow {
+  const windowStatePath = join(app.getPath('userData'), 'window-state.json')
+  const savedState = loadWindowState(
+    windowStatePath,
+    screen.getAllDisplays().map((display) => display.workArea)
+  )
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    ...Option.getOrUndefined(savedState),
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
@@ -129,7 +145,12 @@ function createWindow(): BrowserWindow {
     }
   })
 
+  saveWindowStateOnClose(mainWindow, windowStatePath, (cause) =>
+    runLog(Effect.logWarning('Failed to save the window state', { cause }))
+  )
+
   mainWindow.on('ready-to-show', () => {
+    if (Option.isSome(savedState) && savedState.value.maximized) mainWindow.maximize()
     mainWindow.show()
   })
 
