@@ -24,13 +24,16 @@ const SHORT_SHA_LENGTH = 7
 
 const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? '' : 's'}`
 
+const findingKey = (finding: SecretFinding): string =>
+  `${finding.commit}:${finding.file ?? ''}:${finding.line}`
+
 function FindingRow({ finding }: { readonly finding: SecretFinding }) {
   const location =
     finding.file === null
       ? `commit message, line ${finding.line}`
       : `${finding.file}:${finding.line}`
   return (
-    <ListRow value={`${finding.commit}:${finding.file ?? ''}:${finding.line}`}>
+    <ListRow value={findingKey(finding)}>
       <ListRowLink render={<div />}>
         <ListRowSubject>
           <ListRowName>{finding.description}</ListRowName>
@@ -41,7 +44,7 @@ function FindingRow({ finding }: { readonly finding: SecretFinding }) {
           </span>
         </ListRowFact>
         <ListRowFact className="font-mono text-xs text-ink-muted">
-          <span className="truncate" title={location}>
+          <span className="break-all" title={location}>
             {location}
           </span>
         </ListRowFact>
@@ -74,10 +77,7 @@ function PushOutcome({ result }: { readonly result: MetaRepoPushResult }) {
           </p>
           <List aria-label="Findings">
             {result.findings.map((finding) => (
-              <FindingRow
-                key={`${finding.commit}:${finding.file ?? ''}:${finding.line}`}
-                finding={finding}
-              />
+              <FindingRow key={findingKey(finding)} finding={finding} />
             ))}
           </List>
           <p className="text-xs text-ink-muted">

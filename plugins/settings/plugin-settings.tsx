@@ -169,7 +169,10 @@ function PluginRow({
         </ListRowSubject>
         <ListRowFact>
           <Status>
-            <StatusMedia fill={STATUS_FILL[plugin.status._tag]} />
+            <StatusMedia
+              fill={STATUS_FILL[plugin.status._tag]}
+              className={plugin.status._tag === 'Failed' ? 'text-error' : undefined}
+            />
             <StatusName>{pluginStatusLabel(plugin.status)}</StatusName>
           </Status>
         </ListRowFact>

@@ -57,11 +57,11 @@ interface StatusIndicatorProps {
 
 /**
  * The status dot of one agent: amber and pulsing when it needs input, red and pulsing when it
- * failed, a steady half-filled dot while it is parked until a usage limit resets, a slow neutral pulse
- * while it works, steady green when it finished, a dashed ring when
- * idle. It is the design system's `StatusMedia`, so its shape matches every other status dot. Pass `still` for a legend or sample that must not animate, because it stands for a
- * status rather than reporting one. Decorative: put {@link statusLabel} in the accessible name
- * of the row it sits in.
+ * failed, a steady half-filled dot while it is parked until a usage limit resets, a slow neutral
+ * pulse while it works, steady green when it finished, a dashed ring when idle. Its shape matches
+ * every other status dot. Pass `still` for a legend or sample that must not animate, because it
+ * stands for a status rather than reporting one. Decorative: put {@link statusLabel} in the
+ * accessible name of the row it sits in.
  */
 export function StatusIndicator({
   status,
@@ -74,7 +74,7 @@ export function StatusIndicator({
       {pulses && <span className={statusRing({ status: status._tag })} />}
       <StatusMedia
         fill={STATUS_FILL[status._tag]}
-        className={cn(statusDot({ status: status._tag }), still && 'animate-none')}
+        className={cn('relative', statusDot({ status: status._tag }), still && 'animate-none')}
       />
     </span>
   )

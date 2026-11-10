@@ -6,6 +6,7 @@ import {
   EntityMedia,
   EntityName,
   Input,
+  initials,
   SettingsRow,
   Status,
   StatusMedia,
@@ -82,13 +83,6 @@ const issueTree = (issues: ReadonlyArray<Issue>): ReadonlyArray<IssueNode> => {
     (byParent.get(parent) ?? []).map((issue) => ({ issue, children: build(issue.id) }))
   return build(null)
 }
-
-const initials = (name: string): string =>
-  name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => word.charAt(0).toUpperCase())
-    .join('')
 
 const toastIssueFailure = (title: string, failure: { readonly _tag: string }) => {
   toast.add({ title, description: failureText(failure), type: 'error' })

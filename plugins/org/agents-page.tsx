@@ -6,6 +6,7 @@ import {
   EntityDescription,
   EntityMedia,
   EntityName,
+  initials,
   SettingsRow,
   ToggleGroup,
   ToggleGroupItem
@@ -28,14 +29,6 @@ const BYPASS = [
   { value: 'on', label: 'On', override: true },
   { value: 'off', label: 'Off', override: false }
 ] as const
-
-const initials = (name: string): string =>
-  name
-    .split(/\s+/)
-    .filter((word) => word !== '')
-    .slice(0, 2)
-    .map((word) => word.charAt(0))
-    .join('')
 
 const hiredDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
 
@@ -229,7 +222,7 @@ export function AgentsPage({ hireId, ...screen }: OrgScreen & { readonly hireId:
               <Entity className="flex-1">
                 <EntityMedia>
                   <AvatarFallback>
-                    {initials(agent.name ?? jobTitleName(agent, snapshot.jobTitles) ?? '')}
+                    {initials(agent.name ?? jobTitleName(agent, snapshot.jobTitles) ?? 'Agent')}
                   </AvatarFallback>
                 </EntityMedia>
                 <EntityName>{agentName(agent, snapshot.jobTitles)}</EntityName>
