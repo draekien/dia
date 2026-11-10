@@ -1,0 +1,413 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-10T13:01:53+00:00",
+  "title": "Design System: dia",
+  "extensions": {
+    "colorMeta": {
+      "signal-indigo": {
+        "role": "primary",
+        "displayName": "Signal Indigo",
+        "canonical": "oklch(0.52 0.18 265)",
+        "cssVar": "--primary",
+        "dark": "oklch(0.62 0.14 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.036 265)",
+          "oklch(0.26 0.076 265)",
+          "oklch(0.37 0.115 265)",
+          "oklch(0.48 0.155 265)",
+          "oklch(0.60 0.162 265)",
+          "oklch(0.72 0.119 265)",
+          "oklch(0.84 0.076 265)",
+          "oklch(0.95 0.036 265)"
+        ]
+      },
+      "indigo-ink": {
+        "role": "primary",
+        "displayName": "Indigo Ink",
+        "canonical": "oklch(0.99 0.01 265)",
+        "cssVar": "--primary-ink",
+        "dark": "oklch(0.98 0.01 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.002 265)",
+          "oklch(0.26 0.004 265)",
+          "oklch(0.37 0.006 265)",
+          "oklch(0.48 0.009 265)",
+          "oklch(0.60 0.009 265)",
+          "oklch(0.72 0.007 265)",
+          "oklch(0.84 0.004 265)",
+          "oklch(0.95 0.002 265)"
+        ]
+      },
+      "needs-input-amber": {
+        "role": "tertiary",
+        "displayName": "Needs-input Amber",
+        "canonical": "oklch(0.7 0.15 70)",
+        "cssVar": "--pulse-amber",
+        "dark": "oklch(0.75 0.16 70)",
+        "tonalRamp": [
+          "oklch(0.15 0.030 70)",
+          "oklch(0.26 0.063 70)",
+          "oklch(0.37 0.096 70)",
+          "oklch(0.48 0.129 70)",
+          "oklch(0.60 0.135 70)",
+          "oklch(0.72 0.099 70)",
+          "oklch(0.84 0.063 70)",
+          "oklch(0.95 0.030 70)"
+        ]
+      },
+      "failed-red": {
+        "role": "tertiary",
+        "displayName": "Failed Red",
+        "canonical": "oklch(0.55 0.22 25)",
+        "cssVar": "--pulse-red",
+        "dark": "oklch(0.62 0.22 25)",
+        "tonalRamp": [
+          "oklch(0.15 0.044 25)",
+          "oklch(0.26 0.092 25)",
+          "oklch(0.37 0.141 25)",
+          "oklch(0.48 0.189 25)",
+          "oklch(0.60 0.198 25)",
+          "oklch(0.72 0.145 25)",
+          "oklch(0.84 0.092 25)",
+          "oklch(0.95 0.044 25)"
+        ]
+      },
+      "error-red": {
+        "role": "tertiary",
+        "displayName": "Error Red",
+        "canonical": "oklch(0.52 0.2 25)",
+        "cssVar": "--error",
+        "dark": "oklch(0.58 0.19 25)",
+        "tonalRamp": [
+          "oklch(0.15 0.040 25)",
+          "oklch(0.26 0.084 25)",
+          "oklch(0.37 0.128 25)",
+          "oklch(0.48 0.172 25)",
+          "oklch(0.60 0.180 25)",
+          "oklch(0.72 0.132 25)",
+          "oklch(0.84 0.084 25)",
+          "oklch(0.95 0.040 25)"
+        ]
+      },
+      "finished-green": {
+        "role": "tertiary",
+        "displayName": "Finished Green",
+        "canonical": "oklch(0.55 0.15 145)",
+        "cssVar": "--pulse-green",
+        "dark": "oklch(0.72 0.17 145)",
+        "tonalRamp": [
+          "oklch(0.15 0.030 145)",
+          "oklch(0.26 0.063 145)",
+          "oklch(0.37 0.096 145)",
+          "oklch(0.48 0.129 145)",
+          "oklch(0.60 0.135 145)",
+          "oklch(0.72 0.099 145)",
+          "oklch(0.84 0.063 145)",
+          "oklch(0.95 0.030 145)"
+        ]
+      },
+      "cool-ground": {
+        "role": "neutral",
+        "displayName": "Cool Ground",
+        "canonical": "oklch(0.97 0.004 255)",
+        "cssVar": "--background",
+        "dark": "oklch(0.16 0.008 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.002 255)",
+          "oklch(0.26 0.004 255)",
+          "oklch(0.37 0.006 255)",
+          "oklch(0.48 0.009 255)",
+          "oklch(0.60 0.009 255)",
+          "oklch(0.72 0.007 255)",
+          "oklch(0.84 0.004 255)",
+          "oklch(0.95 0.002 255)"
+        ]
+      },
+      "raised-sheet": {
+        "role": "neutral",
+        "displayName": "Raised Sheet",
+        "canonical": "oklch(0.995 0.001 255)",
+        "cssVar": "--surface",
+        "dark": "oklch(0.21 0.01 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.002 255)",
+          "oklch(0.26 0.004 255)",
+          "oklch(0.37 0.006 255)",
+          "oklch(0.48 0.009 255)",
+          "oklch(0.60 0.009 255)",
+          "oklch(0.72 0.007 255)",
+          "oklch(0.84 0.004 255)",
+          "oklch(0.95 0.002 255)"
+        ]
+      },
+      "slate-ink": {
+        "role": "neutral",
+        "displayName": "Slate Ink",
+        "canonical": "oklch(0.25 0.015 255)",
+        "cssVar": "--ink",
+        "dark": "oklch(0.94 0.005 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.003 255)",
+          "oklch(0.26 0.006 255)",
+          "oklch(0.37 0.010 255)",
+          "oklch(0.48 0.013 255)",
+          "oklch(0.60 0.014 255)",
+          "oklch(0.72 0.010 255)",
+          "oklch(0.84 0.006 255)",
+          "oklch(0.95 0.003 255)"
+        ]
+      },
+      "muted-slate": {
+        "role": "neutral",
+        "displayName": "Muted Slate",
+        "canonical": "oklch(0.5 0.02 255)",
+        "cssVar": "--ink-muted",
+        "dark": "oklch(0.64 0.015 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.004 255)",
+          "oklch(0.26 0.008 255)",
+          "oklch(0.37 0.013 255)",
+          "oklch(0.48 0.017 255)",
+          "oklch(0.60 0.018 255)",
+          "oklch(0.72 0.013 255)",
+          "oklch(0.84 0.008 255)",
+          "oklch(0.95 0.004 255)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(0.9 0.006 255)",
+        "cssVar": "--border",
+        "dark": "oklch(0.32 0.012 255)",
+        "tonalRamp": [
+          "oklch(0.15 0.002 255)",
+          "oklch(0.26 0.005 255)",
+          "oklch(0.37 0.008 255)",
+          "oklch(0.48 0.010 255)",
+          "oklch(0.60 0.011 255)",
+          "oklch(0.72 0.008 255)",
+          "oklch(0.84 0.005 255)",
+          "oklch(0.95 0.002 255)"
+        ]
+      },
+      "quiet-fill": {
+        "role": "neutral",
+        "displayName": "Quiet Fill",
+        "canonical": "oklch(0.93 0.008 255)",
+        "cssVar": "--secondary",
+        "dark": "oklch(0.4 0.02 250)",
+        "tonalRamp": [
+          "oklch(0.15 0.004 255)",
+          "oklch(0.26 0.008 255)",
+          "oklch(0.37 0.013 255)",
+          "oklch(0.48 0.017 255)",
+          "oklch(0.60 0.018 255)",
+          "oklch(0.72 0.013 255)",
+          "oklch(0.84 0.008 255)",
+          "oklch(0.95 0.004 255)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Empty-state and first-run moments only."
+      },
+      "heading": {
+        "displayName": "Heading",
+        "purpose": "Card, section, dialog and form titles."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "A record's name in a list row."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "UI copy, chrome and agent prose."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Captions, status labels, metadata and hints."
+      },
+      "micro": {
+        "displayName": "Micro",
+        "purpose": "Avatar initials only."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Code, file paths, tool names and other literal agent output."
+      }
+    },
+    "shadows": [
+      {
+        "name": "field-rest",
+        "value": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        "purpose": "Inputs and outline buttons (shadow-xs)."
+      },
+      {
+        "name": "popover",
+        "value": "0px 1px 2px rgb(0% 0% 0% / 0.05), 0px 10px 28px -8px rgb(0% 0% 0% / 0.18)",
+        "purpose": "Preview cards (--shadow-popover). Popovers and menus use shadow-md."
+      },
+      {
+        "name": "dialog",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "Modal and alert dialogs (shadow-lg)."
+      }
+    ],
+    "motion": [
+      {
+        "name": "quick",
+        "value": "150ms",
+        "purpose": "Hover, focus, border and colour changes (--transition-duration-quick)."
+      },
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0, 0, 0.2, 1)",
+        "purpose": "Default easing (--ease-out)."
+      },
+      {
+        "name": "pulse-slow",
+        "value": "3.2s ease-in-out infinite",
+        "purpose": "A working agent's status dot."
+      },
+      {
+        "name": "stream-enter",
+        "value": "240ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Streamed transcript text entering."
+      },
+      {
+        "name": "composer-move",
+        "value": "250ms ease-out",
+        "purpose": "The composer moving from the empty-session centre to the bottom edge."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "hide",
+        "value": "40rem",
+        "purpose": "Container width below which a List fact set to hide is removed."
+      },
+      {
+        "name": "abbreviate",
+        "value": "48rem",
+        "purpose": "Container width below which a List fact set to abbreviate shows its short form."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single primary action in a dialog.",
+      "html": "<button class=\"ds-btn-primary\">Approve</button>",
+      "css": ".ds-btn-primary { font-family: var(--font-sans, 'Geist Variable', ui-sans-serif, system-ui, sans-serif); height: 36px; padding: 8px 16px; border: 1px solid transparent; border-radius: 8px; background: var(--primary); color: var(--primary-ink); font-size: 0.875rem; font-weight: 500; transition: all 150ms; } .ds-btn-primary:hover { background: color-mix(in oklch, var(--primary) 90%, transparent); } .ds-btn-primary:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "A secondary action that needs a visible edge.",
+      "html": "<button class=\"ds-btn-outline\">Try again</button>",
+      "css": ".ds-btn-outline { font-family: var(--font-sans, 'Geist Variable', ui-sans-serif, system-ui, sans-serif); height: 32px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); color: var(--ink); font-size: 0.875rem; font-weight: 500; box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); transition: all 150ms; } .ds-btn-outline:hover { background: var(--secondary); } .ds-btn-outline:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Most buttons in dense rows and menus.",
+      "html": "<button class=\"ds-btn-ghost\">Unload</button>",
+      "css": ".ds-btn-ghost { font-family: var(--font-sans, 'Geist Variable', ui-sans-serif, system-ui, sans-serif); height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ink); font-size: 0.875rem; font-weight: 500; transition: all 150ms; } .ds-btn-ghost:hover { background: var(--secondary); } .ds-btn-ghost:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "The shared single-line field.",
+      "html": "<input class=\"ds-input\" placeholder=\"git@github.com:you/dia-meta.git\" />",
+      "css": ".ds-input { font-family: var(--font-sans, 'Geist Variable', ui-sans-serif, system-ui, sans-serif); height: 36px; width: 280px; padding: 4px 12px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--ink); font-size: 0.875rem; box-shadow: 0 1px 2px rgb(0 0 0 / 0.05); transition: border-color 150ms, box-shadow 150ms; } .ds-input::placeholder { color: var(--ink-muted); } .ds-input:focus-visible { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent); }"
+    },
+    {
+      "name": "Agent Status Dot",
+      "kind": "custom",
+      "refersTo": "status-dot",
+      "description": "The signature status indicator: amber and red pulse with a ring, working pulses slowly, parked is half-filled, finished is green, idle is a dashed ring.",
+      "html": "<div class=\"ds-dots\"><span class=\"ds-dot ds-dot-amber\"><i></i></span><span class=\"ds-dot ds-dot-red\"><i></i></span><span class=\"ds-dot ds-dot-half\"></span><span class=\"ds-dot ds-dot-working\"></span><span class=\"ds-dot ds-dot-green\"></span><span class=\"ds-dot ds-dot-idle\"></span></div>",
+      "css": ".ds-dots { display: flex; gap: 16px; align-items: center; } .ds-dot { position: relative; display: inline-block; width: 10px; height: 10px; box-sizing: border-box; border-radius: 9999px; border: 1.5px solid currentColor; background: currentColor; color: var(--ink-muted); } .ds-dot i { position: absolute; inset: -1.5px; border-radius: 9999px; background: currentColor; opacity: 0.6; animation: ds-ping 1s cubic-bezier(0, 0, 0.2, 1) infinite; } .ds-dot-amber { color: var(--pulse-amber); } .ds-dot-red { color: var(--pulse-red); } .ds-dot-green { color: var(--pulse-green); } .ds-dot-half { background: linear-gradient(90deg, currentColor 50%, transparent 50%); } .ds-dot-idle { background: transparent; border-style: dashed; } .ds-dot-working { animation: ds-pulse 3.2s ease-in-out infinite; } @keyframes ds-ping { 75%, 100% { transform: scale(2); opacity: 0; } } @keyframes ds-pulse { 0%, 100% { opacity: 0.9; } 50% { opacity: 0.35; } } @media (prefers-reduced-motion: reduce) { .ds-dot { animation: none; } .ds-dot i { display: none; } }"
+    },
+    {
+      "name": "Record List Row",
+      "kind": "custom",
+      "refersTo": "list-row",
+      "description": "A 44px List row: the subject, a Status fact and an action.",
+      "html": "<div class=\"ds-row\" tabindex=\"0\"><span class=\"ds-row-name\">claude-code</span><span class=\"ds-status\"><span class=\"ds-status-dot\"></span>Loaded</span><button class=\"ds-row-action\">Reload</button></div>",
+      "css": ".ds-row { font-family: var(--font-sans, 'Geist Variable', ui-sans-serif, system-ui, sans-serif); display: flex; align-items: center; gap: 16px; width: 420px; height: 44px; padding: 0 8px; border-radius: 6px; color: var(--ink); font-size: 0.875rem; outline: none; } .ds-row:hover { background: color-mix(in oklch, var(--secondary) 60%, transparent); } .ds-row:focus-visible { box-shadow: inset 0 0 0 1px var(--ring); } .ds-row-name { flex: 1; font-weight: 600; } .ds-status { display: inline-flex; align-items: center; gap: 8px; font-size: 0.75rem; } .ds-status-dot { width: 10px; height: 10px; border-radius: 9999px; background: currentColor; } .ds-row-action { font-family: var(--font-sans, 'Geist Variable', ui-sans-serif, system-ui, sans-serif); height: 24px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); color: var(--ink); font-size: 0.75rem; }"
+    },
+    {
+      "name": "Entity",
+      "kind": "custom",
+      "refersTo": "entity-media",
+      "description": "A hired agent: an initials avatar, the name and the job title.",
+      "html": "<span class=\"ds-entity\"><span class=\"ds-avatar\">SE</span><span>Unnamed Software engineer</span><span class=\"ds-entity-desc\">Software engineer</span></span>",
+      "css": ".ds-entity { font-family: var(--font-sans, 'Geist Variable', ui-sans-serif, system-ui, sans-serif); display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: 0.875rem; } .ds-avatar { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 9999px; background: var(--surface); color: var(--ink-muted); font-size: 0.625rem; font-weight: 500; } .ds-entity-desc { color: var(--ink-muted); font-size: 0.75rem; }"
+    },
+    {
+      "name": "Tooltip",
+      "kind": "custom",
+      "refersTo": "tooltip",
+      "description": "An inverted label shown on hover or focus.",
+      "html": "<span class=\"ds-tooltip\">Available when this turn ends</span>",
+      "css": ".ds-tooltip { font-family: var(--font-sans, 'Geist Variable', ui-sans-serif, system-ui, sans-serif); display: inline-block; padding: 6px 12px; border-radius: 8px; background: var(--ink); color: var(--background); font-size: 0.75rem; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Dispatch Desk",
+    "overview": "dia is a polished native desktop app in the lineage of Linear, Arc, and Raycast: crisp, cool-neutral surfaces; deliberate, sparing color; motion that responds to what the user just did rather than performing for its own sake. The user sends agents out to work and does not watch them. The UI's first job is to show, in one list, which agents need the user and what the others are doing, and then to get out of the way: one agent's tab fills the window at a time, and the rest keep working out of view.\n\nThe colour palette is named **Control Room**: many status lights on a quiet cool-neutral ground, with one operator watching them. Density is that of a desktop tool: 14px body text, 44px record rows, hairline dividers instead of cards, and one accent.\n\nThis system explicitly rejects two adjacent aesthetics: the generic AI-chat-SaaS look (gradient hero treatments, bubbly chat-marketing polish, anything that reads as a hosted product's landing page) and the raw terminal-multiplexer look (bare ASCII borders, zero-chrome, tmux-default starkness). dia is a native app that happens to run agent sessions — not a wrapped terminal, and not a product being sold.",
+    "keyCharacteristics": [
+      "Cool-neutral Control Room palette, in a light and a dark theme, with each color role used deliberately",
+      "Sans + mono pairing: sans for chrome and UI copy, mono for session/code content",
+      "Amber, red and green carry severity only: amber for a warning or alert, red for an error, green for a finished agent",
+      "Records are drawn with the draekien/design-system components (`List`, `Status`, `Entity`, `Figure`, `RelativeTime`) on dia's own tokens",
+      "Responsive, non-choreographed motion: transitions confirm actions, they don't perform"
+    ],
+    "rules": [
+      {
+        "name": "The One Voice Rule",
+        "body": "Amber marks every warning and alert. Red marks every error. Green marks a finished agent. No element uses these colours for decoration or emphasis: diff added and removed lines are neither warnings nor errors, so they do not use them. Amber and red pulse only on the status indicator. The OS-drawn close button's red hover is not dia's and does not follow this rule (ADR-0039).",
+        "section": "colors"
+      },
+      {
+        "name": "The No Middle Dot Rule",
+        "body": "Text dia writes never uses the middle dot (U+00B7) as a separator. Use layout spacing, a line break, a comma or a sentence instead: `3 steps, Bash failed, 12s`, not the same parts joined by middle dots. Data from elsewhere shown verbatim, such as a skill's `argumentHint`, keeps its own characters.",
+        "section": "colors"
+      },
+      {
+        "name": "The Content-Is-Mono Rule",
+        "body": "The agent's *literal output* — code, file paths, tool names, command strings, and other verbatim snippets — renders in the mono family. Everything else, including the agent's *prose* (paragraphs, lists, and headings inside a Markdown message) and all of dia's own chrome (buttons, labels, dialogs), renders in the sans family. The two are never mixed within one span of text: mono is a signal that \"this is a literal string,\" so widening it to whole prose bodies would drain that signal. An overview activity line follows the same rule: a `TodoWrite` item is sans, a tool call such as `Edit src/main/index.ts` is mono.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Frame Rule",
+        "body": "At rest there is one level. The sidebar and the content area, and the regions inside them, are separated by borders and dividers, not shadows. Elevation appears only in direct response to an open dialog or overlay.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** keep color roles deliberate: primary for action/selection, the cool neutrals for structure, amber for warnings, red for errors and green for a finished agent, per the One Voice Rule.",
+      "**Do** use mono for all literal agent/session content and sans for all dia chrome, per the Content-Is-Mono Rule.",
+      "**Do** keep to the one resting level, reserving elevation for dialogs and overlays, per the Flat Frame Rule.",
+      "**Do** make motion responsive to real actions (tab switch, row selection, status change) — confirm, don't choreograph.",
+      "**Do** draw a list of comparable records with `List`, its states with `Status`, people and agents with `Entity`, and compared numbers with `Figure`, per Record lists."
+    ],
+    "donts": [
+      "**Don't** build a generic AI-chat-SaaS look — no gradient hero treatments, no bubble-chat marketing polish, nothing that reads as a hosted product's landing page.",
+      "**Don't** default to a raw terminal-multiplexer aesthetic — no bare ASCII-art borders, no zero-chrome-for-its-own-sake tmux-default look.",
+      "**Don't** use amber, red or green for decoration or emphasis; they mean warning, error and finished.",
+      "**Don't** separate text with a middle dot (U+00B7), per the No Middle Dot Rule.",
+      "**Don't** pulse for a finished agent; a finished agent does not need the user, and a pulse there makes the needs-input pulse easier to ignore.",
+      "**Don't** hand-roll a record list as a `<ul className=\"divide-y\">` with its own row markup, or draw a status as a bespoke dot; use the Record lists components."
+    ]
+  }
+}
