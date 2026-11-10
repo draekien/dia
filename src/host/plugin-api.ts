@@ -29,7 +29,16 @@ export {
   ModelsReady,
   ModelsUnavailable
 } from '../shared/domain/model'
-export { type PaneId, SessionId, ThinkingLevel } from '../shared/domain/pane'
+export {
+  type PaneId,
+  ReleaseOutcome,
+  SessionId,
+  ThinkingLevel,
+  WorktreeInfo,
+  WorktreeKept,
+  WorktreeOwner,
+  WorktreeReleased
+} from '../shared/domain/pane'
 export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
 export { AgentName, ProjectId } from '../shared/domain/project'
 export { PermissionRules, SessionToolOptions } from '../shared/domain/session-tools'
@@ -49,7 +58,6 @@ export {
   WorktreeCreateError,
   WorktreeIncludeError,
   WorktreeReattachError,
-  WorktreeRemoveError,
   WorktreesKey
 } from './services/worktrees-seam'
 export {

@@ -95,13 +95,14 @@ import { WorktreeCreateError, WorktreeReattachError, withGitOps } from './worktr
 
 /**
  * How a pane's worktree should be obtained. `Create` provisions a brand-new worktree
- * (friendly `dia/<slug>` branch + directory under `worktreesRoot`, collision-checked);
+ * (friendly `dia/<slug>` branch + directory chosen by the worktrees plugin, collision-checked),
+ * recorded under `label` on Settings › Worktrees;
  * `Reattach` re-adds the pane's already-created worktree from its persisted {@link WorktreeInfo}
  * (checking out the existing branch), used on resume after the directory was removed on the
  * prior graceful shutdown. Absent from a {@link PaneCreationRequest} means a non-worktree pane.
  */
 export type WorktreeRequest =
-  | { readonly _tag: 'Create'; readonly worktreesRoot: string }
+  | { readonly _tag: 'Create'; readonly label: string }
   | { readonly _tag: 'Reattach'; readonly info: WorktreeInfo }
 
 /**
@@ -815,10 +816,14 @@ export const PaneSupervisorLive = Layer.effect(
         if (worktreeRequest === undefined) return { config: projectConfig, setup: undefined }
 
         const removeWorktree = (info: WorktreeInfo) =>
-          withGitOps(plugins, (gitOps) => gitOps.removeWorktree(info, request.paneId)).pipe(
-            Effect.flatMap((removed) =>
-              Option.isSome(removed)
-                ? Effect.void
+          withGitOps(plugins, (gitOps) => gitOps.releaseWorktree(info, request.paneId)).pipe(
+            Effect.flatMap((released) =>
+              Option.isSome(released)
+                ? Effect.logInfo('Released the pane worktree', {
+                    paneId: request.paneId,
+                    path: info.path,
+                    outcome: released.value
+                  })
                 : Effect.logWarning(
                     'Left the pane worktree on disk because the worktrees plugin is not loaded',
                     { paneId: request.paneId, path: info.path }
@@ -837,8 +842,8 @@ export const PaneSupervisorLive = Layer.effect(
             worktreeRequest._tag === 'Create'
               ? gitOps.createWorktree(
                   request.sourceCwd,
-                  request.paneId,
-                  worktreeRequest.worktreesRoot
+                  { paneId: request.paneId, label: worktreeRequest.label },
+                  Option.none()
                 )
               : gitOps.reattachWorktree(worktreeRequest.info, request.paneId)
           return setUpWorktreeTab({

@@ -36,6 +36,7 @@ import {
   PermissionNotPending,
   refusalOf
 } from './domain'
+import type { IssueWorkspace } from './issue-workspace'
 import { nextStarts } from './scheduler'
 import type { Org } from './service'
 import type { SessionTools, SessionToolsResult } from './session-tools'
@@ -136,7 +137,11 @@ const newPrompt = (issue: Issue, objective: Objective) =>
 const promptFor = (issue: Issue, objective: Objective) =>
   issue.sessionId !== null ? RESUME_TEXT : newPrompt(issue, objective)
 
-/** Where an issue's session runs: the registered directory of its objective's project. */
+/**
+ * The registered directory of an objective's project, `None` when it is not registered. The
+ * dispatcher reads it for session tools and permission modes; an issue's session runs where
+ * `IssueWorkspace.open` says.
+ */
 export type ProjectDirectory = (objective: Objective) => Effect.Effect<Option.Option<string>>
 
 /**
@@ -198,17 +203,19 @@ interface RefusedIssue {
 export const makeDispatcher = (deps: {
   readonly org: Pick<Org, 'jobTitles' | 'hiredAgents' | 'settings' | 'watchJobTitleChanges'>
   readonly projectDirectory: ProjectDirectory
+  readonly issueWorkspace: IssueWorkspace
   readonly attach: HostSessions['attach']
   readonly sessionTools: SessionTools
 }) =>
   Effect.gen(function* () {
-    const { org, projectDirectory, attach, sessionTools } = deps
+    const { org, projectDirectory, issueWorkspace, attach, sessionTools } = deps
     const pluginScope = yield* Effect.scope
     const issues = yield* SynchronizedRef.make(new Map<IssueId, LiveIssue>())
     const backendRef = yield* Ref.make(Option.none<AgentBackend>())
     const models = yield* Ref.make(Option.none<readonly [ModelOption, ...Array<ModelOption>]>())
     const lent = yield* Ref.make(Option.none<ProviderIssues>())
     const failed = yield* Ref.make(new Map<IssueId, string>())
+    const waitingForWorkspace = yield* Ref.make(new Set<IssueId>())
     const unlistedHires = yield* Ref.make(new Set<HireId>())
     const answerOrder = yield* Ref.make(0)
     const signals = yield* Queue.sliding<void>(1)
@@ -291,6 +298,24 @@ export const makeDispatcher = (deps: {
     ) {
       const { issue, objective, hire, jobTitle, directory, tools, pluginPaths } = context
       const unreserve = drop(issue.id).pipe(Effect.andThen(signal))
+      const cwd = yield* issueWorkspace.open(issue, objective)
+      if (cwd._tag === 'IssueWaiting') {
+        const first = !(yield* Ref.get(waitingForWorkspace)).has(issue.id)
+        yield* Ref.update(waitingForWorkspace, (current) => new Set(current).add(issue.id))
+        if (first) {
+          yield* Effect.logWarning('Issue waits for its workspace', {
+            issueId: issue.id,
+            reason: cwd.reason
+          })
+        }
+        yield* drop(issue.id)
+        return
+      }
+      yield* Ref.update(waitingForWorkspace, (current) => {
+        const next = new Set(current)
+        next.delete(issue.id)
+        return next
+      })
       if (!(yield* runs.markStarted(issue.id, hire.id))) {
         yield* Effect.logInfo('Issue changed before it started', { issueId: issue.id })
         return yield* unreserve
@@ -313,7 +338,7 @@ export const makeDispatcher = (deps: {
       const scope = yield* Scope.make()
       const config = {
         paneId: issue.paneId,
-        cwd: directory,
+        cwd: cwd.path,
         model,
         thinkingLevel: jobTitle.thinkingLevel,
         permissionMode
@@ -531,6 +556,14 @@ export const makeDispatcher = (deps: {
         ? yield* runs.value.runState
         : { startable: [], started: [] }
       yield* reconcile(candidates.startable, candidates.started)
+      if (Option.isSome(runs)) {
+        yield* issueWorkspace.retain(
+          new Set([
+            ...candidates.startable.map(({ issue }) => issue.id),
+            ...candidates.started.map((issue) => issue.id)
+          ])
+        )
+      }
       const { contexts, refused } =
         Option.isSome(runs) && Option.isSome(backend) && Option.isSome(catalog)
           ? yield* contextsFor(candidates.startable, yield* SynchronizedRef.get(issues))

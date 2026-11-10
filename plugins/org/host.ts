@@ -1,9 +1,11 @@
 import {
   type AgentBackend,
   AgentBackendKey,
+  type GitOps,
   type HostPluginContext,
   type PluginSetup,
-  type ProjectId
+  type ProjectId,
+  WorktreesKey
 } from '@dia/plugin'
 import {
   type AgentDefinitionRegistry,
@@ -45,6 +47,7 @@ import {
   SetBypassOverride,
   SetJobTitleEnabled,
   SetOverallCap,
+  SetProjectWorktrees,
   SetReportsTo,
   WatchOrgLive
 } from './calls'
@@ -57,6 +60,7 @@ import {
   sameMissingReferences
 } from './domain'
 import { handOverJobTitles, handOverWork, handoverPending, workHandoverPending } from './handover'
+import { makeIssueWorkspace } from './issue-workspace'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { makeRoutingTools } from './routing-tools'
@@ -88,6 +92,25 @@ const holdAgentBackend = (
           () => Ref.set(backend, Option.none())
         )
         yield* dispatcher.lendBackend(agentBackend)
+      })
+    )
+    .pipe(Effect.orDie)
+
+const holdGitOps = (
+  ctx: HostPluginContext,
+  gitOps: Ref.Ref<Option.Option<GitOps>>,
+  dispatcher: Dispatcher
+) =>
+  ctx
+    .whenProvided([WorktreesKey], ({ worktrees }) =>
+      Effect.gen(function* () {
+        yield* Effect.acquireRelease(
+          Ref.set(gitOps, Option.some(worktrees)).pipe(
+            Effect.tap(() => Effect.logDebug('Org holds the worktrees plugin'))
+          ),
+          () => Ref.set(gitOps, Option.none())
+        )
+        yield* dispatcher.signal
       })
     )
     .pipe(Effect.orDie)
@@ -231,7 +254,9 @@ const holdRegistries = (
   }).pipe(Effect.orDie)
 
 const projectDirectories = (workspace: Workspace) =>
-  workspace.projects.map(({ project }) => `${project.projectId}=${project.directory}`).join('\n')
+  workspace.projects
+    .map(({ project }) => `${project.projectId}=${project.directory}=${project.isGitRepo}`)
+    .join('\n')
 
 const followWorkspace = (
   ctx: HostPluginContext,
@@ -255,11 +280,11 @@ const followWorkspace = (
     yield* Deferred.await(first)
   })
 
-const directoryOf = (workspace: Ref.Ref<Option.Option<Workspace>>, projectId: ProjectId) =>
+const projectOf = (workspace: Ref.Ref<Option.Option<Workspace>>, projectId: ProjectId) =>
   Effect.map(Ref.get(workspace), (current) =>
     Option.flatMap(current, (value) =>
       Option.fromNullishOr(
-        value.projects.find((entry) => entry.project.projectId === projectId)?.project.directory
+        value.projects.find((entry) => entry.project.projectId === projectId)?.project
       )
     )
   )
@@ -268,7 +293,11 @@ const serveOrgCalls = (
   ctx: HostPluginContext,
   org: Org,
   backend: Ref.Ref<Option.Option<AgentBackend>>,
-  dispatcher: Dispatcher
+  dispatcher: Dispatcher,
+  worktrees: Pick<
+    Effect.Success<ReturnType<typeof makeIssueWorkspace>>,
+    'worktreeProjects' | 'setWorktreeProjects'
+  >
 ): Effect.Effect<void, never, Scope.Scope> =>
   Effect.all(
     [
@@ -277,7 +306,8 @@ const serveOrgCalls = (
           jobTitles: org.jobTitles,
           hiredAgents: org.hiredAgents,
           settings: org.settings,
-          bypassAvailable: bypassAvailable(backend)
+          bypassAvailable: bypassAvailable(backend),
+          worktreeProjects: worktrees.worktreeProjects
         })
       ),
       ctx.serve(SetJobTitleEnabled, ({ jobTitleId, enabled }) =>
@@ -295,6 +325,11 @@ const serveOrgCalls = (
       ctx.serve(SetReportsTo, ({ hireId, reportsTo }) => org.setReportsTo(hireId, reportsTo)),
       ctx.serve(SetOverallCap, ({ cap }) =>
         org.setOverallCap(cap).pipe(Effect.tap(() => dispatcher.signal))
+      ),
+      ctx.serve(SetProjectWorktrees, ({ projectId, enabled }) =>
+        worktrees
+          .setWorktreeProjects(projectId, enabled)
+          .pipe(Effect.andThen(dispatcher.signal), Effect.andThen(worktrees.worktreeProjects))
       )
     ],
     { discard: true }
@@ -326,18 +361,29 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     yield* ctx.provide(OrgService, org)
     const sessionTools = yield* makeSessionTools(ctx.pluginsSettled)
     const assistantMissing = yield* SubscriptionRef.make<ReadonlyArray<MissingReference>>([])
+    const gitOps = yield* Ref.make(Option.none<GitOps>())
+    const worktrees = yield* makeIssueWorkspace({
+      projectOf: (projectId) => projectOf(workspace, projectId),
+      gitOps: Ref.get(gitOps)
+    }).pipe(Effect.provideService(SqlClient.SqlClient, sql))
     const dispatcher = yield* makeDispatcher({
       org,
-      projectDirectory: (objective) => directoryOf(workspace, objective.projectId),
+      projectDirectory: (objective) =>
+        Effect.map(
+          projectOf(workspace, objective.projectId),
+          Option.map((project) => project.directory)
+        ),
+      issueWorkspace: worktrees,
       attach: ctx.sessions.attach,
       sessionTools
     })
     yield* followWorkspace(ctx, workspace, dispatcher)
     const backend = yield* Ref.make(Option.none<AgentBackend>())
     yield* holdAgentBackend(ctx, backend, dispatcher)
+    yield* holdGitOps(ctx, gitOps, dispatcher)
     yield* holdRegistries(ctx, org, sessionTools, sql)
     yield* runIssues(ctx, { sql, org, workspace, dispatcher, sessionTools, assistantMissing })
-    yield* serveOrgCalls(ctx, org, backend, dispatcher)
+    yield* serveOrgCalls(ctx, org, backend, dispatcher, worktrees)
     yield* serveLiveCalls(ctx, dispatcher, assistantMissing)
     const jobTitles = yield* org.jobTitles
     const hires = yield* org.hiredAgents

@@ -35,7 +35,8 @@ const snapshot: OrgSnapshot = {
     })
   ],
   settings: { overallCap: OverallCap.make(4) },
-  bypassAvailable: true
+  bypassAvailable: true,
+  worktreeProjects: []
 }
 
 describe('showView', () => {

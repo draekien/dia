@@ -9,7 +9,8 @@ import { handOverJobTitles, handOverWork, handoverPending, workHandoverPending }
 import { orgMigrations } from './migrations'
 import { builtInDefinitionRegistry, mcpRegistry } from './registries.fake'
 
-const { '10_issues_handover': _handover, ...migrationsBeforeHandover } = orgMigrations
+const { '11_worktrees': _worktrees, ...migrationsBeforeWorktrees } = orgMigrations
+const { '10_issues_handover': _handover, ...migrationsBeforeHandover } = migrationsBeforeWorktrees
 const { '9_agent_definitions': _definitions, ...migrationsBeforeDefinitions } =
   migrationsBeforeHandover
 

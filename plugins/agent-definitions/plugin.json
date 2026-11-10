@@ -1,6 +1,6 @@
 {
   "name": "agent-definitions",
-  "api": "0.0.35",
+  "api": "0.0.36",
   "category": "feature",
   "host": "host.ts",
   "load": "eager",

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ProjectId } from '@dia/plugin'
 import { callHost } from '@dia/renderer-plugin'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Atom } from 'effect/reactivity'
@@ -82,5 +83,33 @@ describe('Org settings page', () => {
     })
 
     expect(host.sent).toEqual([])
+  })
+
+  it('turns worktrees on for a git project with the project id', async () => {
+    const host = await renderPage()
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('switch', { name: 'dia' }))
+    })
+
+    expect(host.sent).toEqual([
+      ['SetProjectWorktrees', { projectId: '00000000-0000-4000-8000-300000000001', enabled: true }]
+    ])
+  })
+
+  it('shows the switch on for a project the snapshot lists and turns it off', async () => {
+    const projectId = '00000000-0000-4000-8000-300000000001' as ProjectId
+    const host = installHost(snapshotOf({ worktreeProjects: [projectId] }))
+    render(<OrgSettingsPage ctx={ctx} orgAtom={Atom.make(callHost(ctx, ReadOrg, {}))} />)
+
+    const toggle = await screen.findByRole('switch', { name: 'dia' })
+    await act(async () => {
+      fireEvent.click(toggle)
+    })
+
+    expect([toggle.getAttribute('aria-checked'), host.sent]).toEqual([
+      'true',
+      [['SetProjectWorktrees', { projectId, enabled: false }]]
+    ])
   })
 })

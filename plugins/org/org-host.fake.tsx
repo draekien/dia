@@ -87,6 +87,7 @@ export const snapshotOf = (overrides: Partial<OrgSnapshot> = {}): OrgSnapshot =>
   hiredAgents: HIRES,
   settings: { overallCap: OverallCap.make(4) },
   bypassAvailable: true,
+  worktreeProjects: [],
   ...overrides
 })
 
@@ -121,7 +122,8 @@ const RPCS: Record<string, Rpc.AnyWithProps> = Object.fromEntries(
     calls.RenameHire,
     calls.SetBypassOverride,
     calls.SetReportsTo,
-    calls.SetOverallCap
+    calls.SetOverallCap,
+    calls.SetProjectWorktrees
   ].map((rpc: Rpc.AnyWithProps) => [rpc._tag, rpc])
 )
 
@@ -170,6 +172,7 @@ export interface FakeHost {
 
 const defaultReply = (host: FakeHost, tag: string, payload: Record<string, unknown>): Reply => {
   if (tag === 'SetOverallCap') return { value: { overallCap: payload.cap } }
+  if (tag === 'SetProjectWorktrees') return { value: payload.enabled ? [payload.projectId] : [] }
   if (typeof payload.hireId === 'string') {
     return { value: host.snapshot.hiredAgents.find((hire) => hire.id === payload.hireId) }
   }

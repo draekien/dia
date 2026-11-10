@@ -2,7 +2,13 @@ import { NodeCrypto, NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import { AGENT_NAME_ADJECTIVES, AGENT_NAME_NOUNS } from '@shared/domain/agent-name'
 import { EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
-import { type ConversationMessage, type PaneConfig, SessionId } from '@shared/domain/pane'
+import {
+  type ConversationMessage,
+  type PaneConfig,
+  SessionId,
+  WorktreeKept,
+  WorktreeReleased
+} from '@shared/domain/pane'
 import {
   AgentName,
   type CreateTabRequest,
@@ -41,7 +47,7 @@ import { AgentEventStore, AgentEventWriteError, type AppendEntry } from './agent
 import { EventHub } from './event-hub'
 import { PaneChatProjection } from './pane-chat-projection'
 import { type PaneCreationRequest, type PaneHandle, PaneSupervisor } from './pane-supervisor'
-import { makePaneWorkspaceLive, PaneWorkspace } from './pane-workspace'
+import { PaneWorkspace, PaneWorkspaceLive } from './pane-workspace'
 import { TranscriptReader } from './transcript-reader'
 import { WorkspaceFeed, WorkspaceFeedLive } from './workspace-feed'
 import { type WorkspaceLoadError, WorkspaceStore, WorkspaceWriteError } from './workspace-store'
@@ -57,7 +63,6 @@ const PANE_B = 'bbbbbbbb-0000-4000-8000-000000000002'
 const PANE_NEW = 'cccccccc-0000-4000-8000-000000000003'
 const PROJECT_1 = ProjectId.make('11111111-0000-4000-8000-000000000001')
 const PROJECT_2 = ProjectId.make('22222222-0000-4000-8000-000000000002')
-const WORKTREES_ROOT = '/worktrees'
 
 const fakeHandle: PaneHandle = {
   sendMessage: () => Effect.void,
@@ -245,7 +250,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   })
 
   const layer = Layer.provide(
-    makePaneWorkspaceLive(WORKTREES_ROOT),
+    PaneWorkspaceLive,
     Layer.mergeAll(
       supervisor,
       store,
@@ -754,7 +759,7 @@ describe('PaneWorkspace.createTab', () => {
 
       assert.deepStrictEqual(harness.requests[0].worktree, {
         _tag: 'Create',
-        worktreesRoot: WORKTREES_ROOT
+        label: 'Tab · /repo'
       })
       assert.strictEqual(workspace.projects[0].tabs[1].name, 'swift-raven')
     })
@@ -990,7 +995,8 @@ describe('PaneWorkspace.removeProject', () => {
     reattachWorktree: () => Effect.die('not called'),
     findIncludedFiles: () => Effect.die('not called'),
     copyIncludedFiles: () => Effect.die('not called'),
-    removeWorktree: (info) => Effect.sync(() => void existing.delete(info.path))
+    releaseWorktree: (info) =>
+      Effect.sync(() => void existing.delete(info.path)).pipe(Effect.as(WorktreeReleased.make({})))
   })
 
   const tags = (progress: ReadonlyArray<RemovalProgress>) =>
@@ -1018,6 +1024,27 @@ describe('PaneWorkspace.removeProject', () => {
       assert.deepStrictEqual(
         withGit.saves.at(-1)?.projects.map((entry) => entry.project.projectId),
         [PROJECT_2]
+      )
+    })
+  )
+
+  it.effect('drops the project and leaves a kept worktree on disk as handled', () =>
+    Effect.gen(function* () {
+      const keepingGitOps = (): GitOps => ({
+        ...removingGitOps(new Set()),
+        releaseWorktree: () => Effect.succeed(WorktreeKept.make({ changedFiles: 2 }))
+      })
+      const harness = makeHarness({
+        persisted: removable(),
+        files: [worktree.path],
+        gitOps: keepingGitOps
+      })
+
+      const progress = yield* run(harness, removeAll(PROJECT_1))
+
+      assert.deepStrictEqual(
+        [tags(progress).at(-1), harness.saves.at(-1)?.projects.length],
+        ['ProjectRemoved', 1]
       )
     })
   )
@@ -1086,7 +1113,7 @@ describe('PaneWorkspace.removeProject', () => {
         reattachWorktree: () => Effect.die('not called'),
         findIncludedFiles: () => Effect.die('not called'),
         copyIncludedFiles: () => Effect.die('not called'),
-        removeWorktree: () => Effect.void
+        releaseWorktree: () => Effect.succeed(WorktreeReleased.make({}))
       }
       const harness = makeHarness({
         persisted: removable(),
@@ -1108,11 +1135,11 @@ describe('PaneWorkspace.removeProject', () => {
         reattachWorktree: () => Effect.die('not called'),
         findIncludedFiles: () => Effect.die('not called'),
         copyIncludedFiles: () => Effect.die('not called'),
-        removeWorktree: (info) =>
+        releaseWorktree: (info) =>
           Effect.sync(() => {
             attempts += 1
             if (attempts > 1) existing.delete(info.path)
-          })
+          }).pipe(Effect.as(WorktreeReleased.make({})))
       })
       const harness = makeHarness({
         persisted: removable(),
@@ -1212,14 +1239,15 @@ describe('PaneWorkspace.archiveTab and deleteTab', () => {
     reattachWorktree: () => Effect.die('not called'),
     findIncludedFiles: () => Effect.die('not called'),
     copyIncludedFiles: () => Effect.die('not called'),
-    removeWorktree: (info) => Effect.sync(() => void existing.delete(info.path))
+    releaseWorktree: (info) =>
+      Effect.sync(() => void existing.delete(info.path)).pipe(Effect.as(WorktreeReleased.make({})))
   })
   const stubbornGitOps = (): GitOps => ({
     createWorktree: () => Effect.die('not called'),
     reattachWorktree: () => Effect.die('not called'),
     findIncludedFiles: () => Effect.die('not called'),
     copyIncludedFiles: () => Effect.die('not called'),
-    removeWorktree: () => Effect.void
+    releaseWorktree: () => Effect.succeed(WorktreeReleased.make({}))
   })
   const withWorktree = (gitOps?: (existing: Set<string>) => GitOps) =>
     makeHarness({ persisted: persisted(), files: [worktree.path], gitOps })
@@ -1475,7 +1503,7 @@ describe('PaneWorkspace.unarchiveTab', () => {
         reattach(info, paneId).pipe(Effect.tap(() => Effect.sync(() => existing.add(info.path)))),
       findIncludedFiles: () => Effect.die('not called'),
       copyIncludedFiles: () => Effect.die('not called'),
-      removeWorktree: () => Effect.die('not called')
+      releaseWorktree: () => Effect.die('not called')
     })
   const restoring = reattachingGitOps((info) => Effect.succeed(info))
   const missingBranch = reattachingGitOps((info, paneId) =>

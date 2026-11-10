@@ -369,6 +369,19 @@ const moveToIssuesPlugin = Effect.gen(function* () {
   yield* Effect.logInfo('Prepared the org to hand its objectives and issues to issues')
 })
 
+const createWorktreeTables = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql.unsafe('CREATE TABLE project_worktrees (project_id TEXT PRIMARY KEY)')
+  yield* sql.unsafe(`CREATE TABLE issue_worktrees (
+    issue_id    TEXT    PRIMARY KEY,
+    path        TEXT    NOT NULL,
+    branch      TEXT    NOT NULL,
+    source_repo TEXT    NOT NULL,
+    released    INTEGER NOT NULL DEFAULT 0 CHECK (released IN (0, 1))
+  )`)
+  yield* Effect.logInfo('Created the project and issue worktree tables')
+})
+
 /**
  * The `org` plugin's migrations, passed to `ctx.database`. `1_create_org_tables` creates the
  * first roles, hired agents and org settings tables; `2_seed_org` inserts the default overall cap;
@@ -388,7 +401,9 @@ const moveToIssuesPlugin = Effect.gen(function* () {
  * `org`'s host to hand over to `agent-definitions` and `mcp`, and adds each issue's `missing`
  * names, which must be `[]` unless the issue is in `triage`; `10_issues_handover` renames the
  * objectives, issues, issue comments and org events tables to `*_handover` for `org`'s host to
- * hand over to `issues`. Each runs once per database.
+ * hand over to `issues`; `11_worktrees` creates `project_worktrees` (a row means issues of that
+ * project run in worktrees) and `issue_worktrees` (the worktree each issue last ran in, and whether
+ * it was released). Each runs once per database.
  */
 export const orgMigrations: PluginMigrations = {
   '1_create_org_tables': createTables,
@@ -400,5 +415,6 @@ export const orgMigrations: PluginMigrations = {
   '7_issues': moveToIssues,
   '8_executive_assistant': addExecutiveAssistant,
   '9_agent_definitions': moveToAgentDefinitions,
-  '10_issues_handover': moveToIssuesPlugin
+  '10_issues_handover': moveToIssuesPlugin,
+  '11_worktrees': createWorktreeTables
 }
