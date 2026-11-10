@@ -131,6 +131,27 @@ export const HiredAgent = Schema.Struct({
 })
 export type HiredAgent = typeof HiredAgent.Type
 
+/**
+ * A team to hire in one call: a lead of job title `lead`, or none when null, and one member per
+ * entry of `members`. Holds at least one hire.
+ */
+export const TeamPlan = Schema.Struct({
+  lead: Schema.NullOr(JobTitleId),
+  members: Schema.Array(JobTitleId)
+}).check(
+  Schema.makeFilter((plan) =>
+    plan.lead === null && plan.members.length === 0 ? 'a team holds at least one hire' : undefined
+  )
+)
+export type TeamPlan = typeof TeamPlan.Type
+
+/** The first non-empty line of `jobTitle`'s job description, trimmed; empty when it has none. */
+export const jobSummary = (jobTitle: Pick<JobTitle, 'jobDescription'>): string =>
+  jobTitle.jobDescription
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line !== '') ?? ''
+
 /** The name of `agent`'s job title in `jobTitles`, or undefined when `jobTitles` lacks it. */
 export const jobTitleName = (
   agent: HiredAgent,

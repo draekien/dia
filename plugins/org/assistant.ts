@@ -4,6 +4,7 @@ import {
   type DiaTool,
   type HostSessions,
   type OutboundMessage,
+  type PaneId,
   type SessionAttachment,
   type SessionId,
   SessionNotice
@@ -46,6 +47,7 @@ export interface AssistantDeps {
   readonly org: Pick<Org, 'jobTitles' | 'watchJobTitleChanges'>
   readonly sessionTools: Pick<SessionTools, 'forDefinition' | 'references'>
   readonly missing: SubscriptionRef.SubscriptionRef<ReadonlyArray<MissingReference>>
+  readonly pane: SubscriptionRef.SubscriptionRef<PaneId | null>
   readonly work: Pick<Issues, 'snapshot' | 'watchChanges'>
   readonly backend: AgentBackend
   readonly tools: (claim: Assistant['claim']) => ReadonlyArray<DiaTool>
@@ -107,7 +109,8 @@ const enabledBuiltInOf = (jobTitles: ReadonlyArray<JobTitle>) =>
  * runs in the agent overview's Assistant group and resumes the stored session after a restart;
  * disabling the job title closes it. While a name it holds resolves to nothing, the session is
  * closed and `deps.missing` lists the names; while names cannot be resolved yet, the session is
- * left as it is. `startOver` does nothing while the names do not resolve. The
+ * left as it is. `startOver` does nothing while the names do not resolve. `deps.pane` holds the
+ * session's pane id while it is attached and null otherwise. The
  * assistant reports triage, review and completion of the objectives it claimed as notices in its
  * pane, and prefixes their text to the user's next message. Closing the scope ends the session.
  */
@@ -211,6 +214,7 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (deps: Assista
           open: open(jobTitle, ready, config, resume)
         })
         .pipe(Scope.provide(scope))
+      yield* SubscriptionRef.set(deps.pane, row.pane_id)
       yield* Effect.logInfo('Executive assistant attached', {
         paneId: row.pane_id,
         model: config.model,
@@ -261,9 +265,11 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (deps: Assista
         yield* Effect.logInfo('Executive assistant starts over', { paneId })
         if (Option.isNone(current)) return current
         yield* detach(current.value)
-        return Option.isSome(ready)
-          ? Option.some(yield* attachNow(ready.value.jobTitle, ready.value.result, startOver))
-          : Option.none()
+        if (Option.isSome(ready)) {
+          return Option.some(yield* attachNow(ready.value.jobTitle, ready.value.result, startOver))
+        }
+        yield* SubscriptionRef.set(deps.pane, null)
+        return Option.none()
       }).pipe(Effect.uninterruptible)
     )
   })
@@ -275,6 +281,7 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (deps: Assista
         if (Option.isNone(resolved)) {
           yield* setMissing([])
           if (Option.isSome(current)) yield* detach(current.value)
+          yield* SubscriptionRef.set(deps.pane, null)
           return Option.none()
         }
         const { jobTitle, result } = resolved.value
@@ -287,6 +294,7 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (deps: Assista
           case 'Missing':
             yield* setMissing(result.missing)
             if (Option.isSome(current)) yield* detach(current.value)
+            yield* SubscriptionRef.set(deps.pane, null)
             return Option.none()
           case 'Unavailable':
             yield* Effect.logDebug('Executive assistant waits for its session tools to resolve')
@@ -323,7 +331,8 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (deps: Assista
   yield* Effect.addFinalizer(() =>
     SynchronizedRef.get(attached).pipe(
       Effect.flatMap((current) => (Option.isSome(current) ? detach(current.value) : Effect.void)),
-      Effect.andThen(SubscriptionRef.set(deps.missing, []))
+      Effect.andThen(SubscriptionRef.set(deps.missing, [])),
+      Effect.andThen(SubscriptionRef.set(deps.pane, null))
     )
   )
   yield* follow.pipe(

@@ -7,7 +7,9 @@ import {
   JOB_TITLE_NAME_MAX_LENGTH,
   JobTitleId,
   JobTitleName,
-  OverallCap
+  jobSummary,
+  OverallCap,
+  TeamPlan
 } from './domain'
 
 const isJobTitleName = Schema.is(JobTitleName)
@@ -59,5 +61,28 @@ describe('descendantsOf', () => {
     ['only its own branch for a second root', 4, [5]]
   ])('returns %s', (_case, root, below) => {
     expect([...descendantsOf(org, hireId(root))].sort()).toEqual(below.map(hireId))
+  })
+})
+
+describe('jobSummary', () => {
+  it.each([
+    ['the first line of several', 'Builds features.\nWrites tests.', 'Builds features.'],
+    ['the first non-empty line, trimmed', '\n  \n  Reviews code.  \nMore.', 'Reviews code.'],
+    ['empty for a blank description', ' \n ', '']
+  ])('returns %s', (_case, jobDescription, summary) => {
+    expect(jobSummary({ jobDescription })).toBe(summary)
+  })
+})
+
+describe('TeamPlan', () => {
+  const ENGINEER = JobTitleId.make('00000000-0000-4000-8000-100000000002')
+  const isTeamPlan = Schema.is(TeamPlan)
+
+  it.each([
+    ['a lead alone', { lead: ENGINEER, members: [] }, true],
+    ['members alone', { lead: null, members: [ENGINEER] }, true],
+    ['no lead and no member', { lead: null, members: [] }, false]
+  ])('accepts %s: %s', (_case, plan, accepted) => {
+    expect(isTeamPlan(plan)).toBe(accepted)
   })
 })

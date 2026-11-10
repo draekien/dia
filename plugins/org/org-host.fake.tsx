@@ -118,6 +118,7 @@ const RPCS: Record<string, Rpc.AnyWithProps> = Object.fromEntries(
     calls.EditJobTitle,
     calls.DeleteJobTitle,
     calls.Hire,
+    calls.StaffTeam,
     calls.Dismiss,
     calls.RenameHire,
     calls.SetBypassOverride,
@@ -193,7 +194,7 @@ const encodeLive = Schema.encodeSync(Schema.toCodecJson(OrgLive))
 export const installHost = (
   snapshot: OrgSnapshot,
   replies: Record<string, (payload: Record<string, unknown>, host: FakeHost) => Reply> = {},
-  live: OrgLive = { assistantMissing: [] }
+  live: OrgLive = { assistantMissing: [], assistantPaneId: null, teamHasWork: false }
 ): FakeHost => {
   let reads = 0
   const watchers = new Set<(value: unknown) => void>()
@@ -263,7 +264,8 @@ export const installHost = (
       getWorkspace: async () => WORKSPACE,
       onWorkspaceChanged: () => () => {},
       onAgentSummariesReplaced: () => () => {},
-      selectTab: () => {}
+      selectTab: vi.fn(),
+      sendMessage: vi.fn()
     }
   })
   return host

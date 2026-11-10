@@ -92,6 +92,21 @@ export const commonFailureText = (failure: { readonly _tag: string }): string | 
   }
 }
 
+/**
+ * The text to show when hiring into a job title fails because the job title cannot be hired: it is
+ * disabled, or it is the Executive assistant. Undefined for any other failure.
+ */
+export const hireFailureText = (failure: { readonly _tag: string }): string | undefined => {
+  switch (failure._tag) {
+    case 'JobTitleDisabled':
+      return 'This job title is disabled'
+    case 'JobTitleNotHireable':
+      return 'The Executive assistant is not hired'
+    default:
+      return undefined
+  }
+}
+
 /** Shows an error toast titled `title` with the reason of `failure`. */
 export const toastFailure = (title: string, failure: { readonly _tag: string }): void => {
   toast.add({ title, description: commonFailureText(failure) ?? failure._tag, type: 'error' })
@@ -120,11 +135,13 @@ export const readAgentName = (text: string): Result.Result<AgentName | null, str
 
 /**
  * What every Org sub-page gets: the snapshot to draw, the org calls, a way to show another view,
- * and a way to open the Hire dialog with `jobTitleId` chosen, or none chosen when null.
+ * a way to open the Hire dialog with `jobTitleId` chosen, or none chosen when null, and a way to
+ * open the Staff the org dialog.
  */
 export interface OrgScreen {
   readonly snapshot: OrgSnapshot
   readonly call: OrgCall
   readonly show: (view: OrgView) => void
   readonly openHire: (jobTitleId: JobTitleId | null) => void
+  readonly openStaff: () => void
 }

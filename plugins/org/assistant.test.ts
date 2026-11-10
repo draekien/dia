@@ -5,6 +5,7 @@ import {
   type DiaTool,
   type ModelOption,
   type OutboundMessage,
+  type PaneId,
   type ProjectId,
   type SessionAttachment,
   SessionId,
@@ -133,6 +134,7 @@ const setUpWith = (options: { readonly settled: boolean }) =>
     yield* sessionTools.holdMcp(mcp.registry)
     yield* sessionTools.holdSkills(yield* skillRegistry('user', []))
     const missing = yield* SubscriptionRef.make<ReadonlyArray<MissingReference>>([])
+    const pane = yield* SubscriptionRef.make<PaneId | null>(null)
     const host = fakeHost()
     const start = Effect.gen(function* () {
       const scope = yield* Scope.make()
@@ -145,7 +147,8 @@ const setUpWith = (options: { readonly settled: boolean }) =>
           attach: host.attach,
           directory: 'C:/dia/plugins/org/assistant',
           sessionTools,
-          missing
+          missing,
+          pane
         })
       ).pipe(Scope.provide(scope))
       yield* settle
@@ -180,7 +183,8 @@ const setUpWith = (options: { readonly settled: boolean }) =>
       setStatus,
       mcp,
       pluginsSettled,
-      missing
+      missing,
+      pane
     }
   })
 
@@ -324,6 +328,74 @@ describe('Assistant session', () => {
         ],
         [true, 1, false, Option.none()]
       )
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe('Assistant pane', () => {
+  const shownPaneId = (env: Effect.Success<typeof setUp>) =>
+    env.host.shown()[0]?.attachment.display.config.paneId ?? null
+
+  it.effect('holds the attached pane id, null while the built-in is disabled', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const beforeStart = yield* SubscriptionRef.get(env.pane)
+      yield* env.start
+      const attached = yield* SubscriptionRef.get(env.pane)
+      const attachedId = shownPaneId(env)
+
+      yield* env.org.setJobTitleEnabled(ASSISTANT_JOB_TITLE, false)
+      yield* settle
+
+      assert.isNotNull(attachedId)
+      assert.deepStrictEqual(
+        [beforeStart, attached, yield* SubscriptionRef.get(env.pane)],
+        [null, attachedId, null]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('moves to the new pane on start over without reading null in between', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const { assistant } = yield* env.start
+      const seen: Array<PaneId | null> = []
+      yield* SubscriptionRef.changes(env.pane).pipe(
+        Stream.runForEach((paneId) => Effect.sync(() => seen.push(paneId))),
+        Effect.forkScoped
+      )
+      yield* settle
+
+      yield* assistant.startOver
+      yield* settle
+
+      const after = shownPaneId(env)
+      assert.deepStrictEqual([seen.includes(null), seen.at(-1), seen.length], [false, after, 2])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('reads null once a name the assistant holds goes missing', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      yield* env.mcp.replaceUser({ github: GITHUB }, Effect.void)
+      yield* assistantNaming(env, ['github'])
+      yield* env.start
+      const attached = yield* SubscriptionRef.get(env.pane)
+
+      yield* env.mcp.replaceUser({}, Effect.void)
+      yield* settle
+
+      assert.isNotNull(attached)
+      assert.isNull(yield* SubscriptionRef.get(env.pane))
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('reads null after the assistant stops', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const { stop } = yield* env.start
+      yield* stop
+      assert.isNull(yield* SubscriptionRef.get(env.pane))
     }).pipe(Effect.scoped)
   )
 })

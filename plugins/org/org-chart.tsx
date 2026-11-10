@@ -65,7 +65,11 @@ function Reports({
  * The Org chart: the user at the root and every hired agent under the agent it reports to, each
  * showing its name and job title. Selecting an agent shows it on the Hired agents page.
  */
-export function OrgChart({ snapshot, show, openHire }: Omit<OrgScreen, 'call'>) {
+export function OrgChart({
+  snapshot,
+  show,
+  openHire
+}: Pick<OrgScreen, 'snapshot' | 'show' | 'openHire'>) {
   if (snapshot.hiredAgents.length === 0) return <NoHires openHire={openHire} />
   return (
     <section aria-label="Org chart" className="flex flex-col gap-px">
