@@ -84,7 +84,7 @@ export function Dashboard({
       )}
       <dl className="grid grid-cols-3 divide-x border-y">
         <Stat label="Hired agents">
-          <span className="text-base font-medium tabular-nums">{snapshot.hiredAgents.length}</span>
+          <span className="text-base font-medium tabular-nums">{hires}</span>
         </Stat>
         <Stat label="Job titles">
           <span>

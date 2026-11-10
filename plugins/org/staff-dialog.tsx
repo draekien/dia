@@ -137,11 +137,12 @@ export function StaffDialog({
   const members = hireable.flatMap((jobTitle) =>
     Array.from({ length: draft.counts[jobTitle.id] ?? 0 }, () => jobTitle.id)
   )
-  const hires = members.length + (draft.lead === null ? 0 : 1)
   const leadTitle = hireable.find((jobTitle) => jobTitle.id === draft.lead)
+  const lead = leadTitle?.id ?? null
+  const hires = members.length + (lead === null ? 0 : 1)
 
-  const edit = (next: Omit<Draft, 'preset'>) => {
-    setDraft({ ...next, preset: null })
+  const edit = (patch: Partial<Omit<Draft, 'preset'>>) => {
+    setDraft({ ...draft, ...patch, preset: null })
     setError(undefined)
   }
 
@@ -149,7 +150,7 @@ export function StaffDialog({
     event.preventDefault()
     if (hires === 0) return
     setBusy(true)
-    const plan = TeamPlan.make({ lead: draft.lead, members })
+    const plan = TeamPlan.make({ lead, members })
     const result = await call(StaffTeam, { plan }, `${hires} hires`).finally(() => setBusy(false))
     if (Result.isSuccess(result)) return onStaffed(result.success)
     setError(hireFailureText(result.failure) ?? commonFailureText(result.failure))
@@ -170,7 +171,7 @@ export function StaffDialog({
             Name agents later under Hired agents.
           </DialogDescription>
         </DialogHeader>
-        <form className="flex min-w-0 flex-col gap-4" onSubmit={(event) => void submit(event)}>
+        <form className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
           {presets.length === 0 ? null : (
             <div className="flex flex-col gap-1.5">
               <Label>Start from</Label>
@@ -197,12 +198,9 @@ export function StaffDialog({
           <div className="flex flex-col gap-1.5">
             <Label>Lead</Label>
             <Select
-              value={draft.lead ?? NO_LEAD}
+              value={lead ?? NO_LEAD}
               onValueChange={(value) =>
-                edit({
-                  lead: value === NO_LEAD || value === null ? null : (value as JobTitleId),
-                  counts: draft.counts
-                })
+                edit({ lead: value === NO_LEAD || value === null ? null : (value as JobTitleId) })
               }
             >
               <SelectTrigger aria-label="Lead" className="w-full">
@@ -231,9 +229,7 @@ export function StaffDialog({
                   key={jobTitle.id}
                   jobTitle={jobTitle}
                   count={draft.counts[jobTitle.id] ?? 0}
-                  onChange={(count) =>
-                    edit({ lead: draft.lead, counts: { ...draft.counts, [jobTitle.id]: count } })
-                  }
+                  onChange={(count) => edit({ counts: { ...draft.counts, [jobTitle.id]: count } })}
                 />
               ))}
             </ul>

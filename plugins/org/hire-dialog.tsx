@@ -130,7 +130,7 @@ export function HireDialog({
                 <SelectContent className="max-w-(--anchor-width)">
                   <SelectGroup>
                     {enabled.map((jobTitle) => (
-                      <SelectItem key={jobTitle.id} value={jobTitle.id} className="*:last:min-w-0">
+                      <SelectItem key={jobTitle.id} value={jobTitle.id}>
                         <span className="flex min-w-0 flex-col">
                           <span className="truncate">{jobTitle.name}</span>
                           {jobSummary(jobTitle) === '' ? null : (
