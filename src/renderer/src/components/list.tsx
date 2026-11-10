@@ -19,6 +19,8 @@ const ListContext = React.createContext<ListContextValue | null>(null)
 
 const linkSelector = '[data-slot="list-row-link"]'
 
+const listSelector = '[data-slot="list"]'
+
 const rowSelector = '[data-slot="list-row"]'
 
 const selectSelector = '[data-slot="list-row-select"]'
@@ -57,7 +59,11 @@ function useControllable<TValue>(
 }
 
 function rowLinks(root: HTMLElement | null): ReadonlyArray<HTMLElement> {
-  return root === null ? [] : Array.from(root.querySelectorAll<HTMLElement>(linkSelector))
+  return root === null
+    ? []
+    : Array.from(root.querySelectorAll<HTMLElement>(linkSelector)).filter(
+        (link) => link.closest(listSelector) === root
+      )
 }
 
 /**

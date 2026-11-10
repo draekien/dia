@@ -1,5 +1,16 @@
 // @effect-diagnostics asyncFunction:off -- React callbacks await OrgCall's Promise; components hold no Effect runtime.
-import { Button, SettingsRow, ToggleGroup, ToggleGroupItem } from '@dia/renderer-plugin'
+import {
+  AvatarFallback,
+  Button,
+  Entity,
+  EntityDescription,
+  EntityMedia,
+  EntityName,
+  initials,
+  SettingsRow,
+  ToggleGroup,
+  ToggleGroupItem
+} from '@dia/renderer-plugin'
 import { Result } from 'effect'
 import { useState } from 'react'
 import { Dismiss, RenameHire, SetBypassOverride, SetReportsTo } from './calls'
@@ -208,12 +219,17 @@ export function AgentsPage({ hireId, ...screen }: OrgScreen & { readonly hireId:
           entries={snapshot.hiredAgents.map((agent) => ({
             id: agent.id,
             content: (
-              <>
-                <span className="truncate">{agentName(agent, snapshot.jobTitles)}</span>
-                <span className="ml-auto truncate text-xs font-normal text-ink-muted">
+              <Entity className="flex-1">
+                <EntityMedia>
+                  <AvatarFallback>
+                    {initials(agent.name ?? jobTitleName(agent, snapshot.jobTitles) ?? 'Agent')}
+                  </AvatarFallback>
+                </EntityMedia>
+                <EntityName>{agentName(agent, snapshot.jobTitles)}</EntityName>
+                <EntityDescription className="text-right text-xs font-normal">
                   {jobTitleName(agent, snapshot.jobTitles)}
-                </span>
-              </>
+                </EntityDescription>
+              </Entity>
             )
           }))}
         />

@@ -1,9 +1,20 @@
 import {
   Button,
   formatWhen,
+  List,
+  ListRow,
+  ListRowAction,
+  ListRowFact,
+  ListRowLink,
+  ListRowLoading,
+  ListRowName,
+  ListRowSubject,
   type OverrideRejection,
   pluginStatusLabel,
   Skeleton,
+  Status,
+  StatusMedia,
+  StatusName,
   useActivities,
   usePlugins
 } from '@dia/renderer-plugin'
@@ -19,6 +30,15 @@ import { FolderIcon, Loader2Icon, PlayIcon, RefreshCwIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 const limitBytes = ByteSize.toNumberUnsafe(PLUGIN_MEMORY_LIMIT)
+
+const STATUS_FILL = {
+  Unloaded: 'none',
+  Loading: 'half',
+  Loaded: 'full',
+  Failed: 'full',
+  Waiting: 'none',
+  RestartRequired: 'half'
+} as const satisfies Record<PluginStatus['_tag'], 'none' | 'half' | 'full'>
 
 const statusDetail = (status: PluginStatus): string | undefined => {
   switch (status._tag) {
@@ -82,12 +102,16 @@ function ActivityRow({ activity, onRun }: ActivityRowProps) {
   const lastRun = activity.status.lastRun
 
   return (
-    <li className="flex flex-col gap-1" data-activity={activity.id}>
-      <div className="flex items-center gap-3">
-        <div className="flex min-w-0 flex-1 items-baseline gap-3">
-          <span className="text-sm text-ink">{activity.label}</span>
-          <span className="text-xs text-ink-muted tabular-nums">{activityLabel(activity)}</span>
-        </div>
+    <ListRow value={activityKey(activity)} data-activity={activity.id}>
+      <ListRowLink render={<div />}>
+        <ListRowSubject>
+          <ListRowName className="font-normal text-ink">{activity.label}</ListRowName>
+        </ListRowSubject>
+        <ListRowFact className="text-xs text-ink-muted tabular-nums">
+          {activityLabel(activity)}
+        </ListRowFact>
+      </ListRowLink>
+      <ListRowAction>
         <Button
           size="xs"
           variant="outline"
@@ -98,13 +122,13 @@ function ActivityRow({ activity, onRun }: ActivityRowProps) {
           {running ? <Loader2Icon className="motion-safe:animate-spin" /> : <PlayIcon />}
           Run now
         </Button>
-      </div>
+      </ListRowAction>
       {lastRun?._tag === 'RunFailed' ? (
-        <p className="max-h-32 overflow-y-auto font-mono text-xs break-words whitespace-pre-wrap text-ink">
+        <p className="col-span-full max-h-32 overflow-y-auto px-1 pb-2 font-mono text-xs break-words whitespace-pre-wrap text-ink">
           {lastRun.message}
         </p>
       ) : null}
-    </li>
+    </ListRow>
   )
 }
 
@@ -138,12 +162,22 @@ function PluginRow({
   const overridden = plugin.origin === 'override'
 
   return (
-    <li className="flex flex-col gap-1.5 px-4 py-3" data-plugin={plugin.name}>
-      <div className="flex items-center gap-3">
-        <div className="flex min-w-0 flex-1 items-baseline gap-3">
-          <span className="text-sm font-medium text-ink">{plugin.name}</span>
-          <span className="text-xs text-ink-muted">{pluginStatusLabel(plugin.status)}</span>
-        </div>
+    <ListRow value={plugin.name} data-plugin={plugin.name}>
+      <ListRowLink render={<div />}>
+        <ListRowSubject>
+          <ListRowName className="text-ink">{plugin.name}</ListRowName>
+        </ListRowSubject>
+        <ListRowFact>
+          <Status>
+            <StatusMedia
+              fill={STATUS_FILL[plugin.status._tag]}
+              className={plugin.status._tag === 'Failed' ? 'text-error' : undefined}
+            />
+            <StatusName>{pluginStatusLabel(plugin.status)}</StatusName>
+          </Status>
+        </ListRowFact>
+      </ListRowLink>
+      <ListRowAction>
         <div className="flex shrink-0 items-center gap-1">
           <Button size="xs" variant="outline" disabled={disabled} onClick={onReload}>
             {disabled ? <Loader2Icon className="motion-safe:animate-spin" /> : <RefreshCwIcon />}
@@ -164,44 +198,46 @@ function PluginRow({
             </Button>
           ) : null}
         </div>
+      </ListRowAction>
+      <div className="col-span-full flex flex-col gap-1.5 px-1 pb-3">
+        <p className="flex min-w-0 items-baseline gap-2 text-xs text-ink-muted">
+          <span className="shrink-0">{overridden ? 'Folder' : 'Bundled'}</span>
+          <span className="min-w-0 font-mono break-all" title={plugin.root}>
+            {plugin.root}
+          </span>
+        </p>
+        {detail === undefined ? null : (
+          <p className="max-h-32 overflow-y-auto font-mono text-xs break-words whitespace-pre-wrap text-ink">
+            {detail}
+          </p>
+        )}
+        {rejection === undefined ? null : (
+          <p className="max-h-32 overflow-y-auto text-xs break-words text-ink">
+            Not applied: <span className="font-mono whitespace-pre-wrap">{rejection.message}</span>
+          </p>
+        )}
+        {loading ? <Skeleton className="h-3 w-40" /> : null}
+        {plugin.memoryBytes > 0 ? (
+          <p className="text-xs text-ink-muted tabular-nums">
+            Memory {formatMegabytes(plugin.memoryBytes)} of {formatMegabytes(limitBytes)}
+          </p>
+        ) : null}
+        {activities.length === 0 ? null : (
+          <List
+            className="mt-1 border-t pt-2"
+            aria-label={`Background activities of ${plugin.name}`}
+          >
+            {activities.map((activity) => (
+              <ActivityRow
+                key={activity.id}
+                activity={activity}
+                onRun={() => onRunActivity(activity.id)}
+              />
+            ))}
+          </List>
+        )}
       </div>
-      <p className="flex min-w-0 items-baseline gap-2 text-xs text-ink-muted">
-        <span className="shrink-0">{overridden ? 'Folder' : 'Bundled'}</span>
-        <span className="min-w-0 font-mono break-all" title={plugin.root}>
-          {plugin.root}
-        </span>
-      </p>
-      {detail === undefined ? null : (
-        <p className="max-h-32 overflow-y-auto font-mono text-xs break-words whitespace-pre-wrap text-ink">
-          {detail}
-        </p>
-      )}
-      {rejection === undefined ? null : (
-        <p className="max-h-32 overflow-y-auto text-xs break-words text-ink">
-          Not applied: <span className="font-mono whitespace-pre-wrap">{rejection.message}</span>
-        </p>
-      )}
-      {loading ? <Skeleton className="h-3 w-40" /> : null}
-      {plugin.memoryBytes > 0 ? (
-        <p className="text-xs text-ink-muted tabular-nums">
-          Memory {formatMegabytes(plugin.memoryBytes)} of {formatMegabytes(limitBytes)}
-        </p>
-      ) : null}
-      {activities.length === 0 ? null : (
-        <ul
-          className="mt-1 flex flex-col gap-2 border-t pt-2"
-          aria-label={`Background activities of ${plugin.name}`}
-        >
-          {activities.map((activity) => (
-            <ActivityRow
-              key={activity.id}
-              activity={activity}
-              onRun={() => onRunActivity(activity.id)}
-            />
-          ))}
-        </ul>
-      )}
-    </li>
+    </ListRow>
   )
 }
 
@@ -209,17 +245,16 @@ const SKELETON_ROWS = ['first', 'second', 'third']
 
 function PluginListSkeleton() {
   return (
-    <ul className="divide-y" aria-busy="true" aria-label="Loading plugins">
+    <List aria-busy="true" aria-label="Loading plugins">
       {SKELETON_ROWS.map((row) => (
-        <li key={row} className="flex flex-col gap-1.5 px-4 py-3">
-          <div className="flex items-baseline gap-3">
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="h-3 w-16" />
-          </div>
-          <Skeleton className="h-3 w-64 max-w-full" />
-        </li>
+        <ListRowLoading key={row}>
+          <ListRowSubject>
+            <ListRowName />
+          </ListRowSubject>
+          <ListRowFact />
+        </ListRowLoading>
       ))}
-    </ul>
+    </List>
   )
 }
 
@@ -242,7 +277,7 @@ export function PluginSettings() {
       ) : plugins.length === 0 ? (
         <p className="px-4 py-6 text-sm text-ink-muted">No plugins found.</p>
       ) : (
-        <ul className="divide-y">
+        <List aria-label="Plugins">
           {plugins.map((plugin) => (
             <PluginRow
               key={plugin.name}
@@ -257,7 +292,7 @@ export function PluginSettings() {
               onClearOverride={() => void clearOverride(plugin.name)}
             />
           ))}
-        </ul>
+        </List>
       )}
       <p role="status" className="sr-only">
         {announcement}

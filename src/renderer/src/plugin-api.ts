@@ -191,6 +191,7 @@ export { usePluginList } from './hooks/use-plugin-list'
 export { type OverrideRejection, usePlugins } from './hooks/use-plugins'
 export { awaitsUser } from './lib/account-banner'
 export { formatWhen } from './lib/format-when'
+export { initials } from './lib/initials'
 export { findModelOption } from './lib/model-options'
 export {
   paneChatAtom,
