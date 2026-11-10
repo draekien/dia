@@ -131,6 +131,7 @@ function createWindow(): BrowserWindow {
     windowStatePath,
     screen.getAllDisplays().map((display) => display.workArea)
   )
+  runLog(Effect.logDebug('Loaded the saved window state', { savedState }))
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,

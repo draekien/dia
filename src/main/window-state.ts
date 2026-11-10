@@ -3,8 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { Option, Schema } from 'effect'
 import type { BrowserWindow, Rectangle } from 'electron'
 
-/** The main window's normal-state bounds and whether it was maximised, as saved on close. */
-export const WindowStateSchema = Schema.Struct({
+const WindowStateSchema = Schema.Struct({
   x: Schema.Finite,
   y: Schema.Finite,
   width: Schema.Finite,
@@ -12,25 +11,33 @@ export const WindowStateSchema = Schema.Struct({
   maximized: Schema.Boolean
 })
 
-/** A decoded {@link WindowStateSchema}. */
-export type WindowState = typeof WindowStateSchema.Type
+type WindowState = typeof WindowStateSchema.Type
 
 const decodeWindowState = Schema.decodeUnknownOption(Schema.fromJsonString(WindowStateSchema))
 
-const overlaps = (a: Rectangle, b: Rectangle): boolean =>
-  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+const MIN_VISIBLE_TITLE_BAR_WIDTH = 100
+
+const titleBarIsDraggable = (window: Rectangle, area: Rectangle): boolean => {
+  const visibleWidth =
+    Math.min(window.x + window.width, area.x + area.width) - Math.max(window.x, area.x)
+  return (
+    visibleWidth >= MIN_VISIBLE_TITLE_BAR_WIDTH &&
+    window.y >= area.y &&
+    window.y < area.y + area.height
+  )
+}
 
 /**
- * Decodes saved window-state JSON. Returns `None` when the JSON is malformed or the saved bounds
- * overlap none of `workAreas` (the work areas of the connected displays), so a window saved on a
- * now-disconnected monitor opens at the default position instead of off-screen.
+ * Decodes saved window-state JSON. Returns `None` when the JSON is malformed or no display in
+ * `workAreas` (the work areas of the connected displays) shows enough of the window's title bar to
+ * drag it, so a window saved on a now-disconnected monitor opens at the default position instead.
  */
 export const parseWindowState = (
   json: string,
   workAreas: ReadonlyArray<Rectangle>
 ): Option.Option<WindowState> =>
   decodeWindowState(json).pipe(
-    Option.filter((state) => workAreas.some((area) => overlaps(state, area)))
+    Option.filter((state) => workAreas.some((area) => titleBarIsDraggable(state, area)))
   )
 
 /**
