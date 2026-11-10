@@ -3,6 +3,7 @@ import {
   AgentBackendKey,
   type GitOps,
   type HostPluginContext,
+  type PaneId,
   type PluginSetup,
   type ProjectId,
   WorktreesKey
@@ -12,7 +13,7 @@ import {
   AgentDefinitionRegistryKey
 } from '@dia-plugin/agent-definitions/registry'
 import { ObjectiveId } from '@dia-plugin/issues/domain'
-import { type Issues, IssuesKey } from '@dia-plugin/issues/service'
+import { type Issues, IssuesKey, type ProviderIssues } from '@dia-plugin/issues/service'
 import { McpServerRegistryKey } from '@dia-plugin/mcp/registry'
 import { SkillSourceRegistryKey } from '@dia-plugin/skills/registry'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
@@ -49,6 +50,7 @@ import {
   SetOverallCap,
   SetProjectWorktrees,
   SetReportsTo,
+  StaffTeam,
   WatchOrgLive
 } from './calls'
 import { type Dispatcher, makeDispatcher } from './dispatcher'
@@ -71,11 +73,54 @@ type Workspace = Stream.Success<HostPluginContext['workspace']>
 
 type AssistantMissing = SubscriptionRef.SubscriptionRef<ReadonlyArray<MissingReference>>
 
-const watchOrgLive = (assistantMissing: AssistantMissing) =>
-  SubscriptionRef.changes(assistantMissing).pipe(
-    Stream.changesWith(sameMissingReferences),
-    Stream.map((missing) => ({ assistantMissing: missing }))
+interface LiveRefs {
+  readonly assistantMissing: AssistantMissing
+  readonly assistantPane: SubscriptionRef.SubscriptionRef<PaneId | null>
+  readonly teamHasWork: SubscriptionRef.SubscriptionRef<boolean>
+}
+
+const watchOrgLive = (live: LiveRefs) =>
+  Stream.zipLatestAll(
+    SubscriptionRef.changes(live.assistantMissing),
+    SubscriptionRef.changes(live.assistantPane),
+    SubscriptionRef.changes(live.teamHasWork)
+  ).pipe(
+    Stream.changesWith(
+      ([missingA, paneA, workA], [missingB, paneB, workB]) =>
+        sameMissingReferences(missingA, missingB) && paneA === paneB && workA === workB
+    ),
+    Stream.map(([assistantMissing, assistantPaneId, teamHasWork]) => ({
+      assistantMissing,
+      assistantPaneId,
+      teamHasWork
+    }))
   )
+
+const followTeamWork = (
+  org: Org,
+  runs: Pick<ProviderIssues, 'countOpenIssues'>,
+  issues: Issues,
+  teamHasWork: LiveRefs['teamHasWork']
+) =>
+  Effect.gen(function* () {
+    const hireChanges = yield* org.watchHireChanges
+    const workChanges = yield* issues.watchChanges
+    yield* Effect.addFinalizer(() => SubscriptionRef.set(teamHasWork, false))
+    const refresh = Effect.gen(function* () {
+      const hires = yield* org.hiredAgents
+      const working = yield* Effect.findFirst(hires, (hire) =>
+        Effect.map(runs.countOpenIssues(hire.id), (open) => open > 0)
+      )
+      const hasWork = Option.isSome(working)
+      if ((yield* SubscriptionRef.getAndSet(teamHasWork, hasWork)) !== hasWork) {
+        yield* Effect.logDebug('Org team work changed', { teamHasWork: hasWork })
+      }
+    })
+    yield* Stream.merge(Stream.make(undefined), Stream.merge(hireChanges, workChanges)).pipe(
+      Stream.runForEach(() => refresh),
+      Effect.forkScoped
+    )
+  })
 
 const holdAgentBackend = (
   ctx: HostPluginContext,
@@ -146,6 +191,7 @@ const runAssistant = (
     readonly dispatcher: Dispatcher
     readonly sessionTools: SessionTools
     readonly assistantMissing: AssistantMissing
+    readonly assistantPane: LiveRefs['assistantPane']
   }
 ) =>
   ctx
@@ -172,7 +218,8 @@ const runAssistant = (
           attach: ctx.sessions.attach,
           directory,
           sessionTools: deps.sessionTools,
-          missing: deps.assistantMissing
+          missing: deps.assistantMissing,
+          pane: deps.assistantPane
         }).pipe(Effect.provideService(SqlClient.SqlClient, deps.sql))
       }).pipe(Effect.provide(Layer.merge(NodeServices.layer, NodeCrypto.layer)))
     )
@@ -180,7 +227,9 @@ const runAssistant = (
 
 const runIssues = (
   ctx: HostPluginContext,
-  deps: Omit<Parameters<typeof runAssistant>[1], 'work'>
+  deps: Omit<Parameters<typeof runAssistant>[1], 'work'> & {
+    readonly teamHasWork: LiveRefs['teamHasWork']
+  }
 ) =>
   Effect.gen(function* () {
     if (yield* workHandoverPending.pipe(Effect.provideService(SqlClient.SqlClient, deps.sql))) {
@@ -196,6 +245,7 @@ const runIssues = (
         })
         yield* deps.org.holdIssues(runs)
         yield* deps.dispatcher.lendIssues(issues, runs)
+        yield* followTeamWork(deps.org, runs, issues, deps.teamHasWork)
         yield* runAssistant(ctx, { ...deps, work: issues })
         yield* Effect.logInfo('Org runs its hired agents through issues')
       })
@@ -317,6 +367,7 @@ const serveOrgCalls = (
       ctx.serve(EditJobTitle, ({ jobTitleId, edit }) => org.editJobTitle(jobTitleId, edit)),
       ctx.serve(DeleteJobTitle, ({ jobTitleId }) => org.deleteJobTitle(jobTitleId)),
       ctx.serve(Hire, ({ jobTitleId, name, reportsTo }) => org.hire(jobTitleId, name, reportsTo)),
+      ctx.serve(StaffTeam, ({ plan }) => org.staffTeam(plan)),
       ctx.serve(Dismiss, ({ hireId }) => org.dismiss(hireId)),
       ctx.serve(RenameHire, ({ hireId, name }) => org.renameHire(hireId, name)),
       ctx.serve(SetBypassOverride, ({ hireId, override }) =>
@@ -338,11 +389,11 @@ const serveOrgCalls = (
 const serveLiveCalls = (
   ctx: HostPluginContext,
   dispatcher: Dispatcher,
-  assistantMissing: AssistantMissing
+  live: LiveRefs
 ): Effect.Effect<void, never, Scope.Scope> =>
   Effect.all(
     [
-      ctx.serve(WatchOrgLive, () => watchOrgLive(assistantMissing)),
+      ctx.serve(WatchOrgLive, () => watchOrgLive(live)),
       ctx.serve(AnswerPermission, ({ issueId, requestId, response }) =>
         dispatcher.answerPermission(issueId, requestId, response)
       )
@@ -360,7 +411,11 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     )
     yield* ctx.provide(OrgService, org)
     const sessionTools = yield* makeSessionTools(ctx.pluginsSettled)
-    const assistantMissing = yield* SubscriptionRef.make<ReadonlyArray<MissingReference>>([])
+    const live: LiveRefs = {
+      assistantMissing: yield* SubscriptionRef.make<ReadonlyArray<MissingReference>>([]),
+      assistantPane: yield* SubscriptionRef.make<PaneId | null>(null),
+      teamHasWork: yield* SubscriptionRef.make(false)
+    }
     const gitOps = yield* Ref.make(Option.none<GitOps>())
     const worktrees = yield* makeIssueWorkspace({
       projectOf: (projectId) => projectOf(workspace, projectId),
@@ -382,9 +437,9 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     yield* holdAgentBackend(ctx, backend, dispatcher)
     yield* holdGitOps(ctx, gitOps, dispatcher)
     yield* holdRegistries(ctx, org, sessionTools, sql)
-    yield* runIssues(ctx, { sql, org, workspace, dispatcher, sessionTools, assistantMissing })
+    yield* runIssues(ctx, { sql, org, workspace, dispatcher, sessionTools, ...live })
     yield* serveOrgCalls(ctx, org, backend, dispatcher, worktrees)
-    yield* serveLiveCalls(ctx, dispatcher, assistantMissing)
+    yield* serveLiveCalls(ctx, dispatcher, live)
     const jobTitles = yield* org.jobTitles
     const hires = yield* org.hiredAgents
     yield* Effect.logInfo('Org service provided', {

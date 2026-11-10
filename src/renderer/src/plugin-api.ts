@@ -14,6 +14,7 @@ import {
   newAgent,
   openPage,
   openPluginsPage,
+  REGISTER_PROJECT_REFUSAL_TEXT,
   registerProject,
   removeProject,
   renameTab,
@@ -231,3 +232,4 @@ export {
 } from './lib/turn-steps'
 export { usageLimitResumeAtom } from './lib/usage-limit-resume-atom'
 export { cn } from './lib/utils'
+export { REGISTER_PROJECT_REFUSAL_TEXT }

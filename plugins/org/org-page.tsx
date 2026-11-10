@@ -20,6 +20,7 @@ import {
   type OrgView,
   showView
 } from './org-view'
+import { StaffDialog } from './staff-dialog'
 
 const NAV = [
   {
@@ -93,7 +94,9 @@ function SubPage({
 }) {
   switch (view._tag) {
     case 'DashboardView':
-      return <Dashboard snapshot={screen.snapshot} openHire={screen.openHire} liveAtom={liveAtom} />
+      return (
+        <Dashboard snapshot={screen.snapshot} openStaff={screen.openStaff} liveAtom={liveAtom} />
+      )
     case 'OrgChartView':
       return <OrgChart snapshot={screen.snapshot} show={screen.show} openHire={screen.openHire} />
     case 'JobTitlesView':
@@ -119,12 +122,14 @@ function Loaded({
   const [hiring, setHiring] = useState<{ readonly jobTitleId: JobTitleId | null } | undefined>(
     undefined
   )
+  const [staffing, setStaffing] = useState(false)
   const shown = showView(snapshot, view)
   const screen: OrgScreen = {
     snapshot,
     call,
     show: setView,
-    openHire: (jobTitleId) => setHiring({ jobTitleId })
+    openHire: (jobTitleId) => setHiring({ jobTitleId }),
+    openStaff: () => setStaffing(true)
   }
 
   return (
@@ -142,6 +147,14 @@ function Loaded({
           onClose={() => setHiring(undefined)}
         />
       )}
+      {staffing ? (
+        <StaffDialog
+          snapshot={snapshot}
+          call={call}
+          onStaffed={() => setStaffing(false)}
+          onClose={() => setStaffing(false)}
+        />
+      ) : null}
     </>
   )
 }

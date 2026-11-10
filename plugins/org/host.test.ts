@@ -15,15 +15,19 @@ import mcpSetup from '@dia-plugin/mcp/host'
 import { assert, describe, it } from '@effect/vitest'
 import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
 import { makePluginRegistry, type PluginRegistry } from '@shared/plugin/plugin-registry'
-import { DateTime, Effect, Option, Schema, Stream } from 'effect'
-import { callPlugin, servePluginCall } from '../../src/host/plugins/plugin-messages'
+import { DateTime, Duration, Effect, Option, Schema, Stream } from 'effect'
+import {
+  callPlugin,
+  servePluginCall,
+  subscribePlugin
+} from '../../src/host/plugins/plugin-messages'
 import { makePluginDatabase } from '../../src/host/services/database'
 import {
   BUILT_IN_JOB_TITLES,
   DEFAULT_OVERALL_CAP,
   EXECUTIVE_ASSISTANT
 } from './built-in-job-titles'
-import { OrgSnapshot } from './calls'
+import { OrgLive, OrgSnapshot } from './calls'
 import { HiredAgent } from './domain'
 import setup from './host'
 
@@ -359,6 +363,42 @@ describe('org host entry work through issues', () => {
       readIssues(registry),
       (view) => view.issues.find((issue) => issue.id === issueId(n))?.status
     )
+
+  const liveWhere = (registry: PluginRegistry, done: (live: OrgLive) => boolean) =>
+    Effect.gen(function* () {
+      const stream = yield* subscribePlugin(registry, {
+        plugin: 'org',
+        tag: 'WatchOrgLive',
+        payload: {}
+      })
+      const found = yield* stream.pipe(
+        Stream.map((value) => Schema.decodeUnknownSync(OrgLive)(value)),
+        Stream.filter(done),
+        Stream.runHead,
+        Effect.timeout(Duration.seconds(5))
+      )
+      return Option.getOrThrow(found)
+    })
+
+  it.live('reports team work once a hire has an open issue, and none once issues unloads', () =>
+    Effect.gen(function* () {
+      const registry = yield* startOrg(Option.none())
+      yield* createObjective(registry)
+      const ada = yield* hireEngineer(registry)
+      yield* createIssue(registry, 1, null)
+      const unassigned = yield* liveWhere(registry, () => true)
+
+      yield* createIssue(registry, 2, ada)
+      const assigned = yield* liveWhere(registry, (live) => live.teamHasWork)
+      yield* registry.unload('issues')
+      const unloaded = yield* liveWhere(registry, (live) => !live.teamHasWork)
+
+      assert.deepStrictEqual(
+        [unassigned.teamHasWork, assigned.teamHasWork, unloaded.teamHasWork],
+        [false, true, false]
+      )
+    })
+  )
 
   it.effect('starts a created issue, and starts the next one once the overall cap is raised', () =>
     Effect.gen(function* () {

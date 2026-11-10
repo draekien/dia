@@ -2,6 +2,7 @@ import {
   actions,
   Button,
   PluginBoundary,
+  REGISTER_PROJECT_REFUSAL_TEXT,
   Sidebar,
   SidebarContent,
   SidebarGroup,
@@ -42,7 +43,7 @@ import {
   verticalListSortingStrategy
 } from '@dnd-kit/sortable'
 import type { PaneId } from '@shared/domain/pane'
-import { ProjectId, type RegisterProjectRefusal, type Workspace } from '@shared/domain/project'
+import { ProjectId, type Workspace } from '@shared/domain/project'
 import { tabOf } from '@shared/domain/workspace'
 import { Option, Result, Schema } from 'effect'
 import { FolderPlusIcon, SearchIcon } from 'lucide-react'
@@ -90,13 +91,6 @@ const NO_COLLAPSED: ReadonlySet<ProjectId> = new Set()
 
 const focusNav = (container: HTMLElement, key: string): void =>
   container.querySelector<HTMLElement>(`[data-nav="${key}"]`)?.focus()
-
-const REFUSAL_TEXT: Record<RegisterProjectRefusal['_tag'], string> = {
-  ProjectAlreadyRegisteredError: 'dia already has a project for that directory.',
-  DirectoryNotFoundError: 'That directory no longer exists.',
-  StoredProjectUnreadableError:
-    'A stored project for that directory could not be loaded. Resolve it under workspace problems first.'
-}
 
 const statusCounts = (
   workspace: Workspace,
@@ -435,7 +429,7 @@ export function AgentOverview() {
   const addProject = () => {
     setNotice(null)
     actions.registerProject().then(
-      (refusal) => setNotice(refusal == null ? null : REFUSAL_TEXT[refusal._tag]),
+      (refusal) => setNotice(refusal == null ? null : REGISTER_PROJECT_REFUSAL_TEXT[refusal._tag]),
       () => setNotice('The project could not be added. Try again.')
     )
   }

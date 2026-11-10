@@ -30,7 +30,8 @@ import {
   JobTitleNotHireable,
   OrgSettings,
   type OverallCap,
-  ReportsToCycle
+  ReportsToCycle,
+  type TeamPlan
 } from './domain'
 import type { HeldIssues, Org } from './service'
 
@@ -314,6 +315,38 @@ export const makeOrg = Effect.gen(function* () {
     yield* Effect.logInfo('Deleted job title', { jobTitleId })
   })
 
+  const insertHire = Effect.fnUntraced(function* (
+    jobTitleId: JobTitleId,
+    name: AgentName | null,
+    reportsTo: HireId | null,
+    id: HireId,
+    hiredAt: number
+  ) {
+    const jobTitle = yield* findJobTitle(jobTitleId)
+    if (!jobTitle.enabled) {
+      return yield* JobTitleDisabled.make({ jobTitleId })
+    }
+    if (jobTitle.builtIn === 'executive-assistant') {
+      return yield* JobTitleNotHireable.make({ jobTitleId })
+    }
+    if (name !== null) {
+      yield* ensureHireNameFree(name, null)
+    }
+    if (reportsTo !== null) {
+      yield* findHire(reportsTo)
+    }
+    const agent = HiredAgent.make({
+      id,
+      jobTitleId,
+      name,
+      bypassOverride: null,
+      reportsTo,
+      hiredAt
+    })
+    yield* sql`INSERT INTO hired_agents ${sql.insert(toHireRow(agent))}`
+    return agent
+  })
+
   const hire = Effect.fn('Org.hire')(function* (
     jobTitleId: JobTitleId,
     name: AgentName | null,
@@ -322,38 +355,40 @@ export const makeOrg = Effect.gen(function* () {
     const id = HiredAgent.fields.id.make(yield* newId)
     const hiredAt = yield* Clock.currentTimeMillis
     const hired = yield* hireLock.withPermits(1)(
-      Effect.gen(function* () {
-        const jobTitle = yield* findJobTitle(jobTitleId)
-        if (!jobTitle.enabled) {
-          return yield* JobTitleDisabled.make({ jobTitleId })
-        }
-        if (jobTitle.builtIn === 'executive-assistant') {
-          return yield* JobTitleNotHireable.make({ jobTitleId })
-        }
-        return yield* transaction(
-          Effect.gen(function* () {
-            if (name !== null) {
-              yield* ensureHireNameFree(name, null)
-            }
-            if (reportsTo !== null) {
-              yield* findHire(reportsTo)
-            }
-            const agent = HiredAgent.make({
-              id,
-              jobTitleId,
-              name,
-              bypassOverride: null,
-              reportsTo,
-              hiredAt
-            })
-            yield* sql`INSERT INTO hired_agents ${sql.insert(toHireRow(agent))}`
-            return agent
-          })
-        )
-      })
+      transaction(insertHire(jobTitleId, name, reportsTo, id, hiredAt))
     )
     yield* publishHireChange
     yield* Effect.logInfo('Hired agent', { jobTitleId, hireId: id, reportsTo })
+    return hired
+  })
+
+  const staffTeam = Effect.fn('Org.staffTeam')(function* (plan: TeamPlan) {
+    const leadId = HiredAgent.fields.id.make(yield* newId)
+    const members = yield* Effect.forEach(plan.members, (jobTitleId) =>
+      Effect.map(newId, (id) => ({ jobTitleId, id: HiredAgent.fields.id.make(id) }))
+    )
+    const hiredAt = yield* Clock.currentTimeMillis
+    const reportsTo = plan.lead === null ? null : leadId
+    const hired = yield* hireLock
+      .withPermits(1)(
+        transaction(
+          Effect.gen(function* () {
+            const lead =
+              plan.lead === null ? [] : [yield* insertHire(plan.lead, null, null, leadId, hiredAt)]
+            const hires = yield* Effect.forEach(members, ({ jobTitleId, id }) =>
+              insertHire(jobTitleId, null, reportsTo, id, hiredAt)
+            )
+            return [...lead, ...hires]
+          })
+        )
+      )
+      .pipe(Effect.catchTags({ HireNameTaken: Effect.die, HireNotFound: Effect.die }))
+    yield* publishHireChange
+    yield* Effect.logInfo('Staffed team', {
+      lead: plan.lead,
+      members: plan.members.length,
+      hires: hired.length
+    })
     return hired
   })
 
@@ -456,6 +491,7 @@ export const makeOrg = Effect.gen(function* () {
     editJobTitle,
     deleteJobTitle,
     hire,
+    staffTeam,
     dismiss,
     renameHire,
     setBypassOverride,

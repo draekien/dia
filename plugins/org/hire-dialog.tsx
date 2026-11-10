@@ -20,8 +20,8 @@ import { Result } from 'effect'
 import { Loader2Icon } from 'lucide-react'
 import { type FormEvent, useId, useState } from 'react'
 import { Hire, type OrgSnapshot } from './calls'
-import type { HiredAgent, HireId, JobTitleId } from './domain'
-import { commonFailureText, type OrgCall, readAgentName } from './org-actions'
+import { type HiredAgent, type HireId, type JobTitleId, jobSummary } from './domain'
+import { commonFailureText, hireFailureText, type OrgCall, readAgentName } from './org-actions'
 import { ReportsToSelect } from './org-fields'
 
 interface Errors {
@@ -78,12 +78,8 @@ export function HireDialog({
         return setErrors({ name: `An agent named "${failure.agentName}" already exists` })
       case 'HireNotFound':
         return setErrors({ reportsTo: 'The selected manager was dismissed' })
-      case 'JobTitleDisabled':
-        return setErrors({ hire: 'This job title is disabled' })
-      case 'JobTitleNotHireable':
-        return setErrors({ hire: 'The Executive assistant is not hired' })
       default:
-        return setErrors({ hire: commonFailureText(failure) })
+        return setErrors({ hire: hireFailureText(failure) ?? commonFailureText(failure) })
     }
   }
 
@@ -131,11 +127,18 @@ export function HireDialog({
                 <SelectTrigger aria-label="Job title" className="w-full">
                   <SelectValue>{chosenTitle?.name ?? 'Choose a job title'}</SelectValue>
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-w-(--anchor-width)">
                   <SelectGroup>
                     {enabled.map((jobTitle) => (
                       <SelectItem key={jobTitle.id} value={jobTitle.id}>
-                        {jobTitle.name}
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate">{jobTitle.name}</span>
+                          {jobSummary(jobTitle) === '' ? null : (
+                            <span className="truncate text-xs text-ink-muted">
+                              {jobSummary(jobTitle)}
+                            </span>
+                          )}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectGroup>

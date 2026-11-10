@@ -126,6 +126,14 @@ export const registerProject = (): Promise<RegisterProjectRefusal | null | undef
     return window.dia.registerProject(ProjectId.make(crypto.randomUUID()), directory)
   })
 
+/** The sentence to show the user for each way the Host refuses a directory in {@link registerProject}. */
+export const REGISTER_PROJECT_REFUSAL_TEXT: Record<RegisterProjectRefusal['_tag'], string> = {
+  ProjectAlreadyRegisteredError: 'dia already has a project for that directory.',
+  DirectoryNotFoundError: 'That directory no longer exists.',
+  StoredProjectUnreadableError:
+    'A stored project for that directory could not be loaded. Resolve it under workspace problems first.'
+}
+
 /** Moves project `projectId` to position `toIndex` in the project order. */
 export const moveProject = (projectId: ProjectId, toIndex: number): void => {
   log('Moving a project', { projectId, toIndex })

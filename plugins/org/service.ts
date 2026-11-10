@@ -22,7 +22,8 @@ import type {
   JobTitleNotHireable,
   OrgSettings,
   OverallCap,
-  ReportsToCycle
+  ReportsToCycle,
+  TeamPlan
 } from './domain'
 
 /**
@@ -89,6 +90,17 @@ export interface Org {
     HiredAgent,
     JobTitleNotFound | JobTitleDisabled | JobTitleNotHireable | HireNameTaken | HireNotFound
   >
+  /**
+   * Hires `plan` in one transaction: the lead reports to the user, and every member reports to the
+   * lead, or to the user when there is no lead. Every hire is unnamed. Fails, hiring nobody, when
+   * a job title is missing, disabled or the Executive assistant.
+   */
+  readonly staffTeam: (
+    plan: TeamPlan
+  ) => Effect.Effect<
+    ReadonlyArray<HiredAgent>,
+    JobTitleNotFound | JobTitleDisabled | JobTitleNotHireable
+  >
   readonly dismiss: (
     hireId: HireId
   ) => Effect.Effect<void, HireNotFound | HireHasOpenIssues | IssuesNotLoaded>
@@ -123,6 +135,7 @@ const MEMBERS: Record<keyof Org, (member: unknown) => boolean> = {
   editJobTitle: Predicate.isFunction,
   deleteJobTitle: Predicate.isFunction,
   hire: Predicate.isFunction,
+  staffTeam: Predicate.isFunction,
   dismiss: Predicate.isFunction,
   renameHire: Predicate.isFunction,
   setBypassOverride: Predicate.isFunction,

@@ -2,17 +2,18 @@ import {
   Button,
   List,
   ListRow,
-  ListRowAction,
   ListRowLink,
   ListRowName,
   ListRowSubject,
-  openSettings
+  openSettings,
+  useWorkspace
 } from '@dia/renderer-plugin'
 import { useAtomValue } from '@effect/atom-react'
 import { Option } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
 import type { ReactNode } from 'react'
 import { describeMissing } from './domain'
+import { OnboardingStrip, onboardingStage, TeamWorkBox } from './onboarding'
 import type { LiveAtom, OrgScreen } from './org-actions'
 
 function Stat({
@@ -36,28 +37,54 @@ function Stat({
 }
 
 /**
- * The Org Dashboard: the number of hired agents, how many job titles are enabled, and the overall
- * cap with a `Change` button that opens Settings › Org; then `Needs attention`, which holds one
- * item whose `Hire…` opens the Hire dialog while no agent is hired, and one alert naming what the
- * Executive assistant definition holds that resolves to nothing while `liveAtom` reports any.
+ * The Org Dashboard. Until the team has work it opens with the onboarding strip (Add a project,
+ * Staff the org, Get the team working), whose `Staff the org…` calls `openStaff`, and at Get the
+ * team working the box that sends a request to the Executive assistant. Then the number of hired
+ * agents, how many job titles are enabled, and the overall cap with a `Change` button that opens
+ * Settings › Org; then `Needs attention`, which holds one alert naming what the Executive
+ * assistant definition holds that resolves to nothing while `liveAtom` reports any.
  */
 export function Dashboard({
   snapshot,
-  openHire,
+  openStaff,
   liveAtom
-}: Pick<OrgScreen, 'snapshot' | 'openHire'> & { readonly liveAtom: LiveAtom }) {
+}: Pick<OrgScreen, 'snapshot' | 'openStaff'> & { readonly liveAtom: LiveAtom }) {
   const enabled = snapshot.jobTitles.filter((jobTitle) => jobTitle.enabled).length
-  const noHires = snapshot.hiredAgents.length === 0
-  const live = useAtomValue(liveAtom)
-  const assistantMissing = AsyncResult.isSuccess(live)
-    ? Option.match(live.value, { onNone: () => [], onSome: (view) => view.assistantMissing })
-    : []
+  const hires = snapshot.hiredAgents.length
+  const workspace = useWorkspace()
+  const result = useAtomValue(liveAtom)
+  const live = AsyncResult.isSuccess(result) ? result.value : Option.none()
+  const assistantMissing = Option.match(live, {
+    onNone: () => [],
+    onSome: (view) => view.assistantMissing
+  })
+  const stage =
+    workspace === undefined || (hires > 0 && Option.isNone(live))
+      ? null
+      : onboardingStage(
+          workspace.projects.length,
+          hires,
+          Option.exists(live, (view) => view.teamHasWork)
+        )
 
   return (
     <div className="flex max-w-3xl flex-col gap-8">
+      {stage === null ? null : (
+        <div className="flex flex-col gap-4">
+          <OnboardingStrip stage={stage} openStaff={openStaff} />
+          {stage === 'get-working' ? (
+            <TeamWorkBox
+              assistantPaneId={Option.match(live, {
+                onNone: () => null,
+                onSome: (view) => view.assistantPaneId
+              })}
+            />
+          ) : null}
+        </div>
+      )}
       <dl className="grid grid-cols-3 divide-x border-y">
         <Stat label="Hired agents">
-          <span className="text-base font-medium tabular-nums">{snapshot.hiredAgents.length}</span>
+          <span className="text-base font-medium tabular-nums">{hires}</span>
         </Stat>
         <Stat label="Job titles">
           <span>
@@ -84,35 +111,17 @@ export function Dashboard({
         <h3 id="org-attention-heading" className="text-sm font-medium text-ink">
           Needs attention
         </h3>
-        {noHires || assistantMissing.length > 0 ? (
+        {assistantMissing.length > 0 ? (
           <List aria-labelledby="org-attention-heading">
-            {assistantMissing.length > 0 ? (
-              <ListRow value="assistant-missing" role="alert">
-                <ListRowLink render={<div />}>
-                  <ListRowSubject>
-                    <ListRowName className="whitespace-normal font-normal text-error">
-                      {`Executive assistant cannot start: missing ${describeMissing(assistantMissing)}`}
-                    </ListRowName>
-                  </ListRowSubject>
-                </ListRowLink>
-              </ListRow>
-            ) : null}
-            {noHires ? (
-              <ListRow value="no-hires">
-                <ListRowLink render={<div />}>
-                  <ListRowSubject>
-                    <ListRowName className="whitespace-normal font-normal">
-                      No agents are hired. Hire one to start building the org.
-                    </ListRowName>
-                  </ListRowSubject>
-                </ListRowLink>
-                <ListRowAction>
-                  <Button size="sm" variant="outline" onClick={() => openHire(null)}>
-                    Hire…
-                  </Button>
-                </ListRowAction>
-              </ListRow>
-            ) : null}
+            <ListRow value="assistant-missing" role="alert">
+              <ListRowLink render={<div />}>
+                <ListRowSubject>
+                  <ListRowName className="whitespace-normal font-normal text-error">
+                    {`Executive assistant cannot start: missing ${describeMissing(assistantMissing)}`}
+                  </ListRowName>
+                </ListRowSubject>
+              </ListRowLink>
+            </ListRow>
           </List>
         ) : (
           <p className="text-sm text-ink-muted">Nothing needs attention.</p>

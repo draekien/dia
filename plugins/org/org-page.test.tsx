@@ -8,7 +8,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { Atom } from 'effect/reactivity'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startRendererRegistry } from '../../src/renderer/src/lib/renderer-registry.fake'
-import { ReadOrg, WatchOrgLive } from './calls'
+import { type OrgLive, ReadOrg, WatchOrgLive } from './calls'
 import {
   HiredAgent,
   HireHasOpenIssues,
@@ -21,6 +21,7 @@ import {
   JobTitleNotFound,
   ReportsToCycle
 } from './domain'
+import { OnboardingStrip } from './onboarding'
 import {
   type FakeHost,
   HIRES,
@@ -102,7 +103,7 @@ const openSelect = (select: string) =>
     fireEvent.click(screen.getByRole('combobox', { name: select }))
   })
 
-const choose = async (select: string, option: string) => {
+const choose = async (select: string, option: string | RegExp) => {
   await openSelect(select)
   const item = screen.getByRole('option', { name: option, hidden: true })
   await act(async () => {
@@ -228,7 +229,9 @@ describe('Dashboard', () => {
           assistantMissing: [
             { kind: 'mcp-server', name: 'github' },
             { kind: 'skill', name: 'dia-meta:plan' }
-          ]
+          ],
+          assistantPaneId: null,
+          teamHasWork: true
         }
       )
     )
@@ -237,16 +240,228 @@ describe('Dashboard', () => {
       'Executive assistant cannot start: missing github (MCP server), dia-meta:plan (skill)'
     )
   })
+})
 
-  it('shows the no-hires item, whose Hire… opens the Hire dialog', async () => {
-    await renderOrg(installHost(snapshotOf({ hiredAgents: [] })))
-    expect(
-      screen.getByText('No agents are hired. Hire one to start building the org.')
-    ).toBeTruthy()
+describe('Dashboard onboarding', () => {
+  const ASSISTANT_PANE = '00000000-0000-4000-8000-700000000001'
+  const live = (overrides: Partial<OrgLive> = {}): OrgLive => ({
+    assistantMissing: [],
+    assistantPaneId: ASSISTANT_PANE,
+    teamHasWork: false,
+    ...overrides
+  })
 
-    await click('Hire…')
+  const steps = () =>
+    within(screen.getByRole('region', { name: 'Set up the org' }))
+      .getAllByRole('listitem')
+      .map((step) => [
+        step.querySelector('[data-slot="status-name"]')?.textContent,
+        step.getAttribute('aria-current')
+      ])
 
-    expect(screen.getByRole('dialog', { name: 'Hire an agent' })).toBeTruthy()
+  const currentStep = () => steps().find(([, state]) => state === 'step')?.[0]
+
+  it('draws the steps before the current one done and holds Add project… at Add a project', () => {
+    render(<OnboardingStrip stage="add-project" openStaff={() => {}} />)
+
+    expect([steps(), screen.queryByRole('button', { name: 'Add project…' }) !== null]).toEqual([
+      [
+        ['Add a project', 'step'],
+        ['Staff the org', null],
+        ['Get the team working', null]
+      ],
+      true
+    ])
+  })
+
+  it('draws the steps before Get the team working done', () => {
+    render(<OnboardingStrip stage="get-working" openStaff={() => {}} />)
+
+    const fills = within(screen.getByRole('region', { name: 'Set up the org' }))
+      .getAllByRole('listitem')
+      .map((step) =>
+        step.querySelector('[data-slot="status-media"]')?.className.includes('bg-current')
+      )
+    expect(fills).toEqual([true, true, false])
+  })
+
+  it('marks Staff the org current with a project and no hire; its button opens the dialog', async () => {
+    await renderOrg(installHost(snapshotOf({ hiredAgents: [] }), {}, live()))
+    const current = currentStep()
+
+    await click('Staff the org…')
+
+    expect(current).toBe('Staff the org')
+    expect(screen.getByRole('dialog', { name: 'Staff the org' })).toBeTruthy()
+  })
+
+  it('marks Get the team working current while no hire has work, with the request box', async () => {
+    await renderOrg(installHost(snapshotOf(), {}, live()))
+
+    expect(currentStep()).toBe('Get the team working')
+    expect(screen.getByLabelText('What should the team work on?')).toBeTruthy()
+  })
+
+  it('queues the trimmed request in the Executive assistant session and shows it', async () => {
+    await renderOrg(installHost(snapshotOf(), {}, live()))
+
+    type('What should the team work on?', '  Add a dark mode toggle  ')
+    await click('Send to the Executive assistant')
+
+    expect(vi.mocked(window.dia.sendMessage).mock.calls).toEqual([
+      [ASSISTANT_PANE, 'Add a dark mode toggle', 'queue', undefined]
+    ])
+    expect(vi.mocked(window.dia.selectTab).mock.calls).toEqual([[null]])
+  })
+
+  it('keeps Send disabled while the request is blank', async () => {
+    await renderOrg(installHost(snapshotOf(), {}, live()))
+
+    type('What should the team work on?', '   ')
+
+    const send = screen.getByRole('button', { name: 'Send to the Executive assistant' })
+    expect((send as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('says the Executive assistant is not running while it has no pane', async () => {
+    await renderOrg(installHost(snapshotOf(), {}, live({ assistantPaneId: null })))
+
+    expect([
+      screen.queryByText('The Executive assistant is not running, so it cannot take requests.') !==
+        null,
+      screen.queryByLabelText('What should the team work on?')
+    ]).toEqual([true, null])
+  })
+
+  it('shows no onboarding once a hire has an open issue', async () => {
+    await renderOrg(installHost(snapshotOf(), {}, live({ teamHasWork: true })))
+
+    expect(screen.queryByRole('region', { name: 'Set up the org' })).toBeNull()
+  })
+
+  it('removes the onboarding when the team gets work while the Dashboard is shown', async () => {
+    const host = installHost(snapshotOf(), {}, live())
+    await renderOrg(host)
+    const before = screen.queryByRole('region', { name: 'Set up the org' }) !== null
+
+    await act(async () => host.push(live({ teamHasWork: true })))
+
+    expect([before, screen.queryByRole('region', { name: 'Set up the org' })]).toEqual([true, null])
+  })
+})
+
+describe('Staff the org dialog', () => {
+  const ENGINEER = jobTitleNamed('Software engineer')
+  const TESTER = jobTitleNamed('Quality engineer')
+
+  const openStaff = async (host: FakeHost) => {
+    await renderOrg(host)
+    await click('Staff the org…')
+    return host
+  }
+
+  const noHires = (
+    replies: Record<string, (payload: Record<string, unknown>, host: FakeHost) => Reply> = {}
+  ) => installHost(snapshotOf({ hiredAgents: [] }), replies)
+
+  const hired = (n: number, jobTitleId: HiredAgent['jobTitleId'], reportsTo: number | null) =>
+    HiredAgent.make({
+      id: hireId(n),
+      jobTitleId,
+      name: null,
+      bypassOverride: null,
+      reportsTo: reportsTo === null ? null : hireId(reportsTo),
+      hiredAt: Date.UTC(2026, 10, n)
+    })
+
+  const count = (jobTitle: string) =>
+    screen.getByRole('status', { name: `${jobTitle} count` }).textContent
+
+  it('starts on Feature team: a Team lead, two Software engineers and a Quality engineer', async () => {
+    await openStaff(noHires())
+
+    expect([
+      within(screen.getByRole('combobox', { name: 'Lead' })).queryByText('Team lead') !== null,
+      count('Software engineer'),
+      count('Quality engineer'),
+      count('Reviewer'),
+      screen.queryByRole('button', { name: 'Hire 4 agents' }) !== null
+    ]).toEqual([true, '2', '1', '0', true])
+  })
+
+  it('sends the lead and one member id per count in StaffTeam, then closes', async () => {
+    const team = [
+      hired(5, TEAM_LEAD.id, null),
+      hired(6, ENGINEER.id, 5),
+      hired(7, ENGINEER.id, 5),
+      hired(8, TESTER.id, 5)
+    ]
+    const host = await openStaff(
+      noHires({
+        StaffTeam: (_payload, fake) => {
+          fake.snapshot = snapshotOf({ hiredAgents: team })
+          return { value: team }
+        }
+      })
+    )
+
+    await click('Hire 4 agents')
+
+    expect(host.sent).toEqual([
+      [
+        'StaffTeam',
+        { plan: { lead: TEAM_LEAD.id, members: [ENGINEER.id, ENGINEER.id, TESTER.id] } }
+      ]
+    ])
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('adds a member with More to the count and the button', async () => {
+    await openStaff(noHires())
+
+    await click('More Reviewer')
+
+    expect([
+      count('Reviewer'),
+      screen.queryByRole('button', { name: 'Hire 5 agents' }) !== null
+    ]).toEqual(['1', true])
+  })
+
+  it('disables Hire with no lead and every count at 0', async () => {
+    await openStaff(noHires())
+
+    await choose('Lead', 'No lead')
+    await click('Fewer Software engineer')
+    await click('Fewer Software engineer')
+    await click('Fewer Quality engineer')
+
+    const hire = screen.getByRole('button', { name: /^Hire$/ }) as HTMLButtonElement
+    expect(hire.disabled).toBe(true)
+  })
+
+  it('shows the hire failure and keeps the dialog open', async () => {
+    await openStaff(
+      noHires({ StaffTeam: failWith(JobTitleDisabled.make({ jobTitleId: TESTER.id })) })
+    )
+
+    await click('Hire 4 agents')
+
+    expect([
+      screen.getByRole('alert').textContent,
+      screen.queryByRole('dialog', { name: 'Staff the org' }) !== null
+    ]).toEqual(['This job title is disabled', true])
+  })
+
+  it('offers no preset whose lead job title is disabled', async () => {
+    const titles = JOB_TITLES.map((jobTitle) =>
+      jobTitle.id === TEAM_LEAD.id ? { ...jobTitle, enabled: false } : jobTitle
+    )
+    await openStaff(installHost(snapshotOf({ jobTitles: titles, hiredAgents: [] })))
+
+    const presets = within(screen.getByRole('group', { name: 'Team preset' }))
+      .getAllByRole('button')
+      .map((button) => button.textContent)
+    expect(presets).toEqual(['Product team', 'Solo engineer'])
   })
 })
 
@@ -804,7 +1019,7 @@ describe('Hire dialog', () => {
     const hire = () => screen.getByRole('button', { name: /^Hire$/ }) as HTMLButtonElement
     const before = hire().disabled
 
-    await choose('Job title', 'Reviewer')
+    await choose('Job title', /^Reviewer/)
 
     expect([before, hire().disabled]).toEqual([true, false])
   })
@@ -819,7 +1034,7 @@ describe('Hire dialog', () => {
       })
     )
 
-    await choose('Job title', 'Reviewer')
+    await choose('Job title', /^Reviewer/)
     await choose('Reports to', 'Ada')
     await click(/^Hire$/)
 
@@ -838,10 +1053,32 @@ describe('Hire dialog', () => {
       })
     )
 
-    await choose('Job title', 'Reviewer')
+    await choose('Job title', /^Reviewer/)
     await click(/^Hire$/)
 
     expect(screen.getByRole('alert').textContent).toBe('This job title is disabled')
+  })
+
+  it('shows the first line of each job description under its name, and the name alone once chosen', async () => {
+    const firstLine = 'Reviews every change for correctness. '.repeat(13).trim()
+    const long = `${firstLine}\nSecond line.`
+    const titles = JOB_TITLES.map((jobTitle) =>
+      jobTitle.id === REVIEWER.id ? { ...jobTitle, jobDescription: long } : jobTitle
+    )
+    await openHire(installHost(snapshotOf({ jobTitles: titles })))
+    await choose('Job title', /^Reviewer/)
+    await openSelect('Job title')
+    const option = screen.getByRole('option', { name: /^Reviewer/, hidden: true })
+    const summary = option.querySelector('.truncate.text-xs')?.textContent
+    await openSelect('Job title')
+
+    expect([summary, screen.getByRole('combobox', { name: 'Job title' }).textContent]).toEqual([
+      firstLine,
+      expect.stringMatching(/^Reviewer/)
+    ])
+    expect(screen.getByRole('combobox', { name: 'Job title' }).textContent).not.toContain(
+      'Reviews every change'
+    )
   })
 
   it('fixes the job title when opened from a job title', async () => {

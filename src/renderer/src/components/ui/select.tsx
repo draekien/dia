@@ -107,7 +107,7 @@ function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Prop
           <CheckIcon className="size-4" />
         </SelectPrimitive.ItemIndicator>
       </span>
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      <SelectPrimitive.ItemText className="min-w-0">{children}</SelectPrimitive.ItemText>
     </SelectPrimitive.Item>
   )
 }

@@ -24,7 +24,8 @@ import {
   OrgSettings,
   OverallCap,
   PermissionNotPending,
-  ReportsToCycle
+  ReportsToCycle,
+  TeamPlan
 } from './domain'
 
 /**
@@ -93,6 +94,17 @@ export const Hire = Rpc.make('Hire', {
 })
 
 /**
+ * Hires `plan` in one transaction: the lead reports to the user, and every member reports to the
+ * lead, or to the user when there is no lead. Every hire is unnamed. Fails, hiring nobody, when a
+ * job title is missing, disabled or the Executive assistant.
+ */
+export const StaffTeam = Rpc.make('StaffTeam', {
+  payload: { plan: TeamPlan },
+  success: Schema.Array(HiredAgent),
+  error: Schema.Union([JobTitleNotFound, JobTitleDisabled, JobTitleNotHireable])
+})
+
+/**
  * Dismisses hired agent `hireId`; refused while it is assigned to an issue that is neither `done`
  * nor `canceled`, and while the `issues` plugin is not ready to tell.
  */
@@ -139,9 +151,15 @@ export const SetProjectWorktrees = Rpc.make('SetProjectWorktrees', {
 
 /**
  * The org's live state the Dashboard shows: `assistantMissing`, the names the Executive assistant
- * definition holds that resolve to nothing, so its session cannot start; empty otherwise.
+ * definition holds that resolve to nothing, so its session cannot start, empty otherwise;
+ * `assistantPaneId`, the pane of the Executive assistant session while it is attached, null
+ * otherwise; `teamHasWork`, whether any hired agent has an open issue.
  */
-export const OrgLive = Schema.Struct({ assistantMissing: Schema.Array(MissingReference) })
+export const OrgLive = Schema.Struct({
+  assistantMissing: Schema.Array(MissingReference),
+  assistantPaneId: Schema.NullOr(Schema.String),
+  teamHasWork: Schema.Boolean
+})
 export type OrgLive = typeof OrgLive.Type
 
 /** Streams the {@link OrgLive}: the current one when subscribed, then a new one after each change. */

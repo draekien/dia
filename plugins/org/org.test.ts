@@ -497,6 +497,98 @@ describe('Org.hire', () => {
   )
 })
 
+describe('Org.staffTeam', () => {
+  const team = Effect.gen(function* () {
+    const org = yield* freshOrg
+    const jobTitles = yield* org.jobTitles
+    return {
+      org,
+      lead: jobTitleNamed(jobTitles, 'Team lead'),
+      engineer: jobTitleNamed(jobTitles, 'Software engineer'),
+      tester: jobTitleNamed(jobTitles, 'Quality engineer')
+    }
+  })
+
+  it.effect('hires the lead reporting to the user and every member reporting to the lead', () =>
+    Effect.gen(function* () {
+      const { org, lead, engineer, tester } = yield* team
+      const hired = yield* org.staffTeam({
+        lead: lead.id,
+        members: [engineer.id, engineer.id, tester.id]
+      })
+      const [leadHire] = hired
+      assert.isDefined(leadHire)
+      assert.deepStrictEqual(
+        hired.map((hire) => [hire.jobTitleId, hire.name, hire.reportsTo]),
+        [
+          [lead.id, null, null],
+          [engineer.id, null, leadHire?.id],
+          [engineer.id, null, leadHire?.id],
+          [tester.id, null, leadHire?.id]
+        ]
+      )
+    })
+  )
+
+  it.effect('hires every member reporting to the user when there is no lead', () =>
+    Effect.gen(function* () {
+      const { org, engineer, tester } = yield* team
+      const hired = yield* org.staffTeam({ lead: null, members: [engineer.id, tester.id] })
+      assert.deepStrictEqual(
+        hired.map((hire) => hire.reportsTo),
+        [null, null]
+      )
+    })
+  )
+
+  it.effect('gives every hire its own id and lists them all', () =>
+    Effect.gen(function* () {
+      const { org, lead, engineer } = yield* team
+      const hired = yield* org.staffTeam({ lead: lead.id, members: [engineer.id, engineer.id] })
+      const listed = (yield* org.hiredAgents).map((hire) => hire.id)
+      assert.deepStrictEqual(
+        [new Set(listed).size, [...listed].sort()],
+        [3, hired.map((hire) => hire.id).sort()]
+      )
+    })
+  )
+
+  it.effect('hires nobody when one member job title is disabled', () =>
+    Effect.gen(function* () {
+      const { org, lead, engineer, tester } = yield* team
+      yield* org.setJobTitleEnabled(tester.id, false)
+      const error = yield* Effect.flip(
+        org.staffTeam({ lead: lead.id, members: [engineer.id, tester.id] })
+      )
+      assert.deepStrictEqual([error._tag, (yield* org.hiredAgents).length], ['JobTitleDisabled', 0])
+    })
+  )
+
+  it.effect('hires nobody when the lead is the Executive assistant', () =>
+    Effect.gen(function* () {
+      const { org, engineer } = yield* team
+      const assistant = jobTitleNamed(yield* org.jobTitles, 'Executive assistant')
+      const error = yield* Effect.flip(
+        org.staffTeam({ lead: assistant.id, members: [engineer.id] })
+      )
+      assert.deepStrictEqual(
+        [error._tag, (yield* org.hiredAgents).length],
+        ['JobTitleNotHireable', 0]
+      )
+    })
+  )
+
+  it.effect('hires nobody when a member job title is unknown', () =>
+    Effect.gen(function* () {
+      const { org, lead } = yield* team
+      const error = yield* Effect.flip(
+        org.staffTeam({ lead: lead.id, members: [UNKNOWN_JOB_TITLE] })
+      )
+      assert.deepStrictEqual([error._tag, (yield* org.hiredAgents).length], ['JobTitleNotFound', 0])
+    })
+  )
+})
+
 describe('Org.dismiss', () => {
   it.effect('removes the hired agent', () =>
     Effect.gen(function* () {
