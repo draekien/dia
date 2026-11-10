@@ -1,4 +1,4 @@
-import type { PaneId, WorktreeInfo } from '@shared/domain/pane'
+import type { PaneId, ReleaseOutcome, WorktreeInfo, WorktreeOwner } from '@shared/domain/pane'
 import { ServiceKey } from '@shared/plugin/api'
 import type { PluginRegistry, ServiceWithdrawnError } from '@shared/plugin/plugin-registry'
 import { Data, Effect, type Option, Predicate } from 'effect'
@@ -11,17 +11,6 @@ import { Data, Effect, type Option, Predicate } from 'effect'
 export class WorktreeCreateError extends Data.TaggedError('WorktreeCreateError')<{
   readonly paneId: PaneId
   readonly sourceRepo: string
-  readonly cause: unknown
-}> {}
-
-/**
- * Failure raised when `GitOps.removeWorktree` cannot remove or prune a pane's git worktree.
- * Carries the pane id, worktree path, and the underlying cause so callers can log or surface the
- * failure.
- */
-export class WorktreeRemoveError extends Data.TaggedError('WorktreeRemoveError')<{
-  readonly paneId: PaneId
-  readonly path: string
   readonly cause: unknown
 }> {}
 
@@ -56,18 +45,21 @@ export interface IncludedFileFailure {
 }
 
 /**
- * The git operations behind a pane's worktree lifecycle.
+ * The git operations behind every worktree dia creates, recorded in the `worktrees` plugin's
+ * ledger and listed on Settings › Worktrees (ADR-0073).
  *
- * `createWorktree` provisions a worktree and a `dia/<adjective-noun>` branch for a pane from
- * `sourceRepo` under `worktreesRoot`, using a name that clashes with no existing branch or
- * directory, and returns where it put them. `reattachWorktree` re-adds the worktree described by
- * `info` on resume, checking out its existing branch so committed work is preserved; it returns
- * `info` and does nothing when the path is already a registered worktree, reuses a path that
- * exists but is an empty, unregistered directory, and fails with `WorktreeReattachError` when
- * that directory is not empty or when the branch no longer exists (cause
- * `Branch <branch> no longer exists`). `removeWorktree` tears one down, deletes the directory when git
- * leaves it on disk empty, and does not fail when git cannot prune it or the directory cannot be
- * deleted, because pane teardown must not block on that.
+ * `createWorktree` provisions a worktree from `sourceRepo` for `owner` in a directory the plugin
+ * chooses, on branch `dia/<name>`, and returns where it put them. `<name>` is `nameHint` reduced
+ * to lowercase letters, digits and hyphens, or a generated adjective-noun name when `nameHint` is
+ * `None`; a `-<hex>` suffix is added when a directory or branch with that name exists.
+ * `reattachWorktree` re-adds the worktree described by `info` on resume, checking out its existing
+ * branch so committed work is preserved; it returns `info` and does nothing when the path is
+ * already a registered worktree, reuses a path that exists but is an empty, unregistered
+ * directory, and fails with `WorktreeReattachError` when that directory is not empty or when the
+ * branch no longer exists (cause `Branch <branch> no longer exists`). `releaseWorktree` frees a
+ * worktree the caller no longer runs in: a tree with no modified or untracked files is removed and
+ * its branch kept (`WorktreeReleased`), and a tree with any is left on disk for the user to decide
+ * (`WorktreeKept`); it never fails, because teardown must not block on it.
  *
  * `findIncludedFiles` returns `None` when `sourceRepo` has no `.worktreeinclude`, otherwise the
  * repo-relative paths (forward slashes) of the untracked files that match it and are gitignored;
@@ -79,13 +71,10 @@ export interface IncludedFileFailure {
 export interface GitOps {
   readonly createWorktree: (
     sourceRepo: string,
-    paneId: PaneId,
-    worktreesRoot: string
+    owner: WorktreeOwner,
+    nameHint: Option.Option<string>
   ) => Effect.Effect<WorktreeInfo, WorktreeCreateError>
-  readonly removeWorktree: (
-    info: WorktreeInfo,
-    paneId: PaneId
-  ) => Effect.Effect<void, WorktreeRemoveError>
+  readonly releaseWorktree: (info: WorktreeInfo, paneId: PaneId) => Effect.Effect<ReleaseOutcome>
   readonly reattachWorktree: (
     info: WorktreeInfo,
     paneId: PaneId
@@ -103,7 +92,7 @@ export interface GitOps {
 
 const gitOperations = [
   'createWorktree',
-  'removeWorktree',
+  'releaseWorktree',
   'reattachWorktree',
   'findIncludedFiles',
   'copyIncludedFiles'

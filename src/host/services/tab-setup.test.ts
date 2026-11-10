@@ -1,5 +1,5 @@
 import { assert, describe, it } from '@effect/vitest'
-import type { WorktreeInfo } from '@shared/domain/pane'
+import { type WorktreeInfo, WorktreeReleased } from '@shared/domain/pane'
 import type { IpcEvent } from '@shared/ipc/contract'
 import { Effect, Option } from 'effect'
 import { setUpWorktreeTab } from './tab-setup'
@@ -15,7 +15,7 @@ const worktree: WorktreeInfo = {
 
 const gitOps: GitOps = {
   createWorktree: () => Effect.die(new Error('createWorktree is not called by tab setup')),
-  removeWorktree: () => Effect.void,
+  releaseWorktree: () => Effect.succeed(WorktreeReleased.make({})),
   reattachWorktree: () => Effect.die(new Error('reattachWorktree is not called by tab setup')),
   findIncludedFiles: () => Effect.succeed(Option.none()),
   copyIncludedFiles: () => Effect.succeed([])

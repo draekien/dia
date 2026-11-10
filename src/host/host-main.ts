@@ -47,7 +47,7 @@ import { ModelCatalogFeed, ModelCatalogFeedLive } from './services/model-catalog
 import { ModelPreferencesLive } from './services/model-preferences'
 import { PaneChatProjectionLive } from './services/pane-chat-projection'
 import { PaneSupervisor, PaneSupervisorLive, SessionFactoryLive } from './services/pane-supervisor'
-import { makePaneWorkspaceLive, PaneWorkspace } from './services/pane-workspace'
+import { PaneWorkspace, PaneWorkspaceLive } from './services/pane-workspace'
 import { makePersistenceServiceLive } from './services/persistence'
 import { ProjectEntriesLive } from './services/project-entries'
 import { makeSettingsStoreLive } from './services/settings-store'
@@ -162,7 +162,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     Layer.mergeAll(supervisor, paneChats, eventHub, sessionAttacher)
   )
   const workspace = Layer.provide(
-    makePaneWorkspaceLive(init.worktreesRoot),
+    PaneWorkspaceLive,
     Layer.mergeAll(
       supervisor,
       workspaceStore,

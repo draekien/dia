@@ -55,6 +55,7 @@
     "plugins/skills/picker.ts",
     "plugins/skills/calls.ts",
     "plugins/mcp/calls.ts",
+    "plugins/worktrees/calls.ts",
     "plugins/issues/calls.ts",
     "plugins/issues/issue-actions.ts",
     "plugins/org/org-view.ts",

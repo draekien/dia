@@ -4,7 +4,8 @@ import {
   type PaneConfig,
   type PermissionMode,
   SessionId,
-  type WorktreeInfo
+  type WorktreeInfo,
+  WorktreeReleased
 } from '@shared/domain/pane'
 import { SignedOut, UsageLimit, type UsageLimitResume } from '@shared/domain/parking'
 import { ProjectId } from '@shared/domain/project'
@@ -101,7 +102,8 @@ const pluginsProviding = (gitOps: GitOps) =>
 
 const unusedGitOps: GitOps = {
   createWorktree: () => Effect.die(new Error('createWorktree should not be called in these tests')),
-  removeWorktree: () => Effect.die(new Error('removeWorktree should not be called in these tests')),
+  releaseWorktree: () =>
+    Effect.die(new Error('releaseWorktree should not be called in these tests')),
   reattachWorktree: () =>
     Effect.die(new Error('reattachWorktree should not be called in these tests')),
   findIncludedFiles: () =>
@@ -441,7 +443,7 @@ describe('PaneSupervisor', () => {
         const gitOps: GitOps = {
           createWorktree: () =>
             Effect.die(new Error('createWorktree must not be called when resuming')),
-          removeWorktree: () => Effect.void,
+          releaseWorktree: () => Effect.succeed(WorktreeReleased.make({})),
           reattachWorktree: (info, paneId) =>
             Effect.sync(() => {
               reattachCalls.push({ info, paneId })
@@ -501,7 +503,10 @@ describe('PaneSupervisor', () => {
       const info: WorktreeInfo = { path: '/wt/d', branch: 'dia/calm-fox', sourceRepo: '/repo' }
       const gitOps: GitOps = {
         createWorktree: () => Effect.succeed(info),
-        removeWorktree: () => Effect.sync(() => void lifecycleLog.push('worktree removed')),
+        releaseWorktree: () =>
+          Effect.sync(() => void lifecycleLog.push('worktree removed')).pipe(
+            Effect.as(WorktreeReleased.make({}))
+          ),
         reattachWorktree: () => Effect.die(new Error('reattachWorktree should not be called')),
         ...withoutIncludeFile
       }
@@ -510,7 +515,7 @@ describe('PaneSupervisor', () => {
       yield* Effect.gen(function* () {
         const supervisor = yield* PaneSupervisor
         yield* supervisor.openPane(
-          { ...requestA, worktree: { _tag: 'Create', worktreesRoot: '/wt' } },
+          { ...requestA, worktree: { _tag: 'Create', label: 'Tab · test' } },
           () => Effect.void,
           ignoreSessionId,
           ignorePermissionMode
@@ -529,7 +534,10 @@ describe('PaneSupervisor', () => {
       const info: WorktreeInfo = { path: '/wt/d', branch: 'dia/calm-fox', sourceRepo: '/repo' }
       const gitOps: GitOps = {
         createWorktree: () => Effect.succeed(info),
-        removeWorktree: () => Effect.sync(() => void lifecycleLog.push('worktree removed')),
+        releaseWorktree: () =>
+          Effect.sync(() => void lifecycleLog.push('worktree removed')).pipe(
+            Effect.as(WorktreeReleased.make({}))
+          ),
         reattachWorktree: () => Effect.die(new Error('reattachWorktree should not be called')),
         ...withoutIncludeFile
       }
@@ -545,7 +553,7 @@ describe('PaneSupervisor', () => {
       yield* Effect.gen(function* () {
         const supervisor = yield* PaneSupervisor
         yield* supervisor.openPane(
-          { ...requestA, worktree: { _tag: 'Create', worktreesRoot: '/wt' } },
+          { ...requestA, worktree: { _tag: 'Create', label: 'Tab · test' } },
           () => Effect.void,
           ignoreSessionId,
           ignorePermissionMode
@@ -566,7 +574,7 @@ describe('PaneSupervisor', () => {
       yield* Effect.gen(function* () {
         const supervisor = yield* PaneSupervisor
         yield* supervisor.openPane(
-          { ...requestA, worktree: { _tag: 'Create', worktreesRoot: '/wt' } },
+          { ...requestA, worktree: { _tag: 'Create', label: 'Tab · test' } },
           () => Effect.void,
           ignoreSessionId,
           ignorePermissionMode
@@ -1305,7 +1313,7 @@ describe('PaneSupervisor tab setup progress', () => {
   }
   const createRequest: PaneCreationRequest = {
     ...requestA,
-    worktree: { _tag: 'Create', worktreesRoot: '/wt' }
+    worktree: { _tag: 'Create', label: 'Tab · test' }
   }
   const goneSession = SessionId.make('9c376084-48c1-4e74-b886-7915ef2993db')
   const NOT_FOUND_NOTICE =
@@ -1313,7 +1321,7 @@ describe('PaneSupervisor tab setup progress', () => {
 
   const includeGitOps = (overrides: Partial<GitOps>): GitOps => ({
     createWorktree: () => Effect.succeed(created),
-    removeWorktree: () => Effect.void,
+    releaseWorktree: () => Effect.succeed(WorktreeReleased.make({})),
     reattachWorktree: (info) => Effect.succeed(info),
     findIncludedFiles: () =>
       Effect.succeed(Option.some(['.env', '.env.local', 'config/secrets.json'])),
@@ -1500,7 +1508,7 @@ describe('PaneSupervisor tab setup progress', () => {
       Effect.gen(function* () {
         const { sessions, testLayer } = makeTestSetup(
           includeGitOps({
-            createWorktree: (sourceRepo, paneId) =>
+            createWorktree: (sourceRepo, { paneId }) =>
               Effect.fail(
                 new WorktreeCreateError({
                   paneId,

@@ -9,6 +9,7 @@ import {
   FileSystem,
   Layer,
   Logger,
+  Option,
   Path,
   PlatformError,
   Result,
@@ -16,11 +17,15 @@ import {
 } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { TestClock } from 'effect/testing'
-import { makeGitOps } from './git-ops'
+import { makeGitOps, slugify } from './git-ops'
 
 class TestGitOps extends Context.Service<TestGitOps, GitOps>()('TestGitOps') {}
 
 const PANE_ID = 'aaaaaaaa-0000-4000-8000-000000000001'
+
+const WORKTREES_ROOT = '/worktrees'
+
+const OWNER = { paneId: PANE_ID, label: 'Tab · repo' }
 
 function makeFakeSpawner(
   exitCodeFor: (command: ChildProcess.Command) => number,
@@ -102,7 +107,7 @@ function makeTestSetup(
   })
 
   const testLayer = Layer.provide(
-    Layer.effect(TestGitOps, makeGitOps),
+    Layer.effect(TestGitOps, makeGitOps(WORKTREES_ROOT)),
     Layer.mergeAll(spawnerLayer, fsLayer, Path.layer)
   )
   const loggerLayer = Logger.layer([captureLogger], { mergeWithExisting: true })
@@ -116,7 +121,6 @@ const WORKTREE_INFO: WorktreeInfo = {
   sourceRepo: '/repo'
 }
 
-const WORKTREES_ROOT = '/worktrees'
 const isRevParse = (command: ChildProcess.Command): boolean => argsOf(command)[0] === 'rev-parse'
 const isWorktreeAdd = (command: ChildProcess.Command): boolean =>
   argsOf(command)[0] === 'worktree' && argsOf(command)[1] === 'add'
@@ -133,7 +137,7 @@ describe('makeGitOps', () => {
 
       const info = yield* Effect.gen(function* () {
         const gitOps = yield* TestGitOps
-        return yield* gitOps.createWorktree('/repo', PANE_ID, WORKTREES_ROOT)
+        return yield* gitOps.createWorktree('/repo', OWNER, Option.none())
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
       const addCommands = commands.filter(isWorktreeAdd)
@@ -168,7 +172,7 @@ describe('makeGitOps', () => {
 
       const info = yield* Effect.gen(function* () {
         const gitOps = yield* TestGitOps
-        return yield* gitOps.createWorktree('/repo', PANE_ID, WORKTREES_ROOT)
+        return yield* gitOps.createWorktree('/repo', OWNER, Option.none())
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
       assert.strictEqual(revParseCalls, 2)
@@ -199,7 +203,7 @@ describe('makeGitOps', () => {
 
       yield* Effect.gen(function* () {
         const gitOps = yield* TestGitOps
-        return yield* gitOps.createWorktree('/repo', PANE_ID, WORKTREES_ROOT)
+        return yield* gitOps.createWorktree('/repo', OWNER, Option.none())
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
       // A directory clash is caught before the branch check, so rev-parse is never reached.
@@ -216,7 +220,7 @@ describe('makeGitOps', () => {
 
       const result = yield* Effect.gen(function* () {
         const gitOps = yield* TestGitOps
-        return yield* gitOps.createWorktree('/repo', PANE_ID, WORKTREES_ROOT)
+        return yield* gitOps.createWorktree('/repo', OWNER, Option.none())
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer), Effect.result)
 
       assert.isTrue(Result.isFailure(result))
@@ -226,7 +230,7 @@ describe('makeGitOps', () => {
     })
   )
 
-  it.effect('removeWorktree succeeds on a zero exit', () =>
+  it.effect('releaseWorktree succeeds on a zero exit', () =>
     Effect.gen(function* () {
       const { testLayer, loggerLayer } = makeTestSetup(() => 0)
       const info: WorktreeInfo = {
@@ -237,12 +241,12 @@ describe('makeGitOps', () => {
 
       yield* Effect.gen(function* () {
         const gitOps = yield* TestGitOps
-        yield* gitOps.removeWorktree(info, PANE_ID)
+        yield* gitOps.releaseWorktree(info, PANE_ID)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
     })
   )
 
-  it.effect('removeWorktree tries prune as fallback when remove fails', () =>
+  it.effect('releaseWorktree tries prune as fallback when remove fails', () =>
     Effect.gen(function* () {
       let commandCount = 0
       const { capturedLogs, testLayer, loggerLayer } = makeTestSetup(() => {
@@ -257,16 +261,16 @@ describe('makeGitOps', () => {
 
       yield* Effect.gen(function* () {
         const gitOps = yield* TestGitOps
-        yield* gitOps.removeWorktree(info, PANE_ID)
+        yield* gitOps.releaseWorktree(info, PANE_ID)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
       const logs = capturedLogs.map((log) => String(log))
       assert.isTrue(logs.some((log) => log.includes('Standard worktree remove failed')))
-      assert.isTrue(logs.some((log) => log.includes('Pruned pane worktree')))
+      assert.isTrue(logs.some((log) => log.includes('Pruned worktree')))
     })
   )
 
-  it.effect('removeWorktree logs warning when both remove and prune fail', () =>
+  it.effect('releaseWorktree logs warning when both remove and prune fail', () =>
     Effect.gen(function* () {
       const { capturedLogs, testLayer, loggerLayer } = makeTestSetup(() => 1)
       const info: WorktreeInfo = {
@@ -277,7 +281,7 @@ describe('makeGitOps', () => {
 
       yield* Effect.gen(function* () {
         const gitOps = yield* TestGitOps
-        yield* gitOps.removeWorktree(info, PANE_ID)
+        yield* gitOps.releaseWorktree(info, PANE_ID)
       }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
 
       const logs = capturedLogs.map((log) => String(log))
@@ -302,7 +306,7 @@ describe('makeGitOps', () => {
     })
     return Effect.gen(function* () {
       const gitOps = yield* TestGitOps
-      const removing = yield* Effect.forkChild(gitOps.removeWorktree(WORKTREE_INFO, PANE_ID))
+      const removing = yield* Effect.forkChild(gitOps.releaseWorktree(WORKTREE_INFO, PANE_ID))
       yield* TestClock.adjust(Duration.seconds(10))
       yield* Fiber.join(removing)
       return setup.capturedLogs.map(String)
@@ -310,7 +314,7 @@ describe('makeGitOps', () => {
   }
 
   it.effect(
-    'removeWorktree deletes the empty directory git leaves behind, retrying while it is busy',
+    'releaseWorktree deletes the empty directory git leaves behind, retrying while it is busy',
     () =>
       Effect.gen(function* () {
         const removed: string[] = []
@@ -330,7 +334,7 @@ describe('makeGitOps', () => {
       })
   )
 
-  it.effect('removeWorktree keeps a leftover directory that still has files in it', () =>
+  it.effect('releaseWorktree keeps a leftover directory that still has files in it', () =>
     Effect.gen(function* () {
       const logs = yield* removeLeftover({ directoryEntries: ['notes.txt'] })
 
@@ -338,7 +342,7 @@ describe('makeGitOps', () => {
     })
   )
 
-  it.effect('removeWorktree stops retrying and keeps the directory once files appear in it', () =>
+  it.effect('releaseWorktree stops retrying and keeps the directory once files appear in it', () =>
     Effect.gen(function* () {
       let reads = 0
       let removes = 0
@@ -352,7 +356,7 @@ describe('makeGitOps', () => {
     })
   )
 
-  it.effect('removeWorktree does nothing more when the directory is already gone', () =>
+  it.effect('releaseWorktree does nothing more when the directory is already gone', () =>
     Effect.gen(function* () {
       const logs = yield* removeLeftover({ worktreeExists: false })
 
@@ -360,7 +364,7 @@ describe('makeGitOps', () => {
     })
   )
 
-  it.effect('removeWorktree succeeds and warns when the empty directory stays busy', () =>
+  it.effect('releaseWorktree succeeds and warns when the empty directory stays busy', () =>
     Effect.gen(function* () {
       const logs = yield* removeLeftover({ remove: () => Effect.fail(busy) })
 
@@ -558,6 +562,75 @@ describe('makeGitOps', () => {
         assert.instanceOf(result.failure, WorktreeReattachError)
       }
       assert.strictEqual(commands.filter(isWorktreeAdd).length, 0)
+    })
+  )
+})
+
+describe('slugify', () => {
+  const cases: ReadonlyArray<readonly [string, string, string]> = [
+    [
+      'lowercases and replaces other characters with hyphens',
+      'Fix Login: redirect_loop',
+      'fix-login-redirect-loop'
+    ],
+    ['collapses runs of hyphens and symbols', 'a --- b !!! c', 'a-b-c'],
+    ['trims leading and trailing hyphens', '--Hello--', 'hello'],
+    ['returns empty when no letter or digit remains', '!!! ???', ''],
+    ['drops non-ASCII letters', 'café au lait', 'caf-au-lait']
+  ]
+  for (const [name, input, expected] of cases) {
+    it(name, () => assert.strictEqual(slugify(input), expected))
+  }
+
+  it('cuts at 40 characters without leaving a trailing hyphen', () => {
+    const slug = slugify(`${'a'.repeat(39)} bbbbbb`)
+    assert.deepStrictEqual([slug.length, slug.endsWith('-')], [39, false])
+  })
+
+  it('keeps exactly 40 characters when the text is longer', () => {
+    assert.strictEqual(slugify('a'.repeat(60)).length, 40)
+  })
+})
+
+describe('createWorktree with a name hint', () => {
+  const create = (hint: string, exitCodeFor: (command: ChildProcess.Command) => number) =>
+    Effect.gen(function* () {
+      const { testLayer, loggerLayer } = makeTestSetup(exitCodeFor)
+      return yield* Effect.gen(function* () {
+        const gitOps = yield* TestGitOps
+        return yield* gitOps.createWorktree('/repo', OWNER, Option.some(hint))
+      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+    })
+
+  it.effect('names the branch and directory after the slugified hint', () =>
+    Effect.gen(function* () {
+      const info = yield* create('Fix login redirect', (command) => (isRevParse(command) ? 1 : 0))
+
+      assert.deepStrictEqual(
+        [info.branch, info.path.endsWith('fix-login-redirect')],
+        ['dia/fix-login-redirect', true]
+      )
+    })
+  )
+
+  it.effect('appends four hex digits when the branch already exists', () =>
+    Effect.gen(function* () {
+      let revParseCalls = 0
+      const info = yield* create('Fix login', (command) => {
+        if (!isRevParse(command)) return 0
+        revParseCalls++
+        return revParseCalls === 1 ? 0 : 1
+      })
+
+      assert.match(info.branch, /^dia\/fix-login-[0-9a-f]{4}$/)
+    })
+  )
+
+  it.effect('falls back to an adjective-noun name when the hint has no letter or digit', () =>
+    Effect.gen(function* () {
+      const info = yield* create('!!!', (command) => (isRevParse(command) ? 1 : 0))
+
+      assert.match(info.branch, /^dia\/[a-z]+-[a-z]+$/)
     })
   )
 })

@@ -37,7 +37,7 @@ const makeRepo = Effect.fn('makeRepo')(function* (files: Record<string, string>)
 
 const findIn = Effect.fn('findIn')(function* (files: Record<string, string>) {
   const root = yield* makeRepo(files)
-  const gitOps = yield* makeGitOps
+  const gitOps = yield* makeGitOps('/unused')
   const found = yield* gitOps.findIncludedFiles(root, PANE_ID)
   return Option.map(found, (paths) => [...paths].sort())
 })
@@ -115,7 +115,7 @@ describe('copyIncludedFiles', () => {
         yield* fs.writeFileString(path.join(sourceRepo, 'config', 'secrets.json'), 'source')
         yield* fs.writeFileString(path.join(sourceRepo, '.env'), 'source')
         yield* fs.writeFileString(path.join(worktree, '.env'), 'already here')
-        const gitOps = yield* makeGitOps
+        const gitOps = yield* makeGitOps('/unused')
 
         const failures = yield* gitOps.copyIncludedFiles(
           { path: worktree, branch: 'dia/calm-fox', sourceRepo },

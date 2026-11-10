@@ -207,7 +207,6 @@ app.whenReady().then(async () => {
           hostEntry: join(import.meta.dirname, 'host.js'),
           init: HostInit.make({
             userDataPath: app.getPath('userData'),
-            worktreesRoot: join(app.getPath('userData'), 'worktrees'),
             pluginsRoot: join(app.getAppPath(), 'plugins'),
             pluginApiPath: join(app.getAppPath(), 'out', 'main', 'plugin-api.js'),
             logFilePath,

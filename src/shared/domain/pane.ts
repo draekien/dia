@@ -47,6 +47,31 @@ export const WorktreeInfo = Schema.Struct({
 export type WorktreeInfo = typeof WorktreeInfo.Type
 
 /**
+ * Who a worktree serves: the pane whose session runs in it and the `label` Settings › Worktrees
+ * shows for it, such as `Tab · dia` or `Issue · Fix login redirect loop`.
+ */
+export const WorktreeOwner = Schema.Struct({
+  paneId: Schema.String,
+  label: Schema.String
+})
+export type WorktreeOwner = typeof WorktreeOwner.Type
+
+/** A released worktree whose directory is gone; its branch is kept. */
+export const WorktreeReleased = Schema.TaggedStruct('WorktreeReleased', {})
+export type WorktreeReleased = typeof WorktreeReleased.Type
+
+/**
+ * A released worktree that is still on disk because `changedFiles` files in it are modified or
+ * untracked; it waits for the user's decision on Settings › Worktrees.
+ */
+export const WorktreeKept = Schema.TaggedStruct('WorktreeKept', { changedFiles: Schema.Int })
+export type WorktreeKept = typeof WorktreeKept.Type
+
+/** What releasing a worktree did. */
+export const ReleaseOutcome = Schema.Union([WorktreeReleased, WorktreeKept])
+export type ReleaseOutcome = typeof ReleaseOutcome.Type
+
+/**
  * A reasoning effort the agent can cap adaptive thinking at, from least to most effort. A model
  * supports some or all of them; see `ModelOption.effortLevels`.
  */

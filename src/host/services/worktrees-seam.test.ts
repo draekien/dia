@@ -1,5 +1,5 @@
 import { assert, describe, it } from '@effect/vitest'
-import type { WorktreeInfo } from '@shared/domain/pane'
+import { type WorktreeInfo, WorktreeReleased } from '@shared/domain/pane'
 import { fakeUse } from '@shared/plugin/plugin-registry.fake'
 import { Effect, Option } from 'effect'
 import { type GitOps, WorktreesKey, withGitOps } from './worktrees-seam'
@@ -12,7 +12,7 @@ const registryProviding = (provided: Option.Option<unknown>) => ({
 
 const providedGitOps: GitOps = {
   createWorktree: () => Effect.succeed(info),
-  removeWorktree: () => Effect.void,
+  releaseWorktree: () => Effect.succeed(WorktreeReleased.make({})),
   reattachWorktree: () => Effect.succeed(info),
   findIncludedFiles: () => Effect.succeed(Option.none()),
   copyIncludedFiles: () => Effect.succeed([])
@@ -36,13 +36,13 @@ describe('withGitOps', () => {
     ],
     [
       'the service lacks reattachWorktree',
-      Option.some({ createWorktree: () => {}, removeWorktree: () => {} })
+      Option.some({ createWorktree: () => {}, releaseWorktree: () => {} })
     ],
     [
       'the service lacks the include operations of an older worktrees plugin',
       Option.some({
         createWorktree: () => {},
-        removeWorktree: () => {},
+        releaseWorktree: () => {},
         reattachWorktree: () => {}
       })
     ],
