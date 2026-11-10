@@ -46,46 +46,15 @@ export type WorktreesAtom = ReturnType<typeof makeWorktreesAtom>
 
 const plural = (count: number) => `${count} changed ${count === 1 ? 'file' : 'files'}`
 
-const stateName = (state: LedgerState): string => {
-  switch (state._tag) {
-    case 'Active':
-      return 'In use'
-    case 'NeedsDecision':
-      return 'Needs decision'
-    case 'Kept':
-      return 'Kept'
-    case 'Removed':
-      return 'Removed'
-  }
-}
-
-const stateFill = (state: LedgerState) => {
-  switch (state._tag) {
-    case 'Active':
-      return 'half'
-    case 'NeedsDecision':
-      return 'none'
-    case 'Kept':
-    case 'Removed':
-      return 'full'
-  }
-}
+const STATE_VIEW = {
+  Active: { name: 'In use', word: 'in use', fill: 'half' },
+  NeedsDecision: { name: 'Needs decision', word: 'waiting for your decision', fill: 'none' },
+  Kept: { name: 'Kept', word: 'kept', fill: 'full' },
+  Removed: { name: 'Removed', word: 'removed', fill: 'full' }
+} as const satisfies Record<LedgerState['_tag'], { name: string; word: string; fill: string }>
 
 const changedFiles = (state: LedgerState): string =>
   state._tag === 'NeedsDecision' || state._tag === 'Kept' ? plural(state.changedFiles) : ''
-
-const stateWord = (state: LedgerState): string => {
-  switch (state._tag) {
-    case 'Active':
-      return 'in use'
-    case 'NeedsDecision':
-      return 'waiting for your decision'
-    case 'Kept':
-      return 'kept'
-    case 'Removed':
-      return 'removed'
-  }
-}
 
 type Action = typeof DiscardWorktree | typeof KeepWorktree
 
@@ -102,7 +71,7 @@ const runAction = (ctx: Pick<PluginServices, 'name'>, action: Action, entry: Led
     toast.add({
       title:
         failure._tag === 'LedgerStateChanged'
-          ? `${entry.info.branch} is now ${stateWord(failure.state)}`
+          ? `${entry.info.branch} is now ${STATE_VIEW[failure.state._tag].word}`
           : `Could not update ${entry.info.branch}`,
       description:
         failure._tag === 'LedgerStateChanged'
@@ -138,8 +107,8 @@ function WorktreeRow({
         </ListRowSubject>
         <ListRowFact>
           <Status>
-            <StatusMedia fill={stateFill(entry.state)} />
-            <StatusName>{stateName(entry.state)}</StatusName>
+            <StatusMedia fill={STATE_VIEW[entry.state._tag].fill} />
+            <StatusName>{STATE_VIEW[entry.state._tag].name}</StatusName>
           </Status>
         </ListRowFact>
         <ListRowFact narrow="hide" className="text-ink-muted">

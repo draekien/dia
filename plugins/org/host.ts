@@ -280,15 +280,6 @@ const followWorkspace = (
     yield* Deferred.await(first)
   })
 
-const directoryOf = (workspace: Ref.Ref<Option.Option<Workspace>>, projectId: ProjectId) =>
-  Effect.map(Ref.get(workspace), (current) =>
-    Option.flatMap(current, (value) =>
-      Option.fromNullishOr(
-        value.projects.find((entry) => entry.project.projectId === projectId)?.project.directory
-      )
-    )
-  )
-
 const projectOf = (workspace: Ref.Ref<Option.Option<Workspace>>, projectId: ProjectId) =>
   Effect.map(Ref.get(workspace), (current) =>
     Option.flatMap(current, (value) =>
@@ -377,7 +368,11 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     }).pipe(Effect.provideService(SqlClient.SqlClient, sql))
     const dispatcher = yield* makeDispatcher({
       org,
-      projectDirectory: (objective) => directoryOf(workspace, objective.projectId),
+      projectDirectory: (objective) =>
+        Effect.map(
+          projectOf(workspace, objective.projectId),
+          Option.map((project) => project.directory)
+        ),
       issueWorkspace: worktrees,
       attach: ctx.sessions.attach,
       sessionTools

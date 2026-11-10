@@ -118,23 +118,24 @@ export const makeGitOps = (worktreesRoot: string) =>
         Option.map(slugify),
         Option.filter((slug) => slug !== '')
       )
-      const isFree = Effect.fnUntraced(function* (slug: string) {
-        const dirPath = path.join(worktreesRoot, slug)
-        const dirTaken = yield* fs.exists(dirPath).pipe(Effect.orElseSucceed(() => false))
-        return !dirTaken && !(yield* branchExists(sourceRepo, paneId, `dia/${slug}`))
+      const candidate = (slug: string) => ({
+        path: path.join(worktreesRoot, slug),
+        branch: `dia/${slug}`
       })
+      const isFree = Effect.fnUntraced(function* (slug: string) {
+        const { path: dirPath, branch } = candidate(slug)
+        const dirTaken = yield* fs.exists(dirPath).pipe(Effect.orElseSucceed(() => false))
+        return !dirTaken && !(yield* branchExists(sourceRepo, paneId, branch))
+      })
+      const nextBase = Option.isSome(hinted) ? Effect.succeed(hinted.value) : generateWorktreeSlug()
       const randomSuffix = Effect.map(Random.nextIntBetween(0x1000, 0x10000), (n) => n.toString(16))
 
       for (let attempt = 0; attempt < MAX_SLUG_ATTEMPTS; attempt++) {
-        const base = Option.isSome(hinted) ? hinted.value : yield* generateWorktreeSlug()
+        const base = yield* nextBase
         const slug = Option.isSome(hinted) && attempt > 0 ? `${base}-${yield* randomSuffix}` : base
-        if (yield* isFree(slug))
-          return { path: path.join(worktreesRoot, slug), branch: `dia/${slug}` }
+        if (yield* isFree(slug)) return candidate(slug)
       }
-
-      const base = Option.isSome(hinted) ? hinted.value : yield* generateWorktreeSlug()
-      const slug = `${base}-${yield* randomSuffix}`
-      return { path: path.join(worktreesRoot, slug), branch: `dia/${slug}` }
+      return candidate(`${yield* nextBase}-${yield* randomSuffix}`)
     })
 
     const createWorktree = Effect.fn('GitOps.createWorktree')(function* (

@@ -130,13 +130,7 @@ export const makeIssueWorkspace = (deps: {
           cause: included.failure.cause
         })
       } else if (Option.isSome(included.success) && included.success.value.length > 0) {
-        const failures = yield* git.copyIncludedFiles(info, included.success.value, issue.paneId)
-        if (failures.length > 0) {
-          yield* Effect.logWarning('Could not copy some included files', {
-            issueId: issue.id,
-            failures
-          })
-        }
+        yield* git.copyIncludedFiles(info, included.success.value, issue.paneId)
       }
       return IssueDirectory.make({ path: info.path })
     })

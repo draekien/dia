@@ -178,6 +178,8 @@ export const makeLedger = (sql: SqlClient.SqlClient) =>
 
     const infoOf = (row: Row): WorktreeInfo => entryOf(row).info
     const ownerOf = (row: Row): WorktreeOwner => entryOf(row).owner
+    const ownerOrAdopted = (row: Row | undefined, paneId: PaneId): WorktreeOwner =>
+      row === undefined ? { paneId, label: `Pane ${paneId}` } : ownerOf(row)
 
     const recordCreated: Ledger['recordCreated'] = (info, owner) =>
       withLock(info.path, write(info, owner, Active.make({})))
@@ -193,11 +195,7 @@ export const makeLedger = (sql: SqlClient.SqlClient) =>
               paneId
             })
           }
-          yield* write(
-            info,
-            row === undefined ? { paneId, label: `Pane ${paneId}` } : ownerOf(row),
-            Active.make({})
-          )
+          yield* write(info, ownerOrAdopted(row, paneId), Active.make({}))
         })
       )
 
@@ -214,7 +212,7 @@ export const makeLedger = (sql: SqlClient.SqlClient) =>
             return outcomeOf(stateOf(row))
           }
           const outcome = yield* doRelease
-          const owner = row === undefined ? { paneId, label: `Pane ${paneId}` } : ownerOf(row)
+          const owner = ownerOrAdopted(row, paneId)
           if (outcome._tag === 'WorktreeKept') {
             yield* write(info, owner, NeedsDecision.make({ changedFiles: outcome.changedFiles }))
           } else if (row !== undefined) {
