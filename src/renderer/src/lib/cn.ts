@@ -1,5 +1,10 @@
 import { createCn } from 'cn/config'
 
+/**
+ * Joins class names and resolves Tailwind conflicts, knowing the design system's custom radius,
+ * spacing, text, shadow, ease, container, duration and z tokens. Use it in the design-system
+ * components.
+ */
 export const cn = createCn({
   extend: {
     theme: {

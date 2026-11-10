@@ -7,6 +7,7 @@ import {
   Effect,
   PubSub,
   Ref,
+  Schema,
   type Scope,
   Stream
 } from 'effect'
@@ -33,7 +34,7 @@ import {
   isAssignable,
   isClosed,
   isStarted,
-  type ListedAssignee,
+  ListedAssignee,
   type NewObjective,
   type NewWorkIssue,
   Objective,
@@ -67,6 +68,8 @@ import {
 const REQUEUEABLE_STATUSES = StartedStatus.literals.filter((status) => status !== 'in_review')
 
 const TRIAGE_TARGET: Record<TriageDecision, IssueStatus> = { accept: 'todo', decline: 'canceled' }
+
+const sameAssignees = Schema.toEquivalence(Schema.Array(ListedAssignee))
 
 interface HeldProvider {
   readonly label: string
@@ -614,10 +617,13 @@ export const makeIssues = (projectExists: (projectId: ProjectId) => Effect.Effec
     }
 
     const setAssignees = (provider: ProviderId, assignees: ReadonlyArray<ListedAssignee>) =>
-      Ref.update(providers, (current) => {
+      Ref.modify(providers, (current) => {
         const held = current.get(provider)
-        return held === undefined ? current : new Map(current).set(provider, { ...held, assignees })
-      }).pipe(Effect.andThen(publishChange))
+        if (held === undefined || sameAssignees(held.assignees, assignees)) {
+          return [false, current] as const
+        }
+        return [true, new Map(current).set(provider, { ...held, assignees })] as const
+      }).pipe(Effect.flatMap((changed) => (changed ? publishChange : Effect.void)))
 
     const releaseProvider = (provider: ProviderId) =>
       Effect.gen(function* () {

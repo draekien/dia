@@ -514,7 +514,9 @@ export const makeDispatcher = (deps: {
       const waiting = new Map(startable.map(({ issue }) => [issue.id, issue.assignee?.id] as const))
       yield* Ref.update(failed, (current) => {
         const next = new Map(
-          [...current].filter(([issueId, hireId]) => waiting.get(issueId) === hireId)
+          [...current].filter(
+            ([issueId, hireId]) => stillStarted.has(issueId) || waiting.get(issueId) === hireId
+          )
         )
         return next.size === current.size ? current : next
       })
