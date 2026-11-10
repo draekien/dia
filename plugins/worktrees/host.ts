@@ -26,9 +26,10 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
   Effect.gen(function* () {
     const sql = yield* ctx.database(worktreeMigrations)
     const ledger = yield* makeLedger(sql)
-    const path = yield* Path.Path.pipe(Effect.provide(NodeServices.layer))
-    const root = path.join(ctx.dataDir, 'trees')
-    const git = yield* makeGitOps(root).pipe(Effect.provide(NodeServices.layer))
+    const { git, root } = yield* Effect.gen(function* () {
+      const root = (yield* Path.Path).join(ctx.dataDir, 'trees')
+      return { git: yield* makeGitOps(root), root }
+    }).pipe(Effect.provide(NodeServices.layer))
     yield* ctx.serve(WatchWorktrees, () => ledger.changes)
     yield* ctx.serve(DiscardWorktree, ({ path }) => ledger.discard(path, git.forceRemoveWorktree))
     yield* ctx.serve(KeepWorktree, ({ path }) => ledger.keep(path))

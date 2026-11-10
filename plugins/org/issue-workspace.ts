@@ -112,7 +112,7 @@ export const makeIssueWorkspace = (deps: {
         git.createWorktree(
           directory,
           { paneId: issue.paneId, label: `Issue · ${issue.title}` },
-          Option.some(`${issue.title} ${issue.id.slice(0, 8)}`)
+          Option.some(`${issue.title.slice(0, 31)} ${issue.id.slice(0, 8)}`)
         )
       )
       if (created._tag === 'Failure') {

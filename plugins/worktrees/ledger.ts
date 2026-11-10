@@ -148,6 +148,10 @@ export const makeLedger = (sql: SqlClient.SqlClient) =>
       Effect.orDie
     )
     const entries = yield* SubscriptionRef.make(yield* selectAll)
+    const publishLock = Semaphore.makeUnsafe(1)
+    const publish = publishLock.withPermit(
+      Effect.flatMap(selectAll, (rows) => SubscriptionRef.set(entries, rows))
+    )
 
     const find = (path: string) =>
       sql`SELECT * FROM worktrees WHERE path = ${path}`.pipe(
@@ -172,7 +176,7 @@ export const makeLedger = (sql: SqlClient.SqlClient) =>
         changed_files: changedFilesOf(state),
         updated_at: updatedAt
       })}`.pipe(Effect.orDie)
-      yield* SubscriptionRef.set(entries, yield* selectAll)
+      yield* publish
       yield* Effect.logInfo('Worktree ledger updated', { path: info.path, state: state._tag })
     })
 
