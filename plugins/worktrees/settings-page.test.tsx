@@ -68,10 +68,31 @@ const renderPage = async () => {
   await screen.findByRole('list')
 }
 
-const buttonsOf = (branch: string) =>
-  Array.from(screen.getByText(branch).closest('li')?.querySelectorAll('button') ?? []).map(
-    (button) => button.textContent
-  )
+const rowOf = (branch: string) => screen.getByText(branch).closest('li')
+
+const trigger = (branch: string) => screen.queryByRole('button', { name: `Actions for ${branch}` })
+
+const openActions = async (branch: string) => {
+  const button = trigger(branch)
+  if (button === null) throw new Error(`No actions for ${branch}`)
+  fireEvent.click(button)
+  return screen.findAllByRole('menuitem')
+}
+
+const actionsOf = async (branch: string) => {
+  if (trigger(branch) === null) return []
+  const items = (await openActions(branch)).map((item) => item.textContent)
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+  await waitFor(() => expect(screen.queryAllByRole('menuitem')).toEqual([]))
+  return items
+}
+
+const choose = async (branch: string, action: string) => {
+  const items = await openActions(branch)
+  const item = items.find((candidate) => candidate.textContent === action)
+  if (item === undefined) throw new Error(`No ${action} for ${branch}`)
+  fireEvent.click(item)
+}
 
 afterEach(() => {
   cleanup()
@@ -87,13 +108,13 @@ describe('Worktrees settings page', () => {
 
     await renderPage()
 
-    expect(screen.getByText('dia/live').closest('li')?.textContent).toContain('Tab · dia')
-    expect(screen.getByText('dia/dirty').closest('li')?.textContent).toContain(
-      'Issue · Fix login' + 'Needs your decision, 1 changed file'
+    expect(rowOf('dia/live')?.textContent).toBe('dia/liveTab · diaIn use')
+    expect(rowOf('dia/dirty')?.textContent).toBe(
+      'dia/dirtyIssue · Fix loginNeeds decision1 changed file'
     )
   })
 
-  it('offers Keep and Discard for NeedsDecision, only Discard for Kept, and nothing otherwise', async () => {
+  it('offers Keep and Discard for NeedsDecision, only Discard for Kept, and no action menu otherwise', async () => {
     installHost([
       entry('a', 'l', NeedsDecision.make({ changedFiles: 2 })),
       entry('b', 'l', Kept.make({ changedFiles: 2 })),
@@ -103,19 +124,17 @@ describe('Worktrees settings page', () => {
 
     await renderPage()
 
-    expect(['dia/a', 'dia/b', 'dia/c', 'dia/d'].map(buttonsOf)).toEqual([
-      ['Keep worktree', 'Discard and remove'],
-      ['Discard and remove'],
-      [],
-      []
-    ])
+    const offered = []
+    for (const branch of ['dia/a', 'dia/b', 'dia/c', 'dia/d']) offered.push(await actionsOf(branch))
+
+    expect(offered).toEqual([['Keep', 'Remove'], ['Remove'], [], []])
   })
 
   it('sends DiscardWorktree with the worktree path', async () => {
     const host = installHost([entry('a', 'l', Kept.make({ changedFiles: 2 }))])
     await renderPage()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Discard and remove' }))
+    await choose('dia/a', 'Remove')
 
     await waitFor(() =>
       expect(host.call.mock.calls).toEqual([['worktrees', 'DiscardWorktree', { path: '/trees/a' }]])
@@ -126,7 +145,7 @@ describe('Worktrees settings page', () => {
     const host = installHost([entry('a', 'l', NeedsDecision.make({ changedFiles: 2 }))])
     await renderPage()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Keep worktree' }))
+    await choose('dia/a', 'Keep')
 
     await waitFor(() =>
       expect(host.call.mock.calls).toEqual([['worktrees', 'KeepWorktree', { path: '/trees/a' }]])
@@ -143,10 +162,10 @@ describe('Worktrees settings page', () => {
     }))
     await renderPage()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Discard and remove' }))
+    await choose('dia/a', 'Remove')
     await host.push([entry('a', 'l', Active.make({}))])
 
     expect(await screen.findByText('dia/a is now in use')).toBeTruthy()
-    expect(buttonsOf('dia/a')).toEqual([])
+    await waitFor(() => expect(trigger('dia/a')).toBeNull())
   })
 })

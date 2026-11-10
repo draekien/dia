@@ -3,14 +3,31 @@ import type { PluginServices } from '@dia/plugin'
 import {
   Button,
   callHost,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   followHost,
+  List,
+  ListRow,
+  ListRowAction,
+  ListRowDescription,
+  ListRowFact,
+  ListRowLink,
+  ListRowName,
+  ListRowSubject,
   SettingsSectionHeading,
   Skeleton,
+  Status,
+  StatusMedia,
+  StatusName,
   toast
 } from '@dia/renderer-plugin'
 import { useAtomRefresh, useAtomValue } from '@effect/atom-react'
 import { Cause, Effect, Option, Result } from 'effect'
 import { AsyncResult, Atom } from 'effect/reactivity'
+import { EllipsisIcon } from 'lucide-react'
 import { useState } from 'react'
 import {
   DiscardWorktree,
@@ -29,18 +46,33 @@ export type WorktreesAtom = ReturnType<typeof makeWorktreesAtom>
 
 const plural = (count: number) => `${count} changed ${count === 1 ? 'file' : 'files'}`
 
-const stateText = (state: LedgerState): string => {
+const stateName = (state: LedgerState): string => {
   switch (state._tag) {
     case 'Active':
       return 'In use'
     case 'NeedsDecision':
-      return `Needs your decision, ${plural(state.changedFiles)}`
+      return 'Needs decision'
     case 'Kept':
-      return `Kept, ${plural(state.changedFiles)}`
+      return 'Kept'
     case 'Removed':
       return 'Removed'
   }
 }
+
+const stateFill = (state: LedgerState) => {
+  switch (state._tag) {
+    case 'Active':
+      return 'half'
+    case 'NeedsDecision':
+      return 'none'
+    case 'Kept':
+    case 'Removed':
+      return 'full'
+  }
+}
+
+const changedFiles = (state: LedgerState): string =>
+  state._tag === 'NeedsDecision' || state._tag === 'Kept' ? plural(state.changedFiles) : ''
 
 const stateWord = (state: LedgerState): string => {
   switch (state._tag) {
@@ -98,44 +130,58 @@ function WorktreeRow({
   const discardable = decidable || entry.state._tag === 'Kept'
 
   return (
-    <li className="flex items-center gap-3 py-2">
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate font-mono text-xs" title={entry.info.path}>
-          {entry.info.branch}
-        </span>
-        <span className="truncate text-xs text-ink-muted">{entry.owner.label}</span>
-      </div>
-      <span className="w-56 text-xs text-ink-muted">{stateText(entry.state)}</span>
-      <div className="flex w-64 justify-end gap-2">
-        {decidable ? (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={pending}
-            onClick={() => void act(KeepWorktree)}
-          >
-            Keep worktree
-          </Button>
-        ) : null}
-        {discardable ? (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={pending}
-            onClick={() => void act(DiscardWorktree)}
-          >
-            Discard and remove
-          </Button>
-        ) : null}
-      </div>
-    </li>
+    <ListRow value={entry.info.path}>
+      <ListRowLink render={<div />} title={entry.info.path}>
+        <ListRowSubject>
+          <ListRowName className="font-mono">{entry.info.branch}</ListRowName>
+          <ListRowDescription>{entry.owner.label}</ListRowDescription>
+        </ListRowSubject>
+        <ListRowFact>
+          <Status>
+            <StatusMedia fill={stateFill(entry.state)} />
+            <StatusName>{stateName(entry.state)}</StatusName>
+          </Status>
+        </ListRowFact>
+        <ListRowFact narrow="hide" className="text-ink-muted">
+          {changedFiles(entry.state)}
+        </ListRowFact>
+      </ListRowLink>
+      {discardable ? (
+        <ListRowAction>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              disabled={pending}
+              render={
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={`Actions for ${entry.info.branch}`}
+                />
+              }
+            >
+              <EllipsisIcon />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuGroup>
+                {decidable ? (
+                  <DropdownMenuItem onClick={() => void act(KeepWorktree)}>Keep</DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem variant="destructive" onClick={() => void act(DiscardWorktree)}>
+                  Remove
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </ListRowAction>
+      ) : null}
+    </ListRow>
   )
 }
 
 /**
  * The Worktrees page of the Settings dialog: every git worktree dia created, with the branch, who
- * it serves and its state. A worktree left with modified or untracked files offers Keep worktree
- * and Discard and remove; a kept one offers Discard and remove. It follows `worktreesAtom` while
+ * it serves and its state. A worktree left with modified or untracked files offers Keep
+ * and Remove; a kept one offers Remove. It follows `worktreesAtom` while
  * shown; `ctx` is the `worktrees` renderer entry the actions go through.
  */
 export function WorktreesSettings({
@@ -149,7 +195,7 @@ export function WorktreesSettings({
   const retry = useAtomRefresh(worktreesAtom)
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 py-6">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-6">
       <SettingsSectionHeading id="worktrees-heading">Worktrees</SettingsSectionHeading>
       {AsyncResult.match(result, {
         onInitial: () => <Skeleton className="h-24 w-full" aria-busy="true" />,
@@ -172,11 +218,11 @@ export function WorktreesSettings({
               entries.length === 0 ? (
                 <p className="text-sm text-ink-muted">dia has not created a worktree yet.</p>
               ) : (
-                <ul className="flex flex-col divide-y border-y" aria-labelledby="worktrees-heading">
+                <List aria-labelledby="worktrees-heading">
                   {entries.map((entry) => (
                     <WorktreeRow key={entry.info.path} ctx={ctx} entry={entry} />
                   ))}
-                </ul>
+                </List>
               )
           })
       })}

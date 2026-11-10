@@ -199,7 +199,7 @@ export function List({
     props: mergeProps<'ul'>(
       {
         className: cn(
-          '@container grid grid-cols-[auto_auto_auto_minmax(0,auto)_minmax(0,1fr)_repeat(8,auto)_auto]',
+          '@container grid grid-cols-[auto_auto_auto_minmax(0,auto)_minmax(0,1fr)_repeat(8,auto)_auto_auto]',
           className
         )
       },
@@ -382,10 +382,10 @@ export function ListRowSelect({ className, ...props }: ListRowSelectProps): Reac
   )
 }
 
-const linkClass = 'col-[2/-2] grid h-full min-h-11 grid-cols-subgrid items-center pl-1'
+const linkClass = 'col-[2/-3] grid h-full min-h-11 grid-cols-subgrid items-center pl-1'
 
 const peekClass =
-  'col-[-2/-1] ml-1 flex size-6 shrink-0 items-center justify-center rounded-floor pointer-coarse:size-11'
+  'col-[-3/-2] ml-1 flex size-6 shrink-0 items-center justify-center rounded-floor pointer-coarse:size-11'
 
 /** Props for {@link ListRowPeek}. */
 export type ListRowPeekProps = Omit<React.ComponentProps<'button'>, 'children' | 'type'>
@@ -440,6 +440,33 @@ export function ListRowPeek({ className, ...props }: ListRowPeekProps): React.Re
       </svg>
     </button>
   )
+}
+
+const actionClass = 'col-[-2/-1] ml-1 flex items-center'
+
+/**
+ * The row's action control at its end, after `ListRowPeek`: one button, usually the trigger of a
+ * menu of the actions the item offers. It is outside `ListRowLink`, so it is its own tab stop and
+ * the `List` keys do not reach it. Name it after the row, such as "Actions for invoice REC-104".
+ * A loading row draws an empty slot.
+ */
+export function ListRowAction({
+  render,
+  className,
+  children,
+  ...props
+}: useRender.ComponentProps<'span'>): React.ReactElement {
+  const row = useListRow('ListRowAction')
+  const isRecord = row.kind === 'record'
+  return useRender({
+    defaultTagName: 'span',
+    render: isRecord ? render : <span />,
+    state: { slot: 'list-row-action' },
+    props: mergeProps<'span'>(
+      { className: cn(actionClass, className) },
+      isRecord ? { ...props, children } : {}
+    )
+  })
 }
 
 /**
