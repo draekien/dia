@@ -258,6 +258,8 @@ FinishIssue     { issueId }                        → Issue     | IssueNotFound
 
 `registerProvider` holds the provider until its scope closes; while held, `issues` follows its `assignees` stream. An assignee is valid for `assignIssue`, `createIssue` and `createObjective` only while a held provider lists its id; otherwise they fail with `AssigneeNotFound`. A stored reference is never rewritten: when the provider closes or stops listing the id, the issue keeps it. On release, the provider's started issues other than `in_review` return to `todo` with their session kept, so no issue other than an `in_review` one stays started without a session.
 
+The release runs SQL on the `issues` database, so the registering plugin's `whenProvided` scope must close before `issues` closes its database. `unload` already closes dependants first; closing the scope a `PluginRegistry` was made in (app shutdown, a test's scope) now unloads every plugin the same way, the last loaded first, instead of closing each plugin's scope in reverse load order without its dependants.
+
 ### Running issues (org)
 
 One `whenProvided([IssuesKey], …)` setup in `org` runs, in order:
@@ -282,8 +284,9 @@ Route `plan` calls `createObjective({ …, assignee: null }, [{ kind: 'planning'
 ### UI
 
 - `issues/renderer.ts` adds the PagesSlot entry `{ id: 'issues', label: 'Issues', order: 11 }`; its `target` is an objective id. It follows `WatchIssues`.
-- The objectives list is a `List` with one `ListRow` per objective: `ListRowName` the title, facts `Status` (open: fill half; completed: fill full), the priority label, and `RelativeTime` with `dateTime = new Date(createdAt).toISOString()` and `now` an ISO string read once per render.
-- The objective screen shows the issues as a `List`: `Status` with fill none for `triage`, `todo` and `canceled`, half for the six started statuses, full for `done`; `Entity` for the assignee; the refusal under the title in `triage`.
+- The Issues page shows the objectives list, and opening a row replaces the list with that objective's screen, which has an "Objectives" back button. A `target` objective id opens on that objective's screen.
+- The objectives list is a `List` with one `ListRow` per objective: `ListRowName` the title, `ListRowDescription` the project name, facts `Status` (open: fill half; completed: fill full), the priority label, and `RelativeTime` with `dateTime` the ISO string of `createdAt` and `now` an ISO string read once per render, both from Effect `DateTime`.
+- The objective screen shows the issues as an indented tree, not a `List`: an issue has no page for a `ListRowLink` to open, and its row holds an assignee select and triage controls that `List` has no column for. Each row shows `Status` with fill none for `triage`, `todo` and `canceled`, half for the six started statuses, full for `done`; the refusal under the title in `triage`. The assignee is an `AssigneeSelect` while the issue can be assigned, and an `Entity` otherwise. The screen has an Add issue form whose assignee is an `AssigneeSelect` over every held provider.
 - `AssigneeSelect` groups listed assignees by provider label. A stored reference shows "Removed assignee" when its provider is held and does not list the id, and "<provider id> not loaded" when its provider is not held.
 - The New objective dialog drops the assignee field and creates the objective with no first issues.
 - The Org page drops `ObjectivesView` (`org-view.ts`, `org-page.tsx`) and `workAtom`; the Dashboard follows `WatchOrgLive`.
