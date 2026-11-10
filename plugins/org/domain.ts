@@ -255,10 +255,6 @@ export type PlanRoute = typeof PlanRoute.Type
 export const DirectRoute = Schema.TaggedStruct('DirectRoute', { assignee: HireId })
 export type DirectRoute = typeof DirectRoute.Type
 
-/** How a new objective's first issue is created: {@link PlanRoute} or {@link DirectRoute}. */
-export const ObjectiveRoute = Schema.Union([PlanRoute, DirectRoute])
-export type ObjectiveRoute = typeof ObjectiveRoute.Type
-
 /**
  * A permission request a hired agent's session waits on: the tool `toolName` with `input`. Answer
  * it with the `AnswerPermission` call, naming `issueId` and `requestId`.

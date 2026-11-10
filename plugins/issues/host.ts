@@ -76,10 +76,7 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       ],
       { discard: true }
     )
-    yield* Effect.logInfo('Issues service provided', {
-      plugin: ctx.name,
-      objectives: (yield* issues.snapshot).objectives.length
-    })
+    yield* Effect.logInfo('Issues service provided', { plugin: ctx.name })
   })
 
 export default setup

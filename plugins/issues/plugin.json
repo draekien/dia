@@ -5,5 +5,5 @@
   "host": "host.ts",
   "renderer": "renderer.ts",
   "load": "eager",
-  "exports": ["domain.ts", "service.ts"]
+  "exports": ["domain.ts", "service.ts", "tool-input.ts"]
 }

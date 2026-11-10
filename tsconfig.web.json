@@ -39,6 +39,7 @@
     "plugins/example/messages.ts",
     "plugins/issues/domain.ts",
     "plugins/issues/service.ts",
+    "plugins/issues/tool-input.ts",
     "plugins/org/service.ts",
     "plugins/org/domain.ts",
     "plugins/org/calls.ts",

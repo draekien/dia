@@ -11,9 +11,6 @@ import {
   WorkTitle
 } from '@dia-plugin/issues/domain'
 import type { Issues } from '@dia-plugin/issues/service'
-import { Effect } from 'effect'
-import type { Dispatcher } from './dispatcher'
-import { DirectRoute, type HireId, ORG_PROVIDER, PlanRoute, prefixedTitle } from './domain'
 import {
   decodeField,
   decodeOptional,
@@ -23,7 +20,10 @@ import {
   present,
   required,
   result
-} from './tool-input'
+} from '@dia-plugin/issues/tool-input'
+import { Effect } from 'effect'
+import type { Dispatcher } from './dispatcher'
+import { DirectRoute, type HireId, ORG_PROVIDER, PlanRoute, prefixedTitle } from './domain'
 
 /** The most words a routing note may have (ADR-0053). */
 export const ROUTING_NOTE_MAX_WORDS = 30
