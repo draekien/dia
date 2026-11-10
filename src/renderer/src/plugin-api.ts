@@ -127,12 +127,19 @@ export { AboutDialog } from './components/about-dialog'
  * transcript and pending requests survive the chat plugin being unloaded or reloaded.
  */
 export { AccountBanner } from './components/account-banner'
+export * from './components/avatar'
+export * from './components/entity'
+export * from './components/figure'
 export { InstallNotice } from './components/install-notice'
+export * from './components/list'
+export * from './components/meter'
 export {
   OPEN_COMMAND_PALETTE_EVENT,
   openCommandPalette
 } from './components/open-command-palette'
 export { PermissionModeItems } from './components/permission-mode-items'
+export * from './components/preview-card'
+export * from './components/relative-time'
 export {
   CLAUDE_CODE_SETTINGS,
   OPEN_SETTINGS_EVENT,
@@ -140,8 +147,10 @@ export {
   type SettingsLocation
 } from './components/settings/open-settings'
 export { SettingsRow, SettingsSectionHeading } from './components/settings-section'
+export * from './components/status'
 export { StatusIndicator, statusLabel } from './components/status-indicator'
 export { StepStatusIcon, showsSetup, TabSetupSteps } from './components/tab-setup-steps'
+export * from './components/table'
 export { useTheme } from './components/theme-provider'
 export { TranscriptWidthToggle } from './components/transcript-width-toggle'
 export * from './components/ui/alert-dialog'

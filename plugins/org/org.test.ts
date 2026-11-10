@@ -6,26 +6,37 @@ import { Duration, Effect, Exit, FileSystem, Layer, Path, Scope, Stream } from '
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
 import { openDatabase } from '../../src/host/services/database'
-import { HireId, HireNotFound, type JobTitle, JobTitleId, JobTitleName, OverallCap } from './domain'
+import {
+  HireHasOpenIssues,
+  HireId,
+  HireNotFound,
+  IssuesNotLoaded,
+  type JobTitle,
+  JobTitleId,
+  JobTitleName,
+  OverallCap
+} from './domain'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { holdBuiltInDefinitions } from './registries.fake'
 import type { Org } from './service'
-import { makeWork } from './work'
 
 const openOrgIn = (filename: string, definitionsFilename = ':memory:') =>
   Effect.gen(function* () {
     const scope = yield* Scope.make()
     const sql = yield* openDatabase(filename, orgMigrations).pipe(Scope.provide(scope))
-    const org = yield* makeWork(() => Effect.succeed(true)).pipe(
-      Effect.flatMap(({ openIssuesOf }) => makeOrg(openIssuesOf)),
+    const org = yield* makeOrg.pipe(
       Effect.provideService(SqlClient.SqlClient, sql),
       Effect.provide(NodeCrypto.layer)
     )
     const definitions = yield* holdBuiltInDefinitions(org, definitionsFilename).pipe(
       Scope.provide(scope)
     )
-    return { org, definitions, close: Scope.close(scope, Exit.void) }
+    const openIssues = new Map<string, number>()
+    yield* org
+      .holdIssues({ countOpenIssues: (hireId) => Effect.succeed(openIssues.get(hireId) ?? 0) })
+      .pipe(Scope.provide(scope))
+    return { org, definitions, openIssues, close: Scope.close(scope, Exit.void) }
   })
 
 const freshOrg = Effect.map(openOrgIn(':memory:'), ({ org }) => org)
@@ -189,8 +200,7 @@ describe('Org job titles from the agent definition registry', () => {
     Effect.gen(function* () {
       const scope = yield* Scope.make()
       const sql = yield* openDatabase(':memory:', orgMigrations).pipe(Scope.provide(scope))
-      const org = yield* makeWork(() => Effect.succeed(true)).pipe(
-        Effect.flatMap(({ openIssuesOf }) => makeOrg(openIssuesOf)),
+      const org = yield* makeOrg.pipe(
         Effect.provideService(SqlClient.SqlClient, sql),
         Effect.provide(NodeCrypto.layer)
       )
@@ -508,6 +518,52 @@ describe('Org.dismiss', () => {
       )
       assert.strictEqual(error._tag, 'HireNotFound')
     })
+  )
+
+  it.effect('refuses a hired agent the issues plugin counts open issues for, and keeps it', () =>
+    Effect.gen(function* () {
+      const { org, openIssues } = yield* openOrgIn(':memory:')
+      const engineer = jobTitleNamed(yield* org.jobTitles, 'Software engineer')
+      const hired = yield* org.hire(engineer.id, null, null)
+      openIssues.set(hired.id, 2)
+      const error = yield* Effect.flip(org.dismiss(hired.id))
+      assert.deepStrictEqual(
+        [error, (yield* org.hiredAgents).map((hire) => hire.id)],
+        [HireHasOpenIssues.make({ hireId: hired.id, issues: 2 }), [hired.id]]
+      )
+    })
+  )
+
+  it.effect('refuses with IssuesNotLoaded while no issues are held, and keeps the hire', () =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make()
+      const sql = yield* openDatabase(':memory:', orgMigrations).pipe(Scope.provide(scope))
+      const org = yield* makeOrg.pipe(
+        Effect.provideService(SqlClient.SqlClient, sql),
+        Effect.provide(NodeCrypto.layer)
+      )
+      yield* holdBuiltInDefinitions(org).pipe(Scope.provide(scope))
+      const engineer = jobTitleNamed(yield* org.jobTitles, 'Software engineer')
+      const hired = yield* org.hire(engineer.id, null, null)
+      const error = yield* Effect.flip(org.dismiss(hired.id))
+      assert.deepStrictEqual([error, (yield* org.hiredAgents).length], [IssuesNotLoaded.make(), 1])
+      yield* Scope.close(scope, Exit.void)
+    })
+  )
+})
+
+describe('Org.watchHireChanges', () => {
+  it.effect('emits once after each hire, rename and dismiss', () =>
+    Effect.gen(function* () {
+      const { org, jobTitle } = yield* builtIn('Software engineer')
+      const changes = yield* org.watchHireChanges
+
+      const hired = yield* org.hire(jobTitle.id, null, null)
+      yield* org.renameHire(hired.id, AgentName.make('Ada'))
+      yield* org.dismiss(hired.id)
+
+      assert.strictEqual((yield* Stream.runCollect(Stream.take(changes, 3))).length, 3)
+    }).pipe(Effect.scoped)
   )
 })
 

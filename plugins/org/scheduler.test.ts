@@ -1,5 +1,6 @@
+import { IssueId, type ObjectivePriority } from '@dia-plugin/issues/domain'
 import { describe, expect, it } from 'vitest'
-import { HireId, IssueId, type ObjectivePriority, OverallCap } from './domain'
+import { HireId, OverallCap } from './domain'
 import { nextStarts, type StartCandidate } from './scheduler'
 
 const issue = (n: number) =>

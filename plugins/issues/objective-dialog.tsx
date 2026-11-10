@@ -1,4 +1,4 @@
-// @effect-diagnostics asyncFunction:off -- React callbacks await OrgCall's Promise; components hold no Effect runtime.
+// @effect-diagnostics asyncFunction:off -- React callbacks await IssuesCall's Promise; components hold no Effect runtime.
 import type { ProjectId } from '@dia/plugin'
 import {
   Button,
@@ -23,17 +23,9 @@ import {
 import { Result } from 'effect'
 import { Loader2Icon } from 'lucide-react'
 import { type FormEvent, useId, useState } from 'react'
-import { CreateObjective, type OrgSnapshot } from './calls'
-import {
-  type HireId,
-  type Objective,
-  ObjectiveId,
-  ObjectivePriority,
-  PlanRoute,
-  PRIORITY_LABELS
-} from './domain'
-import { commonFailureText, newId, type OrgCall, readWorkTitle } from './org-actions'
-import { AssigneeSelect } from './org-fields'
+import { CreateObjective } from './calls'
+import { type Objective, ObjectiveId, ObjectivePriority, PRIORITY_LABELS } from './domain'
+import { failureText, type IssuesCall, newId, readWorkTitle } from './issue-actions'
 
 /** A registered project the objective form offers: its id and the name to show. */
 export interface ProjectChoice {
@@ -44,26 +36,23 @@ export interface ProjectChoice {
 interface Errors {
   readonly project?: string
   readonly title?: string
-  readonly assignee?: string
   readonly create?: string
 }
 
 /**
- * The New objective dialog: a project from `projects`, a title, a description, a priority (default
- * Normal) and an assignee from `snapshot`'s hired agents, or none. `Create` sends the
- * `CreateObjective` call; on success `onCreated` gets the new objective. With no projects it asks
- * the user to add one and offers no `Create`.
+ * The New objective dialog: a project from `projects`, a title, a description and a priority
+ * (default Normal). `Create` sends the `CreateObjective` call for an unassigned objective with no
+ * issues; on success `onCreated` gets the new objective. With no projects it asks the user to add
+ * one and offers no `Create`.
  */
 export function ObjectiveDialog({
-  snapshot,
   projects,
   call,
   onCreated,
   onClose
 }: {
-  readonly snapshot: OrgSnapshot
   readonly projects: ReadonlyArray<ProjectChoice>
-  readonly call: OrgCall
+  readonly call: IssuesCall
   readonly onCreated: (objective: Objective) => void
   readonly onClose: () => void
 }) {
@@ -72,7 +61,6 @@ export function ObjectiveDialog({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<ObjectivePriority>('normal')
-  const [assignee, setAssignee] = useState<HireId | null>(null)
   const [errors, setErrors] = useState<Errors>({})
   const [busy, setBusy] = useState(false)
   const titleId = useId()
@@ -95,7 +83,7 @@ export function ObjectiveDialog({
           title: readTitle.success,
           description: description.trim(),
           priority,
-          route: PlanRoute.make({ assignee })
+          assignee: null
         }
       },
       id
@@ -105,10 +93,8 @@ export function ObjectiveDialog({
     switch (failure._tag) {
       case 'ProjectNotFound':
         return setErrors({ project: 'This project was removed' })
-      case 'HireNotFound':
-        return setErrors({ assignee: 'This agent was dismissed' })
       default:
-        return setErrors({ create: commonFailureText(failure) ?? failure._tag })
+        return setErrors({ create: failureText(failure) })
     }
   }
 
@@ -122,9 +108,7 @@ export function ObjectiveDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>New objective</DialogTitle>
-          <DialogDescription>
-            Its planning issue goes to the assignee, or waits until you assign it.
-          </DialogDescription>
+          <DialogDescription>Add its issues on the objective once it is created.</DialogDescription>
         </DialogHeader>
         {projects.length === 0 ? (
           <>
@@ -212,24 +196,6 @@ export function ObjectiveDialog({
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Assignee</Label>
-              <AssigneeSelect
-                label="Assignee"
-                none="Unassigned"
-                value={assignee}
-                hiredAgents={snapshot.hiredAgents}
-                jobTitles={snapshot.jobTitles}
-                className="w-full"
-                onChange={(next) => {
-                  setAssignee(next)
-                  setErrors({})
-                }}
-              />
-              {errors.assignee === undefined ? null : (
-                <p className="text-xs text-error">{errors.assignee}</p>
-              )}
             </div>
             <DialogFooter className="items-center">
               {errors.create === undefined ? null : (

@@ -361,6 +361,14 @@ const moveToAgentDefinitions = Effect.gen(function* () {
   })
 })
 
+const moveToIssuesPlugin = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  for (const table of ['objectives', 'issues', 'issue_comments', 'org_events']) {
+    yield* sql.unsafe(`ALTER TABLE ${table} RENAME TO ${table}_handover`)
+  }
+  yield* Effect.logInfo('Prepared the org to hand its objectives and issues to issues')
+})
+
 /**
  * The `org` plugin's migrations, passed to `ctx.database`. `1_create_org_tables` creates the
  * first roles, hired agents and org settings tables; `2_seed_org` inserts the default overall cap;
@@ -378,7 +386,9 @@ const moveToAgentDefinitions = Effect.gen(function* () {
  * issue and objective assignee, comment author and reporting line), moves each disabled job
  * title's flag to `job_title_settings`, renames the job titles table to `job_titles_handover` for
  * `org`'s host to hand over to `agent-definitions` and `mcp`, and adds each issue's `missing`
- * names, which must be `[]` unless the issue is in `triage`. Each runs once per database.
+ * names, which must be `[]` unless the issue is in `triage`; `10_issues_handover` renames the
+ * objectives, issues, issue comments and org events tables to `*_handover` for `org`'s host to
+ * hand over to `issues`. Each runs once per database.
  */
 export const orgMigrations: PluginMigrations = {
   '1_create_org_tables': createTables,
@@ -389,5 +399,6 @@ export const orgMigrations: PluginMigrations = {
   '6_objectives_tasks': createObjectivesAndTasks,
   '7_issues': moveToIssues,
   '8_executive_assistant': addExecutiveAssistant,
-  '9_agent_definitions': moveToAgentDefinitions
+  '9_agent_definitions': moveToAgentDefinitions,
+  '10_issues_handover': moveToIssuesPlugin
 }

@@ -1,20 +1,13 @@
-import { ProjectId } from '@dia/plugin'
-import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { assert, describe, it } from '@effect/vitest'
-import { Effect, Exit, Scope } from 'effect'
-import { SqlClient } from 'effect/sql'
-import { openDatabase } from '../../src/host/services/database'
-import { HireId, IssueId, ObjectiveId, PlanRoute, StartedStatus, WorkTitle } from './domain'
-import { type IssueToolScope, makeIssueTools } from './issue-tools'
-import { orgMigrations } from './migrations'
-import { makeOrg } from './org'
-import { holdBuiltInDefinitions } from './registries.fake'
-import { makeWork, type Work } from './work'
+import { Effect } from 'effect'
+import { IssueId, ObjectiveId, StartedStatus, WorkTitle } from './domain'
+import { type IssueToolWork, makeIssueTools } from './issue-tools'
+import { openIssues, orgRef, PROJECT, registerFixed } from './issues.fake'
 
-const PROJECT = ProjectId.make('00000000-0000-4000-8000-400000000001')
 const OBJECTIVE = ObjectiveId.make('00000000-0000-4000-8000-500000000001')
 const OTHER_OBJECTIVE = ObjectiveId.make('00000000-0000-4000-8000-500000000002')
 const MISSING_ISSUE = IssueId.make('00000000-0000-4000-8000-600000000099')
+const HIRE = 'ada'
 
 const objective = (id: ObjectiveId) => ({
   id,
@@ -22,30 +15,27 @@ const objective = (id: ObjectiveId) => ({
   title: WorkTitle.make('Ship the marketplace'),
   description: '',
   priority: 'normal' as const,
-  route: PlanRoute.make({ assignee: null })
+  assignee: null
 })
 
+const firstIssue = {
+  kind: 'planning' as const,
+  title: WorkTitle.make('Plan: Ship the marketplace'),
+  description: '',
+  assignee: null
+}
+
 const setUp = Effect.gen(function* () {
-  const scope = yield* Scope.make()
-  yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
-  const sql = yield* openDatabase(':memory:', orgMigrations).pipe(Scope.provide(scope))
-  const { work, runs, org } = yield* Effect.gen(function* () {
-    const made = yield* makeWork(() => Effect.succeed(true))
-    return { ...made, org: yield* makeOrg(made.openIssuesOf) }
-  }).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
-  yield* holdBuiltInDefinitions(org).pipe(Scope.provide(scope))
-  const jobTitle = (yield* org.jobTitles)[0]
-  assert.isDefined(jobTitle)
-  const hire = yield* org.hire(jobTitle.id, null, null)
-  yield* work.createObjective(objective(OBJECTIVE))
-  yield* work.createObjective(objective(OTHER_OBJECTIVE))
+  const { issues: work, sql } = yield* openIssues
+  const runs = yield* registerFixed(work, [HIRE])
+  yield* work.createObjective(objective(OBJECTIVE), [firstIssue])
+  yield* work.createObjective(objective(OTHER_OBJECTIVE), [firstIssue])
   const [own, other] = (yield* work.snapshot).issues
   assert.isDefined(own)
   assert.isDefined(other)
-  yield* work.assignIssue(own.id, hire.id)
-  assert.isTrue(yield* runs.markStarted(own.id, hire.id))
-  const scopeOf: IssueToolScope = { issueId: own.id, objectiveId: OBJECTIVE, hireId: hire.id }
-  const tools = new Map(makeIssueTools(work, scopeOf).map((tool) => [tool.name, tool]))
+  yield* work.assignIssue(own.id, orgRef(HIRE))
+  assert.isTrue(yield* runs.markStarted(own.id, HIRE))
+  const tools = new Map(runs.issueTools(own.id, HIRE).map((tool) => [tool.name, tool]))
   const run = (name: string, input: Record<string, string>) => {
     const tool = tools.get(name)
     assert.isDefined(tool, name)
@@ -61,7 +51,7 @@ const setUp = Effect.gen(function* () {
     description: '',
     assignee: null
   })
-  return { work, sql, run, issueOf, own, other, sibling, hire }
+  return { work, sql, run, issueOf, own, other, sibling }
 })
 
 describe('create_issue', () => {
@@ -132,16 +122,12 @@ describe('create_issue', () => {
 
   it.effect('returns a defect as Could not create the issue', () =>
     Effect.gen(function* () {
-      const dying: Pick<Work, 'proposeIssue' | 'updateIssue' | 'commentIssue'> = {
+      const dying: IssueToolWork = {
         proposeIssue: () => Effect.die(new Error('disk full')),
         updateIssue: () => Effect.die(new Error('disk full')),
         commentIssue: () => Effect.die(new Error('disk full'))
       }
-      const [create] = makeIssueTools(dying, {
-        issueId: MISSING_ISSUE,
-        objectiveId: OBJECTIVE,
-        hireId: HireId.make('00000000-0000-4000-8000-200000000001')
-      })
+      const [create] = makeIssueTools(dying, { issueId: MISSING_ISSUE, author: orgRef(HIRE) })
       assert.isDefined(create)
       const result = yield* create.run({ title: 'Anything' })
       assert.deepStrictEqual(result, { text: 'Could not create the issue.', isError: true })
@@ -253,7 +239,7 @@ describe('comment_issue', () => {
       const comments = (yield* env.work.snapshot).comments
       assert.deepStrictEqual(
         comments.map((comment) => [comment.issueId, comment.author, comment.body]),
-        [[env.own.id, env.hire.id, 'Planned three issues.']]
+        [[env.own.id, orgRef(HIRE), 'Planned three issues.']]
       )
       assert.deepStrictEqual(result, { text: `Commented on issue ${env.own.id}.`, isError: false })
     }).pipe(Effect.scoped)

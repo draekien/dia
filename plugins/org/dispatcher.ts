@@ -1,7 +1,6 @@
 import {
   type AgentBackend,
   type AgentSession,
-  type DiaTool,
   type HostSessions,
   type ModelOption,
   type OutboundMessage,
@@ -11,6 +10,8 @@ import {
   type SessionToolOptions,
   startPermissionMode
 } from '@dia/plugin'
+import type { Issue, IssueId, Objective } from '@dia-plugin/issues/domain'
+import type { Issues, ProviderIssues, StartableIssue } from '@dia-plugin/issues/service'
 import {
   Deferred,
   Effect,
@@ -28,20 +29,16 @@ import {
   agentName,
   type HiredAgent,
   type HireId,
-  type Issue,
-  type IssueId,
   type JobTitle,
   LiveWork,
   type MissingReference,
-  type Objective,
   PendingPermission,
-  PermissionNotPending
+  PermissionNotPending,
+  refusalOf
 } from './domain'
-import type { IssueToolScope } from './issue-tools'
 import { nextStarts } from './scheduler'
 import type { Org } from './service'
 import type { SessionTools, SessionToolsResult } from './session-tools'
-import type { IssueRuns, StartableIssue } from './work'
 
 type Turn = 'running' | 'awaiting-user' | 'idle'
 
@@ -146,10 +143,13 @@ export type ProjectDirectory = (objective: Objective) => Effect.Effect<Option.Op
  * Runs hired agents' issues as headless sessions within the overall cap (ADR-0033, ADR-0067).
  * `signal` asks for a scheduling pass; call it after any change that can start or resume an issue.
  * `lendBackend` lends the dispatcher an agent backend until the calling scope closes; with none,
- * nothing starts. `answerPermission` queues the user's answer to a pending permission request; the
- * agent resumes ahead of `todo` issues, up to one over the overall cap. `release` stops the issue's
- * session, if any, and lets an issue whose session failed start again; call it after the issue is
- * finished or reassigned. `message` sends `text` as a `queue` message to the issue's live session,
+ * nothing starts. `lendIssues` lends it the org's issues until the calling scope closes: it first
+ * returns every started issue other than `in_review` to `todo`, then runs a pass now and after
+ * each change to `issues`; each pass closes the session of an issue that is no longer started and
+ * lets an issue whose session failed start again once it is reassigned or leaves `todo`. When the
+ * lend ends, every session closes and nothing starts. `answerPermission` queues the user's answer
+ * to a pending permission request; the agent resumes ahead of `todo` issues, up to one over the
+ * overall cap. `message` sends `text` as a `queue` message to the issue's live session,
  * returning false when it has none. `live` reads the pending permission requests and the held slots.
  * `watchChanges` subscribes when run; the stream it returns emits once each time `live` may read
  * differently since the subscription.
@@ -162,7 +162,10 @@ export interface Dispatcher {
     requestId: string,
     response: PermissionResponse
   ) => Effect.Effect<void, PermissionNotPending>
-  readonly release: (issueId: IssueId) => Effect.Effect<void>
+  readonly lendIssues: (
+    issues: Pick<Issues, 'watchChanges'>,
+    runs: ProviderIssues
+  ) => Effect.Effect<void, never, Scope.Scope>
   readonly message: (issueId: IssueId, text: string) => Effect.Effect<boolean>
   readonly live: Effect.Effect<LiveWork>
   readonly watchChanges: Effect.Effect<Stream.Stream<void>, never, Scope.Scope>
@@ -184,31 +187,28 @@ interface RefusedIssue {
 }
 
 /**
- * Builds the {@link Dispatcher} for the `org` plugin's setup scope. It requeues every started issue
- * other than `in_review` left by an earlier setup, so each resumes its session when it next
- * starts, and it closes every session when the scope closes. `issueTools` builds the dia tools a
- * hired agent's session gets for its issue. `attach` shows each session in the agent overview
+ * Builds the {@link Dispatcher} for the `org` plugin's setup scope. It closes every session when
+ * the scope closes. `attach` shows each session in the agent overview
  * while it runs (ADR-0070); a permission answered from its pane is routed through
  * `answerPermission`. `sessionTools` resolves each job title's MCP servers and skills before an
- * issue takes a slot: an issue whose job title names a missing one moves to `triage` with the
- * missing names, and one whose names cannot be resolved yet waits for the next pass. A pass runs
+ * issue takes a slot: an issue whose job title names a missing one moves to `triage` with a
+ * refusal naming them, and one whose names cannot be resolved yet waits for the next pass. A pass runs
  * after each change to the job titles or to the registries `sessionTools` holds.
  */
 export const makeDispatcher = (deps: {
-  readonly runs: IssueRuns
   readonly org: Pick<Org, 'jobTitles' | 'hiredAgents' | 'settings' | 'watchJobTitleChanges'>
   readonly projectDirectory: ProjectDirectory
-  readonly issueTools: (scope: IssueToolScope) => ReadonlyArray<DiaTool>
   readonly attach: HostSessions['attach']
   readonly sessionTools: SessionTools
 }) =>
   Effect.gen(function* () {
-    const { runs, org, projectDirectory, issueTools, attach, sessionTools } = deps
+    const { org, projectDirectory, attach, sessionTools } = deps
     const pluginScope = yield* Effect.scope
     const issues = yield* SynchronizedRef.make(new Map<IssueId, LiveIssue>())
     const backendRef = yield* Ref.make(Option.none<AgentBackend>())
     const models = yield* Ref.make(Option.none<readonly [ModelOption, ...Array<ModelOption>]>())
-    const failed = yield* Ref.make(new Set<IssueId>())
+    const lent = yield* Ref.make(Option.none<ProviderIssues>())
+    const failed = yield* Ref.make(new Map<IssueId, string>())
     const unlistedHires = yield* Ref.make(new Set<HireId>())
     const answerOrder = yield* Ref.make(0)
     const signals = yield* Queue.sliding<void>(1)
@@ -249,7 +249,8 @@ export const makeDispatcher = (deps: {
     const onEvent = (issueId: IssueId) => (message: OutboundMessage) =>
       Effect.gen(function* () {
         if (message._tag === 'SessionStarted') {
-          yield* runs.markSessionStarted(issueId, message.sessionId)
+          const runs = yield* Ref.get(lent)
+          if (Option.isSome(runs)) yield* runs.value.markSessionStarted(issueId, message.sessionId)
           return
         }
         const freed = yield* updateIssues((current) => {
@@ -267,11 +268,11 @@ export const makeDispatcher = (deps: {
         }
       })
 
-    const onEnded = (issueId: IssueId, end: SessionEnd) =>
+    const onEnded = (runs: ProviderIssues, issueId: IssueId, hireId: HireId, end: SessionEnd) =>
       Effect.gen(function* () {
         const keepSession = end._tag !== 'SessionNotFound'
         if (end._tag === 'SessionFailed') {
-          yield* Ref.update(failed, (current) => new Set(current).add(issueId))
+          yield* Ref.update(failed, (current) => new Map(current).set(issueId, hireId))
         }
         yield* Effect.logWarning('Hired agent session ended', { issueId, end: end._tag })
         yield* runs.markRequeued(issueId, keepSession)
@@ -283,6 +284,7 @@ export const makeDispatcher = (deps: {
       })
 
     const startIssue = Effect.fnUntraced(function* (
+      runs: ProviderIssues,
       backend: AgentBackend,
       catalog: readonly [ModelOption, ...Array<ModelOption>],
       context: StartContext
@@ -335,11 +337,7 @@ export const makeDispatcher = (deps: {
               emit: (message) => emit(message).pipe(Effect.andThen(onEvent(issue.id)(message))),
               systemPromptAppend: jobTitle.jobDescription,
               pluginPaths,
-              diaTools: issueTools({
-                issueId: issue.id,
-                objectiveId: issue.objectiveId,
-                hireId: hire.id
-              }),
+              diaTools: runs.issueTools(issue.id, hire.id),
               tools: Option.some(tools)
             })
             .pipe(
@@ -349,7 +347,7 @@ export const makeDispatcher = (deps: {
       }).pipe(Scope.provide(scope))
       const session = yield* Deferred.await(raw)
       const watcher = yield* session.ended.pipe(
-        Effect.flatMap((end) => onEnded(issue.id, end)),
+        Effect.flatMap((end) => onEnded(runs, issue.id, hire.id, end)),
         Effect.forkIn(pluginScope)
       )
       const kept = yield* updateIssues((current) => {
@@ -430,7 +428,9 @@ export const makeDispatcher = (deps: {
       startable: ReadonlyArray<StartableIssue>,
       live: ReadonlyMap<IssueId, LiveIssue>
     ) {
-      const hires = new Map((yield* org.hiredAgents).map((hire) => [hire.id, hire]))
+      const hires = new Map<string, HiredAgent>(
+        (yield* org.hiredAgents).map((hire) => [hire.id, hire])
+      )
       const jobTitles = new Map((yield* org.jobTitles).map((jobTitle) => [jobTitle.id, jobTitle]))
       const skipped = yield* Ref.get(failed)
       const contexts = new Map<IssueId, StartContext>()
@@ -438,7 +438,7 @@ export const makeDispatcher = (deps: {
       const resolutions = new Map<string, SessionToolsResult>()
       for (const { issue, objective } of startable) {
         if (live.has(issue.id) || skipped.has(issue.id)) continue
-        const hire = issue.assignee === null ? undefined : hires.get(issue.assignee)
+        const hire = issue.assignee === null ? undefined : hires.get(issue.assignee.id)
         if (hire === undefined) continue
         const jobTitle = jobTitles.get(hire.jobTitleId)
         yield* warnUnlisted(hire, jobTitle !== undefined)
@@ -480,24 +480,62 @@ export const makeDispatcher = (deps: {
       return { contexts, refused }
     })
 
-    const refuse = Effect.fnUntraced(function* (refused: ReadonlyArray<RefusedIssue>) {
+    const refuse = Effect.fnUntraced(function* (
+      runs: ProviderIssues,
+      refused: ReadonlyArray<RefusedIssue>
+    ) {
       let changed = false
       for (const { issueId, missing } of refused) {
-        if (yield* runs.markRefused(issueId, missing)) changed = true
+        if (yield* runs.markRefused(issueId, refusalOf(missing))) changed = true
       }
       if (changed) yield* signal
     })
 
+    const reconcile = Effect.fnUntraced(function* (
+      startable: ReadonlyArray<StartableIssue>,
+      started: ReadonlyArray<Issue>
+    ) {
+      const stillStarted = new Set(started.map((issue) => issue.id))
+      const ended = yield* updateIssues<ReadonlyArray<readonly [IssueId, LiveIssue]>>((current) => {
+        const gone = [...current.entries()].filter(
+          ([issueId, live]) => Option.isSome(live.session) && !stillStarted.has(issueId)
+        )
+        if (gone.length === 0) return [[], undefined] as const
+        const next = new Map(current)
+        for (const [issueId] of gone) next.delete(issueId)
+        return [gone, next] as const
+      })
+      for (const [issueId, live] of ended) {
+        yield* closeLive(live)
+        yield* Effect.logDebug('Closed the session of an issue that is no longer started', {
+          issueId
+        })
+      }
+      const waiting = new Map(startable.map(({ issue }) => [issue.id, issue.assignee?.id] as const))
+      yield* Ref.update(failed, (current) => {
+        const next = new Map(
+          [...current].filter(
+            ([issueId, hireId]) => stillStarted.has(issueId) || waiting.get(issueId) === hireId
+          )
+        )
+        return next.size === current.size ? current : next
+      })
+    })
+
     const pass = Effect.gen(function* () {
+      const runs = yield* Ref.get(lent)
       const backend = yield* Ref.get(backendRef)
       const catalog = yield* Ref.get(models)
       const { overallCap } = yield* org.settings
-      const candidates = yield* runs.startCandidates
+      const candidates = Option.isSome(runs)
+        ? yield* runs.value.runState
+        : { startable: [], started: [] }
+      yield* reconcile(candidates.startable, candidates.started)
       const { contexts, refused } =
-        Option.isSome(backend) && Option.isSome(catalog)
+        Option.isSome(runs) && Option.isSome(backend) && Option.isSome(catalog)
           ? yield* contextsFor(candidates.startable, yield* SynchronizedRef.get(issues))
           : { contexts: new Map<IssueId, StartContext>(), refused: [] }
-      yield* refuse(refused)
+      if (Option.isSome(runs)) yield* refuse(runs.value, refused)
       const pick = yield* updateIssues((current) => {
         const entries = [...current.entries()]
         const answered = entries
@@ -509,7 +547,11 @@ export const makeDispatcher = (deps: {
         const chosen = nextStarts({
           overallCap,
           heldSlots: entries.filter(([, live]) => holdsSlot(live)).length,
-          busyHires: candidates.busyHires,
+          busyHires: new Set(
+            candidates.started.flatMap((issue) =>
+              issue.assignee === null ? [] : [issue.assignee.id as HireId]
+            )
+          ),
           answered,
           waiting: [...contexts.values()]
             .filter(({ issue }) => !current.has(issue.id))
@@ -533,10 +575,12 @@ export const makeDispatcher = (deps: {
         start: pick.start
       })
       for (const issueId of pick.resume) yield* resumeIssue(issueId)
-      if (Option.isNone(backend) || Option.isNone(catalog)) return
+      if (Option.isNone(runs) || Option.isNone(backend) || Option.isNone(catalog)) return
       for (const issueId of pick.start) {
         const context = contexts.get(issueId)
-        if (context !== undefined) yield* startIssue(backend.value, catalog.value, context)
+        if (context !== undefined) {
+          yield* startIssue(runs.value, backend.value, catalog.value, context)
+        }
       }
     })
 
@@ -545,12 +589,12 @@ export const makeDispatcher = (deps: {
         yield* Effect.acquireRelease(Ref.set(backendRef, Option.some(backend)), () =>
           Ref.set(backendRef, Option.none()).pipe(Effect.andThen(Ref.set(models, Option.none())))
         )
-        yield* Ref.set(failed, new Set())
+        yield* Ref.set(failed, new Map())
         yield* backend.models().pipe(
           Stream.runForEach((state) =>
             state._tag === 'Ready'
               ? Ref.set(models, Option.some(state.models)).pipe(
-                  Effect.andThen(Ref.set(failed, new Set())),
+                  Effect.andThen(Ref.set(failed, new Map())),
                   Effect.andThen(signal)
                 )
               : Effect.void
@@ -590,19 +634,36 @@ export const makeDispatcher = (deps: {
       yield* signal
     })
 
-    const release = Effect.fn('Dispatcher.release')(function* (issueId: IssueId) {
-      yield* Ref.update(failed, (current) => {
-        const next = new Set(current)
-        next.delete(issueId)
-        return next
-      })
-      const live = yield* drop(issueId)
-      if (live !== undefined) {
-        yield* closeLive(live)
-        yield* Effect.logInfo('Released hired agent session', { issueId })
-      }
-      yield* signal
+    const closeAll = Effect.gen(function* () {
+      const closed = yield* updateIssues((current) =>
+        current.size === 0
+          ? ([[], undefined] as const)
+          : ([[...current.values()], new Map()] as const)
+      )
+      yield* Effect.forEach(closed, closeLive, { discard: true })
+      return closed.length
     })
+
+    const lendIssues = (issuesService: Pick<Issues, 'watchChanges'>, runs: ProviderIssues) =>
+      Effect.gen(function* () {
+        yield* Effect.acquireRelease(Ref.set(lent, Option.some(runs)), () =>
+          Ref.set(lent, Option.none()).pipe(
+            Effect.andThen(Ref.set(failed, new Map())),
+            Effect.andThen(closeAll),
+            Effect.flatMap((closed) =>
+              Effect.logInfo('Dispatcher no longer runs the org issues', { closedSessions: closed })
+            )
+          )
+        )
+        yield* runs.requeueRunning
+        const changes = yield* issuesService.watchChanges
+        yield* changes.pipe(
+          Stream.runForEach(() => signal),
+          Effect.forkScoped
+        )
+        yield* Effect.logInfo('Dispatcher runs the org issues')
+        yield* signal
+      })
 
     const message = Effect.fn('Dispatcher.message')(function* (issueId: IssueId, text: string) {
       const session = Option.flatMap(
@@ -625,7 +686,6 @@ export const makeDispatcher = (deps: {
       })
     )
 
-    yield* runs.requeueRunning
     yield* Effect.addFinalizer(() =>
       SynchronizedRef.get(issues).pipe(
         Effect.flatMap((current) => Effect.forEach(current.values(), closeLive, { discard: true }))
@@ -649,8 +709,8 @@ export const makeDispatcher = (deps: {
     return {
       signal,
       lendBackend,
+      lendIssues,
       answerPermission,
-      release,
       message,
       live,
       watchChanges

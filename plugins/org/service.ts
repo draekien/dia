@@ -1,5 +1,6 @@
 import { type AgentName, ServiceKey } from '@dia/plugin'
 import type { AgentDefinitionRegistry } from '@dia-plugin/agent-definitions/registry'
+import type { ProviderIssues } from '@dia-plugin/issues/service'
 import { Effect, Predicate, type Scope, type Stream } from 'effect'
 import type {
   BuiltInJobTitleDeleted,
@@ -9,6 +10,7 @@ import type {
   HireId,
   HireNameTaken,
   HireNotFound,
+  IssuesNotLoaded,
   JobTitle,
   JobTitleDisabled,
   JobTitleEdit,
@@ -35,14 +37,18 @@ import type {
  * `watchJobTitleChanges` subscribes when run; the stream it returns emits once after each
  * `setJobTitleEnabled`, each change to the held registry's definitions, and each hold and release
  * of a registry since the subscription. `holdDefinitions` holds `registry` until the calling scope
- * closes; call it inside `whenProvided([AgentDefinitionRegistryKey], …)`.
+ * closes; call it inside `whenProvided([AgentDefinitionRegistryKey], …)`. `watchHireChanges`
+ * subscribes when run; the stream it returns emits once after each `hire`, `dismiss` and
+ * `renameHire` since the subscription. `holdIssues` holds the issues assigned to the org's hired
+ * agents until the calling scope closes; call it after registering the org as an assignee provider.
  *
  * `copyJobTitle` copies every field of `jobTitleId` into a new enabled job title named `name` that
  * is not built in. `editJobTitle` applies `edit`'s present fields. `deleteJobTitle` deletes a copy
  * with no hired agents. `hire` hires an agent of an enabled job title, named `name` or unnamed when
  * null, reporting to hired agent `reportsTo` or to the user when null. `dismiss` removes a hired
  * agent and moves its reports to its own `reportsTo`; it fails with `HireHasOpenIssues` while the
- * agent is assigned to an issue that is neither `done` nor `canceled`. `renameHire` names a hired agent `name`, or clears its name
+ * agent is assigned to an issue that is neither `done` nor `canceled`, and with `IssuesNotLoaded`
+ * while no issues are held. `renameHire` names a hired agent `name`, or clears its name
  * when null; the name must be free among the other hired agents, ignoring ASCII case.
  * `setBypassOverride` sets a hired agent's bypass override: true or false overrides its job
  * title's `bypassOptIn`, null follows the job title (ADR-0054). `setReportsTo` makes a hired agent
@@ -56,6 +62,8 @@ export interface Org {
   readonly holdDefinitions: (
     registry: AgentDefinitionRegistry
   ) => Effect.Effect<void, never, Scope.Scope>
+  readonly watchHireChanges: Effect.Effect<Stream.Stream<void>, never, Scope.Scope>
+  readonly holdIssues: (issues: HeldIssues) => Effect.Effect<void, never, Scope.Scope>
   readonly hiredAgents: Effect.Effect<ReadonlyArray<HiredAgent>>
   readonly settings: Effect.Effect<OrgSettings>
   readonly setJobTitleEnabled: (
@@ -81,7 +89,9 @@ export interface Org {
     HiredAgent,
     JobTitleNotFound | JobTitleDisabled | JobTitleNotHireable | HireNameTaken | HireNotFound
   >
-  readonly dismiss: (hireId: HireId) => Effect.Effect<void, HireNotFound | HireHasOpenIssues>
+  readonly dismiss: (
+    hireId: HireId
+  ) => Effect.Effect<void, HireNotFound | HireHasOpenIssues | IssuesNotLoaded>
   readonly renameHire: (
     hireId: HireId,
     name: AgentName | null
@@ -97,10 +107,15 @@ export interface Org {
   readonly setOverallCap: (cap: OverallCap) => Effect.Effect<OrgSettings>
 }
 
+/** What `Org.holdIssues` takes: the count of a hired agent's open issues. */
+export type HeldIssues = Pick<ProviderIssues, 'countOpenIssues'>
+
 const MEMBERS: Record<keyof Org, (member: unknown) => boolean> = {
   jobTitles: Effect.isEffect,
   watchJobTitleChanges: Effect.isEffect,
   holdDefinitions: Predicate.isFunction,
+  watchHireChanges: Effect.isEffect,
+  holdIssues: Predicate.isFunction,
   hiredAgents: Effect.isEffect,
   settings: Effect.isEffect,
   setJobTitleEnabled: Predicate.isFunction,

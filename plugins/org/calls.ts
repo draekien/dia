@@ -1,4 +1,5 @@
 import { AgentName, PermissionResponse } from '@dia/plugin'
+import { IssueId } from '@dia-plugin/issues/domain'
 import { Schema } from 'effect'
 import { Rpc } from 'effect/rpc'
 import {
@@ -9,12 +10,7 @@ import {
   HireId,
   HireNameTaken,
   HireNotFound,
-  Issue,
-  IssueId,
-  IssueNotAssignable,
-  IssueNotFound,
-  IssueNotInTriage,
-  IssueNotStarted,
+  IssuesNotLoaded,
   JobTitle,
   JobTitleDisabled,
   JobTitleEdit,
@@ -24,19 +20,11 @@ import {
   JobTitleNameTaken,
   JobTitleNotFound,
   JobTitleNotHireable,
-  LiveWork,
   MissingReference,
-  NewIssue,
-  NewObjective,
-  Objective,
-  ObjectiveNotFound,
   OrgSettings,
   OverallCap,
   PermissionNotPending,
-  ProjectNotFound,
-  ReportsToCycle,
-  TriageDecision,
-  WorkSnapshot
+  ReportsToCycle
 } from './domain'
 
 /**
@@ -104,11 +92,11 @@ export const Hire = Rpc.make('Hire', {
 
 /**
  * Dismisses hired agent `hireId`; refused while it is assigned to an issue that is neither `done`
- * nor `canceled`.
+ * nor `canceled`, and while the `issues` plugin is not ready to tell.
  */
 export const Dismiss = Rpc.make('Dismiss', {
   payload: { hireId: HireId },
-  error: Schema.Union([HireNotFound, HireHasOpenIssues])
+  error: Schema.Union([HireNotFound, HireHasOpenIssues, IssuesNotLoaded])
 })
 
 /** Names hired agent `hireId` `name`, or clears its name when null. */
@@ -139,76 +127,17 @@ export const SetOverallCap = Rpc.make('SetOverallCap', {
 })
 
 /**
- * Every objective, issue and comment, the permission requests hired agents wait on, how many slots of
- * the overall cap are held now, and `assistantMissing`: the names the Executive assistant definition
- * holds that resolve to nothing, so its session cannot start; empty otherwise.
+ * The org's live state the Dashboard shows: `assistantMissing`, the names the Executive assistant
+ * definition holds that resolve to nothing, so its session cannot start; empty otherwise.
  */
-export const WorkView = Schema.Struct({
-  ...WorkSnapshot.fields,
-  ...LiveWork.fields,
-  assistantMissing: Schema.Array(MissingReference)
-})
-export type WorkView = typeof WorkView.Type
+export const OrgLive = Schema.Struct({ assistantMissing: Schema.Array(MissingReference) })
+export type OrgLive = typeof OrgLive.Type
 
-/** Reads the {@link WorkView}. */
-export const ReadWork = Rpc.make('ReadWork', { payload: {}, success: WorkView })
-
-/**
- * Streams the {@link WorkView}: the current one when subscribed, then a new one after each change
- * to objectives, issues and comments, held slots or pending permissions. Several changes during one read give
- * one more view, so a subscriber always ends on the latest state.
- */
-export const WatchWork = Rpc.make('WatchWork', { payload: {}, success: WorkView, stream: true })
-
-/**
- * Creates an open objective and its `planning` issue, assigned to the objective's assignee; a
- * repeated call with the same `id` returns the stored objective.
- */
-export const CreateObjective = Rpc.make('CreateObjective', {
-  payload: { objective: NewObjective },
-  success: Objective,
-  error: Schema.Union([ProjectNotFound, HireNotFound])
-})
-
-/**
- * Creates a `work` issue in `todo`, reopening a completed objective; a repeated call with the same
- * `id` returns the stored issue.
- */
-export const CreateIssue = Rpc.make('CreateIssue', {
-  payload: { issue: NewIssue },
-  success: Issue,
-  error: Schema.Union([ObjectiveNotFound, IssueNotFound, HireNotFound])
-})
-
-/**
- * Gives `triage` or `todo` issue `issueId` to hired agent `hireId`, or takes it from its agent when
- * null.
- */
-export const AssignIssue = Rpc.make('AssignIssue', {
-  payload: { issueId: IssueId, hireId: Schema.NullOr(HireId) },
-  success: Issue,
-  error: Schema.Union([IssueNotFound, IssueNotAssignable, HireNotFound])
-})
-
-/**
- * Accepts (to `todo`) or declines (to `canceled`) every `triage` issue in `issueIds`, all or none;
- * an issue already in the decision's target is left as it is. Returns the issues in `issueIds`
- * order.
- */
-export const TriageIssues = Rpc.make('TriageIssues', {
-  payload: { issueIds: Schema.NonEmptyArray(IssueId), decision: TriageDecision },
-  success: Schema.Array(Issue),
-  error: Schema.Union([IssueNotFound, IssueNotInTriage])
-})
-
-/**
- * Finishes started issue `issueId` and stops its session: it becomes `done`, and a `work` issue
- * gets a `retro` sub-issue in `todo`.
- */
-export const FinishIssue = Rpc.make('FinishIssue', {
-  payload: { issueId: IssueId },
-  success: Issue,
-  error: Schema.Union([IssueNotFound, IssueNotStarted])
+/** Streams the {@link OrgLive}: the current one when subscribed, then a new one after each change. */
+export const WatchOrgLive = Rpc.make('WatchOrgLive', {
+  payload: {},
+  success: OrgLive,
+  stream: true
 })
 
 /** Answers permission request `requestId` that issue `issueId`'s hired agent waits on. */

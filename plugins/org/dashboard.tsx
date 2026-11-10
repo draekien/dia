@@ -4,7 +4,7 @@ import { Option } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
 import type { ReactNode } from 'react'
 import { describeMissing } from './domain'
-import type { OrgScreen, WorkAtom } from './org-actions'
+import type { LiveAtom, OrgScreen } from './org-actions'
 
 function Stat({
   label,
@@ -30,18 +30,18 @@ function Stat({
  * The Org Dashboard: the number of hired agents, how many job titles are enabled, and the overall
  * cap with a `Change` button that opens Settings › Org; then `Needs attention`, which holds one
  * item whose `Hire…` opens the Hire dialog while no agent is hired, and one alert naming what the
- * Executive assistant definition holds that resolves to nothing while `workAtom` reports any.
+ * Executive assistant definition holds that resolves to nothing while `liveAtom` reports any.
  */
 export function Dashboard({
   snapshot,
   openHire,
-  workAtom
-}: Pick<OrgScreen, 'snapshot' | 'openHire'> & { readonly workAtom: WorkAtom }) {
+  liveAtom
+}: Pick<OrgScreen, 'snapshot' | 'openHire'> & { readonly liveAtom: LiveAtom }) {
   const enabled = snapshot.jobTitles.filter((jobTitle) => jobTitle.enabled).length
   const noHires = snapshot.hiredAgents.length === 0
-  const work = useAtomValue(workAtom)
-  const assistantMissing = AsyncResult.isSuccess(work)
-    ? Option.match(work.value, { onNone: () => [], onSome: (view) => view.assistantMissing })
+  const live = useAtomValue(liveAtom)
+  const assistantMissing = AsyncResult.isSuccess(live)
+    ? Option.match(live.value, { onNone: () => [], onSome: (view) => view.assistantMissing })
     : []
 
   return (

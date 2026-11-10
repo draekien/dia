@@ -8,6 +8,8 @@ import {
   type SessionId,
   SessionNotice
 } from '@dia/plugin'
+import type { IssuesSnapshot, ObjectiveId } from '@dia-plugin/issues/domain'
+import type { Issues } from '@dia-plugin/issues/service'
 import {
   Crypto,
   Effect,
@@ -20,16 +22,9 @@ import {
   SynchronizedRef
 } from 'effect'
 import { SqlClient } from 'effect/sql'
-import {
-  type JobTitle,
-  type MissingReference,
-  type ObjectiveId,
-  sameMissingReferences,
-  type WorkSnapshot
-} from './domain'
+import { type JobTitle, type MissingReference, sameMissingReferences } from './domain'
 import type { Org } from './service'
 import type { SessionTools, SessionToolsResult } from './session-tools'
-import type { Work } from './work'
 
 /** The org's one Executive assistant session (ADR-0071). */
 export interface Assistant {
@@ -51,7 +46,7 @@ export interface AssistantDeps {
   readonly org: Pick<Org, 'jobTitles' | 'watchJobTitleChanges'>
   readonly sessionTools: Pick<SessionTools, 'forDefinition' | 'references'>
   readonly missing: SubscriptionRef.SubscriptionRef<ReadonlyArray<MissingReference>>
-  readonly work: Pick<Work, 'snapshot' | 'watchChanges'>
+  readonly work: Pick<Issues, 'snapshot' | 'watchChanges'>
   readonly backend: AgentBackend
   readonly tools: (claim: Assistant['claim']) => ReadonlyArray<DiaTool>
   readonly attach: HostSessions['attach']
@@ -75,8 +70,8 @@ interface Notice {
 const LABEL = 'Executive assistant'
 
 const noticesBetween = (
-  previous: WorkSnapshot,
-  current: WorkSnapshot,
+  previous: IssuesSnapshot,
+  current: IssuesSnapshot,
   claimed: ReadonlySet<string>
 ): ReadonlyArray<Notice> => {
   const issueNotices = current.issues.flatMap((issue): ReadonlyArray<Notice> => {
@@ -315,7 +310,7 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (deps: Assista
       yield* emit.value(
         SessionNotice.make({
           text: notice.text,
-          link: { label: 'Open', plugin: 'org', page: 'org', target: notice.objectiveId }
+          link: { label: 'Open', plugin: 'issues', page: 'issues', target: notice.objectiveId }
         })
       )
       yield* Effect.logInfo('Executive assistant notice', { objectiveId: notice.objectiveId })

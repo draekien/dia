@@ -1,18 +1,24 @@
-import { ProjectId } from '@dia/plugin'
+import {
+  AssigneeRef,
+  FirstIssue,
+  type IssueId,
+  ObjectiveId,
+  WorkTitle
+} from '@dia-plugin/issues/domain'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { assert, describe, it } from '@effect/vitest'
 import { AgentName } from '@shared/domain/project'
 import { Effect, Exit, Ref, Scope } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
-import { type IssueId, ObjectiveId, PlanRoute, WorkTitle } from './domain'
+import { openIssues, PROJECT } from '../issues/issues.fake'
+import { orgAssignees } from './assignees'
+import { ORG_PROVIDER } from './domain'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { holdBuiltInDefinitions } from './registries.fake'
 import { makeRoutingTools } from './routing-tools'
-import { makeWork } from './work'
 
-const PROJECT = ProjectId.make('00000000-0000-4000-8000-400000000001')
 const EXISTING = ObjectiveId.make('00000000-0000-4000-8000-500000000001')
 const NEW_ID = ObjectiveId.make('00000000-0000-4000-8000-500000000002')
 
@@ -20,17 +26,23 @@ const setUp = Effect.gen(function* () {
   const scope = yield* Scope.make()
   yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
   const sql = yield* openDatabase(':memory:', orgMigrations).pipe(Scope.provide(scope))
-  const { work, runs, org } = yield* Effect.gen(function* () {
-    const made = yield* makeWork(() => Effect.succeed(true))
-    return { ...made, org: yield* makeOrg(made.openIssuesOf) }
-  }).pipe(Effect.provideService(SqlClient.SqlClient, sql), Effect.provide(NodeCrypto.layer))
+  const org = yield* makeOrg.pipe(
+    Effect.provideService(SqlClient.SqlClient, sql),
+    Effect.provide(NodeCrypto.layer)
+  )
   yield* holdBuiltInDefinitions(org).pipe(Scope.provide(scope))
   const engineer = (yield* org.jobTitles)[1]
   assert.isDefined(engineer)
   const ada = yield* org.hire(engineer.id, AgentName.make('Ada'), null)
+  const { issues: work } = yield* openIssues
+  const runs = yield* work.registerProvider({
+    id: ORG_PROVIDER,
+    label: 'Org',
+    assignees: orgAssignees(org)
+  })
+  const adaRef = AssigneeRef.make({ provider: ORG_PROVIDER, id: ada.id })
   const claimed = yield* Ref.make<ReadonlyArray<ObjectiveId>>([])
   const messaged = yield* Ref.make<ReadonlyArray<string>>([])
-  const released = yield* Ref.make<ReadonlyArray<IssueId>>([])
   const live = new Set<IssueId>()
   const tools = makeRoutingTools({
     work,
@@ -39,12 +51,10 @@ const setUp = Effect.gen(function* () {
     newObjectiveId: Effect.succeed(NEW_ID),
     claim: (objectiveId) => Ref.update(claimed, (ids) => [...ids, objectiveId]),
     dispatcher: {
-      signal: Effect.void,
       message: (issueId, text) =>
         live.has(issueId)
           ? Ref.update(messaged, (texts) => [...texts, `${issueId}:${text}`]).pipe(Effect.as(true))
-          : Effect.succeed(false),
-      release: (issueId) => Ref.update(released, (ids) => [...ids, issueId])
+          : Effect.succeed(false)
     }
   })
   const run = (name: string, input: Record<string, string>) => {
@@ -52,19 +62,29 @@ const setUp = Effect.gen(function* () {
     assert.isDefined(tool, name)
     return tool.run(input)
   }
-  return { work, runs, ada, run, claimed, messaged, released, live }
+  return { work, runs, ada, adaRef, run, claimed, messaged, live }
 })
 
 const withExisting = Effect.gen(function* () {
   const env = yield* setUp
-  yield* env.work.createObjective({
-    id: EXISTING,
-    projectId: PROJECT,
-    title: WorkTitle.make('Ship the marketplace'),
-    description: 'Let users install plugins.',
-    priority: 'normal',
-    route: PlanRoute.make({ assignee: env.ada.id })
-  })
+  yield* env.work.createObjective(
+    {
+      id: EXISTING,
+      projectId: PROJECT,
+      title: WorkTitle.make('Ship the marketplace'),
+      description: 'Let users install plugins.',
+      priority: 'normal',
+      assignee: null
+    },
+    [
+      FirstIssue.make({
+        kind: 'planning',
+        title: WorkTitle.make('Plan: Ship the marketplace'),
+        description: '',
+        assignee: env.adaRef
+      })
+    ]
+  )
   const [planning] = (yield* env.work.snapshot).issues
   assert.isDefined(planning)
   assert.isTrue(yield* env.runs.markStarted(planning.id, env.ada.id))
@@ -124,7 +144,7 @@ describe('objective_create', () => {
             [
               'fix the typo in the README, give it to Ada\n\nRouting note: the user wants this before the release'
             ],
-            [['work', env.ada.id]]
+            [['work', env.adaRef]]
           ]
         )
       }).pipe(Effect.scoped)
@@ -144,6 +164,45 @@ describe('objective_create', () => {
         [['planning', null]]
       )
     }).pipe(Effect.scoped)
+  )
+
+  it.effect('cuts the planning title of a 120-character objective title to 120 characters', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const title = 'x'.repeat(120)
+      const created = yield* env.run('objective_create', {
+        project: PROJECT,
+        title,
+        request: 'make it long',
+        route: 'plan'
+      })
+      const snapshot = yield* env.work.snapshot
+      assert.deepStrictEqual(
+        [
+          created.isError,
+          snapshot.objectives.map((objective) => objective.title),
+          snapshot.issues.map((issue) => issue.title)
+        ],
+        [false, [title], [`Plan: ${'x'.repeat(114)}`]]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect(
+    "gives a direct objective's work issue the objective's assignee, and starts nothing",
+    () =>
+      Effect.gen(function* () {
+        const env = yield* setUp
+        yield* env.run('objective_create', direct)
+        const snapshot = yield* env.work.snapshot
+        assert.deepStrictEqual(
+          [
+            snapshot.objectives.map((objective) => objective.assignee),
+            snapshot.issues.map((issue) => issue.status)
+          ],
+          [[env.adaRef], ['todo']]
+        )
+      }).pipe(Effect.scoped)
   )
 
   const refusals: ReadonlyArray<readonly [string, Record<string, string>, string]> = [
@@ -214,16 +273,13 @@ describe('objective_attach', () => {
 })
 
 describe('objective_stop', () => {
-  it.effect('cancels the open issues and releases each one', () =>
+  it.effect('cancels the open issues', () =>
     Effect.gen(function* () {
       const env = yield* withExisting
       const stopped = yield* env.run('objective_stop', { objective: EXISTING })
       assert.deepStrictEqual(
-        [stopped.text, yield* Ref.get(env.released)],
-        [
-          'Stopped "Ship the marketplace": canceled "Plan: Ship the marketplace".',
-          [env.planning.id]
-        ]
+        [stopped.text, (yield* env.work.snapshot).issues.map((issue) => issue.status)],
+        ['Stopped "Ship the marketplace": canceled "Plan: Ship the marketplace".', ['canceled']]
       )
     }).pipe(Effect.scoped)
   )

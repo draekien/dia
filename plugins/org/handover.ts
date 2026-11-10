@@ -3,11 +3,14 @@ import {
   type AgentDefinitionRegistry,
   AgentDefinition as AgentDefinitionSchema
 } from '@dia-plugin/agent-definitions/registry'
+import { AssigneeRef, Issue, IssueComment, Objective } from '@dia-plugin/issues/domain'
+import { ImportedEvent, type Issues } from '@dia-plugin/issues/service'
 import type { McpServerRegistry } from '@dia-plugin/mcp/registry'
 import { McpServers } from '@dia-plugin/mcp/servers'
 import { Effect, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { BUILT_IN_DEFINITIONS } from './built-in-job-titles'
+import { MissingReference, ORG_PROVIDER, refusalOf } from './domain'
 
 const HANDOVER_TABLE = 'job_titles_handover'
 
@@ -125,5 +128,169 @@ export const handOverJobTitles = (
       jobTitles: rows.length,
       overrides: overrides.length,
       definitions: userDefinitions.length
+    })
+  }).pipe(Effect.orDie)
+
+const WORK_HANDOVER_TABLES = [
+  'issue_comments_handover',
+  'issues_handover',
+  'objectives_handover',
+  'org_events_handover'
+] as const
+
+const hireRef = (hireId: string | null) =>
+  hireId === null ? null : AssigneeRef.make({ provider: ORG_PROVIDER, id: hireId })
+
+const ObjectiveHandoverRow = Schema.Struct({
+  objective_id: Objective.fields.id,
+  project_id: Objective.fields.projectId,
+  title: Objective.fields.title,
+  description: Objective.fields.description,
+  priority: Objective.fields.priority,
+  assignee: Schema.NullOr(Schema.String),
+  state: Objective.fields.state,
+  created_at: Objective.fields.createdAt
+})
+
+const IssueHandoverRow = Schema.Struct({
+  issue_id: Issue.fields.id,
+  objective_id: Issue.fields.objectiveId,
+  parent_issue_id: Issue.fields.parentIssueId,
+  kind: Issue.fields.kind,
+  title: Issue.fields.title,
+  description: Issue.fields.description,
+  status: Issue.fields.status,
+  assignee: Schema.NullOr(Schema.String),
+  pane_id: Issue.fields.paneId,
+  session_id: Issue.fields.sessionId,
+  missing: Schema.fromJsonString(Schema.Array(MissingReference)),
+  created_at: Issue.fields.createdAt
+})
+
+const CommentHandoverRow = Schema.Struct({
+  comment_id: IssueComment.fields.id,
+  issue_id: IssueComment.fields.issueId,
+  author: Schema.NullOr(Schema.String),
+  body: IssueComment.fields.body,
+  created_at: IssueComment.fields.createdAt
+})
+
+const EventHandoverRow = Schema.Struct({
+  seq: ImportedEvent.fields.seq,
+  at: ImportedEvent.fields.at,
+  objective_id: ImportedEvent.fields.objectiveId,
+  issue_id: ImportedEvent.fields.issueId,
+  event: ImportedEvent.fields.event
+})
+
+const decodeAll = <S extends Schema.Top & { readonly DecodingServices: never }>(
+  schema: S,
+  rows: ReadonlyArray<unknown>
+) => Schema.decodeUnknownEffect(Schema.Array(schema))(rows)
+
+/**
+ * Whether the `org` database still holds objectives, issues, comments or events to hand over:
+ * `10_issues_handover` renamed them to `*_handover`, and {@link handOverWork} drops them when it
+ * is done.
+ */
+export const workHandoverPending = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const rows =
+    yield* sql`SELECT 1 FROM sqlite_master WHERE type = 'table' AND ${sql.in('name', WORK_HANDOVER_TABLES)}`
+  return rows.length > 0
+}).pipe(Effect.orDie)
+
+/**
+ * Moves the objectives, issues, comments and events `10_issues_handover` left in the `*_handover`
+ * tables into `issues`, then drops the tables. Each hired agent named as an assignee or author
+ * becomes an assignee reference of the `org` provider; an issue's missing names become its refusal.
+ * Running it again after a failure before the drop imports nothing twice; running it once the
+ * tables are gone does nothing. Call it while `issues` is provided, before registering the org as
+ * an assignee provider.
+ */
+export const handOverWork = (
+  issues: Pick<Issues, 'importWork'>
+): Effect.Effect<void, never, SqlClient.SqlClient> =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    if (!(yield* workHandoverPending)) {
+      yield* Effect.logDebug('No org work left to hand over')
+      return
+    }
+    const objectives = yield* decodeAll(
+      ObjectiveHandoverRow,
+      yield* sql`SELECT * FROM objectives_handover ORDER BY rowid`
+    )
+    const issueRows = yield* decodeAll(
+      IssueHandoverRow,
+      yield* sql`SELECT * FROM issues_handover ORDER BY rowid`
+    )
+    const comments = yield* decodeAll(
+      CommentHandoverRow,
+      yield* sql`SELECT * FROM issue_comments_handover ORDER BY rowid`
+    )
+    const events = yield* decodeAll(
+      EventHandoverRow,
+      yield* sql`SELECT * FROM org_events_handover ORDER BY seq`
+    )
+    yield* issues.importWork({
+      objectives: objectives.map((row) =>
+        Objective.make({
+          id: row.objective_id,
+          projectId: row.project_id,
+          title: row.title,
+          description: row.description,
+          priority: row.priority,
+          assignee: hireRef(row.assignee),
+          state: row.state,
+          createdAt: row.created_at
+        })
+      ),
+      issues: issueRows.map((row) =>
+        Issue.make({
+          id: row.issue_id,
+          objectiveId: row.objective_id,
+          parentIssueId: row.parent_issue_id,
+          kind: row.kind,
+          title: row.title,
+          description: row.description,
+          status: row.status,
+          assignee: hireRef(row.assignee),
+          paneId: row.pane_id,
+          sessionId: row.session_id,
+          refusal:
+            row.status === 'triage' && row.missing.length > 0 ? refusalOf(row.missing) : null,
+          createdAt: row.created_at
+        })
+      ),
+      comments: comments.map((row) =>
+        IssueComment.make({
+          id: row.comment_id,
+          issueId: row.issue_id,
+          author: hireRef(row.author),
+          body: row.body,
+          createdAt: row.created_at
+        })
+      ),
+      events: events.map((row) =>
+        ImportedEvent.make({
+          seq: row.seq,
+          at: row.at,
+          objectiveId: row.objective_id,
+          issueId: row.issue_id,
+          event: row.event
+        })
+      )
+    })
+    yield* sql.withTransaction(
+      Effect.forEach(WORK_HANDOVER_TABLES, (table) => sql.unsafe(`DROP TABLE ${table}`), {
+        discard: true
+      })
+    )
+    yield* Effect.logInfo('Handed org work to issues', {
+      objectives: objectives.length,
+      issues: issueRows.length,
+      comments: comments.length,
+      events: events.length
     })
   }).pipe(Effect.orDie)

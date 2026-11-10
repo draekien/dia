@@ -52,6 +52,10 @@
     env(titlebar-area-x, 0px) +
     0.75rem
   );
+  --avatar-overlap: 0.5;
+  --meter-value-min: 4ch;
+  --preview-card-enter-scale: 0.97;
+  --status-media-ring: 1.5px;
 }
 
 /* Dark theme -- the original Control Room palette. */
@@ -144,6 +148,39 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-card: calc(var(--radius) * 1.8);
+  --radius-checkbox: calc(var(--radius) * 0.5);
+  --radius-floor: calc(var(--radius) * 0.6);
+  --radius-panel: calc(var(--radius) * 3.4);
+  --spacing-hit-coarse: 2.75rem;
+  --spacing-hit-min: 1.5rem;
+  --spacing-related: 0.5rem;
+  --spacing-row: 2.75rem;
+  --spacing-row-inset: 0.5rem;
+  --spacing-run: 0rem;
+  --spacing-section: 1.5rem;
+  --text-body: 0.875rem;
+  --text-body--font-weight: 400;
+  --text-body--line-height: 1.43;
+  --text-body--letter-spacing: 0rem;
+  --text-label: 0.75rem;
+  --text-label--font-weight: 500;
+  --text-label--line-height: 1.33;
+  --text-label--letter-spacing: 0rem;
+  --text-micro: 0.625rem;
+  --text-micro--font-weight: 500;
+  --text-micro--line-height: 1.4;
+  --text-micro--letter-spacing: 0rem;
+  --text-title: 0.875rem;
+  --text-title--font-weight: 600;
+  --text-title--line-height: 1.43;
+  --text-title--letter-spacing: 0rem;
+  --shadow-popover: 0px 1px 2px rgb(0% 0% 0% / 0.05), 0px 10px 28px -8px rgb(0% 0% 0% / 0.18);
+  --transition-duration-quick: 150ms;
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --z-index-popover: 50;
+  --container-abbreviate: 48rem;
+  --container-hide: 40rem;
 }
 
 .typeset-docs {

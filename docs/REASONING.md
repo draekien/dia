@@ -88,6 +88,7 @@ This is an index of non-obvious decisions, gotchas, and learnings recorded durin
 | 2026-11-08 | [An attached session's transcript is pruned on every start](reasoning/2026-11-08-attached-session-transcript-pruned-on-start.md) | `pruneOrphans` deletes events of panes with no agent row and now also their sessions' cursors, so a resumed attached session re-imports its Claude Code transcript. |
 | 2026-11-08 | [A recursive watch on Windows emits `rename` events without end after its directory is deleted](reasoning/2026-11-08-windows-recursive-watch-on-deleted-directory.md) | `pathChanges` ends a watch at a `Remove` event whose target no longer exists, and follows the path again as missing. |
 | 2026-11-09 | [Dropping a parent table in SQLite runs its `ON DELETE SET NULL` actions at once](reasoning/2026-11-09-sqlite-parent-table-rebuild.md) | `9_agent_definitions` saves `issues.assignee`, `objectives.assignee` and `issue_comments.author` in TEMP tables before it rebuilds `hired_agents`, and restores them after. |
+| 2026-11-10 | [Closing the plugin registry's scope must close dependants first](reasoning/2026-11-10-registry-scope-close-order.md) | Closing the registry's scope unloads each plugin through `closeWithDependants`, so a `whenProvided` finalizer still reaches its provider's database. |
 
 ## Adding a new entry
 
