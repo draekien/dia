@@ -1,0 +1,7 @@
+{
+  "name": "dia-run-messaging",
+  "api": "0.0.42",
+  "category": "feature",
+  "host": "host.ts",
+  "load": "eager"
+}
