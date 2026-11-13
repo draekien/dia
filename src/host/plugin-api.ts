@@ -23,6 +23,7 @@ export {
   Question,
   QuestionResponse
 } from '../shared/domain/attention'
+export { ActivityId } from '../shared/domain/background-activity'
 export {
   EMPTY_MESSAGE_QUEUE,
   MessageQueueSnapshot,

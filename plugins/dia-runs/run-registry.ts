@@ -108,7 +108,8 @@ const specOfRow = (row: RunRow): RunSpec => ({
 
 /**
  * Builds the run service `dia-runs` provides (`runs`), the recovery it runs once it has provided
- * it (`recover`: resumes each run whose row says a turn was in progress), and
+ * it (`recover`: resumes each run whose row says a turn was in progress, leaving alone a run that
+ * is already live, such as one started since the service was provided), and
  * `setUsageLimitResume`, which re-parks every parked run under a new mode. Every live run lives in
  * a scope of its own; closing the calling scope ends them all without changing their rows, so a
  * later start resumes their turns.
@@ -617,7 +618,8 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
   }
 
   const recover = Effect.gen(function* () {
-    const stored = yield* rows.list
+    const entries = yield* Ref.get(entriesRef)
+    const stored = (yield* rows.list).filter((row) => !entries.has(row.runId))
     yield* Effect.forEach(
       stored.filter((row) => row.status === 'waiting'),
       (row) => rows.setStatus(row.runId, 'idle'),
