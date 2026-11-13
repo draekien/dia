@@ -1,7 +1,13 @@
 import type { PluginInfo, PluginOverrideResult } from '@shared/plugin/manifest'
-import { Deferred, Effect } from 'effect'
+import { Deferred, Effect, Schema } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
-import { type DiaToolResult, makePluginTools } from './dia-tools'
+import {
+  type DiaToolResult,
+  makePluginTools,
+  PluginNameInput,
+  PluginOverrideInput,
+  type ToolScope
+} from './dia-tools'
 
 const info = (name: string, status: PluginInfo['status'] = { _tag: 'Loaded' }): PluginInfo => ({
   name,
@@ -14,6 +20,7 @@ const info = (name: string, status: PluginInfo['status'] = { _tag: 'Loaded' }): 
 })
 
 const CALLER = 'dia-runs'
+const RUN: ToolScope = { runId: 'run-1', labels: [], context: undefined }
 
 const harness = (
   script: {
@@ -37,7 +44,7 @@ const harness = (
         }),
       clearOverride: (name) => Effect.sync(() => void log.push(`clearOverride:${name}`))
     },
-    { plugin: CALLER, turnEnded: script.turnEnded ?? Effect.void }
+    { plugin: CALLER, turnEnded: () => script.turnEnded ?? Effect.void }
   )
   const tool = (name: string) => {
     const found = tools.find((candidate) => candidate.name === name)
@@ -45,7 +52,7 @@ const harness = (
     return found
   }
   const call = (name: string, args: Record<string, string>): Promise<DiaToolResult> =>
-    Effect.runPromise(tool(name).run(args))
+    Effect.runPromise(tool(name).run(args, RUN))
   return { log, call, tool, tools }
 }
 
@@ -163,24 +170,18 @@ describe('plugin tools', () => {
     })
   })
 
-  describe('input patterns', () => {
-    const pattern = (tool: string, field: string) => {
-      const found = harness().tool(tool).input[field]
-      if (found === undefined) throw new Error(`no field ${field}`)
-      return found.pattern
-    }
-
+  describe('input schemas', () => {
     it.each(['chat', 'theme-2'])('accepts the plugin name %s', (name) => {
-      expect(pattern('plugin_reload', 'name').test(name)).toBe(true)
+      expect(Schema.is(PluginNameInput)({ name })).toBe(true)
     })
 
     it.each(['../etc', 'Chat', '', '2fast', 'a b'])('rejects the plugin name "%s"', (name) => {
-      expect(pattern('plugin_reload', 'name').test(name)).toBe(false)
+      expect(Schema.is(PluginNameInput)({ name })).toBe(false)
     })
 
     it('rejects an empty override directory and accepts any non-empty one', () => {
-      expect(pattern('plugin_override', 'directory').test('')).toBe(false)
-      expect(pattern('plugin_override', 'directory').test(' ')).toBe(true)
+      expect(Schema.is(PluginOverrideInput)({ name: 'chat', directory: '' })).toBe(false)
+      expect(Schema.is(PluginOverrideInput)({ name: 'chat', directory: ' ' })).toBe(true)
     })
   })
 })

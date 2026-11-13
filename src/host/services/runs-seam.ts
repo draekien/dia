@@ -27,7 +27,9 @@ export type WorktreeRequest =
 
 /**
  * What a run opens with: its id, the directory and model the user chose, how its worktree is
- * obtained, and the conversation it continues (`resume`), or none for a new one.
+ * obtained, and the conversation it continues (`resume`), or none for a new one. `labels` and
+ * `context` become the run's dia tool scope (see `ToolScope`); `context` must be
+ * JSON-serialisable, because it is stored with the run.
  */
 export interface RunSpec {
   readonly runId: string
@@ -37,15 +39,23 @@ export interface RunSpec {
   readonly permissionMode: PermissionMode
   readonly worktree: WorktreeRequest | undefined
   readonly resume: Option.Option<SessionId>
+  readonly labels?: ReadonlyArray<string>
+  readonly context?: unknown
 }
 
-/** What {@link Runs.start} starts: a run with no tab working in `cwd`, sent `text` at once. */
+/**
+ * What {@link Runs.start} starts: a run with no tab working in `cwd`, sent `text` at once.
+ * `labels` and `context` become the run's dia tool scope; dia tools registered for that scope
+ * receive `context` with every call. `context` must be JSON-serialisable.
+ */
 export interface StartRunOptions {
   readonly cwd: string
   readonly model: string
   readonly thinkingLevel: ThinkingLevel
   readonly permissionMode: PermissionMode
   readonly text: string
+  readonly labels?: ReadonlyArray<string>
+  readonly context?: unknown
 }
 
 /**

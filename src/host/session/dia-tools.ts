@@ -1,12 +1,25 @@
 import type { PluginInfo, PluginOverrideResult } from '@shared/plugin/manifest'
-import { Effect, Fiber } from 'effect'
+import { Effect, Fiber, Schema } from 'effect'
 
-/** One input field of a {@link DiaTool}: a string the agent supplies, required unless `optional` is true, which must match `pattern`. */
-export interface DiaToolField {
-  readonly description: string
-  readonly pattern: RegExp
-  readonly optional?: boolean
-}
+/**
+ * Who a dia tool call comes from. A run that dia started has `runId` and `project` (the run's
+ * source directory); an agent outside dia has neither. `labels` and `context` are what the caller
+ * that started the run supplied (empty and undefined for a tab); `context` reaches every tool
+ * handler unchanged.
+ */
+export const ToolScope = Schema.Struct({
+  runId: Schema.optionalKey(Schema.String),
+  project: Schema.optionalKey(Schema.String),
+  labels: Schema.Array(Schema.String),
+  context: Schema.Unknown
+})
+export type ToolScope = typeof ToolScope.Type
+
+/** True for the scope of a run dia started; false for an agent outside dia. */
+export const isRunScope = (scope: ToolScope): boolean => scope.runId !== undefined
+
+/** The input schema a {@link DiaTool} may declare: a struct that decodes with no services. */
+export type ToolInput = Schema.Top & { readonly DecodingServices: never }
 
 /** What a {@link DiaTool} call returns to the agent. `isError` tells the agent the call did not do what it asked. */
 export interface DiaToolResult {
@@ -15,18 +28,20 @@ export interface DiaToolResult {
 }
 
 /**
- * A tool dia offers the agent in every session. `name` is unqualified (`plugin_reload`); the
- * agent backend exposes it under its own naming. `input` lists every field, each a string. The
- * backend applies the session's permission rules and mode to each call as it does to its own
- * tools, and calls `run` only for an allowed call; `run` receives every field that lacks
- * `optional: true`, and each present field matches its pattern.
+ * A tool dia offers agents. `name` is unqualified (`plugin_reload`); agents see it as
+ * `mcp__dia__<name>`. `input` is a `Schema.Struct` whose JSON Schema is the tool's input schema;
+ * `run` receives the decoded input and the {@link ToolScope} of the caller, and is called only for
+ * an input that decodes. Build one with {@link diaTool} so `run`'s input is inferred.
  */
-export interface DiaTool {
+export interface DiaTool<S extends ToolInput = ToolInput> {
   readonly name: string
   readonly description: string
-  readonly input: Readonly<Record<string, DiaToolField>>
-  readonly run: (input: Readonly<Partial<Record<string, string>>>) => Effect.Effect<DiaToolResult>
+  readonly input: S
+  run(input: S['Type'], scope: ToolScope): Effect.Effect<DiaToolResult>
 }
+
+/** Returns `tool` unchanged; call it so TypeScript infers `run`'s input from `tool.input`. */
+export const diaTool = <S extends ToolInput>(tool: DiaTool<S>): DiaTool<S> => tool
 
 /**
  * What the plugin tools can do to the Host's plugins. `reload` loads or reloads a plugin and
@@ -67,23 +82,27 @@ const report = (info: PluginInfo): DiaToolResult => {
   }
 }
 
-const pluginName: DiaToolField = {
-  description: 'Name of the plugin: lowercase letters, digits and hyphens.',
-  pattern: /^[a-z][a-z0-9-]*$/
-}
+const PluginName = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]*$/)).annotate({
+  description: 'Name of the plugin: lowercase letters, digits and hyphens.'
+})
 
-const directory: DiaToolField = {
-  description: 'Absolute path of the folder holding the plugin source.',
-  pattern: /[\s\S]/
-}
+const Directory = Schema.NonEmptyString.annotate({
+  description: 'Absolute path of the folder holding the plugin source.'
+})
+
+/** Input of `plugin_reload` and `plugin_clear_override`. */
+export const PluginNameInput = Schema.Struct({ name: PluginName })
+
+/** Input of `plugin_override`. */
+export const PluginOverrideInput = Schema.Struct({ name: PluginName, directory: Directory })
 
 /**
- * The session the plugin tools are made for: `plugin`, the name of the plugin running it, and
- * `turnEnded`, which completes when the session's current turn has ended.
+ * The runs the plugin tools are made for: `plugin`, the name of the plugin running them, and
+ * `turnEnded`, which completes when run `runId`'s current turn has ended.
  */
 export interface PluginToolCaller {
   readonly plugin: string
-  readonly turnEnded: Effect.Effect<void>
+  readonly turnEnded: (runId: string) => Effect.Effect<void>
 }
 
 /**
@@ -91,53 +110,55 @@ export interface PluginToolCaller {
  * `plugin_override` (set a source folder, then reload), `plugin_reload` and
  * `plugin_clear_override` (return to the bundled copy, then reload). A result with `isError` set
  * tells the agent the plugin did not end up loaded cleanly. Each reload runs in a fiber detached
- * from the calling session, so it completes when the reload ends the session. A reload of
- * `caller.plugin` waits for `caller.turnEnded` and the tool returns at once, so the turn that asked
- * for it ends before the reload interrupts it. Create them once per session and pass them to the
- * agent backend.
+ * from the calling run, so it completes when the reload ends the run's session. A reload of
+ * `caller.plugin` from a run waits for `caller.turnEnded(runId)` and the tool returns at once, so
+ * the turn that asked for it ends before the reload interrupts it. Register them once, for run
+ * scopes only.
  */
 export const makePluginTools = (
   host: PluginToolHost,
   caller: PluginToolCaller
 ): ReadonlyArray<DiaTool> => {
-  const reload = (name: string): Effect.Effect<DiaToolResult> =>
-    name === caller.plugin
-      ? caller.turnEnded.pipe(
-          Effect.andThen(Effect.logInfo('Reloading the plugin that ran the session', { name })),
-          Effect.andThen(host.reload(name)),
-          Effect.forkDetach,
-          Effect.as(text(`Plugin "${name}" runs this session, so it reloads when this turn ends.`))
-        )
+  const reload = (name: string, scope: ToolScope): Effect.Effect<DiaToolResult> =>
+    name === caller.plugin && scope.runId !== undefined
+      ? caller
+          .turnEnded(scope.runId)
+          .pipe(
+            Effect.andThen(Effect.logInfo('Reloading the plugin that ran the session', { name })),
+            Effect.andThen(host.reload(name)),
+            Effect.forkDetach,
+            Effect.as(
+              text(`Plugin "${name}" runs this session, so it reloads when this turn ends.`)
+            )
+          )
       : host.reload(name).pipe(Effect.forkDetach, Effect.flatMap(Fiber.join), Effect.map(report))
   return [
-    {
+    diaTool({
       name: 'plugin_override',
       description:
         "Point a dia plugin at a source folder on disk and reload it, so the plugin runs that folder's code. The folder must hold a plugin.json and resolve to a package with type module.",
-      input: { name: pluginName, directory },
-      run: Effect.fn('PluginTools.override')(function* (input) {
-        const name = input.name ?? ''
-        const result = yield* host.setOverride(name, input.directory ?? '')
+      input: PluginOverrideInput,
+      run: Effect.fn('PluginTools.override')(function* (input, scope) {
+        const result = yield* host.setOverride(input.name, input.directory)
         if (result._tag === 'Rejected') return text(`Override refused: ${result.message}`, true)
-        return yield* reload(name)
+        return yield* reload(input.name, scope)
       })
-    },
-    {
+    }),
+    diaTool({
       name: 'plugin_reload',
       description:
         'Reload a dia plugin so it runs its current source. If the new version fails, the previous one keeps running and the failure is reported.',
-      input: { name: pluginName },
-      run: (input) => reload(input.name ?? '')
-    },
-    {
+      input: PluginNameInput,
+      run: (input, scope) => reload(input.name, scope)
+    }),
+    diaTool({
       name: 'plugin_clear_override',
       description: 'Return a dia plugin to the copy that ships with dia and reload it.',
-      input: { name: pluginName },
-      run: Effect.fn('PluginTools.clearOverride')(function* (input) {
-        const name = input.name ?? ''
-        yield* host.clearOverride(name)
-        return yield* reload(name)
+      input: PluginNameInput,
+      run: Effect.fn('PluginTools.clearOverride')(function* (input, scope) {
+        yield* host.clearOverride(input.name)
+        return yield* reload(input.name, scope)
       })
-    }
+    })
   ]
 }

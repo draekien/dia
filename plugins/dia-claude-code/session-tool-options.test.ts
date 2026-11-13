@@ -1,7 +1,4 @@
-import type {
-  McpSdkServerConfigWithInstance,
-  McpServerConfig
-} from '@anthropic-ai/claude-agent-sdk'
+import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import type { SessionToolOptions } from '@dia/plugin'
 import type { McpServer } from '@dia-plugin/dia-mcp/servers'
 import { assert, describe, it } from '@effect/vitest'
@@ -13,11 +10,11 @@ const options = (...args: Parameters<typeof sessionToolOptions>) =>
 
 const taskTools = ['TaskCreate', 'TaskGet', 'TaskUpdate', 'TaskList']
 
-const diaServer = {
-  type: 'sdk',
-  name: 'dia',
-  instance: {}
-} as unknown as McpSdkServerConfigWithInstance
+const diaServer: McpServer = {
+  type: 'http',
+  url: 'http://127.0.0.1:4000/mcp',
+  headers: { Authorization: 'Bearer token' }
+}
 
 const github: McpServer = {
   type: 'stdio',
@@ -33,17 +30,10 @@ const toolsWith = (overrides: Partial<SessionToolOptions>): SessionToolOptions =
   ...overrides
 })
 
-describe('sessionToolOptions for an ad-hoc tab', () => {
-  it('allows only the task-tracking tools when there is no dia tool server', () => {
-    assert.deepStrictEqual(options(Option.none(), Option.none()), {
+describe('sessionToolOptions with no tool options', () => {
+  it('allows only the task-tracking tools', () => {
+    assert.deepStrictEqual(options(Option.none()), {
       allowedTools: taskTools
-    })
-  })
-
-  it('adds the dia tool server under its key', () => {
-    assert.deepStrictEqual(options(Option.none(), Option.some(diaServer)), {
-      allowedTools: taskTools,
-      mcpServers: { dia: diaServer }
     })
   })
 })
@@ -52,21 +42,15 @@ describe('sessionToolOptions with session tool options', () => {
   it('enables only the listed skills', () => {
     const tools = toolsWith({ skills: ['review', 'dia-meta:plan'] })
 
-    assert.deepStrictEqual(options(Option.some(tools), Option.none()).skills, [
-      'review',
-      'dia-meta:plan'
-    ])
+    assert.deepStrictEqual(options(Option.some(tools)).skills, ['review', 'dia-meta:plan'])
   })
 
   it('leaves every skill enabled when the list is empty', () => {
-    assert.notProperty(options(Option.some(toolsWith({})), Option.none()), 'skills')
+    assert.notProperty(options(Option.some(toolsWith({}))), 'skills')
   })
 
-  it('gives tool options with no rules or servers the same options as an ad-hoc tab', () => {
-    assert.deepStrictEqual(
-      options(Option.some(toolsWith({})), Option.some(diaServer)),
-      options(Option.none(), Option.some(diaServer))
-    )
+  it('gives tool options with no rules or servers the same options as none', () => {
+    assert.deepStrictEqual(options(Option.some(toolsWith({}))), options(Option.none()))
   })
 
   it('allows the allow rules after the task-tracking tools', () => {
@@ -74,7 +58,7 @@ describe('sessionToolOptions with session tool options', () => {
       permissions: { allow: ['Read', 'Bash(pnpm test)'], ask: [], deny: [] }
     })
 
-    assert.deepStrictEqual(options(Option.some(tools), Option.none()).allowedTools, [
+    assert.deepStrictEqual(options(Option.some(tools)).allowedTools, [
       ...taskTools,
       'Read',
       'Bash(pnpm test)'
@@ -84,20 +68,18 @@ describe('sessionToolOptions with session tool options', () => {
   it('passes the deny rules as disallowedTools', () => {
     const tools = toolsWith({ permissions: { allow: [], ask: [], deny: ['Bash(git push *)'] } })
 
-    assert.deepStrictEqual(options(Option.some(tools), Option.none()).disallowedTools, [
-      'Bash(git push *)'
-    ])
+    assert.deepStrictEqual(options(Option.some(tools)).disallowedTools, ['Bash(git push *)'])
   })
 
   it('passes the ask rules as settings permission ask rules', () => {
     const tools = toolsWith({ permissions: { allow: [], ask: ['Bash(git status*)'], deny: [] } })
 
-    assert.deepStrictEqual(options(Option.some(tools), Option.none()).settings, {
+    assert.deepStrictEqual(options(Option.some(tools)).settings, {
       permissions: { ask: ['Bash(git status*)'] }
     })
   })
 
-  it('adds the MCP servers beside the dia tool server', () => {
+  it('passes every MCP server, including the dia server, as the SDK config', () => {
     const expected: McpServerConfig = {
       type: 'stdio',
       command: 'github-mcp',
@@ -106,27 +88,9 @@ describe('sessionToolOptions with session tool options', () => {
     }
 
     assert.deepStrictEqual(
-      options(Option.some(toolsWith({ mcpServers: { github } })), Option.some(diaServer))
-        .mcpServers,
+      options(Option.some(toolsWith({ mcpServers: { github, dia: diaServer } }))).mcpServers,
       { github: expected, dia: diaServer }
     )
-  })
-
-  it('replaces a server named dia with the dia tool server', () => {
-    const tools = toolsWith({ mcpServers: { dia: github } })
-
-    assert.deepStrictEqual(options(Option.some(tools), Option.some(diaServer)).mcpServers, {
-      dia: diaServer
-    })
-  })
-
-  it('keeps a server named dia when there is no dia tool server', () => {
-    const tools = toolsWith({ mcpServers: { dia: github } })
-
-    assert.deepStrictEqual(options(Option.some(tools), Option.none()).mcpServers?.dia, {
-      ...github,
-      args: ['--read-only']
-    })
   })
 
   it.effect('leaves out a server that is not an MCP server, logs it, and keeps the others', () => {
@@ -137,7 +101,7 @@ describe('sessionToolOptions with session tool options', () => {
     const tools = toolsWith({ mcpServers: { github, files: { type: 'ftp' } } })
 
     return Effect.gen(function* () {
-      const result = yield* sessionToolOptions(Option.some(tools), Option.none())
+      const result = yield* sessionToolOptions(Option.some(tools))
 
       assert.deepStrictEqual(Object.keys(result.mcpServers ?? {}), ['github'])
       assert.isTrue(

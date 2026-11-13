@@ -1,4 +1,4 @@
-import type { DiaTool, DiaToolResult } from '@dia/plugin'
+import { type DiaTool, type DiaToolResult, diaTool, type ToolScope } from '@dia/plugin'
 import { Effect, Schema } from 'effect'
 import {
   type AssigneeRef,
@@ -16,6 +16,7 @@ import {
   StartedStatus,
   WorkTitle
 } from './domain'
+import { IssueToolContext } from './service'
 import {
   decodeField,
   decodeOptional,
@@ -109,34 +110,45 @@ const recover =
       )
     )
 
+const issueScopeOf = (
+  scope: ToolScope,
+  authorOf: (assigneeId: string) => AssigneeRef
+): Effect.Effect<IssueToolScope, InvalidInput> =>
+  Schema.decodeUnknownEffect(IssueToolContext)(scope.context).pipe(
+    Effect.map((context) => ({ issueId: context.issueId, author: authorOf(context.assigneeId) })),
+    Effect.mapError(() => new InvalidInput({ message: 'This run is not working on an issue.' }))
+  )
+
 const issueIdOrOwn = (input: Input, scope: IssueToolScope) => {
   const raw = present(input, 'issue_id')
   return raw === undefined ? Effect.succeed(scope.issueId) : decodeIssueId('issue_id', raw)
 }
 
 /**
- * The dia tools an assignee's session gets: create_issue, update_issue and comment_issue,
- * each acting only within the objective of `scope.issueId`, with comments authored by `scope.author`.
- * `update_issue` and `comment_issue` default to `scope.issueId`; only that issue's status can
- * change. A refused call returns its reason to the agent with `isError` set and writes nothing.
- * Build them once per hired agent session and pass them as the session's dia tools.
+ * The dia tools an assignee's run gets: create_issue, update_issue and comment_issue. Each call
+ * reads the issue and assignee from the run's context (`{ issueId, assigneeId }`), acts only within
+ * that issue's objective, and authors comments as `authorOf(assigneeId)`. `update_issue` and
+ * `comment_issue` default to the run's issue; only that issue's status can change. A refused call,
+ * including one from a run without that context, returns its reason to the agent with `isError`
+ * set and writes nothing.
  */
 export const makeIssueTools = (
   work: IssueToolWork,
-  scope: IssueToolScope
+  authorOf: (assigneeId: string) => AssigneeRef
 ): ReadonlyArray<DiaTool> => [
-  {
+  diaTool({
     name: 'create_issue',
     description:
       'Propose a new issue in your objective. It goes to Triage, unassigned, for the user to accept or decline. Give it a description another agent can act on.',
-    input: {
+    input: Schema.Struct({
       title: required('Title of the issue, up to 120 characters.'),
       description: optional('What the issue asks for, so an agent can act on it.'),
       parent_issue_id: optional('Id of the issue in this objective it belongs under.')
-    },
-    run: (input) =>
+    }),
+    run: (input, toolScope) =>
       recover('create_issue', 'create the issue')(
         Effect.gen(function* () {
+          const scope = yield* issueScopeOf(toolScope, authorOf)
           const title = yield* decodeField(WorkTitle, 'title', (input.title ?? '').trim())
           const description =
             (yield* decodeOptional(
@@ -161,22 +173,23 @@ export const makeIssueTools = (
           }
         }
       )
-  },
-  {
+  }),
+  diaTool({
     name: 'update_issue',
     description:
       "Change an issue in your objective. Set your own issue's status as you work: understanding, designing, implementing, testing, verifying, in_review. Set in_review when the work is ready for the user.",
-    input: {
+    input: Schema.Struct({
       issue_id: optional('Id of the issue to change; your own issue when omitted.'),
       title: optional('New title, up to 120 characters.'),
       description: optional('New description.'),
       status: optional(
         `New status of your own issue, one of: ${StartedStatus.literals.join(', ')}.`
       )
-    },
-    run: (input) =>
+    }),
+    run: (input, toolScope) =>
       recover('update_issue', 'update the issue')(
         Effect.gen(function* () {
+          const scope = yield* issueScopeOf(toolScope, authorOf)
           const issueId = yield* issueIdOrOwn(input, scope)
           const title = yield* decodeOptional(WorkTitle, 'title', present(input, 'title')?.trim())
           const description = yield* decodeOptional(
@@ -214,26 +227,27 @@ export const makeIssueTools = (
           }
         }
       )
-  },
-  {
+  }),
+  diaTool({
     name: 'comment_issue',
     description:
       'Add a comment to an issue in your objective, for the user and other agents to read.',
-    input: {
+    input: Schema.Struct({
       issue_id: optional('Id of the issue to comment on; your own issue when omitted.'),
       body: required('Text of the comment.')
-    },
-    run: (input) =>
+    }),
+    run: (input, toolScope) =>
       recover(
         'comment_issue',
         'comment on the issue'
       )(
         Effect.gen(function* () {
+          const scope = yield* issueScopeOf(toolScope, authorOf)
           const issueId = yield* issueIdOrOwn(input, scope)
           const body = yield* decodeField(CommentBody, 'body', (input.body ?? '').trim())
           yield* work.commentIssue(scope.issueId, issueId, scope.author, body)
           return result(`Commented on issue ${issueId}.`)
         })
       )
-  }
+  })
 ]

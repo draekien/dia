@@ -111,9 +111,9 @@ const runTool = (
   name: string,
   input: Record<string, string>
 ) => {
-  const tool = env.runs.issueTools(fromIssue, assigneeId).find((entry) => entry.name === name)
+  const tool = env.runs.issueTools.find((entry) => entry.name === name)
   assert.isDefined(tool, name)
-  return tool.run(input)
+  return tool.run(input, { labels: [], context: { issueId: fromIssue, assigneeId } })
 }
 
 describe('Issues.createObjective', () => {

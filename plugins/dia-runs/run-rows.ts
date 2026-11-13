@@ -8,7 +8,9 @@ export const StoredSpec = Schema.Struct({
   model: Schema.String,
   thinkingLevel: ThinkingLevel,
   permissionMode: PermissionMode,
-  worktree: Schema.NullOr(WorktreeInfo)
+  worktree: Schema.NullOr(WorktreeInfo),
+  labels: Schema.optionalKey(Schema.Array(Schema.String)),
+  context: Schema.optionalKey(Schema.Unknown)
 })
 export type StoredSpec = typeof StoredSpec.Type
 

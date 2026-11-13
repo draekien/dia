@@ -2,7 +2,6 @@
 import { stat } from 'node:fs/promises'
 import {
   type CanUseTool,
-  type McpSdkServerConfigWithInstance,
   type PermissionResult,
   type PermissionUpdate,
   type Query,
@@ -14,7 +13,6 @@ import {
 import {
   BackgroundTasksChanged,
   ContextUsageChanged,
-  type DiaTool,
   MessageQueueChanged,
   ModelChanged,
   makePendingUserInput,
@@ -102,7 +100,6 @@ import { makeSessionEventReducer, toSlashCommandInfo } from './reducer'
 import { sessionAdditionsOptions } from './session-additions'
 import { sessionToolOptions } from './session-tool-options'
 import { thinkingOptions } from './thinking-options'
-import { DIA_TOOL_SERVER_KEY, makeDiaToolServer } from './tool-server'
 import { readLastAssistantUuid, readTurnResumeAnchor } from './transcript'
 
 /**
@@ -447,7 +444,6 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     modeController: PermissionModeController,
     abortExpectedRef: Ref.Ref<boolean>,
     canUseTool: CanUseTool,
-    newDiaToolServer: Option.Option<() => McpSdkServerConfigWithInstance>,
     emit: (message: OutboundMessage) => Effect.Effect<void>,
     resume: Option.Option<SessionId>,
     branchAt: string | undefined,
@@ -476,15 +472,6 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       branchAt,
       continuesFrom: Option.getOrUndefined(continuesFrom)
     })
-    if (
-      Option.isSome(newDiaToolServer) &&
-      Option.exists(additions.tools, (tools) => DIA_TOOL_SERVER_KEY in tools.mcpServers)
-    ) {
-      yield* Effect.logWarning('An MCP server named dia was replaced by the dia tool server', {
-        paneId: config.paneId,
-        server: DIA_TOOL_SERVER_KEY
-      })
-    }
 
     const thinking = thinkingOptions(config.thinkingLevel)
     yield* Effect.logInfo('Resolved thinking options', {
@@ -492,10 +479,9 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
       options: thinking
     })
 
-    const toolOptions = yield* sessionToolOptions(
-      additions.tools,
-      Option.map(newDiaToolServer, (newServer) => newServer())
-    ).pipe(Effect.annotateLogs('paneId', config.paneId))
+    const toolOptions = yield* sessionToolOptions(additions.tools).pipe(
+      Effect.annotateLogs('paneId', config.paneId)
+    )
 
     const input = yield* openPromptInput(promptQueue)
 
@@ -685,18 +671,6 @@ const runSession = Effect.fn('ClaudeCodeSession.runSession')(
     )
 )
 
-const diaToolServerFactory = (
-  tools: ReadonlyArray<DiaTool>,
-  services: Context.Context<never>
-): Option.Option<() => McpSdkServerConfigWithInstance> => {
-  if (tools.length === 0) return Option.none()
-  const serverOptions = {
-    tools,
-    run: <A>(effect: Effect.Effect<A>) => Effect.runPromiseWith(services)(effect)
-  }
-  return Option.some(() => makeDiaToolServer(serverOptions))
-}
-
 const ignoredUnstarted =
   (command: string, reason: string) =>
   (..._args: ReadonlyArray<unknown>): Effect.Effect<void> =>
@@ -756,13 +730,12 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
     appendLength: options.systemPromptAppend.length,
     pluginPaths: options.pluginPaths
   })
-  const { emit, diaTools } = options
+  const { emit } = options
   const sessionScope = yield* Scope.Scope
   const services = yield* Effect.context<never>()
   const pendingUserInput = makePendingUserInput()
   const modeController = yield* makePermissionModeController
   const canUseTool = makeCanUseTool(pendingUserInput, emit, services)
-  const newDiaToolServer = diaToolServerFactory(diaTools, services)
   const promptQueue = yield* Queue.unbounded<SDKUserMessage>()
   const sessionIdRef = yield* Ref.make<Option.Option<SessionId>>(Option.none())
   const branchAtRef = yield* Ref.make<Option.Option<string>>(Option.none())
@@ -839,7 +812,6 @@ export const openClaudeCodeSession = Effect.fn('ClaudeCodeSession.open')(functio
         modeController,
         abortExpectedRef,
         canUseTool,
-        newDiaToolServer,
         emit,
         resume,
         branchAt,

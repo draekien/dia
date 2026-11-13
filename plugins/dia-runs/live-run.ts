@@ -91,8 +91,7 @@ export interface LiveRunOptions extends LiveRunCallbacks {
   readonly config: PaneConfig
   readonly resume: Option.Option<SessionId>
   readonly open: (
-    emit: (message: OutboundMessage) => Effect.Effect<void>,
-    turnEnded: Effect.Effect<void>
+    emit: (message: OutboundMessage) => Effect.Effect<void>
   ) => Effect.Effect<AgentSession, never, Scope.Scope>
   readonly record: (message: OutboundMessage) => Effect.Effect<void>
   readonly usageLimitResume: Effect.Effect<Parking.UsageLimitResume>
@@ -500,15 +499,13 @@ export const startLiveRun = Effect.fn('LiveRun.start')(function* (options: LiveR
       if (Option.isSome(attentionTarget)) yield* applyAttention(attentionTarget.value)
     })
 
-  const session = yield* options.open(
-    (message) =>
-      Effect.andThen(
-        Effect.flatMap(Queue.offer(outbound, RunOutput.Record({ message })), (queued) =>
-          queued ? Effect.void : options.record(message)
-        ),
-        handleSessionEvent(message)
+  const session = yield* options.open((message) =>
+    Effect.andThen(
+      Effect.flatMap(Queue.offer(outbound, RunOutput.Record({ message })), (queued) =>
+        queued ? Effect.void : options.record(message)
       ),
-    turnEnded
+      handleSessionEvent(message)
+    )
   )
   yield* Deferred.succeed(sessionReady, session)
   yield* Effect.logInfo('Run agent session created', {

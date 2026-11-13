@@ -15,7 +15,6 @@ const openOptions = {
   config,
   resume: Option.none(),
   emit: () => Effect.void,
-  diaTools: [],
   systemPromptAppend: '',
   pluginPaths: [],
   tools: Option.none()

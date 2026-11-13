@@ -1,7 +1,6 @@
 import {
   type Attachment,
   Attention,
-  type DiaTool,
   EMPTY_MESSAGE_QUEUE,
   type GitOps,
   type PaneConfig,
@@ -48,6 +47,7 @@ import {
 import type { AgentBackend, SessionEnd } from './backend'
 import { type LiveRunHandle, startLiveRun } from './live-run'
 import { cwdOf, type RunRow, type RunRows, type StoredSpec } from './run-rows'
+import type { RunTools } from './run-tools'
 import { setUpWorktreeTab } from './tab-setup'
 
 const SESSION_NOT_FOUND_NOTICE =
@@ -65,7 +65,7 @@ export interface RunRegistryDeps {
   readonly runEvents: Effect.Effect<Option.Option<RunEvents>>
   readonly gitOps: Effect.Effect<Option.Option<GitOps>>
   readonly additions: Effect.Effect<SessionAdditions>
-  readonly pluginTools: (turnEnded: Effect.Effect<void>) => ReadonlyArray<DiaTool>
+  readonly sessionTools: RunTools['sessionTools']
   readonly usageLimitResume: Effect.Effect<Parking.UsageLimitResume>
   readonly newRunId: Effect.Effect<string>
 }
@@ -89,7 +89,9 @@ const specOfRow = (row: RunRow): RunSpec => ({
   thinkingLevel: row.spec.thinkingLevel,
   permissionMode: row.spec.permissionMode,
   worktree: row.spec.worktree === null ? undefined : { _tag: 'Reattach', info: row.spec.worktree },
-  resume: row.sessionId
+  resume: row.sessionId,
+  ...(row.spec.labels === undefined ? {} : { labels: row.spec.labels }),
+  ...(row.spec.context === undefined ? {} : { context: row.spec.context })
 })
 
 /**
@@ -220,7 +222,9 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
     model: config.model,
     thinkingLevel: config.thinkingLevel,
     permissionMode: config.permissionMode,
-    worktree: config.worktree ?? null
+    worktree: config.worktree ?? null,
+    ...(spec.labels === undefined ? {} : { labels: spec.labels }),
+    ...(spec.context === undefined ? {} : { context: spec.context })
   })
 
   const recordFor = Effect.fnUntraced(function* (
@@ -283,17 +287,22 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
             }
             yield* PubSub.publish(changes, RunPermissionModeChanged.make({ runId, mode }))
           }),
-        open: (emit, turnEnded) =>
+        open: (emit) =>
           Effect.gen(function* () {
             const backend = yield* deps.backend
             const additions = yield* deps.additions
+            const tools = yield* deps.sessionTools({
+              runId,
+              project: spec.sourceCwd,
+              labels: spec.labels ?? [],
+              context: spec.context
+            })
             return yield* backend.openSession({
               config,
               resume: spec.resume,
               emit,
               ...additions,
-              diaTools: deps.pluginTools(turnEnded),
-              tools: Option.none()
+              tools
             })
           })
       })
@@ -448,7 +457,9 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
         thinkingLevel: options.thinkingLevel,
         permissionMode: options.permissionMode,
         worktree: undefined,
-        resume: Option.none()
+        resume: Option.none(),
+        ...(options.labels === undefined ? {} : { labels: options.labels }),
+        ...(options.context === undefined ? {} : { context: options.context })
       },
       false
     ).pipe(Effect.orDie)
