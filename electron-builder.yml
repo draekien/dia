@@ -22,6 +22,7 @@ asarUnpack:
   - node_modules/@anthropic-ai/claude-agent-sdk/**
   - node_modules/esbuild/**
   - node_modules/@esbuild/**
+  - node_modules/@lydell/**
 
 win:
   icon: build/icon.ico
