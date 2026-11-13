@@ -7,7 +7,9 @@ const MAX_FOLDER_NAME = 200
 
 /** Claude Code's folder for the transcripts of sessions run in `cwd`, under `projectsDir`. */
 export const transcriptFolderOf = (projectsDir: string, cwd: string): string =>
-  `${projectsDir}/${cwd.replace(/[^a-zA-Z0-9]/g, '-')}`
+  `${projectsDir}/${folderNameOf(cwd)}`
+
+const folderNameOf = (cwd: string): string => cwd.replace(/[^a-zA-Z0-9]/g, '-')
 
 /**
  * The folder Claude Code keeps transcripts in: `<CLAUDE_CONFIG_DIR>/projects`, or
@@ -22,24 +24,28 @@ export const claudeProjectsDir: Effect.Effect<string> = Config.String('CLAUDE_CO
 /** The working directory of every Claude Code session on this machine, from the Agent SDK. */
 export const sessionCwds: Effect.Effect<ReadonlyArray<string>, unknown> = Effect.tryPromise(() =>
   listSessions()
-).pipe(Effect.map((sessions) => sessions.flatMap((session) => session.cwd ?? [])))
+).pipe(Effect.map((sessions) => [...new Set(sessions.flatMap((session) => session.cwd ?? []))]))
 
 /**
  * Renames the transcript folder of each session working directory in `cwds` that lies under
- * `move.from` to the folder of its new path, so Claude Code resumes those sessions there. A folder
- * that does not exist, a destination that already exists, and a name Claude Code would shorten
- * (over 200 characters) are logged and skipped; nothing is deleted. Fails only when a rename
- * fails. Requires `FileSystem` and `Path`.
+ * `move.from` to the folder of its new path, so Claude Code resumes those sessions there. `cwds`
+ * runs only when `projectsDir` holds a folder whose name could belong to a directory under
+ * `move.from`. A folder that does not exist, a destination that already exists, and a name Claude
+ * Code would shorten (over 200 characters) are logged and skipped; nothing is deleted. Fails only
+ * when `cwds` or a rename fails. Requires `FileSystem` and `Path`.
  */
 export const moveTranscriptFolders = Effect.fn('ClaudeCode.moveTranscriptFolders')(function* (
   move: PathsMoved,
   projectsDir: string,
-  cwds: ReadonlyArray<string>
+  cwds: Effect.Effect<ReadonlyArray<string>, unknown>
 ) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const exists = (folder: string) => fs.exists(folder).pipe(Effect.orElseSucceed(() => false))
-  for (const cwd of cwds) {
+  const prefix = folderNameOf(move.from).toLowerCase()
+  const folders = yield* fs.readDirectory(projectsDir).pipe(Effect.orElseSucceed(() => []))
+  if (!folders.some((folder) => folder.toLowerCase().startsWith(prefix))) return
+  for (const cwd of yield* cwds) {
     const relocated = relocatePath(cwd, move)
     if (Option.isNone(relocated)) continue
     const target = relocated.value

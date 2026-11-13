@@ -18,7 +18,7 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     const recentSessionCwds = yield* Effect.cachedWithTTL(sessionCwds, Duration.minutes(1))
     yield* ctx.onPathsMoved((move) =>
       Effect.gen(function* () {
-        yield* moveTranscriptFolders(move, yield* claudeProjectsDir, yield* recentSessionCwds)
+        yield* moveTranscriptFolders(move, yield* claudeProjectsDir, recentSessionCwds)
       }).pipe(Effect.provideContext(services))
     )
     const install = yield* makeClaudeInstall(ctx, isExistingFile)

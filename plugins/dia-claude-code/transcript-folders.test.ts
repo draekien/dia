@@ -1,6 +1,6 @@
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { assert, describe, it } from '@effect/vitest'
-import { Effect, FileSystem, type Path } from 'effect'
+import { Effect, Exit, FileSystem, type Path } from 'effect'
 import { moveTranscriptFolders, transcriptFolderOf } from './transcript-folders'
 
 const move = {
@@ -36,7 +36,7 @@ describe('moveTranscriptFolders', () => {
         yield* fs.makeDirectory(`${projects}/${OLD_FOLDER}`)
         yield* fs.writeFileString(`${projects}/${OLD_FOLDER}/s.jsonl`, '{}')
 
-        yield* moveTranscriptFolders(move, projects, [movedCwd])
+        yield* moveTranscriptFolders(move, projects, Effect.succeed([movedCwd]))
 
         assert.deepStrictEqual(
           [
@@ -56,7 +56,7 @@ describe('moveTranscriptFolders', () => {
         const folder = sibling.replace(/[^a-zA-Z0-9]/g, '-')
         yield* fs.makeDirectory(`${projects}/${folder}`)
 
-        yield* moveTranscriptFolders(move, projects, [sibling])
+        yield* moveTranscriptFolders(move, projects, Effect.succeed([sibling]))
 
         assert.deepStrictEqual(yield* fs.readDirectory(projects), [folder])
       })
@@ -69,7 +69,7 @@ describe('moveTranscriptFolders', () => {
         yield* fs.makeDirectory(`${projects}/${OLD_FOLDER}`)
         yield* fs.makeDirectory(`${projects}/${NEW_FOLDER}`)
 
-        yield* moveTranscriptFolders(move, projects, [movedCwd])
+        yield* moveTranscriptFolders(move, projects, Effect.succeed([movedCwd]))
 
         assert.deepStrictEqual(
           (yield* fs.readDirectory(projects)).sort(),
@@ -82,9 +82,23 @@ describe('moveTranscriptFolders', () => {
   it.effect('does nothing for a moved working directory without a transcript folder', () =>
     withProjects((projects, fs) =>
       Effect.gen(function* () {
-        yield* moveTranscriptFolders(move, projects, [movedCwd])
+        yield* moveTranscriptFolders(move, projects, Effect.succeed([movedCwd]))
 
         assert.deepStrictEqual(yield* fs.readDirectory(projects), [])
+      })
+    )
+  )
+
+  it.effect('does not list sessions when no transcript folder lies under the moved folder', () =>
+    withProjects((projects, fs) =>
+      Effect.gen(function* () {
+        yield* fs.makeDirectory(`${projects}/C--elsewhere`)
+
+        const exit = yield* Effect.exit(
+          moveTranscriptFolders(move, projects, Effect.fail('listed sessions'))
+        )
+
+        assert.isTrue(Exit.isSuccess(exit))
       })
     )
   )

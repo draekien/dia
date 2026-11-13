@@ -223,7 +223,7 @@ const gitOpsFailureText = (failure: ServiceWithdrawnError | { readonly cause: un
  * visible; with nothing persisted it starts empty. Requires {@link PaneSupervisor}, {@link WorkspaceStore},
  * {@link TranscriptReader}, {@link PaneChatProjection}, {@link EventHub}, {@link AgentEventStore},
  * {@link HostPlugins} (for the worktree and agent backend services used to remove a project), {@link WorkspaceFeed} (which it keeps current),
- * {@link PathMoves} (it rewrites tab paths under each moved folder, as the path owner `workspace`),
+ * {@link PathMoves} (it rewrites tab paths under each moved folder, as the path owner `host:workspace`),
  * `FileSystem`, `Path` and `Crypto`.
  */
 export const PaneWorkspaceLive = Layer.effect(
@@ -280,7 +280,7 @@ export const PaneWorkspaceLive = Layer.effect(
         })
       )
 
-    yield* pathMoves.subscribe('workspace', (move) =>
+    yield* pathMoves.subscribe('host:workspace', (move) =>
       mutate<never>('pathsMoved', (workspace) =>
         Result.succeed(WorkspaceOps.movePaths(workspace, move))
       )

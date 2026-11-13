@@ -102,7 +102,7 @@ Delivery runs entries in `sequence` order, under one semaphore for all owners. A
 
 ### Kernel owner: `PaneWorkspace`
 
-`WorkspaceOps.movePaths(workspace, move)` (pure) rewrites each tab's `config.cwd` and `config.worktree.path` through `relocatePath` and returns the same object when nothing changed. `PaneWorkspaceLive` subscribes owner `workspace` and applies it through `mutate`, so memory, `host.db` and `WorkspaceChanged` change together.
+`WorkspaceOps.movePaths(workspace, move)` (pure) rewrites each tab's `config.cwd` and `config.worktree.path` through `relocatePath` and returns the same object when nothing changed. `PaneWorkspaceLive` subscribes owner `host:workspace` (a name no plugin can take) and applies it through `mutate`, so memory, `host.db` and `WorkspaceChanged` change together.
 
 ### `dia-worktrees`
 
@@ -142,4 +142,4 @@ At layer build, `renamePluginKeys` renames each `pluginOverrides` and `adapters`
 
 **Round 2 (inline)**
 
-* No blocker or major finding. Checked: `migrate` receives `manifest.name`, so the catalog name and data folder agree; `recordMove` delivery to `workspace` happens inside the plugin load, before `HostReady`.
+* No blocker or major finding. Checked: `migrate` receives `manifest.name`, so the catalog name and data folder agree; `recordMove` delivery to `host:workspace` happens inside the plugin load, before `HostReady`.
