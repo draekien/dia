@@ -16,6 +16,7 @@ import type { TerminalInfo, Terminals } from './terminals'
 
 const RUN = 'aaaaaaaa-0000-4000-8000-000000000001'
 const WAIT = Duration.seconds(20)
+const RETYPE_INTERVAL = Duration.seconds(3)
 
 const live = <A, E>(effect: Effect.Effect<A, E, NodeServices.NodeServices | Scope.Scope>) =>
   effect.pipe(Effect.scoped, Effect.provide(NodeServices.layer))
