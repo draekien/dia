@@ -226,15 +226,17 @@ describe('SettingsStore plugin overrides', () => {
 
   it.effect('replaces the stored path when an override is set again for the same plugin', () =>
     Effect.gen(function* () {
-      const overrides = yield* run(JSON.stringify({ pluginOverrides: { chat: '/old' } }), (store) =>
-        Effect.gen(function* () {
-          yield* store.setPluginOverride('chat', '/new')
-          yield* store.setPluginOverride('theme', '/other')
-          return yield* store.getPluginOverrides()
-        })
+      const overrides = yield* run(
+        JSON.stringify({ pluginOverrides: { notes: '/old' } }),
+        (store) =>
+          Effect.gen(function* () {
+            yield* store.setPluginOverride('notes', '/new')
+            yield* store.setPluginOverride('theme', '/other')
+            return yield* store.getPluginOverrides()
+          })
       )
 
-      assert.deepStrictEqual(overrides, { chat: '/new', theme: '/other' })
+      assert.deepStrictEqual(overrides, { notes: '/new', theme: '/other' })
     })
   )
 
@@ -242,17 +244,66 @@ describe('SettingsStore plugin overrides', () => {
     Effect.gen(function* () {
       const stored = JSON.stringify({
         theme: 'dark',
-        pluginOverrides: { chat: '/a', theme: '/b' }
+        pluginOverrides: { notes: '/a', theme: '/b' }
       })
 
       const result = yield* run(stored, (store) =>
         Effect.gen(function* () {
-          yield* store.clearPluginOverride('chat')
+          yield* store.clearPluginOverride('notes')
           return [yield* store.getPluginOverrides(), yield* store.getTheme()] as const
         })
       )
 
       assert.deepStrictEqual(result, [{ theme: '/b' }, Option.some('dark' as const)])
+    })
+  )
+})
+
+describe('SettingsStore plugin renames', () => {
+  const build = (initial: string) => {
+    const setup = makeTestSetup(initial)
+    return Effect.gen(function* () {
+      const store = yield* SettingsStore
+      return {
+        overrides: yield* store.getPluginOverrides(),
+        claudeCode: yield* store.getAdapterPreferences('dia-claude-code'),
+        writes: setup.writes.length
+      }
+    }).pipe(Effect.provide(setup.testLayer), Effect.provide(setup.loggerLayer))
+  }
+  const preferences = { models: { opus: 'favourite' as const }, defaults: {} }
+
+  it.effect('renames override and adapter keys of first-party plugins to their dia- names', () =>
+    Effect.gen(function* () {
+      const result = yield* build(
+        JSON.stringify({
+          pluginOverrides: { worktrees: '/src/worktrees', notes: '/src/notes' },
+          adapters: { 'claude-code': preferences }
+        })
+      )
+
+      assert.deepStrictEqual(
+        [result.overrides, result.claudeCode],
+        [{ 'dia-worktrees': '/src/worktrees', notes: '/src/notes' }, preferences]
+      )
+    })
+  )
+
+  it.effect('keeps an old key when its dia- key already exists', () =>
+    Effect.gen(function* () {
+      const result = yield* build(
+        JSON.stringify({ pluginOverrides: { chat: '/old', 'dia-chat': '/new' } })
+      )
+
+      assert.deepStrictEqual(result.overrides, { chat: '/old', 'dia-chat': '/new' })
+    })
+  )
+
+  it.effect('writes nothing when no key needs renaming', () =>
+    Effect.gen(function* () {
+      const result = yield* build(JSON.stringify({ pluginOverrides: { notes: '/src/notes' } }))
+
+      assert.strictEqual(result.writes, 0)
     })
   )
 })
