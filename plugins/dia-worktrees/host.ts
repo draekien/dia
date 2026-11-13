@@ -1,4 +1,11 @@
-import { type GitOps, type HostPluginContext, type PluginSetup, WorktreesKey } from '@dia/plugin'
+import {
+  GitKey,
+  type GitOps,
+  type HostPluginContext,
+  type PluginSetup,
+  WorktreesKey
+} from '@dia/plugin'
+import { makeGit } from '@dia-plugin/dia-git/git'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { Effect, Path } from 'effect'
 import { DiscardWorktree, KeepWorktree, WatchWorktrees } from './calls'
@@ -28,19 +35,23 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     const sql = yield* ctx.database(worktreeMigrations)
     const ledger = yield* makeLedger(sql)
     yield* ctx.onPathsMoved((move) =>
-      ledger
-        .movePaths(move)
-        .pipe(Effect.flatMap(repairWorktrees), Effect.provide(NodeServices.layer))
+      Effect.gen(function* () {
+        yield* repairWorktrees(yield* ledger.movePaths(move), yield* makeGit)
+      }).pipe(Effect.provide(NodeServices.layer))
     )
-    const { git, root } = yield* Effect.gen(function* () {
-      const root = (yield* Path.Path).join(ctx.dataDir, 'trees')
-      return { git: yield* makeGitOps(root), root }
-    }).pipe(Effect.provide(NodeServices.layer))
+    const root = (yield* Path.Path).join(ctx.dataDir, 'trees')
     yield* ctx.serve(WatchWorktrees, () => ledger.changes)
-    yield* ctx.serve(DiscardWorktree, ({ path }) => ledger.discard(path, git.forceRemoveWorktree))
     yield* ctx.serve(KeepWorktree, ({ path }) => ledger.keep(path))
-    yield* ctx.provide(WorktreesKey, recordingGitOps(git, ledger))
-    yield* Effect.logInfo('Worktrees service provided', { plugin: ctx.name, root })
-  })
+    yield* ctx.whenProvided([GitKey], ({ git: provided }) =>
+      Effect.gen(function* () {
+        const git = yield* makeGitOps(root, provided).pipe(Effect.provide(NodeServices.layer))
+        yield* ctx.serve(DiscardWorktree, ({ path }) =>
+          ledger.discard(path, git.forceRemoveWorktree)
+        )
+        yield* ctx.provide(WorktreesKey, recordingGitOps(git, ledger))
+        yield* Effect.logInfo('Worktrees service provided', { plugin: ctx.name, root })
+      })
+    )
+  }).pipe(Effect.provide(NodeServices.layer))
 
 export default setup

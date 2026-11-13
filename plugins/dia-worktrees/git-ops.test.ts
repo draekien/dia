@@ -1,4 +1,5 @@
 import { type GitOps, WorktreeCreateError, WorktreeReattachError } from '@dia/plugin'
+import { makeGit } from '@dia-plugin/dia-git/git'
 import { assert, describe, it } from '@effect/vitest'
 import type { WorktreeInfo } from '@shared/domain/pane'
 import {
@@ -13,6 +14,7 @@ import {
   Path,
   PlatformError,
   Result,
+  Sink,
   Stream
 } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
@@ -31,27 +33,39 @@ function makeFakeSpawner(
   exitCodeFor: (command: ChildProcess.Command) => number,
   registeredWorktrees: ReadonlyArray<string> | 'unavailable'
 ): ChildProcessSpawner.ChildProcessSpawner['Service'] {
-  const notImplemented = () => Effect.die('not implemented in fake spawner')
-  const streamNotImplemented = () => Stream.die('not implemented in fake spawner')
-  return ChildProcessSpawner.ChildProcessSpawner.of({
-    spawn: notImplemented,
-    exitCode: (command) => Effect.succeed(ChildProcessSpawner.ExitCode(exitCodeFor(command))),
-    string: () =>
-      registeredWorktrees === 'unavailable'
-        ? Effect.fail(
-            PlatformError.systemError({
-              _tag: 'NotFound',
-              module: 'ChildProcess',
-              method: 'string',
-              description: 'git is not available'
-            })
-          )
-        : Effect.succeed(
-            registeredWorktrees.map((path) => `worktree ${path}\nHEAD abc\n`).join('\n')
-          ),
-    lines: notImplemented,
-    streamString: streamNotImplemented,
-    streamLines: streamNotImplemented
+  const unused = () => Effect.die('not used by makeGit')
+  const text = (value: string) => Stream.encodeText(Stream.make(value))
+  return ChildProcessSpawner.make((command) => {
+    const isWorktreeList = argsOf(command)[0] === 'worktree' && argsOf(command)[1] === 'list'
+    if (isWorktreeList && registeredWorktrees === 'unavailable') {
+      return Effect.fail(
+        PlatformError.systemError({
+          _tag: 'NotFound',
+          module: 'ChildProcess',
+          method: 'spawn',
+          description: 'git is not available'
+        })
+      )
+    }
+    const stdout =
+      isWorktreeList && registeredWorktrees !== 'unavailable'
+        ? registeredWorktrees.map((path) => `worktree ${path}\nHEAD abc\n`).join('\n')
+        : ''
+    return Effect.succeed(
+      ChildProcessSpawner.makeHandle({
+        pid: ChildProcessSpawner.ProcessId(1),
+        exitCode: Effect.sync(() => ChildProcessSpawner.ExitCode(exitCodeFor(command))),
+        isRunning: Effect.succeed(false),
+        kill: unused,
+        stdin: Sink.drain,
+        stdout: text(stdout),
+        stderr: text(''),
+        all: text(stdout),
+        getInputFd: () => Sink.drain,
+        getOutputFd: () => Stream.empty,
+        unref: unused()
+      })
+    )
   })
 }
 
@@ -107,7 +121,10 @@ function makeTestSetup(
   })
 
   const testLayer = Layer.provide(
-    Layer.effect(TestGitOps, makeGitOps(WORKTREES_ROOT)),
+    Layer.effect(
+      TestGitOps,
+      Effect.flatMap(makeGit, (git) => makeGitOps(WORKTREES_ROOT, git))
+    ),
     Layer.mergeAll(spawnerLayer, fsLayer, Path.layer)
   )
   const loggerLayer = Logger.layer([captureLogger], { mergeWithExisting: true })

@@ -1,3 +1,4 @@
+import { makeGit } from '@dia-plugin/dia-git/git'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { assert, describe, it } from '@effect/vitest'
 import { Effect, FileSystem, Option, Path } from 'effect'
@@ -26,7 +27,7 @@ const setup = Effect.fn('setup')(function* () {
   yield* fs.writeFileString(path.join(repo, 'a.txt'), 'one')
   yield* git(repo, 'add', '.')
   yield* git(repo, 'commit', '-q', '-m', 'init')
-  const gitOps = yield* makeGitOps(root)
+  const gitOps = yield* makeGitOps(root, yield* makeGit)
   const info = yield* gitOps.createWorktree(repo, OWNER, Option.some('Fix login'))
   return { fs, path, repo, gitOps, info }
 })

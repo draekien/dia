@@ -1,4 +1,5 @@
 import type { PathsMoved } from '@dia/plugin'
+import { makeGit } from '@dia-plugin/dia-git/git'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { Effect, Path } from 'effect'
 import { stopFsmonitors } from './folder-move'
@@ -9,7 +10,7 @@ import { stopFsmonitors } from './folder-move'
  */
 const beforeMove = (move: PathsMoved) =>
   Effect.gen(function* () {
-    yield* stopFsmonitors((yield* Path.Path).join(move.from, 'trees'))
+    yield* stopFsmonitors((yield* Path.Path).join(move.from, 'trees'), yield* makeGit)
   }).pipe(Effect.provide(NodeServices.layer))
 
 export default beforeMove

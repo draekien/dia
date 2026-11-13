@@ -1,4 +1,5 @@
 import {
+  type Git,
   type GitOps,
   type IncludedFileFailure,
   type ReleaseOutcome,
@@ -22,10 +23,7 @@ import {
   Result,
   Schedule
 } from 'effect'
-import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { generateWorktreeSlug } from './worktree-slug'
-
-const PORCELAIN_WORKTREE_PREFIX = 'worktree '
 
 const INCLUDE_FILE = '.worktreeinclude'
 
@@ -77,32 +75,23 @@ export interface GitCommands extends GitOps {
 }
 
 /**
- * Builds the {@link GitCommands} the `worktrees` plugin runs, shelling out to the `git` CLI through
- * the platform `ChildProcessSpawner`. New worktrees are created under `worktreesRoot`. Run it once
- * in the plugin's setup with the Node platform services provided.
+ * Builds the {@link GitCommands} the `worktrees` plugin runs through `git`, the `dia-git` service.
+ * New worktrees are created under `worktreesRoot`. Run it with the Node file system and path
+ * services provided.
  */
-export const makeGitOps = (worktreesRoot: string) =>
+export const makeGitOps = (worktreesRoot: string, git: Git) =>
   Effect.gen(function* () {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-
-    const verifyBranch = (sourceRepo: string, branch: string) =>
-      spawner.exitCode(
-        ChildProcess.make('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`]).pipe(
-          ChildProcess.setCwd(sourceRepo)
-        )
-      )
 
     const branchExists = Effect.fn('GitOps.branchExists')(function* (
       sourceRepo: string,
       paneId: PaneId,
       branch: string
     ) {
-      const exitCode = yield* verifyBranch(sourceRepo, branch).pipe(
-        Effect.mapError((cause) => new WorktreeCreateError({ paneId, sourceRepo, cause }))
-      )
-      return exitCode === 0
+      return yield* git
+        .branchExists(sourceRepo, branch)
+        .pipe(Effect.mapError((cause) => new WorktreeCreateError({ paneId, sourceRepo, cause })))
     })
 
     // A worktree's directory is removed on graceful shutdown but its branch persists (and
@@ -149,24 +138,16 @@ export const makeGitOps = (worktreesRoot: string) =>
         paneId,
         nameHint
       )
-      const command = ChildProcess.make('git', [
-        'worktree',
-        'add',
-        worktreePath,
-        '-b',
-        branch
-      ]).pipe(ChildProcess.setCwd(sourceRepo))
-      const exitCode = yield* spawner
-        .exitCode(command)
-        .pipe(Effect.mapError((cause) => new WorktreeCreateError({ paneId, sourceRepo, cause })))
-
-      if (exitCode !== 0) {
-        return yield* new WorktreeCreateError({
-          paneId,
-          sourceRepo,
-          cause: `git worktree add exited with code ${exitCode}`
-        })
-      }
+      yield* git.addWorktree(sourceRepo, worktreePath, branch, { createBranch: true }).pipe(
+        Effect.mapError(
+          (error) =>
+            new WorktreeCreateError({
+              paneId,
+              sourceRepo,
+              cause: `git worktree add exited with code ${error.exitCode}`
+            })
+        )
+      )
 
       yield* Effect.logInfo('Created worktree', { paneId, path: worktreePath, branch })
       return { path: worktreePath, branch, sourceRepo }
@@ -207,17 +188,12 @@ export const makeGitOps = (worktreesRoot: string) =>
       info: WorktreeInfo,
       paneId: PaneId
     ) {
-      const pruneExitCode = yield* spawner
-        .exitCode(
-          ChildProcess.make('git', ['worktree', 'prune']).pipe(ChildProcess.setCwd(info.sourceRepo))
-        )
-        .pipe(Effect.orElseSucceed(() => -1))
-
-      if (pruneExitCode !== 0) {
+      const pruned = yield* git.pruneWorktrees(info.sourceRepo).pipe(Effect.result)
+      if (Result.isFailure(pruned)) {
         yield* Effect.logWarning('Failed to prune worktree; manual cleanup may be needed', {
           paneId,
           path: info.path,
-          pruneExitCode
+          pruneExitCode: pruned.failure.exitCode
         })
         return
       }
@@ -227,26 +203,16 @@ export const makeGitOps = (worktreesRoot: string) =>
     })
 
     const removeCommand = (info: WorktreeInfo, force: boolean) =>
-      spawner
-        .exitCode(
-          ChildProcess.make('git', [
-            'worktree',
-            'remove',
-            ...(force ? ['--force'] : []),
-            info.path
-          ]).pipe(ChildProcess.setCwd(info.sourceRepo))
-        )
-        .pipe(Effect.orElseSucceed(() => -1))
+      git.removeWorktree(info.sourceRepo, info.path, { force }).pipe(
+        Effect.as(0),
+        Effect.catch((error) => Effect.succeed(error.exitCode))
+      )
 
     const countChangedFiles = (info: WorktreeInfo) =>
-      spawner
-        .string(
-          ChildProcess.make('git', ['status', '--porcelain']).pipe(ChildProcess.setCwd(info.path))
-        )
-        .pipe(
-          Effect.map((output) => output.split(/\r?\n/).filter((line) => line !== '').length),
-          Effect.orElseSucceed(() => 0)
-        )
+      git.status(info.path).pipe(
+        Effect.map((entries) => entries.length),
+        Effect.orElseSucceed(() => 0)
+      )
 
     const releaseWorktree = Effect.fn('GitOps.releaseWorktree')(function* (
       info: WorktreeInfo,
@@ -303,23 +269,13 @@ export const makeGitOps = (worktreesRoot: string) =>
       info: WorktreeInfo,
       paneId: PaneId
     ) {
-      const output = yield* spawner
-        .string(
-          ChildProcess.make('git', ['worktree', 'list', '--porcelain']).pipe(
-            ChildProcess.setCwd(info.sourceRepo)
-          )
-        )
+      const worktrees = yield* git
+        .listWorktrees(info.sourceRepo)
         .pipe(
           Effect.mapError((cause) => new WorktreeReattachError({ paneId, path: info.path, cause }))
         )
       const target = comparablePath(info.path)
-      return output
-        .split(/\r?\n/)
-        .some(
-          (line) =>
-            line.startsWith(PORCELAIN_WORKTREE_PREFIX) &&
-            comparablePath(line.slice(PORCELAIN_WORKTREE_PREFIX.length)) === target
-        )
+      return worktrees.some((worktree) => comparablePath(worktree) === target)
     })
 
     const reattachWorktree = Effect.fn('GitOps.reattachWorktree')(function* (
@@ -359,41 +315,32 @@ export const makeGitOps = (worktreesRoot: string) =>
         })
       }
 
-      const verified = yield* verifyBranch(info.sourceRepo, info.branch).pipe(
-        Effect.mapError((cause) => new WorktreeReattachError({ paneId, path: info.path, cause }))
-      )
-      if (verified !== 0) {
+      const verified = yield* git.branchExists(info.sourceRepo, info.branch).pipe(Effect.result)
+      if (Result.isFailure(verified) || !verified.success) {
         yield* Effect.logWarning('Did not reattach a worktree whose branch could not be verified', {
           paneId,
           branch: info.branch,
-          exitCode: verified
+          exitCode: Result.isFailure(verified) ? verified.failure.exitCode : 1
         })
         return yield* new WorktreeReattachError({
           paneId,
           path: info.path,
-          cause:
-            verified === 1
-              ? `Branch ${info.branch} no longer exists`
-              : `git rev-parse exited with code ${verified}`
+          cause: Result.isFailure(verified)
+            ? `git rev-parse exited with code ${verified.failure.exitCode}`
+            : `Branch ${info.branch} no longer exists`
         })
       }
 
-      const command = ChildProcess.make('git', ['worktree', 'add', info.path, info.branch]).pipe(
-        ChildProcess.setCwd(info.sourceRepo)
-      )
-      const exitCode = yield* spawner
-        .exitCode(command)
-        .pipe(
-          Effect.mapError((cause) => new WorktreeReattachError({ paneId, path: info.path, cause }))
+      yield* git.addWorktree(info.sourceRepo, info.path, info.branch, { createBranch: false }).pipe(
+        Effect.mapError(
+          (error) =>
+            new WorktreeReattachError({
+              paneId,
+              path: info.path,
+              cause: `git worktree add exited with code ${error.exitCode}`
+            })
         )
-
-      if (exitCode !== 0) {
-        return yield* new WorktreeReattachError({
-          paneId,
-          path: info.path,
-          cause: `git worktree add exited with code ${exitCode}`
-        })
-      }
+      )
 
       yield* Effect.logInfo('Reattached pane worktree', {
         paneId,
@@ -412,20 +359,9 @@ export const makeGitOps = (worktreesRoot: string) =>
         yield* Effect.logDebug('No .worktreeinclude in the project', { paneId, sourceRepo })
         return Option.none<ReadonlyArray<string>>()
       }
-      const command = ChildProcess.make('git', [
-        'ls-files',
-        '-z',
-        '--others',
-        '--ignored',
-        `--exclude-from=${includeFile}`
-      ]).pipe(
-        ChildProcess.pipeTo(ChildProcess.make('git', ['check-ignore', '-z', '--stdin'])),
-        ChildProcess.setCwd(sourceRepo)
-      )
-      const output = yield* spawner
-        .string(command)
+      const files = yield* git
+        .ignoredMatching(sourceRepo, includeFile)
         .pipe(Effect.mapError((cause) => new WorktreeIncludeError({ paneId, sourceRepo, cause })))
-      const files = output.split('\0').filter((file) => file !== '')
       yield* Effect.logInfo('Matched .worktreeinclude files', { paneId, count: files.length })
       return Option.some<ReadonlyArray<string>>(files)
     })

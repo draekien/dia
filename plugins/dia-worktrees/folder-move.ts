@@ -1,25 +1,22 @@
-import type { WorktreeInfo } from '@dia/plugin'
-import { Effect, FileSystem, Path } from 'effect'
-import { ChildProcess, ChildProcessSpawner } from 'effect/process'
+import type { Git, WorktreeInfo } from '@dia/plugin'
+import { Effect, FileSystem, Path, Result } from 'effect'
 
 /**
  * Stops the `git fsmonitor--daemon` of each worktree directly under `treesRoot`, so the folder
  * can be renamed on Windows (a running daemon holds its worktree open). A directory without a
  * daemon, and a missing `treesRoot`, are skipped. Never fails.
  */
-export const stopFsmonitors = Effect.fn('Worktrees.stopFsmonitors')(function* (treesRoot: string) {
+export const stopFsmonitors = Effect.fn('Worktrees.stopFsmonitors')(function* (
+  treesRoot: string,
+  git: Git
+) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const names = yield* fs.readDirectory(treesRoot).pipe(Effect.orElseSucceed(() => []))
   for (const name of names) {
     const directory = path.join(treesRoot, name)
-    const exitCode = yield* spawner
-      .exitCode(
-        ChildProcess.make('git', ['fsmonitor--daemon', 'stop']).pipe(ChildProcess.setCwd(directory))
-      )
-      .pipe(Effect.orElseSucceed(() => -1))
-    yield* Effect.logDebug('Asked git to stop the fsmonitor daemon', { directory, exitCode })
+    yield* git.stopFsmonitor(directory)
+    yield* Effect.logDebug('Asked git to stop the fsmonitor daemon', { directory })
   }
 })
 
@@ -29,25 +26,24 @@ export const stopFsmonitors = Effect.fn('Worktrees.stopFsmonitors')(function* (t
  * repository and does not fail the effect.
  */
 export const repairWorktrees = Effect.fn('Worktrees.repairWorktrees')(function* (
-  worktrees: ReadonlyArray<WorktreeInfo>
+  worktrees: ReadonlyArray<WorktreeInfo>,
+  git: Git
 ) {
   const fs = yield* FileSystem.FileSystem
-  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const byRepo = new Map<string, Array<string>>()
   for (const worktree of worktrees) {
     if (!(yield* fs.exists(worktree.path).pipe(Effect.orElseSucceed(() => false)))) continue
     byRepo.set(worktree.sourceRepo, [...(byRepo.get(worktree.sourceRepo) ?? []), worktree.path])
   }
   for (const [sourceRepo, paths] of byRepo) {
-    const exitCode = yield* spawner
-      .exitCode(
-        ChildProcess.make('git', ['worktree', 'repair', ...paths]).pipe(
-          ChildProcess.setCwd(sourceRepo)
-        )
-      )
-      .pipe(Effect.orElseSucceed(() => -1))
-    if (exitCode === 0) yield* Effect.logInfo('Repaired moved worktrees', { sourceRepo, paths })
+    const repaired = yield* git.repairWorktrees(sourceRepo, paths).pipe(Effect.result)
+    if (Result.isSuccess(repaired))
+      yield* Effect.logInfo('Repaired moved worktrees', { sourceRepo, paths })
     else
-      yield* Effect.logWarning('Could not repair moved worktrees', { sourceRepo, paths, exitCode })
+      yield* Effect.logWarning('Could not repair moved worktrees', {
+        sourceRepo,
+        paths,
+        exitCode: repaired.failure.exitCode
+      })
   }
 })
