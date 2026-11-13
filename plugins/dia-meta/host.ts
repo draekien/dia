@@ -28,7 +28,14 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       Effect.acquireRelease(Ref.set(git, Option.some(provided)), () =>
         Ref.set(git, Option.none())
       ).pipe(
-        Effect.andThen(ensureMetaRepo(directory, provided)),
+        Effect.andThen(
+          ensureMetaRepo(directory, provided).pipe(
+            Effect.catch((error) =>
+              Effect.logWarning('Could not create the meta repo files', { directory, error })
+            ),
+            Effect.forkScoped
+          )
+        ),
         Effect.provide(NodeServices.layer)
       )
     )

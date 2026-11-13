@@ -23,6 +23,12 @@ interface Output {
 const splitNul = (output: string): ReadonlyArray<string> =>
   output.split('\0').filter((item) => item !== '')
 
+const subcommand = (args: ReadonlyArray<string>): string | undefined => {
+  let index = 0
+  while (args[index] === '-c') index += 2
+  return args[index]
+}
+
 /**
  * Builds a {@link Git} that runs the `git` CLI through the platform `ChildProcessSpawner`, with
  * `GIT_TERMINAL_PROMPT=0` added to the inherited environment. Run it with the Node platform
@@ -62,7 +68,7 @@ export const makeGit = Effect.gen(function* () {
         Effect.succeed<Output>({ exitCode: -1, stdout: '', stderr: String(error) })
       ),
       Effect.tap((output) =>
-        Effect.logDebug('Ran git', { cwd, command: args[0], exitCode: output.exitCode })
+        Effect.logDebug('Ran git', { cwd, command: subcommand(args), exitCode: output.exitCode })
       )
     )
 
