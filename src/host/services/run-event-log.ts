@@ -18,14 +18,15 @@ const NOT_LOADED = 'The dia-run-events plugin is not loaded'
  * The run event log the loaded `dia-run-events` plugin provides, for kernel code that still runs
  * tab sessions. Each member delegates to the provider loaded at the time of the call; `committed`
  * follows the provider across reloads. With no provider: `append` fails with
- * `RunEventWriteError`, `readAfter` returns `ReloadRequired('readFailed')`, `highestSequence`
- * returns 0, `record` records nothing, `snapshot` returns the empty state at sequence 0, and
+ * `RunEventWriteError`, `readAfter` returns `ReloadRequired('readFailed')`, `record` records nothing, `snapshot` returns the empty state at sequence 0, and
  * `seed` and `release` do nothing; each logs why. `hostStartSequence` is the `startSequence` of the
  * first provider this Host saw, and waits for one. Provide it with {@link RunEventLogLive}.
  */
 export class RunEventLog extends Context.Service<
   RunEventLog,
-  Omit<RunEvents, 'startSequence'> & { readonly hostStartSequence: Effect.Effect<number> }
+  Omit<RunEvents, 'startSequence' | 'highestSequence'> & {
+    readonly hostStartSequence: Effect.Effect<number>
+  }
 >()('RunEventLog') {}
 
 /**
@@ -117,9 +118,6 @@ export const RunEventLogLive = Layer.effect(
           Effect.succeed(ReloadRequired.make({ reason: 'readFailed' })),
           (p) => p.readAfter(runId, afterSequence, limits)
         ),
-      highestSequence: withProvider('highestSequence', Effect.succeed(0), (p) =>
-        p.highestSequence.pipe(Effect.orElseSucceed(() => 0))
-      ),
       hostStartSequence: Deferred.await(firstStart),
       record: (options: RecordingOptions) =>
         Effect.flatMap(current, (provided) =>

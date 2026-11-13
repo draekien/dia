@@ -68,23 +68,22 @@ const followBackend = (ctx: HostPluginContext) =>
         yield* Effect.logInfo('Reading transcripts through the agent backend')
       })
     )
+    const withBackend = <A>(
+      sessionId: string,
+      read: (loaded: AgentBackend) => Effect.Effect<Option.Option<A>>
+    ) =>
+      Effect.flatMap(Ref.get(backend), (loaded) =>
+        Option.isSome(loaded)
+          ? read(loaded.value)
+          : Effect.logWarning('No agent backend to read a transcript with', { sessionId }).pipe(
+              Effect.as(Option.none<A>())
+            )
+      )
     const transcripts = Transcripts.of({
       transcriptInfo: (sessionId, cwd) =>
-        Effect.flatMap(Ref.get(backend), (loaded) =>
-          Option.isSome(loaded)
-            ? loaded.value.transcriptInfo(sessionId, cwd)
-            : Effect.logWarning('No agent backend to read a transcript with', { sessionId }).pipe(
-                Effect.as(Option.none())
-              )
-        ),
+        withBackend(sessionId, (loaded) => loaded.transcriptInfo(sessionId, cwd)),
       readTranscriptAfter: (sessionId, cwd, afterUuid) =>
-        Effect.flatMap(Ref.get(backend), (loaded) =>
-          Option.isSome(loaded)
-            ? loaded.value.readTranscriptAfter(sessionId, cwd, afterUuid)
-            : Effect.logWarning('No agent backend to read a transcript with', { sessionId }).pipe(
-                Effect.as(Option.none())
-              )
-        )
+        withBackend(sessionId, (loaded) => loaded.readTranscriptAfter(sessionId, cwd, afterUuid))
     })
     return { transcripts, catalog: RunModelCatalog.of({ current: Ref.get(catalog) }) }
   })

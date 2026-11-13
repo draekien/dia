@@ -28,6 +28,11 @@ const copyRows = Effect.gen(function* () {
   return { events: events.length, items: items.length, cursors: cursors.length }
 })
 
+const markDone = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql`INSERT INTO handover ${sql.insert({ id: 1, copied_at: yield* Clock.currentTimeMillis })}`
+})
+
 const copyFrom = (hostDatabase: string) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
@@ -36,21 +41,13 @@ const copyFrom = (hostDatabase: string) =>
       .withTransaction(
         Effect.gen(function* () {
           const counts = yield* copyRows
-          yield* sql`INSERT INTO handover ${sql.insert({
-            id: 1,
-            copied_at: yield* Clock.currentTimeMillis
-          })}`
+          yield* markDone
           return counts
         })
       )
       .pipe(Effect.ensuring(Effect.ignore(sql`DETACH DATABASE host`)))
     yield* Effect.logInfo('Copied the event log from host.db', { hostDatabase, ...copied })
   })
-
-const markDone = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient
-  yield* sql`INSERT INTO handover ${sql.insert({ id: 1, copied_at: yield* Clock.currentTimeMillis })}`
-})
 
 /**
  * Copies the kernel's event log (`agent_events`, `agent_items`, `agent_transcript_cursors`) from

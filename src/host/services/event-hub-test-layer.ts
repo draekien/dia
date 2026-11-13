@@ -30,7 +30,6 @@ export const RunEventLogFromStore: Layer.Layer<RunEventLog, never, RunEventStore
       append: store.append,
       committed: store.committed,
       readAfter: store.readAfter,
-      highestSequence: store.highestSequence,
       hostStartSequence: Effect.succeed(start),
       record: () => Effect.succeed(() => Effect.void),
       snapshot: () => Effect.die('RunEventLogTestLayer.snapshot is not implemented'),
