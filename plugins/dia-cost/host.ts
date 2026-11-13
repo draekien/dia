@@ -2,7 +2,7 @@ import type { CommittedEvent, HostPluginContext, PluginSetup, RunEvents } from '
 import { RunEventsKey } from '@dia/plugin'
 import { Effect, Option, Stream, SubscriptionRef } from 'effect'
 import { FollowRunUsage } from './calls'
-import { emptyUsageFold, foldUsage, USAGE_TAGS } from './usage'
+import { emptyRunUsage, foldUsage, USAGE_TAGS } from './usage'
 
 const usageTags = new Set<string>(USAGE_TAGS)
 
@@ -23,9 +23,9 @@ const followUsage = (runEvents: RunEvents, runId: string) =>
     Effect.gen(function* () {
       const live = yield* runEvents.subscribe
       const stored = yield* storedUsage(runEvents, runId)
-      const start = stored.reduce((fold, { event }) => foldUsage(fold, event), emptyUsageFold)
+      const start = stored.reduce((usage, { event }) => foldUsage(usage, event), emptyRunUsage)
       const through = stored.at(-1)?.sequence ?? 0
-      yield* Effect.logDebug('Following run usage', { runId, turns: start.usage.turns.length })
+      yield* Effect.logDebug('Following run usage', { runId, turns: start.turns.length })
       const isNewUsageEvent = (committed: CommittedEvent) =>
         committed.runId === runId &&
         committed.sequence > through &&
@@ -34,10 +34,8 @@ const followUsage = (runEvents: RunEvents, runId: string) =>
         Stream.filter(isNewUsageEvent),
         Stream.scan(
           () => start,
-          (fold, { event }) => foldUsage(fold, event)
-        ),
-        Stream.map((fold) => fold.usage),
-        Stream.changesWith((a, b) => a === b)
+          (usage, { event }) => foldUsage(usage, event)
+        )
       )
     })
   )
@@ -54,7 +52,7 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       SubscriptionRef.changes(provided).pipe(
         Stream.switchMap(
           Option.match({
-            onNone: () => Stream.make(emptyUsageFold.usage),
+            onNone: () => Stream.make(emptyRunUsage),
             onSome: (runEvents) => followUsage(runEvents, runId)
           })
         )

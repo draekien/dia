@@ -113,8 +113,18 @@ describe('dia-cost host entry', () => {
 
       yield* PubSub.publish(committed, STORED)
       yield* PubSub.publish(committed, usageEvent(OTHER_RUN, 5, 99))
-      yield* PubSub.publish(committed, usageEvent(RUN, 6, 20))
-      const second = yield* withTurns(2)
+      yield* PubSub.publish(committed, {
+        runId: RUN,
+        sequence: 6,
+        event: PaneEvents.PaneUserMessagesSent.make({
+          paneId: RUN,
+          messages: [{ id: 'm2', text: 'next' }]
+        })
+      })
+      yield* PubSub.publish(committed, usageEvent(RUN, 7, 20))
+      const second = yield* withTurns(2).pipe(
+        Effect.repeat({ until: (usage) => usage.turns[1]?.usage.outputTokens !== 0 })
+      )
 
       assert.deepStrictEqual(
         [outputsOf(first), outputsOf(second), second.total],

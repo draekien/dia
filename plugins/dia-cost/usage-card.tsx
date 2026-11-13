@@ -19,6 +19,8 @@ const COUNTS = [
   ['Cache write', 'cacheWriteTokens']
 ] as const satisfies ReadonlyArray<readonly [string, keyof TokenUsage]>
 
+const hasTokens = (usage: TokenUsage) => Object.values(usage).some((tokens) => tokens > 0)
+
 function Counts({ usage }: { readonly usage: TokenUsage }): React.JSX.Element {
   return (
     <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
@@ -48,7 +50,8 @@ function Turn({ turn }: { readonly turn: TurnUsage }): React.JSX.Element {
 
 /**
  * The session rail's Usage card body for run `runId`: the tokens of the run's main agent loop in
- * total, then per turn, newest first. It follows `usageAtoms(runId)`.
+ * total, then per turn that used tokens, newest first, numbered as the Changes card numbers
+ * turns. It follows `usageAtoms(runId)`.
  */
 export function UsageCard({
   runId,
@@ -59,7 +62,8 @@ export function UsageCard({
 }): React.JSX.Element {
   const result = useAtomValue(usageAtoms(runId))
   const usage = AsyncResult.isSuccess(result) ? Option.getOrUndefined(result.value) : undefined
-  if (usage === undefined || usage.turns.length === 0) {
+  const turns = usage?.turns.filter((turn) => hasTokens(turn.usage)) ?? []
+  if (usage === undefined || turns.length === 0) {
     return <p className="text-muted-foreground">No token usage yet</p>
   }
   return (
@@ -71,7 +75,7 @@ export function UsageCard({
         <Counts usage={usage.total} />
       </section>
       <ul className="flex flex-col gap-3">
-        {[...usage.turns].reverse().map((turn) => (
+        {[...turns].reverse().map((turn) => (
           <Turn key={turn.turn} turn={turn} />
         ))}
       </ul>

@@ -1,5 +1,5 @@
 import type { StoredEvent, TokenUsage } from '@dia/plugin'
-import { type Array as Arr, Option } from 'effect'
+import type { Array as Arr } from 'effect'
 import type { RunUsage } from './calls'
 
 const PROMPT_LIMIT = 120
@@ -10,15 +10,6 @@ export const USAGE_TAGS = [
   'PaneTurnUsageReported'
 ] as const satisfies Arr.NonEmptyReadonlyArray<StoredEvent['_tag']>
 
-/**
- * A run's usage after some of its events, and the prompt of the turn in progress, which names the
- * next turn that reports usage. Start from {@link emptyUsageFold}; read `usage`.
- */
-export interface UsageFold {
-  readonly usage: RunUsage
-  readonly pendingPrompt: Option.Option<string>
-}
-
 const noTokens: TokenUsage = {
   inputTokens: 0,
   outputTokens: 0,
@@ -27,10 +18,7 @@ const noTokens: TokenUsage = {
 }
 
 /** The usage of a run with no events: no turns and a total of 0. */
-export const emptyUsageFold: UsageFold = {
-  usage: { turns: [], total: noTokens },
-  pendingPrompt: Option.none()
-}
+export const emptyRunUsage: RunUsage = { turns: [], total: noTokens }
 
 const add = (a: TokenUsage, b: TokenUsage): TokenUsage => ({
   inputTokens: a.inputTokens + b.inputTokens,
@@ -48,32 +36,36 @@ const promptOf = (text: string) =>
   ).slice(0, PROMPT_LIMIT)
 
 /**
- * The fold after run event `event`, given in sequence order. Each `PaneTurnUsageReported` adds a
- * turn named by the first `PaneUserMessagesSent` since the previous one; every other event leaves
- * `fold` unchanged.
+ * The usage after run event `event`, given in sequence order. Each `PaneUserMessagesSent` starts
+ * a turn with no tokens, named by the first line of its first message; each
+ * `PaneTurnUsageReported` adds its tokens to the latest turn, or to a new unnamed turn when none
+ * has started. Every other event leaves `usage` unchanged.
  */
-export const foldUsage = (fold: UsageFold, event: StoredEvent): UsageFold => {
+export const foldUsage = (usage: RunUsage, event: StoredEvent): RunUsage => {
   switch (event._tag) {
     case 'PaneUserMessagesSent':
-      return Option.isSome(fold.pendingPrompt)
-        ? fold
-        : { ...fold, pendingPrompt: Option.some(promptOf(event.messages[0]?.text ?? '')) }
-    case 'PaneTurnUsageReported':
       return {
-        usage: {
-          turns: [
-            ...fold.usage.turns,
-            {
-              turn: fold.usage.turns.length + 1,
-              prompt: Option.getOrElse(fold.pendingPrompt, () => ''),
-              usage: event.usage
-            }
-          ],
-          total: add(fold.usage.total, event.usage)
-        },
-        pendingPrompt: Option.none()
+        ...usage,
+        turns: [
+          ...usage.turns,
+          {
+            turn: usage.turns.length + 1,
+            prompt: promptOf(event.messages[0]?.text ?? ''),
+            usage: noTokens
+          }
+        ]
       }
+    case 'PaneTurnUsageReported': {
+      const latest = usage.turns.at(-1) ?? { turn: 1, prompt: '', usage: noTokens }
+      return {
+        turns: [
+          ...usage.turns.slice(0, latest.turn - 1),
+          { ...latest, usage: add(latest.usage, event.usage) }
+        ],
+        total: add(usage.total, event.usage)
+      }
+    }
     default:
-      return fold
+      return usage
   }
 }

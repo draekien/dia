@@ -3,8 +3,9 @@ import { Schema } from 'effect'
 import { Rpc } from 'effect/rpc'
 
 /**
- * Turn `turn` of a run, counting from 1, the first line of its prompt (`''` when the turn had no
- * message of its own, such as a resumed parked turn), and the tokens its main agent loop used.
+ * Turn `turn` of a run, counting from 1 at each message sent, the first line of its prompt (`''`
+ * for usage reported before any message), and the tokens its main agent loop has used so far:
+ * 0 until the turn ends.
  */
 export const TurnUsage = Schema.Struct({
   turn: Schema.Int,
@@ -14,7 +15,10 @@ export const TurnUsage = Schema.Struct({
 /** One turn's usage; see {@link TurnUsage}. */
 export type TurnUsage = typeof TurnUsage.Type
 
-/** A run's turns that reported usage, in order, and the sum of their tokens. */
+/**
+ * Every turn of a run in order, including turns still running and turns from before dia recorded
+ * usage, which have 0 tokens, and the sum of their tokens.
+ */
 export const RunUsage = Schema.Struct({
   turns: Schema.Array(TurnUsage),
   total: TokenUsage
@@ -23,8 +27,9 @@ export const RunUsage = Schema.Struct({
 export type RunUsage = typeof RunUsage.Type
 
 /**
- * Run `runId`'s usage now, then again after each turn of the run that reports usage. Emits one
- * value with no turns while run events are not provided or the run's log cannot be read.
+ * Run `runId`'s usage now, then again after each message sent to the run and each usage it
+ * reports. Emits one value with no turns while run events are not provided or the run's log
+ * cannot be read.
  */
 export const FollowRunUsage = Rpc.make('FollowRunUsage', {
   payload: { runId: Schema.String },
