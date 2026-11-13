@@ -93,7 +93,7 @@ export const makeCheckpoints = (git: Git): Checkpoints => {
       yield* git.snapshot(
         cwd,
         [refOf(runId, turn, 'start'), ...(closesLast ? [refOf(runId, last.turn, 'end')] : [])],
-        prompt === '' ? `Turn ${turn}` : prompt
+        prompt
       )
       yield* Effect.logDebug('Recorded a turn start', { runId, turn, closesLast })
     }),

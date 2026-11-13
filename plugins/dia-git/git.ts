@@ -241,6 +241,8 @@ export const makeGit = Effect.gen(function* () {
         '-c',
         'core.quotePath=false',
         'diff',
+        '--no-color',
+        '--no-ext-diff',
         ...(options?.revisions ?? []),
         '--',
         ...(options?.paths ?? [])

@@ -63,9 +63,13 @@ const followTurns = (
   Option.match(provided, {
     onNone: () => Stream.make([]),
     onSome: (services) =>
-      Stream.concat(
-        Stream.make(runId),
-        Stream.fromPubSub(recorded).pipe(Stream.filter((id) => id === runId))
+      Stream.unwrap(
+        Effect.map(PubSub.subscribe(recorded), (subscription) =>
+          Stream.concat(
+            Stream.make(runId),
+            Stream.fromSubscription(subscription).pipe(Stream.filter((id) => id === runId))
+          )
+        )
       ).pipe(Stream.mapEffect(() => turnsOf(services, runId)))
   })
 
