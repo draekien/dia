@@ -1,5 +1,4 @@
 import {
-  type AgentBackend,
   AgentEvents,
   type OutboundMessage,
   type OutgoingMessage,
@@ -7,6 +6,7 @@ import {
   type SessionId,
   TranscriptCursor
 } from '@dia/plugin'
+import type { AgentBackend } from '@dia-plugin/dia-runs/backend'
 import {
   type Cause,
   Clock,

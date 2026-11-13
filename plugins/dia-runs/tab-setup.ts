@@ -1,14 +1,19 @@
-import type { PaneId, WorktreeInfo } from '@shared/domain/pane'
 import {
-  CopySetupStep,
-  SessionSetupStep,
-  type SetupStep,
-  WorktreeSetupStep
-} from '@shared/domain/tab-setup'
-import { type IpcEvent, PaneSessionNotice, PaneSetupProgress } from '@shared/ipc/contract'
-import { errorMessage } from '@shared/plugin/plugin-registry'
+  errorMessage,
+  type GitOps,
+  type IncludedFileFailure,
+  PaneEvents,
+  type PaneId,
+  TabSetup,
+  type WorktreeInfo
+} from '@dia/plugin'
 import { Duration, Effect, Exit, Option, Predicate, Ref, type Scope } from 'effect'
-import type { GitOps, IncludedFileFailure } from './worktrees-seam'
+
+const { CopySetupStep, SessionSetupStep, WorktreeSetupStep } = TabSetup
+type CopySetupStep = TabSetup.CopySetupStep
+type SessionSetupStep = TabSetup.SessionSetupStep
+type SetupStep = TabSetup.SetupStep
+type WorktreeSetupStep = TabSetup.WorktreeSetupStep
 
 interface Steps {
   readonly worktree: WorktreeSetupStep
@@ -66,7 +71,7 @@ export interface WorktreeTabSetupOptions<E> {
   readonly reattach: boolean
   readonly gitOps: GitOps
   readonly acquire: Effect.Effect<WorktreeInfo, E, Scope.Scope>
-  readonly emit: (event: IpcEvent) => Effect.Effect<void>
+  readonly emit: (event: PaneEvents.IpcEvent) => Effect.Effect<void>
 }
 
 /**
@@ -96,7 +101,9 @@ export const setUpWorktreeTab = Effect.fn('TabSetup.setUpWorktreeTab')(function*
   })
   const update = (change: (current: Steps) => Steps) =>
     Ref.updateAndGet(steps, change).pipe(
-      Effect.flatMap((next) => emit(PaneSetupProgress.make({ paneId, steps: stepList(next) })))
+      Effect.flatMap((next) =>
+        emit(PaneEvents.PaneSetupProgress.make({ paneId, steps: stepList(next) }))
+      )
     )
   yield* update((current) => current)
 
@@ -168,7 +175,7 @@ export const setUpWorktreeTab = Effect.fn('TabSetup.setUpWorktreeTab')(function*
       const notice = next.copy === undefined ? Option.none() : copyNotice(next.copy)
       if (Option.isSome(notice)) {
         yield* Effect.logWarning('Recorded the copy warning in the transcript', { paneId })
-        yield* emit(PaneSessionNotice.make({ paneId, text: notice.value }))
+        yield* emit(PaneEvents.PaneSessionNotice.make({ paneId, text: notice.value }))
       }
       return started
     })

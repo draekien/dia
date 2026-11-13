@@ -1,5 +1,5 @@
 import { PluginStatusChanged } from '@shared/ipc/contract'
-import { PLUGIN_MEMORY_LIMIT } from '@shared/plugin/manifest'
+import { PLUGIN_MEMORY_LIMIT, type PluginInfo } from '@shared/plugin/manifest'
 import {
   makePluginRegistry,
   PluginLoadError,
@@ -17,19 +17,19 @@ import {
 } from 'effect'
 import type { Rpc } from 'effect/rpc'
 import { AppWindow } from '../services/app-window'
-import { SessionAttacher } from '../services/attached-sessions'
 import { BackgroundActivities } from '../services/background-activities'
 import { makePluginDatabase } from '../services/database'
 import { EventHub } from '../services/event-hub'
 import { PathMoves, type PathsMovedHandler } from '../services/path-moves'
 import { WorkspaceFeed } from '../services/workspace-feed'
+import { type DiaTool, makePluginTools } from '../session/dia-tools'
 import { makeDataMigrations } from './data-migrations'
-import type { HostPluginContext, SessionAttachment } from './host-plugin-context'
+import type { HostPluginContext } from './host-plugin-context'
 import { makeHostPluginLoader } from './plugin-loader'
 import { heapUsedAfterGc, makePluginMemoryGuard } from './plugin-memory-guard'
 import { servePluginCall } from './plugin-messages'
 import { makePluginModules } from './plugin-modules'
-import { PluginSources } from './plugin-sources'
+import { applyOverride, PluginSources } from './plugin-sources'
 
 /**
  * The Host's plugin lifecycle: `load` opens a plugin (or replaces it when open), `unload` closes
@@ -45,15 +45,15 @@ export class HostPlugins extends Context.Service<HostPlugins, PluginRegistry>()(
  * `<userDataPath>/plugins/<name>`, created before the plugin's setup runs; `activities`,
  * registration with {@link BackgroundActivities} under the plugin's name; and `database`, which
  * opens `<dataDir>/data.db` only when the plugin calls it; `pluginsSettled`, which succeeds once `start` has settled every eager plugin; `workspace`, following
- * {@link WorkspaceFeed}; `window`, backed by {@link AppWindow}; and `sessions`, which waits
- * for {@link SessionAttacher} on each call; and `onPathsMoved`, which subscribes the plugin to
+ * {@link WorkspaceFeed}; `window`, backed by {@link AppWindow}; `pluginTools`, the `plugin_*` tools over
+ * this registry and `PluginSources`; and `onPathsMoved`, which subscribes the plugin to
  * {@link PathMoves} under its name. Before a plugin loads, its manifest's data migrations run
  * (see `makeDataMigrations`). Every plugin state
  * change is published to the hub as a `PluginStatusChanged` event. `pluginApiPath` is the
  * absolute path of the built module that `import '@dia/plugin'` resolves to inside a plugin
  * (`out/main/plugin-api.js`). Build the layer once per process, because it installs a
  * process-wide resolution hook. Requires `PluginSources`, `EventHub`, `BackgroundActivities`,
- * `WorkspaceFeed`, `AppWindow`, `SessionAttacher`, `PathMoves`, `FileSystem` and `Path`.
+ * `WorkspaceFeed`, `AppWindow`, `PathMoves`, `FileSystem` and `Path`.
  */
 export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string) =>
   Layer.effect(
@@ -64,7 +64,6 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
       const activities = yield* BackgroundActivities
       const workspaceFeed = yield* WorkspaceFeed
       const appWindow = yield* AppWindow
-      const attacher = yield* SessionAttacher
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
       const pluginApiUrl = yield* path.toFileUrl(pluginApiPath).pipe(Effect.orDie)
@@ -95,10 +94,15 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
               events: hub.subscribe({}),
               workspace: SubscriptionRef.changes(workspaceFeed),
               window: { attended: appWindow.attended, notify: appWindow.notify },
-              sessions: {
-                attach: (attachment: SessionAttachment) =>
-                  Deferred.await(attacher).pipe(Effect.flatMap((attach) => attach(attachment)))
-              },
+              pluginTools: (turnEnded: Effect.Effect<void>): ReadonlyArray<DiaTool> =>
+                makePluginTools(
+                  {
+                    reload: (name): Effect.Effect<PluginInfo> => registry.load(name),
+                    setOverride: (name, directory) => applyOverride(sources, name, directory),
+                    clearOverride: (name) => sources.clearOverride(name)
+                  },
+                  { plugin: services.name, turnEnded }
+                ),
               dataDir,
               onPathsMoved: (handle: PathsMovedHandler) =>
                 pathMoves.subscribe(services.name, handle),

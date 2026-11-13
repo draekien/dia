@@ -5,7 +5,6 @@ import {
   NoActivity,
   statusRank
 } from '@shared/domain/agent-summary'
-import type { AttachedSession } from '@shared/domain/attached-session'
 import { type PaneId, PermissionMode } from '@shared/domain/pane'
 import { Project, ProjectId, type Workspace } from '@shared/domain/project'
 import { Uuid } from '@shared/domain/uuid'
@@ -52,14 +51,10 @@ export const NO_FILTERS: OverviewFilters = OverviewFilters.make({
 export const filtersApply = (filters: OverviewFilters): boolean =>
   filters.query.trim() !== '' || filters.statuses.length > 0
 
-/**
- * One agent row: its pane id, name and current permission mode, and its current summary.
- * `caption` is the job title of a session a plugin attached (ADR-0070) and `null` for a tab.
- */
+/** One agent row: its pane id, name and current permission mode, and its current summary. */
 export const OverviewRow = Schema.Struct({
   paneId: Uuid,
   name: Schema.String,
-  caption: Schema.NullOr(Schema.String),
   summary: AgentSummary,
   permissionMode: PermissionMode
 })
@@ -69,7 +64,7 @@ export type OverviewRow = typeof OverviewRow.Type
  * One project group. `rows` are the matching non-archived agents, most urgent first and then in
  * creation order; `archived` the matching archived agents, in creation order. `mostUrgent`
  * is the most urgent status among all the project's non-archived agents, `null` without any.
- * `shown` counts `rows`; `total` counts every non-archived tab and attached session.
+ * `shown` counts `rows`; `total` counts every non-archived tab.
  */
 export const OverviewGroup = Schema.Struct({
   project: Project,
@@ -104,14 +99,12 @@ const contains = (text: string, query: string): boolean => text.toLocaleLowerCas
 /**
  * The project groups the overview lists, in the user's project order, with their rows filtered
  * by `filters`. A status change reorders rows inside a group but never moves a group. A tab with
- * no summary yet shows as idle with no activity. Each of `attached` is a row in the group of its
- * project, sorted with the tabs; one whose project is not in the workspace is not shown.
+ * no summary yet shows as idle with no activity.
  */
 export const buildOverview = (
   workspace: Workspace,
   summaries: ReadonlyMap<PaneId, AgentSummary>,
-  filters: OverviewFilters,
-  attached: ReadonlyArray<AttachedSession> = []
+  filters: OverviewFilters
 ): ReadonlyArray<OverviewGroup> => {
   const query = filters.query.trim().toLocaleLowerCase()
   const narrowing = filtersApply(filters)
@@ -123,26 +116,14 @@ export const buildOverview = (
       OverviewRow.make({
         paneId: tab.config.paneId,
         name: tab.name,
-        caption: null,
         summary: summaryOf(tab.config.paneId),
         permissionMode: tab.config.permissionMode
       })
-    const attachedRows = attached
-      .filter((session) => session.projectId === entry.project.projectId)
-      .map((session) =>
-        OverviewRow.make({
-          paneId: session.config.paneId,
-          name: session.label,
-          caption: session.caption,
-          summary: summaryOf(session.config.paneId),
-          permissionMode: session.config.permissionMode
-        })
-      )
     const matches = (row: OverviewRow): boolean =>
       (projectMatches || contains(row.name, query)) &&
       (filters.statuses.length === 0 || filters.statuses.includes(row.summary.status._tag))
     const active = entry.tabs.filter((tab) => !tab.archived).map(toRow)
-    const rows = byUrgency([...active, ...attachedRows].filter(matches))
+    const rows = byUrgency(active.filter(matches))
     const archived = entry.tabs
       .filter((tab) => tab.archived)
       .map(toRow)
@@ -157,35 +138,13 @@ export const buildOverview = (
         project: entry.project,
         rows,
         archived,
-        mostUrgent: mostUrgentOf([...active, ...attachedRows]),
+        mostUrgent: mostUrgentOf(active),
         shown: rows.length,
-        total: active.length + attachedRows.length
+        total: active.length
       })
     ]
   })
 }
-
-/**
- * The rows of the Assistant group: each of `attached` with no project (ADR-0071), in the order
- * given. A session with no summary yet shows as idle with no activity.
- */
-export const assistantRows = (
-  attached: ReadonlyArray<AttachedSession>,
-  summaries: ReadonlyMap<PaneId, AgentSummary>
-): ReadonlyArray<OverviewRow> =>
-  attached
-    .filter((session) => session.projectId === null)
-    .map((session) =>
-      OverviewRow.make({
-        paneId: session.config.paneId,
-        name: session.label,
-        caption: session.caption,
-        summary:
-          summaries.get(session.config.paneId) ??
-          idleSummary(session.config.paneId, NoActivity.make({})),
-        permissionMode: session.config.permissionMode
-      })
-    )
 
 /** The `data-nav` key of the header of project `projectId`, which keyboard navigation focuses. */
 export const headerKey = (projectId: ProjectId): string => `header:${projectId}`

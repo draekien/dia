@@ -1,5 +1,6 @@
 import * as os from 'node:os'
-import { AgentBackendKey, type HostPluginContext, type PluginSetup } from '@dia/plugin'
+import type { HostPluginContext, PluginSetup } from '@dia/plugin'
+import { AgentBackendKey } from '@dia-plugin/dia-runs/backend'
 import { SkillSourceRegistryKey } from '@dia-plugin/dia-skills/registry'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { Duration, Effect } from 'effect'

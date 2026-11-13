@@ -2,7 +2,7 @@ import type { Project } from '@shared/domain/project'
 import { tabOf } from '@shared/domain/workspace'
 import { Result } from 'effect'
 import { RulerIcon } from 'lucide-react'
-import { useAttachedSessions, useView, useWorkspace } from '../plugin-api'
+import { useView, useWorkspace } from '../plugin-api'
 import { RailToggle } from './session-rail'
 import { TranscriptWidthToggle } from './transcript-width-toggle'
 import {
@@ -80,16 +80,7 @@ export function TabHeader() {
   const found =
     view?._tag === 'TabView' && workspace !== undefined ? tabOf(workspace, view.paneId) : undefined
   const tab = found !== undefined && Result.isSuccess(found) ? found.success : undefined
-  const attachedSessions = useAttachedSessions()
-  const attached =
-    view?._tag === 'AttachedView'
-      ? attachedSessions.find((session) => session.config.paneId === view.paneId)
-      : undefined
-  const attachedProject =
-    attached === undefined
-      ? undefined
-      : workspace?.projects.find((entry) => entry.project.projectId === attached.projectId)?.project
-  const showsChat = tab !== undefined || attached !== undefined
+  const showsChat = tab !== undefined
   const newAgentProject =
     view?._tag === 'NewAgentView'
       ? workspace?.projects.find((entry) => entry.project.projectId === view.projectId)?.project
@@ -101,7 +92,6 @@ export function TabHeader() {
       {tab?.tab.config.worktree !== undefined && (
         <WorktreeChip worktree={tab.tab.config.worktree} />
       )}
-      {attached !== undefined && <Crumbs project={attachedProject} page={attached.label} />}
       {newAgentProject !== undefined && <Crumbs project={newAgentProject} page="New agent" />}
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {showsChat && <TranscriptWidthButton />}

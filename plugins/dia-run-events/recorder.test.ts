@@ -1,3 +1,4 @@
+import type { TranscriptEntry, TranscriptInfo, TranscriptTail } from '@dia-plugin/dia-runs/backend'
 import { NodeCrypto, NodeServices } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import { TOOL_OUTPUT_LIMIT } from '@shared/domain/agent-event'
@@ -11,11 +12,6 @@ import {
   RunEventWriteError,
   TranscriptCursor
 } from '../../src/host/services/run-events-seam'
-import type {
-  TranscriptEntry,
-  TranscriptInfo,
-  TranscriptTail
-} from '../../src/host/session/agent-backend'
 import {
   AssistantMessageReceived,
   AssistantTextDelta,

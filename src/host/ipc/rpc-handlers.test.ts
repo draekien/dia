@@ -1,12 +1,8 @@
 import { NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import { NoActivity, StatusIdle } from '@shared/domain/agent-summary'
-import { ContentAttachment, PathAttachment } from '@shared/domain/attachment'
-import { Deny, FreeformResponse } from '@shared/domain/attention'
 import type { SendMode } from '@shared/domain/message-queue'
-import { LastVisibleModel } from '@shared/domain/model-preferences'
 import { emptyPaneChatState } from '@shared/domain/pane-chat'
-import type { UsageLimitResume } from '@shared/domain/parking'
 import {
   AgentName,
   DirectoryNotFoundError,
@@ -20,21 +16,11 @@ import { AgentItem, ProjectRemoved, Removed } from '@shared/domain/project-remov
 import type { TranscriptWidth } from '@shared/domain/transcript-width'
 import {
   CreateTab,
-  EditQueuedMessage,
   type IpcEvent,
   MoveProject,
   type PaneCreateFailed,
-  RemoveQueuedMessage,
   RenameTab,
-  ResetAttachedSession,
-  ResolvePermission,
-  ResolvePlanReview,
-  ResolveQuestion,
-  ResumeParkedAgent,
-  RewindToCheckpoint,
   SelectTab,
-  SendMessage,
-  SendQueuedMessageNow,
   SetTranscriptWidth
 } from '@shared/ipc/contract'
 import type { PluginServices } from '@shared/plugin/api'
@@ -45,15 +31,10 @@ import { Rpc } from 'effect/rpc'
 import { HostPlugins } from '../plugins/host-plugins'
 import { servePluginCall } from '../plugins/plugin-messages'
 import { InvalidOverrideError, PluginSources } from '../plugins/plugin-sources'
-import { AdapterStatusFeed } from '../services/adapter-status-feed'
 import { AgentSummaries } from '../services/agent-summaries'
-import { AttachedSessions } from '../services/attached-sessions'
 import { BackgroundActivities } from '../services/background-activities'
 import { type CommandDeduper, makeCommandDeduperLive } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
-import { ModelCatalogFeed } from '../services/model-catalog-feed'
-import { ModelPreferences } from '../services/model-preferences'
-import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { ProjectEntries } from '../services/project-entries'
 import { RunEventLog } from '../services/run-event-log'
@@ -72,8 +53,6 @@ interface Harness {
   readonly layer: Layer.Layer<
     | PaneWorkspace
     | AgentSummaries
-    | AttachedSessions
-    | PaneSupervisor
     | SettingsStore
     | EventHub
     | FileSystem.FileSystem
@@ -81,34 +60,17 @@ interface Harness {
     | HostPlugins
     | PluginSources
     | BackgroundActivities
-    | ModelCatalogFeed
-    | AdapterStatusFeed
-    | ModelPreferences
     | WorkspaceProblems
     | RunEventLog
   >
 }
 
 interface HarnessOptions {
-  readonly livePanes?: ReadonlyArray<string>
-  readonly knownPanes?: ReadonlyArray<string>
-  readonly sendMessageFails?: boolean
   readonly createTabFails?: boolean
   readonly storedSendMode?: SendMode
   readonly storedTranscriptWidth?: TranscriptWidth
-  readonly storedUsageLimitResume?: UsageLimitResume
   readonly pluginUse?: PluginRegistry['use']
 }
-
-const sendMessage = (
-  paneId: string,
-  text: string,
-  commandId: string,
-  mode: SendMode = 'queue'
-) => ({
-  ...SendMessage.make({ paneId, text, mode }),
-  commandId
-})
 
 const createTab = (commandId = 'req-1') => ({
   ...CreateTab.make({
@@ -126,74 +88,6 @@ const createTab = (commandId = 'req-1') => ({
 const makeHarness = (options: HarnessOptions = {}): Harness => {
   const calls: Array<string> = []
   const published: Array<IpcEvent> = []
-  const live = new Set(options.livePanes ?? [])
-  const known = new Set(options.knownPanes ?? [...live])
-
-  const handle: PaneHandle = {
-    sendMessage: (text, mode, attachments) =>
-      options.sendMessageFails
-        ? Effect.die(new Error('session is gone'))
-        : Effect.sync(() => {
-            calls.push(`sendMessage:${text}:${mode}`)
-            if (attachments !== undefined) {
-              calls.push(`sendMessageAttachments:${JSON.stringify(attachments)}`)
-            }
-          }),
-    editQueuedMessage: (messageId, text, attachments) =>
-      Effect.sync(() => {
-        calls.push(`editQueuedMessage:${messageId}:${text}`)
-        if (attachments !== undefined) {
-          calls.push(`editQueuedMessageAttachments:${JSON.stringify(attachments)}`)
-        }
-      }),
-    removeQueuedMessage: (messageId) =>
-      Effect.sync(() => {
-        calls.push(`removeQueuedMessage:${messageId}`)
-      }),
-    sendQueuedMessageNow: (messageId) =>
-      Effect.sync(() => {
-        calls.push(`sendQueuedMessageNow:${messageId}`)
-      }),
-    messageQueue: Effect.succeed({ queued: [{ id: 'm-1', text: 'later' }], held: true }),
-    setThinkingLevel: () => Effect.void,
-    setPermissionMode: () => Effect.void,
-    setModel: () => Effect.void,
-    resolvePermission: (requestId) =>
-      Effect.sync(() => {
-        calls.push(`resolvePermission:${requestId}`)
-      }),
-    resolveQuestion: (requestId) =>
-      Effect.sync(() => {
-        calls.push(`resolveQuestion:${requestId}`)
-      }),
-    resolvePlanReview: (requestId) =>
-      Effect.sync(() => {
-        calls.push(`resolvePlanReview:${requestId}`)
-      }),
-    rewindToCheckpoint: (messageUuid, resumeAnchorUuid) =>
-      Effect.sync(() => {
-        calls.push(`rewindToCheckpoint:${messageUuid}:${resumeAnchorUuid}`)
-      }),
-    interrupt: () => Effect.void,
-    markCrashed: () => Effect.void,
-    markErrored: () => Effect.void,
-    resume: Effect.sync(() => {
-      calls.push('resume')
-    })
-  }
-
-  const supervisor = Layer.succeed(PaneSupervisor, {
-    openPane: () => Effect.die(new Error('openPane is not used by the handlers')),
-    attachPane: () => Effect.die(new Error('attachPane is not used by the handlers')),
-    closePane: () => Effect.void,
-    getHandle: (paneId) =>
-      Effect.sync(() => (live.has(paneId) ? Option.some(handle) : Option.none())),
-    closeAll: () => Effect.void,
-    setUsageLimitResume: (mode) =>
-      Effect.sync(() => {
-        calls.push(`setUsageLimitResume:${mode}`)
-      })
-  })
 
   const retire = (operation: string, paneId: string) =>
     paneId === STUCK_PANE_ID
@@ -240,19 +134,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     setThinkingLevel: () => Effect.void,
     setPermissionMode: () => Effect.void,
     setModel: (paneId, model) => Effect.sync(() => void calls.push(`setModel:${paneId}:${model}`)),
-    resumePane: () => Effect.void,
-    ensureLive: (paneId) =>
-      Effect.sync(() => {
-        calls.push(`ensureLive:${paneId}`)
-        if (known.has(paneId)) live.add(paneId)
-      })
-  })
-
-  const attached = Layer.succeed(AttachedSessions, {
-    attach: () => Effect.die(new Error('attach is not used by the handlers')),
-    current: Effect.succeed([]),
-    changes: Stream.empty,
-    reset: (paneId) => Effect.sync(() => void calls.push(`resetAttached:${paneId}`))
+    resumePane: () => Effect.void
   })
 
   const summaries = Layer.succeed(AgentSummaries, {
@@ -276,7 +158,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       Effect.sync(() => {
         calls.push(`setTranscriptWidth:${width}`)
       }),
-    getUsageLimitResume: () => Effect.succeed(Option.fromNullishOr(options.storedUsageLimitResume)),
+    getUsageLimitResume: () => Effect.succeed(Option.none()),
     setUsageLimitResume: (mode) =>
       Effect.sync(() => {
         calls.push(`settings.setUsageLimitResume:${mode}`)
@@ -338,40 +220,6 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       })
   })
 
-  const models = Layer.succeed(ModelCatalogFeed, {
-    start: Effect.void,
-    current: Effect.die(new Error('current not used by these tests')),
-    refresh: Effect.sync(() => {
-      calls.push('refreshModels')
-    })
-  })
-
-  const adapterStatus = Layer.succeed(AdapterStatusFeed, {
-    start: Effect.void,
-    current: Effect.die(new Error('current not used by these tests')),
-    check: Effect.sync(() => {
-      calls.push('checkHealth')
-    }),
-    setInstallPath: (path) =>
-      Effect.sync(() => {
-        calls.push(`setInstallPath:${path}`)
-      })
-  })
-
-  const modelPreferences = Layer.succeed(ModelPreferences, {
-    current: Effect.die(new Error('current not used by these tests')),
-    set: (model, preference) =>
-      model === 'last-visible'
-        ? Effect.fail(new LastVisibleModel({ message: 'At least one model must stay visible' }))
-        : Effect.sync(() => {
-            calls.push(`setModelPreference:${model}:${Option.getOrElse(preference, () => 'none')}`)
-          }),
-    setDefaults: (defaults) =>
-      Effect.sync(() => {
-        calls.push(`setAgentDefaults:${JSON.stringify(defaults)}`)
-      })
-  })
-
   const problems = Layer.succeed(WorkspaceProblems, {
     list: Effect.succeed([]),
     deleteUnreadable: (row) =>
@@ -402,8 +250,6 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     calls,
     published,
     layer: Layer.mergeAll(
-      supervisor,
-      attached,
       workspace,
       summaries,
       settings,
@@ -413,9 +259,6 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       plugins,
       pluginSources,
       activities,
-      models,
-      adapterStatus,
-      modelPreferences,
       problems,
       paneChats
     )
@@ -442,7 +285,7 @@ const withHandlers = <A, E>(
 describe('Dia RPC handlers', () => {
   it.effect('delivers the pane id and model of a SetModel unchanged, once per commandId', () =>
     Effect.gen(function* () {
-      const harness = makeHarness({ livePanes: [PANE_ID] })
+      const harness = makeHarness()
 
       yield* withHandlers(harness, (handlers) =>
         Effect.gen(function* () {
@@ -461,192 +304,6 @@ describe('Dia RPC handlers', () => {
         harness.calls.filter((call) => call.startsWith('setModel')),
         [`setModel:${PANE_ID}:claude-opus-5`]
       )
-    })
-  )
-
-  it.effect('delivers the model and preference of a SetModelPreference unchanged', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness()
-
-      yield* withHandlers(harness, (handlers) =>
-        Effect.gen(function* () {
-          yield* handlers.SetModelPreference({ model: 'claude-opus-5', preference: 'favourite' })
-          yield* handlers.SetModelPreference({ model: 'claude-haiku-5', preference: null })
-        })
-      )
-
-      assert.deepStrictEqual(harness.calls, [
-        'setModelPreference:claude-opus-5:favourite',
-        'setModelPreference:claude-haiku-5:none'
-      ])
-    })
-  )
-
-  it.effect('returns the refusal to hide the last visible model as a typed error', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness()
-
-      const error = yield* withHandlers(harness, (handlers) =>
-        Effect.flip(handlers.SetModelPreference({ model: 'last-visible', preference: 'hidden' }))
-      )
-
-      assert.strictEqual(error._tag, 'LastVisibleModel')
-    })
-  )
-
-  it.effect('passes the SetInstallPath path, and null to clear it, to the adapter unchanged', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness()
-
-      yield* withHandlers(harness, (handlers) =>
-        Effect.gen(function* () {
-          yield* handlers.SetInstallPath({ path: 'D:\\tools\\claude.exe' })
-          yield* handlers.SetInstallPath({ path: null })
-        })
-      )
-
-      assert.deepStrictEqual(harness.calls, [
-        'setInstallPath:D:\\tools\\claude.exe',
-        'setInstallPath:null'
-      ])
-    })
-  )
-
-  it.effect('applies a SendMessage once when the client resends it with the same commandId', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ livePanes: [PANE_ID] })
-
-      yield* withHandlers(harness, (handlers) =>
-        Effect.gen(function* () {
-          const command = sendMessage(PANE_ID, 'hello', 'req-1')
-          yield* handlers.SendMessage(command)
-          yield* handlers.SendMessage(command)
-        })
-      )
-
-      assert.deepStrictEqual(
-        harness.calls.filter((call) => call.startsWith('sendMessage')),
-        ['sendMessage:hello:queue']
-      )
-    })
-  )
-
-  it.effect('delivers the attachments of a SendMessage and an EditQueuedMessage unchanged', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ livePanes: [PANE_ID] })
-      const attachments = [
-        PathAttachment.make({ path: 'F:/repo/docs', kind: 'directory' }),
-        ContentAttachment.make({ name: 'a.png', mediaType: 'image/png', data: 'AAA' })
-      ]
-
-      yield* withHandlers(harness, (handlers) =>
-        Effect.gen(function* () {
-          yield* handlers.SendMessage({
-            ...SendMessage.make({ paneId: PANE_ID, text: 'look', mode: 'queue', attachments }),
-            commandId: 'req-1'
-          })
-          yield* handlers.EditQueuedMessage({
-            ...EditQueuedMessage.make({
-              paneId: PANE_ID,
-              messageId: 'm-1',
-              text: 'look',
-              attachments: attachments.slice(1)
-            }),
-            commandId: 'req-2'
-          })
-        })
-      )
-
-      assert.deepStrictEqual(
-        harness.calls.filter((call) => call.includes('Attachments:')),
-        [
-          `sendMessageAttachments:${JSON.stringify(attachments)}`,
-          `editQueuedMessageAttachments:${JSON.stringify(attachments.slice(1))}`
-        ]
-      )
-    })
-  )
-
-  it.effect('applies a SendMessage with a new commandId even when the text repeats', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ livePanes: [PANE_ID] })
-
-      yield* withHandlers(harness, (handlers) =>
-        Effect.gen(function* () {
-          yield* handlers.SendMessage(sendMessage(PANE_ID, 'again', 'req-1'))
-          yield* handlers.SendMessage(sendMessage(PANE_ID, 'again', 'req-2'))
-        })
-      )
-
-      assert.deepStrictEqual(
-        harness.calls.filter((call) => call.startsWith('sendMessage')),
-        ['sendMessage:again:queue', 'sendMessage:again:queue']
-      )
-    })
-  )
-
-  it.effect(
-    'starts the pane session before delivering a SendMessage to a pane with no live session',
-    () =>
-      Effect.gen(function* () {
-        const harness = makeHarness({ knownPanes: [PANE_ID] })
-
-        yield* withHandlers(harness, (handlers) =>
-          handlers.SendMessage(sendMessage(PANE_ID, 'wake up', 'req-1'))
-        )
-
-        assert.deepStrictEqual(harness.calls, [
-          `ensureLive:${PANE_ID}`,
-          'sendMessage:wake up:queue'
-        ])
-      })
-  )
-
-  it.effect(
-    'starts the pane session before delivering a RewindToCheckpoint to a pane with no live session',
-    () =>
-      Effect.gen(function* () {
-        const harness = makeHarness({ knownPanes: [PANE_ID] })
-
-        yield* withHandlers(harness, (handlers) =>
-          handlers.RewindToCheckpoint({
-            ...RewindToCheckpoint.make({
-              paneId: PANE_ID,
-              messageUuid: 'turn-2',
-              resumeAnchorUuid: 'reply-1'
-            }),
-            commandId: 'req-1'
-          })
-        )
-
-        assert.deepStrictEqual(harness.calls, [
-          `ensureLive:${PANE_ID}`,
-          'rewindToCheckpoint:turn-2:reply-1'
-        ])
-      })
-  )
-
-  it.effect('drops a SendMessage for a pane that does not exist without failing the RPC', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ knownPanes: [PANE_ID] })
-
-      yield* withHandlers(harness, (handlers) =>
-        handlers.SendMessage(sendMessage(OTHER_PANE_ID, 'lost', 'req-1'))
-      )
-
-      assert.deepStrictEqual(harness.calls, [`ensureLive:${OTHER_PANE_ID}`])
-    })
-  )
-
-  it.effect('does not fail the RPC when the session rejects the message', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ livePanes: [PANE_ID], sendMessageFails: true })
-
-      const exit = yield* withHandlers(harness, (handlers) =>
-        handlers.SendMessage(sendMessage(PANE_ID, 'boom', 'req-1')).pipe(Effect.exit)
-      )
-
-      assert.isTrue(exit._tag === 'Success')
     })
   )
 
@@ -746,22 +403,6 @@ describe('Dia RPC handlers', () => {
       )
 
       assert.deepStrictEqual(harness.calls, [`selectTab:${PANE_ID}`, 'selectTab:none'])
-    })
-  )
-
-  it.effect('resets the attached session a ResetAttachedSession names, once per commandId', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness()
-      const command = { ...ResetAttachedSession.make({ paneId: PANE_ID }), commandId: 'c-1' }
-
-      yield* withHandlers(harness, (handlers) =>
-        Effect.gen(function* () {
-          yield* handlers.ResetAttachedSession(command)
-          yield* handlers.ResetAttachedSession(command)
-        })
-      )
-
-      assert.deepStrictEqual(harness.calls, [`resetAttached:${PANE_ID}`])
     })
   )
 
@@ -904,49 +545,6 @@ describe('Dia RPC handlers', () => {
   )
 
   it.effect(
-    'resolves permission, question and plan review prompts by the prompt requestId, not the commandId',
-    () =>
-      Effect.gen(function* () {
-        const harness = makeHarness({ livePanes: [PANE_ID] })
-
-        yield* withHandlers(harness, (handlers) =>
-          Effect.gen(function* () {
-            yield* handlers.ResolvePermission({
-              ...ResolvePermission.make({
-                paneId: PANE_ID,
-                requestId: 'prompt-permission',
-                response: Deny.make({ message: 'no' })
-              }),
-              commandId: 'cmd-1'
-            })
-            yield* handlers.ResolveQuestion({
-              ...ResolveQuestion.make({
-                paneId: PANE_ID,
-                requestId: 'prompt-question',
-                response: FreeformResponse.make({ questions: [], response: 'skip' })
-              }),
-              commandId: 'cmd-2'
-            })
-            yield* handlers.ResolvePlanReview({
-              ...ResolvePlanReview.make({
-                paneId: PANE_ID,
-                requestId: 'prompt-plan',
-                approved: true
-              }),
-              commandId: 'cmd-3'
-            })
-          })
-        )
-
-        assert.deepStrictEqual(harness.calls, [
-          'resolvePermission:prompt-permission',
-          'resolveQuestion:prompt-question',
-          'resolvePlanReview:prompt-plan'
-        ])
-      })
-  )
-
-  it.effect(
     'forwards LoadPlugin and UnloadPlugin to the plugin registry with the plugin name',
     () =>
       Effect.gen(function* () {
@@ -1013,66 +611,6 @@ describe('Dia RPC handlers', () => {
     })
   )
 
-  it.effect('delivers the send mode a SendMessage names to the pane unchanged', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ livePanes: [PANE_ID] })
-
-      yield* withHandlers(harness, (handlers) =>
-        handlers.SendMessage(sendMessage(PANE_ID, 'change course', 'req-1', 'steer'))
-      )
-
-      assert.deepStrictEqual(
-        harness.calls.filter((call) => call.startsWith('sendMessage')),
-        ['sendMessage:change course:steer']
-      )
-    })
-  )
-
-  it.effect('delivers the message id and text of an EditQueuedMessage to the pane unchanged', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ livePanes: [PANE_ID] })
-
-      yield* withHandlers(harness, (handlers) =>
-        handlers.EditQueuedMessage({
-          ...EditQueuedMessage.make({ paneId: PANE_ID, messageId: 'm-7', text: 'edited text' }),
-          commandId: 'req-1'
-        })
-      )
-
-      assert.deepStrictEqual(harness.calls, ['editQueuedMessage:m-7:edited text'])
-    })
-  )
-
-  it.effect('delivers the message id of a RemoveQueuedMessage to the pane unchanged', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ livePanes: [PANE_ID] })
-
-      yield* withHandlers(harness, (handlers) =>
-        handlers.RemoveQueuedMessage({
-          ...RemoveQueuedMessage.make({ paneId: PANE_ID, messageId: 'm-7' }),
-          commandId: 'req-1'
-        })
-      )
-
-      assert.deepStrictEqual(harness.calls, ['removeQueuedMessage:m-7'])
-    })
-  )
-
-  it.effect('delivers the message id of a SendQueuedMessageNow to the pane unchanged', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ livePanes: [PANE_ID] })
-
-      yield* withHandlers(harness, (handlers) =>
-        handlers.SendQueuedMessageNow({
-          ...SendQueuedMessageNow.make({ paneId: PANE_ID, messageId: 'm-7' }),
-          commandId: 'req-1'
-        })
-      )
-
-      assert.deepStrictEqual(harness.calls, ['sendQueuedMessageNow:m-7'])
-    })
-  )
-
   it.effect('serves the chat snapshot of the pane named in a GetPaneChat payload', () =>
     Effect.gen(function* () {
       const harness = makeHarness()
@@ -1105,61 +643,6 @@ describe('Dia RPC handlers', () => {
       assert.strictEqual(mode, 'steer')
       assert.deepStrictEqual(harness.calls, ['setSendMode:queue'])
     })
-  )
-
-  it.effect('resumes the parked agent of a live pane once per command id', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ livePanes: [PANE_ID] })
-      const command = { ...ResumeParkedAgent.make({ paneId: PANE_ID }), commandId: 'req-1' }
-
-      yield* withHandlers(harness, (handlers) =>
-        handlers
-          .ResumeParkedAgent(command)
-          .pipe(Effect.andThen(handlers.ResumeParkedAgent(command)))
-      )
-
-      assert.deepStrictEqual(harness.calls, ['resume'])
-    })
-  )
-
-  it.effect('skips a resume for a pane with no live session without starting one', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ knownPanes: [PANE_ID], livePanes: [] })
-
-      yield* withHandlers(harness, (handlers) =>
-        handlers.ResumeParkedAgent({
-          ...ResumeParkedAgent.make({ paneId: PANE_ID }),
-          commandId: 'req-1'
-        })
-      )
-
-      assert.deepStrictEqual(harness.calls, [])
-    })
-  )
-
-  it.effect('reports automatic as the usage-limit resume mode when none is stored', () =>
-    Effect.gen(function* () {
-      const mode = yield* withHandlers(makeHarness(), (handlers) => handlers.GetUsageLimitResume())
-
-      assert.strictEqual(mode, 'automatic')
-    })
-  )
-
-  it.effect(
-    'reports the stored usage-limit resume mode and hands a new one to the supervisor',
-    () =>
-      Effect.gen(function* () {
-        const harness = makeHarness({ storedUsageLimitResume: 'manual' })
-
-        const mode = yield* withHandlers(harness, (handlers) =>
-          handlers
-            .GetUsageLimitResume()
-            .pipe(Effect.tap(handlers.SetUsageLimitResume({ mode: 'automatic' })))
-        )
-
-        assert.strictEqual(mode, 'manual')
-        assert.deepStrictEqual(harness.calls, ['setUsageLimitResume:automatic'])
-      })
   )
 
   it.effect(

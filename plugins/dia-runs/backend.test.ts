@@ -1,18 +1,7 @@
 import { assert, describe, it } from '@effect/vitest'
 import { type PaneConfig, SessionId } from '@shared/domain/pane'
-import { fakeInject } from '@shared/plugin/plugin-registry.fake'
 import { Effect, Option, Stream } from 'effect'
-import {
-  type AgentBackend,
-  AgentBackendKey,
-  agentBackendProblems,
-  resolveAgentBackend,
-  SessionFailed
-} from './agent-backend'
-
-const registryProviding = (value: Option.Option<unknown>) => ({
-  inject: fakeInject((key) => (key === AgentBackendKey.name ? value : Option.none()))
-})
+import { agentBackendProblems, SessionFailed, unavailableBackend } from './backend'
 
 const config: PaneConfig = {
   paneId: '00000000-0000-0000-0000-000000000001',
@@ -32,90 +21,47 @@ const openOptions = {
   tools: Option.none()
 }
 
-describe('resolveAgentBackend', () => {
-  it.effect('returns the backend the adapter provides', () =>
+describe('unavailableBackend', () => {
+  it.effect('ends every session at once saying the adapter is not loaded', () =>
     Effect.gen(function* () {
-      const backend: AgentBackend = {
-        openSession: () => Effect.die('not called'),
-        readHistory: () => Effect.succeed([{ role: 'user', content: 'hi' }]),
-        transcriptInfo: () => Effect.succeed(Option.none()),
-        readTranscriptAfter: () => Effect.succeed(Option.none()),
-        models: () => Stream.empty,
-        refreshModels: () => Effect.void,
-        status: () => Stream.empty,
-        checkHealth: () => Effect.void,
-        setInstallPath: () => Effect.void,
-        disabledPermissionModes: () => Effect.succeed([]),
-        attachmentTypes: () => Effect.succeed([])
-      }
+      const session = yield* unavailableBackend.openSession(openOptions).pipe(Effect.scoped)
 
-      const resolved = yield* resolveAgentBackend(registryProviding(Option.some(backend)))
-
-      assert.strictEqual(resolved, backend)
+      assert.deepStrictEqual(
+        yield* session.ended,
+        SessionFailed.make({ reason: 'The claude-code adapter is not loaded' })
+      )
     })
   )
 
-  const invalidCases: ReadonlyArray<readonly [string, Option.Option<unknown>]> = [
-    ['no plugin provides one', Option.none()],
-    ['the value is not an object', Option.some('backend')],
-    ['the value lacks openSession', Option.some({ readHistory: () => Effect.succeed([]) })],
-    [
-      'readHistory is not a function',
-      Option.some({ openSession: () => Effect.void, readHistory: 1 })
-    ]
-  ]
+  it.effect('reads an empty history', () =>
+    Effect.gen(function* () {
+      assert.deepStrictEqual(
+        yield* unavailableBackend.readHistory(SessionId.make('s-1'), '/work'),
+        []
+      )
+    })
+  )
 
-  for (const [name, provided] of invalidCases) {
-    it.effect(`returns a backend whose sessions end at once when ${name}`, () =>
-      Effect.gen(function* () {
-        const backend = yield* resolveAgentBackend(registryProviding(provided))
+  it.effect('reads no transcript info', () =>
+    Effect.gen(function* () {
+      assert.deepStrictEqual(
+        yield* unavailableBackend.transcriptInfo(SessionId.make('s-1'), '/work'),
+        Option.none()
+      )
+    })
+  )
 
-        const session = yield* backend.openSession(openOptions).pipe(Effect.scoped)
-        const end = yield* session.ended
-
-        assert.deepStrictEqual(
-          end,
-          SessionFailed.make({ reason: 'The claude-code adapter is not loaded' })
-        )
-      })
-    )
-
-    it.effect(`returns a backend that reads an empty history when ${name}`, () =>
-      Effect.gen(function* () {
-        const backend = yield* resolveAgentBackend(registryProviding(provided))
-
-        const history = yield* backend.readHistory(SessionId.make('s-1'), '/work')
-
-        assert.deepStrictEqual(history, [])
-      })
-    )
-
-    it.effect(`returns a backend that reads no transcript info when ${name}`, () =>
-      Effect.gen(function* () {
-        const backend = yield* resolveAgentBackend(registryProviding(provided))
-
-        const info = yield* backend.transcriptInfo(SessionId.make('s-1'), '/work')
-
-        assert.deepStrictEqual(info, Option.none())
-      })
-    )
-
-    it.effect(`returns a backend whose model list is unavailable when ${name}`, () =>
-      Effect.gen(function* () {
-        const backend = yield* resolveAgentBackend(registryProviding(provided))
-
-        const states = yield* Stream.runCollect(backend.models())
-
-        assert.deepStrictEqual(states, [
-          {
-            _tag: 'Unavailable',
-            message: 'The claude-code adapter is not loaded',
-            refreshing: false
-          }
-        ])
-      })
-    )
-  }
+  it.effect('reports the model list as unavailable', () =>
+    Effect.gen(function* () {
+      assert.deepStrictEqual(yield* Stream.runCollect(unavailableBackend.models()), [
+        {
+          _tag: 'Unavailable',
+          message: 'The claude-code adapter is not loaded',
+          refreshing: false
+        }
+      ])
+    })
+  )
 })
 
 describe('agentBackendProblems', () => {

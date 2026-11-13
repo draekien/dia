@@ -1,5 +1,5 @@
 import type { PluginInfo, PluginOverrideResult } from '@shared/plugin/manifest'
-import { Effect } from 'effect'
+import { Effect, Fiber } from 'effect'
 
 /** One input field of a {@link DiaTool}: a string the agent supplies, required unless `optional` is true, which must match `pattern`. */
 export interface DiaToolField {
@@ -78,40 +78,66 @@ const directory: DiaToolField = {
 }
 
 /**
+ * The session the plugin tools are made for: `plugin`, the name of the plugin running it, and
+ * `turnEnded`, which completes when the session's current turn has ended.
+ */
+export interface PluginToolCaller {
+  readonly plugin: string
+  readonly turnEnded: Effect.Effect<void>
+}
+
+/**
  * The three tools an agent uses to change which source a plugin loads from and to reload it:
  * `plugin_override` (set a source folder, then reload), `plugin_reload` and
  * `plugin_clear_override` (return to the bundled copy, then reload). A result with `isError` set
- * tells the agent the plugin did not end up loaded cleanly. Create them once per session and
- * pass them to the agent backend.
+ * tells the agent the plugin did not end up loaded cleanly. Each reload runs in a fiber detached
+ * from the calling session, so it completes when the reload ends the session. A reload of
+ * `caller.plugin` waits for `caller.turnEnded` and the tool returns at once, so the turn that asked
+ * for it ends before the reload interrupts it. Create them once per session and pass them to the
+ * agent backend.
  */
-export const makePluginTools = (host: PluginToolHost): ReadonlyArray<DiaTool> => [
-  {
-    name: 'plugin_override',
-    description:
-      "Point a dia plugin at a source folder on disk and reload it, so the plugin runs that folder's code. The folder must hold a plugin.json and resolve to a package with type module.",
-    input: { name: pluginName, directory },
-    run: Effect.fn('PluginTools.override')(function* (input) {
-      const name = input.name ?? ''
-      const result = yield* host.setOverride(name, input.directory ?? '')
-      if (result._tag === 'Rejected') return text(`Override refused: ${result.message}`, true)
-      return report(yield* host.reload(name))
-    })
-  },
-  {
-    name: 'plugin_reload',
-    description:
-      'Reload a dia plugin so it runs its current source. If the new version fails, the previous one keeps running and the failure is reported.',
-    input: { name: pluginName },
-    run: (input) => host.reload(input.name ?? '').pipe(Effect.map(report))
-  },
-  {
-    name: 'plugin_clear_override',
-    description: 'Return a dia plugin to the copy that ships with dia and reload it.',
-    input: { name: pluginName },
-    run: Effect.fn('PluginTools.clearOverride')(function* (input) {
-      const name = input.name ?? ''
-      yield* host.clearOverride(name)
-      return report(yield* host.reload(name))
-    })
-  }
-]
+export const makePluginTools = (
+  host: PluginToolHost,
+  caller: PluginToolCaller
+): ReadonlyArray<DiaTool> => {
+  const reload = (name: string): Effect.Effect<DiaToolResult> =>
+    name === caller.plugin
+      ? caller.turnEnded.pipe(
+          Effect.andThen(Effect.logInfo('Reloading the plugin that ran the session', { name })),
+          Effect.andThen(host.reload(name)),
+          Effect.forkDetach,
+          Effect.as(text(`Plugin "${name}" runs this session, so it reloads when this turn ends.`))
+        )
+      : host.reload(name).pipe(Effect.forkDetach, Effect.flatMap(Fiber.join), Effect.map(report))
+  return [
+    {
+      name: 'plugin_override',
+      description:
+        "Point a dia plugin at a source folder on disk and reload it, so the plugin runs that folder's code. The folder must hold a plugin.json and resolve to a package with type module.",
+      input: { name: pluginName, directory },
+      run: Effect.fn('PluginTools.override')(function* (input) {
+        const name = input.name ?? ''
+        const result = yield* host.setOverride(name, input.directory ?? '')
+        if (result._tag === 'Rejected') return text(`Override refused: ${result.message}`, true)
+        return yield* reload(name)
+      })
+    },
+    {
+      name: 'plugin_reload',
+      description:
+        'Reload a dia plugin so it runs its current source. If the new version fails, the previous one keeps running and the failure is reported.',
+      input: { name: pluginName },
+      run: (input) => reload(input.name ?? '')
+    },
+    {
+      name: 'plugin_clear_override',
+      description: 'Return a dia plugin to the copy that ships with dia and reload it.',
+      input: { name: pluginName },
+      run: Effect.fn('PluginTools.clearOverride')(function* (input) {
+        const name = input.name ?? ''
+        yield* host.clearOverride(name)
+        return yield* reload(name)
+      })
+    }
+  ]
+}

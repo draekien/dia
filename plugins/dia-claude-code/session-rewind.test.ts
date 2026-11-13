@@ -1,7 +1,8 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the test yields to Node's event loop so the plugin's non-Effect callbacks run.
 import { setImmediate } from 'node:timers/promises'
 import type { Options, SDKUserMessage, SessionMessage } from '@anthropic-ai/claude-agent-sdk'
-import { type AgentSessionOptions, type OutboundMessage, RewindFailed } from '@dia/plugin'
+import { type OutboundMessage, RewindFailed } from '@dia/plugin'
+import type { AgentSessionOptions } from '@dia-plugin/dia-runs/backend'
 import { assert, describe, it } from '@effect/vitest'
 import type { PaneConfig, SessionId } from '@shared/domain/pane'
 import { Deferred, Duration, Effect, Fiber, Option } from 'effect'

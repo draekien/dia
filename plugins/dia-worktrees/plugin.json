@@ -1,6 +1,6 @@
 {
   "name": "dia-worktrees",
-  "api": "0.0.38",
+  "api": "0.0.39",
   "category": "feature",
   "host": "host.ts",
   "renderer": "renderer.ts",

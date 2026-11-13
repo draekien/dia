@@ -1,4 +1,3 @@
-import type { AttachedSession } from '@shared/domain/attached-session'
 import type { PaneId } from '@shared/domain/pane'
 import { ProjectId, type Workspace } from '@shared/domain/project'
 import { Uuid } from '@shared/domain/uuid'
@@ -24,10 +23,6 @@ export type PageView = typeof PageView.Type
 export const TabView = Schema.TaggedStruct('TabView', { paneId: Uuid })
 export type TabView = typeof TabView.Type
 
-/** The content area shows the session a plugin attached as `paneId` (ADR-0070). */
-export const AttachedView = Schema.TaggedStruct('AttachedView', { paneId: Uuid })
-export type AttachedView = typeof AttachedView.Type
-
 /** The content area shows the New agent form for project `projectId`. */
 export const NewAgentView = Schema.TaggedStruct('NewAgentView', { projectId: ProjectId })
 export type NewAgentView = typeof NewAgentView.Type
@@ -41,14 +36,7 @@ export const EmptyProjectView = Schema.TaggedStruct('EmptyProjectView', {})
 export type EmptyProjectView = typeof EmptyProjectView.Type
 
 /** What the content area shows. Read it with `useView()`; switch on `_tag`. */
-export const View = Schema.Union([
-  PageView,
-  TabView,
-  AttachedView,
-  NewAgentView,
-  FirstRunView,
-  EmptyProjectView
-])
+export const View = Schema.Union([PageView, TabView, NewAgentView, FirstRunView, EmptyProjectView])
 export type View = typeof View.Type
 
 /**
@@ -70,20 +58,10 @@ export interface OpenPage {
 }
 
 /**
- * The open attached session, and the tab that was visible before it (or before the page or New
- * agent form it replaced) opened. It closes once the workspace shows a different tab, or when its
- * session is detached.
+ * Whether a workspace change closes the open page: true when the workspace now shows a tab other
+ * than the one visible before it opened.
  */
-export interface OpenAttached {
-  readonly paneId: PaneId
-  readonly shownBefore: PaneId | null
-}
-
-/**
- * Whether a workspace change closes the open page or attached session: true when the workspace
- * now shows a tab other than the one visible before it opened.
- */
-export const closesOpenPage = (open: OpenPage | OpenAttached, workspace: Workspace): boolean =>
+export const closesOpenPage = (open: OpenPage, workspace: Workspace): boolean =>
   workspace.visibleTab !== null && workspace.visibleTab !== open.shownBefore
 
 /**
@@ -112,28 +90,19 @@ export const closesNewAgentForm = (form: NewAgentForm, workspace: Workspace): bo
   !workspace.projects.some((entry) => entry.project.projectId === form.projectId)
 
 /**
- * The {@link View} for a workspace, the open New agent form, the open page and the open attached
- * session, in priority order: the page while it is open, else the form while it is open, else the
- * attached session while it is open and still in `attachedSessions`, else the visible tab, else the
+ * The {@link View} for a workspace, the open New agent form and the open page, in priority order:
+ * the page while it is open, else the form while it is open, else the visible tab, else the
  * first-run screen when no project exists, else the empty-project prompt. `undefined` until the
  * workspace has loaded.
  */
 export const viewOf = (
   workspace: Option.Option<Workspace>,
   form: Option.Option<NewAgentForm>,
-  page: Option.Option<OpenPage>,
-  attached: Option.Option<OpenAttached> = Option.none(),
-  attachedSessions: ReadonlyArray<AttachedSession> = []
+  page: Option.Option<OpenPage>
 ): View | undefined => {
   if (Option.isNone(workspace)) return undefined
   if (Option.isSome(page)) return PageView.make(page.value.key)
   if (Option.isSome(form)) return NewAgentView.make({ projectId: form.value.projectId })
-  if (
-    Option.isSome(attached) &&
-    attachedSessions.some((session) => session.config.paneId === attached.value.paneId)
-  ) {
-    return AttachedView.make({ paneId: attached.value.paneId })
-  }
   if (workspace.value.visibleTab !== null) {
     return TabView.make({ paneId: workspace.value.visibleTab })
   }

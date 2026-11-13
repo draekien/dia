@@ -1,4 +1,4 @@
-import type { AgentBackend } from '@dia/plugin'
+import type { AgentBackend } from '@dia-plugin/dia-runs/backend'
 import { Effect } from 'effect'
 import { CLAUDE_CODE_ATTACHMENT_TYPES } from './attachments'
 import type { ClaudeInstall } from './claude-install'

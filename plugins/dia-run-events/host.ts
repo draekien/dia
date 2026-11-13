@@ -1,6 +1,4 @@
 import {
-  type AgentBackend,
-  AgentBackendKey,
   type HostPluginContext,
   hostDatabaseOf,
   type ModelCatalogState,
@@ -9,6 +7,7 @@ import {
   type RunEvents,
   RunEventsKey
 } from '@dia/plugin'
+import { type AgentBackend, AgentBackendKey } from '@dia-plugin/dia-runs/backend'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem'
 import { Context, Deferred, Effect, Layer, Option, Ref, Stream, SubscriptionRef } from 'effect'

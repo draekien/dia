@@ -1,6 +1,6 @@
 {
   "name": "dia-agent-overview",
-  "api": "0.0.38",
+  "api": "0.0.39",
   "category": "feature",
   "renderer": "renderer.ts",
   "load": "eager"

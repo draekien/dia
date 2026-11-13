@@ -1,22 +1,11 @@
 import { Schema } from 'effect'
 import { Rpc, RpcGroup } from 'effect/rpc'
-import { AdapterStatusSnapshot } from '../domain/adapter-status'
 import { AgentSummary } from '../domain/agent-summary'
-import { AttachedSession } from '../domain/attached-session'
-import { AttachmentType, ProjectEntry } from '../domain/attachment'
+import { ProjectEntry } from '../domain/attachment'
 import { ActivityId, ActivityInfo, ActivityNotFound } from '../domain/background-activity'
 import { SendMode } from '../domain/message-queue'
 import { MetaRepoPushResult, MetaRepoStateResult } from '../domain/meta-repo'
-import { ModelCatalogSnapshot } from '../domain/model'
-import {
-  AgentDefaults,
-  LastVisibleModel,
-  ModelPreference,
-  ModelPreferencesSnapshot
-} from '../domain/model-preferences'
-import { PermissionMode } from '../domain/pane'
 import { PaneChatSnapshot } from '../domain/pane-chat'
-import { UsageLimitResume } from '../domain/parking'
 import {
   ProjectId,
   ProjectNotFoundError,
@@ -39,21 +28,10 @@ import { PluginInfo, PluginName, PluginOverrideResult } from '../plugin/manifest
 import { PluginCallAttempt, PluginCallError } from '../plugin/messages'
 import {
   CreateTab,
-  EditQueuedMessage,
-  InterruptPane,
   IpcEvent,
   MoveProject,
-  RemoveQueuedMessage,
   RenameTab,
-  ResetAttachedSession,
-  ResolvePermission,
-  ResolvePlanReview,
-  ResolveQuestion,
-  ResumeParkedAgent,
-  RewindToCheckpoint,
   SelectTab,
-  SendMessage,
-  SendQueuedMessageNow,
   SetModel,
   SetPermissionMode,
   SetThinkingLevel,
@@ -66,7 +44,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.29'
+export const PROTOCOL_VERSION = '0.0.30'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -123,14 +101,10 @@ export type EventFrame = typeof EventFrame.Type
  * `ArchiveTab`, `DeleteTab` and `UnarchiveTab` are queries so their typed errors reach the caller
  * (`ArchiveTab`, `DeleteTab` and `UnarchiveTab` succeed for a tab already gone, so repeating one is
  * harmless); the plugin calls (`LoadPlugin`
- * on a loaded plugin reloads it), the model calls (`GetModels`, `RefreshModels`), the adapter calls
- * (`GetAdapterStatus`, `CheckAdapterHealth`, `SetInstallPath`, `GetModelPreferences`,
- * `SetModelPreference`, `SetAgentDefaults`, each setting a value, so repeating one is harmless,
- * and `GetDisabledPermissionModes`), the usage-limit resume calls (`GetUsageLimitResume`,
- * `SetUsageLimitResume`) and
- * the activity calls (`ListActivities`, `RunActivity`) are safe to repeat and take none; a
- * `RefreshModels`, `CheckAdapterHealth` or `RunActivity` sent while that run is in progress waits
- * for it instead of starting another;
+ * on a loaded plugin reloads it) and the activity calls (`ListActivities`, `RunActivity`) are safe
+ * to repeat and take none; a `RunActivity` sent while that run is in progress waits for it instead
+ * of starting another. The session, model and adapter calls are `dia-runs` plugin calls, made
+ * through `CallPlugin` and `SubscribePlugin`;
  * the meta repo calls (`GetMetaRepo`, `SetMetaRemote`, `PushMetaRepo`) take none and report every
  * failure in their result, never as an RPC error;
  * the workspace problem calls (`ListWorkspaceProblems`, `DeleteUnreadableRow`,
@@ -148,25 +122,14 @@ export type EventFrame = typeof EventFrame.Type
  * with `RpcServer` in the Host and call it with `RpcClient` from the preload.
  */
 export const DiaRpcs = RpcGroup.make(
-  Rpc.make('SendMessage', { payload: withRequestId(SendMessage) }),
-  Rpc.make('ResolvePermission', { payload: withRequestId(ResolvePermission) }),
-  Rpc.make('ResolveQuestion', { payload: withRequestId(ResolveQuestion) }),
-  Rpc.make('ResolvePlanReview', { payload: withRequestId(ResolvePlanReview) }),
   Rpc.make('CreateTab', { payload: withRequestId(CreateTab) }),
   Rpc.make('MoveProject', { payload: withRequestId(MoveProject) }),
   Rpc.make('RenameTab', { payload: withRequestId(RenameTab) }),
   Rpc.make('SelectTab', { payload: withRequestId(SelectTab) }),
-  Rpc.make('ResetAttachedSession', { payload: withRequestId(ResetAttachedSession) }),
   Rpc.make('SetTranscriptWidth', { payload: withRequestId(SetTranscriptWidth) }),
   Rpc.make('SetThinkingLevel', { payload: withRequestId(SetThinkingLevel) }),
   Rpc.make('SetPermissionMode', { payload: withRequestId(SetPermissionMode) }),
   Rpc.make('SetModel', { payload: withRequestId(SetModel) }),
-  Rpc.make('InterruptPane', { payload: withRequestId(InterruptPane) }),
-  Rpc.make('ResumeParkedAgent', { payload: withRequestId(ResumeParkedAgent) }),
-  Rpc.make('RewindToCheckpoint', { payload: withRequestId(RewindToCheckpoint) }),
-  Rpc.make('EditQueuedMessage', { payload: withRequestId(EditQueuedMessage) }),
-  Rpc.make('RemoveQueuedMessage', { payload: withRequestId(RemoveQueuedMessage) }),
-  Rpc.make('SendQueuedMessageNow', { payload: withRequestId(SendQueuedMessageNow) }),
   Rpc.make('GetWorkspace', { success: Workspace }),
   Rpc.make('RegisterProject', {
     payload: { projectId: ProjectId, directory: Schema.String },
@@ -182,7 +145,6 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('DeleteTab', { payload: { paneId: Uuid }, error: WorktreeNotRemovedError }),
   Rpc.make('UnarchiveTab', { payload: { paneId: Uuid }, error: WorktreeNotRestoredError }),
   Rpc.make('GetAgentSummaries', { success: Schema.Array(AgentSummary) }),
-  Rpc.make('GetAttachedSessions', { success: Schema.Array(AttachedSession) }),
   Rpc.make('GetTranscriptWidth', { success: TranscriptWidth }),
   Rpc.make('GetPaneChat', {
     payload: { paneId: Schema.String },
@@ -192,8 +154,6 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('SetTheme', { payload: { theme: ThemePreference } }),
   Rpc.make('GetSendMode', { success: SendMode }),
   Rpc.make('SetSendMode', { payload: { mode: SendMode } }),
-  Rpc.make('GetUsageLimitResume', { success: UsageLimitResume }),
-  Rpc.make('SetUsageLimitResume', { payload: { mode: UsageLimitResume } }),
   Rpc.make('ListPlugins', { success: Schema.Array(PluginInfo) }),
   Rpc.make('LoadPlugin', { payload: { name: PluginName }, success: PluginInfo }),
   Rpc.make('UnloadPlugin', { payload: { name: PluginName }, success: PluginInfo }),
@@ -202,22 +162,6 @@ export const DiaRpcs = RpcGroup.make(
     success: PluginOverrideResult
   }),
   Rpc.make('ClearPluginOverride', { payload: { name: PluginName } }),
-  Rpc.make('GetModels', { success: ModelCatalogSnapshot }),
-  Rpc.make('RefreshModels', {}),
-  Rpc.make('GetAdapterStatus', { success: AdapterStatusSnapshot }),
-  Rpc.make('CheckAdapterHealth', {}),
-  Rpc.make('SetInstallPath', { payload: { path: Schema.NullOr(Schema.NonEmptyString) } }),
-  Rpc.make('GetModelPreferences', { success: ModelPreferencesSnapshot }),
-  Rpc.make('SetModelPreference', {
-    payload: { model: Schema.NonEmptyString, preference: Schema.NullOr(ModelPreference) },
-    error: LastVisibleModel
-  }),
-  Rpc.make('SetAgentDefaults', { payload: { defaults: AgentDefaults } }),
-  Rpc.make('GetDisabledPermissionModes', {
-    payload: { cwd: Schema.String },
-    success: Schema.Array(PermissionMode)
-  }),
-  Rpc.make('GetAttachmentTypes', { success: Schema.Array(AttachmentType) }),
   Rpc.make('ListProjectEntries', {
     payload: { cwd: Schema.String },
     success: Schema.Array(ProjectEntry)

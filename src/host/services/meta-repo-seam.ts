@@ -6,7 +6,17 @@ import {
 import { ServiceKey } from '@shared/plugin/api'
 import type { PluginRegistry } from '@shared/plugin/plugin-registry'
 import { Effect, Option, Predicate } from 'effect'
-import type { SessionAdditions } from '../session/agent-backend'
+
+/**
+ * What dia adds to an agent session on top of the agent's own configuration.
+ * `systemPromptAppend` is text appended to the agent's system prompt; an empty string appends
+ * nothing. `pluginPaths` are absolute paths of local Claude Code plugin directories loaded into
+ * the session.
+ */
+export interface SessionAdditions {
+  readonly systemPromptAppend: string
+  readonly pluginPaths: ReadonlyArray<string>
+}
 
 /**
  * The meta repo (ADR-0025), as the `meta` plugin provides it under {@link MetaRepoKey}. None of its
@@ -32,7 +42,8 @@ export interface MetaRepo {
 export type SessionMetaRepo = Pick<MetaRepo, 'forNewSession'> &
   Partial<Omit<MetaRepo, 'forNewSession'>>
 
-const NO_ADDITIONS: SessionAdditions = { systemPromptAppend: '', pluginPaths: [] }
+/** {@link SessionAdditions} that add nothing; use them when no meta repo is provided. */
+export const NO_SESSION_ADDITIONS: SessionAdditions = { systemPromptAppend: '', pluginPaths: [] }
 
 const ALL_MEMBERS = ['forNewSession', 'state', 'setRemote', 'push'] as const
 
@@ -50,7 +61,7 @@ const hasAllMembers = (value: SessionMetaRepo): value is MetaRepo =>
  * The key the `meta` plugin provides its {@link MetaRepo} under. It reads as a
  * {@link SessionMetaRepo} and accepts a value whose `forNewSession` is an effect; any other value
  * reads as not provided. Host code reads it through {@link withMetaRepo} and
- * {@link resolveSessionAdditions}, one operation per call (ADR-0055).
+ * `ctx.whenProvided` in `dia-runs`, one operation per call (ADR-0055).
  */
 export const MetaRepoKey = ServiceKey.make('metaRepo', hasSessionMembers)
 
@@ -92,34 +103,4 @@ export const withMetaRepo = Effect.fn('MetaRepo.with')(function* <A>(
       )
     )
   return Option.getOrElse(result, () => NOT_LOADED)
-})
-
-/**
- * Reads the {@link SessionAdditions} for a session starting now from the {@link MetaRepo} the
- * loaded `meta` plugin provides. It needs only `forNewSession`, so an older `meta` plugin without
- * the push members still adds to sessions. It never fails: when the plugin is not loaded, or what
- * it provides has no `forNewSession` effect, it returns additions that add nothing. Call it once
- * per session start; a plugin reload applies from the next call.
- */
-export const resolveSessionAdditions = Effect.fn('MetaRepo.resolveSessionAdditions')(function* (
-  registry: Pick<PluginRegistry, 'use'>
-) {
-  const additions = yield* registry
-    .use(MetaRepoKey, (value) =>
-      value.forNewSession.pipe(
-        Effect.catchDefect((defect) =>
-          Effect.logError('The meta repo forNewSession effect died', { defect }).pipe(
-            Effect.as(NO_ADDITIONS)
-          )
-        )
-      )
-    )
-    .pipe(
-      Effect.catchTag('ServiceWithdrawnError', (error) =>
-        Effect.logWarning('Started the session without meta repo additions', {
-          message: error.message
-        }).pipe(Effect.as(Option.some(NO_ADDITIONS)))
-      )
-    )
-  return Option.getOrElse(additions, () => NO_ADDITIONS)
 })

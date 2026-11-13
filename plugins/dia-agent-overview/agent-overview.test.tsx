@@ -9,7 +9,6 @@ import {
   StatusWorking,
   ToolUse
 } from '@shared/domain/agent-summary'
-import type { AttachedSession } from '@shared/domain/attached-session'
 import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
@@ -18,15 +17,13 @@ import { AgentOverview } from './agent-overview'
 
 const state = vi.hoisted(() => ({
   workspace: undefined as Workspace | undefined,
-  summaries: new Map<string, AgentSummary>(),
-  attached: [] as ReadonlyArray<AttachedSession>
+  summaries: new Map<string, AgentSummary>()
 }))
 
 vi.mock('@dia/renderer-plugin', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@dia/renderer-plugin')>()),
   useWorkspace: () => state.workspace,
-  useAgentSummaries: () => state.summaries,
-  useAttachedSessions: () => state.attached
+  useAgentSummaries: () => state.summaries
 }))
 
 const paneId = (n: number) => `00000000-0000-4000-8000-0000000001${String(n).padStart(2, '0')}`
@@ -64,7 +61,6 @@ beforeEach(() => {
     }
   )
   localStorage.clear()
-  state.attached = []
   state.workspace = {
     projects: [
       entry(1, 'alpha', [tab(1, 'build'), tab(2, 'review')]),
@@ -281,63 +277,6 @@ describe('AgentOverview archived agents', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete…' }))
 
     expect(screen.getByRole('alertdialog').textContent).toContain('Delete docs?')
-  })
-})
-
-describe('AgentOverview Assistant group', () => {
-  const assistant = (resettable: boolean): AttachedSession => ({
-    config: {
-      paneId: paneId(9),
-      cwd: '/assistant',
-      model: 'm',
-      thinkingLevel: 'adaptive',
-      permissionMode: 'dontAsk'
-    },
-    projectId: null,
-    label: 'Executive assistant',
-    caption: '',
-    resettable
-  })
-
-  const assistantGroup = () => screen.getByRole('group', { name: 'Assistant' })
-
-  it('lists the assistant session under Assistant, named without a project or caption', () => {
-    state.attached = [assistant(true)]
-    render(<Harness initialOpen />)
-
-    expect(
-      [...assistantGroup().querySelectorAll('[data-nav^="row:"]')].map((row) =>
-        row.getAttribute('title')
-      )
-    ).toEqual(['Executive assistant'])
-  })
-
-  it('shows no Assistant group without an assistant session', () => {
-    render(<Harness initialOpen />)
-
-    expect(screen.queryByRole('group', { name: 'Assistant' })).toBeNull()
-  })
-
-  it('starts the session over from its row menu', () => {
-    state.attached = [assistant(true)]
-    const bridge = { resetAttachedSession: vi.fn() }
-    Object.assign(window, { dia: bridge })
-    render(<Harness initialOpen />)
-
-    fireEvent.contextMenu(screen.getByRole('button', { name: /^Executive assistant, / }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Start over' }))
-
-    expect(bridge.resetAttachedSession.mock.calls).toEqual([[paneId(9)]])
-    Reflect.deleteProperty(window, 'dia')
-  })
-
-  it('offers only Show for a session its plugin cannot reset', () => {
-    state.attached = [assistant(false)]
-    render(<Harness initialOpen />)
-
-    fireEvent.contextMenu(screen.getByRole('button', { name: /^Executive assistant, / }))
-
-    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Show'])
   })
 })
 

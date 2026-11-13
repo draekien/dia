@@ -1,14 +1,7 @@
 import { NodeCrypto, NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import { AGENT_NAME_ADJECTIVES, AGENT_NAME_NOUNS } from '@shared/domain/agent-name'
-import { EMPTY_MESSAGE_QUEUE } from '@shared/domain/message-queue'
-import {
-  type ConversationMessage,
-  type PaneConfig,
-  SessionId,
-  WorktreeKept,
-  WorktreeReleased
-} from '@shared/domain/pane'
+import { type PaneConfig, SessionId, WorktreeKept, WorktreeReleased } from '@shared/domain/pane'
 import {
   AgentName,
   type CreateTabRequest,
@@ -34,22 +27,25 @@ import {
   Option,
   Path,
   PlatformError,
+  Queue,
   Result,
   Stream,
   SubscriptionRef
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import {
-  type AgentBackend,
-  AgentBackendKey,
-  type DiscoveredSession
-} from '../session/agent-backend'
 import { EventHub } from './event-hub'
-import { type PaneCreationRequest, type PaneHandle, PaneSupervisor } from './pane-supervisor'
 import { PaneWorkspace, PaneWorkspaceLive } from './pane-workspace'
 import { PathMoves } from './path-moves'
 import { RunEventLog } from './run-event-log'
 import { type AppendEntry, RunEventWriteError } from './run-events-seam'
+import { RunsClient } from './runs-client'
+import {
+  type DiscoveredSession,
+  type RunChange,
+  RunSessionChanged,
+  type RunSpec,
+  RunTabRequested
+} from './runs-seam'
 import { WorkspaceFeed, WorkspaceFeedLive } from './workspace-feed'
 import { type WorkspaceLoadError, WorkspaceStore, WorkspaceWriteError } from './workspace-store'
 import {
@@ -65,31 +61,13 @@ const PANE_NEW = 'cccccccc-0000-4000-8000-000000000003'
 const PROJECT_1 = ProjectId.make('11111111-0000-4000-8000-000000000001')
 const PROJECT_2 = ProjectId.make('22222222-0000-4000-8000-000000000002')
 
-const fakeHandle: PaneHandle = {
-  sendMessage: () => Effect.void,
-  editQueuedMessage: () => Effect.void,
-  removeQueuedMessage: () => Effect.void,
-  sendQueuedMessageNow: () => Effect.void,
-  messageQueue: Effect.succeed(EMPTY_MESSAGE_QUEUE),
-  setThinkingLevel: () => Effect.void,
-  setPermissionMode: () => Effect.void,
-  setModel: () => Effect.void,
-  resolvePermission: () => Effect.void,
-  resolveQuestion: () => Effect.void,
-  resolvePlanReview: () => Effect.void,
-  rewindToCheckpoint: () => Effect.void,
-  interrupt: () => Effect.void,
-  markCrashed: () => Effect.void,
-  markErrored: () => Effect.void,
-  resume: Effect.void
-}
-
 interface Harness {
   readonly log: Array<string>
   readonly saves: Array<Workspace>
   readonly published: Array<IpcEvent>
-  readonly requests: Array<PaneCreationRequest>
+  readonly requests: Array<RunSpec>
   readonly existing: Set<string>
+  readonly emit: (change: RunChange) => Effect.Effect<void>
   readonly layer: Layer.Layer<PaneWorkspace | WorkspaceFeed, WorkspaceLoadError>
 }
 
@@ -97,11 +75,14 @@ interface HarnessOptions {
   readonly persisted?: Workspace
   readonly directories?: ReadonlyArray<string>
   readonly files?: ReadonlyArray<string>
-  readonly openPane?: PaneSupervisor['Service']['openPane']
+  readonly openRun?: (
+    spec: RunSpec,
+    emit: (change: RunChange) => Effect.Effect<void>
+  ) => Effect.Effect<PaneConfig, WorktreeCreateError | WorktreeReattachError>
   readonly live?: ReadonlySet<string>
-  readonly closePane?: (paneId: string) => Effect.Effect<void>
+  readonly closeRun?: (runId: string) => Effect.Effect<void>
+  readonly retireRun?: (runId: string) => Effect.Effect<void>
   readonly gitOps?: (existing: Set<string>) => GitOps
-  readonly history?: ReadonlyArray<ConversationMessage>
   readonly discovered?: ReadonlyArray<DiscoveredSession>
   readonly storedSessionIds?: ReadonlyArray<string>
   readonly unloadedDirectoryKeys?: ReadonlyArray<string>
@@ -116,38 +97,54 @@ const withdrawn = new ServiceWithdrawnError({
   message: 'The "worktrees" plugin closed while a call using "worktrees" was running'
 })
 
-const configOf = (request: PaneCreationRequest): PaneConfig => ({
-  paneId: request.paneId,
-  cwd: request.sourceCwd,
-  model: request.model,
-  thinkingLevel: request.thinkingLevel,
-  permissionMode: request.permissionMode
+const configOf = (spec: RunSpec): PaneConfig => ({
+  paneId: spec.runId,
+  cwd: spec.sourceCwd,
+  model: spec.model,
+  thinkingLevel: spec.thinkingLevel,
+  permissionMode: spec.permissionMode
 })
 
 const makeHarness = (options: HarnessOptions = {}): Harness => {
   const log: Array<string> = []
   const saves: Array<Workspace> = []
   const published: Array<IpcEvent> = []
-  const requests: Array<PaneCreationRequest> = []
+  const requests: Array<RunSpec> = []
   const existing = new Set([...(options.directories ?? []), ...(options.files ?? [])])
   const directories = new Set(options.directories ?? [])
 
-  const supervisor = Layer.succeed(PaneSupervisor, {
-    openPane: (request, onEvent, onSessionChanged, onModeChanged) => {
-      requests.push(request)
-      return options.openPane === undefined
-        ? Effect.succeed({ handle: fakeHandle, config: configOf(request) })
-        : options.openPane(request, onEvent, onSessionChanged, onModeChanged)
+  const changes = Effect.runSync(Queue.unbounded<RunChange>())
+  const emit = (change: RunChange) =>
+    Queue.offer(changes, change).pipe(
+      Effect.andThen(Effect.repeat(Effect.yieldNow, { times: 20 })),
+      Effect.asVoid
+    )
+
+  const runs = Layer.succeed(RunsClient, {
+    open: (spec) => {
+      requests.push(spec)
+      return options.openRun === undefined
+        ? Effect.succeed(configOf(spec))
+        : options.openRun(spec, emit)
     },
-    closePane: (paneId) =>
-      Effect.sync(() => log.push(`closePane ${paneId}`)).pipe(
-        Effect.andThen(options.closePane?.(paneId) ?? Effect.void)
+    close: (runId) =>
+      Effect.sync(() => log.push(`close ${runId}`)).pipe(
+        Effect.andThen(options.closeRun?.(runId) ?? Effect.void)
       ),
-    getHandle: (paneId) =>
-      Effect.succeed(options.live?.has(paneId) === true ? Option.some(fakeHandle) : Option.none()),
-    closeAll: () => Effect.void,
-    attachPane: () => Effect.die(new Error('attachPane is not used by the workspace')),
-    setUsageLimitResume: () => Effect.void
+    retire: (runId, as) =>
+      Effect.sync(() => log.push(`retire ${runId} ${as}`)).pipe(
+        Effect.andThen(options.retireRun?.(runId) ?? Effect.void)
+      ),
+    isLive: (runId) => Effect.succeed(options.live?.has(runId) === true),
+    setThinkingLevel: () => Effect.void,
+    setPermissionMode: () => Effect.void,
+    setModel: () => Effect.void,
+    changes: Stream.fromQueue(changes),
+    discoverSessions: (directory) =>
+      Effect.sync(() => {
+        log.push(`discoverSessions ${directory}`)
+        return options.discovered ?? []
+      })
   })
 
   const store = Layer.succeed(WorkspaceStore, {
@@ -178,25 +175,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     subscribe: () => Stream.empty
   })
 
-  const backend: AgentBackend = {
-    openSession: () => Effect.die('not called'),
-    readHistory: () => Effect.succeed([]),
-    discoverSessions: (directory) =>
-      Effect.sync(() => {
-        log.push(`discoverSessions ${directory}`)
-        return options.discovered ?? []
-      }),
-    transcriptInfo: () => Effect.die('not called'),
-    readTranscriptAfter: () => Effect.die('not called'),
-    models: () => Stream.empty,
-    refreshModels: () => Effect.die('not called'),
-    status: () => Stream.empty,
-    checkHealth: () => Effect.void,
-    setInstallPath: () => Effect.void,
-    disabledPermissionModes: () => Effect.succeed([]),
-    attachmentTypes: () => Effect.succeed([])
-  }
-  const provided = new Map<string, unknown>([[AgentBackendKey.name, backend]])
+  const provided = new Map<string, unknown>()
   if (options.gitOps !== undefined) provided.set(WorktreesKey.name, options.gitOps(existing))
   const read = (key: string) => Option.fromNullishOr(provided.get(key))
   const provideUse = fakeUse(read)
@@ -216,8 +195,6 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
             for (const entry of entries) log.push(`append ${runId} ${entry.event._tag}`)
             return entries.map(() => Option.some(1))
           }),
-    seed: (runId: string) =>
-      Effect.sync(() => void log.push(`seed ${runId} after ${requests.length} sessions`)),
     release: () => Effect.void
   } as unknown as RunEventLog['Service'])
 
@@ -248,7 +225,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const layer = Layer.provide(
     PaneWorkspaceLive,
     Layer.mergeAll(
-      supervisor,
+      runs,
       pathMoves,
       store,
       hub,
@@ -259,7 +236,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       NodeCrypto.layer
     )
   ).pipe(Layer.provideMerge(WorkspaceFeedLive))
-  return { log, saves, published, requests, existing, layer }
+  return { log, saves, published, requests, existing, emit, layer }
 }
 
 const project = (projectId: ProjectId, directory: string, isGitRepo = true): Project => ({
@@ -777,7 +754,6 @@ describe('PaneWorkspace.createTab', () => {
       )
 
       assert.strictEqual(harness.requests[0].sourceCwd, '/repo')
-      assert.include(harness.log, `seed ${PANE_NEW} after 0 sessions`)
       assert.deepStrictEqual(tabsOf(workspace), [PANE_A, PANE_NEW])
       assert.deepStrictEqual(workspace.visibleTab, PANE_NEW)
       assert.strictEqual(workspace.projects[0].tabs[1].name, 'heron')
@@ -788,17 +764,14 @@ describe('PaneWorkspace.createTab', () => {
     Effect.gen(function* () {
       const harness = makeHarness({
         persisted: oneProject(),
-        openPane: (req) =>
+        openRun: (spec) =>
           Effect.succeed({
-            handle: fakeHandle,
-            config: {
-              ...configOf(req),
-              cwd: '/worktrees/swift-raven',
-              worktree: {
-                path: '/worktrees/swift-raven',
-                branch: 'dia/swift-raven',
-                sourceRepo: '/repo'
-              }
+            ...configOf(spec),
+            cwd: '/worktrees/swift-raven',
+            worktree: {
+              path: '/worktrees/swift-raven',
+              branch: 'dia/swift-raven',
+              sourceRepo: '/repo'
             }
           })
       })
@@ -876,9 +849,9 @@ describe('PaneWorkspace.createTab', () => {
     Effect.gen(function* () {
       const harness = makeHarness({
         persisted: oneProject(),
-        openPane: (req) =>
+        openRun: (spec) =>
           Effect.fail(
-            new WorktreeCreateError({ paneId: req.paneId, sourceRepo: '/repo', cause: 'boom' })
+            new WorktreeCreateError({ paneId: spec.runId, sourceRepo: '/repo', cause: 'boom' })
           )
       })
 
@@ -900,10 +873,13 @@ describe('PaneWorkspace.createTab', () => {
     Effect.gen(function* () {
       const harness = makeHarness({
         persisted: oneProject(),
-        openPane: (req, _onEvent, onSessionChanged) =>
-          onSessionChanged(Option.some(SessionId.make('early-session'))).pipe(
-            Effect.as({ handle: fakeHandle, config: configOf(req) })
-          )
+        openRun: (spec, emit) =>
+          emit(
+            RunSessionChanged.make({
+              runId: spec.runId,
+              sessionId: SessionId.make('early-session')
+            })
+          ).pipe(Effect.as(configOf(spec)))
       })
 
       const workspace = yield* run(
@@ -944,7 +920,7 @@ describe('PaneWorkspace tab changes', () => {
       )
 
       assert.deepStrictEqual(workspace.visibleTab, PANE_B)
-      assert.strictEqual(harness.requests[0].resume, 's-b')
+      assert.deepStrictEqual(harness.requests[0].resume, Option.some(SessionId.make('s-b')))
     })
   )
 
@@ -1119,7 +1095,7 @@ describe('PaneWorkspace.removeProject', () => {
       )
       assert.isBelow(
         harness.log.indexOf('publish WorkspaceChanged'),
-        harness.log.indexOf(`closePane ${PANE_A}`)
+        harness.log.indexOf(`retire ${PANE_A} deleted`)
       )
     })
   )
@@ -1248,7 +1224,7 @@ describe('PaneWorkspace.removeProject', () => {
       const release = yield* Deferred.make<void>()
       const harness = makeHarness({
         persisted: removable(),
-        closePane: () => Deferred.await(release)
+        retireRun: () => Deferred.await(release)
       })
 
       const [createError, selectError] = yield* run(
@@ -1258,7 +1234,7 @@ describe('PaneWorkspace.removeProject', () => {
           const removal = yield* Effect.forkChild(
             Stream.runCollect(service.removeProject(PROJECT_1, true))
           )
-          while (!harness.log.includes(`closePane ${PANE_A}`)) yield* Effect.yieldNow
+          while (!harness.log.includes(`retire ${PANE_A} deleted`)) yield* Effect.yieldNow
           const createError = yield* Effect.flip(service.createTab(request(), ignore))
           const selectError = yield* Effect.flip(service.selectTab(PANE_A, ignore))
           yield* Deferred.succeed(release, undefined)
@@ -1319,7 +1295,8 @@ describe('PaneWorkspace.archiveTab and deleteTab', () => {
 
         const workspace = yield* run(harness, archive(PANE_A).pipe(Effect.andThen(current)))
 
-        assert.include(harness.log, `closePane ${PANE_A}`)
+        assert.include(harness.log, `close ${PANE_A}`)
+        assert.include(harness.log, `retire ${PANE_A} archived`)
         assert.isFalse(harness.existing.has(worktree.path))
         assert.deepStrictEqual(workspace.projects[0].tabs[0], { ...worktreeTab, archived: true })
         assert.deepStrictEqual(harness.saves.at(-1), workspace)
@@ -1332,7 +1309,7 @@ describe('PaneWorkspace.archiveTab and deleteTab', () => {
 
       yield* run(harness, archive(PANE_A))
 
-      const closed = harness.log.indexOf(`closePane ${PANE_A}`)
+      const closed = harness.log.indexOf(`close ${PANE_A}`)
       const recorded = harness.log.indexOf(`append ${PANE_A} AgentArchived`)
       assert.isTrue(closed !== -1 && recorded > closed)
     })
@@ -1369,7 +1346,8 @@ describe('PaneWorkspace.archiveTab and deleteTab', () => {
 
       const workspace = yield* run(harness, remove(PANE_A).pipe(Effect.andThen(current)))
 
-      assert.include(harness.log, `closePane ${PANE_A}`)
+      assert.include(harness.log, `close ${PANE_A}`)
+      assert.include(harness.log, `retire ${PANE_A} deleted`)
       assert.isFalse(harness.existing.has(worktree.path))
       assert.deepStrictEqual(tabsOf(workspace), [PANE_B])
       assert.strictEqual(workspace.visibleTab, PANE_B)
@@ -1477,7 +1455,7 @@ describe('PaneWorkspace.archiveTab and deleteTab', () => {
       const release = yield* Deferred.make<void>()
       const harness = makeHarness({
         persisted: twoProjects(PANE_B),
-        closePane: () => Deferred.await(release)
+        closeRun: () => Deferred.await(release)
       })
 
       const [selectError, deleteError] = yield* run(
@@ -1485,10 +1463,10 @@ describe('PaneWorkspace.archiveTab and deleteTab', () => {
         Effect.gen(function* () {
           const service = yield* PaneWorkspace
           const archiving = yield* Effect.forkChild(service.archiveTab(PANE_A))
-          while (!harness.log.includes(`closePane ${PANE_A}`)) yield* Effect.yieldNow
+          while (!harness.log.includes(`close ${PANE_A}`)) yield* Effect.yieldNow
           const selectError = yield* Effect.flip(service.selectTab(PANE_A, ignore))
           const deleteError = yield* Effect.flip(service.deleteTab(PANE_A))
-          const starting = yield* Effect.forkChild(service.ensureLive(PANE_A, ignore))
+          const starting = yield* Effect.forkChild(service.resumePane(PANE_A, ignore))
           yield* Deferred.succeed(release, undefined)
           yield* Fiber.join(archiving)
           yield* Fiber.join(starting)
@@ -1504,7 +1482,7 @@ describe('PaneWorkspace.archiveTab and deleteTab', () => {
     })
   )
 
-  it.effect('shows an archived tab without starting its session, and never starts it', () =>
+  it.effect('shows an archived tab without starting its session', () =>
     Effect.gen(function* () {
       const archived = twoProjects(PANE_B)
       const harness = makeHarness({
@@ -1526,7 +1504,6 @@ describe('PaneWorkspace.archiveTab and deleteTab', () => {
         Effect.gen(function* () {
           const service = yield* PaneWorkspace
           yield* service.selectTab(PANE_A, ignore)
-          yield* service.ensureLive(PANE_A, ignore)
           return yield* service.getWorkspace
         })
       )
@@ -1757,51 +1734,6 @@ describe('PaneWorkspace sessions', () => {
     return { events, onEvent: (event: IpcEvent) => Effect.sync(() => void events.push(event)) }
   }
 
-  it.effect('resumePane seeds the tab chat state before its session starts', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ persisted: withSession(), directories: ['/repo'] })
-
-      yield* run(
-        harness,
-        Effect.flatMap(PaneWorkspace, (s) => s.resumePane(PANE_A, ignore))
-      )
-
-      assert.include(harness.log, `seed ${PANE_A} after 0 sessions`)
-      assert.strictEqual(harness.requests.length, 1)
-    })
-  )
-
-  it.effect('resumePane does not seed a tab with no recorded session', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ persisted: withoutSession, directories: ['/repo'] })
-
-      yield* run(
-        harness,
-        Effect.flatMap(PaneWorkspace, (s) => s.resumePane(PANE_A, ignore))
-      )
-
-      assert.isFalse(harness.log.some((line) => line.startsWith('seed ')))
-    })
-  )
-
-  it.effect('resumePane seeds the tab before reporting a gone working directory', () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({ persisted: withSession() })
-      const onEvent = (event: IpcEvent) =>
-        Effect.sync(() => void harness.log.push(`event ${event._tag}`))
-
-      yield* run(
-        harness,
-        Effect.flatMap(PaneWorkspace, (s) => s.resumePane(PANE_A, onEvent))
-      )
-
-      assert.deepStrictEqual(
-        harness.log.filter((line) => line.startsWith('seed ') || line.startsWith('event ')),
-        [`seed ${PANE_A} after 0 sessions`, 'event PaneAttentionChanged']
-      )
-    })
-  )
-
   it.effect('resumePane continues the recorded session in the tab directory', () =>
     Effect.gen(function* () {
       const harness = makeHarness({ persisted: withSession(), directories: ['/repo'] })
@@ -1811,7 +1743,7 @@ describe('PaneWorkspace sessions', () => {
         Effect.flatMap(PaneWorkspace, (s) => s.resumePane(PANE_A, ignore))
       )
 
-      assert.strictEqual(harness.requests[0].resume, 'restored-1')
+      assert.deepStrictEqual(harness.requests[0].resume, Option.some(SessionId.make('restored-1')))
       assert.strictEqual(harness.requests[0].sourceCwd, '/repo')
     })
   )
@@ -1821,10 +1753,11 @@ describe('PaneWorkspace sessions', () => {
       const harness = makeHarness({
         persisted: withSession(),
         directories: ['/repo'],
-        openPane: (req, _onEvent, onSessionChanged) =>
-          (req.resume === undefined ? Effect.void : onSessionChanged(Option.none())).pipe(
-            Effect.as({ handle: fakeHandle, config: configOf(req) })
-          )
+        openRun: (spec, emit) =>
+          (Option.isNone(spec.resume)
+            ? Effect.void
+            : emit(RunSessionChanged.make({ runId: spec.runId, sessionId: null }))
+          ).pipe(Effect.as(configOf(spec)))
       })
 
       const tabAfter = yield* run(
@@ -1833,14 +1766,14 @@ describe('PaneWorkspace sessions', () => {
           const workspace = yield* PaneWorkspace
           yield* workspace.resumePane(PANE_A, ignore)
           yield* workspace.resumePane(PANE_A, ignore)
-          yield* workspace.ensureLive(PANE_A, ignore)
+          yield* workspace.selectTab(PANE_A, ignore)
           return (yield* current).projects[0].tabs[0]
         })
       )
 
       assert.deepStrictEqual(
         harness.requests.map((req) => req.resume),
-        ['restored-1', undefined]
+        [Option.some(SessionId.make('restored-1')), Option.none()]
       )
       assert.notProperty(tabAfter, 'sessionId')
       assert.deepStrictEqual(tabAfter.config, withSession().projects[0].tabs[0].config)
@@ -1881,29 +1814,30 @@ describe('PaneWorkspace sessions', () => {
     })
   )
 
-  it.effect('ensureLive starts a fresh session for a tab with no recorded session', () =>
+  it.effect('selectTab starts a new conversation for a tab with no recorded session', () =>
     Effect.gen(function* () {
       const harness = makeHarness({ persisted: withoutSession, directories: ['/repo'] })
 
       yield* run(
         harness,
-        Effect.flatMap(PaneWorkspace, (s) => s.ensureLive(PANE_A, ignore))
+        Effect.flatMap(PaneWorkspace, (s) => s.selectTab(PANE_A, ignore))
       )
 
       assert.strictEqual(harness.requests.length, 1)
-      assert.strictEqual(harness.requests[0].resume, undefined)
+      assert.isTrue(Option.isNone(harness.requests[0].resume))
     })
   )
 
-  it.effect('ensureLive does nothing for an unknown tab', () =>
+  it.effect('selectTab fails for an unknown tab without starting a run', () =>
     Effect.gen(function* () {
       const harness = makeHarness({ persisted: withoutSession, directories: ['/repo'] })
 
-      yield* run(
+      const error = yield* run(
         harness,
-        Effect.flatMap(PaneWorkspace, (s) => s.ensureLive(PANE_NEW, ignore))
+        Effect.flatMap(PaneWorkspace, (s) => Effect.flip(s.selectTab(PANE_NEW, ignore)))
       )
 
+      assert.strictEqual(error._tag, 'TabNotFoundError')
       assert.strictEqual(harness.requests.length, 0)
     })
   )
@@ -1948,9 +1882,9 @@ describe('PaneWorkspace sessions', () => {
       const harness = makeHarness({
         persisted: withSession(),
         directories: ['/repo'],
-        openPane: (req) =>
+        openRun: (spec) =>
           Effect.fail(
-            new WorktreeCreateError({ paneId: req.paneId, sourceRepo: '/repo', cause: 'boom' })
+            new WorktreeCreateError({ paneId: spec.runId, sourceRepo: '/repo', cause: 'boom' })
           )
       })
       const { events, onEvent } = recordEvents()
@@ -1962,6 +1896,38 @@ describe('PaneWorkspace sessions', () => {
 
       assert.isTrue(Result.isSuccess(result))
       assert.strictEqual(events[0]?._tag, 'PaneAttentionChanged')
+    })
+  )
+})
+
+describe('PaneWorkspace run tab requests', () => {
+  it.effect('adds a tab for the run to the project of its directory and shows it', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* harness.emit(
+            RunTabRequested.make({
+              runId: PANE_NEW,
+              directory: '/other',
+              model: 'm',
+              thinkingLevel: 'adaptive',
+              permissionMode: 'default',
+              sessionId: SessionId.make('s-new')
+            })
+          )
+          return yield* current
+        })
+      )
+
+      assert.deepStrictEqual(
+        workspace.projects.map((entry) => entry.tabs.map((t) => t.config.paneId)),
+        [[PANE_A], [PANE_B, PANE_NEW]]
+      )
+      assert.strictEqual(workspace.projects[1].tabs[1].sessionId, 's-new')
+      assert.strictEqual(workspace.visibleTab, PANE_NEW)
     })
   )
 })

@@ -1,5 +1,4 @@
 import { DEFAULT_SEND_MODE } from '@shared/domain/message-queue'
-import { DEFAULT_USAGE_LIMIT_RESUME } from '@shared/domain/parking'
 import type {
   TabNotFoundError,
   WorktreeNotRemovedError,
@@ -13,50 +12,37 @@ import { Effect, Option, Stream } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { callPlugin, subscribePlugin } from '../plugins/plugin-messages'
 import { applyOverride, PluginSources } from '../plugins/plugin-sources'
-import { AdapterStatusFeed } from '../services/adapter-status-feed'
 import { AgentSummaries } from '../services/agent-summaries'
-import { AttachedSessions } from '../services/attached-sessions'
 import { BackgroundActivities } from '../services/background-activities'
 import { CommandDeduper } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
 import { withMetaRepo } from '../services/meta-repo-seam'
-import { ModelCatalogFeed } from '../services/model-catalog-feed'
-import { ModelPreferences } from '../services/model-preferences'
-import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { ProjectEntries } from '../services/project-entries'
 import { RunEventLog } from '../services/run-event-log'
 import { SettingsStore } from '../services/settings-store'
 import { WorkspaceProblems } from '../services/workspace-problems'
-import { resolveAgentBackend } from '../session/agent-backend'
 
 /**
  * Builds the implementation of {@link DiaRpcs} on top of the Host's services. Requires
- * `PaneWorkspace`, `AgentSummaries`, `PaneSupervisor`, `SettingsStore`, `EventHub`, `CommandDeduper`,
- * `HostPlugins`, `PluginSources`, `ModelCatalogFeed`, `AdapterStatusFeed`, `ModelPreferences`,
- * `BackgroundActivities`, `RunEventLog` and `WorkspaceProblems`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
- * handlers without a transport.
+ * `PaneWorkspace`, `AgentSummaries`, `SettingsStore`, `EventHub`, `CommandDeduper`, `HostPlugins`,
+ * `PluginSources`, `BackgroundActivities`, `RunEventLog` and `WorkspaceProblems`. Use
+ * {@link DiaRpcHandlersLive} to serve it; call this directly to invoke handlers without a transport.
  *
  * Every command is applied at most once per `commandId` within its target (pane, project, or
  * `'app'`), drops with a warning when its target does not exist, and never fails the RPC:
- * failures are logged. `RegisterProject`, `RemoveProject`, `ArchiveTab`, `DeleteTab`, `UnarchiveTab`, `SetModelPreference` and the workspace problem calls return their typed errors. `SendMessage` starts
- * the pane's session on demand when the pane has none, so a message to a pane whose session
- * ended is not lost.
+ * failures are logged. `RegisterProject`, `RemoveProject`, `ArchiveTab`, `DeleteTab`,
+ * `UnarchiveTab` and the workspace problem calls return their typed errors.
  */
 export const makeDiaRpcHandlers = Effect.gen(function* () {
   const workspace = yield* PaneWorkspace
   const summaries = yield* AgentSummaries
-  const attached = yield* AttachedSessions
-  const supervisor = yield* PaneSupervisor
   const settings = yield* SettingsStore
   const hub = yield* EventHub
   const projectEntries = yield* ProjectEntries
   const deduper = yield* CommandDeduper
   const plugins = yield* HostPlugins
   const pluginSources = yield* PluginSources
-  const models = yield* ModelCatalogFeed
-  const adapterStatus = yield* AdapterStatusFeed
-  const modelPreferences = yield* ModelPreferences
   const activities = yield* BackgroundActivities
   const problems = yield* WorkspaceProblems
   const paneChats = yield* RunEventLog
@@ -98,80 +84,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
         )
       )
 
-  const withHandle = (
-    command: string,
-    paneId: string,
-    failure: string,
-    op: (handle: PaneHandle) => Effect.Effect<void>
-  ): Effect.Effect<void> =>
-    supervisor.getHandle(paneId).pipe(
-      Effect.flatMap(
-        Option.match({
-          onNone: () => Effect.logWarning(`Dropped ${command} for unknown pane`, { paneId }),
-          onSome: (handle) =>
-            op(handle).pipe(
-              Effect.catchCause((cause) => Effect.logError(failure, { paneId, cause }))
-            )
-        })
-      )
-    )
-
-  const withLiveHandle = (
-    command: string,
-    paneId: string,
-    failure: string,
-    op: (handle: PaneHandle) => Effect.Effect<void>
-  ): Effect.Effect<void> =>
-    workspace
-      .ensureLive(paneId, publish)
-      .pipe(Effect.andThen(withHandle(command, paneId, failure, op)))
-
   return DiaRpcs.of({
-    SendMessage: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'SendMessage',
-        withLiveHandle('SendMessage', command.paneId, 'Failed to send message to pane', (handle) =>
-          handle.sendMessage(command.text, command.mode, command.attachments)
-        )
-      ),
-    ResolvePermission: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'ResolvePermission',
-        withHandle(
-          'ResolvePermission',
-          command.paneId,
-          'Failed to resolve permission for pane',
-          (handle) => handle.resolvePermission(command.requestId, command.response)
-        )
-      ),
-    ResolveQuestion: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'ResolveQuestion',
-        withHandle(
-          'ResolveQuestion',
-          command.paneId,
-          'Failed to resolve question for pane',
-          (handle) => handle.resolveQuestion(command.requestId, command.response)
-        )
-      ),
-    ResolvePlanReview: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'ResolvePlanReview',
-        withHandle(
-          'ResolvePlanReview',
-          command.paneId,
-          'Failed to resolve plan review for pane',
-          (handle) => handle.resolvePlanReview(command.requestId, command.approved)
-        )
-      ),
     CreateTab: ({ commandId, _tag, ...request }) =>
       once(
         request.paneId,
@@ -216,13 +129,6 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
           .selectTab(command.paneId, publish)
           .pipe(warnOnFailure('SelectTab', { paneId: command.paneId }))
       ),
-    ResetAttachedSession: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'ResetAttachedSession',
-        attached.reset(command.paneId)
-      ),
     SetTranscriptWidth: (command) =>
       once(
         'app',
@@ -257,75 +163,6 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
           .setModel(command.paneId, command.model)
           .pipe(warnOnFailure('SetModel', { paneId: command.paneId }))
       ),
-    InterruptPane: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'InterruptPane',
-        withHandle('InterruptPane', command.paneId, 'Failed to interrupt pane', (handle) =>
-          handle.interrupt()
-        )
-      ),
-    ResumeParkedAgent: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'ResumeParkedAgent',
-        withHandle(
-          'ResumeParkedAgent',
-          command.paneId,
-          'Failed to resume a parked agent',
-          (handle) => handle.resume
-        )
-      ),
-    RewindToCheckpoint: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'RewindToCheckpoint',
-        withLiveHandle(
-          'RewindToCheckpoint',
-          command.paneId,
-          'Failed to rewind pane to checkpoint',
-          (handle) => handle.rewindToCheckpoint(command.messageUuid, command.resumeAnchorUuid)
-        )
-      ),
-    EditQueuedMessage: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'EditQueuedMessage',
-        withHandle(
-          'EditQueuedMessage',
-          command.paneId,
-          'Failed to edit a queued message',
-          (handle) => handle.editQueuedMessage(command.messageId, command.text, command.attachments)
-        )
-      ),
-    RemoveQueuedMessage: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'RemoveQueuedMessage',
-        withHandle(
-          'RemoveQueuedMessage',
-          command.paneId,
-          'Failed to remove a queued message',
-          (handle) => handle.removeQueuedMessage(command.messageId)
-        )
-      ),
-    SendQueuedMessageNow: (command) =>
-      once(
-        command.paneId,
-        command.commandId,
-        'SendQueuedMessageNow',
-        withHandle(
-          'SendQueuedMessageNow',
-          command.paneId,
-          'Failed to send a queued message now',
-          (handle) => handle.sendQueuedMessageNow(command.messageId)
-        )
-      ),
     GetWorkspace: () => workspace.getWorkspace,
     RegisterProject: ({ projectId, directory }) => workspace.registerProject(projectId, directory),
     RemoveProject: ({ projectId, force }) => workspace.removeProject(projectId, force),
@@ -334,7 +171,6 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     UnarchiveTab: ({ paneId }) =>
       workspace.unarchiveTab(paneId).pipe(treatGoneTabAsDone('UnarchiveTab')),
     GetAgentSummaries: () => summaries.getAll,
-    GetAttachedSessions: () => attached.current,
     GetTranscriptWidth: () =>
       settings
         .getTranscriptWidth()
@@ -345,31 +181,11 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     GetSendMode: () =>
       settings.getSendMode().pipe(Effect.map(Option.getOrElse(() => DEFAULT_SEND_MODE))),
     SetSendMode: ({ mode }) => settings.setSendMode(mode),
-    GetUsageLimitResume: () =>
-      settings
-        .getUsageLimitResume()
-        .pipe(Effect.map(Option.getOrElse(() => DEFAULT_USAGE_LIMIT_RESUME))),
-    SetUsageLimitResume: ({ mode }) => supervisor.setUsageLimitResume(mode),
     ListPlugins: () => plugins.list(),
     LoadPlugin: ({ name }) => plugins.load(name),
     UnloadPlugin: ({ name }) => plugins.unload(name),
     SetPluginOverride: ({ name, directory }) => applyOverride(pluginSources, name, directory),
     ClearPluginOverride: ({ name }) => pluginSources.clearOverride(name),
-    GetModels: () => models.current,
-    RefreshModels: () => models.refresh,
-    GetAdapterStatus: () => adapterStatus.current,
-    CheckAdapterHealth: () => adapterStatus.check,
-    SetInstallPath: ({ path }) => adapterStatus.setInstallPath(path),
-    GetModelPreferences: () => modelPreferences.current,
-    SetModelPreference: ({ model, preference }) =>
-      modelPreferences.set(model, Option.fromNullishOr(preference)),
-    SetAgentDefaults: ({ defaults }) => modelPreferences.setDefaults(defaults),
-    GetDisabledPermissionModes: ({ cwd }) =>
-      resolveAgentBackend(plugins).pipe(
-        Effect.flatMap((backend) => backend.disabledPermissionModes(cwd))
-      ),
-    GetAttachmentTypes: () =>
-      resolveAgentBackend(plugins).pipe(Effect.flatMap((backend) => backend.attachmentTypes())),
     ListProjectEntries: ({ cwd }) => projectEntries.list(cwd),
     ListActivities: () => activities.list,
     RunActivity: ({ plugin, id }) => activities.runNow(plugin, id),
