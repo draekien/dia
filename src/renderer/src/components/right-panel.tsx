@@ -87,7 +87,7 @@ function ResizeHandle({
     const active = drag.current
     if (!active || active.pointerId !== event.pointerId) return
     drag.current = null
-    if (active.width !== active.startWidth) resizeRightPanel(paneId, active.width)
+    if (active.width !== width) resizeRightPanel(paneId, active.width)
   }
 
   const step = (event: React.KeyboardEvent<HTMLDivElement>, delta: number): void =>
@@ -228,7 +228,8 @@ export function RightPanelToggle({
         event.code === 'KeyB' &&
         (event.metaKey || event.ctrlKey) &&
         event.altKey &&
-        !event.shiftKey
+        !event.shiftKey &&
+        !event.getModifierState('AltGraph')
       ) {
         event.preventDefault()
         toggleRightPanel(paneId)

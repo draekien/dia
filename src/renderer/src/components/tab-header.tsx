@@ -98,7 +98,7 @@ export function TabHeader() {
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {showsChat && <TranscriptWidthButton />}
         {showsChat && <RailToggle />}
-        {tab !== undefined && <RightPanelToggle paneId={tab.tab.config.paneId} />}
+        {showsChat && <RightPanelToggle paneId={tab.tab.config.paneId} />}
         <WindowStatus />
       </div>
     </div>

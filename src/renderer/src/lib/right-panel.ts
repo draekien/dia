@@ -89,7 +89,10 @@ export const selectRightPanel = (paneId: PaneId, key: string): void => {
 }
 
 /** Sets the right panel width of the tab showing `paneId` to `width` px. */
-export const resizeRightPanel = (paneId: PaneId, width: number): void => update(paneId, { width })
+export const resizeRightPanel = (paneId: PaneId, width: number): void => {
+  update(paneId, { width })
+  log('Resized the right panel', { paneId, width })
+}
 
 /**
  * The panel to show among `panels` (in list order): the one whose key is `selected`, or the first
