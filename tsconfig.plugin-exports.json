@@ -36,6 +36,7 @@
     "plugins/dia-tools/tools.ts",
     "plugins/dia-tools/calls.ts",
     "plugins/dia-run-queue/queue.ts",
+    "plugins/dia-git/git.ts",
     "plugins/dia-schedules/schedules.ts",
     "plugins/dia-chat/slots.ts",
     "plugins/dia-adapters/slots.ts",

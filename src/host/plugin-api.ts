@@ -78,6 +78,13 @@ export { errorMessage } from '../shared/plugin/plugin-registry'
 export type { HostPluginContext } from './plugins/host-plugin-context'
 export { hostDatabaseOf, hostSettingsOf } from './plugins/plugin-paths'
 export {
+  type Git,
+  type GitAuthor,
+  GitError,
+  GitKey,
+  type GitStatusEntry
+} from './services/git-seam'
+export {
   type MetaRepo,
   MetaRepoKey,
   NO_SESSION_ADDITIONS,
