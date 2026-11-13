@@ -9,10 +9,17 @@ import { makeClaudeHealth } from './health'
 import { makeModelCatalog, probeModels } from './model-catalog'
 import { logShadowedCanUseToolWarnings } from './sdk-warnings'
 import { claudeCodeSources } from './skills'
+import { claudeProjectsDir, moveTranscriptFolders, sessionCwds } from './transcript-folders'
 
 const setup: PluginSetup<HostPluginContext> = (ctx) =>
   Effect.gen(function* () {
     yield* logShadowedCanUseToolWarnings(process)
+    const services = yield* Effect.context<NodeServices.NodeServices>()
+    yield* ctx.onPathsMoved((move) =>
+      Effect.gen(function* () {
+        yield* moveTranscriptFolders(move, yield* claudeProjectsDir, yield* sessionCwds)
+      }).pipe(Effect.provideContext(services))
+    )
     const install = yield* makeClaudeInstall(ctx, isExistingFile)
     const catalog = yield* makeModelCatalog(ctx, probeModels(install))
     const health = yield* makeClaudeHealth(install, ctx.dataDir, catalog.refreshModels)

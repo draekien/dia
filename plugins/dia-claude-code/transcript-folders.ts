@@ -1,0 +1,68 @@
+import * as os from 'node:os'
+import { listSessions } from '@anthropic-ai/claude-agent-sdk'
+import { type PathsMoved, relocatePath } from '@dia/plugin'
+import { Config, Effect, FileSystem, Option, Path } from 'effect'
+
+const MAX_FOLDER_NAME = 200
+
+/** Claude Code's folder for the transcripts of sessions run in `cwd`, under `projectsDir`. */
+export const transcriptFolderOf = (projectsDir: string, cwd: string): string =>
+  `${projectsDir}/${cwd.replace(/[^a-zA-Z0-9]/g, '-')}`
+
+/**
+ * The folder Claude Code keeps transcripts in: `<CLAUDE_CONFIG_DIR>/projects`, or
+ * `~/.claude/projects` when the variable is unset.
+ */
+export const claudeProjectsDir: Effect.Effect<string> = Config.String('CLAUDE_CONFIG_DIR').pipe(
+  Config.withDefault(`${os.homedir()}/.claude`),
+  Effect.orElseSucceed(() => `${os.homedir()}/.claude`),
+  Effect.map((configDir) => `${configDir}/projects`)
+)
+
+/** The working directory of every Claude Code session on this machine, from the Agent SDK. */
+export const sessionCwds: Effect.Effect<ReadonlyArray<string>, unknown> = Effect.tryPromise(() =>
+  listSessions()
+).pipe(Effect.map((sessions) => sessions.flatMap((session) => session.cwd ?? [])))
+
+/**
+ * Renames the transcript folder of each session working directory in `cwds` that lies under
+ * `move.from` to the folder of its new path, so Claude Code resumes those sessions there. A folder
+ * that does not exist, a destination that already exists, and a name Claude Code would shorten
+ * (over 200 characters) are logged and skipped; nothing is deleted. Fails only when a rename
+ * fails. Requires `FileSystem` and `Path`.
+ */
+export const moveTranscriptFolders = Effect.fn('ClaudeCode.moveTranscriptFolders')(function* (
+  move: PathsMoved,
+  projectsDir: string,
+  cwds: ReadonlyArray<string>
+) {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const exists = (folder: string) => fs.exists(folder).pipe(Effect.orElseSucceed(() => false))
+  const moved = new Map<string, string>()
+  for (const cwd of cwds) {
+    const target = relocatePath(cwd, move)
+    if (Option.isSome(target)) moved.set(cwd, target.value)
+  }
+  for (const [cwd, target] of moved) {
+    const from = path.normalize(transcriptFolderOf(projectsDir, cwd))
+    const to = path.normalize(transcriptFolderOf(projectsDir, target))
+    if (path.basename(to).length > MAX_FOLDER_NAME) {
+      yield* Effect.logWarning('Left a transcript folder whose new name Claude Code shortens', {
+        cwd,
+        target
+      })
+      continue
+    }
+    if (!(yield* exists(from))) continue
+    if (yield* exists(to)) {
+      yield* Effect.logWarning('Left a transcript folder; its new folder already exists', {
+        from,
+        to
+      })
+      continue
+    }
+    yield* fs.rename(from, to)
+    yield* Effect.logInfo('Moved a transcript folder with its working directory', { from, to })
+  }
+})
