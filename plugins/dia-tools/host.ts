@@ -1,7 +1,7 @@
 import type { HostPluginContext, PluginSetup, ToolScope } from '@dia/plugin'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import * as NodeServices from '@effect/platform-node/NodeServices'
-import { type Crypto, Effect, type FileSystem, Layer, Option, Path, Ref } from 'effect'
+import { type Crypto, Effect, type FileSystem, Layer, Option, Path, Ref, Semaphore } from 'effect'
 import { IssueOutsideToken, RevokeOutsideTokens } from './calls'
 import { MCP_HOST, MCP_PATH, serveMcp } from './http-server'
 import { makeMcpServer } from './mcp-server'
@@ -44,6 +44,7 @@ const makeOutsideTokens = Effect.fnUntraced(function* (
   const path = yield* Path.Path
   const services = yield* Effect.context<FileSystem.FileSystem | Crypto.Crypto>()
   const hashes = yield* Ref.make(yield* readOutsideTokens(file))
+  const lock = yield* Semaphore.make(1)
   yield* Effect.forEach(yield* Ref.get(hashes), (hash) => registry.grant(hash, OUTSIDE_SCOPE), {
     discard: true
   })
@@ -54,22 +55,23 @@ const makeOutsideTokens = Effect.fnUntraced(function* (
   const issue = Effect.gen(function* () {
     const script = yield* scriptPath
     const { token, hash } = yield* newToken
-    const next = yield* Ref.updateAndGet(hashes, (current) => [...current, hash])
-    yield* writeOutsideTokens(file, next)
+    const next = [...(yield* Ref.get(hashes)), hash]
+    yield* writeOutsideTokens(file, next).pipe(Effect.orDie)
+    yield* Ref.set(hashes, next)
     yield* registry.grant(hash, OUTSIDE_SCOPE)
     yield* Effect.logInfo('Issued a dia tools token for an outside agent', { tokens: next.length })
     return { command: outsideCommand(token, script, endpointFile) }
-  }).pipe(Effect.provide(services))
+  }).pipe(lock.withPermits(1), Effect.provide(services))
 
   const revokeAll = Effect.gen(function* () {
     const revoked = yield* Ref.getAndSet(hashes, [])
-    yield* writeOutsideTokens(file, [])
     yield* Effect.forEach(revoked, revoke, { discard: true })
+    yield* writeOutsideTokens(file, []).pipe(Effect.orDie)
     yield* Effect.logInfo('Revoked every outside agent dia tools token', {
       tokens: revoked.length
     })
     return revoked.length
-  }).pipe(Effect.provide(services))
+  }).pipe(lock.withPermits(1), Effect.provide(services))
 
   return { issue, revokeAll }
 })

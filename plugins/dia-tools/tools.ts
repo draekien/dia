@@ -44,6 +44,8 @@ const isTools = (value: unknown): value is Tools =>
   Predicate.isFunction(value.register) &&
   Predicate.hasProperty(value, 'grant') &&
   Predicate.isFunction(value.grant) &&
+  Predicate.hasProperty(value, 'revoke') &&
+  Predicate.isFunction(value.revoke) &&
   Predicate.hasProperty(value, 'url') &&
   Predicate.isString(value.url)
 

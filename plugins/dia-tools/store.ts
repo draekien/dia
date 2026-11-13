@@ -28,7 +28,7 @@ const writeJson = <S extends Schema.Codec<unknown, string>>(
     const text = yield* Schema.encodeEffect(schema)(value).pipe(Effect.orDie)
     yield* fs
       .writeFileString(path, text)
-      .pipe(Effect.catch((error) => Effect.logError('Could not write a file', { path, error })))
+      .pipe(Effect.tapError((error) => Effect.logError('Could not write a file', { path, error })))
   })
 
 /** The port recorded in the endpoint file at `path`, none when it is missing or unreadable. */
@@ -39,7 +39,8 @@ export const readPort = (path: string) =>
   )
 
 /** Records `port` in the endpoint file at `path`; a write failure is logged. */
-export const writePort = (path: string, port: number) => writeJson(Endpoint, path, { port })
+export const writePort = (path: string, port: number) =>
+  writeJson(Endpoint, path, { port }).pipe(Effect.ignore)
 
 /** The outside token hashes recorded at `path`, empty when the file is missing or unreadable. */
 export const readOutsideTokens = (path: string) =>
@@ -48,6 +49,6 @@ export const readOutsideTokens = (path: string) =>
     Option.match({ onNone: (): ReadonlyArray<string> => [], onSome: (file) => file.hashes })
   )
 
-/** Records `hashes` as the outside token hashes at `path`; a write failure is logged. */
+/** Records `hashes` as the outside token hashes at `path`; fails, logged, when the write fails. */
 export const writeOutsideTokens = (path: string, hashes: ReadonlyArray<string>) =>
   writeJson(OutsideTokens, path, { hashes })
