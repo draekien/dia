@@ -21,11 +21,11 @@ const COUNTS = [
 
 function Counts({ usage }: { readonly usage: TokenUsage }): React.JSX.Element {
   return (
-    <dl className="grid grid-cols-4 gap-x-2 text-xs">
+    <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
       {COUNTS.map(([label, key]) => (
-        <div key={key} className="flex min-w-0 flex-col">
+        <div key={key} className="flex min-w-0 justify-between gap-1.5">
           <dt className="truncate text-muted-foreground">{label}</dt>
-          <dd className="truncate tabular-nums">{usage[key].toLocaleString('en-US')}</dd>
+          <dd className="shrink-0 tabular-nums">{usage[key].toLocaleString('en-US')}</dd>
         </div>
       ))}
     </dl>
