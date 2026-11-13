@@ -1,6 +1,15 @@
+import { makeGit } from '@dia-plugin/dia-git/git'
 import { NodeServices } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
-import { Effect, FileSystem, Layer, Path } from 'effect'
+import type { ProjectEntry } from '@shared/domain/attachment'
+import type { PluginRegistry } from '@shared/plugin/plugin-registry'
+import { ServiceWithdrawnError } from '@shared/plugin/plugin-registry'
+import { fakeUse } from '@shared/plugin/plugin-registry.fake'
+import { Effect, FileSystem, Layer, Option, Path } from 'effect'
+import { ChildProcess, ChildProcessSpawner } from 'effect/process'
+import { HostPlugins } from '../plugins/host-plugins'
+import type { Git } from './git-seam'
+import { GitKey } from './git-seam'
 import { entriesFromFiles, ProjectEntries, ProjectEntriesLive } from './project-entries'
 
 describe('entriesFromFiles', () => {
@@ -23,7 +32,98 @@ describe('entriesFromFiles', () => {
   })
 })
 
+type GitProvider = 'provided' | 'not loaded' | 'withdrawn'
+
+const pluginsWith = (provider: GitProvider) =>
+  Layer.effect(
+    HostPlugins,
+    Effect.gen(function* () {
+      const git = yield* makeGit
+      const read = (key: string) =>
+        provider === 'provided' && key === GitKey.name ? Option.some<Git>(git) : Option.none()
+      const use: PluginRegistry['use'] =
+        provider === 'withdrawn'
+          ? () =>
+              Effect.fail(
+                new ServiceWithdrawnError({
+                  key: GitKey.name,
+                  plugin: 'dia-git',
+                  message: 'The "dia-git" plugin closed while a call using "git" was running'
+                })
+              )
+          : fakeUse(read)
+      return { use } as unknown as PluginRegistry
+    })
+  )
+
+const entriesLayer = (provider: GitProvider) =>
+  Layer.provideMerge(
+    ProjectEntriesLive,
+    Layer.merge(Layer.provide(pluginsWith(provider), NodeServices.layer), NodeServices.layer)
+  )
+
+const sorted = (entries: ReadonlyArray<ProjectEntry>) =>
+  [...entries].sort((a, b) => a.path.localeCompare(b.path))
+
+const repoWithIgnoredFile = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+  const root = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-entries-git-' })
+  yield* spawner.exitCode(ChildProcess.make('git', ['init', '-q']).pipe(ChildProcess.setCwd(root)))
+  yield* Effect.addFinalizer(() =>
+    spawner
+      .exitCode(
+        ChildProcess.make('git', ['fsmonitor--daemon', 'stop']).pipe(ChildProcess.setCwd(root))
+      )
+      .pipe(Effect.ignore)
+  )
+  yield* fs.writeFileString(path.join(root, '.gitignore'), 'secret.env\n')
+  yield* fs.writeFileString(path.join(root, 'secret.env'), '')
+  yield* fs.writeFileString(path.join(root, 'a.ts'), '')
+  return root
+})
+
+const ALL_FILES = [
+  { path: '.gitignore', kind: 'file' },
+  { path: 'a.ts', kind: 'file' },
+  { path: 'secret.env', kind: 'file' }
+]
+
 describe('ProjectEntries', () => {
+  it.effect('lists a git repository through dia-git, leaving out ignored files', () =>
+    Effect.gen(function* () {
+      const root = yield* repoWithIgnoredFile
+
+      const entries = yield* (yield* ProjectEntries).list(root)
+
+      assert.deepStrictEqual(
+        sorted(entries),
+        ALL_FILES.filter((entry) => entry.path !== 'secret.env')
+      )
+    }).pipe(Effect.scoped, Effect.provide(entriesLayer('provided')))
+  )
+
+  it.effect('walks a git repository while dia-git is not loaded', () =>
+    Effect.gen(function* () {
+      const root = yield* repoWithIgnoredFile
+
+      const entries = yield* (yield* ProjectEntries).list(root)
+
+      assert.deepStrictEqual(sorted(entries), ALL_FILES)
+    }).pipe(Effect.scoped, Effect.provide(entriesLayer('not loaded')))
+  )
+
+  it.effect('walks a git repository when dia-git closes during the call', () =>
+    Effect.gen(function* () {
+      const root = yield* repoWithIgnoredFile
+
+      const entries = yield* (yield* ProjectEntries).list(root)
+
+      assert.deepStrictEqual(sorted(entries), ALL_FILES)
+    }).pipe(Effect.scoped, Effect.provide(entriesLayer('withdrawn')))
+  )
+
   it.effect('walks a directory outside git, skipping node_modules', () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
@@ -36,17 +136,11 @@ describe('ProjectEntries', () => {
 
       const entries = yield* (yield* ProjectEntries).list(root)
 
-      assert.deepStrictEqual(
-        [...entries].sort((a, b) => a.path.localeCompare(b.path)),
-        [
-          { path: 'src', kind: 'directory' },
-          { path: 'src/a.ts', kind: 'file' }
-        ]
-      )
-    }).pipe(
-      Effect.scoped,
-      Effect.provide(Layer.provideMerge(ProjectEntriesLive, NodeServices.layer))
-    )
+      assert.deepStrictEqual(sorted(entries), [
+        { path: 'src', kind: 'directory' },
+        { path: 'src/a.ts', kind: 'file' }
+      ])
+    }).pipe(Effect.scoped, Effect.provide(entriesLayer('provided')))
   )
 
   it.effect('lists nothing for a directory that does not exist', () =>
@@ -56,9 +150,6 @@ describe('ProjectEntries', () => {
       const root = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-entries-' })
       const entries = yield* (yield* ProjectEntries).list(path.join(root, 'missing'))
       assert.deepStrictEqual(entries, [])
-    }).pipe(
-      Effect.scoped,
-      Effect.provide(Layer.provideMerge(ProjectEntriesLive, NodeServices.layer))
-    )
+    }).pipe(Effect.scoped, Effect.provide(entriesLayer('provided')))
   )
 })

@@ -1,3 +1,4 @@
+import { makeGit } from '@dia-plugin/dia-git/git'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { assert, describe, it } from '@effect/vitest'
 import { Effect, FileSystem, Path } from 'effect'
@@ -29,19 +30,25 @@ describe('moving the worktrees folder', () => {
       const oldTrees = path.join(userData, 'plugins', 'worktrees', 'trees')
       yield* fs.makeDirectory(oldTrees, { recursive: true })
       yield* git(repo, 'worktree', 'add', '-q', path.join(oldTrees, 'heron'), '-b', 'dia/heron')
-      yield* stopFsmonitors(oldTrees)
+      yield* stopFsmonitors(oldTrees, yield* makeGit)
       yield* fs.rename(
         path.join(userData, 'plugins', 'worktrees'),
         path.join(userData, 'plugins', 'dia-worktrees')
       )
       const moved = path.join(userData, 'plugins', 'dia-worktrees', 'trees', 'heron')
 
-      yield* repairWorktrees([{ path: moved, branch: 'dia/heron', sourceRepo: repo }])
+      yield* repairWorktrees(
+        [{ path: moved, branch: 'dia/heron', sourceRepo: repo }],
+        yield* makeGit
+      )
 
       const listed = yield* git(repo, 'worktree', 'list', '--porcelain')
       assert.include(comparable(listed), `worktree ${comparable(moved)}`)
       assert.notInclude(listed, 'prunable')
-      yield* stopFsmonitors(path.join(userData, 'plugins', 'dia-worktrees', 'trees'))
+      yield* stopFsmonitors(
+        path.join(userData, 'plugins', 'dia-worktrees', 'trees'),
+        yield* makeGit
+      )
       yield* git(repo, 'fsmonitor--daemon', 'stop').pipe(Effect.ignore)
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
   )

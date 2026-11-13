@@ -1,6 +1,7 @@
+import { makeGit } from '@dia-plugin/dia-git/git'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { assert, describe, it } from '@effect/vitest'
-import { Effect, FileSystem, Path } from 'effect'
+import { Effect, FileSystem, Option, Path } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { ensureMetaRepo, makeMetaRepo } from './meta-repo'
 
@@ -21,7 +22,7 @@ describe('ensureMetaRepo', () => {
     Effect.gen(function* () {
       const { fs, path, directory } = yield* scratchRepo
 
-      yield* ensureMetaRepo(directory)
+      yield* ensureMetaRepo(directory, yield* makeGit)
 
       assert.strictEqual(yield* fs.readFileString(path.join(directory, 'instructions.md')), '')
       const manifest = JSON.parse(
@@ -35,7 +36,7 @@ describe('ensureMetaRepo', () => {
     Effect.gen(function* () {
       const { directory } = yield* scratchRepo
 
-      yield* ensureMetaRepo(directory)
+      yield* ensureMetaRepo(directory, yield* makeGit)
 
       assert.strictEqual(yield* git(directory, 'rev-list', '--count', 'HEAD'), '1')
       assert.deepStrictEqual((yield* git(directory, 'ls-files')).split('\n').sort(), [
@@ -52,7 +53,7 @@ describe('ensureMetaRepo', () => {
       yield* fs.makeDirectory(directory, { recursive: true })
       yield* git(directory, 'init')
 
-      yield* ensureMetaRepo(directory)
+      yield* ensureMetaRepo(directory, yield* makeGit)
 
       assert.strictEqual(yield* git(directory, 'rev-list', '--count', 'HEAD'), '1')
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
@@ -61,10 +62,10 @@ describe('ensureMetaRepo', () => {
   it.effect('keeps an existing instructions.md and adds no commit on a later start', () =>
     Effect.gen(function* () {
       const { fs, path, directory } = yield* scratchRepo
-      yield* ensureMetaRepo(directory)
+      yield* ensureMetaRepo(directory, yield* makeGit)
       yield* fs.writeFileString(path.join(directory, 'instructions.md'), 'Prefer rg over grep.')
 
-      yield* ensureMetaRepo(directory)
+      yield* ensureMetaRepo(directory, yield* makeGit)
 
       assert.strictEqual(
         yield* fs.readFileString(path.join(directory, 'instructions.md')),
@@ -79,9 +80,9 @@ describe('makeMetaRepo', () => {
   it.effect('offers the trimmed instructions and the plugin directory', () =>
     Effect.gen(function* () {
       const { fs, path, directory } = yield* scratchRepo
-      yield* ensureMetaRepo(directory)
+      yield* ensureMetaRepo(directory, yield* makeGit)
       yield* fs.writeFileString(path.join(directory, 'instructions.md'), '\nUse pnpm.\n\n')
-      const repo = yield* makeMetaRepo(directory)
+      const repo = yield* makeMetaRepo(directory, Effect.succeed(Option.some(yield* makeGit)))
 
       const additions = yield* repo.forNewSession
 
@@ -95,8 +96,8 @@ describe('makeMetaRepo', () => {
   it.effect('reads an instructions change made after it was created', () =>
     Effect.gen(function* () {
       const { fs, path, directory } = yield* scratchRepo
-      yield* ensureMetaRepo(directory)
-      const repo = yield* makeMetaRepo(directory)
+      yield* ensureMetaRepo(directory, yield* makeGit)
+      const repo = yield* makeMetaRepo(directory, Effect.succeed(Option.some(yield* makeGit)))
       const before = yield* repo.forNewSession
 
       yield* fs.writeFileString(path.join(directory, 'instructions.md'), 'Use pnpm.')
@@ -110,7 +111,7 @@ describe('makeMetaRepo', () => {
   it.effect('appends nothing when instructions.md cannot be read', () =>
     Effect.gen(function* () {
       const { directory } = yield* scratchRepo
-      const repo = yield* makeMetaRepo(directory)
+      const repo = yield* makeMetaRepo(directory, Effect.succeed(Option.some(yield* makeGit)))
 
       const additions = yield* repo.forNewSession
 
