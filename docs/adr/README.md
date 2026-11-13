@@ -87,6 +87,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0077](0077-first-party-plugins-are-named-dia.md) | Name every first-party plugin `dia-<name>`, and move each renamed plugin's data with a plugin data migration | accepted |
 | [0078](0078-plugin-data-migrations-and-paths-moved.md) | A plugin declares data migrations that move its data, and the Host records each move so every owner of a path reference rewrites it | accepted |
 | [0079](0079-terminals-use-lydell-node-pty.md) | Run terminals through `@lydell/node-pty`, a native module with N-API prebuilds and no install script | accepted |
+| [0080](0080-org-runs-hires-and-the-assistant-as-runs.md) | Org runs hires and the Executive assistant as runs of `dia-runs`; job titles apply only through start options and the first message | accepted |
 
 ## Adding a new ADR
 

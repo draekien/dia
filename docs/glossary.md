@@ -1,6 +1,6 @@
 # Glossary
 
-Scope: the `issues` plugin (`plugins/dia-issues`) and the `org` plugin (`plugins/org` as of ADR-0072, archived to `archive/org` by ADR-0076). Terms follow Linear where Linear has the concept.
+Scope: the `issues` plugin (`plugins/dia-issues`) and the `org` plugin (`plugins/dia-org`; archived by ADR-0076 and rewritten over the foundation by ADR-0080). Terms follow Linear where Linear has the concept.
 
 ## Vocabulary
 

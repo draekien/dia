@@ -34,6 +34,7 @@
     "plugins/**/*.test.ts",
     "plugins/**/renderer.ts",
     "plugins/dia-issues/issue-actions.ts",
+    "plugins/dia-org/org-actions.ts",
     "plugins/dia-chat/composer-action.ts",
     "plugins/dia-chat/composer-settings.ts",
     "plugins/dia-chat/use-composer-attachments.ts",

@@ -1,6 +1,6 @@
 # Plan: dia's foundation capabilities
 
-Status: **not started**
+Status: **in review**: steps 0–13 are stacked PRs #253–#266, one per step in order; step 14 is the PR that closes #252
 Date: 2026-11-13
 Decisions: ADR-0074 (`dia-runs`, `dia-run-events`), ADR-0075 (`dia-tools`), ADR-0076 (foundation before org, org frozen), ADR-0077 (`dia-` plugin names), ADR-0078 (plugin data migrations)
 Reviewed: 2026-11-13, findings applied to ADR-0074 to ADR-0078 and this plan.

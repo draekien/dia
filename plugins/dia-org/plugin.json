@@ -1,0 +1,10 @@
+{
+  "name": "dia-org",
+  "api": "0.0.42",
+  "category": "feature",
+  "host": "host.ts",
+  "renderer": "renderer.ts",
+  "load": "eager",
+  "exports": ["service.ts", "domain.ts", "calls.ts"],
+  "dataMigrations": [{ "id": "1_dia_prefix", "from": "plugins/org" }]
+}
