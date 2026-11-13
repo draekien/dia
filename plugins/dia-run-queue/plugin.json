@@ -1,0 +1,8 @@
+{
+  "name": "dia-run-queue",
+  "api": "0.0.41",
+  "category": "feature",
+  "host": "host.ts",
+  "load": "eager",
+  "exports": ["queue.ts"]
+}
