@@ -53,6 +53,7 @@ interface FakeSession {
 const makeWorld = (rows: RunRows) => {
   const sessions: Array<FakeSession> = []
   const appended: Array<IpcEvent> = []
+  const logOrder: Array<string> = []
   const toolScopes: Array<ToolScope> = []
   const backend: AgentBackend = {
     ...unavailableBackend,
@@ -89,10 +90,14 @@ const makeWorld = (rows: RunRows) => {
     append: (_runId: string, entries: ReadonlyArray<{ readonly event: IpcEvent }>) =>
       Effect.sync(() => {
         appended.push(...entries.map((entry) => entry.event))
+        logOrder.push(...entries.map((entry) => entry.event._tag))
         return entries.map(() => Option.some(1))
       }),
     seed: () => Effect.void,
-    record: () => Effect.succeed(() => Effect.void)
+    record: () =>
+      Effect.succeed((message: OutboundMessage) =>
+        Effect.sync(() => void logOrder.push(message._tag))
+      )
   } as unknown as RunEvents
   const registry = makeRunRegistry({
     rows,
@@ -108,7 +113,7 @@ const makeWorld = (rows: RunRows) => {
     usageLimitResume: Effect.succeed('automatic'),
     newRunId: Effect.succeed(STARTED)
   })
-  return { sessions, appended, toolScopes, registry }
+  return { sessions, appended, logOrder, toolScopes, registry }
 }
 
 const eventually = <A>(read: Effect.Effect<A>, done: (value: A) => boolean) =>
@@ -469,6 +474,31 @@ describe('busy runs', () => {
         const afterTaskEnds = yield* eventually(busyNow(runs), (busy) => busy.length === 0)
 
         assert.deepStrictEqual([whileTaskRuns, afterTaskEnds], [[STARTED], []])
+      })
+    )
+  )
+})
+
+describe('run event order', () => {
+  it.live("records a turn's end before the attention signal that ends the turn", () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows)
+        const { runs } = yield* world.registry
+        yield* runs.start(startOptions)
+        const [session] = world.sessions
+        if (session === undefined) return assert.fail('the run opened no session')
+
+        yield* session.emit(TurnCompleted.make({}))
+        const order = yield* eventually(
+          Effect.sync(() => [...world.logOrder]),
+          (logged) => logged.includes('PaneAttentionChanged')
+        )
+
+        assert.deepStrictEqual(
+          order.filter((tag) => tag === 'TurnCompleted' || tag === 'PaneAttentionChanged'),
+          ['TurnCompleted', 'PaneAttentionChanged']
+        )
       })
     )
   )

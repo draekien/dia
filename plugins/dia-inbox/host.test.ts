@@ -26,6 +26,9 @@ const permission = (requestId: string) =>
 const runInfo = (runId: string, cwd: string): RunInfo => ({
   runId,
   cwd,
+  model: 'sonnet',
+  thinkingLevel: 'off',
+  permissionMode: 'default',
   sessionId: Option.none(),
   status: 'waiting',
   live: true

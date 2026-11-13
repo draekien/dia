@@ -587,6 +587,9 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
       return (yield* rows.list).map((row) => ({
         runId: row.runId,
         cwd: cwdOf(row.spec),
+        model: row.spec.model,
+        thinkingLevel: row.spec.thinkingLevel,
+        permissionMode: row.spec.permissionMode,
         sessionId: row.sessionId,
         status: row.status,
         live: entries.has(row.runId)

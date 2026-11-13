@@ -94,10 +94,17 @@ export interface RunRequest {
 export const RunStatus = Schema.Literals(['idle', 'running', 'waiting', 'archived'])
 export type RunStatus = typeof RunStatus.Type
 
-/** One run as `Runs.list` reports it. `live` is true while its session runs. */
+/**
+ * One run as `Runs.list` reports it. `cwd` is where its session works (its worktree when it has
+ * one); `model`, `thinkingLevel` and `permissionMode` are the ones it opens with. `live` is true
+ * while its session runs.
+ */
 export interface RunInfo {
   readonly runId: string
   readonly cwd: string
+  readonly model: string
+  readonly thinkingLevel: ThinkingLevel
+  readonly permissionMode: PermissionMode
   readonly sessionId: Option.Option<SessionId>
   readonly status: RunStatus
   readonly live: boolean
@@ -144,7 +151,8 @@ export class RunsNotLoadedError extends Data.TaggedError('RunsNotLoadedError')<{
  * Every agent session as a run, as `dia-runs` provides it under {@link RunsKey} (ADR-0074). A run
  * exists with or without a tab; a tab's run id is its pane id. Every method other than `open`,
  * `start` and `openInTab` logs and does nothing for a run that is not live or not known. Events a
- * run produces reach its event log in `dia-run-events`.
+ * run produces reach its event log in `dia-run-events` in the order its session emits them: a
+ * turn's last message is committed before the `PaneAttentionChanged` that ends the turn.
  */
 export interface Runs {
   /**
