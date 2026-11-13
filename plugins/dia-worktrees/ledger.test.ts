@@ -303,4 +303,24 @@ describe('recordingGitOps', () => {
       )
     }).pipe(Effect.scoped, Effect.provide(platform))
   )
+
+  it.effect('moves the paths of rows under a moved folder and returns the live ones', () =>
+    Effect.gen(function* () {
+      const { ledger } = yield* open
+      const B = info('b')
+      yield* ledger.recordCreated(A, OWNER)
+      yield* ledger.recordCreated(B, OWNER)
+      yield* ledger.release(B, PANE, Effect.succeed(WorktreeReleased.make({})))
+      yield* ledger.recordCreated({ ...info('c'), path: '/elsewhere/c' }, OWNER)
+
+      const moved = yield* ledger.movePaths({ from: '/trees', to: '/dia-trees' })
+
+      assert.deepStrictEqual(moved, [{ ...A, path: '/dia-trees/a' }])
+      assert.deepStrictEqual((yield* rows(ledger)).map((entry) => entry.info.path).sort(), [
+        '/dia-trees/a',
+        '/dia-trees/b',
+        '/elsewhere/c'
+      ])
+    }).pipe(Effect.scoped, Effect.provide(platform))
+  )
 })

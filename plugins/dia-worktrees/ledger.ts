@@ -1,13 +1,24 @@
 import {
   type PaneId,
+  type PathsMoved,
   type PluginMigrations,
   type ReleaseOutcome,
+  relocatePath,
   type WorktreeInfo,
   WorktreeKept,
   type WorktreeOwner,
   WorktreeReleased
 } from '@dia/plugin'
-import { Clock, Duration, Effect, Schema, Semaphore, type Stream, SubscriptionRef } from 'effect'
+import {
+  Clock,
+  Duration,
+  Effect,
+  Option,
+  Schema,
+  Semaphore,
+  type Stream,
+  SubscriptionRef
+} from 'effect'
 import { SqlClient } from 'effect/sql'
 import {
   Active,
@@ -117,6 +128,11 @@ export interface Ledger {
    * in any other state or absent.
    */
   readonly keep: (path: string) => Effect.Effect<void, LedgerStateChanged>
+  /**
+   * Points every row whose path lies under `move.from` at the same path under `move.to`, and
+   * returns the moved worktrees that are not `Removed`, with their new paths.
+   */
+  readonly movePaths: (move: PathsMoved) => Effect.Effect<ReadonlyArray<WorktreeInfo>>
   /** Every row: the current list, then the list after each change. */
   readonly changes: Stream.Stream<ReadonlyArray<LedgerEntry>>
 }
@@ -258,12 +274,35 @@ export const makeLedger = (sql: SqlClient.SqlClient) =>
         )
       )
 
+    const movePaths: Ledger['movePaths'] = (move) =>
+      Effect.gen(function* () {
+        const rows = yield* sql`SELECT * FROM worktrees`.pipe(
+          Effect.flatMap(decodeRows),
+          Effect.orDie
+        )
+        const moved: Array<WorktreeInfo> = []
+        let rewritten = 0
+        for (const row of rows) {
+          const path = relocatePath(row.path, move)
+          if (Option.isNone(path)) continue
+          yield* sql`UPDATE worktrees SET path = ${path.value} WHERE path = ${row.path}`.pipe(
+            Effect.orDie
+          )
+          rewritten += 1
+          if (row.state !== 'Removed') moved.push({ ...infoOf(row), path: path.value })
+        }
+        if (rewritten > 0) yield* publish
+        yield* Effect.logInfo('Worktree ledger paths moved', { ...move, rewritten })
+        return moved
+      })
+
     const ledger: Ledger = {
       recordCreated,
       recordReattached,
       release,
       discard,
       keep,
+      movePaths,
       changes: SubscriptionRef.changes(entries)
     }
     return ledger

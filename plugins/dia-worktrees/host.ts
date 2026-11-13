@@ -2,6 +2,7 @@ import { type GitOps, type HostPluginContext, type PluginSetup, WorktreesKey } f
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { Effect, Path } from 'effect'
 import { DiscardWorktree, KeepWorktree, WatchWorktrees } from './calls'
+import { repairWorktrees } from './folder-move'
 import { type GitCommands, makeGitOps } from './git-ops'
 import { type Ledger, makeLedger, worktreeMigrations } from './ledger'
 
@@ -26,6 +27,11 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
   Effect.gen(function* () {
     const sql = yield* ctx.database(worktreeMigrations)
     const ledger = yield* makeLedger(sql)
+    yield* ctx.onPathsMoved((move) =>
+      ledger
+        .movePaths(move)
+        .pipe(Effect.flatMap(repairWorktrees), Effect.provide(NodeServices.layer))
+    )
     const { git, root } = yield* Effect.gen(function* () {
       const root = (yield* Path.Path).join(ctx.dataDir, 'trees')
       return { git: yield* makeGitOps(root), root }
