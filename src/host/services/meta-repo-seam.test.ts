@@ -2,7 +2,7 @@ import { assert, describe, it } from '@effect/vitest'
 import { ServiceWithdrawnError } from '@shared/plugin/plugin-registry'
 import { fakeUse } from '@shared/plugin/plugin-registry.fake'
 import { Effect, Option } from 'effect'
-import { type MetaRepo, MetaRepoKey, resolveSessionAdditions, withMetaRepo } from './meta-repo-seam'
+import { type MetaRepo, MetaRepoKey, withMetaRepo } from './meta-repo-seam'
 
 const registryProviding = (value: Option.Option<unknown>) => ({
   use: fakeUse((key) => (key === MetaRepoKey.name ? value : Option.none()))
@@ -18,73 +18,6 @@ const metaRepo = (overrides: Partial<MetaRepo>): MetaRepo => ({
   setRemote: () => unusedState,
   push: unusedState,
   ...overrides
-})
-
-describe('resolveSessionAdditions', () => {
-  it.effect('returns what the meta repo adds to a session starting now', () =>
-    Effect.gen(function* () {
-      let reads = 0
-      const repo = metaRepo({
-        forNewSession: Effect.sync(() => {
-          reads += 1
-          return { systemPromptAppend: `read ${reads}`, pluginPaths: ['/meta/plugin'] }
-        })
-      })
-      const registry = registryProviding(Option.some(repo))
-
-      yield* resolveSessionAdditions(registry)
-      const second = yield* resolveSessionAdditions(registry)
-
-      assert.deepStrictEqual(second, {
-        systemPromptAppend: 'read 2',
-        pluginPaths: ['/meta/plugin']
-      })
-    })
-  )
-
-  it.effect('adds nothing when the meta plugin is not loaded', () =>
-    Effect.gen(function* () {
-      assert.deepStrictEqual(
-        yield* resolveSessionAdditions(registryProviding(Option.none())),
-        nothingAdded
-      )
-    })
-  )
-
-  it.effect('adds nothing when the forNewSession effect dies', () =>
-    Effect.gen(function* () {
-      const repo = metaRepo({ forNewSession: Effect.die(new Error('boom')) })
-      assert.deepStrictEqual(
-        yield* resolveSessionAdditions(registryProviding(Option.some(repo))),
-        nothingAdded
-      )
-    })
-  )
-
-  it.effect('adds to a session from an older meta plugin that has no push members', () =>
-    Effect.gen(function* () {
-      const older = {
-        forNewSession: Effect.succeed({ systemPromptAppend: 'older', pluginPaths: [] })
-      }
-
-      assert.deepStrictEqual(
-        yield* resolveSessionAdditions(registryProviding(Option.some(older))),
-        {
-          systemPromptAppend: 'older',
-          pluginPaths: []
-        }
-      )
-    })
-  )
-
-  it.effect('adds nothing when the provided value has no forNewSession effect', () =>
-    Effect.gen(function* () {
-      assert.deepStrictEqual(
-        yield* resolveSessionAdditions(registryProviding(Option.some({ forNewSession: 'x' }))),
-        nothingAdded
-      )
-    })
-  )
 })
 
 describe('withMetaRepo', () => {

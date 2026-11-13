@@ -1,0 +1,8 @@
+{
+  "name": "dia-runs",
+  "api": "0.0.39",
+  "category": "feature",
+  "host": "host.ts",
+  "load": "eager",
+  "exports": ["backend.ts", "calls.ts"]
+}

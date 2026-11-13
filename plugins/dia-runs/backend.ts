@@ -1,26 +1,31 @@
-import { type AdapterStatus, HealthError } from '@shared/domain/adapter-status'
-import type { AgentEvent } from '@shared/domain/agent-event'
-import type { Attachment, AttachmentType } from '@shared/domain/attachment'
-import type { PermissionResponse, QuestionResponse } from '@shared/domain/attention'
 import {
-  EMPTY_MESSAGE_QUEUE,
-  type MessageQueueSnapshot,
-  type SendMode
-} from '@shared/domain/message-queue'
-import { type ModelCatalogState, ModelsUnavailable } from '@shared/domain/model'
-import {
+  type AdapterStatus,
+  type AgentEvents,
+  type AttachmentType,
+  type ContentAttachment,
   type ConversationMessage,
+  type DiaTool,
+  type DiscoveredSession,
+  HealthError,
+  type MessageQueueSnapshot,
+  type ModelCatalogState,
+  ModelsUnavailable,
+  type OutboundMessage,
   type PaneConfig,
+  type PathAttachment,
   type PermissionMode,
+  type PermissionResponse,
+  type QuestionResponse,
+  type SendMode,
+  ServiceKey,
+  type SessionAdditions,
   SessionId,
+  type SessionToolOptions,
   type ThinkingLevel
-} from '@shared/domain/pane'
-import type { SessionToolOptions } from '@shared/domain/session-tools'
-import { ServiceKey } from '@shared/plugin/api'
-import type { PluginRegistry } from '@shared/plugin/plugin-registry'
+} from '@dia/plugin'
 import { DateTime, Effect, Option, Predicate, Schema, type Scope, Stream } from 'effect'
-import type { DiaTool } from './dia-tools'
-import type { OutboundMessage } from './protocol'
+
+type Attachment = ContentAttachment | PathAttachment
 
 /** The session ended for a reason other than a missing conversation; `reason` describes it for the user. */
 export const SessionFailed = Schema.TaggedStruct('SessionFailed', { reason: Schema.String })
@@ -103,35 +108,12 @@ export interface AgentSession {
 }
 
 /**
- * A conversation an agent harness holds, as {@link AgentBackend.discoverSessions} reports it.
- * `title` is the harness's name for it and may be empty; `startedAt` is when it began, in epoch
- * milliseconds; `model` is the model value a session that resumes it is opened with.
- */
-export interface DiscoveredSession {
-  readonly sessionId: SessionId
-  readonly title: string
-  readonly startedAt: number
-  readonly model: string
-}
-
-/**
- * What dia adds to an agent session on top of the agent's own configuration.
- * `systemPromptAppend` is text appended to the agent's system prompt; an empty string appends
- * nothing. `pluginPaths` are absolute paths of local Claude Code plugin directories loaded into
- * the session.
- */
-export interface SessionAdditions {
-  readonly systemPromptAppend: string
-  readonly pluginPaths: ReadonlyArray<string>
-}
-
-/**
  * One event read from a session's transcript, as {@link AgentBackend.readTranscriptAfter} returns
  * it. `sourceUuid` is the uuid of the transcript entry the event came from. Pass it to
  * `RunEvents.append` unchanged.
  */
 export interface TranscriptEntry {
-  readonly event: AgentEvent
+  readonly event: AgentEvents.AgentEvent
   readonly sourceUuid: string
 }
 
@@ -245,7 +227,7 @@ const unavailableSession: AgentSession = {
   editQueuedText: ignored('editQueuedText'),
   removeQueuedText: ignored('removeQueuedText'),
   sendQueuedNow: ignored('sendQueuedNow'),
-  messageQueue: Effect.succeed(EMPTY_MESSAGE_QUEUE),
+  messageQueue: Effect.succeed({ queued: [], held: false }),
   setThinkingLevel: ignored('setThinkingLevel'),
   setPermissionMode: ignored('setPermissionMode'),
   setModel: ignored('setModel'),
@@ -258,7 +240,12 @@ const unavailableSession: AgentSession = {
   ended: Effect.succeed(SessionFailed.make({ reason: ADAPTER_NOT_LOADED }))
 }
 
-const unavailableBackend: AgentBackend = {
+/**
+ * The backend to use while no adapter provides {@link AgentBackendKey}: its sessions end at once with
+ * `The claude-code adapter is not loaded`, its `readHistory` returns an empty list, and its
+ * `transcriptInfo` and `readTranscriptAfter` return none.
+ */
+export const unavailableBackend: AgentBackend = {
   openSession: (options) =>
     Effect.logError('Cannot start an agent session', {
       paneId: options.config.paneId,
@@ -336,48 +323,8 @@ const isAgentBackend = (value: unknown): value is AgentBackend =>
   agentBackendProblems(Option.some(value)).length === 0
 
 /**
- * The key a plugin provides its {@link AgentBackend} under. It reads as `AgentBackend` and
+ * The key an adapter plugin provides its {@link AgentBackend} under. It reads as `AgentBackend` and
  * accepts a value {@link agentBackendProblems} finds no problem with; any other value reads as not
- * provided. Host code reads it through {@link resolveAgentBackend}.
+ * provided. Read it with `ctx.whenProvided`, so a reload of the adapter does not close the reader.
  */
 export const AgentBackendKey = ServiceKey.make(BACKEND_KEY_NAME, isAgentBackend)
-
-/**
- * Reads the {@link AgentBackend} a plugin provides under {@link AgentBackendKey}.
- * It never fails: when no plugin provides one, or the value is not a backend, it logs an error
- * and returns a backend whose sessions end at once with
- * `The claude-code adapter is not loaded`, whose `readHistory` returns an empty list, and whose
- * `transcriptInfo` and `readTranscriptAfter` return none. Call it
- * each time a session starts or a transcript is read; a plugin reload applies from the next call.
- * A session opened from the result runs in the caller's scope, so a reload of the provider does not
- * end it.
- */
-export const resolveAgentBackend = Effect.fn('AgentBackend.resolve')(function* (
-  registry: Pick<PluginRegistry, 'inject'>
-) {
-  // biome-ignore lint/plugin/noRegistryInject: a session opened from the backend runs in the caller's scope, which a `use` lease would not cover (ADR-0065)
-  const provided = yield* registry.inject(AgentBackendKey)
-  if (Option.isSome(provided)) {
-    yield* Effect.logDebug('Resolved the agent backend')
-    return provided.value
-  }
-  yield* Effect.logError('No valid agent backend is provided', { reason: ADAPTER_NOT_LOADED })
-  return unavailableBackend
-})
-
-/**
- * Streams the agent backend: the one provided now, then the one provided after each change of the
- * plugin providing {@link AgentBackendKey}, each read with {@link resolveAgentBackend}. Never
- * ends. Use it with `Stream.switchMap` to follow a stream of the backend that is loaded now,
- * including an adapter loaded after a failed start.
- */
-export const agentBackendChanges = (
-  registry: Pick<PluginRegistry, 'inject' | 'changes'>
-): Stream.Stream<AgentBackend> =>
-  Stream.merge(
-    Stream.make(AgentBackendKey.name),
-    registry.changes.pipe(
-      Stream.filter((key) => key === AgentBackendKey.name),
-      Stream.tap(() => Effect.logInfo('The agent backend provider changed; resolving it again'))
-    )
-  ).pipe(Stream.mapEffect(() => resolveAgentBackend(registry)))

@@ -109,7 +109,6 @@ interface AgentRowProps {
   readonly archived: boolean
   readonly onRename: (renaming: boolean) => void
   readonly onRetire: (retirement: Retirement) => void
-  readonly onStartOver?: (() => void) | undefined
 }
 
 /**
@@ -136,10 +135,8 @@ const unarchive = (row: OverviewRow): Promise<void> =>
  * One agent in the overview: its status dot, name and second line. Clicking it or pressing
  * `Enter` shows the agent's tab; `F2` or the row menu renames it. The row menu also archives an
  * agent that is not `archived` through `onRetire`, unarchives one that is, and deletes any agent
- * through `onRetire`. A row with a `caption` is an attached session (ADR-0070): it shows a
- * non-empty caption after the name, opens the session, and its menu shows it and, when
- * `onStartOver` is given, offers Start over. A `projectName` of null leaves the project out of the
- * tooltip and accessible name.
+ * through `onRetire`. A `projectName` of null leaves the project out of the tooltip and accessible
+ * name.
  */
 export function AgentRow({
   row,
@@ -149,20 +146,17 @@ export function AgentRow({
   tabbable,
   archived,
   onRename,
-  onRetire,
-  onStartOver
+  onRetire
 }: AgentRowProps) {
   const collapsed = useSidebar().state === 'collapsed'
   const line = secondLine(row.summary)
   const status = statusLabel(row.summary.status)
   const marker = modeMarker(row.permissionMode)
   const markerSuffix = marker === null ? '' : ` · ${marker}`
-  const attached = row.caption !== null
-  const fullName = row.caption ? `${row.name} (${row.caption})` : row.name
-  const place = projectName === null ? fullName : `${projectName} / ${fullName}`
-  const label = `${fullName}, ${status}. ${line.text}${markerSuffix}`
+  const place = projectName === null ? row.name : `${projectName} / ${row.name}`
+  const label = `${row.name}, ${status}. ${line.text}${markerSuffix}`
   const summaryText = `${place} · ${status} · ${line.text}${markerSuffix}`
-  const show = () => (attached ? actions.selectAttached(row.paneId) : actions.selectTab(row.paneId))
+  const show = () => actions.selectTab(row.paneId)
   const body = (name: React.ReactNode) => (
     <>
       <StatusIndicator status={row.summary.status} />
@@ -205,7 +199,7 @@ export function AgentRow({
               title={collapsed ? undefined : place}
               onClick={show}
               onKeyDown={(event) => {
-                if (event.key === 'F2' && !attached) {
+                if (event.key === 'F2') {
                   event.preventDefault()
                   onRename(true)
                 }
@@ -215,9 +209,6 @@ export function AgentRow({
               {body(
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span className="truncate text-sm text-ink">{row.name}</span>
-                  {row.caption && (
-                    <span className="min-w-0 truncate text-xs text-ink-muted">{row.caption}</span>
-                  )}
                   {marker !== null && (
                     <span className="ml-auto shrink-0 text-xs font-medium text-ink">{marker}</span>
                   )}
@@ -229,34 +220,22 @@ export function AgentRow({
         <ContextMenuContent className="w-48">
           <ContextMenuGroup>
             <ContextMenuItem onClick={show}>Show</ContextMenuItem>
-            {!attached && (
-              <ContextMenuItem onClick={() => onRename(true)}>
-                Rename
-                <ContextMenuShortcut>F2</ContextMenuShortcut>
-              </ContextMenuItem>
-            )}
+            <ContextMenuItem onClick={() => onRename(true)}>
+              Rename
+              <ContextMenuShortcut>F2</ContextMenuShortcut>
+            </ContextMenuItem>
           </ContextMenuGroup>
-          {onStartOver !== undefined && (
-            <>
-              <ContextMenuSeparator />
-              <ContextMenuGroup>
-                <ContextMenuItem onClick={onStartOver}>Start over</ContextMenuItem>
-              </ContextMenuGroup>
-            </>
-          )}
-          {!attached && <ContextMenuSeparator />}
-          {!attached && (
-            <ContextMenuGroup>
-              {archived ? (
-                <ContextMenuItem onClick={() => void unarchive(row)}>Unarchive</ContextMenuItem>
-              ) : (
-                <ContextMenuItem onClick={() => onRetire('archive')}>Archive</ContextMenuItem>
-              )}
-              <ContextMenuItem variant="destructive" onClick={() => onRetire('delete')}>
-                Delete…
-              </ContextMenuItem>
-            </ContextMenuGroup>
-          )}
+          <ContextMenuSeparator />
+          <ContextMenuGroup>
+            {archived ? (
+              <ContextMenuItem onClick={() => void unarchive(row)}>Unarchive</ContextMenuItem>
+            ) : (
+              <ContextMenuItem onClick={() => onRetire('archive')}>Archive</ContextMenuItem>
+            )}
+            <ContextMenuItem variant="destructive" onClick={() => onRetire('delete')}>
+              Delete…
+            </ContextMenuItem>
+          </ContextMenuGroup>
         </ContextMenuContent>
       </ContextMenu>
     </SidebarMenuItem>

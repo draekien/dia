@@ -43,6 +43,14 @@ D12. **`agent-summaries.ts` stays in the kernel** (deferred again from step 3, D
 
 D13. **Model and adapter feeds move into `dia-runs`** as calls: `GetModels`, `RefreshModels`, `FollowModels`, `GetAdapterStatus`, `CheckAdapterHealth`, `SetInstallPath`, `FollowAdapterStatus`, `GetModelPreferences`, `SetModelPreference`, `SetAgentDefaults`, `FollowModelPreferences`, `GetDisabledPermissionModes`, `GetAttachmentTypes`.
 
+D14. **Model preferences are kept for one adapter**, `dia-claude-code`, or the only adapter when it has another name. The kernel kept them per adapter name; dia loads one adapter. Alternative: keep the per-adapter map in `dia-runs` (rejected: no second adapter exists to need it).
+
+D15. **Selecting a tab with no live run starts its run** (`selectTab` calls `runs.open`), so a tab created before this change, which has no row in `dia-runs`, gets one on first view. Alternative: copy every tab into `dia-runs` at its first start (rejected: the tab list stays the kernel's, and `runs.open` already creates the row).
+
+D16. **The renderer's attached-session view is removed** with the kernel API that fed it: the Assistant group of the agent overview, the `AttachedView` content view, `useAttachedSessions`, `selectAttached` and `resetAttached`. No shipped plugin attached a session. Alternative: keep the view behind an always-empty list (rejected: dead code). `Pane`'s `fixedSettings` prop stays, unused, for a later cleanup.
+
+D17. **The preload does not retry a `dia-runs` call that failed with a plugin call error**; it retries only a lost connection, so a refused `SetModelPreference` resolves at once with its encoded error.
+
 ## Interface
 
 ### Kernel seam (`src/host/services/runs-seam.ts`, re-exported from `@dia/plugin`)

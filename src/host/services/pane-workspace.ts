@@ -20,7 +20,7 @@ import {
   EMPTY_WORKSPACE,
   type Project,
   type ProjectAlreadyRegisteredError,
-  type ProjectId,
+  ProjectId,
   ProjectNotFoundError,
   StoredProjectUnreadableError,
   type Tab,
@@ -60,12 +60,12 @@ import {
   SubscriptionRef
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import { type DiscoveredSession, resolveAgentBackend } from '../session/agent-backend'
 import { EventHub } from './event-hub'
-import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
 import { PathMoves } from './path-moves'
 import { probeProject } from './project-directory'
 import { RunEventLog } from './run-event-log'
+import { RunsClient } from './runs-client'
+import type { DiscoveredSession, RunChange, RunSpec, RunsNotLoadedError } from './runs-seam'
 import { WorkspaceFeed } from './workspace-feed'
 import { WorkspaceStore } from './workspace-store'
 import { type WorktreeCreateError, type WorktreeReattachError, withGitOps } from './worktrees-seam'
@@ -74,8 +74,9 @@ type OnEvent = (event: IpcEvent) => Effect.Effect<void>
 
 /**
  * Service tag for the pane workspace: owns the registered projects, their tabs, the project
- * order and the visible tab, persists them, and starts and stops the agent session behind each
- * tab through the {@link PaneSupervisor}. Every change it makes is published as
+ * order and the visible tab, persists them, and opens and closes the run behind each tab (its run
+ * id is its pane id) through {@link RunsClient}. It follows the run service's changes to store each
+ * tab's session id and permission mode, and adds a tab for a run that asks for one. Every change it makes is published as
  * `WorkspaceChanged` on the {@link EventHub} before the call returns, so clients read workspace
  * state only from `getWorkspace` and that event.
  */
@@ -138,7 +139,11 @@ export class PaneWorkspace extends Context.Service<
       onEvent: OnEvent
     ) => Effect.Effect<
       void,
-      ProjectNotFoundError | WorktreeUnavailableError | WorktreeCreateError | WorktreeReattachError
+      | ProjectNotFoundError
+      | WorktreeUnavailableError
+      | WorktreeCreateError
+      | WorktreeReattachError
+      | RunsNotLoadedError
     >
     readonly renameTab: (paneId: PaneId, name: AgentName) => Effect.Effect<void, TabNotFoundError>
     /**
@@ -172,8 +177,9 @@ export class PaneWorkspace extends Context.Service<
       paneId: PaneId
     ) => Effect.Effect<void, TabNotFoundError | WorktreeNotRestoredError>
     /**
-     * Shows the tab of `paneId`, or no tab for `null`, and resumes the shown tab's recorded
-     * session when it is not running and the tab is not archived. Fails for an unknown tab, or one
+     * Shows the tab of `paneId`, or no tab for `null`, and opens the shown tab's run when it is not
+     * running and the tab is not archived: it continues the recorded session, or starts a new
+     * conversation for a tab with none. Fails for an unknown tab, or one
      * whose project is being removed or which is being archived or deleted.
      */
     readonly selectTab: (
@@ -200,13 +206,6 @@ export class PaneWorkspace extends Context.Service<
      * event rather than failing the effect.
      */
     readonly resumePane: (paneId: PaneId, onEvent: OnEvent) => Effect.Effect<void>
-    /**
-     * Guarantees a tab has a running session before a command that needs one, so the command is
-     * not dropped: continues the recorded session, or starts a fresh conversation in the tab's
-     * working directory. A no-op when the session already runs, or the tab is unknown or its
-     * project is being removed. Failures are handled as in {@link resumePane}.
-     */
-    readonly ensureLive: (paneId: PaneId, onEvent: OnEvent) => Effect.Effect<void>
   }
 >()('PaneWorkspace') {}
 
@@ -218,16 +217,16 @@ const gitOpsFailureText = (failure: ServiceWithdrawnError | { readonly cause: un
 /**
  * The live {@link PaneWorkspace} layer. On construction it loads the persisted workspace
  * (sessions stay cold -- no processes are spawned here) and shows the first tab when none is
- * visible; with nothing persisted it starts empty. Requires {@link PaneSupervisor}, {@link WorkspaceStore},
+ * visible; with nothing persisted it starts empty. Requires {@link RunsClient}, {@link WorkspaceStore},
  * {@link RunEventLog}, {@link EventHub},
- * {@link HostPlugins} (for the worktree and agent backend services, and the conversations a project holds), {@link WorkspaceFeed} (which it keeps current),
+ * {@link HostPlugins} (for the worktree service), {@link WorkspaceFeed} (which it keeps current),
  * {@link PathMoves} (it rewrites tab paths under each moved folder, as the path owner `host:workspace`),
  * `FileSystem`, `Path` and `Crypto`.
  */
 export const PaneWorkspaceLive = Layer.effect(
   PaneWorkspace,
   Effect.gen(function* () {
-    const supervisor = yield* PaneSupervisor
+    const runs = yield* RunsClient
     const store = yield* WorkspaceStore
     const runEvents = yield* RunEventLog
     const hub = yield* EventHub
@@ -350,12 +349,7 @@ export const PaneWorkspaceLive = Layer.effect(
     const importableSessions = Effect.fn('PaneWorkspace.importableSessions')(function* (
       directory: string
     ) {
-      const backend = yield* resolveAgentBackend(plugins)
-      if (backend.discoverSessions === undefined) {
-        yield* Effect.logDebug('The agent backend cannot discover sessions', { directory })
-        return []
-      }
-      const discovered = yield* backend.discoverSessions(directory)
+      const discovered = yield* runs.discoverSessions(directory)
       if (discovered.length === 0) return discovered
       const stored = yield* store.sessionIds.pipe(Effect.option)
       if (Option.isNone(stored)) {
@@ -535,7 +529,7 @@ export const PaneWorkspaceLive = Layer.effect(
       const removalOf = (tab: Tab, item: RemovalItem): Effect.Effect<Option.Option<string>> => {
         switch (item._tag) {
           case 'AgentItem':
-            return supervisor.closePane(item.paneId).pipe(Effect.as(Option.none<string>()))
+            return runs.retire(item.paneId, 'deleted').pipe(Effect.as(Option.none<string>()))
           case 'WorktreeItem':
             return tab.config.worktree === undefined
               ? Effect.succeed(Option.none<string>())
@@ -620,7 +614,7 @@ export const PaneWorkspaceLive = Layer.effect(
 
     const createTab = Effect.fn('PaneWorkspace.createTab')(function* (
       request: CreateTabRequest,
-      onEvent: OnEvent
+      _onEvent: OnEvent
     ) {
       const { projectId, paneId } = request
       const workspace = yield* SubscriptionRef.get(workspaceRef)
@@ -634,22 +628,17 @@ export const PaneWorkspaceLive = Layer.effect(
         return yield* new WorktreeUnavailableError({ projectId })
       }
 
-      yield* runEvents.seed(paneId)
-      const { config } = yield* supervisor.openPane(
-        {
-          paneId,
-          sourceCwd: entry.project.directory,
-          model: request.model,
-          thinkingLevel: request.thinkingLevel,
-          permissionMode: request.permissionMode,
-          worktree: request.useWorktree
-            ? { _tag: 'Create', label: `Tab · ${request.name ?? entry.project.displayName}` }
-            : undefined
-        },
-        onEvent,
-        (sessionId) => recordSessionId(paneId, sessionId),
-        (mode) => recordPermissionMode(paneId, mode)
-      )
+      const config = yield* runs.open({
+        runId: paneId,
+        sourceCwd: entry.project.directory,
+        model: request.model,
+        thinkingLevel: request.thinkingLevel,
+        permissionMode: request.permissionMode,
+        worktree: request.useWorktree
+          ? { _tag: 'Create', label: `Tab · ${request.name ?? entry.project.displayName}` }
+          : undefined,
+        resume: Option.none()
+      })
 
       const name = yield* nameForTab(request, config.worktree?.branch)
       yield* mutate('addTab', (current, removing) => {
@@ -661,7 +650,7 @@ export const PaneWorkspaceLive = Layer.effect(
             ? { name, config, archived: false }
             : { name, config, sessionId, archived: false }
         return WorkspaceOps.addTab(current, projectId, tab)
-      }).pipe(Effect.tapError(() => supervisor.closePane(paneId)))
+      }).pipe(Effect.tapError(() => runs.retire(paneId, 'deleted')))
       yield* Effect.logInfo('Created tab', { projectId, paneId, name })
     })
 
@@ -709,7 +698,7 @@ export const PaneWorkspaceLive = Layer.effect(
           yield* Effect.logInfo('Left a tab that is already archived as it was', { paneId })
           return
         }
-        yield* sessionStartLock.withPermits(1)(supervisor.closePane(paneId))
+        yield* sessionStartLock.withPermits(1)(runs.close(paneId))
         const worktree = tab.archived ? undefined : tab.config.worktree
         if (worktree !== undefined) {
           const failure = yield* removeWorktree(paneId, worktree)
@@ -728,6 +717,7 @@ export const PaneWorkspaceLive = Layer.effect(
         }
         if (operation === 'archiveTab') yield* recordEvent(paneId, AgentArchived.make({}))
         yield* mutate(operation, (workspace) => apply(workspace, paneId))
+        yield* runs.retire(paneId, operation === 'archiveTab' ? 'archived' : 'deleted')
         yield* Effect.logInfo(operation === 'archiveTab' ? 'Archived tab' : 'Deleted tab', {
           paneId,
           removedWorktree: worktree?.path
@@ -789,8 +779,7 @@ export const PaneWorkspaceLive = Layer.effect(
       yield* mutate('setThinkingLevel', (workspace) =>
         WorkspaceOps.updateTabConfig(workspace, paneId, { thinkingLevel: level })
       )
-      const handle = yield* supervisor.getHandle(paneId)
-      if (Option.isSome(handle)) yield* handle.value.setThinkingLevel(level)
+      yield* runs.setThinkingLevel(paneId, level)
     })
 
     const setPermissionMode = Effect.fn('PaneWorkspace.setPermissionMode')(function* (
@@ -800,16 +789,14 @@ export const PaneWorkspaceLive = Layer.effect(
       yield* mutate('setPermissionMode', (workspace) =>
         WorkspaceOps.updateTabConfig(workspace, paneId, { permissionMode: mode })
       )
-      const handle = yield* supervisor.getHandle(paneId)
-      if (Option.isSome(handle)) yield* handle.value.setPermissionMode(mode)
+      yield* runs.setPermissionMode(paneId, mode)
     })
 
     const setModel = Effect.fn('PaneWorkspace.setModel')(function* (paneId: PaneId, model: string) {
       yield* mutate('setModel', (workspace) =>
         WorkspaceOps.updateTabConfig(workspace, paneId, { model })
       )
-      const handle = yield* supervisor.getHandle(paneId)
-      if (Option.isSome(handle)) yield* handle.value.setModel(model)
+      yield* runs.setModel(paneId, model)
     })
 
     const emitErrored = (paneId: PaneId, onEvent: OnEvent, message: string) =>
@@ -822,8 +809,7 @@ export const PaneWorkspaceLive = Layer.effect(
       onEvent: OnEvent,
       startFresh: boolean
     ) {
-      const existing = yield* supervisor.getHandle(paneId)
-      if (Option.isSome(existing)) return
+      if (yield* runs.isLive(paneId)) return
 
       if (yield* isRemovingTab(paneId)) {
         yield* Effect.logWarning('Did not start a tab whose project is being removed', { paneId })
@@ -844,8 +830,6 @@ export const PaneWorkspaceLive = Layer.effect(
         yield* Effect.logDebug('resumePane skipped; tab has no session to resume', { paneId })
         return
       }
-      yield* runEvents.seed(paneId)
-
       if (config.worktree === undefined) {
         const exists = yield* fs.exists(config.cwd).pipe(Effect.orElseSucceed(() => false))
         if (!exists) {
@@ -858,25 +842,18 @@ export const PaneWorkspaceLive = Layer.effect(
         }
       }
 
-      const request: PaneCreationRequest = {
-        paneId,
+      const spec: RunSpec = {
+        runId: paneId,
         sourceCwd: config.worktree?.sourceRepo ?? config.cwd,
         model: config.model,
         thinkingLevel: config.thinkingLevel,
         permissionMode: config.permissionMode,
         worktree:
           config.worktree !== undefined ? { _tag: 'Reattach', info: config.worktree } : undefined,
-        resume: sessionId
+        resume: Option.fromUndefinedOr(sessionId)
       }
 
-      const result = yield* supervisor
-        .openPane(
-          request,
-          onEvent,
-          (newSessionId) => recordSessionId(paneId, newSessionId),
-          (mode) => recordPermissionMode(paneId, mode)
-        )
-        .pipe(Effect.result)
+      const result = yield* runs.open(spec).pipe(Effect.result)
 
       if (Result.isFailure(result)) {
         yield* Effect.logError('Failed to resume tab', { paneId, cause: result.failure })
@@ -887,15 +864,6 @@ export const PaneWorkspaceLive = Layer.effect(
     const resumePane = (paneId: PaneId, onEvent: OnEvent) =>
       sessionStartLock.withPermits(1)(startPaneSession(paneId, onEvent, false))
 
-    const ensureLive = Effect.fn('PaneWorkspace.ensureLive')(function* (
-      paneId: PaneId,
-      onEvent: OnEvent
-    ) {
-      const existing = yield* supervisor.getHandle(paneId)
-      if (Option.isSome(existing)) return
-      yield* sessionStartLock.withPermits(1)(startPaneSession(paneId, onEvent, true))
-    })
-
     const selectTab = Effect.fn('PaneWorkspace.selectTab')(function* (
       paneId: PaneId | null,
       onEvent: OnEvent
@@ -904,8 +872,61 @@ export const PaneWorkspaceLive = Layer.effect(
         return yield* new TabNotFoundError({ paneId })
       }
       yield* mutate('selectTab', (workspace) => WorkspaceOps.selectTab(workspace, paneId))
-      if (paneId !== null) yield* resumePane(paneId, onEvent)
+      if (paneId !== null) {
+        yield* sessionStartLock.withPermits(1)(startPaneSession(paneId, onEvent, true))
+      }
     })
+
+    const showRunInTab = Effect.fn('PaneWorkspace.showRunInTab')(function* (
+      change: Extract<RunChange, { _tag: 'RunTabRequested' }>
+    ) {
+      const workspace = yield* SubscriptionRef.get(workspaceRef)
+      const registered = workspace.projects.find(
+        (entry) => entry.project.directory === change.directory
+      )?.project
+      const project =
+        registered ??
+        (yield* probeProject(
+          ProjectId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie)),
+          change.directory
+        ).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+          Effect.provideService(Path.Path, path)
+        ))
+      const name = yield* generateAgentName
+      const tab: Tab = {
+        name,
+        config: {
+          paneId: change.runId,
+          cwd: change.directory,
+          model: change.model,
+          thinkingLevel: change.thinkingLevel,
+          permissionMode: change.permissionMode
+        },
+        ...(change.sessionId === null ? {} : { sessionId: change.sessionId }),
+        archived: false
+      }
+      yield* importTab(project, tab)
+      yield* mutate('showRunTab', (current) => WorkspaceOps.selectTab(current, change.runId))
+      yield* Effect.logInfo('Showed a run in a tab', { runId: change.runId })
+    })
+
+    const followRunChange = (change: RunChange): Effect.Effect<void> => {
+      switch (change._tag) {
+        case 'RunSessionChanged':
+          return recordSessionId(change.runId, Option.fromNullishOr(change.sessionId))
+        case 'RunPermissionModeChanged':
+          return recordPermissionMode(change.runId, change.mode)
+        case 'RunTabRequested':
+          return showRunInTab(change).pipe(
+            Effect.catch((error) =>
+              Effect.logWarning('Could not show a run in a tab', { runId: change.runId, error })
+            )
+          )
+      }
+    }
+
+    yield* runs.changes.pipe(Stream.runForEach(followRunChange), Effect.forkScoped)
 
     return {
       getWorkspace,
@@ -922,8 +943,7 @@ export const PaneWorkspaceLive = Layer.effect(
       setThinkingLevel,
       setPermissionMode,
       setModel,
-      resumePane,
-      ensureLive
+      resumePane
     }
   })
 )

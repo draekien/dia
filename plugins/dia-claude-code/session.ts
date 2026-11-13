@@ -12,8 +12,6 @@ import {
   type SDKUserMessage
 } from '@anthropic-ai/claude-agent-sdk'
 import {
-  type AgentSession,
-  type AgentSessionOptions,
   BackgroundTasksChanged,
   ContextUsageChanged,
   type DiaTool,
@@ -33,15 +31,19 @@ import {
   RewindFailed,
   RewoundToCheckpoint,
   type SessionAdditions,
-  type SessionEnd,
-  SessionFailed,
-  SessionNotFound,
   SlashCommandsAvailable,
   SlashCommandsWarming,
   TurnCompleted,
   type UserInputResolution,
   UserMessagesSent
 } from '@dia/plugin'
+import {
+  type AgentSession,
+  type AgentSessionOptions,
+  type SessionEnd,
+  SessionFailed,
+  SessionNotFound
+} from '@dia-plugin/dia-runs/backend'
 import type { Attachment } from '@shared/domain/attachment'
 import type { QuestionResponse } from '@shared/domain/attention'
 import type { OutgoingMessage, SendMode } from '@shared/domain/message-queue'

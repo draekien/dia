@@ -1,9 +1,8 @@
+import { type GitOps, type PaneEvents, type WorktreeInfo, WorktreeReleased } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
-import { type WorktreeInfo, WorktreeReleased } from '@shared/domain/pane'
-import type { IpcEvent } from '@shared/ipc/contract'
+
 import { Effect, Option } from 'effect'
 import { setUpWorktreeTab } from './tab-setup'
-import type { GitOps } from './worktrees-seam'
 
 const paneId = '5b0c5a8e-4f0e-4f57-9d0b-0c6f6f3c2a11'
 
@@ -24,7 +23,7 @@ const gitOps: GitOps = {
 describe('setUpWorktreeTab', () => {
   it.effect('fails the session step when the session start dies', () =>
     Effect.gen(function* () {
-      const events: Array<IpcEvent> = []
+      const events: Array<PaneEvents.IpcEvent> = []
       const setup = yield* setUpWorktreeTab({
         paneId,
         sourceRepo: '/a',

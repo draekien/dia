@@ -9,10 +9,9 @@ import {
   RunEventWriteError,
   type SessionId,
   StoredEvent,
-  TranscriptCursor,
-  type TranscriptEntry,
-  type TranscriptTail
+  TranscriptCursor
 } from '@dia/plugin'
+import type { TranscriptEntry, TranscriptTail } from '@dia-plugin/dia-runs/backend'
 import {
   Array as Arr,
   Clock,

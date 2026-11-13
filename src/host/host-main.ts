@@ -33,17 +33,12 @@ import { makeHostServerLive } from './ipc/host-server'
 import { DiaRpcHandlersLive } from './ipc/rpc-handlers'
 import { HostPlugins, makeHostPluginsLive } from './plugins/host-plugins'
 import { makePluginSourcesLive } from './plugins/plugin-sources'
-import { AdapterStatusFeed, AdapterStatusFeedLive } from './services/adapter-status-feed'
 import { AgentSummariesLive } from './services/agent-summaries'
 import { AppWindow, makeAppWindowLive } from './services/app-window'
-import { AttachedSessionsLive, SessionAttacherLive } from './services/attached-sessions'
 import { BackgroundActivitiesLive } from './services/background-activities'
 import { makeCommandDeduperLive } from './services/command-deduper'
 import { makeHostDatabaseLive } from './services/database'
 import { EventHub, EventHubLive } from './services/event-hub'
-import { ModelCatalogFeed, ModelCatalogFeedLive } from './services/model-catalog-feed'
-import { ModelPreferencesLive } from './services/model-preferences'
-import { PaneSupervisor, PaneSupervisorLive, SessionFactoryLive } from './services/pane-supervisor'
 import { PaneWorkspace, PaneWorkspaceLive } from './services/pane-workspace'
 import { PathMovesLive } from './services/path-moves'
 import { makePersistenceServiceLive } from './services/persistence'
@@ -53,6 +48,7 @@ import {
   RunEventLogLive,
   RunEventLogRegistryLive
 } from './services/run-event-log'
+import { RunsClientLive } from './services/runs-client'
 import { makeSettingsStoreLive } from './services/settings-store'
 import { WorkspaceFeedLive } from './services/workspace-feed'
 import { makeWorkspaceProblemsLive } from './services/workspace-problems'
@@ -124,7 +120,6 @@ const buildHostLayer = (init: HostInit, token: string) => {
     Layer.mergeAll(settings, NodeFileSystem.layer, NodePath.layer)
   )
   const backgroundActivities = Layer.provide(BackgroundActivitiesLive, eventHub)
-  const sessionAttacher = SessionAttacherLive
   const hostPlugins = Layer.provide(
     makeHostPluginsLive(init.pluginApiPath, init.userDataPath),
     Layer.mergeAll(
@@ -133,13 +128,11 @@ const buildHostLayer = (init: HostInit, token: string) => {
       backgroundActivities,
       WorkspaceFeedLive,
       appWindow,
-      sessionAttacher,
       pathMoves,
       NodeFileSystem.layer,
       NodePath.layer
     )
   )
-  const sessionFactory = Layer.provide(SessionFactoryLive, Layer.merge(hostPlugins, pluginSources))
   const persistence = Layer.provide(
     makePersistenceServiceLive(init.userDataPath),
     NodeServices.layer
@@ -152,19 +145,11 @@ const buildHostLayer = (init: HostInit, token: string) => {
     RunEventLogConnectLive,
     Layer.merge(runEventRegistry, hostPlugins)
   )
-  const supervisor = Layer.provide(
-    PaneSupervisorLive,
-    Layer.mergeAll(sessionFactory, hostPlugins, settings, runEventLog)
-  )
-  const modelCatalog = Layer.provide(ModelCatalogFeedLive, Layer.merge(hostPlugins, eventHub))
-  const attachedSessions = Layer.provide(
-    AttachedSessionsLive,
-    Layer.mergeAll(supervisor, runEventLog, eventHub, sessionAttacher)
-  )
+  const runs = Layer.provide(RunsClientLive, hostPlugins)
   const workspace = Layer.provide(
     PaneWorkspaceLive,
     Layer.mergeAll(
-      supervisor,
+      runs,
       workspaceStore,
       runEventLog,
       eventHub,
@@ -182,14 +167,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     AgentSummariesLive,
     Layer.mergeAll(workspace, persistence, eventHub)
   )
-  const adapterStatus = Layer.provide(AdapterStatusFeedLive, Layer.merge(hostPlugins, eventHub))
-  const modelPreferences = Layer.provide(
-    ModelPreferencesLive,
-    Layer.mergeAll(settings, modelCatalog, hostPlugins, eventHub)
-  )
   const state = Layer.mergeAll(
-    supervisor,
-    attachedSessions,
     workspace,
     runEventLog,
     runEventConnect,
@@ -200,9 +178,6 @@ const buildHostLayer = (init: HostInit, token: string) => {
     pluginSources,
     hostPlugins,
     backgroundActivities,
-    modelCatalog,
-    adapterStatus,
-    modelPreferences,
     appWindow,
     makeCommandDeduperLive(),
     Layer.provide(ProjectEntriesLive, NodeServices.layer),
@@ -259,7 +234,6 @@ export const runHost = Effect.scoped(
     const context = yield* Layer.buildWithScope(buildHostLayer(init, token), hostScope)
     yield* Effect.gen(function* () {
       const server = Context.get(context, HttpServer.HttpServer)
-      const supervisor = Context.get(context, PaneSupervisor)
       const address = server.address
       if (!('port' in address)) {
         return yield* Effect.die(
@@ -269,8 +243,6 @@ export const runHost = Effect.scoped(
       const { port } = address
       yield* Effect.logInfo('Host listening', { port })
       yield* Context.get(context, HostPlugins).start()
-      yield* Context.get(context, ModelCatalogFeed).start
-      yield* Context.get(context, AdapterStatusFeed).start
       yield* post(HostReady.make({ port, token }))
 
       while (true) {
@@ -279,7 +251,6 @@ export const runHost = Effect.scoped(
         yield* handleMainMessage(message, hostScope)
       }
       yield* Effect.logInfo('Host shutting down')
-      yield* supervisor.closeAll()
       yield* Scope.close(hostScope, Exit.void)
       yield* post(HostShutdownComplete.make({}))
     }).pipe(Effect.provideContext(context))

@@ -3,13 +3,8 @@ import {
   getSessionMessages,
   type SessionMessage
 } from '@anthropic-ai/claude-agent-sdk'
-import {
-  AgentEvents,
-  ContentAttachment,
-  type TranscriptEntry,
-  type TranscriptInfo,
-  type TranscriptTail
-} from '@dia/plugin'
+import { AgentEvents, ContentAttachment } from '@dia/plugin'
+import type { TranscriptEntry, TranscriptInfo, TranscriptTail } from '@dia-plugin/dia-runs/backend'
 import type { AgentEvent } from '@shared/domain/agent-event'
 import type { Attachment } from '@shared/domain/attachment'
 import type { ConversationMessage, SessionId } from '@shared/domain/pane'

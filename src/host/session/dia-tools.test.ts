@@ -1,6 +1,6 @@
 import type { PluginInfo, PluginOverrideResult } from '@shared/plugin/manifest'
-import { Effect } from 'effect'
-import { describe, expect, it } from 'vitest'
+import { Deferred, Effect } from 'effect'
+import { describe, expect, it, vi } from 'vitest'
 import { type DiaToolResult, makePluginTools } from './dia-tools'
 
 const info = (name: string, status: PluginInfo['status'] = { _tag: 'Loaded' }): PluginInfo => ({
@@ -13,26 +13,32 @@ const info = (name: string, status: PluginInfo['status'] = { _tag: 'Loaded' }): 
   provides: []
 })
 
+const CALLER = 'dia-runs'
+
 const harness = (
   script: {
     readonly reloadResult?: (name: string) => PluginInfo
     readonly overrideResult?: PluginOverrideResult
+    readonly turnEnded?: Effect.Effect<void>
   } = {}
 ) => {
   const log: Array<string> = []
-  const tools = makePluginTools({
-    reload: (name) =>
-      Effect.sync(() => {
-        log.push(`reload:${name}`)
-        return (script.reloadResult ?? info)(name)
-      }),
-    setOverride: (name, directory) =>
-      Effect.sync(() => {
-        log.push(`setOverride:${name}:${directory}`)
-        return script.overrideResult ?? { _tag: 'Applied' }
-      }),
-    clearOverride: (name) => Effect.sync(() => void log.push(`clearOverride:${name}`))
-  })
+  const tools = makePluginTools(
+    {
+      reload: (name) =>
+        Effect.sync(() => {
+          log.push(`reload:${name}`)
+          return (script.reloadResult ?? info)(name)
+        }),
+      setOverride: (name, directory) =>
+        Effect.sync(() => {
+          log.push(`setOverride:${name}:${directory}`)
+          return script.overrideResult ?? { _tag: 'Applied' }
+        }),
+      clearOverride: (name) => Effect.sync(() => void log.push(`clearOverride:${name}`))
+    },
+    { plugin: CALLER, turnEnded: script.turnEnded ?? Effect.void }
+  )
   const tool = (name: string) => {
     const found = tools.find((candidate) => candidate.name === name)
     if (found === undefined) throw new Error(`no tool ${name}`)
@@ -130,6 +136,31 @@ describe('plugin tools', () => {
     await call('plugin_clear_override', { name: 'chat' })
 
     expect(log).toEqual(['clearOverride:chat', 'reload:chat'])
+  })
+
+  describe('on the plugin that runs the session', () => {
+    it('returns before the turn ends without reloading', async () => {
+      const turn = Effect.runSync(Deferred.make<void>())
+      const { log, call } = harness({ turnEnded: Deferred.await(turn) })
+
+      const result = await call('plugin_reload', { name: CALLER })
+
+      expect(result).toEqual({
+        text: `Plugin "${CALLER}" runs this session, so it reloads when this turn ends.`,
+        isError: false
+      })
+      expect(log).toEqual([])
+    })
+
+    it('reloads it once when the turn ends', async () => {
+      const turn = Effect.runSync(Deferred.make<void>())
+      const { log, call } = harness({ turnEnded: Deferred.await(turn) })
+      await call('plugin_reload', { name: CALLER })
+
+      Effect.runSync(Deferred.succeed(turn, undefined))
+
+      await vi.waitFor(() => expect(log).toEqual([`reload:${CALLER}`]))
+    })
   })
 
   describe('input patterns', () => {

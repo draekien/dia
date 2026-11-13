@@ -6,7 +6,6 @@ import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarInput,
   SidebarMenu,
@@ -18,7 +17,6 @@ import {
   TooltipContent,
   TooltipTrigger,
   useAgentSummaries,
-  useAttachedSessions,
   useList,
   useSidebar,
   useView,
@@ -48,11 +46,9 @@ import { tabOf } from '@shared/domain/workspace'
 import { Option, Result, Schema } from 'effect'
 import { FolderPlusIcon, SearchIcon } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { AgentRow } from './agent-row'
 import { FilterPopover } from './filter-popover'
 import {
   archivedKey,
-  assistantRows,
   buildOverview,
   filtersApply,
   headerKey,
@@ -92,22 +88,13 @@ const NO_COLLAPSED: ReadonlySet<ProjectId> = new Set()
 const focusNav = (container: HTMLElement, key: string): void =>
   container.querySelector<HTMLElement>(`[data-nav="${key}"]`)?.focus()
 
-const statusCounts = (
-  workspace: Workspace,
-  summaries: ReturnType<typeof useAgentSummaries>,
-  attached: ReturnType<typeof useAttachedSessions>
-) => {
+const statusCounts = (workspace: Workspace, summaries: ReturnType<typeof useAgentSummaries>) => {
   const counts = Object.fromEntries(STATUS_TAGS.map((tag) => [tag, 0])) as Record<StatusTag, number>
   const count = (paneId: PaneId) => {
     counts[summaries.get(paneId)?.status._tag ?? 'StatusIdle'] += 1
   }
   for (const entry of workspace.projects) {
     for (const tab of entry.tabs) if (!tab.archived) count(tab.config.paneId)
-  }
-  for (const session of attached) {
-    if (workspace.projects.some((entry) => entry.project.projectId === session.projectId)) {
-      count(session.config.paneId)
-    }
   }
   return counts
 }
@@ -177,53 +164,6 @@ function MetaGroup() {
         </SidebarMenuItem>
       </SidebarMenu>
     </SidebarGroup>
-  )
-}
-
-const ignore = () => {}
-
-function AssistantGroup({
-  attached,
-  summaries,
-  visibleTab,
-  iconMode
-}: {
-  readonly attached: ReturnType<typeof useAttachedSessions>
-  readonly summaries: ReturnType<typeof useAgentSummaries>
-  readonly visibleTab: PaneId | null
-  readonly iconMode: boolean
-}) {
-  const rows = assistantRows(attached, summaries)
-  if (rows.length === 0) return null
-  return (
-    <>
-      {iconMode && <SidebarSeparator />}
-      <SidebarGroup role="group" aria-label="Assistant" className="pt-0">
-        <SidebarGroupLabel>Assistant</SidebarGroupLabel>
-        <SidebarMenu className="gap-0">
-          {rows.map((row) => (
-            <AgentRow
-              key={row.paneId}
-              row={row}
-              projectName={null}
-              selected={row.paneId === visibleTab}
-              renaming={false}
-              tabbable
-              archived={false}
-              onRename={ignore}
-              onRetire={ignore}
-              onStartOver={
-                attached.some(
-                  (session) => session.config.paneId === row.paneId && session.resettable
-                )
-                  ? () => actions.resetAttached(row.paneId)
-                  : undefined
-              }
-            />
-          ))}
-        </SidebarMenu>
-      </SidebarGroup>
-    </>
   )
 }
 
@@ -305,8 +245,7 @@ function NoMatches({
 export function AgentOverview() {
   const workspace = useWorkspace()
   const summaries = useAgentSummaries()
-  const attached = useAttachedSessions()
-  const view = useView()
+  const _view = useView()
   const { state, setOpen } = useSidebar()
   const iconMode = state === 'collapsed'
   const [filters, setFilters] = useState<OverviewFilters>(NO_FILTERS)
@@ -343,8 +282,8 @@ export function AgentOverview() {
     () =>
       workspace === undefined
         ? []
-        : orderGroups(buildOverview(workspace, summaries, activeFilters, attached), order),
-    [workspace, summaries, activeFilters, attached, order]
+        : orderGroups(buildOverview(workspace, summaries, activeFilters), order),
+    [workspace, summaries, activeFilters, order]
   )
   const effectiveCollapsed = narrowing || iconMode ? NO_COLLAPSED : collapsed
   const effectiveArchivedOpen = useMemo(
@@ -497,9 +436,7 @@ export function AgentOverview() {
     const firstRow = targets.find((target) => target._tag === 'RowTarget')
     if (event.key === 'Enter' && filters.query.trim() !== '' && firstRow !== undefined) {
       event.preventDefault()
-      if (attached.some((session) => session.config.paneId === firstRow.paneId)) {
-        actions.selectAttached(firstRow.paneId)
-      } else actions.selectTab(firstRow.paneId)
+      actions.selectTab(firstRow.paneId)
       focusNav(listRef.current, navKey(firstRow))
     }
   }
@@ -542,7 +479,7 @@ export function AgentOverview() {
                 </div>
                 <FilterPopover
                   filters={filters}
-                  counts={statusCounts(workspace, summaries, attached)}
+                  counts={statusCounts(workspace, summaries)}
                   onChange={setFilters}
                 />
                 <Tooltip>
@@ -583,14 +520,6 @@ export function AgentOverview() {
           >
             {!narrowing && <MetaGroup />}
             {!narrowing && <PagesGroup />}
-            {!narrowing && (
-              <AssistantGroup
-                attached={attached}
-                summaries={summaries}
-                visibleTab={view?._tag === 'AttachedView' ? view.paneId : null}
-                iconMode={iconMode}
-              />
-            )}
             {workspace.projects.length === 0 ? (
               !iconMode && <NoProjects onAdd={addProject} />
             ) : groups.length === 0 ? (
@@ -625,9 +554,7 @@ export function AgentOverview() {
                         narrowing={narrowing}
                         dragging={dragging}
                         iconMode={iconMode}
-                        visibleTab={
-                          view?._tag === 'AttachedView' ? view.paneId : workspace.visibleTab
-                        }
+                        visibleTab={workspace.visibleTab}
                         renaming={renaming}
                         tabStop={currentStop}
                         onToggle={() => toggle(group.project.projectId)}

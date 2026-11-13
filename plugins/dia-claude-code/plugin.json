@@ -1,6 +1,6 @@
 {
   "name": "dia-claude-code",
-  "api": "0.0.38",
+  "api": "0.0.39",
   "category": "adapter",
   "host": "host.ts",
   "load": "eager",

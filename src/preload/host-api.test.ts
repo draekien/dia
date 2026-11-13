@@ -2,7 +2,6 @@ import { type AdapterStatusSnapshot, HealthNotChecked } from '@shared/domain/ada
 import { type AgentSummary, NoActivity, StatusIdle } from '@shared/domain/agent-summary'
 import { Deny, FreeformResponse } from '@shared/domain/attention'
 import { ActivityNotFound } from '@shared/domain/background-activity'
-import { type ModelCatalogSnapshot, ModelsReady } from '@shared/domain/model'
 import {
   EMPTY_ADAPTER_PREFERENCES,
   type ModelPreferencesSnapshot
@@ -24,17 +23,15 @@ import {
 } from '@shared/domain/project-removal'
 import { WorkspaceProblemError } from '@shared/domain/workspace-problem'
 import {
-  type AdapterStatusSnapshotJson,
   type AgentSummariesReplaced,
   type IpcEvent,
   type ModelCatalogSnapshotJson,
-  ModelsChanged,
   PaneTurnStatusChanged,
   type WorkspaceChanged
 } from '@shared/ipc/contract'
 import type { EventFrame } from '@shared/ipc/rpc'
-import { PluginNotServing } from '@shared/plugin/messages'
-import { Data, DateTime, Deferred, Effect, Stream } from 'effect'
+import { PluginCallFailed, PluginNotServing } from '@shared/plugin/messages'
+import { Data, Deferred, Effect, Stream } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type DiaRpcClient, makeHostApi } from './host-api'
 
@@ -55,24 +52,6 @@ const paneFrame = (seq: number, text: string): EventFrame => ({
 })
 const reloadFrame: EventFrame = { _tag: 'ReloadHistory', paneId: PANE }
 
-const SNAPSHOT: ModelCatalogSnapshot = {
-  revision: 7,
-  state: ModelsReady.make({
-    models: [
-      {
-        value: 'sonnet',
-        displayName: 'Sonnet',
-        description: 'Everyday tasks',
-        adaptiveThinking: true,
-        effortLevels: ['low', 'medium', 'high'],
-        autoMode: true,
-        fastMode: false
-      }
-    ],
-    fetchedAt: DateTime.makeUnsafe('2026-10-25T15:00:00Z'),
-    refreshing: false
-  })
-}
 const SNAPSHOT_JSON: ModelCatalogSnapshotJson = {
   revision: 7,
   state: {
@@ -113,27 +92,19 @@ const afterListenersAttach = (stream: Stream.Stream<EventFrame, ConnectionError>
   )
 
 interface ClientScript {
-  readonly sendMessageFailures?: number
   readonly subscriptions?: ReadonlyArray<Stream.Stream<EventFrame, ConnectionError>>
   readonly registerProject?: Effect.Effect<void, DirectoryNotFoundError>
   readonly removeProject?: Stream.Stream<RemovalProgress, ProjectNotFoundError>
-  readonly getModels?: Effect.Effect<ModelCatalogSnapshot, ConnectionError>
   readonly runActivity?: Effect.Effect<void, ActivityNotFound>
   readonly resolveImportConflict?: Effect.Effect<void, WorkspaceProblemError>
   readonly paneChatSeq?: number
   readonly pluginSubscriptions?: ReadonlyArray<Stream.Stream<unknown, unknown>>
   readonly callPluginFailures?: number
+  readonly callPluginResult?: Effect.Effect<unknown, PluginCallFailed>
 }
 
 const makeClient = (script: ClientScript = {}) => {
-  let sendAttempts = 0
   let subscribeAttempts = 0
-  const sendMessage = vi.fn((_payload: { commandId: string; text: string; mode: string }) =>
-    ++sendAttempts <= (script.sendMessageFailures ?? 0)
-      ? Effect.fail(new ConnectionError({ reason: 'connection down' }))
-      : Effect.void
-  )
-  const resolvePrompt = vi.fn((_payload: { requestId: string; commandId: string }) => Effect.void)
   const subscribeEvents = vi.fn((_payload: { cursors: Record<string, number> }) => {
     const next = script.subscriptions?.[subscribeAttempts++]
     return next ?? Stream.never
@@ -153,7 +124,7 @@ const makeClient = (script: ClientScript = {}) => {
     }) =>
       ++callPluginAttempts <= (script.callPluginFailures ?? 0)
         ? Effect.fail(new ConnectionError({ reason: 'connection down' }))
-        : Effect.succeed('done')
+        : (script.callPluginResult ?? Effect.succeed('done'))
   )
   const getWorkspace = vi.fn(() => Effect.succeed(EMPTY_WORKSPACE))
   const getAgentSummaries = vi.fn(() => Effect.succeed([SUMMARY]))
@@ -173,9 +144,6 @@ const makeClient = (script: ClientScript = {}) => {
       provides: []
     })
   )
-  const getModels = vi.fn(() => script.getModels ?? Effect.succeed(SNAPSHOT))
-  const getAdapterStatus = vi.fn(() => Effect.succeed(ADAPTER_STATUS))
-  const getModelPreferences = vi.fn(() => Effect.succeed(PREFERENCES))
   const runActivity = vi.fn(
     (_payload: { plugin: string; id: string }) => script.runActivity ?? Effect.void
   )
@@ -194,28 +162,18 @@ const makeClient = (script: ClientScript = {}) => {
     ResolveImportConflict: resolveImportConflict,
     LoadPlugin: loadPlugin,
     SetPluginOverride: setPluginOverride,
-    SendMessage: sendMessage,
-    ResolvePermission: resolvePrompt,
-    ResolveQuestion: resolvePrompt,
-    ResolvePlanReview: resolvePrompt,
     SubscribeEvents: subscribeEvents,
     SubscribePlugin: subscribePlugin,
     CallPlugin: callPlugin,
     GetWorkspace: getWorkspace,
     GetAgentSummaries: getAgentSummaries,
-    GetAttachedSessions: () => Effect.succeed([]),
     RegisterProject: registerProject,
     RemoveProject: removeProject,
-    GetModels: getModels,
-    GetAdapterStatus: getAdapterStatus,
-    GetModelPreferences: getModelPreferences,
     RunActivity: runActivity,
     SetMetaRemote: setMetaRemote
   } as unknown as DiaRpcClient
   return {
     client,
-    sendMessage,
-    resolvePrompt,
     subscribeEvents,
     subscribePlugin,
     callPlugin,
@@ -225,7 +183,6 @@ const makeClient = (script: ClientScript = {}) => {
     removeProject,
     loadPlugin,
     setPluginOverride,
-    getModels,
     runActivity,
     setMetaRemote,
     resolveImportConflict
@@ -255,17 +212,17 @@ describe('makeHostApi', () => {
     vi.useRealTimers()
   })
 
-  it('resends a command that failed while the connection was down under the one commandId it was issued', async () => {
-    const { client, sendMessage } = makeClient({ sendMessageFailures: 2 })
+  it('resends a session command that failed while the connection was down under the one call id it was issued', async () => {
+    const { client, callPlugin } = makeClient({ callPluginFailures: 2 })
     const { api, issuedRequestIds } = makeApi(client)
 
     api.sendMessage(PANE, 'hello', 'queue')
     await advance(1200)
 
-    expect(sendMessage.mock.calls.map(([payload]) => payload.commandId)).toEqual([
-      'request-0',
-      'request-0',
-      'request-0'
+    expect(callPlugin.mock.calls.map(([payload]) => payload.call)).toEqual([
+      { id: 'request-0', resent: false },
+      { id: 'request-0', resent: true },
+      { id: 'request-0', resent: true }
     ])
     expect(issuedRequestIds()).toBe(1)
   })
@@ -311,20 +268,20 @@ describe('makeHostApi', () => {
     ])
   })
 
-  it('sends the prompt text and send mode in the SendMessage payload unchanged', async () => {
-    const { client, sendMessage } = makeClient()
+  it('sends SendMessage to dia-runs with the pane as the run and the text and mode unchanged', async () => {
+    const { client, callPlugin } = makeClient()
     const { api } = makeApi(client)
 
     api.sendMessage(PANE, 'change course', 'steer')
     await advance(0)
 
-    expect(sendMessage.mock.calls.map(([payload]) => [payload.text, payload.mode])).toEqual([
-      ['change course', 'steer']
-    ])
+    expect(
+      callPlugin.mock.calls.map(([payload]) => [payload.plugin, payload.tag, payload.payload])
+    ).toEqual([['dia-runs', 'SendMessage', { runId: PANE, text: 'change course', mode: 'steer' }]])
   })
 
-  it('sends the pending prompt requestId separately from the commandId when resolving a prompt', async () => {
-    const { client, resolvePrompt } = makeClient()
+  it('sends the pending prompt requestId in the payload, apart from the call id, when resolving a prompt', async () => {
+    const { client, callPlugin } = makeClient()
     const { api } = makeApi(client)
 
     api.resolvePermission(PANE, 'prompt-permission', Deny.make({ message: 'no' }))
@@ -337,25 +294,39 @@ describe('makeHostApi', () => {
     await advance(0)
 
     expect(
-      resolvePrompt.mock.calls.map(([payload]) => [payload.requestId, payload.commandId])
+      callPlugin.mock.calls.map(([payload]) => [
+        payload.tag,
+        (payload.payload as { requestId: string }).requestId,
+        payload.call.id
+      ])
     ).toEqual([
-      ['prompt-permission', 'request-0'],
-      ['prompt-question', 'request-1'],
-      ['prompt-plan', 'request-2']
+      ['ResolvePermission', 'prompt-permission', 'request-0'],
+      ['ResolveQuestion', 'prompt-question', 'request-1'],
+      ['ResolvePlanReview', 'prompt-plan', 'request-2']
     ])
   })
 
-  it('stops resending a command once the resend window has passed and reports the failure', async () => {
-    const { client, sendMessage } = makeClient({ sendMessageFailures: Number.MAX_SAFE_INTEGER })
+  it('stops resending a session command once the resend window has passed and reports the failure', async () => {
+    const { client, callPlugin } = makeClient({ callPluginFailures: Number.MAX_SAFE_INTEGER })
     const { api, warn } = makeApi(client)
 
     api.sendMessage(PANE, 'hello', 'queue')
     await advance(31_000)
-    const attemptsAtWindowEnd = sendMessage.mock.calls.length
+    const attemptsAtWindowEnd = callPlugin.mock.calls.length
     await advance(5_000)
 
-    expect(sendMessage.mock.calls.length).toBe(attemptsAtWindowEnd)
+    expect(callPlugin.mock.calls.length).toBe(attemptsAtWindowEnd)
     expect(warn).toHaveBeenCalledWith('Command SendMessage failed', expect.any(ConnectionError))
+  })
+
+  it('resolves a refused model preference as the encoded error dia-runs failed with', async () => {
+    const refusal = { _tag: 'LastVisibleModel', message: 'At least one model must stay visible' }
+    const { client } = makeClient({
+      callPluginResult: Effect.fail(new PluginCallFailed({ error: refusal }))
+    })
+    const { api } = makeApi(client)
+
+    expect(await api.adapter.setModelPreference('opus', 'hidden')).toEqual(refusal)
   })
 
   it('subscribes with no cursors at first and resumes from the last received sequence number after a drop', async () => {
@@ -480,69 +451,41 @@ describe('makeHostApi', () => {
     expect(replaced.map((event) => event.summaries)).toEqual([[SUMMARY]])
   })
 
-  it('hands a ModelsChanged event to the renderer as plain JSON with an ISO fetchedAt', async () => {
-    const frame: EventFrame = {
-      _tag: 'GlobalEvent',
-      event: ModelsChanged.make({ snapshot: SNAPSHOT })
-    }
-    const { client } = makeClient({ subscriptions: [afterListenersAttach(Stream.make(frame))] })
+  it('follows the model list, adapter status and model preferences through dia-runs subscriptions', async () => {
+    const { client, subscribePlugin } = makeClient({
+      pluginSubscriptions: [
+        Stream.make(SNAPSHOT_JSON),
+        Stream.make(ADAPTER_STATUS),
+        Stream.make(PREFERENCES)
+      ]
+    })
     const { api } = makeApi(client)
-    const received: Array<ModelCatalogSnapshotJson> = []
-    api.models.onChanged((snapshot) => received.push(structuredClone(snapshot)))
+    const received: Array<unknown> = []
+    api.models.onChanged((snapshot) => received.push(snapshot))
+    api.adapter.onStatusChanged((snapshot) => received.push(snapshot))
+    api.adapter.onPreferencesChanged((snapshot) => received.push(snapshot))
 
     await advance(10)
 
-    expect(received).toEqual([SNAPSHOT_JSON])
+    expect(subscribePlugin.mock.calls.map(([payload]) => [payload.plugin, payload.tag])).toEqual([
+      ['dia-runs', 'FollowModels'],
+      ['dia-runs', 'FollowAdapterStatus'],
+      ['dia-runs', 'FollowModelPreferences']
+    ])
+    expect(received).toEqual([SNAPSHOT_JSON, ADAPTER_STATUS, PREFERENCES])
   })
 
-  it('re-reads the model list and the activities after a reconnect', async () => {
+  it('re-reads the activities after a reconnect', async () => {
     const { client } = makeClient({ subscriptions: [dropped] })
     const { api } = makeApi(client)
-    const models: Array<ModelCatalogSnapshotJson> = []
     let activityChanges = 0
-    api.models.onChanged((snapshot) => models.push(snapshot))
     api.activities.onChanged(() => {
       activityChanges += 1
     })
 
     await advance(1500)
 
-    expect(models).toEqual([SNAPSHOT_JSON])
     expect(activityChanges).toBe(1)
-  })
-
-  it('re-reads the adapter status and the model preferences after a reconnect', async () => {
-    const { client } = makeClient({ subscriptions: [dropped] })
-    const { api } = makeApi(client)
-    const statuses: Array<AdapterStatusSnapshotJson> = []
-    const preferences: Array<ModelPreferencesSnapshot> = []
-    api.adapter.onStatusChanged((snapshot) => statuses.push(snapshot))
-    api.adapter.onPreferencesChanged((snapshot) => preferences.push(snapshot))
-
-    await advance(1500)
-
-    expect(statuses).toEqual([
-      {
-        revision: 3,
-        status: { health: { _tag: 'HealthNotChecked' }, checking: false, installPathOverride: null }
-      }
-    ])
-    expect(preferences).toEqual([PREFERENCES])
-  })
-
-  it('still re-reads the workspace after a reconnect when the model list cannot be read', async () => {
-    const { client } = makeClient({
-      subscriptions: [dropped],
-      getModels: Effect.fail(new ConnectionError({ reason: 'connection down' }))
-    })
-    const { api, warn } = makeApi(client)
-    const workspaces: Array<WorkspaceChanged> = []
-    api.onWorkspaceChanged((event) => workspaces.push(event))
-
-    await advance(1500)
-
-    expect(workspaces.map((event) => event.workspace)).toEqual([EMPTY_WORKSPACE])
-    expect(warn.mock.calls.map(([message]) => message)).toContain('Model list refresh failed')
   })
 
   it('sends the plugin and activity id to RunActivity and resolves null once it ran', async () => {

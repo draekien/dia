@@ -1,16 +1,14 @@
 import { scheduleTask } from '@effect/atom-react'
 import type { AgentSummary } from '@shared/domain/agent-summary'
-import type { AttachedSession } from '@shared/domain/attached-session'
 import type { PaneId } from '@shared/domain/pane'
 import type { Workspace } from '@shared/domain/project'
 import { DEFAULT_TRANSCRIPT_WIDTH, type TranscriptWidth } from '@shared/domain/transcript-width'
-import { Effect, Option, Queue, Ref, Stream, SubscriptionRef } from 'effect'
+import { Effect, Option, Queue, Stream, SubscriptionRef } from 'effect'
 import { AsyncResult, Atom, AtomRegistry } from 'effect/reactivity'
 import {
   closesNewAgentForm,
   closesOpenPage,
   type NewAgentForm,
-  type OpenAttached,
   type OpenPage,
   type View,
   viewOf
@@ -44,15 +42,6 @@ export const newAgentFormAtom = Atom.make<Option.Option<NewAgentForm>>(Option.no
  */
 export const openPageAtom = Atom.make<Option.Option<OpenPage>>(Option.none()).pipe(Atom.keepAlive)
 
-/**
- * The open attached session (ADR-0070), or `None`. Set it through `actions.selectAttached`; it
- * also closes when the workspace shows a tab other than the one visible before it opened, and
- * when its session is detached, which shows that tab again.
- */
-export const openAttachedAtom = Atom.make<Option.Option<OpenAttached>>(Option.none()).pipe(
-  Atom.keepAlive
-)
-
 const resumeVisibleTab = (workspace: Option.Option<Workspace>) =>
   Effect.gen(function* () {
     if (Option.isNone(workspace) || workspace.value.visibleTab === null) return
@@ -79,11 +68,6 @@ const loadedWorkspaceAtom = Atom.subscriptionRef((get) =>
             yield* Effect.logDebug('The workspace showed a tab, closing the open page')
             get.registry.set(openPageAtom, Option.none())
           }
-          const attached = get.registry.get(openAttachedAtom)
-          if (Option.isSome(attached) && closesOpenPage(attached.value, workspace)) {
-            yield* Effect.logDebug('The workspace showed a tab, closing the attached session')
-            get.registry.set(openAttachedAtom, Option.none())
-          }
         })
       ),
       Effect.forkScoped
@@ -109,52 +93,6 @@ const loadedWorkspaceAtom = Atom.subscriptionRef((get) =>
 export const workspaceAtom = Atom.make(
   (get): Option.Option<Workspace> =>
     AsyncResult.getOrElse(get(loadedWorkspaceAtom), () => Option.none<Workspace>())
-).pipe(Atom.keepAlive)
-
-const closeDetached = (
-  registry: AtomRegistry.AtomRegistry,
-  sessions: ReadonlyArray<AttachedSession>
-) =>
-  Effect.gen(function* () {
-    const open = registry.get(openAttachedAtom)
-    if (Option.isNone(open)) return
-    if (sessions.some((session) => session.config.paneId === open.value.paneId)) return
-    yield* Effect.logDebug('The open attached session was detached', {
-      paneId: open.value.paneId
-    })
-    registry.set(openAttachedAtom, Option.none())
-    if (open.value.shownBefore !== null) window.dia.selectTab(open.value.shownBefore)
-  })
-
-const loadedAttachedSessionsAtom = Atom.subscriptionRef((get) =>
-  Effect.gen(function* () {
-    const ref = yield* SubscriptionRef.make<ReadonlyArray<AttachedSession>>([])
-    const pushed = yield* Ref.make(false)
-    yield* fromListener<ReadonlyArray<AttachedSession>>((push) =>
-      window.dia.onAttachedSessionsChanged((event) => push(event.sessions))
-    ).pipe(
-      Stream.runForEach((sessions) =>
-        Ref.set(pushed, true).pipe(
-          Effect.andThen(SubscriptionRef.set(ref, sessions)),
-          Effect.andThen(closeDetached(get.registry, sessions))
-        )
-      ),
-      Effect.forkScoped
-    )
-    const fetched = yield* Effect.promise(() => window.dia.getAttachedSessions())
-    if (!(yield* Ref.get(pushed))) yield* SubscriptionRef.set(ref, fetched)
-    yield* Effect.logDebug('Loaded attached sessions', { count: fetched.length })
-    return ref
-  })
-).pipe(Atom.keepAlive)
-
-/**
- * Every session a plugin has attached (ADR-0070); empty until it first loads. Read with
- * `useAtomValue(attachedSessionsAtom)`.
- */
-export const attachedSessionsAtom = Atom.make(
-  (get): ReadonlyArray<AttachedSession> =>
-    AsyncResult.getOrElse(get(loadedAttachedSessionsAtom), () => [])
 ).pipe(Atom.keepAlive)
 
 const loadedSummariesAtom = Atom.subscriptionRef(
@@ -222,11 +160,5 @@ export const transcriptWidthAtom = Atom.writable(
 
 /** What the content area shows; `undefined` until the workspace loads. See {@link viewOf}. */
 export const viewAtom = Atom.make((get): View | undefined =>
-  viewOf(
-    get(workspaceAtom),
-    get(newAgentFormAtom),
-    get(openPageAtom),
-    get(openAttachedAtom),
-    get(attachedSessionsAtom)
-  )
+  viewOf(get(workspaceAtom), get(newAgentFormAtom), get(openPageAtom))
 ).pipe(Atom.keepAlive)

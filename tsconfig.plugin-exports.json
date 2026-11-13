@@ -31,6 +31,8 @@
     "plugins/dia-skills/frontmatter.ts",
     "plugins/dia-skills/picker.ts",
     "plugins/dia-run-events/calls.ts",
+    "plugins/dia-runs/backend.ts",
+    "plugins/dia-runs/calls.ts",
     "plugins/dia-chat/slots.ts",
     "plugins/dia-adapters/slots.ts",
     "plugins/dia-command-palette/slots.ts",

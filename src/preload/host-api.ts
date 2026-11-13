@@ -1,35 +1,20 @@
-import { AdapterStatusSnapshot } from '@shared/domain/adapter-status'
 import { ActivityInfo, ActivityNotFound } from '@shared/domain/background-activity'
-import { ModelCatalogSnapshot } from '@shared/domain/model'
-import { LastVisibleModel } from '@shared/domain/model-preferences'
+import type { ModelPreferencesSnapshot } from '@shared/domain/model-preferences'
 import { RegisterProjectError, type RegisterProjectRefusal } from '@shared/domain/project'
 import {
   ActivitiesChanged,
   type ActivityNotFoundJson,
-  AdapterStatusChanged,
+  type AdapterStatusSnapshotJson,
   AgentSummariesReplaced,
-  AttachedSessionsChanged,
   type DiaApi,
-  EditQueuedMessage,
-  InterruptPane,
   type IpcEvent,
   type LastVisibleModelJson,
-  ModelPreferencesChanged,
-  ModelsChanged,
+  type ModelCatalogSnapshotJson,
   MoveProject,
   type PluginCallResultJson,
   type PluginSubscriptionEndJson,
-  RemoveQueuedMessage,
   RenameTab,
-  ResetAttachedSession,
-  ResolvePermission,
-  ResolvePlanReview,
-  ResolveQuestion,
-  ResumeParkedAgent,
-  RewindToCheckpoint,
   SelectTab,
-  SendMessage,
-  SendQueuedMessageNow,
   SetModel,
   SetPermissionMode,
   SetThinkingLevel,
@@ -84,6 +69,7 @@ export interface HostApiDeps {
 /** How long a command or query keeps being resent while the Host connection is down. */
 export const RESEND_WINDOW = Duration.seconds(30)
 
+const RUNS_PLUGIN = 'dia-runs'
 const RESEND_INTERVAL = Duration.millis(500)
 const RESUBSCRIBE_INTERVAL = Duration.seconds(1)
 
@@ -106,15 +92,16 @@ const resendSchedule = Schedule.spaced(RESEND_INTERVAL).pipe(
  *
  * Values cross `contextBridge`, which drops prototypes, so every result is plain data: a typed
  * error (`registerProject`) resolves in its encoded form (`archiveTab`, `deleteTab` and `unarchiveTab` resolve its reason), and only a lost connection is retried. `removeProject` is not retried: it rejects when the connection drops.
+ *
+ * The session, model, adapter and usage-limit members are calls to the `dia-runs` plugin, with the
+ * pane id as the run id. A session command keeps its call id across resends, so `dia-runs` applies
+ * it once.
  */
 const encodeRefusal = Schema.encodeSync(RegisterProjectError)
-const encodeSnapshot = Schema.encodeSync(ModelCatalogSnapshot)
 const encodeActivities = Schema.encodeSync(Schema.Array(ActivityInfo))
 const encodeActivityNotFound = Schema.encodeSync(ActivityNotFound)
 const encodePluginCallError = Schema.encodeSync(PluginCallError)
 const encodeSubscriptionEnd = Schema.encodeSync(PluginSubscriptionEnd)
-const encodeAdapterStatus = Schema.encodeSync(AdapterStatusSnapshot)
-const encodeLastVisibleModel = Schema.encodeSync(LastVisibleModel)
 
 export const makeHostApi = (deps: HostApiDeps): HostApi => {
   const reloadListeners = new Set<(paneId: string) => void>()
@@ -167,35 +154,21 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
 
     const refreshWorkspace = Effect.gen(function* () {
       const client = yield* deps.client
-      const [workspace, summaries, sessions] = yield* Effect.all(
-        [client.GetWorkspace(), client.GetAgentSummaries(), client.GetAttachedSessions()],
+      const [workspace, summaries] = yield* Effect.all(
+        [client.GetWorkspace(), client.GetAgentSummaries()],
         { concurrency: 'unbounded' }
       )
       dispatch(WorkspaceChanged.make({ workspace }))
-      dispatch(AttachedSessionsChanged.make({ sessions }))
       dispatch(AgentSummariesReplaced.make({ summaries }))
     }).pipe(
       Effect.catch((error) => Effect.sync(() => deps.warn('Workspace refresh failed', error)))
-    )
-
-    const refreshCatalogs = Effect.gen(function* () {
-      const client = yield* deps.client
-      const [snapshot, status, preferences] = yield* Effect.all(
-        [client.GetModels(), client.GetAdapterStatus(), client.GetModelPreferences()],
-        { concurrency: 'unbounded' }
-      )
-      dispatch(ModelsChanged.make({ snapshot }))
-      dispatch(AdapterStatusChanged.make({ snapshot: status }))
-      dispatch(ModelPreferencesChanged.make({ snapshot: preferences }))
-    }).pipe(
-      Effect.catch((error) => Effect.sync(() => deps.warn('Model list refresh failed', error)))
     )
 
     const refreshAfterReconnect = Effect.gen(function* () {
       const reconnecting = yield* Ref.getAndSet(connectedBefore, true)
       if (!reconnecting) return
       dispatch(ActivitiesChanged.make({}))
-      yield* Effect.all([refreshWorkspace, refreshCatalogs], { concurrency: 'unbounded' })
+      yield* refreshWorkspace
     })
 
     const subscribeOnce = Effect.gen(function* () {
@@ -246,6 +219,50 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     return () => void Effect.runFork(Fiber.interrupt(fiber))
   }
 
+  const callRuns = (tag: string, payload: unknown, id: string) => {
+    let sent = false
+    return deps.client.pipe(
+      Effect.flatMap((client) =>
+        Effect.suspend(() => {
+          const call = { id, resent: sent }
+          sent = true
+          return client.CallPlugin({ plugin: RUNS_PLUGIN, tag, payload, call })
+        })
+      ),
+      Effect.retry({
+        schedule: resendSchedule,
+        while: (error) => !Schema.is(PluginCallError)(error)
+      })
+    )
+  }
+
+  const runCommand = (tag: string, payload: Record<string, unknown>): void => {
+    void Effect.runPromise(
+      callRuns(tag, payload, deps.newRequestId()).pipe(
+        Effect.catch((error) => Effect.sync(() => deps.warn(`Command ${tag} failed`, error)))
+      )
+    )
+  }
+
+  const runQuery = <A>(tag: string, payload: Record<string, unknown> = {}): Promise<A> =>
+    Effect.runPromise(
+      callRuns(tag, payload, deps.newRequestId()).pipe(
+        Effect.map((value) => value as A),
+        Effect.orDie
+      )
+    )
+
+  const followRuns =
+    <A>(tag: string) =>
+    (listener: (value: A) => void): (() => void) =>
+      subscribePlugin(
+        RUNS_PLUGIN,
+        tag,
+        {},
+        (value) => listener(value as A),
+        (end) => deps.warn(`Stopped following ${tag}`, end)
+      )
+
   const subscribeTo = <E extends IpcEvent['_tag']>(
     tag: E,
     listener: (event: Extract<IpcEvent, { _tag: E }>) => void
@@ -287,36 +304,30 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       subscribe: subscribePlugin
     },
     models: {
-      get: () => query((client) => client.GetModels().pipe(Effect.map(encodeSnapshot))),
-      refresh: () => query((client) => client.RefreshModels()),
-      onChanged: (listener) =>
-        subscribeTo('ModelsChanged', (event) => listener(encodeSnapshot(event.snapshot)))
+      get: () => runQuery<ModelCatalogSnapshotJson>('GetModels'),
+      refresh: () => runQuery<void>('RefreshModels'),
+      onChanged: followRuns<ModelCatalogSnapshotJson>('FollowModels')
     },
     adapter: {
-      getStatus: () =>
-        query((client) => client.GetAdapterStatus().pipe(Effect.map(encodeAdapterStatus))),
-      checkHealth: () => query((client) => client.CheckAdapterHealth()),
-      setInstallPath: (path) => query((client) => client.SetInstallPath({ path })),
-      onStatusChanged: (listener) =>
-        subscribeTo('AdapterStatusChanged', (event) =>
-          listener(encodeAdapterStatus(event.snapshot))
-        ),
-      getPreferences: () => query((client) => client.GetModelPreferences()),
+      getStatus: () => runQuery<AdapterStatusSnapshotJson>('GetAdapterStatus'),
+      checkHealth: () => runQuery<void>('CheckAdapterHealth'),
+      setInstallPath: (path) => runQuery<void>('SetInstallPath', { path }),
+      onStatusChanged: followRuns<AdapterStatusSnapshotJson>('FollowAdapterStatus'),
+      getPreferences: () => runQuery<ModelPreferencesSnapshot>('GetModelPreferences'),
       setModelPreference: (model, preference) =>
-        query((client) =>
-          client.SetModelPreference({ model, preference }).pipe(
+        Effect.runPromise(
+          callRuns('SetModelPreference', { model, preference }, deps.newRequestId()).pipe(
             Effect.as<LastVisibleModelJson | null>(null),
-            Effect.catchTag('LastVisibleModel', (error) =>
-              Effect.succeed(encodeLastVisibleModel(error))
-            )
+            Effect.catchTag('PluginCallFailed', (failure) =>
+              Effect.succeed(failure.error as LastVisibleModelJson)
+            ),
+            Effect.orDie
           )
         ),
-      setDefaults: (defaults) => query((client) => client.SetAgentDefaults({ defaults })),
-      onPreferencesChanged: (listener) =>
-        subscribeTo('ModelPreferencesChanged', (event) => listener(event.snapshot)),
-      getDisabledPermissionModes: (cwd) =>
-        query((client) => client.GetDisabledPermissionModes({ cwd })),
-      getAttachmentTypes: () => query((client) => client.GetAttachmentTypes())
+      setDefaults: (defaults) => runQuery<void>('SetAgentDefaults', { defaults }),
+      onPreferencesChanged: followRuns<ModelPreferencesSnapshot>('FollowModelPreferences'),
+      getDisabledPermissionModes: (cwd) => runQuery('GetDisabledPermissionModes', { cwd }),
+      getAttachmentTypes: () => runQuery('GetAttachmentTypes')
     },
     activities: {
       list: () => query((client) => client.ListActivities().pipe(Effect.map(encodeActivities))),
@@ -366,58 +377,28 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         )
     },
     sendMessage: (paneId, text, mode, attachments) =>
-      command('SendMessage', (client, commandId) =>
-        client.SendMessage({
-          ...SendMessage.make({
-            paneId,
-            text,
-            mode,
-            ...(attachments !== undefined && attachments.length > 0 ? { attachments } : {})
-          }),
-          commandId
-        })
-      ),
+      runCommand('SendMessage', {
+        runId: paneId,
+        text,
+        mode,
+        ...(attachments !== undefined && attachments.length > 0 ? { attachments } : {})
+      }),
     editQueuedMessage: (paneId, messageId, text, attachments) =>
-      command('EditQueuedMessage', (client, commandId) =>
-        client.EditQueuedMessage({
-          ...EditQueuedMessage.make({
-            paneId,
-            messageId,
-            text,
-            ...(attachments !== undefined ? { attachments } : {})
-          }),
-          commandId
-        })
-      ),
+      runCommand('EditQueuedMessage', {
+        runId: paneId,
+        messageId,
+        text,
+        ...(attachments !== undefined ? { attachments } : {})
+      }),
     listProjectEntries: (cwd) => query((client) => client.ListProjectEntries({ cwd })),
     removeQueuedMessage: (paneId, messageId) =>
-      command('RemoveQueuedMessage', (client, commandId) =>
-        client.RemoveQueuedMessage({
-          ...RemoveQueuedMessage.make({ paneId, messageId }),
-          commandId
-        })
-      ),
+      runCommand('RemoveQueuedMessage', { runId: paneId, messageId }),
     sendQueuedMessageNow: (paneId, messageId) =>
-      command('SendQueuedMessageNow', (client, commandId) =>
-        client.SendQueuedMessageNow({
-          ...SendQueuedMessageNow.make({ paneId, messageId }),
-          commandId
-        })
-      ),
+      runCommand('SendQueuedMessageNow', { runId: paneId, messageId }),
     resolvePermission: (paneId, requestId, response) =>
-      command('ResolvePermission', (client, id) =>
-        client.ResolvePermission({
-          ...ResolvePermission.make({ paneId, requestId, response }),
-          commandId: id
-        })
-      ),
+      runCommand('ResolvePermission', { runId: paneId, requestId, response }),
     resolveQuestion: (paneId, requestId, response) =>
-      command('ResolveQuestion', (client, id) =>
-        client.ResolveQuestion({
-          ...ResolveQuestion.make({ paneId, requestId, response }),
-          commandId: id
-        })
-      ),
+      runCommand('ResolveQuestion', { runId: paneId, requestId, response }),
     setThinkingLevel: (paneId, level) =>
       command('SetThinkingLevel', (client, commandId) =>
         client.SetThinkingLevel({ ...SetThinkingLevel.make({ paneId, level }), commandId })
@@ -431,31 +412,15 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         client.SetModel({ ...SetModel.make({ paneId, model }), commandId })
       ),
     resolvePlanReview: (paneId, requestId, approved) =>
-      command('ResolvePlanReview', (client, id) =>
-        client.ResolvePlanReview({
-          ...ResolvePlanReview.make({ paneId, requestId, approved }),
-          commandId: id
-        })
-      ),
-    interrupt: (paneId) =>
-      command('InterruptPane', (client, commandId) =>
-        client.InterruptPane({ ...InterruptPane.make({ paneId }), commandId })
-      ),
-    resumeParkedAgent: (paneId) =>
-      command('ResumeParkedAgent', (client, commandId) =>
-        client.ResumeParkedAgent({ ...ResumeParkedAgent.make({ paneId }), commandId })
-      ),
+      runCommand('ResolvePlanReview', { runId: paneId, requestId, approved }),
+    interrupt: (paneId) => runCommand('InterruptRun', { runId: paneId }),
+    resumeParkedAgent: (paneId) => runCommand('ResumeParkedRun', { runId: paneId }),
     rewindToCheckpoint: (paneId, messageUuid, resumeAnchorUuid) =>
-      command('RewindToCheckpoint', (client, commandId) =>
-        client.RewindToCheckpoint({
-          ...RewindToCheckpoint.make({
-            paneId,
-            messageUuid,
-            ...(resumeAnchorUuid !== undefined ? { resumeAnchorUuid } : {})
-          }),
-          commandId
-        })
-      ),
+      runCommand('RewindToCheckpoint', {
+        runId: paneId,
+        messageUuid,
+        ...(resumeAnchorUuid !== undefined ? { resumeAnchorUuid } : {})
+      }),
     getWorkspace: () => query((client) => client.GetWorkspace()),
     registerProject: (projectId, directory) =>
       query((client) =>
@@ -522,11 +487,6 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         })
       ),
     getAgentSummaries: () => query((client) => client.GetAgentSummaries()),
-    getAttachedSessions: () => query((client) => client.GetAttachedSessions()),
-    resetAttachedSession: (paneId) =>
-      command('ResetAttachedSession', (client, commandId) =>
-        client.ResetAttachedSession({ ...ResetAttachedSession.make({ paneId }), commandId })
-      ),
     getTranscriptWidth: () => query((client) => client.GetTranscriptWidth()),
     setTranscriptWidth: (width) =>
       command('SetTranscriptWidth', (client, commandId) =>
@@ -551,8 +511,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     setTheme: (theme) => query((client) => client.SetTheme({ theme })),
     getSendMode: () => query((client) => client.GetSendMode()),
     setSendMode: (mode) => query((client) => client.SetSendMode({ mode })),
-    getUsageLimitResume: () => query((client) => client.GetUsageLimitResume()),
-    setUsageLimitResume: (mode) => query((client) => client.SetUsageLimitResume({ mode })),
+    getUsageLimitResume: () => runQuery('GetUsageLimitResume'),
+    setUsageLimitResume: (mode) => runQuery<void>('SetUsageLimitResume', { mode }),
     onHistoryReloadRequested: (listener) => {
       reloadListeners.add(listener)
       return () => reloadListeners.delete(listener)
@@ -562,7 +522,6 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       return () => paneFrameListeners.delete(listener)
     },
     onWorkspaceChanged: (listener) => subscribeTo('WorkspaceChanged', listener),
-    onAttachedSessionsChanged: (listener) => subscribeTo('AttachedSessionsChanged', listener),
     onAgentSummaryChanged: (listener) => subscribeTo('AgentSummaryChanged', listener),
     onAgentSummariesReplaced: (listener) => subscribeTo('AgentSummariesReplaced', listener),
     onPaneCreateFailed: (listener) => subscribeTo('PaneCreateFailed', listener),

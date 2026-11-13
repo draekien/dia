@@ -8,13 +8,11 @@ import {
   StatusNeedsInput,
   StatusWorking
 } from '@shared/domain/agent-summary'
-import { AttachedSession } from '@shared/domain/attached-session'
 import type { PermissionMode } from '@shared/domain/pane'
 import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
 import { describe, expect, it } from 'vitest'
 import {
   ArchivedTarget,
-  assistantRows,
   buildOverview,
   HeaderTarget,
   NO_FILTERS,
@@ -70,100 +68,6 @@ const names = (workspace: Workspace, map: Map<string, AgentSummary>, filters = N
   ])
 
 const filters = (patch: Partial<OverviewFilters>): OverviewFilters => ({ ...NO_FILTERS, ...patch })
-
-const attachedTo = (n: number, project: number, label: string, caption: string) =>
-  AttachedSession.make({
-    config: {
-      paneId: paneId(n),
-      cwd: '/repo',
-      model: 'm',
-      thinkingLevel: 'adaptive',
-      permissionMode: 'default'
-    },
-    projectId: projectId(project),
-    label,
-    caption,
-    resettable: false
-  })
-
-describe('buildOverview with attached sessions', () => {
-  const workspace: Workspace = {
-    projects: [project(1, 'dia', [tab(1, 'notes')]), project(2, 'site', [])],
-    visibleTab: null
-  }
-  const ada = attachedTo(9, 1, 'Ada', 'Software engineer')
-
-  it('lists an attached session in its project, sorted by urgency with the tabs', () => {
-    const groups = buildOverview(
-      workspace,
-      summaries(summary(9, StatusNeedsInput.make({ reason: 'Approve Bash' }))),
-      NO_FILTERS,
-      [ada]
-    )
-
-    expect(
-      groups.map((group) => [
-        group.project.displayName,
-        group.rows.map((row) => [row.name, row.caption])
-      ])
-    ).toEqual([
-      [
-        'dia',
-        [
-          ['Ada', 'Software engineer'],
-          ['notes', null]
-        ]
-      ],
-      ['site', []]
-    ])
-  })
-
-  it('counts an attached session in the group total', () => {
-    const [dia] = buildOverview(workspace, summaries(), NO_FILTERS, [ada])
-
-    expect([dia.shown, dia.total]).toEqual([2, 2])
-  })
-
-  it('takes the group urgency from an attached session that needs input', () => {
-    const needsInput = StatusNeedsInput.make({ reason: 'Approve Bash' })
-    const [dia] = buildOverview(workspace, summaries(summary(9, needsInput)), NO_FILTERS, [ada])
-
-    expect(dia.mostUrgent).toEqual(needsInput)
-  })
-
-  it('does not show an attached session whose project is not in the workspace', () => {
-    const elsewhere = attachedTo(8, 7, 'Grace', 'Designer')
-
-    expect(
-      buildOverview(workspace, summaries(), NO_FILTERS, [elsewhere]).flatMap((group) =>
-        group.rows.map((row) => row.name)
-      )
-    ).toEqual(['notes'])
-  })
-
-  it('matches an attached session by its label', () => {
-    const [dia] = buildOverview(workspace, summaries(), filters({ query: 'ada' }), [ada])
-
-    expect(dia.rows.map((row) => row.name)).toEqual(['Ada'])
-  })
-})
-
-describe('assistantRows', () => {
-  it('lists only the attached sessions with no project, with their summaries', () => {
-    const assistant = AttachedSession.make({
-      ...attachedTo(8, 1, 'Executive assistant', ''),
-      projectId: null
-    })
-    const needsInput = StatusNeedsInput.make({ reason: 'Approve Bash' })
-
-    expect(
-      assistantRows(
-        [attachedTo(9, 1, 'Ada', 'Software engineer'), assistant],
-        summaries(summary(8, needsInput))
-      ).map((row) => [row.name, row.summary.status])
-    ).toEqual([['Executive assistant', needsInput]])
-  })
-})
 
 describe('buildOverview', () => {
   it('gives each row its tab’s current permission mode', () => {

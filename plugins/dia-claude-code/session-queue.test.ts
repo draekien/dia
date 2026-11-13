@@ -2,14 +2,16 @@
 import { setImmediate } from 'node:timers/promises'
 import type { Options, SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import {
-  type AgentSessionOptions,
   type OutboundMessage,
   RewindFailed,
   type SessionAdditions,
-  SessionFailed,
-  SessionNotFound,
   type SessionToolOptions
 } from '@dia/plugin'
+import {
+  type AgentSessionOptions,
+  SessionFailed,
+  SessionNotFound
+} from '@dia-plugin/dia-runs/backend'
 import { assert, describe, it } from '@effect/vitest'
 import { ContentAttachment, PathAttachment } from '@shared/domain/attachment'
 import type { PaneConfig, SessionId } from '@shared/domain/pane'

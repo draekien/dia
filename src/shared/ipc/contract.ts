@@ -1,8 +1,7 @@
 import { Schema } from 'effect'
-import { AdapterStatusSnapshot } from '../domain/adapter-status'
+import type { AdapterStatusSnapshot } from '../domain/adapter-status'
 import { AgentEvent } from '../domain/agent-event'
 import { AgentSummary } from '../domain/agent-summary'
-import { AttachedSession } from '../domain/attached-session'
 import { Attachment, type AttachmentType, type ProjectEntry } from '../domain/attachment'
 import {
   AttentionState,
@@ -17,11 +16,11 @@ import { CompactionFailure, ContextUsage } from '../domain/context-usage'
 import { JsonRecord } from '../domain/json-record'
 import { MessageQueueSnapshot, OutgoingMessage, SendMode } from '../domain/message-queue'
 import type { MetaRepoPushResult, MetaRepoStateResult } from '../domain/meta-repo'
-import { ModelCatalogSnapshot } from '../domain/model'
-import {
-  type AgentDefaults,
-  type LastVisibleModel,
-  type ModelPreference,
+import type { ModelCatalogSnapshot } from '../domain/model'
+import type {
+  AgentDefaults,
+  LastVisibleModel,
+  ModelPreference,
   ModelPreferencesSnapshot
 } from '../domain/model-preferences'
 import { NoticeLink } from '../domain/notice-link'
@@ -200,15 +199,6 @@ export const SelectTab = Schema.TaggedStruct('SelectTab', {
   paneId: Schema.NullOr(Uuid)
 })
 export type SelectTab = typeof SelectTab.Type
-
-/**
- * Command sent by the renderer to replace attached session `paneId` with a fresh one (ADR-0071).
- * The Host runs the attachment's reset; it does nothing for a pane that has none.
- */
-export const ResetAttachedSession = Schema.TaggedStruct('ResetAttachedSession', {
-  paneId: Uuid
-})
-export type ResetAttachedSession = typeof ResetAttachedSession.Type
 
 /** Command sent by the renderer to change the app-wide transcript width. */
 export const SetTranscriptWidth = Schema.TaggedStruct('SetTranscriptWidth', {
@@ -557,15 +547,6 @@ export const WorkspaceChanged = Schema.TaggedStruct('WorkspaceChanged', {
 export type WorkspaceChanged = typeof WorkspaceChanged.Type
 
 /**
- * Event pushed to the renderer whenever a plugin attaches or detaches a session (ADR-0070).
- * `sessions` is every attached session and replaces the renderer's list. Never replayed.
- */
-export const AttachedSessionsChanged = Schema.TaggedStruct('AttachedSessionsChanged', {
-  sessions: Schema.Array(AttachedSession)
-})
-export type AttachedSessionsChanged = typeof AttachedSessionsChanged.Type
-
-/**
  * Event pushed to the renderer when one tab's status or activity line changes. `summary`
  * replaces the renderer's summary for `summary.paneId`. Never replayed.
  */
@@ -636,36 +617,6 @@ export type PluginStatusChanged = typeof PluginStatusChanged.Type
 export const ActivitiesChanged = Schema.TaggedStruct('ActivitiesChanged', {})
 export type ActivitiesChanged = typeof ActivitiesChanged.Type
 
-/**
- * Event pushed to the renderer whenever the model list changes; `snapshot` is the full current
- * list state. Never replayed; the preload raises it itself after a reconnect with the state read
- * from `GetModels`. Keep the snapshot with the highest `revision`.
- */
-export const ModelsChanged = Schema.TaggedStruct('ModelsChanged', {
-  snapshot: ModelCatalogSnapshot
-})
-export type ModelsChanged = typeof ModelsChanged.Type
-
-/**
- * Event pushed to the renderer whenever the agent adapter's install status changes. Never
- * replayed; the preload raises it itself after a reconnect. Keep the snapshot with the highest
- * `revision`.
- */
-export const AdapterStatusChanged = Schema.TaggedStruct('AdapterStatusChanged', {
-  snapshot: AdapterStatusSnapshot
-})
-export type AdapterStatusChanged = typeof AdapterStatusChanged.Type
-
-/**
- * Event pushed to the renderer whenever the adapter's model preferences or defaults change.
- * Never replayed; the preload raises it itself after a reconnect. Keep the snapshot with the
- * highest `revision`.
- */
-export const ModelPreferencesChanged = Schema.TaggedStruct('ModelPreferencesChanged', {
-  snapshot: ModelPreferencesSnapshot
-})
-export type ModelPreferencesChanged = typeof ModelPreferencesChanged.Type
-
 // Additional events (PaneClosed) join this union in later bullets.
 /**
  * Every pane event other than {@link PaneAgentEvent}: the events that carry a `paneId` and
@@ -706,14 +657,10 @@ export const IpcEvent = Schema.Union([
   PaneAgentEvent,
   ...PaneSignal.members,
   WorkspaceChanged,
-  AttachedSessionsChanged,
   AgentSummaryChanged,
   AgentSummariesReplaced,
   PluginStatusChanged,
   ActivitiesChanged,
-  ModelsChanged,
-  AdapterStatusChanged,
-  ModelPreferencesChanged,
   UpdateStatusChanged
 ])
 export type IpcEvent = typeof IpcEvent.Type
@@ -955,10 +902,6 @@ export interface DiaApi {
   unarchiveTab(paneId: string): Promise<string | null>
   selectTab(paneId: string | null): void
   getAgentSummaries(): Promise<ReadonlyArray<AgentSummary>>
-  /** Every session a plugin has attached (ADR-0070). */
-  getAttachedSessions(): Promise<ReadonlyArray<AttachedSession>>
-  /** Replaces attached session `paneId` with a fresh one, when its plugin allows it (ADR-0071). */
-  resetAttachedSession(paneId: string): void
   getTranscriptWidth(): Promise<TranscriptWidth>
   setTranscriptWidth(width: TranscriptWidth): void
   /** Shows `directory` in the system file manager; does nothing when it is not a directory. */
@@ -996,7 +939,6 @@ export interface DiaApi {
   /** Subscribes to every pane event with its pane's sequence number. */
   onPaneEvent(listener: (frame: PaneEventFrame) => void): () => void
   onWorkspaceChanged(listener: (event: WorkspaceChanged) => void): () => void
-  onAttachedSessionsChanged(listener: (event: AttachedSessionsChanged) => void): () => void
   onAgentSummaryChanged(listener: (event: AgentSummaryChanged) => void): () => void
   onAgentSummariesReplaced(listener: (event: AgentSummariesReplaced) => void): () => void
   onPaneCreateFailed(listener: (event: PaneCreateFailed) => void): () => void

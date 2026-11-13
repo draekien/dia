@@ -5,7 +5,6 @@ import {
   markShown,
   NoActivity
 } from '@shared/domain/agent-summary'
-import type { AttachedSession } from '@shared/domain/attached-session'
 import type { PaneId } from '@shared/domain/pane'
 import type { Workspace } from '@shared/domain/project'
 import { AgentSummaryChanged, type IpcEvent } from '@shared/ipc/contract'
@@ -35,7 +34,6 @@ interface State {
   readonly summaries: ReadonlyMap<PaneId, AgentSummary>
   readonly visibleTab: PaneId | null
   readonly tabIds: ReadonlySet<PaneId>
-  readonly attachedIds: ReadonlySet<PaneId>
 }
 
 const tabIdsOf = (workspace: Workspace): ReadonlySet<PaneId> =>
@@ -71,8 +69,7 @@ export const AgentSummariesLive = Layer.effect(
     const stateRef = yield* Ref.make<State>({
       summaries: seeded,
       visibleTab: workspace.visibleTab,
-      tabIds: tabIdsOf(workspace),
-      attachedIds: new Set()
+      tabIds: tabIdsOf(workspace)
     })
     const savePending = yield* Ref.make(false)
 
@@ -120,22 +117,7 @@ export const AgentSummariesLive = Layer.effect(
         const summary = state.summaries.get(paneId) ?? idleSummary(paneId, NoActivity.make({}))
         summaries.set(paneId, shownIfVisible(summary, next.visibleTab))
       }
-      for (const paneId of state.attachedIds) {
-        const summary = state.summaries.get(paneId)
-        if (summary !== undefined && !summaries.has(paneId)) summaries.set(paneId, summary)
-      }
       return { ...state, summaries, visibleTab: next.visibleTab, tabIds }
-    }
-
-    const applyAttached = (state: State, sessions: ReadonlyArray<AttachedSession>): State => {
-      const attachedIds = new Set(sessions.map((session) => session.config.paneId))
-      const summaries = new Map(state.summaries)
-      for (const paneId of state.attachedIds) {
-        const previous = summaries.get(paneId)
-        if (attachedIds.has(paneId) || state.tabIds.has(paneId) || previous === undefined) continue
-        summaries.set(paneId, idleSummary(paneId, previous.activity))
-      }
-      return { ...state, summaries, attachedIds }
     }
 
     const applyPaneEvent = (state: State, paneId: PaneId, event: IpcEvent): State => {
@@ -154,11 +136,9 @@ export const AgentSummariesLive = Layer.effect(
       const after =
         event._tag === 'WorkspaceChanged'
           ? applyWorkspace(before, event.workspace)
-          : event._tag === 'AttachedSessionsChanged'
-            ? applyAttached(before, event.sessions)
-            : paneId === undefined
-              ? before
-              : applyPaneEvent(before, paneId, event)
+          : paneId === undefined
+            ? before
+            : applyPaneEvent(before, paneId, event)
       if (after === before) return
       yield* Ref.set(stateRef, after)
       yield* publishChanges(before.summaries, after.summaries)
