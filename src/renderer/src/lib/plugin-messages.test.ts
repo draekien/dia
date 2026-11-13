@@ -42,23 +42,29 @@ const CountAsText = Rpc.make('Count', { payload: { n: Schema.String }, success: 
 const EXAMPLE = 'example'
 const ctx = { name: EXAMPLE }
 
-const manifest: PluginManifest = {
-  name: EXAMPLE,
+const OTHER = 'dia-other'
+
+const manifestOf = (name: string): PluginManifest => ({
+  name,
   api: PLUGIN_API_VERSION,
   category: 'feature',
   host: 'host.ts'
-}
+})
 
-const makeRegistry = (setup: PluginSetup<ServingContext>) =>
+const makeRegistry = (setup: PluginSetup<ServingContext>, name = EXAMPLE) =>
   makePluginRegistry<ServingContext>({
     catalog: {
-      names: () => Effect.succeed([EXAMPLE]),
-      resolve: () => Effect.succeed(Option.some({ root: EXAMPLE, origin: 'default' as const }))
+      names: () => Effect.succeed([name]),
+      resolve: () => Effect.succeed(Option.some({ root: name, origin: 'default' as const }))
     },
     loader: {
-      peek: () => Effect.succeed(manifest),
+      peek: () => Effect.succeed(manifestOf(name)),
       load: (_name, _root, use) =>
-        use({ manifest, resolveSetup: Effect.succeed(Option.some(setup)), importers: [] })
+        use({
+          manifest: manifestOf(name),
+          resolveSetup: Effect.succeed(Option.some(setup)),
+          importers: []
+        })
     },
     extend: (services) => {
       const served = new Set<string>()
@@ -80,7 +86,12 @@ const routeCallsTo = (registry: PluginRegistry) =>
       plugins: {
         call: (plugin: string, tag: string, payload: unknown) =>
           Effect.runPromise(
-            callPlugin(registry, { plugin, tag, payload }).pipe(
+            callPlugin(registry, {
+              plugin,
+              tag,
+              payload,
+              call: { id: 'call-1', resent: false }
+            }).pipe(
               Effect.match({
                 onSuccess: (value): PluginCallResultJson => ({ _tag: 'Success', value }),
                 onFailure: (error): PluginCallResultJson => ({
@@ -110,6 +121,53 @@ describe('callHost', () => {
       const greeting = yield* callHost(ctx, Greet, { plugin: 'ignored', payload: 'otter' })
 
       assert.strictEqual(greeting, 'hello otter')
+    })
+  )
+
+  it.effect("returns the typed result of another plugin's host handler", () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry(
+        (plugin) => plugin.serve(Count, ({ n }) => Effect.succeed(n + 1)),
+        OTHER
+      )
+      yield* registry.load(OTHER)
+      routeCallsTo(registry)
+
+      const counted = yield* callHost(OTHER, Count, { n: 41 })
+
+      assert.strictEqual(counted, 42)
+    })
+  )
+
+  it.effect("fails with another plugin's typed error decoded by its schema", () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry(
+        (plugin) =>
+          plugin.serve(Greet, () => Effect.fail(new GreetingRefused({ reason: 'too early' }))),
+        OTHER
+      )
+      yield* registry.load(OTHER)
+      routeCallsTo(registry)
+
+      const error = yield* Effect.flip(callHost(OTHER, Greet, { plugin: EXAMPLE, payload: 'x' }))
+
+      assert.instanceOf(error, GreetingRefused)
+      assert.strictEqual(error.reason, 'too early')
+    })
+  )
+
+  it.effect("fails with PluginNotServing when the caller's own plugin is named instead", () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry(
+        (plugin) => plugin.serve(Count, ({ n }) => Effect.succeed(n)),
+        OTHER
+      )
+      yield* registry.load(OTHER)
+      routeCallsTo(registry)
+
+      const error = yield* Effect.flip(callHost(ctx, Count, { n: 1 }))
+
+      assert.strictEqual(error._tag, 'PluginNotServing')
     })
   )
 
@@ -329,6 +387,21 @@ describe('followHost', () => {
       const values = yield* Stream.runCollect(followHost(ctx, Ticks, {}))
 
       assert.deepStrictEqual(values, [Option.some(1), Option.some(2)])
+    })
+  )
+
+  it.effect("emits Some of each value another plugin's host entry streams", () =>
+    Effect.gen(function* () {
+      const registry = yield* makeRegistry(
+        (plugin) => plugin.serve(Ticks, () => Stream.make(3, 4)),
+        OTHER
+      )
+      yield* registry.load(OTHER)
+      routeSubscriptionsTo(registry)
+
+      const values = yield* Stream.runCollect(followHost(OTHER, Ticks, {}))
+
+      assert.deepStrictEqual(values, [Option.some(3), Option.some(4)])
     })
   )
 

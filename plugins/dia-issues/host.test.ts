@@ -60,7 +60,7 @@ const startIssues = (setups: Record<string, never>) =>
   })
 
 const call = (registry: PluginRegistry, tag: string, payload: unknown) =>
-  callPlugin(registry, { plugin: 'issues', tag, payload })
+  callPlugin(registry, { plugin: 'issues', tag, payload, call: { id: tag, resent: false } })
 
 const readView = (registry: PluginRegistry) =>
   Effect.map(call(registry, 'ReadIssues', {}), (value) =>

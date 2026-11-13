@@ -45,7 +45,7 @@ export { PermissionRules, SessionToolOptions } from '../shared/domain/session-to
 export { Uuid } from '../shared/domain/uuid'
 export * from '../shared/plugin/api'
 export * from '../shared/plugin/list-slot'
-export { PluginCallInvalid, PluginNotServing } from '../shared/plugin/messages'
+export { PluginCallAttempt, PluginCallInvalid, PluginNotServing } from '../shared/plugin/messages'
 export * from '../shared/plugin/paths-moved'
 export type {
   HostPluginContext,

@@ -108,7 +108,12 @@ const userServers = (list: ReadonlyArray<RegisteredServer>) =>
   )
 
 const save = (registry: PluginRegistry, servers: Record<string, McpServer>) =>
-  callPlugin(registry, { plugin: 'mcp', tag: 'SaveUserServers', payload: { servers } })
+  callPlugin(registry, {
+    plugin: 'mcp',
+    tag: 'SaveUserServers',
+    payload: { servers },
+    call: { id: 'save', resent: false }
+  })
 
 describe('mcp host entry', () => {
   it.effect('lists a server a plugin registers, and drops it when that plugin unloads', () =>

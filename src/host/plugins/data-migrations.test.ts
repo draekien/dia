@@ -1,6 +1,6 @@
 import { NodeServices } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
-import type { PluginManifest } from '@shared/plugin/manifest'
+import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest'
 import type { PathsMoved } from '@shared/plugin/paths-moved'
 import { Effect, Exit, FileSystem, Layer, Path, PlatformError, type Scope } from 'effect'
 import { makeHostDatabaseLive } from '../services/database'
@@ -9,7 +9,7 @@ import { makeDataMigrations } from './data-migrations'
 
 const manifest = (before?: string): PluginManifest => ({
   name: 'dia-worktrees',
-  api: '0.0.37',
+  api: PLUGIN_API_VERSION,
   category: 'feature',
   dataMigrations: [
     { id: '1_dia_prefix', from: 'plugins/worktrees', ...(before === undefined ? {} : { before }) }

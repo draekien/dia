@@ -41,7 +41,7 @@ export { SessionRail } from './components/session-rail'
 export * from './components/ui/breadcrumb'
 export * from './components/ui/sidebar'
 export { addEntry, declareList, useList } from './lib/list-slots'
-export { callHost, followHost } from './lib/plugin-messages'
+export { callHost, followHost, type PluginTarget } from './lib/plugin-messages'
 export {
   revealRailCard,
   useRailCardShown,

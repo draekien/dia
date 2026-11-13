@@ -122,6 +122,7 @@ interface ClientScript {
   readonly resolveImportConflict?: Effect.Effect<void, WorkspaceProblemError>
   readonly paneChatSeq?: number
   readonly pluginSubscriptions?: ReadonlyArray<Stream.Stream<unknown, unknown>>
+  readonly callPluginFailures?: number
 }
 
 const makeClient = (script: ClientScript = {}) => {
@@ -141,6 +142,18 @@ const makeClient = (script: ClientScript = {}) => {
   const subscribePlugin = vi.fn(
     (_payload: { plugin: string; tag: string; payload: unknown }) =>
       script.pluginSubscriptions?.[pluginSubscribeAttempts++] ?? Stream.never
+  )
+  let callPluginAttempts = 0
+  const callPlugin = vi.fn(
+    (_payload: {
+      plugin: string
+      tag: string
+      payload: unknown
+      call: { id: string; resent: boolean }
+    }) =>
+      ++callPluginAttempts <= (script.callPluginFailures ?? 0)
+        ? Effect.fail(new ConnectionError({ reason: 'connection down' }))
+        : Effect.succeed('done')
   )
   const getWorkspace = vi.fn(() => Effect.succeed(EMPTY_WORKSPACE))
   const getAgentSummaries = vi.fn(() => Effect.succeed([SUMMARY]))
@@ -187,6 +200,7 @@ const makeClient = (script: ClientScript = {}) => {
     ResolvePlanReview: resolvePrompt,
     SubscribeEvents: subscribeEvents,
     SubscribePlugin: subscribePlugin,
+    CallPlugin: callPlugin,
     GetWorkspace: getWorkspace,
     GetAgentSummaries: getAgentSummaries,
     GetAttachedSessions: () => Effect.succeed([]),
@@ -204,6 +218,7 @@ const makeClient = (script: ClientScript = {}) => {
     resolvePrompt,
     subscribeEvents,
     subscribePlugin,
+    callPlugin,
     getWorkspace,
     getAgentSummaries,
     registerProject,
@@ -253,6 +268,47 @@ describe('makeHostApi', () => {
       'request-0'
     ])
     expect(issuedRequestIds()).toBe(1)
+  })
+
+  it('resends a plugin call under its one call id, marking every attempt after the first a resend', async () => {
+    const { client, callPlugin } = makeClient({ callPluginFailures: 2 })
+    const { api } = makeApi(client)
+
+    const result = api.plugins.call('dia-other', 'Count', { n: 1 })
+    await advance(1200)
+
+    expect(await result).toEqual({ _tag: 'Success', value: 'done' })
+    expect(callPlugin.mock.calls.map(([payload]) => payload.call)).toEqual([
+      { id: 'request-0', resent: false },
+      { id: 'request-0', resent: true },
+      { id: 'request-0', resent: true }
+    ])
+  })
+
+  it('gives each plugin call its own call id', async () => {
+    const { client, callPlugin } = makeClient()
+    const { api } = makeApi(client)
+
+    await Promise.all([
+      api.plugins.call('dia-other', 'Count', { n: 1 }),
+      api.plugins.call('dia-other', 'Count', { n: 1 })
+    ])
+
+    expect(callPlugin.mock.calls.map(([payload]) => payload.call)).toEqual([
+      { id: 'request-0', resent: false },
+      { id: 'request-1', resent: false }
+    ])
+  })
+
+  it('sends the plugin call payload nested and unchanged', async () => {
+    const { client, callPlugin } = makeClient()
+    const { api } = makeApi(client)
+
+    await api.plugins.call('dia-other', 'Count', { call: 'inner', id: 'inner' })
+
+    expect(callPlugin.mock.calls.map(([payload]) => payload.payload)).toEqual([
+      { call: 'inner', id: 'inner' }
+    ])
   })
 
   it('sends the prompt text and send mode in the SendMessage payload unchanged', async () => {

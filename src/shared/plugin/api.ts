@@ -4,6 +4,7 @@ import type { SqlClient } from 'effect/sql'
 import type { AgentNotification } from '../domain/notification'
 import type { Workspace } from '../domain/project'
 import type { EventFrame } from '../ipc/rpc'
+import type { PluginCallAttempt } from './messages'
 import type { PathsMoved } from './paths-moved'
 
 /**
@@ -214,13 +215,16 @@ export interface HostPluginContext extends PluginServices {
   ) => Effect.Effect<SqlClient.SqlClient, PluginDatabaseError, Scope.Scope>
   /**
    * Serves `rpc`, declared with `Rpc.make` in a module both of this plugin's entries import, for
-   * calls from this plugin's own `renderer` entry, until the scope it runs in closes. Declare a
-   * struct `payload` (`payload: {}` when the call takes none).
+   * calls from any plugin's `renderer` entry, until the scope it runs in closes. Declare a
+   * struct `payload` (`payload: {}` when the call takes none). To serve other plugins, declare
+   * `rpc` in a file listed in `plugin.json` `exports`, which they import.
    *
    * A request/response `rpc` takes a handler returning an effect and is called with `callHost`.
    * The handler can run more than once for one call, and the runs can overlap: the renderer resends
    * a call while the Host connection is down, and the first run is not cancelled, so make it safe
-   * to repeat. Closing the scope waits up to 30 seconds for running handlers, then interrupts
+   * to repeat. The handler's second argument, a `PluginCallAttempt`, carries the call's `id`, the
+   * same on every resend, and `resent`; a handler that must apply once records `id` and returns
+   * the recorded result for an `id` it has seen. Closing the scope waits up to 30 seconds for running handlers, then interrupts
    * them; the caller then sees `PluginNotServing` although the handler may have partly run.
    *
    * A streaming `rpc` (`Rpc.make(tag, { ..., stream: true })`) takes a handler returning a stream
@@ -237,7 +241,10 @@ export interface HostPluginContext extends PluginServices {
   readonly serve: {
     <R extends Rpc.AnyWithProps>(
       rpc: R,
-      handler: (payload: Rpc.Payload<R>) => Effect.Effect<Rpc.Success<R>, Rpc.Error<R>>
+      handler: (
+        payload: Rpc.Payload<R>,
+        call: PluginCallAttempt
+      ) => Effect.Effect<Rpc.Success<R>, Rpc.Error<R>>
     ): Effect.Effect<void, never, Scope.Scope>
     <R extends Rpc.AnyWithProps>(
       rpc: R,

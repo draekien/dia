@@ -41,6 +41,19 @@ export class PluginCallFailed extends Schema.TaggedError<PluginCallFailed>()('Pl
 export const jsonCodec = (schema: Schema.Top): Schema.Codec<unknown, unknown> =>
   Schema.toCodecJson(schema as Schema.Codec<unknown, unknown>)
 
+/**
+ * What a request/response handler served with `ctx.serve` receives as its second argument about
+ * the call it is running. `id` identifies one `callHost` call and is the same on every resend of
+ * it. `resent` is true when an earlier attempt of the call was sent; that attempt may or may not
+ * have run, so a handler whose effect must apply once records `id` and returns the recorded
+ * result when it sees that `id` again, and never skips work on `resent` alone.
+ */
+export const PluginCallAttempt = Schema.Struct({
+  id: Schema.NonEmptyString,
+  resent: Schema.Boolean
+})
+export type PluginCallAttempt = typeof PluginCallAttempt.Type
+
 /** Every failure `CallPlugin` reports. */
 export const PluginCallError = Schema.Union([PluginNotServing, PluginCallInvalid, PluginCallFailed])
 export type PluginCallError = typeof PluginCallError.Type

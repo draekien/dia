@@ -10,6 +10,15 @@ import { type Rpc, RpcSchema } from 'effect/rpc'
 
 const PLUGIN_RETRY_INTERVAL = Duration.seconds(5)
 
+/**
+ * The plugin whose `host` entry serves a call: its name, such as `'dia-runs'`, or a plugin
+ * context, which names the caller's own plugin.
+ */
+export type PluginTarget = string | Pick<PluginServices, 'name'>
+
+const pluginOf = (target: PluginTarget): string =>
+  typeof target === 'string' ? target : target.name
+
 class SubscriptionFailed extends Data.TaggedError('SubscriptionFailed')<{
   readonly error: unknown
 }> {}
@@ -35,20 +44,23 @@ const failFromWire = <E>(
   })
 
 /**
- * Calls `rpc` on the `host` entry of the plugin named `ctx.name`, which serves it with
- * `ctx.serve`; declare `rpc` with `Rpc.make` in a module both entries import. Succeeds with the
+ * Calls `rpc` on the `host` entry of the plugin `target` names, which serves it with
+ * `ctx.serve`; declare `rpc` with `Rpc.make` in a module both entries import. To call another
+ * plugin, import `rpc` from that plugin's exported module (`@dia-plugin/<name>/<file>`) and pass
+ * its name. The handler sees a call the preload resends after a lost connection as a resend of
+ * the same call (`PluginCallAttempt`). Succeeds with the
  * handler's result and fails with its typed error. Fails with {@link PluginNotServing} while that
  * entry is not loaded or does not serve `rpc`, and with {@link PluginCallInvalid} when the two
  * entries disagree on `rpc`'s schemas. A defect in the handler is a defect here. Interrupting the
  * call does not stop the handler.
  */
 export const callHost = <R extends Rpc.AnyWithProps>(
-  ctx: Pick<PluginServices, 'name'>,
+  target: PluginTarget,
   rpc: R,
   payload: Rpc.PayloadConstructor<R>
 ): Effect.Effect<Rpc.Success<R>, Rpc.Error<R> | PluginNotServing | PluginCallInvalid> =>
   Effect.gen(function* () {
-    const plugin = ctx.name
+    const plugin = pluginOf(target)
     const tag = rpc._tag
     const invalid = invalidOf(plugin, tag)
     const encoded = yield* Schema.encodeUnknownEffect(jsonCodec(rpc.payloadSchema))(
@@ -100,9 +112,9 @@ const untilPluginStatusChanges = (name: string) =>
   )
 
 /**
- * Follows the streaming `rpc` that the `host` entry of the plugin named `ctx.name` serves with
+ * Follows the streaming `rpc` that the `host` entry of the plugin `target` names serves with
  * `ctx.serve`; declare `rpc` with `Rpc.make(tag, { ..., stream: true })` in a module both entries
- * import. Emits `Some(value)` for each value the handler's stream produces, starting with the
+ * import, or import it from another plugin's exported module and pass that plugin's name. Emits `Some(value)` for each value the handler's stream produces, starting with the
  * current state, and `None` while that entry is not serving `rpc`, then subscribes again after the
  * plugin's next status change or after 5 seconds, whichever is first. Completes when the
  * handler's stream completes, and fails with the handler's typed error, or with
@@ -110,13 +122,13 @@ const untilPluginStatusChanges = (name: string) =>
  * not encode. Interrupting the stream ends the subscription.
  */
 export const followHost = <R extends Rpc.AnyWithProps>(
-  ctx: Pick<PluginServices, 'name'>,
+  target: PluginTarget,
   rpc: R,
   payload: Rpc.PayloadConstructor<R>
 ): Stream.Stream<Option.Option<Rpc.SuccessChunk<R>>, Rpc.ErrorExit<R> | PluginCallInvalid> =>
   Stream.unwrap(
     Effect.gen(function* () {
-      const plugin = ctx.name
+      const plugin = pluginOf(target)
       const tag = rpc._tag
       const streamSchema = RpcSchema.isStreamSchema(rpc.successSchema)
         ? rpc.successSchema
