@@ -115,7 +115,7 @@ Delivery runs entries in `sequence` order, under one semaphore for all owners. A
 
 ### `dia-claude-code`
 
-Owner `transcriptFolders.move(move)`: lists sessions with the SDK's `listSessions()` (every project), takes the distinct `cwd`s that `relocatePath` moves, and renames `transcriptFolderOf(cwd)` to `transcriptFolderOf(newCwd)`. `transcriptFolderOf(cwd)` is `<CLAUDE_CONFIG_DIR or ~/.claude>/projects/<cwd with each character outside [A-Za-z0-9] replaced by ->`. A missing source folder is skipped; an existing destination is logged and skipped (no merge, no delete). A cwd whose encoding exceeds 200 characters is logged and skipped, because Claude Code shortens such names (unverified; worktree paths are about 80 characters). The plugin subscribes before it provides the agent backend.
+Owner `moveTranscriptFolders(move)`: when a folder in `projects` starts with the encoded `move.from`, lists sessions with the SDK's `listSessions()` (every project, at most once a minute), takes the distinct `cwd`s that `relocatePath` moves, and renames `transcriptFolderOf(cwd)` to `transcriptFolderOf(newCwd)`. `transcriptFolderOf(cwd)` is `<CLAUDE_CONFIG_DIR or ~/.claude>/projects/<cwd with each character outside [A-Za-z0-9] replaced by ->`. A missing source folder is skipped; an existing destination is logged and skipped (no merge, no delete). A cwd whose encoding exceeds 200 characters is logged and skipped, because Claude Code shortens such names (unverified; worktree paths are about 80 characters). The plugin subscribes before it provides the agent backend.
 
 ### Settings (`src/host/services/settings-store.ts`)
 
@@ -132,6 +132,8 @@ At layer build, `renamePluginKeys` renames each `pluginOverrides` and `adapters`
 3. `pluginOverrides` values are not rewritten; an override whose folder still has the old manifest name fails with the existing name-mismatch error.
 4. A transcript folder whose destination exists is skipped, not merged.
 5. The `no`/`yes` migration row records a move even when no crash happened; the cost is one owner scan.
+6. The kernel path owner is named `host:workspace`, which the plugin-name pattern cannot produce, so no plugin can replace its subscription (from `/code-review`).
+7. `dia-claude-code` lists sessions only when a transcript folder may lie under the moved folder, and reuses the list for one minute, because its owner runs inside plugin setup, which fails after 10 seconds (from `/simplify` and `/code-review`). Alternative: deliver moves in the background, which lets the renderer resume a tab before its path is rewritten.
 
 ## Refinement Record
 
