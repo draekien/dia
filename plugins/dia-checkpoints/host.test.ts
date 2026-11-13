@@ -19,7 +19,7 @@ import { PLUGIN_API_VERSION, type PluginManifest } from '@shared/plugin/manifest
 import { makePluginRegistry } from '@shared/plugin/plugin-registry'
 import { Effect, FileSystem, Option, Path, PubSub, Queue, Schema, Stream } from 'effect'
 import { servePluginCall, subscribePlugin } from '../../src/host/plugins/plugin-messages'
-import { TurnChanges, TurnFinished } from './calls'
+import { NotARepository, RunChanges, type TurnChanges, TurnFinished } from './calls'
 import setup from './host'
 
 const CHECKPOINTS = 'dia-checkpoints'
@@ -87,17 +87,19 @@ const manifestOf = (name: string): PluginManifest => ({
   host: 'host.ts'
 })
 
-const decodeTurns = Schema.decodeUnknownSync(Schema.Array(TurnChanges))
+const decodeChanges = Schema.decodeUnknownSync(RunChanges)
 
-const startPlugin = Effect.gen(function* () {
+const startPlugin = Effect.fnUntraced(function* (options: { readonly repository: boolean }) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const git = yield* makeGit
   const directory = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-checkpoints-host-' })
-  yield* Effect.addFinalizer(() => git.stopFsmonitor(directory))
-  yield* git.init(directory)
-  yield* fs.writeFileString(path.join(directory, 'a.txt'), 'one\n')
-  yield* git.commitAll(directory, { message: 'init', author: { name: 'dia', email: 'dia@x' } })
+  if (options.repository) {
+    yield* Effect.addFinalizer(() => git.stopFsmonitor(directory))
+    yield* git.init(directory)
+    yield* fs.writeFileString(path.join(directory, 'a.txt'), 'one\n')
+    yield* git.commitAll(directory, { message: 'init', author: { name: 'dia', email: 'dia@x' } })
+  }
 
   const committed = yield* PubSub.unbounded<CommittedEvent>()
   let sequence = 0
@@ -149,10 +151,12 @@ const startPlugin = Effect.gen(function* () {
 describe('dia-checkpoints host entry', { timeout: 30_000 }, () => {
   it.live('lists the files a run changed in a turn its events started and ended', () =>
     Effect.gen(function* () {
-      const { updates, publish, write } = yield* startPlugin
+      const { updates, publish, write } = yield* startPlugin({ repository: true })
       const seen = yield* Queue.unbounded<ReadonlyArray<TurnChanges>>()
       yield* updates.pipe(
-        Stream.runForEach((value) => Queue.offer(seen, decodeTurns(value))),
+        Stream.map((value) => decodeChanges(value)),
+        Stream.filter((changes) => changes._tag === 'RunTurns'),
+        Stream.runForEach((changes) => Queue.offer(seen, changes.turns)),
         Effect.forkScoped({ startImmediately: true })
       )
       const firstWith = (tag: TurnChanges['_tag']) =>
@@ -185,6 +189,16 @@ describe('dia-checkpoints host entry', { timeout: 30_000 }, () => {
           files: [{ path: 'a.txt', added: 1, deleted: 0, binary: false }]
         })
       ])
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
+  )
+
+  it.live('reports a run outside a git repository as not a repository', () =>
+    Effect.gen(function* () {
+      const { updates } = yield* startPlugin({ repository: false })
+
+      const first = yield* Stream.runHead(Stream.map(updates, (value) => decodeChanges(value)))
+
+      assert.deepStrictEqual(first, Option.some(NotARepository.make({})))
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
   )
 })
