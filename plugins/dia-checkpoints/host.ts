@@ -1,8 +1,15 @@
-import type { CommittedEvent, HostPluginContext, PluginSetup, Runs } from '@dia/plugin'
+import type { CommittedEvent, GitError, HostPluginContext, PluginSetup, Runs } from '@dia/plugin'
 import { GitKey, RunEventsKey, RunsKey } from '@dia/plugin'
 import { Effect, Option, PubSub, Stream, SubscriptionRef } from 'effect'
 import { type Boundary, boundaryOf } from './boundaries'
-import { ChangesUnavailable, FollowRunChanges, GetFileDiff } from './calls'
+import {
+  ChangesUnavailable,
+  FollowRunChanges,
+  GetFileDiff,
+  NotARepository,
+  type RunChanges,
+  RunTurns
+} from './calls'
 import { type Checkpoints, makeCheckpoints } from './checkpoints'
 
 interface Services {
@@ -41,17 +48,29 @@ const recordEach =
       onSome: (boundary) => record(services, recorded, committed.runId, boundary)
     })
 
-const turnsOf = (services: Services, runId: string) =>
+const NO_TURNS = RunTurns.make({ turns: [] })
+
+const isNotARepository = (error: GitError) =>
+  error.stderr.toLowerCase().includes('not a git repository')
+
+const changesOf = (services: Services, runId: string) =>
   Effect.gen(function* () {
     const cwd = yield* cwdOf(services.runs, runId)
-    if (Option.isNone(cwd)) return []
-    return yield* services.checkpoints.turns(runId, cwd.value)
+    if (Option.isNone(cwd)) return NO_TURNS
+    return RunTurns.make({ turns: yield* services.checkpoints.turns(runId, cwd.value) })
   }).pipe(
-    Effect.catchTag('GitError', (error) =>
-      Effect.as(
-        Effect.logDebug('Could not read turn snapshots', { runId, error: error.message }),
-        []
-      )
+    Effect.catchTag(
+      'GitError',
+      (error): Effect.Effect<RunChanges> =>
+        isNotARepository(error)
+          ? Effect.as(
+              Effect.logDebug('Run is not in a git repository', { runId }),
+              NotARepository.make({})
+            )
+          : Effect.as(
+              Effect.logDebug('Could not read turn snapshots', { runId, error: error.message }),
+              NO_TURNS
+            )
     )
   )
 
@@ -61,7 +80,7 @@ const followTurns = (
   runId: string
 ) =>
   Option.match(provided, {
-    onNone: () => Stream.make([]),
+    onNone: () => Stream.make(NO_TURNS),
     onSome: (services) =>
       Stream.unwrap(
         Effect.map(PubSub.subscribe(recorded), (subscription) =>
@@ -70,7 +89,7 @@ const followTurns = (
             Stream.fromSubscription(subscription).pipe(Stream.filter((id) => id === runId))
           )
         )
-      ).pipe(Stream.mapEffect(() => turnsOf(services, runId)))
+      ).pipe(Stream.mapEffect(() => changesOf(services, runId)))
   })
 
 const fileDiff = (provided: Option.Option<Services>, runId: string, turn: number, path: string) =>
