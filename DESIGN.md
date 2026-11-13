@@ -276,7 +276,7 @@ A page the `org` plugin adds to the `PagesSlot` list (Agent Overview › Pages).
 
 ### Tabs
 - **One visible:** exactly one agent's tab fills the content area. There are no split panes.
-- **Selecting:** a tab is selected from its sidebar row. The content area's header row holds the sidebar toggle, a breadcrumb `project › agent`, the worktree branch when there is one, the transcript width control, the session rail toggle, and the window status (plugin loading, update, `Ctrl K` hint). The header row is a window drag area; its content stays clear of the window controls. A divider separates it from the transcript.
+- **Selecting:** a tab is selected from its sidebar row. The content area's header row holds the sidebar toggle, a breadcrumb `project › agent`, the worktree branch when there is one, the transcript width control, the session rail toggle, the right panel toggle (only while a plugin has added a panel), and the window status (plugin loading, update, `Ctrl K` hint). The header row is a window drag area; its content stays clear of the window controls. A divider separates it from the transcript.
 - **Transcript width:** the transcript and composer sit in one centred column, capped at one of three widths (Narrow, Default, Wide) chosen app-wide from the content header or Settings › General; a narrower content area fills the column.
 - **Background tabs:** tabs that are not visible keep running and show their status in the sidebar and the collapsed rail only.
 - **Messages:** the user's messages sit in a tinted bubble on the right. The agent's text renders as plain Markdown on the left, with no bubble.
@@ -304,8 +304,18 @@ A page the `org` plugin adds to the `PagesSlot` list (Agent Overview › Pages).
 - **Card:** a caption-size muted title and a `⋯` button, then the body a plugin renders. The `⋯` popover lists every card with a checkbox; unchecking one hides it. When every card is hidden, one small card reads `All cards hidden` with `Show cards`.
 - **Cards from dia:** Context (the share of the context window in use, the token counts, a meter coloured neutral up to 50%, amber by 75% and red at the auto-compact threshold or after a failed compaction, `Compact conversation`, and why the last compaction did not run; `No usage yet` before the first reading), Background tasks (each task's description; `None running`), Task list (the last `TodoWrite` list, the in-progress item in foreground text, completed items struck through; `No task list`). An empty card keeps one muted line so the column does not change height.
 - **Room:** the cards show only while they fit beside the transcript column: the pane must be at least the column's maximum width plus 320px. While they show, the column moves left only as far as the cards need, over 200ms. When they do not fit they are hidden.
-- **Toggle:** the header's `PanelRight` button, `Ctrl Shift B` (`⌘ Shift B` on macOS). While the cards fit it turns them on or off, saved app-wide. While they do not fit it shows them over the transcript until a pointer or focus goes outside them, or `Escape`. The rail is not shown in an empty session.
+- **Toggle:** the header's `GalleryVerticalEnd` button, `Ctrl Shift B` (`⌘ Shift B` on macOS). While the cards fit it turns them on or off, saved app-wide. While they do not fit it shows them over the transcript until a pointer or focus goes outside them, or `Escape`. The rail is not shown in an empty session.
 - **Plugins:** a plugin adds a card to the `chat` plugin's `RailCardsSlot` list (ADR-0061). Cards are ordered by their `order`, then by plugin name and id; which cards are hidden is saved app-wide.
+
+### Right panel
+- **Shape:** a region at the right of the session pane, beside the transcript, not over it. A 1px Hairline left border separates it from the transcript; it has the pane's background and no shadow, per the Flat Frame Rule. It is closed by default.
+- **Header:** a 40px row over a hairline divider. With one panel it shows the panel's title in caption size; with two or more it shows a borderless `Select` of the panels' titles instead.
+- **Body:** the panel a plugin renders for the tab, scrolling within the region.
+- **Width:** 400px until the user drags the left edge; at least 240px, and never wide enough to leave the transcript area under 400px. A narrowing window shrinks the region before the transcript. The edge is a focusable separator: arrow keys step 16px, `Home` or a double-click returns to 400px.
+- **Per tab:** each tab keeps its own open state, chosen panel and width while dia runs; after a restart every tab is closed.
+- **Toggle:** the header's `PanelRight` button, `Ctrl Alt B` (`⌘ ⌥ B` on macOS), pressed while the region is open. It is hidden while no plugin has added a panel.
+- **With the session rail:** the rail cards stay over the transcript area. Whether they fit is measured on the transcript area that remains beside the region.
+- **Plugins:** a plugin adds a panel to the `chat` plugin's `PanelsSlot` list (ADR-0061). Every panel applies to every chat tab; panels are ordered by their `order`, then by plugin name and id. An archived tab shows no region.
 
 ### Inputs / Fields
 - **Style:** a 1px Hairline border on a transparent background (`bg-input/30` in the dark theme), 8px corners, 36px tall, `shadow-xs`, muted placeholder.

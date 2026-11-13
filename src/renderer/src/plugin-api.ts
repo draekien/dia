@@ -33,6 +33,7 @@ import {
 export { PluginCallInvalid, PluginNotServing } from '@shared/plugin/messages'
 export { PluginBoundary, type PluginFallback } from './components/plugin-boundary'
 export { PluginFailed } from './components/plugin-failed'
+export { RightPanel } from './components/right-panel'
 export { SessionRail } from './components/session-rail'
 export * from './components/ui/breadcrumb'
 export * from './components/ui/sidebar'
