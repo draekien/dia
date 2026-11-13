@@ -8,7 +8,15 @@ import {
   type ToolScope
 } from '@dia/plugin'
 import { Data, Deferred, Duration, Effect, Exit, Option, Schema, Scope, Stream } from 'effect'
-import { type Finish, finishOf, isSeen, isSettled, type RunStep, replyOf, watchRun } from './turns'
+import {
+  type Finish,
+  finishOf,
+  isSettled,
+  type RunStep,
+  replyOf,
+  timesSeen,
+  watchRun
+} from './turns'
 
 const SEEN_LIMIT = Duration.seconds(30)
 const DEFAULT_WAIT_SECONDS = 300
@@ -75,12 +83,21 @@ export const makeMessagingTools = Effect.fnUntraced(function* (
     yield* target(caller, input.runId)
     const message = `Message from run ${caller}:\n\n${input.text}`
     const follow = yield* watchRun(runEvents)
+    const steps = yield* follow(input.runId)
     yield* runs.send(input.runId, message, 'queue')
     if (!(yield* runs.isLive(input.runId))) {
       return yield* refused(`Run ${input.runId} could not be opened; the message was not sent.`)
     }
-    const seen = yield* (yield* follow(input.runId)).pipe(
-      Stream.filter((step) => isSeen(step.state, message)),
+    const seen = yield* steps.pipe(
+      Stream.mapAccum(
+        () => Option.none<number>(),
+        (before, step) => {
+          const count = timesSeen(step.state, message)
+          const baseline = Option.getOrElse(before, () => count)
+          return [Option.some(baseline), [count > baseline]] as const
+        }
+      ),
+      Stream.filter((isNew) => isNew),
       Stream.runHead,
       Effect.timeoutOption(SEEN_LIMIT)
     )
@@ -144,7 +161,7 @@ export const makeMessagingTools = Effect.fnUntraced(function* (
   ) {
     const finish = yield* steps.pipe(
       Stream.tap((step) =>
-        isSeen(step.state, task) ? Deferred.succeed(seen, undefined) : Effect.void
+        timesSeen(step.state, task) > 0 ? Deferred.succeed(seen, undefined) : Effect.void
       ),
       Stream.filterEffect(() => Deferred.isDone(seen)),
       Stream.map(finishOf),
@@ -170,22 +187,25 @@ export const makeMessagingTools = Effect.fnUntraced(function* (
     const info = yield* runInfo(caller)
     if (Option.isNone(info)) return yield* refused(`Run ${caller} has no stored settings to copy.`)
     const subscription = yield* Scope.fork(deliveries)
-    const follow = yield* watchRun(runEvents).pipe(Scope.provide(subscription))
-    const runId = yield* runs.start({
-      cwd: info.value.cwd,
-      model: info.value.model,
-      thinkingLevel: info.value.thinkingLevel,
-      permissionMode: info.value.permissionMode,
-      text: input.task
-    })
     const seen = yield* Deferred.make<void>()
-    yield* deliver(caller, runId, yield* follow(runId), seen, input.task).pipe(
-      Effect.onInterrupt(() =>
-        Effect.logWarning('Dropped a delegated run delivery', { to: caller, from: runId })
-      ),
-      Effect.ensuring(Scope.close(subscription, Exit.void)),
-      Effect.forkIn(deliveries)
-    )
+    const runId = yield* Effect.gen(function* () {
+      const follow = yield* watchRun(runEvents).pipe(Scope.provide(subscription))
+      const runId = yield* runs.start({
+        cwd: info.value.cwd,
+        model: info.value.model,
+        thinkingLevel: info.value.thinkingLevel,
+        permissionMode: info.value.permissionMode,
+        text: input.task
+      })
+      yield* deliver(caller, runId, yield* follow(runId), seen, input.task).pipe(
+        Effect.onInterrupt(() =>
+          Effect.logWarning('Dropped a delegated run delivery', { to: caller, from: runId })
+        ),
+        Effect.ensuring(Scope.close(subscription, Exit.void)),
+        Effect.forkIn(deliveries)
+      )
+      return runId
+    }).pipe(Effect.onError(() => Scope.close(subscription, Exit.void)))
     const shown = yield* Deferred.await(seen).pipe(Effect.timeoutOption(SEEN_LIMIT))
     yield* Effect.logInfo('Delegated a task to a new run', {
       from: caller,

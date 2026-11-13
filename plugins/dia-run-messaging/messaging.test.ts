@@ -390,19 +390,21 @@ describe('run_wait', () => {
 })
 
 describe('run_send', () => {
-  it.effect("queues the caller's message and returns once the run's log shows it", () =>
+  it.effect("queues the caller's message and returns once the run's log shows it again", () =>
     Effect.gen(function* () {
       const world = yield* makeWorld(A_AND_B)
+      yield* world.setSnapshot(
+        RUN_B,
+        stateWith({
+          messages: [
+            userMessage(`Message from run ${RUN_A}:
+
+Rebase onto main`)
+          ]
+        })
+      )
       yield* world.onSend((message) =>
-        world
-          .snapshotRead(message.runId)
-          .pipe(
-            Effect.andThen(
-              world.publish(message.runId, [queueChanged(message.runId, [message.text])])
-            ),
-            Effect.forkDetach,
-            Effect.asVoid
-          )
+        world.publish(message.runId, [queueChanged(message.runId, [message.text])])
       )
 
       const result = yield* world.call('run_send', { runId: RUN_B, text: 'Rebase onto main' })
@@ -419,6 +421,29 @@ describe('run_send', () => {
             }
           ]
         }
+      )
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe('run_send of a text the run already holds', () => {
+  it.effect('does not count the earlier copy as the message being shown', () =>
+    Effect.gen(function* () {
+      const world = yield* makeWorld(A_AND_B)
+      const message = `Message from run ${RUN_A}:
+
+Rebase onto main`
+      yield* world.setSnapshot(RUN_B, stateWith({ messages: [userMessage(message)] }))
+      const call = yield* Effect.forkChild(
+        world.call('run_send', { runId: RUN_B, text: 'Rebase onto main' })
+      )
+      yield* world.snapshotRead(RUN_B)
+
+      yield* TestClock.adjust(Duration.seconds(30))
+
+      assert.strictEqual(
+        (yield* Fiber.join(call)).text,
+        `Sent to run ${RUN_B}; it has not shown the message yet.`
       )
     }).pipe(Effect.scoped)
   )

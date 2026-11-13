@@ -1,4 +1,10 @@
-import { type CommittedEvent, PaneAgentEvent, PaneChat, type RunEvents } from '@dia/plugin'
+import {
+  Attention,
+  type CommittedEvent,
+  PaneAgentEvent,
+  PaneChat,
+  type RunEvents
+} from '@dia/plugin'
 import { Clock, Effect, Option, type Scope, Stream } from 'effect'
 
 type ChatState = PaneChat.PaneChatState
@@ -13,6 +19,7 @@ export interface Finish {
 }
 
 const endingOf = (attention: ChatState['attention']): Option.Option<Ending> => {
+  if (Attention.isParkedState(attention)) return Option.some('parked')
   switch (attention._tag) {
     case 'Completed':
       return Option.some('completed')
@@ -20,10 +27,6 @@ const endingOf = (attention: ChatState['attention']): Option.Option<Ending> => {
       return Option.some('errored')
     case 'Crashed':
       return Option.some('crashed')
-    case 'ParkedToResume':
-    case 'ParkedUntilReset':
-    case 'ParkedForUser':
-      return Option.some('parked')
     default:
       return Option.none()
   }
@@ -34,14 +37,17 @@ const nothingToRunNext = (state: ChatState) => state.queued.length === 0 || stat
 /** Whether `state` has no turn in progress and no queued message that runs next. */
 export const isSettled = (state: ChatState): boolean => !state.isLoading && nothingToRunNext(state)
 
-/** Whether `state` shows a user message or a queued message whose text is exactly `text`. */
-export const isSeen = (state: ChatState, text: string): boolean =>
-  state.queued.some((message) => message.text === text) ||
-  state.messages.some(
+/**
+ * How many user messages and queued messages of `state` have exactly `text`. A message sent again
+ * is seen once this count exceeds the count before the send.
+ */
+export const timesSeen = (state: ChatState, text: string): number =>
+  state.queued.filter((message) => message.text === text).length +
+  state.messages.filter(
     (message) =>
       message.role === 'user' &&
       message.parts.some((part) => part.type === 'text' && part.content === text)
-  )
+  ).length
 
 /** The text of the last assistant message of `state`, or an empty string when it has none. */
 export const replyOf = (state: ChatState): string => {
