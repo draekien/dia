@@ -23,6 +23,10 @@ D5. **Requests are not stored by the inbox.** A request is a callback of a live 
 
 D6. **Show selects the run's tab, and asks `dia-runs` for a tab first when the run has none** (`OpenRunInTab`, then `actions.selectTab(runId)`, which also closes the Inbox page). The run id is the tab's pane id (dia-runs D2).
 
+D7. **The host joins each request with `Runs.list` for its run's `cwd`.** `Runs.list` reads every row, once per change of the open requests. Alternative: a `cwd` field on `RunRequest` in `runs-seam.ts`, filled by `dia-runs`; it changes the step-4 seam for one reader, and the read is small at the number of runs one user keeps.
+
+Known limit: Show on a run with no tab sends `SelectTab` as soon as `OpenRunInTab` returns, which can be before the kernel has added the tab; the kernel then logs a failed `SelectTab`, and its own `RunTabRequested` handling selects the new tab a moment later.
+
 ## Interface
 
 ### Exported calls (`plugins/dia-inbox/calls.ts`)
@@ -51,7 +55,7 @@ export const RequestCardKey: ServiceKey<ComponentType<RequestCardProps>>
 
 ### Renderer (`plugins/dia-inbox/renderer.ts`, `inbox-page.tsx`)
 
-Adds the Inbox page. Each item shows the run's folder name and run id, the request card from `RequestCardKey`, and Show. An answer is sent with the `dia-runs` call matching its tag; the item leaves the list when `FollowInbox` drops it. The empty page reads "No agent is waiting for you."
+Adds the Inbox page. Each item shows the display name of the project holding the run's tab (the folder name of its `cwd` when it has no tab) and its run id, the request card from `RequestCardKey`, and Show. An answer is sent with the `dia-runs` call matching its tag; the item leaves the list when `FollowInbox` drops it. The empty page reads "No agent is waiting for you."
 
 ## Refinement Record
 

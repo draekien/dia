@@ -56,13 +56,12 @@ const answerItem = (item: InboxItem, answer: RunAnswer) =>
       answer: answer._tag
     })
     const result = yield* Effect.result(sendAnswer(item, answer))
-    if (Result.isSuccess(result)) return true
+    if (Result.isSuccess(result)) return
     yield* Effect.logWarning('Could not answer a run request', {
       runId: item.runId,
       reason: result.failure._tag
     })
     toast.add({ title: 'Could not send your answer', description: 'Try again.', type: 'error' })
-    return false
   })
 
 const showRun = (runId: string, hasTab: boolean) =>
@@ -80,15 +79,19 @@ const showRun = (runId: string, hasTab: boolean) =>
 
 const folderName = (cwd: string) => cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? cwd
 
-function InboxEntry({ item, hasTab }: { readonly item: InboxItem; readonly hasTab: boolean }) {
+function InboxEntry({ item }: { readonly item: InboxItem }) {
   const Card = useProvided(RequestCardKey)
+  const project = useWorkspace()?.projects.find((entry) =>
+    entry.tabs.some((tab) => tab.config.paneId === item.runId)
+  )
+  const hasTab = project !== undefined
   const [sending, setSending] = useState(false)
   const answer = async (given: RunAnswer) => {
     setSending(true)
-    const sent = await Effect.runPromise(answerItem(item, given)).catch(() => false)
-    if (!sent) setSending(false)
+    await Effect.runPromise(answerItem(item, given)).catch(() => undefined)
+    setSending(false)
   }
-  const label = item.cwd === '' ? 'Agent' : folderName(item.cwd)
+  const label = project?.project.displayName ?? (item.cwd === '' ? 'Agent' : folderName(item.cwd))
 
   return (
     <section aria-label={`${label} needs you`} className="flex flex-col gap-1">
@@ -119,10 +122,6 @@ function InboxEntry({ item, hasTab }: { readonly item: InboxItem; readonly hasTa
 }
 
 function Items({ items }: { readonly items: ReadonlyArray<InboxItem> }) {
-  const workspace = useWorkspace()
-  const tabs = new Set(
-    workspace?.projects.flatMap((entry) => entry.tabs.map((tab) => tab.config.paneId)) ?? []
-  )
   if (items.length === 0) {
     return (
       <Empty>
@@ -138,11 +137,7 @@ function Items({ items }: { readonly items: ReadonlyArray<InboxItem> }) {
   return (
     <div className="flex flex-col gap-6">
       {items.map((item) => (
-        <InboxEntry
-          key={`${item.runId}:${item.request.requestId}`}
-          item={item}
-          hasTab={tabs.has(item.runId)}
-        />
+        <InboxEntry key={`${item.runId}:${item.request.requestId}`} item={item} />
       ))}
     </div>
   )
