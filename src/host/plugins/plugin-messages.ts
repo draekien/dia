@@ -102,24 +102,25 @@ const makeSubscriptionTracker = (plugin: string, tag: string): Effect.Effect<Sub
 const callKey = (plugin: string, tag: string): string => `call:${plugin}.${tag}`
 
 /**
- * Serves `rpc` for calls from the `renderer` entry of the plugin `services` belongs to, until the
- * scope it runs in closes. `served` holds the tags this plugin serves in open scopes; create one
+ * Serves `rpc` for calls from any plugin's `renderer` entry, until the scope it runs in closes.
+ * `services` is the serving plugin's; `served` holds the tags it serves in open scopes; create one
  * per plugin open. A request/response `rpc` takes a handler returning an effect and is run by
- * {@link callPlugin}; a streaming `rpc` takes a handler returning a stream and is run by
- * {@link subscribePlugin}; only a request/response handler receives `call`. Closing the scope ends every subscription of a streaming tag with
- * {@link PluginNotServing} and waits for them to end, up to the registry's service time limit.
+ * {@link callPlugin} with the call's {@link PluginCallAttempt}; a streaming `rpc` takes a handler
+ * returning a stream and is run by {@link subscribePlugin}. Closing the scope ends every
+ * subscription of a streaming tag with {@link PluginNotServing} and waits for them to end, up to
+ * the registry's service time limit.
  * Serving a tag already in `served`, or a tag another plugin has taken, is a defect.
  */
 export const servePluginCall = <R extends Rpc.AnyWithProps>(
   services: PluginServices,
   served: Set<string>,
   rpc: R,
-  handler: (
-    payload: Rpc.Payload<R>,
-    call: PluginCallAttempt
-  ) =>
-    | Effect.Effect<Rpc.Success<R>, Rpc.Error<R>>
-    | Stream.Stream<Rpc.SuccessChunk<R>, Rpc.ErrorExit<R>>
+  handler:
+    | ((
+        payload: Rpc.Payload<R>,
+        call: PluginCallAttempt
+      ) => Effect.Effect<Rpc.Success<R>, Rpc.Error<R>>)
+    | ((payload: Rpc.Payload<R>) => Stream.Stream<Rpc.SuccessChunk<R>, Rpc.ErrorExit<R>>)
 ): Effect.Effect<void, never, Scope.Scope> =>
   Effect.gen(function* () {
     const plugin = services.name
