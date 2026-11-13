@@ -13,19 +13,26 @@ const copyRows = Effect.gen(function* () {
     })
     return { events: 0, items: 0, cursors: 0 }
   }
-  const events = yield* sql<{ readonly sequence: number }>`INSERT INTO main.run_events
+  const changedRows = Effect.map(
+    sql<{ readonly count: number }>`SELECT changes() AS count`,
+    (rows) => rows[0]?.count ?? 0
+  )
+  yield* sql`INSERT INTO main.run_events
     (sequence, run_id, event_type, item_id, source_uuid, occurred_at, payload_json)
     SELECT sequence, agent_id, event_type, item_id, source_uuid, occurred_at, payload_json
-    FROM host.agent_events ORDER BY sequence RETURNING sequence`
-  const items = yield* sql<{ readonly item_id: string }>`INSERT INTO main.run_items
+    FROM host.agent_events ORDER BY sequence`
+  const events = yield* changedRows
+  yield* sql`INSERT INTO main.run_items
     (run_id, item_id, position, kind, streaming, payload_json)
     SELECT agent_id, item_id, position, kind, streaming, payload_json
-    FROM host.agent_items RETURNING item_id`
-  const cursors = yield* sql<{ readonly session_id: string }>`INSERT INTO main.transcript_cursors
+    FROM host.agent_items`
+  const items = yield* changedRows
+  yield* sql`INSERT INTO main.transcript_cursors
     (session_id, last_uuid, file_size, mtime_ms)
     SELECT session_id, last_uuid, file_size, mtime_ms
-    FROM host.agent_transcript_cursors RETURNING session_id`
-  return { events: events.length, items: items.length, cursors: cursors.length }
+    FROM host.agent_transcript_cursors`
+  const cursors = yield* changedRows
+  return { events, items, cursors }
 })
 
 const markDone = Effect.gen(function* () {

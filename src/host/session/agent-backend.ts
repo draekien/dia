@@ -128,7 +128,7 @@ export interface SessionAdditions {
 /**
  * One event read from a session's transcript, as {@link AgentBackend.readTranscriptAfter} returns
  * it. `sourceUuid` is the uuid of the transcript entry the event came from. Pass it to
- * `AgentEventStore.append` unchanged.
+ * `RunEvents.append` unchanged.
  */
 export interface TranscriptEntry {
   readonly event: AgentEvent
@@ -208,7 +208,7 @@ export interface AgentBackend {
   /**
    * The events of session `sessionId`'s transcript under `cwd` from the entries after `afterUuid`,
    * or from every entry when `afterUuid` is none or no longer in the transcript (an already stored
-   * entry is skipped by `AgentEventStore.appendTranscript`). None when the transcript cannot be
+   * entry is skipped by the `dia-run-events` store's `appendTranscript`). None when the transcript cannot be
    * read; the caller then leaves its stored cursor unchanged. Never fails.
    */
   readonly readTranscriptAfter: (

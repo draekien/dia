@@ -8,9 +8,9 @@
 
 ## Reasoning / Learning
 
-`EventHub.publish` (`src/host/services/event-hub.ts`) puts a global event straight on the PubSub as a `GlobalEventFrame`. A pane signal is first appended to `AgentEventStore`, and reaches the PubSub only when `store.committed` emits it. `AttachedSessions.attach` publishes `AttachedSessionsChanged` before it calls `PaneSupervisor.attachPane`. So every subscriber sees `AttachedSessionsChanged` before the attached session's first pane frame. `AgentSummaries` folds `AttachedSessionsChanged` from the hub as a frame, the same way it folds `WorkspaceChanged`, and needs no other dependency.
+`EventHub.publish` (`src/host/services/event-hub.ts`) puts a global event straight on the PubSub as a `GlobalEventFrame`. A pane signal is first appended to the run event log through `RunEventLog` (provided by the `dia-run-events` plugin), and reaches the PubSub only when its `committed` stream emits it. `AttachedSessions.attach` publishes `AttachedSessionsChanged` before it calls `PaneSupervisor.attachPane`. So every subscriber sees `AttachedSessionsChanged` before the attached session's first pane frame. `AgentSummaries` folds `AttachedSessionsChanged` from the hub as a frame, the same way it folds `WorkspaceChanged`, and needs no other dependency.
 
-`HostPlugins` cannot depend on `AttachedSessions`: `AttachedSessions` uses `PaneSupervisor` and `PaneChatProjection`, which depend on `HostPlugins` through `TranscriptReader` and `ModelCatalogFeed`. `SessionAttacher` is a dependency-free `Deferred` that both receive; `AttachedSessionsLive` completes it, and `ctx.sessions.attach` awaits it.
+`HostPlugins` cannot depend on `AttachedSessions`: `AttachedSessions` uses `PaneSupervisor`, which depends on `HostPlugins`. `SessionAttacher` is a dependency-free `Deferred` that both receive; `AttachedSessionsLive` completes it, and `ctx.sessions.attach` awaits it.
 
 ## Implication
 
