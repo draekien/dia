@@ -245,7 +245,6 @@ function NoMatches({
 export function AgentOverview() {
   const workspace = useWorkspace()
   const summaries = useAgentSummaries()
-  const _view = useView()
   const { state, setOpen } = useSidebar()
   const iconMode = state === 'collapsed'
   const [filters, setFilters] = useState<OverviewFilters>(NO_FILTERS)

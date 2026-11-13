@@ -222,6 +222,37 @@ describe('run registry', () => {
     )
   )
 
+  it.live(
+    'sets a run that waited for an answer at shutdown idle on recovery, without opening it',
+    () =>
+      withRows((rows) =>
+        Effect.gen(function* () {
+          yield* rows.upsert(
+            RUN,
+            {
+              sourceCwd: '/repo',
+              model: 'm',
+              thinkingLevel: 'adaptive',
+              permissionMode: 'default',
+              worktree: null
+            },
+            Option.some(SESSION),
+            true
+          )
+          yield* rows.setStatus(RUN, 'waiting')
+          const world = makeWorld(rows)
+          const { recover } = yield* world.registry
+
+          yield* recover
+
+          assert.deepStrictEqual(
+            [yield* statusOf(rows, RUN), world.sessions.length],
+            [Option.some('idle'), 0]
+          )
+        })
+      )
+  )
+
   it.live('marks a run cut off before its session started idle and tells the user to resend', () =>
     withRows((rows) =>
       Effect.gen(function* () {

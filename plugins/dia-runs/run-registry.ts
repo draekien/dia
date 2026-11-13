@@ -139,13 +139,14 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
     })
 
   const teardown = Effect.fn('RunRegistry.teardown')(function* (runId: string) {
-    const entry = (yield* Ref.get(entriesRef)).get(runId)
-    if (entry === undefined) return
-    yield* Ref.update(entriesRef, (current) => {
+    const entry = yield* Ref.modify(entriesRef, (current) => {
+      const found = current.get(runId)
+      if (found === undefined) return [undefined, current]
       const next = new Map(current)
       next.delete(runId)
-      return next
+      return [found, next]
     })
+    if (entry === undefined) return
     yield* entry.stop
     yield* Deferred.succeed(entry.closed, undefined)
     yield* setRequest(runId, Option.none())
@@ -555,7 +556,13 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
   }
 
   const recover = Effect.gen(function* () {
-    const inProgress = (yield* rows.list).filter((row) => row.status === 'running')
+    const stored = yield* rows.list
+    yield* Effect.forEach(
+      stored.filter((row) => row.status === 'waiting'),
+      (row) => rows.setStatus(row.runId, 'idle'),
+      { discard: true }
+    )
+    const inProgress = stored.filter((row) => row.status === 'running')
     yield* Effect.logInfo('Recovering runs whose turn was in progress', {
       runs: inProgress.map((row) => row.runId)
     })

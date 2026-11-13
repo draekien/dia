@@ -102,6 +102,9 @@ const encodeActivities = Schema.encodeSync(Schema.Array(ActivityInfo))
 const encodeActivityNotFound = Schema.encodeSync(ActivityNotFound)
 const encodePluginCallError = Schema.encodeSync(PluginCallError)
 const encodeSubscriptionEnd = Schema.encodeSync(PluginSubscriptionEnd)
+const isPluginCallError = Schema.is(PluginCallError)
+const untilServed = (error: unknown): boolean =>
+  !isPluginCallError(error) || error._tag === 'PluginNotServing'
 
 export const makeHostApi = (deps: HostApiDeps): HostApi => {
   const reloadListeners = new Set<(paneId: string) => void>()
@@ -219,7 +222,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     return () => void Effect.runFork(Fiber.interrupt(fiber))
   }
 
-  const callRuns = (tag: string, payload: unknown, id: string) => {
+  const callRuns = (tag: string, payload: unknown) => {
+    const id = deps.newRequestId()
     let sent = false
     return deps.client.pipe(
       Effect.flatMap((client) =>
@@ -231,14 +235,14 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       ),
       Effect.retry({
         schedule: resendSchedule,
-        while: (error) => !Schema.is(PluginCallError)(error)
+        while: untilServed
       })
     )
   }
 
   const runCommand = (tag: string, payload: Record<string, unknown>): void => {
     void Effect.runPromise(
-      callRuns(tag, payload, deps.newRequestId()).pipe(
+      callRuns(tag, payload).pipe(
         Effect.catch((error) => Effect.sync(() => deps.warn(`Command ${tag} failed`, error)))
       )
     )
@@ -246,7 +250,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
 
   const runQuery = <A>(tag: string, payload: Record<string, unknown> = {}): Promise<A> =>
     Effect.runPromise(
-      callRuns(tag, payload, deps.newRequestId()).pipe(
+      callRuns(tag, payload).pipe(
         Effect.map((value) => value as A),
         Effect.orDie
       )
@@ -254,14 +258,22 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
 
   const followRuns =
     <A>(tag: string) =>
-    (listener: (value: A) => void): (() => void) =>
-      subscribePlugin(
-        RUNS_PLUGIN,
-        tag,
-        {},
-        (value) => listener(value as A),
-        (end) => deps.warn(`Stopped following ${tag}`, end)
+    (listener: (value: A) => void): (() => void) => {
+      const follow = Effect.gen(function* () {
+        const client = yield* deps.client
+        yield* client
+          .SubscribePlugin({ plugin: RUNS_PLUGIN, tag, payload: {} })
+          .pipe(Stream.runForEach((value) => Effect.sync(() => listener(value as A))))
+      }).pipe(
+        Effect.tapError((error) =>
+          Effect.sync(() => deps.warn(`Following ${tag} dropped; resubscribing`, error))
+        ),
+        Effect.retry({ schedule: Schedule.spaced(RESUBSCRIBE_INTERVAL), while: untilServed }),
+        Effect.catch((error) => Effect.sync(() => deps.warn(`Stopped following ${tag}`, error)))
       )
+      const fiber = Effect.runFork(follow)
+      return () => void Effect.runFork(Fiber.interrupt(fiber))
+    }
 
   const subscribeTo = <E extends IpcEvent['_tag']>(
     tag: E,
@@ -316,7 +328,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       getPreferences: () => runQuery<ModelPreferencesSnapshot>('GetModelPreferences'),
       setModelPreference: (model, preference) =>
         Effect.runPromise(
-          callRuns('SetModelPreference', { model, preference }, deps.newRequestId()).pipe(
+          callRuns('SetModelPreference', { model, preference }).pipe(
             Effect.as<LastVisibleModelJson | null>(null),
             Effect.catchTag('PluginCallFailed', (failure) =>
               Effect.succeed(failure.error as LastVisibleModelJson)
