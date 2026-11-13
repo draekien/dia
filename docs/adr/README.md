@@ -50,7 +50,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0039](0039-flush-window-frame.md) | Drop the inset card and make the window frame flush with 32px top rows | accepted |
 | [0040](0040-chat-plugin-fills-a-main-tab-slot.md) | The chat plugin fills a `main.tab` slot inside the kernel's `main` default | accepted |
 | [0041](0041-park-refused-turns.md) | Park a turn the account refused instead of failing it, and resume it with `continue` | accepted |
-| [0042](0042-sqlite-for-host-runtime-state.md) | Store Host runtime state in SQLite, one database file per owner | accepted, amended by ADR-0043 and ADR-0051 |
+| [0042](0042-sqlite-for-host-runtime-state.md) | Store Host runtime state in SQLite, one database file per owner | accepted, amended by ADR-0043, ADR-0051 and ADR-0079 |
 | [0043](0043-workspace-in-host-db.md) | Store the workspace in `host.db` as relational tables, with every session of each agent | accepted, amended by ADR-0074 |
 | [0044](0044-nightly-build-as-side-by-side-app.md) | Publish a nightly build of `main` as a side-by-side `dia-nightly` app | accepted |
 | [0045](0045-hold-to-rewind-under-agent-turns.md) | Hold to rewind from a control under the agent turn | accepted |
@@ -86,6 +86,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0076](0076-build-the-foundation-before-org.md) | Build ten foundation capabilities as plugins before more org work, freeze the org plugin, then rewrite it on them | accepted |
 | [0077](0077-first-party-plugins-are-named-dia.md) | Name every first-party plugin `dia-<name>`, and move each renamed plugin's data with a plugin data migration | accepted |
 | [0078](0078-plugin-data-migrations-and-paths-moved.md) | A plugin declares data migrations that move its data, and the Host records each move so every owner of a path reference rewrites it | accepted |
+| [0079](0079-terminals-use-lydell-node-pty.md) | Run terminals through `@lydell/node-pty`, a native module with N-API prebuilds and no install script | accepted |
 
 ## Adding a new ADR
 
