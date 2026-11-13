@@ -65,6 +65,7 @@ import { AgentEventStore } from './agent-event-store'
 import { EventHub } from './event-hub'
 import { PaneChatProjection } from './pane-chat-projection'
 import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
+import { PathMoves } from './path-moves'
 import { probeProject } from './project-directory'
 import { TranscriptReader } from './transcript-reader'
 import { WorkspaceFeed } from './workspace-feed'
@@ -222,6 +223,7 @@ const gitOpsFailureText = (failure: ServiceWithdrawnError | { readonly cause: un
  * visible; with nothing persisted it starts empty. Requires {@link PaneSupervisor}, {@link WorkspaceStore},
  * {@link TranscriptReader}, {@link PaneChatProjection}, {@link EventHub}, {@link AgentEventStore},
  * {@link HostPlugins} (for the worktree and agent backend services used to remove a project), {@link WorkspaceFeed} (which it keeps current),
+ * {@link PathMoves} (it rewrites tab paths under each moved folder, as the path owner `workspace`),
  * `FileSystem`, `Path` and `Crypto`.
  */
 export const PaneWorkspaceLive = Layer.effect(
@@ -234,6 +236,7 @@ export const PaneWorkspaceLive = Layer.effect(
     const hub = yield* EventHub
     const events = yield* AgentEventStore
     const plugins = yield* HostPlugins
+    const pathMoves = yield* PathMoves
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const crypto = yield* Crypto.Crypto
@@ -276,6 +279,12 @@ export const PaneWorkspaceLive = Layer.effect(
           yield* Effect.logDebug('Workspace changed', { operation })
         })
       )
+
+    yield* pathMoves.subscribe('workspace', (move) =>
+      mutate<never>('pathsMoved', (workspace) =>
+        Result.succeed(WorkspaceOps.movePaths(workspace, move))
+      )
+    )
 
     const projectOfTab = (paneId: PaneId) =>
       Effect.map(SubscriptionRef.get(workspaceRef), (workspace) =>

@@ -102,6 +102,26 @@ const agentEventCleanup = runEach([
   END`
 ])
 
+const pathMoves = runEach([
+  `CREATE TABLE data_migrations (
+    plugin       TEXT    NOT NULL,
+    migration_id TEXT    NOT NULL,
+    ran_at       INTEGER NOT NULL,
+    PRIMARY KEY (plugin, migration_id)
+  )`,
+  `CREATE TABLE paths_moved (
+    sequence  INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_path TEXT    NOT NULL,
+    to_path   TEXT    NOT NULL,
+    moved_at  INTEGER NOT NULL
+  )`,
+  `CREATE TABLE path_move_acks (
+    owner    TEXT    NOT NULL,
+    sequence INTEGER NOT NULL REFERENCES paths_moved,
+    PRIMARY KEY (owner, sequence)
+  )`
+])
+
 /**
  * The migrations of `<userData>/host.db`, keyed `<id>_<name>` and applied in id order by
  * `makeHostDatabaseLive`. Add a migration as a new key; never change an applied one.
@@ -110,5 +130,6 @@ export const kernelMigrations = {
   '1_workspace': workspaceTables,
   '2_import_resolutions': importResolutions,
   '3_agent_events': agentEvents,
-  '4_agent_event_cleanup': agentEventCleanup
+  '4_agent_event_cleanup': agentEventCleanup,
+  '5_path_moves': pathMoves
 }

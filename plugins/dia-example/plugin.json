@@ -1,9 +1,10 @@
 {
   "name": "dia-example",
-  "api": "0.0.36",
+  "api": "0.0.37",
   "category": "feature",
   "host": "host.ts",
   "renderer": "renderer.ts",
   "load": "eager",
-  "exports": ["messages.ts"]
+  "exports": ["messages.ts"],
+  "dataMigrations": [{ "id": "1_dia_prefix", "from": "plugins/example" }]
 }

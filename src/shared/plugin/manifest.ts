@@ -21,7 +21,7 @@ export type PluginApiVersion = typeof PluginApiVersion.Type
  * increment the minor version when the plugin context gains something, and the major version when
  * it changes in a way an older plugin cannot use.
  */
-export const PLUGIN_API_VERSION: PluginApiVersion = '0.0.36'
+export const PLUGIN_API_VERSION: PluginApiVersion = '0.0.37'
 
 const versionParts = (version: string): ReadonlyArray<number> | undefined => {
   const match = SEMVER.exec(version)
@@ -89,12 +89,39 @@ export const PluginExport = Schema.String.check(
 export type PluginExport = typeof PluginExport.Type
 
 /**
+ * A folder inside dia's user data folder, written relative to it as `/`-separated segments of
+ * lowercase letters, digits and hyphens, for example `plugins/worktrees`. It cannot leave the user
+ * data folder.
+ */
+export const UserDataPath = Schema.String.check(
+  Schema.isPattern(/^[a-z0-9-]+(?:\/[a-z0-9-]+)*$/, {
+    message: 'expected a folder relative to the user data folder, such as "plugins/worktrees"'
+  })
+)
+export type UserDataPath = typeof UserDataPath.Type
+
+/**
+ * One data migration in `plugin.json` `dataMigrations`: the Host moves the folder `from` to the
+ * plugin's data folder once, before the plugin first loads, and records the move so every path
+ * owner rewrites its paths. `id` is `<number>_<name>` and never changes once shipped. `before`
+ * is a `.ts` module in the plugin directory whose default export takes the `PathsMoved` about to
+ * happen and returns an effect run before the move, to release what holds the folder open.
+ */
+export const DataMigration = Schema.Struct({
+  id: Schema.String.check(Schema.isPattern(/^\d+_[a-z0-9_]+$/)),
+  from: UserDataPath,
+  before: Schema.optional(PluginExport)
+})
+export type DataMigration = typeof DataMigration.Type
+
+/**
  * Contents of a plugin's `plugin.json`. `category` is the plugin's {@link PluginCategory}.
  * `host` and `renderer` are entry paths relative to the plugin directory; a plugin may declare
  * either or both. `inject` lists the service keys the plugin reads with `ctx.inject`, so the
  * registry reopens the plugin when a provider of one of them changes. `exports` lists the
  * {@link PluginExport} files other code may import. `load` is the {@link PluginLoadMode} at
- * startup; it defaults to `lazy`. Decode it with `{ errors: 'all' }` so every problem in the
+ * startup; it defaults to `lazy`. `dataMigrations` lists the plugin's {@link DataMigration}s in
+ * the order they run. Decode it with `{ errors: 'all' }` so every problem in the
  * manifest is reported at once.
  */
 export const PluginManifest = Schema.Struct({
@@ -107,7 +134,8 @@ export const PluginManifest = Schema.Struct({
   renderer: Schema.optional(Schema.String),
   inject: Schema.optional(Schema.Array(Schema.String)),
   exports: Schema.optional(Schema.Array(PluginExport)),
-  load: Schema.optional(PluginLoadMode)
+  load: Schema.optional(PluginLoadMode),
+  dataMigrations: Schema.optional(Schema.Array(DataMigration))
 })
 export type PluginManifest = typeof PluginManifest.Type
 

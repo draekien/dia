@@ -6,6 +6,7 @@ import {
   type PluginLoader
 } from '@shared/plugin/plugin-registry'
 import { Effect, FileSystem, Option, Path, Result, Schema } from 'effect'
+import type { DataMigrationRunner } from './data-migrations'
 import type { HostPluginContext } from './host-plugin-context'
 import { type PluginModules, processPluginModules } from './plugin-modules'
 
@@ -20,12 +21,14 @@ const decodeManifest = Schema.decodeUnknownResult(Schema.fromJsonString(PluginMa
  * `host` entry, `resolveSetup` imports that entry with `modules.importEntry` and takes its
  * default export as the setup function. Every failure (missing or invalid `plugin.json`, an
  * entry that does not import, a default export that is not a function) is a
- * {@link PluginLoadError} naming the cause. `peek` does the same read and decode without importing
+ * {@link PluginLoadError} naming the cause. Before `use`, a load runs the manifest's data
+ * migrations with `migrate`, and fails with its error. `peek` does the same read and decode without importing
  * or transacting anything, and declares the plugin's exports to `modules` when the manifest's
  * name is the catalog name. Requires `FileSystem` and `Path`.
  */
 export const makeHostPluginLoader = (
-  modules: PluginModules = processPluginModules
+  modules: PluginModules = processPluginModules,
+  migrate: DataMigrationRunner = () => Effect.void
 ): Effect.Effect<PluginLoader<HostPluginContext>, never, FileSystem.FileSystem | Path.Path> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
@@ -68,7 +71,9 @@ export const makeHostPluginLoader = (
     ) {
       const { manifest, resolveSetup } = yield* read(root)
       return yield* modules.transact(name, root, manifest.exports ?? [], (importers) =>
-        use({ manifest, resolveSetup, importers })
+        migrate(name, manifest, root).pipe(
+          Effect.andThen(() => use({ manifest, resolveSetup, importers }))
+        )
       )
     })
 
