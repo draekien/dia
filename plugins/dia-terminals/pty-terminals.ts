@@ -143,22 +143,25 @@ export const makeTerminals = Effect.fnUntraced(function* (
     if (Option.isNone(cwd)) {
       return yield* new TerminalOpenError({ runId, message: 'No run has this id.' })
     }
+    const terminalId = yield* crypto.randomUUIDv4().pipe(Effect.orDie)
+    const lock = yield* Semaphore.make(1)
+    const published = yield* PubSub.unbounded<Option.Option<string>>()
+    const ended = yield* Deferred.make<void>()
+    const events = yield* Queue.unbounded<PtyEvent>()
     const { pty, title } = yield* spawn(cwd.value, command).pipe(
       Effect.mapError((message) => new TerminalOpenError({ runId, message }))
     )
-    const terminalId = yield* crypto.randomUUIDv4().pipe(Effect.orDie)
     const terminal: Terminal = {
       runId,
       title,
       pty,
-      lock: yield* Semaphore.make(1),
+      lock,
       chunks: [],
-      published: yield* PubSub.unbounded<Option.Option<string>>(),
-      ended: yield* Deferred.make<void>(),
+      published,
+      ended,
       size: 0,
       running: true
     }
-    const events = yield* Queue.unbounded<PtyEvent>()
     pty.onData((data) => Queue.offerUnsafe(events, { _tag: 'Data', data }))
     pty.onExit(({ exitCode }) => {
       processes.delete(terminal)
@@ -176,7 +179,7 @@ export const makeTerminals = Effect.fnUntraced(function* (
     )
     yield* Effect.logInfo('Terminal opened', { terminalId, runId, title })
     return info
-  })
+  }, Effect.uninterruptible)
 
   const list = (runId: string) =>
     SubscriptionRef.changes(infos).pipe(

@@ -71,7 +71,13 @@ const followOutput = (terminalId: string, terminal: Terminal) =>
 
 const sendInput = (terminalId: string, input: Queue.Queue<string>) =>
   Stream.fromQueue(input).pipe(
-    Stream.runForEach((data) => callHost(PLUGIN, WriteTerminal, { terminalId, data }))
+    Stream.runForEach((data) =>
+      callHost(PLUGIN, WriteTerminal, { terminalId, data }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning('A terminal call failed', { action: 'write', error: String(error) })
+        )
+      )
+    )
   )
 
 function TerminalView({ terminalId }: { readonly terminalId: string }): React.JSX.Element {
@@ -96,9 +102,9 @@ function TerminalView({ terminalId }: { readonly terminalId: string }): React.JS
       run(sendInput(terminalId, input), 'write')
     ]
     const typed = terminal.onData((data) => Queue.offerUnsafe(input, data))
-    const resized = terminal.onResize(({ cols, rows }) =>
+    const reportSize = ({ cols, rows }: { readonly cols: number; readonly rows: number }) =>
       run(callHost(PLUGIN, ResizeTerminal, { terminalId, cols, rows }), 'resize')
-    )
+    const resized = terminal.onResize(reportSize)
     const fitToWidth = () => {
       const size = fit.proposeDimensions()
       if (size !== undefined && size.cols > 0) terminal.resize(size.cols, VIEW_ROWS)
@@ -106,6 +112,7 @@ function TerminalView({ terminalId }: { readonly terminalId: string }): React.JS
     const observer = new ResizeObserver(fitToWidth)
     observer.observe(element)
     fitToWidth()
+    reportSize(terminal)
     return () => {
       observer.disconnect()
       typed.dispose()

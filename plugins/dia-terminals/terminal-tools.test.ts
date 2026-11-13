@@ -108,6 +108,23 @@ describe('makeTerminalTools', { timeout: 60_000 }, () => {
     )
   )
 
+  it.live('reports the exit code when asked to stop a command that already exited', () =>
+    live(
+      Effect.gen(function* () {
+        const { terminals, tool } = yield* setup
+        const started = yield* tool('terminal_start').run({ command: 'exit 4' }, scopeOf(RUN))
+        yield* onlyTerminal(terminals, (info) => info._tag === 'TerminalExited')
+
+        const stopped = yield* tool('terminal_stop').run(
+          { terminalId: startedId(started.text) },
+          scopeOf(RUN)
+        )
+
+        assert.include(stopped.text, 'already exited with code 4')
+      })
+    )
+  )
+
   it.live('refuses to start a terminal for a caller outside dia', () =>
     live(
       Effect.gen(function* () {

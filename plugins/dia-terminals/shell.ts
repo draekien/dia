@@ -20,7 +20,7 @@ export const shellCommand = (
       command === undefined ? ['-NoLogo'] : ['-NoLogo', '-NoProfile', '-Command', command]
     return { file: 'powershell.exe', args, title: command ?? 'PowerShell' }
   }
-  const file = shell ?? '/bin/sh'
+  const file = shell || '/bin/sh'
   const args = command === undefined ? [] : ['-c', command]
-  return { file, args, title: command ?? file.split('/').at(-1) ?? file }
+  return { file, args, title: command ?? file.slice(file.lastIndexOf('/') + 1) }
 }

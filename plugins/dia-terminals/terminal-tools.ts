@@ -76,8 +76,10 @@ export const makeTerminalTools = (terminals: Terminals): ReadonlyArray<DiaTool> 
       Effect.flatMap(own(terminalId, scope), (snapshot) =>
         Option.match(snapshot, {
           onNone: () => Effect.succeed(notFound(terminalId)),
-          onSome: () =>
-            Effect.as(terminals.stop(terminalId), result(`Stopped terminal ${terminalId}.`))
+          onSome: ({ info }) =>
+            info._tag === 'TerminalExited'
+              ? Effect.succeed(result(`Terminal ${terminalId} had already ${stateText(info)}.`))
+              : Effect.as(terminals.stop(terminalId), result(`Stopped terminal ${terminalId}.`))
         })
       )
   })
