@@ -30,6 +30,10 @@ describe('shownPanel', () => {
   it('shows the first panel when the selected panel is gone', () => {
     expect(shownPanel([FILES], 'git.diff')).toBe(FILES)
   })
+
+  it('shows nothing when there is no panel', () => {
+    expect(shownPanel([], 'example.files')).toBeUndefined()
+  })
 })
 
 describe('fitRightPanelWidth', () => {

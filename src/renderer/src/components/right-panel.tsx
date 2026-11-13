@@ -3,10 +3,10 @@ import { PanelRightIcon } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import {
   fitRightPanelWidth,
+  RIGHT_PANEL_DEFAULT_WIDTH,
   RIGHT_PANEL_MIN_WIDTH,
   type RightPanelView,
   recordPanelsAvailable,
-  resetRightPanelWidth,
   resizeRightPanel,
   rightPanelKey,
   selectRightPanel,
@@ -37,7 +37,16 @@ const SHORTCUT =
     : 'Ctrl Alt B'
 
 const paneWidthOf = (handle: HTMLElement): number =>
-  handle.closest('[data-right-panel]')?.parentElement?.clientWidth ?? 0
+  handle.parentElement?.parentElement?.clientWidth ?? 0
+
+interface Drag {
+  readonly pointerId: number
+  readonly startX: number
+  readonly startWidth: number
+  readonly paneWidth: number
+  readonly panel: HTMLElement
+  width: number
+}
 
 function ResizeHandle({
   paneId,
@@ -46,38 +55,48 @@ function ResizeHandle({
   readonly paneId: PaneId
   readonly width: number
 }): React.JSX.Element {
-  const drag = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
+  const drag = useRef<Drag | null>(null)
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>): void => {
-    if (event.button !== 0 || drag.current) return
-    const panel = event.currentTarget.closest<HTMLElement>('[data-right-panel]')
+    const panel = event.currentTarget.parentElement
+    if (event.button !== 0 || drag.current || panel === null) return
     event.currentTarget.setPointerCapture(event.pointerId)
     event.preventDefault()
+    const startWidth = panel.getBoundingClientRect().width
     drag.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
-      startWidth: panel?.getBoundingClientRect().width ?? width
+      startWidth,
+      paneWidth: paneWidthOf(event.currentTarget),
+      panel,
+      width: startWidth
     }
   }
 
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>): void => {
     const active = drag.current
     if (!active || active.pointerId !== event.pointerId) return
-    const requested = active.startWidth + active.startX - event.clientX
-    resizeRightPanel(paneId, fitRightPanelWidth(requested, paneWidthOf(event.currentTarget)))
+    active.width = fitRightPanelWidth(
+      active.startWidth + active.startX - event.clientX,
+      active.paneWidth
+    )
+    active.panel.style.width = `${active.width}px`
   }
 
   const endDrag = (event: React.PointerEvent<HTMLDivElement>): void => {
-    if (drag.current?.pointerId === event.pointerId) drag.current = null
+    const active = drag.current
+    if (!active || active.pointerId !== event.pointerId) return
+    drag.current = null
+    if (active.width !== active.startWidth) resizeRightPanel(paneId, active.width)
   }
 
+  const step = (event: React.KeyboardEvent<HTMLDivElement>, delta: number): void =>
+    resizeRightPanel(paneId, fitRightPanelWidth(width + delta, paneWidthOf(event.currentTarget)))
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-    const paneWidth = paneWidthOf(event.currentTarget)
-    if (event.key === 'ArrowLeft')
-      resizeRightPanel(paneId, fitRightPanelWidth(width + KEY_STEP, paneWidth))
-    else if (event.key === 'ArrowRight')
-      resizeRightPanel(paneId, fitRightPanelWidth(width - KEY_STEP, paneWidth))
-    else if (event.key === 'Home') resetRightPanelWidth(paneId)
+    if (event.key === 'ArrowLeft') step(event, KEY_STEP)
+    else if (event.key === 'ArrowRight') step(event, -KEY_STEP)
+    else if (event.key === 'Home') resizeRightPanel(paneId, RIGHT_PANEL_DEFAULT_WIDTH)
     else return
     event.preventDefault()
   }
@@ -96,7 +115,7 @@ function ResizeHandle({
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
       onLostPointerCapture={endDrag}
-      onDoubleClick={() => resetRightPanelWidth(paneId)}
+      onDoubleClick={() => resizeRightPanel(paneId, RIGHT_PANEL_DEFAULT_WIDTH)}
       onKeyDown={onKeyDown}
       className="absolute inset-y-0 left-0 z-10 w-3 -translate-x-1/2 touch-none cursor-col-resize outline-hidden after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:-translate-x-1/2 hover:after:bg-border focus-visible:after:bg-ring"
     />
@@ -157,13 +176,11 @@ export function RightPanel({
   const available = panels.length > 0
   useEffect(() => recordPanelsAvailable(available), [available])
   useEffect(() => () => recordPanelsAvailable(false), [])
-  const [first, ...rest] = panels
-  if (!state.open || first === undefined) return null
-  const shown = shownPanel([first, ...rest], state.selected)
+  const shown = shownPanel(panels, state.selected)
+  if (!state.open || shown === undefined) return null
   const Body = shown.component
   return (
     <aside
-      data-right-panel
       aria-label={shown.title}
       style={{ width: state.width, maxWidth: `calc(100% - ${TRANSCRIPT_MIN_WIDTH}px)` }}
       className="relative flex shrink-0 flex-col border-l border-border bg-background"

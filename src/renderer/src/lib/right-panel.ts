@@ -91,18 +91,15 @@ export const selectRightPanel = (paneId: PaneId, key: string): void => {
 /** Sets the right panel width of the tab showing `paneId` to `width` px. */
 export const resizeRightPanel = (paneId: PaneId, width: number): void => update(paneId, { width })
 
-/** Returns the right panel width of the tab showing `paneId` to the default. */
-export const resetRightPanelWidth = (paneId: PaneId): void =>
-  update(paneId, { width: RIGHT_PANEL_DEFAULT_WIDTH })
-
 /**
- * The panel to show among `panels` (non-empty, in list order): the one whose key is `selected`, or
- * the first when `selected` is unset or names a panel that is gone.
+ * The panel to show among `panels` (in list order): the one whose key is `selected`, or the first
+ * when `selected` is unset or names a panel that is gone; `undefined` when `panels` is empty.
  */
 export const shownPanel = (
-  panels: readonly [RightPanelView, ...ReadonlyArray<RightPanelView>],
+  panels: ReadonlyArray<RightPanelView>,
   selected: string | undefined
-): RightPanelView => panels.find((panel) => rightPanelKey(panel) === selected) ?? panels[0]
+): RightPanelView | undefined =>
+  panels.find((panel) => rightPanelKey(panel) === selected) ?? panels[0]
 
 /**
  * The width in px to give the region when the user asks for `width` in a pane `paneWidth` px wide:
