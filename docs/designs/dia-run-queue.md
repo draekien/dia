@@ -49,7 +49,7 @@ export interface Runs {
 }
 ```
 
-`isRuns` also requires `busy` to be present. `PLUGIN_API_VERSION` (`src/shared/plugin/manifest.ts`, now 0.0.40) goes to 0.0.41 with every `plugin.json`. The fake `Runs` values in `src/host/services/pane-workspace.test.ts` and `plugins/dia-inbox/host.test.ts` gain `busy`; `RunsClient` does not expose it.
+`isRuns` also requires `busy` to be present. `PLUGIN_API_VERSION` (`src/shared/plugin/manifest.ts`, 0.0.40 before this step) goes to 0.0.41 with every `plugin.json`. The fake `Runs` in `plugins/dia-inbox/host.test.ts` gains `busy`; `RunsClient` does not expose it.
 
 ### Exported module (`plugins/dia-run-queue/queue.ts`, imported as `@dia-plugin/dia-run-queue/queue`)
 

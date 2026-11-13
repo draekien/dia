@@ -182,6 +182,12 @@ export interface Runs {
   readonly answer: (runId: string, requestId: string, answer: RunAnswer) => Effect.Effect<void>
   /** Every open request of every live run, now and after each change. */
   readonly requests: Stream.Stream<ReadonlyArray<RunRequest>>
+  /**
+   * The ids of the live runs that are busy, now and after each change of the set: a turn is in
+   * progress and no request is open, or one or more background tasks run. A run waiting for the
+   * user is not busy. A run `start` returned is busy before its session reports the turn.
+   */
+  readonly busy: Stream.Stream<ReadonlyArray<string>>
   /** Interrupts run `runId`'s turn. */
   readonly interrupt: (runId: string) => Effect.Effect<void>
   /** Resumes run `runId` when a usage limit parked it. */
@@ -247,10 +253,10 @@ const RUNS_FUNCTIONS = [
 const isRuns = (value: unknown): value is Runs =>
   RUNS_FUNCTIONS.every(
     (member) => Predicate.hasProperty(value, member) && Predicate.isFunction(value[member])
-  )
+  ) && Predicate.hasProperty(value, 'busy')
 
 /**
  * The key `dia-runs` provides {@link Runs} under, named `runs`. A value counts as provided when
- * every method of {@link Runs} is a function. Read it with `ctx.whenProvided`.
+ * every method of {@link Runs} is a function and it has `busy`. Read it with `ctx.whenProvided`.
  */
 export const RunsKey = ServiceKey.make('runs', isRuns)

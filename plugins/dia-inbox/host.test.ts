@@ -42,6 +42,7 @@ const fakeRuns = (requests: SubscriptionRef.SubscriptionRef<ReadonlyArray<RunReq
     sendQueuedNow: nothing,
     answer: nothing,
     requests: SubscriptionRef.changes(requests),
+    busy: Stream.make([]),
     interrupt: nothing,
     resumeParked: nothing,
     rewind: nothing,
