@@ -34,6 +34,13 @@ interface FakeQuery {
   readonly fail: (error: Error) => void
 }
 
+const NO_USAGE = {
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_read_input_tokens: 0,
+  cache_creation_input_tokens: 0
+}
+
 const sdk = vi.hoisted(() => ({ queries: [] as Array<FakeQuery> }))
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async (importOriginal) => {
@@ -110,9 +117,10 @@ const config: PaneConfig = {
   permissionMode: 'default'
 }
 
-const success = { type: 'result', subtype: 'success' } as unknown as SDKMessage
+const success = { type: 'result', usage: NO_USAGE, subtype: 'success' } as unknown as SDKMessage
 const aborted = {
   type: 'result',
+  usage: NO_USAGE,
   subtype: 'error_during_execution',
   errors: ['aborted']
 } as unknown as SDKMessage
@@ -454,6 +462,7 @@ describe('install', () => {
 
       yield* endTurn({
         type: 'result',
+        usage: NO_USAGE,
         subtype: 'error_during_execution',
         errors: ['Claude Code is too old'],
         startup_failure_reason: 'cli_version_too_old'
@@ -607,6 +616,7 @@ describe('missing session', () => {
   const notFound = (turns = 0) =>
     ({
       type: 'result',
+      usage: NO_USAGE,
       subtype: 'error_during_execution',
       is_error: true,
       num_turns: turns,

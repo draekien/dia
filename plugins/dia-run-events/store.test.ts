@@ -15,7 +15,7 @@ import {
   ToolCallStarted
 } from '@shared/domain/agent-event'
 import { SessionId } from '@shared/domain/pane'
-import { PaneTurnStatusChanged } from '@shared/ipc/contract'
+import { PaneTurnStatusChanged, PaneTurnUsageReported } from '@shared/ipc/contract'
 import { Context, Effect, Fiber, FileSystem, Layer, Option, type Scope, Stream } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
@@ -624,6 +624,86 @@ describe('RunEventStore.readAfter', () => {
         assert.deepStrictEqual(read, ReloadRequired.make({ reason: 'readFailed' }))
       })
     )
+  )
+})
+
+describe('RunEventStore.readTagged', () => {
+  const usageOf = (runId: string, outputTokens: number) =>
+    PaneTurnUsageReported.make({
+      paneId: runId,
+      usage: { inputTokens: 1, outputTokens, cacheReadTokens: 0, cacheWriteTokens: 0 }
+    })
+
+  it.effect("returns only the run's events with the given tags, in sequence order", () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        const appended = yield* store.append(AGENT_A, [
+          { event: usageOf(AGENT_A, 10) },
+          { event: messageUpdated('m1', 'Hello', false) },
+          { event: PaneTurnStatusChanged.make({ paneId: AGENT_A, label: 'Thinking' }) },
+          { event: usageOf(AGENT_A, 20) }
+        ])
+        yield* store.append(AGENT_B, [{ event: usageOf(AGENT_B, 30) }])
+
+        const read = yield* store.readTagged(AGENT_A, [
+          'PaneTurnUsageReported',
+          'PaneTurnStatusChanged'
+        ])
+
+        assert.deepStrictEqual(
+          read.map(({ sequence, event }) => [sequence, event._tag]),
+          [
+            [Option.getOrThrow(appended[0]), 'PaneTurnUsageReported'],
+            [Option.getOrThrow(appended[2]), 'PaneTurnStatusChanged'],
+            [Option.getOrThrow(appended[3]), 'PaneTurnUsageReported']
+          ]
+        )
+      })
+    )
+  )
+
+  it.effect('leaves out an event that does not decode', () =>
+    withStore((store, sql) =>
+      Effect.gen(function* () {
+        const [first] = yield* store.append(AGENT_A, [{ event: usageOf(AGENT_A, 10) }])
+        yield* store.append(AGENT_A, [{ event: usageOf(AGENT_A, 20) }])
+        yield* sql`UPDATE run_events SET payload_json = 'not json'
+          WHERE sequence = ${Option.getOrThrow(first)}`
+
+        const read = yield* store.readTagged(AGENT_A, ['PaneTurnUsageReported'])
+
+        assert.deepStrictEqual(
+          read.map(({ event }) => event),
+          [usageOf(AGENT_A, 20)]
+        )
+      })
+    )
+  )
+
+  it.effect('returns nothing for a run with no event of the given tags', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        yield* store.append(AGENT_A, [{ event: messageUpdated('m1', 'Hello', false) }])
+
+        assert.deepStrictEqual(yield* store.readTagged(AGENT_A, ['PaneTurnUsageReported']), [])
+      })
+    )
+  )
+
+  it.effect('indexes a database created at the first migration when it reopens', () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-run-events-store-' })
+      const [first] = Object.entries(runEventsMigrations)
+      if (first === undefined) return assert.fail('no migrations')
+      yield* Effect.scoped(openDatabase(`${dir}/data.db`, Object.fromEntries([first])))
+
+      const sql = yield* Effect.orDie(openDatabase(`${dir}/data.db`, runEventsMigrations))
+      const indexes = yield* sql<{ readonly name: string }>`SELECT name FROM sqlite_master
+        WHERE type = 'index' AND name = 'run_events_by_type'`
+
+      assert.deepStrictEqual(indexes, [{ name: 'run_events_by_type' }])
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
   )
 })
 

@@ -6,7 +6,7 @@ Issue: draekien/dia#251, step 13 of `docs/plans/2026-11-13-foundation.md`. Decis
 
 ## Success criteria
 
-1. Each turn's usage is recorded as a run event. (Test: `plugins/dia-claude-code/reducer.test.ts`: a `result` message whose `usage` has non-zero tokens yields `TurnUsageReported` with those four counts after the flushed tool calls and before `TurnCompleted`; a parked, a refused and an error result do the same before `TurnParked` or `TurnErrored`; a result whose four counts are all 0 yields no `TurnUsageReported`. The tests feed fixture `SDKMessage`s and start no Claude process. `plugins/dia-runs` mapping test: `TurnUsageReported` becomes `PaneTurnUsageReported` for the run.)
+1. Each turn's usage is recorded as a run event. (Test: `plugins/dia-claude-code/reducer.test.ts`: a `result` message whose `usage` has non-zero tokens yields `TurnUsageReported` with those four counts after the flushed tool calls and before `TurnCompleted`; a parked, a refused and an error result do the same before `TurnParked` or `TurnErrored`; a result whose four counts are all 0 yields no `TurnUsageReported`. The tests feed fixture `SDKMessage`s and start no Claude process. `plugins/dia-runs/run-registry.test.ts`: `TurnUsageReported` is stored as `PaneTurnUsageReported` of the run.)
 2. A run's stored usage events can be read without reading the whole log. (Test: `plugins/dia-run-events/store.test.ts`: `readTagged(runId, ['PaneTurnUsageReported'])` returns only that run's events with that tag, in sequence order, and skips an undecodable row with a warning. `2_index_run_events_by_type` applies over a database at migration 1.)
 3. Each run shows input, output and cache tokens per turn and in total. (Test: `plugins/dia-cost/usage.test.ts`: folding `PaneUserMessagesSent('fix the bug\nmore')`, `PaneTurnUsageReported(a)`, `PaneUserMessagesSent('next')`, `PaneTurnUsageReported(b)` gives turns 1 and 2 with prompts `fix the bug` and `next`, usages `a` and `b`, and total `a + b`; a usage event with no prompt before it has prompt `''`. `plugins/dia-cost/host.test.ts`: `FollowRunUsage({ runId })` emits the stored turns first, then a new value after a `PaneTurnUsageReported` of that run is committed, and ignores other runs. App: send two turns in a tab; the `Usage` card lists both turns with their four counts and a total equal to their sum.)
 
@@ -28,7 +28,7 @@ D6. **A result whose four counts are all 0 reports nothing.** Crash and startup-
 
 ### Kernel
 
-`src/shared/domain/token-usage.ts`:
+`src/shared/domain/context-usage.ts` (beside `ContextUsage`, sharing its `TokenCount`):
 
 ```ts
 /** Tokens one turn or run used: prompt input, output, input read from the prompt cache, and input written to it. Each is a non-negative integer. */
@@ -71,7 +71,7 @@ readonly readTagged: (runId: string, tags: NonEmptyReadonlyArray<StoredEvent['_t
 
 ### Plugin (`plugins/dia-cost`)
 
-`plugin.json`: `name: dia-cost`, `api: 0.0.42`, `category: feature`, `host: host.ts`, `renderer: renderer.ts`, `load: eager`; no exports. `tsconfig.web.json` includes `plugins/dia-cost/calls.ts` and `plugins/dia-cost/usage.ts`. Every new export carries JSDoc.
+`plugin.json`: `name: dia-cost`, `api: 0.0.42`, `category: feature`, `host: host.ts`, `renderer: renderer.ts`, `load: eager`; no exports. `tsconfig.web.json` includes `plugins/dia-cost/calls.ts`. Every new export carries JSDoc.
 
 `calls.ts`:
 

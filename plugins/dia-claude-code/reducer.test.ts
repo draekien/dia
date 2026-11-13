@@ -598,10 +598,18 @@ describe('makeSessionEventReducer — file-checkpoint anchoring', () => {
   })
 })
 
+const NO_USAGE = {
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_read_input_tokens: 0,
+  cache_creation_input_tokens: 0
+}
+
 const sdkMessage = (fields: Record<string, unknown>): SDKMessage =>
   ({
     uuid: '00000000-0000-0000-0000-000000000000',
     session_id: 'test-session',
+    ...(fields.type === 'result' ? { usage: NO_USAGE } : {}),
     ...fields
   }) as unknown as SDKMessage
 
@@ -1083,5 +1091,83 @@ describe('makeSessionEventReducer — parked turns', () => {
     reducer.step(rejected())
     reducer.step(failedResult)
     expect(reducer.step(failedResult).map((message) => message._tag)).toEqual(['TurnErrored'])
+  })
+})
+
+describe('makeSessionEventReducer — turn usage', () => {
+  const usage = {
+    input_tokens: 12,
+    output_tokens: 340,
+    cache_read_input_tokens: 5_600,
+    cache_creation_input_tokens: 78
+  }
+  const reported = {
+    _tag: 'TurnUsageReported',
+    usage: { inputTokens: 12, outputTokens: 340, cacheReadTokens: 5_600, cacheWriteTokens: 78 }
+  }
+
+  it('reports the turn usage before a completed turn ends', () => {
+    expect(stepOnce(sdkMessage({ type: 'result', subtype: 'success', usage }))).toEqual([
+      reported,
+      { _tag: 'TurnCompleted' }
+    ])
+  })
+
+  it('reports the turn usage before a failed turn ends', () => {
+    const failed = sdkMessage({ type: 'result', subtype: 'error_max_turns', errors: [], usage })
+    expect(stepOnce(failed).map((message) => message._tag)).toEqual([
+      'TurnUsageReported',
+      'TurnErrored'
+    ])
+  })
+
+  it('reports the turn usage before a parked turn ends', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(
+      sdkMessage({
+        type: 'rate_limit_event',
+        rate_limit_info: { status: 'rejected', resetsAt: 1_700_000_000 }
+      })
+    )
+    const failed = sdkMessage({
+      type: 'result',
+      subtype: 'error_during_execution',
+      errors: [],
+      usage
+    })
+    expect(reducer.step(failed).map((message) => message._tag)).toEqual([
+      'TurnUsageReported',
+      'TurnParked'
+    ])
+  })
+
+  it('reports the turn usage before a refused turn ends', () => {
+    const reducer = makeSessionEventReducer(Option.none())
+    reducer.step(
+      system('model_refusal_no_fallback', {
+        original_model: 'claude-opus-5-5',
+        request_id: null,
+        content: 'Claude declined this request.'
+      })
+    )
+    expect(
+      reducer.step(sdkMessage({ type: 'result', subtype: 'success', usage })).map((m) => m._tag)
+    ).toEqual(['TurnUsageReported', 'TurnErrored'])
+  })
+
+  it('reports nothing for a turn that used no tokens', () => {
+    expect(stepOnce(sdkMessage({ type: 'result', subtype: 'success', usage: NO_USAGE }))).toEqual([
+      { _tag: 'TurnCompleted' }
+    ])
+  })
+
+  it('reports a turn that only read the prompt cache', () => {
+    const cacheOnly = { ...NO_USAGE, cache_read_input_tokens: 1 }
+    expect(
+      stepOnce(sdkMessage({ type: 'result', subtype: 'success', usage: cacheOnly }))[0]
+    ).toEqual({
+      _tag: 'TurnUsageReported',
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1, cacheWriteTokens: 0 }
+    })
   })
 })

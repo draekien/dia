@@ -29,7 +29,7 @@ import {
 } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
-import { TurnCompleted } from '../../src/host/session/protocol'
+import { TurnCompleted, TurnUsageReported } from '../../src/host/session/protocol'
 import {
   type AgentBackend,
   type AgentSession,
@@ -520,6 +520,28 @@ describe('run event order', () => {
           order.filter((tag) => tag === 'TurnCompleted' || tag === 'PaneAttentionChanged'),
           ['TurnCompleted', 'PaneAttentionChanged']
         )
+      })
+    )
+  )
+  it.live("stores a turn's usage as a signal of its run", () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows)
+        const { runs } = yield* world.registry
+        yield* runs.start(startOptions)
+        const [session] = world.sessions
+        if (session === undefined) return assert.fail('the run opened no session')
+        const usage = { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 }
+
+        yield* session.emit(TurnUsageReported.make({ usage }))
+        const stored = yield* eventually(
+          Effect.sync(() =>
+            world.appended.filter((event) => event._tag === 'PaneTurnUsageReported')
+          ),
+          (events) => events.length > 0
+        )
+
+        assert.deepStrictEqual(stored, [{ _tag: 'PaneTurnUsageReported', paneId: STARTED, usage }])
       })
     )
   )

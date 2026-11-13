@@ -17,6 +17,13 @@ type Reading = Pick<
   'totalTokens' | 'maxTokens' | 'autoCompactThreshold' | 'isAutoCompactEnabled'
 >
 
+const NO_USAGE = {
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_read_input_tokens: 0,
+  cache_creation_input_tokens: 0
+}
+
 const sdk = vi.hoisted(() => ({
   readings: [] as Array<Reading | Error>,
   details: [] as Array<string | undefined>,
@@ -75,7 +82,7 @@ const reading = (totalTokens: number): Reading => ({
   isAutoCompactEnabled: true
 })
 
-const success = { type: 'result', subtype: 'success' } as unknown as SDKMessage
+const success = { type: 'result', usage: NO_USAGE, subtype: 'success' } as unknown as SDKMessage
 
 const compactBoundary = {
   type: 'system',
