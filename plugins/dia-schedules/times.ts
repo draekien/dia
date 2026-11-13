@@ -26,11 +26,11 @@ export const nextTime = (times: Times, after: DateTime.Utc): DateTime.Utc =>
     : DateTime.fromDateUnsafe(Cron.next(times.cron, DateTime.toDate(after)))
 
 /**
- * When a schedule registered at `now` and last fired (or stored) at `firedAt` first fires: its
+ * When a schedule that last fired (or was stored) at `firedAt` fires next, judged at `now`: its
  * next time after `firedAt`, or, when that has passed and `catchUp` is `skip`, its next time after
- * `now`. A time in the past means at once.
+ * `now`. A time in the past means at once. Use it at registration and after each fire.
  */
-export const firstRunAt = (
+export const nextRunAt = (
   times: Times,
   catchUp: CatchUp,
   firedAt: DateTime.Utc,

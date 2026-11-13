@@ -14,7 +14,7 @@ import {
 } from 'effect'
 import type { SqlClient } from 'effect/sql'
 import { type InvalidSchedule, Schedule, type Schedules } from './schedules'
-import { firstRunAt, nextTime, parseTimes, type Times } from './times'
+import { nextRunAt, nextTime, parseTimes, type Times } from './times'
 
 /** What {@link makeSchedules} needs: the plugin's activities, its database, and the run queue when one is provided. */
 export interface SchedulesDeps {
@@ -67,10 +67,7 @@ export const makeSchedules = Effect.fnUntraced(function* (deps: SchedulesDeps) {
             yield* sql`UPDATE schedules SET fired_at = ${DateTime.toEpochMillis(began)} WHERE id = ${schedule.id}`.pipe(
               Effect.orDie
             )
-            const next =
-              schedule.catchUp === 'once'
-                ? nextTime(times, began)
-                : nextTime(times, yield* DateTime.now)
+            const next = nextRunAt(times, schedule.catchUp, began, yield* DateTime.now)
             yield* Effect.logInfo('Schedule started a run', {
               ...annotations,
               runId: exit.value,
@@ -103,7 +100,7 @@ export const makeSchedules = Effect.fnUntraced(function* (deps: SchedulesDeps) {
     const scope = yield* Scope.fork(pluginScope)
     live.set(schedule.id, scope)
     const now = yield* DateTime.now
-    const first = firstRunAt(times, schedule.catchUp, firedAt, now)
+    const first = nextRunAt(times, schedule.catchUp, firedAt, now)
     if (schedule.catchUp === 'skip' && !DateTime.isGreaterThan(nextTime(times, firedAt), now)) {
       yield* Effect.logInfo('Schedule skipped the times it missed', { schedule: schedule.id })
     }
