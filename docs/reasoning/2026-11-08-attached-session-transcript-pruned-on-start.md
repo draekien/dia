@@ -1,6 +1,6 @@
-# An attached session's transcript is pruned on every start
+# An attached session's transcript was pruned on every start
 
-**Date:** 2026-11-08
+**Date:** 2026-11-08 (updated 2026-11-13 for the `dia-run-events` plugin, #241)
 
 ## Context
 
@@ -8,10 +8,10 @@ The Executive assistant session (ADR-0071) resumed after a restart in the same p
 
 ## Reasoning / Learning
 
-`pruneOrphans` in `src/host/services/agent-event-store.ts` runs when the store is built and deletes every `agent_events` and `agent_items` row whose `agent_id` is not in `agents`. A session a plugin attaches (ADR-0070) is never an agent row, so its recorded events are deleted at each start. `agent_transcript_cursors` is keyed by session id and was not pruned, so on resume `AgentEventRecorder.catchUp` found a cursor that matched the transcript file's size and modification time, and imported nothing.
+`pruneOrphans` in the former `src/host/services/agent-event-store.ts` ran when the store was built and deleted every `agent_events` and `agent_items` row whose `agent_id` was not in `agents`. A session a plugin attaches (ADR-0070) is never an agent row, so its recorded events were deleted at each start. `agent_transcript_cursors` is keyed by session id and was not pruned, so on resume catch-up found a cursor that matched the transcript file's size and modification time, and imported nothing. The fix then was to prune those cursors too, so a resumed attached session re-imported its whole Claude Code transcript.
 
-`pruneOrphans` now also deletes each cursor whose session is not in `agent_sessions`. A resumed attached session then re-imports its whole Claude Code transcript through `catchUp`. A workspace tab's sessions are in `agent_sessions`, so its cursors stay; a cursor dropped by mistake only causes a re-read, which `appendTranscript` deduplicates by `source_uuid`.
+Since #241 the event log lives in `plugins/dia-run-events/store.ts`, in the plugin's own database. It has no `pruneOrphans`: no event, item or cursor is deleted because its run is not a workspace tab. An attached session's events and its cursor both stay, so a resume shows the stored history and catch-up imports only the transcript entries after the cursor.
 
 ## Implication
 
-An attached session's pane is rebuilt from its Claude Code transcript on each start, not from dia's event store. Events with no transcript entry, such as `SessionNotice` rows and turn durations, are not restored after a restart.
+Do not add a start-up prune keyed on `host.db`'s `agents` table to the run event store: the plugin's database has no `agents` table, and a prune that drops events but keeps cursors brings back this bug. The legacy `host.db` rows are still deleted by the `agents` delete trigger; those rows are no longer read after the one-time copy.

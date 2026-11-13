@@ -83,7 +83,7 @@ Schemas and types `StoredEvent`, `AppendEntry`, `CommittedEvent`, `Replay`, `Rel
 
 ### Exports added to `@dia/plugin` (`src/host/plugin-api.ts`)
 
-The seam values above (except the kernel service and layers), `hostDatabaseOf(dataDir)` from `src/host/plugins/plugin-paths.ts` (beside `pluginDataDir`, which `host-plugins.ts` uses to build `dataDir`; it stays until the handover is removed), `PaneChat` (namespace of `src/shared/domain/pane-chat.ts`: `PaneChatSnapshot`, `paneChatStateFromItems`, `reducePaneChat`, `isPaneStreamEvent`, `emptyPaneChatState`), and `PaneAgentEvent`. `AgentItem` and `ConversationMessage` are already reachable through `AgentEvents`. The plugin context is unchanged, so `PLUGIN_API_VERSION` stays (its rule counts changes to the plugin context).
+The seam values above (except the kernel service and layers), `hostDatabaseOf(dataDir)` from `src/host/plugins/plugin-paths.ts` (it states the `<userData>/plugins/<name>` layout `host-plugins.ts` builds `dataDir` with, and stays until the handover is removed), `PaneChat` (namespace of `src/shared/domain/pane-chat.ts`: `PaneChatSnapshot`, `paneChatStateFromItems`, `reducePaneChat`, `isPaneStreamEvent`, `emptyPaneChatState`), and `PaneAgentEvent`. `AgentItem` and `ConversationMessage` are already reachable through `AgentEvents`. The plugin context is unchanged, so `PLUGIN_API_VERSION` stays (its rule counts changes to the plugin context).
 
 ### Plugin (`plugins/dia-run-events`)
 
@@ -131,7 +131,7 @@ D1. **The kernel reaches the plugin through a seam key until #242.** Alternative
 
 D2. **A tab's run id is its pane id.** Alternative: mint run ids now and map tabs to them, which needs a run table, which is `dia-runs`' data.
 
-D3. **The copy runs outside the migrations, guarded by a `handover` row.** Pending migrations share one transaction and SQLite refuses `ATTACH` in a transaction. Alternatives: the kernel pushes rows to the plugin (kernel code for a plugin's concern); a new `ctx` field naming `host.db` (permanent plugin API for a one-time copy). Chosen: the plugin attaches the path `hostDatabaseOf(ctx.dataDir)`, a kernel function in `plugin-paths.ts` beside `pluginDataDir`.
+D3. **The copy runs outside the migrations, guarded by a `handover` row.** Pending migrations share one transaction and SQLite refuses `ATTACH` in a transaction. Alternatives: the kernel pushes rows to the plugin (kernel code for a plugin's concern); a new `ctx` field naming `host.db` (permanent plugin API for a one-time copy). Chosen: the plugin attaches the path `hostDatabaseOf(ctx.dataDir)`, a kernel function in `plugin-paths.ts`. It is plain string joining, because `run-events-seam.ts`' neighbours are typechecked by the web project, which has no `node:path`.
 
 D4. **`agent-summaries.ts` stays in the kernel until step 4.** It folds live session status and activity lines into `activity.json`, not the event log, and publishes through the kernel hub; it is run status, which `dia-runs` owns. Moving it now needs a plugin-to-hub publish path or a renderer change, both rewritten again in #242. This amends ADR-0074's list and plan row 3.
 
