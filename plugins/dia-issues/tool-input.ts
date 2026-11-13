@@ -1,4 +1,4 @@
-import type { DiaToolField, DiaToolResult } from '@dia/plugin'
+import type { DiaToolResult } from '@dia/plugin'
 import { Data, Effect, Schema } from 'effect'
 
 /** A dia tool call refused because of its input; `message` is returned to the agent. */
@@ -11,17 +11,11 @@ export type Input = Readonly<Partial<Record<string, string>>>
 export const result = (text: string, isError = false): DiaToolResult => ({ text, isError })
 
 /** A required dia tool field described by `description`; it must not be empty. */
-export const required = (description: string): DiaToolField => ({
-  description,
-  pattern: /[\s\S]/
-})
+export const required = (description: string) => Schema.NonEmptyString.annotate({ description })
 
 /** An optional dia tool field described by `description`. */
-export const optional = (description: string): DiaToolField => ({
-  description,
-  pattern: /^[\s\S]*$/,
-  optional: true
-})
+export const optional = (description: string) =>
+  Schema.optionalKey(Schema.String.annotate({ description }))
 
 /** The text of `field` in `input`, or undefined when it is absent or empty. */
 export const present = (input: Input, field: string): string | undefined => {

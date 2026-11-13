@@ -146,7 +146,6 @@ const openWith = Effect.fnUntraced(function* (
       config,
       resume,
       emit: (message) => Effect.sync(() => emitted.push(message)),
-      diaTools: [],
       tools: Option.none(),
       ...additions
     },
@@ -472,7 +471,6 @@ describe('install', () => {
           config,
           resume: Option.none(),
           emit: () => Effect.void,
-          diaTools: [],
           systemPromptAppend: '',
           pluginPaths: [],
           tools: Option.none()
@@ -497,7 +495,6 @@ describe('install', () => {
           config,
           resume: Option.none(),
           emit: (message) => Effect.sync(() => void emitted.push(message)),
-          diaTools: [],
           systemPromptAppend: '',
           pluginPaths: [],
           tools: Option.none()
@@ -521,7 +518,6 @@ describe('install', () => {
           config,
           resume: Option.none(),
           emit: () => Effect.void,
-          diaTools: [],
           systemPromptAppend: '',
           pluginPaths: [],
           tools: Option.none()

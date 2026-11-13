@@ -608,11 +608,9 @@ export const makeIssues = (projectExists: (projectId: ProjectId) => Effect.Effec
             Effect.map((rows) => rows[0]?.open ?? 0),
             orDie
           ),
-        issueTools: (issueId, assigneeId) =>
-          makeIssueTools(toolWork, {
-            issueId,
-            author: AssigneeRef.make({ provider, id: assigneeId })
-          })
+        issueTools: makeIssueTools(toolWork, (assigneeId) =>
+          AssigneeRef.make({ provider, id: assigneeId })
+        )
       }
     }
 

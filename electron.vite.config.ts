@@ -22,7 +22,8 @@ export default defineConfig({
         input: {
           index: resolve('src/main/index.ts'),
           host: resolve('src/host/index.ts'),
-          'plugin-api': resolve('src/host/plugin-api.ts')
+          'plugin-api': resolve('src/host/plugin-api.ts'),
+          'dia-mcp': resolve('plugins/dia-tools/dia-mcp.ts')
         }
       }
     }

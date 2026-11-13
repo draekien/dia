@@ -103,7 +103,6 @@ const open = Effect.fnUntraced(function* (readings: ReadonlyArray<Reading | Erro
       config,
       resume: Option.none(),
       emit: (m) => Effect.sync(() => emitted.push(m)),
-      diaTools: [],
       systemPromptAppend: '',
       pluginPaths: [],
       tools: Option.none()

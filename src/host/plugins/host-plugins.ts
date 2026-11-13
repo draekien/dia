@@ -94,7 +94,9 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
               events: hub.subscribe({}),
               workspace: SubscriptionRef.changes(workspaceFeed),
               window: { attended: appWindow.attended, notify: appWindow.notify },
-              pluginTools: (turnEnded: Effect.Effect<void>): ReadonlyArray<DiaTool> =>
+              pluginTools: (
+                turnEnded: (runId: string) => Effect.Effect<void>
+              ): ReadonlyArray<DiaTool> =>
                 makePluginTools(
                   {
                     reload: (name): Effect.Effect<PluginInfo> => registry.load(name),

@@ -126,7 +126,14 @@ export {
   WorktreeReattachError,
   WorktreesKey
 } from './services/worktrees-seam'
-export type { DiaTool, DiaToolField, DiaToolResult } from './session/dia-tools'
+export {
+  type DiaTool,
+  type DiaToolResult,
+  diaTool,
+  isRunScope,
+  type ToolInput,
+  ToolScope
+} from './session/dia-tools'
 export {
   makePendingUserInput,
   type PendingUserInput,

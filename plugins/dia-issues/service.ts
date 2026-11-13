@@ -1,4 +1,4 @@
-import { type DiaTool, ServiceKey, type SessionId } from '@dia/plugin'
+import { type DiaTool, ServiceKey, type SessionId, type ToolScope } from '@dia/plugin'
 import { type Array as Arr, Effect, Predicate, Schema, type Scope, type Stream } from 'effect'
 import {
   type AssigneeGroup,
@@ -85,11 +85,12 @@ export interface ProviderIssues {
   /** How many issues assigned to `assigneeId` are neither `done` nor `canceled`. */
   readonly countOpenIssues: (assigneeId: string) => Effect.Effect<number>
   /**
-   * The agent issue tools (`create_issue`, `update_issue`, `comment_issue`) for a session working
-   * on `issueId` as `assigneeId`: each acts only within that issue's objective, and comments are
-   * authored by the assignee. Pass them as the session's dia tools.
+   * The agent issue tools (`create_issue`, `update_issue`, `comment_issue`) of this provider's
+   * assignees. Register them with the dia tool registry for scopes {@link isIssueToolScope} accepts
+   * and start each assignee's run with an {@link IssueToolContext} as its context: each call acts
+   * only within that issue's objective, and comments are authored by that assignee.
    */
-  readonly issueTools: (issueId: IssueId, assigneeId: string) => ReadonlyArray<DiaTool>
+  readonly issueTools: ReadonlyArray<DiaTool>
 }
 
 /**
@@ -168,6 +169,14 @@ const MEMBERS: Record<keyof Issues, (member: unknown) => boolean> = {
   registerProvider: Predicate.isFunction,
   importWork: Predicate.isFunction
 }
+
+/** The run context an assignee's run starts with: the issue it works on and the assignee's id. */
+export const IssueToolContext = Schema.Struct({ issueId: IssueId, assigneeId: Schema.String })
+export type IssueToolContext = typeof IssueToolContext.Type
+
+/** True for the dia tool scope of a run started with an {@link IssueToolContext}. */
+export const isIssueToolScope = (scope: ToolScope): boolean =>
+  Schema.is(IssueToolContext)(scope.context)
 
 /** Whether `value` has every {@link Issues} member: the reads as effects, the changes as functions. */
 export const isIssues = (value: unknown): value is Issues =>

@@ -15,6 +15,7 @@ import {
   type SessionMetaRepo,
   WorktreesKey
 } from '@dia/plugin'
+import { ToolsKey } from '@dia-plugin/dia-tools/tools'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem'
 import { Crypto, Effect, Option, Stream, SubscriptionRef } from 'effect'
@@ -54,6 +55,7 @@ import { handOverSettings, storeUsageLimitResume, usageLimitResumeOf } from './h
 import { runsMigrations } from './migrations'
 import { makeRunRegistry } from './run-registry'
 import { makeRunRows, type RunRows } from './run-rows'
+import { makeRunTools } from './run-tools'
 
 const follow = <A>(
   ctx: HostPluginContext,
@@ -119,6 +121,7 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       Option.getOrElse(() => unavailableBackend)
     )
     const crypto = yield* Effect.provide(Crypto.Crypto, NodeCrypto.layer)
+    const runTools = yield* makeRunTools.pipe(Effect.provide(NodeCrypto.layer))
 
     const registry = yield* makeRunRegistry({
       rows,
@@ -139,7 +142,7 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
             )
         })
       ),
-      pluginTools: ctx.pluginTools,
+      sessionTools: runTools.sessionTools,
       usageLimitResume: usageLimitResumeOf(rows),
       newRunId: crypto.randomUUIDv4().pipe(Effect.orDie)
     })
@@ -153,6 +156,9 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     const { runs } = registry
     const sessionCall = once(rows)
 
+    yield* ctx.whenProvided([ToolsKey], ({ tools }) =>
+      runTools.follow(tools, ctx.pluginTools(runs.awaitIdle))
+    )
     yield* ctx.provide(RunsKey, runs)
 
     yield* ctx.serve(SendMessage, ({ runId, text, mode, attachments }, call) =>

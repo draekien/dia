@@ -4,7 +4,6 @@ import {
   type AttachmentType,
   type ContentAttachment,
   type ConversationMessage,
-  type DiaTool,
   type DiscoveredSession,
   HealthError,
   type MessageQueueSnapshot,
@@ -140,16 +139,15 @@ export interface TranscriptTail extends TranscriptInfo {
 /**
  * What a session opens with. `config` chooses the working directory, model and modes; `resume`
  * names the conversation to continue, or is none for a new one; `emit` receives every event the
- * session produces, in order; `diaTools` are the dia tools offered to the agent, whose calls follow
- * the session's permission rules and mode; `tools` are the permission rules and MCP servers of the hired agent's job title,
- * or none for an ad-hoc tab. The {@link SessionAdditions} and `tools` apply for the session's whole
+ * session produces, in order; `tools` are the permission rules and MCP servers the session gets,
+ * among them the `dia` server carrying the dia tools, whose calls follow the session's permission
+ * rules and mode; none adds nothing. The {@link SessionAdditions} and `tools` apply for the session's whole
  * life, including every restart it performs itself.
  */
 export interface AgentSessionOptions extends SessionAdditions {
   readonly config: PaneConfig
   readonly resume: Option.Option<SessionId>
   readonly emit: (message: OutboundMessage) => Effect.Effect<void>
-  readonly diaTools: ReadonlyArray<DiaTool>
   readonly tools: Option.Option<SessionToolOptions>
 }
 

@@ -8,6 +8,7 @@ import {
   type RunEvents,
   SessionId,
   SessionStarted,
+  type ToolScope,
   UserMessagesSent
 } from '@dia/plugin'
 import { NodeServices } from '@effect/platform-node'
@@ -50,6 +51,7 @@ interface FakeSession {
 const makeWorld = (rows: RunRows) => {
   const sessions: Array<FakeSession> = []
   const appended: Array<IpcEvent> = []
+  const toolScopes: Array<ToolScope> = []
   const backend: AgentBackend = {
     ...unavailableBackend,
     openSession: ({ resume, emit }) =>
@@ -96,11 +98,15 @@ const makeWorld = (rows: RunRows) => {
     runEvents: Effect.succeed(Option.some(runEvents)),
     gitOps: Effect.succeed(Option.none()),
     additions: Effect.succeed(NO_SESSION_ADDITIONS),
-    pluginTools: () => [],
+    sessionTools: (scope) =>
+      Effect.sync(() => {
+        toolScopes.push(scope)
+        return Option.none()
+      }),
     usageLimitResume: Effect.succeed('automatic'),
     newRunId: Effect.succeed(STARTED)
   })
-  return { sessions, appended, registry }
+  return { sessions, appended, toolScopes, registry }
 }
 
 const eventually = <A>(read: Effect.Effect<A>, done: (value: A) => boolean) =>
@@ -170,6 +176,30 @@ describe('run registry', () => {
         assert.strictEqual(runId, STARTED)
         assert.deepStrictEqual(world.sessions[0]?.calls, ['sendText:tidy the README:queue'])
         assert.isFalse(Option.getOrThrow(yield* rows.get(STARTED)).hasTab)
+      })
+    )
+  )
+
+  it.live("opens a started run's session with its labels and context after a restart", () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const before = makeWorld(rows)
+        const firstStart = yield* Scope.make()
+        const { runs } = yield* before.registry.pipe(Effect.provideService(Scope.Scope, firstStart))
+        yield* runs.start({ ...startOptions, labels: ['issue'], context: { issueId: 'i-1' } })
+        yield* Scope.close(firstStart, Exit.void)
+
+        const after = makeWorld(rows)
+        const reopened = yield* after.registry
+        yield* reopened.runs.send(STARTED, 'continue', 'queue')
+
+        const expected: ToolScope = {
+          runId: STARTED,
+          project: '/repo',
+          labels: ['issue'],
+          context: { issueId: 'i-1' }
+        }
+        assert.deepStrictEqual(after.toolScopes, [expected])
       })
     )
   )

@@ -35,11 +35,12 @@ const setUp = Effect.gen(function* () {
   assert.isDefined(other)
   yield* work.assignIssue(own.id, orgRef(HIRE))
   assert.isTrue(yield* runs.markStarted(own.id, HIRE))
-  const tools = new Map(runs.issueTools(own.id, HIRE).map((tool) => [tool.name, tool]))
+  const tools = new Map(runs.issueTools.map((tool) => [tool.name, tool]))
+  const scope = { labels: [], context: { issueId: own.id, assigneeId: HIRE } }
   const run = (name: string, input: Record<string, string>) => {
     const tool = tools.get(name)
     assert.isDefined(tool, name)
-    return tool.run(input)
+    return tool.run(input, scope)
   }
   const issueOf = (id: IssueId) =>
     Effect.map(work.snapshot, (snapshot) => snapshot.issues.find((issue) => issue.id === id))
@@ -51,7 +52,12 @@ const setUp = Effect.gen(function* () {
     description: '',
     assignee: null
   })
-  return { work, sql, run, issueOf, own, other, sibling }
+  const runWithout = (name: string, input: Record<string, string>) => {
+    const tool = tools.get(name)
+    assert.isDefined(tool, name)
+    return tool.run(input, { runId: 'tab', labels: [], context: undefined })
+  }
+  return { work, sql, run, runWithout, issueOf, own, other, sibling }
 })
 
 describe('create_issue', () => {
@@ -127,9 +133,12 @@ describe('create_issue', () => {
         updateIssue: () => Effect.die(new Error('disk full')),
         commentIssue: () => Effect.die(new Error('disk full'))
       }
-      const [create] = makeIssueTools(dying, { issueId: MISSING_ISSUE, author: orgRef(HIRE) })
+      const [create] = makeIssueTools(dying, orgRef)
       assert.isDefined(create)
-      const result = yield* create.run({ title: 'Anything' })
+      const result = yield* create.run(
+        { title: 'Anything' },
+        { labels: [], context: { issueId: MISSING_ISSUE, assigneeId: HIRE } }
+      )
       assert.deepStrictEqual(result, { text: 'Could not create the issue.', isError: true })
     })
   )
@@ -259,6 +268,18 @@ describe('comment_issue', () => {
       const env = yield* setUp
       const result = yield* env.run('comment_issue', { issue_id: env.other.id, body: 'Hi' })
       assert.isTrue(result.isError)
+      assert.deepStrictEqual((yield* env.work.snapshot).comments, [])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('refuses a run whose context names no issue, and writes nothing', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const result = yield* env.runWithout('comment_issue', { body: 'Hi' })
+      assert.deepStrictEqual(result, {
+        text: 'This run is not working on an issue.',
+        isError: true
+      })
       assert.deepStrictEqual((yield* env.work.snapshot).comments, [])
     }).pipe(Effect.scoped)
   )
