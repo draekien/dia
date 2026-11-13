@@ -315,19 +315,32 @@ export const makeGitOps = (worktreesRoot: string, git: Git) =>
         })
       }
 
-      const verified = yield* git.branchExists(info.sourceRepo, info.branch).pipe(Effect.result)
-      if (Result.isFailure(verified) || !verified.success) {
-        yield* Effect.logWarning('Did not reattach a worktree whose branch could not be verified', {
+      const branchExists = yield* git.branchExists(info.sourceRepo, info.branch).pipe(
+        Effect.tapError((error) =>
+          Effect.logWarning('Could not verify the branch of a worktree to reattach', {
+            paneId,
+            branch: info.branch,
+            exitCode: error.exitCode
+          })
+        ),
+        Effect.mapError(
+          (error) =>
+            new WorktreeReattachError({
+              paneId,
+              path: info.path,
+              cause: `git rev-parse exited with code ${error.exitCode}`
+            })
+        )
+      )
+      if (!branchExists) {
+        yield* Effect.logWarning('Did not reattach a worktree whose branch no longer exists', {
           paneId,
-          branch: info.branch,
-          exitCode: Result.isFailure(verified) ? verified.failure.exitCode : 1
+          branch: info.branch
         })
         return yield* new WorktreeReattachError({
           paneId,
           path: info.path,
-          cause: Result.isFailure(verified)
-            ? `git rev-parse exited with code ${verified.failure.exitCode}`
-            : `Branch ${info.branch} no longer exists`
+          cause: `Branch ${info.branch} no longer exists`
         })
       }
 

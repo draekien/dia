@@ -9,7 +9,7 @@ import {
   type MetaRepoStateResult
 } from '@dia/plugin'
 import { redactUrlCredentials } from '@dia-plugin/dia-git/git'
-import { Duration, Effect, Option, Semaphore } from 'effect'
+import { Duration, Effect, Option, Result, Semaphore } from 'effect'
 import { SCAN_LOG_OPTIONS, scanPatchLog } from './push-scan'
 
 const REMOTE = 'origin'
@@ -67,8 +67,10 @@ export const makeMetaPush = Effect.fn('MetaPush.make')(function* (
 
   const readState = (git: Git): Effect.Effect<MetaRepoStateResult> =>
     Effect.gen(function* () {
-      const remoteUrl = yield* git.remoteUrl(directory, REMOTE)
-      const branch = yield* git.currentBranch(directory)
+      const [remoteUrl, branch] = yield* Effect.all(
+        [git.remoteUrl(directory, REMOTE), git.currentBranch(directory)],
+        { concurrency: 2 }
+      )
       return MetaRepoState.make({
         remoteUrl: Option.getOrNull(Option.map(remoteUrl, redactUrlCredentials)),
         branch: Option.getOrNull(branch)
@@ -91,7 +93,7 @@ export const makeMetaPush = Effect.fn('MetaPush.make')(function* (
         `git ${step} did not finish within ${Duration.toMinutes(NETWORK_TIMEOUT)} minutes.`
       )
     }
-    if (result.value._tag === 'Success') return undefined
+    if (Result.isSuccess(result.value)) return undefined
     yield* logFailure(step)(result.value.failure)
     return failed(`git ${step} failed: ${reason(result.value.failure)}`)
   })
@@ -107,7 +109,7 @@ export const makeMetaPush = Effect.fn('MetaPush.make')(function* (
             return failed('Enter a remote URL without spaces that does not start with "-".')
           }
           const set = yield* git.setRemoteUrl(directory, REMOTE, trimmed).pipe(Effect.result)
-          if (set._tag === 'Failure') {
+          if (Result.isFailure(set)) {
             return failed(`Could not set the remote: ${reason(set.failure)}`)
           }
           yield* Effect.logInfo('Set the meta repo remote', {

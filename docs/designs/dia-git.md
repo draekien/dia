@@ -119,7 +119,7 @@ Builds `makeGit` with `NodeServices.layer` and provides it under `GitKey`. Manif
 
 ## Internal Decomposition
 
-- **`git.ts` `run`** — spawns `git` with `GIT_TERMINAL_PROMPT=0` in a directory, optionally with a `Stream<Uint8Array>` as stdin, and collects exit code, stdout and stderr; it logs each run at debug level (`cwd`, redacted `args`, `exitCode`) and never at warning or error, because the caller decides whether a `GitError` matters; every operation calls it and maps exit codes.
+- **`git.ts` `run`** — spawns `git` with `GIT_TERMINAL_PROMPT=0` in a directory, optionally with a `Stream<Uint8Array>` as stdin, and collects exit code, stdout and stderr; it logs each run at debug level (`cwd`, the git subcommand, `exitCode`) and never at warning or error, because the caller decides whether a `GitError` matters; every operation calls it and maps exit codes.
 - **`git.ts` operations** — one function per interface member; parsing (`-z` output, porcelain worktree list) stays next to the operation that reads it.
 
 Callers after the change:

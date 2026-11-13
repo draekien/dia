@@ -62,11 +62,7 @@ export const makeGit = Effect.gen(function* () {
         Effect.succeed<Output>({ exitCode: -1, stdout: '', stderr: String(error) })
       ),
       Effect.tap((output) =>
-        Effect.logDebug('Ran git', {
-          cwd,
-          args: args.map(redactUrlCredentials),
-          exitCode: output.exitCode
-        })
+        Effect.logDebug('Ran git', { cwd, command: args[0], exitCode: output.exitCode })
       )
     )
 
