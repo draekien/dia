@@ -4,7 +4,7 @@
 
 ## Context
 
-Issue #15 added OS notifications. Electron main shows them with `Notification`, and a Host built-in plugin (`plugins/notifications`) decides when, from the workspace and the window state.
+Issue #15 added OS notifications. Electron main shows them with `Notification`, and a Host built-in plugin (`plugins/dia-notifications`) decides when, from the workspace and the window state.
 
 ## Reasoning / Learning
 

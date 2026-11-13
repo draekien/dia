@@ -18,4 +18,4 @@ Measured with Agent SDK as installed on 2026-10-26 on Windows:
 
 ## Implication
 
-`plugins/claude-code/model-catalog.ts` (`probeModels`) uses exactly these options and closes the query in a release step, so a timeout or failure never leaves a process behind. Re-check these findings after an Agent SDK upgrade that changes `query()` start-up.
+`plugins/dia-claude-code/model-catalog.ts` (`probeModels`) uses exactly these options and closes the query in a release step, so a timeout or failure never leaves a process behind. Re-check these findings after an Agent SDK upgrade that changes `query()` start-up.

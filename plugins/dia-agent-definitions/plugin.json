@@ -1,0 +1,8 @@
+{
+  "name": "dia-agent-definitions",
+  "api": "0.0.36",
+  "category": "feature",
+  "host": "host.ts",
+  "load": "eager",
+  "exports": ["registry.ts"]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "dia-issues",
+  "api": "0.0.36",
+  "category": "feature",
+  "host": "host.ts",
+  "renderer": "renderer.ts",
+  "load": "eager",
+  "exports": ["domain.ts", "service.ts", "tool-input.ts"]
+}

@@ -23,4 +23,4 @@ THROWN  Error: Claude Code returned an error result: No conversation found with 
 
 ## Implication
 
-The text match lives only in `isSessionNotFound` (`plugins/claude-code/session.ts`), and the Host branches on `SessionEnd._tag`. If an SDK upgrade changes the wording, the end falls back to `SessionFailed` and the pane is marked `Crashed`, which is the behaviour before #48. Re-check the text after an SDK upgrade: resume a deleted session and read the result message.
+The text match lives only in `isSessionNotFound` (`plugins/dia-claude-code/session.ts`), and the Host branches on `SessionEnd._tag`. If an SDK upgrade changes the wording, the end falls back to `SessionFailed` and the pane is marked `Crashed`, which is the behaviour before #48. Re-check the text after an SDK upgrade: resume a deleted session and read the result message.

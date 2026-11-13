@@ -21,10 +21,10 @@ what identifier ties them together, or in what order to invoke them.
   next prompt goes nowhere). Each rewindable user turn now carries two uuids —
   its own `checkpointUuid` (→ `rewindFiles`) and the *preceding assistant* turn's
   `resumeAnchorUuid` (→ `resumeSessionAt`). Rewinding the first turn (no
-  preceding assistant) starts a fresh, unresumed session. Both live (`plugins/claude-code/reducer.ts`
+  preceding assistant) starts a fresh, unresumed session. Both live (`plugins/dia-claude-code/reducer.ts`
   tracks the last assistant uuid seen, seeded at each restart with `continuesFrom`; see
   `docs/reasoning/2026-10-25-closed-sdk-query-takes-prompts.md`) and restored
-  (`plugins/claude-code/transcript.ts` tracks it while projecting history in `readHistory`)
+  (`plugins/dia-claude-code/transcript.ts` tracks it while projecting history in `readHistory`)
   paths compute `resumeAnchorUuid` the same way, and
   it is threaded alongside `checkpointUuid` through protocol/IPC to the renderer
   and back in the rewind command.
@@ -70,6 +70,6 @@ what identifier ties them together, or in what order to invoke them.
    `rewindFiles` restores the file. One CLI defect remains, recorded in
    `docs/reasoning/2026-10-25-rewound-file-loses-next-checkpoint.md`.
 
-The rewind sequencing in `plugins/claude-code/session.ts` (`rewindToCheckpoint`,
-`startQuery`) is tested in `plugins/claude-code/session-rewind.test.ts` against a
+The rewind sequencing in `plugins/dia-claude-code/session.ts` (`rewindToCheckpoint`,
+`startQuery`) is tested in `plugins/dia-claude-code/session-rewind.test.ts` against a
 fake `query()` that reads prompts the way the SDK's `streamInput` does.

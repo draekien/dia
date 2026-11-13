@@ -17,4 +17,4 @@ After the upgrade from `@anthropic-ai/claude-agent-sdk` 0.3.207 to 0.3.311, a pa
 
 ## Implication
 
-`plugins/claude-code/session.ts` passes `TASK_TRACKING_TOOLS` as `allowedTools` on every `query()`, including the query a rewind forks; `session-rewind.test.ts` covers both. The agent summary in `src/shared/domain/agent-summary.ts` shows a todo line only for `TodoWrite`. On current SDK sessions the task tools appear as a `ToolUse` activity, not a `Todo`.
+`plugins/dia-claude-code/session.ts` passes `TASK_TRACKING_TOOLS` as `allowedTools` on every `query()`, including the query a rewind forks; `session-rewind.test.ts` covers both. The agent summary in `src/shared/domain/agent-summary.ts` shows a todo line only for `TodoWrite`. On current SDK sessions the task tools appear as a `ToolUse` activity, not a `Todo`.

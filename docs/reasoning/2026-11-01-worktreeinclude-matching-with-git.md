@@ -17,7 +17,7 @@ Measured on git 2.47.1.windows.2 in a throwaway repo (`.gitignore`: `.env*`, `no
 - **Nested files.** `--exclude-from` reads only the named file, so `vendor/.worktreeinclude` (`other.txt`) was ignored. `--exclude-per-directory=.worktreeinclude` would read it (it then listed `vendor/x/other.txt`), but Claude Code documents only the project-root file, so dia does not.
 - **Copy failures.** A file held open with `FileShare.None` fails `copyFile` with `EBUSY`. The Node error message is `EBUSY: resource busy or locked, copyfile '<src>' -> '<dst>'`; dia shows the part before the first `, ` so the reason does not repeat both paths.
 
-`plugins/worktrees/worktree-include.test.ts` runs the matching cases against real git.
+`plugins/dia-worktrees/worktree-include.test.ts` runs the matching cases against real git.
 
 ## Implication
 

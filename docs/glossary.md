@@ -1,6 +1,6 @@
 # Glossary
 
-Scope: the `issues` plugin (`plugins/issues`) and the `org` plugin (`plugins/org` as of ADR-0072, archived to `archive/org` by ADR-0076). Terms follow Linear where Linear has the concept.
+Scope: the `issues` plugin (`plugins/dia-issues`) and the `org` plugin (`plugins/org` as of ADR-0072, archived to `archive/org` by ADR-0076). Terms follow Linear where Linear has the concept.
 
 ## Vocabulary
 
@@ -22,7 +22,7 @@ Scope: the `issues` plugin (`plugins/issues`) and the `org` plugin (`plugins/org
 
 ## Issue statuses
 
-`IssueStatus` in `plugins/issues/domain.ts`. The six started statuses follow the phases of the `implement-task` workflow, and an agent may set them in any order.
+`IssueStatus` in `plugins/dia-issues/domain.ts`. The six started statuses follow the phases of the `implement-task` workflow, and an agent may set them in any order.
 
 | Status | Linear category | Set by |
 | --- | --- | --- |

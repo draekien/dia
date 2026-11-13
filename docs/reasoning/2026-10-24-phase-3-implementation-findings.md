@@ -12,10 +12,10 @@ Phase 3 of `docs/plans/2026-10-22-plugin-platform.md` (issue #8) was built and t
 
 | Run | Result |
 | --- | --- |
-| 200 source edits to `plugins/example` (a new export of growing size per edit, one `load` after each) | The plugin's total went from 19.7 MB to 22.3 MB (about 13 KB per edit). The Host's working set went from 137 MB to 145 MB. 200 edits plus reloads took 4.7 s |
+| 200 source edits to `plugins/dia-example` (a new export of growing size per edit, one `load` after each) | The plugin's total went from 19.7 MB to 22.3 MB (about 13 KB per edit). The Host's working set went from 137 MB to 145 MB. 200 edits plus reloads took 4.7 s |
 | Fixture plugin whose module holds a 300 000-object array, one edit per reload | The total rose about 7.2 MB per edit: 29.2 MB after edit 1, 101.3 MB after edit 11. Edit 12 returned `RestartRequired` with reason `memory`, imported nothing, and `unload` afterwards returned `Unloaded` |
 
-- **The first total includes one-time costs.** `plugins/example` showed 19.7 MB before any edit, because the first tracked load of the first plugin includes costs that happen once in the Host. The likely sources are tsx's start-up and the first evaluation of the Host's copy of `effect`; which of them it is was not measured. A limit of 100 MB therefore leaves about 80 MB for edits of the first plugin.
+- **The first total includes one-time costs.** `plugins/dia-example` showed 19.7 MB before any edit, because the first tracked load of the first plugin includes costs that happen once in the Host. The likely sources are tsx's start-up and the first evaluation of the Host's copy of `effect`; which of them it is was not measured. A limit of 100 MB therefore leaves about 80 MB for edits of the first plugin.
 - **An unchanged reload does not grow the total.** The second load with no edit changed it from 19.72 MB to 19.45 MB; a total can fall because the heap is measured after a collection.
 - **The forced collection worked in the unpackaged Host.** The per-edit growth was a steady 7.2 MB for the array fixture, which it would not be if uncollected garbage were included. Not tried in a packaged build.
 

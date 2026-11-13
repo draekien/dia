@@ -1,0 +1,8 @@
+{
+  "name": "dia-meta",
+  "api": "0.0.36",
+  "category": "feature",
+  "host": "host.ts",
+  "renderer": "renderer.ts",
+  "load": "eager"
+}

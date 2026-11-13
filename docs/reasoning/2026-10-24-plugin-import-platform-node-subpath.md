@@ -4,7 +4,7 @@
 
 ## Context
 
-Phase 4 step 4 moved the git operations into `plugins/worktrees` (then named `git-ops`), whose `host.ts` provides `NodeServices.layer` to the git code. With `import { NodeServices } from '@effect/platform-node'` the plugin loaded in the unpackaged app, but in an `electron-builder --dir` build it ended `git-ops:Failed` with `Cannot find package 'redis' imported from …\app.asar\node_modules\@effect\platform-node\dist\NodeRedis.js`.
+Phase 4 step 4 moved the git operations into `plugins/dia-worktrees` (then named `git-ops`), whose `host.ts` provides `NodeServices.layer` to the git code. With `import { NodeServices } from '@effect/platform-node'` the plugin loaded in the unpackaged app, but in an `electron-builder --dir` build it ended `git-ops:Failed` with `Cannot find package 'redis' imported from …\app.asar\node_modules\@effect\platform-node\dist\NodeRedis.js`.
 
 On 2026-10-28 the upgrade from electron-vite 5 to 6 caused the same error in the main process, so the packaged app failed at startup. electron-vite 5 bundled `@effect/platform-node` into `out/main`; electron-vite 6 externalizes it, so `out/main` imported the package index from `node_modules` at runtime.
 

@@ -1,0 +1,9 @@
+{
+  "name": "dia-mcp",
+  "api": "0.0.36",
+  "category": "feature",
+  "host": "host.ts",
+  "renderer": "renderer.ts",
+  "load": "eager",
+  "exports": ["servers.ts", "editor.ts", "registry.ts", "picker.ts"]
+}

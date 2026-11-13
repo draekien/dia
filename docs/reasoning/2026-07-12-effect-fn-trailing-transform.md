@@ -4,7 +4,7 @@
 
 ## Context
 
-Writing `runSession` (now in `plugins/claude-code/session.ts`) needed to wrap the entire generator body in `Effect.catchCause` (named `Effect.catchAllCause` in Effect v3) (to log-and-swallow session failures, matching the original code's `.catch(cause => console.error(...))` behavior) without breaking `Effect.fn`'s single-declaration style into a separate `.pipe()` at every call site.
+Writing `runSession` (now in `plugins/dia-claude-code/session.ts`) needed to wrap the entire generator body in `Effect.catchCause` (named `Effect.catchAllCause` in Effect v3) (to log-and-swallow session failures, matching the original code's `.catch(cause => console.error(...))` behavior) without breaking `Effect.fn`'s single-declaration style into a separate `.pipe()` at every call site.
 
 ## Reasoning / Learning
 

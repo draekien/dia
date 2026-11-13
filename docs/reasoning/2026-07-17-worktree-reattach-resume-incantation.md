@@ -15,8 +15,8 @@ dia removes worktrees on graceful shutdown (via the `acquireRelease` finalizer i
 the branch — with the pane's committed work — is still there.
 
 > **Update (2026-07-19):** worktree branches/dirs are now named `dia/<adjective-noun>` (a
-> friendly, collision-checked slug from `GitOps.createWorktree` in `plugins/worktrees/git-ops.ts` — see
-> `plugins/worktrees/worktree-slug.ts`), not `dia/<paneId>`. The branch string is no longer derivable from the
+> friendly, collision-checked slug from `GitOps.createWorktree` in `plugins/dia-worktrees/git-ops.ts` — see
+> `plugins/dia-worktrees/worktree-slug.ts`), not `dia/<paneId>`. The branch string is no longer derivable from the
 > pane id, so reattach must read the **persisted** `WorktreeInfo.branch` rather than
 > reconstruct it. `PaneCreationRequest.worktree` is now a discriminated `Create`/`Reattach`
 > union carrying that persisted info; `openPane` no longer rebuilds `dia/<paneId>` on resume

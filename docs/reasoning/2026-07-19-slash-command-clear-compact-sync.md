@@ -78,7 +78,7 @@ as `system/compact_boundary` with `{ trigger, pre_tokens, post_tokens? }`.
 The reducer keeps the raw counts on the notice (`compaction`), and the chat view
 rounds them (`~95k`, `<1k` below 500) with the exact value in a tooltip
 (`94,533 tokens`), formatted with the fixed `'en-US'` locale so tests do not
-depend on the machine's locale (`plugins/chat/token-count.ts`, #75).
+depend on the machine's locale (`plugins/dia-chat/token-count.ts`, #75).
 
 **A compaction ends rewind for earlier turns.** After compaction,
 `getSessionMessages` no longer returns the turns before it, and the `/compact`
@@ -88,7 +88,7 @@ turns still take checkpoints in order, so later turns keep their own (#75).
 
 ## Implication
 
-- Keep the SDK→protocol mapping in the pure `plugins/claude-code/reducer.ts` and the
+- Keep the SDK→protocol mapping in the pure `plugins/dia-claude-code/reducer.ts` and the
   protocol→IPC mapping in `pane-supervisor.ts`; both are unit-tested without a
   live session.
 - If `showClearContextOnPlanAccept` is ever turned on, revisit the

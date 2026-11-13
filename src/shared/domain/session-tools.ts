@@ -15,7 +15,7 @@ export type PermissionRules = typeof PermissionRules.Type
 /**
  * The permission rules and MCP servers, keyed by server name, a session gets in addition to its
  * defaults. Pass it as `AgentSessionOptions.tools`; pass none for an ad-hoc tab. The kernel does
- * not read an MCP server's value: the mcp plugin owns its shape (`@dia-plugin/mcp/servers`), and
+ * not read an MCP server's value: the mcp plugin owns its shape (`@dia-plugin/dia-mcp/servers`), and
  * the adapter decodes it with that schema. `skills` are the skill names the session enables, as the
  * Agent SDK's `Options.skills` takes them; empty leaves every skill enabled.
  */

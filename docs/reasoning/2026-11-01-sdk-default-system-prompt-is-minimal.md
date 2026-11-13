@@ -4,7 +4,7 @@
 
 ## Context
 
-Issue #16 adds a system-prompt append to every agent. Before it, `plugins/claude-code/session.ts` passed no `systemPrompt` to `query()`.
+Issue #16 adds a system-prompt append to every agent. Before it, `plugins/dia-claude-code/session.ts` passed no `systemPrompt` to `query()`.
 
 ## Reasoning / Learning
 
@@ -14,4 +14,4 @@ An `append` is only accepted on the preset form `{ type: 'preset', preset: 'clau
 
 ## Implication
 
-The claude-code adapter always passes the `claude_code` preset, with or without an append (`plugins/claude-code/session-additions.ts`). Do not drop `systemPrompt` when the append is empty. Expect a resumed conversation to keep the append it started with.
+The claude-code adapter always passes the `claude_code` preset, with or without an append (`plugins/dia-claude-code/session-additions.ts`). Do not drop `systemPrompt` when the append is empty. Expect a resumed conversation to keep the append it started with.
