@@ -122,8 +122,8 @@ function TerminalView({ terminalId }: { readonly terminalId: string }): React.JS
   )
 }
 
-const stateLabel = (info: TerminalInfo) =>
-  info._tag === 'TerminalRunning' ? 'Running' : `Exited ${info.exitCode}`
+const rowTitle = (info: TerminalInfo) =>
+  info._tag === 'TerminalRunning' ? info.title : `${info.title} · exit code ${info.exitCode}`
 
 function TerminalRow({
   info,
@@ -141,7 +141,7 @@ function TerminalRow({
       <button
         type="button"
         aria-pressed={selected}
-        title={info.title}
+        title={rowTitle(info)}
         onClick={onSelect}
         className={cn(
           'flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1 py-0.5 text-left hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
@@ -151,7 +151,7 @@ function TerminalRow({
         <span className="min-w-0 flex-1 truncate font-mono text-xs">{info.title}</span>
         <Status className="shrink-0 text-muted-foreground text-xs">
           <StatusMedia fill={running ? 'half' : 'full'} />
-          <StatusName>{stateLabel(info)}</StatusName>
+          <StatusName>{running ? 'Running' : 'Exited'}</StatusName>
         </Status>
       </button>
       <Button
