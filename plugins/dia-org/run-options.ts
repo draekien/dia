@@ -1,4 +1,4 @@
-import { type PermissionMode, type StartRunOptions, startPermissionMode } from '@dia/plugin'
+import { type StartRunOptions, startPermissionMode } from '@dia/plugin'
 import type { Issue, Objective } from '@dia-plugin/dia-issues/domain'
 import type { AgentBackend } from '@dia-plugin/dia-runs/backend'
 import { Effect, Option, Stream } from 'effect'
@@ -57,7 +57,7 @@ export const runSettings = Effect.fn('Org.runSettings')(function* (
     disabled: yield* backend.disabledPermissionModes(cwd),
     bypassOptedIn
   }
-  const permissionMode: PermissionMode = startPermissionMode(input)
+  const permissionMode = startPermissionMode(input)
   yield* Effect.logInfo('Chose a run permission mode', { model, ...input, permissionMode })
   return { model, thinkingLevel: jobTitle.thinkingLevel, permissionMode }
 })

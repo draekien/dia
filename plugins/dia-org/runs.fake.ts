@@ -52,7 +52,11 @@ export const fakeRuns = () => {
   const enqueued: Array<Enqueued> = []
   let next = 0
 
-  const addRun = (runId: string, options: Pick<StartRunOptions, 'cwd' | 'model'>) =>
+  const addRun = (
+    runId: string,
+    options: Pick<StartRunOptions, 'cwd' | 'model'>,
+    state: Pick<RunInfo, 'status' | 'live'> = { status: 'running', live: true }
+  ) =>
     rows.set(runId, {
       runId,
       cwd: options.cwd,
@@ -60,15 +64,12 @@ export const fakeRuns = () => {
       thinkingLevel: 'medium',
       permissionMode: 'default',
       sessionId: Option.none(),
-      status: 'running',
-      live: true
+      ...state
     })
 
   /** Stores run `runId` as `list` reports it, with `status` and `live`. */
   const setRun = (runId: string, status: RunStatus, live: boolean) => {
-    addRun(runId, { cwd: 'C:/work', model: 'opus' })
-    const row = rows.get(runId)
-    if (row !== undefined) rows.set(runId, { ...row, status, live })
+    addRun(runId, { cwd: 'C:/work', model: 'opus' }, { status, live })
   }
 
   const runs: Pick<Runs, 'list' | 'send' | 'close' | 'start' | 'retire'> = {

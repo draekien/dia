@@ -143,14 +143,13 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
     row: IssueRunRow,
     info: RunInfo
   ) {
-    if (!info.live && info.status === 'idle') {
-      yield* deps.runs.send(row.run_id, RESUME_TEXT, 'queue')
-    }
+    const resumed = !info.live && info.status === 'idle'
+    if (resumed) yield* deps.runs.send(row.run_id, RESUME_TEXT, 'queue')
     const started = yield* deps.provider.markStarted(issue.id, hire.id)
     yield* Effect.logInfo('Reused the run of an issue', {
       issueId: issue.id,
       runId: row.run_id,
-      resumed: !info.live && info.status === 'idle',
+      resumed,
       started
     })
   })
@@ -166,12 +165,12 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
       const info = runInfos.get(row.run_id)
       const forHire = waiting.get(row.issue_id)?.issue.assignee?.id === row.hire_id
       const gone = info === undefined || info.status === 'archived'
-      if (startedIds.has(row.issue_id) && !gone) continue
-      if ((!forHire && !startedIds.has(row.issue_id)) || gone) {
+      const isStarted = startedIds.has(row.issue_id)
+      if (gone || (!isStarted && !forHire)) {
         if (!held.has(row.issue_id)) yield* closeRun(row, info)
         continue
       }
-      stored.set(row.issue_id, row)
+      if (!isStarted) stored.set(row.issue_id, row)
     }
     yield* deps.workspace.retain(new Set([...waiting.keys(), ...startedIds] as Array<IssueId>))
     const hires = new Map((yield* deps.org.hiredAgents).map((hire) => [hire.id as string, hire]))
@@ -204,9 +203,14 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
   })
 
   const deliver = Effect.fn('IssueRuns.deliver')(function* (issueId: IssueId, text: string) {
-    const row = (yield* rows).find((entry) => entry.issue_id === issueId)
-    const live = (yield* deps.runs.list).find((info) => info.runId === row?.run_id)?.live === true
-    if (row === undefined || !live) {
+    const [row] =
+      yield* sql<IssueRunRow>`SELECT issue_id, hire_id, run_id FROM issue_runs WHERE issue_id = ${issueId}`.pipe(
+        Effect.orDie
+      )
+    const live =
+      row !== undefined &&
+      (yield* deps.runs.list).some((info) => info.runId === row.run_id && info.live)
+    if (!live) {
       yield* Effect.logInfo('No live run to message', { issueId })
       return false
     }
