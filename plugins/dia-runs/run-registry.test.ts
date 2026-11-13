@@ -1,6 +1,9 @@
 import {
+  Attention,
   NO_SESSION_ADDITIONS,
   type OutboundMessage,
+  PermissionAnswer,
+  PermissionRequested,
   type RunChange,
   type RunEvents,
   SessionId,
@@ -308,6 +311,70 @@ describe('run registry', () => {
           [[STARTED, 'RunTabRequested']]
         )
         assert.isTrue(Option.getOrThrow(yield* rows.get(STARTED)).hasTab)
+      })
+    )
+  )
+
+  it.live('lists the permission request of a run with no tab until it is answered', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows)
+        const { runs } = yield* world.registry
+        yield* runs.start(startOptions)
+        const [session] = world.sessions
+        if (session === undefined) return assert.fail('the run opened no session')
+        yield* session.emit(SessionStarted.make({ sessionId: SESSION }))
+        yield* session.emit(UserMessagesSent.make({ messages: [] }))
+
+        yield* session.emit(
+          PermissionRequested.make({ requestId: 'p1', toolName: 'Bash', input: {} })
+        )
+        const listed = yield* eventually(Stream.runHead(runs.requests), (current) =>
+          Option.exists(current, (requests) => requests.length === 1)
+        )
+
+        assert.deepStrictEqual(
+          Option.map(listed, (requests) =>
+            requests.map(({ runId, request }) => [runId, request.requestId])
+          ),
+          Option.some([[STARTED, 'p1']])
+        )
+      })
+    )
+  )
+
+  it.live('passes an answer to the session, resumes the run and drops the request', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows)
+        const { runs } = yield* world.registry
+        yield* runs.start(startOptions)
+        const [session] = world.sessions
+        if (session === undefined) return assert.fail('the run opened no session')
+        yield* session.emit(SessionStarted.make({ sessionId: SESSION }))
+        yield* session.emit(UserMessagesSent.make({ messages: [] }))
+        yield* session.emit(
+          PermissionRequested.make({ requestId: 'p1', toolName: 'Bash', input: {} })
+        )
+        yield* eventually(statusOf(rows, STARTED), (status) => Option.contains(status, 'waiting'))
+
+        yield* runs.answer(
+          STARTED,
+          'p1',
+          PermissionAnswer.make({ response: Attention.Allow.make({}) })
+        )
+
+        const remaining = yield* eventually(Stream.runHead(runs.requests), (current) =>
+          Option.exists(current, (requests) => requests.length === 0)
+        )
+        assert.deepStrictEqual(
+          [
+            session.calls.filter((call) => call.startsWith('resolvePermission:p1:')).length,
+            yield* statusOf(rows, STARTED),
+            Option.map(remaining, (requests) => requests.length)
+          ],
+          [1, Option.some('running'), Option.some(0)]
+        )
       })
     )
   )
