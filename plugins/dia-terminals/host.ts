@@ -2,7 +2,7 @@ import type { HostPluginContext, PluginSetup, Runs } from '@dia/plugin'
 import { isRunScope, RunsKey } from '@dia/plugin'
 import { ToolsKey } from '@dia-plugin/dia-tools/tools'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
-import { Effect, Option, SubscriptionRef } from 'effect'
+import { Effect, Option, Ref } from 'effect'
 import {
   FollowTerminalOutput,
   FollowTerminals,
@@ -16,9 +16,9 @@ import { makeTerminals } from './pty-terminals'
 import { makeTerminalTools } from './terminal-tools'
 import { TerminalsKey } from './terminals'
 
-const cwdOf = (provided: SubscriptionRef.SubscriptionRef<Option.Option<Runs>>) => (runId: string) =>
+const cwdOf = (provided: Ref.Ref<Option.Option<Runs>>) => (runId: string) =>
   Effect.gen(function* () {
-    const runs = yield* SubscriptionRef.get(provided)
+    const runs = yield* Ref.get(provided)
     if (Option.isNone(runs)) return Option.none<string>()
     const list = yield* runs.value.list
     return Option.fromUndefinedOr(list.find((run) => run.runId === runId)?.cwd)
@@ -26,11 +26,9 @@ const cwdOf = (provided: SubscriptionRef.SubscriptionRef<Option.Option<Runs>>) =
 
 const setup: PluginSetup<HostPluginContext> = (ctx) =>
   Effect.gen(function* () {
-    const runs = yield* SubscriptionRef.make(Option.none<Runs>())
+    const runs = yield* Ref.make(Option.none<Runs>())
     yield* ctx.whenProvided([RunsKey], ({ runs: current }) =>
-      Effect.acquireRelease(SubscriptionRef.set(runs, Option.some(current)), () =>
-        SubscriptionRef.set(runs, Option.none())
-      )
+      Effect.acquireRelease(Ref.set(runs, Option.some(current)), () => Ref.set(runs, Option.none()))
     )
     const terminals = yield* makeTerminals(cwdOf(runs))
     yield* ctx.provide(TerminalsKey, terminals)

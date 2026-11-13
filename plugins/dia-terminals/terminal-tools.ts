@@ -1,15 +1,9 @@
+import { stripVTControlCharacters } from 'node:util'
 import { type DiaTool, type DiaToolResult, diaTool, type ToolScope } from '@dia/plugin'
 import { Effect, Option, Schema } from 'effect'
 import type { TerminalInfo, Terminals } from './terminals'
 
 const READ_CHARACTERS = 8000
-
-const ANSI_SEQUENCE =
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: matches terminal escape sequences
-  /\u001b(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001b]*(?:\u0007|\u001b\\)|[@-Z\\-_])/g
-
-/** `text` with ANSI escape sequences (colours, cursor moves, titles) removed. */
-export const stripAnsi = (text: string): string => text.replace(ANSI_SEQUENCE, '')
 
 const result = (text: string, isError = false): DiaToolResult => ({ text, isError })
 
@@ -68,7 +62,7 @@ export const makeTerminalTools = (terminals: Terminals): ReadonlyArray<DiaTool> 
           onNone: () => notFound(terminalId),
           onSome: ({ info, output }) =>
             result(
-              `Terminal ${terminalId} is ${stateText(info)}. Its output:\n\n${stripAnsi(output).slice(-READ_CHARACTERS)}`
+              `Terminal ${terminalId} is ${stateText(info)}. Its output:\n\n${stripVTControlCharacters(output).slice(-READ_CHARACTERS)}`
             )
         })
       )

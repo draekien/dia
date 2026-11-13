@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module'
+import { errorMessage } from '@dia/plugin'
 import type * as NodePty from '@lydell/node-pty'
 import {
   Crypto,
@@ -32,6 +33,8 @@ type PtyEvent =
   | { readonly _tag: 'Exit'; readonly exitCode: number }
 
 interface Terminal {
+  readonly runId: string
+  readonly title: string
   readonly pty: NodePty.IPty
   readonly lock: Semaphore.Semaphore
   readonly chunks: Array<string>
@@ -55,8 +58,6 @@ const retain = (terminal: Terminal, data: string) => {
     terminal.size -= terminal.chunks.shift()?.length ?? 0
   }
 }
-
-const describe = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause))
 
 /**
  * The terminals of every run, as {@link Terminals}. `cwdOf` returns a run's working directory, or
@@ -87,12 +88,14 @@ export const makeTerminals = Effect.fnUntraced(function* (
     })
   )
 
-  const setInfo = (terminalId: string, info: Option.Option<TerminalInfo>) =>
+  const replaceInfo = (next: TerminalInfo) =>
     SubscriptionRef.update(infos, (current) =>
-      Option.match(info, {
-        onNone: () => current.filter((each) => each.terminalId !== terminalId),
-        onSome: (next) => current.map((each) => (each.terminalId === terminalId ? next : each))
-      })
+      current.map((each) => (each.terminalId === next.terminalId ? next : each))
+    )
+
+  const dropInfo = (terminalId: string) =>
+    SubscriptionRef.update(infos, (current) =>
+      current.filter((each) => each.terminalId !== terminalId)
     )
 
   const infoOf = (terminalId: string) =>
@@ -110,24 +113,10 @@ export const makeTerminals = Effect.fnUntraced(function* (
         }
         terminal.running = false
         yield* PubSub.publish(terminal.published, Option.none())
-        const info = yield* infoOf(terminalId)
-        if (Option.isNone(info)) return
-        yield* setInfo(
-          terminalId,
-          Option.some(
-            TerminalExited.make({
-              terminalId,
-              runId: info.value.runId,
-              title: info.value.title,
-              exitCode: event.exitCode
-            })
-          )
-        )
-        yield* Effect.logInfo('Terminal exited', {
-          terminalId,
-          runId: info.value.runId,
-          exitCode: event.exitCode
-        })
+        const { runId, title } = terminal
+        const { exitCode } = event
+        yield* replaceInfo(TerminalExited.make({ terminalId, runId, title, exitCode }))
+        yield* Effect.logInfo('Terminal exited', { terminalId, runId, exitCode })
       })
     )
 
@@ -146,7 +135,7 @@ export const makeTerminals = Effect.fnUntraced(function* (
         })
         return { pty, title: shell.title }
       },
-      catch: describe
+      catch: errorMessage
     })
 
   const open = Effect.fn('Terminals.open')(function* (runId: string, command?: string) {
@@ -159,6 +148,8 @@ export const makeTerminals = Effect.fnUntraced(function* (
     )
     const terminalId = yield* crypto.randomUUIDv4().pipe(Effect.orDie)
     const terminal: Terminal = {
+      runId,
+      title,
       pty,
       lock: yield* Semaphore.make(1),
       chunks: [],
@@ -226,7 +217,7 @@ export const makeTerminals = Effect.fnUntraced(function* (
     Effect.suspend(() => {
       const terminal = terminals.get(terminalId)
       if (terminal === undefined || !terminal.running) return Effect.void
-      return Effect.try({ try: () => act(terminal.pty), catch: describe }).pipe(
+      return Effect.try({ try: () => act(terminal.pty), catch: errorMessage }).pipe(
         Effect.catch((message) =>
           Effect.logDebug('A terminal call failed; its process had ended', {
             terminalId,
@@ -237,18 +228,18 @@ export const makeTerminals = Effect.fnUntraced(function* (
       )
     })
 
+  const kill = (terminalId: string) => whileRunning(terminalId, 'stop', (pty) => pty.kill())
+
   const stop = (terminalId: string) =>
-    whileRunning(terminalId, 'stop', (pty) => pty.kill()).pipe(
-      Effect.tap(() => Effect.logInfo('Terminal stopped', { terminalId }))
-    )
+    kill(terminalId).pipe(Effect.tap(() => Effect.logInfo('Terminal stopped', { terminalId })))
 
   const remove = (terminalId: string) =>
     Effect.gen(function* () {
-      yield* whileRunning(terminalId, 'stop', (pty) => pty.kill())
+      yield* kill(terminalId)
       const terminal = terminals.get(terminalId)
       terminals.delete(terminalId)
       if (terminal !== undefined) yield* PubSub.publish(terminal.published, Option.none())
-      yield* setInfo(terminalId, Option.none())
+      yield* dropInfo(terminalId)
       yield* Effect.logInfo('Terminal removed', { terminalId })
     })
 

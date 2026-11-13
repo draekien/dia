@@ -3,7 +3,7 @@ import * as NodeServices from '@effect/platform-node/NodeServices'
 import { assert, describe, it } from '@effect/vitest'
 import { Duration, Effect, FileSystem, Option, type Scope, Stream } from 'effect'
 import { makeTerminals } from './pty-terminals'
-import { makeTerminalTools, stripAnsi } from './terminal-tools'
+import { makeTerminalTools } from './terminal-tools'
 import type { TerminalInfo, Terminals } from './terminals'
 
 const RUN = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -124,13 +124,4 @@ describe('makeTerminalTools', { timeout: 60_000 }, () => {
       })
     )
   )
-})
-
-describe('stripAnsi', () => {
-  it('removes colour, cursor and title sequences and keeps the text', () => {
-    assert.strictEqual(
-      stripAnsi('\u001b]0;title\u0007\u001b[31mred\u001b[0m \u001b[2;1Hnext\u001b[?25h'),
-      'red next'
-    )
-  })
 })

@@ -16,16 +16,11 @@ export const shellCommand = (
   command?: string
 ): ShellCommand => {
   if (platform === 'win32') {
-    return command === undefined
-      ? { file: 'powershell.exe', args: ['-NoLogo'], title: 'PowerShell' }
-      : {
-          file: 'powershell.exe',
-          args: ['-NoLogo', '-NoProfile', '-Command', command],
-          title: command
-        }
+    const args =
+      command === undefined ? ['-NoLogo'] : ['-NoLogo', '-NoProfile', '-Command', command]
+    return { file: 'powershell.exe', args, title: command ?? 'PowerShell' }
   }
   const file = shell ?? '/bin/sh'
-  return command === undefined
-    ? { file, args: [], title: file.split('/').at(-1) ?? file }
-    : { file, args: ['-c', command], title: command }
+  const args = command === undefined ? [] : ['-c', command]
+  return { file, args, title: command ?? file.split('/').at(-1) ?? file }
 }
