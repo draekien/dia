@@ -78,12 +78,14 @@ export interface LiveRunHandle {
 
 /**
  * What a live run reports to its owner: a new conversation id (`None` when the one it resumed
- * does not exist), a permission mode the session chose itself, and each status change.
+ * does not exist), a permission mode the session chose itself, each status change, and the number
+ * of background tasks after each change.
  */
 export interface LiveRunCallbacks {
   readonly onSessionChanged: (sessionId: Option.Option<SessionId>) => Effect.Effect<void>
   readonly onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>
   readonly onStatus: (status: Exclude<RunStatus, 'archived'>) => Effect.Effect<void>
+  readonly onBackgroundTasks: (count: number) => Effect.Effect<void>
 }
 
 /** What {@link startLiveRun} needs besides the run's config and callbacks. */
@@ -474,6 +476,10 @@ export const startLiveRun = Effect.fn('LiveRun.start')(function* (options: LiveR
           newSessionId: message.newSessionId
         })
         yield* unlessStopped(options.onSessionChanged(Option.some(message.newSessionId)))
+      }
+
+      if (message._tag === 'BackgroundTasksChanged') {
+        yield* unlessStopped(options.onBackgroundTasks(message.tasks.length))
       }
 
       if (message._tag === 'PermissionModeChanged') {

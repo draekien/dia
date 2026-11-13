@@ -1,5 +1,6 @@
 import {
   Attention,
+  BackgroundTasksChanged,
   NO_SESSION_ADDITIONS,
   type OutboundMessage,
   PermissionAnswer,
@@ -28,6 +29,7 @@ import {
 } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
+import { TurnCompleted } from '../../src/host/session/protocol'
 import {
   type AgentBackend,
   type AgentSession,
@@ -405,6 +407,68 @@ describe('run registry', () => {
           ],
           [1, Option.some('running'), Option.some(0)]
         )
+      })
+    )
+  )
+})
+
+const busyNow = (runs: { readonly busy: Stream.Stream<ReadonlyArray<string>> }) =>
+  Effect.map(
+    Stream.runHead(runs.busy),
+    Option.getOrElse(() => [])
+  )
+
+describe('busy runs', () => {
+  it.live('counts a started run as busy before its session reports the turn', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const { runs } = yield* makeWorld(rows).registry
+
+        yield* runs.start(startOptions)
+
+        assert.deepStrictEqual(yield* busyNow(runs), [STARTED])
+      })
+    )
+  )
+
+  it.live('does not count a run waiting for the user', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows)
+        const { runs } = yield* world.registry
+        yield* runs.start(startOptions)
+        const [session] = world.sessions
+        if (session === undefined) return assert.fail('the run opened no session')
+        yield* session.emit(UserMessagesSent.make({ messages: [] }))
+
+        yield* session.emit(
+          PermissionRequested.make({ requestId: 'p1', toolName: 'Bash', input: {} })
+        )
+
+        assert.deepStrictEqual(yield* eventually(busyNow(runs), (busy) => busy.length === 0), [])
+      })
+    )
+  )
+
+  it.live('counts a run whose turn ended while a background task runs, until it ends', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows)
+        const { runs } = yield* world.registry
+        yield* runs.start(startOptions)
+        const [session] = world.sessions
+        if (session === undefined) return assert.fail('the run opened no session')
+        yield* session.emit(UserMessagesSent.make({ messages: [] }))
+        yield* session.emit(
+          BackgroundTasksChanged.make({ tasks: [{ taskId: 't1', description: 'build' }] })
+        )
+
+        yield* session.emit(TurnCompleted.make({}))
+        const whileTaskRuns = yield* busyNow(runs)
+        yield* session.emit(BackgroundTasksChanged.make({ tasks: [] }))
+        const afterTaskEnds = yield* eventually(busyNow(runs), (busy) => busy.length === 0)
+
+        assert.deepStrictEqual([whileTaskRuns, afterTaskEnds], [[STARTED], []])
       })
     )
   )

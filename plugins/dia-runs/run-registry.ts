@@ -82,6 +82,18 @@ interface RunEntry {
   readonly closed: Deferred.Deferred<void>
 }
 
+interface RunActivity {
+  readonly running: boolean
+  readonly backgroundTasks: number
+}
+
+const IDLE: RunActivity = { running: false, backgroundTasks: 0 }
+
+const isBusy = (activity: RunActivity) => activity.running || activity.backgroundTasks > 0
+
+const sameIds = (left: ReadonlyArray<string>, right: ReadonlyArray<string>) =>
+  left.length === right.length && left.every((id, index) => id === right[index])
+
 const specOfRow = (row: RunRow): RunSpec => ({
   runId: row.runId,
   sourceCwd: row.spec.sourceCwd,
@@ -107,6 +119,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
   const requestsRef = yield* SubscriptionRef.make<ReadonlyMap<string, Attention.UserInputRequest>>(
     new Map()
   )
+  const activityRef = yield* SubscriptionRef.make<ReadonlyMap<string, RunActivity>>(new Map())
   const changes = yield* PubSub.unbounded<RunChange>()
   const openLock = yield* Semaphore.make(1)
 
@@ -140,6 +153,18 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
       return next
     })
 
+  const setActivity = (runId: string, change: Partial<RunActivity>) =>
+    SubscriptionRef.update(activityRef, (current) =>
+      new Map(current).set(runId, { ...(current.get(runId) ?? IDLE), ...change })
+    )
+
+  const dropActivity = (runId: string) =>
+    SubscriptionRef.update(activityRef, (current) => {
+      const next = new Map(current)
+      next.delete(runId)
+      return next
+    })
+
   const teardown = Effect.fn('RunRegistry.teardown')(function* (runId: string) {
     const entry = yield* Ref.modify(entriesRef, (current) => {
       const found = current.get(runId)
@@ -152,6 +177,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
     yield* entry.stop
     yield* Deferred.succeed(entry.closed, undefined)
     yield* setRequest(runId, Option.none())
+    yield* dropActivity(runId)
     yield* Effect.logInfo('Closing a run', { runId })
     yield* entry.endOutbound
     yield* Fiber.join(entry.subscriber)
@@ -267,7 +293,12 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
         resume: spec.resume,
         record,
         usageLimitResume: deps.usageLimitResume,
-        onStatus: (status) => rows.setStatus(runId, status),
+        onStatus: (status) =>
+          Effect.andThen(
+            setActivity(runId, { running: status === 'running' }),
+            rows.setStatus(runId, status)
+          ),
+        onBackgroundTasks: (backgroundTasks) => setActivity(runId, { backgroundTasks }),
         onSessionChanged: (sessionId) =>
           rows
             .setSessionId(runId, sessionId)
@@ -361,8 +392,10 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
     )
 
     if (Option.isSome(prior) && prior.value.status === 'running') {
-      if (Option.isSome(spec.resume)) yield* started.handle.continueTurn
-      else yield* interruptedBeforeStart(runId)
+      if (Option.isSome(spec.resume)) {
+        yield* setActivity(runId, { running: true })
+        yield* started.handle.continueTurn
+      } else yield* interruptedBeforeStart(runId)
     }
     return config
   })
@@ -463,7 +496,12 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
       },
       false
     ).pipe(Effect.orDie)
-    yield* withLive('start', false)(runId, (handle) => handle.sendMessage(options.text, 'queue'))
+    yield* withLive('start', false)(runId, (handle) =>
+      setActivity(runId, { running: true }).pipe(
+        Effect.andThen(handle.sendMessage(options.text, 'queue')),
+        Effect.onError(() => setActivity(runId, { running: false }))
+      )
+    )
     yield* Effect.logInfo('Started a run with no tab', { runId, cwd: options.cwd })
     return runId
   })
@@ -555,6 +593,15 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
       }))
     }),
     openInTab,
+    busy: SubscriptionRef.changes(activityRef).pipe(
+      Stream.map((current) =>
+        [...current]
+          .filter(([, activity]) => isBusy(activity))
+          .map(([runId]) => runId)
+          .sort()
+      ),
+      Stream.changesWith(sameIds)
+    ),
     changes: Stream.fromPubSub(changes),
     discoverSessions: (directory) =>
       Effect.flatMap(deps.backend, (backend) =>
