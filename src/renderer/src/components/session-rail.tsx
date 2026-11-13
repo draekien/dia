@@ -1,6 +1,6 @@
 import { useAtomValue } from '@effect/atom-react'
 import type { PaneId } from '@shared/domain/pane'
-import { EllipsisIcon, PanelRightIcon } from 'lucide-react'
+import { EllipsisIcon, GalleryVerticalEndIcon } from 'lucide-react'
 import { useEffect, useId } from 'react'
 import {
   endRailPeek,
@@ -220,7 +220,7 @@ export function RailToggle(): React.JSX.Element {
             aria-pressed={shown}
             onClick={toggleRail}
           >
-            <PanelRightIcon />
+            <GalleryVerticalEndIcon />
           </Button>
         }
       />

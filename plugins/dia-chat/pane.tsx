@@ -36,6 +36,7 @@ import {
   paneRewindAtom,
   paneSendAtom,
   paneSendQueuedNowAtom,
+  RightPanel,
   revealRailCard,
   rewindRowState,
   rewindTargets,
@@ -69,7 +70,7 @@ import {
   useRailLayout,
   useTranscriptWidth
 } from '@dia/renderer-plugin'
-import { RailCardsSlot } from '@dia-plugin/dia-chat/slots'
+import { PanelsSlot, RailCardsSlot } from '@dia-plugin/dia-chat/slots'
 import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react'
 import type { AgentSummary } from '@shared/domain/agent-summary'
 import { PathAttachment, type ProjectEntry } from '@shared/domain/attachment'
@@ -656,6 +657,10 @@ const messageActivitySignature = (state: PaneChatState): string => {
 
 function ChatSessionRail({ paneId }: { readonly paneId: string }) {
   return <SessionRail paneId={paneId} cards={useList(RailCardsSlot)} />
+}
+
+function ChatRightPanel({ paneId }: { readonly paneId: string }) {
+  return <RightPanel paneId={paneId} panels={useList(PanelsSlot)} />
 }
 
 function PaneChat({
@@ -1335,7 +1340,7 @@ function Pane({
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a drop guard only, so a file dropped outside the composer does not navigate the window
     <div
-      className="flex h-full flex-col bg-background text-ink"
+      className="flex h-full bg-background text-ink"
       onDragOver={(event) => {
         if (event.defaultPrevented || !event.dataTransfer.types.includes('Files')) return
         event.preventDefault()
@@ -1343,28 +1348,31 @@ function Pane({
       }}
       onDrop={(event) => event.preventDefault()}
     >
-      <PaneChat
-        key={paneId}
-        paneId={paneId}
-        cwd={cwd}
-        model={chosenModel}
-        onModelChange={changeModel}
-        thinkingLevel={fitThinkingLevel(level, thinkingLevels)}
-        thinkingLevels={thinkingLevels}
-        onThinkingLevelChange={changeThinkingLevel}
-        permissionMode={mode}
-        disabledPermissionModes={disabledPermissionModesFor(
-          settingsDisabledModes,
-          modelOption(chosenModel)
-        )}
-        onPermissionModeChange={changePermissionMode}
-        column={transcriptColumn({ width })}
-        columnMax={COLUMN_MAX_PX[width]}
-        focusComposer={focusComposer}
-        projectName={projectName}
-        branch={branch}
-        fixedSettings={fixedSettings}
-      />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <PaneChat
+          key={paneId}
+          paneId={paneId}
+          cwd={cwd}
+          model={chosenModel}
+          onModelChange={changeModel}
+          thinkingLevel={fitThinkingLevel(level, thinkingLevels)}
+          thinkingLevels={thinkingLevels}
+          onThinkingLevelChange={changeThinkingLevel}
+          permissionMode={mode}
+          disabledPermissionModes={disabledPermissionModesFor(
+            settingsDisabledModes,
+            modelOption(chosenModel)
+          )}
+          onPermissionModeChange={changePermissionMode}
+          column={transcriptColumn({ width })}
+          columnMax={COLUMN_MAX_PX[width]}
+          focusComposer={focusComposer}
+          projectName={projectName}
+          branch={branch}
+          fixedSettings={fixedSettings}
+        />
+      </div>
+      <ChatRightPanel paneId={paneId} />
     </div>
   )
 }

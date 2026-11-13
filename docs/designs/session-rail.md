@@ -1,5 +1,7 @@
 # Session rail and centred composer
 
+> Superseded in part by `docs/designs/right-panel.md` (issue #137): the rail toggle's icon is `GalleryVerticalEnd`, not `PanelRight`, which the right panel toggle now uses. The rail cards measure their fit on the transcript area beside the right panel.
+>
 > Superseded in part by `docs/designs/list-slots.md` (ADR-0061): `addRailCard`, `railCardsAtom`, `visibleRailCardsAtom` and `RailCard` are removed; a plugin adds a card with `addEntry(ctx, RailCardsSlot, card)`, cards are ordered by `order`, and the chat plugin passes them to `SessionRail` as `cards`.
 
 Shaped in conversation with the user on 2026-11-01 (`/impeccable shape`). The visual rules are in `DESIGN.md` > Components > Session rail and Composer. The decision to add a many-contributor extension point is ADR-0048.
@@ -11,7 +13,7 @@ Shaped in conversation with the user on 2026-11-01 (`/impeccable shape`). The vi
 - A composer that sits centred in an empty session and moves to the bottom after the first send.
 - Composer layout: the settings move to a line under the box; the text area grows with its text; the send button is neutral while there is nothing to send.
 
-Out of scope: the diff drawer (a later window-level column to the right of the session pane), drag reordering of cards, per-agent card visibility.
+Out of scope: the diff drawer (now the right panel beside the transcript, `docs/designs/right-panel.md`), drag reordering of cards, per-agent card visibility.
 
 ## Modules
 
@@ -63,7 +65,7 @@ The header toggle (`RailToggle`) is kernel UI in `TabHeader` and is not exported
 - Card frame: a hairline border, `bg-card` (the surface token, one step lighter than the pane), no shadow; a caption-size title row with a `⋯` icon button. The `⋯` popover lists every registered card with a checkbox; unchecking one hides it.
 - When every card is hidden, one small card reads `All cards hidden` with a `Show cards` button that clears the hidden list.
 - While `peek` is on, `RailToggle` (mounted for every tab, so also in an empty session where the rail is not rendered) listens: a `focusin` or `pointerdown` outside every element marked `data-session-rail` (the cards, their `⋯` popovers and the header toggle), or `Escape`, turns it off.
-- `RailToggle` (in `TabHeader`, shown for a tab): an icon button (`PanelRight`), `aria-pressed` = `railShown`, with the shortcut `Ctrl Shift B` (`⌘ Shift B` on macOS). When the cards fit it flips `railOpen`; otherwise it flips `peek`.
+- `RailToggle` (in `TabHeader`, shown for a tab): an icon button (`GalleryVerticalEnd`), `aria-pressed` = `railShown`, with the shortcut `Ctrl Shift B` (`⌘ Shift B` on macOS). When the cards fit it flips `railOpen`; otherwise it flips `peek`.
 
 ### Chat plugin
 
