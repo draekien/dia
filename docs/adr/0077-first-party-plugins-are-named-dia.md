@@ -52,4 +52,4 @@ Chosen option: "Rename every first-party plugin and move each data folder with a
 
 ## More Information
 
-* Whether any `host.db` table other than the workspace tables stores a plugin name. <!-- unverified: not searched at 2026-11-13 -->
+* No `host.db` table stores a plugin name: `agents.model` holds a model id, and the other kernel tables hold paths, ids and events (checked 2026-11-13 against `src/host/services/kernel-migrations.ts`).

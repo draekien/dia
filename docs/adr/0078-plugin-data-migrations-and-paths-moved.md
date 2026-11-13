@@ -26,8 +26,8 @@ A plugin stores files in `<userData>/plugins/<name>` (`ctx.dataDir`, ADR-0032) a
 
 Chosen option: "The Host moves folders and records a `PathsMoved` entry that each owner applies", because each owner then rewrites only references it owns, and a new owner of path references handles moves without changes to any migrating plugin.
 
-* A plugin manifest lists data migration modules. Each migration has an `id`, a `from` path (relative to the user data folder) and an optional `after` effect that receives the moved paths and fixes data the plugin owns.
-* Before a plugin's setup, the Host runs each migration the plugin has not run: it renames `from` to the plugin's data folder, runs `after`, and records the migration id in `host.db`, as `ctx.database` records database migrations.
+* A plugin manifest lists data migrations in `dataMigrations`. Each migration has an `id`, a `from` path (relative to the user data folder) and an optional `before` module whose default export runs before the move and releases what holds the folder open (for example a `git fsmonitor--daemon`). A plugin fixes data it owns as a path owner of its own move, so a migration has no `after` step.
+* Before a plugin's setup, the Host runs each migration the plugin has not run: it runs `before`, renames `from` to the plugin's data folder, and records the migration id in `host.db`, as `ctx.database` records database migrations. A rename that fails stops the plugin from loading with an error naming both paths and the cause, and is retried at the next load.
 * If `from` and the destination both exist, the migration fails with an error naming both paths, and the plugin does not load. This covers dev builds that share `%APPDATA%\dia-dev` across worktrees (`docs/reasoning/2026-07-20-dev-prod-coexistence-userdata-isolation.md`).
 * After a move the Host records a `PathsMoved` entry `{ from, to }` in `host.db`. An owner of path references (the kernel workspace store, `dia-claude-code`, `dia-worktrees`, and any later plugin) registers as a path owner and is given every entry it has not acknowledged, at load and when a new entry is recorded. It rewrites its references and acknowledges the entry.
 * `dia-claude-code` handles an entry by moving the transcript folder of each moved working directory. `dia-worktrees` handles an entry by running `git worktree repair` with each moved worktree path.
@@ -52,6 +52,7 @@ Chosen option: "The Host moves folders and records a `PathsMoved` entry that eac
 
 ## More Information
 
-* Claude Code finds a session after its transcript folder is renamed, given that each transcript entry also records a `cwd`. <!-- unverified -->
-* `git worktree repair` restores the links of worktrees moved together with their parent folder on Windows. <!-- unverified -->
+* Claude Code finds a session after its working directory and its transcript folder are both renamed, although earlier transcript entries keep the old `cwd` (verified 2026-11-13, `docs/reasoning/2026-11-13-plugin-data-move-hand-tests.md`).
+* `git worktree repair <new paths>` run in the main repository restores the links of worktrees moved together with their parent folder on Windows (verified 2026-11-13, same entry). The move itself fails while a `git fsmonitor--daemon` watches a worktree, hence the `before` step.
+* Amended 2026-11-13 by the design `docs/designs/plugin-data-migrations.md`: migrations are manifest data with an optional `before` module in place of migration modules with an `after` effect.
 * Amends ADR-0032 (plugins keep files in a data directory).
