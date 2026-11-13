@@ -14,7 +14,7 @@ Issue #154 records each live pane session to `host.db` and owns the transcript c
 
 ## Reasoning / Learning
 
-- `ConversationReset.newSessionId` comes from the SDK's `new_conversation_id` (`plugins/claude-code/reducer.ts`). No transcript is written under that id. The cleared conversation's entries go to the session named by the `SessionStarted` that follows the reset.
+- `ConversationReset.newSessionId` comes from the SDK's `new_conversation_id` (`plugins/dia-claude-code/reducer.ts`). No transcript is written under that id. The cleared conversation's entries go to the session named by the `SessionStarted` that follows the reset.
 - The recorder first owned the cursor of the `ConversationReset` id only. The following `SessionStarted` then looked like a rewind fork (a new id with no reset), so the recorder dropped ownership and the cleared conversation got no cursor.
 - The recorder now owns the cursor of the session it last bound (#155), so the `SessionStarted` after the reset takes ownership.
 

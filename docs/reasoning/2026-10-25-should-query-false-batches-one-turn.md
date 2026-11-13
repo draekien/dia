@@ -49,7 +49,7 @@ The SDK reference documents `num_turns: 0` only for batched background-task comp
 ## Implication
 
 - Do not drop results by `num_turns === 0`: a pane would stay loading after `/cost`. Count the silent messages instead.
-- `offerBatch` in `plugins/claude-code/session.ts` adds n − 1 to `silentResultsRef` before offering any message, and `forward` drops one `TurnCompleted` per count. The count is raised before the first offer because the silent result can arrive before the next offer runs.
+- `offerBatch` in `plugins/dia-claude-code/session.ts` adds n − 1 to `silentResultsRef` before offering any message, and `forward` drops one `TurnCompleted` per count. The count is raised before the first offer because the silent result can arrive before the next offer runs.
 - A `TurnErrored`, a thinking-level restart and a rewind reset the count to 0, so a batch cut short does not swallow a later real turn end.
 - The silent-result drop runs before the `abortExpectedRef` suppression, so a silent result does not consume an expected abort.
 - Unverified: whether `query.interrupt()` sent right after an offer aborts the turn that offer starts.

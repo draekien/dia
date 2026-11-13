@@ -5,8 +5,10 @@ import { Effect, Fiber, FileSystem, Layer, Option, Path, Stream } from 'effect'
 import { makeAppWindowLive } from '../services/app-window'
 import { SessionAttacherLive } from '../services/attached-sessions'
 import { BackgroundActivitiesLive } from '../services/background-activities'
+import { makeHostDatabaseLive } from '../services/database'
 import { EventHub } from '../services/event-hub'
 import { EventHubTestLayer } from '../services/event-hub-test-layer'
+import { PathMovesLive } from '../services/path-moves'
 import { SettingsStore } from '../services/settings-store'
 import { WorkspaceFeedLive } from '../services/workspace-feed'
 import { HostPlugins, makeHostPluginsLive } from './host-plugins'
@@ -55,7 +57,8 @@ const hostPluginsFor = (root: string) => {
       Layer.provide(BackgroundActivitiesLive, hub),
       WorkspaceFeedLive,
       makeAppWindowLive(() => Effect.void),
-      SessionAttacherLive
+      SessionAttacherLive,
+      Layer.provide(PathMovesLive, makeHostDatabaseLive(root))
     )
   )
   return Layer.provideMerge(plugins, hub)
@@ -98,6 +101,29 @@ describe('HostPlugins', () => {
           ]
         )
       }).pipe(Effect.provide(hostPluginsFor(root)))
+    }).pipe(Effect.scoped, Effect.provide(platform))
+  )
+
+  it.effect('moves a plugin data folder its manifest migrates before the plugin loads', () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const root = yield* fs.makeTempDirectoryScoped()
+      yield* writePlugin(root, 'dia-core', {
+        load: 'eager',
+        dataMigrations: [{ id: '1_dia_prefix', from: 'plugins/core' }]
+      })
+      yield* fs.makeDirectory(path.join(root, 'plugins', 'core'), { recursive: true })
+      yield* fs.writeFileString(path.join(root, 'plugins', 'core', 'kept.txt'), 'kept')
+
+      yield* Effect.flatMap(HostPlugins, (plugins) => plugins.start()).pipe(
+        Effect.provide(hostPluginsFor(root))
+      )
+
+      assert.strictEqual(
+        yield* fs.readFileString(path.join(root, 'plugins', 'dia-core', 'kept.txt')),
+        'kept'
+      )
     }).pipe(Effect.scoped, Effect.provide(platform))
   )
 })

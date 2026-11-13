@@ -1,0 +1,11 @@
+{
+  "name": "dia-worktrees",
+  "api": "0.0.37",
+  "category": "feature",
+  "host": "host.ts",
+  "renderer": "renderer.ts",
+  "load": "eager",
+  "dataMigrations": [
+    { "id": "1_dia_prefix", "from": "plugins/worktrees", "before": "data-migration.ts" }
+  ]
+}

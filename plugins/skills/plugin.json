@@ -1,9 +1,0 @@
-{
-  "name": "skills",
-  "api": "0.0.36",
-  "category": "feature",
-  "host": "host.ts",
-  "renderer": "renderer.ts",
-  "load": "eager",
-  "exports": ["registry.ts", "directory.ts", "picker.ts"]
-}

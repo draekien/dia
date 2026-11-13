@@ -1,0 +1,10 @@
+{
+  "name": "dia-skills",
+  "api": "0.0.37",
+  "category": "feature",
+  "host": "host.ts",
+  "renderer": "renderer.ts",
+  "load": "eager",
+  "exports": ["registry.ts", "directory.ts", "picker.ts"],
+  "dataMigrations": [{ "id": "1_dia_prefix", "from": "plugins/skills" }]
+}

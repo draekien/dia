@@ -22,6 +22,7 @@ import {
 import type { RemovalProgress } from '@shared/domain/project-removal'
 import type { IpcEvent } from '@shared/ipc/contract'
 import type { ServiceKey } from '@shared/plugin/api'
+import type { PathsMoved } from '@shared/plugin/paths-moved'
 import { type PluginRegistry, ServiceWithdrawnError } from '@shared/plugin/plugin-registry'
 import { fakeInject, fakeUse } from '@shared/plugin/plugin-registry.fake'
 import {
@@ -48,6 +49,7 @@ import { EventHub } from './event-hub'
 import { PaneChatProjection } from './pane-chat-projection'
 import { type PaneCreationRequest, type PaneHandle, PaneSupervisor } from './pane-supervisor'
 import { PaneWorkspace, PaneWorkspaceLive } from './pane-workspace'
+import { PathMoves } from './path-moves'
 import { TranscriptReader } from './transcript-reader'
 import { WorkspaceFeed, WorkspaceFeedLive } from './workspace-feed'
 import { type WorkspaceLoadError, WorkspaceStore, WorkspaceWriteError } from './workspace-store'
@@ -106,6 +108,7 @@ interface HarnessOptions {
   readonly unloadedDirectoryKeys?: ReadonlyArray<string>
   readonly failEventAppend?: boolean
   readonly worktreesWithdrawn?: boolean
+  readonly movedFolders?: ReadonlyArray<PathsMoved>
 }
 
 const withdrawn = new ServiceWithdrawnError({
@@ -249,10 +252,19 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
         : Effect.fail(notFound(path))
   })
 
+  const pathMoves = Layer.succeed(PathMoves, {
+    hasRun: () => Effect.succeed(false),
+    recordRun: () => Effect.void,
+    recordMove: () => Effect.void,
+    subscribe: (_owner, handle) =>
+      Effect.forEach(options.movedFolders ?? [], handle, { discard: true }).pipe(Effect.orDie)
+  })
+
   const layer = Layer.provide(
     PaneWorkspaceLive,
     Layer.mergeAll(
       supervisor,
+      pathMoves,
       store,
       hub,
       plugins,
@@ -338,6 +350,68 @@ describe('PaneWorkspace loading', () => {
         assert.deepStrictEqual(workspace.visibleTab, PANE_A)
         assert.strictEqual(harness.requests.length, 0)
       })
+  )
+})
+
+describe('PaneWorkspace moved folders', () => {
+  const move = { from: '/data/plugins/worktrees', to: '/data/plugins/dia-worktrees' }
+  const worktreeTab = tab(PANE_A, '/data/plugins/worktrees/trees/heron', {
+    config: {
+      paneId: PANE_A,
+      cwd: '/data/plugins/worktrees/trees/heron',
+      model: 'm',
+      thinkingLevel: 'adaptive',
+      permissionMode: 'default',
+      worktree: {
+        path: '/data/plugins/worktrees/trees/heron',
+        branch: 'dia/heron',
+        sourceRepo: '/repo'
+      }
+    }
+  })
+  const moved: Workspace = {
+    projects: [
+      { project: project(PROJECT_1, '/repo'), tabs: [worktreeTab] },
+      { project: project(PROJECT_2, '/other'), tabs: [tab(PANE_B, '/other')] }
+    ],
+    visibleTab: PANE_A
+  }
+
+  it.effect('points a tab under a moved folder at the new folder', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: moved, movedFolders: [move] })
+
+      const workspace = yield* run(harness, current)
+
+      const config = workspace.projects[0]?.tabs[0]?.config
+      assert.strictEqual(config?.cwd, '/data/plugins/dia-worktrees/trees/heron')
+      assert.strictEqual(config?.worktree?.path, '/data/plugins/dia-worktrees/trees/heron')
+      assert.strictEqual(config?.worktree?.sourceRepo, '/repo')
+    })
+  )
+
+  it.effect('saves the moved paths', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: moved, movedFolders: [move] })
+
+      yield* run(harness, current)
+
+      assert.strictEqual(
+        harness.saves.at(-1)?.projects[0]?.tabs[0]?.config.cwd,
+        '/data/plugins/dia-worktrees/trees/heron'
+      )
+    })
+  )
+
+  it.effect('leaves tabs outside the moved folder and saves nothing when none moved', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects(), movedFolders: [move] })
+
+      const workspace = yield* run(harness, current)
+
+      assert.deepStrictEqual(workspace, twoProjects())
+      assert.strictEqual(harness.saves.length, 0)
+    })
   )
 })
 

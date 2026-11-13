@@ -17,7 +17,7 @@ to the next turn boundary: on the next `SendText`, if the desired level differs 
 active one and a `sessionId` exists, the pane process interrupts the current query fiber
 and forks a fresh `query({ resume: sessionId, ...resolveThinkingOptions(...) })`. Resuming (not
 a cold start) preserves the conversation. This lives entirely in the pane process
-(`plugins/claude-code/session.ts` `restartForThinkingChange`), driven by three `Ref`s: `desiredLevelRef`
+(`plugins/dia-claude-code/session.ts` `restartForThinkingChange`), driven by three `Ref`s: `desiredLevelRef`
 (set by `Init` and `SetThinkingLevel`), `configRef` (the active config, level included),
 and `fiberRef` (the current query fiber to interrupt). A no-op when the level is unchanged
 or no session has started yet.
@@ -26,7 +26,7 @@ or no session has started yet.
 `{ thinking: { type: 'disabled' } }`; `adaptive` → `{ thinking: { type: 'adaptive' } }`;
 each effort level (`low` to `max`) → `{ thinking: { type: 'adaptive' }, effort: <level> }` (adaptive
 thinking *capped* at that effort, not `thinking: { type: 'enabled' }`). Extracted to the
-pure `plugins/claude-code/thinking-options.ts` (part of the `claude-code` adapter, `docs/designs/claude-code-adapter.md`) so the mapping is unit-tested on its own, without starting an SDK query.
+pure `plugins/dia-claude-code/thinking-options.ts` (part of the `claude-code` adapter, `docs/designs/claude-code-adapter.md`) so the mapping is unit-tested on its own, without starting an SDK query.
 
 **Thinking always precedes the answer in one turn, so the reasoning→text transition is a
 one-way close.** In the renderer reducer `reducePaneChat`

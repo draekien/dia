@@ -4,6 +4,7 @@ import type { SqlClient } from 'effect/sql'
 import type { AgentNotification } from '../domain/notification'
 import type { Workspace } from '../domain/project'
 import type { EventFrame } from '../ipc/rpc'
+import type { PathsMoved } from './paths-moved'
 
 /**
  * A typed service key (ADR-0060). `name` is the key the registry stores the service under and the
@@ -183,6 +184,17 @@ export interface HostPluginContext extends PluginServices {
   readonly workspace: Stream.Stream<Workspace>
   readonly window: PluginWindow
   readonly dataDir: string
+  /**
+   * Subscribes this plugin as an owner of stored paths until the calling scope (the setup scope)
+   * closes. `handle` receives every folder the Host moved (a plugin data migration) that this
+   * plugin has not yet handled, oldest first: at once, and again whenever a later move is
+   * recorded. Rewrite each stored path under `move.from` with `relocatePath`. A move counts as
+   * handled when `handle` succeeds; after a failure it is given again at the next subscription.
+   * Call it before providing services that read the stored paths.
+   */
+  readonly onPathsMoved: (
+    handle: (move: PathsMoved) => Effect.Effect<void, unknown>
+  ) => Effect.Effect<void, never, Scope.Scope>
   readonly activities: PluginActivities
   /**
    * Succeeds once the Host's startup has settled every eager plugin (loaded, waiting, failed or

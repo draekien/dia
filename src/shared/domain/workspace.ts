@@ -1,4 +1,5 @@
 import { Option, Result } from 'effect'
+import { type PathsMoved, relocatePath } from '../plugin/paths-moved'
 import type { PaneConfig, PaneId, SessionId } from './pane'
 import {
   type AgentName,
@@ -250,4 +251,38 @@ export const withDefaultVisibleTab = (workspace: Workspace): Workspace => {
   const first = workspace.projects.flatMap((entry) => entry.tabs).find((tab) => !tab.archived)
     ?.config.paneId
   return first === undefined ? workspace : { ...workspace, visibleTab: first }
+}
+
+const movedTab = (tab: Tab, move: PathsMoved): Tab => {
+  const cwd = relocatePath(tab.config.cwd, move)
+  const worktreePath = Option.flatMap(Option.fromNullishOr(tab.config.worktree), (worktree) =>
+    relocatePath(worktree.path, move)
+  )
+  if (Option.isNone(cwd) && Option.isNone(worktreePath)) return tab
+  const worktree = tab.config.worktree
+  return {
+    ...tab,
+    config: {
+      ...tab.config,
+      cwd: Option.getOrElse(cwd, () => tab.config.cwd),
+      ...(worktree === undefined
+        ? {}
+        : { worktree: { ...worktree, path: Option.getOrElse(worktreePath, () => worktree.path) } })
+    }
+  }
+}
+
+/**
+ * The workspace after the folder `move.from` moved to `move.to`: each tab's `cwd` and worktree
+ * path under `move.from` point under `move.to`. Returns `workspace` itself when no tab changed.
+ */
+export const movePaths = (workspace: Workspace, move: PathsMoved): Workspace => {
+  let changed = false
+  const projects = workspace.projects.map((entry) => {
+    const tabs = entry.tabs.map((tab) => movedTab(tab, move))
+    if (tabs.every((tab, index) => tab === entry.tabs[index])) return entry
+    changed = true
+    return { ...entry, tabs }
+  })
+  return changed ? { ...workspace, projects } : workspace
 }

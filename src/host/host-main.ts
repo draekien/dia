@@ -48,6 +48,7 @@ import { ModelPreferencesLive } from './services/model-preferences'
 import { PaneChatProjectionLive } from './services/pane-chat-projection'
 import { PaneSupervisor, PaneSupervisorLive, SessionFactoryLive } from './services/pane-supervisor'
 import { PaneWorkspace, PaneWorkspaceLive } from './services/pane-workspace'
+import { PathMovesLive } from './services/path-moves'
 import { makePersistenceServiceLive } from './services/persistence'
 import { ProjectEntriesLive } from './services/project-entries'
 import { makeSettingsStoreLive } from './services/settings-store'
@@ -113,6 +114,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
   const settings = Layer.provide(makeSettingsStoreLive(init.userDataPath), NodeServices.layer)
   const hostDatabase = makeHostDatabaseLive(init.userDataPath)
   const agentEventStore = Layer.provide(AgentEventStoreLive, hostDatabase)
+  const pathMoves = Layer.provide(PathMovesLive, hostDatabase)
   const eventHub = Layer.provide(EventHubLive, agentEventStore)
   const appWindow = makeAppWindowLive(post)
   const pluginSources = Layer.provide(
@@ -130,6 +132,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
       WorkspaceFeedLive,
       appWindow,
       sessionAttacher,
+      pathMoves,
       NodeFileSystem.layer,
       NodePath.layer
     )
@@ -171,6 +174,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
       eventHub,
       agentEventStore,
       hostPlugins,
+      pathMoves,
       WorkspaceFeedLive,
       NodeServices.layer
     )

@@ -15,4 +15,4 @@
 
 ## Implication
 
-The import makes one agent per session, calls `listSessions({ dir, includeWorktrees: false })` with the default `includeProgrammatic`, and drops a session whose `cwd` names another directory (`plugins/claude-code/discovery.ts`, `docs/designs/project-agent-import.md`).
+The import makes one agent per session, calls `listSessions({ dir, includeWorktrees: false })` with the default `includeProgrammatic`, and drops a session whose `cwd` names another directory (`plugins/dia-claude-code/discovery.ts`, `docs/designs/project-agent-import.md`).

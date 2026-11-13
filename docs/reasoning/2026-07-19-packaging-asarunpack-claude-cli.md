@@ -6,7 +6,7 @@
 > binary bundled with the SDK. Points 2 and 3 below describe the bundled binary and no longer
 > match the code: `electron-builder.yml` excludes `@anthropic-ai/claude-agent-sdk-*/**` from the
 > app and unpacks only `@anthropic-ai/claude-agent-sdk/**` (for its helper binaries), and
-> `claude-executable.ts` was replaced by `plugins/claude-code/claude-install.ts`, which resolves
+> `claude-executable.ts` was replaced by `plugins/dia-claude-code/claude-install.ts`, which resolves
 > the user's install. Point 1 and the adjacent facts still apply.
 
 ## Context
@@ -44,7 +44,7 @@ app. Each is a runtime-only failure invisible to `pnpm build`, typecheck, and th
    `createRequire(import.meta.url).resolve('@anthropic-ai/claude-agent-sdk-<plat>-<arch>/claude<ext>')`,
    and in the packaged app `import.meta.url` sits *inside* `app.asar`, so it resolves to the
    asar **virtual** path (`…app.asar\…\claude.exe`), not the unpacked copy — the OS then fails
-   to launch it ("exists but failed to launch"). `resolveClaudeExecutable` (`plugins/claude-code/claude-executable.ts`) recomputes that resolve from the adapter plugin's own URL and
+   to launch it ("exists but failed to launch"). `resolveClaudeExecutable` (`plugins/dia-claude-code/claude-executable.ts`) recomputes that resolve from the adapter plugin's own URL and
    rewrites the `app.asar<sep>` segment to `app.asar.unpacked<sep>`, passing the result as
    `pathToClaudeCodeExecutable`. In dev the same resolve returns a plain `node_modules` path
    with no `app.asar` segment, so the rewrite is a no-op and the SDK behaves normally.
@@ -65,7 +65,7 @@ Two adjacent facts worth keeping:
   separate); it is set to `false` so its Squirrel-binary download is skipped.
 
 When a session *does* fail here, the error arrives as a `SessionStreamError` whose `cause` is
-`unknown`; Effect's logger serializes it to `{}`. The `catchCause` in `plugins/claude-code/session.ts`'s
+`unknown`; Effect's logger serializes it to `{}`. The `catchCause` in `plugins/dia-claude-code/session.ts`'s
 `runSession` extracts the underlying `Error` via `Cause.failureOption` so the real message/stack
 (e.g. the "failed to launch" text that named the asar path) is actually logged — keep it.
 

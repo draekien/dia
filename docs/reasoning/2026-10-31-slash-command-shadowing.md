@@ -21,5 +21,5 @@ A probe with `@anthropic-ai/claude-agent-sdk` 0.3.311 (`settingSources: ['user',
 
 ## Implication
 
-- `key={command.name}` in `plugins/chat/slash-command-menu.tsx` is unique for every list observed. Do not change it to an index key on the strength of the JSDoc alone; reproduce a repeated name first.
+- `key={command.name}` in `plugins/dia-chat/slash-command-menu.tsx` is unique for every list observed. Do not change it to an index key on the strength of the JSDoc alone; reproduce a repeated name first.
 - The slash menu cannot show a shadowed command, because the list does not contain it. Finding shadowed commands needs the skill locations and the built-in names compared directly (#108).

@@ -41,8 +41,8 @@ it, rather than the stale `config.permissionMode` the pane was created with.
 ## Implication
 
 The controller now lives in the `claude-code` adapter
-(`plugins/claude-code/permission-mode-controller.ts`), and the session that wires it to the SDK
-is `plugins/claude-code/session.ts`, which has no import-time side effects and is tested
+(`plugins/dia-claude-code/permission-mode-controller.ts`), and the session that wires it to the SDK
+is `plugins/dia-claude-code/session.ts`, which has no import-time side effects and is tested
 directly. Keep per-session state logic in small Ref-only factories next to it so each piece is
 testable with a fake `Query`. When adding SDK-live controls, check
 `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts` for a live setter on `Query`

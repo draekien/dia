@@ -82,7 +82,7 @@
       }
     },
     {
-      "includes": ["src/host/**", "src/preload/**", "plugins/claude-code/**"],
+      "includes": ["src/host/**", "src/preload/**", "plugins/dia-claude-code/**"],
       "linter": {
         "rules": {
           "correctness": {

@@ -4,7 +4,7 @@
 
 ## Context
 
-`pathChanges` in `plugins/skills/directory.ts` follows a skills directory with `FileSystem.watch(directory, { recursive: true })`, which calls Node's `fs.watch`. The code review of #221 removed a watched directory (the effect of `git checkout` to a branch without `.claude/skills`) and checked whether the picker recovered when the directory came back.
+`pathChanges` in `plugins/dia-skills/directory.ts` follows a skills directory with `FileSystem.watch(directory, { recursive: true })`, which calls Node's `fs.watch`. The code review of #221 removed a watched directory (the effect of `git checkout` to a branch without `.claude/skills`) and checked whether the picker recovered when the directory came back.
 
 ## Reasoning / Learning
 
@@ -21,4 +21,4 @@ Not verified: whether Linux or macOS emit a `Remove` event for the deletion of t
 
 ## Implication
 
-Any watch that must survive deletion of its own target needs an explicit end condition on a `Remove` event plus an existence check. Do not rely on the watcher erroring or closing. `plugins/skills/directory.test.ts` covers removal and re-creation of a skills directory.
+Any watch that must survive deletion of its own target needs an explicit end condition on a `Remove` event plus an existence check. Do not rely on the watcher erroring or closing. `plugins/dia-skills/directory.test.ts` covers removal and re-creation of a skills directory.

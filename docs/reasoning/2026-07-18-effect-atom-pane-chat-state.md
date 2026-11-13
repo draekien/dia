@@ -52,7 +52,7 @@ streaming turn.
   terminal attention (`Completed`/`Errored`) clears it — so the trailing-assistant
   window is exactly one turn. This keeps every field of the state view-meaningful
   (nothing to hide from `MessageView`) and the reducer pure/total, mirroring the
-  session reducer `plugins/claude-code/reducer.ts`. `PaneMessageAppended{assistant}` is only
+  session reducer `plugins/dia-claude-code/reducer.ts`. `PaneMessageAppended{assistant}` is only
   a backstop: it appends the final text *only* when no deltas built the turn (i.e.
   not currently streaming an assistant message).
 

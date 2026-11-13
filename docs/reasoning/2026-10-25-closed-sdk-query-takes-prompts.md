@@ -4,7 +4,7 @@
 
 ## Context
 
-In the unpackaged app, a rewind restored the files but the next prompt was never answered, and the pane kept the pre-rewind session id. The Agent SDK was not at fault: a standalone script with the same options (`resume`, `resumeSessionAt`, `forkSession`, streaming input, `replay-user-messages`) forked and answered, also with the prompt sent 15 s after the query started. The cause was in `plugins/claude-code/session.ts`, which runs a pane as a sequence of SDK queries (pane open, each thinking-level change, each rewind).
+In the unpackaged app, a rewind restored the files but the next prompt was never answered, and the pane kept the pre-rewind session id. The Agent SDK was not at fault: a standalone script with the same options (`resume`, `resumeSessionAt`, `forkSession`, streaming input, `replay-user-messages`) forked and answered, also with the prompt sent 15 s after the query started. The cause was in `plugins/dia-claude-code/session.ts`, which runs a pane as a sequence of SDK queries (pane open, each thinking-level change, each rewind).
 
 ## Reasoning / Learning
 

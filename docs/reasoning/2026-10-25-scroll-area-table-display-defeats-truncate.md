@@ -10,7 +10,7 @@ In the packaged app, an agent row whose second line was a long permission reason
 
 The Radix `ScrollArea.Viewport` wraps its children in a `div` with an inline `display: table; min-width: 100%`, which lets horizontal scrolling work. A table-display element grows to its widest content, so the list became as wide as the longest unbroken line. Every `truncate` below it then had no width limit to truncate against. jsdom does not lay out, so no unit test can catch this.
 
-The fix forces that wrapper to `display: block` from the consumer: `className="[&_[data-slot=scroll-area-viewport]>div]:block!"` on `ScrollArea` (`plugins/agent-overview/agent-overview.tsx`). The `!` is needed because the wrapper's display is an inline style. `src/renderer/src/components/ui/scroll-area.tsx` was left unchanged, because it is shadcn source and other uses may want horizontal scrolling.
+The fix forces that wrapper to `display: block` from the consumer: `className="[&_[data-slot=scroll-area-viewport]>div]:block!"` on `ScrollArea` (`plugins/dia-agent-overview/agent-overview.tsx`). The `!` is needed because the wrapper's display is an inline style. `src/renderer/src/components/ui/scroll-area.tsx` was left unchanged, because it is shadcn source and other uses may want horizontal scrolling.
 
 ## Implication
 

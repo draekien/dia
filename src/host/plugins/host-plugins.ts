@@ -21,7 +21,9 @@ import { SessionAttacher } from '../services/attached-sessions'
 import { BackgroundActivities } from '../services/background-activities'
 import { makePluginDatabase } from '../services/database'
 import { EventHub } from '../services/event-hub'
+import { PathMoves, type PathsMovedHandler } from '../services/path-moves'
 import { WorkspaceFeed } from '../services/workspace-feed'
+import { makeDataMigrations } from './data-migrations'
 import type { HostPluginContext, SessionAttachment } from './host-plugin-context'
 import { makeHostPluginLoader } from './plugin-loader'
 import { heapUsedAfterGc, makePluginMemoryGuard } from './plugin-memory-guard'
@@ -44,12 +46,14 @@ export class HostPlugins extends Context.Service<HostPlugins, PluginRegistry>()(
  * registration with {@link BackgroundActivities} under the plugin's name; and `database`, which
  * opens `<dataDir>/data.db` only when the plugin calls it; `pluginsSettled`, which succeeds once `start` has settled every eager plugin; `workspace`, following
  * {@link WorkspaceFeed}; `window`, backed by {@link AppWindow}; and `sessions`, which waits
- * for {@link SessionAttacher} on each call. Every plugin state
+ * for {@link SessionAttacher} on each call; and `onPathsMoved`, which subscribes the plugin to
+ * {@link PathMoves} under its name. Before a plugin loads, its manifest's data migrations run
+ * (see `makeDataMigrations`). Every plugin state
  * change is published to the hub as a `PluginStatusChanged` event. `pluginApiPath` is the
  * absolute path of the built module that `import '@dia/plugin'` resolves to inside a plugin
  * (`out/main/plugin-api.js`). Build the layer once per process, because it installs a
  * process-wide resolution hook. Requires `PluginSources`, `EventHub`, `BackgroundActivities`,
- * `WorkspaceFeed`, `AppWindow`, `SessionAttacher`, `FileSystem` and `Path`.
+ * `WorkspaceFeed`, `AppWindow`, `SessionAttacher`, `PathMoves`, `FileSystem` and `Path`.
  */
 export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string) =>
   Layer.effect(
@@ -64,7 +68,10 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
       const pluginApiUrl = yield* path.toFileUrl(pluginApiPath).pipe(Effect.orDie)
-      const loader = yield* makeHostPluginLoader(makePluginModules(pluginApiUrl.href))
+      const pathMoves = yield* PathMoves
+      const modules = makePluginModules(pluginApiUrl.href)
+      const migrate = yield* makeDataMigrations(userDataPath, modules.importEntry)
+      const loader = yield* makeHostPluginLoader(modules, migrate)
       const settled = yield* Deferred.make<void>()
       const registry = yield* makePluginRegistry<HostPluginContext>({
         catalog: sources,
@@ -93,6 +100,8 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
                   Deferred.await(attacher).pipe(Effect.flatMap((attach) => attach(attachment)))
               },
               dataDir,
+              onPathsMoved: (handle: PathsMovedHandler) =>
+                pathMoves.subscribe(services.name, handle),
               pluginsSettled: Deferred.await(settled),
               activities: {
                 register: (spec) => activities.register(services.name, spec)

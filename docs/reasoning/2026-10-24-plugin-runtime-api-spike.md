@@ -4,7 +4,7 @@
 
 ## Context
 
-The SDK message → protocol mapping moved into a built-in plugin (now `plugins/claude-code/reducer.ts`). The reducer builds `SessionStarted.make(...)`, `TurnErrored.make(...)` and the other protocol messages, which are runtime schema values in `src/host/session/protocol.ts`. A plugin shipped under `plugins/` cannot import them: `electron-builder.yml` packages `out/**` and `plugins/**` only, and `@dia/plugin` resolved only through `tsconfig.base.json` `paths` (a type-only alias with no runtime alias in `electron.vite.config.ts` or `vitest.config.ts`). The options were `ctx.protocol`, a runtime `@dia/plugin`, or building built-in plugins into `out/`.
+The SDK message → protocol mapping moved into a built-in plugin (now `plugins/dia-claude-code/reducer.ts`). The reducer builds `SessionStarted.make(...)`, `TurnErrored.make(...)` and the other protocol messages, which are runtime schema values in `src/host/session/protocol.ts`. A plugin shipped under `plugins/` cannot import them: `electron-builder.yml` packages `out/**` and `plugins/**` only, and `@dia/plugin` resolved only through `tsconfig.base.json` `paths` (a type-only alias with no runtime alias in `electron.vite.config.ts` or `vitest.config.ts`). The options were `ctx.protocol`, a runtime `@dia/plugin`, or building built-in plugins into `out/`.
 
 ## Reasoning / Learning
 

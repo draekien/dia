@@ -13,6 +13,41 @@ const Settings = Schema.Struct({
   pluginOverrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   adapters: Schema.optional(Schema.Record(Schema.String, AdapterPreferences))
 })
+const RENAMED_PLUGINS = [
+  'adapters',
+  'agent-definitions',
+  'agent-overview',
+  'chat',
+  'claude-code',
+  'claude-code-settings',
+  'command-palette',
+  'example',
+  'issues',
+  'layout',
+  'mcp',
+  'meta',
+  'notifications',
+  'settings',
+  'skills',
+  'worktrees'
+]
+
+const renameKeys = <A>(
+  record: Readonly<Record<string, A>> | undefined
+): Readonly<Record<string, A>> | undefined => {
+  if (record === undefined) return undefined
+  const renamed: Record<string, A> = { ...record }
+  let changed = false
+  for (const name of RENAMED_PLUGINS) {
+    const value = renamed[name]
+    if (value === undefined || `dia-${name}` in renamed) continue
+    renamed[`dia-${name}`] = value
+    delete renamed[name]
+    changed = true
+  }
+  return changed ? renamed : record
+}
+
 const parseJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
 const decodeSettings = Schema.decodeUnknownResult(Settings)
 const encodeSettings = Schema.encodeSync(Schema.fromJsonString(Settings, { space: 2 }))
@@ -51,7 +86,9 @@ export class SettingsStore extends Context.Service<
  * under `<userDataPath>/settings.json`. Requires `FileSystem.FileSystem` in
  * the environment. Unreadable or malformed settings files are ignored
  * (treated as empty) rather than failing; write failures are logged, not thrown.
- * Writes are atomic, and concurrent setters never drop each other's change.
+ * Writes are atomic, and concurrent setters never drop each other's change. Building it renames
+ * each `pluginOverrides` and `adapters` key named after a first-party plugin before ADR-0077
+ * (for example `claude-code`) to its `dia-` name, unless the `dia-` key already exists.
  */
 export const makeSettingsStoreLive = (userDataPath: string) =>
   Layer.effect(
@@ -141,6 +178,21 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
           ...settings,
           adapters: { ...settings.adapters, [adapter]: preferences }
         }))
+
+      const settingsNow = yield* read()
+      const pluginOverrides = renameKeys(settingsNow.pluginOverrides)
+      const adapters = renameKeys(settingsNow.adapters)
+      if (pluginOverrides !== settingsNow.pluginOverrides || adapters !== settingsNow.adapters) {
+        yield* update((settings) => ({
+          ...settings,
+          pluginOverrides: renameKeys(settings.pluginOverrides),
+          adapters: renameKeys(settings.adapters)
+        }))
+        yield* Effect.logInfo('Renamed settings keys to dia- plugin names', {
+          pluginOverrides: Object.keys(pluginOverrides ?? {}),
+          adapters: Object.keys(adapters ?? {})
+        })
+      }
 
       return {
         getTheme,

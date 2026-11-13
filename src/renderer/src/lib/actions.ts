@@ -199,4 +199,4 @@ export const removeProject = (
 export const revealProject = (directory: string): Promise<void> => window.dia.revealPath(directory)
 
 /** Opens the Settings dialog on its Plugins page. */
-export const openPluginsPage = (): void => openSettings({ plugin: 'settings', id: 'plugins' })
+export const openPluginsPage = (): void => openSettings({ plugin: 'dia-settings', id: 'plugins' })
