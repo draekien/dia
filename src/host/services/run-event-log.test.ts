@@ -32,6 +32,7 @@ const providerOf = (
   committed,
   subscribe: Effect.succeed(committed),
   readAfter: () => Effect.die('not called'),
+  readTagged: () => Effect.die('not called'),
   highestSequence: Effect.succeed(startSequence),
   startSequence,
   record: () => Effect.succeed(() => Effect.void),

@@ -4,6 +4,7 @@ import type { PaneChatSnapshot } from '@shared/domain/pane-chat'
 import { PaneSignal } from '@shared/ipc/contract'
 import { ServiceKey } from '@shared/plugin/api'
 import { Data, Effect, type Option, Predicate, Schema, type Scope, Stream } from 'effect'
+import type { NonEmptyReadonlyArray } from 'effect/Array'
 import type { OutboundMessage } from '../session/protocol'
 
 /**
@@ -133,6 +134,14 @@ export interface RunEvents {
     afterSequence: number,
     limits: ReplayLimits
   ) => Effect.Effect<Replay | ReloadRequired>
+  /**
+   * The events of run `runId` whose tag is one of `tags`, in sequence order. An event that does not
+   * decode is left out and logged. Fails with {@link RunEventReadError} when the log cannot be read.
+   */
+  readonly readTagged: (
+    runId: string,
+    tags: NonEmptyReadonlyArray<StoredEvent['_tag']>
+  ) => Effect.Effect<ReadonlyArray<CommittedEvent>, RunEventReadError>
   /** The highest sequence of any run, or 0 when none has an event. */
   readonly highestSequence: Effect.Effect<number, RunEventReadError>
   /** The highest sequence when this provider started, before it accepted any append. */
@@ -165,7 +174,15 @@ export interface RunEvents {
   readonly release: (runId: string) => Effect.Effect<void>
 }
 
-const functionMembers = ['append', 'readAfter', 'record', 'snapshot', 'seed', 'release'] as const
+const functionMembers = [
+  'append',
+  'readAfter',
+  'readTagged',
+  'record',
+  'snapshot',
+  'seed',
+  'release'
+] as const
 
 const isRunEvents = (value: unknown): value is RunEvents =>
   functionMembers.every(

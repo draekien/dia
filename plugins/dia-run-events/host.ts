@@ -142,6 +142,7 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       committed: store.committed,
       subscribe: store.subscribe,
       readAfter: store.readAfter,
+      readTagged: store.readTagged,
       highestSequence: store.highestSequence,
       startSequence,
       record: recorder.open,

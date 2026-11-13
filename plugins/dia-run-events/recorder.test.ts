@@ -130,6 +130,7 @@ const noReads = {
   committed: Stream.empty,
   subscribe: Effect.succeed(Stream.empty),
   readAfter: () => Effect.die('not called'),
+  readTagged: () => Effect.die('not called'),
   readHistory: () => Effect.succeed({ items: [], through: 0 }),
   lastSequence: () => Effect.succeed(0),
   highestSequence: Effect.succeed(0)

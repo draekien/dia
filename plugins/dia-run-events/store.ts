@@ -105,6 +105,15 @@ export class RunEventStore extends Context.Service<
       RunEventReadError
     >
     /**
+     * The events of run `runId` whose tag is one of `tags`, in sequence order. An event that does
+     * not decode is left out and logged. Fails with {@link RunEventReadError} when the database
+     * cannot be read.
+     */
+    readonly readTagged: (
+      runId: string,
+      tags: Arr.NonEmptyReadonlyArray<StoredEvent['_tag']>
+    ) => Effect.Effect<ReadonlyArray<CommittedEvent>, RunEventReadError>
+    /**
      * The highest sequence of run `runId`, or 0 when it has none. Fails with
      * {@link RunEventReadError} when the database cannot be read.
      */
@@ -469,6 +478,35 @@ const makeStore = Effect.gen(function* () {
     return { items, through }
   })
 
+  const readTagged = Effect.fn('RunEventStore.readTagged')(function* (
+    runId: string,
+    tags: Arr.NonEmptyReadonlyArray<StoredEvent['_tag']>
+  ) {
+    const rows = yield* asRead('Could not read tagged run events', { runId, tags })(
+      sql<{
+        readonly sequence: number
+        readonly payload_json: string
+      }>`SELECT sequence, payload_json
+        FROM run_events WHERE run_id = ${runId} AND event_type IN ${sql.in(tags)}
+        ORDER BY sequence`
+    )
+    const events: Array<CommittedEvent> = []
+    for (const row of rows) {
+      const event = decodeEventJson(row.payload_json)
+      if (Result.isSuccess(event)) {
+        events.push(CommittedEvent.make({ runId, sequence: row.sequence, event: event.success }))
+        continue
+      }
+      yield* Effect.logWarning('Left out a run event that does not decode', {
+        runId,
+        sequence: row.sequence,
+        reason: event.failure.message
+      })
+    }
+    yield* Effect.logDebug('Read tagged run events', { runId, tags, events: events.length })
+    return events
+  })
+
   const readRange = (runId: string, afterSequence: number, limits: ReplayLimits) =>
     sql.withTransaction(
       Effect.gen(function* () {
@@ -588,6 +626,7 @@ const makeStore = Effect.gen(function* () {
     committed: Stream.fromPubSub(committedEvents),
     subscribe: Effect.map(PubSub.subscribe(committedEvents), Stream.fromSubscription),
     readAfter,
+    readTagged,
     readHistory,
     lastSequence,
     highestSequence,

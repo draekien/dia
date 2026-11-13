@@ -71,6 +71,7 @@ const fakeRunEvents = (committed: PubSub.PubSub<CommittedEvent>): RunEvents => (
   committed: Stream.fromPubSub(committed),
   subscribe: Effect.map(PubSub.subscribe(committed), Stream.fromSubscription),
   readAfter: () => Effect.die('not used'),
+  readTagged: () => Effect.die('not used'),
   highestSequence: Effect.succeed(0),
   startSequence: 0,
   record: () => Effect.die('not used'),
