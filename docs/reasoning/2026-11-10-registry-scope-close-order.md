@@ -4,7 +4,7 @@
 
 ## Context
 
-`plugins/org/host.test.ts` failed every test with `SqlError: database is not open` once it also loaded the `issues` plugin. The stack named `Issues.registerProvider`: the finalizer that releases the `org` provider runs `requeueAll`, which queries the `issues` database.
+`archive/org/host.test.ts` failed every test with `SqlError: database is not open` once it also loaded the `issues` plugin. The stack named `Issues.registerProvider`: the finalizer that releases the `org` provider runs `requeueAll`, which queries the `issues` database.
 
 ## Reasoning / Learning
 
