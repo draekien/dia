@@ -112,6 +112,26 @@ function FileRow({
   )
 }
 
+function TurnFiles({
+  runId,
+  changes
+}: {
+  readonly runId: string
+  readonly changes: TurnChanges
+}): React.JSX.Element {
+  if (changes._tag === 'TurnOpen') {
+    return <p className="text-muted-foreground">Changes show when this turn ends</p>
+  }
+  if (changes.files.length === 0) return <p className="text-muted-foreground">No file changes</p>
+  return (
+    <ul className="flex flex-col gap-1">
+      {changes.files.map((file) => (
+        <FileRow key={file.path} runId={runId} turn={changes.turn} file={file} />
+      ))}
+    </ul>
+  )
+}
+
 function Turn({
   runId,
   changes
@@ -127,17 +147,7 @@ function Turn({
           {changes.prompt}
         </span>
       </p>
-      {changes._tag === 'TurnOpen' ? (
-        <p className="text-muted-foreground">Changes show when this turn ends</p>
-      ) : changes.files.length === 0 ? (
-        <p className="text-muted-foreground">No file changes</p>
-      ) : (
-        <ul className="flex flex-col gap-1">
-          {changes.files.map((file) => (
-            <FileRow key={file.path} runId={runId} turn={changes.turn} file={file} />
-          ))}
-        </ul>
-      )}
+      <TurnFiles runId={runId} changes={changes} />
     </li>
   )
 }

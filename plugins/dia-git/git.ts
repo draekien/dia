@@ -26,6 +26,11 @@ interface Output {
   readonly stderr: string
 }
 
+interface RunOptions {
+  readonly stdin?: Stream.Stream<Uint8Array>
+  readonly env?: Record<string, string>
+}
+
 const splitNul = (output: string): ReadonlyArray<string> =>
   output.split('\0').filter((item) => item !== '')
 
@@ -70,8 +75,7 @@ export const makeGit = Effect.gen(function* () {
   const run = (
     cwd: string,
     args: ReadonlyArray<string>,
-    stdin?: Stream.Stream<Uint8Array>,
-    env?: Record<string, string>
+    { stdin, env }: RunOptions = {}
   ): Effect.Effect<Output> =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -113,10 +117,9 @@ export const makeGit = Effect.gen(function* () {
   const runOk = Effect.fnUntraced(function* (
     cwd: string,
     args: ReadonlyArray<string>,
-    stdin?: Stream.Stream<Uint8Array>,
-    env?: Record<string, string>
+    options?: RunOptions
   ) {
-    const output = yield* run(cwd, args, stdin, env)
+    const output = yield* run(cwd, args, options)
     if (output.exitCode !== 0) return yield* failure(cwd, args, output)
     return output.stdout
   })
@@ -160,7 +163,9 @@ export const makeGit = Effect.gen(function* () {
     ])
     if (candidates === '') return []
     const checkArgs = ['check-ignore', '-z', '--stdin']
-    const output = yield* run(repo, checkArgs, Stream.encodeText(Stream.make(candidates)))
+    const output = yield* run(repo, checkArgs, {
+      stdin: Stream.encodeText(Stream.make(candidates))
+    })
     if (output.exitCode === 1) return []
     if (output.exitCode !== 0) return yield* failure(repo, checkArgs, output)
     return splitNul(output.stdout)
@@ -171,6 +176,9 @@ export const makeGit = Effect.gen(function* () {
     yield* runOk(cwd, ['remote', Option.isNone(existing) ? 'add' : 'set-url', remote, url])
   })
 
+  const fileFailure = (cwd: string, args: ReadonlyArray<string>, error: unknown) =>
+    new GitError({ cwd, args, exitCode: -1, stderr: String(error) })
+
   const copyIndex = Effect.fnUntraced(function* (cwd: string, target: string) {
     const args = ['rev-parse', '--path-format=absolute', '--git-path', 'index']
     const source = (yield* runOk(cwd, args)).trim()
@@ -180,7 +188,7 @@ export const makeGit = Effect.gen(function* () {
         Effect.catchTag('PlatformError', (error) =>
           error.reason._tag === 'NotFound'
             ? Effect.void
-            : Effect.fail(new GitError({ cwd, args, exitCode: -1, stderr: String(error) }))
+            : Effect.fail(fileFailure(cwd, args, error))
         )
       )
   })
@@ -190,28 +198,14 @@ export const makeGit = Effect.gen(function* () {
       Effect.gen(function* () {
         const directory = yield* fs
           .makeTempDirectoryScoped({ prefix: 'dia-snapshot-' })
-          .pipe(
-            Effect.mapError(
-              (error) =>
-                new GitError({ cwd, args: ['snapshot'], exitCode: -1, stderr: String(error) })
-            )
-          )
+          .pipe(Effect.mapError((error) => fileFailure(cwd, ['snapshot'], error)))
         const index = path.join(directory, 'index')
         yield* copyIndex(cwd, index)
-        const env = { ...SNAPSHOT_IDENTITY, GIT_INDEX_FILE: index }
-        yield* runOk(cwd, [...SNAPSHOT_INDEX_CONFIG, 'add', '-A'], undefined, env)
-        const tree = (yield* runOk(
-          cwd,
-          [...SNAPSHOT_INDEX_CONFIG, 'write-tree'],
-          undefined,
-          env
-        )).trim()
-        const commit = (yield* runOk(
-          cwd,
-          ['commit-tree', tree, '-m', message],
-          undefined,
-          env
-        )).trim()
+        const withIndex = (args: ReadonlyArray<string>) =>
+          runOk(cwd, args, { env: { ...SNAPSHOT_IDENTITY, GIT_INDEX_FILE: index } })
+        yield* withIndex([...SNAPSHOT_INDEX_CONFIG, 'add', '-A'])
+        const tree = (yield* withIndex([...SNAPSHOT_INDEX_CONFIG, 'write-tree'])).trim()
+        const commit = (yield* withIndex(['commit-tree', tree, '-m', message])).trim()
         yield* Effect.forEach(refs, (ref) => runOk(cwd, ['update-ref', ref, commit]), {
           discard: true
         })

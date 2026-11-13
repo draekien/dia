@@ -15,20 +15,22 @@ const cwdOf = (runs: Runs, runId: string) =>
     Option.fromNullishOr(list.find((run) => run.runId === runId)?.cwd)
   )
 
-const record = (services: Services, runId: string, boundary: Boundary) =>
+const record = (
+  services: Services,
+  recorded: PubSub.PubSub<string>,
+  runId: string,
+  boundary: Boundary
+) =>
   Effect.gen(function* () {
     const cwd = yield* cwdOf(services.runs, runId)
-    if (Option.isNone(cwd)) return false
+    if (Option.isNone(cwd)) return
     yield* boundary._tag === 'TurnStart'
       ? services.checkpoints.beginTurn(runId, cwd.value, boundary.prompt)
       : services.checkpoints.endTurn(runId, cwd.value)
-    return true
+    yield* PubSub.publish(recorded, runId)
   }).pipe(
     Effect.catchTag('GitError', (error) =>
-      Effect.as(
-        Effect.logDebug('No turn snapshot for this run', { runId, error: error.message }),
-        false
-      )
+      Effect.logDebug('No turn snapshot for this run', { runId, error: error.message })
     )
   )
 
@@ -36,10 +38,7 @@ const recordEach =
   (services: Services, recorded: PubSub.PubSub<string>) => (committed: CommittedEvent) =>
     Option.match(boundaryOf(committed.event), {
       onNone: () => Effect.void,
-      onSome: (boundary) =>
-        Effect.flatMap(record(services, committed.runId, boundary), (written) =>
-          written ? PubSub.publish(recorded, committed.runId) : Effect.void
-        )
+      onSome: (boundary) => record(services, recorded, committed.runId, boundary)
     })
 
 const turnsOf = (services: Services, runId: string) =>

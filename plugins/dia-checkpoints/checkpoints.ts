@@ -113,7 +113,8 @@ export const makeCheckpoints = (git: Git): Checkpoints => {
             ? Effect.succeed(TurnOpen.make({ turn, prompt }))
             : Effect.map(filesOf(cwd, start, end), (files) =>
                 TurnFinished.make({ turn, prompt, files })
-              )
+              ),
+        { concurrency: 4 }
       )
     }),
     fileDiff: Effect.fnUntraced(function* (runId, cwd, turn, path) {
