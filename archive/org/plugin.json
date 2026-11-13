@@ -1,9 +1,0 @@
-{
-  "name": "org",
-  "api": "0.0.36",
-  "category": "feature",
-  "host": "host.ts",
-  "renderer": "renderer.ts",
-  "load": "eager",
-  "exports": ["service.ts", "domain.ts", "calls.ts"]
-}

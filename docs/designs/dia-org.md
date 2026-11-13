@@ -15,7 +15,7 @@ Issue: draekien/dia#252, step 14 of `docs/plans/2026-11-13-foundation.md` (paren
 | 5 | Hires and job titles from `<userData>/plugins/org` are present after first start, at `<userData>/plugins/dia-org` | app, scratch profile seeded with a copy of the real `plugins/org` |
 | 6 | No file under `plugins/dia-org` calls `openSession` | `host.test.ts` reads the plugin's sources |
 
-Supporting: an issue that leaves `todo` while queued and not yet picked is removed from the queue, and a run started for it after the pick is closed by the next pass; an issue whose stored run is live or mid-turn is marked started without another run; an idle stored run is resumed with `RESUME_TEXT`; a stored run that no longer exists or is archived is replaced by a new run; `issue_worktrees` paths under a moved folder are rewritten.
+Supporting: a run started for an issue that left `todo` while queued is closed at once; an issue whose stored run is live or mid-turn is marked started without another run; an idle stored run is resumed with `RESUME_TEXT`; a stored run that no longer exists or is archived is replaced by a new run; `issue_worktrees` paths under a moved folder are rewritten.
 
 ## Decisions taken without the user
 
@@ -23,7 +23,7 @@ D1. **A run per issue, started through the queue; a re-start of the same hire's 
 
 D2. **The first pass waits for `ctx.pluginsSettled`.** `dia-runs` provides `RunsKey` before it forks recovery (`plugins/dia-runs/host.ts`), so `isLive` alone would miss a run about to be recovered; D1 reads the stored status instead, and waiting for settled plugins keeps the first pass from racing the rest of startup.
 
-D3. **The issue is marked started after its run starts, and the `issue_runs` row is written first.** While queued the issue stays `todo`, so the Issues page shows no work that has not begun. An issue id stays in an in-flight set from `enqueue` until the row and `markStarted` complete; passes skip in-flight ids and run one at a time. Cancelling an in-flight issue interrupts its fiber: the queue removes an entry it has not picked; once picked, `enqueue` returns the run id and the row is still written (the record step is uninterruptible), so the next pass closes the run. A `false` from `markStarted` is not an error: the next pass closes the run when the issue is neither started nor startable for that hire. Alternative: mark first and requeue on failure (rejected: a long queue shows many issues as `understanding`).
+D3. **The issue is marked started after its run starts, and the `issue_runs` row is written first.** While queued the issue stays `todo`, so the Issues page shows no work that has not begun. An issue id stays in an in-flight set from `enqueue` until the row and `markStarted` complete; passes skip in-flight ids and run one at a time. An issue that leaves `todo` (or changes hire) while queued is not interrupted: once its run starts, `markStarted` returns `false` and the run is closed at once and its row deleted. Interrupting the waiting `enqueue` would remove an entry the queue has not picked, but an interrupt that lands after the pick loses the run id (`docs/reasoning/2026-11-13-run-queue-enqueue-interrupt-loses-run-id.md`), leaving a run no row names. Closing the plugin's scope still interrupts every waiting start. Alternative: mark first and requeue on failure (rejected: a long queue shows many issues as `understanding`).
 
 D4. **A run ends; its issue stays where the agent left it.** When a turn ends with the issue still started, nothing moves it; the user moves it or reassigns it, as with the old dispatcher. A pass closes (`runs.close`) the live run of every row whose issue is neither started nor startable for that row's hire, and deletes the row. A startable issue whose hire, listed job title or registered project is unknown waits with a logged warning, as before.
 
@@ -71,7 +71,7 @@ export interface IssueRuns {
 }
 ```
 
-`startOptions` (built in `host.ts`) opens the issue's workspace and returns none while it waits, then computes the permission mode and the first message. A pass runs after `ctx.pluginsSettled` and after each change of issues, hires or job titles; it reads `provider.runState`, interrupts in-flight issues no longer startable for their hire, closes runs per D4, calls `workspace.retain`, and starts each startable issue per D1.
+`startOptions` (`issueStartOptions` in `run-options.ts`) opens the issue's workspace and returns none while it waits, then computes the permission mode and the first message. A pass runs after `ctx.pluginsSettled` and after each change of issues, hires or job titles; it reads `provider.runState`, closes runs per D4, calls `workspace.retain`, and starts each startable issue per D1.
 
 ### `assistant.ts`
 
@@ -97,7 +97,7 @@ Removed: `AnswerPermission`. `OrgLive` becomes `{ assistantEnabled, assistantRun
 
 Round 1 (subagent, sonnet):
 - B1 a pass between `enqueue` and `markStarted` enqueues the issue again — applied (D3 in-flight set, serial passes).
-- B2 interrupting after the pick loses the run id — applied (D3: uninterruptible record step; next pass closes the run).
+- B2 interrupting after the pick loses the run id — applied (D3: a queued issue is not interrupted; its run is closed when it starts).
 - B3 closing the run when `markStarted` fails — applied (D3: row first, close only via D4).
 - B4 `isLive` races recovery; `send` to a missing or archived run does nothing — applied (D1 reads `runs.list`; D2).
 - M5 silent skip of issues with an unknown hire, job title or project — rejected: the old dispatcher skipped them with a warning, a dismissed hire cannot hold an open issue, and refusing would move an issue to triage while a project is only temporarily unregistered. D4 states the behaviour.
@@ -106,5 +106,7 @@ Round 1 (subagent, sonnet):
 - M8 every dia tool call asks the user — applied as a consequence in D5.
 - M9 `ask` to a missing run — applied (D8 checks `runs.list`).
 - Minors: narrower `Pick`s and `startOptions` instead of the backend — applied; JSDoc — applied; overall-cap consequence — applied (D7).
+
+Implementation: a probe showed that interrupting `enqueue` after the pick loses the run id, so D3 no longer interrupts a queued issue that changes; it closes the run once it starts.
 
 Round 2 (inline): checked D1–D11 against `run-queue.ts` `enqueue` (an interrupt after the pick returns the id), `runs-seam.ts` `RunInfo.status` and `live`, `service.ts` `markStarted`. No blocker or major found.
