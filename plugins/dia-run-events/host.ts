@@ -94,10 +94,10 @@ const followRunChat = (
 ) =>
   Stream.unwrap(
     Effect.gen(function* () {
-      const later = yield* Stream.toPull(store.committed)
+      const later = yield* store.subscribe
       const snapshot = yield* projection.snapshot(runId)
       yield* Effect.logDebug('Following a run chat', { runId, seq: snapshot.seq })
-      const events = Stream.fromPull(Effect.succeed(later)).pipe(
+      const events = later.pipe(
         Stream.filter(
           (committed) => committed.runId === runId && committed.sequence > snapshot.seq
         ),
@@ -140,6 +140,7 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     const runEvents: RunEvents = {
       append: store.append,
       committed: store.committed,
+      subscribe: store.subscribe,
       readAfter: store.readAfter,
       highestSequence: store.highestSequence,
       startSequence,

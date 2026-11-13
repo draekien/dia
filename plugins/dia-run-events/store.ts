@@ -22,6 +22,7 @@ import {
   PubSub,
   Result,
   Schema,
+  type Scope,
   Semaphore,
   Stream
 } from 'effect'
@@ -74,6 +75,12 @@ export class RunEventStore extends Context.Service<
      * dropped, and the store never waits for a subscriber.
      */
     readonly committed: Stream.Stream<CommittedEvent>
+    /**
+     * Subscribes at once, in the calling scope, and returns the events committed after the call,
+     * by any run, in sequence order. Use it, not `committed`, to read a state and then the events
+     * after it: `committed` subscribes only when it is first pulled.
+     */
+    readonly subscribe: Effect.Effect<Stream.Stream<CommittedEvent>, never, Scope.Scope>
     /**
      * The events of run `runId` after sequence `afterSequence`, read in one transaction: a
      * {@link Replay}, or {@link ReloadRequired} when they cannot be replayed within `limits` (the
@@ -579,6 +586,7 @@ const makeStore = Effect.gen(function* () {
     append,
     appendTranscript,
     committed: Stream.fromPubSub(committedEvents),
+    subscribe: Effect.map(PubSub.subscribe(committedEvents), Stream.fromSubscription),
     readAfter,
     readHistory,
     lastSequence,

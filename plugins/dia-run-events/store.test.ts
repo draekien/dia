@@ -684,6 +684,26 @@ describe('RunEventStore.committed', () => {
   )
 })
 
+describe('RunEventStore.subscribe', () => {
+  it.effect('holds an event appended after the call and before the stream is first pulled', () =>
+    withStore((store) =>
+      Effect.gen(function* () {
+        const later = yield* store.subscribe
+        const [sequence] = sequencesOf(
+          yield* store.append(AGENT_A, [{ event: messageUpdated('m0', 'zero', false) }])
+        )
+
+        const received = yield* later.pipe(Stream.take(1), Stream.runCollect)
+
+        assert.deepStrictEqual(
+          received.map((event) => event.sequence),
+          [sequence]
+        )
+      })
+    )
+  )
+})
+
 describe('reopening the run event database', () => {
   const SESSION = SessionId.make('44444444-4444-4444-8444-444444444444')
 

@@ -1,6 +1,6 @@
 {
   "name": "dia-agent-definitions",
-  "api": "0.0.41",
+  "api": "0.0.42",
   "category": "feature",
   "host": "host.ts",
   "load": "eager",

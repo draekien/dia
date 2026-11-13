@@ -117,6 +117,13 @@ export interface RunEvents {
    */
   readonly committed: Stream.Stream<CommittedEvent>
   /**
+   * Subscribes at once, in the calling scope, and returns every event committed after the call,
+   * by any run, in sequence order. Use it, not `committed`, to read a run's state and then follow
+   * the events after it: `committed` subscribes only when it is first pulled, so events committed
+   * in between are missed.
+   */
+  readonly subscribe: Effect.Effect<Stream.Stream<CommittedEvent>, never, Scope.Scope>
+  /**
    * The events of run `runId` after sequence `afterSequence`: a {@link Replay}, or
    * {@link ReloadRequired} when they cannot be replayed within `limits` (bytes count each event's
    * stored JSON in UTF-8). Never fails; a failed read is returned as `readFailed`.
@@ -166,6 +173,8 @@ const isRunEvents = (value: unknown): value is RunEvents =>
   ) &&
   Predicate.hasProperty(value, 'committed') &&
   Stream.isStream(value.committed) &&
+  Predicate.hasProperty(value, 'subscribe') &&
+  Effect.isEffect(value.subscribe) &&
   Predicate.hasProperty(value, 'highestSequence') &&
   Effect.isEffect(value.highestSequence) &&
   Predicate.hasProperty(value, 'startSequence') &&
