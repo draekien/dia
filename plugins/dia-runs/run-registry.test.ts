@@ -321,7 +321,8 @@ describe('run registry', () => {
         const world = makeWorld(rows)
         const { runs } = yield* world.registry
         yield* runs.start(startOptions)
-        const session = world.sessions[0]!
+        const [session] = world.sessions
+        if (session === undefined) return assert.fail('the run opened no session')
         yield* session.emit(SessionStarted.make({ sessionId: SESSION }))
         yield* session.emit(UserMessagesSent.make({ messages: [] }))
 
@@ -348,7 +349,8 @@ describe('run registry', () => {
         const world = makeWorld(rows)
         const { runs } = yield* world.registry
         yield* runs.start(startOptions)
-        const session = world.sessions[0]!
+        const [session] = world.sessions
+        if (session === undefined) return assert.fail('the run opened no session')
         yield* session.emit(SessionStarted.make({ sessionId: SESSION }))
         yield* session.emit(UserMessagesSent.make({ messages: [] }))
         yield* session.emit(

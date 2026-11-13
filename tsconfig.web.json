@@ -59,6 +59,7 @@
     "plugins/dia-mcp/calls.ts",
     "plugins/dia-worktrees/calls.ts",
     "plugins/dia-issues/calls.ts",
+    "plugins/dia-inbox/calls.ts",
     "plugins/dia-issues/issue-actions.ts",
     "plugins/dia-chat/slots.ts",
     "plugins/dia-adapters/slots.ts",
