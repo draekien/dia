@@ -7,15 +7,24 @@ import { IssueOutsideToken, RevokeOutsideTokens } from './calls'
 
 const GROUP = 'Dia tools'
 
-const failed = (title: string) => (cause: unknown) =>
+const failed = (title: string, description?: string) => (cause: unknown) =>
   Effect.logError(title, { cause }).pipe(
-    Effect.andThen(Effect.sync(() => toast.add({ title, type: 'error' })))
+    Effect.andThen(Effect.sync(() => toast.add({ title, description, type: 'error' })))
   )
 
 const connect = (ctx: PluginServices) =>
   Effect.gen(function* () {
-    const { command } = yield* callHost(ctx, IssueOutsideToken, {})
-    yield* Effect.promise(() => navigator.clipboard.writeText(command))
+    const { command } = yield* callHost(ctx, IssueOutsideToken, {}).pipe(
+      Effect.tapCause(failed('Could not create a dia tools token'))
+    )
+    yield* Effect.tryPromise(() => navigator.clipboard.writeText(command)).pipe(
+      Effect.tapCause(
+        failed(
+          'Could not copy the Claude Code command',
+          'Focus the dia window, then run this command again.'
+        )
+      )
+    )
     yield* Effect.logInfo('Copied a dia tools command for an outside agent')
     toast.add({
       title: 'Copied a Claude Code command',
@@ -23,7 +32,7 @@ const connect = (ctx: PluginServices) =>
         "Run it in a terminal to give Claude Code dia's tools. It holds a new token: keep it private.",
       type: 'success'
     })
-  }).pipe(Effect.catchCause(failed('Could not create a dia tools token')))
+  }).pipe(Effect.catchCause(() => Effect.void))
 
 const revoke = (ctx: PluginServices) =>
   Effect.gen(function* () {

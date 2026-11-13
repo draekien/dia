@@ -24,9 +24,10 @@ const quote = (value: string) => `"${value}"`
 
 const outsideCommand = (token: string, script: string, endpointFile: string) =>
   [
-    'claude mcp add --scope user --transport stdio',
+    'claude mcp add',
     `--env DIA_MCP_TOKEN=${token}`,
     '--env ELECTRON_RUN_AS_NODE=1',
+    '--scope user --transport stdio',
     DIA_SERVER_NAME,
     '--',
     quote(process.execPath),
