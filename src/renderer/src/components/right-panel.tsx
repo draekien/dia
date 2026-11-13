@@ -193,7 +193,7 @@ export function RightPanel({
           <h2 className="truncate text-xs font-medium text-ink">{shown.title}</h2>
         )}
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-app">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <PluginBoundary
           plugin={shown.key.plugin}
           at="chat.panels"
