@@ -30,6 +30,7 @@ const providerOf = (
 ): RunEvents => ({
   append: () => Effect.succeed([Option.some(startSequence + 1)]),
   committed,
+  subscribe: Effect.succeed(committed),
   readAfter: () => Effect.die('not called'),
   highestSequence: Effect.succeed(startSequence),
   startSequence,

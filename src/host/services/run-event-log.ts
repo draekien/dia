@@ -24,7 +24,7 @@ const NOT_LOADED = 'The dia-run-events plugin is not loaded'
  */
 export class RunEventLog extends Context.Service<
   RunEventLog,
-  Omit<RunEvents, 'startSequence' | 'highestSequence'> & {
+  Omit<RunEvents, 'startSequence' | 'highestSequence' | 'subscribe'> & {
     readonly hostStartSequence: Effect.Effect<number>
   }
 >()('RunEventLog') {}
