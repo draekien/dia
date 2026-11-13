@@ -113,13 +113,10 @@ export const makeDataMigrations = (
       Effect.forEach(
         manifest.dataMigrations ?? [],
         (migration) =>
-          Effect.gen(function* () {
-            const ran = yield* moves
-              .hasRun(name, migration.id)
-              .pipe(Effect.mapError((error) => migrationError(name, migration, error)))
-            if (ran) return
-            yield* runOne(name, root, migration)
-          }),
+          moves.hasRun(name, migration.id).pipe(
+            Effect.mapError((error) => migrationError(name, migration, error)),
+            Effect.flatMap((ran) => (ran ? Effect.void : runOne(name, root, migration)))
+          ),
         { discard: true }
       ).pipe(
         Effect.tapError((error) =>

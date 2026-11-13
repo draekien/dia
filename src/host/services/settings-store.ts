@@ -37,17 +37,16 @@ const renameKeys = <A>(
 ): Readonly<Record<string, A>> | undefined => {
   if (record === undefined) return undefined
   const renamed: Record<string, A> = { ...record }
+  let changed = false
   for (const name of RENAMED_PLUGINS) {
     const value = renamed[name]
     if (value === undefined || `dia-${name}` in renamed) continue
     renamed[`dia-${name}`] = value
     delete renamed[name]
+    changed = true
   }
-  return renamed
+  return changed ? renamed : record
 }
-
-const sameKeys = (a: object | undefined, b: object | undefined) =>
-  Object.keys(a ?? {}).join() === Object.keys(b ?? {}).join()
 
 const parseJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
 const decodeSettings = Schema.decodeUnknownResult(Settings)
@@ -183,10 +182,7 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
       const settingsNow = yield* read()
       const pluginOverrides = renameKeys(settingsNow.pluginOverrides)
       const adapters = renameKeys(settingsNow.adapters)
-      if (
-        !sameKeys(pluginOverrides, settingsNow.pluginOverrides) ||
-        !sameKeys(adapters, settingsNow.adapters)
-      ) {
+      if (pluginOverrides !== settingsNow.pluginOverrides || adapters !== settingsNow.adapters) {
         yield* update((settings) => ({
           ...settings,
           pluginOverrides: renameKeys(settings.pluginOverrides),

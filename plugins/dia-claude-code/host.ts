@@ -2,7 +2,7 @@ import * as os from 'node:os'
 import { AgentBackendKey, type HostPluginContext, type PluginSetup } from '@dia/plugin'
 import { SkillSourceRegistryKey } from '@dia-plugin/dia-skills/registry'
 import * as NodeServices from '@effect/platform-node/NodeServices'
-import { Effect } from 'effect'
+import { Duration, Effect } from 'effect'
 import { makeClaudeCodeBackend } from './backend'
 import { isExistingFile, makeClaudeInstall } from './claude-install'
 import { makeClaudeHealth } from './health'
@@ -15,9 +15,10 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
   Effect.gen(function* () {
     yield* logShadowedCanUseToolWarnings(process)
     const services = yield* Effect.context<NodeServices.NodeServices>()
+    const recentSessionCwds = yield* Effect.cachedWithTTL(sessionCwds, Duration.minutes(1))
     yield* ctx.onPathsMoved((move) =>
       Effect.gen(function* () {
-        yield* moveTranscriptFolders(move, yield* claudeProjectsDir, yield* sessionCwds)
+        yield* moveTranscriptFolders(move, yield* claudeProjectsDir, yield* recentSessionCwds)
       }).pipe(Effect.provideContext(services))
     )
     const install = yield* makeClaudeInstall(ctx, isExistingFile)

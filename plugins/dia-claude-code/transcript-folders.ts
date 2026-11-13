@@ -39,12 +39,10 @@ export const moveTranscriptFolders = Effect.fn('ClaudeCode.moveTranscriptFolders
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const exists = (folder: string) => fs.exists(folder).pipe(Effect.orElseSucceed(() => false))
-  const moved = new Map<string, string>()
   for (const cwd of cwds) {
-    const target = relocatePath(cwd, move)
-    if (Option.isSome(target)) moved.set(cwd, target.value)
-  }
-  for (const [cwd, target] of moved) {
+    const relocated = relocatePath(cwd, move)
+    if (Option.isNone(relocated)) continue
+    const target = relocated.value
     const from = path.normalize(transcriptFolderOf(projectsDir, cwd))
     const to = path.normalize(transcriptFolderOf(projectsDir, target))
     if (path.basename(to).length > MAX_FOLDER_NAME) {
