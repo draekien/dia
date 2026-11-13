@@ -1,0 +1,9 @@
+{
+  "name": "dia-terminals",
+  "api": "0.0.42",
+  "category": "feature",
+  "host": "host.ts",
+  "renderer": "renderer.ts",
+  "load": "eager",
+  "exports": ["terminals.ts"]
+}
