@@ -1,9 +1,10 @@
 import type { MetaRepoPushResult } from '@dia/plugin'
+import { makeGit } from '@dia-plugin/dia-git/git'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { assert, describe, it } from '@effect/vitest'
-import { Effect, FileSystem, Path, type Scope } from 'effect'
+import { Effect, FileSystem, Option, Path, type Scope } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
-import { makeMetaPush, redactUrlCredentials } from './meta-push'
+import { makeMetaPush } from './meta-push'
 import { ensureMetaRepo } from './meta-repo'
 
 const SECRET = ['ghp', 'Zq8Xw2Lm4Np6Rt0Vb3Hk7Jd9Sf1Gc5TyAbCd'].join('_')
@@ -19,7 +20,7 @@ const fixture = Effect.gen(function* () {
   const root = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-meta-push-' })
   const directory = path.join(root, 'repo')
   const remote = path.join(root, 'remote.git')
-  yield* ensureMetaRepo(directory)
+  yield* ensureMetaRepo(directory, yield* makeGit)
   yield* fs.makeDirectory(remote)
   yield* git(remote, 'init', '--bare')
   const commitFile = (file: string, content: string, message: string) =>
@@ -46,7 +47,7 @@ const fixture = Effect.gen(function* () {
       Effect.orElseSucceed(() => '')
     )
   const branch = yield* git(directory, 'symbolic-ref', '--short', 'HEAD')
-  const metaPush = yield* makeMetaPush(directory)
+  const metaPush = yield* makeMetaPush(directory, Effect.succeed(Option.some(yield* makeGit)))
   return { directory, remote, branch, commitFile, remoteHead, metaPush }
 })
 
@@ -174,6 +175,21 @@ describe('makeMetaPush', { timeout: 30_000 }, () => {
     )
   )
 
+  it.effect('reports state, remote and push as failed while no dia-git is loaded', () =>
+    run(
+      Effect.gen(function* () {
+        const { directory, remote } = yield* fixture
+        const withoutGit = yield* makeMetaPush(directory, Effect.succeed(Option.none()))
+        const unavailable = { _tag: 'MetaRepoFailed', message: 'Git is not available.' }
+
+        assert.deepStrictEqual(
+          [yield* withoutGit.state, yield* withoutGit.setRemote(remote), yield* withoutGit.push],
+          [unavailable, unavailable, unavailable]
+        )
+      })
+    )
+  )
+
   it.effect('reports a push to an unreachable remote as a failure naming the step', () =>
     run(
       Effect.gen(function* () {
@@ -234,22 +250,4 @@ describe('makeMetaPush', { timeout: 30_000 }, () => {
       })
     )
   )
-})
-
-describe('redactUrlCredentials', () => {
-  it('replaces the password in every URL of a message and keeps the user name', () => {
-    assert.strictEqual(
-      redactUrlCredentials(
-        "fatal: unable to access 'https://me:tok3n@host/a.git/': and ssh://git@host/b.git"
-      ),
-      "fatal: unable to access 'https://me:***@host/a.git/': and ssh://git@host/b.git"
-    )
-  })
-
-  it('replaces a token used as the user name of an https URL', () => {
-    assert.strictEqual(
-      redactUrlCredentials(`remote: https://${SECRET}@github.com/me/meta.git`),
-      'remote: https://***@github.com/me/meta.git'
-    )
-  })
 })
