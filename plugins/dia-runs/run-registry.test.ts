@@ -328,6 +328,27 @@ describe('run registry', () => {
     )
   )
 
+  it.live('leaves a run started before recovery to its own session', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows)
+        const { runs, recover } = yield* world.registry
+        yield* runs.start(startOptions)
+        const session = world.sessions[0]
+        if (session === undefined) return assert.fail('no session opened')
+        yield* session.emit(UserMessagesSent.make({ messages: [] }))
+        yield* eventually(statusOf(rows, STARTED), (status) => Option.contains(status, 'running'))
+
+        yield* recover
+
+        assert.deepStrictEqual(
+          [yield* statusOf(rows, STARTED), world.sessions.length, world.appended.length],
+          [Option.some('running'), 1, 0]
+        )
+      })
+    )
+  )
+
   it.live('asks for a tab for a run with no tab and records that it has one', () =>
     withRows((rows) =>
       Effect.gen(function* () {
