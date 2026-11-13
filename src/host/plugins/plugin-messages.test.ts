@@ -333,6 +333,70 @@ describe('subscribePlugin', () => {
   )
 })
 
+const Record = Rpc.make('Record', {
+  payload: { id: Schema.String, resent: Schema.Boolean, call: Schema.String },
+  success: Schema.Number
+})
+
+const recordCalls = (received: Array<unknown>) => (ctx: ServingContext) =>
+  ctx.serve(Record, (payload, call) => {
+    received.push({ payload: { ...payload }, call })
+    return Effect.succeed(received.length)
+  })
+
+describe('callPlugin', () => {
+  it.effect('hands the handler the call id and whether this attempt is a resend', () =>
+    Effect.gen(function* () {
+      const received: Array<{ readonly call: unknown }> = []
+      const registry = yield* makeRegistry(recordCalls(received))
+      yield* registry.load(EXAMPLE)
+      const payload = { id: 'p', resent: false, call: 'c' }
+
+      yield* callPlugin(registry, {
+        plugin: EXAMPLE,
+        tag: 'Record',
+        payload,
+        call: { id: 'call-7', resent: false }
+      })
+      yield* callPlugin(registry, {
+        plugin: EXAMPLE,
+        tag: 'Record',
+        payload,
+        call: { id: 'call-7', resent: true }
+      })
+
+      assert.deepStrictEqual(
+        received.map((entry) => entry.call),
+        [
+          { id: 'call-7', resent: false },
+          { id: 'call-7', resent: true }
+        ]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('hands the handler payload fields named id, resent and call unchanged', () =>
+    Effect.gen(function* () {
+      const received: Array<{ readonly payload: unknown }> = []
+      const registry = yield* makeRegistry(recordCalls(received))
+      yield* registry.load(EXAMPLE)
+
+      yield* callPlugin(registry, {
+        plugin: EXAMPLE,
+        tag: 'Record',
+        payload: { id: 'inner', resent: true, call: 'inner-call' },
+        call: { id: 'call-1', resent: false }
+      })
+
+      assert.deepStrictEqual(received[0]?.payload, {
+        id: 'inner',
+        resent: true,
+        call: 'inner-call'
+      })
+    }).pipe(Effect.scoped)
+  )
+})
+
 describe('callPlugin on a streaming tag', () => {
   it.effect('fails with PluginCallInvalid', () =>
     Effect.gen(function* () {
@@ -340,7 +404,12 @@ describe('callPlugin on a streaming tag', () => {
       yield* registry.load(EXAMPLE)
 
       const error = yield* Effect.flip(
-        callPlugin(registry, { plugin: EXAMPLE, tag: 'Ticks', payload: { payload: 0 } })
+        callPlugin(registry, {
+          plugin: EXAMPLE,
+          tag: 'Ticks',
+          payload: { payload: 0 },
+          call: { id: 'call-1', resent: false }
+        })
       )
 
       assert.strictEqual(error._tag, 'PluginCallInvalid')

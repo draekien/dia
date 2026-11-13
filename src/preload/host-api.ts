@@ -71,7 +71,7 @@ export type HostApi = Omit<
  * Everything {@link makeHostApi} needs from its environment. `client` resolves once the Host
  * connection is open. `pickDirectory` opens
  * the native directory picker starting at the given path. `newRequestId` mints the identifier
- * that makes a resent command idempotent. `warn` reports failures that have no caller to throw
+ * that makes a resent command idempotent, and the id of a plugin call. `warn` reports failures that have no caller to throw
  * to.
  */
 export interface HostApiDeps {
@@ -96,7 +96,8 @@ const resendSchedule = Schedule.spaced(RESEND_INTERVAL).pipe(
  * event stream in the background.
  *
  * Commands return immediately and are resent with the same `commandId` while the connection is
- * down, for up to {@link RESEND_WINDOW}; the Host applies each `commandId` once. The event
+ * down, for up to {@link RESEND_WINDOW}; the Host applies each `commandId` once. A plugin call is
+ * resent the same way under one call id, marked as a resend after its first attempt. The event
  * stream resumes after a dropped connection from the last sequence number received per pane;
  * when the Host cannot replay what was missed it asks the renderer to reload that pane's history
  * (`onHistoryReloadRequested`). Workspace and agent-summary changes are never replayed, so after
@@ -265,9 +266,15 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         query((client) => client.SetPluginOverride({ name, directory })),
       clearOverride: (name) => query((client) => client.ClearPluginOverride({ name })),
       onStatusChanged: (listener) => subscribeTo('PluginStatusChanged', listener),
-      call: (plugin, tag, payload) =>
-        query((client) =>
-          client.CallPlugin({ plugin, tag, payload }).pipe(
+      call: (plugin, tag, payload) => {
+        const id = deps.newRequestId()
+        let sent = false
+        return query((client) =>
+          Effect.suspend(() => {
+            const call = { id, resent: sent }
+            sent = true
+            return client.CallPlugin({ plugin, tag, payload, call })
+          }).pipe(
             Effect.map((value): PluginCallResultJson => ({ _tag: 'Success', value })),
             Effect.catchTag(
               ['PluginNotServing', 'PluginCallInvalid', 'PluginCallFailed'],
@@ -275,7 +282,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
                 Effect.succeed({ _tag: 'Failure', error: encodePluginCallError(error) })
             )
           )
-        ),
+        )
+      },
       subscribe: subscribePlugin
     },
     models: {

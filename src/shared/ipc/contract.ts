@@ -742,7 +742,8 @@ export interface PluginApi {
   /**
    * Runs the handler plugin `plugin`'s `host` entry serves for `tag` with `payload`, a value
    * encoded with the call's payload schema. Resolves the encoded result, or the failure as plain
-   * data; a renderer plugin calls it through `callHost`, never directly.
+   * data. Each call has one id; a resend after a lost connection reaches the handler with that id
+   * marked as a resend. A renderer plugin calls it through `callHost`, never directly.
    */
   call(plugin: string, tag: string, payload: unknown): Promise<PluginCallResultJson>
   /**

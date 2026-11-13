@@ -1,6 +1,6 @@
 {
   "name": "dia-example",
-  "api": "0.0.37",
+  "api": "0.0.38",
   "category": "feature",
   "host": "host.ts",
   "renderer": "renderer.ts",

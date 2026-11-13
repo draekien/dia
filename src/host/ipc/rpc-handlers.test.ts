@@ -1181,7 +1181,7 @@ describe('Dia RPC handlers', () => {
           } as unknown as PluginServices,
           new Set(),
           Ticks,
-          (payload) => {
+          (payload: { readonly payload: number }) => {
             received.push({ ...payload })
             return Stream.make(1)
           }

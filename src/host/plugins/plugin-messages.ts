@@ -1,6 +1,7 @@
 import type { PluginServices } from '@shared/plugin/api'
 import {
   jsonCodec,
+  type PluginCallAttempt,
   type PluginCallError,
   PluginCallFailed,
   PluginCallInvalid,
@@ -14,7 +15,8 @@ const HANDLER = Symbol('dia/PluginCallHandler')
 
 interface PluginCallHandler {
   readonly [HANDLER]: (
-    payload: unknown
+    payload: unknown,
+    call: PluginCallAttempt
   ) => Effect.Effect<unknown, PluginCallInvalid | PluginCallFailed>
 }
 
@@ -100,12 +102,13 @@ const makeSubscriptionTracker = (plugin: string, tag: string): Effect.Effect<Sub
 const callKey = (plugin: string, tag: string): string => `call:${plugin}.${tag}`
 
 /**
- * Serves `rpc` for calls from the `renderer` entry of the plugin `services` belongs to, until the
- * scope it runs in closes. `served` holds the tags this plugin serves in open scopes; create one
+ * Serves `rpc` for calls from any plugin's `renderer` entry, until the scope it runs in closes.
+ * `services` is the serving plugin's; `served` holds the tags it serves in open scopes; create one
  * per plugin open. A request/response `rpc` takes a handler returning an effect and is run by
- * {@link callPlugin}; a streaming `rpc` takes a handler returning a stream and is run by
- * {@link subscribePlugin}. Closing the scope ends every subscription of a streaming tag with
- * {@link PluginNotServing} and waits for them to end, up to the registry's service time limit.
+ * {@link callPlugin} with the call's {@link PluginCallAttempt}; a streaming `rpc` takes a handler
+ * returning a stream and is run by {@link subscribePlugin}. Closing the scope ends every
+ * subscription of a streaming tag with {@link PluginNotServing} and waits for them to end, up to
+ * the registry's service time limit.
  * Serving a tag already in `served`, or a tag another plugin has taken, is a defect.
  */
 export const servePluginCall = <R extends Rpc.AnyWithProps>(
@@ -113,7 +116,10 @@ export const servePluginCall = <R extends Rpc.AnyWithProps>(
   served: Set<string>,
   rpc: R,
   handler:
-    | ((payload: Rpc.Payload<R>) => Effect.Effect<Rpc.Success<R>, Rpc.Error<R>>)
+    | ((
+        payload: Rpc.Payload<R>,
+        call: PluginCallAttempt
+      ) => Effect.Effect<Rpc.Success<R>, Rpc.Error<R>>)
     | ((payload: Rpc.Payload<R>) => Stream.Stream<Rpc.SuccessChunk<R>, Rpc.ErrorExit<R>>)
 ): Effect.Effect<void, never, Scope.Scope> =>
   Effect.gen(function* () {
@@ -160,12 +166,15 @@ export const servePluginCall = <R extends Rpc.AnyWithProps>(
     } else {
       const encodeSuccess = Schema.encodeUnknownEffect(jsonCodec(rpc.successSchema))
       const failHandlerError = failEncoded(encodeError(rpc.errorSchema))
-      const effectHandler = handler as (payload: Rpc.Payload<R>) => Effect.Effect<unknown, unknown>
+      const effectHandler = handler as (
+        payload: Rpc.Payload<R>,
+        call: PluginCallAttempt
+      ) => Effect.Effect<unknown, unknown>
       value = {
-        [HANDLER]: (payload) =>
+        [HANDLER]: (payload, call) =>
           Effect.gen(function* () {
             const decoded = yield* decodePayload(payload).pipe(Effect.mapError(invalid))
-            return yield* effectHandler(decoded as Rpc.Payload<R>).pipe(
+            return yield* effectHandler(decoded as Rpc.Payload<R>, call).pipe(
               Effect.matchEffect({
                 onSuccess: (item) => encodeSuccess(item).pipe(Effect.mapError(invalid)),
                 onFailure: failHandlerError
@@ -188,7 +197,7 @@ export const servePluginCall = <R extends Rpc.AnyWithProps>(
   })
 
 /**
- * Runs the handler plugin `plugin` serves for `tag` with `payload`, holding the plugin open until
+ * Runs the handler plugin `plugin` serves for `tag` with `payload` and `call`, holding the plugin open until
  * the handler ends (ADR-0055). Fails with {@link PluginNotServing} when no handler is served or the
  * plugin closed during the call, with {@link PluginCallInvalid} when `payload` or the result does
  * not match the call's schema, and with {@link PluginCallFailed} carrying the handler's encoded
@@ -196,16 +205,22 @@ export const servePluginCall = <R extends Rpc.AnyWithProps>(
  */
 export const callPlugin = Effect.fn('PluginMessages.call')(function* (
   registry: Pick<PluginRegistry, 'use'>,
-  request: { readonly plugin: string; readonly tag: string; readonly payload: unknown }
+  request: {
+    readonly plugin: string
+    readonly tag: string
+    readonly payload: unknown
+    readonly call: PluginCallAttempt
+  }
 ) {
-  const { plugin, tag, payload } = request
+  const { plugin, tag, payload, call } = request
   const notServing = (message: string) => new PluginNotServing({ plugin, tag, message })
+  yield* Effect.logDebug('Running a plugin call', { plugin, tag, id: call.id, resent: call.resent })
   const result = yield* registry
     .use(
       callKey(plugin, tag),
       (value): Effect.Effect<unknown, PluginNotServing | PluginCallInvalid | PluginCallFailed> =>
         isHandler(value)
-          ? value[HANDLER](payload)
+          ? value[HANDLER](payload, call)
           : isStreamHandler(value)
             ? Effect.fail(
                 new PluginCallInvalid({ plugin, tag, message: `\`${tag}\` is a streaming call` })

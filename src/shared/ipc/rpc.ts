@@ -36,7 +36,7 @@ import {
   WorkspaceProblemError
 } from '../domain/workspace-problem'
 import { PluginInfo, PluginName, PluginOverrideResult } from '../plugin/manifest'
-import { PluginCallError } from '../plugin/messages'
+import { PluginCallAttempt, PluginCallError } from '../plugin/messages'
 import {
   CreateTab,
   EditQueuedMessage,
@@ -66,7 +66,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.28'
+export const PROTOCOL_VERSION = '0.0.29'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -138,7 +138,8 @@ export type EventFrame = typeof EventFrame.Type
  * with `WorkspaceProblemError`;
  * `CallPlugin` takes none and runs a handler that plugin `plugin`'s `host` entry serves for `tag`,
  * with `payload` and the result encoded by the plugin's own schemas; it is resent like every query,
- * so the handler may run more than once;
+ * so the handler may run more than once; `call` carries the call's id, the same on every resend, and
+ * whether this attempt is a resend;
  * `SubscribePlugin` is not a query: it streams the encoded values of a streaming call that plugin
  * `plugin`'s `host` entry serves for `tag`, the preload subscribes again after a lost connection,
  * and its handler may run more than once;
@@ -239,7 +240,12 @@ export const DiaRpcs = RpcGroup.make(
     error: WorkspaceProblemError
   }),
   Rpc.make('CallPlugin', {
-    payload: { plugin: PluginName, tag: Schema.NonEmptyString, payload: Schema.Unknown },
+    payload: {
+      plugin: PluginName,
+      tag: Schema.NonEmptyString,
+      payload: Schema.Unknown,
+      call: PluginCallAttempt
+    },
     success: Schema.Unknown,
     error: PluginCallError
   }),
