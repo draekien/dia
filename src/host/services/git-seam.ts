@@ -24,9 +24,10 @@ export interface GitStatusEntry {
   readonly path: string
 }
 
-/** A ref and the subject line of the commit it points at, as {@link Git.refs} lists it. */
+/** A ref, the commit it points at and that commit's subject line, as {@link Git.refs} lists it. */
 export interface GitRef {
   readonly name: string
+  readonly commit: string
   readonly subject: string
 }
 
@@ -148,7 +149,7 @@ export interface Git {
     refs: Arr.NonEmptyReadonlyArray<string>,
     message: string
   ) => Effect.Effect<void, GitError>
-  /** The refs in `cwd`'s repository whose name starts with `prefix`, in name order. */
+  /** The refs under the ref folder `prefix` (a name ending in `/`) in `cwd`'s repository, in name order. */
   readonly refs: (cwd: string, prefix: string) => Effect.Effect<ReadonlyArray<GitRef>, GitError>
   /** The files that differ between commits `from` and `to`; a rename is a deletion and an addition. */
   readonly changedFiles: (

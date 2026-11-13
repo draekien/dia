@@ -283,14 +283,14 @@ export const makeGit = Effect.gen(function* () {
     stopFsmonitor: (cwd) => run(cwd, ['fsmonitor--daemon', 'stop']).pipe(Effect.asVoid),
     snapshot,
     refs: (cwd, prefix) =>
-      runOk(cwd, ['for-each-ref', '--format=%(refname)%00%(subject)', prefix]).pipe(
+      runOk(cwd, ['for-each-ref', '--format=%(refname)%00%(objectname)%00%(subject)', prefix]).pipe(
         Effect.map((output) =>
           output
             .split(/\r?\n/)
             .filter((line) => line !== '')
             .map((line): GitRef => {
-              const [name = '', subject = ''] = line.split('\0')
-              return { name, subject }
+              const [name = '', commit = '', subject = ''] = line.split('\0')
+              return { name, commit, subject }
             })
         )
       ),

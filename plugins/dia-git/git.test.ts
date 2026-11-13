@@ -316,14 +316,14 @@ describe('makeGit', { timeout: 30_000 }, () => {
 
         const refs = yield* git.refs(directory, 'refs/dia/test/')
 
-        assert.deepStrictEqual(refs, [
-          { name: 'refs/dia/test/1/end', subject: 'Fix it' },
-          { name: 'refs/dia/test/2/start', subject: 'Fix it' }
-        ])
-        assert.deepStrictEqual(
-          yield* git.resolveCommit(directory, 'refs/dia/test/1/end'),
-          yield* git.resolveCommit(directory, 'refs/dia/test/2/start')
+        const commit = Option.getOrElse(
+          yield* git.resolveCommit(directory, 'refs/dia/test/2/start'),
+          () => ''
         )
+        assert.deepStrictEqual(refs, [
+          { name: 'refs/dia/test/1/end', commit, subject: 'Fix it' },
+          { name: 'refs/dia/test/2/start', commit, subject: 'Fix it' }
+        ])
       })
     )
   )

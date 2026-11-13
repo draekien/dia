@@ -56,9 +56,9 @@ interface Git {
 
 ### Plugin (`plugins/dia-checkpoints`)
 
-`plugin.json`: `category: feature`, `host: host.ts`, `renderer: renderer.ts`, `load: eager`, `exports: ["calls.ts"]`.
+`plugin.json`: `category: feature`, `host: host.ts`, `renderer: renderer.ts`, `load: eager`; it exports no module (its own renderer imports `calls.ts`, as `dia-inbox` does).
 
-`calls.ts` (exported, each export documented):
+`calls.ts` (each export documented):
 
 ```ts
 /** A turn still running, or interrupted with no later turn: its number and prompt. */
