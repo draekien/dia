@@ -9,10 +9,14 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
   Effect.gen(function* () {
     const queue = yield* SubscriptionRef.make(Option.none<RunQueue>())
     yield* ctx.whenProvided([RunQueueKey], ({ 'run-queue': provided }) =>
-      Effect.acquireRelease(
-        ctx.pluginsSettled.pipe(Effect.andThen(SubscriptionRef.set(queue, Option.some(provided)))),
-        () => SubscriptionRef.set(queue, Option.none())
-      ).pipe(Effect.andThen(Effect.logInfo('Schedules follow the run queue', { plugin: ctx.name })))
+      Effect.gen(function* () {
+        yield* Effect.addFinalizer(() => SubscriptionRef.set(queue, Option.none()))
+        yield* ctx.pluginsSettled.pipe(
+          Effect.andThen(SubscriptionRef.set(queue, Option.some(provided))),
+          Effect.andThen(Effect.logInfo('Schedules follow the run queue', { plugin: ctx.name })),
+          Effect.forkScoped
+        )
+      })
     )
     const sql = yield* ctx.database(schedulesMigrations)
     const schedules = yield* makeSchedules({ activities: ctx.activities, sql, queue })
