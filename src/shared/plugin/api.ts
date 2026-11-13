@@ -224,8 +224,9 @@ export interface HostPluginContext extends PluginServices {
    * a call while the Host connection is down, and the first run is not cancelled, so make it safe
    * to repeat. The handler's second argument, a `PluginCallAttempt`, carries the call's `id`, the
    * same on every resend, and `resent`; a handler that must apply once records `id` and returns
-   * the recorded result for an `id` it has seen. Closing the scope waits up to 30 seconds for running handlers, then interrupts
-   * them; the caller then sees `PluginNotServing` although the handler may have partly run.
+   * the recorded result for an `id` it has seen. Closing the scope waits up to 30 seconds for
+   * running handlers, then interrupts them; the caller then sees `PluginNotServing` although the
+   * handler may have partly run.
    *
    * A streaming `rpc` (`Rpc.make(tag, { ..., stream: true })`) takes a handler returning a stream
    * and is followed with `followHost`. The handler runs once per subscription, and again for each

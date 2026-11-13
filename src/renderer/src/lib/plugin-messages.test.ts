@@ -171,6 +171,18 @@ describe('callHost', () => {
     })
   )
 
+  it.effect('fails with PluginCallInvalid without calling the Host when the name is invalid', () =>
+    Effect.gen(function* () {
+      const call = vi.fn()
+      vi.stubGlobal('window', { dia: { plugins: { call } } })
+
+      const error = yield* Effect.flip(callHost('Dia-Other', Count, { n: 1 }))
+
+      assert.strictEqual(error._tag, 'PluginCallInvalid')
+      assert.strictEqual(call.mock.calls.length, 0)
+    })
+  )
+
   it.effect('hands the handler payload fields named plugin and payload unchanged', () =>
     Effect.gen(function* () {
       const received: Array<unknown> = []
@@ -402,6 +414,18 @@ describe('followHost', () => {
       const values = yield* Stream.runCollect(followHost(OTHER, Ticks, {}))
 
       assert.deepStrictEqual(values, [Option.some(3), Option.some(4)])
+    })
+  )
+
+  it.effect('fails with PluginCallInvalid without subscribing when the name is invalid', () =>
+    Effect.gen(function* () {
+      const subscribe = vi.fn()
+      vi.stubGlobal('window', { dia: { plugins: { subscribe } } })
+
+      const error = yield* Stream.runCollect(followHost('Dia-Other', Ticks, {})).pipe(Effect.flip)
+
+      assert.strictEqual(error._tag, 'PluginCallInvalid')
+      assert.strictEqual(subscribe.mock.calls.length, 0)
     })
   )
 

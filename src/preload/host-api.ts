@@ -71,7 +71,7 @@ export type HostApi = Omit<
  * Everything {@link makeHostApi} needs from its environment. `client` resolves once the Host
  * connection is open. `pickDirectory` opens
  * the native directory picker starting at the given path. `newRequestId` mints the identifier
- * that makes a resent command idempotent. `warn` reports failures that have no caller to throw
+ * that makes a resent command idempotent, and the id of a plugin call. `warn` reports failures that have no caller to throw
  * to.
  */
 export interface HostApiDeps {
