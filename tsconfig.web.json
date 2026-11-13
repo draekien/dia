@@ -61,6 +61,7 @@
     "plugins/dia-worktrees/calls.ts",
     "plugins/dia-issues/calls.ts",
     "plugins/dia-inbox/calls.ts",
+    "plugins/dia-checkpoints/calls.ts",
     "plugins/dia-tools/calls.ts",
     "plugins/dia-tools/tools.ts",
     "plugins/dia-run-queue/queue.ts",

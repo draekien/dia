@@ -81,7 +81,9 @@ export {
   type Git,
   type GitAuthor,
   GitError,
+  GitFileChange,
   GitKey,
+  type GitRef,
   type GitStatusEntry
 } from './services/git-seam'
 export {
