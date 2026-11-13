@@ -82,7 +82,7 @@ export const TerminalsKey = ServiceKey.make('terminals', isTerminals)
 
 - `pty-terminals.ts` — `makeTerminals(cwdOf: (runId) => Effect<Option<string>>)`: owns the PTY processes, their retained output and the per-run lists; scoped, so closing the scope kills every process. Calls `@lydell/node-pty` `spawn`. Builds every `TerminalInfo` with `TerminalRunning.make`/`TerminalExited.make`; logs open, exit, stop and remove at info level with `terminalId`, `runId` and `exitCode`.
 - `shell.ts` — `shellCommand(platform, env, command?)`: the file and arguments of D4. (Test: on Windows a command containing double quotes and `&` runs as written.)
-- `terminal-tools.ts` — `makeTerminalTools(terminals)`: the three `DiaTool`s of D7, and `stripAnsi`.
+- `terminal-tools.ts` — `makeTerminalTools(terminals)`: the three `DiaTool`s of D7; `terminal_read` removes escape sequences with Node's `util.stripVTControlCharacters`.
 - `host.ts` — makes the terminals in the setup scope, provides `TerminalsKey`, keeps `Runs` in a `SubscriptionRef` under `whenProvided([RunsKey])`, registers the tools under `whenProvided([ToolsKey])`, serves the calls.
 - `terminals-card.tsx`, `renderer.ts` — the rail card of D8, built under `src/renderer/CLAUDE.md` (impeccable, shadcn).
 
