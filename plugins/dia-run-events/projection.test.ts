@@ -4,21 +4,18 @@ import { Errored, Idle } from '@shared/domain/attention'
 import { ModelsReady } from '@shared/domain/model'
 import { SessionId } from '@shared/domain/pane'
 import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
-import {
-  type IpcEvent,
-  PaneAttentionChanged,
-  PaneModelChanged,
-  WorkspaceChanged
-} from '@shared/ipc/contract'
+import { PaneAttentionChanged, PaneModelChanged, type PaneSignal } from '@shared/ipc/contract'
 import { DateTime, Deferred, Effect, Fiber, Layer, Option, SubscriptionRef } from 'effect'
 import { SqlClient } from 'effect/sql'
-import { AgentEventRecorder } from './agent-event-recorder'
-import { AgentEventStore } from './agent-event-store'
-import { EventHub } from './event-hub'
-import { EventHubTestLayer } from './event-hub-test-layer'
-import { ModelCatalogFeed } from './model-catalog-feed'
-import { PaneChatProjection, PaneChatProjectionLive } from './pane-chat-projection'
-import { WorkspaceFeed, WorkspaceFeedLive } from './workspace-feed'
+import { RunEventStoreTestLayer } from '../../src/host/services/event-hub-test-layer'
+import {
+  RunChatProjection,
+  RunChatProjectionLive,
+  RunModelCatalog,
+  RunWorkspace
+} from './projection'
+import { RunEventRecorder } from './recorder'
+import { RunEventStore } from './store'
 
 const PANE_A = 'aaaaaaaa-0000-4000-8000-000000000001'
 const PANE_B = 'bbbbbbbb-0000-4000-8000-000000000002'
@@ -52,24 +49,21 @@ const workspaceOf = (tabs: ReadonlyArray<Tab>): Workspace => ({
   visibleTab: null
 })
 
-const CATALOG = {
-  revision: 1,
-  state: ModelsReady.make({
-    models: [
-      {
-        value: 'sonnet',
-        displayName: 'Sonnet',
-        description: 'Everyday tasks',
-        adaptiveThinking: true,
-        effortLevels: ['low'],
-        autoMode: true,
-        fastMode: false
-      }
-    ],
-    fetchedAt: DateTime.makeUnsafe('2026-10-25T15:00:00Z'),
-    refreshing: false
-  })
-}
+const CATALOG = ModelsReady.make({
+  models: [
+    {
+      value: 'sonnet',
+      displayName: 'Sonnet',
+      description: 'Everyday tasks',
+      adaptiveThinking: true,
+      effortLevels: ['low'],
+      autoMode: true,
+      fastMode: false
+    }
+  ],
+  fetchedAt: DateTime.makeUnsafe('2026-10-25T15:00:00Z'),
+  refreshing: false
+})
 
 const turnFromTranscript = (sessionId: string) =>
   MessageUpdated.make({
@@ -89,16 +83,16 @@ const makeSetup = ({
 }: SetupOptions = {}) => {
   const catchUps: Array<string> = []
   const recorder = Layer.effect(
-    AgentEventRecorder,
+    RunEventRecorder,
     Effect.gen(function* () {
-      const store = yield* AgentEventStore
-      return AgentEventRecorder.of({
+      const store = yield* RunEventStore
+      return RunEventRecorder.of({
         open: () => Effect.die('not called'),
-        catchUp: ({ agentId, sessionId }) =>
+        catchUp: ({ runId, sessionId }) =>
           Effect.gen(function* () {
             catchUps.push(sessionId)
             yield* catchUpGate
-            yield* store.append(agentId, [
+            yield* store.append(runId, [
               { event: turnFromTranscript(sessionId), sourceUuid: `${sessionId}-turn` }
             ])
             return Option.some(sessionId)
@@ -106,14 +100,11 @@ const makeSetup = ({
       })
     })
   )
-  const models = Layer.succeed(ModelCatalogFeed, {
-    start: Effect.void,
-    current: Effect.as(catalogReady, CATALOG),
-    refresh: Effect.void
-  })
+  const models = Layer.succeed(RunModelCatalog, { current: Effect.as(catalogReady, CATALOG) })
+  const workspace = Layer.effect(RunWorkspace, SubscriptionRef.make(workspaceOf([])))
   const layer = Layer.provideMerge(
-    PaneChatProjectionLive,
-    Layer.mergeAll(WorkspaceFeedLive, models, recorder).pipe(Layer.provideMerge(EventHubTestLayer))
+    RunChatProjectionLive,
+    Layer.mergeAll(workspace, models, recorder).pipe(Layer.provideMerge(RunEventStoreTestLayer))
   )
   return { catchUps, layer }
 }
@@ -122,12 +113,14 @@ const settle = Effect.gen(function* () {
   for (let i = 0; i < 50; i++) yield* Effect.yieldNow
 })
 
-const publish = (event: IpcEvent) =>
-  Effect.flatMap(EventHub, (hub) => hub.publish(event)).pipe(Effect.andThen(settle))
+const publish = (event: PaneSignal) =>
+  Effect.flatMap(RunEventStore, (store) => store.append(event.paneId, [{ event }])).pipe(
+    Effect.andThen(settle)
+  )
 
 const reply = (paneId: string, itemId: string, content: string) =>
   Effect.gen(function* () {
-    const store = yield* AgentEventStore
+    const store = yield* RunEventStore
     yield* store.append(paneId, [
       {
         event: MessageUpdated.make({
@@ -141,19 +134,19 @@ const reply = (paneId: string, itemId: string, content: string) =>
   })
 
 const lastSequence = (paneId: string) =>
-  Effect.flatMap(AgentEventStore, (store) => store.lastSequence(paneId))
+  Effect.flatMap(RunEventStore, (store) => store.lastSequence(paneId))
 
 const setWorkspace = (workspace: Workspace) =>
   Effect.gen(function* () {
-    yield* SubscriptionRef.set(yield* WorkspaceFeed, workspace)
-    yield* publish(WorkspaceChanged.make({ workspace }))
+    yield* SubscriptionRef.set(yield* RunWorkspace, workspace)
+    yield* settle
   })
 
 const snapshotOf = (paneId: string) =>
-  Effect.flatMap(PaneChatProjection, (projection) => projection.snapshot(paneId))
+  Effect.flatMap(RunChatProjection, (projection) => projection.snapshot(paneId))
 
 const seed = (paneId: string) =>
-  Effect.flatMap(PaneChatProjection, (projection) => projection.seed(paneId))
+  Effect.flatMap(RunChatProjection, (projection) => projection.seed(paneId))
 
 const textsOf = (paneId: string) =>
   Effect.map(snapshotOf(paneId), ({ state }) =>
@@ -162,7 +155,7 @@ const textsOf = (paneId: string) =>
     )
   )
 
-describe('PaneChatProjection', () => {
+describe('RunChatProjection', () => {
   it.effect('serves a tab with a session from its caught-up stored conversation', () => {
     const { catchUps, layer } = makeSetup()
     return Effect.gen(function* () {
@@ -243,7 +236,7 @@ describe('PaneChatProjection', () => {
     const { layer } = makeSetup()
     return Effect.gen(function* () {
       yield* setWorkspace(workspaceOf([tab(PANE_A)]))
-      const store = yield* AgentEventStore
+      const store = yield* RunEventStore
       yield* store.append(PANE_A, [
         { event: ToolCallStarted.make({ toolCallId: 'call-1', toolName: 'Bash' }) },
         {
@@ -282,10 +275,10 @@ describe('PaneChatProjection', () => {
       const sql = yield* SqlClient.SqlClient
       yield* setWorkspace(workspaceOf([tab(PANE_A)]))
       yield* reply(PANE_A, 'r1', 'stored')
-      yield* sql`ALTER TABLE agent_items RENAME TO agent_items_hidden`
+      yield* sql`ALTER TABLE run_items RENAME TO run_items_hidden`
       const whileUnreadable = yield* textsOf(PANE_A)
 
-      yield* sql`ALTER TABLE agent_items_hidden RENAME TO agent_items`
+      yield* sql`ALTER TABLE run_items_hidden RENAME TO run_items`
 
       assert.deepStrictEqual([whileUnreadable, yield* textsOf(PANE_A)], [[], ['stored']])
     }).pipe(Effect.provide(layer))
@@ -358,7 +351,7 @@ describe('PaneChatProjection', () => {
       yield* reply(PANE_B, 'r1', 'hired agent reply')
       const before = yield* textsOf(PANE_B)
 
-      yield* Effect.flatMap(PaneChatProjection, (projection) => projection.release(PANE_B))
+      yield* Effect.flatMap(RunChatProjection, (projection) => projection.release(PANE_B))
 
       assert.deepStrictEqual([before, yield* textsOf(PANE_B)], [['hired agent reply'], []])
     }).pipe(Effect.provide(layer))
@@ -371,7 +364,7 @@ describe('PaneChatProjection', () => {
       yield* seed(PANE_A)
       yield* reply(PANE_A, 'r1', 'tab reply')
 
-      yield* Effect.flatMap(PaneChatProjection, (projection) => projection.release(PANE_A))
+      yield* Effect.flatMap(RunChatProjection, (projection) => projection.release(PANE_A))
 
       assert.deepStrictEqual(yield* textsOf(PANE_A), ['tab reply'])
     }).pipe(Effect.provide(layer))
@@ -408,21 +401,21 @@ describe('PaneChatProjection', () => {
     }).pipe(Effect.provide(layer))
   })
 
-  it.effect(
-    'keeps a tab that a stale workspace event leaves out but the workspace still has',
-    () => {
-      const { layer } = makeSetup()
-      return Effect.gen(function* () {
-        yield* setWorkspace(workspaceOf([tab(PANE_A)]))
-        yield* seed(PANE_A)
-        yield* reply(PANE_A, 'r1', 'hi')
+  it.effect('keeps every stored event of a tab removed from the workspace', () => {
+    const { layer } = makeSetup()
+    return Effect.gen(function* () {
+      yield* setWorkspace(workspaceOf([tab(PANE_A)]))
+      yield* seed(PANE_A)
+      yield* reply(PANE_A, 'r1', 'hi')
+      const before = yield* lastSequence(PANE_A)
 
-        yield* publish(WorkspaceChanged.make({ workspace: workspaceOf([]) }))
+      yield* setWorkspace(workspaceOf([]))
 
-        assert.deepStrictEqual(yield* textsOf(PANE_A), ['hi'])
-      }).pipe(Effect.provide(layer))
-    }
-  )
+      const store = yield* RunEventStore
+      assert.strictEqual(yield* store.lastSequence(PANE_A), before)
+      assert.strictEqual((yield* store.readHistory(PANE_A)).items.length, 1)
+    }).pipe(Effect.provide(layer))
+  })
 
   it.effect('rebuilds the state of a tab that leaves and rejoins from the store', () => {
     const { catchUps, layer } = makeSetup()

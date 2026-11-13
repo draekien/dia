@@ -53,10 +53,10 @@ import { type CommandDeduper, makeCommandDeduperLive } from '../services/command
 import { EventHub } from '../services/event-hub'
 import { ModelCatalogFeed } from '../services/model-catalog-feed'
 import { ModelPreferences } from '../services/model-preferences'
-import { PaneChatProjection } from '../services/pane-chat-projection'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { ProjectEntries } from '../services/project-entries'
+import { RunEventLog } from '../services/run-event-log'
 import { SettingsStore } from '../services/settings-store'
 import { WorkspaceProblems } from '../services/workspace-problems'
 import { makeDiaRpcHandlers } from './rpc-handlers'
@@ -85,7 +85,7 @@ interface Harness {
     | AdapterStatusFeed
     | ModelPreferences
     | WorkspaceProblems
-    | PaneChatProjection
+    | RunEventLog
   >
 }
 
@@ -380,15 +380,15 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       Effect.sync(() => void calls.push(`resolveImportConflict:${agentId}:${resolution}`))
   })
 
-  const paneChats = Layer.succeed(PaneChatProjection, {
-    snapshot: (paneId) =>
+  const paneChats = Layer.succeed(RunEventLog, {
+    snapshot: (paneId: string) =>
       Effect.sync(() => {
         calls.push(`snapshot:${paneId}`)
         return { state: emptyPaneChatState, seq: 7 }
       }),
     seed: () => Effect.void,
     release: () => Effect.void
-  })
+  } as unknown as RunEventLog['Service'])
 
   const hub = Layer.succeed(EventHub, {
     publish: (event) =>

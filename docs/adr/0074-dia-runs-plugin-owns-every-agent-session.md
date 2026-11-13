@@ -91,5 +91,6 @@ This ADR supersedes the first row of ADR-0019's kernel table, ADR-0050, ADR-0067
 
 * Delivery order and the org freeze: ADR-0076. Tool registry used by runs: ADR-0075.
 * The name `dia-run-events` is provisional.
+* `dia-run-events` (#241) provides its service under the kernel key `RunEventsKey` until `dia-runs` (#242) exists, and keys events by run id, which equals the tab's pane id until then. `agent-summaries.ts` stays in the kernel until step 4. See `docs/designs/dia-run-events.md`.
 * What the Agent SDK does when it resumes a session whose last entry is an unanswered tool call. <!-- unverified -->
 * Comparison sources: `.repos/t3code` (commit dated 2026-11-05), `.repos/deepseek-harness` (2026-11-04), `.repos/paperclip` (2026-11-06), herdr docs at https://herdr.dev/docs/ (read 2026-11-13).

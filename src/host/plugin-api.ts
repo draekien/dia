@@ -39,10 +39,12 @@ export {
   WorktreeOwner,
   WorktreeReleased
 } from '../shared/domain/pane'
+export * as PaneChat from '../shared/domain/pane-chat'
 export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
 export { AgentName, ProjectId } from '../shared/domain/project'
 export { PermissionRules, SessionToolOptions } from '../shared/domain/session-tools'
 export { Uuid } from '../shared/domain/uuid'
+export { PaneAgentEvent } from '../shared/ipc/contract'
 export * from '../shared/plugin/api'
 export * from '../shared/plugin/list-slot'
 export { PluginCallAttempt, PluginCallInvalid, PluginNotServing } from '../shared/plugin/messages'
@@ -52,7 +54,22 @@ export type {
   HostSessions,
   SessionAttachment
 } from './plugins/host-plugin-context'
+export { hostDatabaseOf } from './plugins/plugin-paths'
 export { type MetaRepo, MetaRepoKey } from './services/meta-repo-seam'
+export {
+  type AppendEntry,
+  CommittedEvent,
+  type RecordingOptions,
+  ReloadRequired,
+  Replay,
+  type ReplayLimits,
+  RunEventReadError,
+  type RunEvents,
+  RunEventsKey,
+  RunEventWriteError,
+  StoredEvent,
+  TranscriptCursor
+} from './services/run-events-seam'
 export {
   type GitOps,
   type IncludedFileFailure,

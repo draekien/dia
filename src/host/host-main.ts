@@ -34,8 +34,6 @@ import { DiaRpcHandlersLive } from './ipc/rpc-handlers'
 import { HostPlugins, makeHostPluginsLive } from './plugins/host-plugins'
 import { makePluginSourcesLive } from './plugins/plugin-sources'
 import { AdapterStatusFeed, AdapterStatusFeedLive } from './services/adapter-status-feed'
-import { AgentEventRecorderLive } from './services/agent-event-recorder'
-import { AgentEventStoreLive } from './services/agent-event-store'
 import { AgentSummariesLive } from './services/agent-summaries'
 import { AppWindow, makeAppWindowLive } from './services/app-window'
 import { AttachedSessionsLive, SessionAttacherLive } from './services/attached-sessions'
@@ -45,14 +43,17 @@ import { makeHostDatabaseLive } from './services/database'
 import { EventHub, EventHubLive } from './services/event-hub'
 import { ModelCatalogFeed, ModelCatalogFeedLive } from './services/model-catalog-feed'
 import { ModelPreferencesLive } from './services/model-preferences'
-import { PaneChatProjectionLive } from './services/pane-chat-projection'
 import { PaneSupervisor, PaneSupervisorLive, SessionFactoryLive } from './services/pane-supervisor'
 import { PaneWorkspace, PaneWorkspaceLive } from './services/pane-workspace'
 import { PathMovesLive } from './services/path-moves'
 import { makePersistenceServiceLive } from './services/persistence'
 import { ProjectEntriesLive } from './services/project-entries'
+import {
+  RunEventLogConnectLive,
+  RunEventLogLive,
+  RunEventLogRegistryLive
+} from './services/run-event-log'
 import { makeSettingsStoreLive } from './services/settings-store'
-import { TranscriptReaderLive } from './services/transcript-reader'
 import { WorkspaceFeedLive } from './services/workspace-feed'
 import { makeWorkspaceProblemsLive } from './services/workspace-problems'
 import { makeWorkspaceStoreLive } from './services/workspace-store'
@@ -113,9 +114,10 @@ const handleMainMessage = Effect.fn('Host.handleMainMessage')(function* (
 const buildHostLayer = (init: HostInit, token: string) => {
   const settings = Layer.provide(makeSettingsStoreLive(init.userDataPath), NodeServices.layer)
   const hostDatabase = makeHostDatabaseLive(init.userDataPath)
-  const agentEventStore = Layer.provide(AgentEventStoreLive, hostDatabase)
+  const runEventRegistry = RunEventLogRegistryLive
+  const runEventLog = Layer.provide(RunEventLogLive, runEventRegistry)
   const pathMoves = Layer.provide(PathMovesLive, hostDatabase)
-  const eventHub = Layer.provide(EventHubLive, agentEventStore)
+  const eventHub = Layer.provide(EventHubLive, runEventLog)
   const appWindow = makeAppWindowLive(post)
   const pluginSources = Layer.provide(
     makePluginSourcesLive(init.pluginsRoot),
@@ -146,33 +148,26 @@ const buildHostLayer = (init: HostInit, token: string) => {
     makeWorkspaceStoreLive(init.userDataPath),
     Layer.merge(hostDatabase, NodeServices.layer)
   )
-  const transcriptReader = Layer.provide(TranscriptReaderLive, hostPlugins)
-  const recorder = Layer.provide(
-    AgentEventRecorderLive,
-    Layer.mergeAll(agentEventStore, transcriptReader, NodeCrypto.layer)
+  const runEventConnect = Layer.provide(
+    RunEventLogConnectLive,
+    Layer.merge(runEventRegistry, hostPlugins)
   )
   const supervisor = Layer.provide(
     PaneSupervisorLive,
-    Layer.mergeAll(sessionFactory, hostPlugins, settings, recorder)
+    Layer.mergeAll(sessionFactory, hostPlugins, settings, runEventLog)
   )
   const modelCatalog = Layer.provide(ModelCatalogFeedLive, Layer.merge(hostPlugins, eventHub))
-  const paneChats = Layer.provide(
-    PaneChatProjectionLive,
-    Layer.mergeAll(eventHub, WorkspaceFeedLive, agentEventStore, recorder, modelCatalog)
-  )
   const attachedSessions = Layer.provide(
     AttachedSessionsLive,
-    Layer.mergeAll(supervisor, paneChats, eventHub, sessionAttacher)
+    Layer.mergeAll(supervisor, runEventLog, eventHub, sessionAttacher)
   )
   const workspace = Layer.provide(
     PaneWorkspaceLive,
     Layer.mergeAll(
       supervisor,
       workspaceStore,
-      transcriptReader,
-      paneChats,
+      runEventLog,
       eventHub,
-      agentEventStore,
       hostPlugins,
       pathMoves,
       WorkspaceFeedLive,
@@ -196,7 +191,8 @@ const buildHostLayer = (init: HostInit, token: string) => {
     supervisor,
     attachedSessions,
     workspace,
-    paneChats,
+    runEventLog,
+    runEventConnect,
     workspaceProblems,
     summaries,
     settings,
@@ -211,7 +207,6 @@ const buildHostLayer = (init: HostInit, token: string) => {
     makeCommandDeduperLive(),
     Layer.provide(ProjectEntriesLive, NodeServices.layer),
     hostDatabase,
-    agentEventStore,
     NodeFileSystem.layer,
     NodePath.layer
   )

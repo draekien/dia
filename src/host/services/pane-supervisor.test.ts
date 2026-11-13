@@ -31,7 +31,6 @@ import {
   TurnParked,
   UserMessagesSent
 } from '../session/protocol'
-import { AgentEventRecorder } from './agent-event-recorder'
 import {
   type PaneCreationRequest,
   PaneSupervisor,
@@ -39,6 +38,7 @@ import {
   SessionFactory,
   SessionFactoryLive
 } from './pane-supervisor'
+import { RunEventLog } from './run-event-log'
 import { SettingsStore } from './settings-store'
 import {
   type GitOps,
@@ -207,11 +207,12 @@ function makeTestSetup(
 }
 
 const recordingInto = (log: Array<string>) =>
-  Layer.succeed(AgentEventRecorder)({
-    open: () =>
-      Effect.succeed((message) => Effect.sync(() => void log.push(`recorded ${message._tag}`))),
-    catchUp: () => Effect.succeedNone
-  })
+  Layer.succeed(RunEventLog, {
+    record: () =>
+      Effect.succeed((message: OutboundMessage) =>
+        Effect.sync(() => void log.push(`recorded ${message._tag}`))
+      )
+  } as unknown as RunEventLog['Service'])
 
 const noRecording = recordingInto([])
 

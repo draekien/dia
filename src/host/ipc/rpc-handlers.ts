@@ -22,10 +22,10 @@ import { EventHub } from '../services/event-hub'
 import { withMetaRepo } from '../services/meta-repo-seam'
 import { ModelCatalogFeed } from '../services/model-catalog-feed'
 import { ModelPreferences } from '../services/model-preferences'
-import { PaneChatProjection } from '../services/pane-chat-projection'
 import { type PaneHandle, PaneSupervisor } from '../services/pane-supervisor'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { ProjectEntries } from '../services/project-entries'
+import { RunEventLog } from '../services/run-event-log'
 import { SettingsStore } from '../services/settings-store'
 import { WorkspaceProblems } from '../services/workspace-problems'
 import { resolveAgentBackend } from '../session/agent-backend'
@@ -34,7 +34,7 @@ import { resolveAgentBackend } from '../session/agent-backend'
  * Builds the implementation of {@link DiaRpcs} on top of the Host's services. Requires
  * `PaneWorkspace`, `AgentSummaries`, `PaneSupervisor`, `SettingsStore`, `EventHub`, `CommandDeduper`,
  * `HostPlugins`, `PluginSources`, `ModelCatalogFeed`, `AdapterStatusFeed`, `ModelPreferences`,
- * `BackgroundActivities` and `WorkspaceProblems`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
+ * `BackgroundActivities`, `RunEventLog` and `WorkspaceProblems`. Use {@link DiaRpcHandlersLive} to serve it; call this directly to invoke
  * handlers without a transport.
  *
  * Every command is applied at most once per `commandId` within its target (pane, project, or
@@ -59,7 +59,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
   const modelPreferences = yield* ModelPreferences
   const activities = yield* BackgroundActivities
   const problems = yield* WorkspaceProblems
-  const paneChats = yield* PaneChatProjection
+  const paneChats = yield* RunEventLog
 
   const publish = (event: IpcEvent): Effect.Effect<void> => hub.publish(event)
 

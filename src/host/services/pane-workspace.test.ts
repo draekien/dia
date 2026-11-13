@@ -44,13 +44,12 @@ import {
   AgentBackendKey,
   type DiscoveredSession
 } from '../session/agent-backend'
-import { AgentEventStore, AgentEventWriteError, type AppendEntry } from './agent-event-store'
 import { EventHub } from './event-hub'
-import { PaneChatProjection } from './pane-chat-projection'
 import { type PaneCreationRequest, type PaneHandle, PaneSupervisor } from './pane-supervisor'
 import { PaneWorkspace, PaneWorkspaceLive } from './pane-workspace'
 import { PathMoves } from './path-moves'
-import { TranscriptReader } from './transcript-reader'
+import { RunEventLog } from './run-event-log'
+import { type AppendEntry, RunEventWriteError } from './run-events-seam'
 import { WorkspaceFeed, WorkspaceFeedLive } from './workspace-feed'
 import { type WorkspaceLoadError, WorkspaceStore, WorkspaceWriteError } from './workspace-store'
 import {
@@ -182,6 +181,11 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   const backend: AgentBackend = {
     openSession: () => Effect.die('not called'),
     readHistory: () => Effect.succeed([]),
+    discoverSessions: (directory) =>
+      Effect.sync(() => {
+        log.push(`discoverSessions ${directory}`)
+        return options.discovered ?? []
+      }),
     transcriptInfo: () => Effect.die('not called'),
     readTranscriptAfter: () => Effect.die('not called'),
     models: () => Stream.empty,
@@ -204,37 +208,18 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
         : provideUse(key, f)
   } as unknown as PluginRegistry)
 
-  const transcripts = Layer.succeed(TranscriptReader, {
-    readHistory: (sessionId, cwd) =>
-      Effect.sync(() => {
-        log.push(`readHistory ${sessionId} ${cwd}`)
-        return options.history ?? []
-      }),
-    discoverSessions: (directory) =>
-      Effect.sync(() => {
-        log.push(`discoverSessions ${directory}`)
-        return options.discovered ?? []
-      }),
-    transcriptInfo: () => Effect.die('not called'),
-    readTranscriptAfter: () => Effect.die('not called')
-  })
-
-  const events = Layer.succeed(AgentEventStore, {
-    append: (agentId: string, entries: ReadonlyArray<AppendEntry>) =>
+  const runEvents = Layer.succeed(RunEventLog, {
+    append: (runId: string, entries: ReadonlyArray<AppendEntry>) =>
       options.failEventAppend === true
-        ? Effect.fail(new AgentEventWriteError({ cause: 'disk full' }))
+        ? Effect.fail(new RunEventWriteError({ cause: 'disk full' }))
         : Effect.sync(() => {
-            for (const entry of entries) log.push(`append ${agentId} ${entry.event._tag}`)
+            for (const entry of entries) log.push(`append ${runId} ${entry.event._tag}`)
             return entries.map(() => Option.some(1))
-          })
-  } as unknown as AgentEventStore['Service'])
-
-  const paneChats = Layer.succeed(PaneChatProjection, {
-    snapshot: () => Effect.die('not called'),
-    seed: (paneId) =>
-      Effect.sync(() => void log.push(`seed ${paneId} after ${requests.length} sessions`)),
+          }),
+    seed: (runId: string) =>
+      Effect.sync(() => void log.push(`seed ${runId} after ${requests.length} sessions`)),
     release: () => Effect.void
-  })
+  } as unknown as RunEventLog['Service'])
 
   const notFound = (path: string) =>
     PlatformError.systemError({
@@ -268,9 +253,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       store,
       hub,
       plugins,
-      transcripts,
-      paneChats,
-      events,
+      runEvents,
       fs,
       NodePath.layer,
       NodeCrypto.layer
