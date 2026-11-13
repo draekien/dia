@@ -1,6 +1,6 @@
 import type { HostPluginContext, PluginSetup } from '@dia/plugin'
 import { ReadGreeting } from '@dia-plugin/example/messages'
-import { OrgService } from '@dia-plugin/org/service'
+import { IssuesKey } from '@dia-plugin/issues/service'
 import { Effect, Option, Ref, Stream } from 'effect'
 
 const setup: PluginSetup<HostPluginContext> = (ctx) =>
@@ -17,22 +17,22 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       ),
       Effect.forkScoped
     )
-    const jobTitleCount = yield* Ref.make(Option.none<number>())
-    yield* ctx.whenProvided([OrgService], ({ org }) =>
+    const objectiveCount = yield* Ref.make(Option.none<number>())
+    yield* ctx.whenProvided([IssuesKey], ({ issues }) =>
       Effect.gen(function* () {
-        const jobTitles = yield* org.jobTitles
-        yield* Ref.set(jobTitleCount, Option.some(jobTitles.length))
-        yield* Effect.addFinalizer(() => Ref.set(jobTitleCount, Option.none()))
-        yield* Effect.logInfo('Example plugin read the org', { jobTitles: jobTitles.length })
+        const { objectives } = yield* issues.snapshot
+        yield* Ref.set(objectiveCount, Option.some(objectives.length))
+        yield* Effect.addFinalizer(() => Ref.set(objectiveCount, Option.none()))
+        yield* Effect.logInfo('Example plugin read the issues', { objectives: objectives.length })
       })
     )
     yield* ctx.serve(ReadGreeting, () =>
-      Ref.get(jobTitleCount).pipe(
+      Ref.get(objectiveCount).pipe(
         Effect.map(
           Option.match({
             onNone: () => `Hello from the ${ctx.name} plugin's host entry`,
             onSome: (count) =>
-              `Hello from the ${ctx.name} plugin's host entry · ${count} job titles`
+              `Hello from the ${ctx.name} plugin's host entry · ${count} objectives`
           })
         )
       )
