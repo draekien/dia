@@ -1,6 +1,7 @@
 import type { ProjectEntry } from '@shared/domain/attachment'
 import { Context, Effect, FileSystem, Layer, Option, Path } from 'effect'
-import { ChildProcess, ChildProcessSpawner } from 'effect/process'
+import { HostPlugins } from '../plugins/host-plugins'
+import { GitKey } from './git-seam'
 
 /** The most entries {@link ProjectEntries.list} returns for one directory. */
 export const PROJECT_ENTRY_LIMIT = 20_000
@@ -8,7 +9,7 @@ export const PROJECT_ENTRY_LIMIT = 20_000
 const SKIPPED_SEGMENTS = new Set(['.git', 'node_modules'])
 
 /**
- * The entries for `files`, the `/`-separated relative paths `git ls-files` prints: every
+ * The entries for `files`, the `/`-separated relative paths `Git.listFiles` returns: every
  * directory those paths lie in, then every file, each group in path order, at most `limit` in all.
  */
 export const entriesFromFiles = (
@@ -31,8 +32,9 @@ export const entriesFromFiles = (
 
 /**
  * Lists the files and directories under a session's working directory for the `@` path menu.
- * `list(cwd)` reads a git repository through `git ls-files`, so `.gitignore` applies; any other
- * directory is walked one directory at a time, skipping `.git`, `node_modules` and any entry it cannot read. It returns at most
+ * `list(cwd)` reads a git repository through the `Git` that `dia-git` provides, so `.gitignore`
+ * applies; any other directory, and every directory while `dia-git` is not loaded or is reloading,
+ * is walked one directory at a time, skipping `.git`, `node_modules` and any entry it cannot read. It returns at most
  * {@link PROJECT_ENTRY_LIMIT} entries, and an empty list when `cwd` cannot be read. Each call
  * reads the directory again.
  */
@@ -41,26 +43,18 @@ export class ProjectEntries extends Context.Service<
   { readonly list: (cwd: string) => Effect.Effect<ReadonlyArray<ProjectEntry>> }
 >()('ProjectEntries') {}
 
-/** Builds the live {@link ProjectEntries}; requires the platform spawner, file system and path services. */
+/** Builds the live {@link ProjectEntries}; requires `HostPlugins` and the file system and path services. */
 export const ProjectEntriesLive = Layer.effect(
   ProjectEntries,
   Effect.gen(function* () {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    const plugins = yield* HostPlugins
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
 
     const gitFiles = (cwd: string) =>
-      spawner
-        .string(
-          ChildProcess.make('git', [
-            'ls-files',
-            '-z',
-            '--cached',
-            '--others',
-            '--exclude-standard'
-          ]).pipe(ChildProcess.setCwd(cwd))
-        )
-        .pipe(Effect.map((output) => output.split('\0').filter((line) => line !== '')))
+      plugins
+        .use(GitKey, (git) => git.listFiles(cwd))
+        .pipe(Effect.map(Option.getOrElse((): ReadonlyArray<string> => [])))
 
     const entryAt = (cwd: string, relative: string) =>
       fs.stat(path.join(cwd, relative)).pipe(

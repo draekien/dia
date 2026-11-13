@@ -180,7 +180,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     backgroundActivities,
     appWindow,
     makeCommandDeduperLive(),
-    Layer.provide(ProjectEntriesLive, NodeServices.layer),
+    Layer.provide(ProjectEntriesLive, Layer.mergeAll(hostPlugins, NodeServices.layer)),
     hostDatabase,
     NodeFileSystem.layer,
     NodePath.layer
