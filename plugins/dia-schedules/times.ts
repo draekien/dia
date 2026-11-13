@@ -6,14 +6,31 @@ export type Times =
   | { readonly _tag: 'Interval'; readonly interval: Duration.Duration }
   | { readonly _tag: 'Cron'; readonly cron: Cron.Cron }
 
-/** Parses `schedule.times`; fails with `InvalidSchedule` for a bad cron expression or time zone. */
+const withNextTime = (schedule: Schedule, times: Times): Effect.Effect<Times, InvalidSchedule> =>
+  DateTime.now.pipe(
+    Effect.flatMap((now) =>
+      Effect.try({
+        try: () => {
+          nextTime(times, now)
+          return times
+        },
+        catch: () =>
+          new InvalidSchedule({ id: schedule.id, message: 'The cron expression has no next time' })
+      })
+    )
+  )
+
+/**
+ * Parses `schedule.times`; fails with `InvalidSchedule` for a bad cron expression or time zone,
+ * or a cron expression with no next time.
+ */
 export const parseTimes = (schedule: Schedule): Effect.Effect<Times, InvalidSchedule> => {
   const times = schedule.times
   if (times._tag === 'Interval') {
     return Effect.succeed({ _tag: 'Interval', interval: times.interval })
   }
   return Result.match(Cron.parse(times.expression, times.timeZone), {
-    onSuccess: (cron) => Effect.succeed({ _tag: 'Cron' as const, cron }),
+    onSuccess: (cron) => withNextTime(schedule, { _tag: 'Cron', cron }),
     onFailure: (error) =>
       Effect.fail(new InvalidSchedule({ id: schedule.id, message: error.message }))
   })

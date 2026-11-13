@@ -86,7 +86,10 @@ export const makeSchedules = Effect.fnUntraced(function* (deps: SchedulesDeps) {
               retryAt
             })
           }
-          yield* Effect.logInfo('Schedule enqueues again after the run queue stopped', annotations)
+          yield* Effect.logInfo(
+            'Schedule enqueue was interrupted; it enqueues again on the next run queue unless the schedule stopped',
+            annotations
+          )
           used = Option.some(queue)
         }
       })

@@ -24,7 +24,14 @@ import { openDatabase } from '../../src/host/services/database'
 import { EventHubTestLayer } from '../../src/host/services/event-hub-test-layer'
 import { makeSchedules } from './make-schedules'
 import { schedulesMigrations } from './migrations'
-import { type CatchUp, Schedule, type ScheduledRun, type ScheduleTimes } from './schedules'
+import {
+  type CatchUp,
+  CronTimes,
+  Interval,
+  Schedule,
+  type ScheduledRun,
+  type ScheduleTimes
+} from './schedules'
 
 const layer = Layer.mergeAll(
   Layer.provideMerge(BackgroundActivitiesLive, EventHubTestLayer),
@@ -47,7 +54,7 @@ const schedule = (
 ): Schedule => ({
   id: 'test-report',
   label: 'Report',
-  times: options.times ?? { _tag: 'Interval', interval: TEN_MINUTES },
+  times: options.times ?? Interval.make({ interval: TEN_MINUTES }),
   catchUp: options.catchUp ?? 'skip',
   run: run(options.text ?? 'Write the report')
 })
@@ -135,7 +142,7 @@ describe('makeSchedules', () => {
       yield* world.provide(world.recording.queue)
       const { schedules } = yield* world.open
       yield* schedules.put(
-        schedule({ times: { _tag: 'CronTimes', expression: '0 9 * * *', timeZone: 'UTC' } })
+        schedule({ times: CronTimes.make({ expression: '0 9 * * *', timeZone: 'UTC' }) })
       )
 
       yield* advance(Duration.sum(Duration.hours(8), Duration.minutes(59)))
@@ -251,12 +258,12 @@ describe('makeSchedules', () => {
       const { schedules } = yield* world.open
 
       const badExpression = yield* Effect.flip(
-        schedules.put(schedule({ times: { _tag: 'CronTimes', expression: '0 9 * *' } }))
+        schedules.put(schedule({ times: CronTimes.make({ expression: '0 9 * *' }) }))
       )
       const badZone = yield* Effect.flip(
         schedules.put(
           schedule({
-            times: { _tag: 'CronTimes', expression: '0 9 * * *', timeZone: 'Mars/Olympus' }
+            times: CronTimes.make({ expression: '0 9 * * *', timeZone: 'Mars/Olympus' })
           })
         )
       )
@@ -265,6 +272,23 @@ describe('makeSchedules', () => {
         [badExpression._tag, badZone._tag],
         ['InvalidSchedule', 'InvalidSchedule']
       )
+    })
+  )
+
+  it.effect('refuses a cron expression that never fires and stores nothing for it', () =>
+    inWorld(function* (world) {
+      const first = yield* world.open
+
+      const refused = yield* Effect.flip(
+        first.schedules.put(
+          schedule({ times: CronTimes.make({ expression: '0 0 30 2 *', timeZone: 'UTC' }) })
+        )
+      )
+      yield* first.close
+      const reopened = yield* Effect.exit(world.open)
+
+      assert.strictEqual(refused._tag, 'InvalidSchedule')
+      assert.isTrue(Exit.isSuccess(reopened))
     })
   )
 
