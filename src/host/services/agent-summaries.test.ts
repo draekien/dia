@@ -12,7 +12,7 @@ import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/p
 import { AttachedSessionsChanged, type IpcEvent, WorkspaceChanged } from '@shared/ipc/contract'
 import { Duration, Effect, Exit, Layer, Scope, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
-import { AgentEventStore } from './agent-event-store'
+import { RunEventStore } from '../../../plugins/dia-run-events/store'
 import { ACTIVITY_SAVE_DELAY, AgentSummaries, AgentSummariesLive } from './agent-summaries'
 import { EventHub } from './event-hub'
 import { EventHubTestLayer } from './event-hub-test-layer'
@@ -73,7 +73,7 @@ const settle = Effect.gen(function* () {
 const publish = (event: IpcEvent) =>
   Effect.gen(function* () {
     if (event._tag === 'PaneAgentEvent') {
-      const store = yield* AgentEventStore
+      const store = yield* RunEventStore
       yield* store.append(event.paneId, [{ event: event.agentEvent }])
     } else {
       const hub = yield* EventHub

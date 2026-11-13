@@ -4,8 +4,8 @@ import { AttachedSessionsChanged } from '@shared/ipc/contract'
 import { Context, Deferred, Effect, Layer, Option, Ref, type Stream, SubscriptionRef } from 'effect'
 import type { HostSessions, SessionAttachment } from '../plugins/host-plugin-context'
 import { EventHub } from './event-hub'
-import { PaneChatProjection } from './pane-chat-projection'
 import { PaneSupervisor } from './pane-supervisor'
+import { RunEventLog } from './run-event-log'
 
 /**
  * Where `HostPlugins` finds `HostSessions['attach']` without depending on the services it uses,
@@ -46,7 +46,7 @@ export const AttachedSessionsLive = Layer.effect(
   AttachedSessions,
   Effect.gen(function* () {
     const supervisor = yield* PaneSupervisor
-    const paneChats = yield* PaneChatProjection
+    const paneChats = yield* RunEventLog
     const hub = yield* EventHub
     const attacher = yield* SessionAttacher
     const list = yield* SubscriptionRef.make<ReadonlyArray<AttachedSession>>([])

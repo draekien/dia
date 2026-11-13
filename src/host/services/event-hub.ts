@@ -17,7 +17,8 @@ import {
   Schema,
   Stream
 } from 'effect'
-import { AgentEventStore, type CommittedEvent, type ReplayLimits } from './agent-event-store'
+import { RunEventLog } from './run-event-log'
+import type { CommittedEvent, ReplayLimits } from './run-events-seam'
 
 /**
  * The most a resubscribing client is sent as a replay of one pane: 128 events and 1 MiB of stored
@@ -63,7 +64,7 @@ const paneIdOf = (event: IpcEvent): string | undefined =>
 const isPaneSignal = Schema.is(PaneSignal)
 
 const frameOf = (committed: CommittedEvent): PaneEventFrame => {
-  const paneId = committed.agentId
+  const paneId = committed.runId
   const event =
     'paneId' in committed.event
       ? committed.event
@@ -72,22 +73,19 @@ const frameOf = (committed: CommittedEvent): PaneEventFrame => {
 }
 
 /**
- * The live {@link EventHub} layer. Requires {@link AgentEventStore}; follows its committed events
+ * The live {@link EventHub} layer. Requires {@link RunEventLog}; follows its committed events
  * for the layer's lifetime.
  */
 export const EventHubLive = Layer.effect(
   EventHub,
   Effect.gen(function* () {
-    const store = yield* AgentEventStore
+    const store = yield* RunEventLog
     const pubsub = yield* PubSub.unbounded<EventFrame>()
-    const hostStartSequence = yield* store.highestSequence.pipe(
-      Effect.catch(() => Effect.succeed(0))
-    )
     yield* store.committed.pipe(
       Stream.runForEach((committed) => PubSub.publish(pubsub, frameOf(committed))),
       Effect.forkScoped({ startImmediately: true })
     )
-    yield* Effect.logDebug('Delivering stored pane events', { hostStartSequence })
+    yield* Effect.logDebug('Delivering stored pane events')
 
     const storeSignal = (paneId: string, event: PaneSignal) =>
       store.append(paneId, [{ event }]).pipe(
@@ -124,7 +122,8 @@ export const EventHubLive = Layer.effect(
     const replayFor = Effect.fnUntraced(function* (paneId: string, cursor: number) {
       const startedAt = yield* Clock.currentTimeMillis
       const read = yield* store.readAfter(paneId, cursor, REPLAY_LIMITS)
-      const fromEndedRun = cursor > 0 && cursor <= hostStartSequence
+      const fromEndedRun =
+        read._tag === 'Replay' && cursor > 0 && cursor <= (yield* store.hostStartSequence)
       const elapsedMs = (yield* Clock.currentTimeMillis) - startedAt
       if (read._tag === 'Replay' && !fromEndedRun) {
         yield* Effect.logDebug('Replaying pane events', {

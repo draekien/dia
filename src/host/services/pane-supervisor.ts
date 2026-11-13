@@ -87,8 +87,8 @@ import { applyOverride, PluginSources } from '../plugins/plugin-sources'
 import { type AgentSession, resolveAgentBackend, type SessionEnd } from '../session/agent-backend'
 import { makePluginTools } from '../session/dia-tools'
 import type { OutboundMessage } from '../session/protocol'
-import { AgentEventRecorder } from './agent-event-recorder'
 import { resolveSessionAdditions } from './meta-repo-seam'
+import { RunEventLog } from './run-event-log'
 import { SettingsStore } from './settings-store'
 import { setUpWorktreeTab } from './tab-setup'
 import { WorktreeCreateError, WorktreeReattachError, withGitOps } from './worktrees-seam'
@@ -421,13 +421,13 @@ const startPane = Effect.fn('PaneSupervisor.startPane')(function* (
   config: PaneConfig,
   factory: SessionFactory['Service'],
   settings: SettingsStore['Service'],
-  recorder: AgentEventRecorder['Service'],
+  recorder: RunEventLog['Service'],
   onSessionChanged: (sessionId: Option.Option<SessionId>) => Effect.Effect<void>,
   onPermissionModeChanged: (mode: PermissionMode) => Effect.Effect<void>,
   resume: Option.Option<SessionId>
 ) {
   const paneScope = yield* Scope.Scope
-  const record = yield* recorder.open({ agentId: config.paneId, cwd: config.cwd, resume })
+  const record = yield* recorder.record({ runId: config.paneId, cwd: config.cwd, resume })
   const outbound = yield* Queue.unbounded<PaneOutput, Cause.Done>()
   const publish = (event: IpcEvent) => Queue.offer(outbound, PaneOutput.Publish({ event }))
   const recordRef = yield* Ref.make<PaneRecord>({
@@ -782,7 +782,7 @@ export const PaneSupervisorLive = Layer.effect(
     const factory = yield* SessionFactory
     const plugins = yield* HostPlugins
     const settings = yield* SettingsStore
-    const recorder = yield* AgentEventRecorder
+    const recorder = yield* RunEventLog
     const entriesRef = yield* Ref.make(HashMap.empty<PaneId, PaneEntry>())
 
     const teardown = Effect.fn('PaneSupervisor.teardown')(function* (paneId: PaneId) {

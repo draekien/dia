@@ -5,7 +5,17 @@ import { SessionId } from '@shared/domain/pane'
 import { Context, Duration, Effect, FileSystem, Layer, Option, Stream } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
-import type { TranscriptEntry, TranscriptInfo, TranscriptTail } from '../session/agent-backend'
+import { openDatabase } from '../../src/host/services/database'
+import {
+  RunEventReadError,
+  RunEventWriteError,
+  TranscriptCursor
+} from '../../src/host/services/run-events-seam'
+import type {
+  TranscriptEntry,
+  TranscriptInfo,
+  TranscriptTail
+} from '../../src/host/session/agent-backend'
 import {
   AssistantMessageReceived,
   AssistantTextDelta,
@@ -20,21 +30,23 @@ import {
   ToolCallUpdated,
   TurnCompleted,
   UserMessagesSent
-} from '../session/protocol'
+} from '../../src/host/session/protocol'
+import { runEventsMigrations } from './migrations'
 import {
-  AgentEventRecorder,
-  AgentEventRecorderLive,
-  STREAMING_WRITE_INTERVAL
-} from './agent-event-recorder'
-import {
-  AgentEventReadError,
-  AgentEventStore,
-  AgentEventStoreLive,
-  AgentEventWriteError,
-  TranscriptCursor
-} from './agent-event-store'
-import { makeHostDatabaseLive } from './database'
-import { TranscriptReader } from './transcript-reader'
+  RunEventRecorder,
+  RunEventRecorderLive,
+  STREAMING_WRITE_INTERVAL,
+  Transcripts
+} from './recorder'
+import { RunEventStore, RunEventStoreLive } from './store'
+
+const storeIn = (dir: string) =>
+  Layer.provideMerge(
+    RunEventStoreLive,
+    Layer.effect(SqlClient.SqlClient, openDatabase(`${dir}/data.db`, runEventsMigrations)).pipe(
+      Layer.orDie
+    )
+  )
 
 const AGENT = '11111111-1111-4111-8111-111111111111'
 const SESSION = SessionId.make('33333333-3333-4333-8333-333333333333')
@@ -65,9 +77,7 @@ const scriptedReader = (
     Option.map(tail(Option.none()), infoOf)
 ) => {
   const reads: Array<{ readonly sessionId: string; readonly afterUuid: Option.Option<string> }> = []
-  const layer = Layer.succeed(TranscriptReader)({
-    readHistory: () => Effect.die('not called'),
-    discoverSessions: () => Effect.die('not called'),
+  const layer = Layer.succeed(Transcripts)({
     transcriptInfo: (sessionId) => Effect.sync(() => info(sessionId)),
     readTranscriptAfter: (sessionId, _cwd, afterUuid) =>
       Effect.sync(() => {
@@ -83,28 +93,28 @@ const unreadTranscript = scriptedReader(() => Option.none()).layer
 const run = <A, E>(
   options: {
     readonly resume?: SessionId
-    readonly reader?: Layer.Layer<TranscriptReader>
-    readonly seed?: (store: AgentEventStore['Service']) => Effect.Effect<void, unknown>
+    readonly reader?: Layer.Layer<Transcripts>
+    readonly seed?: (store: RunEventStore['Service']) => Effect.Effect<void, unknown>
   },
   messages: ReadonlyArray<OutboundMessage>,
-  inspect: (store: AgentEventStore['Service'], sql: SqlClient.SqlClient) => Effect.Effect<A, E>
+  inspect: (store: RunEventStore['Service'], sql: SqlClient.SqlClient) => Effect.Effect<A, E>
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
-    const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-agent-event-recorder-' })
-    const storage = Layer.provideMerge(AgentEventStoreLive, makeHostDatabaseLive(dir))
+    const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-run-events-recorder-' })
+    const storage = storeIn(dir)
     const context = yield* Layer.build(
       Layer.provideMerge(
-        AgentEventRecorderLive,
+        RunEventRecorderLive,
         Layer.mergeAll(storage, options.reader ?? unreadTranscript, NodeCrypto.layer)
       )
     )
-    const store = Context.get(context, AgentEventStore)
+    const store = Context.get(context, RunEventStore)
     if (options.seed !== undefined) yield* Effect.orDie(options.seed(store))
     yield* Effect.scoped(
       Effect.gen(function* () {
-        const record = yield* Context.get(context, AgentEventRecorder).open({
-          agentId: AGENT,
+        const record = yield* Context.get(context, RunEventRecorder).open({
+          runId: AGENT,
           cwd: CWD,
           resume: Option.fromUndefinedOr(options.resume)
         })
@@ -114,7 +124,7 @@ const run = <A, E>(
     return yield* inspect(store, Context.get(context, SqlClient.SqlClient))
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
 
-const itemsOf = (store: AgentEventStore['Service']) =>
+const itemsOf = (store: RunEventStore['Service']) =>
   store.readHistory(AGENT).pipe(
     Effect.map(({ items }) => items),
     Effect.orDie
@@ -137,7 +147,7 @@ const eventRows = (sql: SqlClient.SqlClient) =>
     readonly event_type: string
     readonly source_uuid: string | null
     readonly payload_json: string
-  }>`SELECT event_type, source_uuid, payload_json FROM agent_events ORDER BY sequence`.pipe(
+  }>`SELECT event_type, source_uuid, payload_json FROM run_events ORDER BY sequence`.pipe(
     Effect.orDie
   )
 
@@ -146,7 +156,7 @@ const thinkingDelta = (text: string) => AssistantThinkingDelta.make({ text })
 const assistantReceived = (content: string, sourceId?: string) =>
   AssistantMessageReceived.make({ message: { role: 'assistant', content }, sourceId })
 
-describe('AgentEventRecorder messages', () => {
+describe('RunEventRecorder messages', () => {
   it.effect('stores streamed assistant text as one final message with its source', () =>
     run(
       {},
@@ -171,19 +181,15 @@ describe('AgentEventRecorder messages', () => {
 
   const openRecording = Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
-    const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-agent-event-recorder-' })
+    const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-run-events-recorder-' })
     const context = yield* Layer.build(
       Layer.provideMerge(
-        AgentEventRecorderLive,
-        Layer.mergeAll(
-          Layer.provideMerge(AgentEventStoreLive, makeHostDatabaseLive(dir)),
-          unreadTranscript,
-          NodeCrypto.layer
-        )
+        RunEventRecorderLive,
+        Layer.mergeAll(storeIn(dir), unreadTranscript, NodeCrypto.layer)
       )
     )
-    const record = yield* Context.get(context, AgentEventRecorder).open({
-      agentId: AGENT,
+    const record = yield* Context.get(context, RunEventRecorder).open({
+      runId: AGENT,
       cwd: CWD,
       resume: Option.none()
     })
@@ -450,17 +456,17 @@ const THIRD_SESSION = SessionId.make('55555555-5555-4555-8555-555555555555')
 
 const seedCursorAtA1 =
   (file: TranscriptInfo = { fileSize: 1, mtimeMs: 1 }) =>
-  (store: AgentEventStore['Service']) =>
+  (store: RunEventStore['Service']) =>
     store.writeCursor(TranscriptCursor.make({ sessionId: SESSION, lastUuid: 'a1', ...file }))
 
 const cursorSessions = (sql: SqlClient.SqlClient) =>
-  sql<{ readonly session_id: string }>`SELECT session_id FROM agent_transcript_cursors`.pipe(
+  sql<{ readonly session_id: string }>`SELECT session_id FROM transcript_cursors`.pipe(
     Effect.orDie,
     Effect.map((rows) => rows.map((row) => row.session_id).sort())
   )
 
-describe('AgentEventRecorder transcript cursor', () => {
-  const readCursor = (store: AgentEventStore['Service']) =>
+describe('RunEventRecorder transcript cursor', () => {
+  const readCursor = (store: RunEventStore['Service']) =>
     store.readCursor(SESSION).pipe(Effect.orDie)
 
   it.effect("moves a new conversation's cursor to the transcript's last entry at turn end", () => {
@@ -597,8 +603,8 @@ describe('AgentEventRecorder transcript cursor', () => {
   it.effect('stops advancing the cursor after an event write fails', () =>
     Effect.gen(function* () {
       const cursorWrites: Array<string> = []
-      const failingStore = Layer.succeed(AgentEventStore)({
-        append: () => Effect.fail(new AgentEventWriteError({ cause: 'disk full' })),
+      const failingStore = Layer.succeed(RunEventStore)({
+        append: () => Effect.fail(new RunEventWriteError({ cause: 'disk full' })),
         appendTranscript: () => Effect.die('not called'),
         ...noReads,
         readCursor: () => Effect.succeed(Option.none()),
@@ -607,15 +613,15 @@ describe('AgentEventRecorder transcript cursor', () => {
       const reader = scriptedReader(() => Option.some(tailOf('u1', 'a1')))
       const context = yield* Layer.build(
         Layer.provide(
-          AgentEventRecorderLive,
+          RunEventRecorderLive,
           Layer.mergeAll(failingStore, reader.layer, NodeCrypto.layer)
         )
       )
 
       yield* Effect.scoped(
         Effect.gen(function* () {
-          const record = yield* Context.get(context, AgentEventRecorder).open({
-            agentId: AGENT,
+          const record = yield* Context.get(context, RunEventRecorder).open({
+            runId: AGENT,
             cwd: CWD,
             resume: Option.none()
           })
@@ -630,14 +636,14 @@ describe('AgentEventRecorder transcript cursor', () => {
   )
 })
 
-describe('AgentEventRecorder catch-up', () => {
+describe('RunEventRecorder catch-up', () => {
   const FOURTH_SESSION = SessionId.make('66666666-6666-4666-8666-666666666666')
 
-  const contentsOf = (store: AgentEventStore['Service']) =>
+  const contentsOf = (store: RunEventStore['Service']) =>
     Effect.map(itemsOf(store), (items) =>
       items.map((item) => (item._tag === 'MessageItem' ? item.message.content : item._tag))
     )
-  const lastUuidOf = (store: AgentEventStore['Service'], sessionId: SessionId) =>
+  const lastUuidOf = (store: RunEventStore['Service'], sessionId: SessionId) =>
     Effect.map(store.readCursor(sessionId).pipe(Effect.orDie), (cursor) =>
       Option.map(cursor, (stored) => stored.lastUuid)
     )
@@ -728,12 +734,12 @@ describe('AgentEventRecorder catch-up', () => {
   })
 
   const recordWithStore = (
-    store: Partial<AgentEventStore['Service']>,
+    store: Partial<RunEventStore['Service']>,
     messages: ReadonlyArray<OutboundMessage>
   ) =>
     Effect.gen(function* () {
       const cursorWrites: Array<string> = []
-      const fakeStore = Layer.succeed(AgentEventStore)({
+      const fakeStore = Layer.succeed(RunEventStore)({
         append: () => Effect.succeed([]),
         appendTranscript: () => Effect.void,
         ...noReads,
@@ -744,14 +750,14 @@ describe('AgentEventRecorder catch-up', () => {
       const reader = scriptedReader(() => Option.some(tailOf('u1', 'a1')))
       const context = yield* Layer.build(
         Layer.provide(
-          AgentEventRecorderLive,
+          RunEventRecorderLive,
           Layer.mergeAll(fakeStore, reader.layer, NodeCrypto.layer)
         )
       )
       yield* Effect.scoped(
         Effect.gen(function* () {
-          const record = yield* Context.get(context, AgentEventRecorder).open({
-            agentId: AGENT,
+          const record = yield* Context.get(context, RunEventRecorder).open({
+            runId: AGENT,
             cwd: CWD,
             resume: Option.some(SESSION)
           })
@@ -770,7 +776,7 @@ describe('AgentEventRecorder catch-up', () => {
         {
           readCursor: () =>
             cursorReads++ === 0
-              ? Effect.fail(new AgentEventReadError({ cause: 'locked' }))
+              ? Effect.fail(new RunEventReadError({ cause: 'locked' }))
               : Effect.succeed(Option.none())
         },
         resumedTurn
@@ -783,7 +789,7 @@ describe('AgentEventRecorder catch-up', () => {
   it.effect('leaves a resumed session unowned when its tail cannot be stored', () =>
     Effect.gen(function* () {
       const cursorWrites = yield* recordWithStore(
-        { appendTranscript: () => Effect.fail(new AgentEventWriteError({ cause: 'disk full' })) },
+        { appendTranscript: () => Effect.fail(new RunEventWriteError({ cause: 'disk full' })) },
         resumedTurn
       )
 

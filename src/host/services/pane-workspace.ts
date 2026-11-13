@@ -60,14 +60,12 @@ import {
   SubscriptionRef
 } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
-import type { DiscoveredSession } from '../session/agent-backend'
-import { AgentEventStore } from './agent-event-store'
+import { type DiscoveredSession, resolveAgentBackend } from '../session/agent-backend'
 import { EventHub } from './event-hub'
-import { PaneChatProjection } from './pane-chat-projection'
 import { type PaneCreationRequest, PaneSupervisor } from './pane-supervisor'
 import { PathMoves } from './path-moves'
 import { probeProject } from './project-directory'
-import { TranscriptReader } from './transcript-reader'
+import { RunEventLog } from './run-event-log'
 import { WorkspaceFeed } from './workspace-feed'
 import { WorkspaceStore } from './workspace-store'
 import { type WorktreeCreateError, type WorktreeReattachError, withGitOps } from './worktrees-seam'
@@ -221,8 +219,8 @@ const gitOpsFailureText = (failure: ServiceWithdrawnError | { readonly cause: un
  * The live {@link PaneWorkspace} layer. On construction it loads the persisted workspace
  * (sessions stay cold -- no processes are spawned here) and shows the first tab when none is
  * visible; with nothing persisted it starts empty. Requires {@link PaneSupervisor}, {@link WorkspaceStore},
- * {@link TranscriptReader}, {@link PaneChatProjection}, {@link EventHub}, {@link AgentEventStore},
- * {@link HostPlugins} (for the worktree and agent backend services used to remove a project), {@link WorkspaceFeed} (which it keeps current),
+ * {@link RunEventLog}, {@link EventHub},
+ * {@link HostPlugins} (for the worktree and agent backend services, and the conversations a project holds), {@link WorkspaceFeed} (which it keeps current),
  * {@link PathMoves} (it rewrites tab paths under each moved folder, as the path owner `host:workspace`),
  * `FileSystem`, `Path` and `Crypto`.
  */
@@ -231,10 +229,8 @@ export const PaneWorkspaceLive = Layer.effect(
   Effect.gen(function* () {
     const supervisor = yield* PaneSupervisor
     const store = yield* WorkspaceStore
-    const transcriptReader = yield* TranscriptReader
-    const paneChats = yield* PaneChatProjection
+    const runEvents = yield* RunEventLog
     const hub = yield* EventHub
-    const events = yield* AgentEventStore
     const plugins = yield* HostPlugins
     const pathMoves = yield* PathMoves
     const fs = yield* FileSystem.FileSystem
@@ -354,7 +350,12 @@ export const PaneWorkspaceLive = Layer.effect(
     const importableSessions = Effect.fn('PaneWorkspace.importableSessions')(function* (
       directory: string
     ) {
-      const discovered = yield* transcriptReader.discoverSessions(directory)
+      const backend = yield* resolveAgentBackend(plugins)
+      if (backend.discoverSessions === undefined) {
+        yield* Effect.logDebug('The agent backend cannot discover sessions', { directory })
+        return []
+      }
+      const discovered = yield* backend.discoverSessions(directory)
       if (discovered.length === 0) return discovered
       const stored = yield* store.sessionIds.pipe(Effect.option)
       if (Option.isNone(stored)) {
@@ -633,7 +634,7 @@ export const PaneWorkspaceLive = Layer.effect(
         return yield* new WorktreeUnavailableError({ projectId })
       }
 
-      yield* paneChats.seed(paneId)
+      yield* runEvents.seed(paneId)
       const { config } = yield* supervisor.openPane(
         {
           paneId,
@@ -687,7 +688,7 @@ export const PaneWorkspaceLive = Layer.effect(
       })
 
     const recordEvent = (paneId: PaneId, event: AgentArchived | AgentUnarchived) =>
-      events.append(paneId, [{ event }]).pipe(
+      runEvents.append(paneId, [{ event }]).pipe(
         Effect.catch((cause) =>
           Effect.logError('Could not record an archive change of a tab', {
             paneId,
@@ -843,7 +844,7 @@ export const PaneWorkspaceLive = Layer.effect(
         yield* Effect.logDebug('resumePane skipped; tab has no session to resume', { paneId })
         return
       }
-      yield* paneChats.seed(paneId)
+      yield* runEvents.seed(paneId)
 
       if (config.worktree === undefined) {
         const exists = yield* fs.exists(config.cwd).pipe(Effect.orElseSucceed(() => false))

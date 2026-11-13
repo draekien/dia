@@ -3,8 +3,8 @@ import { Effect, Exit, Layer, Option, Ref, Scope } from 'effect'
 import type { AgentSession } from '../session/agent-backend'
 import { AttachedSessions, AttachedSessionsLive, SessionAttacherLive } from './attached-sessions'
 import { EventHub } from './event-hub'
-import { PaneChatProjection } from './pane-chat-projection'
 import { PaneSupervisor } from './pane-supervisor'
+import { RunEventLog } from './run-event-log'
 
 const PANE = '00000000-0000-4000-8000-0000000000a1'
 
@@ -25,10 +25,10 @@ const collaborators = Layer.mergeAll(
   Layer.succeed(PaneSupervisor, {
     attachPane: () => Effect.void
   } as unknown as PaneSupervisor['Service']),
-  Layer.succeed(PaneChatProjection, {
+  Layer.succeed(RunEventLog, {
     seed: () => Effect.void,
     release: () => Effect.void
-  } as unknown as PaneChatProjection['Service']),
+  } as unknown as RunEventLog['Service']),
   Layer.succeed(EventHub, { publish: () => Effect.void } as unknown as EventHub['Service']),
   SessionAttacherLive
 )

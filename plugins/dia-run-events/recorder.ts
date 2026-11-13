@@ -1,17 +1,12 @@
 import {
-  type AgentEvent,
-  ConversationCleared,
-  ConversationRewound,
-  capToolOutput,
-  MessageUpdated,
-  ReasoningUpdated,
-  SessionBound,
-  ToolCallCompleted,
-  ToolCallStarted
-} from '@shared/domain/agent-event'
-import type { JsonRecord } from '@shared/domain/json-record'
-import type { OutgoingMessage } from '@shared/domain/message-queue'
-import type { ConversationMessage, SessionId } from '@shared/domain/pane'
+  type AgentBackend,
+  AgentEvents,
+  type OutboundMessage,
+  type OutgoingMessage,
+  type RecordingOptions,
+  type SessionId,
+  TranscriptCursor
+} from '@dia/plugin'
 import {
   type Cause,
   Clock,
@@ -27,30 +22,41 @@ import {
   Semaphore,
   Stream
 } from 'effect'
-import type { OutboundMessage } from '../session/protocol'
-import { AgentEventStore, TranscriptCursor } from './agent-event-store'
-import { TranscriptReader } from './transcript-reader'
+import { RunEventStore } from './store'
+
+const {
+  ConversationCleared,
+  ConversationRewound,
+  capToolOutput,
+  MessageUpdated,
+  ReasoningUpdated,
+  SessionBound,
+  ToolCallCompleted,
+  ToolCallStarted
+} = AgentEvents
+type AgentEvent = AgentEvents.AgentEvent
+type ConversationMessage = AgentEvents.MessageUpdated['message']
+type ToolInput = AgentEvents.ToolCallCompleted['input']
 
 /** Shortest time between two streaming writes of one reasoning or text item. */
 export const STREAMING_WRITE_INTERVAL = Duration.millis(50)
 
-/** What {@link AgentEventRecorder.open} needs to know about the session it records. */
-export interface RecordingOptions {
-  /** The agent the session belongs to (the pane id). */
-  readonly agentId: string
-  /** The session's working directory, where its transcript is found. */
-  readonly cwd: string
-  /** The SDK session the pane resumes, or none for a new conversation. */
-  readonly resume: Option.Option<SessionId>
-}
+/**
+ * Reads a session's transcript file without starting a session, as the loaded agent backend does.
+ * Provide it from the backend `dia-run-events` reads; with no backend, both return none.
+ */
+export class Transcripts extends Context.Service<
+  Transcripts,
+  Pick<AgentBackend, 'transcriptInfo' | 'readTranscriptAfter'>
+>()('Transcripts') {}
 
 /**
- * Service tag for writing a live pane session's conversation to `AgentEventStore`, and keeping the
+ * Service tag for writing a live pane session's conversation to `RunEventStore`, and keeping the
  * transcript cursor of each session it binds at the end of the turns it wrote. Provide it with
- * {@link AgentEventRecorderLive}.
+ * {@link RunEventRecorderLive}.
  */
-export class AgentEventRecorder extends Context.Service<
-  AgentEventRecorder,
+export class RunEventRecorder extends Context.Service<
+  RunEventRecorder,
   {
     /**
      * Starts recording one pane session. Call it before the session starts. Returns the function
@@ -59,7 +65,7 @@ export class AgentEventRecorder extends Context.Service<
      * function never fails: a failed write is logged, and the transcript cursor stops advancing
      * for the rest of the recording.
      *
-     * When `resume` is some, first appends the entries of that session's transcript the agent has
+     * When `resume` is some, first appends the entries of that session's transcript the run has
      * not stored. A failed catch-up is logged and does not fail `open`. While the pane still
      * resumes that session, the next open retries it; once the pane persists another session id
      * (a fork or a conversation reset), the entries of the failed session are imported only as far
@@ -69,20 +75,20 @@ export class AgentEventRecorder extends Context.Service<
       options: RecordingOptions
     ) => Effect.Effect<(message: OutboundMessage) => Effect.Effect<void>, never, Scope.Scope>
     /**
-     * Appends to agent `agentId` the entries of SDK session `sessionId`'s transcript (found from
+     * Appends to run `runId` the entries of SDK session `sessionId`'s transcript (found from
      * `cwd`) that it has not stored, and moves the session's cursor to the transcript's end. Does
      * nothing when the transcript's size and modification time match the cursor. Returns the
-     * session when the agent now holds every entry up to the cursor, or none when there is no
+     * session when the run now holds every entry up to the cursor, or none when there is no
      * transcript or the catch-up failed; a failure is logged, never raised. Call it before reading
-     * an agent's history, so turns added outside dia are included.
+     * a run's history, so turns added outside dia are included.
      */
     readonly catchUp: (options: {
-      readonly agentId: string
+      readonly runId: string
       readonly sessionId: SessionId
       readonly cwd: string
     }) => Effect.Effect<Option.Option<SessionId>>
   }
->()('AgentEventRecorder') {}
+>()('RunEventRecorder') {}
 
 type Entry = { readonly event: AgentEvent; readonly sourceUuid?: string }
 
@@ -101,7 +107,7 @@ interface PendingUser {
 
 interface OpenTool {
   readonly toolName: string
-  input: typeof JsonRecord.Type
+  input: ToolInput
 }
 
 interface RecordingState {
@@ -137,25 +143,25 @@ const isTurnEnd = (message: OutboundMessage) =>
   message._tag === 'TurnParked'
 
 const makeRecorder = Effect.gen(function* () {
-  const store = yield* AgentEventStore
-  const reader = yield* TranscriptReader
+  const store = yield* RunEventStore
+  const reader = yield* Transcripts
   const crypto = yield* Crypto.Crypto
 
   const newItemId = crypto.randomUUIDv4().pipe(Effect.orDie)
 
-  const catchUp = Effect.fn('AgentEventRecorder.catchUp')(
+  const catchUp = Effect.fn('RunEventRecorder.catchUp')(
     function* ({
-      agentId,
+      runId,
       sessionId,
       cwd
     }: {
-      readonly agentId: string
+      readonly runId: string
       readonly sessionId: SessionId
       readonly cwd: string
     }) {
       const info = yield* reader.transcriptInfo(sessionId, cwd)
       if (Option.isNone(info)) {
-        yield* Effect.logWarning('No transcript to catch up from', { agentId, sessionId })
+        yield* Effect.logWarning('No transcript to catch up from', { runId, sessionId })
         return Option.none<SessionId>()
       }
       const cursor = yield* store.readCursor(sessionId)
@@ -165,7 +171,7 @@ const makeRecorder = Effect.gen(function* () {
         cursor.value.mtimeMs === info.value.mtimeMs
       ) {
         yield* Effect.logDebug('The transcript has not changed since its cursor', {
-          agentId,
+          runId,
           sessionId
         })
         return Option.some(sessionId)
@@ -176,19 +182,19 @@ const makeRecorder = Effect.gen(function* () {
         Option.map(cursor, (stored) => stored.lastUuid)
       )
       if (Option.isNone(tail)) return Option.none<SessionId>()
-      yield* store.appendTranscript(agentId, sessionId, tail.value)
+      yield* store.appendTranscript(runId, sessionId, tail.value)
       yield* Effect.logInfo('Caught up from the transcript', {
-        agentId,
+        runId,
         sessionId,
         entries: tail.value.entries.length
       })
       return Option.some(sessionId)
     },
-    (effect, { agentId, sessionId }) =>
+    (effect, { runId, sessionId }) =>
       effect.pipe(
         Effect.catch((error) =>
           Effect.logWarning('Could not catch up from the transcript', {
-            agentId,
+            runId,
             sessionId,
             error
           }).pipe(Effect.as(Option.none<SessionId>()))
@@ -196,11 +202,11 @@ const makeRecorder = Effect.gen(function* () {
       )
   )
 
-  const open = Effect.fn('AgentEventRecorder.open')(function* (options: RecordingOptions) {
-    const { agentId, cwd } = options
+  const open = Effect.fn('RunEventRecorder.open')(function* (options: RecordingOptions) {
+    const { runId, cwd } = options
     const caughtUp = yield* Option.match(options.resume, {
       onNone: () => Effect.succeed(Option.none<SessionId>()),
-      onSome: (sessionId) => catchUp({ agentId, sessionId, cwd })
+      onSome: (sessionId) => catchUp({ runId, sessionId, cwd })
     })
     const state: RecordingState = {
       reasoning: undefined,
@@ -212,8 +218,8 @@ const makeRecorder = Effect.gen(function* () {
       cursorStalled: false,
       catchUpFailed: Option.isSome(options.resume) && Option.isNone(caughtUp)
     }
-    yield* Effect.logDebug('Recording agent events', {
-      agentId,
+    yield* Effect.logDebug('Recording run events', {
+      runId,
       resume: options.resume,
       ownsCursor: Option.isSome(caughtUp)
     })
@@ -223,23 +229,23 @@ const makeRecorder = Effect.gen(function* () {
     const stall = (message: string, context: object) =>
       Effect.gen(function* () {
         state.cursorStalled = true
-        yield* Effect.logError(message, { agentId, ...context })
+        yield* Effect.logError(message, { runId, ...context })
       })
 
     const append = (entries: ReadonlyArray<Entry>) =>
       entries.length === 0
         ? Effect.void
-        : store.append(agentId, entries).pipe(
+        : store.append(runId, entries).pipe(
             Effect.asVoid,
             Effect.catch((error) =>
-              stall('Could not record agent events; the cursor stops here', {
+              stall('Could not record run events; the cursor stops here', {
                 events: entries.map(({ event }) => event._tag),
                 error
               })
             )
           )
 
-    const advanceCursor = Effect.fn('AgentEventRecorder.advanceCursor')(function* (
+    const advanceCursor = Effect.fn('RunEventRecorder.advanceCursor')(function* (
       sessionId: SessionId
     ) {
       if (state.cursorStalled) return
@@ -262,7 +268,7 @@ const makeRecorder = Effect.gen(function* () {
           mtimeMs: tail.value.mtimeMs
         })
       )
-      yield* Effect.logDebug('Advanced the transcript cursor', { agentId, sessionId, lastUuid })
+      yield* Effect.logDebug('Advanced the transcript cursor', { runId, sessionId, lastUuid })
     })
 
     const cursorUpdates = yield* Queue.unbounded<SessionId, Cause.Done>()
@@ -363,7 +369,7 @@ const makeRecorder = Effect.gen(function* () {
         return entries
       }
       yield* Effect.logDebug('Left an owned session; queueing its last cursor update', {
-        agentId,
+        runId,
         sessionId: previous.value
       })
       if (!state.cursorStalled) yield* Queue.offer(cursorUpdates, previous.value)
@@ -444,7 +450,7 @@ const makeRecorder = Effect.gen(function* () {
           const pending = state.awaitingCheckpoint.shift()
           if (pending === undefined) {
             yield* Effect.logDebug('A checkpoint arrived with no user message awaiting one', {
-              agentId,
+              runId,
               messageUuid: message.messageUuid
             })
             return []
@@ -493,7 +499,7 @@ const makeRecorder = Effect.gen(function* () {
         yield* offerCursorUpdate
         yield* Queue.end(cursorUpdates)
         yield* Fiber.join(drain)
-        yield* Effect.logDebug('Stopped recording agent events', { agentId })
+        yield* Effect.logDebug('Stopped recording run events', { runId })
       })
     )
     yield* Effect.addFinalizer(() =>
@@ -523,8 +529,8 @@ const makeRecorder = Effect.gen(function* () {
       )
   })
 
-  return AgentEventRecorder.of({ open, catchUp })
+  return RunEventRecorder.of({ open, catchUp })
 })
 
-/** The live {@link AgentEventRecorder}. Requires `AgentEventStore`, `TranscriptReader` and `Crypto`. */
-export const AgentEventRecorderLive = Layer.effect(AgentEventRecorder, makeRecorder)
+/** The live {@link RunEventRecorder}. Requires `RunEventStore`, {@link Transcripts} and `Crypto`. */
+export const RunEventRecorderLive = Layer.effect(RunEventRecorder, makeRecorder)

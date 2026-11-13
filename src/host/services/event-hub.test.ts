@@ -3,11 +3,17 @@ import { MessageUpdated } from '@shared/domain/agent-event'
 import { EMPTY_WORKSPACE } from '@shared/domain/project'
 import { PaneAgentEvent, PaneTurnStatusChanged, WorkspaceChanged } from '@shared/ipc/contract'
 import type { EventFrame } from '@shared/ipc/rpc'
-import { Effect, Fiber, Option, Stream } from 'effect'
+import { Effect, Fiber, Layer, Option, Stream } from 'effect'
 import { SqlClient } from 'effect/sql'
-import { AgentEventStore } from './agent-event-store'
+import { RunEventStore } from '../../../plugins/dia-run-events/store'
 import { EventHub, EventHubLive, REPLAY_LIMITS } from './event-hub'
-import { AgentEventStoreTestLayer, EventHubTestLayer } from './event-hub-test-layer'
+import {
+  EventHubTestLayer,
+  RunEventLogFromStore,
+  RunEventStoreTestLayer
+} from './event-hub-test-layer'
+
+const hubOverStore = Layer.provide(EventHubLive, RunEventLogFromStore)
 
 const paneA = '00000000-0000-4000-8000-00000000000a'
 const paneB = '00000000-0000-4000-8000-00000000000b'
@@ -50,7 +56,7 @@ const summary = (frames: ReadonlyArray<EventFrame>): ReadonlyArray<string> =>
 
 const lastSequence = (paneId: string) =>
   Effect.gen(function* () {
-    const store = yield* AgentEventStore
+    const store = yield* RunEventStore
     return yield* store.lastSequence(paneId)
   })
 
@@ -72,7 +78,7 @@ describe('EventHub.publish', () => {
 
   it.effect('delivers an agent event stored by the Host as a PaneAgentEvent', () =>
     Effect.gen(function* () {
-      const store = yield* AgentEventStore
+      const store = yield* RunEventStore
       const subscriber = yield* subscribeInBackground(1, {})
 
       const [sequence] = yield* store.append(paneA, [{ event: reply('m1', 'hi') }])
@@ -102,7 +108,7 @@ describe('EventHub.publish', () => {
       const hub = yield* EventHub
       const sql = yield* SqlClient.SqlClient
       const subscriber = yield* subscribeInBackground(1, {})
-      yield* sql`DROP TABLE agent_events`
+      yield* sql`DROP TABLE run_events`
 
       yield* hub.publish(status(paneA, 'Thinking'))
 
@@ -208,19 +214,19 @@ describe('EventHub.subscribe', () => {
     'tells the client to reload a pane when its cursor is from before the Host started',
     () =>
       Effect.gen(function* () {
-        const store = yield* AgentEventStore
+        const store = yield* RunEventStore
         yield* store.append(paneA, [{ event: status(paneA, 'previous run') }])
         const cursor = yield* store.lastSequence(paneA)
 
-        const frames = yield* collect(1, { [paneA]: cursor }).pipe(Effect.provide(EventHubLive))
+        const frames = yield* collect(1, { [paneA]: cursor }).pipe(Effect.provide(hubOverStore))
 
         assert.deepStrictEqual(summary(frames), ['reload:a'])
-      }).pipe(Effect.provide(AgentEventStoreTestLayer))
+      }).pipe(Effect.provide(RunEventStoreTestLayer))
   )
 
   it.effect('replays a cursor from this run when an earlier run stored events', () =>
     Effect.gen(function* () {
-      const store = yield* AgentEventStore
+      const store = yield* RunEventStore
       yield* store.append(paneA, [{ event: status(paneA, 'previous run') }])
       const frames = yield* Effect.gen(function* () {
         const hub = yield* EventHub
@@ -228,9 +234,9 @@ describe('EventHub.subscribe', () => {
         const cursor = yield* store.lastSequence(paneA)
         yield* hub.publish(status(paneA, 'a2'))
         return yield* collect(1, { [paneA]: cursor })
-      }).pipe(Effect.provide(EventHubLive))
+      }).pipe(Effect.provide(hubOverStore))
 
       assert.deepStrictEqual(summary(frames), ['a:a2'])
-    }).pipe(Effect.provide(AgentEventStoreTestLayer))
+    }).pipe(Effect.provide(RunEventStoreTestLayer))
   )
 })

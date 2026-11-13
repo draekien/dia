@@ -19,15 +19,10 @@ import { PaneTurnStatusChanged } from '@shared/ipc/contract'
 import { Context, Effect, Fiber, FileSystem, Layer, Option, type Scope, Stream } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { TestClock } from 'effect/testing'
-import {
-  AgentEventStore,
-  AgentEventStoreLive,
-  ReloadRequired,
-  Replay,
-  TRANSCRIPT_BATCH_SIZE,
-  TranscriptCursor
-} from './agent-event-store'
-import { makeHostDatabaseLive } from './database'
+import { openDatabase } from '../../src/host/services/database'
+import { ReloadRequired, Replay, TranscriptCursor } from '../../src/host/services/run-events-seam'
+import { runEventsMigrations } from './migrations'
+import { RunEventStore, RunEventStoreLive, TRANSCRIPT_BATCH_SIZE } from './store'
 
 const AGENT_A = '11111111-1111-4111-8111-111111111111'
 const AGENT_B = '22222222-2222-4222-8222-222222222222'
@@ -48,59 +43,31 @@ const toolCompleted = (toolCallId: string, output: string) =>
 
 const withStore = <A, E>(
   body: (
-    store: AgentEventStore['Service'],
+    store: RunEventStore['Service'],
     sql: SqlClient.SqlClient
   ) => Effect.Effect<A, E, FileSystem.FileSystem | Scope.Scope>
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem
-    const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-agent-event-store-' })
+    const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-run-events-store-' })
     const context = yield* Layer.build(
-      Layer.provideMerge(AgentEventStoreLive, makeHostDatabaseLive(dir))
+      Layer.provideMerge(
+        RunEventStoreLive,
+        Layer.effect(SqlClient.SqlClient, openDatabase(`${dir}/data.db`, runEventsMigrations)).pipe(
+          Layer.orDie
+        )
+      )
     )
     return yield* body(
-      Context.get(context, AgentEventStore),
+      Context.get(context, RunEventStore),
       Context.get(context, SqlClient.SqlClient)
     )
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
 
 const eventCount = (sql: SqlClient.SqlClient) =>
-  Effect.map(
-    sql<{ readonly n: number }>`SELECT COUNT(*) AS n FROM agent_events`,
-    (rows) => rows[0].n
-  )
+  Effect.map(sql<{ readonly n: number }>`SELECT COUNT(*) AS n FROM run_events`, (rows) => rows[0].n)
 
-const insertAgent = (sql: SqlClient.SqlClient, agentId: string) =>
-  Effect.gen(function* () {
-    yield* sql`INSERT INTO projects ${sql.insert({
-      project_id: 'project',
-      position: 0,
-      directory: 'F:\\x',
-      directory_key: 'f:\\x',
-      display_name: 'x',
-      is_git_repo: 0
-    })}`
-    yield* sql`INSERT INTO agents ${sql.insert({
-      agent_id: agentId,
-      project_id: 'project',
-      position: 0,
-      name: 'agent',
-      cwd: 'F:\\x',
-      model: 'claude-sonnet-5-5',
-      thinking_level: 'adaptive',
-      permission_mode: 'default'
-    })}`
-  })
-
-const archivedAt = (sql: SqlClient.SqlClient, agentId: string) =>
-  Effect.map(
-    sql<{
-      readonly archived_at: number | null
-    }>`SELECT archived_at FROM agents WHERE agent_id = ${agentId}`,
-    (rows) => rows[0].archived_at
-  )
-
-describe('AgentEventStore.append', () => {
+describe('RunEventStore.append', () => {
   it.effect('keeps one item at its first position with the latest payload across updates', () =>
     withStore((store) =>
       Effect.gen(function* () {
@@ -251,7 +218,7 @@ describe('AgentEventStore.append', () => {
   it.effect('stores nothing from a batch whose projection write fails', () =>
     withStore((store, sql) =>
       Effect.gen(function* () {
-        yield* sql`DROP TABLE agent_items`
+        yield* sql`DROP TABLE run_items`
 
         const error = yield* Effect.flip(
           store.append(AGENT_A, [
@@ -260,7 +227,7 @@ describe('AgentEventStore.append', () => {
           ])
         )
 
-        assert.strictEqual(error._tag, 'AgentEventWriteError')
+        assert.strictEqual(error._tag, 'RunEventWriteError')
         assert.strictEqual(yield* eventCount(sql), 0)
       })
     )
@@ -305,28 +272,9 @@ describe('AgentEventStore.append', () => {
       })
     )
   )
-
-  it.effect(
-    'sets archived_at to the append time on AgentArchived and clears it on AgentUnarchived',
-    () =>
-      withStore((store, sql) =>
-        Effect.gen(function* () {
-          const archiveTime = 1_800_000_000_000
-          yield* insertAgent(sql, AGENT_A)
-          yield* TestClock.setTime(archiveTime)
-
-          yield* store.append(AGENT_A, [{ event: AgentArchived.make({}) }])
-          const archived = yield* archivedAt(sql, AGENT_A)
-          yield* store.append(AGENT_A, [{ event: AgentUnarchived.make({}) }])
-          const unarchived = yield* archivedAt(sql, AGENT_A)
-
-          assert.deepStrictEqual([archived, unarchived], [archiveTime, null])
-        })
-      )
-  )
 })
 
-describe('AgentEventStore compaction on AgentArchived', () => {
+describe('RunEventStore compaction on AgentArchived', () => {
   const reasoningUpdated = (itemId: string, text: string, streaming: boolean) =>
     ReasoningUpdated.make({ itemId, text, streaming })
 
@@ -341,20 +289,19 @@ describe('AgentEventStore compaction on AgentArchived', () => {
     { event: messageUpdated('m2', 'Interrup', true) }
   ]
 
-  const storedEvents = (sql: SqlClient.SqlClient, agentId: string) =>
+  const storedEvents = (sql: SqlClient.SqlClient, runId: string) =>
     sql<{
       readonly event_type: string
       readonly item_id: string | null
       readonly streaming: number | null
     }>`SELECT event_type, item_id, json_extract(payload_json, '$.streaming') AS streaming
-      FROM agent_events WHERE agent_id = ${agentId} ORDER BY sequence`
+      FROM run_events WHERE run_id = ${runId} ORDER BY sequence`
 
   it.effect(
     'keeps only the final event of each streamed message and reasoning span, tool calls and an unfinished stream',
     () =>
       withStore((store, sql) =>
         Effect.gen(function* () {
-          yield* insertAgent(sql, AGENT_A)
           yield* store.append(AGENT_A, conversation)
 
           yield* store.append(AGENT_A, [{ event: AgentArchived.make({}) }])
@@ -374,7 +321,6 @@ describe('AgentEventStore compaction on AgentArchived', () => {
   it.effect('leaves the history read from the items unchanged', () =>
     withStore((store, sql) =>
       Effect.gen(function* () {
-        yield* insertAgent(sql, AGENT_A)
         yield* store.append(AGENT_A, conversation)
         const before = (yield* store.readHistory(AGENT_A)).items
 
@@ -388,7 +334,6 @@ describe('AgentEventStore compaction on AgentArchived', () => {
   it.effect('leaves the streaming events of other agents', () =>
     withStore((store, sql) =>
       Effect.gen(function* () {
-        yield* insertAgent(sql, AGENT_A)
         yield* store.append(AGENT_B, conversation)
 
         yield* store.append(AGENT_A, [{ event: AgentArchived.make({}) }])
@@ -410,7 +355,7 @@ const sequencesOf = (result: ReadonlyArray<Option.Option<number>>) =>
 
 const turnStatus = (label: string | null) => PaneTurnStatusChanged.make({ paneId: AGENT_A, label })
 
-describe('AgentEventStore.readHistory', () => {
+describe('RunEventStore.readHistory', () => {
   it.effect('returns every item in position order with the last sequence of the agent', () =>
     withStore((store) =>
       Effect.gen(function* () {
@@ -459,7 +404,7 @@ describe('AgentEventStore.readHistory', () => {
     withStore((store, sql) =>
       Effect.gen(function* () {
         yield* store.append(AGENT_A, threeMessages)
-        yield* sql`UPDATE agent_items SET payload_json = 'not json' WHERE item_id = 'm1'`
+        yield* sql`UPDATE run_items SET payload_json = 'not json' WHERE item_id = 'm1'`
 
         const { items } = yield* store.readHistory(AGENT_A)
 
@@ -472,7 +417,7 @@ describe('AgentEventStore.readHistory', () => {
   )
 })
 
-describe('AgentEventStore projection of a cleared or rewound conversation', () => {
+describe('RunEventStore projection of a cleared or rewound conversation', () => {
   const userTurn = (itemId: string, checkpointUuid: string) =>
     MessageUpdated.make({
       itemId,
@@ -542,7 +487,7 @@ describe('AgentEventStore projection of a cleared or rewound conversation', () =
   )
 })
 
-describe('AgentEventStore.readAfter', () => {
+describe('RunEventStore.readAfter', () => {
   const roomy = { maxEvents: 100, maxBytes: 1_000_000 }
 
   it.effect('replays the events after the cursor in sequence order, signals included', () =>
@@ -640,7 +585,7 @@ describe('AgentEventStore.readAfter', () => {
       Effect.gen(function* () {
         yield* store.append(AGENT_A, [{ event: messageUpdated('m0', 'éééé', false) }])
         const [row] = yield* sql<{ readonly payload_json: string }>`SELECT payload_json
-          FROM agent_events`
+          FROM run_events`
         const bytes = Buffer.byteLength(row.payload_json, 'utf8')
         assert.isAbove(bytes, row.payload_json.length)
 
@@ -660,7 +605,7 @@ describe('AgentEventStore.readAfter', () => {
     withStore((store, sql) =>
       Effect.gen(function* () {
         yield* store.append(AGENT_A, threeMessages)
-        yield* sql`UPDATE agent_events SET payload_json = 'not json' WHERE item_id = 'm1'`
+        yield* sql`UPDATE run_events SET payload_json = 'not json' WHERE item_id = 'm1'`
 
         const read = yield* store.readAfter(AGENT_A, 0, roomy)
 
@@ -672,7 +617,7 @@ describe('AgentEventStore.readAfter', () => {
   it.effect('requires a reload when host.db cannot be read', () =>
     withStore((store, sql) =>
       Effect.gen(function* () {
-        yield* sql`DROP TABLE agent_events`
+        yield* sql`DROP TABLE run_events`
 
         const read = yield* store.readAfter(AGENT_A, 0, roomy)
 
@@ -682,7 +627,7 @@ describe('AgentEventStore.readAfter', () => {
   )
 })
 
-describe('AgentEventStore.committed', () => {
+describe('RunEventStore.committed', () => {
   it.effect('offers every appended event after its commit, in sequence order', () =>
     withStore((store) =>
       Effect.gen(function* () {
@@ -725,7 +670,7 @@ describe('AgentEventStore.committed', () => {
         yield* store.append(AGENT_A, [
           { event: messageUpdated('m0', 'zero', false), sourceUuid: 'u0' }
         ])
-        yield* sql`DROP TABLE agent_items`
+        yield* sql`DROP TABLE run_items`
         yield* Effect.flip(store.append(AGENT_A, [{ event: messageUpdated('m1', 'lost', false) }]))
         const [marker] = sequencesOf(yield* store.append(AGENT_A, [{ event: turnStatus(null) }]))
 
@@ -739,64 +684,51 @@ describe('AgentEventStore.committed', () => {
   )
 })
 
-describe('building AgentEventStore', () => {
-  it.effect('deletes the events and items of panes with no agent row and keeps the rest', () =>
+describe('reopening the run event database', () => {
+  const SESSION = SessionId.make('44444444-4444-4444-8444-444444444444')
+
+  it.effect('keeps the events, items and cursors of every run', () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem
-      const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-agent-event-store-' })
-      const build = Layer.build(Layer.provideMerge(AgentEventStoreLive, makeHostDatabaseLive(dir)))
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-run-events-store-' })
+      const build = Layer.build(
+        Layer.provideMerge(
+          RunEventStoreLive,
+          Layer.effect(
+            SqlClient.SqlClient,
+            openDatabase(`${dir}/data.db`, runEventsMigrations)
+          ).pipe(Layer.orDie)
+        )
+      )
+      const cursor = TranscriptCursor.make({
+        sessionId: SESSION,
+        lastUuid: 'a1',
+        fileSize: 4_821,
+        mtimeMs: 1_762_128_000_000
+      })
 
       yield* Effect.scoped(
         Effect.gen(function* () {
-          const context = yield* build
-          const store = Context.get(context, AgentEventStore)
-          yield* insertAgent(Context.get(context, SqlClient.SqlClient), AGENT_A)
+          const store = Context.get(yield* build, RunEventStore)
           yield* store.append(AGENT_A, threeMessages)
           yield* store.append(AGENT_B, threeMessages)
+          yield* store.writeCursor(cursor)
         })
       )
 
-      const context = yield* build
-      const store = Context.get(context, AgentEventStore)
-      const kept = yield* store.readHistory(AGENT_A)
-      const orphaned = yield* store.readHistory(AGENT_B)
+      const store = Context.get(yield* build, RunEventStore)
+      const histories = [yield* store.readHistory(AGENT_A), yield* store.readHistory(AGENT_B)]
 
-      assert.strictEqual(kept.items.length, 3)
-      assert.deepStrictEqual(orphaned, { items: [], through: 0 })
+      assert.deepStrictEqual(
+        histories.map(({ items }) => items.length),
+        [threeMessages.length, threeMessages.length]
+      )
+      assert.deepStrictEqual(yield* store.readCursor(SESSION), Option.some(cursor))
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
   )
 })
 
-describe('building AgentEventStore after a session that was never an agent', () => {
-  const ATTACHED_SESSION = SessionId.make('44444444-4444-4444-8444-444444444444')
-
-  it.effect('drops the cursor of a session no agent owns, so its transcript is read again', () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem
-      const dir = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-agent-event-store-' })
-      const build = Layer.build(Layer.provideMerge(AgentEventStoreLive, makeHostDatabaseLive(dir)))
-
-      yield* Effect.scoped(
-        Effect.gen(function* () {
-          const store = Context.get(yield* build, AgentEventStore)
-          yield* store.writeCursor(
-            TranscriptCursor.make({
-              sessionId: ATTACHED_SESSION,
-              lastUuid: 'a1',
-              fileSize: 4_821,
-              mtimeMs: 1_762_128_000_000
-            })
-          )
-        })
-      )
-
-      const store = Context.get(yield* build, AgentEventStore)
-      assert.deepStrictEqual(yield* store.readCursor(ATTACHED_SESSION), Option.none())
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
-  )
-})
-
-describe('AgentEventStore cursors', () => {
+describe('RunEventStore cursors', () => {
   const SESSION = SessionId.make('33333333-3333-4333-8333-333333333333')
   const cursorAt = (lastUuid: string, fileSize: number) =>
     TranscriptCursor.make({ sessionId: SESSION, lastUuid, fileSize, mtimeMs: 1_762_128_000_000 })
@@ -831,7 +763,7 @@ describe('AgentEventStore cursors', () => {
   )
 })
 
-describe('AgentEventStore.appendTranscript', () => {
+describe('RunEventStore.appendTranscript', () => {
   const SESSION = SessionId.make('44444444-4444-4444-8444-444444444444')
   const FILE = { fileSize: 9_000, mtimeMs: 1_762_128_000_000 }
 
@@ -850,7 +782,7 @@ describe('AgentEventStore.appendTranscript', () => {
     Effect.map(
       sql<{
         readonly n: number
-      }>`SELECT COUNT(*) AS n FROM agent_events WHERE source_uuid = ${sourceUuid}`,
+      }>`SELECT COUNT(*) AS n FROM run_events WHERE source_uuid = ${sourceUuid}`,
       (rows) => rows[0].n
     )
 
@@ -928,14 +860,14 @@ describe('AgentEventStore.appendTranscript', () => {
   it.effect('keeps the batches before a failed cursor write and stores no cursor', () =>
     withStore((store, sql) =>
       Effect.gen(function* () {
-        yield* sql`CREATE TEMP TRIGGER fail_cursor BEFORE INSERT ON agent_transcript_cursors
+        yield* sql`CREATE TEMP TRIGGER fail_cursor BEFORE INSERT ON transcript_cursors
           BEGIN SELECT RAISE(ABORT, 'x'); END`
 
         const error = yield* Effect.flip(
           store.appendTranscript(AGENT_A, SESSION, tailOf(...numbered(1_200)))
         )
 
-        assert.strictEqual(error._tag, 'AgentEventWriteError')
+        assert.strictEqual(error._tag, 'RunEventWriteError')
         assert.strictEqual(yield* eventCount(sql), 2 * TRANSCRIPT_BATCH_SIZE)
         assert.deepStrictEqual(yield* store.readCursor(SESSION), Option.none())
       })
@@ -945,14 +877,14 @@ describe('AgentEventStore.appendTranscript', () => {
   it.effect('keeps the batches before a failed event write and stores no cursor', () =>
     withStore((store, sql) =>
       Effect.gen(function* () {
-        yield* sql`CREATE TEMP TRIGGER fail_u600 BEFORE INSERT ON agent_events
+        yield* sql`CREATE TEMP TRIGGER fail_u600 BEFORE INSERT ON run_events
           WHEN NEW.source_uuid = 'u600' BEGIN SELECT RAISE(ABORT, 'x'); END`
 
         const error = yield* Effect.flip(
           store.appendTranscript(AGENT_A, SESSION, tailOf(...numbered(1_200)))
         )
 
-        assert.strictEqual(error._tag, 'AgentEventWriteError')
+        assert.strictEqual(error._tag, 'RunEventWriteError')
         assert.strictEqual(yield* eventCount(sql), TRANSCRIPT_BATCH_SIZE)
         assert.deepStrictEqual(yield* store.readCursor(SESSION), Option.none())
       })
@@ -971,7 +903,7 @@ describe('AgentEventStore.appendTranscript', () => {
           ...FILE,
           entries: uuids.map((uuid, index) => entryOf(uuid, `item-${index}`))
         }
-        yield* sql`CREATE TEMP TRIGGER fail_u600 BEFORE INSERT ON agent_events
+        yield* sql`CREATE TEMP TRIGGER fail_u600 BEFORE INSERT ON run_events
           WHEN NEW.source_uuid = 'u600' BEGIN SELECT RAISE(ABORT, 'x'); END`
         yield* Effect.flip(store.appendTranscript(AGENT_A, SESSION, tail))
         yield* sql`DROP TRIGGER fail_u600`
@@ -980,101 +912,6 @@ describe('AgentEventStore.appendTranscript', () => {
 
         assert.strictEqual(yield* eventsOf(sql, 'shared'), 4)
         assert.strictEqual(yield* eventCount(sql), uuids.length)
-      })
-    )
-  )
-})
-
-describe('deleting an agent row', () => {
-  const SESSION = SessionId.make('33333333-3333-4333-8333-333333333333')
-
-  const seedAgent = (sql: SqlClient.SqlClient, agentId: string, projectId: string) =>
-    Effect.gen(function* () {
-      yield* sql`INSERT INTO projects ${sql.insert({
-        project_id: projectId,
-        position: 0,
-        directory: `F:/${projectId}`,
-        directory_key: `f:/${projectId}`,
-        display_name: projectId,
-        is_git_repo: 0
-      })} ON CONFLICT DO NOTHING`
-      yield* sql`INSERT INTO agents ${sql.insert({
-        agent_id: agentId,
-        project_id: projectId,
-        position: 0,
-        name: 'agent',
-        cwd: `F:/${projectId}`,
-        model: 'sonnet',
-        thinking_level: 'off',
-        permission_mode: 'default'
-      })}`
-    })
-
-  const rowsOf = (sql: SqlClient.SqlClient, agentId: string) =>
-    Effect.gen(function* () {
-      const events = yield* sql<{ readonly n: number }>`
-        SELECT COUNT(*) AS n FROM agent_events WHERE agent_id = ${agentId}`
-      const items = yield* sql<{ readonly n: number }>`
-        SELECT COUNT(*) AS n FROM agent_items WHERE agent_id = ${agentId}`
-      const cursors = yield* sql<{ readonly n: number }>`
-        SELECT COUNT(*) AS n FROM agent_transcript_cursors WHERE session_id = ${SESSION}`
-      return { events: events[0].n, items: items[0].n, cursors: cursors[0].n }
-    })
-
-  const seedConversation = (
-    store: AgentEventStore['Service'],
-    sql: SqlClient.SqlClient,
-    agentId: string
-  ) =>
-    Effect.gen(function* () {
-      yield* sql`INSERT INTO agent_sessions ${sql.insert({
-        session_id: SESSION,
-        agent_id: agentId,
-        started_at: 0
-      })}`
-      yield* store.append(agentId, [{ event: messageUpdated('m1', 'hello', false) }])
-      yield* store.writeCursor(
-        TranscriptCursor.make({ sessionId: SESSION, lastUuid: 'a1', fileSize: 1, mtimeMs: 1 })
-      )
-    })
-
-  it.effect('deletes its events, items and transcript cursors', () =>
-    withStore((store, sql) =>
-      Effect.gen(function* () {
-        yield* seedAgent(sql, AGENT_A, 'project-1')
-        yield* seedConversation(store, sql, AGENT_A)
-
-        yield* sql`DELETE FROM agents WHERE agent_id = ${AGENT_A}`
-
-        assert.deepStrictEqual(yield* rowsOf(sql, AGENT_A), { events: 0, items: 0, cursors: 0 })
-      })
-    )
-  )
-
-  it.effect('deletes them when its project is deleted', () =>
-    withStore((store, sql) =>
-      Effect.gen(function* () {
-        yield* seedAgent(sql, AGENT_A, 'project-1')
-        yield* seedConversation(store, sql, AGENT_A)
-
-        yield* sql`DELETE FROM projects WHERE project_id = 'project-1'`
-
-        assert.deepStrictEqual(yield* rowsOf(sql, AGENT_A), { events: 0, items: 0, cursors: 0 })
-      })
-    )
-  )
-
-  it.effect("leaves another agent's events and items", () =>
-    withStore((store, sql) =>
-      Effect.gen(function* () {
-        yield* seedAgent(sql, AGENT_A, 'project-1')
-        yield* seedAgent(sql, AGENT_B, 'project-1')
-        yield* store.append(AGENT_B, [{ event: messageUpdated('m1', 'kept', false) }])
-
-        yield* sql`DELETE FROM agents WHERE agent_id = ${AGENT_A}`
-
-        const kept = yield* rowsOf(sql, AGENT_B)
-        assert.deepStrictEqual({ events: kept.events, items: kept.items }, { events: 1, items: 1 })
       })
     )
   )

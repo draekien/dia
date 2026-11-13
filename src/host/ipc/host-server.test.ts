@@ -15,7 +15,7 @@ import { HttpServer } from 'effect/http'
 import { RpcClient, RpcSerialization } from 'effect/rpc'
 import { Socket } from 'effect/socket'
 import WS from 'ws'
-import { AgentEventStore } from '../services/agent-event-store'
+import { RunEventStore } from '../../../plugins/dia-run-events/store'
 import { EventHub } from '../services/event-hub'
 import { EventHubTestLayer } from '../services/event-hub-test-layer'
 import { makeHostServerLive } from './host-server'
@@ -145,7 +145,7 @@ describe('Host server', () => {
   it.live('replays stored events to a client that subscribes with a cursor', () =>
     Effect.gen(function* () {
       const hub = yield* EventHub
-      const store = yield* AgentEventStore
+      const store = yield* RunEventStore
       yield* hub.publish(PaneTurnStatusChanged.make({ paneId: PANE_ID, label: 'Thinking' }))
       const seq = yield* store.lastSequence(PANE_ID)
       const client = yield* connect({})
