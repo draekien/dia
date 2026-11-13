@@ -1,12 +1,14 @@
 import type { QueuedRun } from './queue'
 
-/** A queued entry as {@link pickStarts} sees it: `order` is its enqueue position. */
+/** A queued entry as {@link pickStarts} sees it. */
 export interface PickEntry {
-  readonly order: number
   readonly entry: QueuedRun
 }
 
-/** What one pass of the queue sees: `keyOf` maps each run the queue started to its key id. */
+/**
+ * What one pass of the queue sees: `queued` in enqueue order, and `keyOf` mapping each run the
+ * queue started to its key id.
+ */
 export interface PickInput<Entry extends PickEntry> {
   readonly limit: number
   readonly busy: ReadonlySet<string>
@@ -15,7 +17,7 @@ export interface PickInput<Entry extends PickEntry> {
 }
 
 const byStartOrder = (left: PickEntry, right: PickEntry): number =>
-  (right.entry.priority ?? 0) - (left.entry.priority ?? 0) || left.order - right.order
+  (right.entry.priority ?? 0) - (left.entry.priority ?? 0)
 
 /**
  * The entries one pass starts, in start order: highest priority first, then oldest, while the

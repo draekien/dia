@@ -83,14 +83,13 @@ interface RunEntry {
 }
 
 interface RunActivity {
-  readonly status: 'idle' | 'running' | 'waiting'
+  readonly running: boolean
   readonly backgroundTasks: number
 }
 
-const IDLE: RunActivity = { status: 'idle', backgroundTasks: 0 }
+const IDLE: RunActivity = { running: false, backgroundTasks: 0 }
 
-const isBusy = (activity: RunActivity) =>
-  activity.status === 'running' || activity.backgroundTasks > 0
+const isBusy = (activity: RunActivity) => activity.running || activity.backgroundTasks > 0
 
 const sameIds = (left: ReadonlyArray<string>, right: ReadonlyArray<string>) =>
   left.length === right.length && left.every((id, index) => id === right[index])
@@ -295,7 +294,10 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
         record,
         usageLimitResume: deps.usageLimitResume,
         onStatus: (status) =>
-          Effect.andThen(rows.setStatus(runId, status), setActivity(runId, { status })),
+          Effect.andThen(
+            setActivity(runId, { running: status === 'running' }),
+            rows.setStatus(runId, status)
+          ),
         onBackgroundTasks: (backgroundTasks) => setActivity(runId, { backgroundTasks }),
         onSessionChanged: (sessionId) =>
           rows
@@ -391,7 +393,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
 
     if (Option.isSome(prior) && prior.value.status === 'running') {
       if (Option.isSome(spec.resume)) {
-        yield* setActivity(runId, { status: 'running' })
+        yield* setActivity(runId, { running: true })
         yield* started.handle.continueTurn
       } else yield* interruptedBeforeStart(runId)
     }
@@ -494,11 +496,11 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
       },
       false
     ).pipe(Effect.orDie)
-    yield* setActivity(runId, { status: 'running' })
+    yield* setActivity(runId, { running: true })
     yield* withLive('start', false)(runId, (handle) =>
       handle
         .sendMessage(options.text, 'queue')
-        .pipe(Effect.onError(() => setActivity(runId, { status: 'idle' })))
+        .pipe(Effect.onError(() => setActivity(runId, { running: false })))
     )
     yield* Effect.logInfo('Started a run with no tab', { runId, cwd: options.cwd })
     return runId

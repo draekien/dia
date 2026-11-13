@@ -31,10 +31,9 @@ export interface RunQueue {
 }
 
 const isRunQueue = (value: unknown): value is RunQueue =>
-  Predicate.hasProperty(value, 'enqueue') &&
-  Predicate.isFunction(value.enqueue) &&
-  Predicate.hasProperty(value, 'setLimit') &&
-  Predicate.isFunction(value.setLimit)
+  (['enqueue', 'setLimit'] as const).every(
+    (member) => Predicate.hasProperty(value, member) && Predicate.isFunction(value[member])
+  )
 
 /**
  * The key `dia-run-queue` provides its {@link RunQueue} under: `run-queue`. A value counts when

@@ -33,7 +33,6 @@ export const makeRunQueue = Effect.fn('RunQueue.make')(function* (
   const entries = yield* Ref.make<ReadonlyArray<Waiting>>([])
   const keyOf = yield* Ref.make<ReadonlyMap<string, string>>(new Map())
   const limit = yield* Ref.make(DEFAULT_LIMIT)
-  const nextOrder = yield* Ref.make(0)
   const wake = yield* Queue.sliding<void>(1)
   const trigger = Queue.offer(wake, undefined).pipe(Effect.asVoid)
 
@@ -60,15 +59,16 @@ export const makeRunQueue = Effect.fn('RunQueue.make')(function* (
     }
     const busy = new Set(Option.getOrElse(yield* Stream.runHead(provided.value.busy), () => []))
     const input = { limit: yield* Ref.get(limit), busy, keyOf: yield* Ref.get(keyOf) }
-    const picks = yield* Ref.modify(entries, (queued) => {
+    const [picks, held] = yield* Ref.modify(entries, (queued) => {
       const picked = pickStarts({ ...input, queued })
-      return [picked, queued.filter((waiting) => !picked.includes(waiting))]
+      const remaining = queued.filter((waiting) => !picked.includes(waiting))
+      return [[picked, remaining.length] as const, remaining]
     })
     yield* Effect.logDebug('Run queue pass', {
       busy: busy.size,
       limit: input.limit,
       starting: picks.length,
-      held: (yield* Ref.get(entries)).length
+      held
     })
     yield* Effect.forEach(picks, (waiting) => startEntry(provided.value, waiting), {
       discard: true
@@ -102,7 +102,6 @@ export const makeRunQueue = Effect.fn('RunQueue.make')(function* (
     Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
         const waiting: Waiting = {
-          order: yield* Ref.getAndUpdate(nextOrder, (order) => order + 1),
           entry,
           started: yield* Deferred.make<string>()
         }
@@ -125,11 +124,13 @@ export const makeRunQueue = Effect.fn('RunQueue.make')(function* (
       })
     )
 
-  const setLimit = (value: number) =>
-    Ref.set(limit, startsAtLeastOne(value)).pipe(
-      Effect.andThen(Effect.logInfo('Set the run queue limit', { limit: startsAtLeastOne(value) })),
+  const setLimit = (value: number) => {
+    const next = startsAtLeastOne(value)
+    return Ref.set(limit, next).pipe(
+      Effect.andThen(Effect.logInfo('Set the run queue limit', { limit: next })),
       Effect.andThen(trigger)
     )
+  }
 
   return { enqueue, setLimit }
 })
