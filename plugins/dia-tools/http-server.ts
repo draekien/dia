@@ -99,16 +99,12 @@ export const serveMcp = Effect.fn('DiaTools.serveMcp')(function* (
     const token = bearerOf(req)
     const hash = token === undefined ? undefined : yield* hashToken(token)
     const scope = hash === undefined ? Option.none() : yield* registry.scopeOf(hash)
-    if (hash === undefined || Option.isNone(scope)) {
-      yield* Effect.logWarning('Refused an MCP request without a valid token', {
-        hasToken: token !== undefined
-      })
-      yield* reply(res, 401, 'A valid dia tools token is required.', {
-        'www-authenticate': 'Bearer'
-      })
-      return Option.none<{ hash: string; scope: ToolScope }>()
-    }
-    return Option.some({ hash, scope: scope.value })
+    if (hash !== undefined && Option.isSome(scope)) return Option.some({ hash, scope: scope.value })
+    yield* Effect.logWarning('Refused an MCP request without a valid token', {
+      hasToken: token !== undefined
+    })
+    yield* reply(res, 401, 'A valid dia tools token is required.', { 'www-authenticate': 'Bearer' })
+    return Option.none<{ hash: string; scope: ToolScope }>()
   })
 
   const existing = Effect.fnUntraced(function* (

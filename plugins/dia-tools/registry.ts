@@ -3,7 +3,6 @@ import { Effect, Option, PubSub, Ref, type Scope, Stream } from 'effect'
 import type { ToolRegistration } from './tools'
 
 interface Registered {
-  readonly id: number
   readonly tool: DiaTool
   readonly when: (scope: ToolScope) => boolean
 }
@@ -29,26 +28,25 @@ export interface ToolRegistry {
 export const makeToolRegistry = Effect.gen(function* () {
   const tools = yield* Ref.make<ReadonlyArray<Registered>>([])
   const grants = yield* Ref.make<ReadonlyMap<string, ToolScope>>(new Map())
-  const nextId = yield* Ref.make(0)
   const changed = yield* PubSub.sliding<void>(1)
 
   const add = Effect.fnUntraced(function* (tool: DiaTool, options: ToolRegistration) {
-    const id = yield* Ref.getAndUpdate(nextId, (n) => n + 1)
-    yield* Ref.update(tools, (current) => [...current, { id, tool, when: options.when }])
+    const entry: Registered = { tool, when: options.when }
+    yield* Ref.update(tools, (current) => [...current, entry])
     yield* Effect.logInfo('Registered a dia tool', { tool: tool.name })
     yield* PubSub.publish(changed, undefined)
-    return id
+    return entry
   })
 
-  const remove = Effect.fnUntraced(function* (id: number, name: string) {
-    yield* Ref.update(tools, (current) => current.filter((entry) => entry.id !== id))
-    yield* Effect.logInfo('Unregistered a dia tool', { tool: name })
+  const remove = Effect.fnUntraced(function* (entry: Registered) {
+    yield* Ref.update(tools, (current) => current.filter((other) => other !== entry))
+    yield* Effect.logInfo('Unregistered a dia tool', { tool: entry.tool.name })
     yield* PubSub.publish(changed, undefined)
   })
 
   const registry: ToolRegistry = {
     register: (tool, options) =>
-      Effect.acquireRelease(add(tool, options), (id) => remove(id, tool.name)).pipe(Effect.asVoid),
+      Effect.acquireRelease(add(tool, options), remove).pipe(Effect.asVoid),
     forScope: (scope) =>
       Effect.map(Ref.get(tools), (current) => {
         const byName = new Map<string, DiaTool>()

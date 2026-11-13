@@ -3,7 +3,7 @@ import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { type Crypto, Effect, type FileSystem, Layer, Option, Path, Ref } from 'effect'
 import { IssueOutsideToken, RevokeOutsideTokens } from './calls'
-import { MCP_HOST, MCP_PATH, type McpEndpoint, serveMcp } from './http-server'
+import { MCP_HOST, MCP_PATH, serveMcp } from './http-server'
 import { makeMcpServer } from './mcp-server'
 import { makeToolRegistry, type ToolRegistry } from './registry'
 import {
@@ -37,8 +37,9 @@ const outsideCommand = (token: string, script: string, endpointFile: string) =>
 
 const makeOutsideTokens = Effect.fnUntraced(function* (
   registry: ToolRegistry,
-  endpoint: McpEndpoint,
-  file: string
+  revoke: (tokenHash: string) => Effect.Effect<void>,
+  file: string,
+  endpointFile: string
 ) {
   const path = yield* Path.Path
   const services = yield* Effect.context<FileSystem.FileSystem | Crypto.Crypto>()
@@ -49,7 +50,6 @@ const makeOutsideTokens = Effect.fnUntraced(function* (
   const scriptPath = Effect.sync(
     () => new URL(DIA_MCP_SCRIPT, import.meta.resolve('@dia/plugin'))
   ).pipe(Effect.flatMap(path.fromFileUrl), Effect.orDie)
-  const endpointFile = path.join(path.dirname(file), ENDPOINT_FILE)
 
   const issue = Effect.gen(function* () {
     const script = yield* scriptPath
@@ -64,11 +64,7 @@ const makeOutsideTokens = Effect.fnUntraced(function* (
   const revokeAll = Effect.gen(function* () {
     const revoked = yield* Ref.getAndSet(hashes, [])
     yield* writeOutsideTokens(file, [])
-    yield* Effect.forEach(
-      revoked,
-      (hash) => registry.revoke(hash).pipe(Effect.andThen(endpoint.closeSessions(hash))),
-      { discard: true }
-    )
+    yield* Effect.forEach(revoked, revoke, { discard: true })
     yield* Effect.logInfo('Revoked every outside agent dia tools token', {
       tokens: revoked.length
     })
@@ -90,13 +86,14 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     )
     if (!Option.contains(stored, endpoint.port)) yield* writePort(endpointFile, endpoint.port)
     const services = yield* Effect.context<never>()
+    const revoke = (tokenHash: string) =>
+      registry.revoke(tokenHash).pipe(Effect.andThen(endpoint.closeSessions(tokenHash)))
 
     const tools: Tools = {
       register: registry.register,
       forScope: registry.forScope,
       grant: registry.grant,
-      revoke: (tokenHash) =>
-        registry.revoke(tokenHash).pipe(Effect.andThen(endpoint.closeSessions(tokenHash))),
+      revoke,
       url: `http://${MCP_HOST}:${endpoint.port}${MCP_PATH}`,
       mcpServer: (scope) => Effect.sync(() => makeMcpServer(registry, scope, services))
     }
@@ -104,8 +101,9 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
 
     const outside = yield* makeOutsideTokens(
       registry,
-      endpoint,
-      path.join(ctx.dataDir, OUTSIDE_TOKENS_FILE)
+      revoke,
+      path.join(ctx.dataDir, OUTSIDE_TOKENS_FILE),
+      endpointFile
     )
     yield* ctx.serve(IssueOutsideToken, () => outside.issue)
     yield* ctx.serve(RevokeOutsideTokens, () => outside.revokeAll)
