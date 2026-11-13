@@ -119,7 +119,7 @@ function FileRow({
           aria-hidden="true"
           className={cn('size-3.5 shrink-0 text-muted-foreground', open && 'rotate-90')}
         />
-        <span className="shrink-0 font-mono text-xs">{fileName(file.path)}</span>
+        <span className="min-w-0 truncate font-mono text-xs">{fileName(file.path)}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground text-xs">
           {folderOf(file.path)}
         </span>

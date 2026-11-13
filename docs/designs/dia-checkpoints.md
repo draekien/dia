@@ -70,7 +70,6 @@ export const TurnFinished = Schema.TaggedStruct('TurnFinished', { turn: Schema.I
 export const TurnChanges = Schema.Union([TurnOpen, TurnFinished])
 /** Run `runId`'s turns could not be read: git, runs or run events are not provided, the run is unknown, or git failed. */
 export class ChangesUnavailable extends Schema.TaggedErrorClass<ChangesUnavailable>()('ChangesUnavailable', { runId: Schema.String }) {}
-/** Run `runId`'s turns in order, now and after each snapshot of the run; empty while the services are not provided or the run has no records. */
 /** A run's turns in order; empty while the services are not provided or the run has no records. */
 export const RunTurns = Schema.TaggedStruct('RunTurns', { turns: Schema.Array(TurnChanges) })
 /** The run's directory is not in a git repository (D7). */
