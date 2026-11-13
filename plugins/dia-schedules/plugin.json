@@ -1,0 +1,8 @@
+{
+  "name": "dia-schedules",
+  "api": "0.0.42",
+  "category": "feature",
+  "host": "host.ts",
+  "load": "eager",
+  "exports": ["schedules.ts"]
+}
