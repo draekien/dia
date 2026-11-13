@@ -496,11 +496,11 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
       },
       false
     ).pipe(Effect.orDie)
-    yield* setActivity(runId, { running: true })
     yield* withLive('start', false)(runId, (handle) =>
-      handle
-        .sendMessage(options.text, 'queue')
-        .pipe(Effect.onError(() => setActivity(runId, { running: false })))
+      setActivity(runId, { running: true }).pipe(
+        Effect.andThen(handle.sendMessage(options.text, 'queue')),
+        Effect.onError(() => setActivity(runId, { running: false }))
+      )
     )
     yield* Effect.logInfo('Started a run with no tab', { runId, cwd: options.cwd })
     return runId

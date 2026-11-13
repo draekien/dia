@@ -6,6 +6,7 @@ import {
   Exit,
   Fiber,
   Option,
+  Ref,
   Schedule,
   Scope,
   Stream,
@@ -33,11 +34,13 @@ const makeWorld = (initiallyBusy: ReadonlyArray<string> = []) =>
   Effect.gen(function* () {
     const busy = yield* SubscriptionRef.make<ReadonlyArray<string>>(initiallyBusy)
     const started: Array<string> = []
+    const startsBlocked = yield* Ref.make(false)
     const nothing = () => Effect.void
     const runs: Runs = {
       open: () => Effect.die('not used'),
       start: (options) =>
         Effect.gen(function* () {
+          if (yield* Ref.get(startsBlocked)) return yield* Effect.never
           started.push(options.cwd)
           yield* SubscriptionRef.update(busy, (current) => [...current, options.cwd])
           return options.cwd
@@ -79,7 +82,8 @@ const makeWorld = (initiallyBusy: ReadonlyArray<string> = []) =>
         Effect.orElseSucceed(() => [...started])
       )
     const settled = Effect.sleep(SETTLE).pipe(Effect.andThen(Effect.sync(() => [...started])))
-    return { queue, provide, leaveBusy, becomeBusy, startedOnce, settled }
+    const blockStarts = Ref.set(startsBlocked, true)
+    return { queue, provide, leaveBusy, becomeBusy, blockStarts, startedOnce, settled }
   })
 
 describe('run queue', () => {
@@ -217,6 +221,29 @@ describe('run queue', () => {
       yield* Scope.close(scope, Exit.void)
 
       assert.isTrue(Exit.hasInterrupts(yield* Fiber.await(waiting)))
+    })
+  )
+
+  it.live('interrupts a picked enqueue whose start had not begun when the queue closes', () =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make()
+      const world = yield* makeWorld().pipe(Scope.provide(scope))
+      yield* world.queue.setLimit(2)
+      yield* world.provide
+      yield* world.blockStarts
+      const first = yield* Effect.forkChild(world.queue.enqueue(queued('a')))
+      const second = yield* Effect.forkChild(world.queue.enqueue(queued('b')))
+      yield* world.settled
+
+      yield* Scope.close(scope, Exit.void)
+
+      assert.deepStrictEqual(
+        [
+          Exit.hasInterrupts(yield* Fiber.await(first)),
+          Exit.hasInterrupts(yield* Fiber.await(second))
+        ],
+        [true, true]
+      )
     })
   )
 })

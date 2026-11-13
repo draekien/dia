@@ -61,7 +61,8 @@ export const makeRunQueue = Effect.fn('RunQueue.make')(function* (
     const input = { limit: yield* Ref.get(limit), busy, keyOf: yield* Ref.get(keyOf) }
     const [picks, held] = yield* Ref.modify(entries, (queued) => {
       const picked = pickStarts({ ...input, queued })
-      const remaining = queued.filter((waiting) => !picked.includes(waiting))
+      const pickedSet = new Set(picked)
+      const remaining = queued.filter((waiting) => !pickedSet.has(waiting))
       return [[picked, remaining.length] as const, remaining]
     })
     yield* Effect.logDebug('Run queue pass', {
@@ -72,7 +73,11 @@ export const makeRunQueue = Effect.fn('RunQueue.make')(function* (
     })
     yield* Effect.forEach(picks, (waiting) => startEntry(provided.value, waiting), {
       discard: true
-    })
+    }).pipe(
+      Effect.onInterrupt(() =>
+        Effect.forEach(picks, ({ started }) => Deferred.interrupt(started), { discard: true })
+      )
+    )
   })
 
   yield* Queue.take(wake).pipe(Effect.andThen(pass), Effect.forever, Effect.forkScoped)
