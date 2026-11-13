@@ -72,8 +72,9 @@ export const fakeRuns = () => {
     addRun(runId, { cwd: 'C:/work', model: 'opus' }, { status, live })
   }
 
-  const runs: Pick<Runs, 'list' | 'send' | 'close' | 'start' | 'retire'> = {
+  const runs: Pick<Runs, 'list' | 'isLive' | 'send' | 'close' | 'start' | 'retire'> = {
     list: Effect.sync(() => [...rows.values()]),
+    isLive: (runId) => Effect.sync(() => rows.get(runId)?.live === true),
     send: (runId, text) =>
       Effect.sync(() => {
         sent.push({ runId, text })

@@ -126,11 +126,15 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (
       Effect.gen(function* () {
         const jobTitle = enabledAssistantOf(yield* deps.org.jobTitles)
         if (Option.isNone(jobTitle)) return yield* new AssistantDisabled()
-        const notices = yield* Ref.getAndSet(pending, [])
+        const notices = yield* Ref.get(pending)
         const message = [...notices, text].join('\n')
+        const delivered = Ref.update(pending, (texts) => texts.slice(notices.length))
         const existing = yield* liveRun
-        if (Option.isNone(existing)) return yield* startRun(jobTitle.value, message)
+        if (Option.isNone(existing)) {
+          return yield* startRun(jobTitle.value, message).pipe(Effect.tap(() => delivered))
+        }
         yield* deps.runs.send(existing.value, message, 'queue')
+        yield* delivered
         yield* Effect.logInfo('Sent a request to the Executive assistant', {
           runId: existing.value,
           notices: notices.length

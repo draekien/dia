@@ -37,7 +37,7 @@ export interface IssueRunsDeps {
   readonly provider: Pick<ProviderIssues, 'runState' | 'markStarted'>
   readonly workspace: Pick<IssueWorkspace, 'retain'>
   readonly startOptions: StartOptionsOf
-  readonly runs: Pick<Runs, 'list' | 'send' | 'close'>
+  readonly runs: Pick<Runs, 'list' | 'isLive' | 'send' | 'close'>
   readonly queue: Pick<RunQueue, 'enqueue'>
   /** Completes when the first pass may run: once the Host's startup has settled. */
   readonly ready: Effect.Effect<void>
@@ -103,7 +103,7 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
   ) {
     const { issue, objective } = entry
     const options = yield* deps.startOptions(issue, objective, hire, jobTitle)
-    if (Option.isNone(options)) return
+    if (Option.isNone(options)) return false
     const context = IssueToolContext.make({ issueId: issue.id, assigneeId: hire.id })
     const runId = yield* deps.queue.enqueue({
       run: { ...options.value, labels: [ISSUE_RUN_LABEL], context },
@@ -113,7 +113,7 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
     yield* saveRow(issue.id, hire.id, runId)
     if (yield* deps.provider.markStarted(issue.id, hire.id)) {
       yield* Effect.logInfo('Started a run of an issue', { issueId: issue.id, runId })
-      return
+      return true
     }
     yield* deps.runs.close(runId)
     yield* deleteRow(issue.id)
@@ -121,6 +121,7 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
       issueId: issue.id,
       runId
     })
+    return true
   })
 
   const startIssue = (entry: StartableIssue, hire: HiredAgent, jobTitle: JobTitle) =>
@@ -131,8 +132,11 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
         hireId: hire.id
       })
       yield* enqueueRun(entry, hire, jobTitle).pipe(
-        Effect.catchCause((cause) => Effect.logError('Could not start a run of an issue', cause)),
-        Effect.ensuring(setInFlight(entry.issue.id, false).pipe(Effect.andThen(signal))),
+        Effect.catchCause((cause) =>
+          Effect.logError('Could not start a run of an issue', cause).pipe(Effect.as(false))
+        ),
+        Effect.ensuring(setInFlight(entry.issue.id, false)),
+        Effect.flatMap((enqueued) => (enqueued ? signal : Effect.void)),
         Effect.forkScoped
       )
     })
@@ -143,7 +147,7 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
     row: IssueRunRow,
     info: RunInfo
   ) {
-    const resumed = !info.live && info.status === 'idle'
+    const resumed = info.status === 'idle'
     if (resumed) yield* deps.runs.send(row.run_id, RESUME_TEXT, 'queue')
     const started = yield* deps.provider.markStarted(issue.id, hire.id)
     yield* Effect.logInfo('Reused the run of an issue', {
@@ -155,11 +159,11 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
   })
 
   const pass = Effect.gen(function* () {
+    const held = yield* Ref.get(inFlight)
     const { startable, started } = yield* deps.provider.runState
     const runInfos = new Map((yield* deps.runs.list).map((info) => [info.runId, info] as const))
     const waiting = startableFor(startable)
     const startedIds = new Set<string>(started.map((issue) => issue.id))
-    const held = yield* Ref.get(inFlight)
     const stored = new Map<string, IssueRunRow>()
     for (const row of yield* rows) {
       const info = runInfos.get(row.run_id)
@@ -207,9 +211,7 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
       yield* sql<IssueRunRow>`SELECT issue_id, hire_id, run_id FROM issue_runs WHERE issue_id = ${issueId}`.pipe(
         Effect.orDie
       )
-    const live =
-      row !== undefined &&
-      (yield* deps.runs.list).some((info) => info.runId === row.run_id && info.live)
+    const live = row !== undefined && (yield* deps.runs.isLive(row.run_id))
     if (!live) {
       yield* Effect.logInfo('No live run to message', { issueId })
       return false

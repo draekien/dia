@@ -213,6 +213,20 @@ describe('runIssues', () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect('resumes a stored run whose session is open but idle', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const issue = yield* env.createIssue(env.ada.id)
+      yield* env.storeRun(issue, env.ada.id, 'run-old')
+      env.fake.setRun('run-old', 'idle', true)
+
+      yield* env.begin
+
+      assert.strictEqual(env.fake.enqueued.length, 0)
+      assert.deepStrictEqual(env.fake.sent, [{ runId: 'run-old', text: RESUME_TEXT }])
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('queues a new run when the stored run is archived', () =>
     Effect.gen(function* () {
       const env = yield* setUp

@@ -19,7 +19,7 @@ Supporting: a run started for an issue that left `todo` while queued is closed a
 
 ## Decisions taken without the user
 
-D1. **A run per issue, started through the queue; a re-start of the same hire's issue reuses its stored run.** `issue_runs (issue_id, hire_id, run_id)` records each issue's run. For a startable issue whose row names the same hire, the pass reads `runs.list`: a run that is `live`, or whose `status` is `running` or `waiting` (recovery will resume it), is only marked started; an `idle` run is resumed with `runs.send(runId, RESUME_TEXT, 'queue')`, outside the queue, then marked started; a missing or `archived` run has its row deleted and the issue gets a new run. Any other startable issue gets a new run through `queue.enqueue`. Alternative: always a new run (rejected: a reworked issue loses its conversation, which the old dispatcher kept through `sessionId`). Alternative: a resume in the queue (rejected: a foundation change no criterion needs). Consequence: a resumed run is not held by the per-hire limit, and after a `dia-run-queue` reload or a restart the queue does not count a hire's existing runs against its key (D5 of `dia-run-queue.md`).
+D1. **A run per issue, started through the queue; a re-start of the same hire's issue reuses its stored run.** `issue_runs (issue_id, hire_id, run_id)` records each issue's run. For a startable issue whose row names the same hire, the pass reads `runs.list`: a run whose `status` is `running` or `waiting` (mid-turn, or recovery will resume it) is only marked started; an `idle` run, live or not, is resumed with `runs.send(runId, RESUME_TEXT, 'queue')`, outside the queue, then marked started; a missing or `archived` run has its row deleted and the issue gets a new run. Any other startable issue gets a new run through `queue.enqueue`. Alternative: always a new run (rejected: a reworked issue loses its conversation, which the old dispatcher kept through `sessionId`). Alternative: a resume in the queue (rejected: a foundation change no criterion needs). Consequence: a resumed run is not held by the per-hire limit, and after a `dia-run-queue` reload or a restart the queue does not count a hire's existing runs against its key (D5 of `dia-run-queue.md`).
 
 D2. **The first pass waits for `ctx.pluginsSettled`.** `dia-runs` provides `RunsKey` before it forks recovery (`plugins/dia-runs/host.ts`), so `isLive` alone would miss a run about to be recovered; D1 reads the stored status instead, and waiting for settled plugins keeps the first pass from racing the rest of startup.
 
@@ -60,7 +60,7 @@ export const runIssues: (deps: {
   readonly provider: Pick<ProviderIssues, 'runState' | 'markStarted'>
   readonly workspace: Pick<IssueWorkspace, 'retain'>
   readonly startOptions: StartOptionsOf
-  readonly runs: Pick<Runs, 'list' | 'send' | 'close'>
+  readonly runs: Pick<Runs, 'list' | 'isLive' | 'send' | 'close'>
   readonly queue: Pick<RunQueue, 'enqueue'>
 }) => Effect.Effect<IssueRuns, never, Scope.Scope | SqlClient.SqlClient>
 
