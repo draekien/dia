@@ -59,19 +59,17 @@ const changesOf = (services: Services, runId: string) =>
     if (Option.isNone(cwd)) return NO_TURNS
     return RunTurns.make({ turns: yield* services.checkpoints.turns(runId, cwd.value) })
   }).pipe(
-    Effect.catchTag(
-      'GitError',
-      (error): Effect.Effect<RunChanges> =>
-        isNotARepository(error)
-          ? Effect.as(
-              Effect.logDebug('Run is not in a git repository', { runId }),
-              NotARepository.make({})
-            )
-          : Effect.as(
-              Effect.logDebug('Could not read turn snapshots', { runId, error: error.message }),
-              NO_TURNS
-            )
-    )
+    Effect.catchTag('GitError', (error) => {
+      const changes: RunChanges = isNotARepository(error) ? NotARepository.make({}) : NO_TURNS
+      return Effect.as(
+        Effect.logDebug('Could not read turn snapshots', {
+          runId,
+          reported: changes._tag,
+          error: error.message
+        }),
+        changes
+      )
+    })
   )
 
 const followTurns = (

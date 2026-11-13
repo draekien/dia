@@ -5,7 +5,7 @@ import { Option } from 'effect'
 import { AsyncResult, Atom } from 'effect/reactivity'
 import { ChevronRightIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { FollowRunChanges, GetFileDiff, type RunChanges, type TurnChanges } from './calls'
+import { FollowRunChanges, GetFileDiff, type TurnChanges } from './calls'
 
 const PLUGIN = 'dia-checkpoints'
 
@@ -179,8 +179,6 @@ function Turn({
   )
 }
 
-const turnsOf = (changes: RunChanges) => (changes._tag === 'RunTurns' ? changes.turns : [])
-
 /**
  * The right panel's Changes body for run `runId`: its turns, newest first, each headed by its
  * prompt, file count and line totals, with the files it changed; a file opens to its diff. It
@@ -198,7 +196,7 @@ export function ChangesPanel({
   if (changes?._tag === 'NotARepository') {
     return <p className="p-3 text-muted-foreground text-sm">Not a git repository</p>
   }
-  const turns = changes === undefined ? [] : turnsOf(changes)
+  const turns = changes?._tag === 'RunTurns' ? changes.turns : []
   if (turns.length === 0) {
     return <p className="p-3 text-muted-foreground text-sm">No changes yet</p>
   }
