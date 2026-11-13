@@ -1,5 +1,5 @@
 ---
-status: "accepted, amended by ADR-0029, ADR-0059, ADR-0065 and ADR-0069"
+status: "accepted, amended by ADR-0029, ADR-0059, ADR-0065, ADR-0069 and ADR-0075; kernel row 1 superseded by ADR-0074"
 date: 2026-10-22
 decision-makers: William Pei
 ---
