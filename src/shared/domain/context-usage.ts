@@ -17,6 +17,20 @@ export const ContextUsage = Schema.Struct({
 export type ContextUsage = typeof ContextUsage.Type
 
 /**
+ * The tokens one turn, or a sum of turns, used: `inputTokens` of prompt input not read from the
+ * prompt cache, `outputTokens` generated, `cacheReadTokens` of input read from the prompt cache and
+ * `cacheWriteTokens` of input written to it.
+ */
+export const TokenUsage = Schema.Struct({
+  inputTokens: TokenCount,
+  outputTokens: TokenCount,
+  cacheReadTokens: TokenCount,
+  cacheWriteTokens: TokenCount
+})
+/** A {@link TokenUsage} value. */
+export type TokenUsage = typeof TokenUsage.Type
+
+/**
  * Why a requested compaction did not run, and the text to show the user. `nothingToCompact` means
  * the conversation was too short to compact, which is not an error; `failed` is any other failure.
  */

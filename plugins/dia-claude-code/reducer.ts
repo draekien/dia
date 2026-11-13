@@ -22,6 +22,7 @@ import {
   TurnErrored,
   TurnParked,
   TurnStatusChanged,
+  TurnUsageReported,
   UsageLimit
 } from '@dia/plugin'
 import type { ConversationMessage } from '@shared/domain/pane'
@@ -81,6 +82,18 @@ const refusedByLimit = (info: RateLimitInfo): boolean =>
 
 const resetsAtMillis = (info: RateLimitInfo): number | null =>
   info.resetsAt === undefined ? null : Math.round(info.resetsAt * 1000)
+
+const turnUsage = ({ usage }: ResultMessage): ReadonlyArray<OutboundMessage> => {
+  const reported = TurnUsageReported.make({
+    usage: {
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens,
+      cacheReadTokens: usage.cache_read_input_tokens,
+      cacheWriteTokens: usage.cache_creation_input_tokens
+    }
+  })
+  return Object.values(reported.usage).some((tokens) => tokens > 0) ? [reported] : []
+}
 
 const ERROR_RESULT_LABELS: Record<Exclude<ResultMessage['subtype'], 'success'>, string> = {
   error_during_execution: 'The turn failed',
@@ -456,7 +469,7 @@ export const makeSessionEventReducer = (
     }
 
     if (message.type === 'result') {
-      const flushed = flushPendingToolCalls()
+      const flushed = [...flushPendingToolCalls(), ...turnUsage(message)]
       const cause = parkCause
       const refused = refusal
       parkCause = null

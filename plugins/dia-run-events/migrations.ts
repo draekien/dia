@@ -43,11 +43,19 @@ const createTables = Effect.gen(function* () {
   yield* Effect.logInfo('Created the run event tables')
 })
 
+const indexEventTypes = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql.unsafe('CREATE INDEX run_events_by_type ON run_events (run_id, event_type, sequence)')
+  yield* Effect.logInfo('Indexed run events by type')
+})
+
 /**
  * The `dia-run-events` plugin's migrations, passed to `ctx.database`. `1_create_run_events` creates
  * the run event log (`run_events`), its item projection (`run_items`), the transcript cursors and
  * the `handover` row that records the one-time copy from `host.db`. No trigger deletes an event.
+ * `2_index_run_events_by_type` indexes a run's events by type.
  */
 export const runEventsMigrations: PluginMigrations = {
-  '1_create_run_events': createTables
+  '1_create_run_events': createTables,
+  '2_index_run_events_by_type': indexEventTypes
 }

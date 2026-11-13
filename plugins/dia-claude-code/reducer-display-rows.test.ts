@@ -4,10 +4,18 @@ import { Option } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { makeSessionEventReducer } from './reducer'
 
+const NO_USAGE = {
+  input_tokens: 0,
+  output_tokens: 0,
+  cache_read_input_tokens: 0,
+  cache_creation_input_tokens: 0
+}
+
 const sdkMessage = (fields: Record<string, unknown>): SDKMessage =>
   ({
     uuid: '00000000-0000-0000-0000-000000000000',
     session_id: 'test-session',
+    ...(fields.type === 'result' ? { usage: NO_USAGE } : {}),
     ...fields
   }) as unknown as SDKMessage
 

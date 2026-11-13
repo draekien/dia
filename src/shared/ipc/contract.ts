@@ -12,7 +12,7 @@ import {
 } from '../domain/attention'
 import type { ActivityInfo, ActivityNotFound } from '../domain/background-activity'
 import { BackgroundTask } from '../domain/background-task'
-import { CompactionFailure, ContextUsage } from '../domain/context-usage'
+import { CompactionFailure, ContextUsage, TokenUsage } from '../domain/context-usage'
 import { JsonRecord } from '../domain/json-record'
 import { MessageQueueSnapshot, OutgoingMessage, SendMode } from '../domain/message-queue'
 import type { MetaRepoPushResult, MetaRepoStateResult } from '../domain/meta-repo'
@@ -526,6 +526,17 @@ export const PaneContextUsageChanged = Schema.TaggedStruct('PaneContextUsageChan
 export type PaneContextUsageChanged = typeof PaneContextUsageChanged.Type
 
 /**
+ * Event pushed to the renderer with the tokens one turn of pane `paneId` used, when that turn
+ * ends. Stored in the run's log, one per turn that used tokens.
+ */
+export const PaneTurnUsageReported = Schema.TaggedStruct('PaneTurnUsageReported', {
+  paneId: Uuid,
+  usage: TokenUsage
+})
+/** A {@link PaneTurnUsageReported} event. */
+export type PaneTurnUsageReported = typeof PaneTurnUsageReported.Type
+
+/**
  * Event pushed to the renderer when a compaction requested in pane `paneId` did not run. `failure`
  * says why and carries the text to show.
  */
@@ -642,6 +653,7 @@ export const PaneSignal = Schema.Union([
   PaneUserMessagesSent,
   PaneModelChanged,
   PaneContextUsageChanged,
+  PaneTurnUsageReported,
   PaneCompactionFailed,
   PaneAttentionChanged,
   PaneCreateFailed

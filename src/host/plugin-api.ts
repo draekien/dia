@@ -24,6 +24,7 @@ export {
   QuestionResponse
 } from '../shared/domain/attention'
 export { ActivityId } from '../shared/domain/background-activity'
+export { TokenUsage } from '../shared/domain/context-usage'
 export {
   EMPTY_MESSAGE_QUEUE,
   MessageQueueSnapshot,
