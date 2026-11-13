@@ -101,8 +101,8 @@ export const GitKey = ServiceKey.make('git', isGit)
 ### Exported module (`plugins/dia-git/git.ts`, `@dia-plugin/dia-git/git`)
 
 ```ts
-/** Builds a {@link Git} that runs the `git` CLI through the platform spawner. Provide Node services. */
-export const makeGit: Effect.Effect<Git, never, ChildProcessSpawner.ChildProcessSpawner>
+/** Builds a {@link Git} that runs the `git` CLI through the platform spawner; `snapshot` keeps its temporary index in a temporary directory. Provide Node services. */
+export const makeGit: Effect.Effect<Git, never, ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path>
 ```
 
 ### Host entry (`plugins/dia-git/host.ts`)

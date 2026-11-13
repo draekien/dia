@@ -1,5 +1,11 @@
-import { type Git, GitError, type GitStatusEntry } from '@dia/plugin'
-import { Effect, Option, Stream } from 'effect'
+import {
+  type Git,
+  GitError,
+  type GitFileChange,
+  type GitRef,
+  type GitStatusEntry
+} from '@dia/plugin'
+import { Effect, FileSystem, Option, Path, Stream } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 
 /**
@@ -23,6 +29,27 @@ interface Output {
 const splitNul = (output: string): ReadonlyArray<string> =>
   output.split('\0').filter((item) => item !== '')
 
+const SNAPSHOT_IDENTITY = {
+  GIT_AUTHOR_NAME: 'dia',
+  GIT_AUTHOR_EMAIL: 'dia@localhost',
+  GIT_COMMITTER_NAME: 'dia',
+  GIT_COMMITTER_EMAIL: 'dia@localhost'
+}
+
+const SNAPSHOT_INDEX_CONFIG = ['-c', 'core.splitIndex=false', '-c', 'core.fsmonitor=false']
+
+const parseNumstat = (output: string): ReadonlyArray<GitFileChange> =>
+  splitNul(output).map((line) => {
+    const [added = '', deleted = '', ...path] = line.split('\t')
+    const binary = added === '-'
+    return {
+      path: path.join('\t'),
+      added: binary ? 0 : Number(added),
+      deleted: binary ? 0 : Number(deleted),
+      binary
+    }
+  })
+
 const subcommand = (args: ReadonlyArray<string>): string | undefined => {
   let index = 0
   while (args[index] === '-c') index += 2
@@ -37,18 +64,21 @@ const subcommand = (args: ReadonlyArray<string>): string | undefined => {
  */
 export const makeGit = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
 
   const run = (
     cwd: string,
     args: ReadonlyArray<string>,
-    stdin?: Stream.Stream<Uint8Array>
+    stdin?: Stream.Stream<Uint8Array>,
+    env?: Record<string, string>
   ): Effect.Effect<Output> =>
     Effect.scoped(
       Effect.gen(function* () {
         const handle = yield* spawner.spawn(
           ChildProcess.make('git', [...args], {
             cwd,
-            env: { GIT_TERMINAL_PROMPT: '0' },
+            env: { ...env, GIT_TERMINAL_PROMPT: '0' },
             extendEnv: true,
             ...(stdin === undefined ? {} : { stdin })
           })
@@ -83,9 +113,10 @@ export const makeGit = Effect.gen(function* () {
   const runOk = Effect.fnUntraced(function* (
     cwd: string,
     args: ReadonlyArray<string>,
-    stdin?: Stream.Stream<Uint8Array>
+    stdin?: Stream.Stream<Uint8Array>,
+    env?: Record<string, string>
   ) {
-    const output = yield* run(cwd, args, stdin)
+    const output = yield* run(cwd, args, stdin, env)
     if (output.exitCode !== 0) return yield* failure(cwd, args, output)
     return output.stdout
   })
@@ -139,6 +170,53 @@ export const makeGit = Effect.gen(function* () {
     const existing = yield* runOptional(cwd, ['remote', 'get-url', remote], 2)
     yield* runOk(cwd, ['remote', Option.isNone(existing) ? 'add' : 'set-url', remote, url])
   })
+
+  const copyIndex = Effect.fnUntraced(function* (cwd: string, target: string) {
+    const args = ['rev-parse', '--path-format=absolute', '--git-path', 'index']
+    const source = (yield* runOk(cwd, args)).trim()
+    yield* fs
+      .copyFile(source, target)
+      .pipe(
+        Effect.catchTag('PlatformError', (error) =>
+          error.reason._tag === 'NotFound'
+            ? Effect.void
+            : Effect.fail(new GitError({ cwd, args, exitCode: -1, stderr: String(error) }))
+        )
+      )
+  })
+
+  const snapshot = (cwd: string, refs: ReadonlyArray<string>, message: string) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const directory = yield* fs
+          .makeTempDirectoryScoped({ prefix: 'dia-snapshot-' })
+          .pipe(
+            Effect.mapError(
+              (error) =>
+                new GitError({ cwd, args: ['snapshot'], exitCode: -1, stderr: String(error) })
+            )
+          )
+        const index = path.join(directory, 'index')
+        yield* copyIndex(cwd, index)
+        const env = { ...SNAPSHOT_IDENTITY, GIT_INDEX_FILE: index }
+        yield* runOk(cwd, [...SNAPSHOT_INDEX_CONFIG, 'add', '-A'], undefined, env)
+        const tree = (yield* runOk(
+          cwd,
+          [...SNAPSHOT_INDEX_CONFIG, 'write-tree'],
+          undefined,
+          env
+        )).trim()
+        const commit = (yield* runOk(
+          cwd,
+          ['commit-tree', tree, '-m', message],
+          undefined,
+          env
+        )).trim()
+        yield* Effect.forEach(refs, (ref) => runOk(cwd, ['update-ref', ref, commit]), {
+          discard: true
+        })
+      })
+    )
 
   const git: Git = {
     init: (cwd) => runOk(cwd, ['init']).pipe(Effect.asVoid),
@@ -202,7 +280,24 @@ export const makeGit = Effect.gen(function* () {
       ),
     repairWorktrees: (repo, paths) =>
       runOk(repo, ['worktree', 'repair', ...paths]).pipe(Effect.asVoid),
-    stopFsmonitor: (cwd) => run(cwd, ['fsmonitor--daemon', 'stop']).pipe(Effect.asVoid)
+    stopFsmonitor: (cwd) => run(cwd, ['fsmonitor--daemon', 'stop']).pipe(Effect.asVoid),
+    snapshot,
+    refs: (cwd, prefix) =>
+      runOk(cwd, ['for-each-ref', '--format=%(refname)%00%(subject)', prefix]).pipe(
+        Effect.map((output) =>
+          output
+            .split(/\r?\n/)
+            .filter((line) => line !== '')
+            .map((line): GitRef => {
+              const [name = '', subject = ''] = line.split('\0')
+              return { name, subject }
+            })
+        )
+      ),
+    changedFiles: (cwd, from, to) =>
+      runOk(cwd, ['diff', '--numstat', '-z', '--no-renames', from, to]).pipe(
+        Effect.map(parseNumstat)
+      )
   }
   return git
 })

@@ -235,6 +235,98 @@ describe('makeGit', { timeout: 30_000 }, () => {
       })
     )
   )
+
+  it.live('snapshots modified and untracked files without changing the index or HEAD', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, write } = yield* committedRepo
+        yield* write('a.txt', 'one\ntwo\n')
+        yield* write('new.txt', 'x\ny\n')
+        const statusBefore = yield* git.status(directory)
+        const headBefore = yield* git.resolveCommit(directory, 'HEAD')
+
+        yield* git.snapshot(directory, ['refs/dia/test/after'], 'after')
+
+        assert.deepStrictEqual(yield* git.changedFiles(directory, 'HEAD', 'refs/dia/test/after'), [
+          { path: 'a.txt', added: 1, deleted: 0, binary: false },
+          { path: 'new.txt', added: 2, deleted: 0, binary: false }
+        ])
+        assert.deepStrictEqual(yield* git.status(directory), statusBefore)
+        assert.deepStrictEqual(yield* git.resolveCommit(directory, 'HEAD'), headBefore)
+      })
+    )
+  )
+
+  it.live('leaves ignored files out of a snapshot', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, write } = yield* committedRepo
+        yield* write('.gitignore', 'secret.env\n')
+        yield* write('secret.env', 'x\n')
+
+        yield* git.snapshot(directory, ['refs/dia/test/after'], 'after')
+
+        const files = yield* git.changedFiles(directory, 'HEAD', 'refs/dia/test/after')
+        assert.deepStrictEqual(
+          files.map((file) => file.path),
+          ['.gitignore']
+        )
+      })
+    )
+  )
+
+  it.live('snapshots a repository that has no commit yet', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, write } = yield* repo
+        yield* write('a.txt', 'one\n')
+        yield* git.snapshot(directory, ['refs/dia/test/before'], 'before')
+        yield* write('a.txt', 'two\n')
+        yield* git.snapshot(directory, ['refs/dia/test/after'], 'after')
+
+        assert.deepStrictEqual(
+          yield* git.changedFiles(directory, 'refs/dia/test/before', 'refs/dia/test/after'),
+          [{ path: 'a.txt', added: 1, deleted: 1, binary: false }]
+        )
+      })
+    )
+  )
+
+  it.live('reports a changed binary file with no line counts', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, fs, path } = yield* committedRepo
+        yield* fs.writeFile(path.join(directory, 'image.bin'), new Uint8Array([0, 1, 2, 0]))
+
+        yield* git.snapshot(directory, ['refs/dia/test/after'], 'after')
+
+        assert.deepStrictEqual(yield* git.changedFiles(directory, 'HEAD', 'refs/dia/test/after'), [
+          { path: 'image.bin', added: 0, deleted: 0, binary: true }
+        ])
+      })
+    )
+  )
+
+  it.live('points every given ref at the snapshot and lists only the refs under a prefix', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory } = yield* committedRepo
+        yield* git.snapshot(directory, ['refs/dia/test/1/end', 'refs/dia/test/2/start'], 'Fix it')
+        yield* git.snapshot(directory, ['refs/dia/other/1/start'], 'Elsewhere')
+
+        const refs = yield* git.refs(directory, 'refs/dia/test/')
+
+        assert.deepStrictEqual(refs, [
+          { name: 'refs/dia/test/1/end', subject: 'Fix it' },
+          { name: 'refs/dia/test/2/start', subject: 'Fix it' }
+        ])
+        assert.deepStrictEqual(
+          yield* git.resolveCommit(directory, 'refs/dia/test/1/end'),
+          yield* git.resolveCommit(directory, 'refs/dia/test/2/start')
+        )
+      })
+    )
+  )
 })
 
 describe('redactUrlCredentials', () => {

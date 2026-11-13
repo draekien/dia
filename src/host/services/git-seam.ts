@@ -1,5 +1,5 @@
 import { ServiceKey } from '@shared/plugin/api'
-import { Data, type Effect, type Option, Predicate } from 'effect'
+import { type Array as Arr, Data, type Effect, type Option, Predicate, Schema } from 'effect'
 
 /**
  * A git command that could not start (`exitCode` -1) or exited with a code its {@link Git}
@@ -23,6 +23,25 @@ export interface GitStatusEntry {
   readonly code: string
   readonly path: string
 }
+
+/** A ref and the subject line of the commit it points at, as {@link Git.refs} lists it. */
+export interface GitRef {
+  readonly name: string
+  readonly subject: string
+}
+
+/**
+ * A file that differs between two commits, as {@link Git.changedFiles} reports it: `added` and
+ * `deleted` are line counts, both 0 when `binary`.
+ */
+export const GitFileChange = Schema.Struct({
+  path: Schema.String,
+  added: Schema.Int,
+  deleted: Schema.Int,
+  binary: Schema.Boolean
+})
+/** A changed file; see {@link GitFileChange}. */
+export type GitFileChange = typeof GitFileChange.Type
 
 /** The author of a commit {@link Git.commitAll} makes. */
 export interface GitAuthor {
@@ -119,6 +138,24 @@ export interface Git {
   ) => Effect.Effect<void, GitError>
   /** Stops the `git fsmonitor--daemon` watching `cwd`. Succeeds when none runs; never fails. */
   readonly stopFsmonitor: (cwd: string) => Effect.Effect<void>
+  /**
+   * Records `cwd`'s working tree (tracked files and the untracked files `.gitignore` does not
+   * exclude) as a parentless commit with `message`, and points every ref in `refs` at it. Leaves
+   * the index, `HEAD` and the working tree unchanged, and needs no git identity configured.
+   */
+  readonly snapshot: (
+    cwd: string,
+    refs: Arr.NonEmptyReadonlyArray<string>,
+    message: string
+  ) => Effect.Effect<void, GitError>
+  /** The refs in `cwd`'s repository whose name starts with `prefix`, in name order. */
+  readonly refs: (cwd: string, prefix: string) => Effect.Effect<ReadonlyArray<GitRef>, GitError>
+  /** The files that differ between commits `from` and `to`; a rename is a deletion and an addition. */
+  readonly changedFiles: (
+    cwd: string,
+    from: string,
+    to: string
+  ) => Effect.Effect<ReadonlyArray<GitFileChange>, GitError>
 }
 
 const GIT_MEMBERS = [
@@ -141,7 +178,10 @@ const GIT_MEMBERS = [
   'pruneWorktrees',
   'listWorktrees',
   'repairWorktrees',
-  'stopFsmonitor'
+  'stopFsmonitor',
+  'snapshot',
+  'refs',
+  'changedFiles'
 ] as const satisfies ReadonlyArray<keyof Git>
 
 const isGit = (value: unknown): value is Git =>
