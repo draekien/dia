@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { assert, describe, it } from '@effect/vitest'
 import { Effect, FileSystem, Path } from 'effect'
@@ -21,7 +22,9 @@ describe('moving the worktrees folder', () => {
       const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
       const repo = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-move-repo-' })
-      const userData = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-move-data-' })
+      const userData = realpathSync.native(
+        yield* fs.makeTempDirectoryScoped({ prefix: 'dia-move-data-' })
+      )
       yield* git(repo, 'init', '-q')
       yield* git(repo, 'commit', '-q', '--allow-empty', '-m', 'init')
       const oldTrees = path.join(userData, 'plugins', 'worktrees', 'trees')
