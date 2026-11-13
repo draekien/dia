@@ -197,6 +197,9 @@ function toIpcEvent(paneId: string, message: OutboundMessage): Option.Option<Ipc
       Match.tag('ContextUsageChanged', (m) =>
         Option.some<IpcEvent>(PaneEvents.PaneContextUsageChanged.make({ paneId, usage: m.usage }))
       ),
+      Match.tag('TurnUsageReported', (m) =>
+        Option.some<IpcEvent>(PaneEvents.PaneTurnUsageReported.make({ paneId, usage: m.usage }))
+      ),
       Match.tag('CompactionFailed', (m) =>
         Option.some<IpcEvent>(PaneEvents.PaneCompactionFailed.make({ paneId, failure: m.failure }))
       ),

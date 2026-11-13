@@ -1,6 +1,6 @@
 import { PaneError, PermissionUpdate, Question } from '@shared/domain/attention'
 import { BackgroundTask } from '@shared/domain/background-task'
-import { CompactionFailure, ContextUsage } from '@shared/domain/context-usage'
+import { CompactionFailure, ContextUsage, TokenUsage } from '@shared/domain/context-usage'
 import { OutgoingMessage } from '@shared/domain/message-queue'
 import { NoticeLink } from '@shared/domain/notice-link'
 import { ConversationMessage, PermissionMode, SessionId } from '@shared/domain/pane'
@@ -83,6 +83,8 @@ export const PermissionModeChanged = Schema.TaggedStruct('PermissionModeChanged'
 export const TurnCompleted = Schema.TaggedStruct('TurnCompleted', {})
 /** Emitted by a pane's agent session when the agent's current turn has failed. */
 export const TurnErrored = Schema.TaggedStruct('TurnErrored', { error: PaneError })
+/** Emitted by a pane's agent session with the tokens the turn's main agent loop used, before the message that ends the turn. A turn that used no tokens emits none. */
+export const TurnUsageReported = Schema.TaggedStruct('TurnUsageReported', { usage: TokenUsage })
 /** Emitted by a pane's agent session in place of `TurnCompleted` or `TurnErrored` when the account refused the turn (`cause`); the agent waits instead of failing. Ends the turn. */
 export const TurnParked = Schema.TaggedStruct('TurnParked', { cause: ParkCause })
 /** Emitted by a pane's agent session once the Agent SDK session has started (or resumed), carrying the `sessionId` the Host persists so the pane can later be resumed. */
@@ -165,6 +167,7 @@ export const OutboundMessage = Schema.Union([
   TurnCompleted,
   TurnErrored,
   TurnParked,
+  TurnUsageReported,
   SessionStarted,
   SlashCommandsWarming,
   SlashCommandsAvailable,
