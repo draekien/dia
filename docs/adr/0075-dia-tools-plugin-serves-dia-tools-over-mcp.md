@@ -71,7 +71,7 @@ Tokens and runs:
 
 ## More Information
 
-* The MCP specification revision of 2025-03-26 replaced the HTTP+SSE transport with Streamable HTTP. <!-- unverified: not checked against modelcontextprotocol.io at time of writing -->
-* Whether Claude Code refetches `tools/list` on `notifications/tools/list_changed` from an HTTP server. <!-- unverified -->
-* Open at design time for the `dia-tools` step of `docs/plans/2026-11-13-foundation.md`: how an agent outside dia obtains a token.
+* The MCP specification revision of 2025-03-26 replaced the HTTP+SSE transport of revision 2024-11-05 with Streamable HTTP (modelcontextprotocol.io, `specification/2025-03-26/basic/transports`, checked 2026-11-13). The same page requires a Streamable HTTP server to validate `Origin` on every connection, and recommends binding to `127.0.0.1` and authenticating every connection.
+* Claude Code refetches a server's list when it receives a `list_changed` notification: in an interactive terminal session it refetches tools, prompts and resources; with `-p` and in the Agent SDK it refetches only the tool list (code.claude.com/docs/en/mcp, "Dynamic tool updates", checked 2026-11-13).
+* An agent outside dia obtains a token from the command palette ("Connect an outside agent to dia tools"), which copies a complete `claude mcp add` command line; see `docs/designs/dia-tools.md` D1.
 * Amends ADR-0019 (kernel MCP server per pane) and ADR-0069 (dia tools follow the session's permission rules; the transport changes, the rule does not).

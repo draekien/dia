@@ -32,6 +32,8 @@ D7. **`dia-mcp` takes the endpoint file path as its first argument** rather than
 
 D8. **A run's `ToolScope` is `{ runId, project: sourceCwd, labels, context }`.** `labels` and `context` are optional fields of `StartRunOptions` and `RunSpec`, stored in the run's row so recovery restores them; `context` must be JSON-serialisable. A tab's run has no labels and no context.
 
+D9a. **`dia-tools` finds the `dia-mcp` script with `import.meta.resolve('@dia/plugin')`**, which the loader's resolve hook maps to `out/main/plugin-api.js`; `dia-mcp.js` is its sibling. A kernel export of the path was rejected because `@dia/plugin` is also type-checked as a platform-neutral module (`tsconfig.plugin-exports.json`), where `import.meta.url` does not exist.
+
 D9. **A reload of `dia-tools` from a `plugin_reload` call ends that HTTP request**, so the agent sees a failed call although the reload completes. Deferring it as for `dia-runs` needs the kernel to name a second plugin; recorded, not handled.
 
 ## Interface
@@ -77,8 +79,8 @@ export interface Tools {
   readonly revoke: (tokenHash: string) => Effect<void>
   /** The Streamable HTTP URL (`http://127.0.0.1:<port>/mcp`). */
   readonly url: string
-  /** A new in-process MCP server for `scope`, for `createSdkMcpServer`-style callers. */
-  readonly mcpServer: (scope: ToolScope) => Effect<McpServer>
+  /** A new in-process MCP SDK `McpServer` for `scope`, typed `object` (an exported module cannot import the MCP SDK). */
+  readonly mcpServer: (scope: ToolScope) => Effect<object>
 }
 export const ToolsKey: ServiceKey<Tools>
 export const newToken: Effect<{ token: string; hash: string }, never, Crypto>
@@ -87,7 +89,7 @@ export const hashToken: (token: string) => Effect<string, never, Crypto>
 
 ### Plugin (`plugins/dia-tools`)
 
-- `plugin.json`: `category: feature`, `host: host.ts`, `renderer: renderer.ts`, `load: eager`, `exports: ["tools.ts", "calls.ts"]`.
+- `plugin.json`: `name: dia-tools`, `category: feature`, `host: host.ts`, `renderer: renderer.ts`, `load: eager`, `exports: ["tools.ts", "calls.ts"]`.
 - `registry.ts`: registered tools, granted hashes, and a change stream.
 - `mcp-server.ts`: one `McpServer` per MCP session over the registry: `tools/list` returns `forScope`, `tools/call` decodes the arguments with the tool's schema (a decode failure is an `isError` result) and runs it; logs each call.
 - `http-server.ts`: `node:http` on `127.0.0.1`; checks `Origin` then `Authorization: Bearer` on every request; `/mcp` Streamable HTTP with sessions bound to the token hash that opened them; `/sse` and `/messages` HTTP+SSE. Sends `notifications/tools/list_changed` to every session on a registry change.
