@@ -60,7 +60,7 @@ describe('foldUsage', () => {
     expect(usage.turns[0]?.prompt).toBe('x'.repeat(120))
   })
 
-  it('starts a turn at each message sent, as the Changes card numbers turns', () => {
+  it('starts a turn at each message sent, as dia-checkpoints numbers turns', () => {
     const usage = usageOf([sent('first'), sent('steered'), reported(a)])
 
     expect(usage.turns).toEqual([

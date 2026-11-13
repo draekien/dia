@@ -50,8 +50,8 @@ function Turn({ turn }: { readonly turn: TurnUsage }): React.JSX.Element {
 
 /**
  * The session rail's Usage card body for run `runId`: the tokens of the run's main agent loop in
- * total, then per turn that used tokens, newest first, numbered as the Changes card numbers
- * turns. It follows `usageAtoms(runId)`.
+ * total, then per turn that used tokens, newest first, numbered from 1 at each message sent to the
+ * run. It follows `usageAtoms(runId)`.
  */
 export function UsageCard({
   runId,

@@ -58,10 +58,7 @@ export const foldUsage = (usage: RunUsage, event: StoredEvent): RunUsage => {
     case 'PaneTurnUsageReported': {
       const latest = usage.turns.at(-1) ?? { turn: 1, prompt: '', usage: noTokens }
       return {
-        turns: [
-          ...usage.turns.slice(0, latest.turn - 1),
-          { ...latest, usage: add(latest.usage, event.usage) }
-        ],
+        turns: [...usage.turns.slice(0, -1), { ...latest, usage: add(latest.usage, event.usage) }],
         total: add(usage.total, event.usage)
       }
     }

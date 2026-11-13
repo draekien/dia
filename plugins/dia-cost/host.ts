@@ -6,38 +6,39 @@ import { emptyRunUsage, foldUsage, USAGE_TAGS } from './usage'
 
 const usageTags = new Set<string>(USAGE_TAGS)
 
-const storedUsage = (runEvents: RunEvents, runId: string) =>
-  runEvents
-    .readTagged(runId, USAGE_TAGS)
-    .pipe(
-      Effect.catchTag('RunEventReadError', (error) =>
-        Effect.as(
-          Effect.logWarning('Could not read the run usage; showing none', { runId, error }),
-          []
-        )
-      )
+const followStored = (
+  live: Stream.Stream<CommittedEvent>,
+  stored: ReadonlyArray<CommittedEvent>,
+  runId: string
+) => {
+  const start = stored.reduce((usage, { event }) => foldUsage(usage, event), emptyRunUsage)
+  const through = stored.at(-1)?.sequence ?? 0
+  const isNewUsageEvent = (committed: CommittedEvent) =>
+    committed.runId === runId && committed.sequence > through && usageTags.has(committed.event._tag)
+  return live.pipe(
+    Stream.filter(isNewUsageEvent),
+    Stream.scan(
+      () => start,
+      (usage, { event }) => foldUsage(usage, event)
     )
+  )
+}
 
 const followUsage = (runEvents: RunEvents, runId: string) =>
   Stream.unwrap(
     Effect.gen(function* () {
       const live = yield* runEvents.subscribe
-      const stored = yield* storedUsage(runEvents, runId)
-      const start = stored.reduce((usage, { event }) => foldUsage(usage, event), emptyRunUsage)
-      const through = stored.at(-1)?.sequence ?? 0
-      yield* Effect.logDebug('Following run usage', { runId, turns: start.turns.length })
-      const isNewUsageEvent = (committed: CommittedEvent) =>
-        committed.runId === runId &&
-        committed.sequence > through &&
-        usageTags.has(committed.event._tag)
-      return live.pipe(
-        Stream.filter(isNewUsageEvent),
-        Stream.scan(
-          () => start,
-          (usage, { event }) => foldUsage(usage, event)
+      const stored = yield* runEvents.readTagged(runId, USAGE_TAGS)
+      yield* Effect.logDebug('Following run usage', { runId, events: stored.length })
+      return followStored(live, stored, runId)
+    }).pipe(
+      Effect.catchTag('RunEventReadError', (error) =>
+        Effect.as(
+          Effect.logWarning('Could not read the run usage; showing none', { runId, error }),
+          Stream.make(emptyRunUsage)
         )
       )
-    })
+    )
   )
 
 const setup: PluginSetup<HostPluginContext> = (ctx) =>

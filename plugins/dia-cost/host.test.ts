@@ -3,6 +3,7 @@ import {
   type HostPluginContext,
   PaneEvents,
   type PluginSetup,
+  RunEventReadError,
   type RunEvents,
   RunEventsKey,
   type TokenUsage
@@ -35,12 +36,15 @@ const usageEvent = (runId: string, sequence: number, outputTokens: number): Comm
 
 const STORED = usageEvent(RUN, 4, 10)
 
-const fakeRunEvents = (committed: PubSub.PubSub<CommittedEvent>): RunEvents => ({
+const fakeRunEvents = (
+  committed: PubSub.PubSub<CommittedEvent>,
+  readTagged: RunEvents['readTagged']
+): RunEvents => ({
   append: () => Effect.die('not used'),
   committed: Stream.fromPubSub(committed),
   subscribe: Effect.map(PubSub.subscribe(committed), Stream.fromSubscription),
   readAfter: () => Effect.die('not used'),
-  readTagged: (runId) => Effect.succeed(runId === RUN ? [STORED] : []),
+  readTagged,
   highestSequence: Effect.succeed(0),
   startSequence: 0,
   record: () => Effect.die('not used'),
@@ -58,10 +62,12 @@ const manifestOf = (name: string): PluginManifest => ({
 
 const decodeUsage = Schema.decodeUnknownSync(RunUsage)
 
-const startPlugin = Effect.gen(function* () {
+const readStored: RunEvents['readTagged'] = (runId) => Effect.succeed(runId === RUN ? [STORED] : [])
+
+const startPlugin = Effect.fnUntraced(function* (readTagged: RunEvents['readTagged']) {
   const committed = yield* PubSub.unbounded<CommittedEvent>()
   const provideFakes: PluginSetup<HostPluginContext> = (ctx) =>
-    ctx.provide(RunEventsKey, fakeRunEvents(committed))
+    ctx.provide(RunEventsKey, fakeRunEvents(committed, readTagged))
   const setups: Record<string, PluginSetup<HostPluginContext>> = {
     [COST]: setup,
     [FAKES]: provideFakes
@@ -102,13 +108,13 @@ const startPlugin = Effect.gen(function* () {
   const withTurns = (count: number) =>
     Queue.take(seen).pipe(Effect.repeat({ until: (usage) => usage.turns.length === count }))
   const outputsOf = (usage: RunUsage) => usage.turns.map((turn) => turn.usage.outputTokens)
-  return { committed, withTurns, outputsOf }
+  return { committed, seen, withTurns, outputsOf }
 })
 
 describe('dia-cost host entry', () => {
   it.live("follows a run's stored usage, then each new turn of that run only", () =>
     Effect.gen(function* () {
-      const { committed, withTurns, outputsOf } = yield* startPlugin
+      const { committed, withTurns, outputsOf } = yield* startPlugin(readStored)
       const first = yield* withTurns(1)
 
       yield* PubSub.publish(committed, STORED)
@@ -130,6 +136,20 @@ describe('dia-cost host entry', () => {
         [outputsOf(first), outputsOf(second), second.total],
         [[10], [10, 20], { ...tokens(30), inputTokens: 2 }]
       )
+    }).pipe(Effect.scoped)
+  )
+
+  it.live('shows no usage, and stops following, when the stored usage cannot be read', () =>
+    Effect.gen(function* () {
+      const { committed, seen } = yield* startPlugin(() =>
+        Effect.fail(new RunEventReadError({ cause: 'disk' }))
+      )
+      const first = yield* Queue.take(seen)
+
+      yield* PubSub.publish(committed, usageEvent(RUN, 6, 20))
+      yield* Effect.sleep('50 millis')
+
+      assert.deepStrictEqual([first.turns, yield* Queue.size(seen)], [[], 0])
     }).pipe(Effect.scoped)
   )
 })
