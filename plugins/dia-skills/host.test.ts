@@ -102,11 +102,13 @@ const scratch = Effect.gen(function* () {
 })
 
 const META_BUILT_IN = { name: 'dia-meta:building-dia-plugins', group: 'Meta repo' }
-const META_PLAN = { name: 'dia-meta:plan', group: 'Meta repo' }
-const USER_REVIEW = { name: 'review', group: 'Your skills' }
+const META_PLAN = { name: 'dia-meta:plan', description: '', group: 'Meta repo' }
+const USER_REVIEW = { name: 'review', description: '', group: 'Your skills' }
 
-const namesAndGroups = (skills: ReadonlyArray<{ readonly name: string; readonly group: string }>) =>
-  skills.map(({ name, group }) => ({ name, group }))
+const withoutBuiltInDescription = (skills: ReadonlyArray<Skill>) =>
+  skills.map((skill) =>
+    skill.name === META_BUILT_IN.name ? { name: skill.name, group: skill.group } : skill
+  )
 
 describe('skills host entry', () => {
   it.live('lists a meta repo skill under "Meta repo" and a user skill under "Your skills"', () =>
@@ -117,7 +119,11 @@ describe('skills host entry', () => {
       yield* writeSkill(metaSkills, 'plan')
 
       const skills = yield* skillsWhere(registry, (list) => list.length === 3)
-      assert.deepStrictEqual(namesAndGroups(skills), [META_BUILT_IN, META_PLAN, USER_REVIEW])
+      assert.deepStrictEqual(withoutBuiltInDescription(skills), [
+        META_BUILT_IN,
+        META_PLAN,
+        USER_REVIEW
+      ])
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
   )
 
@@ -131,7 +137,9 @@ describe('skills host entry', () => {
       yield* registry.unload('meta')
 
       assert.deepStrictEqual(
-        namesAndGroups(yield* skillsWhere(registry, (list) => !hasGroup('Meta repo')(list))),
+        withoutBuiltInDescription(
+          yield* skillsWhere(registry, (list) => !hasGroup('Meta repo')(list))
+        ),
         [USER_REVIEW]
       )
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
@@ -149,7 +157,7 @@ describe('skills host entry', () => {
       yield* registry.load('meta')
 
       assert.deepStrictEqual(
-        namesAndGroups(yield* skillsWhere(registry, (list) => list.length === 3)),
+        withoutBuiltInDescription(yield* skillsWhere(registry, (list) => list.length === 3)),
         [META_BUILT_IN, META_PLAN, USER_REVIEW]
       )
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
