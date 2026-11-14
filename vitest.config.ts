@@ -18,7 +18,8 @@ export default defineConfig({
       'src/**/*.test.ts',
       'src/**/*.test.tsx',
       'plugins/**/*.test.ts',
-      'plugins/**/*.test.tsx'
+      'plugins/**/*.test.tsx',
+      'scripts/**/*.test.ts'
     ]
   }
 })

@@ -57,6 +57,7 @@
     "src/**/*.test.tsx",
     "src/**/*.d.ts",
     "plugins/**/*.test.ts",
-    "plugins/**/*.test.tsx"
+    "plugins/**/*.test.tsx",
+    "scripts/**/*.test.ts"
   ]
 }

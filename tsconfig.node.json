@@ -26,12 +26,14 @@
     "src/shared/**/*",
     "plugins/**/*.ts",
     "electron.vite.config.ts",
-    "vite/**/*.ts"
+    "vite/**/*.ts",
+    "scripts/**/*.ts"
   ],
   "exclude": [
     "src/**/*.test.ts",
     "src/**/*.test.tsx",
     "plugins/**/*.test.ts",
+    "scripts/**/*.test.ts",
     "plugins/**/renderer.ts",
     "plugins/dia-issues/issue-actions.ts",
     "plugins/dia-org/org-actions.ts",
