@@ -92,16 +92,16 @@ function TerminalView({ terminalId }: { readonly terminalId: string }): React.JS
       run(sendInput(terminalId, input), 'write')
     ]
     const typed = terminal.onData((data) => Queue.offerUnsafe(input, data))
-    const reportSize = ({ cols, rows }: { readonly cols: number; readonly rows: number }) =>
+    let sizeReported = false
+    const reportSize = ({ cols, rows }: { readonly cols: number; readonly rows: number }) => {
+      sizeReported = true
       run(callHost(PLUGIN, ResizeTerminal, { terminalId, cols, rows }), 'resize')
+    }
     const resized = terminal.onResize(reportSize)
     let pendingFit = 0
-    let sizeReported = false
     const fitToView = () => {
       fit.fit()
-      if (sizeReported) return
-      sizeReported = true
-      reportSize(terminal)
+      if (!sizeReported) reportSize(terminal)
     }
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(pendingFit)

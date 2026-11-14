@@ -22,10 +22,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 const KEY_STEP = 16
 
-const SHORTCUT =
+const IS_MAC =
   typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent)
-    ? '⌘ J'
-    : 'Ctrl J'
+
+const SHORTCUT = IS_MAC ? '⌘ J' : 'Ctrl J'
 
 const columnHeightOf = (handle: HTMLElement): number =>
   handle.parentElement?.parentElement?.clientHeight ?? 0
@@ -174,14 +174,14 @@ export function BottomPanel({
 
 const isToggleShortcut = (event: KeyboardEvent): boolean =>
   event.code === 'KeyJ' &&
-  (event.metaKey || event.ctrlKey) &&
+  (IS_MAC ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) &&
   !event.altKey &&
   !event.shiftKey &&
   !event.getModifierState('AltGraph')
 
 /**
  * The content header's bottom panel button for the tab showing `paneId`, pressed while that tab's
- * panel is open, with the shortcut Ctrl J (⌘ J on macOS). The shortcut is handled before the
+ * panel is open, with the shortcut Ctrl J (⌘ J on macOS, where Ctrl J stays with the focused element). The shortcut is handled before the
  * focused element sees it, so it also works while a terminal has focus. Renders nothing while the
  * visible tab has no bottom panel. Render it in the header of a tab.
  */
