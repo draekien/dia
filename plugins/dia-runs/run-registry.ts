@@ -95,6 +95,16 @@ const isBusy = (activity: RunActivity) => activity.running || activity.backgroun
 const sameIds = (left: ReadonlyArray<string>, right: ReadonlyArray<string>) =>
   left.length === right.length && left.every((id, index) => id === right[index])
 
+const withStoredScope = (spec: RunSpec, row: RunRow): RunSpec => ({
+  ...spec,
+  ...(spec.labels === undefined && row.spec.labels !== undefined
+    ? { labels: row.spec.labels }
+    : {}),
+  ...(spec.context === undefined && row.spec.context !== undefined
+    ? { context: row.spec.context }
+    : {})
+})
+
 const specOfRow = (row: RunRow): RunSpec => ({
   runId: row.runId,
   sourceCwd: row.spec.sourceCwd,
@@ -268,13 +278,14 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
     return yield* provided.value.record({ runId: config.paneId, cwd: config.cwd, resume })
   })
 
-  const openRun = Effect.fn('RunRegistry.openRun')(function* (spec: RunSpec, hasTab: boolean) {
-    const existing = (yield* Ref.get(entriesRef)).get(spec.runId)
+  const openRun = Effect.fn('RunRegistry.openRun')(function* (requested: RunSpec, hasTab: boolean) {
+    const existing = (yield* Ref.get(entriesRef)).get(requested.runId)
     if (existing !== undefined) {
-      if (hasTab) yield* rows.setHasTab(spec.runId)
+      if (hasTab) yield* rows.setHasTab(requested.runId)
       return existing.config
     }
-    const prior = yield* rows.get(spec.runId)
+    const prior = yield* rows.get(requested.runId)
+    const spec = Option.isSome(prior) ? withStoredScope(requested, prior.value) : requested
     const scope = yield* Scope.make()
     const prepared = yield* provision(spec).pipe(
       Effect.provideService(Scope.Scope, scope),
