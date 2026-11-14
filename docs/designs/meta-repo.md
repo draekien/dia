@@ -28,10 +28,15 @@ src/host/services/meta-repo-seam.ts                                 (kernel)
 src/host/plugin-api.ts
   re-exports MetaRepoKey, MetaRepo, SessionAdditions
 
-plugins/meta/
-  plugin.json   { name: 'meta', category: 'feature', host: 'host.ts', load: 'eager' }
+plugins/dia-meta/
+  plugin.json   { name: 'dia-meta', category: 'feature', host: 'host.ts', load: 'eager' }
   host.ts       ensures the repo at <dataDir>/repo, provides MetaRepoKey
-  meta-repo.ts  ensureMetaRepo(directory), makeMetaRepo(directory): MetaRepo
+  meta-repo.ts  ensureMetaFiles(directory, skillSource)
+                ensureMetaRepo(directory, skillSource, git: Git)
+                makeMetaRepo(directory, currentGit): MetaRepo
+  building-dia-plugins/
+    SKILL.md            starting text of the built-in skill (issue #168)
+    references/api.md   git-ignored; written by `pnpm build:plugin-api-reference`, which `pnpm build` runs
 
 plugins/claude-code/session-additions.ts
   sessionAdditionsOptions(additions): Pick<Options, 'systemPrompt' | 'plugins'>
@@ -39,15 +44,19 @@ plugins/claude-code/session-additions.ts
 
 ## Behaviour
 
-- The repo lives at `<userData>/plugins/meta/repo` (the plugin's `dataDir`, ADR-0032):
+- The repo lives at `<userData>/plugins/dia-meta/repo` (the plugin's `dataDir`, ADR-0032):
 
   ```
   repo/
     instructions.md                      empty when created
     plugin/.claude-plugin/plugin.json    { "name": "dia-meta", "description": ... }
+    plugin/skills/building-dia-plugins/
+      SKILL.md                           copied from plugins/dia-meta/building-dia-plugins when missing
+      references/api.md                  copied from plugins/dia-meta/building-dia-plugins when it differs
   ```
 
-- `ensureMetaRepo` writes each of the two files only when it is missing, so it never overwrites a user's or meta agent's edit. When `repo/.git` is missing or the repo has no commit (`git rev-parse --verify HEAD` fails) it runs `git init`, then `git add -A` and `git commit` with the committer identity `dia <dia@localhost>` passed through `-c`, so the first commit does not depend on the user's git config; it also passes `commit.gpgsign=false` and `--no-verify`, so a signing prompt or a global hook cannot block the plugin's eager setup, which the Host waits for before it reports ready. A failed git command is logged as a warning and does not fail the plugin: agents still receive the files.
+- `ensureMetaFiles` runs in setup without git. It writes `instructions.md`, `plugin.json` and the skill's `SKILL.md` only when each is missing, so it never overwrites a user's or meta agent's edit to them. It rewrites the skill's `references/api.md` whenever its content, ignoring CRLF line endings, differs from the copy dia ships. A file dia does not ship (for example `references/api.md` in `pnpm dev` before `pnpm build:plugin-api-reference` has run) is logged as a warning and skipped.
+- `ensureMetaRepo` runs once `dia-git` provides `GitKey`. It runs `ensureMetaFiles` again. When `repo/.git` is missing or the repo has no commit, it runs `Git.init` and `Git.commitAll` as `dia <dia@localhost>`, which skips hooks and signing, so a signing prompt or a global hook cannot block it. In a repo that has a commit it reads `Git.status` and calls `Git.commitPaths` with the skill's `SKILL.md` when git does not track it and the skill's `references/api.md` when it is untracked or changed, message `docs: update the built-in building-dia-plugins skill`. `commitPaths` commits those paths only, so the user's other staged and unstaged changes stay out of that commit. A failed git command is logged as a warning and does not fail the plugin: agents still receive the files.
 - `forNewSession` reads `instructions.md` from disk on every call and trims it; a read failure logs a warning and gives an empty append. `pluginPaths` is `[<repo>/plugin]`. Reading on every call is what makes a change merged into the repo apply to agents started afterwards.
 - `SessionFactoryLive` calls `resolveSessionAdditions` on every session start and spreads the result into `openSession`'s options.
 - The adapter always sets `systemPrompt: { type: 'preset', preset: 'claude_code' }`, adding `append` when `systemPromptAppend` is not empty, and sets `plugins: [{ type: 'local', path }]` per plugin path when there is at least one. `settingSources` stays unset (the SDK default). The options are computed once per `openSession` and reused by every restart of that session (thinking-level change, rewind), so a running agent keeps what it started with.

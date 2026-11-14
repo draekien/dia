@@ -20,7 +20,7 @@ const fixture = Effect.gen(function* () {
   const root = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-meta-push-' })
   const directory = path.join(root, 'repo')
   const remote = path.join(root, 'remote.git')
-  yield* ensureMetaRepo(directory, yield* makeGit)
+  yield* ensureMetaRepo(directory, path.join(root, 'no-shipped-skill'), yield* makeGit)
   yield* fs.makeDirectory(remote)
   yield* git(remote, 'init', '--bare')
   const commitFile = (file: string, content: string, message: string) =>
