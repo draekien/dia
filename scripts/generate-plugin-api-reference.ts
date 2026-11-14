@@ -6,7 +6,7 @@ import { PLUGIN_API_VERSION } from '../src/shared/plugin/manifest'
 import { mergeReferencePages } from './plugin-api-reference'
 
 const ENTRY_POINT = 'src/host/plugin-api.ts'
-const OUTPUT_FILE = 'plugins/meta/building-dia-plugins/references/api.md'
+const OUTPUT_FILE = 'plugins/dia-meta/building-dia-plugins/references/api.md'
 
 const TYPEDOC_PACKAGES = [
   'typedoc@0.28.20',
