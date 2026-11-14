@@ -19,13 +19,8 @@ const setup: PluginSetup<PluginServices> = (ctx) =>
     yield* addEntry(ctx, TurnFootersSlot, {
       id: 'turn-usage',
       order: 10,
-      component: ({
-        paneId,
-        messageIds
-      }: {
-        readonly paneId: PaneId
-        readonly messageIds: ReadonlyArray<string>
-      }) => createElement(TurnUsageLine, { runId: paneId, messageIds, usageAtoms })
+      component: ({ paneId, messageIds }) =>
+        createElement(TurnUsageLine, { runId: paneId, messageIds, usageAtoms })
     })
     yield* Effect.logInfo('Usage card and turn usage line added', { plugin: ctx.name })
   })

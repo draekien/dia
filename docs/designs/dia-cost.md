@@ -8,7 +8,7 @@ Issue: draekien/dia#251, step 13 of `docs/plans/2026-11-13-foundation.md`. Decis
 
 1. Each turn's usage is recorded as a run event. (Test: `plugins/dia-claude-code/reducer.test.ts`: a `result` message whose `usage` has non-zero tokens yields `TurnUsageReported` with those four counts after the flushed tool calls and before `TurnCompleted`; a parked, a refused and an error result do the same before `TurnParked` or `TurnErrored`; a result whose four counts are all 0 yields no `TurnUsageReported`. The tests feed fixture `SDKMessage`s and start no Claude process. `plugins/dia-runs/run-registry.test.ts`: `TurnUsageReported` is stored as `PaneTurnUsageReported` of the run.)
 2. A run's stored usage events can be read without reading the whole log. (Test: `plugins/dia-run-events/store.test.ts`: `readTagged(runId, ['PaneTurnUsageReported'])` returns only that run's events with that tag, in sequence order, and skips an undecodable row with a warning. `2_index_run_events_by_type` applies over a database at migration 1.)
-3. Each run shows input, output and cache tokens per turn and in total. (Test: `plugins/dia-cost/usage.test.ts`: folding `PaneUserMessagesSent('fix the bug')`, `PaneTurnUsageReported(a)`, `PaneUserMessagesSent('next')`, `PaneTurnUsageReported(b)` gives turns 1 and 2 with prompts `fix the bug` and `next`, usages `a` and `b`, and total `a + b`; a second report adds to the latest turn; a turn with no report keeps 0 tokens and later turns keep their numbers. `plugins/dia-cost/host.test.ts`: `FollowRunUsage({ runId })` emits the stored turns first, then new values after events of that run are committed, ignores other runs and an event already read. `usageOfMessages` sums the turns any given message started. `plugins/dia-chat/turn-ends.test.ts`: each turn ends at the last message before the next user message. `plugins/dia-cost/turn-usage-line.test.tsx`: the line shows `~95k tokens` for 94,860 tokens, the four counts on focus, and nothing for 0. App: send two turns in a tab; each turn ends with its token line, the `Usage` card shows a total equal to their sum, and both show the same after a restart.)
+3. Each run shows input, output and cache tokens per turn and in total. (Test: `plugins/dia-cost/usage.test.ts`: folding `PaneUserMessagesSent('fix the bug')`, `PaneTurnUsageReported(a)`, `PaneUserMessagesSent('next')`, `PaneTurnUsageReported(b)` gives two turns keyed by the ids of those messages, usages `a` and `b`, and total `a + b`; a second report adds to the latest turn; a turn with no report keeps 0 tokens. `plugins/dia-cost/host.test.ts`: `FollowRunUsage({ runId })` emits the stored turns first, then new values after events of that run are committed, ignores other runs and an event already read. `usageOfMessages` sums the turns any given message started. `plugins/dia-chat/turn-ends.test.ts`: each turn ends at the last message before the next user message. `plugins/dia-cost/turn-usage-line.test.tsx`: the line shows `~95k tokens` for 94,860 tokens, the four counts on focus, and nothing for 0. App: send two turns in a tab; each turn ends with its token line, the `Usage` card shows a total equal to their sum, and both show the same after a restart.)
 
 ## Decisions taken without the user
 
@@ -76,8 +76,8 @@ readonly readTagged: (runId: string, tags: NonEmptyReadonlyArray<StoredEvent['_t
 `calls.ts`:
 
 ```ts
-/** Turn `turn` of a run (from 1), the first line of its prompt ('' when none), and its tokens. */
-export const TurnUsage = Schema.Struct({ turn: Schema.Int, messageIds: Schema.Array(Schema.String), prompt: Schema.String, usage: TokenUsage })
+/** One turn of a run: the ids of the messages that started it, and its tokens. */
+export const TurnUsage = Schema.Struct({ messageIds: Schema.Array(Schema.String), usage: TokenUsage })
 /** A run's turns in order and their total. */
 export const RunUsage = Schema.Struct({ turns: Schema.Array(TurnUsage), total: TokenUsage })
 /** Run `runId`'s usage now and after each usage event of the run; no turns while run events are not provided. */
@@ -98,6 +98,7 @@ The per-turn list moved from the rail card to the transcript; the card keeps onl
 D7. **`dia-chat` declares `TurnFootersSlot`**, a list of components drawn after a turn's last message with `{ paneId, messageIds }`. `turnEnds` (`plugins/dia-chat/turn-ends.ts`) ends a turn at the last message before the next user message; `messageIds` are the consecutive user messages that open it. A footer that throws renders nothing (DESIGN.md, Plugin failure: a status line shows nothing). Alternative: a turn number in the props (rejected: the transcript cannot number turns by the D5 rule, because turns added outside dia and batched sends would shift the numbers).
 D8. **`TurnUsage` carries `messageIds`**, the ids of the messages of its `PaneUserMessagesSent`, which are the ids of the transcript's user messages. A transcript stretch shows the sum of the turns any of its user messages started. A parked turn resumed with `continue` is two turns by D5, so it shows two lines: one before the `Resumed at` marker and one at the end. `FollowRunUsage` is a plugin call, so `PROTOCOL_VERSION` is unchanged.
 D9. **`token-count.ts` is exported from `dia-chat`**, so the turn line rounds as the compaction notice does (`~95k`).
+D10. **`TurnUsage` drops `turn` and `prompt`.** Only the removed per-turn list of the card read them; the transcript shows each turn's prompt above its line. The D5 prompt rule and its copy of `promptOf` are removed with them.
 
 
 ## Refinement Record

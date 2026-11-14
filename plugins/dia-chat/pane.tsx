@@ -671,9 +671,8 @@ function TurnFooters({
 }: {
   readonly footers: ReturnType<typeof useList<TurnFooter>>
   readonly paneId: string
-  readonly messageIds: ReadonlyArray<string> | undefined
+  readonly messageIds: ReadonlyArray<string>
 }): React.ReactNode {
-  if (messageIds === undefined) return null
   return footers.map((footer) => {
     const Footer = footer.component
     return (
@@ -1276,11 +1275,13 @@ function PaneChat({
             live={message === runningTurn ? liveSteps : undefined}
             nowMs={nowMs}
           />
-          <TurnFooters
-            footers={turnFooters}
-            paneId={paneId}
-            messageIds={endedTurns.get(message.id)}
-          />
+          {endedTurns.has(message.id) && (
+            <TurnFooters
+              footers={turnFooters}
+              paneId={paneId}
+              messageIds={endedTurns.get(message.id) ?? []}
+            />
+          )}
           {parkedForUser && message === lastMessage && isParkNotice(message) && (
             <div className="flex justify-center pt-1">
               <Button

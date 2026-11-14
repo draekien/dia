@@ -41,31 +41,19 @@ describe('foldUsage', () => {
 
     expect(usage).toEqual({
       turns: [
-        { turn: 1, messageIds: ['id:fix the bug'], prompt: 'fix the bug', usage: a },
-        { turn: 2, messageIds: ['id:next'], prompt: 'next', usage: b }
+        { messageIds: ['id:fix the bug'], usage: a },
+        { messageIds: ['id:next'], usage: b }
       ],
       total: { inputTokens: 6, outputTokens: 80, cacheReadTokens: 1_000, cacheWriteTokens: 12 }
     })
-  })
-
-  it('names a turn by the first non-blank line of its first message', () => {
-    const usage = usageOf([sent('\n  fix the bug  \nmore detail', 'second message'), reported(a)])
-
-    expect(usage.turns[0]?.prompt).toBe('fix the bug')
-  })
-
-  it('cuts a prompt to 120 characters', () => {
-    const usage = usageOf([sent('x'.repeat(121)), reported(a)])
-
-    expect(usage.turns[0]?.prompt).toBe('x'.repeat(120))
   })
 
   it('starts a turn at each message sent, as dia-checkpoints numbers turns', () => {
     const usage = usageOf([sent('first'), sent('steered'), reported(a)])
 
     expect(usage.turns).toEqual([
-      { turn: 1, messageIds: ['id:first'], prompt: 'first', usage: none },
-      { turn: 2, messageIds: ['id:steered'], prompt: 'steered', usage: a }
+      { messageIds: ['id:first'], usage: none },
+      { messageIds: ['id:steered'], usage: a }
     ])
   })
 
@@ -74,27 +62,20 @@ describe('foldUsage', () => {
 
     expect(usage.turns).toEqual([
       {
-        turn: 1,
         messageIds: ['id:first'],
-        prompt: 'first',
         usage: { inputTokens: 6, outputTokens: 80, cacheReadTokens: 1_000, cacheWriteTokens: 12 }
       }
     ])
   })
 
-  it('keeps a turn that reported no usage at 0 tokens, so later turns keep their numbers', () => {
+  it('keeps a turn that reported no usage at 0 tokens', () => {
     const usage = usageOf([sent('refused'), sent('next'), reported(b)])
 
-    expect(usage.turns.map(({ turn, usage }) => [turn, usage])).toEqual([
-      [1, none],
-      [2, b]
-    ])
+    expect(usage.turns.map(({ usage }) => usage)).toEqual([none, b])
   })
 
-  it('puts usage reported before any message in an unnamed first turn', () => {
-    expect(usageOf([reported(a)]).turns).toEqual([
-      { turn: 1, messageIds: [], prompt: '', usage: a }
-    ])
+  it('puts usage reported before any message in a turn with no messages', () => {
+    expect(usageOf([reported(a)]).turns).toEqual([{ messageIds: [], usage: a }])
   })
 
   it('has no turns and a zero total for a run with no events', () => {
