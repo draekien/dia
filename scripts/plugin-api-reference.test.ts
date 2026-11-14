@@ -76,6 +76,24 @@ describe('mergeReferencePages', () => {
     expect(merged).not.toContain('.md)')
   })
 
+  it('leaves a link to a markdown file on another site unchanged', () => {
+    const external =
+      '# Attention\n\nSee [ADR-0032](https://github.com/draekien/dia/blob/main/docs/adr/0032.md).'
+
+    const merged = mergeReferencePages('0.0.35', main, [{ name: 'Attention', markdown: external }])
+
+    expect(merged).toContain('(https://github.com/draekien/dia/blob/main/docs/adr/0032.md)')
+  })
+
+  it('points a link to a heading on another page at that heading in the merged document', () => {
+    const linking =
+      '# Attention\n\nSee [AgentEvent](../../README.md#agentevent) and [Pane](PaneEvents.md#panesignal-1).'
+
+    const merged = mergeReferencePages('0.0.35', main, [{ name: 'Attention', markdown: linking }])
+
+    expect(merged).toContain('See [AgentEvent](#agentevent) and [Pane](#panesignal-1).')
+  })
+
   it('orders namespace sections by name whatever order the pages arrive in', () => {
     const pages = [
       { name: 'Zeta', markdown: '# Zeta\n\nlast' },

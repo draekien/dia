@@ -39,7 +39,7 @@ const runTypedoc = Effect.fn('PluginApiReference.typedoc')(function* (outDirecto
     '--tsconfig',
     'tsconfig.node.json',
     '--out',
-    outDirectory
+    `"${outDirectory}"`
   ]
   yield* Effect.logInfo('Running typedoc on the plugin API', { entryPoint: ENTRY_POINT })
   const exitCode = yield* spawner.exitCode(

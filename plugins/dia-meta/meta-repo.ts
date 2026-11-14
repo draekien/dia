@@ -88,7 +88,7 @@ export const ensureMetaFiles = Effect.fn('MetaRepo.ensureFiles')(function* (
   yield* writeIfMissing(path.join(directory, SKILL_PATH), readShipped(SKILL_FILE))
 
   const referenceFile = path.join(directory, REFERENCE_PATH)
-  const shippedReference = yield* readShipped(REFERENCE_FILE)
+  const shippedReference = (yield* readShipped(REFERENCE_FILE))?.replaceAll('\r\n', '\n')
   const currentReference = yield* fs.readFileString(referenceFile).pipe(
     Effect.map((text) => text.replaceAll('\r\n', '\n')),
     Effect.orElseSucceed(() => undefined)
