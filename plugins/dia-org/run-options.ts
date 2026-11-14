@@ -1,10 +1,18 @@
-import { startPermissionMode } from '@dia/plugin'
+import { type StartRunOptions, startPermissionMode } from '@dia/plugin'
 import type { Issue, Objective } from '@dia-plugin/dia-issues/domain'
 import type { AgentBackend } from '@dia-plugin/dia-runs/backend'
 import { Effect, Option, Stream } from 'effect'
 import type { HiredAgent, JobTitle } from './domain'
-import type { IssueStart } from './issue-runs'
 import type { IssueWorkspace } from './issue-workspace'
+
+/**
+ * How a hire's run of an issue starts: `run`, the options it starts with, and
+ * `projectDirectory`, the directory of the issue's project, whose group shows the run's tab.
+ */
+export interface IssueStart {
+  readonly run: StartRunOptions
+  readonly projectDirectory: string
+}
 
 /** The agent backend reads a run's start options need; it never opens a session. */
 export type BackendReads = Pick<AgentBackend, 'models' | 'disabledPermissionModes'>

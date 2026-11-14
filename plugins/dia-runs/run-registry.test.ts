@@ -374,42 +374,38 @@ describe('run registry', () => {
     )
   )
 
-  const requestTab = (placement?: TabPlacement) =>
+  const requestedPlacement = (placement?: TabPlacement) =>
     withRows((rows) =>
       Effect.gen(function* () {
         const { runs } = yield* makeWorld(rows).registry
         yield* runs.start(startOptions)
         const requested = yield* runs.changes.pipe(
           Stream.filter((change: RunChange) => change._tag === 'RunTabRequested'),
-          Stream.take(1),
-          Stream.runCollect,
+          Stream.runHead,
           Effect.forkScoped({ startImmediately: true })
         )
         yield* runs.openInTab(STARTED, placement)
-        const [change] = yield* Fiber.join(requested)
-        assert.isDefined(change)
-        assert.strictEqual(change._tag, 'RunTabRequested')
-        return change._tag === 'RunTabRequested' ? change : undefined
+        const change = Option.getOrThrow(yield* Fiber.join(requested))
+        return change._tag === 'RunTabRequested'
+          ? [change.directory, change.projectDirectory, change.select]
+          : change._tag
       })
     )
 
   it.live("files a run's tab under the run's directory and selects it without a placement", () =>
     Effect.gen(function* () {
-      const change = yield* requestTab()
-
-      assert.deepStrictEqual(
-        [change?.directory, change?.projectDirectory, change?.select],
-        [startOptions.cwd, startOptions.cwd, true]
-      )
+      assert.deepStrictEqual(yield* requestedPlacement(), [
+        startOptions.cwd,
+        startOptions.cwd,
+        true
+      ])
     })
   )
 
   it.live("files a run's tab under the placement's project and keeps its working directory", () =>
     Effect.gen(function* () {
-      const change = yield* requestTab({ projectDirectory: 'C:/dia', select: false })
-
       assert.deepStrictEqual(
-        [change?.directory, change?.projectDirectory, change?.select],
+        yield* requestedPlacement({ projectDirectory: 'C:/dia', select: false }),
         [startOptions.cwd, 'C:/dia', false]
       )
     })

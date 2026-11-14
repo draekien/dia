@@ -32,6 +32,8 @@ export const fakeBackend = (
   disabledPermissionModes: () => Effect.succeed(disabled)
 })
 
+type FakeRuns = Pick<Runs, 'list' | 'isLive' | 'send' | 'close' | 'start' | 'retire' | 'openInTab'>
+
 /** One `enqueue` the fake queue holds until the test calls `start`. */
 export interface Enqueued {
   readonly entry: QueuedRun
@@ -74,41 +76,40 @@ export const fakeRuns = () => {
     addRun(runId, { cwd: 'C:/work', model: 'opus' }, { status, live })
   }
 
-  const runs: Pick<Runs, 'list' | 'isLive' | 'send' | 'close' | 'start' | 'retire' | 'openInTab'> =
-    {
-      list: Effect.sync(() => [...rows.values()]),
-      isLive: (runId) => Effect.sync(() => rows.get(runId)?.live === true),
-      send: (runId, text) =>
-        Effect.sync(() => {
-          sent.push({ runId, text })
-        }),
-      close: (runId) =>
-        Effect.sync(() => {
-          closed.push(runId)
-          const row = rows.get(runId)
-          if (row !== undefined) rows.set(runId, { ...row, live: false, status: 'idle' })
-        }),
-      start: (options) =>
-        Effect.sync(() => {
-          next += 1
-          const runId = `run-${next}`
-          addRun(runId, options)
-          started.push({ ...options, runId })
-          return runId
-        }),
-      retire: (runId, as) =>
-        Effect.sync(() => {
-          retired.push(runId)
-          const row = rows.get(runId)
-          if (row !== undefined && as === 'archived') {
-            rows.set(runId, { ...row, live: false, status: 'archived' })
-          }
-        }),
-      openInTab: (runId, placement) =>
-        Effect.sync(() => {
-          tabs.push({ runId, placement })
-        })
-    }
+  const runs: FakeRuns = {
+    list: Effect.sync(() => [...rows.values()]),
+    isLive: (runId) => Effect.sync(() => rows.get(runId)?.live === true),
+    send: (runId, text) =>
+      Effect.sync(() => {
+        sent.push({ runId, text })
+      }),
+    close: (runId) =>
+      Effect.sync(() => {
+        closed.push(runId)
+        const row = rows.get(runId)
+        if (row !== undefined) rows.set(runId, { ...row, live: false, status: 'idle' })
+      }),
+    start: (options) =>
+      Effect.sync(() => {
+        next += 1
+        const runId = `run-${next}`
+        addRun(runId, options)
+        started.push({ ...options, runId })
+        return runId
+      }),
+    retire: (runId, as) =>
+      Effect.sync(() => {
+        retired.push(runId)
+        const row = rows.get(runId)
+        if (row !== undefined && as === 'archived') {
+          rows.set(runId, { ...row, live: false, status: 'archived' })
+        }
+      }),
+    openInTab: (runId, placement) =>
+      Effect.sync(() => {
+        tabs.push({ runId, placement })
+      })
+  }
 
   const queue: Pick<RunQueue, 'enqueue'> = {
     enqueue: (entry) =>

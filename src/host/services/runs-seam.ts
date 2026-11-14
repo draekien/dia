@@ -138,8 +138,7 @@ export type TabPlacement = typeof TabPlacement.Type
 export const RunTabRequested = Schema.TaggedStruct('RunTabRequested', {
   runId: Schema.String,
   directory: Schema.String,
-  projectDirectory: Schema.String,
-  select: Schema.Boolean,
+  ...TabPlacement.fields,
   model: Schema.String,
   thinkingLevel: ThinkingLevel,
   permissionMode: PermissionMode,

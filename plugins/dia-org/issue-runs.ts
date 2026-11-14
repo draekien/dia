@@ -1,4 +1,4 @@
-import { RESUME_TEXT, type RunInfo, type Runs, type StartRunOptions } from '@dia/plugin'
+import { RESUME_TEXT, type RunInfo, type Runs } from '@dia/plugin'
 import type { Issue, IssueId, Objective, ObjectivePriority } from '@dia-plugin/dia-issues/domain'
 import {
   type Issues,
@@ -11,19 +11,11 @@ import { Effect, Option, Queue, Ref, type Scope, Stream } from 'effect'
 import { SqlClient } from 'effect/sql'
 import type { HiredAgent, HireId, JobTitle } from './domain'
 import type { IssueWorkspace } from './issue-workspace'
+import type { IssueStart } from './run-options'
 import type { Org } from './service'
 
 /** The label every run of an org issue carries in its dia tool scope. */
 export const ISSUE_RUN_LABEL = 'dia-org-issue'
-
-/**
- * How a hire's run of an issue starts: `run`, the options it starts with, and
- * `projectDirectory`, the directory of the issue's project, whose group shows the run's tab.
- */
-export interface IssueStart {
-  readonly run: StartRunOptions
-  readonly projectDirectory: string
-}
 
 /** How a hire's run of an issue starts, or none while it cannot start yet. */
 export type StartOptionsOf = (
