@@ -1,6 +1,5 @@
 import type { HostPluginContext, PluginSetup, Runs } from '@dia/plugin'
-import { isRunScope, RunsKey } from '@dia/plugin'
-import { ToolsKey } from '@dia-plugin/dia-tools/tools'
+import { RunsKey } from '@dia/plugin'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { Effect, Option, Ref } from 'effect'
 import {
@@ -13,7 +12,6 @@ import {
   WriteTerminal
 } from './calls'
 import { makeTerminals } from './pty-terminals'
-import { makeTerminalTools } from './terminal-tools'
 import { TerminalsKey } from './terminals'
 
 const cwdOf = (provided: Ref.Ref<Option.Option<Runs>>) => (runId: string) =>
@@ -32,16 +30,6 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     )
     const terminals = yield* makeTerminals(cwdOf(runs))
     yield* ctx.provide(TerminalsKey, terminals)
-    yield* ctx.whenProvided([ToolsKey], ({ tools }) =>
-      Effect.gen(function* () {
-        yield* Effect.forEach(
-          makeTerminalTools(terminals),
-          (tool) => tools.register(tool, { when: isRunScope }),
-          { discard: true }
-        )
-        yield* Effect.logInfo('Terminal tools registered', { plugin: ctx.name })
-      })
-    )
     yield* ctx.serve(FollowTerminals, ({ runId }) => terminals.list(runId))
     yield* ctx.serve(OpenTerminal, ({ runId }) => terminals.open(runId))
     yield* ctx.serve(FollowTerminalOutput, ({ terminalId }) => terminals.output(terminalId))
