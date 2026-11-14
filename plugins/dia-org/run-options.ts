@@ -1,8 +1,9 @@
-import { type StartRunOptions, startPermissionMode } from '@dia/plugin'
+import { startPermissionMode } from '@dia/plugin'
 import type { Issue, Objective } from '@dia-plugin/dia-issues/domain'
 import type { AgentBackend } from '@dia-plugin/dia-runs/backend'
 import { Effect, Option, Stream } from 'effect'
 import type { HiredAgent, JobTitle } from './domain'
+import type { IssueStart } from './issue-runs'
 import type { IssueWorkspace } from './issue-workspace'
 
 /** The agent backend reads a run's start options need; it never opens a session. */
@@ -63,7 +64,7 @@ export const runSettings = Effect.fn('Org.runSettings')(function* (
 })
 
 /**
- * The {@link StartRunOptions} of `hire`'s run of `issue`, or none while its workspace waits (the
+ * The {@link IssueStart} of `hire`'s run of `issue`, or none while its workspace waits (the
  * project is not registered, or the worktree cannot be created yet). Opens the issue's worktree
  * when its project runs issues in worktrees.
  */
@@ -77,7 +78,7 @@ export const issueStartOptions =
           issueId: issue.id,
           reason: cwd.reason
         })
-        return Option.none<StartRunOptions>()
+        return Option.none<IssueStart>()
       }
       const settings = yield* runSettings(
         backend,
@@ -85,9 +86,8 @@ export const issueStartOptions =
         cwd.path,
         hire.bypassOverride ?? jobTitle.bypassOptIn
       )
-      return Option.some<StartRunOptions>({
-        cwd: cwd.path,
-        ...settings,
-        text: issuePrompt(issue, objective, jobTitle)
+      return Option.some<IssueStart>({
+        run: { cwd: cwd.path, ...settings, text: issuePrompt(issue, objective, jobTitle) },
+        projectDirectory: cwd.projectDirectory
       })
     })

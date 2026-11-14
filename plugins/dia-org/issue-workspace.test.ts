@@ -144,7 +144,7 @@ describe('IssueWorkspace.open', () => {
       assert.deepStrictEqual(
         [cwd, fake.created, yield* rows()],
         [
-          { _tag: 'IssueDirectory', path: 'C:/trees/tree-1' },
+          { _tag: 'IssueDirectory', path: 'C:/trees/tree-1', projectDirectory: DIRECTORY },
           [{ repo: DIRECTORY, label: 'Issue · Fix login', hint: 'Fix login 00000000' }],
           [{ issue_id: issue.id, path: 'C:/trees/tree-1', released: 0 }]
         ]

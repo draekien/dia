@@ -4,7 +4,8 @@ import {
   type RunInfo,
   type RunStatus,
   type Runs,
-  type StartRunOptions
+  type StartRunOptions,
+  type TabPlacement
 } from '@dia/plugin'
 import type { QueuedRun, RunQueue } from '@dia-plugin/dia-run-queue/queue'
 import { DateTime, Deferred, Effect, Option, Stream } from 'effect'
@@ -40,14 +41,15 @@ export interface Enqueued {
 
 /**
  * A run service and run queue for tests. `rows` holds the runs `list` reports; `start` and the
- * queue's starts add a live `running` row. `sent`, `closed`, `retired` and `enqueued` record the
- * calls in order.
+ * queue's starts add a live `running` row. `sent`, `closed`, `retired`, `tabs` and `enqueued`
+ * record the calls in order.
  */
 export const fakeRuns = () => {
   const rows = new Map<string, RunInfo>()
   const sent: Array<{ readonly runId: string; readonly text: string }> = []
   const closed: Array<string> = []
   const retired: Array<string> = []
+  const tabs: Array<{ readonly runId: string; readonly placement: TabPlacement | undefined }> = []
   const started: Array<StartRunOptions & { readonly runId: string }> = []
   const enqueued: Array<Enqueued> = []
   let next = 0
@@ -72,36 +74,41 @@ export const fakeRuns = () => {
     addRun(runId, { cwd: 'C:/work', model: 'opus' }, { status, live })
   }
 
-  const runs: Pick<Runs, 'list' | 'isLive' | 'send' | 'close' | 'start' | 'retire'> = {
-    list: Effect.sync(() => [...rows.values()]),
-    isLive: (runId) => Effect.sync(() => rows.get(runId)?.live === true),
-    send: (runId, text) =>
-      Effect.sync(() => {
-        sent.push({ runId, text })
-      }),
-    close: (runId) =>
-      Effect.sync(() => {
-        closed.push(runId)
-        const row = rows.get(runId)
-        if (row !== undefined) rows.set(runId, { ...row, live: false, status: 'idle' })
-      }),
-    start: (options) =>
-      Effect.sync(() => {
-        next += 1
-        const runId = `run-${next}`
-        addRun(runId, options)
-        started.push({ ...options, runId })
-        return runId
-      }),
-    retire: (runId, as) =>
-      Effect.sync(() => {
-        retired.push(runId)
-        const row = rows.get(runId)
-        if (row !== undefined && as === 'archived') {
-          rows.set(runId, { ...row, live: false, status: 'archived' })
-        }
-      })
-  }
+  const runs: Pick<Runs, 'list' | 'isLive' | 'send' | 'close' | 'start' | 'retire' | 'openInTab'> =
+    {
+      list: Effect.sync(() => [...rows.values()]),
+      isLive: (runId) => Effect.sync(() => rows.get(runId)?.live === true),
+      send: (runId, text) =>
+        Effect.sync(() => {
+          sent.push({ runId, text })
+        }),
+      close: (runId) =>
+        Effect.sync(() => {
+          closed.push(runId)
+          const row = rows.get(runId)
+          if (row !== undefined) rows.set(runId, { ...row, live: false, status: 'idle' })
+        }),
+      start: (options) =>
+        Effect.sync(() => {
+          next += 1
+          const runId = `run-${next}`
+          addRun(runId, options)
+          started.push({ ...options, runId })
+          return runId
+        }),
+      retire: (runId, as) =>
+        Effect.sync(() => {
+          retired.push(runId)
+          const row = rows.get(runId)
+          if (row !== undefined && as === 'archived') {
+            rows.set(runId, { ...row, live: false, status: 'archived' })
+          }
+        }),
+      openInTab: (runId, placement) =>
+        Effect.sync(() => {
+          tabs.push({ runId, placement })
+        })
+    }
 
   const queue: Pick<RunQueue, 'enqueue'> = {
     enqueue: (entry) =>
@@ -118,5 +125,5 @@ export const fakeRuns = () => {
       })
   }
 
-  return { runs, queue, rows, setRun, sent, closed, retired, started, enqueued }
+  return { runs, queue, rows, setRun, sent, closed, retired, tabs, started, enqueued }
 }

@@ -41,6 +41,8 @@ D10. **`objective_attach` sends to the live runs of the objective's started issu
 
 D11. **Data folder.** Manifest `dataMigrations: [{ id: '1_dia_prefix', from: 'plugins/org' }]`. `ctx.onPathsMoved` rewrites `issue_worktrees.path` with `relocatePath` (the worktrees moved with `dia-worktrees`).
 
+D12. **A new issue run is shown in a tab of the objective's project, without selecting it.** After `markStarted` succeeds for a run `queue.enqueue` returned, the pass calls `runs.openInTab(runId, { projectDirectory, select: false })`, where `projectDirectory` is the directory of the objective's project that `IssueWorkspace.open` returned with the run's `cwd`. The tab works in the issue's worktree and is listed under that project in the agent overview. A run reused per D1 is not opened again. Alternative: list tab-less runs in the agent overview (rejected by the user: it needs a run list feed and a run-to-project mapping, and a click still opens a tab). Consequence: the tab stays after the issue leaves the started statuses, until the user archives it; archiving it archives the run, so a still-startable issue gets a new run per D1.
+
 ## Interface
 
 ### Kept (moved with `git mv`, imports renamed to `dia-*`)
