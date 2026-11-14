@@ -3,6 +3,7 @@ import { tabOf } from '@shared/domain/workspace'
 import { Result } from 'effect'
 import { RulerIcon } from 'lucide-react'
 import { useView, useWorkspace } from '../plugin-api'
+import { BottomPanelToggle } from './bottom-panel'
 import { RightPanelToggle } from './right-panel'
 import { RailToggle } from './session-rail'
 import { TranscriptWidthToggle } from './transcript-width-toggle'
@@ -73,8 +74,8 @@ function WorktreeChip({ worktree }: { readonly worktree: { path: string; branch:
  * transcript width control for a tab, `project › label` with the same control for an attached
  * session, `project › New agent` for the New agent form, nothing for
  * the other views; the layout plugin draws a page's label) followed, for a tab, by the session rail
- * toggle and the right panel toggle, then {@link WindowStatus} at the right end. A plugin that
- * fills the slot owns the status items.
+ * toggle, the bottom panel toggle and the right panel toggle, then {@link WindowStatus} at the
+ * right end. A plugin that fills the slot owns the status items.
  */
 export function TabHeader() {
   const view = useView()
@@ -98,6 +99,7 @@ export function TabHeader() {
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {showsChat && <TranscriptWidthButton />}
         {showsChat && <RailToggle />}
+        {showsChat && <BottomPanelToggle paneId={tab.tab.config.paneId} />}
         {showsChat && <RightPanelToggle paneId={tab.tab.config.paneId} />}
         <WindowStatus />
       </div>

@@ -1,6 +1,7 @@
 import {
   actions,
   awaitsUser,
+  BottomPanel,
   Bubble,
   BubbleContent,
   Button,
@@ -70,7 +71,7 @@ import {
   useRailLayout,
   useTranscriptWidth
 } from '@dia/renderer-plugin'
-import { PanelsSlot, RailCardsSlot } from '@dia-plugin/dia-chat/slots'
+import { BottomPanelsSlot, PanelsSlot, RailCardsSlot } from '@dia-plugin/dia-chat/slots'
 import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react'
 import type { AgentSummary } from '@shared/domain/agent-summary'
 import { PathAttachment, type ProjectEntry } from '@shared/domain/attachment'
@@ -661,6 +662,10 @@ function ChatSessionRail({ paneId }: { readonly paneId: string }) {
 
 function ChatRightPanel({ paneId }: { readonly paneId: string }) {
   return <RightPanel paneId={paneId} panels={useList(PanelsSlot)} />
+}
+
+function ChatBottomPanel({ paneId }: { readonly paneId: string }) {
+  return <BottomPanel paneId={paneId} panels={useList(BottomPanelsSlot)} />
 }
 
 function PaneChat({
@@ -1371,6 +1376,7 @@ function Pane({
           branch={branch}
           fixedSettings={fixedSettings}
         />
+        <ChatBottomPanel paneId={paneId} />
       </div>
       <ChatRightPanel paneId={paneId} />
     </div>

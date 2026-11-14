@@ -276,7 +276,7 @@ A page the `org` plugin adds to the `PagesSlot` list (Agent Overview › Pages).
 
 ### Tabs
 - **One visible:** exactly one agent's tab fills the content area. There are no split panes.
-- **Selecting:** a tab is selected from its sidebar row. The content area's header row holds the sidebar toggle, a breadcrumb `project › agent`, the worktree branch when there is one, the transcript width control, the session rail toggle, the right panel toggle (only while a plugin has added a panel), and the window status (plugin loading, update, `Ctrl K` hint). The header row is a window drag area; its content stays clear of the window controls. A divider separates it from the transcript.
+- **Selecting:** a tab is selected from its sidebar row. The content area's header row holds the sidebar toggle, a breadcrumb `project › agent`, the worktree branch when there is one, the transcript width control, the session rail toggle, the bottom panel toggle and the right panel toggle (each only while a plugin has added a panel to it), and the window status (plugin loading, update, `Ctrl K` hint). The header row is a window drag area; its content stays clear of the window controls. A divider separates it from the transcript.
 - **Transcript width:** the transcript and composer sit in one centred column, capped at one of three widths (Narrow, Default, Wide) chosen app-wide from the content header or Settings › General; a narrower content area fills the column.
 - **Background tabs:** tabs that are not visible keep running and show their status in the sidebar and the collapsed rail only.
 - **Messages:** the user's messages sit in a tinted bubble on the right. The agent's text renders as plain Markdown on the left, with no bubble.
@@ -317,6 +317,15 @@ A page the `org` plugin adds to the `PagesSlot` list (Agent Overview › Pages).
 - **Toggle:** the header's `PanelRight` button, `Ctrl Alt B` (`⌘ ⌥ B` on macOS), pressed while the region is open. It is hidden while no plugin has added a panel.
 - **With the session rail:** the rail cards stay over the transcript area. Whether they fit is measured on the transcript area that remains beside the region.
 - **Plugins:** a plugin adds a panel to the `chat` plugin's `PanelsSlot` list (ADR-0061). Every panel applies to every chat tab; panels are ordered by their `order`, then by plugin name and id. An archived tab shows no region.
+
+### Bottom panel
+- **Shape:** a region under the transcript and composer of the session pane, not over them. It spans the transcript area only; the right panel beside it keeps its full height. A 1px Hairline top border separates it from the composer; it has the pane's background and no shadow, per the Flat Frame Rule. It is closed by default.
+- **Header:** a 40px row over a hairline divider. With one panel it shows the panel's title in caption size; with two or more it shows the same borderless `Select` of the panels' titles as the right panel.
+- **Body:** the panel a plugin renders for the tab. The body does not scroll as a whole; the panel sizes itself to the region.
+- **Height:** 280px until the user drags the top edge; at least 160px, and never tall enough to leave the transcript and composer under 240px. The edge is a focusable separator: `ArrowUp` and `ArrowDown` step 16px, `Home` or a double-click returns to 280px.
+- **Per tab:** each tab keeps its own open state, chosen panel and height while dia runs; after a restart every tab is closed.
+- **Toggle:** the header's `PanelBottom` button, `Ctrl J` (`⌘ J` on macOS), pressed while the region is open. The shortcut is handled before the focused element receives it, so it works while a terminal has focus. It is hidden while no plugin has added a bottom panel.
+- **Plugins:** a plugin adds a panel to the `chat` plugin's `BottomPanelsSlot` list (ADR-0061). Every panel applies to every chat tab; panels are ordered by their `order`, then by plugin name and id. An archived tab shows no region.
 
 ### Inputs / Fields
 - **Style:** a 1px Hairline border on a transparent background (`bg-input/30` in the dark theme), 8px corners, 36px tall, `shadow-xs`, muted placeholder.

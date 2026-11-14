@@ -31,6 +31,7 @@ import {
 } from './lib/workspace-atoms'
 
 export { PluginCallInvalid, PluginNotServing } from '@shared/plugin/messages'
+export { BottomPanel } from './components/bottom-panel'
 export { PluginBoundary, type PluginFallback } from './components/plugin-boundary'
 export { PluginFailed } from './components/plugin-failed'
 export { RightPanel } from './components/right-panel'
