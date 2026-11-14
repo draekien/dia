@@ -9,6 +9,7 @@ import {
   type RunEvents,
   SessionId,
   SessionStarted,
+  type TabPlacement,
   type ToolScope,
   UserMessagesSent
 } from '@dia/plugin'
@@ -371,6 +372,47 @@ describe('run registry', () => {
         assert.isTrue(Option.getOrThrow(yield* rows.get(STARTED)).hasTab)
       })
     )
+  )
+
+  const requestTab = (placement?: TabPlacement) =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const { runs } = yield* makeWorld(rows).registry
+        yield* runs.start(startOptions)
+        const requested = yield* runs.changes.pipe(
+          Stream.filter((change: RunChange) => change._tag === 'RunTabRequested'),
+          Stream.take(1),
+          Stream.runCollect,
+          Effect.forkScoped({ startImmediately: true })
+        )
+        yield* runs.openInTab(STARTED, placement)
+        const [change] = yield* Fiber.join(requested)
+        assert.isDefined(change)
+        assert.strictEqual(change._tag, 'RunTabRequested')
+        return change._tag === 'RunTabRequested' ? change : undefined
+      })
+    )
+
+  it.live("files a run's tab under the run's directory and selects it without a placement", () =>
+    Effect.gen(function* () {
+      const change = yield* requestTab()
+
+      assert.deepStrictEqual(
+        [change?.directory, change?.projectDirectory, change?.select],
+        [startOptions.cwd, startOptions.cwd, true]
+      )
+    })
+  )
+
+  it.live("files a run's tab under the placement's project and keeps its working directory", () =>
+    Effect.gen(function* () {
+      const change = yield* requestTab({ projectDirectory: 'C:/dia', select: false })
+
+      assert.deepStrictEqual(
+        [change?.directory, change?.projectDirectory, change?.select],
+        [startOptions.cwd, 'C:/dia', false]
+      )
+    })
   )
 
   it.live('lists the permission request of a run with no tab until it is answered', () =>

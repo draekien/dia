@@ -127,6 +127,7 @@ export {
   RunsNotLoadedError,
   RunTabRequested,
   type StartRunOptions,
+  TabPlacement,
   type WorktreeRequest
 } from './services/runs-seam'
 export {

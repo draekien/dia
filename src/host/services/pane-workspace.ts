@@ -882,13 +882,13 @@ export const PaneWorkspaceLive = Layer.effect(
     ) {
       const workspace = yield* SubscriptionRef.get(workspaceRef)
       const registered = workspace.projects.find(
-        (entry) => entry.project.directory === change.directory
+        (entry) => entry.project.directory === change.projectDirectory
       )?.project
       const project =
         registered ??
         (yield* probeProject(
           ProjectId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie)),
-          change.directory
+          change.projectDirectory
         ).pipe(
           Effect.provideService(FileSystem.FileSystem, fs),
           Effect.provideService(Path.Path, path)
@@ -907,8 +907,14 @@ export const PaneWorkspaceLive = Layer.effect(
         archived: false
       }
       yield* importTab(project, tab)
-      yield* mutate('showRunTab', (current) => WorkspaceOps.selectTab(current, change.runId))
-      yield* Effect.logInfo('Showed a run in a tab', { runId: change.runId })
+      if (change.select) {
+        yield* mutate('showRunTab', (current) => WorkspaceOps.selectTab(current, change.runId))
+      }
+      yield* Effect.logInfo('Showed a run in a tab', {
+        runId: change.runId,
+        projectId: project.projectId,
+        selected: change.select
+      })
     })
 
     const followRunChange = (change: RunChange): Effect.Effect<void> => {

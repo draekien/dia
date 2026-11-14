@@ -21,6 +21,7 @@ import {
   type SessionAdditions,
   type SessionId,
   type StartRunOptions,
+  type TabPlacement,
   type ThinkingLevel,
   type WorktreeCreateError,
   type WorktreeInfo,
@@ -507,7 +508,10 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
     return runId
   })
 
-  const openInTab = Effect.fn('RunRegistry.openInTab')(function* (runId: string) {
+  const openInTab = Effect.fn('RunRegistry.openInTab')(function* (
+    runId: string,
+    placement?: TabPlacement
+  ) {
     const row = yield* rows.get(runId)
     if (Option.isNone(row)) return yield* new RunNotFoundError({ runId })
     yield* rows.setHasTab(runId)
@@ -516,6 +520,8 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
       RunTabRequested.make({
         runId,
         directory: row.value.spec.sourceCwd,
+        projectDirectory: placement?.projectDirectory ?? row.value.spec.sourceCwd,
+        select: placement?.select ?? true,
         model: row.value.spec.model,
         thinkingLevel: row.value.spec.thinkingLevel,
         permissionMode: row.value.spec.permissionMode,

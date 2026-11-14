@@ -1912,6 +1912,8 @@ describe('PaneWorkspace run tab requests', () => {
             RunTabRequested.make({
               runId: PANE_NEW,
               directory: '/other',
+              projectDirectory: '/other',
+              select: true,
               model: 'm',
               thinkingLevel: 'adaptive',
               permissionMode: 'default',
@@ -1929,5 +1931,40 @@ describe('PaneWorkspace run tab requests', () => {
       assert.strictEqual(workspace.projects[1].tabs[1].sessionId, 's-new')
       assert.strictEqual(workspace.visibleTab, PANE_NEW)
     })
+  )
+
+  it.effect(
+    'adds a tab working in a worktree to the project at projectDirectory and keeps the visible tab when select is false',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({ persisted: twoProjects() })
+        const worktree = '/trees/issue-1'
+
+        const workspace = yield* run(
+          harness,
+          Effect.gen(function* () {
+            yield* harness.emit(
+              RunTabRequested.make({
+                runId: PANE_NEW,
+                directory: worktree,
+                projectDirectory: '/repo',
+                select: false,
+                model: 'm',
+                thinkingLevel: 'adaptive',
+                permissionMode: 'default',
+                sessionId: null
+              })
+            )
+            return yield* current
+          })
+        )
+
+        assert.deepStrictEqual(
+          workspace.projects.map((entry) => entry.tabs.map((t) => t.config.paneId)),
+          [[PANE_A, PANE_NEW], [PANE_B]]
+        )
+        assert.strictEqual(workspace.projects[0].tabs[1].config.cwd, worktree)
+        assert.strictEqual(workspace.visibleTab, PANE_A)
+      })
   )
 })
