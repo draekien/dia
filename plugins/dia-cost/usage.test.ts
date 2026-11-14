@@ -1,13 +1,13 @@
 import { PaneEvents, type StoredEvent, type TokenUsage } from '@dia/plugin'
 import { describe, expect, it } from 'vitest'
-import { emptyRunUsage, foldUsage } from './usage'
+import { emptyRunUsage, foldUsage, tokenTotal, usageOfMessages } from './usage'
 
 const RUN = 'aaaaaaaa-0000-4000-8000-000000000001'
 
 const sent = (...texts: ReadonlyArray<string>) =>
   PaneEvents.PaneUserMessagesSent.make({
     paneId: RUN,
-    messages: texts.map((text, index) => ({ id: `m${index}`, text }))
+    messages: texts.map((text) => ({ id: `id:${text}`, text }))
   })
 
 const reported = (usage: TokenUsage) =>
@@ -41,8 +41,8 @@ describe('foldUsage', () => {
 
     expect(usage).toEqual({
       turns: [
-        { turn: 1, prompt: 'fix the bug', usage: a },
-        { turn: 2, prompt: 'next', usage: b }
+        { turn: 1, messageIds: ['id:fix the bug'], prompt: 'fix the bug', usage: a },
+        { turn: 2, messageIds: ['id:next'], prompt: 'next', usage: b }
       ],
       total: { inputTokens: 6, outputTokens: 80, cacheReadTokens: 1_000, cacheWriteTokens: 12 }
     })
@@ -64,8 +64,8 @@ describe('foldUsage', () => {
     const usage = usageOf([sent('first'), sent('steered'), reported(a)])
 
     expect(usage.turns).toEqual([
-      { turn: 1, prompt: 'first', usage: none },
-      { turn: 2, prompt: 'steered', usage: a }
+      { turn: 1, messageIds: ['id:first'], prompt: 'first', usage: none },
+      { turn: 2, messageIds: ['id:steered'], prompt: 'steered', usage: a }
     ])
   })
 
@@ -75,6 +75,7 @@ describe('foldUsage', () => {
     expect(usage.turns).toEqual([
       {
         turn: 1,
+        messageIds: ['id:first'],
         prompt: 'first',
         usage: { inputTokens: 6, outputTokens: 80, cacheReadTokens: 1_000, cacheWriteTokens: 12 }
       }
@@ -91,10 +92,64 @@ describe('foldUsage', () => {
   })
 
   it('puts usage reported before any message in an unnamed first turn', () => {
-    expect(usageOf([reported(a)]).turns).toEqual([{ turn: 1, prompt: '', usage: a }])
+    expect(usageOf([reported(a)]).turns).toEqual([
+      { turn: 1, messageIds: [], prompt: '', usage: a }
+    ])
   })
 
   it('has no turns and a zero total for a run with no events', () => {
     expect(usageOf([])).toEqual({ turns: [], total: none })
+  })
+})
+
+describe('foldUsage: message ids', () => {
+  it('records every message of a send as starting its turn', () => {
+    const usage = usageOf([sent('first', 'second'), reported(a)])
+
+    expect(usage.turns[0]?.messageIds).toEqual(['id:first', 'id:second'])
+  })
+})
+
+describe('usageOfMessages', () => {
+  it('gives the tokens of the turn a message started', () => {
+    const usage = usageOf([sent('fix the bug'), reported(a), sent('next'), reported(b)])
+
+    expect(usageOfMessages(usage, ['id:next'])).toEqual(b)
+  })
+
+  it('matches a turn by any message of its send, not only the first', () => {
+    const usage = usageOf([sent('first', 'second'), reported(a)])
+
+    expect(usageOfMessages(usage, ['id:second'])).toEqual(a)
+  })
+
+  it('sums the turns of consecutive messages that each started a turn', () => {
+    const usage = usageOf([sent('fix the bug'), reported(a), sent('next'), reported(b)])
+
+    expect(usageOfMessages(usage, ['id:fix the bug', 'id:next'])).toEqual({
+      inputTokens: 6,
+      outputTokens: 80,
+      cacheReadTokens: 1_000,
+      cacheWriteTokens: 12
+    })
+  })
+
+  it('gives 0 tokens for a message that started no turn of the run', () => {
+    const usage = usageOf([sent('fix the bug'), reported(a)])
+
+    expect(usageOfMessages(usage, ['id:from another run'])).toEqual(none)
+  })
+})
+
+describe('tokenTotal', () => {
+  it('adds input, output, cache read and cache write', () => {
+    expect(
+      tokenTotal({
+        inputTokens: 4,
+        outputTokens: 759,
+        cacheReadTokens: 92_484,
+        cacheWriteTokens: 1_613
+      })
+    ).toBe(94_860)
   })
 })

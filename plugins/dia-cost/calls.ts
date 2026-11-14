@@ -3,12 +3,14 @@ import { Schema } from 'effect'
 import { Rpc } from 'effect/rpc'
 
 /**
- * Turn `turn` of a run, counting from 1 at each message sent, the first line of its prompt (`''`
- * for usage reported before any message), and the tokens its main agent loop has used so far:
- * 0 until the turn ends.
+ * Turn `turn` of a run, counting from 1 at each message sent, the ids of the messages sent to
+ * start it (as the chat transcript's user messages carry them; none for usage reported before any
+ * message), the first line of its prompt (`''` when none), and the tokens its main agent loop has
+ * used so far: 0 until the turn ends.
  */
 export const TurnUsage = Schema.Struct({
   turn: Schema.Int,
+  messageIds: Schema.Array(Schema.String),
   prompt: Schema.String,
   usage: TokenUsage
 })

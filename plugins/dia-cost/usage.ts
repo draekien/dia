@@ -50,13 +50,14 @@ export const foldUsage = (usage: RunUsage, event: StoredEvent): RunUsage => {
           ...usage.turns,
           {
             turn: usage.turns.length + 1,
+            messageIds: event.messages.map((message) => message.id),
             prompt: promptOf(event.messages[0]?.text ?? ''),
             usage: noTokens
           }
         ]
       }
     case 'PaneTurnUsageReported': {
-      const latest = usage.turns.at(-1) ?? { turn: 1, prompt: '', usage: noTokens }
+      const latest = usage.turns.at(-1) ?? { turn: 1, messageIds: [], prompt: '', usage: noTokens }
       return {
         turns: [...usage.turns.slice(0, -1), { ...latest, usage: add(latest.usage, event.usage) }],
         total: add(usage.total, event.usage)
@@ -66,3 +67,16 @@ export const foldUsage = (usage: RunUsage, event: StoredEvent): RunUsage => {
       return usage
   }
 }
+
+/** The sum of the four counts of `usage`: every token the main agent loop read or wrote. */
+export const tokenTotal = (usage: TokenUsage): number =>
+  usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheWriteTokens
+
+/**
+ * The tokens of the turns of `usage` started by any of the messages `messageIds`, summed; 0 tokens
+ * when no turn matches. Pass the ids of the user messages that open one stretch of the transcript.
+ */
+export const usageOfMessages = (usage: RunUsage, messageIds: ReadonlyArray<string>): TokenUsage =>
+  usage.turns
+    .filter((turn) => turn.messageIds.some((id) => messageIds.includes(id)))
+    .reduce((sum, turn) => add(sum, turn.usage), noTokens)

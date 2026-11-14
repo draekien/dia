@@ -1,8 +1,9 @@
 import type { PaneId, PluginServices, PluginSetup } from '@dia/plugin'
 import { addEntry } from '@dia/renderer-plugin'
-import { RailCardsSlot } from '@dia-plugin/dia-chat/slots'
+import { RailCardsSlot, TurnFootersSlot } from '@dia-plugin/dia-chat/slots'
 import { Effect } from 'effect'
 import { createElement } from 'react'
+import { TurnUsageLine } from './turn-usage-line'
 import { makeUsageAtoms, UsageCard } from './usage-card'
 
 const setup: PluginSetup<PluginServices> = (ctx) =>
@@ -15,7 +16,18 @@ const setup: PluginSetup<PluginServices> = (ctx) =>
       component: ({ paneId }: { readonly paneId: PaneId }) =>
         createElement(UsageCard, { runId: paneId, usageAtoms })
     })
-    yield* Effect.logInfo('Usage card added', { plugin: ctx.name })
+    yield* addEntry(ctx, TurnFootersSlot, {
+      id: 'turn-usage',
+      order: 10,
+      component: ({
+        paneId,
+        messageIds
+      }: {
+        readonly paneId: PaneId
+        readonly messageIds: ReadonlyArray<string>
+      }) => createElement(TurnUsageLine, { runId: paneId, messageIds, usageAtoms })
+    })
+    yield* Effect.logInfo('Usage card and turn usage line added', { plugin: ctx.name })
   })
 
 export default setup
