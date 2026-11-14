@@ -29,6 +29,14 @@ export interface Panel {
  */
 export const PanelsSlot = ListSlot.make<Panel>('chat.panels')
 
+/**
+ * The bottom panel region's panels, declared by the chat plugin. The region sits under the
+ * transcript and composer, draws the header with `title`, and `component` draws the body for the
+ * tab's pane. Every panel applies to every chat tab. Add a panel with
+ * `addEntry(ctx, BottomPanelsSlot, panel)`.
+ */
+export const BottomPanelsSlot = ListSlot.make<Panel>('chat.bottomPanels')
+
 /** Props of the request card: `request` is drawn as the pane draws it; `onAnswer` is called once with the user's answer. */
 export interface RequestCardProps {
   readonly request: Attention.UserInputRequest

@@ -122,20 +122,24 @@ function ResizeHandle({
   )
 }
 
-function PanelSwitcher({
-  paneId,
+/**
+ * The borderless `Select` of `panels` titles a panel region's header shows when it has two or more
+ * panels, with `shown` selected. Choosing a panel calls `onSelect` with its {@link rightPanelKey}.
+ */
+export function PanelSwitcher({
   panels,
-  shown
+  shown,
+  onSelect
 }: {
-  readonly paneId: PaneId
   readonly panels: ReadonlyArray<RightPanelView>
   readonly shown: RightPanelView
+  readonly onSelect: (key: string) => void
 }): React.JSX.Element {
   return (
     <Select
       value={rightPanelKey(shown)}
       onValueChange={(next) => {
-        if (next !== null) selectRightPanel(paneId, next)
+        if (next !== null) onSelect(next)
       }}
     >
       <SelectTrigger
@@ -188,7 +192,11 @@ export function RightPanel({
       <ResizeHandle paneId={paneId} width={state.width} />
       <header className="flex h-10 shrink-0 items-center border-b border-border px-3">
         {panels.length > 1 ? (
-          <PanelSwitcher paneId={paneId} panels={panels} shown={shown} />
+          <PanelSwitcher
+            panels={panels}
+            shown={shown}
+            onSelect={(key) => selectRightPanel(paneId, key)}
+          />
         ) : (
           <h2 className="truncate text-xs font-medium text-ink">{shown.title}</h2>
         )}
