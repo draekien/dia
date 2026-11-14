@@ -30,6 +30,7 @@ import {
   type PaneMessage,
   PERMISSION_MODE_OPTIONS,
   PermissionModeItems,
+  PluginBoundary,
   paneChatAtom,
   paneEditQueuedAtom,
   paneInterruptAtom,
@@ -71,7 +72,13 @@ import {
   useRailLayout,
   useTranscriptWidth
 } from '@dia/renderer-plugin'
-import { BottomPanelsSlot, PanelsSlot, RailCardsSlot } from '@dia-plugin/dia-chat/slots'
+import {
+  BottomPanelsSlot,
+  PanelsSlot,
+  RailCardsSlot,
+  type TurnFooter,
+  TurnFootersSlot
+} from '@dia-plugin/dia-chat/slots'
 import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react'
 import type { AgentSummary } from '@shared/domain/agent-summary'
 import { PathAttachment, type ProjectEntry } from '@shared/domain/attachment'
@@ -142,6 +149,7 @@ import { type LiveSteps, StepsSection, summaryFocus } from './steps-section'
 import { approximateTokens, exactTokens } from './token-count'
 import { TranscriptItem, TranscriptScroller } from './transcript-scroller'
 import { StallActions, TurnActivityLine } from './turn-activity-line'
+import { turnEnds } from './turn-ends'
 import { filesOf, useComposerAttachments, useProjectEntries } from './use-composer-attachments'
 import { useElapsedClock } from './use-elapsed-clock'
 import { usePaneChat } from './use-pane-chat'
@@ -656,6 +664,31 @@ const messageActivitySignature = (state: PaneChatState): string => {
   return `${state.messages.length}:${last?.parts.length ?? 0}:${detail}:${state.turnStatus ?? ''}`
 }
 
+function TurnFooters({
+  footers,
+  paneId,
+  messageIds
+}: {
+  readonly footers: ReturnType<typeof useList<TurnFooter>>
+  readonly paneId: string
+  readonly messageIds: ReadonlyArray<string>
+}): React.ReactNode {
+  return footers.map((footer) => {
+    const Footer = footer.component
+    return (
+      <PluginBoundary
+        key={`${footer.key.plugin}.${footer.key.id}`}
+        plugin={footer.key.plugin}
+        at={TurnFootersSlot.name}
+        resetKey={Footer}
+        fallback={() => null}
+      >
+        <Footer paneId={paneId} messageIds={messageIds} />
+      </PluginBoundary>
+    )
+  })
+}
+
 function ChatSessionRail({ paneId }: { readonly paneId: string }) {
   return <SessionRail paneId={paneId} cards={useList(RailCardsSlot)} />
 }
@@ -713,6 +746,8 @@ function PaneChat({
   const defaultSendMode = useAtomValue(sendModeAtom)
   const [rewindProgress, commandRewind] = useAtom(paneRewindAtom(paneId))
   const targets = useMemo(() => rewindTargets(chat.messages), [chat.messages])
+  const endedTurns = useMemo(() => turnEnds(chat.messages), [chat.messages])
+  const turnFooters = useList(TurnFootersSlot)
   const rewindRowFor = (message: PaneMessage): RewindActionProps | undefined => {
     const target = targets.get(message.id)
     if (target === undefined || fixedSettings) return undefined
@@ -1240,6 +1275,13 @@ function PaneChat({
             live={message === runningTurn ? liveSteps : undefined}
             nowMs={nowMs}
           />
+          {endedTurns.has(message.id) && (
+            <TurnFooters
+              footers={turnFooters}
+              paneId={paneId}
+              messageIds={endedTurns.get(message.id) ?? []}
+            />
+          )}
           {parkedForUser && message === lastMessage && isParkNotice(message) && (
             <div className="flex justify-center pt-1">
               <Button

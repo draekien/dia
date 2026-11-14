@@ -37,6 +37,28 @@ export const PanelsSlot = ListSlot.make<Panel>('chat.panels')
  */
 export const BottomPanelsSlot = ListSlot.make<Panel>('chat.bottomPanels')
 
+/**
+ * Content shown at the end of one turn in the transcript, under the turn's last message.
+ * `messageIds` are the ids of the user messages that open the turn's stretch of the transcript,
+ * in transcript order: the messages sent to start it, as `PaneUserMessagesSent` carries them.
+ * `component` may render nothing, as for a turn still running. A component that throws renders
+ * nothing.
+ */
+export interface TurnFooter {
+  readonly id: string
+  readonly order: number
+  readonly component: ComponentType<{
+    readonly paneId: PaneId
+    readonly messageIds: ReadonlyArray<string>
+  }>
+}
+
+/**
+ * The transcript's turn footers, declared by the chat plugin. Every footer shows under every
+ * turn of every chat tab, ordered by `order`. Add one with `addEntry(ctx, TurnFootersSlot, footer)`.
+ */
+export const TurnFootersSlot = ListSlot.make<TurnFooter>('chat.turnFooters')
+
 /** Props of the request card: `request` is drawn as the pane draws it; `onAnswer` is called once with the user's answer. */
 export interface RequestCardProps {
   readonly request: Attention.UserInputRequest

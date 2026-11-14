@@ -4,7 +4,8 @@ import {
   BottomPanelsSlot,
   PanelsSlot,
   RailCardsSlot,
-  RequestCardKey
+  RequestCardKey,
+  TurnFootersSlot
 } from '@dia-plugin/dia-chat/slots'
 import { Effect } from 'effect'
 import { BackgroundTasksCard } from './background-tasks'
@@ -18,6 +19,7 @@ const setup: PluginSetup<PluginServices> = (ctx) =>
     yield* declareList(ctx, RailCardsSlot)
     yield* declareList(ctx, PanelsSlot)
     yield* declareList(ctx, BottomPanelsSlot)
+    yield* declareList(ctx, TurnFootersSlot)
     yield* fillSlot(ctx, MAIN_TAB, Chat)
     yield* ctx.provide(RequestCardKey, RequestCard)
     yield* Effect.logDebug('Request card provided', { key: RequestCardKey.name })

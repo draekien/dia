@@ -43,6 +43,7 @@
     "plugins/dia-schedules/schedules.ts",
     "plugins/dia-terminals/terminals.ts",
     "plugins/dia-chat/slots.ts",
+    "plugins/dia-chat/token-count.ts",
     "plugins/dia-adapters/slots.ts",
     "plugins/dia-command-palette/slots.ts",
     "plugins/dia-layout/slots.ts",

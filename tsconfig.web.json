@@ -66,6 +66,7 @@
     "plugins/dia-inbox/calls.ts",
     "plugins/dia-checkpoints/calls.ts",
     "plugins/dia-cost/calls.ts",
+    "plugins/dia-cost/usage.ts",
     "plugins/dia-terminals/calls.ts",
     "plugins/dia-terminals/terminals.ts",
     "plugins/dia-tools/calls.ts",
@@ -89,6 +90,7 @@
     "plugins/dia-chat/context-meter.ts",
     "plugins/dia-chat/slash-command-filter.ts",
     "plugins/dia-chat/token-count.ts",
+    "plugins/dia-chat/turn-ends.ts",
     "plugins/dia-chat/use-composer-attachments.ts",
     "plugins/dia-chat/use-pane-chat.ts",
     "plugins/dia-chat/use-elapsed-clock.ts"
