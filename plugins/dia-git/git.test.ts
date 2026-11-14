@@ -194,6 +194,35 @@ describe('makeGit', { timeout: 30_000 }, () => {
     )
   )
 
+  it.live('commits only the given paths and leaves other staged and unstaged changes', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, write, fs, path } = yield* committedRepo
+        yield* write('a.txt', 'staged')
+        yield* stage(directory)
+        yield* fs.makeDirectory(path.join(directory, 'skills'))
+        yield* write('skills/d.txt', 'new')
+        yield* write('a.txt', 'staged then changed')
+        yield* write('c.txt', 'untracked')
+
+        yield* git.commitPaths(directory, ['skills/d.txt'], { message: 'skill', author: AUTHOR })
+
+        assert.strictEqual(
+          (yield* git.log(directory, ['-1', '--name-only', '--format=%s'])).trim(),
+          'skill\n\nskills/d.txt'
+        )
+        const entries = yield* git.status(directory)
+        assert.deepStrictEqual(
+          [...entries].sort((x, y) => x.path.localeCompare(y.path)),
+          [
+            { code: 'MM', path: 'a.txt' },
+            { code: '??', path: 'c.txt' }
+          ]
+        )
+      })
+    )
+  )
+
   it.live('reports a staged rename as one entry under its new path', () =>
     live(
       Effect.gen(function* () {

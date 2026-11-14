@@ -1,5 +1,6 @@
 import {
   type Git,
+  type GitAuthor,
   GitError,
   type GitFileChange,
   type GitRef,
@@ -212,22 +213,34 @@ export const makeGit = Effect.gen(function* () {
       })
     )
 
+  const commitArgs = ({
+    message,
+    author
+  }: {
+    readonly message: string
+    readonly author: GitAuthor
+  }) => [
+    '-c',
+    `user.name=${author.name}`,
+    '-c',
+    `user.email=${author.email}`,
+    '-c',
+    'commit.gpgsign=false',
+    'commit',
+    '--no-verify',
+    '-m',
+    message
+  ]
+
   const git: Git = {
     init: (cwd) => runOk(cwd, ['init']).pipe(Effect.asVoid),
-    commitAll: Effect.fnUntraced(function* (cwd, { message, author }) {
+    commitAll: Effect.fnUntraced(function* (cwd, commit) {
       yield* runOk(cwd, ['add', '-A'])
-      yield* runOk(cwd, [
-        '-c',
-        `user.name=${author.name}`,
-        '-c',
-        `user.email=${author.email}`,
-        '-c',
-        'commit.gpgsign=false',
-        'commit',
-        '--no-verify',
-        '-m',
-        message
-      ])
+      yield* runOk(cwd, commitArgs(commit))
+    }),
+    commitPaths: Effect.fnUntraced(function* (cwd, paths, commit) {
+      yield* runOk(cwd, ['add', '--', ...paths])
+      yield* runOk(cwd, [...commitArgs(commit), '--only', '--', ...paths])
     }),
     resolveCommit,
     branchExists: (repo, branch) =>
