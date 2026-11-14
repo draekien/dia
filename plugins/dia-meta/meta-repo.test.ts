@@ -148,7 +148,16 @@ describe('ensureMetaRepo', () => {
       const { fs, path, directory, skillSource } = yield* scratchRepo
       yield* ensureMetaRepo(directory, skillSource, yield* makeGit)
       yield* fs.writeFileString(path.join(directory, REFERENCE_PATH), 'Edited by hand.')
-      yield* git(directory, 'commit', '-qam', 'docs: edit the reference')
+      yield* git(
+        directory,
+        '-c',
+        'user.name=tester',
+        '-c',
+        'user.email=tester@localhost',
+        'commit',
+        '-qam',
+        'docs: edit the reference'
+      )
 
       yield* ensureMetaRepo(directory, skillSource, yield* makeGit)
 
