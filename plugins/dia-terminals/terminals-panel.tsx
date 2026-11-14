@@ -120,7 +120,7 @@ function TerminalView({ terminalId }: { readonly terminalId: string }): React.JS
   return (
     <div
       ref={container}
-      className="min-h-0 flex-1 overflow-hidden px-3 py-1 font-mono text-ink [&_.xterm-viewport]:bg-transparent"
+      className="min-h-0 flex-1 overflow-hidden px-3 py-1 font-mono text-ink [&_.xterm-viewport]:bg-transparent!"
     />
   )
 }
