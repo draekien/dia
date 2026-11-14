@@ -1,14 +1,5 @@
 import type { PluginServices } from '@dia/plugin'
-import {
-  Button,
-  callHost,
-  cn,
-  followHost,
-  Status,
-  StatusMedia,
-  StatusName,
-  toast
-} from '@dia/renderer-plugin'
+import { Button, callHost, cn, followHost, Status, StatusMedia, toast } from '@dia/renderer-plugin'
 import { useAtomValue } from '@effect/atom-react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
@@ -29,13 +20,12 @@ import {
 import type { TerminalInfo } from './terminals'
 
 const PLUGIN = 'dia-terminals'
-const VIEW_ROWS = 16
 
 /** Makes the atoms that follow each run's terminals for the `dia-terminals` renderer entry `ctx`. */
 export const makeTerminalsAtoms = (ctx: Pick<PluginServices, 'name'>) =>
   Atom.family((runId: string) => Atom.make(followHost(ctx, FollowTerminals, { runId })))
 
-/** The atom family {@link makeTerminalsAtoms} makes; {@link TerminalsCard} reads one of its atoms. */
+/** The atom family {@link makeTerminalsAtoms} makes; {@link TerminalsPanel} reads one of its atoms. */
 export type TerminalsAtoms = ReturnType<typeof makeTerminalsAtoms>
 
 const toSrgbHex = (cssColor: string) => {
@@ -85,11 +75,11 @@ function TerminalView({ terminalId }: { readonly terminalId: string }): React.JS
   useEffect(() => {
     const element = container.current
     if (element === null) return
-    const foreground = toSrgbHex(getComputedStyle(element).color)
+    const style = getComputedStyle(element)
+    const foreground = toSrgbHex(style.color)
     const terminal = new Terminal({
-      rows: VIEW_ROWS,
-      fontFamily: getComputedStyle(element).fontFamily,
-      fontSize: 11,
+      fontFamily: style.fontFamily,
+      fontSize: 12,
       allowTransparency: true,
       theme: { background: '#00000000', foreground, cursor: foreground }
     })
@@ -102,18 +92,24 @@ function TerminalView({ terminalId }: { readonly terminalId: string }): React.JS
       run(sendInput(terminalId, input), 'write')
     ]
     const typed = terminal.onData((data) => Queue.offerUnsafe(input, data))
-    const reportSize = ({ cols, rows }: { readonly cols: number; readonly rows: number }) =>
+    let sizeReported = false
+    const reportSize = ({ cols, rows }: { readonly cols: number; readonly rows: number }) => {
+      sizeReported = true
       run(callHost(PLUGIN, ResizeTerminal, { terminalId, cols, rows }), 'resize')
-    const resized = terminal.onResize(reportSize)
-    const fitToWidth = () => {
-      const size = fit.proposeDimensions()
-      if (size !== undefined && size.cols > 0) terminal.resize(size.cols, VIEW_ROWS)
     }
-    const observer = new ResizeObserver(fitToWidth)
+    const resized = terminal.onResize(reportSize)
+    let pendingFit = 0
+    const fitToView = () => {
+      fit.fit()
+      if (!sizeReported) reportSize(terminal)
+    }
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(pendingFit)
+      pendingFit = requestAnimationFrame(fitToView)
+    })
     observer.observe(element)
-    fitToWidth()
-    reportSize(terminal)
     return () => {
+      cancelAnimationFrame(pendingFit)
       observer.disconnect()
       typed.dispose()
       resized.dispose()
@@ -124,15 +120,15 @@ function TerminalView({ terminalId }: { readonly terminalId: string }): React.JS
   return (
     <div
       ref={container}
-      className="overflow-hidden rounded-md border px-1.5 py-1 font-mono text-foreground"
+      className="min-h-0 flex-1 overflow-hidden px-3 py-1 font-mono text-ink [&_.xterm-viewport]:bg-transparent!"
     />
   )
 }
 
-const rowTitle = (info: TerminalInfo) =>
-  info._tag === 'TerminalRunning' ? info.title : `${info.title} · exit code ${info.exitCode}`
+const tabTitle = (info: TerminalInfo) =>
+  info._tag === 'TerminalRunning' ? info.title : `${info.title}, exit code ${info.exitCode}`
 
-function TerminalRow({
+function TerminalTab({
   info,
   selected,
   onSelect
@@ -142,57 +138,61 @@ function TerminalRow({
   readonly onSelect: () => void
 }): React.JSX.Element {
   const running = info._tag === 'TerminalRunning'
-  const { terminalId } = info
   return (
-    <li className="flex min-w-0 items-center gap-1">
-      <button
-        type="button"
-        aria-pressed={selected}
-        title={rowTitle(info)}
-        onClick={onSelect}
-        className={cn(
-          'flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1 py-0.5 text-left hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
-          selected && 'bg-muted'
-        )}
-      >
-        <span className="min-w-0 flex-1 truncate font-mono text-xs">{info.title}</span>
-        <Status className="shrink-0 text-muted-foreground text-xs">
-          <StatusMedia fill={running ? 'half' : 'full'} />
-          <StatusName>{running ? 'Running' : 'Exited'}</StatusName>
-        </Status>
-      </button>
-      <Button
-        size="xs"
-        variant="ghost"
-        onClick={() =>
-          run(
-            callHost(PLUGIN, running ? StopTerminal : RemoveTerminal, { terminalId }),
-            running ? 'stop' : 'remove'
-          )
-        }
-      >
-        {running ? 'Stop' : 'Remove'}
-      </Button>
-    </li>
+    <button
+      type="button"
+      aria-pressed={selected}
+      title={tabTitle(info)}
+      onClick={onSelect}
+      className={cn(
+        'flex h-6 max-w-48 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs hover:bg-secondary focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none',
+        selected ? 'bg-primary/10 text-ink hover:bg-primary/10' : 'text-ink-muted'
+      )}
+    >
+      <Status className="shrink-0">
+        <StatusMedia fill={running ? 'half' : 'full'} />
+      </Status>
+      <span className="truncate font-mono">{info.title}</span>
+      <span className="sr-only">{running ? 'Running' : `Exited, exit code ${info.exitCode}`}</span>
+    </button>
   )
 }
 
 const openTerminal = (runId: string, onOpened: (terminalId: string) => void) =>
   Effect.gen(function* () {
-    yield* Effect.logInfo('Opening a terminal from the rail', { runId })
+    yield* Effect.logInfo('Opening a terminal from the bottom panel', { runId })
     const opened = yield* Effect.result(callHost(PLUGIN, OpenTerminal, { runId }))
     if (Result.isSuccess(opened)) return onOpened(opened.success.terminalId)
     yield* Effect.logWarning('Could not open a terminal', { runId, reason: opened.failure._tag })
     toast.add({ title: 'Could not open a terminal', type: 'error' })
   })
 
+function StopOrRemove({ info }: { readonly info: TerminalInfo }): React.JSX.Element {
+  const running = info._tag === 'TerminalRunning'
+  const { terminalId } = info
+  return (
+    <Button
+      size="xs"
+      variant="ghost"
+      onClick={() =>
+        run(
+          callHost(PLUGIN, running ? StopTerminal : RemoveTerminal, { terminalId }),
+          running ? 'stop' : 'remove'
+        )
+      }
+    >
+      {running ? 'Stop' : 'Remove'}
+    </Button>
+  )
+}
+
 /**
- * The session rail's Terminals card body for run `runId`: its terminals with their state and a
- * Stop or Remove button, a `New terminal` button that opens a shell in the run's working
- * directory, and the selected terminal (the newest by default), which takes keyboard input.
- * It follows `terminalsAtoms(runId)`.
+ * The bottom panel's Terminals panel for run `runId`: a row with one tab per terminal, a `Stop` or
+ * `Remove` button for the selected terminal and a `New terminal` button that opens a shell in the
+ * run's working directory, then the selected terminal (the newest by default) sized to the panel,
+ * which takes keyboard input. It follows `terminalsAtoms(runId)`.
  */
-export function TerminalsCard({
+export function TerminalsPanel({
   runId,
   terminalsAtoms
 }: {
@@ -203,34 +203,39 @@ export function TerminalsCard({
   const terminals = AsyncResult.isSuccess(result) ? Option.getOrElse(result.value, () => []) : []
   const [chosen, setChosen] = useState<string | undefined>(undefined)
   const selected = terminals.find((each) => each.terminalId === chosen) ?? terminals.at(-1)
+  const open = () => run(openTerminal(runId, setChosen), 'open')
+
+  if (selected === undefined) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3">
+        <p className="text-sm text-ink-muted">No terminals</p>
+        <Button size="sm" variant="outline" onClick={open}>
+          <PlusIcon data-icon="inline-start" />
+          New terminal
+        </Button>
+      </div>
+    )
+  }
+
   return (
-    <div className="flex flex-col gap-2">
-      {terminals.length === 0 ? (
-        <p className="text-muted-foreground">No terminals</p>
-      ) : (
-        <ul className="flex flex-col gap-0.5">
+    <div className="flex h-full flex-col">
+      <div className="flex h-9 shrink-0 items-center gap-2 px-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-none">
           {terminals.map((info) => (
-            <TerminalRow
+            <TerminalTab
               key={info.terminalId}
               info={info}
-              selected={info.terminalId === selected?.terminalId}
+              selected={info.terminalId === selected.terminalId}
               onSelect={() => setChosen(info.terminalId)}
             />
           ))}
-        </ul>
-      )}
-      {selected !== undefined && (
-        <TerminalView key={selected.terminalId} terminalId={selected.terminalId} />
-      )}
-      <Button
-        size="sm"
-        variant="outline"
-        className="w-full"
-        onClick={() => run(openTerminal(runId, setChosen), 'open')}
-      >
-        <PlusIcon data-icon="inline-start" />
-        New terminal
-      </Button>
+        </div>
+        <StopOrRemove info={selected} />
+        <Button size="icon-xs" variant="ghost" aria-label="New terminal" onClick={open}>
+          <PlusIcon />
+        </Button>
+      </div>
+      <TerminalView key={selected.terminalId} terminalId={selected.terminalId} />
     </div>
   )
 }
