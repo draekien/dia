@@ -9,9 +9,10 @@
   "scripts": {
     "prepare:effect": "./scripts/prepare-effect.sh",
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "build:win": "electron-vite build && electron-builder --win",
-    "release": "electron-vite build && electron-builder --win --publish always",
+    "build": "pnpm build:plugin-api-reference && electron-vite build",
+    "build:plugin-api-reference": "tsx scripts/generate-plugin-api-reference.ts",
+    "build:win": "pnpm build && electron-builder --win",
+    "release": "pnpm build && electron-builder --win --publish always",
     "preview": "electron-vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.shared.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.plugin-exports.json",

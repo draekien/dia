@@ -101,8 +101,14 @@ const scratch = Effect.gen(function* () {
   return { root, home, metaSkills, writeSkill }
 })
 
+const META_BUILT_IN = { name: 'dia-meta:building-dia-plugins', group: 'Meta repo' }
 const META_PLAN = { name: 'dia-meta:plan', description: '', group: 'Meta repo' }
 const USER_REVIEW = { name: 'review', description: '', group: 'Your skills' }
+
+const withoutBuiltInDescription = (skills: ReadonlyArray<Skill>) =>
+  skills.map((skill) =>
+    skill.name === META_BUILT_IN.name ? { name: skill.name, group: skill.group } : skill
+  )
 
 describe('skills host entry', () => {
   it.live('lists a meta repo skill under "Meta repo" and a user skill under "Your skills"', () =>
@@ -112,8 +118,12 @@ describe('skills host entry', () => {
 
       yield* writeSkill(metaSkills, 'plan')
 
-      const skills = yield* skillsWhere(registry, (list) => list.length === 2)
-      assert.deepStrictEqual(skills, [META_PLAN, USER_REVIEW])
+      const skills = yield* skillsWhere(registry, (list) => list.length === 3)
+      assert.deepStrictEqual(withoutBuiltInDescription(skills), [
+        META_BUILT_IN,
+        META_PLAN,
+        USER_REVIEW
+      ])
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
   )
 
@@ -126,9 +136,12 @@ describe('skills host entry', () => {
 
       yield* registry.unload('meta')
 
-      assert.deepStrictEqual(yield* skillsWhere(registry, (list) => !hasGroup('Meta repo')(list)), [
-        USER_REVIEW
-      ])
+      assert.deepStrictEqual(
+        withoutBuiltInDescription(
+          yield* skillsWhere(registry, (list) => !hasGroup('Meta repo')(list))
+        ),
+        [USER_REVIEW]
+      )
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
   )
 
@@ -137,16 +150,16 @@ describe('skills host entry', () => {
       const { root, home, metaSkills, writeSkill } = yield* scratch
       const registry = yield* startHost(root, home)
       yield* writeSkill(metaSkills, 'plan')
-      yield* skillsWhere(registry, hasGroup('Meta repo'))
+      yield* skillsWhere(registry, (list) => list.length === 3)
       yield* registry.unload('meta')
       yield* skillsWhere(registry, (list) => !hasGroup('Meta repo')(list))
 
       yield* registry.load('meta')
 
-      assert.deepStrictEqual(yield* skillsWhere(registry, hasGroup('Meta repo')), [
-        META_PLAN,
-        USER_REVIEW
-      ])
+      assert.deepStrictEqual(
+        withoutBuiltInDescription(yield* skillsWhere(registry, (list) => list.length === 3)),
+        [META_BUILT_IN, META_PLAN, USER_REVIEW]
+      )
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
   )
 })

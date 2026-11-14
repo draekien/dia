@@ -22,14 +22,15 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
   Effect.gen(function* () {
     const path = yield* Path.Path
     const directory = path.join(ctx.dataDir, 'repo')
-    yield* ensureMetaFiles(directory)
+    const skillSource = path.join(import.meta.dirname, 'building-dia-plugins')
+    yield* ensureMetaFiles(directory, skillSource)
     const git = yield* Ref.make(Option.none<Git>())
     yield* ctx.whenProvided([GitKey], ({ git: provided }) =>
       Effect.acquireRelease(Ref.set(git, Option.some(provided)), () =>
         Ref.set(git, Option.none())
       ).pipe(
         Effect.andThen(
-          ensureMetaRepo(directory, provided).pipe(
+          ensureMetaRepo(directory, skillSource, provided).pipe(
             Effect.catch((error) =>
               Effect.logWarning('Could not create the meta repo files', { directory, error })
             ),

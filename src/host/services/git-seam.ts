@@ -44,7 +44,7 @@ export const GitFileChange = Schema.Struct({
 /** A changed file; see {@link GitFileChange}. */
 export type GitFileChange = typeof GitFileChange.Type
 
-/** The author of a commit {@link Git.commitAll} makes. */
+/** The author of a commit {@link Git.commitAll} or {@link Git.commitPaths} makes. */
 export interface GitAuthor {
   readonly name: string
   readonly email: string
@@ -62,6 +62,16 @@ export interface Git {
   /** Stages every change in `cwd` and commits it as `author` with `message`, skipping hooks and signing. */
   readonly commitAll: (
     cwd: string,
+    commit: { readonly message: string; readonly author: GitAuthor }
+  ) => Effect.Effect<void, GitError>
+  /**
+   * Stages `paths` in `cwd` and commits those paths only, as `author` with `message`, skipping
+   * hooks and signing. Other staged and unstaged changes stay as they were. Every path must exist
+   * in the working tree or the index.
+   */
+  readonly commitPaths: (
+    cwd: string,
+    paths: ReadonlyArray<string>,
     commit: { readonly message: string; readonly author: GitAuthor }
   ) => Effect.Effect<void, GitError>
   /** The full commit id `rev` names in `cwd`, or `None` when it names no commit. */
@@ -162,6 +172,7 @@ export interface Git {
 const GIT_MEMBERS = [
   'init',
   'commitAll',
+  'commitPaths',
   'resolveCommit',
   'branchExists',
   'currentBranch',

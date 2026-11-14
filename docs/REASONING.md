@@ -96,6 +96,7 @@ This is an index of non-obvious decisions, gotchas, and learnings recorded durin
 | 2026-11-13 | [A run started before `dia-runs` recovery was marked interrupted](reasoning/2026-11-13-run-started-before-recovery.md) | `recover` runs after `RunsKey` is provided, so it must skip runs already live; otherwise a run started in the gap is marked "interrupted before it started" while its turn runs. |
 | 2026-11-13 | [node-pty in the packaged Host](reasoning/2026-11-13-node-pty-in-the-packaged-host.md) | node-pty's worker path rewrite matches `node_modules.asar`, not `app.asar`, so `dia-terminals` requires the package by its `app.asar.unpacked` path; a PTY `kill()` returns before the exit, so the terminals' finalizer waits for each `onExit` or a temp working directory cannot be deleted on Windows (`EBUSY`). |
 | 2026-11-13 | [Interrupting `RunQueue.enqueue` after the pick loses the run id](reasoning/2026-11-13-run-queue-enqueue-interrupt-loses-run-id.md) | The run starts, but the interrupted caller ends `Interrupted` and never sees its id; `dia-org` does not interrupt a queued issue and closes its run when `markStarted` refuses it. |
+| 2026-11-14 | [@effect/docgen drops the JSDoc of re-exports; typedoc with typedoc-plugin-markdown generates the plugin API reference](reasoning/2026-11-14-plugin-api-reference-generator.md) | `pnpm build:plugin-api-reference` runs typedoc and typedoc-plugin-markdown on `src/host/plugin-api.ts` through `pnpm dlx` with TypeScript 6. |
 
 ## Adding a new entry
 
