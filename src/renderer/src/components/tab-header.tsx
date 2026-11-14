@@ -74,8 +74,8 @@ function WorktreeChip({ worktree }: { readonly worktree: { path: string; branch:
  * transcript width control for a tab, `project › label` with the same control for an attached
  * session, `project › New agent` for the New agent form, nothing for
  * the other views; the layout plugin draws a page's label) followed, for a tab, by the session rail
- * toggle, the bottom panel toggle and the right panel toggle, then {@link WindowStatus} at the right end. A plugin that
- * fills the slot owns the status items.
+ * toggle, the bottom panel toggle and the right panel toggle, then {@link WindowStatus} at the
+ * right end. A plugin that fills the slot owns the status items.
  */
 export function TabHeader() {
   const view = useView()
