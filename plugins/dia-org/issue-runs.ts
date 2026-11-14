@@ -1,4 +1,4 @@
-import { RESUME_TEXT, type RunInfo, type Runs, type StartRunOptions } from '@dia/plugin'
+import { RESUME_TEXT, type RunInfo, type Runs } from '@dia/plugin'
 import type { Issue, IssueId, Objective, ObjectivePriority } from '@dia-plugin/dia-issues/domain'
 import {
   type Issues,
@@ -11,18 +11,19 @@ import { Effect, Option, Queue, Ref, type Scope, Stream } from 'effect'
 import { SqlClient } from 'effect/sql'
 import type { HiredAgent, HireId, JobTitle } from './domain'
 import type { IssueWorkspace } from './issue-workspace'
+import type { IssueStart } from './run-options'
 import type { Org } from './service'
 
 /** The label every run of an org issue carries in its dia tool scope. */
 export const ISSUE_RUN_LABEL = 'dia-org-issue'
 
-/** What a hire's run of an issue starts with, or none while it cannot start yet. */
+/** How a hire's run of an issue starts, or none while it cannot start yet. */
 export type StartOptionsOf = (
   issue: Issue,
   objective: Objective,
   hire: HiredAgent,
   jobTitle: JobTitle
-) => Effect.Effect<Option.Option<StartRunOptions>>
+) => Effect.Effect<Option.Option<IssueStart>>
 
 /** The live runs of org issues. */
 export interface IssueRuns {
@@ -37,7 +38,7 @@ export interface IssueRunsDeps {
   readonly provider: Pick<ProviderIssues, 'runState' | 'markStarted'>
   readonly workspace: Pick<IssueWorkspace, 'retain'>
   readonly startOptions: StartOptionsOf
-  readonly runs: Pick<Runs, 'list' | 'isLive' | 'send' | 'close'>
+  readonly runs: Pick<Runs, 'list' | 'isLive' | 'send' | 'close' | 'openInTab'>
   readonly queue: Pick<RunQueue, 'enqueue'>
   /** Completes when the first pass may run: once the Host's startup has settled. */
   readonly ready: Effect.Effect<void>
@@ -96,6 +97,14 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
     })
   })
 
+  const showRun = (issueId: IssueId, runId: string, projectDirectory: string) =>
+    deps.runs.openInTab(runId, { projectDirectory, select: false }).pipe(
+      Effect.andThen(Effect.logInfo('Showed the run of an issue in a tab', { issueId, runId })),
+      Effect.catchTag('RunNotFoundError', () =>
+        Effect.logWarning('No run to show for an issue', { issueId, runId })
+      )
+    )
+
   const enqueueRun = Effect.fnUntraced(function* (
     entry: StartableIssue,
     hire: HiredAgent,
@@ -106,13 +115,14 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
     if (Option.isNone(options)) return false
     const context = IssueToolContext.make({ issueId: issue.id, assigneeId: hire.id })
     const runId = yield* deps.queue.enqueue({
-      run: { ...options.value, labels: [ISSUE_RUN_LABEL], context },
+      run: { ...options.value.run, labels: [ISSUE_RUN_LABEL], context },
       priority: PRIORITY[objective.priority],
       key: { id: hire.id, limit: 1 }
     })
     yield* saveRow(issue.id, hire.id, runId)
     if (yield* deps.provider.markStarted(issue.id, hire.id)) {
       yield* Effect.logInfo('Started a run of an issue', { issueId: issue.id, runId })
+      yield* showRun(issue.id, runId, options.value.projectDirectory)
       return true
     }
     yield* deps.runs.close(runId)

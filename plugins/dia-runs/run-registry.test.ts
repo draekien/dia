@@ -9,6 +9,7 @@ import {
   type RunEvents,
   SessionId,
   SessionStarted,
+  type TabPlacement,
   type ToolScope,
   UserMessagesSent
 } from '@dia/plugin'
@@ -211,6 +212,30 @@ describe('run registry', () => {
     )
   )
 
+  it.live("keeps a started run's labels and context when its tab opens it after a restart", () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const before = makeWorld(rows)
+        const firstStart = yield* Scope.make()
+        const { runs } = yield* before.registry.pipe(Effect.provideService(Scope.Scope, firstStart))
+        yield* runs.start({ ...startOptions, labels: ['issue'], context: { issueId: 'i-1' } })
+        yield* Scope.close(firstStart, Exit.void)
+
+        const after = makeWorld(rows)
+        const reopened = yield* after.registry
+        yield* reopened.runs.open({ ...tabSpec, runId: STARTED })
+
+        const expected: ToolScope = {
+          runId: STARTED,
+          project: '/repo',
+          labels: ['issue'],
+          context: { issueId: 'i-1' }
+        }
+        assert.deepStrictEqual(after.toolScopes, [expected])
+      })
+    )
+  )
+
   it.live('resumes the turn in progress of a run with no tab after a restart', () =>
     withRows((rows) =>
       Effect.gen(function* () {
@@ -371,6 +396,43 @@ describe('run registry', () => {
         assert.isTrue(Option.getOrThrow(yield* rows.get(STARTED)).hasTab)
       })
     )
+  )
+
+  const requestedPlacement = (placement?: TabPlacement) =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const { runs } = yield* makeWorld(rows).registry
+        yield* runs.start(startOptions)
+        const requested = yield* runs.changes.pipe(
+          Stream.filter((change: RunChange) => change._tag === 'RunTabRequested'),
+          Stream.runHead,
+          Effect.forkScoped({ startImmediately: true })
+        )
+        yield* runs.openInTab(STARTED, placement)
+        const change = Option.getOrThrow(yield* Fiber.join(requested))
+        return change._tag === 'RunTabRequested'
+          ? [change.directory, change.projectDirectory, change.select]
+          : change._tag
+      })
+    )
+
+  it.live("files a run's tab under the run's directory and selects it without a placement", () =>
+    Effect.gen(function* () {
+      assert.deepStrictEqual(yield* requestedPlacement(), [
+        startOptions.cwd,
+        startOptions.cwd,
+        true
+      ])
+    })
+  )
+
+  it.live("files a run's tab under the placement's project and keeps its working directory", () =>
+    Effect.gen(function* () {
+      assert.deepStrictEqual(
+        yield* requestedPlacement({ projectDirectory: 'C:/dia', select: false }),
+        [startOptions.cwd, 'C:/dia', false]
+      )
+    })
   )
 
   it.live('lists the permission request of a run with no tab until it is answered', () =>

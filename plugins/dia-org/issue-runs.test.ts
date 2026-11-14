@@ -19,6 +19,7 @@ import { fakeBackend, fakeRuns, model } from './runs.fake'
 
 const OBJECTIVE = ObjectiveId.make('00000000-0000-4000-8000-600000000001')
 const TITLE = WorkTitle.make('Add a login page')
+const PROJECT_DIRECTORY = 'C:/dia'
 
 const settle = Effect.gen(function* () {
   for (let turn = 0; turn < 100; turn += 1) yield* Effect.yieldNow
@@ -53,11 +54,14 @@ const setUp = Effect.gen(function* () {
     startOptions: (issue) =>
       Effect.succeed(
         Option.some({
-          cwd: `C:/trees/${issue.id}`,
-          model: 'opus',
-          thinkingLevel: 'medium' as const,
-          permissionMode: 'default' as const,
-          text: issue.title
+          run: {
+            cwd: `C:/trees/${issue.id}`,
+            model: 'opus',
+            thinkingLevel: 'medium' as const,
+            permissionMode: 'default' as const,
+            text: issue.title
+          },
+          projectDirectory: PROJECT_DIRECTORY
         })
       ),
     runs: fake.runs,
@@ -145,6 +149,40 @@ describe('runIssues', () => {
       assert.strictEqual(env.fake.enqueued.length, 1, 'a started issue is not queued again')
       assert.isTrue(yield* env.issueRuns.deliver(issue.id, 'hello'))
       assert.deepStrictEqual(env.fake.sent, [{ runId: 'run-a', text: 'hello' }])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect("shows a started issue's run in a tab of its project without selecting it", () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      yield* env.createIssue(env.ada.id)
+      yield* env.begin
+      const [queued] = env.fake.enqueued
+      assert.isDefined(queued)
+
+      yield* queued.start('run-a')
+      yield* env.begin
+
+      assert.deepStrictEqual(env.fake.tabs, [
+        { runId: 'run-a', placement: { projectDirectory: PROJECT_DIRECTORY, select: false } }
+      ])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('does not show a run whose issue was canceled while it was queued', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      yield* env.createIssue(env.ada.id)
+      yield* env.begin
+      const [queued] = env.fake.enqueued
+      assert.isDefined(queued)
+      yield* env.issues.stopObjective(OBJECTIVE)
+      yield* env.begin
+
+      yield* queued.start('run-a')
+      yield* env.begin
+
+      assert.deepStrictEqual(env.fake.tabs, [])
     }).pipe(Effect.scoped)
   )
 
@@ -276,7 +314,12 @@ describe('issueStartOptions', () => {
       const issue = yield* env.createIssue(env.ada.id)
       const objective = (yield* env.issues.snapshot).objectives[0]
       assert.isDefined(objective)
-      const workspace = { open: () => Effect.succeed(IssueDirectory.make({ path: ISSUE_PATH })) }
+      const workspace = {
+        open: () =>
+          Effect.succeed(
+            IssueDirectory.make({ path: ISSUE_PATH, projectDirectory: PROJECT_DIRECTORY })
+          )
+      }
       const jobTitle = {
         ...(yield* setUpJobTitle),
         model: null,
@@ -292,10 +335,11 @@ describe('issueStartOptions', () => {
 
       assert.isTrue(Option.isSome(options))
       if (Option.isNone(options)) return
-      assert.strictEqual(options.value.cwd, ISSUE_PATH)
-      assert.strictEqual(options.value.model, 'opus', 'no job title model: the catalog first')
-      assert.strictEqual(options.value.permissionMode, 'auto', 'the model supports auto')
-      assert.isTrue(options.value.text.startsWith('You write code.\n\n'))
+      assert.strictEqual(options.value.run.cwd, ISSUE_PATH)
+      assert.strictEqual(options.value.projectDirectory, PROJECT_DIRECTORY)
+      assert.strictEqual(options.value.run.model, 'opus', 'no job title model: the catalog first')
+      assert.strictEqual(options.value.run.permissionMode, 'auto', 'the model supports auto')
+      assert.isTrue(options.value.run.text.startsWith('You write code.\n\n'))
     }).pipe(Effect.scoped)
   )
 

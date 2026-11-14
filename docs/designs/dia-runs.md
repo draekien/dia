@@ -99,8 +99,8 @@ export interface Runs {
   /** Closes the run and marks it archived, or deletes its row. */
   readonly retire: (runId: string, as: 'archived' | 'deleted') => Effect<void>
   readonly list: Effect<ReadonlyArray<RunInfo>>
-  /** Asks the tab owner to show run `runId` in a tab. */
-  readonly openInTab: (runId: string) => Effect<void, RunNotFoundError>
+  /** Asks the tab owner to show run `runId` in a tab: by default in the project at its directory, selected. */
+  readonly openInTab: (runId: string, placement?: TabPlacement) => Effect<void, RunNotFoundError>
   readonly changes: Stream<RunChange>
   readonly discoverSessions: (directory: string) => Effect<ReadonlyArray<DiscoveredSession>>
 }
@@ -126,7 +126,7 @@ Events a run produces are appended to its log with `RunEvents.append` (retried a
 
 ## Kernel changes
 
-- `PaneWorkspace` uses `RunsClient` instead of `PaneSupervisor`, follows `changes` to record session ids and permission modes, and imports a tab on `RunTabRequested`; `importableSessions` calls `Runs.discoverSessions`.
+- `PaneWorkspace` uses `RunsClient` instead of `PaneSupervisor`, follows `changes` to record session ids and permission modes, and imports a tab on `RunTabRequested` into the project at its `projectDirectory`, selecting it when `select` is true; `importableSessions` calls `Runs.discoverSessions`.
 - `DiaRpcs` loses the session calls of D4, the model/adapter calls of D13, the usage-limit calls, `GetAttachedSessions` and `ResetAttachedSession`; `IpcEvent` loses `ModelsChanged`, `AdapterStatusChanged`, `ModelPreferencesChanged` and `AttachedSessionsChanged`. `PROTOCOL_VERSION` goes to 0.0.30.
 - Host shutdown no longer calls `closeAll`; closing the registry closes `dia-runs`, whose finalizers end sessions and release worktrees without writing statuses.
 

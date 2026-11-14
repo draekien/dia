@@ -9,8 +9,14 @@ import type { Issue, IssueId, Objective } from '@dia-plugin/dia-issues/domain'
 import { Effect, Option, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
 
-/** An issue's session runs in `path`: the project directory, or the issue's own worktree. */
-export const IssueDirectory = Schema.TaggedStruct('IssueDirectory', { path: Schema.String })
+/**
+ * An issue's session runs in `path`: the project directory, or the issue's own worktree.
+ * `projectDirectory` is the directory of the issue's project in either case.
+ */
+export const IssueDirectory = Schema.TaggedStruct('IssueDirectory', {
+  path: Schema.String,
+  projectDirectory: Schema.String
+})
 
 /** An issue cannot start yet; `reason` is the text to log. */
 export const IssueWaiting = Schema.TaggedStruct('IssueWaiting', { reason: Schema.String })
@@ -138,7 +144,7 @@ export const makeIssueWorkspace = (deps: {
       } else if (Option.isSome(included.success) && included.success.value.length > 0) {
         yield* git.copyIncludedFiles(info, included.success.value, issue.paneId)
       }
-      return IssueDirectory.make({ path: info.path })
+      return IssueDirectory.make({ path: info.path, projectDirectory: directory })
     })
 
     const reattach = Effect.fnUntraced(function* (
@@ -152,7 +158,7 @@ export const makeIssueWorkspace = (deps: {
         yield* sql`UPDATE issue_worktrees SET released = 0 WHERE issue_id = ${issue.id}`.pipe(
           Effect.orDie
         )
-        return IssueDirectory.make({ path: reattached.success.path })
+        return IssueDirectory.make({ path: reattached.success.path, projectDirectory: directory })
       }
       if (missingBranch(reattached.failure.cause)) {
         yield* Effect.logWarning('The branch of an issue worktree is gone; creating a new one', {
@@ -172,7 +178,8 @@ export const makeIssueWorkspace = (deps: {
       if (Option.isNone(project)) return yield* waiting(issue, 'The project is not registered')
       const { directory, isGitRepo } = project.value
       const enabled = (yield* worktreeProjects).includes(objective.projectId)
-      if (!enabled || !isGitRepo) return IssueDirectory.make({ path: directory })
+      if (!enabled || !isGitRepo)
+        return IssueDirectory.make({ path: directory, projectDirectory: directory })
       const git = yield* gitOps
       if (Option.isNone(git)) return yield* waiting(issue, 'The worktrees plugin is not provided')
       const row = yield* rowOf(issue.id)

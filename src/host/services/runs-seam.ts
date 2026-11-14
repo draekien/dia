@@ -120,10 +120,25 @@ export const RunPermissionModeChanged = Schema.TaggedStruct('RunPermissionModeCh
   runId: Schema.String,
   mode: PermissionMode
 })
-/** Run `runId`, which has no tab, asks to be shown in a tab of the project at `directory`. */
+/**
+ * Where `Runs.openInTab` puts a run's tab: in the project at `projectDirectory`, and, when `select`
+ * is true, as the visible tab. A run working in a worktree of a project passes that project's
+ * directory.
+ */
+export const TabPlacement = Schema.Struct({
+  projectDirectory: Schema.String,
+  select: Schema.Boolean
+})
+export type TabPlacement = typeof TabPlacement.Type
+
+/**
+ * Run `runId`, which has no tab, asks to be shown in a tab working in `directory`, in the project
+ * at `projectDirectory`; the tab becomes the visible tab when `select` is true.
+ */
 export const RunTabRequested = Schema.TaggedStruct('RunTabRequested', {
   runId: Schema.String,
   directory: Schema.String,
+  ...TabPlacement.fields,
   model: Schema.String,
   thinkingLevel: ThinkingLevel,
   permissionMode: PermissionMode,
@@ -225,8 +240,14 @@ export interface Runs {
   readonly retire: (runId: string, as: 'archived' | 'deleted') => Effect.Effect<void>
   /** Every run with a row. */
   readonly list: Effect.Effect<ReadonlyArray<RunInfo>>
-  /** Asks the owner of tabs to show run `runId` in a tab (a {@link RunTabRequested} change). */
-  readonly openInTab: (runId: string) => Effect.Effect<void, RunNotFoundError>
+  /**
+   * Asks the owner of tabs to show run `runId` in a tab (a {@link RunTabRequested} change). Without
+   * `placement` the tab joins the project at the run's directory and becomes the visible tab.
+   */
+  readonly openInTab: (
+    runId: string,
+    placement?: TabPlacement
+  ) => Effect.Effect<void, RunNotFoundError>
   /** Every {@link RunChange} from now on. */
   readonly changes: Stream.Stream<RunChange>
   /**
