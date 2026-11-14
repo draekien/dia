@@ -75,9 +75,10 @@ function TerminalView({ terminalId }: { readonly terminalId: string }): React.JS
   useEffect(() => {
     const element = container.current
     if (element === null) return
-    const foreground = toSrgbHex(getComputedStyle(element).color)
+    const style = getComputedStyle(element)
+    const foreground = toSrgbHex(style.color)
     const terminal = new Terminal({
-      fontFamily: getComputedStyle(element).fontFamily,
+      fontFamily: style.fontFamily,
       fontSize: 12,
       allowTransparency: true,
       theme: { background: '#00000000', foreground, cursor: foreground }
@@ -94,11 +95,21 @@ function TerminalView({ terminalId }: { readonly terminalId: string }): React.JS
     const reportSize = ({ cols, rows }: { readonly cols: number; readonly rows: number }) =>
       run(callHost(PLUGIN, ResizeTerminal, { terminalId, cols, rows }), 'resize')
     const resized = terminal.onResize(reportSize)
-    const observer = new ResizeObserver(() => fit.fit())
+    let pendingFit = 0
+    let sizeReported = false
+    const fitToView = () => {
+      fit.fit()
+      if (sizeReported) return
+      sizeReported = true
+      reportSize(terminal)
+    }
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(pendingFit)
+      pendingFit = requestAnimationFrame(fitToView)
+    })
     observer.observe(element)
-    fit.fit()
-    reportSize(terminal)
     return () => {
+      cancelAnimationFrame(pendingFit)
       observer.disconnect()
       typed.dispose()
       resized.dispose()
