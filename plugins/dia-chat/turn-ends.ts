@@ -1,9 +1,11 @@
 import type { PaneMessage } from '@shared/domain/pane-chat'
 
 /**
- * Where each turn of a transcript ends: the id of a turn's last message, mapped to the ids of the
- * consecutive user messages that open the turn. A turn runs from those user messages up to the
- * next user message. Messages before the first user message belong to no turn.
+ * Where each turn of a transcript ends: the id of a turn's last reply or error, or of its last
+ * user message while it has none, mapped to the ids of the consecutive user messages that open
+ * the turn. A turn runs from those user messages up to the next user message that follows a
+ * reply. Notices belong to no turn and never end one, so a model change or compaction notice
+ * before the next message, and a park notice, leave the previous turn's end where it was.
  */
 export const turnEnds = (
   messages: ReadonlyArray<Pick<PaneMessage, 'id' | 'role'>>
@@ -16,6 +18,7 @@ export const turnEnds = (
     if (lastId !== undefined && opening.length > 0) ends.set(lastId, opening)
   }
   for (const message of messages) {
+    if (message.role === 'notice') continue
     if (message.role === 'user') {
       if (replied) {
         close()

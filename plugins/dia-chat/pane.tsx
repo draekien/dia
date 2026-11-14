@@ -679,7 +679,7 @@ function TurnFooters({
       <PluginBoundary
         key={`${footer.key.plugin}.${footer.key.id}`}
         plugin={footer.key.plugin}
-        at="chat.turnFooters"
+        at={TurnFootersSlot.name}
         resetKey={Footer}
         fallback={() => null}
       >

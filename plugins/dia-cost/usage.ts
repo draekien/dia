@@ -28,7 +28,8 @@ const add = (a: TokenUsage, b: TokenUsage): TokenUsage => ({
 /**
  * The usage after run event `event`, given in sequence order. Each `PaneUserMessagesSent` starts
  * a turn with no tokens, keyed by the ids of its messages; each `PaneTurnUsageReported` adds its
- * tokens to the latest turn, or to a new turn with no messages when none has started. Every other event leaves `usage` unchanged.
+ * tokens to the latest turn, or to a new turn with no messages when none has started. Every
+ * other event leaves `usage` unchanged.
  */
 export const foldUsage = (usage: RunUsage, event: StoredEvent): RunUsage => {
   switch (event._tag) {
