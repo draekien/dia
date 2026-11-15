@@ -33,7 +33,15 @@ const isRemoteHead = (ref: GitRef) => ref.name.endsWith('/HEAD')
  * {@link GitCallFailed} when git cannot read it.
  */
 export const readBranches = Effect.fn('Branches.read')(function* (git: Git, directory: string) {
-  const current = yield* git.currentBranch(directory)
+  const [current, localRefs, remoteRefs, originHead] = yield* Effect.all(
+    [
+      git.currentBranch(directory),
+      git.refs(directory, LOCAL_PREFIX),
+      git.refs(directory, REMOTE_PREFIX),
+      git.remoteHead(directory, DEFAULT_REMOTE)
+    ],
+    { concurrency: 'unbounded' }
+  )
   const head = Option.isSome(current)
     ? OnBranch.make({ branch: current.value })
     : DetachedHead.make({
@@ -42,11 +50,8 @@ export const readBranches = Effect.fn('Branches.read')(function* (git: Git, dire
           SHORT_COMMIT
         )
       })
-  const local = (yield* git.refs(directory, LOCAL_PREFIX)).map(localBranch)
-  const remote = (yield* git.refs(directory, REMOTE_PREFIX))
-    .filter((ref) => !isRemoteHead(ref))
-    .map(remoteBranch)
-  const originHead = yield* git.remoteHead(directory, DEFAULT_REMOTE)
+  const local = localRefs.map(localBranch)
+  const remote = remoteRefs.filter((ref) => !isRemoteHead(ref)).map(remoteBranch)
   const checkedOut = Option.getOrNull(current)
   const branches: BranchList['branches'] = [
     ...local.filter((branch) => branch.name === checkedOut),
@@ -64,22 +69,30 @@ export const readBranches = Effect.fn('Branches.read')(function* (git: Git, dire
 const hasTrackedChanges = (git: Git, directory: string) =>
   git.status(directory).pipe(Effect.map((entries) => entries.some((entry) => entry.code !== '??')))
 
+/** The local branch name `git switch` takes for `branch`: a remote branch without its remote. */
+export const localName = (branch: Branch): string =>
+  branch.remote === null ? branch.name : branch.name.slice(branch.remote.length + 1)
+
 /**
- * Checks out local branch `branch` in the checkout at `directory` through `git` and returns its new
- * {@link BranchList}. Fails with {@link UncommittedChanges} when tracked files have changes, and
+ * Checks out `branch` in the checkout at `directory` through `git`, as the local branch of the same
+ * name when it is a remote branch, and returns its new {@link BranchList}. Fails with {@link UncommittedChanges} when tracked files have changes, and
  * with {@link GitCallFailed} when git refuses the switch.
  */
 export const switchBranch = Effect.fn('Branches.switch')(function* (
   git: Git,
   directory: string,
-  branch: string
+  branch: Branch
 ) {
   if (yield* hasTrackedChanges(git, directory).pipe(Effect.mapError(failed))) {
     const current = yield* git.currentBranch(directory).pipe(Effect.mapError(failed))
-    yield* Effect.logInfo('Refused a branch switch over uncommitted changes', { directory, branch })
+    yield* Effect.logInfo('Refused a branch switch over uncommitted changes', {
+      directory,
+      branch: branch.name
+    })
     return yield* new UncommittedChanges({ branch: Option.getOrNull(current) })
   }
-  yield* git.switchBranch(directory, branch).pipe(Effect.mapError(failed))
-  yield* Effect.logInfo('Switched the checkout branch', { directory, branch })
+  const name = localName(branch)
+  yield* git.switchBranch(directory, name).pipe(Effect.mapError(failed))
+  yield* Effect.logInfo('Switched the checkout branch', { directory, branch: name })
   return yield* readBranches(git, directory)
 })

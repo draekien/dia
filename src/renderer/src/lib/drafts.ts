@@ -80,7 +80,6 @@ export const draftsAtom = Atom.writable(
   (ctx, drafts: ReadonlyArray<Draft>) => {
     ctx.set(chosenDraftsAtom, drafts)
     localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts))
-    log('Saved the drafts', { count: drafts.length })
   }
 ).pipe(Atom.keepAlive)
 

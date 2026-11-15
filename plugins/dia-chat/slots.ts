@@ -95,3 +95,12 @@ export interface ThreadTargetEntry {
  * with `addEntry(ctx, ThreadTargetsSlot, target)`; a draft names it by the adding plugin and `id`.
  */
 export const ThreadTargetsSlot = ListSlot.make<ThreadTargetEntry>('chat.threadTargets')
+
+/** The {@link ThreadTargetsSlot} entry a draft's `target` names, or undefined when no plugin adds it. */
+export const targetEntryOf = <
+  E extends { readonly key: { readonly plugin: string; readonly id: string } }
+>(
+  entries: ReadonlyArray<E>,
+  target: { readonly plugin: string; readonly id: string }
+): E | undefined =>
+  entries.find((entry) => entry.key.plugin === target.plugin && entry.key.id === target.id)

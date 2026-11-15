@@ -13,7 +13,7 @@ import {
   useView,
   useWorkspace
 } from '@dia/renderer-plugin'
-import { ThreadTargetsSlot } from '@dia-plugin/dia-chat/slots'
+import { ThreadTargetsSlot, targetEntryOf } from '@dia-plugin/dia-chat/slots'
 import { userProjects } from '@shared/domain/workspace'
 import { PenLineIcon, XIcon } from 'lucide-react'
 
@@ -35,10 +35,7 @@ function useTargetName(): (target: ThreadTarget | null) => string {
         projects.find((entry) => entry.project.projectId === target.projectId)?.project
           .displayName ?? 'Removed project'
       )
-    return (
-      entries.find((entry) => entry.key.plugin === target.plugin && entry.key.id === target.id)
-        ?.label ?? target.id
-    )
+    return targetEntryOf(entries, target)?.label ?? target.id
   }
 }
 

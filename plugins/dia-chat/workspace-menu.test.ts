@@ -1,6 +1,6 @@
 import type { BranchList } from '@dia-plugin/dia-git/calls'
 import { describe, expect, it } from 'vitest'
-import { baseChoices, headLabel, switchName, uncommittedText, worktreeBase } from './workspace-menu'
+import { baseChoices, headLabel, uncommittedText, worktreeBase } from './workspace-menu'
 
 const list: BranchList = {
   head: { _tag: 'OnBranch', branch: 'topic' },
@@ -45,16 +45,6 @@ describe('worktreeBase', () => {
 
   it('is null while the branches are not read and the draft chose none', () => {
     expect(worktreeBase({ base: null }, undefined)).toBeNull()
-  })
-})
-
-describe('switchName', () => {
-  it('drops the remote from a remote branch so git switch creates the local branch', () => {
-    expect(switchName({ name: 'origin/feature/login', remote: 'origin' })).toBe('feature/login')
-  })
-
-  it('keeps a local branch name as it is', () => {
-    expect(switchName({ name: 'feature/login', remote: null })).toBe('feature/login')
   })
 })
 

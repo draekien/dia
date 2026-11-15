@@ -48,7 +48,6 @@ export {
   emptyDraft,
   PluginThreadTarget,
   ProjectTarget,
-  sameTarget,
   ThreadTarget
 } from './lib/drafts'
 export { addEntry, declareList, useList } from './lib/list-slots'

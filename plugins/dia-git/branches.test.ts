@@ -2,7 +2,7 @@ import * as NodeServices from '@effect/platform-node/NodeServices'
 import { assert, describe, it } from '@effect/vitest'
 import { Effect, FileSystem, Option, Path, Result, type Scope } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
-import { readBranches, switchBranch } from './branches'
+import { localName, readBranches, switchBranch } from './branches'
 import { makeGit } from './git'
 
 const AUTHOR = { name: 'dia', email: 'dia@example.com' }
@@ -106,7 +106,7 @@ describe('switchBranch', { timeout: 30_000 }, () => {
       Effect.gen(function* () {
         const { git, clone } = yield* clonedRepo
 
-        const list = yield* switchBranch(git, clone, 'release')
+        const list = yield* switchBranch(git, clone, { name: 'origin/release', remote: 'origin' })
 
         assert.deepStrictEqual(list.head, { _tag: 'OnBranch', branch: 'release' })
         assert.deepStrictEqual(list.branches[0], { name: 'release', remote: null })
@@ -120,7 +120,9 @@ describe('switchBranch', { timeout: 30_000 }, () => {
         const { git, clone, path, fs } = yield* clonedRepo
         yield* fs.writeFileString(path.join(clone, 'a.txt'), 'changed')
 
-        const result = yield* Effect.result(switchBranch(git, clone, 'release'))
+        const result = yield* Effect.result(
+          switchBranch(git, clone, { name: 'origin/release', remote: 'origin' })
+        )
 
         const failure = Result.isFailure(result) ? result.failure : undefined
         assert.deepStrictEqual(
@@ -138,10 +140,23 @@ describe('switchBranch', { timeout: 30_000 }, () => {
         const { git, clone, path, fs } = yield* clonedRepo
         yield* fs.writeFileString(path.join(clone, 'notes.txt'), 'scratch')
 
-        const list = yield* switchBranch(git, clone, 'release')
+        const list = yield* switchBranch(git, clone, { name: 'origin/release', remote: 'origin' })
 
         assert.deepStrictEqual(list.head, { _tag: 'OnBranch', branch: 'release' })
       })
     )
   )
+})
+
+describe('localName', () => {
+  it('drops the remote from a remote branch so git switch creates the local branch', () => {
+    assert.strictEqual(
+      localName({ name: 'origin/feature/login', remote: 'origin' }),
+      'feature/login'
+    )
+  })
+
+  it('keeps a local branch name as it is', () => {
+    assert.strictEqual(localName({ name: 'feature/login', remote: null }), 'feature/login')
+  })
 })

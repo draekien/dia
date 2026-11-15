@@ -55,12 +55,13 @@ export const ReadBranches = Rpc.make('ReadBranches', {
 })
 
 /**
- * Checks out local branch `branch` in the checkout at `directory`, creating it to track the remote
- * branch of that name when only a remote has one, and returns the new {@link BranchList}. Refused
+ * Checks out `branch`, a {@link Branch} from a {@link BranchList}, in the checkout at `directory`
+ * and returns the new {@link BranchList}. A remote branch is checked out as the local branch of the
+ * same name, created to track it when it does not exist. Refused
  * with {@link UncommittedChanges} while tracked files have changes; untracked files do not count.
  */
 export const SwitchBranch = Rpc.make('SwitchBranch', {
-  payload: { directory: Schema.String, branch: Schema.String },
+  payload: { directory: Schema.String, branch: Branch },
   success: BranchList,
   error: Schema.Union([UncommittedChanges, GitCallFailed])
 })

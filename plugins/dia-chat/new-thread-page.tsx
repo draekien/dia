@@ -42,7 +42,11 @@ import {
   userProjects,
   useWorkspace
 } from '@dia/renderer-plugin'
-import { type ThreadTargetEntry, ThreadTargetsSlot } from '@dia-plugin/dia-chat/slots'
+import {
+  type ThreadTargetEntry,
+  ThreadTargetsSlot,
+  targetEntryOf
+} from '@dia-plugin/dia-chat/slots'
 import { useAtomValue } from '@effect/atom-react'
 import type { ModelOption } from '@shared/domain/model'
 import {
@@ -94,9 +98,7 @@ const resolveTarget = (
     const project = projects.find((candidate) => candidate.projectId === target.projectId)
     return project === undefined ? null : { _tag: 'Project', target, project }
   }
-  const entry = entries.find(
-    (candidate) => candidate.key.plugin === target.plugin && candidate.key.id === target.id
-  )
+  const entry = targetEntryOf(entries, target)
   return entry === undefined ? null : { _tag: 'Plugin', target, entry }
 }
 

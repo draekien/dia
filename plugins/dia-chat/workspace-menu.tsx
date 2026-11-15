@@ -65,17 +65,16 @@ export const baseChoices = (list: BranchList): ReadonlyArray<Branch> => {
   ]
 }
 
-/** The local branch name `git switch` takes for `branch`: a remote branch without its remote. */
-export const switchName = (branch: Branch): string =>
-  branch.remote === null ? branch.name : branch.name.slice(branch.remote.length + 1)
-
 /** The sentence shown when the checkout refuses a switch over uncommitted changes on `branch`. */
 export const uncommittedText = (branch: string | null): string =>
   `${branch ?? 'The checkout'} has uncommitted changes. Commit or stash them first, or turn on Worktree.`
 
+const failureText = (failure: { readonly reason: string } | { readonly message: string }) =>
+  'reason' in failure ? failure.reason : failure.message
+
 const readBranches = (directory: string) =>
   callHost(GIT, ReadBranches, { directory }).pipe(
-    Effect.mapError((failure) => ('reason' in failure ? failure.reason : failure.message)),
+    Effect.mapError(failureText),
     Effect.tapError((reason) =>
       Effect.logWarning('Could not read branches', { directory, reason })
     ),
@@ -83,18 +82,23 @@ const readBranches = (directory: string) =>
     Effect.runPromise
   )
 
-const switchBranch = (directory: string, branch: string) =>
+const switchBranch = (directory: string, branch: Branch) =>
   callHost(GIT, SwitchBranch, { directory, branch }).pipe(
     Effect.mapError((failure) =>
-      failure._tag === 'UncommittedChanges'
-        ? uncommittedText(failure.branch)
-        : 'reason' in failure
-          ? failure.reason
-          : failure.message
+      failure._tag === 'UncommittedChanges' ? uncommittedText(failure.branch) : failureText(failure)
     ),
-    Effect.tap(() => Effect.logInfo('Switched the checkout branch', { directory, branch })),
+    Effect.tap(() =>
+      Effect.logInfo('Switched the checkout branch', { directory, branch: branch.name })
+    ),
     Effect.tapError((reason) => Effect.logInfo('Branch switch refused', { directory, reason }))
   )
+
+const workspaceLabel = (worktree: WorktreeStart | null, branches: Branches): string => {
+  const list = branches._tag === 'Loaded' ? branches.list : undefined
+  if (worktree !== null) return `Worktree from ${worktreeBase(worktree, list) ?? 'HEAD'}`
+  if (list !== undefined) return headLabel(list.head)
+  return branches._tag === 'Failed' ? 'Checkout' : '…'
+}
 
 const LOADING: Branches = { _tag: 'Loading' }
 
@@ -166,11 +170,11 @@ export function WorkspaceMenu({
   const [branches, setLoaded] = useBranches(directory)
   const [open, setOpen] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
-  const [guarded, setGuarded] = useState<string | null>(null)
+  const [guarded, setGuarded] = useState<Branch | null>(null)
   const switchId = useId()
   const list = branches._tag === 'Loaded' ? branches.list : undefined
 
-  const switchTo = (branch: string) => {
+  const switchTo = (branch: Branch) => {
     setGuarded(null)
     setRefusal(null)
     void Effect.runPromise(
@@ -196,10 +200,10 @@ export function WorkspaceMenu({
     }
     if (busyThread !== null) {
       setOpen(false)
-      setGuarded(switchName(branch))
+      setGuarded(branch)
       return
     }
-    switchTo(switchName(branch))
+    switchTo(branch)
   }
 
   const pickBase = (branch: Branch) => {
@@ -207,14 +211,7 @@ export function WorkspaceMenu({
     setOpen(false)
   }
 
-  const label =
-    worktree !== null
-      ? `Worktree from ${worktreeBase(worktree, list) ?? 'HEAD'}`
-      : list === undefined
-        ? branches._tag === 'Failed'
-          ? 'Checkout'
-          : '…'
-        : headLabel(list.head)
+  const label = workspaceLabel(worktree, branches)
 
   return (
     <>
@@ -315,8 +312,8 @@ export function WorkspaceMenu({
               {busyThread} is working in this checkout. Switch anyway?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Switching to {guarded} changes the files under it while it works. Turn on Worktree to
-              start this thread in its own directory instead.
+              Switching to {guarded?.name} changes the files under it while it works. Turn on
+              Worktree to start this thread in its own directory instead.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

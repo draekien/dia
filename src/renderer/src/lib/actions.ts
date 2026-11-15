@@ -1,10 +1,16 @@
 import type { PaneId } from '@shared/domain/pane'
-import { type AgentName, ProjectId, type RegisterProjectRefusal } from '@shared/domain/project'
+import {
+  type AgentName,
+  type Project,
+  ProjectId,
+  type RegisterProjectRefusal,
+  type Workspace
+} from '@shared/domain/project'
 import type { RemovalProgress } from '@shared/domain/project-removal'
 import { Uuid } from '@shared/domain/uuid'
-import { userProjects } from '@shared/domain/workspace'
+import { tabOf, userProjects } from '@shared/domain/workspace'
 import { sameEntryKey } from '@shared/plugin/list-slot'
-import { Effect, Option } from 'effect'
+import { Effect, Option, Result } from 'effect'
 import { openSettings } from '../components/settings/open-settings'
 import {
   type Draft,
@@ -58,32 +64,29 @@ export const openDraft = (draftId: Uuid): void => {
   window.dia.selectTab(null)
 }
 
-const projectOfVisibleTab = (): ThreadTarget | null =>
-  Option.match(appRegistry.get(workspaceAtom), {
-    onNone: () => null,
-    onSome: (workspace) => {
-      const entry = userProjects(workspace).find((candidate) =>
-        candidate.tabs.some((tab) => tab.config.paneId === workspace.visibleTab)
-      )
-      return entry === undefined ? null : ProjectTarget.make({ projectId: entry.project.projectId })
-    }
-  })
+const projectTarget = (project: Project | undefined): ThreadTarget | null =>
+  project === undefined ? null : ProjectTarget.make({ projectId: project.projectId })
 
-const firstProject = (): ThreadTarget | null =>
-  Option.match(appRegistry.get(workspaceAtom), {
-    onNone: () => null,
-    onSome: (workspace) => {
-      const [first] = userProjects(workspace)
-      return first === undefined ? null : ProjectTarget.make({ projectId: first.project.projectId })
-    }
-  })
+const projectOfVisibleTab = (workspace: Workspace): ThreadTarget | null => {
+  if (workspace.visibleTab === null) return null
+  const found = tabOf(workspace, workspace.visibleTab)
+  if (Result.isFailure(found) || found.success.project.owner !== undefined) return null
+  return projectTarget(found.success.project)
+}
+
+const firstProject = (workspace: Workspace): ThreadTarget | null =>
+  projectTarget(userProjects(workspace)[0]?.project)
 
 /**
  * The target a new thread starts in when the user names none: the project of the visible tab,
  * else the target of the last thread sent, else the first project, else null.
  */
-export const defaultThreadTarget = (): ThreadTarget | null =>
-  projectOfVisibleTab() ?? appRegistry.get(lastTargetAtom) ?? firstProject()
+export const defaultThreadTarget = (): ThreadTarget | null => {
+  const workspace = Option.getOrUndefined(appRegistry.get(workspaceAtom))
+  const visible = workspace === undefined ? null : projectOfVisibleTab(workspace)
+  const last = appRegistry.get(lastTargetAtom)
+  return visible ?? last ?? (workspace === undefined ? null : firstProject(workspace))
+}
 
 /**
  * Opens the new-thread page for `target`, or for {@link defaultThreadTarget} when `target` is
