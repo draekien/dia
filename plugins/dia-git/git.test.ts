@@ -38,6 +38,23 @@ const committedRepo = Effect.gen(function* () {
   return context
 })
 
+const gitIn = (directory: string, args: ReadonlyArray<string>) =>
+  Effect.flatMap(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
+    spawner.exitCode(ChildProcess.make('git', [...args]).pipe(ChildProcess.setCwd(directory)))
+  )
+
+const clonedRepo = Effect.gen(function* () {
+  const upstream = yield* committedRepo
+  const clone = `${upstream.directory}-clone`
+  yield* gitIn(upstream.directory, ['clone', '--quiet', upstream.directory, clone])
+  yield* Effect.addFinalizer(() =>
+    upstream.git
+      .stopFsmonitor(clone)
+      .pipe(Effect.andThen(upstream.fs.remove(clone, { recursive: true })), Effect.ignore)
+  )
+  return { ...upstream, clone }
+})
+
 const live = <A, E>(effect: Effect.Effect<A, E, NodeServices.NodeServices | Scope.Scope>) =>
   effect.pipe(Effect.scoped, Effect.provide(NodeServices.layer))
 
@@ -353,6 +370,86 @@ describe('makeGit', { timeout: 30_000 }, () => {
           { name: 'refs/dia/test/1/end', commit, subject: 'Fix it' },
           { name: 'refs/dia/test/2/start', commit, subject: 'Fix it' }
         ])
+      })
+    )
+  )
+
+  it.live('reads the branch the remote HEAD names, short form', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, clone } = yield* clonedRepo
+        const upstreamBranch = Option.getOrElse(yield* git.currentBranch(directory), () => '')
+
+        const head = yield* git.remoteHead(clone, 'origin')
+
+        assert.deepStrictEqual(head, Option.some(`origin/${upstreamBranch}`))
+      })
+    )
+  )
+
+  it.live('reads no remote HEAD in a repository without that remote', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory } = yield* committedRepo
+
+        assert.isTrue(Option.isNone(yield* git.remoteHead(directory, 'origin')))
+      })
+    )
+  )
+
+  it.live('switches to a branch that exists only on the remote, tracking it', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, clone } = yield* clonedRepo
+        yield* gitIn(directory, ['branch', 'feature'])
+        yield* git.fetch(clone, 'origin')
+
+        yield* git.switchBranch(clone, 'feature')
+
+        assert.deepStrictEqual(yield* git.currentBranch(clone), Option.some('feature'))
+        assert.isTrue(yield* git.branchExists(clone, 'feature'))
+      })
+    )
+  )
+
+  it.live('refuses a switch that would overwrite uncommitted changes and stays on the branch', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, write } = yield* committedRepo
+        const start = Option.getOrElse(yield* git.currentBranch(directory), () => '')
+        yield* gitIn(directory, ['switch', '--quiet', '-c', 'other'])
+        yield* write('a.txt', 'two\n')
+        yield* git.commitAll(directory, { message: 'two', author: AUTHOR })
+        yield* gitIn(directory, ['switch', '--quiet', start])
+        yield* write('a.txt', 'three\n')
+
+        const result = yield* Effect.result(git.switchBranch(directory, 'other'))
+
+        assert.isTrue(Result.isFailure(result))
+        assert.deepStrictEqual(yield* git.currentBranch(directory), Option.some(start))
+      })
+    )
+  )
+
+  it.live('starts a new worktree branch from the start point instead of HEAD', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, write } = yield* committedRepo
+        const first = Option.getOrElse(yield* git.resolveCommit(directory, 'HEAD'), () => '')
+        yield* gitIn(directory, ['branch', 'base'])
+        yield* write('a.txt', 'two\n')
+        yield* git.commitAll(directory, { message: 'two', author: AUTHOR })
+        const worktree = `${directory}-from-base`
+        yield* Effect.addFinalizer(() =>
+          git.removeWorktree(directory, worktree, { force: true }).pipe(Effect.ignore)
+        )
+
+        yield* git.addWorktree(directory, worktree, 'dia/from-base', {
+          createBranch: true,
+          startPoint: 'base'
+        })
+
+        assert.deepStrictEqual(yield* git.resolveCommit(worktree, 'HEAD'), Option.some(first))
       })
     )
   )

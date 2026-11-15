@@ -19,9 +19,9 @@ import { type Ledger, makeLedger, worktreeMigrations } from './ledger'
  */
 export const recordingGitOps = (git: GitCommands, ledger: Ledger): GitOps => ({
   ...git,
-  createWorktree: (sourceRepo, owner, nameHint) =>
+  createWorktree: (sourceRepo, owner, nameHint, base) =>
     git
-      .createWorktree(sourceRepo, owner, nameHint)
+      .createWorktree(sourceRepo, owner, nameHint, base)
       .pipe(Effect.tap((info) => ledger.recordCreated(info, owner))),
   reattachWorktree: (info, paneId) =>
     git

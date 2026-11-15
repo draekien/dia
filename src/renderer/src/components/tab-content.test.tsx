@@ -8,7 +8,7 @@ import type { ComponentType } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setPluginRegistry } from '../lib/slots'
 import { useTabOpenedFromNewAgent } from '../lib/tab-opened-from-new-agent'
-import { FirstRunView, NewAgentView, TabView, type View } from '../lib/view'
+import { NewThreadView, TabView, type View } from '../lib/view'
 import { TabContent } from './tab-content'
 
 const shown = vi.hoisted(() => ({
@@ -20,11 +20,11 @@ vi.mock('../plugin-api', () => ({
   useView: () => shown.view,
   useWorkspace: () => shown.workspace
 }))
-vi.mock('./pane-creation-form', () => ({ default: () => <p>new agent form</p> }))
 vi.mock('./window-status', () => ({ WindowStatus: () => null }))
 
 const PROJECT_ID = ProjectId.make('00000000-0000-4000-8000-000000000001')
 const PANE = '00000000-0000-4000-8000-000000000101'
+const DRAFT = '00000000-0000-4000-8000-0000000000d1'
 const workspace: Workspace = {
   projects: [
     {
@@ -84,25 +84,25 @@ describe('TabContent', () => {
     expect(screen.getByRole('heading', { name: 'No chat plugin is loaded' })).toBeTruthy()
   })
 
-  it('shows the first-run screen while main.tab is empty', () => {
-    setPluginRegistry(registryWithMainTab(undefined))
-
-    render(show(FirstRunView.make({})))
-
-    expect(screen.getByRole('button', { name: 'Add project' })).toBeTruthy()
-  })
-
-  it('shows the New agent form while main.tab is empty', () => {
-    setPluginRegistry(registryWithMainTab(undefined))
-
-    render(show(NewAgentView.make({ projectId: PROJECT_ID })))
-
-    expect(screen.getByText('new agent form')).toBeTruthy()
-  })
-
-  it('tells the main.tab filler the tab was opened from the New agent form', () => {
+  it('renders the main.tab filler for the new-thread page', () => {
     setPluginRegistry(registryWithMainTab(ChatStandIn))
-    const { rerender } = render(show(NewAgentView.make({ projectId: PROJECT_ID })))
+
+    render(show(NewThreadView.make({ draftId: DRAFT })))
+
+    expect(screen.getByText('chat')).toBeTruthy()
+  })
+
+  it('shows that no chat plugin is loaded for the new-thread page while main.tab is empty', () => {
+    setPluginRegistry(registryWithMainTab(undefined))
+
+    render(show(NewThreadView.make({ draftId: DRAFT })))
+
+    expect(screen.getByRole('heading', { name: 'No chat plugin is loaded' })).toBeTruthy()
+  })
+
+  it('tells the main.tab filler the tab was opened from the new-thread page', () => {
+    setPluginRegistry(registryWithMainTab(ChatStandIn))
+    const { rerender } = render(show(NewThreadView.make({ draftId: DRAFT })))
 
     rerender(show(TabView.make({ paneId: PANE })))
 

@@ -72,9 +72,8 @@ function WorktreeChip({ worktree }: { readonly worktree: { path: string; branch:
  * The kernel's content for the card header row, shown in the `main.header` slot unless a plugin
  * fills it. A breadcrumb for the current view (`project › thread` with the worktree branch and the
  * transcript width control for a tab, only the tab name when a plugin owns the tab's project,
- * `project › label` with the same control for an attached session, `project › New thread` for the
- * New thread form, nothing for
- * the other views; the layout plugin draws a page's label) followed, for a tab, by the session rail
+ * `project › label` with the same control for an attached session, `New thread` for the new-thread
+ * page, nothing for a page; the layout plugin draws a page's label) followed, for a tab, by the session rail
  * toggle, the bottom panel toggle and the right panel toggle, then {@link WindowStatus} at the
  * right end. A plugin that fills the slot owns the status items.
  */
@@ -85,10 +84,6 @@ export function TabHeader() {
     view?._tag === 'TabView' && workspace !== undefined ? tabOf(workspace, view.paneId) : undefined
   const tab = found !== undefined && Result.isSuccess(found) ? found.success : undefined
   const showsChat = tab !== undefined
-  const newAgentProject =
-    view?._tag === 'NewAgentView'
-      ? workspace?.projects.find((entry) => entry.project.projectId === view.projectId)?.project
-      : undefined
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -101,7 +96,7 @@ export function TabHeader() {
       {tab?.tab.config.worktree !== undefined && (
         <WorktreeChip worktree={tab.tab.config.worktree} />
       )}
-      {newAgentProject !== undefined && <Crumbs project={newAgentProject} page="New thread" />}
+      {view?._tag === 'NewThreadView' && <Crumbs page="New thread" />}
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {showsChat && <TranscriptWidthButton />}
         {showsChat && <RailToggle />}

@@ -51,7 +51,10 @@ export interface IncludedFileFailure {
  * `createWorktree` provisions a worktree from `sourceRepo` for `owner` in a directory the plugin
  * chooses, on branch `dia/<name>`, and returns where it put them. `<name>` is `nameHint` reduced
  * to lowercase letters, digits and hyphens, or a generated adjective-noun name when `nameHint` is
- * `None`; a `-<hex>` suffix is added when a directory or branch with that name exists.
+ * `None`; a `-<hex>` suffix is added when a directory or branch with that name exists. The branch
+ * starts from `base` (a branch name such as `origin/main`), or from `sourceRepo`'s `HEAD` when
+ * `base` is absent; when `base` begins with a configured remote's name that remote is fetched
+ * first, and a failed fetch falls back to the local copy of `base`.
  * `reattachWorktree` re-adds the worktree described by `info` on resume, checking out its existing
  * branch so committed work is preserved; it returns `info` and does nothing when the path is
  * already a registered worktree, reuses a path that exists but is an empty, unregistered
@@ -72,7 +75,8 @@ export interface GitOps {
   readonly createWorktree: (
     sourceRepo: string,
     owner: WorktreeOwner,
-    nameHint: Option.Option<string>
+    nameHint: Option.Option<string>,
+    base?: string
   ) => Effect.Effect<WorktreeInfo, WorktreeCreateError>
   readonly releaseWorktree: (info: WorktreeInfo, paneId: PaneId) => Effect.Effect<ReleaseOutcome>
   readonly reattachWorktree: (

@@ -5,6 +5,7 @@ import {
   PanelsSlot,
   RailCardsSlot,
   RequestCardKey,
+  ThreadTargetsSlot,
   TurnFootersSlot
 } from '@dia-plugin/dia-chat/slots'
 import { Effect } from 'effect'
@@ -20,6 +21,7 @@ const setup: PluginSetup<PluginServices> = (ctx) =>
     yield* declareList(ctx, PanelsSlot)
     yield* declareList(ctx, BottomPanelsSlot)
     yield* declareList(ctx, TurnFootersSlot)
+    yield* declareList(ctx, ThreadTargetsSlot)
     yield* fillSlot(ctx, MAIN_TAB, Chat)
     yield* ctx.provide(RequestCardKey, RequestCard)
     yield* Effect.logDebug('Request card provided', { key: RequestCardKey.name })

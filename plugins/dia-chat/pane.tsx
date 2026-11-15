@@ -25,11 +25,8 @@ import {
   Message,
   MessageContent,
   type MessagePart,
-  offeredPermissionModes,
   type PaneChatState,
   type PaneMessage,
-  PERMISSION_MODE_OPTIONS,
-  PermissionModeItems,
   PluginBoundary,
   paneChatAtom,
   paneEditQueuedAtom,
@@ -42,11 +39,6 @@ import {
   revealRailCard,
   rewindRowState,
   rewindTargets,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   SessionRail,
   StepStatusIcon,
   type StepsSection as StepsSectionBlock,
@@ -58,7 +50,6 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-  thinkingLevelLabel,
   thinkingLevelsFor,
   turnActivity,
   turnBlocks,
@@ -123,11 +114,7 @@ import {
   composerActionHint,
   composerPlaceholder
 } from './composer-action'
-import {
-  composerSettingTrigger,
-  permissionSettingLabel,
-  thinkingSettingLabel
-} from './composer-settings'
+import { PermissionModeSelect, ThinkingLevelSelect } from './composer-setting-selects'
 import { CONTEXT_CARD_ID } from './context-card'
 import { contextColor, contextNeedsAttention, contextPercent } from './context-meter'
 import { Markdown } from './markdown'
@@ -512,70 +499,6 @@ export function MessageView({
       </Message>
       {rewind !== undefined && <RewindAction {...rewind} />}
     </div>
-  )
-}
-
-function ThinkingLevelSelect({
-  value,
-  levels,
-  onChange
-}: {
-  value: ThinkingLevel
-  levels: ReadonlyArray<ThinkingLevel>
-  onChange: (level: ThinkingLevel) => void
-}): React.JSX.Element {
-  return (
-    <Select
-      value={value}
-      onValueChange={(next) => {
-        if (next !== null) onChange(next)
-      }}
-    >
-      <SelectTrigger size="sm" aria-label="Thinking level" className={composerSettingTrigger()}>
-        <SelectValue>{thinkingSettingLabel(value)}</SelectValue>
-      </SelectTrigger>
-      <SelectContent align="start">
-        {levels.map((level) => (
-          <SelectItem key={level} value={level}>
-            {thinkingLevelLabel(level)}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  )
-}
-
-function PermissionModeSelect({
-  value,
-  disabledModes,
-  onChange
-}: {
-  value: PermissionMode
-  disabledModes: ReadonlyArray<PermissionMode>
-  onChange: (mode: PermissionMode) => void
-}): React.JSX.Element {
-  return (
-    <Select
-      value={value}
-      onValueChange={(next) => {
-        if (next !== null) onChange(next)
-      }}
-    >
-      <SelectTrigger
-        size="sm"
-        aria-label="Permission mode"
-        className={composerSettingTrigger({
-          emphasis: value === 'bypassPermissions' ? 'foreground' : 'muted'
-        })}
-      >
-        <SelectValue>{permissionSettingLabel(value)}</SelectValue>
-      </SelectTrigger>
-      <SelectContent align="start">
-        <PermissionModeItems
-          options={offeredPermissionModes(PERMISSION_MODE_OPTIONS, disabledModes, value)}
-        />
-      </SelectContent>
-    </Select>
   )
 }
 

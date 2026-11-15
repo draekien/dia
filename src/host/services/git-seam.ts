@@ -121,14 +121,29 @@ export interface Git {
   readonly push: (cwd: string, remote: string, refspec: string) => Effect.Effect<void, GitError>
   /**
    * Adds a worktree of `repo` at `path` checking out `branch`; with `createBranch` the branch is
-   * created from `repo`'s `HEAD`.
+   * created from `startPoint`, or from `repo`'s `HEAD` when `startPoint` is absent. A remote-tracking
+   * `startPoint` becomes the new branch's upstream.
    */
   readonly addWorktree: (
     repo: string,
     path: string,
     branch: string,
-    options: { readonly createBranch: boolean }
+    options: { readonly createBranch: boolean; readonly startPoint?: string }
   ) => Effect.Effect<void, GitError>
+  /**
+   * The branch `remote`'s `HEAD` names in `cwd`, short form (`origin/main`), or `None` when
+   * `refs/remotes/<remote>/HEAD` is not set.
+   */
+  readonly remoteHead: (
+    cwd: string,
+    remote: string
+  ) => Effect.Effect<Option.Option<string>, GitError>
+  /**
+   * Checks out local branch `branch` in `cwd`. A name with no local branch but one remote branch of
+   * that name creates a local branch tracking it. Fails, leaving the working tree as it was, when
+   * the switch would overwrite local changes.
+   */
+  readonly switchBranch: (cwd: string, branch: string) => Effect.Effect<void, GitError>
   /**
    * Removes the worktree at `path`. Without `force` it fails when the tree has modified or
    * untracked files.
@@ -186,6 +201,8 @@ const GIT_MEMBERS = [
   'fetch',
   'push',
   'addWorktree',
+  'remoteHead',
+  'switchBranch',
   'removeWorktree',
   'pruneWorktrees',
   'listWorktrees',

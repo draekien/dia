@@ -15,3 +15,6 @@ export const Uuid = Schema.String.check(
     }
   )
 )
+
+/** A UUID string; see {@link Uuid}. */
+export type Uuid = typeof Uuid.Type

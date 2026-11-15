@@ -90,36 +90,23 @@ describe('TabHeader', () => {
     expect(screen.getByRole('button', { name: 'Session details' })).toBeTruthy()
   })
 
-  it('shows project then New agent for the New agent form, without a width control', () => {
-    show({ _tag: 'NewAgentView', projectId: PROJECT_ID }, { projects: [entry], visibleTab: null })
+  it('shows New thread for the new-thread page, without a width control', () => {
+    show(
+      { _tag: 'NewThreadView', draftId: '00000000-0000-4000-8000-0000000000aa' },
+      { projects: [entry], visibleTab: null }
+    )
 
     const crumbs = screen.getByRole('navigation', { name: 'breadcrumb' })
-    expect(within(crumbs).getByText('dia')).toBeTruthy()
     expect(within(crumbs).getByText('New thread').getAttribute('aria-current')).toBe('page')
+    expect(within(crumbs).queryByText('dia')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Transcript width' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Session details' })).toBeNull()
   })
 
-  it.each([
-    ['the first-run view', { _tag: 'FirstRunView' } as const],
-    ['the empty-project view', { _tag: 'EmptyProjectView' } as const],
-    ['startup', undefined]
-  ])('shows no breadcrumb for %s but keeps the window status', (_name, view) => {
-    show(view, { projects: [entry], visibleTab: null })
+  it('shows no breadcrumb during startup but keeps the window status', () => {
+    show(undefined, { projects: [entry], visibleTab: null })
 
     expect(screen.queryByRole('navigation', { name: 'breadcrumb' })).toBeNull()
     expect(screen.getByText('window status')).toBeTruthy()
-  })
-
-  it('shows no breadcrumb for a New agent form whose project is not in the workspace', () => {
-    show(
-      { _tag: 'NewAgentView', projectId: ProjectId.make('00000000-0000-4000-8000-0000000000ff') },
-      {
-        projects: [entry],
-        visibleTab: null
-      }
-    )
-
-    expect(screen.queryByRole('navigation', { name: 'breadcrumb' })).toBeNull()
   })
 })

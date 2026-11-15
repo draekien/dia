@@ -19,11 +19,11 @@ import type { WorktreeCreateError, WorktreeReattachError } from './worktrees-sea
 
 /**
  * How a run's worktree is obtained. `Create` provisions a new worktree recorded under `label` on
- * Settings › Worktrees; `Reattach` re-adds the run's existing worktree from its {@link WorktreeInfo},
+ * Settings › Worktrees, on a branch started from `base` or from the project's `HEAD` when absent; `Reattach` re-adds the run's existing worktree from its {@link WorktreeInfo},
  * checking out its branch. Absent from a {@link RunSpec} means the run works in `sourceCwd`.
  */
 export type WorktreeRequest =
-  | { readonly _tag: 'Create'; readonly label: string }
+  | { readonly _tag: 'Create'; readonly label: string; readonly base?: string }
   | { readonly _tag: 'Reattach'; readonly info: WorktreeInfo }
 
 /**

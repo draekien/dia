@@ -2,14 +2,12 @@ import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/p
 import { Option } from 'effect'
 import { describe, expect, it } from 'vitest'
 import {
-  closesNewAgentForm,
+  closesNewThreadForm,
   closesOpenPage,
-  EmptyProjectView,
-  FirstRunView,
-  type NewAgentForm,
-  NewAgentView,
+  type NewThreadForm,
+  NewThreadView,
   type OpenPage,
-  openNewAgentForm,
+  openNewThreadForm,
   PageView,
   TabView,
   viewOf
@@ -54,66 +52,58 @@ const pageOpenedOver = (shownBefore: string | null): OpenPage => ({
   shownBefore
 })
 
-const formOpenedOver = (shownBefore: string | null): NewAgentForm => ({
-  projectId: PROJECT,
+const DRAFT = '00000000-0000-4000-8000-0000000000d1'
+const FALLBACK = '00000000-0000-4000-8000-0000000000f0'
+
+const formOpenedOver = (shownBefore: string | null): NewThreadForm => ({
+  draftId: DRAFT,
   shownBefore
 })
 
 describe('viewOf', () => {
   it('has no view until the workspace loads', () => {
-    expect(viewOf(Option.none(), Option.none(), Option.none())).toBeUndefined()
+    expect(viewOf(Option.none(), Option.none(), Option.none(), FALLBACK)).toBeUndefined()
   })
 
-  it('shows the open page over the New agent form and a visible tab', () => {
+  it('shows the open page over the new-thread page and a visible tab', () => {
     const view = viewOf(
       Option.some(workspace([PANE_A], PANE_A)),
       Option.some(formOpenedOver(PANE_A)),
-      Option.some(pageOpenedOver(PANE_A))
+      Option.some(pageOpenedOver(PANE_A)),
+      FALLBACK
     )
 
     expect(view).toEqual(PageView.make(GREETING))
   })
 
-  it('shows the New agent form while it is open, even over a visible tab', () => {
+  it('shows the open new-thread page for its draft, even over a visible tab', () => {
     const view = viewOf(
       Option.some(workspace([PANE_A], PANE_A)),
       Option.some(formOpenedOver(PANE_A)),
-      Option.none()
+      Option.none(),
+      FALLBACK
     )
 
-    expect(view).toEqual(NewAgentView.make({ projectId: PROJECT }))
+    expect(view).toEqual(NewThreadView.make({ draftId: DRAFT }))
   })
 
-  it('shows the visible tab when the form is closed', () => {
-    expect(viewOf(Option.some(workspace([PANE_A], PANE_A)), Option.none(), Option.none())).toEqual(
-      TabView.make({ paneId: PANE_A })
-    )
+  it('shows the visible tab when no new-thread page is open', () => {
+    expect(
+      viewOf(Option.some(workspace([PANE_A], PANE_A)), Option.none(), Option.none(), FALLBACK)
+    ).toEqual(TabView.make({ paneId: PANE_A }))
   })
 
-  it('shows the first-run screen when no project is registered', () => {
+  it('shows the new-thread page for the fallback draft when no tab is visible', () => {
+    expect(
+      viewOf(Option.some(workspace([PANE_A], null)), Option.none(), Option.none(), FALLBACK)
+    ).toEqual(NewThreadView.make({ draftId: FALLBACK }))
+  })
+
+  it('shows the new-thread page for the fallback draft when no project is registered', () => {
     const empty: Workspace = { projects: [], visibleTab: null }
 
-    expect(viewOf(Option.some(empty), Option.none(), Option.none())).toEqual(FirstRunView.make({}))
-  })
-
-  it('shows the first-run screen when every project has a plugin owner', () => {
-    const base = workspace([], null)
-    const ownedOnly: Workspace = {
-      ...base,
-      projects: base.projects.map((entry) => ({
-        ...entry,
-        project: { ...entry.project, owner: 'dia-org' }
-      }))
-    }
-
-    expect(viewOf(Option.some(ownedOnly), Option.none(), Option.none())).toEqual(
-      FirstRunView.make({})
-    )
-  })
-
-  it('offers a new agent when projects exist but no tab is visible', () => {
-    expect(viewOf(Option.some(workspace([PANE_A], null)), Option.none(), Option.none())).toEqual(
-      EmptyProjectView.make({})
+    expect(viewOf(Option.some(empty), Option.none(), Option.none(), FALLBACK)).toEqual(
+      NewThreadView.make({ draftId: FALLBACK })
     )
   })
 })
@@ -136,46 +126,42 @@ describe('closesOpenPage', () => {
   })
 })
 
-describe('openNewAgentForm', () => {
-  const OTHER = ProjectId.make('00000000-0000-4000-8000-000000000002')
+describe('openNewThreadForm', () => {
+  const OTHER_DRAFT = '00000000-0000-4000-8000-0000000000d2'
 
-  it('remembers the visible tab when no form is open', () => {
-    expect(openNewAgentForm(Option.none(), PROJECT, PANE_A)).toEqual({
-      projectId: PROJECT,
+  it('remembers the visible tab when no new-thread page is open', () => {
+    expect(openNewThreadForm(Option.none(), DRAFT, PANE_A)).toEqual({
+      draftId: DRAFT,
       shownBefore: PANE_A
     })
   })
 
-  it('keeps the tab the open form hid when a form for another project replaces it', () => {
-    expect(openNewAgentForm(Option.some(formOpenedOver(PANE_A)), OTHER, null)).toEqual({
-      projectId: OTHER,
+  it('keeps the tab the open page hid when another draft replaces it', () => {
+    expect(openNewThreadForm(Option.some(formOpenedOver(PANE_A)), OTHER_DRAFT, null)).toEqual({
+      draftId: OTHER_DRAFT,
       shownBefore: PANE_A
     })
   })
 })
 
-describe('closesNewAgentForm', () => {
-  it('closes the form when the workspace shows a tab other than the one shown before', () => {
-    expect(closesNewAgentForm(formOpenedOver(PANE_A), workspace([PANE_A, PANE_B], PANE_B))).toBe(
+describe('closesNewThreadForm', () => {
+  it('closes the page when the workspace shows a tab other than the one shown before', () => {
+    expect(closesNewThreadForm(formOpenedOver(PANE_A), workspace([PANE_A, PANE_B], PANE_B))).toBe(
       true
     )
   })
 
-  it('closes the form when a tab appears after none was shown', () => {
-    expect(closesNewAgentForm(formOpenedOver(null), workspace([PANE_A], PANE_A))).toBe(true)
+  it('closes the page when a tab appears after none was shown', () => {
+    expect(closesNewThreadForm(formOpenedOver(null), workspace([PANE_A], PANE_A))).toBe(true)
   })
 
-  it('keeps the form open while the tab shown before is still shown', () => {
-    expect(closesNewAgentForm(formOpenedOver(PANE_A), workspace([PANE_A], PANE_A))).toBe(false)
+  it('keeps the page open while the tab shown before is still shown', () => {
+    expect(closesNewThreadForm(formOpenedOver(PANE_A), workspace([PANE_A], PANE_A))).toBe(false)
   })
 
-  it('keeps the form open while no tab is shown', () => {
-    expect(closesNewAgentForm(formOpenedOver(PANE_A), workspace([PANE_A], null))).toBe(false)
-  })
-
-  it('closes the form when its project is removed while no tab is shown', () => {
-    const removed: Workspace = { projects: [], visibleTab: null }
-
-    expect(closesNewAgentForm(formOpenedOver(null), removed)).toBe(true)
+  it('keeps the page open while no tab is shown, even with no project left', () => {
+    expect(closesNewThreadForm(formOpenedOver(PANE_A), { projects: [], visibleTab: null })).toBe(
+      false
+    )
   })
 })

@@ -230,6 +230,63 @@ describe('makeGitOps', () => {
     })
   )
 
+  describe('createWorktree from a base branch', () => {
+    const isRemoteGetUrl = (command: ChildProcess.Command) =>
+      argsOf(command)[0] === 'remote' && argsOf(command)[1] === 'get-url'
+    const isFetch = (command: ChildProcess.Command) => argsOf(command)[0] === 'fetch'
+
+    const createFrom = (base: string, exitCodeFor: (command: ChildProcess.Command) => number) => {
+      const commands: ChildProcess.Command[] = []
+      const { testLayer, loggerLayer } = makeTestSetup((command) => {
+        commands.push(command)
+        return exitCodeFor(command)
+      })
+      return Effect.gen(function* () {
+        const gitOps = yield* TestGitOps
+        yield* gitOps.createWorktree('/repo', OWNER, Option.none(), base)
+        return commands.map(argsOf)
+      }).pipe(Effect.provide(testLayer), Effect.provide(loggerLayer))
+    }
+
+    it.effect('fetches the base branch remote, then starts the branch from the base', () =>
+      Effect.gen(function* () {
+        const commands = yield* createFrom('origin/main', (command) =>
+          isRevParse(command) ? 1 : 0
+        )
+
+        const fetchAt = commands.findIndex((args) => args[0] === 'fetch')
+        const addAt = commands.findIndex((args) => args[0] === 'worktree' && args[1] === 'add')
+        assert.deepStrictEqual(commands[fetchAt], ['fetch', '--prune', 'origin'])
+        assert.isTrue(fetchAt < addAt)
+        assert.strictEqual(commands[addAt].at(-1), 'origin/main')
+      })
+    )
+
+    it.effect('fetches nothing when the base names a local branch', () =>
+      Effect.gen(function* () {
+        const commands = yield* createFrom('feature/login', (command) =>
+          isRevParse(command) ? 1 : isRemoteGetUrl(command) ? 2 : 0
+        )
+
+        assert.isFalse(commands.some((args) => args[0] === 'fetch'))
+        assert.strictEqual(
+          commands.find((args) => args[0] === 'worktree' && args[1] === 'add')?.at(-1),
+          'feature/login'
+        )
+      })
+    )
+
+    it.effect('still creates the worktree when the fetch fails', () =>
+      Effect.gen(function* () {
+        const commands = yield* createFrom('origin/main', (command) =>
+          isRevParse(command) ? 1 : isFetch(command) ? 128 : 0
+        )
+
+        assert.isTrue(commands.some((args) => args[0] === 'worktree' && args[1] === 'add'))
+      })
+    )
+  })
+
   it.effect('createWorktree fails with WorktreeCreateError on non-zero exit', () =>
     Effect.gen(function* () {
       // rev-parse non-zero (branch free) so a slug is accepted; the add then fails.
