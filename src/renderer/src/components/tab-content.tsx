@@ -1,5 +1,6 @@
 import { usePrevious } from '@renderer/hooks/use-previous'
 import type { Project } from '@shared/domain/project'
+import { userProjects } from '@shared/domain/workspace'
 import { FolderPlusIcon, PlusIcon } from 'lucide-react'
 import { newAgent, registerProject } from '../lib/actions'
 import { MAIN_TAB, Slot } from '../lib/slots'
@@ -90,7 +91,7 @@ export function TabContent() {
     case 'FirstRunView':
       return <FirstRun />
     case 'EmptyProjectView': {
-      const first = workspace.projects.find((entry) => entry.project.owner === undefined)
+      const [first] = userProjects(workspace)
       return first === undefined ? null : <EmptyProject project={first.project} />
     }
   }

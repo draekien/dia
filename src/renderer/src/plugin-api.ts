@@ -111,6 +111,7 @@ export {
   type ToolCallPart
 } from '@shared/domain/pane-chat'
 export { statusRank } from '@shared/domain/run-summary'
+export { userProjects } from '@shared/domain/workspace'
 export { formatResetTime } from '@shared/format-reset-time'
 export { AboutDialog } from './components/about-dialog'
 /**

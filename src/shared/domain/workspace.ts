@@ -264,6 +264,13 @@ export const claimTab = (
   }
 }
 
+/**
+ * The project entries of `workspace` that no plugin owns, in workspace order: the projects the user
+ * registered, which the thread list and every project picker show (ADR-0081).
+ */
+export const userProjects = (workspace: Workspace): Workspace['projects'] =>
+  workspace.projects.filter((entry) => entry.project.owner === undefined)
+
 /** The tab with `paneId` and the project that holds it. */
 export const tabOf = (
   workspace: Workspace,

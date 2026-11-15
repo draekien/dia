@@ -5,6 +5,7 @@ import {
   type ProjectId,
   RunsKey,
   type ToolScope,
+  userProjects,
   WorktreesKey
 } from '@dia/plugin'
 import {
@@ -153,12 +154,10 @@ const routingProjects = (workspace: Ref.Ref<Option.Option<Workspace>>) =>
     Option.match(current, {
       onNone: () => [],
       onSome: (value) =>
-        value.projects
-          .filter(({ project }) => project.owner === undefined)
-          .map(({ project }) => ({
-            id: project.projectId,
-            name: project.displayName
-          }))
+        userProjects(value).map(({ project }) => ({
+          id: project.projectId,
+          name: project.displayName
+        }))
     })
   )
 

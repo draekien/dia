@@ -1,6 +1,7 @@
 import type { PaneId } from '@shared/domain/pane'
 import { ProjectId, type Workspace } from '@shared/domain/project'
 import { Uuid } from '@shared/domain/uuid'
+import { userProjects } from '@shared/domain/workspace'
 import { PluginName } from '@shared/plugin/manifest'
 import { Option, Schema } from 'effect'
 
@@ -106,7 +107,7 @@ export const viewOf = (
   if (workspace.value.visibleTab !== null) {
     return TabView.make({ paneId: workspace.value.visibleTab })
   }
-  if (workspace.value.projects.every((entry) => entry.project.owner !== undefined)) {
+  if (userProjects(workspace.value).length === 0) {
     return FirstRunView.make({})
   }
   return EmptyProjectView.make({})

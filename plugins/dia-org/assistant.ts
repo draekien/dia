@@ -145,7 +145,7 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (
     return yield* deps.runs.isLive(runId)
   })
 
-  const deliverNotices = lock.withPermits(1)(
+  const sendPendingNotices = lock.withPermits(1)(
     Effect.gen(function* () {
       const notices = yield* Ref.get(pending)
       const runId = yield* SubscriptionRef.get(deps.runId)
@@ -157,6 +157,10 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (
         notices: notices.length
       })
     })
+  )
+
+  const deliverNotices = Effect.flatMap(Ref.get(pending), (notices) =>
+    notices.length === 0 ? Effect.void : sendPendingNotices
   )
 
   const startRun = Effect.fnUntraced(function* (jobTitle: JobTitle, message: string | undefined) {

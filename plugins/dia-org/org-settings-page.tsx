@@ -1,6 +1,6 @@
 // @effect-diagnostics asyncFunction:off -- React callbacks await OrgCall's Promise; components hold no Effect runtime.
 import type { PluginServices } from '@dia/plugin'
-import { Input, Label, Skeleton, Switch, useWorkspace } from '@dia/renderer-plugin'
+import { Input, Label, Skeleton, Switch, userProjects, useWorkspace } from '@dia/renderer-plugin'
 import { useAtomRefresh, useAtomValue } from '@effect/atom-react'
 import { Result, Schema } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
@@ -79,8 +79,9 @@ function WorktreeSwitches({
   readonly call: ReturnType<typeof useOrgCall>
 }) {
   const id = useId()
-  const projects = (useWorkspace()?.projects ?? []).filter(
-    ({ project }) => project.isGitRepo && project.owner === undefined
+  const workspace = useWorkspace()
+  const projects = (workspace === undefined ? [] : userProjects(workspace)).filter(
+    ({ project }) => project.isGitRepo
   )
   if (projects.length === 0) return null
 

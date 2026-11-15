@@ -169,15 +169,14 @@ export const WatchOrgLive = Rpc.make('WatchOrgLive', {
 
 /**
  * One run of an issue a hired agent works on, for an issue in a started status: the run's id, the
- * issue's title, the name of the issue's project, the hire's name (null for an unnamed hire) and
- * its job title's name.
+ * issue's title, the name of the issue's project, and the assignee: the hire's name, or its job
+ * title's name for an unnamed hire.
  */
 export const AgentRun = Schema.Struct({
   runId: Schema.String,
   issueTitle: Schema.String,
   projectName: Schema.String,
-  hireName: Schema.NullOr(Schema.String),
-  jobTitle: Schema.String
+  assignee: Schema.String
 })
 export type AgentRun = typeof AgentRun.Type
 

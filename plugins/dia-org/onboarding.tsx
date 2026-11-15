@@ -139,18 +139,19 @@ export function OnboardingStrip({
 
 const RUNS = 'dia-runs'
 
-/** Shows the Executive assistant's run `runId` in its tab; logs and resolves when it cannot. */
-export const openAssistant = (runId: string) =>
-  Effect.runPromise(
-    callHost(RUNS, OpenRunInTab, { runId }).pipe(
-      Effect.tap((opened) =>
-        Effect.logInfo('Opened the Executive assistant run in a tab', { runId, opened })
-      ),
-      Effect.catch((failure) =>
-        Effect.logWarning('Could not open the Executive assistant run', { runId, failure })
-      )
+/** Shows the Executive assistant's run `runId` in its tab; logs and succeeds when it cannot. */
+export const showAssistantRun = (runId: string): Effect.Effect<void> =>
+  callHost(RUNS, OpenRunInTab, { runId }).pipe(
+    Effect.tap((opened) =>
+      Effect.logInfo('Opened the Executive assistant run in a tab', { runId, opened })
+    ),
+    Effect.asVoid,
+    Effect.catch((failure) =>
+      Effect.logWarning('Could not open the Executive assistant run', { runId, failure })
     )
   )
+
+const openAssistant = (runId: string) => Effect.runPromise(showAssistantRun(runId))
 
 function SendBox({ call }: { readonly call: OrgCall }) {
   const [text, setText] = useState('')

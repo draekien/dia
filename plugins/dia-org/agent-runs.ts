@@ -75,8 +75,7 @@ export const agentRunsOf = (sources: AgentRunSources): ReadonlyArray<AgentRun> =
           runId: run.runId,
           issueTitle: issue.title,
           projectName: project?.displayName ?? 'Removed project',
-          hireName: hire.name,
-          jobTitle: jobTitles.get(hire.jobTitleId) ?? 'agent'
+          assignee: hire.name ?? jobTitles.get(hire.jobTitleId) ?? 'agent'
         })
       ]
     })

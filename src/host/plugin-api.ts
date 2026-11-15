@@ -69,6 +69,7 @@ export { AGENT_NAME_MAX_LENGTH, AgentName, ProjectId } from '../shared/domain/pr
 export { PermissionRules, SessionToolOptions } from '../shared/domain/session-tools'
 export * as TabSetup from '../shared/domain/tab-setup'
 export { Uuid } from '../shared/domain/uuid'
+export { userProjects } from '../shared/domain/workspace'
 export * as PaneEvents from '../shared/ipc/contract'
 export { PaneAgentEvent } from '../shared/ipc/contract'
 export * from '../shared/plugin/api'

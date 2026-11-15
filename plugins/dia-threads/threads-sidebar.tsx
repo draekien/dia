@@ -46,7 +46,7 @@ import {
 import { useAtomValue } from '@effect/atom-react'
 import type { PaneId } from '@shared/domain/pane'
 import { ProjectId, type Workspace } from '@shared/domain/project'
-import { tabOf } from '@shared/domain/workspace'
+import { tabOf, userProjects } from '@shared/domain/workspace'
 import { Option, Result, Schema } from 'effect'
 import { Atom } from 'effect/reactivity'
 import { FolderPlusIcon, SearchIcon } from 'lucide-react'
@@ -580,7 +580,7 @@ export function ThreadsSidebar() {
             {!narrowing && <PagesGroup />}
             {!narrowing && <SectionsGroup iconMode={iconMode} />}
             {!iconMode && <ThreadsCaption />}
-            {workspace.projects.every((entry) => entry.project.owner !== undefined) ? (
+            {userProjects(workspace).length === 0 ? (
               !iconMode && <NoProjects onAdd={addProject} />
             ) : groups.length === 0 ? (
               <NoMatches filters={filters} onClear={() => setFilters(NO_FILTERS)} />

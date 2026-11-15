@@ -42,12 +42,7 @@ export const agentRows = (
       const summary = summaries.get(run.runId)
       return summary === undefined ? [] : [{ run, summary }]
     })
-    .map((row, order) => ({ row, order }))
-    .sort(
-      (a, b) =>
-        statusRank(a.row.summary.status) - statusRank(b.row.summary.status) || a.order - b.order
-    )
-    .map(({ row }) => row)
+    .sort((a, b) => statusRank(a.summary.status) - statusRank(b.summary.status))
 
 /**
  * The second line of an agent row: the reason while the run needs input or failed, otherwise who
@@ -59,7 +54,7 @@ export const agentLine = ({ run, summary }: AgentRow): string => {
     case 'StatusFailed':
       return summary.status.reason
     default:
-      return `${run.hireName ?? run.jobTitle} · ${run.projectName}`
+      return `${run.assignee} · ${run.projectName}`
   }
 }
 
@@ -67,8 +62,7 @@ function AgentRunRow({ row, selected }: { readonly row: AgentRow; readonly selec
   const status = statusLabel(row.summary.status)
   const line = agentLine(row)
   const label = `${row.run.issueTitle}, ${status}. ${line}`
-  const assignee = row.run.hireName ?? row.run.jobTitle
-  const tooltip = `${assignee} · ${row.run.issueTitle} · ${row.run.projectName} · ${status}`
+  const tooltip = `${row.run.assignee} · ${row.run.issueTitle} · ${row.run.projectName} · ${status}`
   return (
     <SidebarMenuItem>
       <SidebarMenuButton

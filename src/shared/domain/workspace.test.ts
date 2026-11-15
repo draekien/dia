@@ -18,6 +18,7 @@ import {
   tabOf,
   unarchiveTab,
   updateTabConfig,
+  userProjects,
   withDefaultVisibleTab
 } from './workspace'
 
@@ -515,6 +516,27 @@ describe('withDefaultVisibleTab', () => {
     const workspace = workspaceOf([[1, [tab(1), tab(2)]]], paneId(2))
 
     expect(withDefaultVisibleTab(workspace)).toBe(workspace)
+  })
+})
+
+describe('userProjects', () => {
+  it('keeps the projects no plugin owns, in workspace order', () => {
+    const workspace = workspaceOf([
+      [1, []],
+      [2, []],
+      [3, []]
+    ])
+    const owned: Workspace = {
+      ...workspace,
+      projects: workspace.projects.map((entry, index) =>
+        index === 1 ? { ...entry, project: { ...entry.project, owner: 'dia-org' } } : entry
+      )
+    }
+
+    expect(userProjects(owned).map((entry) => entry.project.displayName)).toEqual([
+      'repo1',
+      'repo3'
+    ])
   })
 })
 

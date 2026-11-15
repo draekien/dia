@@ -8,6 +8,7 @@ import {
   statusRank
 } from '@shared/domain/run-summary'
 import { Uuid } from '@shared/domain/uuid'
+import { userProjects } from '@shared/domain/workspace'
 import { Schema } from 'effect'
 
 /** The `_tag` of an {@link RunSummaryStatus}, as a status filter names it. */
@@ -109,8 +110,7 @@ export const buildOverview = (
 ): ReadonlyArray<OverviewGroup> => {
   const query = filters.query.trim().toLocaleLowerCase()
   const narrowing = filtersApply(filters)
-  return workspace.projects.flatMap((owned) => {
-    if (owned.project.owner !== undefined) return []
+  return userProjects(workspace).flatMap((owned) => {
     const entry = { ...owned, tabs: owned.tabs.filter((tab) => tab.owner === undefined) }
     const projectMatches = query === '' || contains(entry.project.displayName, query)
     const summaryOf = (paneId: PaneId) =>

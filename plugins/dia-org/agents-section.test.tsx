@@ -31,14 +31,8 @@ vi.mock('@dia/renderer-plugin', async (importOriginal) => {
   }
 })
 
-const run = (runId: string, issueTitle: string, hireName: string | null = 'Ada') =>
-  AgentRun.make({
-    runId,
-    issueTitle,
-    projectName: 'dia',
-    hireName,
-    jobTitle: 'Software engineer'
-  })
+const run = (runId: string, issueTitle: string) =>
+  AgentRun.make({ runId, issueTitle, projectName: 'dia', assignee: 'Ada' })
 
 const summary = (runId: string, status: RunSummaryStatus): RunSummary => ({
   paneId: runId,
@@ -80,12 +74,6 @@ describe('agentLine', () => {
     expect(agentLine({ run: run('a', 'One'), summary: summary('a', StatusWorking.make({})) })).toBe(
       'Ada · dia'
     )
-  })
-
-  it('names the job title for an unnamed hire', () => {
-    const row = { run: run('a', 'One', null), summary: summary('a', StatusIdle.make({})) }
-
-    expect(agentLine(row)).toBe('Software engineer · dia')
   })
 
   it('gives the reason while the run failed', () => {

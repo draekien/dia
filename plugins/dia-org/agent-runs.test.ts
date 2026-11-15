@@ -35,14 +35,13 @@ const sources = (patch: Partial<AgentRunSources> = {}): AgentRunSources => ({
 })
 
 describe('agentRunsOf', () => {
-  it('names the run, its issue, its project, its hire and the hire’s job title', () => {
+  it('names the run, its issue, its project and its hire', () => {
     expect(agentRunsOf(sources())).toEqual([
       {
         runId: 'run-1',
         issueTitle: 'Add a login page',
         projectName: 'dia',
-        hireName: 'Ada',
-        jobTitle: 'Software engineer'
+        assignee: 'Ada'
       }
     ])
   })
@@ -60,10 +59,10 @@ describe('agentRunsOf', () => {
     expect(agentRunsOf(sources({ hires: [] }))).toEqual([])
   })
 
-  it('gives an unnamed hire a null name', () => {
+  it("names an unnamed hire's run by its job title", () => {
     const runs = [{ issueId: issueId(1), hireId: UNNAMED, runId: 'run-1' }]
 
-    expect(agentRunsOf(sources({ runs }))[0]?.hireName).toBeNull()
+    expect(agentRunsOf(sources({ runs }))[0]?.assignee).toBe('Software engineer')
   })
 
   it('names a project that is no longer registered Removed project', () => {

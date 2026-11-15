@@ -5,7 +5,7 @@ import { Effect, Option } from 'effect'
 import { AsyncResult, Atom } from 'effect/reactivity'
 import { useEffect, useState } from 'react'
 import { OpenAssistant } from './calls'
-import { openAssistant } from './onboarding'
+import { showAssistantRun } from './onboarding'
 import type { LiveAtom } from './org-actions'
 
 /**
@@ -24,7 +24,7 @@ type Opening = 'opening' | 'failed'
 const openAssistantRun = (ctx: Pick<PluginServices, 'name'>) =>
   Effect.runPromise(
     callHost(ctx, OpenAssistant, {}).pipe(
-      Effect.tap((runId) => Effect.promise(() => openAssistant(runId))),
+      Effect.tap(showAssistantRun),
       Effect.as<Opening>('opening'),
       Effect.catch((failure) =>
         Effect.logWarning('Could not open the Executive assistant', { failure }).pipe(
