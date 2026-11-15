@@ -1,5 +1,6 @@
 import { usePrevious } from '@renderer/hooks/use-previous'
 import type { Project } from '@shared/domain/project'
+import { userProjects } from '@shared/domain/workspace'
 import { FolderPlusIcon, PlusIcon } from 'lucide-react'
 import { newAgent, registerProject } from '../lib/actions'
 import { MAIN_TAB, Slot } from '../lib/slots'
@@ -32,13 +33,13 @@ function EmptyProject({ project }: { readonly project: Project }) {
   return (
     <div className="flex h-full items-center justify-center p-6">
       <div className="flex max-w-sm flex-col items-start gap-3">
-        <h1 className="text-base font-semibold text-ink">No agent is open</h1>
+        <h1 className="text-base font-semibold text-ink">No thread is open</h1>
         <p className="text-sm text-ink-muted">
-          Pick an agent in the sidebar, or start one in {project.displayName}.
+          Pick a thread in the sidebar, or start one in {project.displayName}.
         </p>
         <Button onClick={() => newAgent(project.projectId)}>
           <PlusIcon data-icon="inline-start" />
-          New agent
+          New thread
         </Button>
       </div>
     </div>
@@ -89,8 +90,10 @@ export function TabContent() {
     }
     case 'FirstRunView':
       return <FirstRun />
-    case 'EmptyProjectView':
-      return <EmptyProject project={workspace.projects[0].project} />
+    case 'EmptyProjectView': {
+      const [first] = userProjects(workspace)
+      return first === undefined ? null : <EmptyProject project={first.project} />
+    }
   }
 }
 

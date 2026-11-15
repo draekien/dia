@@ -12,7 +12,6 @@ import { Effect, Option, Stream } from 'effect'
 import { HostPlugins } from '../plugins/host-plugins'
 import { callPlugin, subscribePlugin } from '../plugins/plugin-messages'
 import { applyOverride, PluginSources } from '../plugins/plugin-sources'
-import { AgentSummaries } from '../services/agent-summaries'
 import { BackgroundActivities } from '../services/background-activities'
 import { CommandDeduper } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
@@ -20,12 +19,13 @@ import { withMetaRepo } from '../services/meta-repo-seam'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { ProjectEntries } from '../services/project-entries'
 import { RunEventLog } from '../services/run-event-log'
+import { RunSummaries } from '../services/run-summaries'
 import { SettingsStore } from '../services/settings-store'
 import { WorkspaceProblems } from '../services/workspace-problems'
 
 /**
  * Builds the implementation of {@link DiaRpcs} on top of the Host's services. Requires
- * `PaneWorkspace`, `AgentSummaries`, `SettingsStore`, `EventHub`, `CommandDeduper`, `HostPlugins`,
+ * `PaneWorkspace`, `RunSummaries`, `SettingsStore`, `EventHub`, `CommandDeduper`, `HostPlugins`,
  * `PluginSources`, `BackgroundActivities`, `RunEventLog` and `WorkspaceProblems`. Use
  * {@link DiaRpcHandlersLive} to serve it; call this directly to invoke handlers without a transport.
  *
@@ -36,7 +36,7 @@ import { WorkspaceProblems } from '../services/workspace-problems'
  */
 export const makeDiaRpcHandlers = Effect.gen(function* () {
   const workspace = yield* PaneWorkspace
-  const summaries = yield* AgentSummaries
+  const summaries = yield* RunSummaries
   const settings = yield* SettingsStore
   const hub = yield* EventHub
   const projectEntries = yield* ProjectEntries
@@ -170,7 +170,7 @@ export const makeDiaRpcHandlers = Effect.gen(function* () {
     DeleteTab: ({ paneId }) => workspace.deleteTab(paneId).pipe(treatGoneTabAsDone('DeleteTab')),
     UnarchiveTab: ({ paneId }) =>
       workspace.unarchiveTab(paneId).pipe(treatGoneTabAsDone('UnarchiveTab')),
-    GetAgentSummaries: () => summaries.getAll,
+    GetRunSummaries: () => summaries.getAll,
     GetTranscriptWidth: () =>
       settings
         .getTranscriptWidth()

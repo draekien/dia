@@ -80,7 +80,7 @@ describe('Chat for an archived tab', () => {
 
     expect([
       document.body.textContent?.includes('Fix the anchor'),
-      document.body.textContent?.includes('This agent is archived. Its transcript is read-only.'),
+      document.body.textContent?.includes('This thread is archived. Its transcript is read-only.'),
       screen.queryByRole('textbox')
     ]).toEqual([true, true, null])
   })
@@ -89,6 +89,6 @@ describe('Chat for an archived tab', () => {
     state.messages = []
     render(<Chat />)
 
-    expect(document.body.textContent).toContain('This agent is archived. Its transcript is empty.')
+    expect(document.body.textContent).toContain('This thread is archived. Its transcript is empty.')
   })
 })

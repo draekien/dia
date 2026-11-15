@@ -16,7 +16,7 @@ The Host owns each tab's `PaneChatState`. It folds every pane event it publishes
 and serves a snapshot `{ state, seq }`, where `seq` is the pane's `EventHub` sequence number of the
 last event folded in. The renderer subscribes to the pane's events, fetches the snapshot, and folds
 only the events with a higher `seq`. This is the snapshot-then-tail scheme t3code uses
-(`apps/server/src/ws.ts` `subscribeOrchestrationV2Thread`). `AgentSummary` stays the small
+(`apps/server/src/ws.ts` `subscribeOrchestrationV2Thread`). `RunSummary` stays the small
 all-tabs record (t3code's all-threads summary record).
 
 ## Modules
@@ -91,7 +91,7 @@ Knowledge it owns: the current `PaneChatSnapshot` of every seeded workspace tab.
   takes the projection in its `Layer.mergeAll`. It is built before the Host posts
   `HostReady`, so no session runs yet.
 - It follows `hub.subscribe({})` in one fiber forked with `forkScoped({ startImmediately: true })`
-  (the `AgentSummaries` pattern), so it receives every frame published after the layer is built.
+  (the `RunSummaries` pattern), so it receives every frame published after the layer is built.
 - **Entries.** An entry is `{ state, seq, inWorkspace }`. All reads and writes of the entry map go
   through one `Semaphore(1)`; state and `seq` are always written together. `seed` reads the
   transcript outside the semaphore, then inserts under it only if no entry exists (the first insert
@@ -166,8 +166,8 @@ before `supervisor.openPane`.
 
 - Turns from before the Host started still come from the text-only transcript, so their tool calls
   and task lists are not shown after a restart.
-- Permission, question and plan cards keep reading `AgentSummary.status.request`; context usage
-  keeps reading `AgentSummary.contextUsage`. The overview reads attention from `AgentSummary`; the
+- Permission, question and plan cards keep reading `RunSummary.status.request`; context usage
+  keeps reading `RunSummary.contextUsage`. The overview reads attention from `RunSummary`; the
   chat view reads it from `PaneChatState`.
 - After a dropped connection, the preload resumes from each pane's cursor. `getPaneChat` raises the
   pane's cursor to `snapshot.seq` when that is higher, so a pane whose atom holds a snapshot is

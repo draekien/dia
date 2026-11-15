@@ -102,6 +102,9 @@ const withStoredScope = (spec: RunSpec, row: RunRow): RunSpec => ({
     : {}),
   ...(spec.context === undefined && row.spec.context !== undefined
     ? { context: row.spec.context }
+    : {}),
+  ...(spec.systemPromptAppend === undefined && row.spec.systemPromptAppend !== undefined
+    ? { systemPromptAppend: row.spec.systemPromptAppend }
     : {})
 })
 
@@ -114,8 +117,14 @@ const specOfRow = (row: RunRow): RunSpec => ({
   worktree: row.spec.worktree === null ? undefined : { _tag: 'Reattach', info: row.spec.worktree },
   resume: row.sessionId,
   ...(row.spec.labels === undefined ? {} : { labels: row.spec.labels }),
-  ...(row.spec.context === undefined ? {} : { context: row.spec.context })
+  ...(row.spec.context === undefined ? {} : { context: row.spec.context }),
+  ...(row.spec.systemPromptAppend === undefined
+    ? {}
+    : { systemPromptAppend: row.spec.systemPromptAppend })
 })
+
+const appendedPrompt = (shared: string, own: string | undefined): string =>
+  [shared, own ?? ''].filter((part) => part !== '').join('\n\n')
 
 /**
  * Builds the run service `dia-runs` provides (`runs`), the recovery it runs once it has provided
@@ -262,7 +271,10 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
     permissionMode: config.permissionMode,
     worktree: config.worktree ?? null,
     ...(spec.labels === undefined ? {} : { labels: spec.labels }),
-    ...(spec.context === undefined ? {} : { context: spec.context })
+    ...(spec.context === undefined ? {} : { context: spec.context }),
+    ...(spec.systemPromptAppend === undefined
+      ? {}
+      : { systemPromptAppend: spec.systemPromptAppend })
   })
 
   const recordFor = Effect.fnUntraced(function* (
@@ -346,6 +358,10 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
               resume: spec.resume,
               emit,
               ...additions,
+              systemPromptAppend: appendedPrompt(
+                additions.systemPromptAppend,
+                spec.systemPromptAppend
+              ),
               tools
             })
           })
@@ -505,17 +521,27 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
         worktree: undefined,
         resume: Option.none(),
         ...(options.labels === undefined ? {} : { labels: options.labels }),
-        ...(options.context === undefined ? {} : { context: options.context })
+        ...(options.context === undefined ? {} : { context: options.context }),
+        ...(options.systemPromptAppend === undefined
+          ? {}
+          : { systemPromptAppend: options.systemPromptAppend })
       },
       false
     ).pipe(Effect.orDie)
-    yield* withLive('start', false)(runId, (handle) =>
-      setActivity(runId, { running: true }).pipe(
-        Effect.andThen(handle.sendMessage(options.text, 'queue')),
-        Effect.onError(() => setActivity(runId, { running: false }))
+    const text = options.text
+    if (text !== undefined) {
+      yield* withLive('start', false)(runId, (handle) =>
+        setActivity(runId, { running: true }).pipe(
+          Effect.andThen(handle.sendMessage(text, 'queue')),
+          Effect.onError(() => setActivity(runId, { running: false }))
+        )
       )
-    )
-    yield* Effect.logInfo('Started a run with no tab', { runId, cwd: options.cwd })
+    }
+    yield* Effect.logInfo('Started a run with no tab', {
+      runId,
+      cwd: options.cwd,
+      sent: text !== undefined
+    })
     return runId
   })
 
@@ -533,6 +559,8 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
         directory: row.value.spec.sourceCwd,
         projectDirectory: placement?.projectDirectory ?? row.value.spec.sourceCwd,
         select: placement?.select ?? true,
+        ...(placement?.owner === undefined ? {} : { owner: placement.owner }),
+        ...(placement?.name === undefined ? {} : { name: placement.name }),
         model: row.value.spec.model,
         thinkingLevel: row.value.spec.thinkingLevel,
         permissionMode: row.value.spec.permissionMode,

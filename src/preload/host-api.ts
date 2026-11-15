@@ -5,7 +5,6 @@ import {
   ActivitiesChanged,
   type ActivityNotFoundJson,
   type AdapterStatusSnapshotJson,
-  AgentSummariesReplaced,
   type DiaApi,
   type IpcEvent,
   type LastVisibleModelJson,
@@ -14,6 +13,7 @@ import {
   type PluginCallResultJson,
   type PluginSubscriptionEndJson,
   RenameTab,
+  RunSummariesReplaced,
   SelectTab,
   SetModel,
   SetPermissionMode,
@@ -86,9 +86,9 @@ const resendSchedule = Schedule.spaced(RESEND_INTERVAL).pipe(
  * resent the same way under one call id, marked as a resend after its first attempt. The event
  * stream resumes after a dropped connection from the last sequence number received per pane;
  * when the Host cannot replay what was missed it asks the renderer to reload that pane's history
- * (`onHistoryReloadRequested`). Workspace and agent-summary changes are never replayed, so after
+ * (`onHistoryReloadRequested`). Workspace and run-summary changes are never replayed, so after
  * every reconnect the workspace and all summaries are read again and delivered as
- * `WorkspaceChanged` and `AgentSummariesReplaced`.
+ * `WorkspaceChanged` and `RunSummariesReplaced`.
  *
  * Values cross `contextBridge`, which drops prototypes, so every result is plain data: a typed
  * error (`registerProject`) resolves in its encoded form (`archiveTab`, `deleteTab` and `unarchiveTab` resolve its reason), and only a lost connection is retried. `removeProject` is not retried: it rejects when the connection drops.
@@ -158,11 +158,11 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     const refreshWorkspace = Effect.gen(function* () {
       const client = yield* deps.client
       const [workspace, summaries] = yield* Effect.all(
-        [client.GetWorkspace(), client.GetAgentSummaries()],
+        [client.GetWorkspace(), client.GetRunSummaries()],
         { concurrency: 'unbounded' }
       )
       dispatch(WorkspaceChanged.make({ workspace }))
-      dispatch(AgentSummariesReplaced.make({ summaries }))
+      dispatch(RunSummariesReplaced.make({ summaries }))
     }).pipe(
       Effect.catch((error) => Effect.sync(() => deps.warn('Workspace refresh failed', error)))
     )
@@ -498,7 +498,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
           commandId
         })
       ),
-    getAgentSummaries: () => query((client) => client.GetAgentSummaries()),
+    getRunSummaries: () => query((client) => client.GetRunSummaries()),
     getTranscriptWidth: () => query((client) => client.GetTranscriptWidth()),
     setTranscriptWidth: (width) =>
       command('SetTranscriptWidth', (client, commandId) =>
@@ -534,8 +534,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       return () => paneFrameListeners.delete(listener)
     },
     onWorkspaceChanged: (listener) => subscribeTo('WorkspaceChanged', listener),
-    onAgentSummaryChanged: (listener) => subscribeTo('AgentSummaryChanged', listener),
-    onAgentSummariesReplaced: (listener) => subscribeTo('AgentSummariesReplaced', listener),
+    onRunSummaryChanged: (listener) => subscribeTo('RunSummaryChanged', listener),
+    onRunSummariesReplaced: (listener) => subscribeTo('RunSummariesReplaced', listener),
     onPaneCreateFailed: (listener) => subscribeTo('PaneCreateFailed', listener),
     onAttentionChanged: (listener) => subscribeTo('PaneAttentionChanged', listener),
     onRewoundToCheckpoint: (listener) => subscribeTo('PaneRewoundToCheckpoint', listener),

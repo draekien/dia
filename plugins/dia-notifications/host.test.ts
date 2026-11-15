@@ -1,14 +1,9 @@
 import type { HostPluginContext } from '@dia/plugin'
 import { assert, describe, it } from '@effect/vitest'
-import {
-  AgentSummary,
-  NoActivity,
-  StatusFailed,
-  StatusNeedsInput
-} from '@shared/domain/agent-summary'
 import type { AgentNotification } from '@shared/domain/notification'
 import { AgentName, ProjectId, type Workspace } from '@shared/domain/project'
-import { AgentSummaryChanged } from '@shared/ipc/contract'
+import { NoActivity, RunSummary, StatusFailed, StatusNeedsInput } from '@shared/domain/run-summary'
+import { RunSummaryChanged } from '@shared/ipc/contract'
 import { GlobalEventFrame } from '@shared/ipc/rpc'
 import { Effect, Queue, Stream, SubscriptionRef } from 'effect'
 import setup from './host'
@@ -44,10 +39,10 @@ const WORKSPACE: Workspace = {
   visibleTab: VISIBLE
 }
 
-const summaryFrame = (paneId: string, status: AgentSummary['status']) =>
+const summaryFrame = (paneId: string, status: RunSummary['status']) =>
   GlobalEventFrame.make({
-    event: AgentSummaryChanged.make({
-      summary: AgentSummary.make({ paneId, status, activity: NoActivity.make({}) })
+    event: RunSummaryChanged.make({
+      summary: RunSummary.make({ paneId, status, activity: NoActivity.make({}) })
     })
   })
 

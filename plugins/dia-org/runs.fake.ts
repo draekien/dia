@@ -2,13 +2,14 @@ import {
   type ModelOption,
   ModelsReady,
   type RunInfo,
+  type RunRequest,
   type RunStatus,
   type Runs,
   type StartRunOptions,
   type TabPlacement
 } from '@dia/plugin'
 import type { QueuedRun, RunQueue } from '@dia-plugin/dia-run-queue/queue'
-import { DateTime, Deferred, Effect, Option, Stream } from 'effect'
+import { DateTime, Deferred, Effect, Option, Stream, SubscriptionRef } from 'effect'
 import type { BackendReads } from './run-options'
 
 /** A model option named `value` that supports `auto` when `autoMode` is true. */
@@ -32,7 +33,10 @@ export const fakeBackend = (
   disabledPermissionModes: () => Effect.succeed(disabled)
 })
 
-type FakeRuns = Pick<Runs, 'list' | 'isLive' | 'send' | 'close' | 'start' | 'retire' | 'openInTab'>
+type FakeRuns = Pick<
+  Runs,
+  'list' | 'isLive' | 'send' | 'close' | 'start' | 'retire' | 'openInTab' | 'busy' | 'requests'
+>
 
 /** One `enqueue` the fake queue holds until the test calls `start`. */
 export interface Enqueued {
@@ -44,7 +48,8 @@ export interface Enqueued {
 /**
  * A run service and run queue for tests. `rows` holds the runs `list` reports; `start` and the
  * queue's starts add a live `running` row. `sent`, `closed`, `retired`, `tabs` and `enqueued`
- * record the calls in order.
+ * record the calls in order. `busy` and `requests` report what `setBusy` and `setRequests` last
+ * set, both empty at first.
  */
 export const fakeRuns = () => {
   const rows = new Map<string, RunInfo>()
@@ -55,6 +60,10 @@ export const fakeRuns = () => {
   const started: Array<StartRunOptions & { readonly runId: string }> = []
   const enqueued: Array<Enqueued> = []
   let next = 0
+  const busy = Effect.runSync(SubscriptionRef.make<ReadonlyArray<string>>([]))
+  const requests = Effect.runSync(SubscriptionRef.make<ReadonlyArray<RunRequest>>([]))
+  const setBusy = (runIds: ReadonlyArray<string>) => SubscriptionRef.set(busy, runIds)
+  const setRequests = (open: ReadonlyArray<RunRequest>) => SubscriptionRef.set(requests, open)
 
   const addRun = (
     runId: string,
@@ -108,7 +117,9 @@ export const fakeRuns = () => {
     openInTab: (runId, placement) =>
       Effect.sync(() => {
         tabs.push({ runId, placement })
-      })
+      }),
+    busy: SubscriptionRef.changes(busy),
+    requests: SubscriptionRef.changes(requests)
   }
 
   const queue: Pick<RunQueue, 'enqueue'> = {
@@ -126,5 +137,18 @@ export const fakeRuns = () => {
       })
   }
 
-  return { runs, queue, rows, setRun, sent, closed, retired, tabs, started, enqueued }
+  return {
+    runs,
+    queue,
+    rows,
+    setRun,
+    setBusy,
+    setRequests,
+    sent,
+    closed,
+    retired,
+    tabs,
+    started,
+    enqueued
+  }
 }

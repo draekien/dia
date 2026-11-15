@@ -56,7 +56,7 @@ function NoSidebarPlugin() {
   return (
     <aside className="flex w-56 shrink-0 p-4">
       <p className="text-xs text-ink-muted">
-        No sidebar plugin is loaded. Agents stay reachable from the content area.
+        No sidebar plugin is loaded. Threads stay reachable from the content area.
       </p>
     </aside>
   )

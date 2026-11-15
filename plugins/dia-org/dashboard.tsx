@@ -1,4 +1,4 @@
-import { Button, openSettings, useWorkspace } from '@dia/renderer-plugin'
+import { Button, openSettings, userProjects, useWorkspace } from '@dia/renderer-plugin'
 import { useAtomValue } from '@effect/atom-react'
 import { Option } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
@@ -49,7 +49,7 @@ export function Dashboard({
     workspace === undefined || (hires > 0 && Option.isNone(live))
       ? null
       : onboardingStage(
-          workspace.projects.length,
+          userProjects(workspace).length,
           hires,
           Option.exists(live, (view) => view.teamHasWork)
         )

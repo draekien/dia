@@ -97,7 +97,7 @@ Knowledge it owns: which committed rows each connected client receives, and when
 * `PaneUserMessagesSent` uses `id = message.id`. It finds the first sent message's id in `messages`; the park notice and `resumesPark` are judged against the message immediately before it, not `messages.at(-1)`. For a present id it sets `rewindable: false` (index > 0) and `resumedAt` on it and resolves the park notice before it; for an absent id it appends as today. It sets `isLoading` and clears `turnStatus`. A test parks, sends `RESUME_TEXT`, and expects the notice resolved and `resumedAt` set.
 * The removed events' cases and `anchorCheckpoint` are deleted.
 
-### `agent-summary.ts` (`src/shared/domain/agent-summary.ts`)
+### `agent-summary.ts` (`src/shared/domain/run-summary.ts`)
 
 `foldSummary` reads tool activity from `PaneAgentEvent` with `ToolCallStarted` / `ToolCallCompleted`.
 
@@ -112,7 +112,7 @@ Knowledge it owns: which committed rows each connected client receives, and when
 
 ## Cost
 
-Opening an agent never opened since #164 imports its whole transcript in `seed`, and every imported row is fanned out once. The renderer drops them by `seq <= floor`. `PaneChatProjection` skips them by `seq`. `AgentSummaries` folds them: the import replaces the agent's saved activity line with the transcript's last tool call and publishes `AgentSummaryChanged`.
+Opening an agent never opened since #164 imports its whole transcript in `seed`, and every imported row is fanned out once. The renderer drops them by `seq <= floor`. `PaneChatProjection` skips them by `seq`. `RunSummaries` folds them: the import replaces the agent's saved activity line with the transcript's last tool call and publishes `RunSummaryChanged`.
 
 ## Limitations
 
@@ -188,7 +188,7 @@ Round 2 (sonnet): 10 findings.
 | F7 | Notices lost after restart unstated | minor | Applied (Limitations) |
 | F8 | `PaneSignal` not enumerated | minor | Applied |
 | F9 | `committed` buffering and lock order | minor | Applied |
-| F10 | Import folds into `AgentSummaries` | minor | Applied (stated in Cost) |
+| F10 | Import folds into `RunSummaries` | minor | Applied (stated in Cost) |
 
 Round 3 (sonnet): 6 findings.
 

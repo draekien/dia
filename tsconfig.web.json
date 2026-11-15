@@ -38,7 +38,7 @@
     "src/host/session/start-permission-mode.ts",
     "plugins/**/renderer.ts",
     "plugins/**/*.tsx",
-    "plugins/dia-agent-overview/overview.ts",
+    "plugins/dia-threads/overview.ts",
     "plugins/dia-example/messages.ts",
     "plugins/dia-issues/domain.ts",
     "plugins/dia-issues/service.ts",

@@ -1,17 +1,17 @@
+import type { ParkCause } from '@shared/domain/parking'
 import {
-  type AgentSummary,
   NoActivity,
+  type RunSummary,
   StatusNeedsInput,
   StatusParked,
   StatusWorking
-} from '@shared/domain/agent-summary'
-import type { ParkCause } from '@shared/domain/parking'
+} from '@shared/domain/run-summary'
 import { describe, expect, it } from 'vitest'
 import { accountBannerOf, awaitsUser } from './account-banner'
 
 const NOW = 10_000
 
-const summary = (paneId: string, fields: Partial<AgentSummary> = {}): AgentSummary => ({
+const summary = (paneId: string, fields: Partial<RunSummary> = {}): RunSummary => ({
   paneId,
   status: StatusWorking.make({}),
   activity: NoActivity.make({}),

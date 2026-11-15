@@ -1,3 +1,4 @@
+import { Attention, PaneChat } from '@dia/plugin'
 import { FirstIssue, ObjectiveId, WorkTitle } from '@dia-plugin/dia-issues/domain'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { assert, describe, it } from '@effect/vitest'
@@ -5,7 +6,7 @@ import { Effect, Exit, Scope, SubscriptionRef } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
 import { openIssues, PROJECT } from '../dia-issues/issues.fake'
-import { ASSISTANT_LABEL, makeAssistant } from './assistant'
+import { ASSISTANT_LABEL, ASSISTANT_TAB_NAME, makeAssistant } from './assistant'
 import { EXECUTIVE_ASSISTANT } from './built-in-job-titles'
 import type { JobTitleId } from './domain'
 import { orgMigrations } from './migrations'
@@ -75,9 +76,58 @@ describe('Executive assistant', () => {
       assert.strictEqual(started.runId, runId)
       assert.strictEqual(started.cwd, DIRECTORY)
       assert.deepStrictEqual(started.labels, [ASSISTANT_LABEL])
-      assert.isTrue(started.text.endsWith('\n\nAdd dark mode'))
-      assert.isTrue(started.text.startsWith(EXECUTIVE_ASSISTANT.jobDescription.slice(0, 40)))
       assert.strictEqual(yield* SubscriptionRef.get(env.runId), runId)
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('sends the request alone and puts its job description in the system prompt', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+
+      yield* env.assistant.ask('Add dark mode')
+
+      const [started] = env.fake.started
+      assert.deepStrictEqual(
+        [started?.text, started?.systemPromptAppend],
+        ['Add dark mode', EXECUTIVE_ASSISTANT.jobDescription]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('opens a run that waits for its first message when it has none', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+
+      const runId = yield* env.assistant.open
+
+      const [started] = env.fake.started
+      assert.deepStrictEqual(
+        [started?.runId, started?.text, started?.systemPromptAppend],
+        [runId, undefined, EXECUTIVE_ASSISTANT.jobDescription]
+      )
+      assert.strictEqual(yield* SubscriptionRef.get(env.runId), runId)
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('opens the run it already has without starting another', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const first = yield* env.assistant.ask('Add dark mode')
+
+      const opened = yield* env.assistant.open
+
+      assert.deepStrictEqual([opened, env.fake.started.length], [first, 1])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('refuses to open while its job title is disabled', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      yield* env.org.setJobTitleEnabled(EXECUTIVE_ASSISTANT.id as JobTitleId, false)
+
+      const result = yield* Effect.flip(env.assistant.open)
+
+      assert.deepStrictEqual([result._tag, env.fake.started.length], ['AssistantDisabled', 0])
     }).pipe(Effect.scoped)
   )
 
@@ -123,6 +173,7 @@ describe('Executive assistant', () => {
     Effect.gen(function* () {
       const env = yield* setUp
       const runId = yield* env.assistant.ask('Plan the login')
+      yield* env.fake.setBusy([runId])
       yield* env.assistant.claim(CLAIMED)
       yield* env.createObjective(CLAIMED, 'Login')
       yield* env.createObjective(UNCLAIMED, 'Billing')
@@ -150,6 +201,103 @@ describe('Executive assistant', () => {
       assert.isNull(yield* SubscriptionRef.get(env.runId))
       const second = yield* env.assistant.ask('Again')
       assert.notStrictEqual(second, first)
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe('Executive assistant tab', () => {
+  it.effect('shows its run in a tab named Assistant that the org owns with its project', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+
+      const runId = yield* env.assistant.ask('Add dark mode')
+
+      assert.deepStrictEqual(env.fake.tabs, [
+        {
+          runId,
+          placement: {
+            projectDirectory: DIRECTORY,
+            select: false,
+            owner: { plugin: 'dia-org', ownsProject: true },
+            name: ASSISTANT_TAB_NAME
+          }
+        }
+      ])
+    }).pipe(Effect.scoped)
+  )
+})
+
+describe('Executive assistant notices', () => {
+  const completeClaimed = (env: Effect.Success<typeof setUp>) =>
+    Effect.gen(function* () {
+      yield* env.assistant.claim(CLAIMED)
+      yield* env.createObjective(CLAIMED, 'Login')
+      yield* settle
+      yield* env.issues.stopObjective(CLAIMED)
+      yield* settle
+    })
+  const COMPLETED = `${PaneChat.NOTICE_MARKER}Objective "Login" is completed.`
+
+  it.effect('sends gathered notices as one marked message once its run goes idle', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const runId = yield* env.assistant.ask('Plan the login')
+      yield* env.fake.setBusy([runId])
+      yield* completeClaimed(env)
+      assert.deepStrictEqual(env.fake.sent, [], 'a busy run gets no notices')
+
+      yield* env.fake.setBusy([])
+      yield* settle
+
+      assert.deepStrictEqual(env.fake.sent, [{ runId, text: COMPLETED }])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('holds notices while its run waits on an open request', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const runId = yield* env.assistant.ask('Plan the login')
+      yield* env.fake.setRequests([
+        {
+          runId,
+          request: Attention.PermissionRequest.make({
+            requestId: 'r-1',
+            toolName: 'Bash',
+            input: {}
+          })
+        }
+      ])
+
+      yield* completeClaimed(env)
+
+      assert.deepStrictEqual(env.fake.sent, [])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('holds notices while its run is not live, for the next request to take', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const runId = yield* env.assistant.ask('Plan the login')
+      env.fake.setRun(runId, 'idle', false)
+      yield* completeClaimed(env)
+      assert.deepStrictEqual(env.fake.sent, [])
+
+      yield* env.assistant.ask('What happened?')
+
+      assert.deepStrictEqual(env.fake.sent, [
+        { runId, text: 'Objective "Login" is completed.\nWhat happened?' }
+      ])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('sends notices gathered while idle at once', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const runId = yield* env.assistant.ask('Plan the login')
+
+      yield* completeClaimed(env)
+
+      assert.deepStrictEqual(env.fake.sent, [{ runId, text: COMPLETED }])
     }).pipe(Effect.scoped)
   )
 })

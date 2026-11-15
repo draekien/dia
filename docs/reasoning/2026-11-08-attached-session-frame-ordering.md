@@ -4,11 +4,11 @@
 
 ## Context
 
-`AgentSummaries` (`src/host/services/agent-summaries.ts`) must know which pane ids are attached sessions (ADR-0070) before it folds their pane events, or `applyWorkspace` drops their summaries on the next `WorkspaceChanged`. The first design had `AgentSummaries` read `AttachedSessions.current` when a pane event arrived. That reads a value the hub has not delivered yet, so a summary could be dropped or kept depending on fibre scheduling.
+`RunSummaries` (`src/host/services/run-summaries.ts`) must know which pane ids are attached sessions (ADR-0070) before it folds their pane events, or `applyWorkspace` drops their summaries on the next `WorkspaceChanged`. The first design had `RunSummaries` read `AttachedSessions.current` when a pane event arrived. That reads a value the hub has not delivered yet, so a summary could be dropped or kept depending on fibre scheduling.
 
 ## Reasoning / Learning
 
-`EventHub.publish` (`src/host/services/event-hub.ts`) puts a global event straight on the PubSub as a `GlobalEventFrame`. A pane signal is first appended to the run event log through `RunEventLog` (provided by the `dia-run-events` plugin), and reaches the PubSub only when its `committed` stream emits it. `AttachedSessions.attach` publishes `AttachedSessionsChanged` before it calls `PaneSupervisor.attachPane`. So every subscriber sees `AttachedSessionsChanged` before the attached session's first pane frame. `AgentSummaries` folds `AttachedSessionsChanged` from the hub as a frame, the same way it folds `WorkspaceChanged`, and needs no other dependency.
+`EventHub.publish` (`src/host/services/event-hub.ts`) puts a global event straight on the PubSub as a `GlobalEventFrame`. A pane signal is first appended to the run event log through `RunEventLog` (provided by the `dia-run-events` plugin), and reaches the PubSub only when its `committed` stream emits it. `AttachedSessions.attach` publishes `AttachedSessionsChanged` before it calls `PaneSupervisor.attachPane`. So every subscriber sees `AttachedSessionsChanged` before the attached session's first pane frame. `RunSummaries` folds `AttachedSessionsChanged` from the hub as a frame, the same way it folds `WorkspaceChanged`, and needs no other dependency.
 
 `HostPlugins` cannot depend on `AttachedSessions`: `AttachedSessions` uses `PaneSupervisor`, which depends on `HostPlugins`. `SessionAttacher` is a dependency-free `Deferred` that both receive; `AttachedSessionsLive` completes it, and `ctx.sessions.attach` awaits it.
 

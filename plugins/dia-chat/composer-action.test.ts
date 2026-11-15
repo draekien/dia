@@ -146,8 +146,8 @@ describe('composerActionHint', () => {
 
 describe('composerPlaceholder', () => {
   it.each([
-    [false, 'queue', 'Message this agent, or type / for commands'],
-    [false, 'steer', 'Message this agent, or type / for commands'],
+    [false, 'queue', 'Send a message, or type / for commands'],
+    [false, 'steer', 'Send a message, or type / for commands'],
     [true, 'queue', 'Queue a message for after this turn, or type / for commands'],
     [true, 'steer', 'Steer this turn, or type / for commands']
   ] as const)('running %s with the %s default reads %s', (running, defaultMode, text) => {

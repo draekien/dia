@@ -91,13 +91,13 @@ PaneSupervisor {
 
 `PaneSupervisorLive` requires `SettingsStore`; `host-main.ts` provides it: `Layer.provide(PaneSupervisorLive, Layer.mergeAll(sessionFactory, hostPlugins, settings))`. `settings` is a standalone layer built before `supervisor` (host-main.ts:77, :95), so this adds no cycle; the supervisor's test layers provide a `SettingsStore` too. `SettingsStore` gains `getUsageLimitResume: Effect<Option<UsageLimitResume>>` and `setUsageLimitResume`; `Settings` gains `usageLimitResume: Schema.optional(UsageLimitResume)`. `startPane` returns a `repark(mode)` with the handle; `PaneEntry` stores it. `repark` reads the pane's attention from its record and, when it is `Parked*`, applies the `Parked*` state `resumesAtFor` gives under `mode`, and logs. It is not on `PaneHandle`. Every `AgentSession` fake (pane-supervisor tests and others) and every `PaneHandle` fake (rpc and workspace tests) gains `resume`.
 
-### Agent status: `src/shared/domain/agent-summary.ts`
+### Agent status: `src/shared/domain/run-summary.ts`
 
 ```ts
 /** The agent waits for the usage limit to reset; at `until` (epoch ms) dia sends `continue` (`resumedBy: 'dia'`) or the agent starts to need the user (`'user'`). */
 StatusParked = Schema.TaggedStruct('StatusParked', { until: Schema.Int, resumedBy: Schema.Literals(['dia', 'user']) })
-AgentStatus  = Schema.Union([StatusNeedsInput, StatusFailed, StatusParked, StatusWorking, StatusFinished, StatusIdle])
-AgentSummary gains  parked: Schema.optional(ParkCause)     // present while the pane is parked
+RunSummaryStatus  = Schema.Union([StatusNeedsInput, StatusFailed, StatusParked, StatusWorking, StatusFinished, StatusIdle])
+RunSummary gains  parked: Schema.optional(ParkCause)     // present while the pane is parked
 ```
 
 `foldSummary` on `PaneAttentionChanged`:
@@ -135,15 +135,15 @@ PROTOCOL_VERSION = '0.0.7'
 ### Renderer
 
 - `src/renderer/src/lib/account-banner.ts` (new):
-  - `awaitsUser(summary: AgentSummary): boolean`: the agent is parked and its status is `StatusNeedsInput` (the supervisor moves it there once its reset passes). Used by the banner and by the transcript's Resume button.
-  - `accountBannerOf(summaries: Iterable<AgentSummary>): AccountBanner | null`, a pure function. The variants are named `Schema.TaggedStruct` exports built with `.make`, and `AccountBanner` is their `Schema.Union`; each has a JSDoc line. Checked in this order:
+  - `awaitsUser(summary: RunSummary): boolean`: the agent is parked and its status is `StatusNeedsInput` (the supervisor moves it there once its reset passes). Used by the banner and by the transcript's Resume button.
+  - `accountBannerOf(summaries: Iterable<RunSummary>): AccountBanner | null`, a pure function. The variants are named `Schema.TaggedStruct` exports built with `.make`, and `AccountBanner` is their `Schema.Union`; each has a JSDoc line. Checked in this order:
     - `SignedOutBanner { paneIds }`;
     - `LimitResetBanner { paneIds }`: some usage-limit agent with a known `resetsAt` `awaitsUser`;
     - `LimitUnknownBanner { paneIds }`: some usage-limit agent with `resetsAt: null` `awaitsUser`;
     - `LimitWaitingBanner { resetsAt, count }`: `count` agents are `StatusParked` with `resumedBy: 'user'`; the earliest `until`;
     - `LimitResumingBanner { resumesAt, count }`: `count` agents are `StatusParked` with `resumedBy: 'dia'`; the earliest `until`.
 - `src/renderer/src/hooks/use-now.ts` (new): `useNow(interval: Duration)` returns the current epoch ms, refreshed every `interval`. The banner uses `useNow(Duration.minutes(1))` so `formatResetTime` compares against the current day.
-- `src/renderer/src/components/account-banner.tsx` (new): reads `agentSummariesAtom`, keeps an empty `role="status"` region mounted while no agent is parked (so a screen reader announces the text when it appears), and moves focus to that region when Retry or Resume all is pressed. It is exported from `src/renderer/src/plugin-api.ts` (`@dia/renderer-plugin`) and rendered by `plugins/layout/layout.tsx` between the `<Separator />` and `<Slot name={MAIN} />`. Copy:
+- `src/renderer/src/components/account-banner.tsx` (new): reads `runSummariesAtom`, keeps an empty `role="status"` region mounted while no agent is parked (so a screen reader announces the text when it appears), and moves focus to that region when Retry or Resume all is pressed. It is exported from `src/renderer/src/plugin-api.ts` (`@dia/renderer-plugin`) and rendered by `plugins/layout/layout.tsx` between the `<Separator />` and `<Slot name={MAIN} />`. Copy:
   - `Claude Code is not signed in. Run claude auth login, then` [Retry]
   - `Usage limit has reset · 2 agents waiting` [Resume all]
   - `Usage limit reached, reset time unknown · 2 agents waiting` [Resume all]
@@ -152,7 +152,7 @@ PROTOCOL_VERSION = '0.0.7'
   Every `·` is `aria-hidden`. Text is `text-xs` and the buttons are `ghost` `xs`, as in `InstallNotice`.
   Retry and Resume all call `window.dia.resumeParkedAgent` for each pane in `paneIds`. Neutral surface, never amber or red. `format-when.ts` exports `formatResetTime(epochMs, nowMs): string` (`14:30` on the same local day, else `Fri 14:30`); the banner, the transcript notice and the overview row all use it.
 - `pane-chat.ts`: `PaneAttentionChanged` with a `Parked*` state sets `isLoading: false` (`isTurnOver` includes them), leaves the queue fields as `MessageQueueChanged` reports them, and adds a `notice` row with the text `Usage limit reached · dia resumes at 14:30`, `Usage limit reached · you can resume at 14:30`, `Usage limit has reset`, `Usage limit reached` or `Claude Code is not signed in`. A park notice has the id `${n}:parked`; the next park replaces the last row when its id ends in `:parked`, so a mode change does not repeat it. A message sent while the last row is a park notice, or an `Idle` attention change (a stop or a rewind), resolves it: the text keeps only the part before ` · `, and the id ends in `:resumed`, so no Resume button follows it. When that message is exactly `RESUME_TEXT` (`continue`, exported from `parking.ts`), its user row carries `resumedAt` (epoch ms), and the chat renders it as a `Resumed at 14:35` marker instead of a user bubble. It stays a `user` row so checkpoint binding and rewind still work.
-- `plugins/chat`: while the pane's summary (from `useAgentSummaries()`) `awaitsUser`, a `Resume` button under the park notice calls `window.dia.resumeParkedAgent(paneId)` and moves focus to the composer.
+- `plugins/chat`: while the pane's summary (from `useRunSummaries()`) `awaitsUser`, a `Resume` button under the park notice calls `window.dia.resumeParkedAgent(paneId)` and moves focus to the composer.
 - `status-indicator.tsx`: `statusDot` gains a half-filled `StatusParked` dot (`border border-ink-muted` with an `ink-muted` lower half: full-strength ink for contrast, and a shape distinct from Working's filled dot and Idle's hollow ring); no ring; `STATUS_LABELS` gains `StatusParked: 'Parked'`; the component JSDoc lists the parked dot. `plugins/agent-overview/overview.ts` `StatusTag` gains `StatusParked` at rank 2, and the filter sample and counts follow. `plugins/agent-overview/agent-row.tsx` gains a `StatusParked` case whose second line is `Resumes 14:30` (`resumedBy: 'dia'`) or `Resets 14:30` (`'user'`); a `StatusNeedsInput` row with `parked` set shows its `reason` as today.
 - `general-settings.tsx`: a `When the usage limit resets` row with a `Resume automatically | Wait for me` toggle group, backed by an atom in the `send-mode-atom.ts` pattern.
 
@@ -191,7 +191,7 @@ PROTOCOL_VERSION = '0.0.7'
 
 **One `ResumeParkedAgent { paneId }` command.** Resume all, Retry and the per-tab Resume differ only in which panes they cover; the banner and the transcript pass the panes they show (Strategic Programming).
 
-**The banner derives from agent summaries.** Summaries already reach the renderer (`AgentSummaryChanged`, `GetAgentSummaries`); `parked` on each summary gives the banner its data with no new event.
+**The banner derives from agent summaries.** Summaries already reach the renderer (`RunSummaryChanged`, `GetRunSummaries`); `parked` on each summary gives the banner its data with no new event.
 
 **A bounded wait with a grace.** A JavaScript timer above 2^31-1 ms fires at once; a reset more than `MAX_AUTOMATIC_WAIT` ahead or already past waits for the user, so a wrong unit or a stale value cannot send `continue` in a loop. `RESUME_GRACE` keeps a timer that fires slightly early from meeting the same limit.
 
@@ -247,7 +247,7 @@ PROTOCOL_VERSION = '0.0.7'
 6. *Correctness* — the transitions name the send path out of a park and why `Errored->Parked*` is absent.
 7. *Correctness* — `toAttentionTarget` returns none for `TurnParked`; `handleSessionEvent` decides the park.
 8. *Correctness* — the layer wiring is stated cycle-free, and test layers provide `SettingsStore`.
-9. *Correctness* — the banner and the Resume button read `useAgentSummaries()` and a shared `useNow`.
+9. *Correctness* — the banner and the Resume button read `useRunSummaries()` and a shared `useNow`.
 10. *Correctness* — park notices carry the id suffix `:parked`.
 11. *Correctness* — `applyAttention` validates before it interrupts, so a rejected transition keeps the timer.
 12. *Project rule (logging)* — the log points are named.

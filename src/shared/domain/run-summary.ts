@@ -62,7 +62,7 @@ export const StatusIdle = Schema.TaggedStruct('StatusIdle', {})
 export type StatusIdle = typeof StatusIdle.Type
 
 /** The status an overview row shows. Order rows with {@link statusRank}. */
-export const AgentStatus = Schema.Union([
+export const RunSummaryStatus = Schema.Union([
   StatusNeedsInput,
   StatusFailed,
   StatusParked,
@@ -70,7 +70,7 @@ export const AgentStatus = Schema.Union([
   StatusFinished,
   StatusIdle
 ])
-export type AgentStatus = typeof AgentStatus.Type
+export type RunSummaryStatus = typeof RunSummaryStatus.Type
 
 /**
  * What the overview shows for one tab: its status and its activity line. `turnStatus`, present
@@ -79,15 +79,15 @@ export type AgentStatus = typeof AgentStatus.Type
  * why the account refused its turn. `contextUsage`, present once the tab's session has reported
  * one, is the latest reading of how full its context window is.
  */
-export const AgentSummary = Schema.Struct({
+export const RunSummary = Schema.Struct({
   paneId: Uuid,
-  status: AgentStatus,
+  status: RunSummaryStatus,
   activity: Activity,
   turnStatus: Schema.optional(Schema.String),
   parked: Schema.optional(ParkCause),
   contextUsage: Schema.optional(ContextUsage)
 })
-export type AgentSummary = typeof AgentSummary.Type
+export type RunSummary = typeof RunSummary.Type
 
 const TARGET_FIELDS = ['file_path', 'command', 'pattern', 'url', 'path'] as const
 
@@ -125,19 +125,19 @@ const todoActivity = (input: Readonly<Record<string, unknown>>): Activity => {
     : Todo.make({ text })
 }
 
-const withoutTurnStatus = (summary: AgentSummary): AgentSummary => {
+const withoutTurnStatus = (summary: RunSummary): RunSummary => {
   if (summary.turnStatus === undefined) return summary
   const { turnStatus: _ended, ...rest } = summary
   return rest
 }
 
-const withoutParked = (summary: AgentSummary): AgentSummary => {
+const withoutParked = (summary: RunSummary): RunSummary => {
   if (summary.parked === undefined) return summary
   const { parked: _resumed, ...rest } = summary
   return rest
 }
 
-const isParked = (summary: AgentSummary): boolean =>
+const isParked = (summary: RunSummary): boolean =>
   summary.status._tag === 'StatusParked' ||
   (summary.status._tag === 'StatusNeedsInput' && summary.parked !== undefined)
 
@@ -146,7 +146,7 @@ const PARKED_REASON: Record<ParkCause['_tag'], string> = {
   SignedOut: 'Claude Code is not signed in'
 }
 
-const foldAttention = (summary: AgentSummary, attention: AttentionState): AgentSummary => {
+const foldAttention = (summary: RunSummary, attention: AttentionState): RunSummary => {
   switch (attention._tag) {
     case 'ParkedToResume':
       return {
@@ -190,14 +190,14 @@ const foldAttention = (summary: AgentSummary, attention: AttentionState): AgentS
   }
 }
 
-const withActivity = (summary: AgentSummary, activity: Activity): AgentSummary =>
+const withActivity = (summary: RunSummary, activity: Activity): RunSummary =>
   summary.activity._tag === 'Todo' ? summary : { ...summary, activity }
 
 /** A summary for a tab dia has no live events for: idle, with the last activity it saved. */
-export const idleSummary = (paneId: string, activity: Activity): AgentSummary =>
-  AgentSummary.make({ paneId, status: StatusIdle.make({}), activity })
+export const idleSummary = (paneId: string, activity: Activity): RunSummary =>
+  RunSummary.make({ paneId, status: StatusIdle.make({}), activity })
 
-const foldToolActivity = (summary: AgentSummary, event: AgentEvent): AgentSummary => {
+const foldToolActivity = (summary: RunSummary, event: AgentEvent): RunSummary => {
   switch (event._tag) {
     case 'ToolCallStarted':
       return withActivity(summary, ToolUse.make({ tool: event.toolName, target: null }))
@@ -217,7 +217,7 @@ const foldToolActivity = (summary: AgentSummary, event: AgentEvent): AgentSummar
  * The summary after one event. Events for other panes, and events that change neither status nor
  * activity, return `summary` unchanged.
  */
-export const foldSummary = (summary: AgentSummary, event: IpcEvent): AgentSummary => {
+export const foldSummary = (summary: RunSummary, event: IpcEvent): RunSummary => {
   if (!('paneId' in event) || event.paneId !== summary.paneId) return summary
   switch (event._tag) {
     case 'PaneTurnStatusChanged':
@@ -238,10 +238,10 @@ export const foldSummary = (summary: AgentSummary, event: IpcEvent): AgentSummar
 }
 
 /** The summary once the user has shown the tab: finished becomes idle; other statuses stay. */
-export const markShown = (summary: AgentSummary): AgentSummary =>
+export const markShown = (summary: RunSummary): RunSummary =>
   summary.status._tag === 'StatusFinished' ? { ...summary, status: StatusIdle.make({}) } : summary
 
-const STATUS_RANK: Record<AgentStatus['_tag'], number> = {
+const STATUS_RANK: Record<RunSummaryStatus['_tag'], number> = {
   StatusNeedsInput: 0,
   StatusFailed: 1,
   StatusParked: 2,
@@ -254,4 +254,4 @@ const STATUS_RANK: Record<AgentStatus['_tag'], number> = {
  * The overview order of a status: needs input 0, failed 1, parked 2, working 3, finished 4,
  * idle 5. A lower rank is more urgent.
  */
-export const statusRank = (status: AgentStatus): number => STATUS_RANK[status._tag]
+export const statusRank = (status: RunSummaryStatus): number => STATUS_RANK[status._tag]

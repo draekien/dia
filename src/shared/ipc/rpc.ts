@@ -1,6 +1,5 @@
 import { Schema } from 'effect'
 import { Rpc, RpcGroup } from 'effect/rpc'
-import { AgentSummary } from '../domain/agent-summary'
 import { ProjectEntry } from '../domain/attachment'
 import { ActivityId, ActivityInfo, ActivityNotFound } from '../domain/background-activity'
 import { SendMode } from '../domain/message-queue'
@@ -15,6 +14,7 @@ import {
   WorktreeNotRestoredError
 } from '../domain/project'
 import { RemovalProgress } from '../domain/project-removal'
+import { RunSummary } from '../domain/run-summary'
 import { ThemePreference } from '../domain/theme'
 import { TranscriptWidth } from '../domain/transcript-width'
 import { Uuid } from '../domain/uuid'
@@ -44,7 +44,7 @@ import {
  * {@link CLOSE_PROTOCOL_MISMATCH} unless the client offers exactly this version. Bump it whenever
  * {@link DiaRpcs} changes shape; while dia is in development, increment the patch version.
  */
-export const PROTOCOL_VERSION = '0.0.31'
+export const PROTOCOL_VERSION = '0.0.32'
 
 /** Prefix of the WebSocket subprotocol that carries the Host's token: `dia.token.<hex>`. */
 export const TOKEN_SUBPROTOCOL_PREFIX = 'dia.token.'
@@ -144,7 +144,7 @@ export const DiaRpcs = RpcGroup.make(
   Rpc.make('ArchiveTab', { payload: { paneId: Uuid }, error: WorktreeNotRemovedError }),
   Rpc.make('DeleteTab', { payload: { paneId: Uuid }, error: WorktreeNotRemovedError }),
   Rpc.make('UnarchiveTab', { payload: { paneId: Uuid }, error: WorktreeNotRestoredError }),
-  Rpc.make('GetAgentSummaries', { success: Schema.Array(AgentSummary) }),
+  Rpc.make('GetRunSummaries', { success: Schema.Array(RunSummary) }),
   Rpc.make('GetTranscriptWidth', { success: TranscriptWidth }),
   Rpc.make('GetPaneChat', {
     payload: { paneId: Schema.String },

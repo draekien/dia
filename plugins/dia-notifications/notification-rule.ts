@@ -1,6 +1,6 @@
-import type { AgentStatus, AgentSummary } from '@shared/domain/agent-summary'
 import type { AgentNotification } from '@shared/domain/notification'
 import type { Workspace } from '@shared/domain/project'
+import type { RunSummary, RunSummaryStatus } from '@shared/domain/run-summary'
 import { Equal } from 'effect'
 
 /**
@@ -10,7 +10,7 @@ import { Equal } from 'effect'
 export interface RuleState {
   readonly workspace: Workspace | null
   readonly attended: boolean
-  readonly statuses: ReadonlyMap<string, AgentStatus>
+  readonly statuses: ReadonlyMap<string, RunSummaryStatus>
 }
 
 /** The rule's state before anything has been observed: no workspace, window attended. */
@@ -33,7 +33,7 @@ export const attentionChanged =
   (attended: boolean): RuleStep =>
   (state) => [{ ...state, attended }, []]
 
-const reasonOf = (status: AgentStatus): string | undefined => {
+const reasonOf = (status: RunSummaryStatus): string | undefined => {
   switch (status._tag) {
     case 'StatusNeedsInput':
       return `Needs input: ${status.reason}`
@@ -62,7 +62,7 @@ const isOnScreen = (state: RuleState, paneId: string): boolean =>
  * names the agent and its project; the body names the reason.
  */
 export const summaryChanged =
-  (summary: AgentSummary): RuleStep =>
+  (summary: RunSummary): RuleStep =>
   (state) => {
     const previous = state.statuses.get(summary.paneId)
     if (previous !== undefined && Equal.equals(previous, summary.status)) return [state, []]

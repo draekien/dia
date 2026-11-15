@@ -174,7 +174,7 @@ const runningSetup = (paneId: string) =>
     ]
   })
 
-const startButton = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Start agent' })
+const startButton = () => screen.getByRole<HTMLButtonElement>('button', { name: 'Start thread' })
 
 const start = async () => {
   await waitFor(() => expect(startButton().disabled).toBe(false))
@@ -234,7 +234,7 @@ describe('PaneCreationForm', () => {
 })
 
 describe('PaneCreationForm model choice', () => {
-  it('shows the worktree tab’s setup steps once Start agent is pressed', async () => {
+  it('shows the worktree tab’s setup steps once Start thread is pressed', async () => {
     const bridge = installBridge([plugin('worktrees', [WorktreesKey.name])])
     renderForm(project(true))
     const toggle = await screen.findByRole('switch')
@@ -266,7 +266,7 @@ describe('PaneCreationForm model choice', () => {
     expect(screen.queryByRole('list', { name: 'Tab setup' })).toBeNull()
   })
 
-  it('shows no setup steps before Start agent is pressed', async () => {
+  it('shows no setup steps before Start thread is pressed', async () => {
     installBridge([plugin('worktrees', [WorktreesKey.name])])
     renderForm(project(true))
     await waitFor(() => expect(startButton().disabled).toBe(false))
@@ -283,7 +283,7 @@ describe('PaneCreationForm model choice', () => {
     expect(bridge.createTab).toHaveBeenCalledWith(expect.objectContaining({ model: 'default' }))
   })
 
-  it('keeps Start agent disabled while the model list is loading', async () => {
+  it('keeps Start thread disabled while the model list is loading', async () => {
     const bridge = installBridge([], { revision: 0, state: { _tag: 'Loading' } })
     renderForm(project(false))
     await waitFor(() => expect(bridge.models.get).toHaveBeenCalled())
@@ -291,7 +291,7 @@ describe('PaneCreationForm model choice', () => {
     expect(startButton().disabled).toBe(true)
   })
 
-  it('shows why no model list could be read and keeps Start agent disabled', async () => {
+  it('shows why no model list could be read and keeps Start thread disabled', async () => {
     installBridge([], {
       revision: 1,
       state: { _tag: 'Unavailable', message: 'spawn claude ENOENT', refreshing: false }
@@ -426,7 +426,7 @@ describe('PaneCreationForm model choice', () => {
 })
 
 describe('PaneCreationForm install notice', () => {
-  it('says Claude Code is not installed and keeps Start agent disabled', async () => {
+  it('says Claude Code is not installed and keeps Start thread disabled', async () => {
     installBridge([], READY, EMPTY_ADAPTER_PREFERENCES, {
       health: { _tag: 'HealthNotInstalled', checkedAt: '2026-10-25T15:00:00.000Z' },
       checking: false,

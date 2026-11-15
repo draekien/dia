@@ -1,16 +1,17 @@
-import {
-  AgentStatus,
-  AgentSummary,
-  idleSummary,
-  NoActivity,
-  statusRank
-} from '@shared/domain/agent-summary'
 import { type PaneId, PermissionMode } from '@shared/domain/pane'
 import { Project, ProjectId, type Workspace } from '@shared/domain/project'
+import {
+  idleSummary,
+  NoActivity,
+  RunSummary,
+  RunSummaryStatus,
+  statusRank
+} from '@shared/domain/run-summary'
 import { Uuid } from '@shared/domain/uuid'
+import { userProjects } from '@shared/domain/workspace'
 import { Schema } from 'effect'
 
-/** The `_tag` of an {@link AgentStatus}, as a status filter names it. */
+/** The `_tag` of an {@link RunSummaryStatus}, as a status filter names it. */
 export const StatusTag = Schema.Literals([
   'StatusNeedsInput',
   'StatusFailed',
@@ -55,7 +56,7 @@ export const filtersApply = (filters: OverviewFilters): boolean =>
 export const OverviewRow = Schema.Struct({
   paneId: Uuid,
   name: Schema.String,
-  summary: AgentSummary,
+  summary: RunSummary,
   permissionMode: PermissionMode
 })
 export type OverviewRow = typeof OverviewRow.Type
@@ -70,7 +71,7 @@ export const OverviewGroup = Schema.Struct({
   project: Project,
   rows: Schema.Array(OverviewRow),
   archived: Schema.Array(OverviewRow),
-  mostUrgent: Schema.NullOr(AgentStatus),
+  mostUrgent: Schema.NullOr(RunSummaryStatus),
   shown: Schema.Int,
   total: Schema.Int
 })
@@ -85,8 +86,8 @@ const byUrgency = (rows: ReadonlyArray<OverviewRow>): ReadonlyArray<OverviewRow>
     )
     .map(({ row }) => row)
 
-const mostUrgentOf = (rows: ReadonlyArray<OverviewRow>): AgentStatus | null =>
-  rows.reduce<AgentStatus | null>(
+const mostUrgentOf = (rows: ReadonlyArray<OverviewRow>): RunSummaryStatus | null =>
+  rows.reduce<RunSummaryStatus | null>(
     (best, row) =>
       best === null || statusRank(row.summary.status) < statusRank(best)
         ? row.summary.status
@@ -99,16 +100,18 @@ const contains = (text: string, query: string): boolean => text.toLocaleLowerCas
 /**
  * The project groups the overview lists, in the user's project order, with their rows filtered
  * by `filters`. A status change reorders rows inside a group but never moves a group. A tab with
- * no summary yet shows as idle with no activity.
+ * no summary yet shows as idle with no activity. Tabs and projects a plugin owns are left out:
+ * the plugin lists them itself.
  */
 export const buildOverview = (
   workspace: Workspace,
-  summaries: ReadonlyMap<PaneId, AgentSummary>,
+  summaries: ReadonlyMap<PaneId, RunSummary>,
   filters: OverviewFilters
 ): ReadonlyArray<OverviewGroup> => {
   const query = filters.query.trim().toLocaleLowerCase()
   const narrowing = filtersApply(filters)
-  return workspace.projects.flatMap((entry) => {
+  return userProjects(workspace).flatMap((owned) => {
+    const entry = { ...owned, tabs: owned.tabs.filter((tab) => tab.owner === undefined) }
     const projectMatches = query === '' || contains(entry.project.displayName, query)
     const summaryOf = (paneId: PaneId) =>
       summaries.get(paneId) ?? idleSummary(paneId, NoActivity.make({}))

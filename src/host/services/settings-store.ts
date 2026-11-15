@@ -13,23 +13,26 @@ const Settings = Schema.Struct({
   pluginOverrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   adapters: Schema.optional(Schema.Record(Schema.String, AdapterPreferences))
 })
-const RENAMED_PLUGINS = [
-  'adapters',
-  'agent-definitions',
-  'agent-overview',
-  'chat',
-  'claude-code',
-  'claude-code-settings',
-  'command-palette',
-  'example',
-  'issues',
-  'layout',
-  'mcp',
-  'meta',
-  'notifications',
-  'settings',
-  'skills',
-  'worktrees'
+const RENAMED_PLUGINS: ReadonlyArray<readonly [string, string]> = [
+  ...[
+    'adapters',
+    'agent-definitions',
+    'chat',
+    'claude-code',
+    'claude-code-settings',
+    'command-palette',
+    'example',
+    'issues',
+    'layout',
+    'mcp',
+    'meta',
+    'notifications',
+    'settings',
+    'skills',
+    'worktrees'
+  ].map((name) => [name, `dia-${name}`] as const),
+  ['agent-overview', 'dia-threads'],
+  ['dia-agent-overview', 'dia-threads']
 ]
 
 const renameKeys = <A>(
@@ -38,11 +41,11 @@ const renameKeys = <A>(
   if (record === undefined) return undefined
   const renamed: Record<string, A> = { ...record }
   let changed = false
-  for (const name of RENAMED_PLUGINS) {
-    const value = renamed[name]
-    if (value === undefined || `dia-${name}` in renamed) continue
-    renamed[`dia-${name}`] = value
-    delete renamed[name]
+  for (const [from, to] of RENAMED_PLUGINS) {
+    const value = renamed[from]
+    if (value === undefined || to in renamed) continue
+    renamed[to] = value
+    delete renamed[from]
     changed = true
   }
   return changed ? renamed : record

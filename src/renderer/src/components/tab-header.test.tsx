@@ -71,6 +71,15 @@ describe('TabHeader', () => {
     expect(within(crumbs).getByText('fix-anchor').getAttribute('aria-current')).toBe('page')
   })
 
+  it('shows only the tab name when a plugin owns the tab’s project', () => {
+    const owned = { ...entry, project: { ...entry.project, owner: 'dia-org' } }
+    show({ _tag: 'TabView', paneId: PANE }, { projects: [owned], visibleTab: PANE })
+
+    const crumbs = screen.getByRole('navigation', { name: 'breadcrumb' })
+    expect(within(crumbs).queryByText('dia')).toBeNull()
+    expect(within(crumbs).getByText('fix-anchor').getAttribute('aria-current')).toBe('page')
+  })
+
   it('shows the worktree branch, the transcript width control and the rail toggle for a tab', () => {
     show({ _tag: 'TabView', paneId: PANE }, { projects: [entry], visibleTab: PANE })
 
@@ -86,7 +95,7 @@ describe('TabHeader', () => {
 
     const crumbs = screen.getByRole('navigation', { name: 'breadcrumb' })
     expect(within(crumbs).getByText('dia')).toBeTruthy()
-    expect(within(crumbs).getByText('New agent').getAttribute('aria-current')).toBe('page')
+    expect(within(crumbs).getByText('New thread').getAttribute('aria-current')).toBe('page')
     expect(screen.queryByRole('button', { name: 'Transcript width' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Session details' })).toBeNull()
   })

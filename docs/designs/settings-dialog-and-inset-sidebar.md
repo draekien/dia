@@ -291,7 +291,7 @@ Verify also checks that the drag rows under an open dialog's overlay do not move
 
 - New ADR-0038 "Draw the window controls over a transparent overlay and use the shadcn inset sidebar as the window frame": supersedes ADR-0017's header and colour-sync decisions; amends ADR-0031's slot table (`main.header` is rendered by the layout plugin) and its "Kernel" row ("Renders only `<AppHeader/>` and the `root` slot"). Index updated; ADR-0017 and ADR-0031 status lines updated.
 - DESIGN.md: replace the Flat-Surface Rule with the inset card; add a resting card level to §4 Elevation; update Agent Overview (resize, collapse, `SidebarMenu` rows, footer removed) and Tabs (breadcrumb header).
-- `docs/designs/agent-overview.md`: line 21 (`Ctrl B` status rail), line 39 (settled decision "Rail") and line 271 (`dia.agent-overview.rail`, `rail.tsx`) describe the collapsed sidebar (icon mode) and `dia.sidebar.open`.
+- `docs/designs/threads.md`: line 21 (`Ctrl B` status rail), line 39 (settled decision "Rail") and line 271 (`dia.agent-overview.rail`, `rail.tsx`) describe the collapsed sidebar (icon mode) and `dia.sidebar.open`.
 - `docs/designs/adapter-settings.md:250`: the `openSettingsPage()` reference becomes `openSettings({ page: 'adapters', adapter: 'claude-code' })` in the Settings dialog.
 
 ## Tests

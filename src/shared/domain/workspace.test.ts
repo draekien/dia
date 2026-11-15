@@ -7,6 +7,7 @@ import {
   addProject,
   addTab,
   archiveTab,
+  claimTab,
   deleteTab,
   moveProject,
   moveVisibleTabOff,
@@ -17,6 +18,7 @@ import {
   tabOf,
   unarchiveTab,
   updateTabConfig,
+  userProjects,
   withDefaultVisibleTab
 } from './workspace'
 
@@ -514,5 +516,66 @@ describe('withDefaultVisibleTab', () => {
     const workspace = workspaceOf([[1, [tab(1), tab(2)]]], paneId(2))
 
     expect(withDefaultVisibleTab(workspace)).toBe(workspace)
+  })
+})
+
+describe('userProjects', () => {
+  it('keeps the projects no plugin owns, in workspace order', () => {
+    const workspace = workspaceOf([
+      [1, []],
+      [2, []],
+      [3, []]
+    ])
+    const owned: Workspace = {
+      ...workspace,
+      projects: workspace.projects.map((entry, index) =>
+        index === 1 ? { ...entry, project: { ...entry.project, owner: 'dia-org' } } : entry
+      )
+    }
+
+    expect(userProjects(owned).map((entry) => entry.project.displayName)).toEqual([
+      'repo1',
+      'repo3'
+    ])
+  })
+})
+
+describe('claimTab', () => {
+  const orgTab = { plugin: 'dia-org', ownsProject: false }
+  const orgProject = { plugin: 'dia-org', ownsProject: true }
+  const renamed = AgentName.make('Assistant')
+
+  it('gives an unowned tab the owner and the name', () => {
+    const claimed = claimTab(workspaceOf([[1, [tab(1), tab(2)]]]), paneId(1), orgTab, renamed)
+
+    expect(claimed.projects[0]?.tabs.map((t) => [t.owner, t.name])).toEqual([
+      ['dia-org', 'Assistant'],
+      [undefined, 'agent-2']
+    ])
+  })
+
+  it('leaves the project unowned when the owner does not own the project', () => {
+    const claimed = claimTab(workspaceOf([[1, [tab(1)]]]), paneId(1), orgTab, renamed)
+
+    expect(claimed.projects[0]?.project.owner).toBeUndefined()
+  })
+
+  it('gives the project to the owner when the owner owns the project', () => {
+    const claimed = claimTab(workspaceOf([[1, [tab(1)]]]), paneId(1), orgProject, renamed)
+
+    expect(claimed.projects[0]?.project.owner).toBe('dia-org')
+  })
+
+  it("keeps an owned tab's owner and name", () => {
+    const owned: Tab = { ...tab(1), owner: 'dia-schedules' }
+    const workspace = workspaceOf([[1, [owned]]])
+
+    expect(claimTab(workspace, paneId(1), orgTab, renamed)).toBe(workspace)
+  })
+
+  it('returns the workspace unchanged when no tab has the pane id', () => {
+    const workspace = workspaceOf([[1, [tab(1)]]])
+
+    expect(claimTab(workspace, paneId(9), orgTab, renamed)).toBe(workspace)
   })
 })

@@ -45,6 +45,7 @@ import {
   emptyPaneChatState,
   isParkNotice,
   lastUserText,
+  NOTICE_MARKER,
   paneChatStateFromItems,
   reducePaneChat
 } from './pane-chat'
@@ -1246,5 +1247,39 @@ describe('reducePaneChat — background tasks', () => {
 
   it('empties the set on a rewind, which restarts the session process', () => {
     expect(reducePaneChat(running, rewoundToCheckpoint('u1')).backgroundTasks).toEqual([])
+  })
+})
+
+describe('reducePaneChat: dia notices', () => {
+  const noticeText = `${NOTICE_MARKER}"Login" is in review.`
+  const notice = (id: string) => ({
+    id,
+    role: 'notice',
+    parts: [{ type: 'text', content: '"Login" is in review.' }]
+  })
+
+  it('shows a sent message with the notice marker as a notice without the marker', () => {
+    expect(sendUser(emptyPaneChatState, 'u-1', noticeText).messages).toEqual([notice('u-1')])
+  })
+
+  it('shows a recorded message with the notice marker as a notice with no checkpoint', () => {
+    const recorded = reducePaneChat(
+      sendUser(emptyPaneChatState, 'u-1', noticeText),
+      userRecorded('u-1', { content: noticeText, checkpointUuid: 'turn-1' })
+    )
+
+    expect(recorded.messages).toEqual([notice('u-1')])
+  })
+
+  it('shows a history message with the notice marker as a notice with no checkpoint', () => {
+    const history = historyOf([{ role: 'user', content: noticeText, checkpointUuid: 'turn-1' }])
+
+    expect(history.messages).toEqual([notice('h-0')])
+  })
+
+  it('keeps a message that only mentions the marker later as the user’s turn', () => {
+    const typed = sendUser(emptyPaneChatState, 'u-1', `see ${NOTICE_MARKER}`)
+
+    expect(typed.messages[0]?.role).toBe('user')
   })
 })

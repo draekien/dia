@@ -1,22 +1,22 @@
 import { assert, describe, it } from '@effect/vitest'
+import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
 import {
-  type AgentSummary,
   NoActivity,
+  type RunSummary,
   StatusFinished,
   StatusIdle,
   Todo,
   ToolUse
-} from '@shared/domain/agent-summary'
-import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
+} from '@shared/domain/run-summary'
 import { type IpcEvent, WorkspaceChanged } from '@shared/ipc/contract'
 import { Duration, Effect, Exit, Layer, Scope, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
 import { RunEventStore } from '../../../plugins/dia-run-events/store'
-import { ACTIVITY_SAVE_DELAY, AgentSummaries, AgentSummariesLive } from './agent-summaries'
 import { EventHub } from './event-hub'
 import { EventHubTestLayer } from './event-hub-test-layer'
 import { PaneWorkspace } from './pane-workspace'
 import { type PersistedActivity, PersistenceService } from './persistence'
+import { ACTIVITY_SAVE_DELAY, RunSummaries, RunSummariesLive } from './run-summaries'
 
 const PANE_A = 'aaaaaaaa-0000-4000-8000-000000000001'
 const PANE_B = 'bbbbbbbb-0000-4000-8000-000000000002'
@@ -59,7 +59,7 @@ const makeSetup = (initial: Workspace, saved: PersistedActivity = {}) => {
     getWorkspace: Effect.succeed(initial)
   } as unknown as PaneWorkspace['Service'])
   const layer = Layer.provideMerge(
-    AgentSummariesLive,
+    RunSummariesLive,
     Layer.mergeAll(EventHubTestLayer, persistence, workspace)
   )
   return { saves, layer }
@@ -83,17 +83,17 @@ const publish = (event: IpcEvent) =>
 
 const summaryOf = (paneId: string) =>
   Effect.map(
-    Effect.flatMap(AgentSummaries, (service) => service.getAll),
+    Effect.flatMap(RunSummaries, (service) => service.getAll),
     (all) => all.find((summary) => summary.paneId === paneId)
   )
 
 const recordChanges = Effect.gen(function* () {
-  const changes: Array<AgentSummary> = []
+  const changes: Array<RunSummary> = []
   const hub = yield* EventHub
   yield* hub.subscribe({}).pipe(
     Stream.runForEach((frame) =>
       Effect.sync(() => {
-        if (frame._tag === 'GlobalEvent' && frame.event._tag === 'AgentSummaryChanged') {
+        if (frame._tag === 'GlobalEvent' && frame.event._tag === 'RunSummaryChanged') {
           changes.push(frame.event.summary)
         }
       })
@@ -123,7 +123,7 @@ const completed = (paneId: string): IpcEvent => ({
   attention: { _tag: 'Completed' }
 })
 
-describe('AgentSummaries', () => {
+describe('RunSummaries', () => {
   it.effect('seeds every tab as idle with its saved activity line', () =>
     Effect.gen(function* () {
       const saved = { [PANE_A]: Todo.make({ text: 'Fixing the bug' }) }

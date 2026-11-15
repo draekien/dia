@@ -29,7 +29,7 @@ Confirmed with the user before design.
 ## Out of scope and known limits
 
 - **OS notifications.** `plugins/notifications/notification-rule.ts` titles an agent from workspace tabs only, so attached sessions raise no OS notification. A follow-up issue is raised.
-- **`Finished` status.** `AgentSummaries` clears `Finished` when the workspace's `visibleTab` shows the pane; an attached pane is never the `visibleTab`, so its row stays `Finished` after a completed turn until the row is released.
+- **`Finished` status.** `RunSummaries` clears `Finished` when the workspace's `visibleTab` shows the pane; an attached pane is never the `visibleTab`, so its row stays `Finished` after a completed turn until the row is released.
 - **Status after a permission answer.** The pane leaves `AwaitingPermission` when the answer is queued, so the row reads `Working` while the agent waits for a slot.
 
 ## Interface
@@ -123,7 +123,7 @@ export class AttachedSessions extends Context.Service<AttachedSessions, {
 
 | Place | Change |
 |---|---|
-| `AgentSummaries` | `State` gains `tabIds` and `attachedIds`. `handle` sets `attachedIds` from each `AttachedSessionsChanged` frame; `applyWorkspace` sets `tabIds` and keeps every summary whose id is in `tabIds ∪ attachedIds`. When an `AttachedSessionsChanged` frame removes an id that is not a tab, its summary becomes `idleSummary(paneId, previous.activity)` and `AgentSummaryChanged` is published, which clears a pending request in the renderer's map before the id can be attached again; the summary is dropped at the next `WorkspaceChanged`. `flush` writes only summaries whose id is in `tabIds`. No new layer dependency |
+| `RunSummaries` | `State` gains `tabIds` and `attachedIds`. `handle` sets `attachedIds` from each `AttachedSessionsChanged` frame; `applyWorkspace` sets `tabIds` and keeps every summary whose id is in `tabIds ∪ attachedIds`. When an `AttachedSessionsChanged` frame removes an id that is not a tab, its summary becomes `idleSummary(paneId, previous.activity)` and `RunSummaryChanged` is published, which clears a pending request in the renderer's map before the id can be attached again; the summary is dropped at the next `WorkspaceChanged`. `flush` writes only summaries whose id is in `tabIds`. No new layer dependency |
 | `rpc.ts` | new RPC `GetAttachedSessions` → `Array(AttachedSession)`; `contract.ts` global event `AttachedSessionsChanged`; `PROTOCOL_VERSION` bumps |
 | `PaneChatProjection` | `seed` keeps a non-tab entry (`inWorkspace: false`); the `seed` and `snapshot` JSDoc now say a seeded non-tab id keeps its state; new `release(paneId)` drops a non-tab entry, and `AttachedSessions` calls it when a session detaches |
 
@@ -193,7 +193,7 @@ Plugins attach a session they open to the Host, which records it and shows it as
 Applied
 - *Correctness* (blocker 1) — `SessionAttachment` named host types in `src/shared/plugin/api.ts`; now declared in `src/host/plugins/host-plugin-context.ts`, with `HostPluginContext` widened host-side and exported from `@dia/plugin`.
 - *Correctness* (blocker 2) — `attach` returned the wrapped session, so `resumeIssue` called `answerPermission` again; `attach` now returns `void` and the dispatcher keeps the raw session through a `Deferred`.
-- *Correctness* (3) — `AgentSummaries.applyWorkspace` dropped attached summaries on each `WorkspaceChanged`; it now keeps `tabIds ∪ attachedIds`.
+- *Correctness* (3) — `RunSummaries.applyWorkspace` dropped attached summaries on each `WorkspaceChanged`; it now keeps `tabIds ∪ attachedIds`.
 - *Correctness* (4) — attached rows stay `Finished`; recorded as a known limit.
 - *Correctness* (5) — notifications skip attached panes; recorded as out of scope.
 - *Information Hiding* (6) — exporting `startPane` exposed supervisor internals; attach is now `PaneSupervisor.attachPane`, and `startPane` stays private.
@@ -212,16 +212,16 @@ Rejected
 Applied
 - *Correctness* (blocker 1) — `attachPane` did not build a `PaneEntry` (`scope`, `subscriber`, `closed`); it now makes its own closeable scope, forks the drain as `subscriber`, and registers `teardown` on the calling scope.
 - *Correctness* (2) — the attached view had no reset: added `closesOpenAttached` on `WorkspaceChanged`, the `shownBefore` hand-off with pages and the form, and the restore when the id leaves the list.
-- *Correctness* (3) — `AgentSummariesReplaced` is preload-only; removal now publishes nothing.
+- *Correctness* (3) — `RunSummariesReplaced` is preload-only; removal now publishes nothing.
 - *Project rules* (4) — `@dia/plugin` exports `AttachedSession`, `HostSessions`, `SessionAttachment` and the widened `HostPluginContext`.
 - *Correctness* (5) — the preload, `window.dia` and `attachedSessionsAtom` row added, with reconnect refresh.
 - *Correctness* (6) — layer wiring stated.
-- *Correctness* (7) — the `attachedIds` stream raced pane events; `AgentSummaries` reads `attached.current` on each `WorkspaceChanged`, and `attach` adds the list entry before the session opens. `flush` writes tabs only.
+- *Correctness* (7) — the `attachedIds` stream raced pane events; `RunSummaries` reads `attached.current` on each `WorkspaceChanged`, and `attach` adds the list entry before the session opens. `flush` writes tabs only.
 - *Minor* (8) — title, ADR index and status, projection JSDoc, `OverviewRow.name` type, and the dispatcher test fake.
 
 **Round 3**
 
 Applied
-- *Minimize Complexity* (1) — `AgentSummaries` read `attached.current` through a new dependency and `flush` had no tab set; it now folds `AttachedSessionsChanged` frames into `attachedIds`, keeps `tabIds` in `State`, and takes no new dependency. Ordering verified in `event-hub.ts`: global frames are published to the `PubSub` directly, pane frames after `store.append`.
+- *Minimize Complexity* (1) — `RunSummaries` read `attached.current` through a new dependency and `flush` had no tab set; it now folds `AttachedSessionsChanged` frames into `attachedIds`, keeps `tabIds` in `State`, and takes no new dependency. Ordering verified in `event-hub.ts`: global frames are published to the `PubSub` directly, pane frames after `store.append`.
 - *Correctness* (2) — a re-attached `paneId` could show a stale permission card from the renderer's unpruned summary map; removal now publishes an idle summary.
 - *Correctness* (3) — the `startPane` failure sentence contradicted `attach`'s `never` error; reworded to the defect path.

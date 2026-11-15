@@ -69,7 +69,7 @@ interface PaneCreationFormProps {
  * The New agent form for `project`: an optional name, the model, thinking level, permission mode
  * and, for a git project, the worktree switch. The model, thinking level and permission mode start
  * from the adapter's defaults for new agents. Start is disabled while the chosen model is not
- * offered or the agent install cannot run. "Start agent" asks the Host to create the tab,
+ * offered or the agent install cannot run. "Start thread" asks the Host to create the tab,
  * which then becomes the visible tab; Cancel returns to the tab shown before the form opened.
  * Once started, a worktree tab's setup steps show above the buttons, and stay after a failure.
  */
@@ -136,7 +136,7 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
   return (
     <div className="relative flex h-full flex-col items-center justify-center gap-4 bg-background p-6 text-ink">
       <div className="flex w-full max-w-sm flex-col gap-4">
-        <span className="text-base font-semibold">New agent in {project.displayName}</span>
+        <span className="text-base font-semibold">New thread in {project.displayName}</span>
 
         <div className="flex flex-col gap-1">
           <label htmlFor="agent-name" className="text-xs text-ink-muted">
@@ -241,7 +241,7 @@ function PaneCreationForm({ project }: PaneCreationFormProps) {
             Cancel
           </Button>
           <Button type="button" onClick={handleStart} disabled={isBusy || !startable}>
-            {isBusy ? 'Starting…' : state.step === 'error' ? 'Try again' : 'Start agent'}
+            {isBusy ? 'Starting…' : state.step === 'error' ? 'Try again' : 'Start thread'}
           </Button>
         </div>
       </div>

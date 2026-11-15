@@ -168,11 +168,45 @@ export const WatchOrgLive = Rpc.make('WatchOrgLive', {
 })
 
 /**
+ * One run of an issue a hired agent works on, for an issue in a started status: the run's id, the
+ * issue's title, the name of the issue's project, and the assignee: the hire's name, or its job
+ * title's name for an unnamed hire.
+ */
+export const AgentRun = Schema.Struct({
+  runId: Schema.String,
+  issueTitle: Schema.String,
+  projectName: Schema.String,
+  assignee: Schema.String
+})
+export type AgentRun = typeof AgentRun.Type
+
+/**
+ * Streams the {@link AgentRun}s, ordered by issue title: the current list when subscribed, then a
+ * new list after each change of issues, hires, job titles or projects. Served while `dia-issues`
+ * is provided.
+ */
+export const WatchAgentRuns = Rpc.make('WatchAgentRuns', {
+  payload: {},
+  success: Schema.Array(AgentRun),
+  stream: true
+})
+
+/**
  * Sends `text` to the Executive assistant, starting its run when it has none, and returns the
  * run's id; show it with `dia-runs`' `OpenRunInTab`. Served while `dia-runs` is provided.
  */
 export const AskAssistant = Rpc.make('AskAssistant', {
   payload: { text: Schema.NonEmptyString },
+  success: Schema.String,
+  error: AssistantDisabled
+})
+
+/**
+ * Returns the Executive assistant's run id, starting a run that waits for its first message when
+ * it has none; show it with `dia-runs`' `OpenRunInTab`. Fails while its job title is disabled.
+ */
+export const OpenAssistant = Rpc.make('OpenAssistant', {
+  payload: {},
   success: Schema.String,
   error: AssistantDisabled
 })

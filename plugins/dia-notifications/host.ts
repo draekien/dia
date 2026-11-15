@@ -10,7 +10,7 @@ import {
 } from './notification-rule'
 
 const summaryStepOf = (frame: EventFrame): Result.Result<RuleStep, void> =>
-  frame._tag !== 'ReloadHistory' && frame.event._tag === 'AgentSummaryChanged'
+  frame._tag !== 'ReloadHistory' && frame.event._tag === 'RunSummaryChanged'
     ? Result.succeed(summaryChanged(frame.event.summary))
     : Result.failVoid
 

@@ -375,7 +375,7 @@ export const installIssuesHost = (
       plugins: { call, subscribe, onStatusChanged: () => () => {} },
       getWorkspace: async () => WORKSPACE,
       onWorkspaceChanged: () => () => {},
-      onAgentSummariesReplaced: () => () => {},
+      onRunSummariesReplaced: () => () => {},
       selectTab: () => {}
     }
   })

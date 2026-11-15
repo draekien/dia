@@ -1,15 +1,15 @@
+import type { PermissionMode } from '@shared/domain/pane'
+import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
 import {
-  type AgentStatus,
-  type AgentSummary,
   NoActivity,
+  type RunSummary,
+  type RunSummaryStatus,
   StatusFailed,
   StatusFinished,
   StatusIdle,
   StatusNeedsInput,
   StatusWorking
-} from '@shared/domain/agent-summary'
-import type { PermissionMode } from '@shared/domain/pane'
-import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
+} from '@shared/domain/run-summary'
 import { describe, expect, it } from 'vitest'
 import {
   ArchivedTarget,
@@ -52,16 +52,16 @@ const project = (n: number, displayName: string, tabs: ReadonlyArray<Tab>) => ({
   tabs
 })
 
-const summary = (n: number, status: AgentStatus): AgentSummary => ({
+const summary = (n: number, status: RunSummaryStatus): RunSummary => ({
   paneId: paneId(n),
   status,
   activity: NoActivity.make({})
 })
 
-const summaries = (...entries: ReadonlyArray<AgentSummary>) =>
+const summaries = (...entries: ReadonlyArray<RunSummary>) =>
   new Map(entries.map((entry) => [entry.paneId, entry]))
 
-const names = (workspace: Workspace, map: Map<string, AgentSummary>, filters = NO_FILTERS) =>
+const names = (workspace: Workspace, map: Map<string, RunSummary>, filters = NO_FILTERS) =>
   buildOverview(workspace, map, filters).map((group) => [
     group.project.displayName,
     group.rows.map((row) => row.name)
@@ -70,6 +70,33 @@ const names = (workspace: Workspace, map: Map<string, AgentSummary>, filters = N
 const filters = (patch: Partial<OverviewFilters>): OverviewFilters => ({ ...NO_FILTERS, ...patch })
 
 describe('buildOverview', () => {
+  it('leaves out tabs a plugin owns', () => {
+    const owned: Tab = { ...tab(2, 'Fix the anchor'), owner: 'dia-org' }
+    const workspace = { projects: [project(1, 'dia', [tab(1, 'mine'), owned])], visibleTab: null }
+
+    expect(names(workspace, summaries())).toEqual([['dia', ['mine']]])
+  })
+
+  it('counts only the tabs no plugin owns', () => {
+    const owned: Tab = { ...tab(2, 'Fix the anchor'), owner: 'dia-org' }
+    const workspace = { projects: [project(1, 'dia', [tab(1, 'mine'), owned])], visibleTab: null }
+
+    expect(buildOverview(workspace, summaries(), NO_FILTERS)[0]?.total).toBe(1)
+  })
+
+  it('leaves out projects a plugin owns', () => {
+    const assistant = project(2, 'assistant', [tab(2, 'Assistant')])
+    const workspace = {
+      projects: [
+        project(1, 'dia', []),
+        { ...assistant, project: { ...assistant.project, owner: 'dia-org' } }
+      ],
+      visibleTab: null
+    }
+
+    expect(names(workspace, summaries())).toEqual([['dia', []]])
+  })
+
   it('gives each row its tab’s current permission mode', () => {
     const workspace: Workspace = {
       projects: [

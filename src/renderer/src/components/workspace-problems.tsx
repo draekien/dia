@@ -40,7 +40,7 @@ const keyOf = (problem: WorkspaceProblem): string => {
 const isUnreadable = (problem: WorkspaceProblem): problem is Unreadable =>
   problem._tag !== 'ImportConflict'
 
-const agentsLabel = (count: number): string => (count === 1 ? '1 agent' : `${count} agents`)
+const agentsLabel = (count: number): string => (count === 1 ? '1 thread' : `${count} threads`)
 
 /** The label of the import action for `conflict`, naming every value the import drops. */
 export const importLabel = (conflict: ImportConflict): string => {
@@ -58,7 +58,7 @@ const shortSession = (sessionId: string): string =>
 function ConflictReason({ conflict }: { conflict: ImportConflict }) {
   const { session, worktree } = conflict
   if (session === undefined && worktree === undefined) {
-    return <>No other agent holds its session or worktree any more.</>
+    return <>No other thread holds its session or worktree any more.</>
   }
   return (
     <>
@@ -153,7 +153,7 @@ function DeleteRowDialog({
       <AlertDialogContent className="sm:max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {isProject ? `Delete project ${problem.name}?` : `Delete agent ${problem.name}?`}
+            {isProject ? `Delete project ${problem.name}?` : `Delete thread ${problem.name}?`}
           </AlertDialogTitle>
           <AlertDialogDescription
             render={
@@ -161,7 +161,7 @@ function DeleteRowDialog({
                 <p>
                   {isProject
                     ? `dia deletes what it stored about this project and its ${agentsLabel(problem.agents)}: their settings, worktree records and session history.`
-                    : 'dia deletes what it stored about this agent: its settings, its worktree record and its session history.'}{' '}
+                    : 'dia deletes what it stored about this thread: its settings, its worktree record and its session history.'}{' '}
                   This cannot be undone.
                 </p>
                 <p>
@@ -303,7 +303,7 @@ export function WorkspaceProblemsBanner(): React.JSX.Element | null {
                     caption={
                       problem._tag === 'UnreadableProject'
                         ? `Project with ${agentsLabel(problem.agents)}`
-                        : `Agent in ${problem.project}`
+                        : `Thread in ${problem.project}`
                     }
                     reason={
                       <span className="font-mono break-words whitespace-pre-wrap">

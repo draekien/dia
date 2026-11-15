@@ -10,6 +10,7 @@ import {
   ProjectNotFoundError,
   type Tab,
   TabNotFoundError,
+  type TabOwner,
   type Workspace
 } from './project'
 
@@ -229,6 +230,46 @@ export const recordSession = (
       onSome: (id) => ({ ...tab, sessionId: id })
     })
   )
+
+/**
+ * Gives the tab with `paneId` to `owner.plugin` and names it `name`, when the tab has no owner;
+ * with `owner.ownsProject`, also gives its project to `owner.plugin` when the project has no
+ * owner. Returns `workspace` itself when nothing changes, including when no tab has `paneId`.
+ */
+export const claimTab = (
+  workspace: Workspace,
+  paneId: PaneId,
+  owner: TabOwner,
+  name: AgentName
+): Workspace => {
+  const found = tabOf(workspace, paneId)
+  if (Result.isFailure(found)) return workspace
+  const claimsTab = found.success.tab.owner === undefined
+  const claimsProject = owner.ownsProject && found.success.project.owner === undefined
+  if (!claimsTab && !claimsProject) return workspace
+  return {
+    ...workspace,
+    projects: workspace.projects.map((entry) =>
+      entry.project.projectId !== found.success.project.projectId
+        ? entry
+        : {
+            project: claimsProject ? { ...entry.project, owner: owner.plugin } : entry.project,
+            tabs: entry.tabs.map((tab) =>
+              claimsTab && tab.config.paneId === paneId
+                ? { ...tab, owner: owner.plugin, name }
+                : tab
+            )
+          }
+    )
+  }
+}
+
+/**
+ * The project entries of `workspace` that no plugin owns, in workspace order: the projects the user
+ * registered, which the thread list and every project picker show (ADR-0081).
+ */
+export const userProjects = (workspace: Workspace): Workspace['projects'] =>
+  workspace.projects.filter((entry) => entry.project.owner === undefined)
 
 /** The tab with `paneId` and the project that holds it. */
 export const tabOf = (

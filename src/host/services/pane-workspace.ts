@@ -893,9 +893,10 @@ export const PaneWorkspaceLive = Layer.effect(
           Effect.provideService(FileSystem.FileSystem, fs),
           Effect.provideService(Path.Path, path)
         ))
-      const name = yield* generateAgentName
+      const name = change.name ?? (yield* generateAgentName)
       const tab: Tab = {
         name,
+        ...(change.owner === undefined ? {} : { owner: change.owner.plugin }),
         config: {
           paneId: change.runId,
           cwd: change.directory,
@@ -907,6 +908,12 @@ export const PaneWorkspaceLive = Layer.effect(
         archived: false
       }
       yield* importTab(project, tab)
+      const owner = change.owner
+      if (owner !== undefined) {
+        yield* mutate<never>('claimRunTab', (current) =>
+          Result.succeed(WorkspaceOps.claimTab(current, change.runId, owner, name))
+        )
+      }
       if (change.select) {
         yield* mutate('showRunTab', (current) => WorkspaceOps.selectTab(current, change.runId))
       }

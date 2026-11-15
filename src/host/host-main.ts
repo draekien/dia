@@ -33,7 +33,6 @@ import { makeHostServerLive } from './ipc/host-server'
 import { DiaRpcHandlersLive } from './ipc/rpc-handlers'
 import { HostPlugins, makeHostPluginsLive } from './plugins/host-plugins'
 import { makePluginSourcesLive } from './plugins/plugin-sources'
-import { AgentSummariesLive } from './services/agent-summaries'
 import { AppWindow, makeAppWindowLive } from './services/app-window'
 import { BackgroundActivitiesLive } from './services/background-activities'
 import { makeCommandDeduperLive } from './services/command-deduper'
@@ -48,6 +47,7 @@ import {
   RunEventLogLive,
   RunEventLogRegistryLive
 } from './services/run-event-log'
+import { RunSummariesLive } from './services/run-summaries'
 import { RunsClientLive } from './services/runs-client'
 import { makeSettingsStoreLive } from './services/settings-store'
 import { WorkspaceFeedLive } from './services/workspace-feed'
@@ -164,7 +164,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
     Layer.mergeAll(workspace, workspaceStore, NodeServices.layer)
   )
   const summaries = Layer.provide(
-    AgentSummariesLive,
+    RunSummariesLive,
     Layer.mergeAll(workspace, persistence, eventHub)
   )
   const state = Layer.mergeAll(

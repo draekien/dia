@@ -83,11 +83,11 @@ export const Workspace = Schema.Struct({
 
 `src/shared/domain/workspace.ts` holds the pure operations, each returning `Result` with a typed error and never a `Workspace` that fails the checks: `addProject`, `moveProject(projectId, toIndex)`, `removeProject` (sets `visibleTab` to the first non-archived tab of the next project, else of the previous one, else `null`, when the removed project holds it), `addTab` (sets `visibleTab` to the new tab, so `createTab` emits one `WorkspaceChanged` that already shows it), `renameTab`, `selectTab(PaneId | null)`, `updateTabConfig`, `recordSession`, `tabOf(paneId)`, `moveVisibleTabOff(projectId)` (the `visibleTab` rule of `removeProject`, applied before the project's agents stop) and `withDefaultVisibleTab` (the on-load rule above).
 
-Pane ids are `Uuid` throughout (`Workspace.visibleTab`, `SelectTab`, `AgentSummary.paneId`). The `PaneId` type alias (`type PaneId = string`, `pane-tree.ts:6`) moves to `pane.ts` when `pane-tree.ts` is deleted.
+Pane ids are `Uuid` throughout (`Workspace.visibleTab`, `SelectTab`, `RunSummary.paneId`). The `PaneId` type alias (`type PaneId = string`, `pane-tree.ts:6`) moves to `pane.ts` when `pane-tree.ts` is deleted.
 
 Errors that cross the RPC — `ProjectAlreadyRegisteredError`, `DirectoryNotFoundError`, `ProjectNotFoundError`, `TabNotFoundError`, `WorktreeUnavailableError` — are `class X extends Schema.TaggedError<X>()('X', {...})` (`node_modules/effect/src/Schema.ts:16653`), so each can be an RPC `error` schema.
 
-### Shared domain — `src/shared/domain/agent-summary.ts`
+### Shared domain — `src/shared/domain/run-summary.ts`
 
 ```ts
 export const Todo = Schema.TaggedStruct('Todo', { text: Schema.String })
@@ -100,16 +100,16 @@ export const StatusFailed = Schema.TaggedStruct('StatusFailed', { reason: Schema
 export const StatusWorking = Schema.TaggedStruct('StatusWorking', {})
 export const StatusFinished = Schema.TaggedStruct('StatusFinished', {})
 export const StatusIdle = Schema.TaggedStruct('StatusIdle', {})
-export const AgentStatus = Schema.Union([StatusNeedsInput, StatusFailed, StatusWorking, StatusFinished, StatusIdle])
+export const RunSummaryStatus = Schema.Union([StatusNeedsInput, StatusFailed, StatusWorking, StatusFinished, StatusIdle])
 
-export const AgentSummary = Schema.Struct({ paneId: Uuid, status: AgentStatus, activity: Activity })
+export const RunSummary = Schema.Struct({ paneId: Uuid, status: RunSummaryStatus, activity: Activity })
 
 /** The summary after one pane event. Pure. */
-export const foldSummary: (summary: AgentSummary, event: IpcEvent) => AgentSummary
-/** The summary once the user has shown the tab: `StatusFinished` becomes `StatusIdle`; other statuses are unchanged. Used inside `AgentSummaries`. */
-export const markShown: (summary: AgentSummary) => AgentSummary
+export const foldSummary: (summary: RunSummary, event: IpcEvent) => RunSummary
+/** The summary once the user has shown the tab: `StatusFinished` becomes `StatusIdle`; other statuses are unchanged. Used inside `RunSummaries`. */
+export const markShown: (summary: RunSummary) => RunSummary
 /** Overview order: needs input, failed, working, finished, idle. */
-export const statusRank: (status: AgentStatus) => number
+export const statusRank: (status: RunSummaryStatus) => number
 ```
 
 `foldSummary` rules:
@@ -173,19 +173,19 @@ A failed item is reported and the rest continue. The project is dropped and the 
 
 `AgentBackend` (`src/host/session/agent-backend.ts`) gains `deleteSession: (sessionId: SessionId) => Effect<void, SessionDeleteError>`. It succeeds when the transcript no longer exists, including when it was never written. The `claude-code` adapter calls the SDK's `deleteSession(sessionId)` with no `dir`, which removes `{sessionId}.jsonl` from the local projects directory (`sdk.d.ts:500-515`), and maps its "session is not found" throw to success. A retry is therefore idempotent.
 
-### Host — `AgentSummaries` (`src/host/services/agent-summaries.ts`)
+### Host — `RunSummaries` (`src/host/services/run-summaries.ts`)
 
 ```ts
-readonly getAll: () => Effect<ReadonlyArray<AgentSummary>>
+readonly getAll: () => Effect<ReadonlyArray<RunSummary>>
 ```
 
 Subscribes to `EventHub` and handles every event in one fiber, in order:
 
 - a pane event is folded with `foldSummary`; when the result is `StatusFinished` and the pane is the current `visibleTab`, `markShown` is applied in the same step, so a tab on screen never shows finished;
 - `WorkspaceChanged` updates the `visibleTab` it tracks; when that pane is `StatusFinished`, `markShown` is applied; summaries and saved activity of panes absent from the workspace are dropped;
-- `AgentSummaryChanged` (its own output) is ignored.
+- `RunSummaryChanged` (its own output) is ignored.
 
-It publishes `AgentSummaryChanged { summary }` when a summary changes. No RPC handler calls it.
+It publishes `RunSummaryChanged { summary }` when a summary changes. No RPC handler calls it.
 
 It persists each pane's `activity` to `<userData>/activity.json` through `PersistenceService.saveActivity` / `loadActivity`, `ACTIVITY_SAVE_DELAY` (`Duration.seconds(2)`) after the first unsaved change, and flushes in its scope finalizer. It seeds summaries from that file at start, with status `StatusIdle`. The workspace (`host.db`, ADR-0043) holds no activity, so `WorkspaceChanged` fires only for structural changes.
 
@@ -206,9 +206,9 @@ A migrated file always yields a valid `Workspace`. A file that decodes as neithe
 
 | Removed | Added |
 |---|---|
-| `SplitPane`, `ClosePane`, `CreatePane`, `FocusPane`, `GetInitialLayout`, and `GetLastDirectory` and `RecordChosenDirectory` (their only caller was the old form's directory picker; `SettingsStore` loses `lastDirectory`); event `LayoutChanged` | Queries (typed `success` and `error`, `Rpc.make(name, { payload, success, error })`): `GetWorkspace`, `RegisterProject { projectId, directory }` (error `RegisterProjectError`), `RemoveProject { projectId, force }` (streaming success `RemovalProgress`), `GetAgentSummaries`, `GetTranscriptWidth` |
+| `SplitPane`, `ClosePane`, `CreatePane`, `FocusPane`, `GetInitialLayout`, and `GetLastDirectory` and `RecordChosenDirectory` (their only caller was the old form's directory picker; `SettingsStore` loses `lastDirectory`); event `LayoutChanged` | Queries (typed `success` and `error`, `Rpc.make(name, { payload, success, error })`): `GetWorkspace`, `RegisterProject { projectId, directory }` (error `RegisterProjectError`), `RemoveProject { projectId, force }` (streaming success `RemovalProgress`), `GetRunSummaries`, `GetTranscriptWidth` |
 | | Commands (`withRequestId`): `MoveProject { projectId, toIndex }`, `CreateTab`, `RenameTab { paneId, name }`, `SelectTab { paneId: Schema.NullOr(Uuid) }`, `SetTranscriptWidth { width }` |
-| | Events: `WorkspaceChanged { workspace }`, `AgentSummaryChanged { summary }` (global, never replayed) |
+| | Events: `WorkspaceChanged { workspace }`, `RunSummaryChanged { summary }` (global, never replayed) |
 
 `RegisterProjectError` is `Schema.Union([ProjectAlreadyRegisteredError, DirectoryNotFoundError])`. With `stream: true`, `RemoveProject`'s `error` is the stream's error schema (`effect/unstable/rpc/Rpc.ts:983-986`). `CommandDeduper.accept(scopeId, commandId)` takes a `scopeId`: the `paneId` for pane commands, the `projectId` for project commands, `'app'` for app settings. No wrapper field reuses a payload field name; each new command gets a test that its payload reaches the handler unchanged. `PaneCreateFailed` stays for `CreateTab`.
 
@@ -216,12 +216,12 @@ Main gains `CHANNEL.revealPath` (`shell.showItemInFolder`); the handler reveals 
 
 ### Preload and `DiaApi`
 
-`DiaApi` (`contract.ts`) and `makeHostApi` gain `getWorkspace`, `registerProject`, `moveProject`, `removeProject`, `createTab`, `renameTab`, `selectTab`, `getAgentSummaries`, `getTranscriptWidth`, `setTranscriptWidth`, `onWorkspaceChanged`, `onAgentSummaryChanged` and `onAgentSummariesReplaced`. They lose `splitPane`, `closePane`, `createPane`, `focusPane`, `getInitialLayout`, `chooseDirectory` and `onLayoutChanged`.
+`DiaApi` (`contract.ts`) and `makeHostApi` gain `getWorkspace`, `registerProject`, `moveProject`, `removeProject`, `createTab`, `renameTab`, `selectTab`, `getRunSummaries`, `getTranscriptWidth`, `setTranscriptWidth`, `onWorkspaceChanged`, `onRunSummaryChanged` and `onRunSummariesReplaced`. They lose `splitPane`, `closePane`, `createPane`, `focusPane`, `getInitialLayout`, `chooseDirectory` and `onLayoutChanged`.
 
 - Every value that crosses `contextBridge` is plain data: the bridge drops prototypes, so an `Option` or `Result` arrives without its `_tag` and a typed-error instance loses its fields (`docs/reasoning/2026-10-25-context-bridge-drops-option-and-result.md`). Optional fields are therefore `Schema.NullOr`, not `Option`.
 - `registerProject(projectId, directory): Promise<RegisterProjectRefusal | null>` resolves `null` once registered. `catchTags` turns each typed refusal into its encoded form (`RegisterProjectRefusal = typeof RegisterProjectError.Encoded`) in the success channel, so `query`'s retry and `orDie` (`host-api.ts`, `query`) apply only to transport errors.
 - `removeProject(projectId, force, onProgress: (progress: RemovalProgress) => void): Promise<void>` runs `client.RemoveProject({ projectId, force })` with `Stream.runForEach` and calls `onProgress` per item. `ProjectNotFoundError` is logged and resolves, because a project already gone is removed. It is not retried when the connection drops: a rejected promise puts the dialog in a "Connection lost" state with "Check again", which sends the removal again without `force`. The dialog closes when `ProjectRemoved` arrives or when the project leaves the workspace, which the reconnect refresh reports. A callback, not an `AsyncIterable`, because `contextBridge.exposeInMainWorld` (`src/preload/index.ts:123`) does not carry `Symbol.asyncIterator` (unverified in the repo; the existing bridge uses callbacks only, e.g. `onUpdateStatusChanged`).
-- `revealPath(directory)` is implemented in `src/preload/index.ts` with `ipcRenderer`, and listed in the `HostApi` `Omit` in `host-api.ts`. `refreshLayoutAfterReconnect` (`host-api.ts:127-134`) becomes `refreshAfterReconnect`, run on every resubscribe after the first: it calls `GetWorkspace` and `GetAgentSummaries` and dispatches `WorkspaceChanged` and `AgentSummariesReplaced { summaries }`, a renderer-only event. After a Host restart every pane is cold and `AgentSummaries` seeds each summary as `StatusIdle` with its saved activity. The renderer sends `SelectTab` for `visibleTab` once at start and once after each `AgentSummariesReplaced`, which resumes the shown tab, as `FocusPane` does today.
+- `revealPath(directory)` is implemented in `src/preload/index.ts` with `ipcRenderer`, and listed in the `HostApi` `Omit` in `host-api.ts`. `refreshLayoutAfterReconnect` (`host-api.ts:127-134`) becomes `refreshAfterReconnect`, run on every resubscribe after the first: it calls `GetWorkspace` and `GetRunSummaries` and dispatches `WorkspaceChanged` and `RunSummariesReplaced { summaries }`, a renderer-only event. After a Host restart every pane is cold and `RunSummaries` seeds each summary as `StatusIdle` with its saved activity. The renderer sends `SelectTab` for `visibleTab` once at start and once after each `RunSummariesReplaced`, which resumes the shown tab, as `FocusPane` does today.
 
 ### Renderer kernel — slots and the plugin API
 
@@ -234,14 +234,14 @@ export const fillSlot: (ctx: PluginServices, name: SlotName, component: Componen
 /** Renders the slot's filler, else the kernel default for `name`, else `empty`. */
 export function Slot(props: { name: SlotName; empty?: ReactNode }): ReactNode
 export function useWorkspace(): Workspace | undefined
-export function useAgentSummaries(): ReadonlyMap<PaneId, AgentSummary>
+export function useRunSummaries(): ReadonlyMap<PaneId, RunSummary>
 export function useView(): View          // TabView { paneId } | NewAgentView { projectId } | FirstRunView | EmptyProjectView
 export function useTranscriptWidth(): readonly [TranscriptWidth, (width: TranscriptWidth) => void]
 export const actions: {
   selectTab, newAgent, cancelNewAgent, registerProject, moveProject, renameTab, removeProject, revealProject, openPluginsPage
 }
 /** Kernel UI a plugin renders; a plugin file imports no `@renderer/*` path. */
-export { StatusIndicator, statusLabel }   // the renamed PulseIndicator, taking an AgentStatus
+export { StatusIndicator, statusLabel }   // the renamed PulseIndicator, taking an RunSummaryStatus
 export * from './components/ui/...'       // button, checkbox, context-menu, dialog, input, popover, scroll-area, separator, tooltip
 export { cn }
 ```
@@ -254,9 +254,9 @@ Kernel defaults: `MAIN` → `TabContent`; `MAIN_HEADER` → `TabHeader`. `ROOT` 
 
 `TabContent` renders by `useView()`: `TabView` → `<Slot name={MAIN_HEADER}/>` and the tab's `Pane`; `NewAgentView` → `PaneCreationForm` for that project; `FirstRunView` → the "Add a project" screen; `EmptyProjectView` → a prompt with "New agent" for the first project. `TabHeader` shows `project / agent`, the worktree chip, and the width button.
 
-State: `workspaceAtom` is written only by `GetWorkspace` and `WorkspaceChanged`. `agentSummariesAtom` (`GetAgentSummaries`, then `AgentSummaryChanged` and `AgentSummariesReplaced`), `transcriptWidthAtom` (the `send-mode-atom.ts` pattern). `viewAtom`, in priority order: the renderer-local `NewAgentView { projectId }` while the form is open; else `TabView { paneId }` when `visibleTab` is not `null`; else `FirstRunView` when `projects` is empty; else `EmptyProjectView`. The renderer clears `NewAgentView` when a `WorkspaceChanged` arrives whose `visibleTab` is not `null` and differs from the one before the form opened, and on cancel (`actions.cancelNewAgent`).
+State: `workspaceAtom` is written only by `GetWorkspace` and `WorkspaceChanged`. `runSummariesAtom` (`GetRunSummaries`, then `RunSummaryChanged` and `RunSummariesReplaced`), `transcriptWidthAtom` (the `send-mode-atom.ts` pattern). `viewAtom`, in priority order: the renderer-local `NewAgentView { projectId }` while the form is open; else `TabView { paneId }` when `visibleTab` is not `null`; else `FirstRunView` when `projects` is empty; else `EmptyProjectView`. The renderer clears `NewAgentView` when a `WorkspaceChanged` arrives whose `visibleTab` is not `null` and differs from the one before the form opened, and on cancel (`actions.cancelNewAgent`).
 
-`Pane`: its header (cwd chip, split and close buttons) is removed; the transcript, interaction cards and composer sit in one column, `mx-auto w-full` with a maximum width from `transcriptWidthAtom`: `narrow` `max-w-2xl`, `default` `max-w-3xl`, `wide` `max-w-5xl`. The command palette changes the width with a segmented row. After "Start agent", the new tab mounts with its composer focused; showing a tab any other way leaves focus where it is, so arrow-key navigation in the sidebar keeps working. `PaneCreationForm`: takes `projectId`, drops the directory picker, adds the optional name (trimmed before decoding), shows the worktree switch only for a git project. `PulseIndicator` takes an `AgentStatus` instead of an `AttentionState`.
+`Pane`: its header (cwd chip, split and close buttons) is removed; the transcript, interaction cards and composer sit in one column, `mx-auto w-full` with a maximum width from `transcriptWidthAtom`: `narrow` `max-w-2xl`, `default` `max-w-3xl`, `wide` `max-w-5xl`. The command palette changes the width with a segmented row. After "Start agent", the new tab mounts with its composer focused; showing a tab any other way leaves focus where it is, so arrow-key navigation in the sidebar keeps working. `PaneCreationForm`: takes `projectId`, drops the directory picker, adds the optional name (trimmed before decoding), shows the worktree switch only for a git project. `PulseIndicator` takes an `RunSummaryStatus` instead of an `AttentionState`.
 
 ### Build wiring
 
@@ -275,7 +275,7 @@ State: `workspaceAtom` is written only by `GetWorkspace` and `WorkspaceChanged`.
 - **Workspace model** (`project.ts`, `workspace.ts`) — owns which projects and tabs exist, their order, and which tab is visible.
 - **Summary model** (`agent-summary.ts`) — owns how pane events become a status and an activity line.
 - **PaneWorkspace** (Host) — owns persistence of the workspace and the agent sessions behind tabs.
-- **AgentSummaries** (Host) — owns the current summary of every tab and its saved activity.
+- **RunSummaries** (Host) — owns the current summary of every tab and its saved activity.
 - **Slot rendering** (`plugin-api.ts`, `Slot`, `fillSlot`) — owns which component draws each region and the kernel defaults.
 - **Layout plugin** — owns the frame.
 - **Agent overview plugin** — owns how the overview presents and filters the workspace.
@@ -295,7 +295,7 @@ State: `workspaceAtom` is written only by `GetWorkspace` and `WorkspaceChanged`.
 
 **Queries for project registration and removal.** A command is fire-and-forget (`host-api.ts`, `command`), so a refusal could never reach the form (criterion 3). A query whose typed refusal is caught into the success channel carries it without being retried; a client-generated `projectId` makes a resend after a dropped connection idempotent.
 
-**`AgentSummaries` reads the visible tab from the event stream.** Folding `WorkspaceChanged` and pane events in one fiber orders a tab switch and a `Completed` without a handler calling two services in sequence (Avoid Temporal Decomposition).
+**`RunSummaries` reads the visible tab from the event stream.** Folding `WorkspaceChanged` and pane events in one fiber orders a tab switch and a `Completed` without a handler calling two services in sequence (Avoid Temporal Decomposition).
 
 **Order is array position.** A `position` field could duplicate or skip values; the array cannot (Define Errors Out of Existence). For the same reason the tab's pane id exists only as `config.paneId`.
 
@@ -335,7 +335,7 @@ None. The drag library (`@dnd-kit`) and the three widths are recorded above.
 5. *Correctness* (major) — removal stopped agents and then removed worktrees a second time, and transcripts had no delete path; per-agent order, `AgentBackend.deleteSession`.
 6. *Correctness* (major) — a pre-generated slug cannot be passed to `GitOps.createWorktree`; a blank name takes the created branch's slug.
 7. *Correctness* (major) — the shared word lists were imported through `@dia/plugin` without an export; `plugin-api.ts` re-exports them.
-8. *Correctness / Minimize Complexity* (major) — `Tab.lastActivity` rewrote `workspace.json` per tool call; activity moved to `activity.json` in `AgentSummaries`.
+8. *Correctness / Minimize Complexity* (major) — `Tab.lastActivity` rewrote `workspace.json` per tool call; activity moved to `activity.json` in `RunSummaries`.
 9. *Correctness* (major) — `Schema.Option` does not encode to JSON; `Schema.OptionFromNullOr`.
 10. *Correctness* (major) — directory uniqueness had no comparison rule, and migration could produce an invalid workspace; `directoryKey`.
 11. *Correctness* (major) — `CommandDeduper` is keyed by pane; `accept(scopeId, commandId)`.
@@ -366,7 +366,7 @@ None. The drag library (`@dnd-kit`) and the three widths are recorded above.
 8. *Correctness* (major) — mutations overwrote changes made during `openPane`; `Ref.modify` and one semaphore.
 9. *Correctness / Information Hiding* (major) — plugins had no kernel UI to render; `@dia/renderer-plugin` re-exports `StatusIndicator` and shadcn primitives.
 10. *Correctness vs settled decision* (major) — a tab lost its finished status behind the New agent form or the plugins page; `SelectTab { paneId: null }` while no tab is shown.
-11. *Avoid Temporal Decomposition* (minor) — the `SelectTab` handler called two services in order; `AgentSummaries` folds `WorkspaceChanged`.
+11. *Avoid Temporal Decomposition* (minor) — the `SelectTab` handler called two services in order; `RunSummaries` folds `WorkspaceChanged`.
 12. *Correctness* (minor) — removed panes kept their summaries and `visibleTab` was undefined after removal; drop absent panes, `removeProject` picks the next visible tab, `createTab` fails during removal.
 13. *Correctness* (minor) — `revealPath` belongs in the preload with `ipcRenderer`, and main revealed any path; directory check.
 
@@ -387,7 +387,7 @@ None. The drag library (`@dnd-kit`) and the three widths are recorded above.
 7. *Correctness* (major) — key listeners and drag sensors outlived an unloaded plugin; `acquireRelease` in the plugin scope.
 8. *Correctness* (minor) — `inject` returns an `Effect`; corrected.
 9. *Correctness* (minor) — `startRendererPlugins` does not store the registry; `main.tsx` stores it, `Slot` reads on first render then subscribes.
-10. *Correctness* (minor) — the Host-restart outcome and who resumes the shown tab were unstated; renderer sends `SelectTab` at start and after `AgentSummariesReplaced`.
+10. *Correctness* (minor) — the Host-restart outcome and who resumes the shown tab were unstated; renderer sends `SelectTab` at start and after `RunSummariesReplaced`.
 11. *Names* (minor) — `Uuid` and `PaneId` were mixed; `Uuid` everywhere, `PaneId` alias moves to `pane.ts`.
 
 **Rejected** — none.

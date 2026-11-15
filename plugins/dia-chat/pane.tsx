@@ -63,13 +63,13 @@ import {
   turnActivity,
   turnBlocks,
   useAdapterStatus,
-  useAgentSummaries,
   useAttachmentTypes,
   useDisabledPermissionModes,
   useList,
   useModelCatalog,
   useRailCardShown,
   useRailLayout,
+  useRunSummaries,
   useTranscriptWidth
 } from '@dia/renderer-plugin'
 import {
@@ -80,7 +80,6 @@ import {
   TurnFootersSlot
 } from '@dia-plugin/dia-chat/slots'
 import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react'
-import type { AgentSummary } from '@shared/domain/agent-summary'
 import { PathAttachment, type ProjectEntry } from '@shared/domain/attachment'
 import type {
   PermissionResponse,
@@ -94,6 +93,7 @@ import {
   type PermissionMode,
   type ThinkingLevel
 } from '@shared/domain/pane'
+import type { RunSummary } from '@shared/domain/run-summary'
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import { useForm } from '@tanstack/react-form'
 import { cva } from 'class-variance-authority'
@@ -644,7 +644,7 @@ export function ComposerActionButton({
 }
 
 const unansweredRequest = (
-  summary: AgentSummary | undefined,
+  summary: RunSummary | undefined,
   answeredRequestId: string | null
 ): UserInputRequest | undefined => {
   if (summary?.status._tag !== 'StatusNeedsInput') return undefined
@@ -776,7 +776,7 @@ function PaneChat({
     if (focusComposer) textareaRef.current?.focus()
   }, [])
 
-  const summary = useAgentSummaries().get(paneId)
+  const summary = useRunSummaries().get(paneId)
   const [answeredRequestId, setAnsweredRequestId] = useState<string | null>(null)
   const pendingRequest = unansweredRequest(summary, answeredRequestId)
   const pendingPermission = pendingRequest?._tag === 'PermissionRequest' ? pendingRequest : null

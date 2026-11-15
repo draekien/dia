@@ -18,7 +18,7 @@ import {
   StatusNeedsInput,
   StatusParked,
   StatusWorking
-} from '@shared/domain/agent-summary'
+} from '@shared/domain/run-summary'
 import { ListFilterIcon } from 'lucide-react'
 import { NO_FILTERS, type OverviewFilters, STATUS_TAGS, type StatusTag } from './overview'
 
@@ -79,7 +79,7 @@ export function FilterPopover({ filters, counts, onChange }: FilterPopoverProps)
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label={active ? 'Filter agents, filters active' : 'Filter agents'}
+            aria-label={active ? 'Filter threads, filters active' : 'Filter threads'}
             className="relative"
           >
             <ListFilterIcon />

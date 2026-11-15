@@ -28,8 +28,8 @@ export function ArchivedTranscript({
         overlay={
           <p className="border-t border-border py-3 text-center text-xs text-ink-muted">
             {empty
-              ? 'This agent is archived. Its transcript is empty.'
-              : 'This agent is archived. Its transcript is read-only.'}
+              ? 'This thread is archived. Its transcript is empty.'
+              : 'This thread is archived. Its transcript is read-only.'}
           </p>
         }
       >

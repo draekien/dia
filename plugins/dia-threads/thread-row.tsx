@@ -17,13 +17,13 @@ import {
   toast,
   useSidebar
 } from '@dia/renderer-plugin'
-import type { AgentSummary } from '@shared/domain/agent-summary'
 import type { PermissionMode } from '@shared/domain/pane'
 import { AgentName } from '@shared/domain/project'
+import type { RunSummary } from '@shared/domain/run-summary'
 import { Option, Schema } from 'effect'
 import { useState } from 'react'
 import { type OverviewRow, rowKey } from './overview'
-import type { Retirement } from './retire-agent-dialog'
+import type { Retirement } from './retire-thread-dialog'
 
 const decodeName = Schema.decodeUnknownOption(AgentName)
 
@@ -33,7 +33,7 @@ const decodeName = Schema.decodeUnknownOption(AgentName)
  * named state (such as a retry), else the activity line. `mono` is true for a tool call, which is literal output.
  */
 export const secondLine = (
-  summary: AgentSummary,
+  summary: RunSummary,
   // @effect-diagnostics-next-line globalDate:off -- the row reads the resume time against the wall clock; no Effect runtime exists in the renderer.
   nowMs: number = Date.now()
 ): { readonly text: string; readonly mono: boolean } => {
@@ -138,7 +138,7 @@ const unarchive = (row: OverviewRow): Promise<void> =>
  * through `onRetire`. A `projectName` of null leaves the project out of the tooltip and accessible
  * name.
  */
-export function AgentRow({
+export function ThreadRow({
   row,
   projectName,
   selected,

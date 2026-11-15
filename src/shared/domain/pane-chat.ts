@@ -241,7 +241,22 @@ export const emptyPaneChatState: PaneChatState = {
   attention: Idle.make({})
 }
 
-const userMessage = (itemId: string, message: ConversationMessage): PaneMessage => ({
+/**
+ * The prefix of a message dia sends to a run on its own (not typed by the user). The transcript
+ * shows such a message, without the prefix, as a notice, which is not a rewind target.
+ */
+export const NOTICE_MARKER = '[dia notice]\n'
+
+const userMessage = (itemId: string, message: ConversationMessage): PaneMessage =>
+  message.content.startsWith(NOTICE_MARKER)
+    ? {
+        id: itemId,
+        role: 'notice',
+        parts: [{ type: 'text', content: message.content.slice(NOTICE_MARKER.length) }]
+      }
+    : typedMessage(itemId, message)
+
+const typedMessage = (itemId: string, message: ConversationMessage): PaneMessage => ({
   id: itemId,
   role: 'user',
   parts: [{ type: 'text', content: message.content }],

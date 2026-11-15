@@ -104,6 +104,7 @@ interface ProjectRow {
   readonly directory_key: string
   readonly display_name: string
   readonly is_git_repo: number
+  readonly owner: string | null
 }
 
 interface AgentRow {
@@ -119,6 +120,7 @@ interface AgentRow {
   readonly worktree_branch: string | null
   readonly worktree_source_repo: string | null
   readonly session_id: string | null
+  readonly owner: string | null
 }
 
 const decodeProject = Schema.decodeUnknownResult(Project, { reportInput: true })
@@ -130,7 +132,8 @@ const projectFromRow = (row: ProjectRow) =>
     directory: row.directory,
     directoryKey: row.directory_key,
     displayName: row.display_name,
-    isGitRepo: row.is_git_repo === 1
+    isGitRepo: row.is_git_repo === 1,
+    ...(row.owner === null ? {} : { owner: row.owner })
   })
 
 const tabFromRow = (row: AgentRow) =>
@@ -153,7 +156,8 @@ const tabFromRow = (row: AgentRow) =>
             }
           })
     },
-    ...(row.session_id === null ? {} : { sessionId: row.session_id })
+    ...(row.session_id === null ? {} : { sessionId: row.session_id }),
+    ...(row.owner === null ? {} : { owner: row.owner })
   })
 
 const tabsOf = (workspace: Workspace) => workspace.projects.flatMap((entry) => entry.tabs)
@@ -193,12 +197,12 @@ const makeStore = Effect.gen(function* () {
     }>`SELECT visible_agent FROM workspace_state WHERE id = 1`
     if (state.length === 0) return Option.none()
     const projects = yield* sql<ProjectRow>`
-      SELECT project_id, directory, directory_key, display_name, is_git_repo
+      SELECT project_id, directory, directory_key, display_name, is_git_repo, owner
       FROM projects ORDER BY position`
     const agents = yield* sql<AgentRow>`
       SELECT a.agent_id, a.project_id, a.name, a.archived_at IS NOT NULL AS archived, a.cwd, a.model, a.thinking_level,
              a.permission_mode, w.path AS worktree_path, w.branch AS worktree_branch,
-             w.source_repo AS worktree_source_repo, s.session_id
+             w.source_repo AS worktree_source_repo, s.session_id, a.owner
       FROM agents a
       LEFT JOIN agent_worktrees w ON w.agent_id = a.agent_id
       LEFT JOIN agent_sessions s ON s.agent_id = a.agent_id AND s.superseded_at IS NULL
@@ -299,11 +303,12 @@ const makeStore = Effect.gen(function* () {
         directory: project.directory,
         directory_key: project.directoryKey,
         display_name: project.displayName,
-        is_git_repo: project.isGitRepo ? 1 : 0
+        is_git_repo: project.isGitRepo ? 1 : 0,
+        owner: project.owner ?? null
       })} ON CONFLICT (project_id) DO UPDATE SET
         position = excluded.position, directory = excluded.directory,
         directory_key = excluded.directory_key, display_name = excluded.display_name,
-        is_git_repo = excluded.is_git_repo`
+        is_git_repo = excluded.is_git_repo, owner = excluded.owner`
     }
     for (const { project, tabs } of workspace.projects) {
       for (const [position, tab] of tabs.entries()) {
@@ -316,12 +321,14 @@ const makeStore = Effect.gen(function* () {
           cwd: tab.config.cwd,
           model: tab.config.model,
           thinking_level: tab.config.thinkingLevel,
-          permission_mode: tab.config.permissionMode
+          permission_mode: tab.config.permissionMode,
+          owner: tab.owner ?? null
         })} ON CONFLICT (agent_id) DO UPDATE SET
           project_id = excluded.project_id, position = excluded.position, name = excluded.name,
           archived_at = CASE WHEN excluded.archived_at IS NULL THEN NULL
             ELSE COALESCE(agents.archived_at, excluded.archived_at) END, cwd = excluded.cwd, model = excluded.model,
-          thinking_level = excluded.thinking_level, permission_mode = excluded.permission_mode`
+          thinking_level = excluded.thinking_level, permission_mode = excluded.permission_mode,
+          owner = excluded.owner`
       }
     }
   })

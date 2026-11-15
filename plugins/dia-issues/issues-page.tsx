@@ -18,6 +18,7 @@ import {
   Status,
   StatusMedia,
   StatusName,
+  userProjects,
   useWorkspace
 } from '@dia/renderer-plugin'
 import { useAtomRefresh, useAtomValue } from '@effect/atom-react'
@@ -131,7 +132,9 @@ function Loaded({
 }) {
   const [creating, setCreating] = useState(false)
   const workspace = useWorkspace()
-  const projects: ReadonlyArray<ProjectChoice> = (workspace?.projects ?? []).map(({ project }) => ({
+  const projects: ReadonlyArray<ProjectChoice> = (
+    workspace === undefined ? [] : userProjects(workspace)
+  ).map(({ project }) => ({
     id: project.projectId,
     name: project.displayName
   }))

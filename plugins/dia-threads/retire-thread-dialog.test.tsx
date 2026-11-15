@@ -3,7 +3,7 @@
 import { AgentName, type Tab } from '@shared/domain/project'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { RetireAgentDialog } from './retire-agent-dialog'
+import { RetireThreadDialog } from './retire-thread-dialog'
 
 const PANE = '00000000-0000-4000-8000-000000000101'
 const WORKTREE = {
@@ -41,11 +41,11 @@ afterEach(() => {
   Reflect.deleteProperty(window, 'dia')
 })
 
-describe('RetireAgentDialog', () => {
+describe('RetireThreadDialog', () => {
   it('names the worktree it deletes and the branch and transcripts that stay', () => {
     installBridge(Promise.resolve(null))
     render(
-      <RetireAgentDialog
+      <RetireThreadDialog
         tab={tab({ worktree: WORKTREE })}
         retirement="delete"
         onClose={() => undefined}
@@ -61,7 +61,7 @@ describe('RetireAgentDialog', () => {
   it('does not claim to stop an archived agent', () => {
     installBridge(Promise.resolve(null))
     render(
-      <RetireAgentDialog
+      <RetireThreadDialog
         tab={{ ...tab(), archived: true }}
         retirement="delete"
         onClose={() => undefined}
@@ -74,7 +74,7 @@ describe('RetireAgentDialog', () => {
   it('deletes the tab it was opened for and closes once it is deleted', async () => {
     const bridge = installBridge(Promise.resolve(null))
     const onClose = vi.fn()
-    render(<RetireAgentDialog tab={tab()} retirement="delete" onClose={onClose} />)
+    render(<RetireThreadDialog tab={tab()} retirement="delete" onClose={onClose} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
@@ -85,7 +85,7 @@ describe('RetireAgentDialog', () => {
   it('archives through archiveTab when opened to archive', async () => {
     const bridge = installBridge(Promise.resolve(null))
     render(
-      <RetireAgentDialog
+      <RetireThreadDialog
         tab={tab({ worktree: WORKTREE })}
         retirement="archive"
         onClose={() => undefined}
@@ -101,7 +101,11 @@ describe('RetireAgentDialog', () => {
     installBridge(Promise.resolve('The worktree directory is still on disk'))
     const onClose = vi.fn()
     render(
-      <RetireAgentDialog tab={tab({ worktree: WORKTREE })} retirement="archive" onClose={onClose} />
+      <RetireThreadDialog
+        tab={tab({ worktree: WORKTREE })}
+        retirement="archive"
+        onClose={onClose}
+      />
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Archive' }))

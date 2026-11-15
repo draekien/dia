@@ -1,7 +1,7 @@
 import { useAtomSet, useAtomValue } from '@effect/atom-react'
-import type { AgentSummary } from '@shared/domain/agent-summary'
 import type { PaneId } from '@shared/domain/pane'
 import type { Workspace } from '@shared/domain/project'
+import type { RunSummary } from '@shared/domain/run-summary'
 import type { TranscriptWidth } from '@shared/domain/transcript-width'
 import { Option } from 'effect'
 import {
@@ -24,7 +24,7 @@ import {
 } from './lib/actions'
 import type { View } from './lib/view'
 import {
-  agentSummariesAtom,
+  runSummariesAtom,
   transcriptWidthAtom,
   viewAtom,
   workspaceAtom
@@ -65,8 +65,8 @@ export function useWorkspace(): Workspace | undefined {
 }
 
 /** The current summary of every tab, keyed by pane id. */
-export function useAgentSummaries(): ReadonlyMap<PaneId, AgentSummary> {
-  return useAtomValue(agentSummariesAtom)
+export function useRunSummaries(): ReadonlyMap<PaneId, RunSummary> {
+  return useAtomValue(runSummariesAtom)
 }
 
 /** What the content area shows; `undefined` until the workspace loads. */
@@ -110,6 +110,8 @@ export {
   type PaneMessage,
   type ToolCallPart
 } from '@shared/domain/pane-chat'
+export { statusRank } from '@shared/domain/run-summary'
+export { userProjects } from '@shared/domain/workspace'
 export { formatResetTime } from '@shared/format-reset-time'
 export { AboutDialog } from './components/about-dialog'
 /**

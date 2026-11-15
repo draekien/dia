@@ -4,7 +4,7 @@
 
 ## Context
 
-The first draft of the projects-and-tabs workspace (`docs/designs/agent-overview.md`) typed `Workspace.visibleTab`, `ToolUse.target` and `CreateTabRequest.name` as `Schema.OptionFromNullOr`, and `DiaApi.registerProject` and `removeProject` returned a `Result`. Each of these values crosses `contextBridge.exposeInMainWorld` (`src/preload/index.ts`) between the preload and the renderer.
+The first draft of the projects-and-tabs workspace (`docs/designs/threads.md`) typed `Workspace.visibleTab`, `ToolUse.target` and `CreateTabRequest.name` as `Schema.OptionFromNullOr`, and `DiaApi.registerProject` and `removeProject` returned a `Result`. Each of these values crosses `contextBridge.exposeInMainWorld` (`src/preload/index.ts`) between the preload and the renderer.
 
 ## Reasoning / Learning
 
@@ -23,6 +23,6 @@ Values that do cross intact are plain objects with an own `_tag`: `Schema.Tagged
 
 ## Implication
 
-- A schema whose values cross `contextBridge` uses `Schema.NullOr`, not `Schema.OptionFromNullOr`. `Workspace`, `AgentSummary` and `CreateTabRequest` follow this rule.
+- A schema whose values cross `contextBridge` uses `Schema.NullOr`, not `Schema.OptionFromNullOr`. `Workspace`, `RunSummary` and `CreateTabRequest` follow this rule.
 - A `DiaApi` method does not return a `Result` or a typed-error instance. `registerProject` resolves `null` or the encoded error (`RegisterProjectRefusal`, from `Schema.encodeSync(RegisterProjectError)`). `removeProject` resolves `void`.
 - `Option` stays fine on one side of the bridge, for example in the renderer's own atoms or inside the Host.
