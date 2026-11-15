@@ -1,10 +1,9 @@
-import { ProjectId } from '@shared/domain/project'
 import { Option } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cancelNewAgent, closePage, newAgent, openPage } from './actions'
-import { appRegistry, newAgentFormAtom, openPageAtom } from './workspace-atoms'
+import { closePage, discardDraft, openDraft, openPage } from './actions'
+import { appRegistry, newThreadFormAtom, openPageAtom } from './workspace-atoms'
 
-const PROJECT = ProjectId.make('00000000-0000-4000-8000-000000000001')
+const DRAFT = '00000000-0000-4000-8000-0000000000d1'
 const PANE_A = '00000000-0000-4000-8000-00000000000a'
 
 const openPageId = () =>
@@ -16,22 +15,22 @@ afterEach(() => {
 })
 
 describe('openPage', () => {
-  it('keeps the tab the New agent form opened over, and closes the form', () => {
+  it('keeps the tab the new-thread page opened over, and closes that page', () => {
     vi.stubGlobal('window', { dia: { selectTab: () => {} } })
-    appRegistry.set(newAgentFormAtom, Option.some({ projectId: PROJECT, shownBefore: PANE_A }))
+    appRegistry.set(newThreadFormAtom, Option.some({ draftId: DRAFT, shownBefore: PANE_A }))
 
     openPage({ plugin: 'example', id: 'greeting' })
 
     expect(appRegistry.get(openPageAtom)).toEqual(
       Option.some({ key: { plugin: 'example', id: 'greeting' }, shownBefore: PANE_A })
     )
-    expect(appRegistry.get(newAgentFormAtom)).toEqual(Option.none())
+    expect(appRegistry.get(newThreadFormAtom)).toEqual(Option.none())
   })
 
   it('tells the Host that no tab is visible behind the page', () => {
     const selectTab = vi.fn()
     vi.stubGlobal('window', { dia: { selectTab } })
-    appRegistry.set(newAgentFormAtom, Option.some({ projectId: PROJECT, shownBefore: PANE_A }))
+    appRegistry.set(newThreadFormAtom, Option.some({ draftId: DRAFT, shownBefore: PANE_A }))
 
     openPage({ plugin: 'example', id: 'greeting' })
 
@@ -53,17 +52,18 @@ describe('openPage', () => {
   })
 })
 
-describe('newAgent over an open page', () => {
-  it('returns to the tab the page hid when the form is cancelled', () => {
+describe('openDraft over an open page', () => {
+  it('returns to the tab the page hid when the draft is discarded', () => {
     const selectTab = vi.fn()
     vi.stubGlobal('window', { dia: { selectTab } })
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => {} })
     appRegistry.set(
       openPageAtom,
       Option.some({ key: { plugin: 'example', id: 'greeting' }, shownBefore: PANE_A })
     )
 
-    newAgent(PROJECT)
-    cancelNewAgent()
+    openDraft(DRAFT)
+    discardDraft(DRAFT)
 
     expect(selectTab).toHaveBeenLastCalledWith(PANE_A)
   })

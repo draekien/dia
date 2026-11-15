@@ -90,6 +90,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0080](0080-org-runs-hires-and-the-assistant-as-runs.md) | Org runs hires and the Executive assistant as runs of `dia-runs`; job titles apply only through start options and the first message | accepted, amended by ADR-0082 |
 | [0081](0081-threads-and-agents.md) | Threads are runs the user starts; org issue runs are agents in their own sidebar section, marked by a tab owner; the Assistant is a page entry for its tab and receives org notices when idle | accepted |
 | [0082](0082-job-description-in-the-system-prompt.md) | A job title's job description is appended to its run's system prompt; a run can start without a first message | accepted |
+| [0083](0083-new-thread-page-and-drafts.md) | One new-thread page for every target, with drafts kept in renderer `localStorage` and plugin targets in `ThreadTargetsSlot` | accepted |
 
 ## Adding a new ADR
 

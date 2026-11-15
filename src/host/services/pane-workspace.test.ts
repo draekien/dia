@@ -139,6 +139,8 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     setThinkingLevel: () => Effect.void,
     setPermissionMode: () => Effect.void,
     setModel: () => Effect.void,
+    send: (runId, text, mode, attachments) =>
+      Effect.sync(() => log.push(`send ${runId} ${mode} ${text} ${attachments?.length ?? 0}`)),
     changes: Stream.fromQueue(changes),
     discoverSessions: (directory) =>
       Effect.sync(() => {
@@ -269,7 +271,8 @@ const request = (overrides: Partial<CreateTabRequest> = {}): CreateTabRequest =>
   model: 'claude-sonnet-5-5',
   thinkingLevel: 'adaptive',
   permissionMode: 'default',
-  useWorktree: false,
+  worktree: null,
+  firstMessage: null,
   ...overrides
 })
 
@@ -780,7 +783,7 @@ describe('PaneWorkspace.createTab', () => {
         harness,
         Effect.gen(function* () {
           yield* (yield* PaneWorkspace).createTab(
-            request({ name: null, useWorktree: true }),
+            request({ name: null, worktree: { base: null } }),
             ignore
           )
           return yield* current
@@ -792,6 +795,63 @@ describe('PaneWorkspace.createTab', () => {
         label: 'Tab · /repo'
       })
       assert.strictEqual(workspace.projects[0].tabs[1].name, 'swift-raven')
+    })
+  )
+
+  it.effect('sends the first message to the new tab once the tab exists', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: oneProject() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* (yield* PaneWorkspace).createTab(
+            request({ firstMessage: { text: 'Fix the login bug', attachments: [] } }),
+            ignore
+          )
+          return yield* current
+        })
+      )
+
+      assert.deepStrictEqual(tabsOf(workspace), [PANE_A, PANE_NEW])
+      assert.include(harness.log, `send ${PANE_NEW} queue Fix the login bug 0`)
+    })
+  )
+
+  it.effect('sends nothing to a new tab created without a first message', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: oneProject() })
+
+      yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* (yield* PaneWorkspace).createTab(request(), ignore)
+        })
+      )
+
+      assert.isFalse(harness.log.some((entry) => entry.startsWith('send ')))
+    })
+  )
+
+  it.effect('asks for a worktree started from the base branch the request names', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: oneProject() })
+
+      yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* (yield* PaneWorkspace).createTab(
+            request({ name: AgentName.make('heron'), worktree: { base: 'origin/release' } }),
+            ignore
+          )
+        })
+      )
+
+      assert.deepStrictEqual(harness.requests[0].worktree, {
+        _tag: 'Create',
+        label: 'Tab · heron',
+        base: 'origin/release'
+      })
     })
   )
 
@@ -820,7 +880,7 @@ describe('PaneWorkspace.createTab', () => {
         const error = yield* run(
           harness,
           Effect.flatMap(PaneWorkspace, (service) =>
-            Effect.flip(service.createTab(request({ useWorktree: true }), ignore))
+            Effect.flip(service.createTab(request({ worktree: { base: null } }), ignore))
           )
         )
 
@@ -859,7 +919,7 @@ describe('PaneWorkspace.createTab', () => {
         harness,
         Effect.gen(function* () {
           yield* Effect.flip(
-            (yield* PaneWorkspace).createTab(request({ useWorktree: true }), ignore)
+            (yield* PaneWorkspace).createTab(request({ worktree: { base: null } }), ignore)
           )
           return yield* current
         })

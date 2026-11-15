@@ -49,8 +49,9 @@ import { ProjectId, type Workspace } from '@shared/domain/project'
 import { tabOf, userProjects } from '@shared/domain/workspace'
 import { Option, Result, Schema } from 'effect'
 import { Atom } from 'effect/reactivity'
-import { FolderPlusIcon, SearchIcon } from 'lucide-react'
+import { FolderPlusIcon, SearchIcon, SquarePenIcon } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { DraftsGroup } from './drafts-group'
 import { FilterPopover } from './filter-popover'
 import {
   archivedKey,
@@ -120,14 +121,19 @@ const orderGroups = (
         (a, b) => order.indexOf(a.project.projectId) - order.indexOf(b.project.projectId)
       )
 
-/** The shortcuts the overview answers anywhere in the window. */
+/** The shortcuts the overview answers anywhere in the window: Ctrl P searches, Ctrl N starts a new thread. */
 const useWindowShortcuts = (onSearch: () => void): void => {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return
-      if (event.key.toLowerCase() === 'p') {
+      const key = event.key.toLowerCase()
+      if (key === 'p') {
         event.preventDefault()
         onSearch()
+      }
+      if (key === 'n') {
+        event.preventDefault()
+        actions.newThread()
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -557,6 +563,23 @@ export function ThreadsSidebar() {
                   />
                   <TooltipContent>Add project</TooltipContent>
                 </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="New thread"
+                        onClick={() => actions.newThread()}
+                      >
+                        <SquarePenIcon />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>
+                    New thread <Kbd>Ctrl N</Kbd>
+                  </TooltipContent>
+                </Tooltip>
               </div>
               {notice !== null && (
                 <p role="status" className="text-xs text-error">
@@ -581,6 +604,7 @@ export function ThreadsSidebar() {
             {!narrowing && <MetaGroup />}
             {!narrowing && <PagesGroup />}
             {!narrowing && <SectionsGroup iconMode={iconMode} />}
+            {!narrowing && <DraftsGroup />}
             {!iconMode && <ThreadsCaption />}
             {userProjects(workspace).length === 0 ? (
               !iconMode && <NoProjects onAdd={addProject} />

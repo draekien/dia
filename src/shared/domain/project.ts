@@ -1,4 +1,5 @@
 import { Schema } from 'effect'
+import { Attachment } from './attachment'
 import { PaneConfig, SessionId, StartupPermissionMode, ThinkingLevel } from './pane'
 import { Uuid } from './uuid'
 
@@ -182,9 +183,24 @@ export class WorktreeUnavailableError extends Schema.TaggedError<WorktreeUnavail
 ) {}
 
 /**
+ * How a new thread gets its own git worktree: on a new branch started from `base` (a branch name
+ * such as `origin/main`), or from the project's `HEAD` when `base` is null.
+ */
+export const WorktreeStart = Schema.Struct({ base: Schema.NullOr(Schema.String) })
+export type WorktreeStart = typeof WorktreeStart.Type
+
+/** The message a new thread starts with: its text and the files attached to it. */
+export const FirstMessage = Schema.Struct({
+  text: Schema.String,
+  attachments: Schema.Array(Attachment)
+})
+export type FirstMessage = typeof FirstMessage.Type
+
+/**
  * What `createTab` needs to start an agent in a project. `name` is `null` for a generated name
- * (the worktree slug when `useWorktree` is set). `useWorktree` is refused for a project that is
- * not a git repo.
+ * (the worktree slug when `worktree` is set). `worktree` is null to work in the project directory;
+ * a worktree is refused for a project that is not a git repo. `firstMessage`, when not null, is
+ * sent to the new thread once its tab exists.
  */
 export const CreateTabRequest = Schema.Struct({
   projectId: ProjectId,
@@ -193,6 +209,7 @@ export const CreateTabRequest = Schema.Struct({
   model: Schema.String,
   thinkingLevel: ThinkingLevel,
   permissionMode: StartupPermissionMode,
-  useWorktree: Schema.Boolean
+  worktree: Schema.NullOr(WorktreeStart),
+  firstMessage: Schema.NullOr(FirstMessage)
 })
 export type CreateTabRequest = typeof CreateTabRequest.Type

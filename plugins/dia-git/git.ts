@@ -270,11 +270,23 @@ export const makeGit = Effect.gen(function* () {
     setRemoteUrl,
     fetch: (cwd, remote) => runOk(cwd, ['fetch', '--prune', remote]).pipe(Effect.asVoid),
     push: (cwd, remote, refspec) => runOk(cwd, ['push', remote, refspec]).pipe(Effect.asVoid),
-    addWorktree: (repo, path, branch, { createBranch }) =>
+    addWorktree: (repo, path, branch, { createBranch, startPoint }) =>
       runOk(
         repo,
-        createBranch ? ['worktree', 'add', path, '-b', branch] : ['worktree', 'add', path, branch]
+        createBranch
+          ? [
+              'worktree',
+              'add',
+              path,
+              '-b',
+              branch,
+              ...(startPoint === undefined ? [] : [startPoint])
+            ]
+          : ['worktree', 'add', path, branch]
       ).pipe(Effect.asVoid),
+    remoteHead: (cwd, remote) =>
+      runOptional(cwd, ['symbolic-ref', '--quiet', '--short', `refs/remotes/${remote}/HEAD`], 1),
+    switchBranch: (cwd, branch) => runOk(cwd, ['switch', branch]).pipe(Effect.asVoid),
     removeWorktree: (repo, path, { force }) =>
       runOk(repo, ['worktree', 'remove', ...(force ? ['--force'] : []), path]).pipe(Effect.asVoid),
     pruneWorktrees: (repo) => runOk(repo, ['worktree', 'prune']).pipe(Effect.asVoid),

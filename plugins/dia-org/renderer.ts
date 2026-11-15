@@ -1,5 +1,6 @@
 import type { PluginServices, PluginSetup } from '@dia/plugin'
 import { addEntry, callHost, followHost, openSettings } from '@dia/renderer-plugin'
+import { ThreadTargetsSlot } from '@dia-plugin/dia-chat/slots'
 import { CommandsSlot } from '@dia-plugin/dia-command-palette/slots'
 import { PagesSlot, SidebarSectionsSlot } from '@dia-plugin/dia-layout/slots'
 import { SettingsPagesSlot } from '@dia-plugin/dia-settings/slots'
@@ -9,7 +10,8 @@ import { SettingsIcon, SparklesIcon, UsersIcon } from 'lucide-react'
 import { createElement } from 'react'
 import { AgentsSection } from './agents-section'
 import { AssistantPage, assistantRunIdAtom } from './assistant-page'
-import { ReadOrg, WatchAgentRuns, WatchOrgLive } from './calls'
+import { AskAssistant, ReadOrg, WatchAgentRuns, WatchOrgLive } from './calls'
+import { showAssistantRun } from './onboarding'
 import { OrgPage } from './org-page'
 import { OrgSettingsPage } from './org-settings-page'
 
@@ -32,6 +34,21 @@ const setup: PluginSetup<PluginServices> = (ctx) =>
       icon: SparklesIcon,
       tab: assistantRunIdAtom(liveAtom),
       component: () => createElement(AssistantPage, { ctx, liveAtom })
+    })
+    yield* addEntry(ctx, ThreadTargetsSlot, {
+      id: 'assistant',
+      order: 10,
+      label: 'Assistant',
+      icon: SparklesIcon,
+      send: (text) =>
+        callHost(ctx, AskAssistant, { text }).pipe(
+          Effect.flatMap(showAssistantRun),
+          Effect.mapError((failure) =>
+            failure._tag === 'AssistantDisabled'
+              ? 'The Executive assistant job title is disabled. Turn it on in Settings › Org.'
+              : `The Assistant could not take the message: ${failure.message}`
+          )
+        )
     })
     yield* addEntry(ctx, SidebarSectionsSlot, {
       id: 'agents',

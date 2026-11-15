@@ -80,7 +80,8 @@ const createTab = (commandId = 'req-1') => ({
     model: 'sonnet',
     thinkingLevel: 'high',
     permissionMode: 'acceptEdits',
-    useWorktree: true
+    worktree: { base: null },
+    firstMessage: null
   }),
   commandId
 })
@@ -321,7 +322,8 @@ describe('Dia RPC handlers', () => {
           model: 'sonnet',
           thinkingLevel: 'high',
           permissionMode: 'acceptEdits',
-          useWorktree: true
+          worktree: { base: null },
+          firstMessage: null
         })}`
       ])
     })

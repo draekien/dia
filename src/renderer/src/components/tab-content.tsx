@@ -1,50 +1,9 @@
 import { usePrevious } from '@renderer/hooks/use-previous'
-import type { Project } from '@shared/domain/project'
-import { userProjects } from '@shared/domain/workspace'
-import { FolderPlusIcon, PlusIcon } from 'lucide-react'
-import { newAgent, registerProject } from '../lib/actions'
 import { MAIN_TAB, Slot } from '../lib/slots'
 import { TabOpenedFromNewAgent } from '../lib/tab-opened-from-new-agent'
 import { useView, useWorkspace } from '../plugin-api'
-import PaneCreationForm from './pane-creation-form'
 import { StartupSkeleton } from './startup-skeleton'
-import { Button } from './ui/button'
 import { WindowStatus } from './window-status'
-
-function FirstRun() {
-  return (
-    <div className="flex h-full items-center justify-center p-6">
-      <div className="flex max-w-sm flex-col items-start gap-3">
-        <h1 className="text-xl font-semibold text-ink">Add a project</h1>
-        <p className="text-sm text-ink-muted">
-          A project is any directory on this machine. Agents run inside it, and agents in a git repo
-          can each get their own worktree.
-        </p>
-        <Button onClick={() => void registerProject()}>
-          <FolderPlusIcon data-icon="inline-start" />
-          Add project
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function EmptyProject({ project }: { readonly project: Project }) {
-  return (
-    <div className="flex h-full items-center justify-center p-6">
-      <div className="flex max-w-sm flex-col items-start gap-3">
-        <h1 className="text-base font-semibold text-ink">No thread is open</h1>
-        <p className="text-sm text-ink-muted">
-          Pick a thread in the sidebar, or start one in {project.displayName}.
-        </p>
-        <Button onClick={() => newAgent(project.projectId)}>
-          <PlusIcon data-icon="inline-start" />
-          New thread
-        </Button>
-      </div>
-    </div>
-  )
-}
 
 function NoChatPlugin() {
   return (
@@ -52,7 +11,8 @@ function NoChatPlugin() {
       <div className="flex max-w-sm flex-col items-start gap-3">
         <h1 className="text-base font-semibold text-ink">No chat plugin is loaded</h1>
         <p className="text-sm text-ink-muted">
-          This agent keeps running. Its conversation shows here once a chat plugin loads.
+          Threads keep running. Their conversations, and new threads, show here once a chat plugin
+          loads.
         </p>
       </div>
     </div>
@@ -61,39 +21,27 @@ function NoChatPlugin() {
 
 /**
  * The kernel's content area, shown in the `main` slot unless a plugin fills it. Renders by the
- * current view: nothing for a plugin's page (the layout plugin draws it), the `main.tab` slot for the visible tab (or a notice that no chat
- * plugin is loaded), the New agent form, the first-run screen, or the prompt to start an agent; the
+ * current view: nothing for a plugin's page (the layout plugin draws it), and the `main.tab` slot
+ * for the visible tab and for the new-thread page (or a notice that no chat plugin is loaded); the
  * startup skeleton until the workspace loads.
  */
 export function TabContent() {
   const view = useView()
   const workspace = useWorkspace()
   const previousView = usePrevious(view)
-  const cameFromNewAgent = previousView?._tag === 'NewAgentView'
+  const cameFromNewThread = previousView?._tag === 'NewThreadView'
   if (view === undefined || workspace === undefined) return <StartupSkeleton />
   switch (view._tag) {
     case 'PageView':
       return null
     case 'TabView':
       return (
-        <TabOpenedFromNewAgent.Provider value={cameFromNewAgent}>
+        <TabOpenedFromNewAgent.Provider value={cameFromNewThread}>
           <Slot name={MAIN_TAB} empty={<NoChatPlugin />} />
         </TabOpenedFromNewAgent.Provider>
       )
-    case 'NewAgentView': {
-      const entry = workspace.projects.find(
-        (candidate) => candidate.project.projectId === view.projectId
-      )
-      return entry === undefined ? null : (
-        <PaneCreationForm key={view.projectId} project={entry.project} />
-      )
-    }
-    case 'FirstRunView':
-      return <FirstRun />
-    case 'EmptyProjectView': {
-      const [first] = userProjects(workspace)
-      return first === undefined ? null : <EmptyProject project={first.project} />
-    }
+    case 'NewThreadView':
+      return <Slot name={MAIN_TAB} empty={<NoChatPlugin />} />
   }
 }
 

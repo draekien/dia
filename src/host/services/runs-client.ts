@@ -23,6 +23,7 @@ export class RunsClient extends Context.Service<
     | 'setThinkingLevel'
     | 'setPermissionMode'
     | 'setModel'
+    | 'send'
     | 'changes'
     | 'discoverSessions'
   > & {
@@ -78,6 +79,8 @@ export const RunsClientLive = Layer.effect(
         withRuns('setPermissionMode', undefined, (runs) => runs.setPermissionMode(runId, mode)),
       setModel: (runId, model) =>
         withRuns('setModel', undefined, (runs) => runs.setModel(runId, model)),
+      send: (runId, text, mode, attachments) =>
+        withRuns('send', undefined, (runs) => runs.send(runId, text, mode, attachments)),
       changes,
       discoverSessions: (directory) =>
         withRuns('discoverSessions', [], (runs) => runs.discoverSessions(directory))

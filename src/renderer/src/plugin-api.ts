@@ -6,11 +6,14 @@ import type { TranscriptWidth } from '@shared/domain/transcript-width'
 import { Option } from 'effect'
 import {
   archiveTab,
-  cancelNewAgent,
   closePage,
+  completeDraft,
+  defaultThreadTarget,
   deleteTab,
+  discardDraft,
   moveProject,
-  newAgent,
+  newThread,
+  openDraft,
   openPage,
   openPluginsPage,
   REGISTER_PROJECT_REFUSAL_TEXT,
@@ -19,9 +22,11 @@ import {
   renameTab,
   resumeParkedAgent,
   revealProject,
+  saveDraft,
   selectTab,
   unarchiveTab
 } from './lib/actions'
+import { type Draft, draftsAtom } from './lib/drafts'
 import type { View } from './lib/view'
 import {
   runSummariesAtom,
@@ -38,6 +43,13 @@ export { RightPanel } from './components/right-panel'
 export { SessionRail } from './components/session-rail'
 export * from './components/ui/breadcrumb'
 export * from './components/ui/sidebar'
+export {
+  type Draft,
+  emptyDraft,
+  PluginThreadTarget,
+  ProjectTarget,
+  ThreadTarget
+} from './lib/drafts'
 export { addEntry, declareList, useList } from './lib/list-slots'
 export { callHost, followHost, type PluginTarget } from './lib/plugin-messages'
 export {
@@ -69,6 +81,11 @@ export function useRunSummaries(): ReadonlyMap<PaneId, RunSummary> {
   return useAtomValue(runSummariesAtom)
 }
 
+/** Every saved draft, oldest first. */
+export function useDrafts(): ReadonlyArray<Draft> {
+  return useAtomValue(draftsAtom)
+}
+
 /** What the content area shows; `undefined` until the workspace loads. */
 export function useView(): View | undefined {
   return useAtomValue(viewAtom)
@@ -85,8 +102,12 @@ export function useTranscriptWidth(): readonly [TranscriptWidth, (width: Transcr
  */
 export const actions = {
   selectTab,
-  newAgent,
-  cancelNewAgent,
+  newThread,
+  openDraft,
+  saveDraft,
+  discardDraft,
+  completeDraft,
+  defaultThreadTarget,
   openPage,
   closePage,
   registerProject,
@@ -124,7 +145,7 @@ export { AccountBanner } from './components/account-banner'
 export * from './components/avatar'
 export * from './components/entity'
 export * from './components/figure'
-export { InstallNotice } from './components/install-notice'
+export { InstallNotice, installProblem } from './components/install-notice'
 export * from './components/list'
 export * from './components/meter'
 export {
@@ -209,6 +230,7 @@ export {
   disabledPermissionModesFor,
   offeredPermissionModes,
   PERMISSION_MODE_OPTIONS,
+  type PermissionModeOption,
   permissionModeLabel
 } from './lib/permission-modes'
 export { pluginStatusLabel } from './lib/plugin-status-label'

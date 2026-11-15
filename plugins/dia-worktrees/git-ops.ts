@@ -127,27 +127,54 @@ export const makeGitOps = (worktreesRoot: string, git: Git) =>
       return candidate(`${yield* nextBase}-${yield* randomSuffix}`)
     })
 
+    const fetchRemoteOf = Effect.fn('GitOps.fetchRemoteOf')(function* (
+      sourceRepo: string,
+      paneId: PaneId,
+      base: string
+    ) {
+      const [remote = ''] = base.split('/')
+      const url = yield* git.remoteUrl(sourceRepo, remote).pipe(Effect.orElseSucceed(Option.none))
+      if (Option.isNone(url)) return
+      yield* git.fetch(sourceRepo, remote).pipe(
+        Effect.tap(() => Effect.logInfo('Fetched the base branch remote', { paneId, remote })),
+        Effect.catch((error) =>
+          Effect.logWarning('Could not fetch the base branch remote; using the local copy', {
+            paneId,
+            remote,
+            error: error.message
+          })
+        )
+      )
+    })
+
     const createWorktree = Effect.fn('GitOps.createWorktree')(function* (
       sourceRepo: string,
       owner: WorktreeOwner,
-      nameHint: Option.Option<string>
+      nameHint: Option.Option<string>,
+      base?: string
     ) {
       const paneId = owner.paneId
+      if (base !== undefined) yield* fetchRemoteOf(sourceRepo, paneId, base)
       const { path: worktreePath, branch } = yield* findAvailableWorktreeName(
         sourceRepo,
         paneId,
         nameHint
       )
-      yield* git.addWorktree(sourceRepo, worktreePath, branch, { createBranch: true }).pipe(
-        Effect.mapError(
-          (error) =>
-            new WorktreeCreateError({
-              paneId,
-              sourceRepo,
-              cause: `git worktree add exited with code ${error.exitCode}`
-            })
+      yield* git
+        .addWorktree(sourceRepo, worktreePath, branch, {
+          createBranch: true,
+          ...(base === undefined ? {} : { startPoint: base })
+        })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new WorktreeCreateError({
+                paneId,
+                sourceRepo,
+                cause: `git worktree add exited with code ${error.exitCode}`
+              })
+          )
         )
-      )
 
       yield* Effect.logInfo('Created worktree', { paneId, path: worktreePath, branch })
       return { path: worktreePath, branch, sourceRepo }

@@ -8,6 +8,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
   cn,
+  ProjectTarget,
   SidebarGroup,
   SidebarGroupAction,
   SidebarGroupContent,
@@ -149,7 +150,11 @@ export function ProjectGroup({
         />
         <ContextMenuContent className="w-52">
           <ContextMenuGroup>
-            <ContextMenuItem onClick={() => actions.newAgent(project.projectId)}>
+            <ContextMenuItem
+              onClick={() =>
+                actions.newThread(ProjectTarget.make({ projectId: project.projectId }))
+              }
+            >
               New thread
             </ContextMenuItem>
             <ContextMenuItem onClick={() => void actions.revealProject(project.directory)}>
@@ -167,7 +172,7 @@ export function ProjectGroup({
       <SidebarGroupAction
         tabIndex={-1}
         aria-label={`New thread in ${project.displayName}`}
-        onClick={() => actions.newAgent(project.projectId)}
+        onClick={() => actions.newThread(ProjectTarget.make({ projectId: project.projectId }))}
         className="opacity-0 group-focus-within/project:opacity-100 group-hover/project:opacity-100"
       >
         <PlusIcon />
@@ -182,7 +187,9 @@ export function ProjectGroup({
                 <Button
                   size="xs"
                   variant="outline"
-                  onClick={() => actions.newAgent(project.projectId)}
+                  onClick={() =>
+                    actions.newThread(ProjectTarget.make({ projectId: project.projectId }))
+                  }
                 >
                   <PlusIcon data-icon="inline-start" />
                   New thread

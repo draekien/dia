@@ -1,4 +1,5 @@
 import { type Attention, ListSlot, type PaneId, type RunAnswer, ServiceKey } from '@dia/plugin'
+import type { Effect } from 'effect'
 import type { ComponentType } from 'react'
 
 /** A card on the session rail. The rail draws the card's frame and `title`; `component` draws its body for the visible pane. */
@@ -74,3 +75,32 @@ export const RequestCardKey = ServiceKey.make(
   'chatRequestCard',
   (value): value is ComponentType<RequestCardProps> => typeof value === 'function'
 )
+
+/**
+ * A place other than a project that a new thread can start in, such as the Assistant. The
+ * new-thread page offers it as "with the {label}" in its target picker, with `icon`, and hides the
+ * workspace control for it. `send` starts the thread with `text` and shows it; it fails with a
+ * reason the page shows above the composer, keeping the draft.
+ */
+export interface ThreadTargetEntry {
+  readonly id: string
+  readonly order: number
+  readonly label: string
+  readonly icon: ComponentType<{ readonly className?: string }>
+  readonly send: (text: string) => Effect.Effect<void, string>
+}
+
+/**
+ * The new-thread page's targets besides the user's projects, declared by the chat plugin. Add one
+ * with `addEntry(ctx, ThreadTargetsSlot, target)`; a draft names it by the adding plugin and `id`.
+ */
+export const ThreadTargetsSlot = ListSlot.make<ThreadTargetEntry>('chat.threadTargets')
+
+/** The {@link ThreadTargetsSlot} entry a draft's `target` names, or undefined when no plugin adds it. */
+export const targetEntryOf = <
+  E extends { readonly key: { readonly plugin: string; readonly id: string } }
+>(
+  entries: ReadonlyArray<E>,
+  target: { readonly plugin: string; readonly id: string }
+): E | undefined =>
+  entries.find((entry) => entry.key.plugin === target.plugin && entry.key.id === target.id)

@@ -40,6 +40,7 @@
     "plugins/dia-tools/calls.ts",
     "plugins/dia-run-queue/queue.ts",
     "plugins/dia-git/git.ts",
+    "plugins/dia-git/calls.ts",
     "plugins/dia-schedules/schedules.ts",
     "plugins/dia-terminals/terminals.ts",
     "plugins/dia-chat/slots.ts",

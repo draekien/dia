@@ -624,7 +624,7 @@ export const PaneWorkspaceLive = Layer.effect(
       if (entry === undefined || (yield* Ref.get(removingRef)).has(projectId)) {
         return yield* new ProjectNotFoundError({ projectId })
       }
-      if (request.useWorktree && !entry.project.isGitRepo) {
+      if (request.worktree !== null && !entry.project.isGitRepo) {
         return yield* new WorktreeUnavailableError({ projectId })
       }
 
@@ -634,9 +634,14 @@ export const PaneWorkspaceLive = Layer.effect(
         model: request.model,
         thinkingLevel: request.thinkingLevel,
         permissionMode: request.permissionMode,
-        worktree: request.useWorktree
-          ? { _tag: 'Create', label: `Tab · ${request.name ?? entry.project.displayName}` }
-          : undefined,
+        worktree:
+          request.worktree === null
+            ? undefined
+            : {
+                _tag: 'Create',
+                label: `Tab · ${request.name ?? entry.project.displayName}`,
+                ...(request.worktree.base === null ? {} : { base: request.worktree.base })
+              },
         resume: Option.none()
       })
 
@@ -652,6 +657,11 @@ export const PaneWorkspaceLive = Layer.effect(
         return WorkspaceOps.addTab(current, projectId, tab)
       }).pipe(Effect.tapError(() => runs.retire(paneId, 'deleted')))
       yield* Effect.logInfo('Created tab', { projectId, paneId, name })
+      if (request.firstMessage !== null) {
+        const { text, attachments } = request.firstMessage
+        yield* runs.send(paneId, text, 'queue', attachments)
+        yield* Effect.logInfo('Sent the first message to the new tab', { paneId })
+      }
     })
 
     const renameTab = (paneId: PaneId, name: AgentName) =>

@@ -245,7 +245,8 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
         ? gitOps.value.createWorktree(
             spec.sourceCwd,
             { paneId: spec.runId, label: request.label },
-            Option.none()
+            Option.none(),
+            request.base
           )
         : gitOps.value.reattachWorktree(request.info, spec.runId)
     const setup = yield* setUpWorktreeTab({
