@@ -49,7 +49,7 @@ export function Dashboard({
     workspace === undefined || (hires > 0 && Option.isNone(live))
       ? null
       : onboardingStage(
-          workspace.projects.length,
+          workspace.projects.filter((entry) => entry.project.owner === undefined).length,
           hires,
           Option.exists(live, (view) => view.teamHasWork)
         )

@@ -1,6 +1,6 @@
 import { NodeServices } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
-import { NoActivity, Todo } from '@shared/domain/agent-summary'
+import { NoActivity, Todo } from '@shared/domain/run-summary'
 import { Effect, FileSystem } from 'effect'
 import { makePersistenceServiceLive, PersistenceService } from './persistence'
 

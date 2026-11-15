@@ -1,6 +1,6 @@
 import type { PluginServices, PluginSetup } from '@dia/plugin'
 import { actions, declareList, fillSlot, ROOT } from '@dia/renderer-plugin'
-import { DialogsSlot, PagesSlot } from '@dia-plugin/dia-layout/slots'
+import { DialogsSlot, PagesSlot, SidebarSectionsSlot } from '@dia-plugin/dia-layout/slots'
 import { Effect } from 'effect'
 import { Layout } from './layout'
 
@@ -10,6 +10,7 @@ const setup: PluginSetup<PluginServices> = (ctx) =>
       onRemove: (page) => Effect.sync(() => actions.closePage(page.key))
     })
     yield* declareList(ctx, DialogsSlot)
+    yield* declareList(ctx, SidebarSectionsSlot)
     yield* fillSlot(ctx, ROOT, Layout)
   })
 

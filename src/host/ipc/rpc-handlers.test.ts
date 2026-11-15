@@ -1,6 +1,5 @@
 import { NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
-import { NoActivity, StatusIdle } from '@shared/domain/agent-summary'
 import type { SendMode } from '@shared/domain/message-queue'
 import { emptyPaneChatState } from '@shared/domain/pane-chat'
 import {
@@ -13,6 +12,7 @@ import {
   WorktreeNotRemovedError
 } from '@shared/domain/project'
 import { AgentItem, ProjectRemoved, Removed } from '@shared/domain/project-removal'
+import { NoActivity, StatusIdle } from '@shared/domain/run-summary'
 import type { TranscriptWidth } from '@shared/domain/transcript-width'
 import {
   CreateTab,
@@ -31,13 +31,13 @@ import { Rpc } from 'effect/rpc'
 import { HostPlugins } from '../plugins/host-plugins'
 import { servePluginCall } from '../plugins/plugin-messages'
 import { InvalidOverrideError, PluginSources } from '../plugins/plugin-sources'
-import { AgentSummaries } from '../services/agent-summaries'
 import { BackgroundActivities } from '../services/background-activities'
 import { type CommandDeduper, makeCommandDeduperLive } from '../services/command-deduper'
 import { EventHub } from '../services/event-hub'
 import { PaneWorkspace } from '../services/pane-workspace'
 import { ProjectEntries } from '../services/project-entries'
 import { RunEventLog } from '../services/run-event-log'
+import { RunSummaries } from '../services/run-summaries'
 import { SettingsStore } from '../services/settings-store'
 import { WorkspaceProblems } from '../services/workspace-problems'
 import { makeDiaRpcHandlers } from './rpc-handlers'
@@ -52,7 +52,7 @@ interface Harness {
   readonly published: Array<IpcEvent>
   readonly layer: Layer.Layer<
     | PaneWorkspace
-    | AgentSummaries
+    | RunSummaries
     | SettingsStore
     | EventHub
     | FileSystem.FileSystem
@@ -137,7 +137,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
     resumePane: () => Effect.void
   })
 
-  const summaries = Layer.succeed(AgentSummaries, {
+  const summaries = Layer.succeed(RunSummaries, {
     getAll: Effect.succeed([
       { paneId: PANE_ID, status: StatusIdle.make({}), activity: NoActivity.make({}) }
     ])
@@ -535,7 +535,7 @@ describe('Dia RPC handlers', () => {
 
   it.effect('returns the agent summaries the Host holds', () =>
     Effect.gen(function* () {
-      const all = yield* withHandlers(makeHarness(), (handlers) => handlers.GetAgentSummaries())
+      const all = yield* withHandlers(makeHarness(), (handlers) => handlers.GetRunSummaries())
 
       assert.deepStrictEqual(
         all.map((summary) => summary.paneId),

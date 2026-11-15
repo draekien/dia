@@ -1,14 +1,14 @@
+import type { AgentNotification } from '@shared/domain/notification'
+import { AgentName, ProjectId, type Workspace } from '@shared/domain/project'
 import {
-  type AgentStatus,
-  AgentSummary,
   NoActivity,
+  RunSummary,
+  type RunSummaryStatus,
   StatusFailed,
   StatusFinished,
   StatusNeedsInput,
   StatusWorking
-} from '@shared/domain/agent-summary'
-import type { AgentNotification } from '@shared/domain/notification'
-import { AgentName, ProjectId, type Workspace } from '@shared/domain/project'
+} from '@shared/domain/run-summary'
 import { describe, expect, it } from 'vitest'
 import {
   attentionChanged,
@@ -51,8 +51,8 @@ const workspace = (visibleTab: string | null): Workspace => ({
   visibleTab
 })
 
-const summary = (paneId: string, status: AgentStatus) =>
-  summaryChanged(AgentSummary.make({ paneId, status, activity: NoActivity.make({}) }))
+const summary = (paneId: string, status: RunSummaryStatus) =>
+  summaryChanged(RunSummary.make({ paneId, status, activity: NoActivity.make({}) }))
 
 const PERMISSION = StatusNeedsInput.make({ reason: 'Allow Bash npm test?' })
 

@@ -25,17 +25,11 @@ When the plan is complete, set this issue to in_review with update_issue.`
 export const paragraphs = (...parts: ReadonlyArray<string>) =>
   parts.filter((part) => part !== '').join('\n\n')
 
-/** The first message of a hire's run of `issue`: its job description, then the work (ADR-0080). */
-export const issuePrompt = (issue: Issue, objective: Objective, jobTitle: JobTitle): string =>
+/** The first message of a hire's run of `issue`: the work, without the job description (ADR-0082). */
+export const issuePrompt = (issue: Issue, objective: Objective): string =>
   issue.kind === 'planning'
-    ? paragraphs(
-        jobTitle.jobDescription,
-        `Plan the objective "${objective.title}".`,
-        objective.description,
-        PLANNING_STEPS
-      )
+    ? paragraphs(`Plan the objective "${objective.title}".`, objective.description, PLANNING_STEPS)
     : paragraphs(
-        jobTitle.jobDescription,
         issue.title,
         issue.description,
         `Issue: ${issue.id}\nObjective: ${objective.title}`,
@@ -95,7 +89,12 @@ export const issueStartOptions =
         hire.bypassOverride ?? jobTitle.bypassOptIn
       )
       return Option.some<IssueStart>({
-        run: { cwd: cwd.path, ...settings, text: issuePrompt(issue, objective, jobTitle) },
+        run: {
+          cwd: cwd.path,
+          ...settings,
+          text: issuePrompt(issue, objective),
+          systemPromptAppend: jobTitle.jobDescription
+        },
         projectDirectory: cwd.projectDirectory
       })
     })

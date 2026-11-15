@@ -13,7 +13,7 @@ import type { Tab } from '@shared/domain/project'
 import { Loader2Icon } from 'lucide-react'
 import { useState } from 'react'
 
-/** Which change {@link RetireAgentDialog} confirms: archiving the agent, or deleting it. */
+/** Which change {@link RetireThreadDialog} confirms: archiving the agent, or deleting it. */
 export type Retirement = 'archive' | 'delete'
 
 type Phase =
@@ -39,7 +39,7 @@ interface RetireAgentDialogProps {
  * shows the reason and offers "Try again"; the agent is left as it was. Closes once the change is
  * made.
  */
-export function RetireAgentDialog({ tab, retirement, onClose }: RetireAgentDialogProps) {
+export function RetireThreadDialog({ tab, retirement, onClose }: RetireAgentDialogProps) {
   const [phase, setPhase] = useState<Phase>({ _tag: 'Confirm' })
   const copy = COPY[retirement]
   const worktree = tab.config.worktree
@@ -74,8 +74,8 @@ export function RetireAgentDialog({ tab, retirement, onClose }: RetireAgentDialo
                 {!tab.archived && (
                   <p>
                     {worktree === undefined
-                      ? 'dia stops this agent.'
-                      : 'dia stops this agent and deletes its worktree, with any uncommitted changes in it:'}
+                      ? 'dia stops this thread.'
+                      : 'dia stops this thread and deletes its worktree, with any uncommitted changes in it:'}
                   </p>
                 )}
                 {!tab.archived && worktree !== undefined && (
@@ -83,8 +83,8 @@ export function RetireAgentDialog({ tab, retirement, onClose }: RetireAgentDialo
                 )}
                 <p>
                   {retirement === 'archive'
-                    ? 'The agent moves to the Archived list, where its transcript stays readable.'
-                    : 'dia forgets the agent and removes it from the sidebar.'}{' '}
+                    ? 'The thread moves to the Archived list, where its transcript stays readable.'
+                    : 'dia forgets the thread and removes it from the sidebar.'}{' '}
                   {worktree === undefined ? (
                     'Its Claude Code transcripts stay on disk.'
                   ) : (

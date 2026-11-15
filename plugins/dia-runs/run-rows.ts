@@ -10,7 +10,8 @@ export const StoredSpec = Schema.Struct({
   permissionMode: PermissionMode,
   worktree: Schema.NullOr(WorktreeInfo),
   labels: Schema.optionalKey(Schema.Array(Schema.String)),
-  context: Schema.optionalKey(Schema.Unknown)
+  context: Schema.optionalKey(Schema.Unknown),
+  systemPromptAppend: Schema.optionalKey(Schema.String)
 })
 export type StoredSpec = typeof StoredSpec.Type
 

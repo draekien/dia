@@ -128,6 +128,7 @@ const RPCS: Record<string, Rpc.AnyWithProps> = Object.fromEntries(
     calls.SetProjectWorktrees,
     calls.AskAssistant,
     calls.StartOverAssistant,
+    calls.OpenAssistant,
     OpenRunInTab
   ].map((rpc: Rpc.AnyWithProps) => [rpc._tag, rpc])
 )
@@ -175,12 +176,12 @@ export interface FakeHost {
   readonly push: (live: OrgLive) => void
 }
 
-/** The run id the fake answers `AskAssistant` with. */
+/** The run id the fake answers `AskAssistant` and `OpenAssistant` with. */
 export const ASSISTANT_RUN = 'run-assistant'
 
 const defaultReply = (host: FakeHost, tag: string, payload: Record<string, unknown>): Reply => {
   if (tag === 'SetOverallCap') return { value: { overallCap: payload.cap } }
-  if (tag === 'AskAssistant') return { value: ASSISTANT_RUN }
+  if (tag === 'AskAssistant' || tag === 'OpenAssistant') return { value: ASSISTANT_RUN }
   if (tag === 'OpenRunInTab') return { value: true }
   if (tag === 'SetProjectWorktrees') return { value: payload.enabled ? [payload.projectId] : [] }
   if (typeof payload.hireId === 'string') {
@@ -272,7 +273,7 @@ export const installHost = (
       models: FAKE_MODELS,
       getWorkspace: async () => WORKSPACE,
       onWorkspaceChanged: () => () => {},
-      onAgentSummariesReplaced: () => () => {},
+      onRunSummariesReplaced: () => () => {},
       selectTab: vi.fn(),
       sendMessage: vi.fn()
     }

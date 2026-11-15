@@ -70,7 +70,7 @@ const showRun = (runId: string, hasTab: boolean) =>
     if (!hasTab) {
       const opened = yield* Effect.result(callHost(RUNS, OpenRunInTab, { runId }))
       if (Result.isFailure(opened) || !opened.success) {
-        toast.add({ title: 'Could not open this agent', type: 'error' })
+        toast.add({ title: 'Could not open this transcript', type: 'error' })
         return
       }
     }
@@ -113,7 +113,7 @@ function InboxEntry({ item }: { readonly item: InboxItem }) {
       {sending ? (
         <p className="text-ink-muted text-sm">Sending your answer…</p>
       ) : Card === undefined ? (
-        <p className="text-ink-muted text-sm">Open this agent to answer.</p>
+        <p className="text-ink-muted text-sm">Open the transcript to answer.</p>
       ) : (
         createElement(Card, { request: item.request, onAnswer: (given) => void answer(given) })
       )}
@@ -126,7 +126,7 @@ function Items({ items }: { readonly items: ReadonlyArray<InboxItem> }) {
     return (
       <Empty>
         <EmptyHeader>
-          <EmptyTitle>No agent is waiting for you</EmptyTitle>
+          <EmptyTitle>Nothing is waiting for you</EmptyTitle>
           <EmptyDescription>
             Permission requests, questions and plans from every agent appear here.
           </EmptyDescription>

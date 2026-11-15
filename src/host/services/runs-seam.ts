@@ -12,6 +12,7 @@ import {
   ThinkingLevel,
   type WorktreeInfo
 } from '@shared/domain/pane'
+import { AgentName, TabOwner } from '@shared/domain/project'
 import { ServiceKey } from '@shared/plugin/api'
 import { Data, type Effect, type Option, Predicate, Schema, type Stream } from 'effect'
 import type { WorktreeCreateError, WorktreeReattachError } from './worktrees-seam'
@@ -29,7 +30,8 @@ export type WorktreeRequest =
  * What a run opens with: its id, the directory and model the user chose, how its worktree is
  * obtained, and the conversation it continues (`resume`), or none for a new one. `labels` and
  * `context` become the run's dia tool scope (see `ToolScope`); `context` must be
- * JSON-serialisable, because it is stored with the run.
+ * JSON-serialisable, because it is stored with the run. `systemPromptAppend` is appended to the
+ * run's system prompt after dia's session additions, on every session the run opens.
  */
 export interface RunSpec {
   readonly runId: string
@@ -41,19 +43,23 @@ export interface RunSpec {
   readonly resume: Option.Option<SessionId>
   readonly labels?: ReadonlyArray<string>
   readonly context?: unknown
+  readonly systemPromptAppend?: string
 }
 
 /**
- * What {@link Runs.start} starts: a run with no tab working in `cwd`, sent `text` at once.
- * `labels` and `context` become the run's dia tool scope; dia tools registered for that scope
- * receive `context` with every call. `context` must be JSON-serialisable.
+ * What {@link Runs.start} starts: a run with no tab working in `cwd`, sent `text` at once, or
+ * waiting for its first message when `text` is absent. `systemPromptAppend` is appended to the
+ * run's system prompt for its whole life. `labels` and `context` become the run's dia tool scope;
+ * dia tools registered for that scope receive `context` with every call. `context` must be
+ * JSON-serialisable.
  */
 export interface StartRunOptions {
   readonly cwd: string
   readonly model: string
   readonly thinkingLevel: ThinkingLevel
   readonly permissionMode: PermissionMode
-  readonly text: string
+  readonly text?: string
+  readonly systemPromptAppend?: string
   readonly labels?: ReadonlyArray<string>
   readonly context?: unknown
 }
@@ -123,11 +129,14 @@ export const RunPermissionModeChanged = Schema.TaggedStruct('RunPermissionModeCh
 /**
  * Where `Runs.openInTab` puts a run's tab: in the project at `projectDirectory`, and, when `select`
  * is true, as the visible tab. A run working in a worktree of a project passes that project's
- * directory.
+ * directory. With `owner`, the tab is listed by that plugin instead of the thread list, and is
+ * named `name` (a generated name otherwise); a tab already shown without an owner is given to it.
  */
 export const TabPlacement = Schema.Struct({
   projectDirectory: Schema.String,
-  select: Schema.Boolean
+  select: Schema.Boolean,
+  owner: Schema.optional(TabOwner),
+  name: Schema.optional(AgentName)
 })
 export type TabPlacement = typeof TabPlacement.Type
 
@@ -178,7 +187,7 @@ export interface Runs {
   readonly open: (
     spec: RunSpec
   ) => Effect.Effect<PaneConfig, WorktreeCreateError | WorktreeReattachError>
-  /** Starts a run with no tab and sends it `options.text`; returns its id. */
+  /** Starts a run with no tab and sends it `options.text` when given; returns its id. */
   readonly start: (options: StartRunOptions) => Effect.Effect<string>
   /**
    * Sends a user message to run `runId`, opening the run from its row when it is not live. During

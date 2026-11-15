@@ -20,31 +20,45 @@ export const AgentName = Schema.Trimmed.pipe(
 export type AgentName = typeof AgentName.Type
 
 /**
- * A directory the user registered with dia (ADR-0023). `directory` is the path as first
- * registered; `directoryKey` is the comparison key the Host computed for it, so two spellings of
- * one directory cannot both be registered. `isGitRepo` decides whether worktree features apply.
+ * A directory registered with dia (ADR-0023). `directory` is the path as first registered;
+ * `directoryKey` is the comparison key the Host computed for it, so two spellings of one directory
+ * cannot both be registered. `isGitRepo` decides whether worktree features apply. `owner`, when
+ * present, names the plugin whose own directory this is (dia registered it to hold that plugin's
+ * tabs); the thread list leaves such a project out.
  */
 export const Project = Schema.Struct({
   projectId: ProjectId,
   directory: Schema.String,
   directoryKey: Schema.String,
   displayName: Schema.String,
-  isGitRepo: Schema.Boolean
+  isGitRepo: Schema.Boolean,
+  owner: Schema.optional(Schema.String)
 })
 export type Project = typeof Project.Type
 
 /**
- * One agent in a project (ADR-0023). Its pane id is `config.paneId`. An `archived` tab is listed
- * in the project's archived list, has no worktree directory and never runs; showing it shows its
- * transcript read-only. It keeps `config.worktree`, so unarchiving it can restore the worktree.
+ * One run shown in a project (ADR-0023). Its pane id is `config.paneId`. An `archived` tab is
+ * listed in the project's archived list, has no worktree directory and never runs; showing it
+ * shows its transcript read-only. It keeps `config.worktree`, so unarchiving it can restore the
+ * worktree. A tab without `owner` is a thread, listed in the thread list; `owner` names the plugin
+ * that lists the tab instead (the org lists its agents).
  */
 export const Tab = Schema.Struct({
   name: AgentName,
   config: PaneConfig,
   sessionId: Schema.optional(SessionId),
-  archived: Schema.Boolean
+  archived: Schema.Boolean,
+  owner: Schema.optional(Schema.String)
 })
 export type Tab = typeof Tab.Type
+
+/**
+ * Which plugin lists a run's tab instead of the thread list. `ownsProject` is true when the tab's
+ * directory is the plugin's own rather than a user project, so the project is left out of the
+ * thread list too.
+ */
+export const TabOwner = Schema.Struct({ plugin: Schema.String, ownsProject: Schema.Boolean })
+export type TabOwner = typeof TabOwner.Type
 
 /** A project with its tabs, in the order the overview lists them. */
 export const ProjectEntry = Schema.Struct({

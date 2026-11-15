@@ -1,4 +1,4 @@
-import { Activity } from '@shared/domain/agent-summary'
+import { Activity } from '@shared/domain/run-summary'
 import { Context, Data, Effect, FileSystem, Layer, Option, Result, Schema } from 'effect'
 
 /** Each tab's last activity line, keyed by pane id. Written and read through {@link PersistenceService}. */

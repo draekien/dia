@@ -31,7 +31,7 @@ const installHost = (items: ReadonlyArray<InboxItem>) => {
       plugins: { call, subscribe, onStatusChanged: () => () => {} },
       getWorkspace: async () => ({ projects: [], visibleTab: null }),
       onWorkspaceChanged: () => () => {},
-      onAgentSummariesReplaced: () => () => {},
+      onRunSummariesReplaced: () => () => {},
       selectTab: () => {}
     }
   })
@@ -76,6 +76,6 @@ describe('inbox page', () => {
     await startRendererRegistry({ 'dia-chat': provideCard })
     render(<InboxPage inboxAtom={makeInboxAtom({ name: 'dia-inbox' })} />)
 
-    expect(await screen.findByText('No agent is waiting for you')).toBeTruthy()
+    expect(await screen.findByText('Nothing is waiting for you')).toBeTruthy()
   })
 })

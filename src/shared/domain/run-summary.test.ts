@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import type { IpcEvent } from '../ipc/contract'
+import type { AttentionState } from './attention'
+import type { ParkCause } from './parking'
 import {
-  type AgentStatus,
-  type AgentSummary,
   foldSummary,
   idleSummary,
   markShown,
   NoActivity,
+  type RunSummary,
+  type RunSummaryStatus,
   StatusFailed,
   StatusFinished,
   StatusIdle,
@@ -16,16 +18,14 @@ import {
   statusRank,
   Todo,
   ToolUse
-} from './agent-summary'
-import type { AttentionState } from './attention'
-import type { ParkCause } from './parking'
+} from './run-summary'
 
 const paneId = '10000000-0000-4000-8000-000000000001'
 const otherPaneId = '10000000-0000-4000-8000-000000000002'
 
 const idle = idleSummary(paneId, NoActivity.make({}))
-const withStatus = (status: AgentStatus): AgentSummary => ({ ...idle, status })
-const withTodo = (text: string): AgentSummary => ({ ...idle, activity: Todo.make({ text }) })
+const withStatus = (status: RunSummaryStatus): RunSummary => ({ ...idle, status })
+const withTodo = (text: string): RunSummary => ({ ...idle, activity: Todo.make({ text }) })
 
 const started = (toolName: string): IpcEvent => ({
   _tag: 'PaneAgentEvent',
@@ -259,7 +259,7 @@ describe('markShown', () => {
 
 describe('statusRank', () => {
   it('orders needs input, failed, parked, working, finished, idle', () => {
-    const statuses: ReadonlyArray<AgentStatus> = [
+    const statuses: ReadonlyArray<RunSummaryStatus> = [
       StatusIdle.make({}),
       StatusWorking.make({}),
       StatusParked.make({ until: 0, resumedBy: 'dia' }),

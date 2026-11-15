@@ -19,6 +19,11 @@ Scope: the `issues` plugin (`plugins/dia-issues`) and the `org` plugin (`plugins
 | Triage | In the `issues` plugin: the status of an issue an agent proposed or the org refused to start. The user accepts it (to `todo`) or declines it (to `canceled`) | Triage |
 | Comment | In the `issues` plugin: text an assignee attaches to an issue | Comment |
 | Assignee provider | A plugin that registers with `issues.registerProvider` under a provider id, lists the assignees it runs, and runs the issues assigned to them. The org is the `org` provider | (none) |
+| Thread | A run the user starts and drives: an ad-hoc tab or a meta run. The `dia-threads` sidebar list shows them by project | (none) |
+| Agent | A hired agent of the org. In the sidebar's Agents section, one row per run of a started issue assigned to it | (none) |
+| Assistant | The Executive assistant's one persistent run. It has its own sidebar entry under Org and belongs to no project | (none) |
+| Routine | A run a `dia-schedules` schedule starts | (none) |
+| Run | The code term for any of the above (`RunSummary`, `RunSummaryStatus`) | (none) |
 
 ## Issue statuses
 

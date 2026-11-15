@@ -1,18 +1,18 @@
 import { formatResetTime } from '@dia/renderer-plugin'
+import { PermissionMode } from '@shared/domain/pane'
 import {
   type Activity,
-  type AgentStatus,
   NoActivity,
+  type RunSummaryStatus,
   StatusFailed,
   StatusNeedsInput,
   StatusParked,
   StatusWorking,
   Todo,
   ToolUse
-} from '@shared/domain/agent-summary'
-import { PermissionMode } from '@shared/domain/pane'
+} from '@shared/domain/run-summary'
 import { describe, expect, it } from 'vitest'
-import { modeMarker, secondLine } from './agent-row'
+import { modeMarker, secondLine } from './thread-row'
 
 describe('modeMarker', () => {
   it('marks a tab in bypassPermissions as Full access', () => {
@@ -27,7 +27,7 @@ describe('modeMarker', () => {
   )
 })
 
-const summary = (status: AgentStatus, activity: Activity) => ({
+const summary = (status: RunSummaryStatus, activity: Activity) => ({
   paneId: '00000000-0000-4000-8000-000000000101',
   status,
   activity

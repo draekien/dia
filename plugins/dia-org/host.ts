@@ -11,7 +11,7 @@ import {
   type AgentDefinitionRegistry,
   AgentDefinitionRegistryKey
 } from '@dia-plugin/dia-agent-definitions/registry'
-import { ObjectiveId } from '@dia-plugin/dia-issues/domain'
+import { type Issue, ObjectiveId } from '@dia-plugin/dia-issues/domain'
 import {
   type Issues,
   IssuesKey,
@@ -37,6 +37,7 @@ import {
   SubscriptionRef
 } from 'effect'
 import { SqlClient } from 'effect/sql'
+import { watchAgentRuns } from './agent-runs'
 import { orgAssignees } from './assignees'
 import { ASSISTANT_LABEL, enabledAssistantOf, makeAssistant } from './assistant'
 import { BUILT_IN_DEFINITIONS } from './built-in-job-titles'
@@ -48,6 +49,7 @@ import {
   Dismiss,
   EditJobTitle,
   Hire,
+  OpenAssistant,
   ReadOrg,
   RenameHire,
   SetBypassOverride,
@@ -57,6 +59,7 @@ import {
   SetReportsTo,
   StaffTeam,
   StartOverAssistant,
+  WatchAgentRuns,
   WatchOrgLive
 } from './calls'
 import { agentName, jobTitleName, ORG_PROVIDER } from './domain'
@@ -150,14 +153,34 @@ const routingProjects = (workspace: Ref.Ref<Option.Option<Workspace>>) =>
     Option.match(current, {
       onNone: () => [],
       onSome: (value) =>
-        value.projects.map(({ project }) => ({
-          id: project.projectId,
-          name: project.displayName
-        }))
+        value.projects
+          .filter(({ project }) => project.owner === undefined)
+          .map(({ project }) => ({
+            id: project.projectId,
+            name: project.displayName
+          }))
     })
   )
 
 const isAssistantScope = (scope: ToolScope) => scope.labels.includes(ASSISTANT_LABEL)
+
+const projectNames = (workspace: Workspace) =>
+  workspace.projects.map(({ project }) => ({
+    projectId: project.projectId as string,
+    displayName: project.displayName
+  }))
+
+const projectDirectoryOf = (
+  deps: Pick<RunDeps, 'work' | 'workspace'>,
+  issue: Issue
+): Effect.Effect<Option.Option<string>> =>
+  Effect.gen(function* () {
+    const { objectives } = yield* deps.work.snapshot
+    const objective = objectives.find((candidate) => candidate.id === issue.objectiveId)
+    if (objective === undefined) return Option.none()
+    const project = yield* projectOf(deps.workspace, objective.projectId)
+    return Option.map(project, (found) => found.directory)
+  })
 
 interface RunDeps {
   readonly sql: SqlClient.SqlClient
@@ -183,8 +206,17 @@ const runOnFoundation = (ctx: HostPluginContext, deps: RunDeps) =>
             startOptions: issueStartOptions(deps.issueWorkspace, agentBackend),
             runs,
             queue,
+            projectDirectoryOf: (issue) => projectDirectoryOf(deps, issue),
             ready: ctx.pluginsSettled
           })
+          yield* ctx.serve(WatchAgentRuns, () =>
+            watchAgentRuns({
+              runs: issueRuns.runs,
+              issues: deps.work,
+              org: deps.org,
+              projects: ctx.workspace.pipe(Stream.map(projectNames))
+            })
+          )
           const directory = (yield* Path.Path).join(ctx.dataDir, 'assistant')
           yield* (yield* FileSystem.FileSystem).makeDirectory(directory, { recursive: true })
           const assistant = yield* makeAssistant({
@@ -197,6 +229,7 @@ const runOnFoundation = (ctx: HostPluginContext, deps: RunDeps) =>
           })
           yield* ctx.serve(AskAssistant, ({ text }) => assistant.ask(text))
           yield* ctx.serve(StartOverAssistant, () => assistant.startOver)
+          yield* ctx.serve(OpenAssistant, () => assistant.open)
           const crypto = yield* Crypto.Crypto
           const routingTools = makeRoutingTools({
             work: deps.work,
@@ -293,7 +326,10 @@ const holdRegistries = (ctx: HostPluginContext, org: Org, sql: SqlClient.SqlClie
 
 const projectDirectories = (workspace: Workspace) =>
   workspace.projects
-    .map(({ project }) => `${project.projectId}=${project.directory}=${project.isGitRepo}`)
+    .map(
+      ({ project }) =>
+        `${project.projectId}=${project.directory}=${project.isGitRepo}=${project.owner ?? ''}`
+    )
     .join('\n')
 
 const followWorkspace = (ctx: HostPluginContext, workspace: Ref.Ref<Option.Option<Workspace>>) =>

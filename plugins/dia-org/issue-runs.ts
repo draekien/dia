@@ -1,4 +1,4 @@
-import { RESUME_TEXT, type RunInfo, type Runs } from '@dia/plugin'
+import { type AgentName, RESUME_TEXT, type RunInfo, type Runs } from '@dia/plugin'
 import type { Issue, IssueId, Objective, ObjectivePriority } from '@dia-plugin/dia-issues/domain'
 import {
   type Issues,
@@ -9,6 +9,7 @@ import {
 import type { RunQueue } from '@dia-plugin/dia-run-queue/queue'
 import { Effect, Option, Queue, Ref, type Scope, Stream } from 'effect'
 import { SqlClient } from 'effect/sql'
+import { type IssueRunRef, issueRunTabName } from './agent-runs'
 import type { HiredAgent, HireId, JobTitle } from './domain'
 import type { IssueWorkspace } from './issue-workspace'
 import type { IssueStart } from './run-options'
@@ -29,7 +30,15 @@ export type StartOptionsOf = (
 export interface IssueRuns {
   /** Sends `text` to issue `issueId`'s live run as a queued message; false when it has none. */
   readonly deliver: (issueId: IssueId, text: string) => Effect.Effect<boolean>
+  /** The stored run of each issue that has one, whatever the issue's status. */
+  readonly runs: Effect.Effect<ReadonlyArray<IssueRunRef>>
 }
+
+/** The owner of every issue run's tab: the org lists the tabs in the sidebar's Agents section. */
+export const ISSUE_RUN_TAB_OWNER = { plugin: 'dia-org', ownsProject: false } as const
+
+const tabNameOf = (issue: Issue, hire: HiredAgent, jobTitle: JobTitle) =>
+  issueRunTabName(hire.name ?? jobTitle.name, issue.title)
 
 /** What {@link runIssues} reads and drives. */
 export interface IssueRunsDeps {
@@ -40,6 +49,8 @@ export interface IssueRunsDeps {
   readonly startOptions: StartOptionsOf
   readonly runs: Pick<Runs, 'list' | 'isLive' | 'send' | 'close' | 'openInTab'>
   readonly queue: Pick<RunQueue, 'enqueue'>
+  /** The directory of `issue`'s project, or none when the project is not registered. */
+  readonly projectDirectoryOf: (issue: Issue) => Effect.Effect<Option.Option<string>>
   /** Completes when the first pass may run: once the Host's startup has settled. */
   readonly ready: Effect.Effect<void>
 }
@@ -61,13 +72,15 @@ const startableFor = (startable: ReadonlyArray<StartableIssue>) =>
  * whose earlier run for the same hire still exists reuses it; a run whose issue is no longer
  * started or startable for its hire is closed. Passes run one at a time, after `deps.ready` and
  * after each change of issues, hires or job titles. Closing the calling scope interrupts every
- * start that has not been picked from the queue.
+ * start that has not been picked from the queue. Each started issue's run is shown in a tab the
+ * org owns, once per process, so a tab the user removed comes back after a restart.
  */
 export const runIssues = Effect.fn('Org.runIssues')(function* (
   deps: IssueRunsDeps
 ): Effect.fn.Return<IssueRuns, never, Scope.Scope | SqlClient.SqlClient> {
   const sql = yield* SqlClient.SqlClient
   const inFlight = yield* Ref.make<ReadonlySet<string>>(new Set())
+  const shown = yield* Ref.make<ReadonlySet<string>>(new Set())
   const signals = yield* Queue.sliding<void>(1)
   const signal = Queue.offer(signals, undefined).pipe(Effect.asVoid)
 
@@ -97,13 +110,16 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
     })
   })
 
-  const showRun = (issueId: IssueId, runId: string, projectDirectory: string) =>
-    deps.runs.openInTab(runId, { projectDirectory, select: false }).pipe(
-      Effect.andThen(Effect.logInfo('Showed the run of an issue in a tab', { issueId, runId })),
-      Effect.catchTag('RunNotFoundError', () =>
-        Effect.logWarning('No run to show for an issue', { issueId, runId })
+  const showRun = (issueId: IssueId, runId: string, projectDirectory: string, name: AgentName) =>
+    deps.runs
+      .openInTab(runId, { projectDirectory, select: false, owner: ISSUE_RUN_TAB_OWNER, name })
+      .pipe(
+        Effect.andThen(Ref.update(shown, (current) => new Set(current).add(runId))),
+        Effect.andThen(Effect.logInfo('Showed the run of an issue in a tab', { issueId, runId })),
+        Effect.catchTag('RunNotFoundError', () =>
+          Effect.logWarning('No run to show for an issue', { issueId, runId })
+        )
       )
-    )
 
   const enqueueRun = Effect.fnUntraced(function* (
     entry: StartableIssue,
@@ -122,7 +138,12 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
     yield* saveRow(issue.id, hire.id, runId)
     if (yield* deps.provider.markStarted(issue.id, hire.id)) {
       yield* Effect.logInfo('Started a run of an issue', { issueId: issue.id, runId })
-      yield* showRun(issue.id, runId, options.value.projectDirectory)
+      yield* showRun(
+        issue.id,
+        runId,
+        options.value.projectDirectory,
+        tabNameOf(issue, hire, jobTitle)
+      )
       return true
     }
     yield* deps.runs.close(runId)
@@ -168,6 +189,25 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
     })
   })
 
+  const showStartedRuns = Effect.fnUntraced(function* (
+    started: ReadonlyArray<Issue>,
+    startedRuns: ReadonlyMap<string, IssueRunRow>,
+    hires: ReadonlyMap<string, HiredAgent>,
+    jobTitles: ReadonlyMap<string, JobTitle>
+  ) {
+    const alreadyShown = yield* Ref.get(shown)
+    for (const issue of started) {
+      const row = startedRuns.get(issue.id)
+      if (row === undefined || alreadyShown.has(row.run_id)) continue
+      const hire = hires.get(row.hire_id)
+      const jobTitle = hire === undefined ? undefined : jobTitles.get(hire.jobTitleId)
+      if (hire === undefined || jobTitle === undefined) continue
+      const directory = yield* deps.projectDirectoryOf(issue)
+      if (Option.isNone(directory)) continue
+      yield* showRun(issue.id, row.run_id, directory.value, tabNameOf(issue, hire, jobTitle))
+    }
+  })
+
   const pass = Effect.gen(function* () {
     const held = yield* Ref.get(inFlight)
     const { startable, started } = yield* deps.provider.runState
@@ -175,6 +215,7 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
     const waiting = startableFor(startable)
     const startedIds = new Set<string>(started.map((issue) => issue.id))
     const stored = new Map<string, IssueRunRow>()
+    const startedRuns = new Map<string, IssueRunRow>()
     for (const row of yield* rows) {
       const info = runInfos.get(row.run_id)
       const forHire = waiting.get(row.issue_id)?.issue.assignee?.id === row.hire_id
@@ -185,10 +226,12 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
         continue
       }
       if (!isStarted) stored.set(row.issue_id, row)
+      else startedRuns.set(row.issue_id, row)
     }
     yield* deps.workspace.retain(new Set([...waiting.keys(), ...startedIds] as Array<IssueId>))
     const hires = new Map((yield* deps.org.hiredAgents).map((hire) => [hire.id as string, hire]))
     const jobTitles = new Map((yield* deps.org.jobTitles).map((title) => [title.id, title]))
+    yield* showStartedRuns(started, startedRuns, hires, jobTitles)
     for (const entry of startable) {
       if (held.has(entry.issue.id)) continue
       const hire = entry.issue.assignee === null ? undefined : hires.get(entry.issue.assignee.id)
@@ -254,5 +297,9 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
     ),
     Effect.forkScoped
   )
-  return { deliver }
+  const runs = Effect.map(rows, (stored) =>
+    stored.map((row) => ({ issueId: row.issue_id, hireId: row.hire_id, runId: row.run_id }))
+  )
+
+  return { deliver, runs }
 })

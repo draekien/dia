@@ -84,7 +84,7 @@ describe('WorkspaceProblemsBanner', () => {
     const dialog = await openReview()
 
     expect(dialog.textContent).toContain('brave-otter')
-    expect(dialog.textContent).toContain('Agent in dia')
+    expect(dialog.textContent).toContain('Thread in dia')
     expect(dialog.textContent).toContain('got "ultra"')
   })
 
@@ -108,7 +108,7 @@ describe('WorkspaceProblemsBanner', () => {
     const confirmation = await screen.findByRole('alertdialog')
     expect(bridge.deleteRow).not.toHaveBeenCalled()
     expect(confirmation.textContent).toContain('Delete project old-repo?')
-    expect(confirmation.textContent).toContain('3 agents')
+    expect(confirmation.textContent).toContain('3 threads')
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
     await waitFor(() =>

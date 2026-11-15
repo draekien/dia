@@ -1,30 +1,43 @@
 // @vitest-environment jsdom
 
 import { SidebarProvider, Toaster, TooltipProvider } from '@dia/renderer-plugin'
+import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
 import {
-  type AgentSummary,
   NoActivity,
+  type RunSummary,
   StatusIdle,
   StatusNeedsInput,
   StatusWorking,
   ToolUse
-} from '@shared/domain/agent-summary'
-import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
+} from '@shared/domain/run-summary'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { Atom } from 'effect/reactivity'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AgentOverview } from './agent-overview'
+import { ThreadsSidebar } from './threads-sidebar'
 
 const state = vi.hoisted(() => ({
   workspace: undefined as Workspace | undefined,
-  summaries: new Map<string, AgentSummary>()
+  summaries: new Map<string, RunSummary>(),
+  lists: new Map<string, ReadonlyArray<unknown>>(),
+  selectTab: (_paneId: string) => {},
+  openPage: (_key: unknown) => {}
 }))
 
-vi.mock('@dia/renderer-plugin', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@dia/renderer-plugin')>()),
-  useWorkspace: () => state.workspace,
-  useAgentSummaries: () => state.summaries
-}))
+vi.mock('@dia/renderer-plugin', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@dia/renderer-plugin')>()
+  return {
+    ...original,
+    actions: {
+      ...original.actions,
+      selectTab: (paneId: string) => state.selectTab(paneId),
+      openPage: (key: unknown) => state.openPage(key)
+    },
+    useList: (slot: { readonly name: string }) => state.lists.get(slot.name) ?? [],
+    useWorkspace: () => state.workspace,
+    useRunSummaries: () => state.summaries
+  }
+})
 
 const paneId = (n: number) => `00000000-0000-4000-8000-0000000001${String(n).padStart(2, '0')}`
 
@@ -61,6 +74,9 @@ beforeEach(() => {
     }
   )
   localStorage.clear()
+  state.lists = new Map()
+  state.selectTab = vi.fn()
+  state.openPage = vi.fn()
   state.workspace = {
     projects: [
       entry(1, 'alpha', [tab(1, 'build'), tab(2, 'review')]),
@@ -68,7 +84,7 @@ beforeEach(() => {
     ],
     visibleTab: paneId(1)
   }
-  state.summaries = new Map<string, AgentSummary>([
+  state.summaries = new Map<string, RunSummary>([
     [
       paneId(1),
       {
@@ -99,20 +115,20 @@ function Harness({ initialOpen }: { readonly initialOpen: boolean }) {
   return (
     <TooltipProvider>
       <SidebarProvider open={open} onOpenChange={setOpen}>
-        <AgentOverview />
+        <ThreadsSidebar />
       </SidebarProvider>
     </TooltipProvider>
   )
 }
 
-const list = () => screen.getByRole('navigation', { name: 'Projects and agents' })
+const list = () => screen.getByRole('navigation', { name: 'Projects and threads' })
 const tabStops = () => [...list().querySelectorAll<HTMLElement>('[tabindex="0"]')]
 const rowNames = () =>
   [...list().querySelectorAll<HTMLElement>('[data-nav^="row:"]')].map((row) =>
     row.getAttribute('aria-label')
   )
 
-describe('AgentOverview expanded', () => {
+describe('ThreadsSidebar expanded', () => {
   it('has exactly one tab stop, the first group header, and the New agent actions are not tab stops', () => {
     render(<Harness initialOpen />)
 
@@ -120,7 +136,7 @@ describe('AgentOverview expanded', () => {
 
     expect(stops).toHaveLength(1)
     expect(stops[0].dataset.nav).toMatch(/^header:/)
-    expect(screen.getByRole('button', { name: 'New agent in alpha' }).tabIndex).toBe(-1)
+    expect(screen.getByRole('button', { name: 'New thread in alpha' }).tabIndex).toBe(-1)
   })
 
   it('moves focus down from a header to the most urgent row and back up with the arrow keys', () => {
@@ -158,7 +174,7 @@ describe('AgentOverview expanded', () => {
   })
 })
 
-describe('AgentOverview archived agents', () => {
+describe('ThreadsSidebar archived agents', () => {
   const withArchived = () => {
     const alpha = state.workspace?.projects[0]
     if (state.workspace === undefined || alpha === undefined) throw new Error('no workspace')
@@ -280,7 +296,7 @@ describe('AgentOverview archived agents', () => {
   })
 })
 
-describe('AgentOverview collapsed', () => {
+describe('ThreadsSidebar collapsed', () => {
   it('hides the no-projects prompt, which only fits the expanded sidebar', () => {
     state.workspace = { ...state.workspace, projects: [] } as Workspace
     render(<Harness initialOpen={false} />)
@@ -337,7 +353,7 @@ describe('AgentOverview collapsed', () => {
 
   it('ignores an active search while collapsed', () => {
     render(<Harness initialOpen />)
-    fireEvent.change(screen.getByRole('searchbox', { name: 'Search agents and projects' }), {
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search threads and projects' }), {
       target: { value: 'docs' }
     })
     expect(rowNames()).toHaveLength(1)
@@ -354,5 +370,64 @@ describe('AgentOverview collapsed', () => {
     fireEvent.keyDown(window, { key: 'p', ctrlKey: true })
 
     expect(sidebar()?.dataset.state).toBe('expanded')
+  })
+})
+
+const assistantPage = (tab: string | null) => ({
+  id: 'assistant',
+  order: 10.5,
+  label: 'Assistant',
+  icon: () => null,
+  component: () => null,
+  tab: Atom.make<string | null>(tab),
+  key: { plugin: 'dia-org', id: 'assistant' }
+})
+
+describe('ThreadsSidebar page entries', () => {
+  it('selects the tab a page entry names and shows that tab’s status', () => {
+    state.lists.set('layout.pages', [assistantPage(paneId(2))])
+    render(<Harness initialOpen />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assistant · Needs input' }))
+
+    expect(state.selectTab).toHaveBeenCalledWith(paneId(2))
+  })
+
+  it('opens the page of an entry that names no tab', () => {
+    const page = assistantPage(null)
+    state.lists.set('layout.pages', [page])
+    render(<Harness initialOpen />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Assistant' }))
+
+    expect(state.openPage).toHaveBeenCalledWith(page.key)
+  })
+})
+
+describe('ThreadsSidebar sections', () => {
+  const section = {
+    id: 'agents',
+    order: 10,
+    component: ({ iconMode }: { readonly iconMode: boolean }) => (
+      <p>{iconMode ? 'agents as dots' : 'agents as rows'}</p>
+    ),
+    key: { plugin: 'dia-org', id: 'agents' }
+  }
+
+  it('draws each section between the pages and the Threads label', () => {
+    state.lists.set('layout.sections', [section])
+    render(<Harness initialOpen />)
+
+    const order = [screen.getByText('agents as rows'), screen.getByText('Threads')]
+    expect(
+      order[0].compareDocumentPosition(order[1]) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
+  it('tells a section the sidebar is collapsed to its rail', () => {
+    state.lists.set('layout.sections', [section])
+    render(<Harness initialOpen={false} />)
+
+    expect(screen.getByText('agents as dots')).toBeTruthy()
   })
 })

@@ -66,6 +66,7 @@ const setUp = Effect.gen(function* () {
       ),
     runs: fake.runs,
     queue: fake.queue,
+    projectDirectoryOf: () => Effect.succeed(Option.some(PROJECT_DIRECTORY)),
     ready: Deferred.await(ready)
   }).pipe(Effect.provideService(SqlClient.SqlClient, sql))
   const createIssue = (assigneeId: string) =>
@@ -164,7 +165,38 @@ describe('runIssues', () => {
       yield* env.begin
 
       assert.deepStrictEqual(env.fake.tabs, [
-        { runId: 'run-a', placement: { projectDirectory: PROJECT_DIRECTORY, select: false } }
+        {
+          runId: 'run-a',
+          placement: {
+            projectDirectory: PROJECT_DIRECTORY,
+            select: false,
+            owner: { plugin: 'dia-org', ownsProject: false },
+            name: AgentName.make(`Ada · ${TITLE}`)
+          }
+        }
+      ])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect("shows a started issue's stored run in an org-owned tab", () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const issue = yield* env.createIssue(env.ada.id)
+      yield* env.storeRun(issue, env.ada.id, 'run-old')
+      env.fake.setRun('run-old', 'running', false)
+
+      yield* env.begin
+
+      assert.deepStrictEqual(env.fake.tabs, [
+        {
+          runId: 'run-old',
+          placement: {
+            projectDirectory: PROJECT_DIRECTORY,
+            select: false,
+            owner: { plugin: 'dia-org', ownsProject: false },
+            name: AgentName.make(`Ada · ${TITLE}`)
+          }
+        }
       ])
     }).pipe(Effect.scoped)
   )
@@ -308,39 +340,47 @@ describe('runIssues', () => {
 describe('issueStartOptions', () => {
   const ISSUE_PATH = 'C:/dia/plugins/dia-worktrees/trees/add-login'
 
-  it.effect("starts the run in the issue's worktree with its job description first", () =>
-    Effect.gen(function* () {
-      const env = yield* setUp
-      const issue = yield* env.createIssue(env.ada.id)
-      const objective = (yield* env.issues.snapshot).objectives[0]
-      assert.isDefined(objective)
-      const workspace = {
-        open: () =>
-          Effect.succeed(
-            IssueDirectory.make({ path: ISSUE_PATH, projectDirectory: PROJECT_DIRECTORY })
-          )
-      }
-      const jobTitle = {
-        ...(yield* setUpJobTitle),
-        model: null,
-        jobDescription: 'You write code.'
-      }
+  it.effect(
+    "starts the run in the issue's worktree with its job description in the system prompt",
+    () =>
+      Effect.gen(function* () {
+        const env = yield* setUp
+        const issue = yield* env.createIssue(env.ada.id)
+        const objective = (yield* env.issues.snapshot).objectives[0]
+        assert.isDefined(objective)
+        const workspace = {
+          open: () =>
+            Effect.succeed(
+              IssueDirectory.make({ path: ISSUE_PATH, projectDirectory: PROJECT_DIRECTORY })
+            )
+        }
+        const jobTitle = {
+          ...(yield* setUpJobTitle),
+          model: null,
+          jobDescription: 'You write code.'
+        }
 
-      const options = yield* issueStartOptions(workspace, fakeBackend([model('opus', true)]))(
-        issue,
-        objective,
-        env.ada,
-        jobTitle
-      )
+        const options = yield* issueStartOptions(workspace, fakeBackend([model('opus', true)]))(
+          issue,
+          objective,
+          env.ada,
+          jobTitle
+        )
 
-      assert.isTrue(Option.isSome(options))
-      if (Option.isNone(options)) return
-      assert.strictEqual(options.value.run.cwd, ISSUE_PATH)
-      assert.strictEqual(options.value.projectDirectory, PROJECT_DIRECTORY)
-      assert.strictEqual(options.value.run.model, 'opus', 'no job title model: the catalog first')
-      assert.strictEqual(options.value.run.permissionMode, 'auto', 'the model supports auto')
-      assert.isTrue(options.value.run.text.startsWith('You write code.\n\n'))
-    }).pipe(Effect.scoped)
+        assert.isTrue(Option.isSome(options))
+        if (Option.isNone(options)) return
+        assert.strictEqual(options.value.run.cwd, ISSUE_PATH)
+        assert.strictEqual(options.value.projectDirectory, PROJECT_DIRECTORY)
+        assert.strictEqual(options.value.run.model, 'opus', 'no job title model: the catalog first')
+        assert.strictEqual(options.value.run.permissionMode, 'auto', 'the model supports auto')
+        assert.deepStrictEqual(
+          [
+            options.value.run.systemPromptAppend,
+            options.value.run.text?.includes('You write code.')
+          ],
+          ['You write code.', false]
+        )
+      }).pipe(Effect.scoped)
   )
 
   it.effect('returns none while the issue waits for its workspace', () =>

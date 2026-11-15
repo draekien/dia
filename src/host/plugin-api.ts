@@ -65,7 +65,7 @@ export {
 export * as PaneChat from '../shared/domain/pane-chat'
 export * as Parking from '../shared/domain/parking'
 export { ParkCause, RESUME_TEXT, SignedOut, UsageLimit } from '../shared/domain/parking'
-export { AgentName, ProjectId } from '../shared/domain/project'
+export { AGENT_NAME_MAX_LENGTH, AgentName, ProjectId } from '../shared/domain/project'
 export { PermissionRules, SessionToolOptions } from '../shared/domain/session-tools'
 export * as TabSetup from '../shared/domain/tab-setup'
 export { Uuid } from '../shared/domain/uuid'

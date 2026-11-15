@@ -139,7 +139,8 @@ export function OnboardingStrip({
 
 const RUNS = 'dia-runs'
 
-const openAssistant = (runId: string) =>
+/** Shows the Executive assistant's run `runId` in its tab; logs and resolves when it cannot. */
+export const openAssistant = (runId: string) =>
   Effect.runPromise(
     callHost(RUNS, OpenRunInTab, { runId }).pipe(
       Effect.tap((opened) =>

@@ -1,7 +1,7 @@
 import { scheduleTask } from '@effect/atom-react'
-import type { AgentSummary } from '@shared/domain/agent-summary'
 import type { PaneId } from '@shared/domain/pane'
 import type { Workspace } from '@shared/domain/project'
+import type { RunSummary } from '@shared/domain/run-summary'
 import { DEFAULT_TRANSCRIPT_WIDTH, type TranscriptWidth } from '@shared/domain/transcript-width'
 import { Effect, Option, Queue, Stream, SubscriptionRef } from 'effect'
 import { AsyncResult, Atom, AtomRegistry } from 'effect/reactivity'
@@ -72,7 +72,7 @@ const loadedWorkspaceAtom = Atom.subscriptionRef((get) =>
       ),
       Effect.forkScoped
     )
-    yield* fromListener<void>((push) => window.dia.onAgentSummariesReplaced(() => push())).pipe(
+    yield* fromListener<void>((push) => window.dia.onRunSummariesReplaced(() => push())).pipe(
       Stream.runForEach(() => SubscriptionRef.get(ref).pipe(Effect.flatMap(resumeVisibleTab))),
       Effect.forkScoped
     )
@@ -97,24 +97,24 @@ export const workspaceAtom = Atom.make(
 
 const loadedSummariesAtom = Atom.subscriptionRef(
   Effect.gen(function* () {
-    const ref = yield* SubscriptionRef.make<ReadonlyMap<PaneId, AgentSummary>>(new Map())
-    yield* fromListener<AgentSummary>((push) =>
-      window.dia.onAgentSummaryChanged((event) => push(event.summary))
+    const ref = yield* SubscriptionRef.make<ReadonlyMap<PaneId, RunSummary>>(new Map())
+    yield* fromListener<RunSummary>((push) =>
+      window.dia.onRunSummaryChanged((event) => push(event.summary))
     ).pipe(
       Stream.runForEach((summary) =>
         SubscriptionRef.update(ref, (summaries) => new Map(summaries).set(summary.paneId, summary))
       ),
       Effect.forkScoped
     )
-    yield* fromListener<ReadonlyArray<AgentSummary>>((push) =>
-      window.dia.onAgentSummariesReplaced((event) => push(event.summaries))
+    yield* fromListener<ReadonlyArray<RunSummary>>((push) =>
+      window.dia.onRunSummariesReplaced((event) => push(event.summaries))
     ).pipe(
       Stream.runForEach((summaries) =>
         SubscriptionRef.set(ref, new Map(summaries.map((summary) => [summary.paneId, summary])))
       ),
       Effect.forkScoped
     )
-    const fetched = yield* Effect.promise(() => window.dia.getAgentSummaries())
+    const fetched = yield* Effect.promise(() => window.dia.getRunSummaries())
     yield* SubscriptionRef.update(ref, (summaries) => {
       const merged = new Map(summaries)
       for (const summary of fetched) {
@@ -128,12 +128,12 @@ const loadedSummariesAtom = Atom.subscriptionRef(
 ).pipe(Atom.keepAlive)
 
 /**
- * The current {@link AgentSummary} of every tab, keyed by pane id; empty until it first loads.
- * Read with `useAtomValue(agentSummariesAtom)`.
+ * The current {@link RunSummary} of every tab, keyed by pane id; empty until it first loads.
+ * Read with `useAtomValue(runSummariesAtom)`.
  */
-export const agentSummariesAtom = Atom.make(
-  (get): ReadonlyMap<PaneId, AgentSummary> =>
-    AsyncResult.getOrElse(get(loadedSummariesAtom), () => new Map<PaneId, AgentSummary>())
+export const runSummariesAtom = Atom.make(
+  (get): ReadonlyMap<PaneId, RunSummary> =>
+    AsyncResult.getOrElse(get(loadedSummariesAtom), () => new Map<PaneId, RunSummary>())
 ).pipe(Atom.keepAlive)
 
 const storedTranscriptWidthAtom = Atom.make(

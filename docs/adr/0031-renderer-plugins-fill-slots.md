@@ -68,5 +68,5 @@ Chosen option: "One root slot; the plugin that fills it declares child slots", b
 
 ## More Information
 
-* Design: `docs/designs/agent-overview.md`.
+* Design: `docs/designs/threads.md`.
 * Related: ADR-0019, ADR-0020, ADR-0023, ADR-0027, ADR-0029.

@@ -7,6 +7,7 @@ import {
   PermissionRequested,
   type RunChange,
   type RunEvents,
+  type SessionAdditions,
   SessionId,
   SessionStarted,
   type TabPlacement,
@@ -47,22 +48,23 @@ const SESSION = SessionId.make('session-1')
 
 interface FakeSession {
   readonly resume: Option.Option<SessionId>
+  readonly systemPromptAppend: string
   readonly calls: Array<string>
   readonly emit: (message: OutboundMessage) => Effect.Effect<void>
 }
 
-const makeWorld = (rows: RunRows) => {
+const makeWorld = (rows: RunRows, additions: SessionAdditions = NO_SESSION_ADDITIONS) => {
   const sessions: Array<FakeSession> = []
   const appended: Array<IpcEvent> = []
   const logOrder: Array<string> = []
   const toolScopes: Array<ToolScope> = []
   const backend: AgentBackend = {
     ...unavailableBackend,
-    openSession: ({ resume, emit }) =>
+    openSession: ({ resume, emit, systemPromptAppend }) =>
       Effect.gen(function* () {
         const ended = yield* Deferred.make<SessionEnd>()
         const calls: Array<string> = []
-        sessions.push({ resume, calls, emit })
+        sessions.push({ resume, systemPromptAppend, calls, emit })
         const record =
           (name: string) =>
           (...args: ReadonlyArray<unknown>) =>
@@ -105,7 +107,7 @@ const makeWorld = (rows: RunRows) => {
     backend: Effect.succeed(backend),
     runEvents: Effect.succeed(Option.some(runEvents)),
     gitOps: Effect.succeed(Option.none()),
-    additions: Effect.succeed(NO_SESSION_ADDITIONS),
+    additions: Effect.succeed(additions),
     sessionTools: (scope) =>
       Effect.sync(() => {
         toolScopes.push(scope)
@@ -184,6 +186,57 @@ describe('run registry', () => {
         assert.strictEqual(runId, STARTED)
         assert.deepStrictEqual(world.sessions[0]?.calls, ['sendText:tidy the README:queue'])
         assert.isFalse(Option.getOrThrow(yield* rows.get(STARTED)).hasTab)
+      })
+    )
+  )
+
+  it.live('starts a run that waits for its first message when given no text', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows)
+        const { runs } = yield* world.registry
+        const { text: _text, ...withoutText } = startOptions
+
+        yield* runs.start(withoutText)
+
+        assert.deepStrictEqual(
+          [world.sessions[0]?.calls, yield* runs.busy.pipe(Stream.runHead)],
+          [[], Option.some([])]
+        )
+      })
+    )
+  )
+
+  it.live("appends a started run's own text to dia's system prompt additions", () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows, { systemPromptAppend: 'Use dia tools.', pluginPaths: [] })
+        const { runs } = yield* world.registry
+
+        yield* runs.start({ ...startOptions, systemPromptAppend: 'You are a software engineer.' })
+
+        assert.strictEqual(
+          world.sessions[0]?.systemPromptAppend,
+          'Use dia tools.\n\nYou are a software engineer.'
+        )
+      })
+    )
+  )
+
+  it.live("keeps a started run's system prompt text when it opens again after a restart", () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const before = makeWorld(rows)
+        const firstStart = yield* Scope.make()
+        const { runs } = yield* before.registry.pipe(Effect.provideService(Scope.Scope, firstStart))
+        yield* runs.start({ ...startOptions, systemPromptAppend: 'You are a software engineer.' })
+        yield* Scope.close(firstStart, Exit.void)
+
+        const after = makeWorld(rows)
+        const reopened = yield* after.registry
+        yield* reopened.runs.open({ ...tabSpec, runId: STARTED })
+
+        assert.strictEqual(after.sessions[0]?.systemPromptAppend, 'You are a software engineer.')
       })
     )
   )

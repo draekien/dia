@@ -1,13 +1,13 @@
+import type { PaneId } from '@shared/domain/pane'
+import type { Workspace } from '@shared/domain/project'
 import {
-  type AgentSummary,
   foldSummary,
   idleSummary,
   markShown,
-  NoActivity
-} from '@shared/domain/agent-summary'
-import type { PaneId } from '@shared/domain/pane'
-import type { Workspace } from '@shared/domain/project'
-import { AgentSummaryChanged, type IpcEvent } from '@shared/ipc/contract'
+  NoActivity,
+  type RunSummary
+} from '@shared/domain/run-summary'
+import { type IpcEvent, RunSummaryChanged } from '@shared/ipc/contract'
 import type { EventFrame } from '@shared/ipc/rpc'
 import { Context, Duration, Effect, Equal, Fiber, Layer, Ref, Stream } from 'effect'
 import { EventHub } from './event-hub'
@@ -18,20 +18,20 @@ import { type PersistedActivity, PersistenceService } from './persistence'
 export const ACTIVITY_SAVE_DELAY = Duration.seconds(2)
 
 /**
- * The current {@link AgentSummary} of every tab: its overview status and activity line, folded
- * from the Host's pane events. Publishes `AgentSummaryChanged` on the {@link EventHub} whenever a
+ * The current {@link RunSummary} of every tab: its overview status and activity line, folded
+ * from the Host's pane events. Publishes `RunSummaryChanged` on the {@link EventHub} whenever a
  * summary changes; read all summaries with `getAll` when a client connects. A finished tab that
  * is the visible tab becomes idle at once. Activity lines survive a restart; statuses start idle.
  */
-export class AgentSummaries extends Context.Service<
-  AgentSummaries,
+export class RunSummaries extends Context.Service<
+  RunSummaries,
   {
-    readonly getAll: Effect.Effect<ReadonlyArray<AgentSummary>>
+    readonly getAll: Effect.Effect<ReadonlyArray<RunSummary>>
   }
->()('AgentSummaries') {}
+>()('RunSummaries') {}
 
 interface State {
-  readonly summaries: ReadonlyMap<PaneId, AgentSummary>
+  readonly summaries: ReadonlyMap<PaneId, RunSummary>
   readonly visibleTab: PaneId | null
   readonly tabIds: ReadonlySet<PaneId>
 }
@@ -42,11 +42,11 @@ const tabIdsOf = (workspace: Workspace): ReadonlySet<PaneId> =>
 const paneIdOf = (event: IpcEvent): PaneId | undefined =>
   'paneId' in event && typeof event.paneId === 'string' ? event.paneId : undefined
 
-const shownIfVisible = (summary: AgentSummary, visibleTab: PaneId | null): AgentSummary =>
+const shownIfVisible = (summary: RunSummary, visibleTab: PaneId | null): RunSummary =>
   visibleTab === summary.paneId ? markShown(summary) : summary
 
 /**
- * Builds the live {@link AgentSummaries} layer. It seeds one idle summary per tab with the
+ * Builds the live {@link RunSummaries} layer. It seeds one idle summary per tab with the
  * activity line saved at `<userData>/activity.json`, then follows the {@link EventHub} for the
  * lifetime of the layer's scope, saving tabs' activity lines {@link ACTIVITY_SAVE_DELAY} after they
  * change and once more when the scope closes. It also keeps a summary for each session a plugin
@@ -54,15 +54,15 @@ const shownIfVisible = (summary: AgentSummary, visibleTab: PaneId | null): Agent
  * is dropped at the next workspace change. Requires {@link EventHub},
  * {@link PersistenceService} and {@link PaneWorkspace}.
  */
-export const AgentSummariesLive = Layer.effect(
-  AgentSummaries,
+export const RunSummariesLive = Layer.effect(
+  RunSummaries,
   Effect.gen(function* () {
     const hub = yield* EventHub
     const persistence = yield* PersistenceService
     const workspace = yield* (yield* PaneWorkspace).getWorkspace
     const saved = yield* persistence.loadActivity
 
-    const seeded = new Map<PaneId, AgentSummary>()
+    const seeded = new Map<PaneId, RunSummary>()
     for (const paneId of tabIdsOf(workspace)) {
       seeded.set(paneId, idleSummary(paneId, saved[paneId] ?? NoActivity.make({})))
     }
@@ -84,7 +84,7 @@ export const AgentSummariesLive = Layer.effect(
       yield* persistence
         .saveActivity(activity)
         .pipe(Effect.catch((cause) => Effect.logError('Failed to persist activity', { cause })))
-    }).pipe(Effect.withSpan('AgentSummaries.flush'))
+    }).pipe(Effect.withSpan('RunSummaries.flush'))
 
     const scheduleSave = Effect.gen(function* () {
       const alreadyPending = yield* Ref.getAndSet(savePending, true)
@@ -92,9 +92,9 @@ export const AgentSummariesLive = Layer.effect(
       yield* Effect.sleep(ACTIVITY_SAVE_DELAY).pipe(Effect.andThen(flush), Effect.forkScoped)
     })
 
-    const publishChanges = Effect.fn('AgentSummaries.publishChanges')(function* (
-      before: ReadonlyMap<PaneId, AgentSummary>,
-      after: ReadonlyMap<PaneId, AgentSummary>
+    const publishChanges = Effect.fn('RunSummaries.publishChanges')(function* (
+      before: ReadonlyMap<PaneId, RunSummary>,
+      after: ReadonlyMap<PaneId, RunSummary>
     ) {
       let activityChanged = false
       for (const [paneId, summary] of after) {
@@ -103,7 +103,7 @@ export const AgentSummariesLive = Layer.effect(
         if (previous === undefined || !Equal.equals(previous.activity, summary.activity)) {
           activityChanged = true
         }
-        yield* hub.publish(AgentSummaryChanged.make({ summary }))
+        yield* hub.publish(RunSummaryChanged.make({ summary }))
       }
       if (activityChanged || [...before.keys()].some((paneId) => !after.has(paneId))) {
         yield* scheduleSave
@@ -112,7 +112,7 @@ export const AgentSummariesLive = Layer.effect(
 
     const applyWorkspace = (state: State, next: Workspace): State => {
       const tabIds = tabIdsOf(next)
-      const summaries = new Map<PaneId, AgentSummary>()
+      const summaries = new Map<PaneId, RunSummary>()
       for (const paneId of tabIds) {
         const summary = state.summaries.get(paneId) ?? idleSummary(paneId, NoActivity.make({}))
         summaries.set(paneId, shownIfVisible(summary, next.visibleTab))
@@ -127,10 +127,10 @@ export const AgentSummariesLive = Layer.effect(
       return { ...state, summaries: new Map(state.summaries).set(paneId, next) }
     }
 
-    const handle = Effect.fn('AgentSummaries.handle')(function* (frame: EventFrame) {
+    const handle = Effect.fn('RunSummaries.handle')(function* (frame: EventFrame) {
       if (frame._tag === 'ReloadHistory') return
       const event = frame.event
-      if (event._tag === 'AgentSummaryChanged' || event._tag === 'AgentSummariesReplaced') return
+      if (event._tag === 'RunSummaryChanged' || event._tag === 'RunSummariesReplaced') return
       const before = yield* Ref.get(stateRef)
       const paneId = paneIdOf(event)
       const after =

@@ -1967,4 +1967,58 @@ describe('PaneWorkspace run tab requests', () => {
         assert.strictEqual(workspace.visibleTab, PANE_A)
       })
   )
+
+  const ownedRequest = (runId: string, ownsProject: boolean) =>
+    RunTabRequested.make({
+      runId,
+      directory: '/other',
+      projectDirectory: '/other',
+      select: false,
+      owner: { plugin: 'dia-org', ownsProject },
+      name: AgentName.make('Assistant'),
+      model: 'm',
+      thinkingLevel: 'adaptive',
+      permissionMode: 'default',
+      sessionId: null
+    })
+
+  it.effect('gives a new run tab the owner and name the request names', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* harness.emit(ownedRequest(PANE_NEW, false))
+          return yield* current
+        })
+      )
+
+      const added = workspace.projects[1].tabs[1]
+      assert.deepStrictEqual([added.owner, added.name], ['dia-org', 'Assistant'])
+      assert.isUndefined(workspace.projects[1].project.owner)
+    })
+  )
+
+  it.effect(
+    'gives an existing unowned run tab and its project to an owner that owns the project',
+    () =>
+      Effect.gen(function* () {
+        const harness = makeHarness({ persisted: twoProjects() })
+
+        const workspace = yield* run(
+          harness,
+          Effect.gen(function* () {
+            yield* harness.emit(ownedRequest(PANE_B, true))
+            return yield* current
+          })
+        )
+
+        const existing = workspace.projects[1]
+        assert.deepStrictEqual(
+          [existing.project.owner, existing.tabs.map((t) => [t.owner, t.name])],
+          ['dia-org', [['dia-org', 'Assistant']]]
+        )
+      })
+  )
 })

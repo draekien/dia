@@ -1,5 +1,5 @@
 import { cn } from '@renderer/lib/utils'
-import type { AgentStatus } from '@shared/domain/agent-summary'
+import type { RunSummaryStatus } from '@shared/domain/run-summary'
 import { cva } from 'class-variance-authority'
 import { StatusMedia, type StatusMediaProps } from './status'
 
@@ -16,7 +16,7 @@ const statusDot = cva('', {
   }
 })
 
-const STATUS_FILL: Record<AgentStatus['_tag'], StatusMediaProps['fill']> = {
+const STATUS_FILL: Record<RunSummaryStatus['_tag'], StatusMediaProps['fill']> = {
   StatusNeedsInput: 'full',
   StatusFailed: 'full',
   StatusParked: 'half',
@@ -37,7 +37,7 @@ const statusRing = cva(
   }
 )
 
-const STATUS_LABELS: Record<AgentStatus['_tag'], string> = {
+const STATUS_LABELS: Record<RunSummaryStatus['_tag'], string> = {
   StatusNeedsInput: 'Needs input',
   StatusFailed: 'Failed',
   StatusParked: 'Parked',
@@ -47,10 +47,10 @@ const STATUS_LABELS: Record<AgentStatus['_tag'], string> = {
 }
 
 /** The word for an agent status, as the overview, tooltips and screen readers name it. */
-export const statusLabel = (status: AgentStatus): string => STATUS_LABELS[status._tag]
+export const statusLabel = (status: RunSummaryStatus): string => STATUS_LABELS[status._tag]
 
 interface StatusIndicatorProps {
-  readonly status: AgentStatus
+  readonly status: RunSummaryStatus
   readonly className?: string
   readonly still?: boolean
 }

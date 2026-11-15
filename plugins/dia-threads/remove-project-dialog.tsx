@@ -51,7 +51,7 @@ const describe = (
 ): { readonly kind: string; readonly text: string; readonly mono: boolean } => {
   switch (item._tag) {
     case 'AgentItem':
-      return { kind: 'Agent', text: item.name, mono: false }
+      return { kind: 'Thread', text: item.name, mono: false }
     case 'WorktreeItem':
       return { kind: 'Worktree', text: item.path, mono: true }
   }
@@ -138,7 +138,7 @@ export function RemoveProjectDialog({ entry, onClose }: RemoveProjectDialogProps
         </DialogHeader>
 
         {items.length === 0 ? (
-          <p className="text-sm text-ink-muted">This project has no agents.</p>
+          <p className="text-sm text-ink-muted">This project has no threads.</p>
         ) : (
           <ItemGroup aria-label="Items to remove" className="max-h-64 overflow-y-auto">
             {items.map((item) => {

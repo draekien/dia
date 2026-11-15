@@ -1,4 +1,4 @@
-import type { AgentSummary } from '@shared/domain/agent-summary'
+import type { RunSummary } from '@shared/domain/run-summary'
 import { Schema } from 'effect'
 
 const PaneIds = Schema.Array(Schema.String)
@@ -47,11 +47,11 @@ export type AccountBanner = typeof AccountBanner.Type
  * or its usage limit has reset or has no known reset time. The banner and the transcript offer
  * Resume for such an agent.
  */
-export const awaitsUser = (summary: AgentSummary): boolean =>
+export const awaitsUser = (summary: RunSummary): boolean =>
   summary.parked !== undefined && summary.status._tag === 'StatusNeedsInput'
 
 const parkedUntil = (
-  summaries: ReadonlyArray<AgentSummary>,
+  summaries: ReadonlyArray<RunSummary>,
   resumedBy: 'dia' | 'user'
 ): ReadonlyArray<number> =>
   summaries.flatMap((summary) =>
@@ -65,12 +65,12 @@ const parkedUntil = (
  * is not signed in comes first, then agents whose limit reset, then agents with no known reset
  * time, then agents waiting for a reset, then agents dia resumes on its own.
  */
-export const accountBannerOf = (summaries: Iterable<AgentSummary>): AccountBanner | null => {
+export const accountBannerOf = (summaries: Iterable<RunSummary>): AccountBanner | null => {
   const all = [...summaries]
   const forUser = all.filter(awaitsUser)
-  const paneIdsWhere = (keep: (summary: AgentSummary) => boolean) =>
+  const paneIdsWhere = (keep: (summary: RunSummary) => boolean) =>
     forUser.filter(keep).map((summary) => summary.paneId)
-  const resetsOf = (summary: AgentSummary) =>
+  const resetsOf = (summary: RunSummary) =>
     summary.parked?._tag === 'UsageLimit' ? summary.parked.resetsAt : undefined
 
   const signedOut = paneIdsWhere((summary) => summary.parked?._tag === 'SignedOut')

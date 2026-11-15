@@ -1,7 +1,6 @@
 import { Schema } from 'effect'
 import type { AdapterStatusSnapshot } from '../domain/adapter-status'
 import { AgentEvent } from '../domain/agent-event'
-import { AgentSummary } from '../domain/agent-summary'
 import { Attachment, type AttachmentType, type ProjectEntry } from '../domain/attachment'
 import {
   AttentionState,
@@ -31,6 +30,7 @@ import type { RegisterProjectRefusal } from '../domain/project'
 import { AgentName, CreateTabRequest, ProjectId, Workspace } from '../domain/project'
 import type { RemovalProgress } from '../domain/project-removal'
 import { RewindFailureCause } from '../domain/rewind'
+import { RunSummary } from '../domain/run-summary'
 import { SlashCommandInfo } from '../domain/slash-command'
 import { SetupStep } from '../domain/tab-setup'
 import type { ThemePreference } from '../domain/theme'
@@ -561,19 +561,19 @@ export type WorkspaceChanged = typeof WorkspaceChanged.Type
  * Event pushed to the renderer when one tab's status or activity line changes. `summary`
  * replaces the renderer's summary for `summary.paneId`. Never replayed.
  */
-export const AgentSummaryChanged = Schema.TaggedStruct('AgentSummaryChanged', {
-  summary: AgentSummary
+export const RunSummaryChanged = Schema.TaggedStruct('RunSummaryChanged', {
+  summary: RunSummary
 })
-export type AgentSummaryChanged = typeof AgentSummaryChanged.Type
+export type RunSummaryChanged = typeof RunSummaryChanged.Type
 
 /**
  * Event the preload raises (the Host never sends it) after reconnecting, carrying every tab's
  * summary as the Host now holds it. Replaces all of the renderer's summaries.
  */
-export const AgentSummariesReplaced = Schema.TaggedStruct('AgentSummariesReplaced', {
-  summaries: Schema.Array(AgentSummary)
+export const RunSummariesReplaced = Schema.TaggedStruct('RunSummariesReplaced', {
+  summaries: Schema.Array(RunSummary)
 })
-export type AgentSummariesReplaced = typeof AgentSummariesReplaced.Type
+export type RunSummariesReplaced = typeof RunSummariesReplaced.Type
 
 /**
  * Event pushed to the renderer when a {@link CreateTab} command for pane
@@ -669,8 +669,8 @@ export const IpcEvent = Schema.Union([
   PaneAgentEvent,
   ...PaneSignal.members,
   WorkspaceChanged,
-  AgentSummaryChanged,
-  AgentSummariesReplaced,
+  RunSummaryChanged,
+  RunSummariesReplaced,
   PluginStatusChanged,
   ActivitiesChanged,
   UpdateStatusChanged
@@ -913,7 +913,7 @@ export interface DiaApi {
    */
   unarchiveTab(paneId: string): Promise<string | null>
   selectTab(paneId: string | null): void
-  getAgentSummaries(): Promise<ReadonlyArray<AgentSummary>>
+  getRunSummaries(): Promise<ReadonlyArray<RunSummary>>
   getTranscriptWidth(): Promise<TranscriptWidth>
   setTranscriptWidth(width: TranscriptWidth): void
   /** Shows `directory` in the system file manager; does nothing when it is not a directory. */
@@ -951,8 +951,8 @@ export interface DiaApi {
   /** Subscribes to every pane event with its pane's sequence number. */
   onPaneEvent(listener: (frame: PaneEventFrame) => void): () => void
   onWorkspaceChanged(listener: (event: WorkspaceChanged) => void): () => void
-  onAgentSummaryChanged(listener: (event: AgentSummaryChanged) => void): () => void
-  onAgentSummariesReplaced(listener: (event: AgentSummariesReplaced) => void): () => void
+  onRunSummaryChanged(listener: (event: RunSummaryChanged) => void): () => void
+  onRunSummariesReplaced(listener: (event: RunSummariesReplaced) => void): () => void
   onPaneCreateFailed(listener: (event: PaneCreateFailed) => void): () => void
   onAttentionChanged(listener: (event: PaneAttentionChanged) => void): () => void
   onRewoundToCheckpoint(listener: (event: PaneRewoundToCheckpoint) => void): () => void

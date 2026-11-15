@@ -6,6 +6,7 @@ import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarInput,
   SidebarMenu,
@@ -13,16 +14,18 @@ import {
   SidebarMenuItem,
   SidebarRail,
   SidebarSeparator,
+  StatusIndicator,
+  statusLabel,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-  useAgentSummaries,
   useList,
+  useRunSummaries,
   useSidebar,
   useView,
   useWorkspace
 } from '@dia/renderer-plugin'
-import { PagesSlot } from '@dia-plugin/dia-layout/slots'
+import { type Page, PagesSlot, SidebarSectionsSlot } from '@dia-plugin/dia-layout/slots'
 import {
   type Announcements,
   closestCenter,
@@ -40,10 +43,12 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy
 } from '@dnd-kit/sortable'
+import { useAtomValue } from '@effect/atom-react'
 import type { PaneId } from '@shared/domain/pane'
 import { ProjectId, type Workspace } from '@shared/domain/project'
 import { tabOf } from '@shared/domain/workspace'
 import { Option, Result, Schema } from 'effect'
+import { Atom } from 'effect/reactivity'
 import { FolderPlusIcon, SearchIcon } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { FilterPopover } from './filter-popover'
@@ -63,14 +68,18 @@ import {
 } from './overview'
 import { ProjectGroup } from './project-group'
 import { RemoveProjectDialog } from './remove-project-dialog'
-import { RetireAgentDialog, type Retirement } from './retire-agent-dialog'
+import { type Retirement, RetireThreadDialog } from './retire-thread-dialog'
 
-const COLLAPSED_KEY = 'dia.agent-overview.collapsed'
+const COLLAPSED_KEY = 'dia.threads.collapsed'
+const LEGACY_COLLAPSED_KEY = 'dia.agent-overview.collapsed'
 
 const decodeCollapsed = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(ProjectId)))
 
-const readCollapsed = (): ReadonlySet<ProjectId> =>
-  new Set(Option.getOrElse(decodeCollapsed(localStorage.getItem(COLLAPSED_KEY) ?? '[]'), () => []))
+const readCollapsed = (): ReadonlySet<ProjectId> => {
+  const stored =
+    localStorage.getItem(COLLAPSED_KEY) ?? localStorage.getItem(LEGACY_COLLAPSED_KEY) ?? '[]'
+  return new Set(Option.getOrElse(decodeCollapsed(stored), () => []))
+}
 
 const navKey = (target: NavigationTarget): string => {
   switch (target._tag) {
@@ -88,7 +97,7 @@ const NO_COLLAPSED: ReadonlySet<ProjectId> = new Set()
 const focusNav = (container: HTMLElement, key: string): void =>
   container.querySelector<HTMLElement>(`[data-nav="${key}"]`)?.focus()
 
-const statusCounts = (workspace: Workspace, summaries: ReturnType<typeof useAgentSummaries>) => {
+const statusCounts = (workspace: Workspace, summaries: ReturnType<typeof useRunSummaries>) => {
   const counts = Object.fromEntries(STATUS_TAGS.map((tag) => [tag, 0])) as Record<StatusTag, number>
   const count = (paneId: PaneId) => {
     counts[summaries.get(paneId)?.status._tag ?? 'StatusIdle'] += 1
@@ -167,34 +176,84 @@ function MetaGroup() {
   )
 }
 
+const NO_TAB = Atom.make<string | null>(null)
+
+type PageListEntry = ReturnType<typeof useList<Page>>[number]
+
+function PageEntry({ page }: { readonly page: PageListEntry }) {
+  const tab = useAtomValue(page.tab ?? NO_TAB)
+  const view = useView()
+  const summary = useRunSummaries().get(tab ?? '')
+  const Icon = page.icon
+  const active =
+    tab === null
+      ? view?._tag === 'PageView' && view.plugin === page.key.plugin && view.id === page.key.id
+      : view?._tag === 'TabView' && view.paneId === tab
+  const status = tab === null || summary === undefined ? null : summary.status
+  const tooltip = status === null ? page.label : `${page.label} · ${statusLabel(status)}`
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        isActive={active}
+        aria-current={active ? 'page' : undefined}
+        tooltip={tooltip}
+        aria-label={tooltip}
+        onClick={() => (tab === null ? actions.openPage(page.key) : actions.selectTab(tab))}
+      >
+        <Icon />
+        <span>{page.label}</span>
+        {status !== null && (
+          <span className="ml-auto flex group-data-[collapsible=icon]:hidden">
+            <StatusIndicator status={status} />
+          </span>
+        )}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  )
+}
+
 function PagesGroup() {
   const pages = useList(PagesSlot)
-  const view = useView()
   if (pages.length === 0) return null
   return (
     <SidebarGroup className="pt-0">
       <SidebarMenu>
-        {pages.map((page) => {
-          const Icon = page.icon
-          const active =
-            view?._tag === 'PageView' && view.plugin === page.key.plugin && view.id === page.key.id
-          return (
-            <SidebarMenuItem key={`${page.key.plugin}.${page.key.id}`}>
-              <SidebarMenuButton
-                isActive={active}
-                aria-current={active ? 'page' : undefined}
-                tooltip={page.label}
-                onClick={() => actions.openPage(page.key)}
-              >
-                <PluginBoundary plugin={page.key.plugin} at={PagesSlot.name} resetKey={Icon}>
-                  <Icon />
-                </PluginBoundary>
-                <span>{page.label}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          )
-        })}
+        {pages.map((page) => (
+          <PluginBoundary
+            key={`${page.key.plugin}.${page.key.id}`}
+            plugin={page.key.plugin}
+            at={PagesSlot.name}
+            resetKey={page}
+          >
+            <PageEntry page={page} />
+          </PluginBoundary>
+        ))}
       </SidebarMenu>
+    </SidebarGroup>
+  )
+}
+
+function SectionsGroup({ iconMode }: { readonly iconMode: boolean }) {
+  const sections = useList(SidebarSectionsSlot)
+  return sections.map((section) => {
+    const Section = section.component
+    return (
+      <PluginBoundary
+        key={`${section.key.plugin}.${section.key.id}`}
+        plugin={section.key.plugin}
+        at={SidebarSectionsSlot.name}
+        resetKey={Section}
+      >
+        <Section iconMode={iconMode} />
+      </PluginBoundary>
+    )
+  })
+}
+
+function ThreadsCaption() {
+  return (
+    <SidebarGroup className="pb-0">
+      <SidebarGroupLabel>Threads</SidebarGroupLabel>
     </SidebarGroup>
   )
 }
@@ -204,7 +263,7 @@ function NoProjects({ onAdd }: { readonly onAdd: () => void }) {
     <div className="flex flex-col items-start gap-2 px-3 py-4">
       <p className="text-sm text-ink">No projects yet</p>
       <p className="text-xs text-ink-muted">
-        Add a directory to run agents in it. dia never changes the directory itself.
+        Add a directory to start threads in it. dia never changes the directory itself.
       </p>
       <Button size="sm" variant="outline" onClick={onAdd}>
         <FolderPlusIcon data-icon="inline-start" />
@@ -226,8 +285,8 @@ function NoMatches({
     <div className="flex flex-col items-start gap-2 px-3 py-4">
       <p className="text-sm text-ink">
         {query === ''
-          ? 'No agents match these filters.'
-          : `No agents or projects match "${query}".`}
+          ? 'No threads match these filters.'
+          : `No threads or projects match "${query}".`}
       </p>
       <Button size="xs" variant="outline" onClick={onClear}>
         Clear search and filters
@@ -242,9 +301,9 @@ function NoMatches({
  * `SidebarProvider`. `Ctrl P` expands the sidebar and focuses the search; while the sidebar is
  * collapsed it shows Meta and one status dot per agent.
  */
-export function AgentOverview() {
+export function ThreadsSidebar() {
   const workspace = useWorkspace()
-  const summaries = useAgentSummaries()
+  const summaries = useRunSummaries()
   const { state, setOpen } = useSidebar()
   const iconMode = state === 'collapsed'
   const [filters, setFilters] = useState<OverviewFilters>(NO_FILTERS)
@@ -465,7 +524,7 @@ export function AgentOverview() {
                   <SidebarInput
                     ref={searchRef}
                     type="search"
-                    aria-label="Search agents and projects"
+                    aria-label="Search threads and projects"
                     placeholder="Search"
                     value={filters.query}
                     onChange={(event) => setFilters({ ...filters, query: event.target.value })}
@@ -509,7 +568,7 @@ export function AgentOverview() {
         <SidebarContent className="group-data-[collapsible=icon]:overflow-x-hidden group-data-[collapsible=icon]:overflow-y-auto">
           <nav
             ref={listRef}
-            aria-label="Projects and agents"
+            aria-label="Projects and threads"
             className="contents"
             onKeyDown={onListKeyDown}
             onFocus={(event) => {
@@ -519,7 +578,9 @@ export function AgentOverview() {
           >
             {!narrowing && <MetaGroup />}
             {!narrowing && <PagesGroup />}
-            {workspace.projects.length === 0 ? (
+            {!narrowing && <SectionsGroup iconMode={iconMode} />}
+            {!iconMode && <ThreadsCaption />}
+            {workspace.projects.every((entry) => entry.project.owner !== undefined) ? (
               !iconMode && <NoProjects onAdd={addProject} />
             ) : groups.length === 0 ? (
               <NoMatches filters={filters} onClear={() => setFilters(NO_FILTERS)} />
@@ -580,7 +641,7 @@ export function AgentOverview() {
         />
       )}
       {retiring !== null && retiringTab !== undefined && (
-        <RetireAgentDialog
+        <RetireThreadDialog
           key={retiring.paneId}
           tab={retiringTab}
           retirement={retiring.retirement}

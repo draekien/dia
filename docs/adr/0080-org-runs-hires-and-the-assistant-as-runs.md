@@ -26,7 +26,7 @@ ADR-0076 rewrites org over the foundation. ADR-0071 has the Executive assistant 
 Chosen option: "Runs through `Runs.start` as it is", because it needs no foundation change, and the extension can follow without changing org's shape.
 
 * A hire's run and the assistant's run start in the permission mode `startPermissionMode` (ADR-0054) gives. The assistant no longer runs in `dontAsk` (amends ADR-0071).
-* A job title's job description is the first paragraph of the run's first message. Its MCP servers, skills and allow and deny lists are not applied to runs until `StartRunOptions` carries them (amends ADR-0064 and ADR-0069 option B).
+* A job title's job description is the first paragraph of the run's first message (replaced by ADR-0082: it is appended to the run's system prompt). Its MCP servers, skills and allow and deny lists are not applied to runs until `StartRunOptions` carries them (amends ADR-0064 and ADR-0069 option B).
 * The Executive assistant is a run org starts on the user's first request and shows in a tab through `OpenRunInTab`; Start over archives it. It is not an attached session (amends ADR-0071, "The session"). Notices are prefixed to the next request sent through the Org page; they are not shown in the run's transcript (amends ADR-0071, "Notices").
 
 ### Consequences

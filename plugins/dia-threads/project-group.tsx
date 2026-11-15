@@ -20,9 +20,9 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { PaneId } from '@shared/domain/pane'
 import { ChevronRightIcon, PlusIcon } from 'lucide-react'
-import { AgentRow } from './agent-row'
 import { archivedKey, headerKey, type OverviewGroup, type OverviewRow, rowKey } from './overview'
-import type { Retirement } from './retire-agent-dialog'
+import type { Retirement } from './retire-thread-dialog'
+import { ThreadRow } from './thread-row'
 
 interface ProjectGroupProps {
   readonly group: OverviewGroup
@@ -76,7 +76,7 @@ export function ProjectGroup({
   const showRows = open && !dragging
   const urgent = group.mostUrgent
   const renderRow = (row: OverviewRow, archived: boolean) => (
-    <AgentRow
+    <ThreadRow
       key={row.paneId}
       row={row}
       projectName={project.displayName}
@@ -113,7 +113,7 @@ export function ProjectGroup({
                   {...listeners}
                   aria-roledescription="sortable project"
                   aria-expanded={open}
-                  aria-label={`${project.displayName}, ${count} ${group.total === 1 ? 'agent' : 'agents'}${urgent === null || open ? '' : `, ${statusLabel(urgent)}`}`}
+                  aria-label={`${project.displayName}, ${count} ${group.total === 1 ? 'thread' : 'threads'}${urgent === null || open ? '' : `, ${statusLabel(urgent)}`}`}
                   onClick={onToggle}
                   onKeyDown={(event) => listeners?.onKeyDown?.(event)}
                   className={cn(
@@ -150,7 +150,7 @@ export function ProjectGroup({
         <ContextMenuContent className="w-52">
           <ContextMenuGroup>
             <ContextMenuItem onClick={() => actions.newAgent(project.projectId)}>
-              New agent
+              New thread
             </ContextMenuItem>
             <ContextMenuItem onClick={() => void actions.revealProject(project.directory)}>
               Reveal in Explorer
@@ -166,7 +166,7 @@ export function ProjectGroup({
       </ContextMenu>
       <SidebarGroupAction
         tabIndex={-1}
-        aria-label={`New agent in ${project.displayName}`}
+        aria-label={`New thread in ${project.displayName}`}
         onClick={() => actions.newAgent(project.projectId)}
         className="opacity-0 group-focus-within/project:opacity-100 group-hover/project:opacity-100"
       >
@@ -178,14 +178,14 @@ export function ProjectGroup({
             {group.rows.map((row) => renderRow(row, false))}
             {group.rows.length === 0 && !narrowing && (
               <li className="flex list-none items-center gap-2 py-1 pl-2">
-                <span className="text-xs text-ink-muted">No agents</span>
+                <span className="text-xs text-ink-muted">No threads</span>
                 <Button
                   size="xs"
                   variant="outline"
                   onClick={() => actions.newAgent(project.projectId)}
                 >
                   <PlusIcon data-icon="inline-start" />
-                  New agent
+                  New thread
                 </Button>
               </li>
             )}

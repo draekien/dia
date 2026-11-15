@@ -122,6 +122,11 @@ const pathMoves = runEach([
   )`
 ])
 
+const owners = runEach([
+  `ALTER TABLE projects ADD COLUMN owner TEXT`,
+  `ALTER TABLE agents ADD COLUMN owner TEXT`
+])
+
 /**
  * The migrations of `<userData>/host.db`, keyed `<id>_<name>` and applied in id order by
  * `makeHostDatabaseLive`. Add a migration as a new key; never change an applied one.
@@ -131,5 +136,6 @@ export const kernelMigrations = {
   '2_import_resolutions': importResolutions,
   '3_agent_events': agentEvents,
   '4_agent_event_cleanup': agentEventCleanup,
-  '5_path_moves': pathMoves
+  '5_path_moves': pathMoves,
+  '6_owners': owners
 }

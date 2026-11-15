@@ -96,6 +96,21 @@ describe('viewOf', () => {
     expect(viewOf(Option.some(empty), Option.none(), Option.none())).toEqual(FirstRunView.make({}))
   })
 
+  it('shows the first-run screen when every project has a plugin owner', () => {
+    const base = workspace([], null)
+    const ownedOnly: Workspace = {
+      ...base,
+      projects: base.projects.map((entry) => ({
+        ...entry,
+        project: { ...entry.project, owner: 'dia-org' }
+      }))
+    }
+
+    expect(viewOf(Option.some(ownedOnly), Option.none(), Option.none())).toEqual(
+      FirstRunView.make({})
+    )
+  })
+
   it('offers a new agent when projects exist but no tab is visible', () => {
     expect(viewOf(Option.some(workspace([PANE_A], null)), Option.none(), Option.none())).toEqual(
       EmptyProjectView.make({})

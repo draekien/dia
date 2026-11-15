@@ -1,5 +1,4 @@
 import { type AdapterStatusSnapshot, HealthNotChecked } from '@shared/domain/adapter-status'
-import { type AgentSummary, NoActivity, StatusIdle } from '@shared/domain/agent-summary'
 import { Deny, FreeformResponse } from '@shared/domain/attention'
 import { ActivityNotFound } from '@shared/domain/background-activity'
 import {
@@ -21,12 +20,13 @@ import {
   Removed,
   Removing
 } from '@shared/domain/project-removal'
+import { NoActivity, type RunSummary, StatusIdle } from '@shared/domain/run-summary'
 import { WorkspaceProblemError } from '@shared/domain/workspace-problem'
 import {
-  type AgentSummariesReplaced,
   type IpcEvent,
   type ModelCatalogSnapshotJson,
   PaneTurnStatusChanged,
+  type RunSummariesReplaced,
   type WorkspaceChanged
 } from '@shared/ipc/contract'
 import type { EventFrame } from '@shared/ipc/rpc'
@@ -37,7 +37,7 @@ import { type DiaRpcClient, makeHostApi } from './host-api'
 
 const PANE = '00000000-0000-4000-8000-00000000000a'
 const PROJECT = ProjectId.make('00000000-0000-4000-8000-000000000001')
-const SUMMARY: AgentSummary = {
+const SUMMARY: RunSummary = {
   paneId: PANE,
   status: StatusIdle.make({}),
   activity: NoActivity.make({})
@@ -127,7 +127,7 @@ const makeClient = (script: ClientScript = {}) => {
         : (script.callPluginResult ?? Effect.succeed('done'))
   )
   const getWorkspace = vi.fn(() => Effect.succeed(EMPTY_WORKSPACE))
-  const getAgentSummaries = vi.fn(() => Effect.succeed([SUMMARY]))
+  const getRunSummaries = vi.fn(() => Effect.succeed([SUMMARY]))
   const registerProject = vi.fn(
     (_payload: { projectId: string; directory: string }) => script.registerProject ?? Effect.void
   )
@@ -166,7 +166,7 @@ const makeClient = (script: ClientScript = {}) => {
     SubscribePlugin: subscribePlugin,
     CallPlugin: callPlugin,
     GetWorkspace: getWorkspace,
-    GetAgentSummaries: getAgentSummaries,
+    GetRunSummaries: getRunSummaries,
     RegisterProject: registerProject,
     RemoveProject: removeProject,
     RunActivity: runActivity,
@@ -178,7 +178,7 @@ const makeClient = (script: ClientScript = {}) => {
     subscribePlugin,
     callPlugin,
     getWorkspace,
-    getAgentSummaries,
+    getRunSummaries,
     registerProject,
     removeProject,
     loadPlugin,
@@ -438,9 +438,9 @@ describe('makeHostApi', () => {
     const { client, getWorkspace } = makeClient({ subscriptions: [dropped] })
     const { api } = makeApi(client)
     const workspaces: Array<WorkspaceChanged> = []
-    const replaced: Array<AgentSummariesReplaced> = []
+    const replaced: Array<RunSummariesReplaced> = []
     api.onWorkspaceChanged((event) => workspaces.push(event))
-    api.onAgentSummariesReplaced((event) => replaced.push(event))
+    api.onRunSummariesReplaced((event) => replaced.push(event))
 
     await advance(10)
     expect(getWorkspace).not.toHaveBeenCalled()

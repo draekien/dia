@@ -2,7 +2,7 @@
 import type { PluginServices, PluginSetup } from '@dia/plugin'
 import { declareList, useList } from '@dia/renderer-plugin'
 import { CommandsSlot } from '@dia-plugin/dia-command-palette/slots'
-import { PagesSlot } from '@dia-plugin/dia-layout/slots'
+import { PagesSlot, SidebarSectionsSlot } from '@dia-plugin/dia-layout/slots'
 import { SettingsPagesSlot } from '@dia-plugin/dia-settings/slots'
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { Effect } from 'effect'
@@ -13,6 +13,7 @@ import org from './renderer'
 const declaresSlots: PluginSetup<PluginServices> = (ctx) =>
   Effect.gen(function* () {
     yield* declareList(ctx, PagesSlot)
+    yield* declareList(ctx, SidebarSectionsSlot)
     yield* declareList(ctx, SettingsPagesSlot)
     yield* declareList(ctx, CommandsSlot)
   })
@@ -20,6 +21,7 @@ const declaresSlots: PluginSetup<PluginServices> = (ctx) =>
 function Keys() {
   const keys = [
     ...useList(PagesSlot).map((entry) => `page ${entry.key.plugin}/${entry.key.id}`),
+    ...useList(SidebarSectionsSlot).map((entry) => `section ${entry.key.plugin}/${entry.key.id}`),
     ...useList(SettingsPagesSlot).map((entry) => `settings ${entry.key.plugin}/${entry.key.id}`),
     ...useList(CommandsSlot).map((entry) => `command ${entry.key.plugin}/${entry.key.id}`)
   ]
@@ -29,7 +31,7 @@ function Keys() {
 afterEach(cleanup)
 
 describe('org renderer entry', () => {
-  it('adds the Org page, the Org Settings page and its command until the plugin unloads', async () => {
+  it('adds the Org and Assistant pages, the Agents section, the Org Settings page and its command until the plugin unloads', async () => {
     const registry = await startRendererRegistry({ slots: declaresSlots, org })
     render(<Keys />)
     const whileLoaded = screen.getByTestId('keys').textContent
@@ -37,7 +39,7 @@ describe('org renderer entry', () => {
     await act(() => Effect.runPromise(registry.unload('org')))
 
     expect([whileLoaded, screen.getByTestId('keys').textContent]).toEqual([
-      'page org/org, settings org/org, command org/org-settings',
+      'page org/org, page org/assistant, section org/agents, settings org/org, command org/org-settings',
       ''
     ])
   })

@@ -92,7 +92,7 @@ export const closesNewAgentForm = (form: NewAgentForm, workspace: Workspace): bo
 /**
  * The {@link View} for a workspace, the open New agent form and the open page, in priority order:
  * the page while it is open, else the form while it is open, else the visible tab, else the
- * first-run screen when no project exists, else the empty-project prompt. `undefined` until the
+ * first-run screen when no project without a plugin owner exists, else the empty-project prompt. `undefined` until the
  * workspace has loaded.
  */
 export const viewOf = (
@@ -106,6 +106,8 @@ export const viewOf = (
   if (workspace.value.visibleTab !== null) {
     return TabView.make({ paneId: workspace.value.visibleTab })
   }
-  if (workspace.value.projects.length === 0) return FirstRunView.make({})
+  if (workspace.value.projects.every((entry) => entry.project.owner !== undefined)) {
+    return FirstRunView.make({})
+  }
   return EmptyProjectView.make({})
 }

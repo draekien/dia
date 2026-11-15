@@ -92,7 +92,7 @@ export const composerPlaceholder = (
   answering = false
 ): string => {
   if (answering) return 'Type your own answer to this question'
-  if (!running) return 'Message this agent, or type / for commands'
+  if (!running) return 'Send a message, or type / for commands'
   return defaultMode === 'queue'
     ? 'Queue a message for after this turn, or type / for commands'
     : 'Steer this turn, or type / for commands'

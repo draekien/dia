@@ -79,7 +79,9 @@ function WorktreeSwitches({
   readonly call: ReturnType<typeof useOrgCall>
 }) {
   const id = useId()
-  const projects = (useWorkspace()?.projects ?? []).filter(({ project }) => project.isGitRepo)
+  const projects = (useWorkspace()?.projects ?? []).filter(
+    ({ project }) => project.isGitRepo && project.owner === undefined
+  )
   if (projects.length === 0) return null
 
   return (

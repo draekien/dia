@@ -3,7 +3,7 @@ import { useNow } from '@renderer/hooks/use-now'
 import { accountBannerOf, type AccountBanner as Banner } from '@renderer/lib/account-banner'
 import { resumeParkedAgent } from '@renderer/lib/actions'
 import { cn } from '@renderer/lib/utils'
-import { agentSummariesAtom } from '@renderer/lib/workspace-atoms'
+import { runSummariesAtom } from '@renderer/lib/workspace-atoms'
 import { formatResetTime } from '@shared/format-reset-time'
 import { Duration } from 'effect'
 import { useRef } from 'react'
@@ -80,7 +80,7 @@ function BannerContent({
  * content area.
  */
 export function AccountBanner(): React.JSX.Element {
-  const summaries = useAtomValue(agentSummariesAtom)
+  const summaries = useAtomValue(runSummariesAtom)
   const regionRef = useRef<HTMLDivElement>(null)
   const banner = accountBannerOf(summaries.values())
   const resume = (paneIds: ReadonlyArray<string>) => {
