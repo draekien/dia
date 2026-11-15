@@ -73,7 +73,7 @@ const chosenDraftsAtom = Atom.make<ReadonlyArray<Draft> | null>(null).pipe(Atom.
 
 /**
  * Every saved draft, oldest first, kept across restarts. Set it to replace and persist the list;
- * prefer {@link saveDraft} and {@link removeDraft}.
+ * prefer `actions.saveDraft` and `actions.discardDraft`.
  */
 export const draftsAtom = Atom.writable(
   (get): ReadonlyArray<Draft> => get(chosenDraftsAtom) ?? storedDrafts(),

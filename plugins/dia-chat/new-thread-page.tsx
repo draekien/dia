@@ -260,7 +260,6 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
   const adapterStatus = useAdapterStatus()
   const worktreesAvailable =
     usePluginList().plugins?.some((plugin) => plugin.provides.includes(WorktreesKey.name)) ?? false
-  const [fallbackTarget] = useState(() => actions.defaultThreadTarget())
   const [state, setState] = useState<SendState>({ step: 'editing' })
   const [dragging, setDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -268,7 +267,8 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
   const attachments = useComposerAttachments(useAttachmentTypes())
 
   const draft: Draft =
-    drafts.find((saved) => saved.draftId === draftId) ?? emptyDraft(draftId, fallbackTarget)
+    drafts.find((saved) => saved.draftId === draftId) ??
+    emptyDraft(draftId, actions.defaultThreadTarget())
   const update = (patch: Partial<Draft>) => actions.saveDraft({ ...draft, ...patch })
 
   const projects = workspace === undefined ? [] : userProjects(workspace).map((e) => e.project)
@@ -351,6 +351,7 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
 
   const pickTarget = (target: ThreadTarget) => {
     setState({ step: 'editing' })
+    attachments.clear()
     update({ target, worktree: null })
   }
 
@@ -519,7 +520,7 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
               </div>
             ) : null}
           </div>
-          {sending && draft.sentAs !== null && worktree !== null ? (
+          {state.step !== 'editing' && draft.sentAs !== null && worktree !== null ? (
             <div className="mt-3">
               <SetupSteps paneId={draft.sentAs} />
             </div>

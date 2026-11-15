@@ -6,7 +6,7 @@ import { DEFAULT_TRANSCRIPT_WIDTH, type TranscriptWidth } from '@shared/domain/t
 import { Uuid } from '@shared/domain/uuid'
 import { Effect, Option, Queue, Stream, SubscriptionRef } from 'effect'
 import { AsyncResult, Atom, AtomRegistry } from 'effect/reactivity'
-import { draftsAtom, draftsSentTo, lastTargetAtom, withoutDraft } from './drafts'
+import { draftsAtom, draftsSentTo, lastTargetAtom } from './drafts'
 import {
   closesNewThreadForm,
   closesOpenPage,
@@ -67,7 +67,7 @@ const completeSentDrafts = (registry: AtomRegistry.AtomRegistry, workspace: Work
     if (last === undefined) return
     registry.set(
       draftsAtom,
-      sent.reduce((kept, draft) => withoutDraft(kept, draft.draftId), drafts)
+      drafts.filter((draft) => !sent.includes(draft))
     )
     registry.set(lastTargetAtom, last.target)
     yield* Effect.logInfo('Completed drafts whose tab was created', { count: sent.length })

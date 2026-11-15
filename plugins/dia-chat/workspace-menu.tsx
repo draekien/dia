@@ -206,8 +206,14 @@ export function WorkspaceMenu({
     switchTo(branch)
   }
 
+  const defaultBase = list?.defaultBase ?? null
+  useEffect(() => {
+    if (worktree?.base !== null || defaultBase === null) return
+    onWorktreeChange({ base: defaultBase })
+  }, [worktree?.base, defaultBase, onWorktreeChange])
+
   const pickBase = (branch: Branch) => {
-    onWorktreeChange({ base: branch.name === list?.defaultBase ? null : branch.name })
+    onWorktreeChange({ base: branch.name })
     setOpen(false)
   }
 

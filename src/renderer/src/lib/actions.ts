@@ -77,15 +77,21 @@ const projectOfVisibleTab = (workspace: Workspace): ThreadTarget | null => {
 const firstProject = (workspace: Workspace): ThreadTarget | null =>
   projectTarget(userProjects(workspace)[0]?.project)
 
+const isRegistered = (target: ThreadTarget, workspace: Workspace): boolean =>
+  target._tag !== 'ProjectTarget' ||
+  userProjects(workspace).some((entry) => entry.project.projectId === target.projectId)
+
 /**
  * The target a new thread starts in when the user names none: the project of the visible tab,
- * else the target of the last thread sent, else the first project, else null.
+ * else the target of the last thread sent while its project is still registered, else the first
+ * project, else null.
  */
 export const defaultThreadTarget = (): ThreadTarget | null => {
   const workspace = Option.getOrUndefined(appRegistry.get(workspaceAtom))
-  const visible = workspace === undefined ? null : projectOfVisibleTab(workspace)
+  if (workspace === undefined) return appRegistry.get(lastTargetAtom)
   const last = appRegistry.get(lastTargetAtom)
-  return visible ?? last ?? (workspace === undefined ? null : firstProject(workspace))
+  const registeredLast = last !== null && isRegistered(last, workspace) ? last : null
+  return projectOfVisibleTab(workspace) ?? registeredLast ?? firstProject(workspace)
 }
 
 /**
