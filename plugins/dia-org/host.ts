@@ -26,9 +26,11 @@ import { ToolsKey } from '@dia-plugin/dia-tools/tools'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import {
+  Array as Arr,
   Crypto,
   Deferred,
   Effect,
+  Equivalence,
   FileSystem,
   Option,
   Path,
@@ -169,6 +171,13 @@ const projectNames = (workspace: Workspace) =>
     displayName: project.displayName
   }))
 
+const sameProjectNames = Arr.makeEquivalence(
+  Equivalence.Struct({
+    projectId: Equivalence.strictEqual<string>(),
+    displayName: Equivalence.strictEqual<string>()
+  })
+)
+
 const projectDirectoryOf = (
   deps: Pick<RunDeps, 'work' | 'workspace'>,
   issue: Issue
@@ -213,7 +222,10 @@ const runOnFoundation = (ctx: HostPluginContext, deps: RunDeps) =>
               runs: issueRuns.runs,
               issues: deps.work,
               org: deps.org,
-              projects: ctx.workspace.pipe(Stream.map(projectNames))
+              projects: ctx.workspace.pipe(
+                Stream.map(projectNames),
+                Stream.changesWith(sameProjectNames)
+              )
             })
           )
           const directory = (yield* Path.Path).join(ctx.dataDir, 'assistant')

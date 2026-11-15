@@ -114,11 +114,11 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
     deps.runs
       .openInTab(runId, { projectDirectory, select: false, owner: ISSUE_RUN_TAB_OWNER, name })
       .pipe(
-        Effect.andThen(Ref.update(shown, (current) => new Set(current).add(runId))),
         Effect.andThen(Effect.logInfo('Showed the run of an issue in a tab', { issueId, runId })),
         Effect.catchTag('RunNotFoundError', () =>
           Effect.logWarning('No run to show for an issue', { issueId, runId })
-        )
+        ),
+        Effect.andThen(Ref.update(shown, (current) => new Set(current).add(runId)))
       )
 
   const enqueueRun = Effect.fnUntraced(function* (

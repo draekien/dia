@@ -102,8 +102,10 @@ const statusCounts = (workspace: Workspace, summaries: ReturnType<typeof useRunS
   const count = (paneId: PaneId) => {
     counts[summaries.get(paneId)?.status._tag ?? 'StatusIdle'] += 1
   }
-  for (const entry of workspace.projects) {
-    for (const tab of entry.tabs) if (!tab.archived) count(tab.config.paneId)
+  for (const entry of userProjects(workspace)) {
+    for (const tab of entry.tabs) {
+      if (!tab.archived && tab.owner === undefined) count(tab.config.paneId)
+    }
   }
   return counts
 }
@@ -296,10 +298,10 @@ function NoMatches({
 }
 
 /**
- * The agent overview sidebar: search, filters and add-project in its header, the Meta group, then
- * every registered project as a collapsible, reorderable group of agent rows. Render it inside a
- * `SidebarProvider`. `Ctrl P` expands the sidebar and focuses the search; while the sidebar is
- * collapsed it shows Meta and one status dot per agent.
+ * The threads sidebar: search, filters and add-project in its header, the Meta group, the pages and
+ * the sidebar sections, then every user project as a collapsible, reorderable group of thread rows.
+ * Render it inside a `SidebarProvider`. `Ctrl P` expands the sidebar and focuses the search; while
+ * the sidebar is collapsed it shows Meta and one status dot per thread.
  */
 export function ThreadsSidebar() {
   const workspace = useWorkspace()
