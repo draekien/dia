@@ -26,7 +26,7 @@ import {
 import type { ProjectEntry, ProjectId } from '@shared/domain/project'
 import { Effect } from 'effect'
 import { EllipsisIcon, FolderPlusIcon } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { RemoveProjectDialog } from './remove-project-dialog'
 
 function NoProjects() {
@@ -57,9 +57,10 @@ function ProjectRow({
   onRemove
 }: {
   readonly entry: ProjectEntry
-  readonly onRemove: () => void
+  readonly onRemove: (trigger: HTMLElement | null) => void
 }) {
   const { project } = entry
+  const trigger = useRef<HTMLButtonElement>(null)
   return (
     <ListRow value={project.projectId}>
       <ListRowLink render={<div />} title={project.directory}>
@@ -73,6 +74,7 @@ function ProjectRow({
           <DropdownMenuTrigger
             render={
               <Button
+                ref={trigger}
                 size="icon-sm"
                 variant="ghost"
                 aria-label={`Actions for ${project.displayName}`}
@@ -89,7 +91,7 @@ function ProjectRow({
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem variant="destructive" onClick={onRemove}>
+              <DropdownMenuItem variant="destructive" onClick={() => onRemove(trigger.current)}>
                 Remove project
               </DropdownMenuItem>
             </DropdownMenuGroup>
@@ -108,13 +110,16 @@ function ProjectRow({
  */
 export function ProjectsSettings() {
   const workspace = useWorkspace()
-  const [removing, setRemoving] = useState<ProjectId | null>(null)
+  const [removing, setRemoving] = useState<{
+    readonly projectId: ProjectId
+    readonly trigger: HTMLElement | null
+  } | null>(null)
   if (workspace === undefined) return null
   const projects = userProjects(workspace)
-  const removingEntry = projects.find((entry) => entry.project.projectId === removing)
-  const remove = (projectId: ProjectId) => {
+  const removingEntry = projects.find((entry) => entry.project.projectId === removing?.projectId)
+  const remove = (projectId: ProjectId, trigger: HTMLElement | null) => {
     Effect.runFork(Effect.logDebug('Removing project from Settings', { projectId }))
-    setRemoving(projectId)
+    setRemoving({ projectId, trigger })
   }
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 py-6">
@@ -127,7 +132,7 @@ export function ProjectsSettings() {
             <ProjectRow
               key={entry.project.projectId}
               entry={entry}
-              onRemove={() => remove(entry.project.projectId)}
+              onRemove={(trigger) => remove(entry.project.projectId, trigger)}
             />
           ))}
         </List>
@@ -137,6 +142,7 @@ export function ProjectsSettings() {
           key={removingEntry.project.projectId}
           entry={removingEntry}
           onClose={() => setRemoving(null)}
+          returnFocus={removing?.trigger}
         />
       )}
     </div>

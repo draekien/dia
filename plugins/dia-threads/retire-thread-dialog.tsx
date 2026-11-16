@@ -30,6 +30,8 @@ interface RetireAgentDialogProps {
   readonly tab: Tab
   readonly retirement: Retirement
   readonly onClose: () => void
+  /** The element focus returns to when the dialog closes; `null` or a detached element falls back to the dialog's default. */
+  readonly returnFocus?: HTMLElement | null
 }
 
 /**
@@ -39,7 +41,12 @@ interface RetireAgentDialogProps {
  * shows the reason and offers "Try again"; the agent is left as it was. Closes once the change is
  * made.
  */
-export function RetireThreadDialog({ tab, retirement, onClose }: RetireAgentDialogProps) {
+export function RetireThreadDialog({
+  tab,
+  retirement,
+  onClose,
+  returnFocus
+}: RetireAgentDialogProps) {
   const [phase, setPhase] = useState<Phase>({ _tag: 'Confirm' })
   const copy = COPY[retirement]
   const worktree = tab.config.worktree
@@ -65,7 +72,10 @@ export function RetireThreadDialog({ tab, retirement, onClose }: RetireAgentDial
         if (!open && !busy) onClose()
       }}
     >
-      <AlertDialogContent className="sm:max-w-md">
+      <AlertDialogContent
+        className="sm:max-w-md"
+        finalFocus={() => (returnFocus?.isConnected === true ? returnFocus : null)}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>{`${copy.verb} ${tab.name}?`}</AlertDialogTitle>
           <AlertDialogDescription

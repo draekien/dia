@@ -25,7 +25,7 @@ import type { PaneId } from '@shared/domain/pane'
 import type { ProjectEntry, Tab } from '@shared/domain/project'
 import { Effect } from 'effect'
 import { EllipsisIcon } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { RetireThreadDialog } from './retire-thread-dialog'
 
 const unarchive = (tab: Tab): Promise<void> => {
@@ -55,7 +55,14 @@ const show = (paneId: PaneId): void => {
 const archivedTabs = (entry: ProjectEntry): ReadonlyArray<Tab> =>
   entry.tabs.filter((tab) => tab.archived && tab.owner === undefined)
 
-function ArchivedRow({ tab, onDelete }: { readonly tab: Tab; readonly onDelete: () => void }) {
+function ArchivedRow({
+  tab,
+  onDelete
+}: {
+  readonly tab: Tab
+  readonly onDelete: (trigger: HTMLElement | null) => void
+}) {
+  const trigger = useRef<HTMLButtonElement>(null)
   return (
     <ListRow value={tab.config.paneId}>
       <ListRowLink render={<button type="button" onClick={() => show(tab.config.paneId)} />}>
@@ -67,7 +74,12 @@ function ArchivedRow({ tab, onDelete }: { readonly tab: Tab; readonly onDelete: 
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <Button size="icon-sm" variant="ghost" aria-label={`Actions for ${tab.name}`} />
+              <Button
+                ref={trigger}
+                size="icon-sm"
+                variant="ghost"
+                aria-label={`Actions for ${tab.name}`}
+              />
             }
           >
             <EllipsisIcon />
@@ -75,7 +87,7 @@ function ArchivedRow({ tab, onDelete }: { readonly tab: Tab; readonly onDelete: 
           <DropdownMenuContent align="end">
             <DropdownMenuGroup>
               <DropdownMenuItem onClick={() => void unarchive(tab)}>Unarchive</DropdownMenuItem>
-              <DropdownMenuItem variant="destructive" onClick={onDelete}>
+              <DropdownMenuItem variant="destructive" onClick={() => onDelete(trigger.current)}>
                 Delete…
               </DropdownMenuItem>
             </DropdownMenuGroup>
@@ -95,17 +107,20 @@ function ArchivedRow({ tab, onDelete }: { readonly tab: Tab; readonly onDelete: 
  */
 export function ArchivedThreadsSettings() {
   const workspace = useWorkspace()
-  const [deleting, setDeleting] = useState<PaneId | null>(null)
+  const [deleting, setDeleting] = useState<{
+    readonly paneId: PaneId
+    readonly trigger: HTMLElement | null
+  } | null>(null)
   if (workspace === undefined) return null
   const groups = userProjects(workspace)
     .map((entry) => ({ project: entry.project, tabs: archivedTabs(entry) }))
     .filter((group) => group.tabs.length > 0)
   const deletingTab = groups
     .flatMap((group) => group.tabs)
-    .find((tab) => tab.config.paneId === deleting)
-  const remove = (paneId: PaneId) => {
+    .find((tab) => tab.config.paneId === deleting?.paneId)
+  const remove = (paneId: PaneId, trigger: HTMLElement | null) => {
     Effect.runFork(Effect.logDebug('Deleting archived thread from Settings', { paneId }))
-    setDeleting(paneId)
+    setDeleting({ paneId, trigger })
   }
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6">
@@ -133,7 +148,7 @@ export function ArchivedThreadsSettings() {
                 <ArchivedRow
                   key={tab.config.paneId}
                   tab={tab}
-                  onDelete={() => remove(tab.config.paneId)}
+                  onDelete={(trigger) => remove(tab.config.paneId, trigger)}
                 />
               ))}
             </List>
@@ -146,6 +161,7 @@ export function ArchivedThreadsSettings() {
           tab={deletingTab}
           retirement="delete"
           onClose={() => setDeleting(null)}
+          returnFocus={deleting?.trigger}
         />
       )}
     </div>
