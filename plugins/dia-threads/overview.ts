@@ -28,14 +28,12 @@ export const STATUS_TAGS: ReadonlyArray<StatusTag> = StatusTag.literals
 /**
  * What the overview shows. `query` matches agent and project names, case-insensitively.
  * `statuses` keeps rows whose status is one of them; empty keeps every status. Query and statuses
- * combine with AND. `showArchived` opens every project's archived list and keeps a project whose
- * only matches are archived agents; `hideUnmatchedProjects` drops a project
- * with no matching row while the query or a status filter applies.
+ * combine with AND. `hideUnmatchedProjects` drops a project with no matching row while the query
+ * or a status filter applies.
  */
 export const OverviewFilters = Schema.Struct({
   query: Schema.String,
   statuses: Schema.Array(StatusTag),
-  showArchived: Schema.Boolean,
   hideUnmatchedProjects: Schema.Boolean
 })
 export type OverviewFilters = typeof OverviewFilters.Type
@@ -44,7 +42,6 @@ export type OverviewFilters = typeof OverviewFilters.Type
 export const NO_FILTERS: OverviewFilters = OverviewFilters.make({
   query: '',
   statuses: [],
-  showArchived: false,
   hideUnmatchedProjects: true
 })
 
@@ -62,15 +59,13 @@ export const OverviewRow = Schema.Struct({
 export type OverviewRow = typeof OverviewRow.Type
 
 /**
- * One project group. `rows` are the matching non-archived agents, most urgent first and then in
- * creation order; `archived` the matching archived agents, in creation order. `mostUrgent`
- * is the most urgent status among all the project's non-archived agents, `null` without any.
- * `shown` counts `rows`; `total` counts every non-archived tab.
+ * One project group. `rows` are the matching open agents, most urgent first and then in creation
+ * order. `mostUrgent` is the most urgent status among all the project's open agents. `shown`
+ * counts `rows`; `total` counts every open agent. An open agent is a tab that is not archived.
  */
 export const OverviewGroup = Schema.Struct({
   project: Project,
   rows: Schema.Array(OverviewRow),
-  archived: Schema.Array(OverviewRow),
   mostUrgent: Schema.NullOr(RunSummaryStatus),
   shown: Schema.Int,
   total: Schema.Int
@@ -99,9 +94,10 @@ const contains = (text: string, query: string): boolean => text.toLocaleLowerCas
 
 /**
  * The project groups the overview lists, in the user's project order, with their rows filtered
- * by `filters`. A status change reorders rows inside a group but never moves a group. A tab with
- * no summary yet shows as idle with no activity. Tabs and projects a plugin owns are left out:
- * the plugin lists them itself.
+ * by `filters`. A project with no open thread (a tab that is not archived and has no `owner`) is
+ * not listed, whatever the filters. A status change reorders rows inside a group but never moves
+ * a group. A tab with no summary yet shows as idle with no activity. Tabs and projects a plugin
+ * owns are left out: the plugin lists them itself.
  */
 export const buildOverview = (
   workspace: Workspace,
@@ -127,20 +123,13 @@ export const buildOverview = (
       (filters.statuses.length === 0 || filters.statuses.includes(row.summary.status._tag))
     const active = entry.tabs.filter((tab) => !tab.archived).map(toRow)
     const rows = byUrgency(active.filter(matches))
-    const archived = entry.tabs
-      .filter((tab) => tab.archived)
-      .map(toRow)
-      .filter(matches)
-    const groupMatches =
-      rows.length > 0 ||
-      (filters.showArchived && archived.length > 0) ||
-      (filters.statuses.length === 0 && projectMatches)
+    if (active.length === 0) return []
+    const groupMatches = rows.length > 0 || (filters.statuses.length === 0 && projectMatches)
     if (narrowing && filters.hideUnmatchedProjects && !groupMatches) return []
     return [
       OverviewGroup.make({
         project: entry.project,
         rows,
-        archived,
         mostUrgent: mostUrgentOf(active),
         shown: rows.length,
         total: active.length
@@ -159,41 +148,24 @@ export const rowKey = (paneId: PaneId): string => `row:${paneId}`
 export const HeaderTarget = Schema.TaggedStruct('HeaderTarget', { projectId: ProjectId })
 export type HeaderTarget = typeof HeaderTarget.Type
 
-/** The `data-nav` key of the archived-list toggle of project `projectId`. */
-export const archivedKey = (projectId: ProjectId): string => `archived:${projectId}`
-
-/** Keyboard focus on the toggle that opens and closes a project's archived list. */
-export const ArchivedTarget = Schema.TaggedStruct('ArchivedTarget', { projectId: ProjectId })
-export type ArchivedTarget = typeof ArchivedTarget.Type
-
 /** Keyboard focus on an agent row. */
 export const RowTarget = Schema.TaggedStruct('RowTarget', { paneId: Uuid })
 export type RowTarget = typeof RowTarget.Type
 
 /** Something the arrow keys move between in the overview. */
-export const NavigationTarget = Schema.Union([HeaderTarget, ArchivedTarget, RowTarget])
+export const NavigationTarget = Schema.Union([HeaderTarget, RowTarget])
 export type NavigationTarget = typeof NavigationTarget.Type
 
 /**
  * The order `↑` and `↓` move through: each group header, followed, unless the group is in
- * `collapsed`, by its rows, then the toggle of its archived list when it has archived agents, then
- * those agents when the project is in `archivedOpen`. Pass an empty `collapsed` while filters
- * apply, because every group is open then.
+ * `collapsed`, by its rows. Pass an empty `collapsed` while filters apply, because every group is
+ * open then.
  */
 export const navigationOrder = (
   groups: ReadonlyArray<OverviewGroup>,
-  collapsed: ReadonlySet<ProjectId>,
-  archivedOpen: ReadonlySet<ProjectId>
+  collapsed: ReadonlySet<ProjectId>
 ): ReadonlyArray<NavigationTarget> =>
-  groups.flatMap(({ project: { projectId }, rows, archived }) => [
+  groups.flatMap(({ project: { projectId }, rows }) => [
     HeaderTarget.make({ projectId }),
-    ...(collapsed.has(projectId)
-      ? []
-      : [
-          ...rows.map((row) => RowTarget.make({ paneId: row.paneId })),
-          ...(archived.length === 0 ? [] : [ArchivedTarget.make({ projectId })]),
-          ...(archivedOpen.has(projectId)
-            ? archived.map((row) => RowTarget.make({ paneId: row.paneId }))
-            : [])
-        ])
+    ...(collapsed.has(projectId) ? [] : rows.map((row) => RowTarget.make({ paneId: row.paneId })))
   ])

@@ -12,7 +12,6 @@ import {
 } from '@shared/domain/run-summary'
 import { describe, expect, it } from 'vitest'
 import {
-  ArchivedTarget,
   buildOverview,
   HeaderTarget,
   NO_FILTERS,
@@ -88,13 +87,13 @@ describe('buildOverview', () => {
     const assistant = project(2, 'assistant', [tab(2, 'Assistant')])
     const workspace = {
       projects: [
-        project(1, 'dia', []),
+        project(1, 'dia', [tab(1, 'mine')]),
         { ...assistant, project: { ...assistant.project, owner: 'dia-org' } }
       ],
       visibleTab: null
     }
 
-    expect(names(workspace, summaries())).toEqual([['dia', []]])
+    expect(names(workspace, summaries())).toEqual([['dia', ['mine']]])
   })
 
   it('gives each row its tab’s current permission mode', () => {
@@ -165,10 +164,10 @@ describe('buildOverview', () => {
     expect([site.mostUrgent?._tag, site.total]).toEqual(['StatusFailed', 2])
   })
 
-  it('reports no urgent status for a project with no agents', () => {
+  it('lists no group for a project without a thread', () => {
     const empty: Workspace = { projects: [project(3, 'notes', [])], visibleTab: null }
 
-    expect(buildOverview(empty, summaries(), NO_FILTERS)[0].mostUrgent).toBeNull()
+    expect(names(empty, summaries())).toEqual([])
   })
 
   it('matches the query against agent names, keeping the matching rows under their project', () => {
@@ -204,36 +203,44 @@ describe('buildOverview', () => {
     ])
   })
 
-  it('lists archived agents apart from the rows and leaves them out of the counts', () => {
-    const withArchived: Workspace = {
+  it('lists no group for a project whose only threads are archived or plugin-owned', () => {
+    const owned: Tab = { ...tab(3, 'Fix the anchor'), owner: 'dia-org' }
+    const closed: Workspace = {
+      projects: [
+        project(1, 'archived-only', [tab(1, 'old', true)]),
+        project(2, 'owned-only', [owned]),
+        project(4, 'live', [tab(4, 'now'), tab(5, 'old', true)])
+      ],
+      visibleTab: null
+    }
+
+    expect(names(closed, summaries())).toEqual([['live', ['now']]])
+  })
+
+  it('does not bring a project without an open thread back through the filters', () => {
+    const closed: Workspace = {
+      projects: [project(1, 'dia', [tab(1, 'heron', true)])],
+      visibleTab: null
+    }
+
+    expect(
+      [
+        filters({ query: 'heron' }),
+        filters({ query: 'dia', hideUnmatchedProjects: false }),
+        filters({ statuses: ['StatusIdle'], hideUnmatchedProjects: false })
+      ].map((applied) => names(closed, summaries(), applied))
+    ).toEqual([[], [], []])
+  })
+
+  it('leaves archived threads out of the counts', () => {
+    const mixed: Workspace = {
       projects: [project(1, 'dia', [tab(1, 'live'), tab(2, 'old', true)])],
       visibleTab: null
     }
 
-    const group = buildOverview(withArchived, summaries(), NO_FILTERS)[0]
+    const group = buildOverview(mixed, summaries(), NO_FILTERS)[0]
 
-    expect([group.rows.map((row) => row.name), group.archived.map((row) => row.name)]).toEqual([
-      ['live'],
-      ['old']
-    ])
     expect([group.shown, group.total]).toEqual([1, 1])
-  })
-
-  it('keeps a project whose only match is archived only when showArchived is on', () => {
-    const withArchived: Workspace = {
-      projects: [project(1, 'dia', [tab(1, 'live'), tab(2, 'heron', true)])],
-      visibleTab: null
-    }
-
-    const hidden = buildOverview(withArchived, summaries(), filters({ query: 'heron' }))
-    const shown = buildOverview(
-      withArchived,
-      summaries(),
-      filters({ query: 'heron', showArchived: true })
-    )
-
-    expect(hidden).toEqual([])
-    expect(shown[0].archived.map((row) => row.name)).toEqual(['heron'])
   })
 })
 
@@ -245,7 +252,7 @@ describe('navigationOrder', () => {
   const groups = buildOverview(workspace, summaries(), NO_FILTERS)
 
   it('moves through each header followed by its rows', () => {
-    expect(navigationOrder(groups, new Set(), new Set())).toEqual([
+    expect(navigationOrder(groups, new Set())).toEqual([
       HeaderTarget.make({ projectId: projectId(1) }),
       RowTarget.make({ paneId: paneId(1) }),
       RowTarget.make({ paneId: paneId(2) }),
@@ -255,33 +262,10 @@ describe('navigationOrder', () => {
   })
 
   it('skips the rows of a collapsed group', () => {
-    expect(navigationOrder(groups, new Set([projectId(1)]), new Set())).toEqual([
+    expect(navigationOrder(groups, new Set([projectId(1)]))).toEqual([
       HeaderTarget.make({ projectId: projectId(1) }),
       HeaderTarget.make({ projectId: projectId(2) }),
       RowTarget.make({ paneId: paneId(3) })
-    ])
-  })
-
-  const withArchived = buildOverview(
-    { projects: [project(1, 'dia', [tab(1, 'a'), tab(2, 'b', true)])], visibleTab: null },
-    summaries(),
-    NO_FILTERS
-  )
-
-  it('reaches the archived toggle after the rows and skips archived rows while it is closed', () => {
-    expect(navigationOrder(withArchived, new Set(), new Set())).toEqual([
-      HeaderTarget.make({ projectId: projectId(1) }),
-      RowTarget.make({ paneId: paneId(1) }),
-      ArchivedTarget.make({ projectId: projectId(1) })
-    ])
-  })
-
-  it('reaches archived rows after the toggle while the archived list is open', () => {
-    expect(navigationOrder(withArchived, new Set(), new Set([projectId(1)]))).toEqual([
-      HeaderTarget.make({ projectId: projectId(1) }),
-      RowTarget.make({ paneId: paneId(1) }),
-      ArchivedTarget.make({ projectId: projectId(1) }),
-      RowTarget.make({ paneId: paneId(2) })
     ])
   })
 })

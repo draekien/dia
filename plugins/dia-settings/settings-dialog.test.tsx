@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import type { PluginServices, PluginSetup } from '@dia/plugin'
-import { actions, addEntry, openSettings, TooltipProvider } from '@dia/renderer-plugin'
+import {
+  actions,
+  addEntry,
+  closeSettings,
+  openSettings,
+  TooltipProvider
+} from '@dia/renderer-plugin'
 import { type SettingsPageProps, SettingsPagesSlot } from '@dia-plugin/dia-settings/slots'
 import type { PluginRegistry } from '@shared/plugin/plugin-registry'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
@@ -110,6 +116,15 @@ afterEach(() => {
 describe('SettingsDialog navigation', () => {
   it('stays closed until openSettings is called', async () => {
     await renderDialog()
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('closes when closeSettings is called', async () => {
+    await renderDialog()
+    await open()
+
+    await act(async () => closeSettings())
 
     expect(screen.queryByRole('dialog')).toBeNull()
   })

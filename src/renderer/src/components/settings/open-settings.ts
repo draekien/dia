@@ -3,6 +3,9 @@ import { Effect } from 'effect'
 /** The window event the Settings dialog listens for; its `detail` is the requested {@link SettingsLocation}. */
 export const OPEN_SETTINGS_EVENT = 'dia:open-settings'
 
+/** The window event the Settings dialog listens for to close itself. */
+export const CLOSE_SETTINGS_EVENT = 'dia:close-settings'
+
 /**
  * A Settings page: `plugin` and `id` are the key of the page's `SettingsPagesSlot` entry (the
  * adding plugin's name and the entry's `id`). `section` names a part of that page, which the page
@@ -30,4 +33,13 @@ export function openSettings(location?: SettingsLocation): void {
   window.dispatchEvent(
     new CustomEvent<SettingsLocation | undefined>(OPEN_SETTINGS_EVENT, { detail: location })
   )
+}
+
+/**
+ * Closes the Settings dialog if it is open. Call it before navigating away from a Settings page,
+ * such as to show a thread; it does nothing when no Settings dialog is mounted.
+ */
+export function closeSettings(): void {
+  Effect.runSync(Effect.logDebug('Closing Settings'))
+  window.dispatchEvent(new CustomEvent(CLOSE_SETTINGS_EVENT))
 }

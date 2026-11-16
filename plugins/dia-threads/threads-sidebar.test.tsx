@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { SidebarProvider, Toaster, TooltipProvider } from '@dia/renderer-plugin'
+import { actions, SidebarProvider, TooltipProvider } from '@dia/renderer-plugin'
 import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
 import {
   NoActivity,
@@ -10,7 +10,7 @@ import {
   StatusWorking,
   ToolUse
 } from '@shared/domain/run-summary'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Atom } from 'effect/reactivity'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -174,45 +174,7 @@ describe('ThreadsSidebar expanded', () => {
   })
 })
 
-describe('ThreadsSidebar archived agents', () => {
-  const withArchived = () => {
-    const alpha = state.workspace?.projects[0]
-    if (state.workspace === undefined || alpha === undefined) throw new Error('no workspace')
-    state.workspace = {
-      ...state.workspace,
-      projects: [
-        { ...alpha, tabs: [...alpha.tabs, { ...tab(4, 'old-heron'), archived: true }] },
-        ...state.workspace.projects.slice(1)
-      ]
-    }
-  }
-
-  it('lists archived agents under a closed Archived toggle that opens them', () => {
-    withArchived()
-    render(<Harness initialOpen />)
-    const toggle = screen.getByRole('button', { name: 'Archived (1)' })
-    const closed = [toggle.getAttribute('aria-expanded'), rowNames().length]
-
-    fireEvent.click(toggle)
-
-    expect([closed, toggle.getAttribute('aria-expanded'), rowNames()[2]]).toEqual([
-      ['false', 3],
-      'true',
-      'old-heron, Idle. No activity yet'
-    ])
-  })
-
-  it('reaches the Archived toggle with the arrow keys after the last row of its project', () => {
-    withArchived()
-    render(<Harness initialOpen />)
-    const lastRow = screen.getByRole('button', { name: /^build, / })
-    lastRow.focus()
-
-    fireEvent.keyDown(lastRow, { key: 'ArrowDown' })
-
-    expect(document.activeElement?.textContent).toBe('Archived (1)')
-  })
-
+describe('ThreadsSidebar row menu', () => {
   it('archives an agent without a worktree from the row menu without asking', () => {
     const bridge = { archiveTab: vi.fn(async () => null) }
     Object.assign(window, { dia: bridge })
@@ -228,64 +190,6 @@ describe('ThreadsSidebar archived agents', () => {
     Reflect.deleteProperty(window, 'dia')
   })
 
-  const openArchivedMenu = () => {
-    fireEvent.click(screen.getByRole('button', { name: 'Archived (1)' }))
-    fireEvent.contextMenu(screen.getByRole('button', { name: /^old-heron, / }))
-  }
-
-  it('offers Unarchive, not Archive, on an archived agent and unarchives it', async () => {
-    withArchived()
-    const bridge = { unarchiveTab: vi.fn(async () => null) }
-    Object.assign(window, { dia: bridge })
-    render(<Harness initialOpen />)
-
-    openArchivedMenu()
-    const archive = screen.queryByRole('menuitem', { name: 'Archive' })
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Unarchive' }))
-
-    await waitFor(() => expect(bridge.unarchiveTab).toHaveBeenCalled())
-    expect([archive, bridge.unarchiveTab.mock.calls]).toEqual([null, [[paneId(4)]]])
-    Reflect.deleteProperty(window, 'dia')
-  })
-
-  it('shows why an agent could not be unarchived in an error toast', async () => {
-    withArchived()
-    const reason = 'Branch dia/old-heron no longer exists'
-    Object.assign(window, { dia: { unarchiveTab: vi.fn(async () => reason) } })
-    render(
-      <Toaster>
-        <Harness initialOpen />
-      </Toaster>
-    )
-
-    openArchivedMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Unarchive' }))
-
-    expect(await screen.findByText('Could not unarchive old-heron')).toBeTruthy()
-    expect(screen.getByText(reason)).toBeTruthy()
-    Reflect.deleteProperty(window, 'dia')
-  })
-
-  it('shows a lost connection while unarchiving in an error toast', async () => {
-    withArchived()
-    Object.assign(window, {
-      dia: { unarchiveTab: vi.fn(async () => Promise.reject(new Error('closed'))) }
-    })
-    render(
-      <Toaster>
-        <Harness initialOpen />
-      </Toaster>
-    )
-
-    openArchivedMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Unarchive' }))
-
-    expect(
-      await screen.findByText("The connection to dia's background process was lost.")
-    ).toBeTruthy()
-    Reflect.deleteProperty(window, 'dia')
-  })
-
   it('asks before deleting an agent', () => {
     render(<Harness initialOpen />)
 
@@ -293,6 +197,71 @@ describe('ThreadsSidebar archived agents', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete…' }))
 
     expect(screen.getByRole('alertdialog').textContent).toContain('Delete docs?')
+  })
+})
+
+describe('ThreadsSidebar without open threads', () => {
+  const withoutOpenThreads = () => {
+    const alpha = state.workspace?.projects[0]
+    if (state.workspace === undefined || alpha === undefined) throw new Error('no workspace')
+    state.workspace = {
+      ...state.workspace,
+      projects: [{ ...alpha, tabs: alpha.tabs.map((each) => ({ ...each, archived: true })) }]
+    }
+  }
+
+  it('lists a project that has an open thread and not one that has none', () => {
+    withoutOpenThreads()
+    const beta = entry(2, 'beta', [tab(3, 'docs')])
+    const gamma = entry(3, 'gamma', [])
+    if (state.workspace === undefined) throw new Error('no workspace')
+    state.workspace = { ...state.workspace, projects: [...state.workspace.projects, beta, gamma] }
+    render(<Harness initialOpen />)
+
+    const groups = within(list())
+      .getAllByRole('group')
+      .map((group) => group.getAttribute('aria-label'))
+
+    expect(groups).toEqual(['beta'])
+  })
+
+  it('shows the empty state when no project has an open thread', () => {
+    withoutOpenThreads()
+    render(<Harness initialOpen />)
+
+    expect([
+      screen.getByText('No threads').getAttribute('data-slot'),
+      screen.getByText('Threads you start appear here.').getAttribute('data-slot'),
+      screen.queryByText('No projects yet')
+    ]).toEqual(['empty-title', 'empty-description', null])
+  })
+
+  it('starts a thread from the empty state button', () => {
+    withoutOpenThreads()
+    const newThread = vi.spyOn(actions, 'newThread').mockImplementation(() => undefined)
+    render(<Harness initialOpen />)
+
+    fireEvent.click(within(list()).getByRole('button', { name: 'New thread' }))
+
+    expect(newThread.mock.calls).toEqual([[]])
+  })
+
+  it('names the search instead when a search matches nothing', () => {
+    render(<Harness initialOpen />)
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search threads and projects' }), {
+      target: { value: 'zzz' }
+    })
+
+    expect(screen.getByText('No threads or projects match "zzz".')).toBeTruthy()
+    expect(screen.queryByText('Threads you start appear here.')).toBeNull()
+  })
+
+  it('hides the empty state while the sidebar is collapsed', () => {
+    withoutOpenThreads()
+    render(<Harness initialOpen={false} />)
+
+    expect(screen.queryByText('No threads')).toBeNull()
   })
 })
 

@@ -5,6 +5,7 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
+  CLOSE_SETTINGS_EVENT,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -75,6 +76,12 @@ export function SettingsDialog() {
     }
     window.addEventListener(OPEN_SETTINGS_EVENT, onOpen)
     return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onOpen)
+  }, [])
+
+  useEffect(() => {
+    const onClose = () => setOpen(false)
+    window.addEventListener(CLOSE_SETTINGS_EVENT, onClose)
+    return () => window.removeEventListener(CLOSE_SETTINGS_EVENT, onClose)
   }, [])
 
   const selected =
