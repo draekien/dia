@@ -7,11 +7,22 @@ import { EMPTY_ADAPTER_PREFERENCES } from '@shared/domain/model-preferences'
 import { ProjectId, type Workspace } from '@shared/domain/project'
 import { Uuid } from '@shared/domain/uuid'
 import type { ListEntry } from '@shared/plugin/list-slot'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { DateTime, Effect } from 'effect'
 import { SparklesIcon } from 'lucide-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { NewThreadPage, startingModel } from './new-thread-page'
+import { NewThreadPage as Page, startingModel } from './new-thread-page'
+
+const slashCommandsFor = vi.hoisted(() => vi.fn())
+
+vi.mock('./hooks/use-slash-commands', () => ({ useSlashCommands: slashCommandsFor }))
+
+const NewThreadPage = ({ draftId }: { readonly draftId: Uuid }) => (
+  <QueryClientProvider client={new QueryClient()}>
+    <Page draftId={draftId} />
+  </QueryClientProvider>
+)
 
 const DRAFT = Uuid.make('00000000-0000-4000-8000-0000000000d1')
 const PROJECT = ProjectId.make('00000000-0000-4000-8000-000000000001')
@@ -114,6 +125,9 @@ beforeEach(() => {
   state.entries = []
   state.completed = []
   createTab = vi.fn()
+  Element.prototype.scrollIntoView = vi.fn()
+  slashCommandsFor.mockReset()
+  slashCommandsFor.mockReturnValue({ commands: [], loading: false })
   failCreate = () => {}
   Object.assign(window, {
     dia: {
@@ -122,7 +136,8 @@ beforeEach(() => {
         failCreate = listener
         return () => {}
       },
-      pathForFile: () => ''
+      pathForFile: () => '',
+      listProjectEntries: () => Promise.resolve([])
     }
   })
 })
@@ -249,6 +264,54 @@ describe('NewThreadPage with nowhere to start', () => {
       'What are we building today?'
     )
     expect(screen.getByRole('button', { name: 'Add a project…' })).toBeTruthy()
-    expect(screen.getByRole('textbox', { name: 'Message dia' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('combobox', { name: 'Message dia' }).hasAttribute('disabled')).toBe(
+      true
+    )
+  })
+})
+
+describe('NewThreadPage command completion', () => {
+  const review = { name: 'review', description: 'Review the diff', argumentHint: '', aliases: [] }
+
+  it('reads commands for the selected project directory', () => {
+    state.drafts = [draftFor({ _tag: 'ProjectTarget', projectId: PROJECT }, '')]
+
+    render(<NewThreadPage draftId={DRAFT} />)
+
+    expect(slashCommandsFor).toHaveBeenCalledWith('/repo')
+  })
+
+  it('reads no commands for a plugin target', () => {
+    state.entries = [assistant(() => Effect.void)]
+    state.drafts = [
+      draftFor({ _tag: 'PluginThreadTarget', plugin: 'dia-org', id: 'assistant' }, '')
+    ]
+
+    render(<NewThreadPage draftId={DRAFT} />)
+
+    expect(slashCommandsFor).toHaveBeenCalledWith(null)
+  })
+
+  it('shows Loading commands… while the project commands load', () => {
+    slashCommandsFor.mockReturnValue({ commands: [], loading: true })
+    state.drafts = [draftFor({ _tag: 'ProjectTarget', projectId: PROJECT }, '')]
+
+    render(<NewThreadPage draftId={DRAFT} />)
+
+    expect(screen.getByText('Loading commands…')).toBeTruthy()
+  })
+
+  it('completes the highlighted command on Enter without sending', () => {
+    slashCommandsFor.mockReturnValue({ commands: [review], loading: false })
+    state.drafts = [draftFor({ _tag: 'ProjectTarget', projectId: PROJECT }, '/re')]
+    render(<NewThreadPage draftId={DRAFT} />)
+    const input = screen.getByRole('combobox', { name: 'Message dia' }) as HTMLTextAreaElement
+    input.setSelectionRange(3, 3)
+    fireEvent.select(input)
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(state.drafts[0]?.text).toBe('/review ')
+    expect(createTab).not.toHaveBeenCalled()
   })
 })

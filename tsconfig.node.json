@@ -35,6 +35,7 @@
     "plugins/**/*.test.ts",
     "scripts/**/*.test.ts",
     "plugins/**/renderer.ts",
+    "plugins/**/hooks/**",
     "plugins/dia-issues/issue-actions.ts",
     "plugins/dia-org/org-actions.ts",
     "plugins/dia-chat/composer-action.ts",

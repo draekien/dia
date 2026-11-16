@@ -65,11 +65,13 @@ import { CreateTab } from '@shared/ipc/contract'
 import type { ListEntry } from '@shared/plugin/list-slot'
 import { Effect } from 'effect'
 import { AsyncResult } from 'effect/reactivity'
-import { ChevronDownIcon, FolderIcon, FolderPlusIcon, Plus } from 'lucide-react'
+import { ChevronDownIcon, FolderIcon, FolderPlusIcon, Loader2Icon, Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { AttachmentChip } from './attachment-chips'
 import { composerAction } from './composer-action'
+import { useComposerCompletion } from './composer-completion'
 import { PermissionModeSelect, ThinkingLevelSelect } from './composer-setting-selects'
+import { useSlashCommands } from './hooks/use-slash-commands'
 import { ModelPicker } from './model-picker'
 import { ComposerActionButton } from './pane'
 import { filesOf, useComposerAttachments } from './use-composer-attachments'
@@ -355,6 +357,17 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
     update({ target, worktree: null })
   }
 
+  const slashCommands = useSlashCommands(project?.directory ?? null)
+  const completion = useComposerCompletion({
+    text,
+    setText: (value) => update({ text: value }),
+    textareaRef,
+    commands: slashCommands.commands,
+    cwd: project?.directory ?? null,
+    listId: draftId,
+    onPath: attachments.attach
+  })
+
   const action = composerAction({
     running: false,
     hasText: hasContent && !blocked && !sending,
@@ -401,92 +414,102 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
               send()
             }}
           >
-            <InputGroup
-              className={dragging ? 'outline-1 outline-primary outline-solid' : undefined}
-            >
-              {dragging && (
-                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/85 text-foreground text-sm">
-                  Drop to attach
+            <div className="relative">
+              {slashCommands.loading && (
+                <div className="mb-1.5 flex items-center gap-2 px-1 text-muted-foreground text-xs">
+                  <Loader2Icon className="size-3.5 animate-spin motion-reduce:animate-none" />
+                  Loading commands…
                 </div>
               )}
-              <InputGroupTextarea
-                ref={textareaRef}
-                className="min-h-20 max-h-60"
-                value={text}
-                disabled={resolved === null || sending}
-                placeholder={
-                  resolved === null ? 'Add a project to start a thread' : 'Describe the work'
-                }
-                onChange={(event) => update({ text: event.target.value })}
-                onPaste={(event) => {
-                  const files = filesOf(event.clipboardData)
-                  if (files.length === 0 || resolved?._tag !== 'Project') return
-                  event.preventDefault()
-                  void attachments.add(files)
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing)
-                    return
-                  event.preventDefault()
-                  send()
-                }}
-                aria-label="Message dia"
-              />
-              {attachments.drafts.length > 0 && project !== undefined && (
-                <InputGroupAddon align="block-start" className="flex-wrap gap-1.5 pt-1 pb-0">
-                  {attachments.drafts.map((attachment) => (
-                    <AttachmentChip
-                      key={attachment.key}
-                      draft={attachment}
-                      cwd={project.directory}
-                      onRemove={() => attachments.remove(attachment.key)}
-                    />
-                  ))}
-                </InputGroupAddon>
-              )}
-              <InputGroupAddon align="block-end">
-                {resolved?._tag === 'Project' ? (
-                  <>
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <InputGroupButton
-                            type="button"
-                            size="icon-xs"
-                            variant="ghost"
-                            className="-ml-1.5 translate-y-2.5"
-                            aria-label="Attach files"
-                            disabled={sending}
-                            onClick={() => fileInputRef.current?.click()}
-                          >
-                            <Plus />
-                          </InputGroupButton>
-                        }
-                      />
-                      <TooltipContent>Attach files, or drop or paste them</TooltipContent>
-                    </Tooltip>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      hidden
-                      tabIndex={-1}
-                      onChange={(event) => {
-                        const files = [...(event.currentTarget.files ?? [])]
-                        event.currentTarget.value = ''
-                        void attachments.add(files.map((file) => ({ file, isDirectory: false })))
-                      }}
-                    />
-                  </>
-                ) : null}
-                <ComposerActionButton
-                  action={action}
-                  hint={['Send', 'Enter']}
-                  onStop={() => {}}
-                  onSubmit={send}
+              {completion.menu}
+              <InputGroup
+                className={dragging ? 'outline-1 outline-primary outline-solid' : undefined}
+              >
+                {dragging && (
+                  <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/85 text-foreground text-sm">
+                    Drop to attach
+                  </div>
+                )}
+                <InputGroupTextarea
+                  ref={textareaRef}
+                  className="min-h-20 max-h-60"
+                  value={text}
+                  disabled={resolved === null || sending}
+                  placeholder={
+                    resolved === null ? 'Add a project to start a thread' : 'Describe the work'
+                  }
+                  {...completion.textareaProps}
+                  onPaste={(event) => {
+                    const files = filesOf(event.clipboardData)
+                    if (files.length === 0 || resolved?._tag !== 'Project') return
+                    event.preventDefault()
+                    void attachments.add(files)
+                  }}
+                  onKeyDown={(event) => {
+                    if (completion.onKeyDown(event)) return
+                    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing)
+                      return
+                    event.preventDefault()
+                    send()
+                  }}
+                  aria-label="Message dia"
                 />
-              </InputGroupAddon>
-            </InputGroup>
+                {attachments.drafts.length > 0 && project !== undefined && (
+                  <InputGroupAddon align="block-start" className="flex-wrap gap-1.5 pt-1 pb-0">
+                    {attachments.drafts.map((attachment) => (
+                      <AttachmentChip
+                        key={attachment.key}
+                        draft={attachment}
+                        cwd={project.directory}
+                        onRemove={() => attachments.remove(attachment.key)}
+                      />
+                    ))}
+                  </InputGroupAddon>
+                )}
+                <InputGroupAddon align="block-end">
+                  {resolved?._tag === 'Project' ? (
+                    <>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <InputGroupButton
+                              type="button"
+                              size="icon-xs"
+                              variant="ghost"
+                              className="-ml-1.5 translate-y-2.5"
+                              aria-label="Attach files"
+                              disabled={sending}
+                              onClick={() => fileInputRef.current?.click()}
+                            >
+                              <Plus />
+                            </InputGroupButton>
+                          }
+                        />
+                        <TooltipContent>Attach files, or drop or paste them</TooltipContent>
+                      </Tooltip>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        hidden
+                        tabIndex={-1}
+                        onChange={(event) => {
+                          const files = [...(event.currentTarget.files ?? [])]
+                          event.currentTarget.value = ''
+                          void attachments.add(files.map((file) => ({ file, isDirectory: false })))
+                        }}
+                      />
+                    </>
+                  ) : null}
+                  <ComposerActionButton
+                    action={action}
+                    hint={['Send', 'Enter']}
+                    onStop={() => {}}
+                    onSubmit={send}
+                  />
+                </InputGroupAddon>
+              </InputGroup>
+            </div>
           </form>
           <div className="mt-1 flex min-w-0 items-center gap-0.5 pl-[5px]">
             {resolved?._tag === 'Project' && model !== undefined ? (

@@ -71,7 +71,6 @@ import {
   TurnFootersSlot
 } from '@dia-plugin/dia-chat/slots'
 import { useAtom, useAtomSet, useAtomValue } from '@effect/atom-react'
-import { PathAttachment, type ProjectEntry } from '@shared/domain/attachment'
 import type {
   PermissionResponse,
   QuestionResponse,
@@ -85,8 +84,7 @@ import {
   type ThinkingLevel
 } from '@shared/domain/pane'
 import type { RunSummary } from '@shared/domain/run-summary'
-import type { SlashCommandInfo } from '@shared/domain/slash-command'
-import { useForm } from '@tanstack/react-form'
+import { useForm, useStore } from '@tanstack/react-form'
 import { cva } from 'class-variance-authority'
 import { AsyncResult } from 'effect/reactivity'
 import {
@@ -101,12 +99,6 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AttachmentChip, SentAttachments } from './attachment-chips'
-import {
-  activeMentionToken,
-  entryPath,
-  filterProjectEntries,
-  removeToken
-} from './attachment-draft'
 import { ClarifyingQuestionCard, type ClarifyingQuestionHandle } from './clarifying-question-card'
 import {
   type ComposerAction,
@@ -114,30 +106,22 @@ import {
   composerActionHint,
   composerPlaceholder
 } from './composer-action'
+import { useComposerCompletion } from './composer-completion'
 import { PermissionModeSelect, ThinkingLevelSelect } from './composer-setting-selects'
 import { CONTEXT_CARD_ID } from './context-card'
 import { contextColor, contextNeedsAttention, contextPercent } from './context-meter'
 import { Markdown } from './markdown'
 import { ModelPicker } from './model-picker'
-import { PathMenu, pathMenuListboxId, pathMenuOptionId } from './path-menu'
 import { PermissionRequestCard } from './permission-request-card'
 import { PlanReviewCard } from './plan-review-card'
 import { QueuedMessages } from './queued-messages'
 import { RewindAction, type RewindActionProps } from './rewind-action'
-import {
-  activeSlashToken,
-  completeSlashCommand,
-  filterSlashCommands,
-  type TriggerToken,
-  wrapHighlight
-} from './slash-command-filter'
-import { SlashCommandMenu, slashMenuListboxId, slashMenuOptionId } from './slash-command-menu'
 import { type LiveSteps, StepsSection, summaryFocus } from './steps-section'
 import { approximateTokens, exactTokens } from './token-count'
 import { TranscriptItem, TranscriptScroller } from './transcript-scroller'
 import { StallActions, TurnActivityLine } from './turn-activity-line'
 import { turnEnds } from './turn-ends'
-import { filesOf, useComposerAttachments, useProjectEntries } from './use-composer-attachments'
+import { filesOf, useComposerAttachments } from './use-composer-attachments'
 import { useElapsedClock } from './use-elapsed-clock'
 import { usePaneChat } from './use-pane-chat'
 
@@ -682,12 +666,7 @@ function PaneChat({
   }
 
   const adapterStatus = useAdapterStatus()
-  const [slashHighlight, setSlashHighlight] = useState(0)
-  const [slashDismissed, setSlashDismissed] = useState(false)
-  const [caret, setCaret] = useState(0)
   const [modifierHeld, setModifierHeld] = useState(false)
-  const [pathHighlight, setPathHighlight] = useState(0)
-  const [pathDismissed, setPathDismissed] = useState(false)
   const [dragging, setDragging] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -782,13 +761,15 @@ function PaneChat({
       attachments.clear()
     }
   })
-  const mention = activeMentionToken(form.state.values.text, caret)
-  const projectEntries = useProjectEntries(cwd, mention !== null)
-  const mentionQuery = mention?.query ?? null
-  const pathMatches = useMemo(
-    () => (mentionQuery === null ? [] : filterProjectEntries(projectEntries.entries, mentionQuery)),
-    [projectEntries.entries, mentionQuery]
-  )
+  const completion = useComposerCompletion({
+    text: useStore(form.store, (state) => state.values.text),
+    setText: (value) => form.setFieldValue('text', value),
+    textareaRef,
+    commands: chat.slashCommands,
+    cwd,
+    listId: paneId,
+    onPath: attachments.attach
+  })
 
   function respondToPermission(response: PermissionResponse): void {
     if (!pendingPermission) return
@@ -869,51 +850,6 @@ function PaneChat({
           >
             <form.Field name="text">
               {(field) => {
-                const token = activeSlashToken(field.state.value, caret)
-                const matches =
-                  token === null ? [] : filterSlashCommands(chat.slashCommands, token.query)
-                const isMenuOpen = matches.length > 0 && !slashDismissed
-                const highlight = wrapHighlight(slashHighlight, 0, matches.length)
-                const isPathMenuOpen = mention !== null && !isMenuOpen && !pathDismissed
-                const pathIndex = wrapHighlight(pathHighlight, 0, pathMatches.length)
-
-                const placeCaret = (nextCaret: number): void => {
-                  requestAnimationFrame(() => {
-                    const element = textareaRef.current
-                    if (element === null) return
-                    element.selectionStart = nextCaret
-                    element.selectionEnd = nextCaret
-                    setCaret(nextCaret)
-                  })
-                }
-                const changeText = (value: string, nextCaret: number): void => {
-                  field.handleChange(value)
-                  setCaret(nextCaret)
-                  setSlashDismissed(false)
-                  setSlashHighlight(0)
-                  setPathDismissed(false)
-                  setPathHighlight(0)
-                }
-                const selectPath = (entry: ProjectEntry, at: TriggerToken): void => {
-                  const { value, caret: nextCaret } = removeToken(field.state.value, at)
-                  field.handleChange(value)
-                  setPathHighlight(0)
-                  attachments.attach(
-                    PathAttachment.make({ path: entryPath(cwd, entry), kind: entry.kind })
-                  )
-                  placeCaret(nextCaret)
-                }
-                const selectCommand = (command: SlashCommandInfo, at: TriggerToken): void => {
-                  const { value, caret: nextCaret } = completeSlashCommand(
-                    field.state.value,
-                    at,
-                    command
-                  )
-                  field.handleChange(value)
-                  setSlashHighlight(0)
-                  placeCaret(nextCaret)
-                }
-
                 return (
                   <div className="relative">
                     {chat.warmingCommands && (
@@ -935,25 +871,7 @@ function PaneChat({
                       }
                       onRemove={removeQueued}
                     />
-                    {isPathMenuOpen && mention !== null && (
-                      <PathMenu
-                        paneId={paneId}
-                        entries={pathMatches}
-                        loading={projectEntries.loading}
-                        highlightedIndex={pathIndex}
-                        onSelect={(entry) => selectPath(entry, mention)}
-                        onHighlight={setPathHighlight}
-                      />
-                    )}
-                    {isMenuOpen && token !== null && (
-                      <SlashCommandMenu
-                        paneId={paneId}
-                        commands={matches}
-                        highlightedIndex={highlight}
-                        onSelect={(command) => selectCommand(command, token)}
-                        onHighlight={setSlashHighlight}
-                      />
-                    )}
+                    {completion.menu}
                     <InputGroup
                       className={cn(
                         'transition-[color,box-shadow,border-color] duration-150 motion-reduce:transition-none',
@@ -969,10 +887,7 @@ function PaneChat({
                         ref={textareaRef}
                         className="min-h-11 max-h-60"
                         value={field.state.value}
-                        onChange={(event) =>
-                          changeText(event.target.value, event.target.selectionStart)
-                        }
-                        onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+                        {...completion.textareaProps}
                         onPaste={(event) => {
                           const files = filesOf(event.clipboardData)
                           if (files.length === 0) return
@@ -990,65 +905,7 @@ function PaneChat({
                             attachments.removeLast()
                             return
                           }
-                          if (isPathMenuOpen) {
-                            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                              event.preventDefault()
-                              setPathHighlight(
-                                wrapHighlight(
-                                  pathIndex,
-                                  event.key === 'ArrowDown' ? 1 : -1,
-                                  pathMatches.length
-                                )
-                              )
-                              return
-                            }
-                            if (event.key === 'Escape') {
-                              event.preventDefault()
-                              setPathDismissed(true)
-                              return
-                            }
-                            if (
-                              (event.key === 'Enter' || event.key === 'Tab') &&
-                              !event.shiftKey &&
-                              !event.nativeEvent.isComposing
-                            ) {
-                              const entry = pathMatches[pathIndex]
-                              if (entry !== undefined && mention !== null) {
-                                event.preventDefault()
-                                selectPath(entry, mention)
-                                return
-                              }
-                            }
-                          }
-                          if (isMenuOpen) {
-                            if (event.key === 'ArrowDown') {
-                              event.preventDefault()
-                              setSlashHighlight(wrapHighlight(highlight, 1, matches.length))
-                              return
-                            }
-                            if (event.key === 'ArrowUp') {
-                              event.preventDefault()
-                              setSlashHighlight(wrapHighlight(highlight, -1, matches.length))
-                              return
-                            }
-                            if (event.key === 'Escape') {
-                              event.preventDefault()
-                              setSlashDismissed(true)
-                              return
-                            }
-                            if (
-                              (event.key === 'Enter' || event.key === 'Tab') &&
-                              !event.shiftKey &&
-                              !event.nativeEvent.isComposing
-                            ) {
-                              event.preventDefault()
-                              const command = matches[highlight]
-                              if (command !== undefined && token !== null) {
-                                selectCommand(command, token)
-                              }
-                              return
-                            }
-                          }
+                          if (completion.onKeyDown(event)) return
                           if (
                             event.key === 'Enter' &&
                             !event.shiftKey &&
@@ -1060,19 +917,6 @@ function PaneChat({
                             })
                           }
                         }}
-                        role="combobox"
-                        aria-expanded={isMenuOpen || isPathMenuOpen}
-                        aria-controls={
-                          isPathMenuOpen ? pathMenuListboxId(paneId) : slashMenuListboxId(paneId)
-                        }
-                        aria-autocomplete="list"
-                        aria-activedescendant={
-                          isMenuOpen
-                            ? slashMenuOptionId(paneId, highlight)
-                            : isPathMenuOpen && pathMatches.length > 0
-                              ? pathMenuOptionId(paneId, pathIndex)
-                              : undefined
-                        }
                         placeholder={composerPlaceholder(
                           isLoading,
                           actionDefaultMode,
