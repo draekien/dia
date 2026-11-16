@@ -25,16 +25,28 @@ When the plan is complete, set this issue to in_review with update_issue.`
 export const paragraphs = (...parts: ReadonlyArray<string>) =>
   parts.filter((part) => part !== '').join('\n\n')
 
-/** The first message of a hire's run of `issue`: the work, without the job description (ADR-0082). */
-export const issuePrompt = (issue: Issue, objective: Objective): string =>
-  issue.kind === 'planning'
-    ? paragraphs(`Plan the objective "${objective.title}".`, objective.description, PLANNING_STEPS)
+const workIssuePrompt = (issue: Issue, objective: Objective): string => {
+  const repeatsObjective =
+    objective.title === issue.title && objective.description === issue.description
+  return repeatsObjective
+    ? paragraphs(issue.title, issue.description, `Issue: ${issue.id}`)
     : paragraphs(
         issue.title,
         issue.description,
         `Issue: ${issue.id}\nObjective: ${objective.title}`,
         objective.description
       )
+}
+
+/**
+ * The first message of a hire's run of `issue`: the work, without the job description (ADR-0082).
+ * The objective's title and description are left out when both equal the issue's own, so an
+ * objective routed straight to one hire reads once.
+ */
+export const issuePrompt = (issue: Issue, objective: Objective): string =>
+  issue.kind === 'planning'
+    ? paragraphs(`Plan the objective "${objective.title}".`, objective.description, PLANNING_STEPS)
+    : workIssuePrompt(issue, objective)
 
 /**
  * The model, thinking level and permission mode a run of `jobTitle` starts with in `cwd`: the job

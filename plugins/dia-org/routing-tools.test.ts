@@ -149,6 +149,21 @@ describe('objective_create', () => {
       }).pipe(Effect.scoped)
   )
 
+  it.effect("gives a direct objective's work issue the objective's own title and description", () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      yield* env.run('objective_create', {
+        ...direct,
+        note: 'the user wants this before the release'
+      })
+      const snapshot = yield* env.work.snapshot
+      assert.deepStrictEqual(
+        snapshot.issues.map((issue) => [issue.title, issue.description]),
+        snapshot.objectives.map((objective) => [objective.title, objective.description])
+      )
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('creates a plan objective with an unassigned planning issue', () =>
     Effect.gen(function* () {
       const env = yield* setUp
