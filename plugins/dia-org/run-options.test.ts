@@ -52,6 +52,17 @@ describe('issuePrompt', () => {
     )
   })
 
+  it('keeps the labelled objective when only the titles match', () => {
+    const prompt = issuePrompt(
+      issue('work', 'Login bug', 'Fix the login button'),
+      objective('Login bug', REQUEST)
+    )
+    assert.strictEqual(
+      prompt,
+      `Login bug\n\nFix the login button\n\nIssue: ${ISSUE_ID}\nObjective: Login bug\n\n${REQUEST}`
+    )
+  })
+
   it('asks a planning issue to plan its objective', () => {
     const prompt = issuePrompt(
       issue('planning', 'Plan: Login bug', ''),
