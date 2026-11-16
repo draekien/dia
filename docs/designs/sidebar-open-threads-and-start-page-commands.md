@@ -33,7 +33,7 @@ readonly slashCommands: (
 - Required member: added to `backendMethods`. `unavailableBackend.slashCommands` logs `logWarning('Cannot read slash commands', { cwd, reason: ADAPTER_NOT_LOADED })` and returns `[]`.
 - Never fails: the adapter logs a failure and returns `[]`, as `disabledPermissionModes` does.
 - `SlashCommandInfo` (schema value and type) is exported from `src/host/plugin-api.ts`; `calls.ts`, `backend.ts` and `slash-commands.ts` import it from `@dia/plugin`, because a shipped plugin cannot value-import `src/`.
-- Updated for the new member: `backend.test.ts` (its complete-backend literal, and a case that a backend without `slashCommands` is reported as a problem), `plugins/dia-org/runs.fake.ts`, `plugins/dia-org/host.test.ts`.
+- Updated for the new member: `backend.test.ts` (its complete-backend literal, and a case that a backend without `slashCommands` is reported as a problem), `plugins/dia-org/host.test.ts`. (`plugins/dia-org/runs.fake.ts` types its backend as `Pick<AgentBackend, 'models' | 'disabledPermissionModes'>` and needs no change.)
 
 ### 2. Claude Code implementation (`plugins/dia-claude-code/slash-commands.ts`)
 
@@ -82,7 +82,7 @@ export const GetSlashCommands = Rpc.make('GetSlashCommands', {
 ### 4. Renderer access
 
 - `DiaApi.adapter.getSlashCommands(cwd: string): Promise<ReadonlyArray<SlashCommandInfo>>` (`src/shared/ipc/contract.ts`, `src/preload/host-api.ts` via `runQuery('GetSlashCommands', { cwd })`). JSDoc: "The slash commands an agent started in `cwd` offers, with the meta repo's plugins loaded; empty when the adapter cannot report them. Resolves once the adapter's read ends."
-- `useSlashCommands(cwd: string | null): { readonly commands: ReadonlyArray<SlashCommandInfo>; readonly loading: boolean }` lives in `plugins/dia-chat/use-slash-commands.ts`, beside `useProjectEntries`, and is not exported from `plugin-api.ts`. It is `useQuery({ queryKey: ['slashCommands', cwd], queryFn, enabled: cwd !== null, staleTime: (query) => (query.state.data?.length === 0 ? 0 : Duration.toMillis(SLASH_COMMANDS_STALE)), refetchOnWindowFocus: false })` with `SLASH_COMMANDS_STALE = Duration.minutes(5)`; a rejected call resolves to `[]`; `loading` is `cwd !== null && isPending`. JSDoc adds: "An empty answer is not kept fresh: the next mount reads again." The cache stops reopening the page, or switching back to a project, from starting another `claude` process within five minutes; a failed read is retried on the next mount; a window focus never starts one.
+- `useSlashCommands(cwd: string | null): { readonly commands: ReadonlyArray<SlashCommandInfo>; readonly loading: boolean }` lives in `plugins/dia-chat/hooks/use-slash-commands.ts`, beside `useProjectEntries`, and is not exported from `plugin-api.ts`. It is `useQuery({ queryKey: ['slashCommands', cwd], queryFn, enabled: cwd !== null, staleTime: (query) => (query.state.data?.length === 0 ? 0 : Duration.toMillis(SLASH_COMMANDS_STALE)), refetchOnWindowFocus: false })` with `SLASH_COMMANDS_STALE = Duration.minutes(5)`; a rejected call resolves to `[]`; `loading` is `cwd !== null && isPending`. JSDoc adds: "An empty answer is not kept fresh: the next mount reads again." The cache stops reopening the page, or switching back to a project, from starting another `claude` process within five minutes; a failed read is retried on the next mount; a window focus never starts one.
 
 ### 5. Shared composer completion (`plugins/dia-chat/composer-completion.tsx`)
 
@@ -171,7 +171,7 @@ export function useComposerCompletion(input: {
 - `use-slash-commands.test.ts`: a second mount with the same `cwd` inside `staleTime` calls `getSlashCommands` once; an empty first answer is read again on the next mount; a window focus does not call it; `null` does not call it and gives `loading: false`; a rejection gives `[]` and `loading: false`.
 - `composer-completion.test.tsx` (inside a `QueryClientProvider`): `/re` then Enter completes the highlighted command; Escape dismisses; `@` then Enter calls `onPath`; `cwd: null` never opens the path menu.
 - `pane.test.tsx` (or the existing pane composer test): after a send resets the form while the `/` menu was open, the menu is closed.
-- `new-thread-page.test.tsx`: renders inside a `QueryClientProvider`, mocks `./use-slash-commands`, stubs `window.dia.listProjectEntries`; a project target passes its `directory`, the Assistant target passes `null`; Enter with the `/` menu open completes the command and does not send.
+- `new-thread-page.test.tsx`: renders inside a `QueryClientProvider`, mocks `./hooks/use-slash-commands`, stubs `window.dia.listProjectEntries`; a project target passes its `directory`, the Assistant target passes `null`; Enter with the `/` menu open completes the command and does not send.
 - `archived-threads-settings.test.tsx`: clicking a row calls `closeSettings` and `selectTab`; Unarchive calls `unarchiveTab`; a refusal shows the `Could not unarchive <name>` toast; a rejected call shows the lost-connection toast; Delete opens `RetireThreadDialog` with `delete`.
 - `projects-settings.test.tsx`: lists every user project; Remove project opens `RemoveProjectDialog`.
 - Existing `pane.tsx` tests pass unchanged.
