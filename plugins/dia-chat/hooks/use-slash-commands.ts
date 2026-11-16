@@ -19,14 +19,13 @@ export function useSlashCommands(cwd: string | null): {
   const { data, isPending } = useQuery({
     queryKey: ['slashCommands', cwd],
     queryFn: () =>
-      window.dia.adapter.getSlashCommands(cwd ?? '').then(
-        (commands) => commands,
-        (): ReadonlyArray<SlashCommandInfo> => []
-      ),
+      window.dia.adapter
+        .getSlashCommands(cwd ?? '')
+        .catch((): ReadonlyArray<SlashCommandInfo> => []),
     enabled: cwd !== null,
     staleTime: (query) =>
       query.state.data?.length === 0 ? 0 : Duration.toMillis(SLASH_COMMANDS_STALE),
     refetchOnWindowFocus: false
   })
-  return { commands: cwd === null ? [] : (data ?? []), loading: cwd !== null && isPending }
+  return { commands: data ?? [], loading: cwd !== null && isPending }
 }

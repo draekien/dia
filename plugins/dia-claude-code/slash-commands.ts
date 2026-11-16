@@ -53,12 +53,7 @@ export const listSlashCommands =
         })
         return []
       }
-      const commands = yield* withIdleQuery(
-        path.value,
-        cwd,
-        readSlashCommands,
-        additions.pluginPaths
-      ).pipe(
+      return yield* withIdleQuery(path.value, cwd, readSlashCommands, additions.pluginPaths).pipe(
         Effect.tap((read) => Effect.logInfo('Read slash commands', { cwd, count: read.length })),
         Effect.catchTag('SlashCommandsProbeFailed', (error) =>
           Effect.logWarning('Cannot read slash commands', { cwd, error: error.message }).pipe(
@@ -66,5 +61,4 @@ export const listSlashCommands =
           )
         )
       )
-      return commands
     })

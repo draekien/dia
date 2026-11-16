@@ -107,7 +107,7 @@ export function ProjectGroup({
                   {...listeners}
                   aria-roledescription="sortable project"
                   aria-expanded={open}
-                  aria-label={`${project.displayName}, ${count} ${group.total === 1 ? 'thread' : 'threads'}${urgent === null || open ? '' : `, ${statusLabel(urgent)}`}`}
+                  aria-label={`${project.displayName}, ${count} ${group.total === 1 ? 'thread' : 'threads'}${open ? '' : `, ${statusLabel(urgent)}`}`}
                   onClick={onToggle}
                   onKeyDown={(event) => listeners?.onKeyDown?.(event)}
                   className={cn(
@@ -126,7 +126,7 @@ export function ProjectGroup({
                     {project.displayName}
                   </span>
                   <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                    {!open && urgent !== null && <StatusIndicator status={urgent} />}
+                    {!open && <StatusIndicator status={urgent} />}
                     <span className="min-w-4 text-right text-xs tabular-nums text-ink-muted">
                       {count}
                     </span>

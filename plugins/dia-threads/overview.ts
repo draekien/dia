@@ -66,7 +66,7 @@ export type OverviewRow = typeof OverviewRow.Type
 export const OverviewGroup = Schema.Struct({
   project: Project,
   rows: Schema.Array(OverviewRow),
-  mostUrgent: Schema.NullOr(RunSummaryStatus),
+  mostUrgent: RunSummaryStatus,
   shown: Schema.Int,
   total: Schema.Int
 })
@@ -81,13 +81,10 @@ const byUrgency = (rows: ReadonlyArray<OverviewRow>): ReadonlyArray<OverviewRow>
     )
     .map(({ row }) => row)
 
-const mostUrgentOf = (rows: ReadonlyArray<OverviewRow>): RunSummaryStatus | null =>
-  rows.reduce<RunSummaryStatus | null>(
-    (best, row) =>
-      best === null || statusRank(row.summary.status) < statusRank(best)
-        ? row.summary.status
-        : best,
-    null
+const mostUrgentOf = (first: OverviewRow, rows: ReadonlyArray<OverviewRow>): RunSummaryStatus =>
+  rows.reduce(
+    (best, row) => (statusRank(row.summary.status) < statusRank(best) ? row.summary.status : best),
+    first.summary.status
   )
 
 const contains = (text: string, query: string): boolean => text.toLocaleLowerCase().includes(query)
@@ -122,15 +119,16 @@ export const buildOverview = (
       (projectMatches || contains(row.name, query)) &&
       (filters.statuses.length === 0 || filters.statuses.includes(row.summary.status._tag))
     const active = entry.tabs.filter((tab) => !tab.archived).map(toRow)
+    const [first] = active
+    if (first === undefined) return []
     const rows = byUrgency(active.filter(matches))
-    if (active.length === 0) return []
     const groupMatches = rows.length > 0 || (filters.statuses.length === 0 && projectMatches)
     if (narrowing && filters.hideUnmatchedProjects && !groupMatches) return []
     return [
       OverviewGroup.make({
         project: entry.project,
         rows,
-        mostUrgent: mostUrgentOf(active),
+        mostUrgent: mostUrgentOf(first, active),
         shown: rows.length,
         total: active.length
       })
