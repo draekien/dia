@@ -157,6 +157,8 @@ export * from './components/preview-card'
 export * from './components/relative-time'
 export {
   CLAUDE_CODE_SETTINGS,
+  CLOSE_SETTINGS_EVENT,
+  closeSettings,
   OPEN_SETTINGS_EVENT,
   openSettings,
   type SettingsLocation

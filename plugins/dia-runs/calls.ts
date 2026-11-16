@@ -9,6 +9,7 @@ import {
   PermissionResponse,
   QuestionResponse,
   SendMode,
+  SlashCommandInfo,
   ThinkingLevel
 } from '@dia/plugin'
 import { Schema } from 'effect'
@@ -171,6 +172,12 @@ export const FollowModelPreferences = Rpc.make('FollowModelPreferences', {
 export const GetDisabledPermissionModes = Rpc.make('GetDisabledPermissionModes', {
   payload: { cwd: Schema.String },
   success: Schema.Array(PermissionMode)
+})
+
+/** The slash commands a new session in `cwd` would offer, with the meta repo's plugins loaded. */
+export const GetSlashCommands = Rpc.make('GetSlashCommands', {
+  payload: { cwd: Schema.String },
+  success: Schema.Array(SlashCommandInfo)
 })
 
 /** The file types a session accepts as content blocks. */

@@ -32,6 +32,7 @@ import {
   GetDisabledPermissionModes,
   GetModelPreferences,
   GetModels,
+  GetSlashCommands,
   GetUsageLimitResume,
   InterruptRun,
   OpenRunInTab,
@@ -123,25 +124,27 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     const crypto = yield* Effect.provide(Crypto.Crypto, NodeCrypto.layer)
     const runTools = yield* makeRunTools.pipe(Effect.provide(NodeCrypto.layer))
 
+    const sessionAdditions = Effect.flatMap(
+      SubscriptionRef.get(providers.meta),
+      Option.match({
+        onNone: () => Effect.succeed(NO_SESSION_ADDITIONS),
+        onSome: (repo) =>
+          repo.forNewSession.pipe(
+            Effect.catchDefect((defect) =>
+              Effect.logError('The meta repo forNewSession effect died', { defect }).pipe(
+                Effect.as(NO_SESSION_ADDITIONS)
+              )
+            )
+          )
+      })
+    )
+
     const registry = yield* makeRunRegistry({
       rows,
       backend,
       runEvents: SubscriptionRef.get(providers.runEvents),
       gitOps: SubscriptionRef.get(providers.gitOps),
-      additions: Effect.flatMap(
-        SubscriptionRef.get(providers.meta),
-        Option.match({
-          onNone: () => Effect.succeed(NO_SESSION_ADDITIONS),
-          onSome: (repo) =>
-            repo.forNewSession.pipe(
-              Effect.catchDefect((defect) =>
-                Effect.logError('The meta repo forNewSession effect died', { defect }).pipe(
-                  Effect.as(NO_SESSION_ADDITIONS)
-                )
-              )
-            )
-        })
-      ),
+      additions: sessionAdditions,
       sessionTools: runTools.sessionTools,
       usageLimitResume: usageLimitResumeOf(rows),
       newRunId: crypto.randomUUIDv4().pipe(Effect.orDie)
@@ -244,6 +247,14 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     yield* ctx.serve(FollowModelPreferences, () => feeds.preferences.changes)
     yield* ctx.serve(GetDisabledPermissionModes, ({ cwd }) =>
       Effect.flatMap(backend, (loaded) => loaded.disabledPermissionModes(cwd))
+    )
+    yield* ctx.serve(GetSlashCommands, ({ cwd }) =>
+      Effect.gen(function* () {
+        yield* Effect.logDebug('Reading slash commands', { cwd })
+        const additions = yield* sessionAdditions
+        const loaded = yield* backend
+        return yield* loaded.slashCommands(cwd, additions)
+      })
     )
     yield* ctx.serve(GetAttachmentTypes, () =>
       Effect.flatMap(backend, (loaded) => loaded.attachmentTypes())

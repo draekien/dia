@@ -78,6 +78,8 @@ function ItemStateIcon({ state }: { readonly state: ItemState }) {
 interface RemoveProjectDialogProps {
   readonly entry: ProjectEntry
   readonly onClose: () => void
+  /** The element focus returns to when the dialog closes; `null` or a detached element falls back to the dialog's default. */
+  readonly returnFocus?: HTMLElement | null
 }
 
 /**
@@ -86,7 +88,7 @@ interface RemoveProjectDialogProps {
  * progress. When an item fails, "Remove again" retries and "Remove anyway" drops the project and
  * leaves the failed items on disk.
  */
-export function RemoveProjectDialog({ entry, onClose }: RemoveProjectDialogProps) {
+export function RemoveProjectDialog({ entry, onClose, returnFocus }: RemoveProjectDialogProps) {
   const { project } = entry
   const items = removalItems(entry)
   const [phase, setPhase] = useState<Phase>('confirm')
@@ -128,7 +130,11 @@ export function RemoveProjectDialog({ entry, onClose }: RemoveProjectDialogProps
         if (!open && !busy) onClose()
       }}
     >
-      <DialogContent showCloseButton={!busy} className="sm:max-w-md">
+      <DialogContent
+        showCloseButton={!busy}
+        className="sm:max-w-md"
+        finalFocus={() => (returnFocus?.isConnected === true ? returnFocus : null)}
+      >
         <DialogHeader>
           <DialogTitle>Remove {project.displayName}?</DialogTitle>
           <DialogDescription>

@@ -1,6 +1,10 @@
 import {
   actions,
   Button,
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
   PluginBoundary,
   REGISTER_PROJECT_REFUSAL_TEXT,
   Sidebar,
@@ -49,12 +53,11 @@ import { ProjectId, type Workspace } from '@shared/domain/project'
 import { tabOf, userProjects } from '@shared/domain/workspace'
 import { Option, Result, Schema } from 'effect'
 import { Atom } from 'effect/reactivity'
-import { FolderPlusIcon, SearchIcon, SquarePenIcon } from 'lucide-react'
+import { FolderPlusIcon, PlusIcon, SearchIcon, SquarePenIcon } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { DraftsGroup } from './drafts-group'
 import { FilterPopover } from './filter-popover'
 import {
-  archivedKey,
   buildOverview,
   filtersApply,
   headerKey,
@@ -86,8 +89,6 @@ const navKey = (target: NavigationTarget): string => {
   switch (target._tag) {
     case 'HeaderTarget':
       return headerKey(target.projectId)
-    case 'ArchivedTarget':
-      return archivedKey(target.projectId)
     case 'RowTarget':
       return rowKey(target.paneId)
   }
@@ -281,6 +282,26 @@ function NoProjects({ onAdd }: { readonly onAdd: () => void }) {
   )
 }
 
+const hasOpenThread = (workspace: Workspace): boolean =>
+  userProjects(workspace).some((entry) =>
+    entry.tabs.some((tab) => !tab.archived && tab.owner === undefined)
+  )
+
+function NoOpenThreads() {
+  return (
+    <Empty className="mx-2 w-auto flex-none border p-4">
+      <EmptyHeader>
+        <EmptyTitle>No threads</EmptyTitle>
+        <EmptyDescription>Threads you start appear here.</EmptyDescription>
+      </EmptyHeader>
+      <Button size="xs" variant="outline" onClick={() => actions.newThread()}>
+        <PlusIcon data-icon="inline-start" />
+        New thread
+      </Button>
+    </Empty>
+  )
+}
+
 function NoMatches({
   filters,
   onClear
@@ -324,7 +345,6 @@ export function ThreadsSidebar() {
   const order = dragOrder !== null && dragOrder.workspace === workspace ? dragOrder.ids : null
   const [renaming, setRenaming] = useState<PaneId | null>(null)
   const [removing, setRemoving] = useState<ProjectId | null>(null)
-  const [archivedOpen, setArchivedOpen] = useState<ReadonlySet<ProjectId>>(NO_COLLAPSED)
   const [retiring, setRetiring] = useState<{
     readonly paneId: PaneId
     readonly retirement: Retirement
@@ -352,21 +372,12 @@ export function ThreadsSidebar() {
     [workspace, summaries, activeFilters, order]
   )
   const effectiveCollapsed = narrowing || iconMode ? NO_COLLAPSED : collapsed
-  const effectiveArchivedOpen = useMemo(
-    () =>
-      iconMode
-        ? NO_COLLAPSED
-        : activeFilters.showArchived
-          ? new Set(groups.map((group) => group.project.projectId))
-          : archivedOpen,
-    [iconMode, activeFilters.showArchived, groups, archivedOpen]
-  )
   const targets = useMemo(
     () =>
-      navigationOrder(groups, effectiveCollapsed, effectiveArchivedOpen).filter(
+      navigationOrder(groups, effectiveCollapsed).filter(
         (target) => !iconMode || target._tag === 'RowTarget'
       ),
-    [groups, effectiveCollapsed, effectiveArchivedOpen, iconMode]
+    [groups, effectiveCollapsed, iconMode]
   )
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -409,15 +420,13 @@ export function ThreadsSidebar() {
     actions.moveProject(ids[from], to)
   }
 
-  const toggleIn = (current: ReadonlySet<ProjectId>, projectId: ProjectId) => {
-    const next = new Set(current)
-    if (next.has(projectId)) next.delete(projectId)
-    else next.add(projectId)
-    return next
-  }
-  const toggle = (projectId: ProjectId) => setCollapsed((current) => toggleIn(current, projectId))
-  const toggleArchived = (projectId: ProjectId) =>
-    setArchivedOpen((current) => toggleIn(current, projectId))
+  const toggle = (projectId: ProjectId) =>
+    setCollapsed((current) => {
+      const next = new Set(current)
+      if (next.has(projectId)) next.delete(projectId)
+      else next.add(projectId)
+      return next
+    })
 
   const tabOfPane = (paneId: PaneId) => Result.getOrUndefined(tabOf(workspace, paneId))?.tab
 
@@ -609,7 +618,11 @@ export function ThreadsSidebar() {
             {userProjects(workspace).length === 0 ? (
               !iconMode && <NoProjects onAdd={addProject} />
             ) : groups.length === 0 ? (
-              <NoMatches filters={filters} onClear={() => setFilters(NO_FILTERS)} />
+              narrowing && hasOpenThread(workspace) ? (
+                <NoMatches filters={filters} onClear={() => setFilters(NO_FILTERS)} />
+              ) : (
+                !iconMode && <NoOpenThreads />
+              )
             ) : (
               <DndContext
                 sensors={sensors}
@@ -636,7 +649,6 @@ export function ThreadsSidebar() {
                       <ProjectGroup
                         group={group}
                         open={!effectiveCollapsed.has(group.project.projectId)}
-                        archivedOpen={effectiveArchivedOpen.has(group.project.projectId)}
                         narrowing={narrowing}
                         dragging={dragging}
                         iconMode={iconMode}
@@ -644,7 +656,6 @@ export function ThreadsSidebar() {
                         renaming={renaming}
                         tabStop={currentStop}
                         onToggle={() => toggle(group.project.projectId)}
-                        onToggleArchived={() => toggleArchived(group.project.projectId)}
                         onRename={setRenaming}
                         onRetire={retire}
                         onRemove={() => setRemoving(group.project.projectId)}

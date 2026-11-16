@@ -57,12 +57,12 @@ function CheckRow({
 }
 
 /**
- * The filter icon button and its popover: one checkbox per status with its agent count, "Show
- * archived agents", "Hide projects with no matches" and "Clear filters". A dot on the button
+ * The filter icon button and its popover: one checkbox per status with its agent count, "Hide
+ * projects with no matches" and "Clear filters". A dot on the button
  * marks an active status filter.
  */
 export function FilterPopover({ filters, counts, onChange }: FilterPopoverProps) {
-  const active = filters.statuses.length > 0 || filters.showArchived
+  const active = filters.statuses.length > 0
   const toggleStatus = (tag: StatusTag, checked: boolean) =>
     onChange({
       ...filters,
@@ -109,13 +109,6 @@ export function FilterPopover({ filters, counts, onChange }: FilterPopoverProps)
           </CheckRow>
         ))}
         <Separator className="my-1.5" />
-        <CheckRow
-          id="overview-filter-archived"
-          checked={filters.showArchived}
-          onChange={(showArchived) => onChange({ ...filters, showArchived })}
-        >
-          Show archived agents
-        </CheckRow>
         <CheckRow
           id="overview-filter-hide-unmatched"
           checked={filters.hideUnmatchedProjects}

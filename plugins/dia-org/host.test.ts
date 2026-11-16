@@ -77,6 +77,7 @@ const backendDisabling = (modes: ReadonlyArray<string>) =>
     checkHealth: () => Effect.die('not called'),
     setInstallPath: () => Effect.die('not called'),
     disabledPermissionModes: () => Effect.succeed(modes),
+    slashCommands: () => Effect.succeed([]),
     attachmentTypes: () => Effect.die('not called')
   }) as unknown as AgentBackend
 

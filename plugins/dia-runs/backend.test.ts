@@ -75,6 +75,7 @@ describe('agentBackendProblems', () => {
     checkHealth: () => Effect.void,
     setInstallPath: () => Effect.void,
     disabledPermissionModes: () => Effect.succeed([]),
+    slashCommands: () => Effect.succeed([]),
     attachmentTypes: () => Effect.succeed([])
   }
 
@@ -130,8 +131,14 @@ describe('agentBackendProblems', () => {
         '"agentBackend.checkHealth" is not a function',
         '"agentBackend.setInstallPath" is not a function',
         '"agentBackend.disabledPermissionModes" is not a function',
+        '"agentBackend.slashCommands" is not a function',
         '"agentBackend.attachmentTypes" is not a function'
       ]
+    ],
+    [
+      'slashCommands is missing',
+      Option.some({ ...validBackend, slashCommands: undefined }),
+      ['"agentBackend.slashCommands" is not a function']
     ],
     [
       'transcriptInfo is missing',

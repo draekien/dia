@@ -41,7 +41,7 @@ D11. **The usage-limit resume setting and the model preferences move to `dia-run
 
 D12. **`agent-summaries.ts` stays in the kernel** (deferred again from step 3, D4 there). It folds pane frames from the hub, which `dia-runs` still produces through `dia-run-events`; moving it needs a renderer change unrelated to runs. The `dia` server (ADR-0075) is passed to `openSession` as `tools` since step 6 (`docs/designs/dia-tools.md`); the adapter keeps reading its own registries until then.
 
-D13. **Model and adapter feeds move into `dia-runs`** as calls: `GetModels`, `RefreshModels`, `FollowModels`, `GetAdapterStatus`, `CheckAdapterHealth`, `SetInstallPath`, `FollowAdapterStatus`, `GetModelPreferences`, `SetModelPreference`, `SetAgentDefaults`, `FollowModelPreferences`, `GetDisabledPermissionModes`, `GetAttachmentTypes`.
+D13. **Model and adapter feeds move into `dia-runs`** as calls: `GetModels`, `RefreshModels`, `FollowModels`, `GetAdapterStatus`, `CheckAdapterHealth`, `SetInstallPath`, `FollowAdapterStatus`, `GetModelPreferences`, `SetModelPreference`, `SetAgentDefaults`, `FollowModelPreferences`, `GetDisabledPermissionModes`, `GetAttachmentTypes`, `GetSlashCommands` (added by `docs/designs/sidebar-open-threads-and-start-page-commands.md`).
 
 D14. **Model preferences are kept for one adapter**, `dia-claude-code`, or the only adapter when it has another name. The kernel kept them per adapter name; dia loads one adapter. Alternative: keep the per-adapter map in `dia-runs` (rejected: no second adapter exists to need it).
 
