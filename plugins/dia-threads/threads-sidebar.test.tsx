@@ -257,6 +257,20 @@ describe('ThreadsSidebar without open threads', () => {
     expect(screen.queryByText('Threads you start appear here.')).toBeNull()
   })
 
+  it('keeps the empty state during a search when no project has an open thread', () => {
+    withoutOpenThreads()
+    render(<Harness initialOpen />)
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search threads and projects' }), {
+      target: { value: 'zzz' }
+    })
+
+    expect([
+      screen.queryByText('Threads you start appear here.') !== null,
+      screen.queryByText('No threads or projects match "zzz".')
+    ]).toEqual([true, null])
+  })
+
   it('hides the empty state while the sidebar is collapsed', () => {
     withoutOpenThreads()
     render(<Harness initialOpen={false} />)

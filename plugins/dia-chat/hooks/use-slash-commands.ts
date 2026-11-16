@@ -1,6 +1,6 @@
 import type { SlashCommandInfo } from '@shared/domain/slash-command'
 import { useQuery } from '@tanstack/react-query'
-import { Duration } from 'effect'
+import { Duration, Effect } from 'effect'
 
 /** How long a non-empty slash-command answer for a directory is reused before it is read again. */
 export const SLASH_COMMANDS_STALE = Duration.minutes(5)
@@ -21,7 +21,10 @@ export function useSlashCommands(cwd: string | null): {
     queryFn: () =>
       window.dia.adapter
         .getSlashCommands(cwd ?? '')
-        .catch((): ReadonlyArray<SlashCommandInfo> => []),
+        .catch((error: unknown): ReadonlyArray<SlashCommandInfo> => {
+          Effect.runSync(Effect.logWarning('Cannot read slash commands', { cwd, error }))
+          return []
+        }),
     enabled: cwd !== null,
     staleTime: (query) =>
       query.state.data?.length === 0 ? 0 : Duration.toMillis(SLASH_COMMANDS_STALE),

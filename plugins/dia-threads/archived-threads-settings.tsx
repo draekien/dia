@@ -119,7 +119,9 @@ export function ArchivedThreadsSettings() {
     .flatMap((group) => group.tabs)
     .find((tab) => tab.config.paneId === deleting?.paneId)
   const remove = (paneId: PaneId, trigger: HTMLElement | null) => {
-    Effect.runFork(Effect.logDebug('Deleting archived thread from Settings', { paneId }))
+    Effect.runFork(
+      Effect.logDebug('Confirming deletion of an archived thread from Settings', { paneId })
+    )
     setDeleting({ paneId, trigger })
   }
   return (

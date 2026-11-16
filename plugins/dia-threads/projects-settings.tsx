@@ -118,7 +118,7 @@ export function ProjectsSettings() {
   const projects = userProjects(workspace)
   const removingEntry = projects.find((entry) => entry.project.projectId === removing?.projectId)
   const remove = (projectId: ProjectId, trigger: HTMLElement | null) => {
-    Effect.runFork(Effect.logDebug('Removing project from Settings', { projectId }))
+    Effect.runFork(Effect.logDebug('Confirming removal of a project from Settings', { projectId }))
     setRemoving({ projectId, trigger })
   }
   return (

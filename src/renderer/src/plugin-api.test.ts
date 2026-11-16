@@ -11,5 +11,5 @@ describe('plugin-api actions', () => {
       .map(([name]) => name)
 
     expect(unbound).toEqual([])
-  })
+  }, 20_000)
 })

@@ -282,6 +282,11 @@ function NoProjects({ onAdd }: { readonly onAdd: () => void }) {
   )
 }
 
+const hasOpenThread = (workspace: Workspace): boolean =>
+  userProjects(workspace).some((entry) =>
+    entry.tabs.some((tab) => !tab.archived && tab.owner === undefined)
+  )
+
 function NoOpenThreads() {
   return (
     <Empty className="mx-2 w-auto flex-none border p-4">
@@ -613,7 +618,7 @@ export function ThreadsSidebar() {
             {userProjects(workspace).length === 0 ? (
               !iconMode && <NoProjects onAdd={addProject} />
             ) : groups.length === 0 ? (
-              narrowing ? (
+              narrowing && hasOpenThread(workspace) ? (
                 <NoMatches filters={filters} onClear={() => setFilters(NO_FILTERS)} />
               ) : (
                 !iconMode && <NoOpenThreads />
