@@ -20,6 +20,7 @@ import {
   type SessionAdditions,
   SessionId,
   type SessionToolOptions,
+  type SlashCommandInfo,
   type ThinkingLevel
 } from '@dia/plugin'
 import { DateTime, Effect, Option, Predicate, Schema, type Scope, Stream } from 'effect'
@@ -164,6 +165,8 @@ export interface AgentSessionOptions extends SessionAdditions {
  * or clears (`None`) where the adapter finds its agent install, then re-checks, and sessions
  * started afterwards use it. `disabledPermissionModes` lists the permission modes the agent's own
  * settings turn off for a session started in `cwd`; it is empty when the settings cannot be read.
+ * `slashCommands` lists the slash commands a session started in `cwd` with `additions` loaded
+ * offers, read without starting a turn; it is empty when the agent cannot report them.
  * `attachmentTypes` lists the file types a session accepts as content blocks; any other attached
  * file is sent as its path. `discoverSessions` is optional: an adapter without it imports nothing
  * when a project is added. `transcriptInfo` and `readTranscriptAfter` read a session's transcript
@@ -202,6 +205,10 @@ export interface AgentBackend {
   readonly checkHealth: () => Effect.Effect<void>
   readonly setInstallPath: (path: Option.Option<string>) => Effect.Effect<void>
   readonly disabledPermissionModes: (cwd: string) => Effect.Effect<ReadonlyArray<PermissionMode>>
+  readonly slashCommands: (
+    cwd: string,
+    additions: SessionAdditions
+  ) => Effect.Effect<ReadonlyArray<SlashCommandInfo>>
   readonly attachmentTypes: () => Effect.Effect<ReadonlyArray<AttachmentType>>
   /**
    * The conversations the harness holds whose working directory is `directory`, in any order.
@@ -282,6 +289,10 @@ export const unavailableBackend: AgentBackend = {
   checkHealth: ignored('checkHealth'),
   setInstallPath: ignored('setInstallPath'),
   disabledPermissionModes: () => Effect.succeed([]),
+  slashCommands: (cwd) =>
+    Effect.logWarning('Cannot read slash commands', { cwd, reason: ADAPTER_NOT_LOADED }).pipe(
+      Effect.as([])
+    ),
   attachmentTypes: () => Effect.succeed([])
 }
 
@@ -296,6 +307,7 @@ const backendMethods = [
   'checkHealth',
   'setInstallPath',
   'disabledPermissionModes',
+  'slashCommands',
   'attachmentTypes'
 ] as const
 

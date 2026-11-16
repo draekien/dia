@@ -339,6 +339,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       setDefaults: (defaults) => runQuery<void>('SetAgentDefaults', { defaults }),
       onPreferencesChanged: followRuns<ModelPreferencesSnapshot>('FollowModelPreferences'),
       getDisabledPermissionModes: (cwd) => runQuery('GetDisabledPermissionModes', { cwd }),
+      getSlashCommands: (cwd) => runQuery('GetSlashCommands', { cwd }),
       getAttachmentTypes: () => runQuery('GetAttachmentTypes')
     },
     activities: {

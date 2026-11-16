@@ -782,6 +782,8 @@ export interface AdapterApi {
   onPreferencesChanged(listener: (snapshot: ModelPreferencesSnapshot) => void): () => void
   /** The permission modes the adapter's own settings turn off for an agent working in `cwd`; read it again to see a settings change. */
   getDisabledPermissionModes(cwd: string): Promise<ReadonlyArray<PermissionMode>>
+  /** The slash commands an agent started in `cwd` offers, with the meta repo's plugins loaded; empty when the adapter cannot report them. Resolves once the adapter's read ends. */
+  getSlashCommands(cwd: string): Promise<ReadonlyArray<SlashCommandInfo>>
   /** The file types the adapter accepts as content blocks; any other attached file is sent as its path. */
   getAttachmentTypes(): Promise<ReadonlyArray<AttachmentType>>
 }

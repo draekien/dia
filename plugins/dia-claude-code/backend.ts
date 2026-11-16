@@ -6,6 +6,7 @@ import { discoverSessions } from './discovery'
 import type { ClaudeHealth } from './health'
 import { readDisabledPermissionModes } from './permission-settings'
 import { openClaudeCodeSession } from './session'
+import { listSlashCommands } from './slash-commands'
 import { readHistory, readTranscriptAfter, transcriptInfo } from './transcript'
 
 /**
@@ -31,6 +32,7 @@ export const makeClaudeCodeBackend = (deps: {
   setInstallPath: (path) =>
     deps.install.setOverride(path).pipe(Effect.andThen(deps.health.recheck)),
   disabledPermissionModes: readDisabledPermissionModes,
+  slashCommands: listSlashCommands(deps.install),
   attachmentTypes: () => Effect.succeed(CLAUDE_CODE_ATTACHMENT_TYPES),
   discoverSessions
 })

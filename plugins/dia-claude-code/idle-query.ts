@@ -2,6 +2,7 @@ import { type Query, query, type SDKUserMessage } from '@anthropic-ai/claude-age
 import { Effect, Queue } from 'effect'
 import { installQueryOptions } from './claude-install'
 import { openPromptInput } from './session'
+import { pluginOptions } from './session-additions'
 
 /** The message of `cause` when it is an `Error`, else `cause` as a string. Use it to describe a failed SDK call. */
 export const messageOf = (cause: unknown): string =>
@@ -10,19 +11,27 @@ export const messageOf = (cause: unknown): string =>
 /**
  * Starts the Claude Code install at `path` in `cwd` as a query that starts no turn, writes no
  * transcript and starts no MCP server, runs `use` on it, and closes it whatever the outcome.
- * Use it to read what the install reports (models, account) without a conversation.
+ * `pluginPaths` are loaded as local plugins, so their commands are reported. Use it to read
+ * what the install reports (models, account, commands) without a conversation.
  */
 export const withIdleQuery = <A, E>(
   path: string,
   cwd: string,
-  use: (idle: Query) => Effect.Effect<A, E>
+  use: (idle: Query) => Effect.Effect<A, E>,
+  pluginPaths: ReadonlyArray<string> = []
 ): Effect.Effect<A, E> =>
   Effect.acquireUseRelease(
     Effect.gen(function* () {
       const input = yield* openPromptInput(yield* Queue.unbounded<SDKUserMessage>())
       const idle = query({
         prompt: input.prompts,
-        options: { cwd, persistSession: false, strictMcpConfig: true, ...installQueryOptions(path) }
+        options: {
+          cwd,
+          persistSession: false,
+          strictMcpConfig: true,
+          ...pluginOptions(pluginPaths),
+          ...installQueryOptions(path)
+        }
       })
       return { input, idle }
     }),

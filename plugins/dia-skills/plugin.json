@@ -1,6 +1,6 @@
 {
   "name": "dia-skills",
-  "api": "0.0.42",
+  "api": "0.0.43",
   "category": "feature",
   "host": "host.ts",
   "renderer": "renderer.ts",
