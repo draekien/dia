@@ -1,7 +1,31 @@
-import type { HostPluginContext, PluginSetup } from '@dia/plugin'
+import { diaTool, type HostPluginContext, isRunScope, type PluginSetup } from '@dia/plugin'
 import { ReadGreeting } from '@dia-plugin/dia-example/messages'
 import { IssuesKey } from '@dia-plugin/dia-issues/service'
-import { Effect, Option, Ref, Stream } from 'effect'
+import { type Tools, ToolsKey } from '@dia-plugin/dia-tools/tools'
+import { Effect, Option, Ref, Schema, Stream } from 'effect'
+
+const approvalTool = (tools: Tools) =>
+  diaTool({
+    name: 'example_approval',
+    description:
+      "Ask the user to approve an example change in dia's window, and report whether they approved it. It changes nothing; it shows how a dia tool asks for approval.",
+    input: Schema.Struct({
+      change: Schema.NonEmptyString.annotate({ description: 'The change to show the user.' })
+    }),
+    run: Effect.fn('ExampleApproval.run')(function* (input, scope) {
+      const answer = yield* tools.requestApproval(scope, {
+        title: 'Apply an example change',
+        before: '',
+        after: input.change
+      })
+      yield* Effect.logInfo('Example approval answered', { answer })
+      return {
+        text:
+          answer === 'approved' ? 'The user approved the change.' : 'The user declined the change.',
+        isError: false
+      }
+    })
+  })
 
 const setup: PluginSetup<HostPluginContext> = (ctx) =>
   Effect.gen(function* () {
@@ -25,6 +49,11 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
         yield* Effect.addFinalizer(() => Ref.set(objectiveCount, Option.none()))
         yield* Effect.logInfo('Example plugin read the issues', { objectives: objectives.length })
       })
+    )
+    yield* ctx.whenProvided([ToolsKey], ({ tools }) =>
+      tools
+        .register(approvalTool(tools), { when: isRunScope })
+        .pipe(Effect.tap(() => Effect.logInfo('Example approval tool registered')))
     )
     yield* ctx.serve(ReadGreeting, () =>
       Ref.get(objectiveCount).pipe(
