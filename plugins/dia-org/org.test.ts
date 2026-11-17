@@ -153,7 +153,7 @@ describe('org seed', () => {
       })
   )
 
-  it.effect('allows the Executive assistant only the four routing tools', () =>
+  it.effect('allows the Executive assistant only the four routing tools and org_read', () =>
     Effect.gen(function* () {
       const org = yield* freshOrg
       const assistant = (yield* org.jobTitles).find(
@@ -164,7 +164,8 @@ describe('org seed', () => {
           'mcp__dia__objectives_read',
           'mcp__dia__objective_create',
           'mcp__dia__objective_attach',
-          'mcp__dia__objective_stop'
+          'mcp__dia__objective_stop',
+          'mcp__dia__org_read'
         ],
         ask: [],
         deny: []
