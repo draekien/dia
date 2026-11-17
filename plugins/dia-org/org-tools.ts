@@ -4,6 +4,7 @@ import {
   type DiaToolResult,
   diaTool,
   type PermissionRules,
+  type ToolInput,
   type ToolScope
 } from '@dia/plugin'
 import { result } from '@dia-plugin/dia-issues/tool-input'
@@ -128,6 +129,14 @@ const orgCall =
       )
     )
 
+const orgTool = <S extends ToolInput>(tool: {
+  readonly name: string
+  readonly description: string
+  readonly input: S
+  readonly run: (input: S['Type'], scope: ToolScope) => Effect.Effect<string, OrgRefusal | Declined>
+}): DiaTool =>
+  diaTool({ ...tool, run: (input, scope) => orgCall(tool.name)(tool.run(input, scope)) })
+
 const definitionFields = (jobTitle: JobTitle): JobTitleFields =>
   Struct.omit(jobTitle, ['id', 'builtIn', 'enabled'])
 
@@ -196,30 +205,30 @@ const NEW_JOB_TITLE_DEFAULTS = {
 } as const satisfies Omit<JobTitleFields, 'name' | 'jobDescription'>
 
 const readTool = (deps: OrgToolDeps): DiaTool =>
-  diaTool({
+  orgTool({
     name: 'org_read',
     description:
       "List every job title with its fields and whether it is enabled, and every hired agent with its job title and who it reports to. Call it before any other org tool and use the ids it returns. A hired agent's name is its stored name, null when unnamed; displayName is what the org shows.",
     input: Schema.Struct({}),
     run: () =>
-      orgCall('org_read')(
-        Effect.gen(function* () {
-          const [jobTitles, hires] = yield* Effect.all([deps.org.jobTitles, deps.org.hiredAgents])
-          const hiredAgents = hires.map((hire) => ({
-            id: hire.id,
-            name: hire.name,
-            displayName: agentName(hire, jobTitles),
-            jobTitleId: hire.jobTitleId,
-            jobTitle: jobTitles.find((jobTitle) => jobTitle.id === hire.jobTitleId)?.name ?? null,
-            reportsTo: hire.reportsTo
-          }))
-          return show({ jobTitles, hiredAgents })
+      Effect.gen(function* () {
+        const [jobTitles, hires] = yield* Effect.all([deps.org.jobTitles, deps.org.hiredAgents], {
+          concurrency: 'unbounded'
         })
-      )
+        const hiredAgents = hires.map((hire) => ({
+          id: hire.id,
+          name: hire.name,
+          displayName: agentName(hire, jobTitles),
+          jobTitleId: hire.jobTitleId,
+          jobTitle: jobTitles.find((jobTitle) => jobTitle.id === hire.jobTitleId)?.name ?? null,
+          reportsTo: hire.reportsTo
+        }))
+        return show({ jobTitles, hiredAgents })
+      })
   })
 
 const hireTool = (deps: OrgToolDeps): DiaTool =>
-  diaTool({
+  orgTool({
     name: 'hire',
     description: `Hire an agent of an enabled job title. ${READ_FIRST}`,
     input: Schema.Struct({
@@ -234,35 +243,31 @@ const hireTool = (deps: OrgToolDeps): DiaTool =>
       )
     }),
     run: (input) =>
-      orgCall('hire')(
-        Effect.gen(function* () {
-          const hired = yield* deps.org.hire(
-            input.jobTitleId,
-            input.name ?? null,
-            input.reportsTo ?? null
-          )
-          const jobTitles = yield* deps.org.jobTitles
-          return `Hired ${agentName(hired, jobTitles)}, id ${hired.id}.`
-        })
-      )
+      Effect.gen(function* () {
+        const hired = yield* deps.org.hire(
+          input.jobTitleId,
+          input.name ?? null,
+          input.reportsTo ?? null
+        )
+        const jobTitles = yield* deps.org.jobTitles
+        return `Hired ${agentName(hired, jobTitles)}, id ${hired.id}.`
+      })
   })
 
 const staffTeamTool = (deps: OrgToolDeps): DiaTool =>
-  diaTool({
+  orgTool({
     name: 'staff_team',
     description: `Hire a team in one step: a lead reporting to the user, and members reporting to the lead, or to the user when lead is null. Every hire is unnamed. Give at least one of lead or members. ${READ_FIRST}`,
     input: TeamPlan.annotate({ description: 'The job titles to hire.' }),
     run: (plan) =>
-      orgCall('staff_team')(
-        Effect.gen(function* () {
-          const hired = yield* deps.org.staffTeam(plan)
-          return `Hired ${hired.length} agents: ${hired.map((hire) => hire.id).join(', ')}.`
-        })
-      )
+      Effect.gen(function* () {
+        const hired = yield* deps.org.staffTeam(plan)
+        return `Hired ${hired.length} agents: ${hired.map((hire) => hire.id).join(', ')}.`
+      })
   })
 
 const renameTool = (deps: OrgToolDeps): DiaTool =>
-  diaTool({
+  orgTool({
     name: 'hire_rename',
     description: `Name a hired agent, or clear its name with null. ${READ_FIRST}`,
     input: Schema.Struct({
@@ -272,18 +277,16 @@ const renameTool = (deps: OrgToolDeps): DiaTool =>
       })
     }),
     run: (input) =>
-      orgCall('hire_rename')(
-        Effect.gen(function* () {
-          const renamed = yield* deps.org.renameHire(input.hireId, input.name)
-          return renamed.name === null
-            ? `Cleared the name of ${renamed.id}.`
-            : `Named ${renamed.id} "${renamed.name}".`
-        })
-      )
+      Effect.gen(function* () {
+        const renamed = yield* deps.org.renameHire(input.hireId, input.name)
+        return renamed.name === null
+          ? `Cleared the name of ${renamed.id}.`
+          : `Named ${renamed.id} "${renamed.name}".`
+      })
   })
 
 const reportsToTool = (deps: OrgToolDeps): DiaTool =>
-  diaTool({
+  orgTool({
     name: 'hire_set_reports_to',
     description: `Make a hired agent report to another hired agent, or to the user with null. ${READ_FIRST}`,
     input: Schema.Struct({
@@ -293,29 +296,24 @@ const reportsToTool = (deps: OrgToolDeps): DiaTool =>
       })
     }),
     run: (input) =>
-      orgCall('hire_set_reports_to')(
-        Effect.gen(function* () {
-          const moved = yield* deps.org.setReportsTo(input.hireId, input.reportsTo)
-          return moved.reportsTo === null
-            ? `${moved.id} now reports to the user.`
-            : `${moved.id} now reports to ${moved.reportsTo}.`
-        })
-      )
+      Effect.gen(function* () {
+        const moved = yield* deps.org.setReportsTo(input.hireId, input.reportsTo)
+        return moved.reportsTo === null
+          ? `${moved.id} now reports to the user.`
+          : `${moved.id} now reports to ${moved.reportsTo}.`
+      })
   })
 
 const dismissTool = (deps: OrgToolDeps): DiaTool =>
-  diaTool({
+  orgTool({
     name: 'hire_dismiss',
     description: `Dismiss a hired agent with no open issues; its reports move to its own manager. ${READ_FIRST}`,
     input: Schema.Struct({ hireId: hireIdField }),
-    run: (input) =>
-      orgCall('hire_dismiss')(
-        deps.org.dismiss(input.hireId).pipe(Effect.as(`Dismissed ${input.hireId}.`))
-      )
+    run: (input) => deps.org.dismiss(input.hireId).pipe(Effect.as(`Dismissed ${input.hireId}.`))
   })
 
 const createTool = (deps: OrgToolDeps): DiaTool =>
-  diaTool({
+  orgTool({
     name: 'job_title_create',
     description:
       'Create an enabled job title. Fields left out get the defaults of a new job title: no skills, permission rules or MCP servers, no bypass opt-in, the first model and medium thinking. Permission rules or the bypass opt-in wait for the user to approve them.',
@@ -325,24 +323,22 @@ const createTool = (deps: OrgToolDeps): DiaTool =>
       ...Struct.map(Struct.omit(definitionField, ['name', 'jobDescription']), Schema.optionalKey)
     }),
     run: (input, scope) =>
-      orgCall('job_title_create')(
-        Effect.gen(function* () {
-          const fields: JobTitleFields = { ...NEW_JOB_TITLE_DEFAULTS, ...input }
-          if (grantsAccess(fields)) {
-            yield* askUser(deps, scope, {
-              title: `Create job title "${fields.name}"`,
-              before: '',
-              after: show(fields)
-            })
-          }
-          const created = yield* deps.org.createJobTitle(fields)
-          return `Created job title "${created.name}", id ${created.id}.`
-        })
-      )
+      Effect.gen(function* () {
+        const fields: JobTitleFields = { ...NEW_JOB_TITLE_DEFAULTS, ...input }
+        if (grantsAccess(fields)) {
+          yield* askUser(deps, scope, {
+            title: `Create job title "${fields.name}"`,
+            before: '',
+            after: show(fields)
+          })
+        }
+        const created = yield* deps.org.createJobTitle(fields)
+        return `Created job title "${created.name}", id ${created.id}.`
+      })
   })
 
 const editTool = (deps: OrgToolDeps): DiaTool =>
-  diaTool({
+  orgTool({
     name: 'job_title_edit',
     description: `Change a job title's fields; fields left out stay as they are. A built-in job title keeps its name. A change to the Executive assistant, or one that sets permission rules or the bypass opt-in, waits for the user to approve it. ${READ_FIRST}`,
     input: Schema.Struct({
@@ -350,26 +346,24 @@ const editTool = (deps: OrgToolDeps): DiaTool =>
       ...Struct.map(definitionField, Schema.optionalKey)
     }),
     run: (input, scope) =>
-      orgCall('job_title_edit')(
-        Effect.gen(function* () {
-          const edit: JobTitleEdit = Struct.omit(input, ['jobTitleId'])
-          const target = yield* findJobTitle(deps, input.jobTitleId)
-          if (isAssistant(target) || grantsAccess(edit)) {
-            const before = definitionFields(target)
-            yield* askUser(deps, scope, {
-              title: `Edit job title "${target.name}"`,
-              before: show(before),
-              after: show({ ...before, ...edit })
-            })
-          }
-          const edited = yield* deps.org.editJobTitle(input.jobTitleId, edit)
-          return `Edited job title "${edited.name}".`
-        })
-      )
+      Effect.gen(function* () {
+        const edit: JobTitleEdit = Struct.omit(input, ['jobTitleId'])
+        const target = yield* findJobTitle(deps, input.jobTitleId)
+        if (isAssistant(target) || grantsAccess(edit)) {
+          const before = definitionFields(target)
+          yield* askUser(deps, scope, {
+            title: `Edit job title "${target.name}"`,
+            before: show(before),
+            after: show({ ...before, ...edit })
+          })
+        }
+        const edited = yield* deps.org.editJobTitle(input.jobTitleId, edit)
+        return `Edited job title "${edited.name}".`
+      })
   })
 
 const copyTool = (deps: OrgToolDeps): DiaTool =>
-  diaTool({
+  orgTool({
     name: 'job_title_copy',
     description: `Copy every field of a job title into a new enabled job title with a new name. ${READ_FIRST}`,
     input: Schema.Struct({
@@ -377,16 +371,14 @@ const copyTool = (deps: OrgToolDeps): DiaTool =>
       name: JobTitleName.annotate({ description: 'Name of the copy, unique ignoring case.' })
     }),
     run: (input) =>
-      orgCall('job_title_copy')(
-        Effect.gen(function* () {
-          const copy = yield* deps.org.copyJobTitle(input.jobTitleId, input.name)
-          return `Created job title "${copy.name}", id ${copy.id}.`
-        })
-      )
+      Effect.gen(function* () {
+        const copy = yield* deps.org.copyJobTitle(input.jobTitleId, input.name)
+        return `Created job title "${copy.name}", id ${copy.id}.`
+      })
   })
 
 const setEnabledTool = (deps: OrgToolDeps): DiaTool =>
-  diaTool({
+  orgTool({
     name: 'job_title_set_enabled',
     description: `Enable or disable a job title; a disabled job title cannot be hired into. Changing the Executive assistant waits for the user to approve it. ${READ_FIRST}`,
     input: Schema.Struct({
@@ -394,34 +386,30 @@ const setEnabledTool = (deps: OrgToolDeps): DiaTool =>
       enabled: Schema.Boolean.annotate({ description: 'true to enable, false to disable.' })
     }),
     run: (input, scope) =>
-      orgCall('job_title_set_enabled')(
-        Effect.gen(function* () {
-          const target = yield* findJobTitle(deps, input.jobTitleId)
-          if (isAssistant(target)) {
-            const before = { ...definitionFields(target), enabled: target.enabled }
-            yield* askUser(deps, scope, {
-              title: `${input.enabled ? 'Enable' : 'Disable'} job title "${target.name}"`,
-              before: show(before),
-              after: show({ ...before, enabled: input.enabled })
-            })
-          }
-          const changed = yield* deps.org.setJobTitleEnabled(input.jobTitleId, input.enabled)
-          return `${changed.enabled ? 'Enabled' : 'Disabled'} job title "${changed.name}".`
-        })
-      )
+      Effect.gen(function* () {
+        const target = yield* findJobTitle(deps, input.jobTitleId)
+        if (isAssistant(target)) {
+          const before = { ...definitionFields(target), enabled: target.enabled }
+          yield* askUser(deps, scope, {
+            title: `${input.enabled ? 'Enable' : 'Disable'} job title "${target.name}"`,
+            before: show(before),
+            after: show({ ...before, enabled: input.enabled })
+          })
+        }
+        const changed = yield* deps.org.setJobTitleEnabled(input.jobTitleId, input.enabled)
+        return `${changed.enabled ? 'Enabled' : 'Disabled'} job title "${changed.name}".`
+      })
   })
 
 const deleteTool = (deps: OrgToolDeps): DiaTool =>
-  diaTool({
+  orgTool({
     name: 'job_title_delete',
     description: `Delete a job title that is not built in and has no hired agents. ${READ_FIRST}`,
     input: Schema.Struct({ jobTitleId: jobTitleIdField }),
     run: (input) =>
-      orgCall('job_title_delete')(
-        deps.org
-          .deleteJobTitle(input.jobTitleId)
-          .pipe(Effect.as(`Deleted job title ${input.jobTitleId}.`))
-      )
+      deps.org
+        .deleteJobTitle(input.jobTitleId)
+        .pipe(Effect.as(`Deleted job title ${input.jobTitleId}.`))
   })
 
 /**

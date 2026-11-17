@@ -163,19 +163,17 @@ export const grantOrgRead = (
     }
     const { permissions } = assistant.definition
     if (assistant.edited && !permissions.allow.includes(ORG_READ_TOOL)) {
-      const granted = yield* definitions
-        .edit(assistant.definition.id, {
+      const granted = yield* Effect.result(
+        definitions.edit(assistant.definition.id, {
           permissions: { ...permissions, allow: [...permissions.allow, ORG_READ_TOOL] }
         })
-        .pipe(
-          Effect.as(true),
-          Effect.catch((error) =>
-            Effect.logWarning('The org_read grant could not edit the Executive assistant', {
-              reason: error._tag
-            }).pipe(Effect.as(false))
-          )
-        )
-      if (!granted) return
+      )
+      if (granted._tag === 'Failure') {
+        yield* Effect.logWarning('The org_read grant could not edit the Executive assistant', {
+          reason: granted.failure._tag
+        })
+        return
+      }
       yield* Effect.logInfo('Granted org_read to the edited Executive assistant')
     }
     yield* sql`DELETE FROM org_read_grant`
