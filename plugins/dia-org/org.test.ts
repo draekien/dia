@@ -12,6 +12,7 @@ import {
   HireNotFound,
   IssuesNotLoaded,
   type JobTitle,
+  type JobTitleFields,
   JobTitleId,
   JobTitleName,
   OverallCap
@@ -314,6 +315,84 @@ describe('Org.copyJobTitle', () => {
       )
       assert.strictEqual(error._tag, 'JobTitleNotFound')
     })
+  )
+})
+
+const ARCHIVIST: JobTitleFields = {
+  name: JobTitleName.make('Archivist'),
+  jobDescription: 'Files every finished issue.',
+  skills: ['archive'],
+  permissions: { allow: ['Read'], ask: ['Write'], deny: ['Bash'] },
+  mcpServers: ['github'],
+  bypassOptIn: true,
+  model: 'claude-sonnet-5-5',
+  thinkingLevel: 'high'
+}
+
+describe('Org.createJobTitle', () => {
+  it.effect('creates an enabled job title that is not built in, with every given field', () =>
+    Effect.gen(function* () {
+      const org = yield* freshOrg
+
+      const created = yield* org.createJobTitle(ARCHIVIST)
+
+      assert.deepStrictEqual(created, {
+        ...ARCHIVIST,
+        id: created.id,
+        builtIn: null,
+        enabled: true
+      })
+    })
+  )
+
+  it.effect('lists the created job title after the built-ins', () =>
+    Effect.gen(function* () {
+      const org = yield* freshOrg
+
+      const created = yield* org.createJobTitle(ARCHIVIST)
+
+      assert.deepStrictEqual((yield* org.jobTitles).at(-1), created)
+    })
+  )
+
+  it.effect(
+    'fails with JobTitleNameTaken for an existing name in another case, adding nothing',
+    () =>
+      Effect.gen(function* () {
+        const org = yield* freshOrg
+        const before = yield* org.jobTitles
+
+        const error = yield* Effect.flip(
+          org.createJobTitle({ ...ARCHIVIST, name: JobTitleName.make('SOFTWARE ENGINEER') })
+        )
+
+        assert.deepStrictEqual([error._tag, yield* org.jobTitles], ['JobTitleNameTaken', before])
+      })
+  )
+
+  it.effect('fails with JobTitlesNotLoaded while no registry is held', () =>
+    Effect.gen(function* () {
+      const sql = yield* openDatabase(':memory:', orgMigrations)
+      const org = yield* makeOrg.pipe(
+        Effect.provideService(SqlClient.SqlClient, sql),
+        Effect.provide(NodeCrypto.layer)
+      )
+
+      const error = yield* Effect.flip(org.createJobTitle(ARCHIVIST))
+
+      assert.strictEqual(error._tag, 'JobTitlesNotLoaded')
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('emits a job title change after creating a job title', () =>
+    Effect.gen(function* () {
+      const org = yield* freshOrg
+      const changes = yield* org.watchJobTitleChanges
+
+      yield* org.createJobTitle(ARCHIVIST)
+
+      assert.strictEqual((yield* Stream.runCollect(Stream.take(changes, 1))).length, 1)
+    }).pipe(Effect.scoped)
   )
 })
 
