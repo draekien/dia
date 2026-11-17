@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+// @effect-diagnostics newPromise:off -- the test holds an archive or delete call open with a manually resolved Promise.
 
 import { AgentName, type Tab } from '@shared/domain/project'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -6,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RetireThreadDialog } from './retire-thread-dialog'
 
 const PANE = '00000000-0000-4000-8000-000000000101'
+const OTHER_PANE = '00000000-0000-4000-8000-000000000102'
 const WORKTREE = {
   path: 'F:/Dev/dia-worktrees/brave-otter',
   branch: 'dia/brave-otter',
@@ -71,15 +73,20 @@ describe('RetireThreadDialog', () => {
     expect(dialogText()).not.toContain('dia stops this agent')
   })
 
-  it('deletes the tab it was opened for and closes once it is deleted', async () => {
-    const bridge = installBridge(Promise.resolve(null))
+  it('closes before the host has finished deleting the tab it was opened for', () => {
+    const bridge = installBridge(new Promise<string | null>(() => undefined))
     const onClose = vi.fn()
-    render(<RetireThreadDialog tab={tab()} retirement="delete" onClose={onClose} />)
+    render(
+      <RetireThreadDialog tab={tab({ paneId: OTHER_PANE })} retirement="delete" onClose={onClose} />
+    )
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
-    await waitFor(() => expect(onClose).toHaveBeenCalledOnce())
-    expect([bridge.deleteTab.mock.calls, bridge.archiveTab.mock.calls]).toEqual([[[PANE]], []])
+    expect([
+      onClose.mock.calls.length,
+      bridge.deleteTab.mock.calls,
+      bridge.archiveTab.mock.calls
+    ]).toEqual([1, [[OTHER_PANE]], []])
   })
 
   it('archives through archiveTab when opened to archive', async () => {
@@ -95,26 +102,5 @@ describe('RetireThreadDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Archive' }))
 
     await waitFor(() => expect(bridge.archiveTab.mock.calls).toEqual([[PANE]]))
-  })
-
-  it('shows why the worktree was not removed, stays open and offers Try again', async () => {
-    installBridge(Promise.resolve('The worktree directory is still on disk'))
-    const onClose = vi.fn()
-    render(
-      <RetireThreadDialog
-        tab={tab({ worktree: WORKTREE })}
-        retirement="archive"
-        onClose={onClose}
-      />
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Archive' }))
-
-    const alert = await screen.findByRole('alert')
-    expect([
-      alert.textContent,
-      screen.queryByRole('button', { name: 'Try again' }) !== null,
-      onClose.mock.calls.length
-    ]).toEqual(['Not archived: The worktree directory is still on disk', true, 0])
   })
 })
