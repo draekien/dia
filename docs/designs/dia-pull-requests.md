@@ -64,6 +64,9 @@ plugins/dia-markdown/
   renderer.ts            ctx.provide(MarkdownKey, Markdown)
 plugins/dia-chat/pane.tsx, plan-review-card.tsx   read useProvided(MarkdownKey); plain text when undefined
 tsconfig.plugin-exports.json            include + plugins/dia-markdown/markdown.ts
+tsconfig.web.json                       include + dia-pull-requests atoms.ts, calls.ts,
+                                        pull-request-url.ts, summary.ts (imported by the .tsx files)
+tsconfig.node.json                      exclude + dia-pull-requests/atoms.ts (imports @dia/renderer-plugin)
 DESIGN.md                               Session rail "Cards from dia" + Pull requests;
                                         Right panel "Panels from dia" + Pull request
 docs/designs/dia-pull-requests.md       this spec
@@ -393,7 +396,7 @@ No colour on the state line: per DESIGN.md, Error Red is for failed states only,
 
 `pull-request-panel.tsx`: the pull request `shown(paneId)` names if it is still linked, otherwise the first; opening the region from the header toggle leaves `shown` as it was. With two or more, a borderless `Select` of `#n title` above the body; choosing an entry sets `shown(paneId)`. Sections separated by hairlines:
 
-1. Header: the title, `#295`, the state, `base ← head` in mono, the author, `+120 −34` as a `Figure`; buttons `Open in browser` (an `<a target="_blank">`), `Refresh`, `Unlink`. Under `Reading` the header shows `#295` and a `Skeleton`; under `ReadFailed` it shows the message and `Refresh`.
+1. Header: the title, `#295`, the state, `base ← head` in mono, the author, `+120 −34` in tabular figures (not `Figure`, whose `ms-auto` would push it to the end of the wrapping row); buttons `Open in browser` (an `<a target="_blank">`), `Refresh`, `Unlink`. Under `Reading` the header shows `#295` and a `Skeleton`; under `ReadFailed` it shows the message and `Refresh`.
 2. Checks: one `Status` row per check (dot `none` pending, `half` skipped, `full` passed or failed; Error Red only for `failed`), linking to its `url`. `No checks`.
 3. Reviews and comments: one entry per activity in order; author in medium weight, review state as a caption, `RelativeTime` of `at`, body through `Markdown`. `No reviews or comments`.
 4. Description: `Markdown` of `body`. `No description`.

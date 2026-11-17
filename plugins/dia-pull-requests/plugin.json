@@ -1,0 +1,8 @@
+{
+  "name": "dia-pull-requests",
+  "api": "0.0.44",
+  "category": "feature",
+  "host": "host.ts",
+  "renderer": "renderer.ts",
+  "load": "eager"
+}
