@@ -15,8 +15,11 @@ import {
   HireNameTaken,
   HireNotFound,
   IssuesNotLoaded,
+  JobTitle,
   JobTitleDisabled,
   JobTitleHasHires,
+  JobTitleId,
+  JobTitleName,
   JobTitleNameTaken,
   JobTitleNotFound,
   ReportsToCycle
@@ -601,6 +604,96 @@ describe('Job titles', () => {
     await click('Copy')
 
     expect(screen.getByText('A job title named "Reviewer" already exists')).toBeTruthy()
+  })
+
+  const openNewJobTitle = async (host: FakeHost) => {
+    await showReviewer(host)
+    await click('New job title')
+  }
+
+  const saveButton = () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement
+
+  const NEW_JOB_TITLE_FIELDS = {
+    name: 'Archivist',
+    jobDescription: '',
+    skills: [],
+    permissions: { allow: [], ask: [], deny: [] },
+    mcpServers: [],
+    bypassOptIn: false,
+    model: null,
+    thinkingLevel: 'medium'
+  }
+
+  it('opens an empty job title editor from New job title, with Save disabled', async () => {
+    await openNewJobTitle(installHost(snapshotOf()))
+
+    expect({
+      heading: screen.getByRole('heading', { level: 3 }).textContent,
+      name: (screen.getByLabelText('Name') as HTMLInputElement).value,
+      description: (screen.getByLabelText('Job description') as HTMLTextAreaElement).value,
+      saveDisabled: saveButton().disabled
+    }).toEqual({ heading: 'New job title', name: '', description: '', saveDisabled: true })
+  })
+
+  it('sends nothing for a new job title with a blank name and says why', async () => {
+    const host = installHost(snapshotOf())
+    await openNewJobTitle(host)
+
+    type('Job description', 'Files every finished issue.')
+    await click('Save')
+
+    expect([host.sent, screen.getByText('Enter a name')]).toEqual([[], expect.anything()])
+  })
+
+  it('shows JobTitleNameTaken under the name field of a new job title', async () => {
+    await openNewJobTitle(
+      installHost(snapshotOf(), {
+        CreateJobTitle: failWith(JobTitleNameTaken.make({ jobTitleName: REVIEWER.name }))
+      })
+    )
+
+    type('Name', 'Reviewer')
+    await click('Save')
+
+    expect(screen.getByText('A job title named "Reviewer" already exists')).toBeTruthy()
+  })
+
+  it('creates a new job title with the default fields and shows it', async () => {
+    const created = JobTitle.make({
+      ...NEW_JOB_TITLE_FIELDS,
+      id: JobTitleId.make('00000000-0000-4000-8000-100000000099'),
+      name: JobTitleName.make('Archivist'),
+      thinkingLevel: 'medium',
+      builtIn: null,
+      enabled: true
+    })
+    const host = installHost(snapshotOf(), {
+      CreateJobTitle: (_payload, fake) => {
+        fake.snapshot = snapshotOf({ jobTitles: [...fake.snapshot.jobTitles, created] })
+        return { value: created }
+      }
+    })
+    await openNewJobTitle(host)
+
+    type('Name', 'Archivist')
+    await click('Save')
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Archivist')
+    )
+    expect(host.sent).toEqual([['CreateJobTitle', NEW_JOB_TITLE_FIELDS]])
+  })
+
+  it('shows the selected job title again when a new job title is cancelled', async () => {
+    const host = installHost(snapshotOf())
+    await openNewJobTitle(host)
+
+    await click('Cancel')
+
+    expect([screen.getByRole('heading', { level: 3 }).textContent, host.sent]).toEqual([
+      'Reviewer',
+      []
+    ])
   })
 
   it('saves only the fields that changed', async () => {

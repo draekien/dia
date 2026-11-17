@@ -116,6 +116,7 @@ const RPCS: Record<string, Rpc.AnyWithProps> = Object.fromEntries(
     calls.ReadOrg,
     calls.SetJobTitleEnabled,
     calls.CopyJobTitle,
+    calls.CreateJobTitle,
     calls.EditJobTitle,
     calls.DeleteJobTitle,
     calls.Hire,

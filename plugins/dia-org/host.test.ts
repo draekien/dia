@@ -32,7 +32,7 @@ import {
   EXECUTIVE_ASSISTANT
 } from './built-in-job-titles'
 import { OrgLive, OrgSnapshot } from './calls'
-import { HiredAgent } from './domain'
+import { HiredAgent, JobTitle } from './domain'
 import setup from './host'
 import { ISSUE_RUN_LABEL } from './issue-runs'
 import { fakeRuns } from './runs.fake'
@@ -318,6 +318,36 @@ describe('org host entry', () => {
           reportsTo: lead.id,
           error: { _tag: 'ReportsToCycle', hireId: lead.id, reportsTo: lead.id }
         }
+      )
+    })
+  )
+
+  it.effect('serves CreateJobTitle, passing every payload field to the created job title', () =>
+    Effect.gen(function* () {
+      const registry = yield* startOrg(Option.none())
+      const fields = {
+        name: 'Archivist',
+        jobDescription: 'Files every finished issue.',
+        skills: ['archive'],
+        permissions: { allow: ['Read'], ask: ['Write'], deny: ['Bash'] },
+        mcpServers: ['github'],
+        bypassOptIn: true,
+        model: 'claude-sonnet-5-5',
+        thinkingLevel: 'high'
+      }
+
+      const created = Schema.decodeUnknownSync(JobTitle)(
+        yield* call(registry, 'CreateJobTitle', fields)
+      )
+
+      assert.deepStrictEqual(
+        (yield* readOrg(registry)).jobTitles.at(-1),
+        Schema.decodeUnknownSync(JobTitle)({
+          ...fields,
+          id: created.id,
+          builtIn: null,
+          enabled: true
+        })
       )
     })
   )

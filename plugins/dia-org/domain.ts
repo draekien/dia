@@ -12,7 +12,7 @@ import {
   WORK_TITLE_MAX_LENGTH,
   WorkTitle
 } from '@dia-plugin/dia-issues/domain'
-import { Schema } from 'effect'
+import { Schema, Struct } from 'effect'
 
 /**
  * The kinds of the built-in job titles dia ships (ADR-0064, ADR-0071). A built-in job title keeps
@@ -69,6 +69,11 @@ export type JobTitle = typeof JobTitle.Type
  */
 export const JobTitleEdit = AgentDefinitionEdit
 export type JobTitleEdit = typeof JobTitleEdit.Type
+
+/** Every field of a job title's agent definition except `id`: what a new job title is made from. */
+export const JobTitleFields = AgentDefinition.mapFields((fields) => Struct.omit(fields, ['id']))
+/** The decoded type of {@link JobTitleFields}. */
+export type JobTitleFields = typeof JobTitleFields.Type
 
 /**
  * A name an agent definition holds that resolves to nothing: an MCP server the `mcp` registry
@@ -295,3 +300,12 @@ export class HireHasOpenIssues extends Schema.TaggedError<HireHasOpenIssues>()(
  * to an open issue cannot be checked.
  */
 export class IssuesNotLoaded extends Schema.TaggedError<IssuesNotLoaded>()('IssuesNotLoaded', {}) {}
+
+/**
+ * Failure of creating a job title: the `agent-definitions` plugin is not ready, so there is no
+ * registry to store it in.
+ */
+export class JobTitlesNotLoaded extends Schema.TaggedError<JobTitlesNotLoaded>()(
+  'JobTitlesNotLoaded',
+  {}
+) {}
