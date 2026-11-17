@@ -4,7 +4,11 @@ import {
   type SessionMessage
 } from '@anthropic-ai/claude-agent-sdk'
 import { AgentEvents, ContentAttachment } from '@dia/plugin'
-import type { TranscriptEntry, TranscriptInfo, TranscriptTail } from '@dia-plugin/dia-runs/backend'
+import type {
+  TranscriptEntry,
+  TranscriptInfo,
+  TranscriptTail
+} from '@dia-plugin/dia-agent-adapters/backend'
 import type { AgentEvent } from '@shared/domain/agent-event'
 import type { Attachment } from '@shared/domain/attachment'
 import type { ConversationMessage, SessionId } from '@shared/domain/pane'

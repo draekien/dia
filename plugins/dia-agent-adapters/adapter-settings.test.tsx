@@ -2,7 +2,7 @@
 // @effect-diagnostics newPromise:off -- the test holds the plugin list open with a Promise that never resolves.
 import type { PluginServices, PluginSetup } from '@dia/plugin'
 import { addEntry, openSettings, SidebarProvider, TooltipProvider } from '@dia/renderer-plugin'
-import { AdapterPanelsSlot } from '@dia-plugin/dia-adapters/slots'
+import { AdapterPanelsSlot } from '@dia-plugin/dia-agent-adapters/slots'
 import type { SettingsSection } from '@dia-plugin/dia-settings/slots'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'

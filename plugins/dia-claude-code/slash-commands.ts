@@ -1,6 +1,6 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import type { SlashCommandInfo } from '@dia/plugin'
-import type { AgentBackend } from '@dia-plugin/dia-runs/backend'
+import type { AgentBackend } from '@dia-plugin/dia-agent-adapters/backend'
 import { Data, Duration, Effect, Option } from 'effect'
 import { type ClaudeInstall, NOT_INSTALLED_REASON } from './claude-install'
 import { messageOf, withIdleQuery } from './idle-query'

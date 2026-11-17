@@ -11,7 +11,7 @@ import {
   type AgentSessionOptions,
   SessionFailed,
   SessionNotFound
-} from '@dia-plugin/dia-runs/backend'
+} from '@dia-plugin/dia-agent-adapters/backend'
 import { assert, describe, it } from '@effect/vitest'
 import { ContentAttachment, PathAttachment } from '@shared/domain/attachment'
 import type { PaneConfig, SessionId } from '@shared/domain/pane'

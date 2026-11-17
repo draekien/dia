@@ -19,7 +19,7 @@ export type SettingsLocation = {
 
 /** The Claude Code panel of the Adapters page. */
 export const CLAUDE_CODE_SETTINGS: SettingsLocation = {
-  plugin: 'dia-adapters',
+  plugin: 'dia-agent-adapters',
   id: 'adapters',
   section: 'dia-claude-code'
 }

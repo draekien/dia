@@ -1,6 +1,6 @@
 import * as os from 'node:os'
 import type { HostPluginContext, PluginSetup } from '@dia/plugin'
-import { AgentBackendKey } from '@dia-plugin/dia-runs/backend'
+import { AgentAdaptersKey } from '@dia-plugin/dia-agent-adapters/registry'
 import { SkillSourceRegistryKey } from '@dia-plugin/dia-skills/registry'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { Duration, Effect } from 'effect'
@@ -25,14 +25,17 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     const install = yield* makeClaudeInstall(ctx, isExistingFile)
     const catalog = yield* makeModelCatalog(ctx, probeModels(install))
     const health = yield* makeClaudeHealth(install, ctx.dataDir, catalog.refreshModels)
-    yield* ctx.provide(AgentBackendKey, makeClaudeCodeBackend({ catalog, install, health }))
+    const backend = makeClaudeCodeBackend({ catalog, install, health })
+    yield* ctx.whenProvided([AgentAdaptersKey], ({ agentAdapters }) =>
+      agentAdapters.register(ctx, { label: 'Claude Code', backend })
+    )
     yield* Effect.forkScoped(health.check)
     for (const source of yield* claudeCodeSources(os.homedir())) {
       yield* ctx.whenProvided([SkillSourceRegistryKey], ({ skillSourceRegistry }) =>
         skillSourceRegistry.register(source)
       )
     }
-    yield* Effect.logInfo('Claude Code agent backend provided', { plugin: ctx.name })
+    yield* Effect.logInfo('Claude Code agent adapter set up', { plugin: ctx.name })
   }).pipe(Effect.provide(NodeServices.layer))
 
 export default setup
