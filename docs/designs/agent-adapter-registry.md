@@ -275,3 +275,4 @@ Budget of 3 rounds spent.
 ### Implementation
 
 - *Correctness* — `LEGACY_ADAPTER_ID` moved from `model-preferences.ts` to `src/shared/domain/legacy-adapter.ts`: importing it into `pane.ts` from `model-preferences.ts` formed a load-time cycle (`TypeError: Cannot read properties of undefined (reading 'ast')` at `model-preferences.ts:18`).
+- *Correctness* — `AgentBackend.discoverSessions` returns `Omit<DiscoveredSession, 'backend'>`: the adapter does not know its own id, and `dia-runs` adds `backend` when it collects each adapter's sessions.
