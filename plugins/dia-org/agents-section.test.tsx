@@ -72,7 +72,7 @@ describe('agentRows', () => {
 describe('agentLine', () => {
   it('names the hire and the project while the run works', () => {
     expect(agentLine({ run: run('a', 'One'), summary: summary('a', StatusWorking.make({})) })).toBe(
-      'Ada · dia'
+      'Ada, dia'
     )
   })
 

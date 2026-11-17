@@ -1005,7 +1005,7 @@ describe('reducePaneChat — turn status, tool row updates and notices', () => {
   it('sets a running tool row’s elapsed time and detail without changing its state', () => {
     const running = reducePaneChat(loading, toolStarted('toolu_1', 'Task'))
     const timed = reducePaneChat(running, toolUpdated({ elapsedSeconds: 42 }))
-    const detailed = reducePaneChat(timed, toolUpdated({ detail: 'Explore · 3 tools' }))
+    const detailed = reducePaneChat(timed, toolUpdated({ detail: 'Explore, 3 tools' }))
     expect(detailed.messages.at(-1)?.parts).toEqual([
       {
         type: 'tool-call',
@@ -1013,7 +1013,7 @@ describe('reducePaneChat — turn status, tool row updates and notices', () => {
         name: 'Task',
         state: 'running',
         elapsedSeconds: 42,
-        detail: 'Explore · 3 tools'
+        detail: 'Explore, 3 tools'
       }
     ])
   })
@@ -1151,12 +1151,12 @@ describe('reducePaneChat: parked turns', () => {
 
   it('names when dia resumes an agent it resumes on its own', () => {
     const state = reducePaneChat(emptyPaneChatState, attentionChanged(resuming))
-    expect(noticeTexts(state)[0]).toMatch(/^Usage limit reached · dia resumes at \S/)
+    expect(noticeTexts(state)[0]).toMatch(/^Usage limit reached\. dia resumes at \S/)
   })
 
   it('names when the user can resume an agent waiting for its reset', () => {
     const state = reducePaneChat(emptyPaneChatState, attentionChanged(untilReset))
-    expect(noticeTexts(state)[0]).toMatch(/^Usage limit reached · you can resume at \S/)
+    expect(noticeTexts(state)[0]).toMatch(/^Usage limit reached\. You can resume at \S/)
   })
 
   it('replaces the park notice when the agent is parked again, instead of repeating it', () => {

@@ -54,7 +54,7 @@ function DraftRow({
       <SidebarMenuButton
         isActive={active}
         aria-current={active ? 'page' : undefined}
-        tooltip={`${title} · ${targetName}`}
+        tooltip={`${title}, ${targetName}`}
         onClick={() => actions.openDraft(draft.draftId)}
       >
         <PenLineIcon />

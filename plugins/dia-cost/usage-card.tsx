@@ -38,8 +38,7 @@ export function UsageCard({
   }
   return (
     <p className="tabular-nums">
-      {exactTokens(total)}
-      <span className="text-muted-foreground"> · main agent</span>
+      {exactTokens(total)} <span className="text-muted-foreground">main agent</span>
     </p>
   )
 }

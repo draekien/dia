@@ -14,6 +14,10 @@
     {
       "path": "./biome-plugins/noRegistryInject.grit",
       "includes": ["**/src/**", "!**/*.test.ts", "!**/*.test.tsx", "!**/*.fake.ts"]
+    },
+    {
+      "path": "./biome-plugins/noMiddleDot.grit",
+      "includes": ["**/src/**", "**/plugins/**"]
     }
   ],
   "formatter": {

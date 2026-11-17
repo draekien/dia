@@ -99,7 +99,7 @@ const installPathOf = (health: Health): string | undefined =>
 
 const accountOf = (health: Health): string | undefined =>
   health._tag === 'HealthReady'
-    ? [health.email, health.subscriptionType].filter((part) => part !== undefined).join(' · ') ||
+    ? [health.email, health.subscriptionType].filter((part) => part !== undefined).join(', ') ||
       'Signed in'
     : undefined
 
@@ -536,7 +536,7 @@ function ModelList({
                 hiddenOpen && 'rotate-90'
               )}
             />
-            Hidden · {sections.hidden.length}
+            Hidden ({sections.hidden.length})
           </Button>
           {hiddenOpen ? (
             <ul id="hidden-models" aria-label="Hidden" className="flex flex-col">
@@ -613,7 +613,7 @@ function ModelsSection({
           className="text-xs text-ink-muted tabular-nums"
           title={state.lastRefreshError ?? undefined}
         >
-          {state.lastRefreshError === undefined ? 'List from' : "Couldn't refresh · list from"}{' '}
+          {state.lastRefreshError === undefined ? 'List from' : "Couldn't refresh. List from"}{' '}
           {formatWhen(state.fetchedAt)}
         </span>
         {refreshButton('Refresh')}

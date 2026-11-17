@@ -48,7 +48,7 @@ export type WorktreeInfo = typeof WorktreeInfo.Type
 
 /**
  * Who a worktree serves: the pane whose session runs in it and the `label` Settings › Worktrees
- * shows for it, such as `Tab · dia` or `Issue · Fix login redirect loop`.
+ * shows for it, such as `Tab: dia` or `Issue: Fix login redirect loop`.
  */
 export const WorktreeOwner = Schema.Struct({
   paneId: Schema.String,

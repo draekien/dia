@@ -76,7 +76,7 @@ describe('secondLine', () => {
 })
 
 describe('secondLine — turn status', () => {
-  const RETRYING = 'Retrying (attempt 2 of 10) in 4s · 529'
+  const RETRYING = 'Retrying (attempt 2 of 10) in 4s, 529'
 
   it('shows the turn’s named state in sans instead of the activity line', () => {
     expect(secondLine({ ...summary(WORKING, EDITING), turnStatus: RETRYING })).toEqual({

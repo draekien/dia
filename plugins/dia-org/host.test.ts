@@ -675,7 +675,7 @@ describe('org host entry issue worktrees', () => {
 
       assert.deepStrictEqual(
         [before, foundation.fake.enqueued.map((queued) => queued.entry.run.cwd), log],
-        [0, ['C:/trees/one'], ['create Issue · Fix login']]
+        [0, ['C:/trees/one'], ['create Issue: Fix login']]
       )
     })
   )

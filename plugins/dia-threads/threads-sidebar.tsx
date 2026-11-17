@@ -161,7 +161,7 @@ function MetaGroup() {
         <SidebarMenuItem>
           <SidebarMenuButton
             render={<div />}
-            tooltip="Meta · No open proposals"
+            tooltip="Meta, no open proposals"
             className="cursor-default group-data-[collapsible=icon]:justify-center"
           >
             <span className="sr-only">Meta, no open proposals</span>
@@ -199,7 +199,7 @@ function PageEntry({ page }: { readonly page: PageListEntry }) {
       ? view?._tag === 'PageView' && view.plugin === page.key.plugin && view.id === page.key.id
       : view?._tag === 'TabView' && view.paneId === tab
   const status = tab === null || summary === undefined ? null : summary.status
-  const tooltip = status === null ? page.label : `${page.label} · ${statusLabel(status)}`
+  const tooltip = status === null ? page.label : `${page.label}, ${statusLabel(status)}`
   return (
     <SidebarMenuItem>
       <SidebarMenuButton

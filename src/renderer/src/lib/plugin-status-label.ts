@@ -8,7 +8,7 @@ export const pluginStatusLabel = (status: PluginStatus): string => {
     case 'Loading':
       return 'Loading…'
     case 'Loaded':
-      return status.reloadError === undefined ? 'Loaded' : 'Loaded · last reload failed'
+      return status.reloadError === undefined ? 'Loaded' : 'Loaded, last reload failed'
     case 'Failed':
       return 'Failed to load'
     case 'Waiting':

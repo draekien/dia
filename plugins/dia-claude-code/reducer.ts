@@ -127,7 +127,7 @@ const rateLimitWarning = (type: RateLimitType): string =>
 const COMPACTING_LABEL = 'Compacting conversation'
 
 const thinkingLabel = (tokens: number): string =>
-  tokens < 1000 ? 'Thinking' : `Thinking · ~${(Math.floor(tokens / 100) / 10).toFixed(1)}k tokens`
+  tokens < 1000 ? 'Thinking' : `Thinking, ~${(Math.floor(tokens / 100) / 10).toFixed(1)}k tokens`
 
 const NOTHING_TO_COMPACT = 'Not enough messages to compact.'
 
@@ -145,7 +145,7 @@ const compactionFailedEvents = (error: string | undefined) => {
 }
 
 const retryLabel = (retry: Extract<SDKMessage, { subtype: 'api_retry' }>): string =>
-  `Retrying (attempt ${retry.attempt} of ${retry.max_retries}) in ${Math.ceil(retry.retry_delay_ms / 1000)}s · ${retry.error_status ?? 'connection error'}`
+  `Retrying (attempt ${retry.attempt} of ${retry.max_retries}) in ${Math.ceil(retry.retry_delay_ms / 1000)}s, ${retry.error_status ?? 'connection error'}`
 
 const taskProgressDetail = (task: Extract<SDKMessage, { subtype: 'task_progress' }>): string =>
   task.summary ??
@@ -153,7 +153,7 @@ const taskProgressDetail = (task: Extract<SDKMessage, { subtype: 'task_progress'
     task.description,
     `${task.usage.tool_uses} tools`,
     ...(task.last_tool_name !== undefined ? [`last: ${task.last_tool_name}`] : [])
-  ].join(' · ')
+  ].join(', ')
 
 const SIGNING_IN_LABEL = 'Signing in'
 

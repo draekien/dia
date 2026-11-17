@@ -291,13 +291,13 @@ describe('foldSummary — turn status', () => {
   })
   const retrying = foldSummary(
     withTodo('Writing tests'),
-    turnStatus('Retrying (attempt 2 of 10) in 4s · 529')
+    turnStatus('Retrying (attempt 2 of 10) in 4s, 529')
   )
 
   it('carries the turn’s named state while keeping the activity line', () => {
     expect(retrying).toEqual({
       ...withTodo('Writing tests'),
-      turnStatus: 'Retrying (attempt 2 of 10) in 4s · 529'
+      turnStatus: 'Retrying (attempt 2 of 10) in 4s, 529'
     })
   })
 

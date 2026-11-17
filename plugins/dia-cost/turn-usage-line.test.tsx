@@ -3,12 +3,9 @@
 import type { TokenUsage } from '@dia/plugin'
 import { TooltipProvider } from '@dia/renderer-plugin'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { Option, Stream } from 'effect'
-import { Atom } from 'effect/reactivity'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { RunUsage } from './calls'
 import { spokenUsage, TurnUsageLine, TurnUsageView } from './turn-usage-line'
-import type { UsageAtoms } from './usage-card'
+import { followed, RUN } from './usage.fake'
 
 afterEach(cleanup)
 
@@ -60,13 +57,6 @@ describe('spokenUsage', () => {
     )
   })
 })
-
-const RUN = 'aaaaaaaa-0000-4000-8000-000000000001'
-
-const followed = (usage: RunUsage) =>
-  Atom.family((_runId: string) =>
-    Atom.make(Stream.make(Option.some(usage)))
-  ) as unknown as UsageAtoms
 
 const later: TokenUsage = {
   inputTokens: 1,

@@ -13,7 +13,7 @@ import { type Ledger, makeLedger, worktreeMigrations } from './ledger'
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 
 const PANE = 'aaaaaaaa-0000-4000-8000-000000000001'
-const OWNER = { paneId: PANE, label: 'Tab · repo' }
+const OWNER = { paneId: PANE, label: 'Tab: repo' }
 const info = (name: string): WorktreeInfo => ({
   path: `/trees/${name}`,
   branch: `dia/${name}`,
@@ -153,7 +153,7 @@ describe('worktree ledger', () => {
       yield* ledger.recordReattached(A, PANE)
 
       const [entry] = yield* rows(ledger)
-      assert.deepStrictEqual([entry.state, entry.owner.label], [Active.make({}), 'Tab · repo'])
+      assert.deepStrictEqual([entry.state, entry.owner.label], [Active.make({}), 'Tab: repo'])
     }).pipe(Effect.scoped, Effect.provide(platform))
   )
 

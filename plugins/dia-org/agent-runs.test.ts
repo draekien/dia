@@ -88,13 +88,13 @@ describe('agentRunsOf', () => {
 
 describe('issueRunTabName', () => {
   it('joins the assignee and the issue title', () => {
-    expect(issueRunTabName('Ada', 'Add a login page')).toBe('Ada · Add a login page')
+    expect(issueRunTabName('Ada', 'Add a login page')).toBe('Ada: Add a login page')
   })
 
   it('shortens a long issue title with an ellipsis to fit the tab name limit', () => {
     const name = issueRunTabName('Ada', 'x'.repeat(100))
 
-    expect([name.length, name.startsWith('Ada · '), name.endsWith('…')]).toEqual([
+    expect([name.length, name.startsWith('Ada: '), name.endsWith('…')]).toEqual([
       AGENT_NAME_MAX_LENGTH,
       true,
       true
@@ -102,8 +102,8 @@ describe('issueRunTabName', () => {
   })
 
   it('keeps a name of exactly the limit whole', () => {
-    const title = 'x'.repeat(AGENT_NAME_MAX_LENGTH - 'Ada · '.length)
+    const title = 'x'.repeat(AGENT_NAME_MAX_LENGTH - 'Ada: '.length)
 
-    expect(issueRunTabName('Ada', title)).toBe(`Ada · ${title}`)
+    expect(issueRunTabName('Ada', title)).toBe(`Ada: ${title}`)
   })
 })
