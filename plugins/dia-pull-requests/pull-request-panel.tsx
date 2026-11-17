@@ -154,7 +154,6 @@ function Checks({ checks }: { readonly checks: ReadonlyArray<PullRequestCheck> }
           <Status className={check.state === 'failed' ? 'text-destructive' : undefined}>
             <StatusMedia fill={CHECK_FILL[check.state]} />
             <StatusName className="text-foreground">{check.name}</StatusName>
-            <span className="sr-only">{CHECK_LABEL[check.state]}</span>
           </Status>
         )
         return (

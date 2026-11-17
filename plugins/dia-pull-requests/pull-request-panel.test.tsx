@@ -103,9 +103,9 @@ describe('PullRequestPanel', () => {
     const checks = await screen.findByRole('region', { name: 'Checks' })
     const typecheck = within(checks).getByRole('link', { name: /typecheck/ })
     expect(typecheck.getAttribute('href')).toBe('https://github.com/draekien/dia/runs/1')
-    expect(within(checks).getAllByText('Failed')).toHaveLength(2)
+    expect(within(checks).getAllByText('Failed')).toHaveLength(1)
     expect(within(checks).queryByRole('link', { name: /lint/ })).toBeNull()
-    expect(within(checks).getAllByText('Pending')).toHaveLength(2)
+    expect(within(checks).getAllByText('Pending')).toHaveLength(1)
   })
 
   it('shows reviews and comments with their author, kind and body', async () => {
