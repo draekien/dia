@@ -27,7 +27,7 @@ const definition = (id: string, name: string, jobDescription = 'default'): Agent
   permissions: { allow: [], ask: [], deny: [] },
   mcpServers: [],
   bypassOptIn: false,
-  model: null,
+  selection: null,
   thinkingLevel: 'medium'
 })
 

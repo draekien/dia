@@ -81,7 +81,7 @@ import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { makeOrgTools } from './org-tools'
 import { makeRoutingTools } from './routing-tools'
-import { backendReadsOf, issueStartOptions } from './run-options'
+import { issueStartOptions } from './run-options'
 import { type Org, OrgService } from './service'
 
 type Workspace = Stream.Success<HostPluginContext['workspace']>
@@ -215,15 +215,13 @@ const runOnFoundation = (ctx: HostPluginContext, deps: RunDeps) =>
       [RunsKey, RunQueueKey, AgentAdaptersKey],
       ({ runs, 'run-queue': queue, agentAdapters }) =>
         Effect.gen(function* () {
+          const choices = { adapters: agentAdapters, defaultSelection: runs.defaultSelection }
           const issueRuns = yield* runIssues({
             org: deps.org,
             issues: deps.work,
             provider: deps.provider,
             workspace: deps.issueWorkspace,
-            startOptions: issueStartOptions(
-              deps.issueWorkspace,
-              backendReadsOf(agentAdapters, LEGACY_ADAPTER_ID)
-            ),
+            startOptions: issueStartOptions(deps.issueWorkspace, choices),
             runs,
             queue,
             projectDirectoryOf: (issue) => projectDirectoryOf(deps, issue),
@@ -246,7 +244,7 @@ const runOnFoundation = (ctx: HostPluginContext, deps: RunDeps) =>
             org: deps.org,
             work: deps.work,
             runs,
-            backend: backendReadsOf(agentAdapters, LEGACY_ADAPTER_ID),
+            choices,
             directory,
             runId: deps.assistantRunId
           })
@@ -412,12 +410,18 @@ const serveOrgCalls = (
   Effect.all(
     [
       ctx.serve(ReadOrg, () =>
-        Effect.all({
-          jobTitles: org.jobTitles,
-          hiredAgents: org.hiredAgents,
-          settings: org.settings,
-          bypassAvailable: bypassAvailable(adapters, LEGACY_ADAPTER_ID),
-          worktreeProjects: worktrees.worktreeProjects
+        Effect.gen(function* () {
+          const jobTitles = yield* org.jobTitles
+          return {
+            jobTitles,
+            hiredAgents: yield* org.hiredAgents,
+            settings: yield* org.settings,
+            bypassAvailable: yield* bypassAvailable(
+              adapters,
+              jobTitles.map((jobTitle) => jobTitle.selection)
+            ),
+            worktreeProjects: yield* worktrees.worktreeProjects
+          }
         })
       ),
       ctx.serve(SetJobTitleEnabled, ({ jobTitleId, enabled }) =>

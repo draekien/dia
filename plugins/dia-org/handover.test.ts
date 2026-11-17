@@ -88,7 +88,7 @@ describe('handOverJobTitles after 9_agent_definitions', () => {
           permissions: { allow: [], ask: [], deny: [] },
           mcpServers: ['github-2'],
           bypassOptIn: true,
-          model: 'claude-sonnet-5',
+          selection: { backend: 'dia-claude-code', model: 'claude-sonnet-5' },
           thinkingLevel: 'high'
         },
         source: { _tag: 'User' },

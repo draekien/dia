@@ -20,7 +20,7 @@ const snapshot: OrgSnapshot = {
       permissions: { allow: [], ask: [], deny: [] },
       mcpServers: [],
       bypassOptIn: false,
-      model: null,
+      selection: null,
       thinkingLevel: 'medium'
     })
   ],

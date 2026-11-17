@@ -1,3 +1,4 @@
+import { LEGACY_ADAPTER_ID } from '@dia/plugin'
 import {
   type AgentDefinition,
   type AgentDefinitionRegistry,
@@ -22,7 +23,7 @@ const HandoverRow = Schema.Struct({
   permissions: Schema.fromJsonString(AgentDefinitionSchema.fields.permissions),
   mcp_servers: Schema.fromJsonString(McpServers),
   bypass_opt_in: Schema.BooleanFromBit,
-  model: AgentDefinitionSchema.fields.model,
+  model: Schema.NullOr(Schema.NonEmptyString),
   thinking_level: AgentDefinitionSchema.fields.thinkingLevel
 })
 type HandoverRow = typeof HandoverRow.Type
@@ -46,7 +47,8 @@ const sameAsBuiltIn = (row: AgentDefinition, builtIn: AgentDefinition): boolean 
   sameSet(row.permissions.deny, builtIn.permissions.deny) &&
   sameSet(row.mcpServers, builtIn.mcpServers) &&
   row.bypassOptIn === builtIn.bypassOptIn &&
-  row.model === builtIn.model &&
+  row.selection?.backend === builtIn.selection?.backend &&
+  row.selection?.model === builtIn.selection?.model &&
   row.thinkingLevel === builtIn.thinkingLevel
 
 const toDefinition = (row: HandoverRow, mcpServers: ReadonlyArray<string>): AgentDefinition => ({
@@ -57,7 +59,7 @@ const toDefinition = (row: HandoverRow, mcpServers: ReadonlyArray<string>): Agen
   permissions: row.permissions,
   mcpServers,
   bypassOptIn: row.bypass_opt_in,
-  model: row.model,
+  selection: row.model === null ? null : { backend: LEGACY_ADAPTER_ID, model: row.model },
   thinkingLevel: row.thinking_level
 })
 

@@ -126,7 +126,7 @@ const fakeFoundation = () => {
     openInTab: ignored,
     changes: Stream.empty,
     discoverSessions: () => Effect.succeed([]),
-    defaultSelection: Effect.succeed(Option.none())
+    defaultSelection: Effect.succeed(Option.some({ backend: LEGACY_ADAPTER_ID, model: 'default' }))
   } as unknown as Runs
   const setup = (ctx: HostPluginContext) =>
     Effect.gen(function* () {
@@ -343,7 +343,7 @@ describe('org host entry', () => {
         permissions: { allow: ['Read'], ask: ['Write'], deny: ['Bash'] },
         mcpServers: ['github'],
         bypassOptIn: true,
-        model: 'claude-sonnet-5-5',
+        selection: { backend: 'dia-claude-code', model: 'claude-sonnet-5-5' },
         thinkingLevel: 'high'
       }
 
