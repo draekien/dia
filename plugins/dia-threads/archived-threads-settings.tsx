@@ -13,6 +13,7 @@ import {
   List,
   ListRow,
   ListRowAction,
+  ListRowDescription,
   ListRowLink,
   ListRowName,
   ListRowSubject,
@@ -26,6 +27,7 @@ import type { ProjectEntry, Tab } from '@shared/domain/project'
 import { Effect } from 'effect'
 import { EllipsisIcon } from 'lucide-react'
 import { useRef, useState } from 'react'
+import { RETIREMENT_COPY, useRetirement } from './background-retirement'
 import { RetireThreadDialog } from './retire-thread-dialog'
 
 const unarchive = (tab: Tab): Promise<void> => {
@@ -63,14 +65,26 @@ function ArchivedRow({
   readonly onDelete: (trigger: HTMLElement | null) => void
 }) {
   const trigger = useRef<HTMLButtonElement>(null)
+  const deleting = useRetirement(tab.config.paneId) === 'delete'
   return (
     <ListRow value={tab.config.paneId}>
-      <ListRowLink render={<button type="button" onClick={() => show(tab.config.paneId)} />}>
+      <ListRowLink
+        render={
+          <button
+            type="button"
+            aria-disabled={deleting || undefined}
+            onClick={() => {
+              if (!deleting) show(tab.config.paneId)
+            }}
+          />
+        }
+      >
         <ListRowSubject>
-          <ListRowName>{tab.name}</ListRowName>
+          <ListRowName className={deleting ? 'text-ink-muted' : undefined}>{tab.name}</ListRowName>
+          {deleting && <ListRowDescription>{RETIREMENT_COPY.delete.running}</ListRowDescription>}
         </ListRowSubject>
       </ListRowLink>
-      <ListRowAction>
+      <ListRowAction hidden={deleting}>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -102,7 +116,8 @@ function ArchivedRow({
  * The Archived threads page of the Settings dialog: every archived thread, grouped under its
  * project in the user's project order and in creation order inside a project. Clicking a thread
  * closes Settings and shows it. A thread's menu unarchives it, showing a toast when its working
- * directory cannot be restored, or deletes it after {@link RetireThreadDialog} confirms. Renders
+ * directory cannot be restored, or deletes it after {@link RetireThreadDialog} confirms; while the
+ * delete runs, the row is muted, reads `Deleting…`, does not open and has no menu. Renders
  * nothing until the workspace has loaded. Render it inside a scrolling container.
  */
 export function ArchivedThreadsSettings() {

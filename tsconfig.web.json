@@ -85,6 +85,7 @@
     "plugins/dia-org/org-view.ts",
     "plugins/dia-org/org-tree.ts",
     "plugins/dia-org/org-actions.ts",
+    "plugins/dia-threads/background-retirement.ts",
     "plugins/dia-org/team-presets.ts",
     "plugins/dia-chat/slots.ts",
     "plugins/dia-adapters/slots.ts",
