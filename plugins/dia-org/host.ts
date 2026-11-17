@@ -67,11 +67,18 @@ import {
   WatchOrgLive
 } from './calls'
 import { agentName, jobTitleName, ORG_PROVIDER } from './domain'
-import { handOverJobTitles, handOverWork, handoverPending, workHandoverPending } from './handover'
+import {
+  grantOrgRead,
+  handOverJobTitles,
+  handOverWork,
+  handoverPending,
+  workHandoverPending
+} from './handover'
 import { runIssues } from './issue-runs'
 import { type IssueWorkspace, makeIssueWorkspace, moveIssueWorktrees } from './issue-workspace'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
+import { makeOrgTools } from './org-tools'
 import { makeRoutingTools } from './routing-tools'
 import { issueStartOptions } from './run-options'
 import { type Org, OrgService } from './service'
@@ -316,12 +323,24 @@ const registerBuiltIns = (ctx: HostPluginContext, registry: AgentDefinitionRegis
     { discard: true }
   )
 
+const registerOrgTools = (ctx: HostPluginContext, org: Org) =>
+  ctx.whenProvided([ToolsKey], ({ tools }) =>
+    Effect.forEach(
+      makeOrgTools({ org, requestApproval: tools.requestApproval }),
+      (tool) => tools.register(tool, { when: isAssistantScope }),
+      { discard: true }
+    ).pipe(Effect.tap(() => Effect.logInfo('Org tools registered')))
+  )
+
 const holdRegistries = (ctx: HostPluginContext, org: Org, sql: SqlClient.SqlClient) =>
   Effect.gen(function* () {
     yield* ctx.whenProvided([AgentDefinitionRegistryKey], ({ agentDefinitionRegistry }) =>
       Effect.gen(function* () {
         yield* org.holdDefinitions(agentDefinitionRegistry)
         yield* registerBuiltIns(ctx, agentDefinitionRegistry)
+        yield* grantOrgRead(agentDefinitionRegistry).pipe(
+          Effect.provideService(SqlClient.SqlClient, sql)
+        )
       })
     )
     if (yield* handoverPending.pipe(Effect.provideService(SqlClient.SqlClient, sql))) {
@@ -455,6 +474,7 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       hold(queue, provided, 'run queue').pipe(Effect.andThen(applyCap(org, queue)))
     )
     yield* holdRegistries(ctx, org, sql)
+    yield* registerOrgTools(ctx, org)
     yield* runIssuesOnFoundation(ctx, {
       sql,
       org,

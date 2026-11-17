@@ -91,7 +91,7 @@ A defect returns `The <tool> call failed.` with `isError`, as `routing-tools.ts`
 
 ### Logging
 
-Each call logs `Org tool called` (`tool`) at INFO, then `Org tool changed the org` (`tool`, the changed id), `Org tool refused the call` (`tool`, `reason`: the error tag) at INFO, `Org tool call declined by the user` at INFO, or `Org tool failed` with the cause at ERROR.
+Each call logs `Org tool called` (`tool`) at INFO, then `Org tool call succeeded` (`tool`; the result text names the changed ids), `Org tool refused the call` (`tool`, `reason`: the error tag) at INFO, `Org tool approval answered` (`title`, `answer`) and `Org tool call declined by the user` at INFO, or `Org tool failed` with the cause at ERROR.
 
 ### `plugins/dia-org/built-in-job-titles.ts`
 

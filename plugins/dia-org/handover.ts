@@ -9,7 +9,7 @@ import type { McpServerRegistry } from '@dia-plugin/dia-mcp/registry'
 import { McpServers } from '@dia-plugin/dia-mcp/servers'
 import { Effect, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
-import { BUILT_IN_DEFINITIONS } from './built-in-job-titles'
+import { BUILT_IN_DEFINITIONS, EXECUTIVE_ASSISTANT, ORG_READ_TOOL } from './built-in-job-titles'
 import { MissingReference, ORG_PROVIDER, refusalOf } from './domain'
 
 const HANDOVER_TABLE = 'job_titles_handover'
@@ -129,6 +129,56 @@ export const handOverJobTitles = (
       overrides: overrides.length,
       definitions: userDefinitions.length
     })
+  }).pipe(Effect.orDie)
+
+const grantPending = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  const rows = yield* sql`SELECT 1 FROM org_read_grant`
+  return rows.length > 0
+})
+
+/**
+ * Adds {@link ORG_READ_TOOL} to the allow list of the Executive assistant's override in
+ * `definitions`, once per org database: an Executive assistant the user edited keeps its stored
+ * permissions, which the built-in allow list does not reach. Changes nothing else, and nothing
+ * for an Executive assistant that was never edited. Does nothing while job titles wait to be
+ * handed over, so an override the handover imports is granted on a later launch. Call it after the
+ * built-in definitions are registered.
+ */
+export const grantOrgRead = (
+  definitions: AgentDefinitionRegistry
+): Effect.Effect<void, never, SqlClient.SqlClient> =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient
+    if (!(yield* grantPending)) return
+    if (yield* handoverPending) {
+      yield* Effect.logInfo('The org_read grant waits for the job title handover')
+      return
+    }
+    const listed = yield* definitions.list
+    const assistant = listed.find((entry) => entry.definition.id === EXECUTIVE_ASSISTANT.id)
+    if (assistant === undefined) {
+      yield* Effect.logWarning('The org_read grant found no Executive assistant to grant')
+      return
+    }
+    const { permissions } = assistant.definition
+    if (assistant.edited && !permissions.allow.includes(ORG_READ_TOOL)) {
+      const granted = yield* definitions
+        .edit(assistant.definition.id, {
+          permissions: { ...permissions, allow: [...permissions.allow, ORG_READ_TOOL] }
+        })
+        .pipe(
+          Effect.as(true),
+          Effect.catch((error) =>
+            Effect.logWarning('The org_read grant could not edit the Executive assistant', {
+              reason: error._tag
+            }).pipe(Effect.as(false))
+          )
+        )
+      if (!granted) return
+      yield* Effect.logInfo('Granted org_read to the edited Executive assistant')
+    }
+    yield* sql`DELETE FROM org_read_grant`
   }).pipe(Effect.orDie)
 
 const WORK_HANDOVER_TABLES = [
