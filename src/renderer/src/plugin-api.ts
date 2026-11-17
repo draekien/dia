@@ -52,6 +52,7 @@ export {
 } from './lib/drafts'
 export { addEntry, declareList, useList } from './lib/list-slots'
 export { callHost, followHost, type PluginTarget } from './lib/plugin-messages'
+export { openRightPanel } from './lib/right-panel'
 export {
   revealRailCard,
   useRailCardShown,

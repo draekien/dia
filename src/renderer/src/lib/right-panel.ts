@@ -17,9 +17,11 @@ export type RightPanelView = ListEntry<{
   readonly component: ComponentType<{ readonly paneId: PaneId }>
 }>
 
+const panelKey = (plugin: string, id: string): string => `${plugin}.${id}`
+
 /** The app-wide key of `panel`, `<plugin>.<id>`, under which a tab remembers its selected panel. */
 export const rightPanelKey = (panel: RightPanelView): string =>
-  `${panel.key.plugin}.${panel.key.id}`
+  panelKey(panel.key.plugin, panel.key.id)
 
 /** The narrowest the region can be dragged to, in px. */
 export const RIGHT_PANEL_MIN_WIDTH = 240
@@ -86,6 +88,20 @@ export const toggleRightPanel = (paneId: PaneId): void => {
 export const selectRightPanel = (paneId: PaneId, key: string): void => {
   update(paneId, { selected: key })
   log('Selected a right panel', { paneId, key })
+}
+
+/**
+ * Opens the right panel of the tab showing `paneId` on the panel with `id` that plugin `plugin`
+ * added to the panel list. Call it from a plugin's UI to show its own panel, for example when the
+ * user picks a row that the panel details.
+ */
+export const openRightPanel = (
+  paneId: PaneId,
+  panel: { readonly plugin: string; readonly id: string }
+): void => {
+  const selected = panelKey(panel.plugin, panel.id)
+  update(paneId, { open: true, selected })
+  log('Opened the right panel on a panel', { paneId, selected })
 }
 
 /** Sets the right panel width of the tab showing `paneId` to `width` px. */

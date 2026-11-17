@@ -12,7 +12,7 @@ In scope:
 - Polling every 60 seconds while a renderer follows the run, for each pull request that is open, a draft, not yet read, or whose last read failed.
 - A `Pull requests` rail card and a `Pull request` right panel.
 - One kernel export, `openRightPanel`, so a plugin can open a tab's right panel on its own panel. `PLUGIN_API_VERSION` goes from 0.0.43 to 0.0.44.
-- `dia-chat` exports `markdown-view.ts`, which re-exports `Markdown`, so the panel renders text with dia's `Markdown`.
+- A new `dia-markdown` plugin owns dia's Markdown renderer (moved from `plugins/dia-chat/markdown.tsx`) and provides it under `MarkdownKey`. `dia-chat` and this plugin read it with `useProvided(MarkdownKey)` and show plain text while it is not provided.
 
 Out of scope: creating, merging or reviewing pull requests from dia; detecting pull requests from `gh pr create` output; badges, OS notifications or decision-queue entries for pull request events; GitHub Enterprise hosts; inline review-thread comments; removing links when a run is deleted.
 
@@ -55,14 +55,36 @@ src/renderer/src/lib/right-panel.ts     + openRightPanel
 src/renderer/src/plugin-api.ts          exports openRightPanel
 src/shared/plugin/manifest.ts           PLUGIN_API_VERSION 0.0.43 → 0.0.44
 plugins/*/plugin.json (all 28)          "api": "0.0.43" → "0.0.44"
-plugins/dia-chat/markdown-view.ts       export { Markdown } from './markdown'
-plugins/dia-chat/plugin.json            exports + "markdown-view.ts"
+plugins/dia-markdown/
+  plugin.json            { "name": "dia-markdown", "api": "0.0.44", "category": "feature",
+                           "renderer": "renderer.ts", "load": "eager", "exports": ["markdown.ts"] }
+  markdown.ts            MarkdownProps, MarkdownKey (exported; type-only React import)
+  markdown-view.tsx      the renderer, moved from plugins/dia-chat/markdown.tsx unchanged
+  markdown-view.test.tsx moved from plugins/dia-chat/markdown.test.tsx
+  renderer.ts            ctx.provide(MarkdownKey, Markdown)
+plugins/dia-chat/pane.tsx, plan-review-card.tsx   read useProvided(MarkdownKey); plain text when undefined
+tsconfig.plugin-exports.json            include + plugins/dia-markdown/markdown.ts
 DESIGN.md                               Session rail "Cards from dia" + Pull requests;
                                         Right panel "Panels from dia" + Pull request
 docs/designs/dia-pull-requests.md       this spec
 ```
 
-`markdown-view.ts` is a re-export because `PluginExport` accepts only `.ts` paths (`src/shared/plugin/manifest.ts:86`) and `markdown.ts` would collide with `markdown.tsx`.
+### `dia-markdown`
+
+A plugin export may import only `effect`, `@dia/plugin`, `@dia-plugin/*` and relative `.ts` files (`docs/designs/plugin-module-exports.md`, criterion 6), so a React component cannot be exported as a module. The user chose to make Markdown rendering a plugin that provides the component as a service, as `dia-mcp` provides `McpServersEditorKey` (`plugins/dia-mcp/editor.ts`).
+
+```ts
+/** Props of dia's Markdown block: the raw `content`, and `className` appended to the typeset wrapper. */
+export interface MarkdownProps { readonly content: string; readonly className?: string }
+
+/** dia's Markdown renderer, provided by `dia-markdown`. Read it with `useProvided(MarkdownKey)`; `undefined` while not provided. */
+export const MarkdownKey = ServiceKey.make(
+  'markdown',
+  (value): value is ComponentType<MarkdownProps> => typeof value === 'function'
+)
+```
+
+While `MarkdownKey` is not provided (`dia-markdown` unloaded, reloading or failed), each reader renders `content` as plain text with its line breaks kept (`whitespace-pre-wrap`).
 
 ## Modules
 
@@ -416,7 +438,7 @@ It sets `open: true` and `selected` to the panel's key, and logs at debug. The k
 ### Round 1
 
 **Applied**
-- *Correctness, blocker*: `exports` cannot list `markdown.tsx` (`PluginExport` matches only `.ts`, `manifest.ts:86`). Now `markdown-view.ts` re-exports `Markdown`.
+- *Correctness, blocker*: `exports` cannot list `markdown.tsx` (`PluginExport` matches only `.ts`, `manifest.ts:86`). Now `markdown-view.ts` re-exports `Markdown`. *Superseded during implementation*: an export may not import a `.tsx` file at all (`plugin-exports.test.ts`); the user chose a `dia-markdown` plugin that provides `MarkdownKey`.
 - *Project rules, blocker*: the API bump refuses every plugin still on 0.0.43 (`isApiCompatible`, `manifest.ts:38`). All 28 `plugin.json` files move to 0.0.44; criterion 13 added.
 - *Project rules, major*: inline `TaggedStruct`s inside unions extracted to named exports.
 - *Project rules, major*: `PullRequestUrl` hand-declared its type and could not normalise with `brand` alone. Now a `decodeTo` transformation into a branded string; type derived.
