@@ -21,8 +21,8 @@ import { AgentName } from '@shared/domain/project'
 import type { RunSummary } from '@shared/domain/run-summary'
 import { Option, Schema } from 'effect'
 import { useState } from 'react'
+import { RETIREMENT_COPY, type Retirement, useRetirement } from './background-retirement'
 import { type OverviewRow, rowKey } from './overview'
-import type { Retirement } from './retire-thread-dialog'
 
 const decodeName = Schema.decodeUnknownOption(AgentName)
 
@@ -112,8 +112,9 @@ interface AgentRowProps {
 /**
  * One agent in the overview: its status dot, name and second line. Clicking it or pressing
  * `Enter` shows the agent's tab; `F2` or the row menu renames it. The row menu also archives or deletes
- * the agent through `onRetire`. A `projectName` of null leaves the project out of the tooltip and accessible
- * name.
+ * the agent through `onRetire`. While the agent is being archived or deleted, the row is muted, says
+ * so on its second line, does not open, and its menu cannot archive or delete it. A `projectName` of
+ * null leaves the project out of the tooltip and accessible name.
  */
 export function ThreadRow({
   row,
@@ -125,14 +126,20 @@ export function ThreadRow({
   onRetire
 }: AgentRowProps) {
   const collapsed = useSidebar().state === 'collapsed'
-  const line = secondLine(row.summary)
+  const retirement = useRetirement(row.paneId)
+  const line =
+    retirement === null
+      ? secondLine(row.summary)
+      : { text: RETIREMENT_COPY[retirement].running, mono: false }
   const status = statusLabel(row.summary.status)
   const marker = modeMarker(row.permissionMode)
   const markerSuffix = marker === null ? '' : `, ${marker}`
   const place = projectName === null ? row.name : `${projectName} / ${row.name}`
   const label = `${row.name}, ${status}. ${line.text}${markerSuffix}`
   const summaryText = `${place}, ${status}, ${line.text}${markerSuffix}`
-  const show = () => actions.selectTab(row.paneId)
+  const show = () => {
+    if (retirement === null) actions.selectTab(row.paneId)
+  }
   const body = (name: React.ReactNode) => (
     <>
       <StatusIndicator status={row.summary.status} />
@@ -172,6 +179,7 @@ export function ThreadRow({
               tabIndex={tabbable ? 0 : -1}
               aria-label={collapsed ? summaryText : label}
               aria-current={selected ? 'page' : undefined}
+              aria-disabled={retirement !== null || undefined}
               title={collapsed ? undefined : place}
               onClick={show}
               onKeyDown={(event) => {
@@ -201,13 +209,17 @@ export function ThreadRow({
               <ContextMenuShortcut>F2</ContextMenuShortcut>
             </ContextMenuItem>
           </ContextMenuGroup>
-          <ContextMenuSeparator />
-          <ContextMenuGroup>
-            <ContextMenuItem onClick={() => onRetire('archive')}>Archive</ContextMenuItem>
-            <ContextMenuItem variant="destructive" onClick={() => onRetire('delete')}>
-              Delete…
-            </ContextMenuItem>
-          </ContextMenuGroup>
+          {retirement === null && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuGroup>
+                <ContextMenuItem onClick={() => onRetire('archive')}>Archive</ContextMenuItem>
+                <ContextMenuItem variant="destructive" onClick={() => onRetire('delete')}>
+                  Delete…
+                </ContextMenuItem>
+              </ContextMenuGroup>
+            </>
+          )}
         </ContextMenuContent>
       </ContextMenu>
     </SidebarMenuItem>

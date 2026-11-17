@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+// @effect-diagnostics newPromise:off -- the test holds an archive or delete call open with a manually resolved Promise.
 
 import { actions, SidebarProvider, TooltipProvider } from '@dia/renderer-plugin'
 import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
@@ -10,7 +11,7 @@ import {
   StatusWorking,
   ToolUse
 } from '@shared/domain/run-summary'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { Atom } from 'effect/reactivity'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -187,6 +188,48 @@ describe('ThreadsSidebar row menu', () => {
       [[paneId(3)]],
       null
     ])
+    Reflect.deleteProperty(window, 'dia')
+  })
+
+  it('mutes a thread while it archives, so it neither opens nor offers Archive or Delete', async () => {
+    let finish: (reason: string | null) => void = () => undefined
+    const bridge = {
+      archiveTab: vi.fn(() => new Promise<string | null>((resolve) => (finish = resolve)))
+    }
+    Object.assign(window, { dia: bridge })
+    render(<Harness initialOpen />)
+    fireEvent.contextMenu(screen.getByRole('button', { name: /^docs, / }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }))
+
+    const row = await screen.findByRole('button', { name: 'docs, Idle. Archiving…' })
+    fireEvent.click(row)
+    fireEvent.contextMenu(row)
+
+    expect([
+      row.getAttribute('aria-disabled'),
+      vi.mocked(state.selectTab).mock.calls,
+      screen.queryByRole('menuitem', { name: 'Archive' }),
+      screen.queryByRole('menuitem', { name: 'Delete…' })
+    ]).toEqual(['true', [], null, null])
+    await act(async () => finish(null))
+    Reflect.deleteProperty(window, 'dia')
+  })
+
+  it('does not open a thread that is archiving from Enter in the search box', async () => {
+    let finish: (reason: string | null) => void = () => undefined
+    Object.assign(window, {
+      dia: { archiveTab: () => new Promise<string | null>((resolve) => (finish = resolve)) }
+    })
+    render(<Harness initialOpen />)
+    fireEvent.contextMenu(screen.getByRole('button', { name: /^docs, / }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }))
+    const search = screen.getByRole('searchbox', { name: 'Search threads and projects' })
+
+    fireEvent.change(search, { target: { value: 'docs' } })
+    fireEvent.keyDown(search, { key: 'Enter' })
+
+    expect(vi.mocked(state.selectTab).mock.calls).toEqual([])
+    await act(async () => finish(null))
     Reflect.deleteProperty(window, 'dia')
   })
 

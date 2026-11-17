@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
+// @effect-diagnostics newPromise:off -- the test holds an archive or delete call open with a manually resolved Promise.
 
 import { Toaster } from '@dia/renderer-plugin'
 import { AgentName, ProjectId, type Tab, type Workspace } from '@shared/domain/project'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ArchivedThreadsSettings } from './archived-threads-settings'
 
@@ -115,6 +116,26 @@ describe('ArchivedThreadsSettings', () => {
     fireEvent.click(screen.getByRole('button', { name: 'old-heron' }))
 
     expect(state.calls).toEqual(['closeSettings', `selectTab ${OLD_HERON}`])
+  })
+
+  it('mutes a thread while it is deleted, so it neither opens nor shows its menu', async () => {
+    let finish: (reason: string | null) => void = () => undefined
+    const deleteTab = vi.fn(() => new Promise<string | null>((resolve) => (finish = resolve)))
+    Object.assign(window, { dia: { deleteTab } })
+    render(<ArchivedThreadsSettings />)
+    await openMenu('old-site', 'Delete…')
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+
+    const row = await screen.findByRole('button', { name: /^old-site/ })
+    fireEvent.click(row)
+
+    expect([
+      row.textContent,
+      row.getAttribute('aria-disabled'),
+      state.calls,
+      screen.queryByRole('button', { name: 'Actions for old-site' })
+    ]).toEqual(['old-siteDeleting…', 'true', [], null])
+    await act(async () => finish(null))
   })
 
   it('unarchives the thread from its menu', async () => {

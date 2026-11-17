@@ -55,6 +55,7 @@ import { Option, Result, Schema } from 'effect'
 import { Atom } from 'effect/reactivity'
 import { FolderPlusIcon, PlusIcon, SearchIcon, SquarePenIcon } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { type Retirement, retireInBackground, retirementOf } from './background-retirement'
 import { DraftsGroup } from './drafts-group'
 import { FilterPopover } from './filter-popover'
 import {
@@ -72,7 +73,7 @@ import {
 } from './overview'
 import { ProjectGroup } from './project-group'
 import { RemoveProjectDialog } from './remove-project-dialog'
-import { type Retirement, RetireThreadDialog } from './retire-thread-dialog'
+import { RetireThreadDialog } from './retire-thread-dialog'
 
 const COLLAPSED_KEY = 'dia.threads.collapsed'
 const LEGACY_COLLAPSED_KEY = 'dia.agent-overview.collapsed'
@@ -431,10 +432,9 @@ export function ThreadsSidebar() {
   const tabOfPane = (paneId: PaneId) => Result.getOrUndefined(tabOf(workspace, paneId))?.tab
 
   const retire = (paneId: PaneId, retirement: Retirement) => {
-    if (retirement === 'archive' && tabOfPane(paneId)?.config.worktree === undefined) {
-      actions
-        .archiveTab(paneId)
-        .catch(() => setNotice("The connection to dia's background process was lost."))
+    const tab = tabOfPane(paneId)
+    if (retirement === 'archive' && tab !== undefined && tab.config.worktree === undefined) {
+      retireInBackground({ paneId, name: tab.name }, 'archive')
       return
     }
     setRetiring({ paneId, retirement })
@@ -511,7 +511,7 @@ export function ThreadsSidebar() {
     const firstRow = targets.find((target) => target._tag === 'RowTarget')
     if (event.key === 'Enter' && filters.query.trim() !== '' && firstRow !== undefined) {
       event.preventDefault()
-      actions.selectTab(firstRow.paneId)
+      if (retirementOf(firstRow.paneId) === null) actions.selectTab(firstRow.paneId)
       focusNav(listRef.current, navKey(firstRow))
     }
   }

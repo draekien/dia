@@ -20,8 +20,8 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { PaneId } from '@shared/domain/pane'
 import { ChevronRightIcon, PlusIcon } from 'lucide-react'
+import type { Retirement } from './background-retirement'
 import { headerKey, type OverviewGroup, type OverviewRow, rowKey } from './overview'
-import type { Retirement } from './retire-thread-dialog'
 import { ThreadRow } from './thread-row'
 
 interface ProjectGroupProps {
