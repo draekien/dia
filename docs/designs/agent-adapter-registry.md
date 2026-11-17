@@ -91,8 +91,6 @@ export const ModelPreferences = Schema.Struct({
 })
 /** Today's stored shape, `{ models, defaults: { model?, thinkingLevel?, permissionMode? } }`, decoded into {@link ModelPreferences}. `handover.ts` uses it for `settings.json`. */
 export const LegacyModelPreferences: Schema.Codec<ModelPreferences, unknown>
-/** The adapter id of every run, tab, schedule, job title and preference stored before adapters were recorded. Used only to decode those records. */
-export const LEGACY_ADAPTER_ID = 'dia-claude-code'
 /** Decodes the stored preferences of either shape and encodes the new one. */
 export const StoredModelPreferences: Schema.Codec<ModelPreferences, unknown>
 ```
@@ -104,6 +102,13 @@ Every export carries JSDoc stating its purpose and how to consume it; signatures
 `dia-runs` calls: `GetModelPreferences`/`FollowModelPreferences` return `{ revision, preferences: ModelPreferences }`; `SetModelPreference` gains `adapter`; `SetAgentDefaults` takes the new `AgentDefaults`. The `LastVisibleModel` check reads `agentAdapters.models(adapter)`.
 
 ### Runs record their adapter
+
+`LEGACY_ADAPTER_ID` lives in its own module, `src/shared/domain/legacy-adapter.ts`, which imports nothing, because `pane.ts` and `model-preferences.ts` import each other's schemas at load time (`model-preferences.ts:3` imports `ThinkingLevel` from `./pane`):
+
+```ts
+/** The adapter id of every run, tab, schedule, job title and preference stored before adapters were recorded. Used only to decode those records. */
+export const LEGACY_ADAPTER_ID = 'dia-claude-code'
+```
 
 ```ts
 // src/shared/domain/pane.ts — PaneConfig
@@ -266,3 +271,7 @@ Numbered items map to the confirmed success criteria 1–6.
 - none.
 
 Budget of 3 rounds spent.
+
+### Implementation
+
+- *Correctness* — `LEGACY_ADAPTER_ID` moved from `model-preferences.ts` to `src/shared/domain/legacy-adapter.ts`: importing it into `pane.ts` from `model-preferences.ts` formed a load-time cycle (`TypeError: Cannot read properties of undefined (reading 'ast')` at `model-preferences.ts:18`).
