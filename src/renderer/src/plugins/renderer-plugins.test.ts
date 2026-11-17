@@ -124,11 +124,11 @@ const fakeHost = () => {
   const listeners = new Set<
     (event: { readonly _tag: 'PluginStatusChanged'; readonly name: string }) => void
   >()
-  let failNextList = false
+  let listFails = false
   const host: Pick<PluginApi, 'list' | 'onStatusChanged'> = {
     list: () => {
-      if (failNextList) {
-        failNextList = false
+      if (listFails) {
+        listFails = false
         return Promise.reject(new Error('host not connected'))
       }
       return Promise.resolve([...statuses].map(([name, status]) => hostInfo(name, status)))
@@ -142,10 +142,10 @@ const fakeHost = () => {
     statuses.set(name, { _tag: tag })
     for (const listener of listeners) listener({ _tag: 'PluginStatusChanged', name })
   }
-  const failNext = () => {
-    failNextList = true
+  const failNextList = () => {
+    listFails = true
   }
-  return { host, report, failNextList: failNext }
+  return { host, report, failNextList }
 }
 
 const awaitStatus = (plugins: PluginRegistry, name: string, tag: PluginStatus['_tag']) =>
@@ -192,6 +192,24 @@ describe('followHostPlugins', () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect('closes a renderer entry the Host already unloaded before following began', () =>
+    Effect.gen(function* () {
+      const log: Array<string> = []
+      const plugins = yield* makeRendererPlugins({
+        manifests: { sidebar: manifest('sidebar') },
+        entries: { sidebar: recordingEntry('sidebar', log) }
+      })
+      yield* plugins.load('sidebar')
+      const { host, report } = fakeHost()
+      report('sidebar', 'Unloaded')
+
+      yield* followHostPlugins(plugins, host)
+      yield* awaitStatus(plugins, 'sidebar', 'Unloaded')
+
+      assert.deepStrictEqual(log, ['sidebar:open', 'sidebar:close'])
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('does not reopen a loaded renderer entry when the Host reloads its plugin', () =>
     Effect.gen(function* () {
       const log: Array<string> = []
@@ -224,12 +242,9 @@ describe('followHostPlugins', () => {
       failNextList()
       report('sidebar', 'Unloaded')
       report('sidebar', 'Unloaded')
-      yield* awaitStatus(plugins, 'sidebar', 'Unloaded')
+      const status = yield* awaitStatus(plugins, 'sidebar', 'Unloaded')
 
-      assert.strictEqual(
-        (yield* plugins.list()).find((plugin) => plugin.name === 'sidebar')?.status._tag,
-        'Unloaded'
-      )
+      assert.strictEqual(status, 'Unloaded')
     }).pipe(Effect.scoped)
   )
 })

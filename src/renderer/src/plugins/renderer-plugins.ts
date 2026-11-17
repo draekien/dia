@@ -85,29 +85,30 @@ class HostPluginListFailed extends Data.TaggedError('HostPluginListFailed')<{
 const statusIn = (plugins: ReadonlyArray<PluginInfo>, name: string) =>
   plugins.find((plugin) => plugin.name === name)?.status._tag
 
-const followStatus = Effect.fnUntraced(
+const reconcile = Effect.fnUntraced(
   function* (
     renderer: PluginRegistry,
-    host: Pick<PluginApi, 'list' | 'onStatusChanged'>,
-    name: string
+    host: Pick<PluginApi, 'list'>,
+    names: ReadonlyArray<string>
   ) {
+    const rendererPlugins = yield* renderer.list()
+    const followed = names.filter((name) => statusIn(rendererPlugins, name) !== undefined)
+    if (followed.length === 0) return
     const hostPlugins = yield* Effect.tryPromise({
       try: () => host.list(),
       catch: (cause) => new HostPluginListFailed({ message: String(cause) })
     })
-    const hostStatus = statusIn(hostPlugins, name)
-    const rendererStatus = statusIn(yield* renderer.list(), name)
-    if (
-      hostStatus === 'Unloaded' &&
-      rendererStatus !== undefined &&
-      rendererStatus !== 'Unloaded'
-    ) {
-      yield* Effect.logInfo('Unloading renderer entry to follow the Host', { plugin: name })
-      yield* renderer.unload(name)
-    }
-    if (hostStatus === 'Loaded' && rendererStatus === 'Unloaded') {
-      yield* Effect.logInfo('Loading renderer entry to follow the Host', { plugin: name })
-      yield* renderer.load(name)
+    for (const name of followed) {
+      const hostStatus = statusIn(hostPlugins, name)
+      const rendererStatus = statusIn(rendererPlugins, name)
+      if (hostStatus === 'Unloaded' && rendererStatus !== 'Unloaded') {
+        yield* Effect.logInfo('Unloading renderer entry to follow the Host', { plugin: name })
+        yield* renderer.unload(name)
+      }
+      if (hostStatus === 'Loaded' && rendererStatus === 'Unloaded') {
+        yield* Effect.logInfo('Loading renderer entry to follow the Host', { plugin: name })
+        yield* renderer.load(name)
+      }
     }
   },
   Effect.catchTag('HostPluginListFailed', (error) =>
@@ -119,20 +120,27 @@ const followStatus = Effect.fnUntraced(
  * Keeps `renderer` in step with the Host's plugins for as long as the surrounding scope is open:
  * when the Host reports a plugin `Unloaded`, its renderer entry is unloaded, so its pages and slot
  * fillers leave the UI; when the Host reports an `Unloaded` renderer entry's plugin `Loaded`, the
- * renderer entry is loaded. Pass `window.dia.plugins` as `host`. Call it once, after
- * `renderer.start()`. A reload of a plugin that stays loaded does not reload its renderer entry.
+ * renderer entry is loaded. It compares every renderer entry with the Host once when it starts,
+ * then each plugin the Host reports a status change for. Pass `window.dia.plugins` as `host`.
+ * Call it once, after `renderer.start()`. A reload of a plugin that stays loaded does not reload
+ * its renderer entry.
  */
 export const followHostPlugins = (
   renderer: PluginRegistry,
   host: Pick<PluginApi, 'list' | 'onStatusChanged'>
 ): Effect.Effect<void, never, Scope.Scope> =>
-  Stream.callback<string>((queue) =>
-    Effect.acquireRelease(
-      Effect.sync(() => host.onStatusChanged(({ name }) => void Queue.offerUnsafe(queue, name))),
+  Effect.gen(function* () {
+    const pending = yield* Queue.unbounded<ReadonlyArray<string>>()
+    const everyEntry = (yield* renderer.list()).map((plugin) => plugin.name)
+    Queue.offerUnsafe(pending, everyEntry)
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        host.onStatusChanged(({ name }) => void Queue.offerUnsafe(pending, [name]))
+      ),
       (stopListening) => Effect.sync(stopListening)
     )
-  ).pipe(
-    Stream.runForEach((name) => followStatus(renderer, host, name)),
-    Effect.forkScoped({ startImmediately: true }),
-    Effect.asVoid
-  )
+    yield* Stream.fromQueue(pending).pipe(
+      Stream.runForEach((names) => reconcile(renderer, host, names)),
+      Effect.forkScoped
+    )
+  })

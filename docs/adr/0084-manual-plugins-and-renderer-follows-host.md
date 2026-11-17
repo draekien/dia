@@ -28,7 +28,7 @@ Chosen option: "Add `load: "manual"` and make the renderer registry follow the H
 
 * `PluginLoadMode` is `'eager' | 'lazy' | 'manual'`. `PluginRegistry.start()` does not mark a `manual` plugin `Loading` and does not load it; it stays `Unloaded` until `load` is called. Both registries apply this, so the Host entry and the renderer entry both stay closed at startup.
 * `plugins/dia-example` declares `"load": "manual"`.
-* `followHostPlugins(renderer, window.dia.plugins)` (`src/renderer/src/plugins/renderer-plugins.ts`) runs after the renderer registry starts. On each `PluginStatusChanged { name }` it reads `plugins.list`: when the Host reports the plugin `Unloaded` and its renderer entry is not `Unloaded`, it unloads the renderer entry; when the Host reports `Loaded` and the renderer entry is `Unloaded`, it loads the renderer entry.
+* `followHostPlugins(renderer, window.dia.plugins)` (`src/renderer/src/plugins/renderer-plugins.ts`) runs after the renderer registry starts. It compares every renderer entry with the Host's `plugins.list` once when it starts, then the plugin named by each `PluginStatusChanged { name }`: when the Host reports the plugin `Unloaded` and its renderer entry is not `Unloaded`, it unloads the renderer entry; when the Host reports `Loaded` and the renderer entry is `Unloaded`, it loads the renderer entry.
 
 ### Consequences
 
@@ -36,14 +36,13 @@ Chosen option: "Add `load: "manual"` and make the renderer registry follow the H
 * Good, because a plugin author opts a bundled plugin out of startup with one manifest field.
 * Bad, because the on/off choice is not persisted: after a restart a `manual` plugin is off again and every other plugin is on again.
 * Bad, because a Host reload of a loaded plugin does not reload its renderer entry; the renderer entry is bundled with dia and does not change at runtime.
-* Bad, because a status change that the Host publishes before `followHostPlugins` subscribes is not seen. At startup both registries apply the same load modes, so they agree without those events.
 
 ## Pros and Cons of the Options
 
 ### Add `load: "manual"` and make the renderer registry follow the Host
 
 * Good, because the renderer follows unloads from every source.
-* Bad, because each status change costs one `plugins.list` call.
+* Bad, because each status change of a plugin with a renderer entry costs one `plugins.list` call. Carrying the new status in `PluginStatusChanged` would remove that call, but changes the IPC contract and `PROTOCOL_VERSION`.
 
 ### Add `load: "manual"` and make Settings call the renderer registry
 
