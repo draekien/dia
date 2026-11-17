@@ -4,7 +4,7 @@
   "category": "feature",
   "host": "host.ts",
   "renderer": "renderer.ts",
-  "load": "eager",
+  "load": "manual",
   "exports": ["messages.ts"],
   "dataMigrations": [{ "id": "1_dia_prefix", "from": "plugins/example" }]
 }

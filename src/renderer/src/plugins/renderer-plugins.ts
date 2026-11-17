@@ -1,13 +1,14 @@
+import type { PluginApi } from '@shared/ipc/contract'
 import type { PluginServices } from '@shared/plugin/api'
 import { importSetup } from '@shared/plugin/entry'
-import { PluginManifest } from '@shared/plugin/manifest'
+import { type PluginInfo, PluginManifest } from '@shared/plugin/manifest'
 import {
   type LoadedPlugin,
   makePluginRegistry,
   PluginLoadError,
   type PluginRegistry
 } from '@shared/plugin/plugin-registry'
-import { Effect, Option, Result, Schema, type Scope } from 'effect'
+import { Data, Effect, Option, Queue, Result, Schema, type Scope, Stream } from 'effect'
 
 /**
  * The renderer plugins available to the app, keyed by plugin name. `manifests` holds each
@@ -76,3 +77,62 @@ export const makeRendererPlugins = (
     extend: (services) => Effect.succeed(services)
   })
 }
+
+class HostPluginListFailed extends Data.TaggedError('HostPluginListFailed')<{
+  readonly message: string
+}> {}
+
+const statusIn = (plugins: ReadonlyArray<PluginInfo>, name: string) =>
+  plugins.find((plugin) => plugin.name === name)?.status._tag
+
+const followStatus = Effect.fnUntraced(
+  function* (
+    renderer: PluginRegistry,
+    host: Pick<PluginApi, 'list' | 'onStatusChanged'>,
+    name: string
+  ) {
+    const hostPlugins = yield* Effect.tryPromise({
+      try: () => host.list(),
+      catch: (cause) => new HostPluginListFailed({ message: String(cause) })
+    })
+    const hostStatus = statusIn(hostPlugins, name)
+    const rendererStatus = statusIn(yield* renderer.list(), name)
+    if (
+      hostStatus === 'Unloaded' &&
+      rendererStatus !== undefined &&
+      rendererStatus !== 'Unloaded'
+    ) {
+      yield* Effect.logInfo('Unloading renderer entry to follow the Host', { plugin: name })
+      yield* renderer.unload(name)
+    }
+    if (hostStatus === 'Loaded' && rendererStatus === 'Unloaded') {
+      yield* Effect.logInfo('Loading renderer entry to follow the Host', { plugin: name })
+      yield* renderer.load(name)
+    }
+  },
+  Effect.catchTag('HostPluginListFailed', (error) =>
+    Effect.logWarning('Could not read the Host plugin list', { message: error.message })
+  )
+)
+
+/**
+ * Keeps `renderer` in step with the Host's plugins for as long as the surrounding scope is open:
+ * when the Host reports a plugin `Unloaded`, its renderer entry is unloaded, so its pages and slot
+ * fillers leave the UI; when the Host reports an `Unloaded` renderer entry's plugin `Loaded`, the
+ * renderer entry is loaded. Pass `window.dia.plugins` as `host`. Call it once, after
+ * `renderer.start()`. A reload of a plugin that stays loaded does not reload its renderer entry.
+ */
+export const followHostPlugins = (
+  renderer: PluginRegistry,
+  host: Pick<PluginApi, 'list' | 'onStatusChanged'>
+): Effect.Effect<void, never, Scope.Scope> =>
+  Stream.callback<string>((queue) =>
+    Effect.acquireRelease(
+      Effect.sync(() => host.onStatusChanged(({ name }) => void Queue.offerUnsafe(queue, name))),
+      (stopListening) => Effect.sync(stopListening)
+    )
+  ).pipe(
+    Stream.runForEach((name) => followStatus(renderer, host, name)),
+    Effect.forkScoped({ startImmediately: true }),
+    Effect.asVoid
+  )

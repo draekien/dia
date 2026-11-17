@@ -1,6 +1,10 @@
 import type { PluginRegistry } from '@shared/plugin/plugin-registry'
 import { Effect, Scope } from 'effect'
-import { makeRendererPlugins, type RendererPluginSources } from './renderer-plugins'
+import {
+  followHostPlugins,
+  makeRendererPlugins,
+  type RendererPluginSources
+} from './renderer-plugins'
 
 const nameOf = (path: string): string => path.split('/').at(-2) ?? path
 
@@ -22,7 +26,7 @@ const builtIn: RendererPluginSources = {
  * plugins whose manifest says `load: "eager"` have settled; the others keep loading in the
  * background. Call it once when the renderer starts; the returned registry lives for the lifetime
  * of the page, and its `load`, `unload` and `list` operate on the bundled plugins' renderer
- * entries.
+ * entries. Each renderer entry then loads and unloads when the Host loads and unloads its plugin.
  */
 export const startRendererPlugins = (): Promise<PluginRegistry> =>
   Effect.runPromise(
@@ -30,6 +34,7 @@ export const startRendererPlugins = (): Promise<PluginRegistry> =>
       const scope = yield* Scope.make()
       const registry = yield* makeRendererPlugins(builtIn).pipe(Scope.provide(scope))
       yield* registry.start()
+      yield* followHostPlugins(registry, window.dia.plugins).pipe(Scope.provide(scope))
       return registry
     })
   )

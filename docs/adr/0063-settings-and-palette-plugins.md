@@ -40,7 +40,7 @@ This ADR amends ADR-0031.
 * Good, because a plugin adds a Settings page or command with one `addEntry`, and unloading the plugin removes it.
 * Good, because a plugin component that throws no longer unmounts the window.
 * Bad, because with no `layout` plugin loaded there is no Settings dialog and no palette.
-* Bad, because Settings › Plugins › Unload still unloads only the Host entry, so a renderer entry's pages stay until restart (`docs/reasoning/2026-11-07-settings-unload-keeps-renderer-entry.md`).
+* Bad, because Settings › Plugins › Unload still unloads only the Host entry, so a renderer entry's pages stay until restart (`docs/reasoning/2026-11-07-settings-unload-keeps-renderer-entry.md`). ADR-0084 resolves this: the renderer entry now follows the Host.
 
 ## Pros and Cons of the Options
 

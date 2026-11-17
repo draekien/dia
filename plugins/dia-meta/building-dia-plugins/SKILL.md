@@ -43,7 +43,7 @@ weather/
 | `renderer` | Path of a renderer entry module. dia loads a renderer entry only for the plugins built into dia; a plugin loaded from a folder runs its `host` entry only. |
 | `inject` | Service key names the plugin reads with `ctx.inject`. dia reopens the plugin when a provider of one of those keys changes. |
 | `exports` | `.ts` files, relative to the plugin folder, that other plugins import as `@dia-plugin/<name>/<path without .ts>`. Other plugins can import only the files listed here. |
-| `load` | `eager` finishes loading before dia reports ready; `lazy` (the default) loads in the background after that. |
+| `load` | `eager` finishes loading before dia reports ready; `lazy` (the default) loads in the background after that; `manual` stays unloaded until the user loads it in Settings › Plugins. |
 
 ## Host entry
 
