@@ -1,17 +1,17 @@
-# Settings › Plugins › Unload stops only the Host entry; a plugin's page stays
+# A plugin's renderer entry closes only by following the Host
 
-**Date:** 2026-11-07
+**Date:** 2026-11-07 (updated 2026-11-17 for ADR-0084)
 
 ## Context
 
-Verifying plugin pages (ADR-0057, issue #194) in a packaged build: the plan was to unload `example` from Settings › Plugins and watch its page leave the sidebar.
+Verifying plugin pages (ADR-0057, issue #194) in a packaged build: the plan was to unload `example` from Settings › Plugins and watch its page leave the sidebar. The page stayed.
 
 ## Reasoning / Learning
 
-`usePlugins().unload` (`src/renderer/src/hooks/use-plugins.ts`) calls `window.dia.plugins.unload`, which unloads the plugin in the Host's registry only. The renderer has its own registry (`startRendererPlugins`, `src/renderer/src/plugins/built-in-renderer-plugins.ts`), and nothing in the renderer follows `PluginStatusChanged` to unload or reload a renderer entry. So after Unload in Settings, the plugin's pages, rail cards and slot fillers stay, and a page that calls `callHost` shows `PluginNotServing` ("Plugin example does not serve ReadGreeting").
+`usePlugins().unload` (`src/renderer/src/hooks/use-plugins.ts`) calls `window.dia.plugins.unload`, which unloads the plugin in the Host's registry only. The renderer has its own registry (`startRendererPlugins`, `src/renderer/src/plugins/built-in-renderer-plugins.ts`). Until ADR-0084, nothing in the renderer acted on `PluginStatusChanged`, so after Unload the plugin's pages, rail cards and slot fillers stayed, and a page that called `callHost` showed `PluginNotServing` ("Plugin example does not serve ReadGreeting").
 
-`addPage` does remove a page and close it when the renderer entry's scope closes; `src/renderer/src/lib/pages.test.ts` covers that. No UI closes that scope today.
+ADR-0084 added `followHostPlugins` (`src/renderer/src/plugins/renderer-plugins.ts`): on each `PluginStatusChanged` it unloads the renderer entry of a plugin the Host reports `Unloaded`, and loads the renderer entry of a plugin the Host reports `Loaded`. `addPage` removes a page when the renderer entry's scope closes; `src/renderer/src/lib/pages.test.ts` covers that.
 
 ## Implication
 
-A page must render `PluginNotServing` as a normal state, not a crash: its host entry can be unloaded while the page stays. Making Settings unload both entries is a separate change to the renderer registry, not part of ADR-0057.
+A page must still render `PluginNotServing` as a normal state, not a crash. A Host entry can fail, or reload, while its renderer entry stays loaded, and a lazy Host entry may not serve yet when the page first calls it.

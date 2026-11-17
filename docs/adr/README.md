@@ -35,7 +35,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0024](0024-background-agents-run-in-tabs-not-on-screen.md) | Run background agents in tabs that are not on screen; closing the window still quits dia | accepted |
 | [0025](0025-meta-project-as-a-dia-owned-git-repo.md) | Run a meta project: a dia-owned git repo loaded into every agent, changed through approved proposals | accepted, amended by ADR-0036 |
 | [0026](0026-plugin-reload-as-a-transaction-with-rollback-and-a-memory-limit.md) | Reload a plugin as a transaction with rollback, per-module generations and a memory limit | accepted, amended by ADR-0069 |
-| [0027](0027-eager-and-lazy-plugin-startup.md) | Load plugins as eager or lazy at startup, and report each plugin's progress to the renderer | accepted, amended by ADR-0065 |
+| [0027](0027-eager-and-lazy-plugin-startup.md) | Load plugins as eager or lazy at startup, and report each plugin's progress to the renderer | accepted, amended by ADR-0065 and ADR-0084 |
 | [0028](0028-essential-plugins-and-the-permissions-plugin.md) | Keep essential plugins loaded and un-overridable, and move permission handling into one | superseded by ADR-0029 |
 | [0029](0029-plugin-categories-adapter-and-feature.md) | Split plugins into one adapter category and one feature category, and move the Agent SDK into a Claude Code adapter | accepted, category rules superseded by ADR-0065 |
 | [0030](0030-user-turns-appear-when-the-host-reports-them-sent.md) | Show a user turn in the transcript when the Host reports it sent, not when the composer submits it | accepted |
@@ -91,6 +91,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0081](0081-threads-and-agents.md) | Threads are runs the user starts; org issue runs are agents in their own sidebar section, marked by a tab owner; the Assistant is a page entry for its tab and receives org notices when idle | accepted |
 | [0082](0082-job-description-in-the-system-prompt.md) | A job title's job description is appended to its run's system prompt; a run can start without a first message | accepted |
 | [0083](0083-new-thread-page-and-drafts.md) | One new-thread page for every target, with drafts kept in renderer `localStorage` and plugin targets in `ThreadTargetsSlot` | accepted |
+| [0084](0084-manual-plugins-and-renderer-follows-host.md) | Plugins that stay unloaded until the user loads them, and renderer entries that follow the Host | accepted |
 
 ## Adding a new ADR
 

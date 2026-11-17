@@ -902,6 +902,40 @@ describe('plugin registry', () => {
       }).pipe(Effect.scoped)
     )
 
+    it.effect('leaves a manual plugin Unloaded and never runs its setup at startup', () =>
+      Effect.gen(function* () {
+        const log: Array<string> = []
+        const changes = yield* recordChanges('lazy:Loaded')
+        const registry = yield* makeRegistry(
+          {
+            lazy: plugin(manifest('lazy'), recording('lazy', [])),
+            opt: plugin(manifest('opt', { load: 'manual' }), recording('opt', log))
+          },
+          { onChange: changes.onChange }
+        )
+
+        yield* registry.start()
+        yield* Deferred.await(changes.reached)
+
+        assert.strictEqual(yield* statusOf(registry, 'opt'), 'Unloaded')
+        assert.deepStrictEqual(log, [])
+        assert.isFalse(changes.seen.includes('opt:Loading'))
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('loads a manual plugin when load is called after startup', () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry({
+          opt: plugin(manifest('opt', { load: 'manual' }), recording('opt', []))
+        })
+        yield* registry.start()
+
+        yield* registry.load('opt')
+
+        assert.strictEqual(yield* statusOf(registry, 'opt'), 'Loaded')
+      }).pipe(Effect.scoped)
+    )
+
     it.effect('does not stop the other eager plugins when one eager plugin fails', () =>
       Effect.gen(function* () {
         const registry = yield* makeRegistry({

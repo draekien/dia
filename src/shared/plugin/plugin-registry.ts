@@ -131,9 +131,10 @@ export interface PluginMemoryGuard {
  * `f` fails. Closing a plugin, by `unload`, a reload or a failed setup, first waits for the `use`
  * calls on its services to end. Do not keep the value after `f` returns; call `use` again for the
  * next operation.
- * `start` is the startup entry point: it marks every plugin `Loading`, loads every plugin whose
+ * `start` is the startup entry point: it marks every plugin `Loading` except those whose manifest
+ * says `load: "manual"`, which stay `Unloaded` until `load` is called. It loads every plugin whose
  * manifest says `load: "eager"` one after another, and resolves once each of them has settled (loaded, waiting, failed or restart-required), which does not require it to be
- * `Loaded`. The remaining plugins keep loading in the background, in the registry's scope, and a plugin the
+ * `Loaded`. The lazy plugins keep loading in the background, in the registry's scope, and a plugin the
  * caller unloads before its turn is skipped. Call it once per registry.
  * Closing the scope the registry was made in unloads every plugin, the last loaded first, each
  * after the plugins and `whenProvided` setups that depend on its services.
@@ -1091,11 +1092,12 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
 
     const start = Effect.fn('PluginRegistry.start')(function* () {
       const names = (yield* list()).map((info) => info.name)
-      yield* markAllLoading(names)
       const modes = yield* Effect.forEach(names, loadModeOf, { concurrency: 'unbounded' })
       const eager = names.filter((_, index) => modes[index] === 'eager')
-      const lazy = names.filter((_, index) => modes[index] !== 'eager')
-      yield* Effect.logInfo('Plugins starting', { eager, lazy })
+      const lazy = names.filter((_, index) => modes[index] === 'lazy')
+      const manual = names.filter((_, index) => modes[index] === 'manual')
+      yield* markAllLoading(names.filter((_, index) => modes[index] !== 'manual'))
+      yield* Effect.logInfo('Plugins starting', { eager, lazy, manual })
       yield* Effect.forEach(eager, loadIfQueued, { discard: true })
       yield* Effect.logInfo('Eager plugins settled', { count: eager.length })
       yield* Effect.forEach(lazy, loadIfQueued, { discard: true }).pipe(

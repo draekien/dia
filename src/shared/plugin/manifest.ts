@@ -63,9 +63,9 @@ export type PluginName = typeof PluginName.Type
 /**
  * When a plugin loads at startup: `eager` plugins finish loading before the Host reports ready,
  * so the first agent session can use what they provide; `lazy` plugins load in the background
- * after that.
+ * after that; `manual` plugins stay `Unloaded` until the user loads them.
  */
-export const PluginLoadMode = Schema.Literals(['eager', 'lazy'])
+export const PluginLoadMode = Schema.Literals(['eager', 'lazy', 'manual'])
 export type PluginLoadMode = typeof PluginLoadMode.Type
 
 const CATEGORY_REQUIRED = 'plugin.json must declare "category" as "feature" or "adapter"'
