@@ -215,6 +215,24 @@ describe('ThreadsSidebar row menu', () => {
     Reflect.deleteProperty(window, 'dia')
   })
 
+  it('does not open a thread that is archiving from Enter in the search box', async () => {
+    let finish: (reason: string | null) => void = () => undefined
+    Object.assign(window, {
+      dia: { archiveTab: () => new Promise<string | null>((resolve) => (finish = resolve)) }
+    })
+    render(<Harness initialOpen />)
+    fireEvent.contextMenu(screen.getByRole('button', { name: /^docs, / }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Archive' }))
+    const search = screen.getByRole('searchbox', { name: 'Search threads and projects' })
+
+    fireEvent.change(search, { target: { value: 'docs' } })
+    fireEvent.keyDown(search, { key: 'Enter' })
+
+    expect(vi.mocked(state.selectTab).mock.calls).toEqual([])
+    await act(async () => finish(null))
+    Reflect.deleteProperty(window, 'dia')
+  })
+
   it('asks before deleting an agent', () => {
     render(<Harness initialOpen />)
 

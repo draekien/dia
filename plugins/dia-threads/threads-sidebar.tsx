@@ -55,7 +55,7 @@ import { Option, Result, Schema } from 'effect'
 import { Atom } from 'effect/reactivity'
 import { FolderPlusIcon, PlusIcon, SearchIcon, SquarePenIcon } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { type Retirement, retireInBackground } from './background-retirement'
+import { type Retirement, retireInBackground, retirementOf } from './background-retirement'
 import { DraftsGroup } from './drafts-group'
 import { FilterPopover } from './filter-popover'
 import {
@@ -511,7 +511,7 @@ export function ThreadsSidebar() {
     const firstRow = targets.find((target) => target._tag === 'RowTarget')
     if (event.key === 'Enter' && filters.query.trim() !== '' && firstRow !== undefined) {
       event.preventDefault()
-      actions.selectTab(firstRow.paneId)
+      if (retirementOf(firstRow.paneId) === null) actions.selectTab(firstRow.paneId)
       focusNav(listRef.current, navKey(firstRow))
     }
   }

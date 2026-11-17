@@ -109,7 +109,10 @@ export const retireInBackground = (target: RetirementTarget, retirement: Retirem
     })
 }
 
+/** The retirement in progress for `paneId`, or `null`. Read it in an event handler; in render, use {@link useRetirement}. */
+export const retirementOf = (paneId: PaneId): Retirement | null => running.get(paneId) ?? null
+
 /** The retirement in progress for `paneId`, or `null`. Re-renders the caller when it starts or ends. */
 export function useRetirement(paneId: PaneId): Retirement | null {
-  return useSyncExternalStore(subscribe, () => running.get(paneId) ?? null)
+  return useSyncExternalStore(subscribe, () => retirementOf(paneId))
 }
