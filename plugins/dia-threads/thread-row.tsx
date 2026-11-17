@@ -192,14 +192,7 @@ export function ThreadRow({
             >
               {body(
                 <span className="flex min-w-0 items-center gap-1.5">
-                  <span
-                    className={cn(
-                      'truncate text-sm',
-                      retirement === null ? 'text-ink' : 'text-ink-muted'
-                    )}
-                  >
-                    {row.name}
-                  </span>
+                  <span className="truncate text-sm text-ink">{row.name}</span>
                   {marker !== null && (
                     <span className="ml-auto shrink-0 text-xs font-medium text-ink">{marker}</span>
                   )}

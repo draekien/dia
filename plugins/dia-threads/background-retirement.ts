@@ -69,6 +69,9 @@ const reportFailure = (target: RetirementTarget, retirement: Retirement, reason:
     actionProps: {
       children: 'Try again',
       onClick: () => retireInBackground(target, retirement)
+    },
+    onClose: () => {
+      if (failureToasts.get(target.paneId) === id) failureToasts.delete(target.paneId)
     }
   })
   failureToasts.set(target.paneId, id)
@@ -94,20 +97,16 @@ export const retireInBackground = (target: RetirementTarget, retirement: Retirem
   setRunning(new Map(running).set(paneId, retirement))
   Effect.runFork(Effect.logInfo('Retiring a thread in the background', { paneId, retirement }))
   const change = retirement === 'archive' ? actions.archiveTab : actions.deleteTab
-  change(paneId).then(
-    (reason) => {
+  change(paneId)
+    .catch(() => LOST_CONNECTION)
+    .then((reason) => {
       finish(paneId)
       if (reason === null) {
         Effect.runFork(Effect.logInfo('Retired a thread', { paneId, retirement }))
         return
       }
       reportFailure(target, retirement, reason)
-    },
-    () => {
-      finish(paneId)
-      reportFailure(target, retirement, LOST_CONNECTION)
-    }
-  )
+    })
 }
 
 /** The retirement in progress for `paneId`, or `null`. Re-renders the caller when it starts or ends. */
