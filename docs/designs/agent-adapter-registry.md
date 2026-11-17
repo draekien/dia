@@ -276,3 +276,5 @@ Budget of 3 rounds spent.
 
 - *Correctness* — `LEGACY_ADAPTER_ID` moved from `model-preferences.ts` to `src/shared/domain/legacy-adapter.ts`: importing it into `pane.ts` from `model-preferences.ts` formed a load-time cycle (`TypeError: Cannot read properties of undefined (reading 'ast')` at `model-preferences.ts:18`).
 - *Correctness* — `AgentBackend.discoverSessions` returns `Omit<DiscoveredSession, 'backend'>`: the adapter does not know its own id, and `dia-runs` adds `backend` when it collects each adapter's sessions.
+- *Correctness* — `dia-run-events` finds a run's adapter through `Runs.list` (read with `ctx.whenProvided([RunsKey])`): `RecordingOptions` and `RunEvents.catchUp` carry no adapter. `Transcripts` methods and `RunModelCatalog.current` take the run id.
+- *Correctness* — `pane-chat-atoms.ts` is keyed by pane id, so it reads the pane's adapter from the workspace (`tabOf(...).config.backend`), falling back to `LEGACY_ADAPTER_ID` for a pane with no tab.
