@@ -94,6 +94,20 @@ describe('Executive assistant', () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect("starts the run with the Executive assistant's permission rules", () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+
+      yield* env.assistant.ask('Add dark mode')
+
+      assert.deepStrictEqual(env.fake.started[0]?.permissions, {
+        allow: [...EXECUTIVE_ASSISTANT.allow],
+        ask: [],
+        deny: []
+      })
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('opens a run that waits for its first message when it has none', () =>
     Effect.gen(function* () {
       const env = yield* setUp

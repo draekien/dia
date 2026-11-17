@@ -383,6 +383,35 @@ describe('issueStartOptions', () => {
       }).pipe(Effect.scoped)
   )
 
+  it.effect("starts the run with its job title's permission rules", () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const issue = yield* env.createIssue(env.ada.id)
+      const objective = (yield* env.issues.snapshot).objectives[0]
+      assert.isDefined(objective)
+      const workspace = {
+        open: () =>
+          Effect.succeed(
+            IssueDirectory.make({ path: ISSUE_PATH, projectDirectory: PROJECT_DIRECTORY })
+          )
+      }
+      const permissions = { allow: ['Bash(cargo test)'], ask: [], deny: ['Bash(git push)'] }
+      const jobTitle = { ...(yield* setUpJobTitle), permissions }
+
+      const options = yield* issueStartOptions(workspace, fakeBackend([model('opus', true)]))(
+        issue,
+        objective,
+        env.ada,
+        jobTitle
+      )
+
+      assert.deepStrictEqual(
+        Option.map(options, (start) => start.run.permissions),
+        Option.some(permissions)
+      )
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('returns none while the issue waits for its workspace', () =>
     Effect.gen(function* () {
       const env = yield* setUp
