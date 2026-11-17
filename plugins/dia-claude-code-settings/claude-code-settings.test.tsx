@@ -78,7 +78,7 @@ const installBridge = (options: BridgeOptions = {}) => {
       })),
       onStatusChanged: vi.fn(() => () => undefined),
       checkHealth: vi.fn(async () => undefined),
-      setInstallPath: vi.fn(async (_path: string | null) => undefined),
+      setInstallPath: vi.fn(async (_adapter: string, _path: string | null) => undefined),
       getPreferences: vi.fn(async () => ({
         revision: 1,
         preferences: options.preferences ?? EMPTY_ADAPTER_PREFERENCES
@@ -88,10 +88,11 @@ const installBridge = (options: BridgeOptions = {}) => {
           () =>
             undefined
       ),
-      setModelPreference: vi.fn(async (_model: string, _preference: string | null) =>
-        options.refusal === undefined
-          ? null
-          : { _tag: 'LastVisibleModel' as const, message: options.refusal }
+      setModelPreference: vi.fn(
+        async (_adapter: string, _model: string, _preference: string | null) =>
+          options.refusal === undefined
+            ? null
+            : { _tag: 'LastVisibleModel' as const, message: options.refusal }
       ),
       setDefaults: vi.fn(async () => undefined)
     },
@@ -185,7 +186,11 @@ describe('ClaudeCodeSettings models', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Favourite Haiku' }))
 
-    expect(bridge.adapter.setModelPreference).toHaveBeenCalledWith('haiku', 'favourite')
+    expect(bridge.adapter.setModelPreference).toHaveBeenCalledWith(
+      'dia-claude-code',
+      'haiku',
+      'favourite'
+    )
   })
 
   it('clears a favourite when its pressed star is toggled', async () => {
@@ -196,7 +201,7 @@ describe('ClaudeCodeSettings models', () => {
     await waitFor(() => expect(star.getAttribute('aria-pressed')).toBe('true'))
     fireEvent.click(star)
 
-    expect(bridge.adapter.setModelPreference).toHaveBeenCalledWith('opus', null)
+    expect(bridge.adapter.setModelPreference).toHaveBeenCalledWith('dia-claude-code', 'opus', null)
   })
 
   it('refuses to hide the last visible model from its toggle', async () => {
@@ -220,8 +225,8 @@ describe('ClaudeCodeSettings models', () => {
     fireEvent.keyDown(row, { key: 'h' })
 
     expect(bridge.adapter.setModelPreference.mock.calls).toEqual([
-      ['haiku', 'favourite'],
-      ['haiku', 'hidden']
+      ['dia-claude-code', 'haiku', 'favourite'],
+      ['dia-claude-code', 'haiku', 'hidden']
     ])
   })
 
@@ -245,7 +250,11 @@ describe('ClaudeCodeSettings models', () => {
     expect(await screen.findByText('No longer offered')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
 
-    expect(bridge.adapter.setModelPreference).toHaveBeenCalledWith('claude-3-opus', null)
+    expect(bridge.adapter.setModelPreference).toHaveBeenCalledWith(
+      'dia-claude-code',
+      'claude-3-opus',
+      null
+    )
   })
 
   it('shows why the Host refused a preference change', async () => {
@@ -268,7 +277,10 @@ describe('ClaudeCodeSettings health', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Change' }))
 
     await waitFor(() =>
-      expect(bridge.adapter.setInstallPath).toHaveBeenCalledWith('D:/tools/claude.exe')
+      expect(bridge.adapter.setInstallPath).toHaveBeenCalledWith(
+        'dia-claude-code',
+        'D:/tools/claude.exe'
+      )
     )
   })
 
@@ -295,7 +307,7 @@ describe('ClaudeCodeSettings health', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Use PATH' }))
 
-    expect(bridge.adapter.setInstallPath).toHaveBeenCalledWith(null)
+    expect(bridge.adapter.setInstallPath).toHaveBeenCalledWith('dia-claude-code', null)
   })
 
   it('re-checks the install on open when the last check is over five minutes old', async () => {

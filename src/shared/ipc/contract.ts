@@ -739,18 +739,33 @@ export type ActivityInfoJson = typeof ActivityInfo.Encoded
 /** An `ActivityNotFound` refusal as plain data, as `window.dia.activities.run` resolves it. */
 export type ActivityNotFoundJson = typeof ActivityNotFound.Encoded
 
-/** The model list calls of `window.dia.models`, served by the Host. */
+/** The model list calls of `window.dia.models`, served by the Host. `adapter` is an adapter id, the adapter plugin's name; an adapter that is not registered reads as unavailable. */
 export interface ModelApi {
-  /** The current model list. Keep it only if its `revision` is higher than the one you hold. */
-  get(): Promise<ModelCatalogSnapshotJson>
-  /** Re-reads the model list from the agent; resolves when the read ends, whatever its outcome, which arrives through `onChanged`. */
-  refresh(): Promise<void>
+  /** The current model list of `adapter`. Keep it only if its `revision` is higher than the one you hold. */
+  get(adapter: string): Promise<ModelCatalogSnapshotJson>
+  /** Re-reads the model list of `adapter` from the agent; resolves when the read ends, whatever its outcome, which arrives through `onChanged`. */
+  refresh(adapter: string): Promise<void>
   /**
-   * Subscribes to model list changes, including the state read again after a reconnect. Subscribe
-   * before calling `get`, and keep the snapshot with the highest `revision`. Returns a function
-   * that stops listening.
+   * Subscribes to model list changes of `adapter`, including the state read again after a
+   * reconnect. Subscribe before calling `get`, and keep the snapshot with the highest `revision`.
+   * Returns a function that stops listening.
    */
-  onChanged(listener: (snapshot: ModelCatalogSnapshotJson) => void): () => void
+  onChanged(adapter: string, listener: (snapshot: ModelCatalogSnapshotJson) => void): () => void
+}
+
+/** One registered agent adapter as `window.dia.adapters` delivers it: `id` is the adapter plugin's name, `label` its display name. */
+export interface AdapterSummaryJson {
+  readonly id: string
+  readonly label: string
+}
+
+/** The registered agent adapters of `window.dia.adapters`, served by the Host. */
+export interface AdaptersApi {
+  /**
+   * Subscribes to the registered adapters ordered by label then id, delivering the list now and
+   * after each change, including after a reconnect. Returns a function that stops listening.
+   */
+  onChanged(listener: (adapters: ReadonlyArray<AdapterSummaryJson>) => void): () => void
 }
 
 /** An {@link AdapterStatusSnapshot} as plain data, with dates as ISO strings, as `window.dia.adapter` delivers it. */
@@ -759,20 +774,24 @@ export type AdapterStatusSnapshotJson = typeof AdapterStatusSnapshot.Encoded
 /** A `LastVisibleModel` refusal as plain data, as `window.dia.adapter.setModelPreference` resolves it. */
 export type LastVisibleModelJson = typeof LastVisibleModel.Encoded
 
-/** The agent adapter calls of `window.dia.adapter`, served by the Host. */
+/** The agent adapter calls of `window.dia.adapter`, served by the Host. `adapter` is an adapter id, the adapter plugin's name. */
 export interface AdapterApi {
-  /** The adapter's current install status. Keep it only if its `revision` is higher than the one you hold. */
-  getStatus(): Promise<AdapterStatusSnapshotJson>
-  /** Re-checks the install; resolves when the check ends, whose outcome arrives through `onStatusChanged`. */
-  checkHealth(): Promise<void>
-  /** Sets where the adapter finds its install, or clears it with `null`, then re-checks. Sessions started afterwards use it. */
-  setInstallPath(path: string | null): Promise<void>
-  /** Subscribes to install status changes, including after a reconnect. Subscribe before calling `getStatus`. Returns a function that stops listening. */
-  onStatusChanged(listener: (snapshot: AdapterStatusSnapshotJson) => void): () => void
+  /** The current install status of `adapter`. Keep it only if its `revision` is higher than the one you hold. */
+  getStatus(adapter: string): Promise<AdapterStatusSnapshotJson>
+  /** Re-checks the install of `adapter`; resolves when the check ends, whose outcome arrives through `onStatusChanged`. */
+  checkHealth(adapter: string): Promise<void>
+  /** Sets where `adapter` finds its install, or clears it with `null`, then re-checks. Sessions started afterwards use it. */
+  setInstallPath(adapter: string, path: string | null): Promise<void>
+  /** Subscribes to install status changes of `adapter`, including after a reconnect. Subscribe before calling `getStatus`. Returns a function that stops listening. */
+  onStatusChanged(
+    adapter: string,
+    listener: (snapshot: AdapterStatusSnapshotJson) => void
+  ): () => void
   /** The adapter's model preferences and defaults. Keep them only if their `revision` is higher than the one you hold. */
   getPreferences(): Promise<ModelPreferencesSnapshot>
-  /** Marks `model` favourite or hidden, or clears it with `null`. Resolves `null` once applied, or the refusal when hiding would leave no model visible. */
+  /** Marks `model` of `adapter` favourite or hidden, or clears it with `null`. Resolves `null` once applied, or the refusal when hiding would leave no model visible. */
   setModelPreference(
+    adapter: string,
     model: string,
     preference: ModelPreference | null
   ): Promise<LastVisibleModelJson | null>
@@ -780,12 +799,12 @@ export interface AdapterApi {
   setDefaults(defaults: AgentDefaults): Promise<void>
   /** Subscribes to preference changes, including after a reconnect. Subscribe before calling `getPreferences`. Returns a function that stops listening. */
   onPreferencesChanged(listener: (snapshot: ModelPreferencesSnapshot) => void): () => void
-  /** The permission modes the adapter's own settings turn off for an agent working in `cwd`; read it again to see a settings change. */
-  getDisabledPermissionModes(cwd: string): Promise<ReadonlyArray<PermissionMode>>
-  /** The slash commands an agent started in `cwd` offers, with the meta repo's plugins loaded; empty when the adapter cannot report them. Resolves once the adapter's read ends. */
-  getSlashCommands(cwd: string): Promise<ReadonlyArray<SlashCommandInfo>>
-  /** The file types the adapter accepts as content blocks; any other attached file is sent as its path. */
-  getAttachmentTypes(): Promise<ReadonlyArray<AttachmentType>>
+  /** The permission modes the settings of `adapter` turn off for an agent working in `cwd`; read it again to see a settings change. */
+  getDisabledPermissionModes(adapter: string, cwd: string): Promise<ReadonlyArray<PermissionMode>>
+  /** The slash commands an agent of `adapter` started in `cwd` offers, with the meta repo's plugins loaded; empty when the adapter cannot report them. Resolves once the adapter's read ends. */
+  getSlashCommands(adapter: string, cwd: string): Promise<ReadonlyArray<SlashCommandInfo>>
+  /** The file types `adapter` accepts as content blocks; any other attached file is sent as its path. */
+  getAttachmentTypes(adapter: string): Promise<ReadonlyArray<AttachmentType>>
 }
 
 /** The background activity calls of `window.dia.activities`, served by the Host. */
@@ -841,6 +860,7 @@ export interface WorkspaceProblemsApi {
 export interface DiaApi {
   readonly plugins: PluginApi
   readonly models: ModelApi
+  readonly adapters: AdaptersApi
   readonly activities: ActivityApi
   readonly adapter: AdapterApi
   readonly metaRepo: MetaRepoApi

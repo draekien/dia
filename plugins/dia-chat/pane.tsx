@@ -129,6 +129,7 @@ interface PaneProps {
   paneId: string
   cwd: string
   model: string
+  backend: string
   thinkingLevel?: ThinkingLevel
   permissionMode?: PermissionMode
   focusComposer?: boolean
@@ -612,6 +613,7 @@ function PaneChat({
   paneId,
   cwd,
   model,
+  backend,
   onModelChange,
   thinkingLevel,
   thinkingLevels,
@@ -629,6 +631,7 @@ function PaneChat({
   paneId: string
   cwd: string
   model: string
+  backend: string
   onModelChange: (model: string) => void
   thinkingLevel: ThinkingLevel
   thinkingLevels: ReadonlyArray<ThinkingLevel>
@@ -665,13 +668,13 @@ function PaneChat({
     }
   }
 
-  const adapterStatus = useAdapterStatus()
+  const adapterStatus = useAdapterStatus(backend)
   const [modifierHeld, setModifierHeld] = useState(false)
   const [dragging, setDragging] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const questionRef = useRef<ClarifyingQuestionHandle>(null)
-  const attachments = useComposerAttachments(useAttachmentTypes())
+  const attachments = useComposerAttachments(useAttachmentTypes(backend))
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: focuses once, when the composer first mounts
   useEffect(() => {
@@ -999,7 +1002,7 @@ function PaneChat({
                     <div className="mt-1 flex min-w-0 items-center gap-0.5 pl-[5px]">
                       {!fixedSettings && (
                         <>
-                          <ModelPicker value={model} onChange={onModelChange} />
+                          <ModelPicker adapter={backend} value={model} onChange={onModelChange} />
                           <ThinkingLevelSelect
                             value={thinkingLevel}
                             levels={thinkingLevels}
@@ -1099,6 +1102,7 @@ function Pane({
   paneId,
   cwd,
   model,
+  backend,
   thinkingLevel,
   permissionMode,
   focusComposer = false,
@@ -1112,8 +1116,8 @@ function Pane({
   const [mode, setMode] = useState<PermissionMode>(permissionMode ?? DEFAULT_PERMISSION_MODE)
 
   const [chosenModel, setChosenModel] = useState(model)
-  const { state: catalogState } = useModelCatalog()
-  const settingsDisabledModes = useDisabledPermissionModes(cwd)
+  const { state: catalogState } = useModelCatalog(backend)
+  const settingsDisabledModes = useDisabledPermissionModes(backend, cwd)
   const modelOption = (value: string) => findModelOption(catalogState, value)
 
   function changeModel(next: string): void {
@@ -1168,6 +1172,7 @@ function Pane({
           paneId={paneId}
           cwd={cwd}
           model={chosenModel}
+          backend={backend}
           onModelChange={changeModel}
           thinkingLevel={fitThinkingLevel(level, thinkingLevels)}
           thinkingLevels={thinkingLevels}

@@ -54,6 +54,7 @@ import {
 } from 'lucide-react'
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 
+const ADAPTER = 'dia-claude-code'
 const STALE_CHECK = Duration.minutes(5)
 
 type Health = AdapterStatusJson['health']
@@ -130,7 +131,7 @@ function HealthSection({ status }: { readonly status: AdapterStatusJson | undefi
 
   const change = async () => {
     const path = await window.dia.pickFile()
-    if (path !== null) await window.dia.adapter.setInstallPath(path)
+    if (path !== null) await window.dia.adapter.setInstallPath(ADAPTER, path)
   }
 
   return (
@@ -180,7 +181,7 @@ function HealthSection({ status }: { readonly status: AdapterStatusJson | undefi
             size="xs"
             variant="ghost"
             disabled={checking}
-            onClick={() => void window.dia.adapter.setInstallPath(null)}
+            onClick={() => void window.dia.adapter.setInstallPath(ADAPTER, null)}
           >
             Use PATH
           </Button>
@@ -189,7 +190,7 @@ function HealthSection({ status }: { readonly status: AdapterStatusJson | undefi
           size="xs"
           variant="ghost"
           aria-disabled={checking}
-          onClick={checking ? undefined : () => void window.dia.adapter.checkHealth()}
+          onClick={checking ? undefined : () => void window.dia.adapter.checkHealth(ADAPTER)}
         >
           {checking ? <Loader2Icon className="motion-safe:animate-spin" /> : <RefreshCwIcon />}
           Check
@@ -561,7 +562,7 @@ function ModelsSection({
   const refreshing = state !== undefined && state._tag !== 'Loading' && state.refreshing
 
   const set = async (model: string, preference: ModelPreference | null) => {
-    const refused = await window.dia.adapter.setModelPreference(model, preference)
+    const refused = await window.dia.adapter.setModelPreference(ADAPTER, model, preference)
     setRefusal(refused?.message)
   }
 
@@ -634,7 +635,7 @@ function ModelsSection({
  * line of the Claude Code row in the adapter list. Renders nothing until the first status arrives.
  */
 export function ClaudeCodeHealthLabel() {
-  const status = useAdapterStatus()
+  const status = useAdapterStatus(ADAPTER)
   if (status === undefined) return null
   return <span>{healthLabel(status.health, status.checking)}</span>
 }
@@ -646,8 +647,8 @@ export function ClaudeCodeHealthLabel() {
  * scrolling container; it sizes to its content.
  */
 export function ClaudeCodeSettings() {
-  const status = useAdapterStatus()
-  const catalog = useModelCatalog()
+  const status = useAdapterStatus(ADAPTER)
+  const catalog = useModelCatalog(ADAPTER)
   const preferences = useModelPreferences() ?? EMPTY_ADAPTER_PREFERENCES
   const checkedOnOpen = useRef(false)
   const models = catalog.state?._tag === 'Ready' ? catalog.state.models : []
@@ -655,7 +656,7 @@ export function ClaudeCodeSettings() {
   useEffect(() => {
     if (status === undefined || checkedOnOpen.current) return
     checkedOnOpen.current = true
-    if (!status.checking && isStale(status.health)) void window.dia.adapter.checkHealth()
+    if (!status.checking && isStale(status.health)) void window.dia.adapter.checkHealth(ADAPTER)
   }, [status])
 
   return (

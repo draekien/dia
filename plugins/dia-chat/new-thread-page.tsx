@@ -258,16 +258,16 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
   const workspace = useWorkspace()
   const entries = useList(ThreadTargetsSlot)
   const summaries = useRunSummaries()
-  const catalog = useModelCatalog()
+  const catalog = useModelCatalog(LEGACY_ADAPTER_ID)
   const preferences = useModelPreferences()
-  const adapterStatus = useAdapterStatus()
+  const adapterStatus = useAdapterStatus(LEGACY_ADAPTER_ID)
   const worktreesAvailable =
     usePluginList().plugins?.some((plugin) => plugin.provides.includes(WorktreesKey.name)) ?? false
   const [state, setState] = useState<SendState>({ step: 'editing' })
   const [dragging, setDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const attachments = useComposerAttachments(useAttachmentTypes())
+  const attachments = useComposerAttachments(useAttachmentTypes(LEGACY_ADAPTER_ID))
 
   const draft: Draft =
     drafts.find((saved) => saved.draftId === draftId) ??
@@ -287,7 +287,7 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
     thinkingLevels
   )
   const disabledPermissionModes = disabledPermissionModesFor(
-    useDisabledPermissionModes(project?.directory ?? ''),
+    useDisabledPermissionModes(LEGACY_ADAPTER_ID, project?.directory ?? ''),
     modelOption
   )
   const chosenMode: StartupPermissionMode =
@@ -359,7 +359,7 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
     update({ target, worktree: null })
   }
 
-  const slashCommands = useSlashCommands(project?.directory ?? null)
+  const slashCommands = useSlashCommands(LEGACY_ADAPTER_ID, project?.directory ?? null)
   const completion = useComposerCompletion({
     text,
     setText: (value) => update({ text: value }),
@@ -516,7 +516,11 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
           <div className="mt-1 flex min-w-0 items-center gap-0.5 pl-[5px]">
             {resolved?._tag === 'Project' && model !== undefined ? (
               <>
-                <ModelPicker value={model} onChange={(next) => update({ model: next })} />
+                <ModelPicker
+                  adapter={LEGACY_ADAPTER_ID}
+                  value={model}
+                  onChange={(next) => update({ model: next })}
+                />
                 <ThinkingLevelSelect
                   value={thinkingLevel}
                   levels={thinkingLevels}

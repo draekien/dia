@@ -18,19 +18,21 @@ import { composerSettingTrigger } from './composer-settings'
 const MANAGE_MODELS = 'dia:manage-models'
 
 /**
- * The composer's model choice for a tab running `value`. It lists favourite models under a
+ * The composer's model choice for a tab running `value` on agent adapter `adapter`. It lists favourite models under a
  * "Favourites" heading, then the other visible models under "Models", then "Manage models", which
  * opens the Claude Code page of the Settings dialog. A `value` the list does not offer shows as
  * its raw id. Choosing a different model calls `onChange`.
  */
 export function ModelPicker({
+  adapter,
   value,
   onChange
 }: {
+  readonly adapter: string
   readonly value: string
   readonly onChange: (model: string) => void
 }) {
-  const { state } = useModelCatalog()
+  const { state } = useModelCatalog(adapter)
   const preferences = useModelPreferences() ?? EMPTY_ADAPTER_PREFERENCES
   const models = state?._tag === 'Ready' ? state.models : []
   const { favourites, others } = pickerModels(models, preferences)

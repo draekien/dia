@@ -29,6 +29,7 @@ export function Chat() {
       paneId={config.paneId}
       cwd={config.cwd}
       model={config.model}
+      backend={config.backend}
       thinkingLevel={config.thinkingLevel}
       permissionMode={config.permissionMode}
       focusComposer={focusComposer}

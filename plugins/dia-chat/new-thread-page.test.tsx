@@ -278,7 +278,7 @@ describe('NewThreadPage command completion', () => {
 
     render(<NewThreadPage draftId={DRAFT} />)
 
-    expect(slashCommandsFor).toHaveBeenCalledWith('/repo')
+    expect(slashCommandsFor).toHaveBeenCalledWith('dia-claude-code', '/repo')
   })
 
   it('reads no commands for a plugin target', () => {
@@ -289,7 +289,7 @@ describe('NewThreadPage command completion', () => {
 
     render(<NewThreadPage draftId={DRAFT} />)
 
-    expect(slashCommandsFor).toHaveBeenCalledWith(null)
+    expect(slashCommandsFor).toHaveBeenCalledWith('dia-claude-code', null)
   })
 
   it('shows Loading commands… while the project commands load', () => {

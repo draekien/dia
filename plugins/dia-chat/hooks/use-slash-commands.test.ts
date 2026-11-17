@@ -35,10 +35,14 @@ describe('useSlashCommands', () => {
   it('reads once for a second mount with the same cwd inside the stale time', async () => {
     getSlashCommands.mockResolvedValue([review])
     const client = newClient()
-    const first = renderHook(() => useSlashCommands('/repo'), { wrapper: wrapperFor(client) })
+    const first = renderHook(() => useSlashCommands('dia-claude-code', '/repo'), {
+      wrapper: wrapperFor(client)
+    })
     await waitFor(() => expect(first.result.current.commands).toEqual([review]))
 
-    const second = renderHook(() => useSlashCommands('/repo'), { wrapper: wrapperFor(client) })
+    const second = renderHook(() => useSlashCommands('dia-claude-code', '/repo'), {
+      wrapper: wrapperFor(client)
+    })
 
     expect(second.result.current.commands).toEqual([review])
     expect(getSlashCommands).toHaveBeenCalledTimes(1)
@@ -47,10 +51,14 @@ describe('useSlashCommands', () => {
   it('reads again on the next mount after an empty answer', async () => {
     getSlashCommands.mockResolvedValueOnce([]).mockResolvedValueOnce([review])
     const client = newClient()
-    const first = renderHook(() => useSlashCommands('/repo'), { wrapper: wrapperFor(client) })
+    const first = renderHook(() => useSlashCommands('dia-claude-code', '/repo'), {
+      wrapper: wrapperFor(client)
+    })
     await waitFor(() => expect(first.result.current.loading).toBe(false))
 
-    const second = renderHook(() => useSlashCommands('/repo'), { wrapper: wrapperFor(client) })
+    const second = renderHook(() => useSlashCommands('dia-claude-code', '/repo'), {
+      wrapper: wrapperFor(client)
+    })
 
     await waitFor(() => expect(second.result.current.commands).toEqual([review]))
     expect(getSlashCommands).toHaveBeenCalledTimes(2)
@@ -59,7 +67,7 @@ describe('useSlashCommands', () => {
   it('does not read on a window focus', async () => {
     getSlashCommands.mockResolvedValue([review])
     const client = newClient()
-    const { result } = renderHook(() => useSlashCommands('/repo'), {
+    const { result } = renderHook(() => useSlashCommands('dia-claude-code', '/repo'), {
       wrapper: wrapperFor(client)
     })
     await waitFor(() => expect(result.current.loading).toBe(false))
@@ -71,7 +79,7 @@ describe('useSlashCommands', () => {
   })
 
   it('reads nothing and is not loading for a null cwd', () => {
-    const { result } = renderHook(() => useSlashCommands(null), {
+    const { result } = renderHook(() => useSlashCommands('dia-claude-code', null), {
       wrapper: wrapperFor(newClient())
     })
 
@@ -81,7 +89,7 @@ describe('useSlashCommands', () => {
 
   it('is loading until the first read ends', async () => {
     getSlashCommands.mockResolvedValue([review])
-    const { result } = renderHook(() => useSlashCommands('/repo'), {
+    const { result } = renderHook(() => useSlashCommands('dia-claude-code', '/repo'), {
       wrapper: wrapperFor(newClient())
     })
 
@@ -91,7 +99,7 @@ describe('useSlashCommands', () => {
 
   it('gives an empty list and stops loading when the read rejects', async () => {
     getSlashCommands.mockRejectedValue(new Error('no claude'))
-    const { result } = renderHook(() => useSlashCommands('/repo'), {
+    const { result } = renderHook(() => useSlashCommands('dia-claude-code', '/repo'), {
       wrapper: wrapperFor(newClient())
     })
 

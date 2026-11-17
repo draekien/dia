@@ -5,6 +5,7 @@ import {
   ActivitiesChanged,
   type ActivityNotFoundJson,
   type AdapterStatusSnapshotJson,
+  type AdapterSummaryJson,
   type DiaApi,
   type IpcEvent,
   type LastVisibleModelJson,
@@ -70,6 +71,7 @@ export interface HostApiDeps {
 export const RESEND_WINDOW = Duration.seconds(30)
 
 const RUNS_PLUGIN = 'dia-runs'
+const AGENT_ADAPTERS_PLUGIN = 'dia-agent-adapters'
 const RESEND_INTERVAL = Duration.millis(500)
 const RESUBSCRIBE_INTERVAL = Duration.seconds(1)
 
@@ -93,8 +95,9 @@ const resendSchedule = Schedule.spaced(RESEND_INTERVAL).pipe(
  * Values cross `contextBridge`, which drops prototypes, so every result is plain data: a typed
  * error (`registerProject`) resolves in its encoded form (`archiveTab`, `deleteTab` and `unarchiveTab` resolve its reason), and only a lost connection is retried. `removeProject` is not retried: it rejects when the connection drops.
  *
- * The session, model, adapter and usage-limit members are calls to the `dia-runs` plugin, with the
- * pane id as the run id. A session command keeps its call id across resends, so `dia-runs` applies
+ * The session, preference and usage-limit members are calls to the `dia-runs` plugin, with the
+ * pane id as the run id; the model and adapter members that name an adapter are calls to the
+ * `dia-agent-adapters` plugin. A session command keeps its call id across resends, so `dia-runs` applies
  * it once.
  */
 const encodeRefusal = Schema.encodeSync(RegisterProjectError)
@@ -222,7 +225,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     return () => void Effect.runFork(Fiber.interrupt(fiber))
   }
 
-  const callRuns = (tag: string, payload: unknown) => {
+  const callIn = (plugin: string, tag: string, payload: unknown) => {
     const id = deps.newRequestId()
     let sent = false
     return deps.client.pipe(
@@ -230,7 +233,7 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
         Effect.suspend(() => {
           const call = { id, resent: sent }
           sent = true
-          return client.CallPlugin({ plugin: RUNS_PLUGIN, tag, payload, call })
+          return client.CallPlugin({ plugin, tag, payload, call })
         })
       ),
       Effect.retry({
@@ -240,6 +243,8 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     )
   }
 
+  const callRuns = (tag: string, payload: unknown) => callIn(RUNS_PLUGIN, tag, payload)
+
   const runCommand = (tag: string, payload: Record<string, unknown>): void => {
     void Effect.runPromise(
       callRuns(tag, payload).pipe(
@@ -248,21 +253,31 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
     )
   }
 
-  const runQuery = <A>(tag: string, payload: Record<string, unknown> = {}): Promise<A> =>
+  const queryIn = <A>(
+    plugin: string,
+    tag: string,
+    payload: Record<string, unknown> = {}
+  ): Promise<A> =>
     Effect.runPromise(
-      callRuns(tag, payload).pipe(
+      callIn(plugin, tag, payload).pipe(
         Effect.map((value) => value as A),
         Effect.orDie
       )
     )
 
-  const followRuns =
-    <A>(tag: string) =>
-    (listener: (value: A) => void): (() => void) => {
+  const runQuery = <A>(tag: string, payload: Record<string, unknown> = {}): Promise<A> =>
+    queryIn<A>(RUNS_PLUGIN, tag, payload)
+
+  const adapterQuery = <A>(tag: string, payload: Record<string, unknown> = {}): Promise<A> =>
+    queryIn<A>(AGENT_ADAPTERS_PLUGIN, tag, payload)
+
+  const followIn =
+    <A>(plugin: string, tag: string) =>
+    (listener: (value: A) => void, payload: Record<string, unknown> = {}): (() => void) => {
       const follow = Effect.gen(function* () {
         const client = yield* deps.client
         yield* client
-          .SubscribePlugin({ plugin: RUNS_PLUGIN, tag, payload: {} })
+          .SubscribePlugin({ plugin, tag, payload })
           .pipe(Stream.runForEach((value) => Effect.sync(() => listener(value as A))))
       }).pipe(
         Effect.tapError((error) =>
@@ -274,6 +289,9 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       const fiber = Effect.runFork(follow)
       return () => void Effect.runFork(Fiber.interrupt(fiber))
     }
+
+  const followRuns = <A>(tag: string) => followIn<A>(RUNS_PLUGIN, tag)
+  const followAdapters = <A>(tag: string) => followIn<A>(AGENT_ADAPTERS_PLUGIN, tag)
 
   const subscribeTo = <E extends IpcEvent['_tag']>(
     tag: E,
@@ -316,19 +334,26 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
       subscribe: subscribePlugin
     },
     models: {
-      get: () => runQuery<ModelCatalogSnapshotJson>('GetModels'),
-      refresh: () => runQuery<void>('RefreshModels'),
-      onChanged: followRuns<ModelCatalogSnapshotJson>('FollowModels')
+      get: (adapter) => adapterQuery<ModelCatalogSnapshotJson>('GetModels', { adapter }),
+      refresh: (adapter) => adapterQuery<void>('RefreshModels', { adapter }),
+      onChanged: (adapter, listener) =>
+        followAdapters<ModelCatalogSnapshotJson>('FollowModels')(listener, { adapter })
+    },
+    adapters: {
+      onChanged: (listener) =>
+        followAdapters<ReadonlyArray<AdapterSummaryJson>>('FollowAdapters')(listener)
     },
     adapter: {
-      getStatus: () => runQuery<AdapterStatusSnapshotJson>('GetAdapterStatus'),
-      checkHealth: () => runQuery<void>('CheckAdapterHealth'),
-      setInstallPath: (path) => runQuery<void>('SetInstallPath', { path }),
-      onStatusChanged: followRuns<AdapterStatusSnapshotJson>('FollowAdapterStatus'),
+      getStatus: (adapter) =>
+        adapterQuery<AdapterStatusSnapshotJson>('GetAdapterStatus', { adapter }),
+      checkHealth: (adapter) => adapterQuery<void>('CheckAdapterHealth', { adapter }),
+      setInstallPath: (adapter, path) => adapterQuery<void>('SetInstallPath', { adapter, path }),
+      onStatusChanged: (adapter, listener) =>
+        followAdapters<AdapterStatusSnapshotJson>('FollowAdapterStatus')(listener, { adapter }),
       getPreferences: () => runQuery<ModelPreferencesSnapshot>('GetModelPreferences'),
-      setModelPreference: (model, preference) =>
+      setModelPreference: (adapter, model, preference) =>
         Effect.runPromise(
-          callRuns('SetModelPreference', { model, preference }).pipe(
+          callRuns('SetModelPreference', { adapter, model, preference }).pipe(
             Effect.as<LastVisibleModelJson | null>(null),
             Effect.catchTag('PluginCallFailed', (failure) =>
               Effect.succeed(failure.error as LastVisibleModelJson)
@@ -337,10 +362,12 @@ export const makeHostApi = (deps: HostApiDeps): HostApi => {
           )
         ),
       setDefaults: (defaults) => runQuery<void>('SetAgentDefaults', { defaults }),
-      onPreferencesChanged: followRuns<ModelPreferencesSnapshot>('FollowModelPreferences'),
-      getDisabledPermissionModes: (cwd) => runQuery('GetDisabledPermissionModes', { cwd }),
-      getSlashCommands: (cwd) => runQuery('GetSlashCommands', { cwd }),
-      getAttachmentTypes: () => runQuery('GetAttachmentTypes')
+      onPreferencesChanged: (listener) =>
+        followRuns<ModelPreferencesSnapshot>('FollowModelPreferences')(listener),
+      getDisabledPermissionModes: (adapter, cwd) =>
+        adapterQuery('GetDisabledPermissionModes', { adapter, cwd }),
+      getSlashCommands: (adapter, cwd) => runQuery('GetSlashCommands', { adapter, cwd }),
+      getAttachmentTypes: (adapter) => adapterQuery('GetAttachmentTypes', { adapter })
     },
     activities: {
       list: () => query((client) => client.ListActivities().pipe(Effect.map(encodeActivities))),
