@@ -14,12 +14,14 @@ import type {
   JobTitle,
   JobTitleDisabled,
   JobTitleEdit,
+  JobTitleFields,
   JobTitleHasHires,
   JobTitleId,
   JobTitleName,
   JobTitleNameTaken,
   JobTitleNotFound,
   JobTitleNotHireable,
+  JobTitlesNotLoaded,
   OrgSettings,
   OverallCap,
   ReportsToCycle,
@@ -31,8 +33,8 @@ import type {
  * current state; each change returns the changed value. A job title's cap is the number of hired
  * agents of that job title. The job titles are the agent definitions of the registry
  * `holdDefinitions` holds (ADR-0072); with none held, `jobTitles` is empty and every job title
- * change fails with `JobTitleNotFound`. `jobTitles` lists the built-in job titles in seed order,
- * then the other definitions by name; `hiredAgents` lists by `hiredAt`, then creation order. A
+ * change except `createJobTitle` fails with `JobTitleNotFound`. `jobTitles` lists the built-in job
+ * titles in seed order, then the other definitions by name; `hiredAgents` lists by `hiredAt`, then creation order. A
  * database failure, or a failure to generate an id, is a defect.
  *
  * `watchJobTitleChanges` subscribes when run; the stream it returns emits once after each
@@ -44,7 +46,8 @@ import type {
  * agents until the calling scope closes; call it after registering the org as an assignee provider.
  *
  * `copyJobTitle` copies every field of `jobTitleId` into a new enabled job title named `name` that
- * is not built in. `editJobTitle` applies `edit`'s present fields. `deleteJobTitle` deletes a copy
+ * is not built in. `createJobTitle` stores a new enabled job title, not built in, with `fields`; it
+ * fails with `JobTitlesNotLoaded` while no registry is held. `editJobTitle` applies `edit`'s present fields. `deleteJobTitle` deletes a copy
  * with no hired agents. `hire` hires an agent of an enabled job title, named `name` or unnamed when
  * null, reporting to hired agent `reportsTo` or to the user when null. `dismiss` removes a hired
  * agent and moves its reports to its own `reportsTo`; it fails with `HireHasOpenIssues` while the
@@ -75,6 +78,9 @@ export interface Org {
     jobTitleId: JobTitleId,
     name: JobTitleName
   ) => Effect.Effect<JobTitle, JobTitleNotFound | JobTitleNameTaken>
+  readonly createJobTitle: (
+    fields: JobTitleFields
+  ) => Effect.Effect<JobTitle, JobTitleNameTaken | JobTitlesNotLoaded>
   readonly editJobTitle: (
     jobTitleId: JobTitleId,
     edit: JobTitleEdit
@@ -132,6 +138,7 @@ const MEMBERS: Record<keyof Org, (member: unknown) => boolean> = {
   settings: Effect.isEffect,
   setJobTitleEnabled: Predicate.isFunction,
   copyJobTitle: Predicate.isFunction,
+  createJobTitle: Predicate.isFunction,
   editJobTitle: Predicate.isFunction,
   deleteJobTitle: Predicate.isFunction,
   hire: Predicate.isFunction,

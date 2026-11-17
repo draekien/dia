@@ -21,9 +21,15 @@ import { SkillPickerKey } from '@dia-plugin/dia-skills/picker'
 import { Result } from 'effect'
 import { Loader2Icon } from 'lucide-react'
 import { createElement, type FormEvent, type ReactNode, useId, useState } from 'react'
-import { CopyJobTitle, DeleteJobTitle, EditJobTitle, SetJobTitleEnabled } from './calls'
+import {
+  CopyJobTitle,
+  CreateJobTitle,
+  DeleteJobTitle,
+  EditJobTitle,
+  SetJobTitleEnabled
+} from './calls'
 import { ConfirmDialog } from './confirm-dialog'
-import { agentName, type JobTitle, type JobTitleEdit } from './domain'
+import { agentName, type JobTitle, type JobTitleEdit, type JobTitleFields } from './domain'
 import { NameDialog } from './name-dialog'
 import { commonFailureText, type OrgScreen, readJobTitleName, toastFailure } from './org-actions'
 import { HiredAgentsView, JobTitlesView } from './org-view'
@@ -66,39 +72,71 @@ const draftOf = (jobTitle: JobTitle): Draft => ({
   thinkingLevel: jobTitle.thinkingLevel
 })
 
+const NEW_JOB_TITLE_DRAFT: Draft = {
+  name: '',
+  jobDescription: '',
+  skills: '',
+  allow: '',
+  ask: '',
+  deny: '',
+  mcpServers: '',
+  bypassOptIn: false,
+  model: null,
+  thinkingLevel: 'medium'
+}
+
+const LIST_FIELDS = ['skills', 'allow', 'ask', 'deny', 'mcpServers'] as const
+
+const sameDraft = (a: Draft, b: Draft) =>
+  a.name.trim() === b.name.trim() &&
+  a.jobDescription === b.jobDescription &&
+  LIST_FIELDS.every((field) => sameLines(lines(a[field]), lines(b[field]))) &&
+  a.bypassOptIn === b.bypassOptIn &&
+  a.model === b.model &&
+  a.thinkingLevel === b.thinkingLevel
+
 interface FormErrors {
   readonly name?: string
   readonly save?: string
 }
 
-const editOf = (
-  jobTitle: JobTitle,
-  draft: Draft
-): Result.Result<JobTitleEdit, Omit<FormErrors, 'save'>> => {
+const fieldsOf = (draft: Draft): Result.Result<JobTitleFields, Omit<FormErrors, 'save'>> => {
   const name = readJobTitleName(draft.name)
   if (Result.isFailure(name)) return Result.fail({ name: name.failure })
-  const permissions = { allow: lines(draft.allow), ask: lines(draft.ask), deny: lines(draft.deny) }
-  const permissionsChanged =
-    !sameLines(permissions.allow, jobTitle.permissions.allow) ||
-    !sameLines(permissions.ask, jobTitle.permissions.ask) ||
-    !sameLines(permissions.deny, jobTitle.permissions.deny)
   return Result.succeed({
-    ...(name.success === jobTitle.name ? {} : { name: name.success }),
-    ...(draft.jobDescription === jobTitle.jobDescription
-      ? {}
-      : { jobDescription: draft.jobDescription }),
-    ...(sameLines(lines(draft.skills), jobTitle.skills) ? {} : { skills: lines(draft.skills) }),
-    ...(permissionsChanged ? { permissions } : {}),
-    ...(sameLines(lines(draft.mcpServers), jobTitle.mcpServers)
-      ? {}
-      : { mcpServers: lines(draft.mcpServers) }),
-    ...(draft.bypassOptIn === jobTitle.bypassOptIn ? {} : { bypassOptIn: draft.bypassOptIn }),
-    ...(draft.model === jobTitle.model ? {} : { model: draft.model }),
-    ...(draft.thinkingLevel === jobTitle.thinkingLevel
-      ? {}
-      : { thinkingLevel: draft.thinkingLevel })
+    name: name.success,
+    jobDescription: draft.jobDescription,
+    skills: lines(draft.skills),
+    permissions: { allow: lines(draft.allow), ask: lines(draft.ask), deny: lines(draft.deny) },
+    mcpServers: lines(draft.mcpServers),
+    bypassOptIn: draft.bypassOptIn,
+    model: draft.model,
+    thinkingLevel: draft.thinkingLevel
   })
 }
+
+const editOf = (jobTitle: JobTitle, fields: JobTitleFields): JobTitleEdit => {
+  const permissionsChanged =
+    !sameLines(fields.permissions.allow, jobTitle.permissions.allow) ||
+    !sameLines(fields.permissions.ask, jobTitle.permissions.ask) ||
+    !sameLines(fields.permissions.deny, jobTitle.permissions.deny)
+  return {
+    ...(fields.name === jobTitle.name ? {} : { name: fields.name }),
+    ...(fields.jobDescription === jobTitle.jobDescription
+      ? {}
+      : { jobDescription: fields.jobDescription }),
+    ...(sameLines(fields.skills, jobTitle.skills) ? {} : { skills: fields.skills }),
+    ...(permissionsChanged ? { permissions: fields.permissions } : {}),
+    ...(sameLines(fields.mcpServers, jobTitle.mcpServers) ? {} : { mcpServers: fields.mcpServers }),
+    ...(fields.bypassOptIn === jobTitle.bypassOptIn ? {} : { bypassOptIn: fields.bypassOptIn }),
+    ...(fields.model === jobTitle.model ? {} : { model: fields.model }),
+    ...(fields.thinkingLevel === jobTitle.thinkingLevel
+      ? {}
+      : { thinkingLevel: fields.thinkingLevel })
+  }
+}
+
+const nameTakenText = (jobTitleName: string) => `A job title named "${jobTitleName}" already exists`
 
 function Field({
   label,
@@ -196,21 +234,25 @@ function ModelFields({
   )
 }
 
-function EditForm({
-  jobTitle,
-  snapshot,
-  call
-}: Pick<OrgScreen, 'snapshot' | 'call'> & {
-  readonly jobTitle: JobTitle
+function JobTitleForm({
+  initial,
+  nameEditable,
+  onSave,
+  onCancel,
+  snapshot
+}: Pick<OrgScreen, 'snapshot'> & {
+  readonly initial: Draft
+  readonly nameEditable: boolean
+  readonly onSave: (fields: JobTitleFields) => Promise<FormErrors>
+  readonly onCancel?: () => void
 }) {
-  const [draft, setDraft] = useState(() => draftOf(jobTitle))
+  const [draft, setDraft] = useState(initial)
   const [errors, setErrors] = useState<FormErrors>({})
   const [busy, setBusy] = useState(false)
   const id = useId()
   const McpServerPicker = useProvided(McpServerPickerKey)
   const SkillPicker = useProvided(SkillPickerKey)
-  const pending = editOf(jobTitle, draft)
-  const changed = Result.isFailure(pending) || Object.keys(pending.success).length > 0
+  const changed = !sameDraft(draft, initial)
   const set = (field: keyof Draft) => (value: string | boolean | null) => {
     setDraft((current) => ({ ...current, [field]: value }))
     setErrors({})
@@ -218,24 +260,10 @@ function EditForm({
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
-    const edit = editOf(jobTitle, draft)
-    if (Result.isFailure(edit)) return setErrors(edit.failure)
+    const fields = fieldsOf(draft)
+    if (Result.isFailure(fields)) return setErrors(fields.failure)
     setBusy(true)
-    const result = await call(
-      EditJobTitle,
-      { jobTitleId: jobTitle.id, edit: edit.success },
-      jobTitle.id
-    ).finally(() => setBusy(false))
-    if (Result.isSuccess(result)) return
-    const failure = result.failure
-    switch (failure._tag) {
-      case 'JobTitleNameTaken':
-        return setErrors({ name: `A job title named "${failure.jobTitleName}" already exists` })
-      case 'BuiltInJobTitleRenamed':
-        return setErrors({ name: 'A built-in job title keeps its name' })
-      default:
-        return setErrors({ save: commonFailureText(failure) })
-    }
+    setErrors(await onSave(fields.success).finally(() => setBusy(false)))
   }
 
   const textarea = (
@@ -263,7 +291,7 @@ function EditForm({
 
   return (
     <form className="flex flex-col gap-5" onSubmit={(event) => void save(event)}>
-      {jobTitle.builtIn === null ? (
+      {nameEditable ? (
         <Field label={<Label htmlFor={`${id}-name`}>Name</Label>} error={errors.name}>
           <Input
             id={`${id}-name`}
@@ -336,6 +364,11 @@ function EditForm({
           ) : null}
           Save
         </Button>
+        {onCancel === undefined ? null : (
+          <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
         {errors.save === undefined ? null : (
           <p role="alert" className="text-xs text-error">
             {errors.save}
@@ -386,7 +419,7 @@ export function JobTitleEditor({
     }
     const failure = result.failure
     return failure._tag === 'JobTitleNameTaken'
-      ? `A job title named "${failure.jobTitleName}" already exists`
+      ? nameTakenText(failure.jobTitleName)
       : commonFailureText(failure)
   }
 
@@ -403,6 +436,24 @@ export function JobTitleEditor({
         return 'A built-in job title can only be disabled'
       default:
         return commonFailureText(failure)
+    }
+  }
+
+  const saveEdit = async (fields: JobTitleFields): Promise<FormErrors> => {
+    const result = await call(
+      EditJobTitle,
+      { jobTitleId: jobTitle.id, edit: editOf(jobTitle, fields) },
+      jobTitle.id
+    )
+    if (Result.isSuccess(result)) return {}
+    const failure = result.failure
+    switch (failure._tag) {
+      case 'JobTitleNameTaken':
+        return { name: nameTakenText(failure.jobTitleName) }
+      case 'BuiltInJobTitleRenamed':
+        return { name: 'A built-in job title keeps its name' }
+      default:
+        return { save: commonFailureText(failure) }
     }
   }
 
@@ -445,7 +496,13 @@ export function JobTitleEditor({
           ) : null}
         </div>
       </div>
-      <EditForm key={editKey} jobTitle={jobTitle} snapshot={snapshot} call={call} />
+      <JobTitleForm
+        key={editKey}
+        initial={draftOf(jobTitle)}
+        nameEditable={jobTitle.builtIn === null}
+        onSave={saveEdit}
+        snapshot={snapshot}
+      />
       {hireable ? (
         <section className="flex flex-col gap-2 border-t pt-5" aria-labelledby="org-hired-as">
           <h4 id="org-hired-as" className="text-sm font-medium text-ink">
@@ -489,6 +546,44 @@ export function JobTitleEditor({
           onClose={() => setDialog(undefined)}
         />
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * The empty job title editor the Job titles page shows after "New job title": a `New job title`
+ * heading and the job title form with the default fields. `Save` creates the job title, shows it
+ * and then calls `onClose`; `Cancel` calls `onClose`.
+ */
+export function NewJobTitleEditor({
+  snapshot,
+  call,
+  show,
+  onClose
+}: Pick<OrgScreen, 'snapshot' | 'call' | 'show'> & { readonly onClose: () => void }) {
+  const create = async (fields: JobTitleFields): Promise<FormErrors> => {
+    const result = await call(CreateJobTitle, fields, fields.name)
+    if (Result.isSuccess(result)) {
+      show(JobTitlesView.make({ jobTitleId: result.success.id }))
+      onClose()
+      return {}
+    }
+    const failure = result.failure
+    return failure._tag === 'JobTitleNameTaken'
+      ? { name: nameTakenText(failure.jobTitleName) }
+      : { save: commonFailureText(failure) }
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-6">
+      <h3 className="text-base font-semibold text-ink">New job title</h3>
+      <JobTitleForm
+        initial={NEW_JOB_TITLE_DRAFT}
+        nameEditable
+        onSave={create}
+        onCancel={onClose}
+        snapshot={snapshot}
+      />
     </div>
   )
 }

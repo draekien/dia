@@ -14,12 +14,14 @@ import {
   JobTitle,
   JobTitleDisabled,
   JobTitleEdit,
+  JobTitleFields,
   JobTitleHasHires,
   JobTitleId,
   JobTitleName,
   JobTitleNameTaken,
   JobTitleNotFound,
   JobTitleNotHireable,
+  JobTitlesNotLoaded,
   OrgSettings,
   OverallCap,
   ReportsToCycle,
@@ -56,6 +58,13 @@ export const CopyJobTitle = Rpc.make('CopyJobTitle', {
   payload: { jobTitleId: JobTitleId, name: JobTitleName },
   success: JobTitle,
   error: Schema.Union([JobTitleNotFound, JobTitleNameTaken])
+})
+
+/** Creates an enabled job title, not built in, with the given fields. */
+export const CreateJobTitle = Rpc.make('CreateJobTitle', {
+  payload: JobTitleFields.fields,
+  success: JobTitle,
+  error: Schema.Union([JobTitleNameTaken, JobTitlesNotLoaded])
 })
 
 /** Applies `edit`'s present fields to job title `jobTitleId`. */

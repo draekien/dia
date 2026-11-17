@@ -84,6 +84,8 @@ export const commonFailureText = (failure: { readonly _tag: string }): string | 
       return 'This job title was removed'
     case 'HireNotFound':
       return 'This agent was dismissed'
+    case 'JobTitlesNotLoaded':
+      return 'Job titles are not loaded yet'
     case 'PluginNotServing':
     case 'PluginCallInvalid':
       return (failure as PluginNotServing | PluginCallInvalid).message

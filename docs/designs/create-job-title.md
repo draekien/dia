@@ -82,11 +82,11 @@ The empty editor's draft, in `job-title-editor.tsx`. `Draft` (`job-title-editor.
 ```ts
 const NEW_JOB_TITLE_DRAFT: Draft = {
   name: '', jobDescription: '', skills: '', allow: '', ask: '', deny: '', mcpServers: '',
-  bypassOptIn: false, model: null, thinkingLevel: DEFAULT_THINKING_LEVEL
+  bypassOptIn: false, model: null, thinkingLevel: 'medium'
 }
 ```
 
-These match a built-in job title's defaults (`built-in-job-titles.ts:190-200`); `DEFAULT_THINKING_LEVEL` is `'medium'` (`src/shared/domain/pane.ts:94`). `name: ''` is not a valid `JobTitleName`, so this is a `Draft`, not a `JobTitleFields`.
+These match a built-in job title's defaults (`built-in-job-titles.ts:190-200`). `'medium'` is the value of `DEFAULT_THINKING_LEVEL` (`src/shared/domain/pane.ts:94`); the plugin writes the literal, as `built-in-job-titles.ts:200` does, because a shipped plugin imports no runtime value from `src/` and `@dia/plugin` does not export it. `name: ''` is not a valid `JobTitleName`, so this is a `Draft`, not a `JobTitleFields`.
 
 `fieldsOf(draft): Result<JobTitleFields, Omit<FormErrors, 'save'>>` reads every draft field into `JobTitleFields`, reading the name with `readJobTitleName` (a blank name gives `Enter a name`) and list fields with `lines()`. `editOf(jobTitle, fields): JobTitleEdit` diffs typed fields against `jobTitle`: a field is present when it differs, permissions are sent as one group when any of `allow`, `ask`, `deny` differs, and lists are compared with `sameLines`. The edit save still sends `{ jobTitleId, edit }` with today's contents (`org-page.test.tsx:637` asserts the payload).
 
@@ -162,3 +162,6 @@ The watch stream needs no change: the `Org` JSDoc already states `watchJobTitleC
 - *Correctness* — `creating` is also cleared when `jobTitleId` changes for another reason.
 - *Correctness* — `onSelect` clears `creating` itself, so re-selecting the previously selected job title leaves the empty editor.
 - *Style* — the `JSX.Element` return annotation removed; no neighbouring component annotates its return type.
+
+**Implementation — changed**
+- `NEW_JOB_TITLE_DRAFT.thinkingLevel` is the literal `'medium'`, not `DEFAULT_THINKING_LEVEL`: a shipped plugin cannot import a runtime value from `src/` (root `CLAUDE.md`), and `@dia/plugin` does not export the constant.

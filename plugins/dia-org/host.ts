@@ -48,6 +48,7 @@ import { bypassAvailable } from './bypass'
 import {
   AskAssistant,
   CopyJobTitle,
+  CreateJobTitle,
   DeleteJobTitle,
   Dismiss,
   EditJobTitle,
@@ -399,6 +400,7 @@ const serveOrgCalls = (
         org.setJobTitleEnabled(jobTitleId, enabled)
       ),
       ctx.serve(CopyJobTitle, ({ jobTitleId, name }) => org.copyJobTitle(jobTitleId, name)),
+      ctx.serve(CreateJobTitle, (fields) => org.createJobTitle(fields)),
       ctx.serve(EditJobTitle, ({ jobTitleId, edit }) => org.editJobTitle(jobTitleId, edit)),
       ctx.serve(DeleteJobTitle, ({ jobTitleId }) => org.deleteJobTitle(jobTitleId)),
       ctx.serve(Hire, ({ jobTitleId, name, reportsTo }) => org.hire(jobTitleId, name, reportsTo)),

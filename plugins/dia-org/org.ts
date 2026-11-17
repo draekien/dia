@@ -22,12 +22,14 @@ import {
   type JobTitle,
   JobTitleDisabled,
   type JobTitleEdit,
+  type JobTitleFields,
   JobTitleHasHires,
   type JobTitleId,
   type JobTitleName,
   JobTitleNameTaken,
   JobTitleNotFound,
   JobTitleNotHireable,
+  JobTitlesNotLoaded,
   OrgSettings,
   type OverallCap,
   ReportsToCycle,
@@ -251,6 +253,14 @@ export const makeOrg = Effect.gen(function* () {
     return { ...jobTitle, enabled }
   })
 
+  const createIn = (registry: AgentDefinitionRegistry, fields: JobTitleFields) =>
+    registry.create(fields).pipe(
+      Effect.map((created) => toJobTitle(created, true)),
+      Effect.catchTag('AgentDefinitionNameTaken', (error) =>
+        Effect.fail(JobTitleNameTaken.make({ jobTitleName: error.name }))
+      )
+    )
+
   const copyJobTitle = Effect.fn('Org.copyJobTitle')(function* (
     jobTitleId: JobTitleId,
     name: JobTitleName
@@ -262,15 +272,22 @@ export const makeOrg = Effect.gen(function* () {
       ...fields
     } = yield* findJobTitle(jobTitleId)
     const registry = yield* registryFor(jobTitleId)
-    const created = yield* registry
-      .create({ ...fields, name })
-      .pipe(
-        Effect.catchTag('AgentDefinitionNameTaken', (error) =>
-          Effect.fail(JobTitleNameTaken.make({ jobTitleName: error.name }))
-        )
-      )
-    yield* Effect.logInfo('Copied job title', { jobTitleId, copyId: created.id })
-    return toJobTitle(created, true)
+    const copy = yield* createIn(registry, { ...fields, name })
+    yield* Effect.logInfo('Copied job title', { jobTitleId, copyId: copy.id })
+    return copy
+  })
+
+  const createJobTitle = Effect.fn('Org.createJobTitle')(function* (fields: JobTitleFields) {
+    const registry = yield* Ref.get(definitions)
+    if (Option.isNone(registry)) {
+      yield* Effect.logWarning('Refused to create a job title: no registry held', {
+        name: fields.name
+      })
+      return yield* JobTitlesNotLoaded.make({})
+    }
+    const created = yield* createIn(registry.value, fields)
+    yield* Effect.logInfo('Created job title', { jobTitleId: created.id, name: created.name })
+    return created
   })
 
   const editJobTitle = Effect.fn('Org.editJobTitle')(function* (
@@ -488,6 +505,7 @@ export const makeOrg = Effect.gen(function* () {
     settings,
     setJobTitleEnabled,
     copyJobTitle,
+    createJobTitle,
     editJobTitle,
     deleteJobTitle,
     hire,
