@@ -264,7 +264,7 @@ describe('MessageView: turn steps', () => {
 
     const section = container.querySelector('details')
     expect(section?.open).toBe(false)
-    expect(section?.querySelector('summary')?.textContent).toBe('1 step · 11s')
+    expect(section?.querySelector('summary')?.textContent).toBe('1 step, 11s')
   })
 
   it('gives a finished section’s summary an accessible name with its parts kept apart', () => {
@@ -272,7 +272,7 @@ describe('MessageView: turn steps', () => {
 
     const spoken = container.querySelector('summary')?.cloneNode(true) as HTMLElement
     for (const hidden of spoken.querySelectorAll('[aria-hidden]')) hidden.remove()
-    expect(spoken.textContent?.replace(/\s+/g, ' ')).toBe('1 step 11s')
+    expect(spoken.textContent?.replace(/\s+/g, ' ')).toBe('1 step, 11s')
   })
 
   it('keeps the text before and after the steps visible, outside the section', () => {
@@ -340,7 +340,7 @@ describe('MessageView: turn steps', () => {
 
     const { container } = render(<MessageView message={failing} />)
 
-    expect(container.querySelector('summary')?.textContent).toBe('1 step · Bash failed · 1s')
+    expect(container.querySelector('summary')?.textContent).toBe('1 step, Bash failed, 1s')
     expect(screen.getByText('failed')).toBeTruthy()
     expect(screen.queryByText('completed')).toBeNull()
   })
@@ -436,7 +436,7 @@ describe('MessageView: failed steps', () => {
 
     const { container } = render(<MessageView message={message} />)
 
-    expect(container.querySelector('summary')?.textContent).toBe('3 steps · 2 failed · 1s')
+    expect(container.querySelector('summary')?.textContent).toBe('3 steps, 2 failed, 1s')
   })
 
   it('offers a tool row’s full target as its title, for when the row truncates it', () => {

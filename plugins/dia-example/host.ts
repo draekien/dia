@@ -31,8 +31,7 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
         Effect.map(
           Option.match({
             onNone: () => `Hello from the ${ctx.name} plugin's host entry`,
-            onSome: (count) =>
-              `Hello from the ${ctx.name} plugin's host entry · ${count} objectives`
+            onSome: (count) => `Hello from the ${ctx.name} plugin's host entry, ${count} objectives`
           })
         )
       )

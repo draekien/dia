@@ -302,27 +302,27 @@ describe('ThreadsSidebar collapsed', () => {
     expect(sequence).toEqual(['meta', 'separator', 'agent', 'agent', 'separator', 'agent'])
   })
 
-  it('names each dot "project / agent · status · activity", most urgent first', () => {
+  it('names each dot "project / agent, status, activity", most urgent first', () => {
     render(<Harness initialOpen={false} />)
 
     expect(rowNames()).toEqual([
-      'alpha / review · Needs input · Approve plan',
-      'alpha / build · Working · Edit',
-      'beta / docs · Idle · No activity yet'
+      'alpha / review, Needs input, Approve plan',
+      'alpha / build, Working, Edit',
+      'beta / docs, Idle, No activity yet'
     ])
   })
 
   it('shows the same text as a tooltip when a dot is focused', async () => {
     render(<Harness initialOpen={false} />)
 
-    screen.getByRole('button', { name: 'beta / docs · Idle · No activity yet' }).focus()
+    screen.getByRole('button', { name: 'beta / docs, Idle, No activity yet' }).focus()
 
     const tooltip = await waitFor(() => {
       const popup = document.querySelector('[data-slot="tooltip-content"]')
       expect(popup).not.toBeNull()
       return popup
     })
-    expect(tooltip?.textContent).toBe('beta / docs · Idle · No activity yet')
+    expect(tooltip?.textContent).toBe('beta / docs, Idle, No activity yet')
   })
 
   it('has exactly one tab stop and it is an agent row', () => {
@@ -371,7 +371,7 @@ describe('ThreadsSidebar page entries', () => {
     state.lists.set('layout.pages', [assistantPage(paneId(2))])
     render(<Harness initialOpen />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Assistant · Needs input' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Assistant, Needs input' }))
 
     expect(state.selectTab).toHaveBeenCalledWith(paneId(2))
   })

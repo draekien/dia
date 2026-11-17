@@ -27,7 +27,7 @@ const PANE_ID = 'aaaaaaaa-0000-4000-8000-000000000001'
 
 const WORKTREES_ROOT = '/worktrees'
 
-const OWNER = { paneId: PANE_ID, label: 'Tab · repo' }
+const OWNER = { paneId: PANE_ID, label: 'Tab: repo' }
 
 function makeFakeSpawner(
   exitCodeFor: (command: ChildProcess.Command) => number,

@@ -102,15 +102,15 @@ afterEach(() => {
 describe('Worktrees settings page', () => {
   it('lists each worktree with its label and state', async () => {
     installHost([
-      entry('live', 'Tab · dia', Active.make({})),
-      entry('dirty', 'Issue · Fix login', NeedsDecision.make({ changedFiles: 1 }))
+      entry('live', 'Tab: dia', Active.make({})),
+      entry('dirty', 'Issue: Fix login', NeedsDecision.make({ changedFiles: 1 }))
     ])
 
     await renderPage()
 
-    expect(rowOf('dia/live')?.textContent).toBe('dia/liveTab · diaIn use')
+    expect(rowOf('dia/live')?.textContent).toBe('dia/liveTab: diaIn use')
     expect(rowOf('dia/dirty')?.textContent).toBe(
-      'dia/dirtyIssue · Fix loginNeeds decision1 changed file'
+      'dia/dirtyIssue: Fix loginNeeds decision1 changed file'
     )
   })
 

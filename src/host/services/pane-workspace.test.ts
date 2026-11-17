@@ -792,7 +792,7 @@ describe('PaneWorkspace.createTab', () => {
 
       assert.deepStrictEqual(harness.requests[0].worktree, {
         _tag: 'Create',
-        label: 'Tab · /repo'
+        label: 'Tab: /repo'
       })
       assert.strictEqual(workspace.projects[0].tabs[1].name, 'swift-raven')
     })
@@ -849,7 +849,7 @@ describe('PaneWorkspace.createTab', () => {
 
       assert.deepStrictEqual(harness.requests[0].worktree, {
         _tag: 'Create',
-        label: 'Tab · heron',
+        label: 'Tab: heron',
         base: 'origin/release'
       })
     })

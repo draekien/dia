@@ -11,8 +11,6 @@ import { Button } from './ui/button'
 
 const agents = (count: number): string => (count === 1 ? '1 agent' : `${count} agents`)
 
-const Dot = () => <span aria-hidden> · </span>
-
 function ResetTime({ at }: { at: number }) {
   const nowMs = useNow(Duration.minutes(1))
   return <>{formatResetTime(at, nowMs)}</>
@@ -46,8 +44,7 @@ function BannerContent({
             {banner._tag === 'LimitResetBanner'
               ? 'Usage limit has reset'
               : 'Usage limit reached, reset time unknown'}
-            <Dot />
-            {agents(banner.paneIds.length)} waiting
+            , {agents(banner.paneIds.length)} waiting
           </span>
           <Button variant="ghost" size="xs" onClick={() => onResume(banner.paneIds)}>
             Resume all
@@ -57,17 +54,15 @@ function BannerContent({
     case 'LimitWaitingBanner':
       return (
         <span>
-          Usage limit reached
-          <Dot />
-          you can resume {agents(banner.count)} at <ResetTime at={banner.resetsAt} />
+          Usage limit reached. You can resume {agents(banner.count)} at{' '}
+          <ResetTime at={banner.resetsAt} />
         </span>
       )
     case 'LimitResumingBanner':
       return (
         <span>
-          Usage limit reached
-          <Dot />
-          dia resumes {agents(banner.count)} at <ResetTime at={banner.resumesAt} />
+          Usage limit reached. dia resumes {agents(banner.count)} at{' '}
+          <ResetTime at={banner.resumesAt} />
         </span>
       )
   }

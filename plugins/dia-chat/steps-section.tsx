@@ -31,12 +31,7 @@ interface StepsSectionProps {
 export const summaryFocus =
   'rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
-const separator = (
-  <>
-    {' '}
-    <span aria-hidden>·</span>{' '}
-  </>
-)
+const separator = ', '
 
 function StepsSummary({ section }: { section: StepsSectionBlock }): React.JSX.Element {
   const steps = section.parts

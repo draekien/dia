@@ -128,10 +128,10 @@ export function ThreadRow({
   const line = secondLine(row.summary)
   const status = statusLabel(row.summary.status)
   const marker = modeMarker(row.permissionMode)
-  const markerSuffix = marker === null ? '' : ` · ${marker}`
+  const markerSuffix = marker === null ? '' : `, ${marker}`
   const place = projectName === null ? row.name : `${projectName} / ${row.name}`
   const label = `${row.name}, ${status}. ${line.text}${markerSuffix}`
-  const summaryText = `${place} · ${status} · ${line.text}${markerSuffix}`
+  const summaryText = `${place}, ${status}, ${line.text}${markerSuffix}`
   const show = () => actions.selectTab(row.paneId)
   const body = (name: React.ReactNode) => (
     <>

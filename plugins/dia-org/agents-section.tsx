@@ -54,7 +54,7 @@ export const agentLine = ({ run, summary }: AgentRow): string => {
     case 'StatusFailed':
       return summary.status.reason
     default:
-      return `${run.assignee} · ${run.projectName}`
+      return `${run.assignee}, ${run.projectName}`
   }
 }
 
@@ -62,7 +62,7 @@ function AgentRunRow({ row, selected }: { readonly row: AgentRow; readonly selec
   const status = statusLabel(row.summary.status)
   const line = agentLine(row)
   const label = `${row.run.issueTitle}, ${status}. ${line}`
-  const tooltip = `${row.run.assignee} · ${row.run.issueTitle} · ${row.run.projectName} · ${status}`
+  const tooltip = `${row.run.assignee}, ${row.run.issueTitle}, ${row.run.projectName}, ${status}`
   return (
     <SidebarMenuItem>
       <SidebarMenuButton

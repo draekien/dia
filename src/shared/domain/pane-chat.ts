@@ -548,14 +548,14 @@ const RESUMED_SUFFIX = ':resumed'
 /** Whether `message` is the transcript notice that says the agent is parked. */
 export const isParkNotice = (message: PaneMessage): boolean => message.id.endsWith(PARKED_SUFFIX)
 
-const NOTICE_SEPARATOR = ' · '
+const NOTICE_SEPARATOR = '. '
 
 const parkNoticeText = (attention: ParkedState, nowMs: number): string => {
   switch (attention._tag) {
     case 'ParkedToResume':
       return `Usage limit reached${NOTICE_SEPARATOR}dia resumes at ${formatResetTime(attention.resumesAt, nowMs)}`
     case 'ParkedUntilReset':
-      return `Usage limit reached${NOTICE_SEPARATOR}you can resume at ${formatResetTime(attention.resetsAt, nowMs)}`
+      return `Usage limit reached${NOTICE_SEPARATOR}You can resume at ${formatResetTime(attention.resetsAt, nowMs)}`
   }
   if (attention.cause._tag === 'SignedOut') return 'Claude Code is not signed in'
   return attention.cause.resetsAt === null ? 'Usage limit reached' : 'Usage limit has reset'

@@ -6,7 +6,7 @@ import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { makeGitOps } from './git-ops'
 
 const PANE_ID = 'aaaaaaaa-0000-4000-8000-000000000001'
-const OWNER = { paneId: PANE_ID, label: 'Tab · repo' }
+const OWNER = { paneId: PANE_ID, label: 'Tab: repo' }
 
 const git = Effect.fnUntraced(function* (cwd: string, ...args: ReadonlyArray<string>) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner

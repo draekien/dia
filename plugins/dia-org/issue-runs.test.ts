@@ -171,7 +171,7 @@ describe('runIssues', () => {
             projectDirectory: PROJECT_DIRECTORY,
             select: false,
             owner: { plugin: 'dia-org', ownsProject: false },
-            name: AgentName.make(`Ada · ${TITLE}`)
+            name: AgentName.make(`Ada: ${TITLE}`)
           }
         }
       ])
@@ -194,7 +194,7 @@ describe('runIssues', () => {
             projectDirectory: PROJECT_DIRECTORY,
             select: false,
             owner: { plugin: 'dia-org', ownsProject: false },
-            name: AgentName.make(`Ada · ${TITLE}`)
+            name: AgentName.make(`Ada: ${TITLE}`)
           }
         }
       ])

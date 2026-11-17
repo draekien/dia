@@ -639,7 +639,7 @@ export const PaneWorkspaceLive = Layer.effect(
             ? undefined
             : {
                 _tag: 'Create',
-                label: `Tab · ${request.name ?? entry.project.displayName}`,
+                label: `Tab: ${request.name ?? entry.project.displayName}`,
                 ...(request.worktree.base === null ? {} : { base: request.worktree.base })
               },
         resume: Option.none()

@@ -114,7 +114,7 @@ describe('PluginSettings', () => {
     render(<PluginSettings />)
 
     await screen.findByText('Cannot import "host.ts"')
-    expect(rowOf('chat').getByText('Loaded · last reload failed')).toBeTruthy()
+    expect(rowOf('chat').getByText('Loaded, last reload failed')).toBeTruthy()
   })
 
   it('shows why a plugin needs a restart', async () => {
@@ -373,7 +373,7 @@ describe('PluginSettings', () => {
     render(<PluginSettings />)
 
     await screen.findByText('Model list')
-    expect(rowOf('claude-code').getByText(/^Failed .+ · retries .+$/)).toBeTruthy()
+    expect(rowOf('claude-code').getByText(/^Failed .+, retries .+$/)).toBeTruthy()
     expect(rowOf('claude-code').getByText('spawn ENOENT')).toBeTruthy()
   })
 

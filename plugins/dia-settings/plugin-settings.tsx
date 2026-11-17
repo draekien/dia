@@ -57,11 +57,11 @@ const activityLabel = ({ status }: ActivityInfoJson): string => {
   const next = formatWhen(status.nextRunAt)
   switch (status.lastRun?._tag) {
     case undefined:
-      return `Not run yet · due ${next}`
+      return `Not run yet, due ${next}`
     case 'RunSucceeded':
-      return `Ran ${formatWhen(status.lastRun.at)} · next ${next}`
+      return `Ran ${formatWhen(status.lastRun.at)}, next ${next}`
     case 'RunFailed':
-      return `Failed ${formatWhen(status.lastRun.at)} · retries ${next}`
+      return `Failed ${formatWhen(status.lastRun.at)}, retries ${next}`
   }
 }
 

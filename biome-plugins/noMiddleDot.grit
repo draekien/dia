@@ -1,0 +1,12 @@
+engine biome(1.0)
+language js(typescript, jsx)
+
+or {
+  JsStringLiteralExpression(),
+  JsxString(),
+  JsTemplateChunkElement(),
+  JsxText()
+} as $text where {
+  $text <: r"(?s).*·.*",
+  register_diagnostic(span=$text, message="Don't separate text with a middle dot (U+00B7): use layout spacing, a comma, a colon or a sentence (DESIGN.md, The No Middle Dot Rule). Text shown verbatim from elsewhere may keep it; suppress this rule there with the reason.", severity="error")
+}

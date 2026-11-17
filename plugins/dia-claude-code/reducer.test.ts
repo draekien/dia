@@ -625,7 +625,7 @@ describe('makeSessionEventReducer — activity line states', () => {
       system('api_retry', { attempt: 2, max_retries: 10, retry_delay_ms: 3200, error_status: 529 })
     )
     expect(emitted).toEqual([
-      { _tag: 'TurnStatusChanged', label: 'Retrying (attempt 2 of 10) in 4s · 529' }
+      { _tag: 'TurnStatusChanged', label: 'Retrying (attempt 2 of 10) in 4s, 529' }
     ])
   })
 
@@ -634,7 +634,7 @@ describe('makeSessionEventReducer — activity line states', () => {
       system('api_retry', { attempt: 1, max_retries: 10, retry_delay_ms: 1000, error_status: null })
     )
     expect(emitted).toEqual([
-      { _tag: 'TurnStatusChanged', label: 'Retrying (attempt 1 of 10) in 1s · connection error' }
+      { _tag: 'TurnStatusChanged', label: 'Retrying (attempt 1 of 10) in 1s, connection error' }
     ])
   })
 
@@ -686,7 +686,7 @@ describe('makeSessionEventReducer — activity line states', () => {
     const emitted = stepOnce(
       system('thinking_tokens', { estimated_tokens: 1234, estimated_tokens_delta: 100 })
     )
-    expect(emitted).toEqual([{ _tag: 'TurnStatusChanged', label: 'Thinking · ~1.2k tokens' }])
+    expect(emitted).toEqual([{ _tag: 'TurnStatusChanged', label: 'Thinking, ~1.2k tokens' }])
   })
 
   it('shows no count below 1000 thinking tokens, so the label does not change per token', () => {
@@ -797,7 +797,7 @@ describe('makeSessionEventReducer — tool row updates', () => {
       {
         _tag: 'ToolCallUpdated',
         toolCallId: 'toolu_task',
-        detail: 'Explore · 14 tools · last: Grep'
+        detail: 'Explore, 14 tools, last: Grep'
       }
     ])
   })

@@ -31,11 +31,11 @@ export interface AgentRunSources {
   readonly jobTitles: ReadonlyArray<Pick<JobTitle, 'id' | 'name'>>
 }
 
-const SEPARATOR = ' · '
+const SEPARATOR = ': '
 const ELLIPSIS = '…'
 
 /**
- * The name of the tab that shows a hire's run of an issue: `<assignee> · <issueTitle>`, where
+ * The name of the tab that shows a hire's run of an issue: `<assignee>: <issueTitle>`, where
  * `assignee` is the hire's name or its job title's name. The issue title is shortened with an
  * ellipsis so the name fits {@link AGENT_NAME_MAX_LENGTH}.
  */
