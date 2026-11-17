@@ -38,27 +38,18 @@ const pendingCount = (approvals: Approvals) =>
   )
 
 describe('makeApprovals', () => {
-  it.effect('returns approved after the user approves', () =>
-    Effect.gen(function* () {
-      const approvals = yield* scoped
-      const { fiber, pending } = yield* requestInBackground(approvals)
+  for (const answer of ['approved', 'declined'] as const) {
+    it.effect(`returns ${answer} after the user answers ${answer}`, () =>
+      Effect.gen(function* () {
+        const approvals = yield* scoped
+        const { fiber, pending } = yield* requestInBackground(approvals)
 
-      yield* approvals.answer(pending.id, 'approved')
+        yield* approvals.answer(pending.id, answer)
 
-      assert.strictEqual(yield* Fiber.join(fiber), 'approved')
-    }).pipe(Effect.scoped)
-  )
-
-  it.effect('returns declined after the user declines', () =>
-    Effect.gen(function* () {
-      const approvals = yield* scoped
-      const { fiber, pending } = yield* requestInBackground(approvals)
-
-      yield* approvals.answer(pending.id, 'declined')
-
-      assert.strictEqual(yield* Fiber.join(fiber), 'declined')
-    }).pipe(Effect.scoped)
-  )
+        assert.strictEqual(yield* Fiber.join(fiber), answer)
+      }).pipe(Effect.scoped)
+    )
+  }
 
   it.effect('keeps the first answer when the same request is answered twice', () =>
     Effect.gen(function* () {
@@ -115,7 +106,7 @@ describe('makeApprovals', () => {
     Effect.gen(function* () {
       const approvals = yield* scoped
       const first = yield* requestInBackground(approvals)
-      const second = yield* requestInBackground(approvals, { ...RUN })
+      const second = yield* requestInBackground(approvals)
 
       const ids = (yield* whenPending(approvals, 2)).map((one) => one.id)
 

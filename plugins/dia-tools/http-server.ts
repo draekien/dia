@@ -35,7 +35,7 @@ export class McpListenError extends Data.TaggedError('McpListenError')<{
 
 /**
  * A listening MCP endpoint: `port` it listens on, and `closeSessions`, which ends every MCP
- * session a token with hash `tokenHash` opened, after waiting up to one second for the tool calls
+ * session a token with hash `tokenHash` opened, after waiting up to one second in total for the tool calls
  * those sessions are running to return.
  */
 export interface McpEndpoint {
@@ -281,6 +281,7 @@ export const serveMcp = Effect.fn('DiaTools.serveMcp')(function* (
     ),
     () =>
       Effect.forEach([...sessions], ([id, session]) => closeSession(id, session), {
+        concurrency: 'unbounded',
         discard: true
       }).pipe(
         Effect.andThen(
@@ -313,7 +314,7 @@ export const serveMcp = Effect.fn('DiaTools.serveMcp')(function* (
       Effect.forEach(
         [...sessions].filter(([, session]) => session.tokenHash === tokenHash),
         ([id, session]) => closeSession(id, session),
-        { discard: true }
+        { concurrency: 'unbounded', discard: true }
       )
   }
 })

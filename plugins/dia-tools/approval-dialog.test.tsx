@@ -72,30 +72,18 @@ describe('ApprovalDialog', () => {
     })
   })
 
-  it('sends the answer for the shown request when Approve is clicked', async () => {
+  it.each([
+    ['Approve', 'approved'],
+    ['Decline', 'declined']
+  ])('sends %s as %s for the shown request', async (button, answer) => {
     const host = installHost([pending('a', 'Change it')])
     await renderDialog()
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Approve' }))
+      fireEvent.click(screen.getByRole('button', { name: button }))
     })
 
-    expect(host.call.mock.calls).toEqual([
-      ['dia-tools', 'AnswerApproval', { id: 'a', answer: 'approved' }]
-    ])
-  })
-
-  it('sends declined when Decline is clicked', async () => {
-    const host = installHost([pending('a', 'Change it')])
-    await renderDialog()
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Decline' }))
-    })
-
-    expect(host.call.mock.calls).toEqual([
-      ['dia-tools', 'AnswerApproval', { id: 'a', answer: 'declined' }]
-    ])
+    expect(host.call.mock.calls).toEqual([['dia-tools', 'AnswerApproval', { id: 'a', answer }]])
   })
 
   it('stays open when Escape is pressed', async () => {

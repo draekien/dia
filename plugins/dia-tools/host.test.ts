@@ -127,33 +127,24 @@ const answered = (answers: ReadonlyArray<string>, count: number) =>
   }).pipe(Effect.timeout(Duration.seconds(5)))
 
 describe('dia-tools host entry', () => {
-  it.live('revoking one of two tokens of a run declines only the request made under it', () =>
-    Effect.gen(function* () {
-      const { registry, tools, answers } = yield* startHost
-      const revoked = yield* askWith(tools, RUN)
-      yield* askWith(tools, RUN)
-      yield* whenPending(registry, 2)
+  for (const [kind, scope] of [
+    ['a run', RUN],
+    ['an agent outside dia', OUTSIDE]
+  ] as const) {
+    it.live(`revoking one of two tokens of ${kind} declines only the request made under it`, () =>
+      Effect.gen(function* () {
+        const { registry, tools, answers } = yield* startHost
+        const revoked = yield* askWith(tools, scope)
+        yield* askWith(tools, scope)
+        yield* whenPending(registry, 2)
 
-      yield* tools.revoke(revoked)
+        yield* tools.revoke(revoked)
 
-      assert.deepStrictEqual(yield* answered(answers, 1), ['declined'])
-      assert.strictEqual((yield* whenPending(registry, 1)).length, 1)
-    }).pipe(Effect.scoped)
-  )
-
-  it.live('revoking one of two outside tokens declines only the request made under it', () =>
-    Effect.gen(function* () {
-      const { registry, tools, answers } = yield* startHost
-      const revoked = yield* askWith(tools, OUTSIDE)
-      yield* askWith(tools, OUTSIDE)
-      yield* whenPending(registry, 2)
-
-      yield* tools.revoke(revoked)
-
-      assert.deepStrictEqual(yield* answered(answers, 1), ['declined'])
-      assert.strictEqual((yield* whenPending(registry, 1)).length, 1)
-    }).pipe(Effect.scoped)
-  )
+        assert.deepStrictEqual(yield* answered(answers, 1), ['declined'])
+        assert.strictEqual((yield* whenPending(registry, 1)).length, 1)
+      }).pipe(Effect.scoped)
+    )
+  }
 
   it.live('unloading dia-tools declines a pending request', () =>
     Effect.gen(function* () {
