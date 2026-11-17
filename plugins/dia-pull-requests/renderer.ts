@@ -5,20 +5,21 @@ import { Effect } from 'effect'
 import { createElement } from 'react'
 import { makePullRequestAtoms } from './atoms'
 import { PullRequestPanel } from './pull-request-panel'
-import { PULL_REQUEST_PANEL, PullRequestsCard } from './pull-requests-card'
+import { PullRequestsCard } from './pull-requests-card'
 
 const setup: PluginSetup<PluginServices> = (ctx) =>
   Effect.gen(function* () {
     const atoms = makePullRequestAtoms(ctx)
+    const panel = { plugin: ctx.name, id: 'pull-request' }
     yield* addEntry(ctx, RailCardsSlot, {
       id: 'pull-requests',
       order: 60,
       title: 'Pull requests',
       component: ({ paneId }: { readonly paneId: PaneId }) =>
-        createElement(PullRequestsCard, { runId: paneId, atoms })
+        createElement(PullRequestsCard, { runId: paneId, atoms, panel })
     })
     yield* addEntry(ctx, PanelsSlot, {
-      id: PULL_REQUEST_PANEL.id,
+      id: panel.id,
       order: 50,
       title: 'Pull request',
       component: ({ paneId }: { readonly paneId: PaneId }) =>

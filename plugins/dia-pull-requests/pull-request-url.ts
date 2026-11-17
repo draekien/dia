@@ -45,19 +45,12 @@ export const PullRequestUrl = Schema.String.pipe(
 /** A canonical github.com pull request URL; see {@link PullRequestUrl}. */
 export type PullRequestUrl = typeof PullRequestUrl.Type
 
-/** The owner, repository and number a {@link PullRequestUrl} names. */
-export const PullRequestRef = Schema.Struct({
-  owner: Schema.String,
-  repo: Schema.String,
-  number: Schema.Int
-})
-/** What a pull request URL names; see {@link PullRequestRef}. */
-export type PullRequestRef = typeof PullRequestRef.Type
-
-/** The {@link PullRequestRef} of `url`. */
-export const pullRequestRef = (url: PullRequestUrl): PullRequestRef => {
+/** The owner, repository and number that `url` names. */
+export const pullRequestRef = (
+  url: PullRequestUrl
+): { readonly owner: string; readonly repo: string; readonly number: number } => {
   const [owner = '', repo = '', , number = '0'] = new URL(url).pathname.slice(1).split('/')
-  return PullRequestRef.make({ owner, repo, number: Number(number) })
+  return { owner, repo, number: Number(number) }
 }
 
 /** `owner/repo#n`, the label the tool result and the card use for `url`. */

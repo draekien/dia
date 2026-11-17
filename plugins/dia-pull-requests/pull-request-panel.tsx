@@ -26,9 +26,8 @@ import type {
   PullRequestCheck,
   PullRequestDetails
 } from './calls'
-import { pullRequestRef } from './pull-request-url'
 import { useRunPullRequests } from './pull-requests-card'
-import { stateLabel } from './summary'
+import { cardLines, stateLabel } from './summary'
 
 const STATE_FILL = {
   draft: 'none',
@@ -225,9 +224,7 @@ function Details({
   if (read._tag !== 'Read') {
     return (
       <div className="flex flex-col gap-3">
-        <p className="font-medium text-sm tabular-nums">
-          #{pullRequestRef(pullRequest.url).number}
-        </p>
+        <p className="font-medium text-sm tabular-nums">{cardLines(pullRequest).name}</p>
         {read._tag === 'Reading' ? (
           <div className="flex flex-col gap-2">
             <span className="sr-only">Reading the pull request</span>
@@ -265,11 +262,6 @@ function Details({
   )
 }
 
-const optionLabel = (pullRequest: LinkedPullRequest): string => {
-  const number = `#${pullRequestRef(pullRequest.url).number}`
-  return pullRequest.read._tag === 'Read' ? `${number} ${pullRequest.read.details.title}` : number
-}
-
 function Switcher({
   pullRequests,
   shown,
@@ -292,13 +284,13 @@ function Switcher({
         aria-label="Pull request"
         className="-ml-2 h-7 max-w-full border-transparent px-2 text-xs shadow-none"
       >
-        <SelectValue>{optionLabel(shown)}</SelectValue>
+        <SelectValue>{cardLines(shown).name}</SelectValue>
       </SelectTrigger>
       <SelectContent align="start">
         <SelectGroup>
           {pullRequests.map((pullRequest) => (
             <SelectItem key={pullRequest.url} value={pullRequest.url}>
-              {optionLabel(pullRequest)}
+              {cardLines(pullRequest).name}
             </SelectItem>
           ))}
         </SelectGroup>

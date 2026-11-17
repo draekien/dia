@@ -7,9 +7,6 @@ import type { PullRequestAtoms } from './atoms'
 import type { LinkedPullRequest } from './calls'
 import { cardLines } from './summary'
 
-/** The plugin and id of the `Pull request` panel, for `openRightPanel`. */
-export const PULL_REQUEST_PANEL = { plugin: 'dia-pull-requests', id: 'pull-request' } as const
-
 const isMac =
   typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent)
 
@@ -59,15 +56,17 @@ function Row({
 
 /**
  * The `Pull requests` rail card body for the tab showing run `runId`: one row per linked pull
- * request. Clicking a row shows it in the `Pull request` right panel; Ctrl+click (⌘+click on
+ * request. Clicking a row shows it in the `Pull request` right panel, the list entry `panel` names; Ctrl+click (⌘+click on
  * macOS) or a middle click opens it in the browser instead.
  */
 export function PullRequestsCard({
   runId,
-  atoms
+  atoms,
+  panel
 }: {
   readonly runId: string
   readonly atoms: PullRequestAtoms
+  readonly panel: { readonly plugin: string; readonly id: string }
 }): React.JSX.Element {
   const pullRequests = useRunPullRequests(atoms, runId)
   const setShown = useAtomSet(atoms.shown(runId))
@@ -80,7 +79,7 @@ export function PullRequestsCard({
           pullRequest={pullRequest}
           onOpen={() => {
             setShown(pullRequest.url)
-            openRightPanel(runId, PULL_REQUEST_PANEL)
+            openRightPanel(runId, panel)
             Effect.runSync(
               Effect.logDebug('Opened a pull request in the panel', { runId, url: pullRequest.url })
             )

@@ -8,15 +8,17 @@ import { appRegistry } from '../../src/renderer/src/lib/workspace-atoms'
 import type { PullRequestAtoms } from './atoms'
 import { PullRequestPanel } from './pull-request-panel'
 import { fakeAtoms, readPullRequest } from './pull-requests.fake'
-import { PULL_REQUEST_PANEL, PullRequestsCard } from './pull-requests-card'
+import { PullRequestsCard } from './pull-requests-card'
 
 afterEach(cleanup)
+
+const PANEL = { plugin: 'dia-pull-requests', id: 'pull-request' }
 
 const showTab = (runId: string, atoms: PullRequestAtoms) =>
   render(
     <RegistryContext.Provider value={appRegistry}>
       <TooltipProvider>
-        <PullRequestsCard runId={runId} atoms={atoms} />
+        <PullRequestsCard runId={runId} atoms={atoms} panel={PANEL} />
         <div
           ref={(element) => {
             if (element) Object.defineProperty(element, 'clientWidth', { value: 1200 })
@@ -26,8 +28,8 @@ const showTab = (runId: string, atoms: PullRequestAtoms) =>
             paneId={runId}
             panels={[
               {
-                key: PULL_REQUEST_PANEL,
-                id: PULL_REQUEST_PANEL.id,
+                key: PANEL,
+                id: PANEL.id,
                 order: 50,
                 title: 'Pull request',
                 component: ({ paneId }) => <PullRequestPanel runId={paneId} atoms={atoms} />

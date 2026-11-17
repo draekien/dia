@@ -1,6 +1,6 @@
 import { Option, Schema, Stream } from 'effect'
 import { Atom } from 'effect/reactivity'
-import type { PullRequestAtoms } from './atoms'
+import { makePullRequestAtoms, type PullRequestAtoms } from './atoms'
 import {
   type LinkedPullRequest,
   type PullRequestDetails,
@@ -65,12 +65,10 @@ export const fakeAtoms = (
   linked: ReadonlyArray<LinkedPullRequest>,
   actions: Partial<Pick<PullRequestAtoms, 'unlink' | 'refresh'>> = {}
 ): PullRequestAtoms => ({
+  ...makePullRequestAtoms({ name: 'dia-pull-requests' }),
   runPullRequests: Atom.family((_runId: string) =>
     Atom.make(Stream.make(Option.some(linked)))
   ) as unknown as PullRequestAtoms['runPullRequests'],
-  shown: Atom.family((_paneId: string) =>
-    Atom.make<PullRequestUrl | undefined>(undefined).pipe(Atom.keepAlive)
-  ),
   unlink: actions.unlink ?? (() => Promise.resolve()),
   refresh: actions.refresh ?? (() => Promise.resolve())
 })

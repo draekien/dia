@@ -40,7 +40,7 @@ Out of scope: creating, merging or reviewing pull requests from dia; detecting p
 plugins/dia-pull-requests/
   plugin.json            { "name": "dia-pull-requests", "api": "0.0.44", "category": "feature",
                            "host": "host.ts", "renderer": "renderer.ts", "load": "eager" }
-  pull-request-url.ts    PullRequestUrl schema and PullRequestRef
+  pull-request-url.ts    PullRequestUrl schema and pullRequestRef
   calls.ts               the host calls and the schemas they carry
   gh.ts                  GitHubCli: reads one pull request with `gh pr view`
   store.ts               migrations and the LinkStore over the plugin database
@@ -105,12 +105,10 @@ export const PullRequestUrl = Schema.String.pipe(
 )
 export type PullRequestUrl = typeof PullRequestUrl.Type
 
-/** The owner, repository and number a {@link PullRequestUrl} names. */
-export const PullRequestRef = Schema.Struct({ owner: Schema.String, repo: Schema.String, number: Schema.Int })
-export type PullRequestRef = typeof PullRequestRef.Type
-
-/** The {@link PullRequestRef} of `url`. */
-export const pullRequestRef: (url: PullRequestUrl) => PullRequestRef
+/** The owner, repository and number that `url` names. */
+export const pullRequestRef: (
+  url: PullRequestUrl
+) => { readonly owner: string; readonly repo: string; readonly number: number }
 
 /** `owner/repo#n`, the label the tool result and the card use. */
 export const pullRequestLabel: (url: PullRequestUrl) => string
