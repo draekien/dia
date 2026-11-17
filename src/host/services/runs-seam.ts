@@ -13,6 +13,7 @@ import {
   type WorktreeInfo
 } from '@shared/domain/pane'
 import { AgentName, TabOwner } from '@shared/domain/project'
+import type { PermissionRules } from '@shared/domain/session-tools'
 import { ServiceKey } from '@shared/plugin/api'
 import { Data, type Effect, type Option, Predicate, Schema, type Stream } from 'effect'
 import type { WorktreeCreateError, WorktreeReattachError } from './worktrees-seam'
@@ -32,6 +33,7 @@ export type WorktreeRequest =
  * `context` become the run's dia tool scope (see `ToolScope`); `context` must be
  * JSON-serialisable, because it is stored with the run. `systemPromptAppend` is appended to the
  * run's system prompt after dia's session additions, on every session the run opens.
+ * `permissions` are added to the permission rules of every session the run opens.
  */
 export interface RunSpec {
   readonly runId: string
@@ -44,14 +46,15 @@ export interface RunSpec {
   readonly labels?: ReadonlyArray<string>
   readonly context?: unknown
   readonly systemPromptAppend?: string
+  readonly permissions?: PermissionRules
 }
 
 /**
  * What {@link Runs.start} starts: a run with no tab working in `cwd`, sent `text` at once, or
  * waiting for its first message when `text` is absent. `systemPromptAppend` is appended to the
- * run's system prompt for its whole life. `labels` and `context` become the run's dia tool scope;
- * dia tools registered for that scope receive `context` with every call. `context` must be
- * JSON-serialisable.
+ * run's system prompt and `permissions` are added to its sessions' permission rules, for its whole
+ * life. `labels` and `context` become the run's dia tool scope; dia tools registered for that
+ * scope receive `context` with every call. `context` must be JSON-serialisable.
  */
 export interface StartRunOptions {
   readonly cwd: string
@@ -62,6 +65,7 @@ export interface StartRunOptions {
   readonly systemPromptAppend?: string
   readonly labels?: ReadonlyArray<string>
   readonly context?: unknown
+  readonly permissions?: PermissionRules
 }
 
 /**

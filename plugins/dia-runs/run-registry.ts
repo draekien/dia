@@ -7,6 +7,7 @@ import {
   PaneEvents,
   type Parking,
   type PermissionMode,
+  type PermissionRules,
   type RunAnswer,
   type RunChange,
   type RunEvents,
@@ -20,6 +21,7 @@ import {
   type SendMode,
   type SessionAdditions,
   type SessionId,
+  type SessionToolOptions,
   type StartRunOptions,
   type TabPlacement,
   type ThinkingLevel,
@@ -105,6 +107,9 @@ const withStoredScope = (spec: RunSpec, row: RunRow): RunSpec => ({
     : {}),
   ...(spec.systemPromptAppend === undefined && row.spec.systemPromptAppend !== undefined
     ? { systemPromptAppend: row.spec.systemPromptAppend }
+    : {}),
+  ...(spec.permissions === undefined && row.spec.permissions !== undefined
+    ? { permissions: row.spec.permissions }
     : {})
 })
 
@@ -120,8 +125,32 @@ const specOfRow = (row: RunRow): RunSpec => ({
   ...(row.spec.context === undefined ? {} : { context: row.spec.context }),
   ...(row.spec.systemPromptAppend === undefined
     ? {}
-    : { systemPromptAppend: row.spec.systemPromptAppend })
+    : { systemPromptAppend: row.spec.systemPromptAppend }),
+  ...(row.spec.permissions === undefined ? {} : { permissions: row.spec.permissions })
 })
+
+const withPermissions = (
+  tools: Option.Option<SessionToolOptions>,
+  permissions: PermissionRules | undefined
+): Option.Option<SessionToolOptions> => {
+  if (permissions === undefined) return tools
+  const base = Option.getOrElse(
+    tools,
+    (): SessionToolOptions => ({
+      permissions: { allow: [], ask: [], deny: [] },
+      mcpServers: {},
+      skills: []
+    })
+  )
+  return Option.some({
+    ...base,
+    permissions: {
+      allow: [...base.permissions.allow, ...permissions.allow],
+      ask: [...base.permissions.ask, ...permissions.ask],
+      deny: [...base.permissions.deny, ...permissions.deny]
+    }
+  })
+}
 
 const appendedPrompt = (shared: string, own: string | undefined): string =>
   [shared, own ?? ''].filter((part) => part !== '').join('\n\n')
@@ -275,7 +304,8 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
     ...(spec.context === undefined ? {} : { context: spec.context }),
     ...(spec.systemPromptAppend === undefined
       ? {}
-      : { systemPromptAppend: spec.systemPromptAppend })
+      : { systemPromptAppend: spec.systemPromptAppend }),
+    ...(spec.permissions === undefined ? {} : { permissions: spec.permissions })
   })
 
   const recordFor = Effect.fnUntraced(function* (
@@ -363,7 +393,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
                 additions.systemPromptAppend,
                 spec.systemPromptAppend
               ),
-              tools
+              tools: withPermissions(tools, spec.permissions)
             })
           })
       })
@@ -525,7 +555,8 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
         ...(options.context === undefined ? {} : { context: options.context }),
         ...(options.systemPromptAppend === undefined
           ? {}
-          : { systemPromptAppend: options.systemPromptAppend })
+          : { systemPromptAppend: options.systemPromptAppend }),
+        ...(options.permissions === undefined ? {} : { permissions: options.permissions })
       },
       false
     ).pipe(Effect.orDie)

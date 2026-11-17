@@ -150,17 +150,21 @@ export const ROUTING_TOOLS = [
   'mcp__dia__objective_stop'
 ] as const
 
+/** The dia tool the Executive assistant reads the org with (#293), as a permission rule name. */
+export const ORG_READ_TOOL = 'mcp__dia__org_read'
+
 /**
- * The Executive assistant (ADR-0053, ADR-0071) as the `8_executive_assistant` migration inserts it:
- * the built-in job title of the org's one assistant session, which is never hired. It allows
- * {@link ROUTING_TOOLS}; its session runs in `dontAsk`, so every other tool is denied.
+ * The Executive assistant (ADR-0053, ADR-0071) as `8_executive_assistant` inserts it in a new
+ * database: the built-in job title of the org's one assistant session, which is never hired. It
+ * allows {@link ROUTING_TOOLS} and {@link ORG_READ_TOOL}; its other org tools go through the
+ * session's permission rules, in the mode `runSettings` gives its run.
  */
 export const EXECUTIVE_ASSISTANT = {
   id: '6f0c1a6e-4b1e-4a52-9a0e-0d6b3f1a0018',
   kind: 'executive-assistant',
   name: 'Executive assistant',
-  allow: ROUTING_TOOLS,
-  jobDescription: `You are the executive assistant of dia's org. The user tells you what they want; you hand it to the right hired agent in the right project. You never plan the work and never do it.
+  allow: [...ROUTING_TOOLS, ORG_READ_TOOL],
+  jobDescription: `You are the executive assistant of dia's org. The user tells you what they want; you hand it to the right hired agent in the right project, or change the org when they ask. You never plan the work and never do it.
 
 ## How to route
 - Call objectives_read before you create an objective. If an open objective already covers the request, tell the user and do not create another.
@@ -171,6 +175,12 @@ export const EXECUTIVE_ASSISTANT = {
 - Add a routing note of at most 30 words only for routing facts, such as "the user wants this before the release". Write no plan, task list, acceptance criteria or examples.
 - Call objective_attach only when the user's message names an existing objective, or refers to work you just started and exactly one objective fits. A message on a similar subject is a new request.
 - Call objective_stop only when the user asks to stop an objective.
+
+## How to change the org
+- Call org_read before any other org tool, and use the ids it returns.
+- Change the org only as the user asks: hire, rename, dismiss and change reporting lines and job titles.
+- A change to your own job title, or one that changes a job title's permission rules or bypass opt-in, waits for the user to approve it in dia's window. If they decline, tell them nothing changed.
+- If a call is refused, tell the user the reason it gives.
 
 ## Replies
 - After each tool call, tell the user in one or two sentences what you did, naming the objective and the agent.
@@ -203,9 +213,9 @@ const builtInDefinition = (
 /**
  * The agent definitions `org` contributes, in the order the org lists them: the seven
  * {@link BUILT_IN_JOB_TITLES}, each allowing {@link ISSUE_TOOLS}, then the
- * {@link EXECUTIVE_ASSISTANT}, allowing {@link ROUTING_TOOLS}. Each has the values a fresh org
- * database gave it: no skills, MCP servers, ask rules or bypass opt-in, no model, and the medium
- * thinking level.
+ * {@link EXECUTIVE_ASSISTANT}, allowing {@link ROUTING_TOOLS} and {@link ORG_READ_TOOL}. Each has
+ * the values a fresh org database gave it: no skills, MCP servers, ask rules or bypass opt-in, no
+ * model, and the medium thinking level.
  */
 export const BUILT_IN_DEFINITIONS: ReadonlyArray<AgentDefinition> = [
   ...BUILT_IN_JOB_TITLES.map((seed) => builtInDefinition(seed, ISSUE_TOOLS, seed.deny)),

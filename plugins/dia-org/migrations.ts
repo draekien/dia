@@ -396,6 +396,13 @@ const createRunTables = Effect.gen(function* () {
   yield* Effect.logInfo('Created the issue run and assistant run tables')
 })
 
+const createOrgReadGrant = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient
+  yield* sql.unsafe('CREATE TABLE org_read_grant (id INTEGER PRIMARY KEY CHECK (id = 1))')
+  yield* sql.unsafe('INSERT INTO org_read_grant (id) VALUES (1)')
+  yield* Effect.logInfo('Recorded that the Executive assistant waits for the org_read grant')
+})
+
 /**
  * The `org` plugin's migrations, passed to `ctx.database`. `1_create_org_tables` creates the
  * first roles, hired agents and org settings tables; `2_seed_org` inserts the default overall cap;
@@ -418,7 +425,9 @@ const createRunTables = Effect.gen(function* () {
  * hand over to `issues`; `11_worktrees` creates `project_worktrees` (a row means issues of that
  * project run in worktrees) and `issue_worktrees` (the worktree each issue last ran in, and whether
  * it was released); `12_runs` creates `issue_runs` (the run of each issue and the hire it ran for)
- * and `assistant_run` (the Executive assistant's run). Each runs once per database.
+ * and `assistant_run` (the Executive assistant's run); `13_org_read_grant` creates
+ * `org_read_grant` with one row, recording that an edited Executive assistant has not yet been
+ * allowed `org_read`. Each runs once per database.
  */
 export const orgMigrations: PluginMigrations = {
   '1_create_org_tables': createTables,
@@ -432,5 +441,6 @@ export const orgMigrations: PluginMigrations = {
   '9_agent_definitions': moveToAgentDefinitions,
   '10_issues_handover': moveToIssuesPlugin,
   '11_worktrees': createWorktreeTables,
-  '12_runs': createRunTables
+  '12_runs': createRunTables,
+  '13_org_read_grant': createOrgReadGrant
 }

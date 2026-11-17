@@ -34,7 +34,7 @@ The org seeds an eighth built-in job title, `Executive assistant` (kind `executi
 
 ### The session
 
-The org plugin attaches one session (ADR-0070) while the built-in Executive assistant job title is enabled, and closes it when it is disabled. The session has no project (`projectId: null`), so the rail shows it in the `Assistant` group above the project groups. It runs in `dontAsk` with the job title's model, thinking level, permissions and MCP servers, in `<plugin data dir>/assistant`. Its session id is stored in the org database and resumed after a restart. Its row menu offers Show and Start over; Start over replaces it with a new session that has an empty transcript. An edit to the job title takes effect at the next start.
+The org plugin attaches one session (ADR-0070) while the built-in Executive assistant job title is enabled, and closes it when it is disabled. The session has no project (`projectId: null`), so the rail shows it in the `Assistant` group above the project groups. It starts in the permission mode `runSettings` gives every org run (`auto`, `bypassPermissions` or `default`; corrected on 2026-11-18, see `docs/reasoning/2026-11-18-assistant-permission-mode-and-built-in-overrides.md`), with the job title's model, thinking level, permissions and MCP servers, in `<plugin data dir>/assistant`. Its session id is stored in the org database and resumed after a restart. Its row menu offers Show and Start over; Start over replaces it with a new session that has an empty transcript. An edit to the job title takes effect at the next start.
 
 ### Routes
 

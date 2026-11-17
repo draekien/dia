@@ -1,15 +1,24 @@
 import type { RegisteredDefinition } from '@dia-plugin/dia-agent-definitions/registry'
+import { AgentDefinitionId } from '@dia-plugin/dia-agent-definitions/registry'
 import { openIssues, orgRef, PROJECT } from '@dia-plugin/dia-issues/issues.fake'
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import { Effect, Exit, FileSystem, Layer, Path, Scope } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
-import { handOverJobTitles, handOverWork, handoverPending, workHandoverPending } from './handover'
+import { EXECUTIVE_ASSISTANT, ORG_READ_TOOL, ROUTING_TOOLS } from './built-in-job-titles'
+import {
+  grantOrgRead,
+  handOverJobTitles,
+  handOverWork,
+  handoverPending,
+  workHandoverPending
+} from './handover'
 import { orgMigrations } from './migrations'
 import { builtInDefinitionRegistry, mcpRegistry } from './registries.fake'
 
-const { '12_runs': _runs, ...migrationsBeforeRuns } = orgMigrations
+const { '13_org_read_grant': _grant, ...migrationsBeforeGrant } = orgMigrations
+const { '12_runs': _runs, ...migrationsBeforeRuns } = migrationsBeforeGrant
 const { '11_worktrees': _worktrees, ...migrationsBeforeWorktrees } = migrationsBeforeRuns
 const { '10_issues_handover': _handover, ...migrationsBeforeHandover } = migrationsBeforeWorktrees
 const { '9_agent_definitions': _definitions, ...migrationsBeforeDefinitions } =
@@ -270,6 +279,98 @@ describe('handOverWork after 10_issues_handover', () => {
       yield* handOver
 
       assert.deepStrictEqual(yield* issues.snapshot, once)
+    }).pipe(Effect.scoped)
+  )
+})
+
+const ASSISTANT_ID = AgentDefinitionId.make(EXECUTIVE_ASSISTANT.id)
+const ROUTING_ONLY = { allow: [...ROUTING_TOOLS], ask: [], deny: [] }
+
+const grantOrg = (handedOver: boolean) =>
+  Effect.gen(function* () {
+    const sql = yield* openDatabase(':memory:', orgMigrations)
+    const definitions = yield* builtInDefinitionRegistry()
+    const { registry: mcp } = yield* mcpRegistry()
+    if (handedOver) {
+      yield* handOverJobTitles(definitions, mcp).pipe(
+        Effect.provideService(SqlClient.SqlClient, sql)
+      )
+    }
+    const grant = grantOrgRead(definitions).pipe(Effect.provideService(SqlClient.SqlClient, sql))
+    const assistant = Effect.map(definitions.list, (list) => byId(list, ASSISTANT_ID))
+    const pending = Effect.map(sql`SELECT id FROM org_read_grant`, (rows) => rows.length)
+    return { definitions, grant, assistant, pending }
+  })
+
+describe('grantOrgRead after 13_org_read_grant', () => {
+  it.effect(
+    'adds org_read to an edited Executive assistant that lacks it, keeping its other fields',
+    () =>
+      Effect.gen(function* () {
+        const { definitions, grant, assistant } = yield* grantOrg(true)
+        yield* definitions.edit(ASSISTANT_ID, {
+          jobDescription: 'Route to Ada.',
+          permissions: ROUTING_ONLY
+        })
+
+        yield* grant
+
+        const granted = yield* assistant
+        assert.deepStrictEqual(
+          [granted?.edited, granted?.definition.jobDescription, granted?.definition.permissions],
+          [true, 'Route to Ada.', { allow: [...ROUTING_TOOLS, ORG_READ_TOOL], ask: [], deny: [] }]
+        )
+      }).pipe(Effect.scoped)
+  )
+
+  it.effect('leaves an edited Executive assistant that already allows org_read unchanged', () =>
+    Effect.gen(function* () {
+      const { definitions, grant, assistant } = yield* grantOrg(true)
+      yield* definitions.edit(ASSISTANT_ID, { jobDescription: 'Route to Ada.' })
+      const before = yield* assistant
+
+      yield* grant
+
+      assert.deepStrictEqual(yield* assistant, before)
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('stores no override for an Executive assistant that was never edited', () =>
+    Effect.gen(function* () {
+      const { grant, assistant } = yield* grantOrg(true)
+
+      yield* grant
+
+      assert.isFalse((yield* assistant)?.edited)
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('runs once: a later launch leaves org_read off when the user removed it again', () =>
+    Effect.gen(function* () {
+      const { definitions, grant, assistant, pending } = yield* grantOrg(true)
+      yield* grant
+      yield* definitions.edit(ASSISTANT_ID, { permissions: ROUTING_ONLY })
+
+      yield* grant
+
+      assert.deepStrictEqual(
+        [(yield* assistant)?.definition.permissions, yield* pending],
+        [ROUTING_ONLY, 0]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('waits while job titles wait to be handed over, keeping the grant pending', () =>
+    Effect.gen(function* () {
+      const { definitions, grant, assistant, pending } = yield* grantOrg(false)
+      yield* definitions.edit(ASSISTANT_ID, { permissions: ROUTING_ONLY })
+
+      yield* grant
+
+      assert.deepStrictEqual(
+        [(yield* assistant)?.definition.permissions, yield* pending],
+        [ROUTING_ONLY, 1]
+      )
     }).pipe(Effect.scoped)
   )
 })

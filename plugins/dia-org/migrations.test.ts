@@ -47,7 +47,8 @@ const oldSeed = Effect.gen(function* () {
   yield* sql`INSERT INTO org_settings ${sql.insert({ singleton: 1, overall_cap: 4 })}`
 })
 
-const { '12_runs': _runs, ...migrationsBeforeRuns } = orgMigrations
+const { '13_org_read_grant': _grant, ...migrationsBeforeGrant } = orgMigrations
+const { '12_runs': _runs, ...migrationsBeforeRuns } = migrationsBeforeGrant
 const { '11_worktrees': _worktrees, ...migrationsBeforeWorktrees } = migrationsBeforeRuns
 const { '10_issues_handover': _handover, ...migrationsBeforeHandover } = migrationsBeforeWorktrees
 const { '9_agent_definitions': _definitions, ...migrationsBeforeDefinitions } =
@@ -438,32 +439,35 @@ const upgradedToAssistant = Effect.gen(function* () {
 }).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
 
 describe('8_executive_assistant on a database with a hire on a copy', () => {
-  it.effect('adds the enabled Executive assistant allowing only the four routing tools', () =>
-    Effect.gen(function* () {
-      const sql = yield* upgradedToAssistant
-      const [row] = yield* sql<{
-        readonly name: string
-        readonly enabled: number
-        readonly permissions: string
-      }>`SELECT name, enabled, permissions FROM job_titles WHERE built_in = 'executive-assistant'`
-      assert.deepStrictEqual(
-        [row?.name, row?.enabled, JSON.parse(row?.permissions ?? '{}')],
-        [
-          'Executive assistant',
-          1,
-          {
-            allow: [
-              'mcp__dia__objectives_read',
-              'mcp__dia__objective_create',
-              'mcp__dia__objective_attach',
-              'mcp__dia__objective_stop'
-            ],
-            ask: [],
-            deny: []
-          }
-        ]
-      )
-    }).pipe(Effect.scoped)
+  it.effect(
+    'adds the enabled Executive assistant allowing the four routing tools and org_read',
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* upgradedToAssistant
+        const [row] = yield* sql<{
+          readonly name: string
+          readonly enabled: number
+          readonly permissions: string
+        }>`SELECT name, enabled, permissions FROM job_titles WHERE built_in = 'executive-assistant'`
+        assert.deepStrictEqual(
+          [row?.name, row?.enabled, JSON.parse(row?.permissions ?? '{}')],
+          [
+            'Executive assistant',
+            1,
+            {
+              allow: [
+                'mcp__dia__objectives_read',
+                'mcp__dia__objective_create',
+                'mcp__dia__objective_attach',
+                'mcp__dia__objective_stop',
+                'mcp__dia__org_read'
+              ],
+              ask: [],
+              deny: []
+            }
+          ]
+        )
+      }).pipe(Effect.scoped)
   )
 
   it.effect('renames a copy that has its name and keeps its fields', () =>

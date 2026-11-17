@@ -573,7 +573,7 @@ describe('org host entry work through issues', () => {
     })
   )
 
-  it.effect('offers the routing tools to the Executive assistant run only', () =>
+  it.effect('offers the routing tools and the org tools to the Executive assistant run', () =>
     Effect.gen(function* () {
       const { foundation } = yield* startWithFoundation
       const assistant: ToolScope = { runId: 'run-a', labels: ['dia-org-assistant'], context: null }
@@ -581,11 +581,49 @@ describe('org host entry work through issues', () => {
       const offered = foundation.tools.filter((entry) => entry.when(assistant))
 
       assert.deepStrictEqual(offered.map((entry) => entry.tool.name).sort(), [
+        'hire',
+        'hire_dismiss',
+        'hire_rename',
+        'hire_set_reports_to',
+        'job_title_copy',
+        'job_title_create',
+        'job_title_delete',
+        'job_title_edit',
+        'job_title_set_enabled',
         'objective_attach',
         'objective_create',
         'objective_stop',
-        'objectives_read'
+        'objectives_read',
+        'org_read',
+        'staff_team'
       ])
+    })
+  )
+
+  it.effect("offers none of the org tools to a hire's issue run", () =>
+    Effect.gen(function* () {
+      const { foundation, ada } = yield* startWithFoundation
+      const hireRun: ToolScope = {
+        runId: 'run-1',
+        labels: [ISSUE_RUN_LABEL],
+        context: { issueId: issueId(1), assigneeId: ada }
+      }
+
+      const offered = foundation.tools.filter((entry) => entry.when(hireRun))
+
+      assert.deepStrictEqual(
+        offered
+          .map((entry) => entry.tool.name)
+          .filter(
+            (name) =>
+              name === 'org_read' ||
+              name === 'hire' ||
+              name.startsWith('job_title_') ||
+              name.startsWith('hire_') ||
+              name === 'staff_team'
+          ),
+        []
+      )
     })
   )
 

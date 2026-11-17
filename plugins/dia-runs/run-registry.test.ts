@@ -10,6 +10,7 @@ import {
   type SessionAdditions,
   SessionId,
   SessionStarted,
+  type SessionToolOptions,
   type TabPlacement,
   type ToolScope,
   UserMessagesSent
@@ -46,25 +47,41 @@ const RUN = 'aaaaaaaa-0000-4000-8000-000000000001'
 const STARTED = 'bbbbbbbb-0000-4000-8000-000000000002'
 const SESSION = SessionId.make('session-1')
 
+const JOB_TITLE_RULES = {
+  allow: ['mcp__dia__org_read'],
+  ask: ['Bash(git push)'],
+  deny: ['Read(./.env)']
+}
+const DIA_TOOLS: SessionToolOptions = {
+  permissions: { allow: ['mcp__dia__shared'], ask: [], deny: [] },
+  mcpServers: { dia: { type: 'http', url: 'http://127.0.0.1:1/mcp', headers: {} } },
+  skills: []
+}
+
 interface FakeSession {
   readonly resume: Option.Option<SessionId>
   readonly systemPromptAppend: string
+  readonly tools: Option.Option<SessionToolOptions>
   readonly calls: Array<string>
   readonly emit: (message: OutboundMessage) => Effect.Effect<void>
 }
 
-const makeWorld = (rows: RunRows, additions: SessionAdditions = NO_SESSION_ADDITIONS) => {
+const makeWorld = (
+  rows: RunRows,
+  additions: SessionAdditions = NO_SESSION_ADDITIONS,
+  diaTools: Option.Option<SessionToolOptions> = Option.none()
+) => {
   const sessions: Array<FakeSession> = []
   const appended: Array<IpcEvent> = []
   const logOrder: Array<string> = []
   const toolScopes: Array<ToolScope> = []
   const backend: AgentBackend = {
     ...unavailableBackend,
-    openSession: ({ resume, emit, systemPromptAppend }) =>
+    openSession: ({ resume, emit, systemPromptAppend, tools }) =>
       Effect.gen(function* () {
         const ended = yield* Deferred.make<SessionEnd>()
         const calls: Array<string> = []
-        sessions.push({ resume, systemPromptAppend, calls, emit })
+        sessions.push({ resume, systemPromptAppend, tools, calls, emit })
         const record =
           (name: string) =>
           (...args: ReadonlyArray<unknown>) =>
@@ -111,7 +128,7 @@ const makeWorld = (rows: RunRows, additions: SessionAdditions = NO_SESSION_ADDIT
     sessionTools: (scope) =>
       Effect.sync(() => {
         toolScopes.push(scope)
-        return Option.none()
+        return diaTools
       }),
     usageLimitResume: Effect.succeed('automatic'),
     newRunId: Effect.succeed(STARTED)
@@ -237,6 +254,79 @@ describe('run registry', () => {
         yield* reopened.runs.open({ ...tabSpec, runId: STARTED })
 
         assert.strictEqual(after.sessions[0]?.systemPromptAppend, 'You are a software engineer.')
+      })
+    )
+  )
+
+  it.live("adds a started run's permission rules to the dia server's session tools", () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows, NO_SESSION_ADDITIONS, Option.some(DIA_TOOLS))
+        const { runs } = yield* world.registry
+
+        yield* runs.start({ ...startOptions, permissions: JOB_TITLE_RULES })
+
+        assert.deepStrictEqual(
+          world.sessions[0]?.tools,
+          Option.some({
+            ...DIA_TOOLS,
+            permissions: {
+              allow: ['mcp__dia__shared', 'mcp__dia__org_read'],
+              ask: ['Bash(git push)'],
+              deny: ['Read(./.env)']
+            }
+          })
+        )
+      })
+    )
+  )
+
+  it.live("gives a started run its permission rules when dia's tools registry is absent", () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows)
+        const { runs } = yield* world.registry
+
+        yield* runs.start({ ...startOptions, permissions: JOB_TITLE_RULES })
+
+        assert.deepStrictEqual(
+          world.sessions[0]?.tools,
+          Option.some({ permissions: JOB_TITLE_RULES, mcpServers: {}, skills: [] })
+        )
+      })
+    )
+  )
+
+  it.live('leaves the session tools as dia gives them for a run started without rules', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows, NO_SESSION_ADDITIONS, Option.some(DIA_TOOLS))
+        const { runs } = yield* world.registry
+
+        yield* runs.start(startOptions)
+
+        assert.deepStrictEqual(world.sessions[0]?.tools, Option.some(DIA_TOOLS))
+      })
+    )
+  )
+
+  it.live("keeps a started run's permission rules when it opens again after a restart", () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const before = makeWorld(rows)
+        const firstStart = yield* Scope.make()
+        const { runs } = yield* before.registry.pipe(Effect.provideService(Scope.Scope, firstStart))
+        yield* runs.start({ ...startOptions, permissions: JOB_TITLE_RULES })
+        yield* Scope.close(firstStart, Exit.void)
+
+        const after = makeWorld(rows)
+        const reopened = yield* after.registry
+        yield* reopened.runs.open({ ...tabSpec, runId: STARTED })
+
+        assert.deepStrictEqual(
+          after.sessions[0]?.tools,
+          Option.some({ permissions: JOB_TITLE_RULES, mcpServers: {}, skills: [] })
+        )
       })
     )
   )
