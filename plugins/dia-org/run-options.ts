@@ -105,7 +105,8 @@ export const issueStartOptions =
           cwd: cwd.path,
           ...settings,
           text: issuePrompt(issue, objective),
-          systemPromptAppend: jobTitle.jobDescription
+          systemPromptAppend: jobTitle.jobDescription,
+          permissions: jobTitle.permissions
         },
         projectDirectory: cwd.projectDirectory
       })

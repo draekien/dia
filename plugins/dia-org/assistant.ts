@@ -175,6 +175,7 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (
       ...settings,
       ...(message === undefined ? {} : { text: message }),
       systemPromptAppend: jobTitle.jobDescription,
+      permissions: jobTitle.permissions,
       labels: [ASSISTANT_LABEL]
     })
     yield* sql`INSERT OR REPLACE INTO assistant_run (id, run_id) VALUES (1, ${runId})`.pipe(

@@ -1,4 +1,11 @@
-import { PermissionMode, RunStatus, SessionId, ThinkingLevel, WorktreeInfo } from '@dia/plugin'
+import {
+  PermissionMode,
+  PermissionRules,
+  RunStatus,
+  SessionId,
+  ThinkingLevel,
+  WorktreeInfo
+} from '@dia/plugin'
 import { Clock, Effect, Option, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
 
@@ -11,7 +18,8 @@ export const StoredSpec = Schema.Struct({
   worktree: Schema.NullOr(WorktreeInfo),
   labels: Schema.optionalKey(Schema.Array(Schema.String)),
   context: Schema.optionalKey(Schema.Unknown),
-  systemPromptAppend: Schema.optionalKey(Schema.String)
+  systemPromptAppend: Schema.optionalKey(Schema.String),
+  permissions: Schema.optionalKey(PermissionRules)
 })
 export type StoredSpec = typeof StoredSpec.Type
 

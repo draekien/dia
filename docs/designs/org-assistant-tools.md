@@ -139,6 +139,16 @@ It runs when `org_read_grant` has its row and `handoverPending` is false. It rea
 
 `DiaRpcs` is unchanged, so `PROTOCOL_VERSION` is unchanged.
 
+### Runs get their job title's permission rules
+
+Found while verifying in the app: no run that `org` starts received its job title's `permissions`. `StartRunOptions` (`src/host/services/runs-seam.ts`) had no field for them, and `dia-runs` gave every run's session only the `dia` server with empty rules (`plugins/dia-runs/run-tools.ts`), so `org_read`, and the routing tools before it, prompted in `default` mode. The user chose to fix permissions in this change; skills and MCP servers are left for a separate issue.
+
+- `StartRunOptions` and `RunSpec` gain `permissions?: PermissionRules`, "added to the permission rules of every session the run opens".
+- `dia-runs` stores them in the run's row (`StoredSpec.permissions`, optional, so rows stored before this change decode), restores them when a run opens again, and appends them to the `allow`, `ask` and `deny` lists of the session tools `sessionTools` gives. With no dia tools registry the session gets the rules alone.
+- `assistant.ts` and `issueStartOptions` (`run-options.ts`) pass `jobTitle.permissions`.
+
+`StartRunOptions` is not part of `DiaRpcs`, so `PROTOCOL_VERSION` is unchanged.
+
 ### Docs
 
 `docs/adr/0071-executive-assistant-session.md:37` says the Assistant's session "runs in `dontAsk`"; `assistant.ts:167` starts it with the mode `runSettings` gives (`auto`, `bypassPermissions` or `default`). A `docs/reasoning/` entry, indexed in `docs/REASONING.md`, records this, because the org tools off the allow list depend on it: they go through the session's permission rules instead of being denied.
@@ -153,6 +163,8 @@ It runs when `org_read_grant` has its row and `handoverPending` is false. It rea
   - one refusal text per `Org` error tag reached;
   - `hire_rename` / `hire_set_reports_to` with `null`, and `staff_team` with an empty plan fails decoding.
 - `handover.test.ts`, `grantOrgRead`: an edited assistant without the tool gains it; one that has it is unchanged; an unedited one gets no override; a pending handover keeps the row and changes nothing; a second run does nothing.
+- `run-registry.test.ts`: a started run's rules are appended to the dia server's rules; with no dia tools registry the session gets the rules alone; a run started without rules gets the dia tools unchanged; the rules survive a restart.
+- `assistant.test.ts` and `issue-runs.test.ts`: the Assistant's run and a hire's run start with their job title's `permissions`.
 - `host.test.ts`: the test "offers the routing tools to the Executive assistant run only" (`host.test.ts:576`) expects the four routing tools plus the eleven org tools for an Assistant scope; a new case checks that a scope without `ASSISTANT_LABEL` is offered none of the eleven.
 
 ## Key Data Structures
