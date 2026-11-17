@@ -272,6 +272,7 @@ describe('SettingsStore plugin renames', () => {
     }).pipe(Effect.provide(setup.testLayer), Effect.provide(setup.loggerLayer))
   }
   const preferences = { models: { opus: 'favourite' as const }, defaults: {} }
+  const decoded = { adapters: { 'dia-claude-code': { models: preferences.models } }, defaults: {} }
 
   it.effect('renames override and adapter keys of first-party plugins to their dia- names', () =>
     Effect.gen(function* () {
@@ -284,7 +285,7 @@ describe('SettingsStore plugin renames', () => {
 
       assert.deepStrictEqual(
         [result.overrides, result.claudeCode],
-        [{ 'dia-worktrees': '/src/worktrees', notes: '/src/notes' }, preferences]
+        [{ 'dia-worktrees': '/src/worktrees', notes: '/src/notes' }, decoded]
       )
     })
   )

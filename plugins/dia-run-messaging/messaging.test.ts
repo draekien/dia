@@ -137,7 +137,8 @@ const makeWorld = (runList: ReadonlyArray<RunInfo>) =>
       list: Effect.succeed(runList),
       openInTab: nothing,
       changes: Stream.empty,
-      discoverSessions: () => Effect.succeed([])
+      discoverSessions: () => Effect.succeed([]),
+      defaultSelection: Effect.succeed(Option.none())
     }
 
     const runEvents: RunEvents = {

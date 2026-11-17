@@ -5,6 +5,7 @@ import {
   type UserInputRequest
 } from '@shared/domain/attention'
 import type { SendMode } from '@shared/domain/message-queue'
+import type { ModelSelection } from '@shared/domain/model-preferences'
 import {
   type PaneConfig,
   PermissionMode,
@@ -275,6 +276,12 @@ export interface Runs {
    * fails: empty when there are none, they cannot be read, or the adapter cannot list them.
    */
   readonly discoverSessions: (directory: string) => Effect.Effect<ReadonlyArray<DiscoveredSession>>
+  /**
+   * The model a caller with no choice of its own starts a run with: the stored default selection,
+   * else the first model of the first adapter, in registry order, whose catalog is ready with a
+   * model, waiting for catalogs to load. None only when no adapter is registered.
+   */
+  readonly defaultSelection: Effect.Effect<Option.Option<ModelSelection>>
 }
 
 const RUNS_FUNCTIONS = [
@@ -302,10 +309,12 @@ const RUNS_FUNCTIONS = [
 const isRuns = (value: unknown): value is Runs =>
   RUNS_FUNCTIONS.every(
     (member) => Predicate.hasProperty(value, member) && Predicate.isFunction(value[member])
-  ) && Predicate.hasProperty(value, 'busy')
+  ) &&
+  Predicate.hasProperty(value, 'busy') &&
+  Predicate.hasProperty(value, 'defaultSelection')
 
 /**
  * The key `dia-runs` provides {@link Runs} under, named `runs`. A value counts as provided when
- * every method of {@link Runs} is a function and it has `busy`. Read it with `ctx.whenProvided`.
+ * every method of {@link Runs} is a function and it has `busy` and `defaultSelection`. Read it with `ctx.whenProvided`.
  */
 export const RunsKey = ServiceKey.make('runs', isRuns)

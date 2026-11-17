@@ -63,7 +63,8 @@ const fakeRuns = (cwd: string): Runs => {
     list: Effect.succeed([runInfo(cwd)]),
     openInTab: nothing,
     changes: Stream.empty,
-    discoverSessions: () => Effect.succeed([])
+    discoverSessions: () => Effect.succeed([]),
+    defaultSelection: Effect.succeed(Option.none())
   }
 }
 

@@ -48,6 +48,7 @@ import {
   SetUsageLimitResume,
   StartRun
 } from './calls'
+import { makeDefaultSelection } from './default-selection'
 import { makeFeeds } from './feeds'
 import { handOverSettings, storeUsageLimitResume, usageLimitResumeOf } from './handover'
 import { runsMigrations } from './migrations'
@@ -90,6 +91,19 @@ const followProviders = Effect.fn('Runs.followProviders')(function* (ctx: HostPl
   yield* ctx.whenProvided([MetaRepoKey], ({ metaRepo }) => follow(ctx, meta, 'metaRepo', metaRepo))
   return { adapters, runEvents, gitOps, meta }
 })
+
+const followModels = (
+  adapters: SubscriptionRef.SubscriptionRef<Option.Option<AgentAdapters>>,
+  id: string
+) =>
+  SubscriptionRef.changes(adapters).pipe(
+    Stream.switchMap(
+      Option.match({
+        onNone: () => unavailableBackend(notLoadedMessage(id)).models(),
+        onSome: (agentAdapters) => agentAdapters.models(id)
+      })
+    )
+  )
 
 const once =
   (rows: RunRows) =>
@@ -135,11 +149,10 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
           unavailableBackend(notLoadedMessage(id))
       )
     const modelsOf = (id: string) =>
-      Effect.flatMap(SubscriptionRef.get(providers.adapters), (provided) =>
-        Option.match(provided, {
-          onNone: () => unavailableBackend(notLoadedMessage(id)).models(),
-          onSome: (agentAdapters) => agentAdapters.models(id)
-        }).pipe(Stream.take(1), Stream.runHead, Effect.map(Option.getOrThrow))
+      followModels(providers.adapters, id).pipe(
+        Stream.take(1),
+        Stream.runHead,
+        Effect.map(Option.getOrThrow)
       )
     const crypto = yield* Effect.provide(Crypto.Crypto, NodeCrypto.layer)
     const runTools = yield* makeRunTools.pipe(Effect.provide(NodeCrypto.layer))
@@ -159,6 +172,13 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       })
     )
 
+    const feeds = yield* makeFeeds({ models: modelsOf, rows })
+    const defaultSelection = makeDefaultSelection({
+      preferences: Effect.map(feeds.preferences.current, (snapshot) => snapshot.preferences),
+      adapters: registered,
+      models: (id) => followModels(providers.adapters, id)
+    })
+
     const registry = yield* makeRunRegistry({
       rows,
       backendOf,
@@ -168,9 +188,9 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       additions: sessionAdditions,
       sessionTools: runTools.sessionTools,
       usageLimitResume: usageLimitResumeOf(rows),
-      newRunId: crypto.randomUUIDv4().pipe(Effect.orDie)
+      newRunId: crypto.randomUUIDv4().pipe(Effect.orDie),
+      defaultSelection
     })
-    const feeds = yield* makeFeeds({ models: modelsOf, rows })
     const { runs } = registry
     const sessionCall = once(rows)
 

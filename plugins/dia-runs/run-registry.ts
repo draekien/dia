@@ -73,6 +73,7 @@ export interface RunRegistryDeps {
   readonly sessionTools: RunTools['sessionTools']
   readonly usageLimitResume: Effect.Effect<Parking.UsageLimitResume>
   readonly newRunId: Effect.Effect<string>
+  readonly defaultSelection: Runs['defaultSelection']
 }
 
 interface RunEntry {
@@ -693,6 +694,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
       }))
     }),
     openInTab,
+    defaultSelection: deps.defaultSelection,
     busy: SubscriptionRef.changes(activityRef).pipe(
       Stream.map((current) =>
         [...current]

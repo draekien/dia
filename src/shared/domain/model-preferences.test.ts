@@ -1,11 +1,15 @@
+import { Schema } from 'effect'
 import { describe, expect, it } from 'vitest'
 import type { ModelOption } from './model'
 import {
   type AdapterPreferences,
   EMPTY_ADAPTER_PREFERENCES,
   keepsAModelVisible,
+  LegacyModelPreferences,
   type ModelPreference,
+  ModelPreferences,
   pickerModels,
+  StoredModelPreferences,
   withPreference
 } from './model-preferences'
 
@@ -108,9 +112,66 @@ describe('withPreference', () => {
     const prefs = preferring({ opus: 'favourite', sonnet: 'hidden' })
     expect(withPreference(prefs, 'opus', null).models).toEqual({ sonnet: 'hidden' })
   })
+})
 
-  it('keeps the defaults unchanged', () => {
-    const prefs: AdapterPreferences = { models: {}, defaults: { model: 'opus' } }
-    expect(withPreference(prefs, 'sonnet', 'hidden').defaults).toEqual({ model: 'opus' })
+const decodeStored = Schema.decodeUnknownSync(StoredModelPreferences)
+const encodeStored = Schema.encodeSync(StoredModelPreferences)
+
+describe('StoredModelPreferences', () => {
+  const legacy = {
+    models: { opus: 'favourite', sonnet: 'hidden' },
+    defaults: { model: 'opus', thinkingLevel: 'high', permissionMode: 'default' }
+  }
+  const migrated = {
+    adapters: { 'dia-claude-code': { models: { opus: 'favourite', sonnet: 'hidden' } } },
+    defaults: {
+      selection: { backend: 'dia-claude-code', model: 'opus' },
+      thinkingLevel: 'high',
+      permissionMode: 'default'
+    }
+  }
+
+  it('decodes the shape stored before adapters into dia-claude-code preferences', () => {
+    expect(decodeStored(legacy)).toEqual(migrated)
+  })
+
+  it('decodes a legacy shape without a default model to defaults without a selection', () => {
+    expect(decodeStored({ models: {}, defaults: {} })).toEqual({
+      adapters: { 'dia-claude-code': { models: {} } },
+      defaults: {}
+    })
+  })
+
+  it('re-encodes preferences decoded from the legacy shape in the new shape', () => {
+    expect(encodeStored(decodeStored(legacy))).toEqual(migrated)
+  })
+
+  it('decodes the new shape as it is', () => {
+    const stored = {
+      adapters: { 'other-adapter': { models: { alpha: 'hidden' } } },
+      defaults: { selection: { backend: 'other-adapter', model: 'alpha' } }
+    }
+    expect(decodeStored(stored)).toEqual(stored)
+  })
+
+  it('rejects a value of neither shape', () => {
+    expect(() => decodeStored({ models: 'opus' })).toThrow()
+  })
+})
+
+describe('LegacyModelPreferences', () => {
+  it('encodes the selection of another adapter as no default model', () => {
+    const encoded = Schema.encodeSync(LegacyModelPreferences)({
+      adapters: {},
+      defaults: { selection: { backend: 'other-adapter', model: 'alpha' } }
+    })
+    expect(encoded).toEqual({ models: {}, defaults: {} })
+  })
+
+  it('is the codec ModelPreferences decodes from', () => {
+    expect(Schema.decodeUnknownSync(ModelPreferences)({ adapters: {}, defaults: {} })).toEqual({
+      adapters: {},
+      defaults: {}
+    })
   })
 })

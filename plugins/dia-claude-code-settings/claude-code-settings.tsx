@@ -34,10 +34,12 @@ import {
 import {
   type AdapterPreferences,
   type AgentDefaults,
-  EMPTY_ADAPTER_PREFERENCES,
+  adapterPreferencesOf,
+  EMPTY_MODEL_PREFERENCES,
   keepsAModelVisible,
   LAST_VISIBLE_MODEL_MESSAGE,
   type ModelPreference,
+  type ModelPreferences,
   pickerModels
 } from '@shared/domain/model-preferences'
 import { DEFAULT_THINKING_LEVEL } from '@shared/domain/pane'
@@ -205,12 +207,13 @@ function DefaultsSection({
   preferences
 }: {
   readonly models: ReadonlyArray<ModelOptionJson>
-  readonly preferences: AdapterPreferences
+  readonly preferences: ModelPreferences
 }) {
   const { defaults } = preferences
-  const { favourites, others } = pickerModels(models, preferences)
+  const { favourites, others } = pickerModels(models, adapterPreferencesOf(preferences, ADAPTER))
   const listed = [...favourites, ...others]
-  const model = listed.find((option) => option.value === defaults.model) ?? listed[0]
+  const chosen = defaults.selection?.backend === ADAPTER ? defaults.selection.model : undefined
+  const model = listed.find((option) => option.value === chosen) ?? listed[0]
   const thinkingLevels = thinkingLevelsFor(model)
   const thinkingLevel = fitThinkingLevel(
     defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
@@ -229,7 +232,8 @@ function DefaultsSection({
         <Select
           value={model?.value ?? null}
           onValueChange={(value) => {
-            if (value !== null) update({ ...defaults, model: value })
+            if (value !== null)
+              update({ ...defaults, selection: { backend: ADAPTER, model: value } })
           }}
         >
           <SelectTrigger className="w-full" aria-labelledby="default-model-label">
@@ -649,7 +653,7 @@ export function ClaudeCodeHealthLabel() {
 export function ClaudeCodeSettings() {
   const status = useAdapterStatus(ADAPTER)
   const catalog = useModelCatalog(ADAPTER)
-  const preferences = useModelPreferences() ?? EMPTY_ADAPTER_PREFERENCES
+  const preferences = useModelPreferences() ?? EMPTY_MODEL_PREFERENCES
   const checkedOnOpen = useRef(false)
   const models = catalog.state?._tag === 'Ready' ? catalog.state.models : []
 
@@ -673,7 +677,7 @@ export function ClaudeCodeSettings() {
       </section>
       <section className="flex flex-col gap-3 border-t pt-6" aria-labelledby="models-heading">
         <SettingsSectionHeading id="models-heading">Models</SettingsSectionHeading>
-        <ModelsSection catalog={catalog} preferences={preferences} />
+        <ModelsSection catalog={catalog} preferences={adapterPreferencesOf(preferences, ADAPTER)} />
       </section>
     </div>
   )

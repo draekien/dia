@@ -125,7 +125,8 @@ const fakeFoundation = () => {
     isLive: () => Effect.succeed(false),
     openInTab: ignored,
     changes: Stream.empty,
-    discoverSessions: () => Effect.succeed([])
+    discoverSessions: () => Effect.succeed([]),
+    defaultSelection: Effect.succeed(Option.none())
   } as unknown as Runs
   const setup = (ctx: HostPluginContext) =>
     Effect.gen(function* () {

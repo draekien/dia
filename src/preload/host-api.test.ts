@@ -2,7 +2,7 @@ import { type AdapterStatusSnapshot, HealthNotChecked } from '@shared/domain/ada
 import { Deny, FreeformResponse } from '@shared/domain/attention'
 import { ActivityNotFound } from '@shared/domain/background-activity'
 import {
-  EMPTY_ADAPTER_PREFERENCES,
+  EMPTY_MODEL_PREFERENCES,
   type ModelPreferencesSnapshot
 } from '@shared/domain/model-preferences'
 import { emptyPaneChatState } from '@shared/domain/pane-chat'
@@ -78,7 +78,7 @@ const ADAPTER_STATUS: AdapterStatusSnapshot = {
 }
 const PREFERENCES: ModelPreferencesSnapshot = {
   revision: 5,
-  preferences: EMPTY_ADAPTER_PREFERENCES
+  preferences: EMPTY_MODEL_PREFERENCES
 }
 
 class ConnectionError extends Data.TaggedError('ConnectionError')<{ readonly reason: string }> {}

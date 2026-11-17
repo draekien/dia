@@ -142,7 +142,8 @@ const makeWorld = (
         return diaTools
       }),
     usageLimitResume: Effect.succeed('automatic'),
-    newRunId: Effect.succeed(STARTED)
+    newRunId: Effect.succeed(STARTED),
+    defaultSelection: Effect.succeed(Option.none())
   })
   return { sessions, appended, logOrder, toolScopes, registry, adapters, backend }
 }

@@ -1002,7 +1002,11 @@ function PaneChat({
                     <div className="mt-1 flex min-w-0 items-center gap-0.5 pl-[5px]">
                       {!fixedSettings && (
                         <>
-                          <ModelPicker adapter={backend} value={model} onChange={onModelChange} />
+                          <ModelPicker
+                            only={backend}
+                            value={{ backend, model }}
+                            onChange={(selection) => onModelChange(selection.model)}
+                          />
                           <ThinkingLevelSelect
                             value={thinkingLevel}
                             levels={thinkingLevels}

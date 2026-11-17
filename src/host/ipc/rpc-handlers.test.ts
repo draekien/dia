@@ -146,7 +146,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   })
 
   const settings = Layer.succeed(SettingsStore, {
-    getAdapterPreferences: () => Effect.succeed({ models: {}, defaults: {} }),
+    getAdapterPreferences: () => Effect.succeed({ adapters: {}, defaults: {} }),
     setAdapterPreferences: () => Effect.void,
     getTheme: () => Effect.succeed(Option.none()),
     setTheme: () => Effect.void,

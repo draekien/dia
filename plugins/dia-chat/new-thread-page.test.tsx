@@ -3,7 +3,7 @@
 import type { Draft, ThreadTarget } from '@dia/renderer-plugin'
 import type { ThreadTargetEntry } from '@dia-plugin/dia-chat/slots'
 import type { ModelOption } from '@shared/domain/model'
-import { EMPTY_ADAPTER_PREFERENCES } from '@shared/domain/model-preferences'
+import { EMPTY_MODEL_PREFERENCES, type ModelPreferences } from '@shared/domain/model-preferences'
 import { ProjectId, type Workspace } from '@shared/domain/project'
 import { Uuid } from '@shared/domain/uuid'
 import type { ListEntry } from '@shared/plugin/list-slot'
@@ -12,7 +12,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { DateTime, Effect } from 'effect'
 import { SparklesIcon } from 'lucide-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { NewThreadPage as Page, startingModel } from './new-thread-page'
+import { NewThreadPage as Page, startingSelection } from './new-thread-page'
 
 const slashCommandsFor = vi.hoisted(() => vi.fn())
 
@@ -27,6 +27,8 @@ const NewThreadPage = ({ draftId }: { readonly draftId: Uuid }) => (
 const DRAFT = Uuid.make('00000000-0000-4000-8000-0000000000d1')
 const PROJECT = ProjectId.make('00000000-0000-4000-8000-000000000001')
 const SONNET = 'claude-sonnet-5-5'
+const CLAUDE = 'dia-claude-code'
+const OTHER = 'other-adapter'
 
 const model = (value: string): ModelOption => ({
   value,
@@ -38,7 +40,11 @@ const model = (value: string): ModelOption => ({
   fastMode: false
 })
 
+const ready = (models: readonly [ModelOption, ...Array<ModelOption>]) =>
+  ({ _tag: 'Ready', models, fetchedAt: '1970-01-01T00:00:00.000Z', refreshing: false }) as const
+
 const state = vi.hoisted(() => ({
+  preferences: { adapters: {}, defaults: {} } as ModelPreferences,
   workspace: undefined as Workspace | undefined,
   drafts: [] as Array<Draft>,
   entries: [] as Array<unknown>,
@@ -53,16 +59,9 @@ vi.mock('@dia/renderer-plugin', async (importOriginal) => {
     useDrafts: () => state.drafts,
     useList: () => state.entries,
     useRunSummaries: () => new Map(),
-    useModelCatalog: () => ({
-      state: {
-        _tag: 'Ready',
-        models: [model('claude-sonnet-5-5')],
-        fetchedAt: DateTime.makeUnsafe(0),
-        refreshing: false
-      },
-      refresh: () => {}
-    }),
-    useModelPreferences: () => ({ models: {}, defaults: {} }),
+    useAdapters: () => [{ id: CLAUDE, label: 'Claude Code' }],
+    useModelCatalogs: () => new Map([[CLAUDE, ready([model(SONNET)])]]),
+    useModelPreferences: () => state.preferences,
     useAdapterStatus: () => undefined,
     usePluginList: () => ({ plugins: [] }),
     useDisabledPermissionModes: () => [],
@@ -100,7 +99,7 @@ const draftFor = (target: ThreadTarget | null, text: string): Draft => ({
   draftId: DRAFT,
   target,
   text,
-  model: null,
+  selection: null,
   thinkingLevel: null,
   permissionMode: null,
   worktree: null,
@@ -121,6 +120,7 @@ let failCreate: (event: { paneId: string; reason: string }) => void
 
 beforeEach(() => {
   state.workspace = workspaceWith(false)
+  state.preferences = EMPTY_MODEL_PREFERENCES
   state.drafts = []
   state.entries = []
   state.completed = []
@@ -146,25 +146,54 @@ afterEach(cleanup)
 
 const sendButton = () => screen.getByRole('button', { name: 'Send' })
 
-describe('startingModel', () => {
-  const models = [model('claude-haiku-5-5'), model(SONNET)]
+describe('startingSelection', () => {
+  const adapters = [{ id: CLAUDE }, { id: OTHER }]
+  const haiku = { backend: CLAUDE, model: 'claude-haiku-5-5' }
+  const sonnet = { backend: CLAUDE, model: SONNET }
+  const alpha = { backend: OTHER, model: 'alpha' }
+  const catalogs = new Map([
+    [CLAUDE, ready([model(haiku.model), model(SONNET)])],
+    [OTHER, ready([model('alpha')])]
+  ])
 
-  it('keeps the chosen model while the picker offers it', () => {
-    expect(startingModel(models, EMPTY_ADAPTER_PREFERENCES, SONNET)).toBe(SONNET)
+  it('keeps the chosen selection while a picker group offers it', () => {
+    expect(startingSelection(adapters, catalogs, EMPTY_MODEL_PREFERENCES, alpha)).toEqual(alpha)
   })
 
-  it("falls back to the adapter's default model when the chosen one is not offered", () => {
-    const preferences = { models: {}, defaults: { model: SONNET } }
+  it('falls back to the stored default selection when the chosen one is not offered', () => {
+    const preferences = { adapters: {}, defaults: { selection: sonnet } }
+    const retired = { backend: CLAUDE, model: 'claude-retired' }
 
-    expect(startingModel(models, preferences, 'claude-retired')).toBe(SONNET)
+    expect(startingSelection(adapters, catalogs, preferences, retired)).toEqual(sonnet)
   })
 
-  it('falls back to the first offered model when nothing else applies', () => {
-    expect(startingModel(models, EMPTY_ADAPTER_PREFERENCES, null)).toBe('claude-haiku-5-5')
+  it('does not take a model name of another adapter as the same model', () => {
+    const chosen = { backend: OTHER, model: SONNET }
+
+    expect(startingSelection(adapters, catalogs, EMPTY_MODEL_PREFERENCES, chosen)).toEqual(haiku)
+  })
+
+  it('falls back to the first model of the first adapter when nothing else applies', () => {
+    expect(startingSelection(adapters, catalogs, EMPTY_MODEL_PREFERENCES, null)).toEqual(haiku)
+  })
+
+  it('skips an adapter whose list is not ready', () => {
+    const loading = new Map([[OTHER, ready([model('alpha')])]])
+
+    expect(startingSelection(adapters, loading, EMPTY_MODEL_PREFERENCES, null)).toEqual(alpha)
+  })
+
+  it('leaves out the hidden models of an adapter', () => {
+    const preferences = {
+      adapters: { [CLAUDE]: { models: { [haiku.model]: 'hidden' as const } } },
+      defaults: {}
+    }
+
+    expect(startingSelection(adapters, catalogs, preferences, null)).toEqual(sonnet)
   })
 
   it('is undefined while no model is offered', () => {
-    expect(startingModel([], EMPTY_ADAPTER_PREFERENCES, null)).toBeUndefined()
+    expect(startingSelection([], new Map(), EMPTY_MODEL_PREFERENCES, null)).toBeUndefined()
   })
 })
 
@@ -189,6 +218,7 @@ describe('NewThreadPage for a project', () => {
     expect(request).toMatchObject({
       projectId: PROJECT,
       model: SONNET,
+      backend: CLAUDE,
       worktree: null,
       firstMessage: { text: 'Fix the login', attachments: [] }
     })

@@ -1,5 +1,9 @@
 import { SendMode } from '@shared/domain/message-queue'
-import { AdapterPreferences, EMPTY_ADAPTER_PREFERENCES } from '@shared/domain/model-preferences'
+import {
+  EMPTY_MODEL_PREFERENCES,
+  LegacyModelPreferences,
+  type ModelPreferences
+} from '@shared/domain/model-preferences'
 import { UsageLimitResume } from '@shared/domain/parking'
 import { ThemePreference } from '@shared/domain/theme'
 import { TranscriptWidth } from '@shared/domain/transcript-width'
@@ -11,7 +15,7 @@ const Settings = Schema.Struct({
   transcriptWidth: Schema.optional(TranscriptWidth),
   usageLimitResume: Schema.optional(UsageLimitResume),
   pluginOverrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
-  adapters: Schema.optional(Schema.Record(Schema.String, AdapterPreferences))
+  adapters: Schema.optional(Schema.Record(Schema.String, LegacyModelPreferences))
 })
 const RENAMED_PLUGINS: ReadonlyArray<readonly [string, string]> = [
   ...[
@@ -59,7 +63,7 @@ const encodeSettings = Schema.encodeSync(Schema.fromJsonString(Settings, { space
  * Effect Context.Service for the app's persisted settings store.
  * Depend on this to read or update the user's colour-theme choice, default send mode, transcript
  * width, what dia does when a usage limit resets, per-plugin source overrides (plugin name to source directory) and per-adapter model
- * preferences (adapter plugin name to {@link AdapterPreferences}; empty when never set). Provide it via
+ * preferences (adapter plugin name to {@link ModelPreferences}; empty when never set). Provide it via
  * {@link makeSettingsStoreLive}.
  */
 export class SettingsStore extends Context.Service<
@@ -76,10 +80,10 @@ export class SettingsStore extends Context.Service<
     readonly getPluginOverrides: () => Effect.Effect<Readonly<Record<string, string>>>
     readonly setPluginOverride: (name: string, path: string) => Effect.Effect<void>
     readonly clearPluginOverride: (name: string) => Effect.Effect<void>
-    readonly getAdapterPreferences: (adapter: string) => Effect.Effect<AdapterPreferences>
+    readonly getAdapterPreferences: (adapter: string) => Effect.Effect<ModelPreferences>
     readonly setAdapterPreferences: (
       adapter: string,
-      preferences: AdapterPreferences
+      preferences: ModelPreferences
     ) => Effect.Effect<void>
   }
 >()('SettingsStore') {}
@@ -173,10 +177,10 @@ export const makeSettingsStoreLive = (userDataPath: string) =>
 
       const getAdapterPreferences = (adapter: string) =>
         read().pipe(
-          Effect.map((settings) => settings.adapters?.[adapter] ?? EMPTY_ADAPTER_PREFERENCES)
+          Effect.map((settings) => settings.adapters?.[adapter] ?? EMPTY_MODEL_PREFERENCES)
         )
 
-      const setAdapterPreferences = (adapter: string, preferences: AdapterPreferences) =>
+      const setAdapterPreferences = (adapter: string, preferences: ModelPreferences) =>
         update((settings) => ({
           ...settings,
           adapters: { ...settings.adapters, [adapter]: preferences }

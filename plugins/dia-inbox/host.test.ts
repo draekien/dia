@@ -60,7 +60,8 @@ const fakeRuns = (requests: SubscriptionRef.SubscriptionRef<ReadonlyArray<RunReq
     list: Effect.succeed([runInfo(TABLESS_RUN, '/repo/a'), runInfo(TAB_RUN, '/repo/b')]),
     openInTab: nothing,
     changes: Stream.empty,
-    discoverSessions: () => Effect.succeed([])
+    discoverSessions: () => Effect.succeed([]),
+    defaultSelection: Effect.succeed(Option.none())
   }
 }
 

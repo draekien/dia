@@ -17,24 +17,27 @@ export const makeFeeds = Effect.fn('Feeds.make')(function* (deps: {
   readonly rows: RunRows
 }) {
   const now = yield* Clock.currentTimeMillis
-  const stored = yield* deps.rows.getSetting(PREFERENCES_KEY, ModelPreferences.AdapterPreferences)
+  const stored = yield* deps.rows.getSetting(
+    PREFERENCES_KEY,
+    ModelPreferences.StoredModelPreferences
+  )
   const preferences = yield* SubscriptionRef.make<ModelPreferences.ModelPreferencesSnapshot>({
     revision: now,
-    preferences: Option.getOrElse(stored, () => ModelPreferences.EMPTY_ADAPTER_PREFERENCES)
+    preferences: Option.getOrElse(stored, () => ModelPreferences.EMPTY_MODEL_PREFERENCES)
   })
   const lock = yield* Semaphore.make(1)
 
   const changePreferences = <E>(
     description: string,
     update: (
-      current: ModelPreferences.AdapterPreferences
-    ) => Effect.Effect<ModelPreferences.AdapterPreferences, E>
+      current: ModelPreferences.ModelPreferences
+    ) => Effect.Effect<ModelPreferences.ModelPreferences, E>
   ) =>
     lock.withPermits(1)(
       Effect.gen(function* () {
         const current = yield* SubscriptionRef.get(preferences)
         const next = yield* update(current.preferences)
-        yield* deps.rows.setSetting(PREFERENCES_KEY, ModelPreferences.AdapterPreferences, next)
+        yield* deps.rows.setSetting(PREFERENCES_KEY, ModelPreferences.StoredModelPreferences, next)
         const at = yield* Clock.currentTimeMillis
         const snapshot = { revision: nextRevision(current.revision, at), preferences: next }
         yield* SubscriptionRef.set(preferences, snapshot)
@@ -60,13 +63,24 @@ export const makeFeeds = Effect.fn('Feeds.make')(function* (deps: {
               message: 'Models cannot be hidden until the model list has loaded'
             })
           }
-          if (!ModelPreferences.keepsAModelVisible(state.models, current, model, value)) {
+          const own = ModelPreferences.adapterPreferencesOf(current, adapter)
+          if (!ModelPreferences.keepsAModelVisible(state.models, own, model, value)) {
             return yield* new ModelPreferences.LastVisibleModel({
               message: ModelPreferences.LAST_VISIBLE_MODEL_MESSAGE
             })
           }
         }
-        return ModelPreferences.withPreference(current, model, value)
+        return {
+          ...current,
+          adapters: {
+            ...current.adapters,
+            [adapter]: ModelPreferences.withPreference(
+              ModelPreferences.adapterPreferencesOf(current, adapter),
+              model,
+              value
+            )
+          }
+        }
       })
     ).pipe(
       Effect.tapError((error) =>
