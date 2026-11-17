@@ -101,7 +101,7 @@ const makeSetup = ({
       })
     })
   )
-  const models = Layer.succeed(RunModelCatalog, { current: Effect.as(catalogReady, CATALOG) })
+  const models = Layer.succeed(RunModelCatalog, { current: () => Effect.as(catalogReady, CATALOG) })
   const workspace = Layer.effect(RunWorkspace, SubscriptionRef.make(workspaceOf([])))
   const layer = Layer.provideMerge(
     RunChatProjectionLive,

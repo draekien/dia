@@ -1,6 +1,7 @@
 import { LEGACY_ADAPTER_ID, type StartRunOptions, startPermissionMode } from '@dia/plugin'
+import type { AgentBackend } from '@dia-plugin/dia-agent-adapters/backend'
+import { type AgentAdapters, notLoadedMessage } from '@dia-plugin/dia-agent-adapters/registry'
 import type { Issue, Objective } from '@dia-plugin/dia-issues/domain'
-import type { AgentBackend } from '@dia-plugin/dia-runs/backend'
 import { Effect, Option, Stream } from 'effect'
 import type { HiredAgent, JobTitle } from './domain'
 import type { IssueWorkspace } from './issue-workspace'
@@ -16,6 +17,26 @@ export interface IssueStart {
 
 /** The agent backend reads a run's start options need; it never opens a session. */
 export type BackendReads = Pick<AgentBackend, 'models' | 'disabledPermissionModes'>
+
+/**
+ * The {@link BackendReads} of adapter `id` in `adapters`. Its model list follows the registration,
+ * so it turns `Ready` when `id` registers later; its permission modes are empty while `id` is not
+ * registered.
+ */
+export const backendReadsOf = (adapters: AgentAdapters, id: string): BackendReads => ({
+  models: () => adapters.models(id),
+  disabledPermissionModes: (cwd) =>
+    Effect.flatMap(adapters.get(id), (adapter) =>
+      Option.match(adapter, {
+        onNone: () =>
+          Effect.logWarning('No adapter to read permission modes from', {
+            adapter: id,
+            reason: notLoadedMessage(id)
+          }).pipe(Effect.as([])),
+        onSome: (found) => found.backend.disabledPermissionModes(cwd)
+      })
+    )
+})
 
 const PLANNING_STEPS = `Break it into issues with create_issue: one per piece of work another agent can finish on its own,
 each with a description it can act on. They go to Triage for the user to accept.

@@ -1,8 +1,5 @@
 import {
-  AdapterStatusSnapshot,
   Attachment,
-  AttachmentType,
-  ModelCatalogSnapshot,
   ModelPreferences,
   Parking,
   PermissionMode,
@@ -108,49 +105,16 @@ export const SetUsageLimitResume = Rpc.make('SetUsageLimitResume', {
   payload: { mode: Parking.UsageLimitResume }
 })
 
-/** The model list of the loaded adapter. */
-export const GetModels = Rpc.make('GetModels', { payload: {}, success: ModelCatalogSnapshot })
-
-/** Re-reads the model list; completes when the read ends. */
-export const RefreshModels = Rpc.make('RefreshModels', { payload: {} })
-
-/** The model list now and after each change. */
-export const FollowModels = Rpc.make('FollowModels', {
-  payload: {},
-  success: ModelCatalogSnapshot,
-  stream: true
-})
-
-/** The loaded adapter's install status. */
-export const GetAdapterStatus = Rpc.make('GetAdapterStatus', {
-  payload: {},
-  success: AdapterStatusSnapshot
-})
-
-/** Re-checks the adapter's install; completes when the check ends. */
-export const CheckAdapterHealth = Rpc.make('CheckAdapterHealth', { payload: {} })
-
-/** Stores (or clears, with null) where the adapter finds its install, then re-checks it. */
-export const SetInstallPath = Rpc.make('SetInstallPath', {
-  payload: { path: Schema.NullOr(Schema.NonEmptyString) }
-})
-
-/** The adapter's install status now and after each change. */
-export const FollowAdapterStatus = Rpc.make('FollowAdapterStatus', {
-  payload: {},
-  success: AdapterStatusSnapshot,
-  stream: true
-})
-
 /** The model preferences and new-agent defaults. */
 export const GetModelPreferences = Rpc.make('GetModelPreferences', {
   payload: {},
   success: ModelPreferences.ModelPreferencesSnapshot
 })
 
-/** Marks a model favourite or hidden, or clears it with null. */
+/** Marks a model of adapter `adapter` favourite or hidden, or clears it with null. */
 export const SetModelPreference = Rpc.make('SetModelPreference', {
   payload: {
+    adapter: Schema.NonEmptyString,
     model: Schema.NonEmptyString,
     preference: Schema.NullOr(ModelPreferences.ModelPreference)
   },
@@ -169,20 +133,8 @@ export const FollowModelPreferences = Rpc.make('FollowModelPreferences', {
   stream: true
 })
 
-/** The permission modes the agent's own settings turn off for a session started in `cwd`. */
-export const GetDisabledPermissionModes = Rpc.make('GetDisabledPermissionModes', {
-  payload: { cwd: Schema.String },
-  success: Schema.Array(PermissionMode)
-})
-
-/** The slash commands a new session in `cwd` would offer, with the meta repo's plugins loaded. */
+/** The slash commands a new session of adapter `adapter` in `cwd` would offer, with the meta repo's plugins loaded. */
 export const GetSlashCommands = Rpc.make('GetSlashCommands', {
-  payload: { cwd: Schema.String },
+  payload: { adapter: Schema.NonEmptyString, cwd: Schema.String },
   success: Schema.Array(SlashCommandInfo)
-})
-
-/** The file types a session accepts as content blocks. */
-export const GetAttachmentTypes = Rpc.make('GetAttachmentTypes', {
-  payload: {},
-  success: Schema.Array(AttachmentType)
 })

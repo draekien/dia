@@ -5,9 +5,12 @@ import {
   ModelsLoading,
   type PluginSetup,
   type RunEvents,
-  RunEventsKey
+  RunEventsKey,
+  type Runs,
+  RunsKey
 } from '@dia/plugin'
-import { type AgentBackend, AgentBackendKey } from '@dia-plugin/dia-runs/backend'
+import type { AgentBackend } from '@dia-plugin/dia-agent-adapters/backend'
+import { type AgentAdapters, AgentAdaptersKey } from '@dia-plugin/dia-agent-adapters/registry'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem'
 import { Context, Deferred, Effect, Layer, Option, Ref, Stream, SubscriptionRef } from 'effect'
@@ -48,43 +51,60 @@ const followWorkspace = (ctx: HostPluginContext) =>
 
 const followBackend = (ctx: HostPluginContext) =>
   Effect.gen(function* () {
-    const backend = yield* Ref.make(Option.none<AgentBackend>())
-    const catalog = yield* Ref.make<ModelCatalogState>(ModelsLoading.make({}))
-    yield* ctx.whenProvided([AgentBackendKey], ({ agentBackend }) =>
-      Effect.gen(function* () {
-        yield* Effect.acquireRelease(Ref.set(backend, Option.some(agentBackend)), () =>
-          Ref.set(backend, Option.none()).pipe(
-            Effect.andThen(Ref.set(catalog, ModelsLoading.make({}))),
-            Effect.andThen(
-              Effect.logInfo('The agent backend was withdrawn; catch-up reads nothing')
-            )
+    const adapters = yield* Ref.make(Option.none<AgentAdapters>())
+    const runs = yield* Ref.make(Option.none<Runs>())
+    yield* ctx.whenProvided([AgentAdaptersKey], ({ agentAdapters }) =>
+      Effect.acquireRelease(Ref.set(adapters, Option.some(agentAdapters)), () =>
+        Ref.set(adapters, Option.none()).pipe(
+          Effect.andThen(
+            Effect.logInfo('The adapter registry was withdrawn; reads find no adapter')
           )
         )
-        yield* agentBackend.models().pipe(
-          Stream.runForEach((state) => Ref.set(catalog, state)),
-          Effect.forkScoped
-        )
-        yield* Effect.logInfo('Reading transcripts through the agent backend')
-      })
+      )
     )
+    yield* ctx.whenProvided([RunsKey], ({ runs: provided }) =>
+      Effect.acquireRelease(Ref.set(runs, Option.some(provided)), () =>
+        Ref.set(runs, Option.none())
+      )
+    )
+    const adapterOf = (runId: string) =>
+      Effect.gen(function* () {
+        const loadedRuns = yield* Ref.get(runs)
+        const loadedAdapters = yield* Ref.get(adapters)
+        if (Option.isNone(loadedRuns) || Option.isNone(loadedAdapters)) return undefined
+        const info = (yield* loadedRuns.value.list).find((candidate) => candidate.runId === runId)
+        return info === undefined ? undefined : { id: info.backend, registry: loadedAdapters.value }
+      })
     const withBackend = <A>(
-      sessionId: string,
+      runId: string,
       read: (loaded: AgentBackend) => Effect.Effect<Option.Option<A>>
     ) =>
-      Effect.flatMap(Ref.get(backend), (loaded) =>
-        Option.isSome(loaded)
-          ? read(loaded.value)
-          : Effect.logWarning('No agent backend to read a transcript with', { sessionId }).pipe(
-              Effect.as(Option.none<A>())
-            )
-      )
+      Effect.gen(function* () {
+        const adapter = yield* adapterOf(runId)
+        const loaded = adapter === undefined ? undefined : yield* adapter.registry.get(adapter.id)
+        if (loaded === undefined || Option.isNone(loaded)) {
+          return yield* Effect.logWarning('No agent adapter to read a transcript with', {
+            runId,
+            adapter: adapter?.id
+          }).pipe(Effect.as(Option.none<A>()))
+        }
+        return yield* read(loaded.value.backend)
+      })
     const transcripts = Transcripts.of({
-      transcriptInfo: (sessionId, cwd) =>
-        withBackend(sessionId, (loaded) => loaded.transcriptInfo(sessionId, cwd)),
-      readTranscriptAfter: (sessionId, cwd, afterUuid) =>
-        withBackend(sessionId, (loaded) => loaded.readTranscriptAfter(sessionId, cwd, afterUuid))
+      transcriptInfo: (runId, sessionId, cwd) =>
+        withBackend(runId, (loaded) => loaded.transcriptInfo(sessionId, cwd)),
+      readTranscriptAfter: (runId, sessionId, cwd, afterUuid) =>
+        withBackend(runId, (loaded) => loaded.readTranscriptAfter(sessionId, cwd, afterUuid))
     })
-    return { transcripts, catalog: RunModelCatalog.of({ current: Ref.get(catalog) }) }
+    const current = (runId: string) =>
+      Effect.gen(function* () {
+        const adapter = yield* adapterOf(runId)
+        if (adapter === undefined) return ModelsLoading.make({})
+        return yield* adapter.registry
+          .models(adapter.id)
+          .pipe(Stream.take(1), Stream.runHead, Effect.map(Option.getOrThrow))
+      })
+    return { transcripts, catalog: RunModelCatalog.of({ current }) }
   })
 
 const followRunChat = (

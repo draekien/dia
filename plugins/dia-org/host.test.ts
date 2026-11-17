@@ -2,18 +2,21 @@ import {
   type DiaTool,
   type GitOps,
   type HostPluginContext,
+  LEGACY_ADAPTER_ID,
   type Runs,
   RunsKey,
   type ToolScope,
   WorktreeReleased,
   WorktreesKey
 } from '@dia/plugin'
+import { makeAgentAdapterRegistry } from '@dia-plugin/dia-agent-adapters/adapter-registry'
+import type { AgentBackend } from '@dia-plugin/dia-agent-adapters/backend'
+import { AgentAdaptersKey } from '@dia-plugin/dia-agent-adapters/registry'
 import agentDefinitionsSetup from '@dia-plugin/dia-agent-definitions/host'
 import { IssuesView } from '@dia-plugin/dia-issues/calls'
 import issuesSetup from '@dia-plugin/dia-issues/host'
 import mcpSetup from '@dia-plugin/dia-mcp/host'
 import { RunQueueKey } from '@dia-plugin/dia-run-queue/queue'
-import { type AgentBackend, AgentBackendKey } from '@dia-plugin/dia-runs/backend'
 import { ToolsKey } from '@dia-plugin/dia-tools/tools'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { assert, describe, it } from '@effect/vitest'
@@ -175,7 +178,14 @@ const startOrg = (
     if (Option.isSome(foundation)) setups.foundation = foundation.value.setup as never
     if (Option.isSome(backend)) {
       setups.backend = ((ctx: HostPluginContext) =>
-        ctx.provide(AgentBackendKey, backend.value)) as never
+        Effect.gen(function* () {
+          const adapters = yield* makeAgentAdapterRegistry()
+          yield* ctx.provide(AgentAdaptersKey, adapters.service)
+          yield* adapters.service.register(
+            { name: LEGACY_ADAPTER_ID },
+            { label: 'Claude Code', backend: backend.value }
+          )
+        })) as never
     }
     const registry = yield* makePluginRegistry<HostPluginContext>({
       catalog: {

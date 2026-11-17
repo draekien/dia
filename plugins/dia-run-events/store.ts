@@ -11,7 +11,7 @@ import {
   StoredEvent,
   TranscriptCursor
 } from '@dia/plugin'
-import type { TranscriptEntry, TranscriptTail } from '@dia-plugin/dia-runs/backend'
+import type { TranscriptEntry, TranscriptTail } from '@dia-plugin/dia-agent-adapters/backend'
 import {
   Array as Arr,
   Clock,

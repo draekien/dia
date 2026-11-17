@@ -15,6 +15,13 @@ import {
   type ToolScope,
   UserMessagesSent
 } from '@dia/plugin'
+import {
+  type AgentBackend,
+  type AgentSession,
+  type SessionEnd,
+  unavailableBackend
+} from '@dia-plugin/dia-agent-adapters/backend'
+import { type AgentAdapter, notLoadedMessage } from '@dia-plugin/dia-agent-adapters/registry'
 import { NodeServices } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import type { IpcEvent } from '@shared/ipc/contract'
@@ -34,12 +41,6 @@ import {
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
 import { TurnCompleted, TurnUsageReported } from '../../src/host/session/protocol'
-import {
-  type AgentBackend,
-  type AgentSession,
-  type SessionEnd,
-  unavailableBackend
-} from './backend'
 import { runsMigrations } from './migrations'
 import { makeRunRegistry } from './run-registry'
 import { makeRunRows, type RunRows, StoredSpec } from './run-rows'
@@ -60,6 +61,7 @@ const DIA_TOOLS: SessionToolOptions = {
 }
 
 interface FakeSession {
+  readonly backend: string
   readonly resume: Option.Option<SessionId>
   readonly systemPromptAppend: string
   readonly tools: Option.Option<SessionToolOptions>
@@ -70,19 +72,20 @@ interface FakeSession {
 const makeWorld = (
   rows: RunRows,
   additions: SessionAdditions = NO_SESSION_ADDITIONS,
-  diaTools: Option.Option<SessionToolOptions> = Option.none()
+  diaTools: Option.Option<SessionToolOptions> = Option.none(),
+  registered: ReadonlyArray<string> = ['dia-claude-code']
 ) => {
   const sessions: Array<FakeSession> = []
   const appended: Array<IpcEvent> = []
   const logOrder: Array<string> = []
   const toolScopes: Array<ToolScope> = []
   const backend: AgentBackend = {
-    ...unavailableBackend,
-    openSession: ({ resume, emit, systemPromptAppend, tools }) =>
+    ...unavailableBackend('fake'),
+    openSession: ({ config, resume, emit, systemPromptAppend, tools }) =>
       Effect.gen(function* () {
         const ended = yield* Deferred.make<SessionEnd>()
         const calls: Array<string> = []
-        sessions.push({ resume, systemPromptAppend, tools, calls, emit })
+        sessions.push({ backend: config.backend, resume, systemPromptAppend, tools, calls, emit })
         const record =
           (name: string) =>
           (...args: ReadonlyArray<unknown>) =>
@@ -120,9 +123,16 @@ const makeWorld = (
         Effect.sync(() => void logOrder.push(message._tag))
       )
   } as unknown as RunEvents
+  const adapters: Array<AgentAdapter> = registered.map((id) => ({ id, label: id, backend }))
   const registry = makeRunRegistry({
     rows,
-    backend: Effect.succeed(backend),
+    backendOf: (id) =>
+      Effect.sync(
+        () =>
+          adapters.find((adapter) => adapter.id === id)?.backend ??
+          unavailableBackend(notLoadedMessage(id))
+      ),
+    adapters: Effect.sync(() => [...adapters]),
     runEvents: Effect.succeed(Option.some(runEvents)),
     gitOps: Effect.succeed(Option.none()),
     additions: Effect.succeed(additions),
@@ -134,7 +144,7 @@ const makeWorld = (
     usageLimitResume: Effect.succeed('automatic'),
     newRunId: Effect.succeed(STARTED)
   })
-  return { sessions, appended, logOrder, toolScopes, registry }
+  return { sessions, appended, logOrder, toolScopes, registry, adapters, backend }
 }
 
 const eventually = <A>(read: Effect.Effect<A>, done: (value: A) => boolean) =>
@@ -489,7 +499,7 @@ describe('run registry', () => {
 
         const after = makeWorld(rows)
         const { recover } = yield* after.registry
-        yield* recover
+        yield* recover('dia-claude-code')
 
         assert.deepStrictEqual(
           after.sessions.map((resumed) => [resumed.resume, resumed.calls]),
@@ -518,7 +528,7 @@ describe('run registry', () => {
         const world = makeWorld(rows)
         const { recover } = yield* world.registry
 
-        yield* recover
+        yield* recover('dia-claude-code')
 
         assert.deepStrictEqual(world.sessions, [])
       })
@@ -526,7 +536,7 @@ describe('run registry', () => {
   )
 
   it.live(
-    'sets a run that waited for an answer at shutdown idle on recovery, without opening it',
+    'sets a run that waited for an answer at shutdown idle at startup, without opening it',
     () =>
       withRows((rows) =>
         Effect.gen(function* () {
@@ -545,9 +555,9 @@ describe('run registry', () => {
           )
           yield* rows.setStatus(RUN, 'waiting')
           const world = makeWorld(rows)
-          const { recover } = yield* world.registry
+          const { normaliseWaiting } = yield* world.registry
 
-          yield* recover
+          yield* normaliseWaiting
 
           assert.deepStrictEqual(
             [yield* statusOf(rows, RUN), world.sessions.length],
@@ -577,7 +587,7 @@ describe('run registry', () => {
         const world = makeWorld(rows)
         const { recover } = yield* world.registry
 
-        yield* recover
+        yield* recover('dia-claude-code')
 
         assert.deepStrictEqual(yield* statusOf(rows, RUN), Option.some('idle'))
         assert.deepStrictEqual(world.sessions, [])
@@ -604,7 +614,7 @@ describe('run registry', () => {
         yield* session.emit(UserMessagesSent.make({ messages: [] }))
         yield* eventually(statusOf(rows, STARTED), (status) => Option.contains(status, 'running'))
 
-        yield* recover
+        yield* recover('dia-claude-code')
 
         assert.deepStrictEqual(
           [yield* statusOf(rows, STARTED), world.sessions.length, world.appended.length],

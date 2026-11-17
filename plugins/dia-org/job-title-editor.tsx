@@ -172,7 +172,7 @@ function ModelFields({
   readonly onModelChange: (model: JobTitle['model']) => void
   readonly onThinkingLevelChange: (level: JobTitle['thinkingLevel']) => void
 }) {
-  const { state } = useModelCatalog()
+  const { state } = useModelCatalog('dia-claude-code')
   const models = state?._tag === 'Ready' ? state.models : []
   const option = model === null ? models[0] : models.find((candidate) => candidate.value === model)
   const offered = thinkingLevelsFor(option)

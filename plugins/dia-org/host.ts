@@ -1,6 +1,7 @@
 import {
   type GitOps,
   type HostPluginContext,
+  LEGACY_ADAPTER_ID,
   type PluginSetup,
   type ProjectId,
   RunsKey,
@@ -8,6 +9,7 @@ import {
   userProjects,
   WorktreesKey
 } from '@dia/plugin'
+import { type AgentAdapters, AgentAdaptersKey } from '@dia-plugin/dia-agent-adapters/registry'
 import {
   type AgentDefinitionRegistry,
   AgentDefinitionRegistryKey
@@ -21,7 +23,6 @@ import {
 } from '@dia-plugin/dia-issues/service'
 import { McpServerRegistryKey } from '@dia-plugin/dia-mcp/registry'
 import { type RunQueue, RunQueueKey } from '@dia-plugin/dia-run-queue/queue'
-import { type AgentBackend, AgentBackendKey } from '@dia-plugin/dia-runs/backend'
 import { ToolsKey } from '@dia-plugin/dia-tools/tools'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import * as NodeServices from '@effect/platform-node/NodeServices'
@@ -80,7 +81,7 @@ import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { makeOrgTools } from './org-tools'
 import { makeRoutingTools } from './routing-tools'
-import { issueStartOptions } from './run-options'
+import { backendReadsOf, issueStartOptions } from './run-options'
 import { type Org, OrgService } from './service'
 
 type Workspace = Stream.Success<HostPluginContext['workspace']>
@@ -211,15 +212,18 @@ interface RunDeps {
 const runOnFoundation = (ctx: HostPluginContext, deps: RunDeps) =>
   ctx
     .whenProvided(
-      [RunsKey, RunQueueKey, AgentBackendKey],
-      ({ runs, 'run-queue': queue, agentBackend }) =>
+      [RunsKey, RunQueueKey, AgentAdaptersKey],
+      ({ runs, 'run-queue': queue, agentAdapters }) =>
         Effect.gen(function* () {
           const issueRuns = yield* runIssues({
             org: deps.org,
             issues: deps.work,
             provider: deps.provider,
             workspace: deps.issueWorkspace,
-            startOptions: issueStartOptions(deps.issueWorkspace, agentBackend),
+            startOptions: issueStartOptions(
+              deps.issueWorkspace,
+              backendReadsOf(agentAdapters, LEGACY_ADAPTER_ID)
+            ),
             runs,
             queue,
             projectDirectoryOf: (issue) => projectDirectoryOf(deps, issue),
@@ -242,7 +246,7 @@ const runOnFoundation = (ctx: HostPluginContext, deps: RunDeps) =>
             org: deps.org,
             work: deps.work,
             runs,
-            backend: agentBackend,
+            backend: backendReadsOf(agentAdapters, LEGACY_ADAPTER_ID),
             directory,
             runId: deps.assistantRunId
           })
@@ -401,7 +405,7 @@ const applyCap = (org: Org, queue: Ref.Ref<Option.Option<RunQueue>>) =>
 const serveOrgCalls = (
   ctx: HostPluginContext,
   org: Org,
-  backend: Ref.Ref<Option.Option<AgentBackend>>,
+  adapters: Ref.Ref<Option.Option<AgentAdapters>>,
   queue: Ref.Ref<Option.Option<RunQueue>>,
   worktrees: Pick<OrgWorkspace, 'worktreeProjects' | 'setWorktreeProjects'>
 ): Effect.Effect<void, never, Scope.Scope> =>
@@ -412,7 +416,7 @@ const serveOrgCalls = (
           jobTitles: org.jobTitles,
           hiredAgents: org.hiredAgents,
           settings: org.settings,
-          bypassAvailable: bypassAvailable(backend),
+          bypassAvailable: bypassAvailable(adapters, LEGACY_ADAPTER_ID),
           worktreeProjects: worktrees.worktreeProjects
         })
       ),
@@ -465,10 +469,10 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       gitOps: Ref.get(gitOps)
     }).pipe(Effect.provideService(SqlClient.SqlClient, sql))
     yield* followWorkspace(ctx, workspace)
-    const backend = yield* Ref.make(Option.none<AgentBackend>())
+    const adapters = yield* Ref.make(Option.none<AgentAdapters>())
     const queue = yield* Ref.make(Option.none<RunQueue>())
-    yield* ctx.whenProvided([AgentBackendKey], ({ agentBackend }) =>
-      hold(backend, agentBackend, 'agent backend')
+    yield* ctx.whenProvided([AgentAdaptersKey], ({ agentAdapters }) =>
+      hold(adapters, agentAdapters, 'agent adapters')
     )
     yield* ctx.whenProvided([WorktreesKey], ({ worktrees }) => hold(gitOps, worktrees, 'worktrees'))
     yield* ctx.whenProvided([RunQueueKey], ({ 'run-queue': provided }) =>
@@ -484,7 +488,7 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       assistantRunId: live.assistantRunId,
       teamHasWork: live.teamHasWork
     })
-    yield* serveOrgCalls(ctx, org, backend, queue, issueWorkspace)
+    yield* serveOrgCalls(ctx, org, adapters, queue, issueWorkspace)
     yield* ctx.serve(WatchOrgLive, () => watchOrgLive(org, live))
     const jobTitles = yield* org.jobTitles
     const hires = yield* org.hiredAgents

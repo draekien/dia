@@ -3,7 +3,6 @@ import {
   Attention,
   EMPTY_MESSAGE_QUEUE,
   type GitOps,
-  LEGACY_ADAPTER_ID,
   type PaneConfig,
   PaneEvents,
   type Parking,
@@ -30,6 +29,8 @@ import {
   type WorktreeInfo,
   WorktreeReattachError
 } from '@dia/plugin'
+import type { AgentBackend, SessionEnd } from '@dia-plugin/dia-agent-adapters/backend'
+import type { AgentAdapter } from '@dia-plugin/dia-agent-adapters/registry'
 import {
   Deferred,
   Duration,
@@ -48,7 +49,6 @@ import {
   Stream,
   SubscriptionRef
 } from 'effect'
-import type { AgentBackend, SessionEnd } from './backend'
 import { type LiveRunHandle, startLiveRun } from './live-run'
 import { cwdOf, type RunRow, type RunRows, type StoredSpec } from './run-rows'
 import type { RunTools } from './run-tools'
@@ -65,7 +65,8 @@ const isPaneSignal = Schema.is(PaneEvents.PaneSignal)
 /** What {@link makeRunRegistry} reads at the time of each use, so a reload of a provider applies. */
 export interface RunRegistryDeps {
   readonly rows: RunRows
-  readonly backend: Effect.Effect<AgentBackend>
+  readonly backendOf: (id: string) => Effect.Effect<AgentBackend>
+  readonly adapters: Effect.Effect<ReadonlyArray<AgentAdapter>>
   readonly runEvents: Effect.Effect<Option.Option<RunEvents>>
   readonly gitOps: Effect.Effect<Option.Option<GitOps>>
   readonly additions: Effect.Effect<SessionAdditions>
@@ -160,8 +161,10 @@ const appendedPrompt = (shared: string, own: string | undefined): string =>
 
 /**
  * Builds the run service `dia-runs` provides (`runs`), the recovery it runs once it has provided
- * it (`recover`: resumes each run whose row says a turn was in progress, leaving alone a run that
- * is already live, such as one started since the service was provided), and
+ * it (`normaliseWaiting`: marks every stored run that is not live and waited on the user `idle`; call it
+ * once at startup. `recover(adapter)`: resumes each run of adapter `adapter` whose row says a turn was in
+ * progress, leaving alone a run that is already live, such as one started since the service was
+ * provided; call it once per registration of the adapter), and
  * `setUsageLimitResume`, which re-parks every parked run under a new mode. Every live run lives in
  * a scope of its own; closing the calling scope ends them all without changing their rows, so a
  * later start resumes their turns.
@@ -388,7 +391,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
           }),
         open: (emit) =>
           Effect.gen(function* () {
-            const backend = yield* deps.backend
+            const backend = yield* deps.backendOf(config.backend)
             const additions = yield* deps.additions
             const tools = yield* deps.sessionTools({
               runId,
@@ -676,6 +679,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
         ),
     list: Effect.gen(function* () {
       const entries = yield* Ref.get(entriesRef)
+      const registered = new Set((yield* deps.adapters).map((adapter) => adapter.id))
       return (yield* rows.list).map((row) => ({
         runId: row.runId,
         cwd: cwdOf(row.spec),
@@ -684,7 +688,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
         thinkingLevel: row.spec.thinkingLevel,
         permissionMode: row.spec.permissionMode,
         sessionId: row.sessionId,
-        status: row.status,
+        status: row.status === 'running' && !registered.has(row.spec.backend) ? 'idle' : row.status,
         live: entries.has(row.runId)
       }))
     }),
@@ -700,31 +704,39 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
     ),
     changes: Stream.fromPubSub(changes),
     discoverSessions: (directory) =>
-      Effect.flatMap(deps.backend, (backend) =>
-        backend.discoverSessions === undefined
-          ? Effect.logDebug('The agent backend cannot discover sessions', { directory }).pipe(
-              Effect.as([])
-            )
-          : backend
-              .discoverSessions(directory)
-              .pipe(
-                Effect.map((sessions) =>
-                  sessions.map((session) => ({ ...session, backend: LEGACY_ADAPTER_ID }))
+      Effect.flatMap(deps.adapters, (adapters) =>
+        Effect.forEach(adapters, (adapter) =>
+          adapter.backend.discoverSessions === undefined
+            ? Effect.logDebug('The agent adapter cannot discover sessions', {
+                adapter: adapter.id,
+                directory
+              }).pipe(Effect.as([]))
+            : adapter.backend
+                .discoverSessions(directory)
+                .pipe(
+                  Effect.map((sessions) =>
+                    sessions.map((session) => ({ ...session, backend: adapter.id }))
+                  )
                 )
-              )
+        ).pipe(Effect.map((found) => found.flat()))
       )
   }
 
-  const recover = Effect.gen(function* () {
+  const normaliseWaiting = Effect.gen(function* () {
     const entries = yield* Ref.get(entriesRef)
-    const stored = (yield* rows.list).filter((row) => !entries.has(row.runId))
-    yield* Effect.forEach(
-      stored.filter((row) => row.status === 'waiting'),
-      (row) => rows.setStatus(row.runId, 'idle'),
-      { discard: true }
+    const stored = (yield* rows.list).filter(
+      (row) => !entries.has(row.runId) && row.status === 'waiting'
     )
-    const inProgress = stored.filter((row) => row.status === 'running')
+    yield* Effect.forEach(stored, (row) => rows.setStatus(row.runId, 'idle'), { discard: true })
+  })
+
+  const recover = Effect.fn('RunRegistry.recover')(function* (adapter: string) {
+    const entries = yield* Ref.get(entriesRef)
+    const inProgress = (yield* rows.list).filter(
+      (row) => !entries.has(row.runId) && row.status === 'running' && row.spec.backend === adapter
+    )
     yield* Effect.logInfo('Recovering runs whose turn was in progress', {
+      adapter,
       runs: inProgress.map((row) => row.runId)
     })
     yield* Effect.forEach(
@@ -744,5 +756,5 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
     yield* Effect.forEach(entries.values(), (entry) => entry.repark(mode), { discard: true })
   })
 
-  return { runs, recover, setUsageLimitResume }
+  return { runs, normaliseWaiting, recover, setUsageLimitResume }
 })
