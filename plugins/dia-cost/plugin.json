@@ -1,6 +1,6 @@
 {
   "name": "dia-cost",
-  "api": "0.0.43",
+  "api": "0.0.44",
   "category": "feature",
   "host": "host.ts",
   "renderer": "renderer.ts",

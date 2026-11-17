@@ -3,6 +3,7 @@ import { RegistryContext } from '@effect/atom-react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
+  openRightPanel,
   RIGHT_PANEL_DEFAULT_WIDTH,
   type RightPanelView,
   TRANSCRIPT_MIN_WIDTH
@@ -111,6 +112,26 @@ describe('RightPanelToggle', () => {
     const { rerender } = showTab(PANE_A, [FILES])
     rerender(<Tab paneId={PANE_A} panels={[]} paneWidth={1200} />)
     expect(toggle()).toBeNull()
+  })
+})
+
+describe('openRightPanel', () => {
+  it('opens a closed region on the named panel of that tab only', () => {
+    const { unmount } = showTab(PANE_A, [FILES, DIFF])
+    act(() => openRightPanel(PANE_A, { plugin: 'git', id: 'diff' }))
+    expect(region('Diff')).toBeTruthy()
+    unmount()
+
+    showTab(PANE_B, [FILES, DIFF])
+    expect(region('Diff')).toBeNull()
+    expect(region('Files')).toBeNull()
+  })
+
+  it('switches an open region to the named panel', () => {
+    showTab(PANE_A, [FILES, DIFF])
+    fireEvent.click(toggle() as HTMLElement)
+    act(() => openRightPanel(PANE_A, { plugin: 'git', id: 'diff' }))
+    expect(screen.getByText(`Diff body for ${PANE_A}`)).toBeTruthy()
   })
 })
 
