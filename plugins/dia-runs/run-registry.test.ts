@@ -756,6 +756,137 @@ const busyNow = (runs: { readonly busy: Stream.Stream<ReadonlyArray<string>> }) 
     Option.getOrElse(() => [])
   )
 
+describe('run adapters', () => {
+  const runningRow = (rows: RunRows, backend: string) =>
+    Effect.gen(function* () {
+      yield* rows.upsert(
+        RUN,
+        {
+          sourceCwd: '/repo',
+          model: 'm',
+          backend,
+          thinkingLevel: 'adaptive',
+          permissionMode: 'default',
+          worktree: null
+        },
+        Option.some(SESSION),
+        true
+      )
+      yield* rows.setStatus(RUN, 'running')
+    })
+
+  it.live(
+    'ends a run opened while its adapter is not registered, saying so and keeping its adapter',
+    () =>
+      withRows((rows) =>
+        Effect.gen(function* () {
+          const world = makeWorld(rows, NO_SESSION_ADDITIONS, Option.none(), [])
+          const { runs } = yield* world.registry
+
+          yield* runs.open(tabSpec)
+          const errors = yield* eventually(
+            Effect.sync(() =>
+              world.appended.flatMap((event) =>
+                event._tag === 'PaneAttentionChanged' && event.attention._tag === 'Crashed'
+                  ? [event.attention.error.message]
+                  : []
+              )
+            ),
+            (messages) => messages.length > 0
+          )
+
+          assert.deepStrictEqual(errors, [
+            'Pane session ended unexpectedly: dia-claude-code is not loaded'
+          ])
+          assert.strictEqual(
+            Option.getOrThrow(yield* rows.get(RUN)).spec.backend,
+            'dia-claude-code'
+          )
+        })
+      )
+  )
+
+  it.live(
+    'lists a running run as idle while its adapter is not registered, leaving the stored row running',
+    () =>
+      withRows((rows) =>
+        Effect.gen(function* () {
+          yield* runningRow(rows, 'adapter-b')
+          const { runs } = yield* makeWorld(rows, NO_SESSION_ADDITIONS, Option.none(), [
+            'adapter-a'
+          ]).registry
+
+          const listed = yield* runs.list
+
+          assert.deepStrictEqual(
+            [listed[0]?.status, yield* statusOf(rows, RUN)],
+            ['idle', Option.some('running')]
+          )
+        })
+      )
+  )
+
+  it.live(
+    'resumes a running run of adapter B when B registers after A, and leaves it alone until then',
+    () =>
+      withRows((rows) =>
+        Effect.gen(function* () {
+          yield* runningRow(rows, 'adapter-b')
+          const world = makeWorld(rows, NO_SESSION_ADDITIONS, Option.none(), ['adapter-a'])
+          const { recover } = yield* world.registry
+
+          yield* recover('adapter-a')
+          const whileUnregistered = [world.sessions.length, yield* statusOf(rows, RUN)]
+          world.adapters.push({ id: 'adapter-b', label: 'B', backend: world.backend })
+          yield* recover('adapter-b')
+
+          assert.deepStrictEqual(
+            [whileUnregistered, world.sessions.map((opened) => [opened.backend, opened.resume])],
+            [[0, Option.some('running')], [['adapter-b', Option.some(SESSION)]]]
+          )
+        })
+      )
+  )
+
+  it.live('tags each discovered session with the adapter that found it', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows, NO_SESSION_ADDITIONS, Option.none(), [])
+        const found =
+          (sessionId: string): AgentBackend['discoverSessions'] =>
+          () =>
+            Effect.succeed([
+              { sessionId: SessionId.make(sessionId), title: sessionId, startedAt: 1, model: 'm' }
+            ])
+        world.adapters.push(
+          {
+            id: 'adapter-a',
+            label: 'A',
+            backend: { ...world.backend, discoverSessions: found('s-a') }
+          },
+          {
+            id: 'adapter-b',
+            label: 'B',
+            backend: { ...world.backend, discoverSessions: found('s-b') }
+          },
+          { id: 'adapter-c', label: 'C', backend: world.backend }
+        )
+        const { runs } = yield* world.registry
+
+        const sessions = yield* runs.discoverSessions('/repo')
+
+        assert.deepStrictEqual(
+          sessions.map((session) => [session.sessionId, session.backend]),
+          [
+            ['s-a', 'adapter-a'],
+            ['s-b', 'adapter-b']
+          ]
+        )
+      })
+    )
+  )
+})
+
 describe('busy runs', () => {
   it.live('counts a started run as busy before its session reports the turn', () =>
     withRows((rows) =>

@@ -1,7 +1,6 @@
 import {
   type HostPluginContext,
   hostDatabaseOf,
-  type ModelCatalogState,
   ModelsLoading,
   type PluginSetup,
   type RunEvents,
