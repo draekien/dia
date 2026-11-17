@@ -50,6 +50,7 @@
     "plugins/dia-mcp/servers.ts",
     "plugins/dia-mcp/draft.ts",
     "plugins/dia-mcp/editor.ts",
+    "plugins/dia-markdown/markdown.ts",
     "plugins/dia-mcp/registry.ts",
     "plugins/dia-agent-definitions/registry.ts",
     "plugins/dia-mcp/picker.ts",
