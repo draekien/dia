@@ -18,6 +18,7 @@ const SCOPE: ToolScope = { runId: 'run-assistant', labels: [ASSISTANT_LABEL], co
 const MISSING_JOB_TITLE = JobTitleId.make('00000000-0000-4000-8000-000000000999')
 const MISSING_HIRE = HireId.make('00000000-0000-4000-8000-000000000998')
 const ENGINEER = 'Software engineer'
+const PRODUCT_MANAGER = 'Product manager'
 const RULES = { allow: ['Bash(git status)'], ask: [], deny: [] }
 
 const setUp = (answer: ApprovalAnswer = 'approved') =>
@@ -410,17 +411,46 @@ describe('job_title_edit', () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect('does not ask for an edit that sets empty permission rules', () =>
+  it.effect('asks before setting empty rules on a job title that has deny rules', () =>
     Effect.gen(function* () {
       const { run, asked, jobTitle } = yield* setUp()
-      const engineer = yield* jobTitle(ENGINEER)
+      const manager = yield* jobTitle(PRODUCT_MANAGER)
 
       yield* run('job_title_edit', {
-        jobTitleId: engineer.id,
+        jobTitleId: manager.id,
         permissions: { allow: [], ask: [], deny: [] }
       })
 
+      assert.deepStrictEqual(
+        (yield* asked).map((request) => request.title),
+        [`Edit job title "${PRODUCT_MANAGER}"`]
+      )
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('does not ask for an edit that sets the permission rules a job title already has', () =>
+    Effect.gen(function* () {
+      const { run, asked, jobTitle } = yield* setUp()
+      const manager = yield* jobTitle(PRODUCT_MANAGER)
+
+      yield* run('job_title_edit', { jobTitleId: manager.id, permissions: manager.permissions })
+
       assert.deepStrictEqual(yield* asked, [])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('asks before turning off the bypass opt-in', () =>
+    Effect.gen(function* () {
+      const { org, run, asked, jobTitle } = yield* setUp()
+      const engineer = yield* jobTitle(ENGINEER)
+      yield* org.editJobTitle(engineer.id, { bypassOptIn: true })
+
+      yield* run('job_title_edit', { jobTitleId: engineer.id, bypassOptIn: false })
+
+      assert.deepStrictEqual(
+        (yield* asked).map((request) => request.title),
+        [`Edit job title "${ENGINEER}"`]
+      )
     }).pipe(Effect.scoped)
   )
 

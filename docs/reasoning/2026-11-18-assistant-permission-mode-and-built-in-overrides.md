@@ -4,7 +4,7 @@
 
 ## Context
 
-Issue #293 gives the Executive assistant org tools and allows only `mcp__dia__org_read` without a prompt. `docs/adr/0071-executive-assistant-session.md` says the Assistant's session "runs in `dontAsk`", which would deny every other org tool instead of prompting for it. The issue also asks for a migration that adds `org_read` to the Executive assistant's allow list.
+Issue #293 gives the Executive assistant org tools and allows only `mcp__dia__org_read` without a prompt. `docs/adr/0071-executive-assistant-session.md` said the Assistant's session "runs in `dontAsk`", which would deny every other org tool instead of prompting for it. The issue also asks for a migration that adds `org_read` to the Executive assistant's allow list.
 
 ## Reasoning / Learning
 
@@ -14,4 +14,4 @@ Issue #293 gives the Executive assistant org tools and allows only `mcp__dia__or
 
 ## Implication
 
-Treat ADR-0071's `dontAsk` sentence as out of date. To change a built-in job title's permissions for orgs that edited it, add a one-time registry edit of this kind; changing `built-in-job-titles.ts` alone does not reach them.
+ADR-0071 now states the mode `runSettings` gives. To change a built-in job title's permissions for orgs that edited it, add a one-time registry edit of this kind; changing `built-in-job-titles.ts` alone does not reach them.

@@ -8,7 +8,7 @@ Eleven dia tools let the Executive assistant read and change the org. Each calls
 
 1. An Assistant run (scope labels include `ASSISTANT_LABEL`) lists all eleven tools; a hired agent's run lists none of them.
 2. `hire` adds the hire to `Org.hiredAgents`, and so to the org page; `job_title_create` adds the job title to `Org.jobTitles`, and so to the Job titles page.
-3. `job_title_edit` that sets the Builder job title's `permissions` to non-empty rules calls `requestApproval` in every permission mode, including `bypassPermissions`. `'declined'` leaves the job title unchanged and returns an error result; `'approved'` applies the edit.
+3. `job_title_edit` that changes the Builder job title's `permissions` calls `requestApproval` in every permission mode, including `bypassPermissions`. `'declined'` leaves the job title unchanged and returns an error result; `'approved'` applies the edit.
 4. `job_title_edit` of the Executive assistant's `jobDescription` calls `requestApproval`.
 5. `org_read` runs without a permission prompt in an org whose Executive assistant was never edited, and in one whose Executive assistant has an override stored before this change; when the job-title handover imports that override, from the launch after the handover.
 6. `pnpm typecheck`, `pnpm lint` and `pnpm test` pass.
@@ -33,8 +33,8 @@ export interface OrgToolDeps {
  * `hire_set_reports_to`, `hire_dismiss`, `job_title_create`, `job_title_edit`, `job_title_copy`,
  * `job_title_set_enabled` and `job_title_delete`. An `Org` refusal
  * returns its reason with `isError` set and changes nothing. A call that changes the Executive
- * assistant job title, or that sets a job title's `permissions` to non-empty rules or its
- * `bypassOptIn` to true, first asks the user through `requestApproval`; a decline returns an error
+ * assistant job title, that creates a job title with permission rules or the bypass opt-in, or
+ * that changes a job title's `permissions` or `bypassOptIn`, first asks the user through `requestApproval`; a decline returns an error
  * result and changes nothing. Register them with `dia-tools` for the Executive assistant's run scope.
  */
 export const makeOrgTools = (deps: OrgToolDeps): ReadonlyArray<DiaTool>
@@ -63,7 +63,7 @@ Tool inputs (each a `Schema.Struct`; `org-tools.ts` annotates each field with a 
 | Call | Asks when |
 | --- | --- |
 | `job_title_create` | `permissions` has a rule in `allow`, `ask` or `deny`, or `bypassOptIn` is true |
-| `job_title_edit` | the target is the Executive assistant (`builtIn === 'executive-assistant'`), or `edit.permissions` is present with a rule, or `edit.bypassOptIn` is true |
+| `job_title_edit` | the target is the Executive assistant (`builtIn === 'executive-assistant'`), or `edit.permissions` is present and differs from the target's, or `edit.bypassOptIn` is present and differs from the target's |
 | `job_title_set_enabled` | the target is the Executive assistant |
 
 The request is `{ title, before, after }`:
@@ -71,7 +71,7 @@ The request is `{ title, before, after }`:
 - `title`: `Create job title "<name>"`, `Edit job title "<name>"`, `Enable job title "<name>"` or `Disable job title "<name>"`.
 - `before` and `after`: the job title's definition fields (every `JobTitleFields` field, plus `enabled` for `job_title_set_enabled`) as indented JSON; `before` is empty for a create. `after` is `before` with the change applied.
 
-An edit that sets `permissions` to empty rules does not ask, as the issue states.
+An edit that changes `permissions` asks even when the new rules are empty: removing a `deny` or `ask` rule gives the job title's sessions more access. The issue asked only for non-empty rules; the user chose this after code review found the gap. An edit that sets the rules the job title already has does not ask.
 
 The target is read from `jobTitles` before asking; a missing target returns the `JobTitleNotFound` refusal without asking. `after` is computed from `before` when the request is made; the applied result can differ (a name taken since), and the returned text reports the actual outcome.
 
@@ -151,13 +151,13 @@ Found while verifying in the app: no run that `org` starts received its job titl
 
 ### Docs
 
-`docs/adr/0071-executive-assistant-session.md:37` says the Assistant's session "runs in `dontAsk`"; `assistant.ts:167` starts it with the mode `runSettings` gives (`auto`, `bypassPermissions` or `default`). A `docs/reasoning/` entry, indexed in `docs/REASONING.md`, records this, because the org tools off the allow list depend on it: they go through the session's permission rules instead of being denied.
+`docs/adr/0071-executive-assistant-session.md:37` says the Assistant's session "runs in `dontAsk`"; `assistant.ts:167` starts it with the mode `runSettings` gives (`auto`, `bypassPermissions` or `default`). The same change corrects that sentence in ADR-0071, and a `docs/reasoning/` entry, indexed in `docs/REASONING.md`, records it, because the org tools off the allow list depend on it: they go through the session's permission rules instead of being denied.
 
 ## Test plan
 
 - `org-tools.test.ts`, over a real `makeOrg` on an in-memory database and a recording `requestApproval`:
   - each tool's change is visible through `jobTitles` / `hiredAgents`;
-  - the approval table: each asking case calls `requestApproval` with the expected title, `before` and `after`; each non-asking case (plain edit, empty-rules edit, create with defaults, set enabled on a non-assistant) does not;
+  - the approval table: each asking case calls `requestApproval` with the expected title, `before` and `after`; each non-asking case (plain edit, an edit setting the rules a job title already has, create with defaults, set enabled on a non-assistant) does not;
   - `'declined'` returns an error result and leaves the org unchanged; `'approved'` applies;
   - a missing target refuses without asking;
   - one refusal text per `Org` error tag reached;
@@ -221,7 +221,7 @@ Found while verifying in the app: no run that `org` starts received its job titl
 - *Define Errors Out* — `staff_team` input is `TeamPlan`, whose check fails an empty plan at decoding.
 - *Project rule (docs consistent)* — reasoning entry for ADR-0071's stale `dontAsk`.
 - *Project rule (tests)* — Test plan section.
-- *Correctness* — empty-rules edit does not ask, stated.
+- *Correctness* — empty-rules edit does not ask, stated. Superseded at code review: an edit that clears `deny` rules widens access, so any change to `permissions` asks.
 - *Correctness* — `job_title_edit` input written as a spread struct; descriptions annotated in `org-tools.ts`.
 - *Names* — `org_read` returns `name` (stored) and `displayName`.
 - *JSDoc rule* — `makeOrgTools` drops "Each calls one `Org` method"; `grantOrgRead` drops the migration name; Executive assistant JSDoc reworded.

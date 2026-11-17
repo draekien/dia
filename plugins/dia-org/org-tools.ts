@@ -148,6 +148,10 @@ const hasRules = (rules: PermissionRules): boolean =>
 const grantsAccess = (change: Partial<Pick<JobTitleFields, 'permissions' | 'bypassOptIn'>>) =>
   (change.permissions !== undefined && hasRules(change.permissions)) || change.bypassOptIn === true
 
+const changesAccess = (jobTitle: JobTitle, edit: JobTitleEdit): boolean =>
+  (edit.permissions !== undefined && show(edit.permissions) !== show(jobTitle.permissions)) ||
+  (edit.bypassOptIn !== undefined && edit.bypassOptIn !== jobTitle.bypassOptIn)
+
 const isAssistant = (jobTitle: JobTitle): boolean => jobTitle.builtIn === 'executive-assistant'
 
 const askUser = (deps: OrgToolDeps, scope: ToolScope, request: ApprovalRequest) =>
@@ -340,7 +344,7 @@ const createTool = (deps: OrgToolDeps): DiaTool =>
 const editTool = (deps: OrgToolDeps): DiaTool =>
   orgTool({
     name: 'job_title_edit',
-    description: `Change a job title's fields; fields left out stay as they are. A built-in job title keeps its name. A change to the Executive assistant, or one that sets permission rules or the bypass opt-in, waits for the user to approve it. ${READ_FIRST}`,
+    description: `Change a job title's fields; fields left out stay as they are. A built-in job title keeps its name. A change to the Executive assistant, or to a job title's permission rules or bypass opt-in, waits for the user to approve it. ${READ_FIRST}`,
     input: Schema.Struct({
       jobTitleId: jobTitleIdField,
       ...Struct.map(definitionField, Schema.optionalKey)
@@ -349,7 +353,7 @@ const editTool = (deps: OrgToolDeps): DiaTool =>
       Effect.gen(function* () {
         const edit: JobTitleEdit = Struct.omit(input, ['jobTitleId'])
         const target = yield* findJobTitle(deps, input.jobTitleId)
-        if (isAssistant(target) || grantsAccess(edit)) {
+        if (isAssistant(target) || changesAccess(target, edit)) {
           const before = definitionFields(target)
           yield* askUser(deps, scope, {
             title: `Edit job title "${target.name}"`,
@@ -416,9 +420,9 @@ const deleteTool = (deps: OrgToolDeps): DiaTool =>
  * The Executive assistant's org tools (#293): `org_read`, `hire`, `staff_team`, `hire_rename`,
  * `hire_set_reports_to`, `hire_dismiss`, `job_title_create`, `job_title_edit`, `job_title_copy`,
  * `job_title_set_enabled` and `job_title_delete`. An `Org` refusal returns its reason with
- * `isError` set and changes nothing. A call that changes the Executive assistant job title, or
- * that sets a job title's `permissions` to non-empty rules or its `bypassOptIn` to true, first asks
- * the user through `requestApproval`; a decline returns an error result and changes nothing.
+ * `isError` set and changes nothing. A call that changes the Executive assistant job title, that
+ * creates a job title with permission rules or the bypass opt-in, or that changes a job title's
+ * `permissions` or `bypassOptIn`, first asks the user through `requestApproval`; a decline returns an error result and changes nothing.
  * Register them with `dia-tools` for the Executive assistant's run scope.
  */
 export const makeOrgTools = (deps: OrgToolDeps): ReadonlyArray<DiaTool> => [
