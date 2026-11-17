@@ -10,7 +10,8 @@ interface Registered {
 /**
  * The registered tools and granted token hashes `dia-tools` serves. `register` and `forScope`
  * behave as `Tools` documents them; `scopeOf` is the scope a token hash was granted, none for an
- * unknown or revoked hash; `changes` emits once after each change to the registered tools.
+ * unknown or revoked hash; `grant` stores a copy of the scope, so no two tokens share a scope
+ * object; `changes` emits once after each change to the registered tools.
  */
 export interface ToolRegistry {
   readonly register: (
@@ -58,7 +59,7 @@ export const makeToolRegistry = Effect.gen(function* () {
         return [...byName.values()]
       }),
     grant: (tokenHash, scope) =>
-      Ref.update(grants, (current) => new Map(current).set(tokenHash, scope)).pipe(
+      Ref.update(grants, (current) => new Map(current).set(tokenHash, { ...scope })).pipe(
         Effect.andThen(Effect.logDebug('Granted a dia tools token', { runId: scope.runId }))
       ),
     revoke: (tokenHash) =>

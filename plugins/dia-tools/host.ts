@@ -2,7 +2,8 @@ import type { HostPluginContext, PluginSetup, ToolScope } from '@dia/plugin'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import * as NodeServices from '@effect/platform-node/NodeServices'
 import { type Crypto, Effect, type FileSystem, Layer, Option, Path, Ref, Semaphore } from 'effect'
-import { IssueOutsideToken, RevokeOutsideTokens } from './calls'
+import { makeApprovals } from './approvals'
+import { AnswerApproval, IssueOutsideToken, RevokeOutsideTokens, WatchApprovals } from './calls'
 import { MCP_HOST, MCP_PATH, serveMcp } from './http-server'
 import { makeMcpServer } from './mcp-server'
 import { makeToolRegistry, type ToolRegistry } from './registry'
@@ -65,7 +66,7 @@ const makeOutsideTokens = Effect.fnUntraced(function* (
 
   const revokeAll = Effect.gen(function* () {
     const revoked = yield* Ref.getAndSet(hashes, [])
-    yield* Effect.forEach(revoked, revoke, { discard: true })
+    yield* Effect.forEach(revoked, revoke, { concurrency: 'unbounded', discard: true })
     yield* writeOutsideTokens(file, []).pipe(Effect.orDie)
     yield* Effect.logInfo('Revoked every outside agent dia tools token', {
       tokens: revoked.length
@@ -88,8 +89,13 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     )
     if (!Option.contains(stored, endpoint.port)) yield* writePort(endpointFile, endpoint.port)
     const services = yield* Effect.context<never>()
-    const revoke = (tokenHash: string) =>
-      registry.revoke(tokenHash).pipe(Effect.andThen(endpoint.closeSessions(tokenHash)))
+    const approvals = yield* makeApprovals
+    const revoke = Effect.fnUntraced(function* (tokenHash: string) {
+      const scope = yield* registry.scopeOf(tokenHash)
+      if (Option.isSome(scope)) yield* approvals.declineScope(scope.value)
+      yield* registry.revoke(tokenHash)
+      yield* endpoint.closeSessions(tokenHash)
+    })
 
     const tools: Tools = {
       register: registry.register,
@@ -97,7 +103,8 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       grant: registry.grant,
       revoke,
       url: `http://${MCP_HOST}:${endpoint.port}${MCP_PATH}`,
-      mcpServer: (scope) => Effect.sync(() => makeMcpServer(registry, scope, services))
+      mcpServer: (scope) => Effect.sync(() => makeMcpServer(registry, scope, services)),
+      requestApproval: approvals.request
     }
     yield* ctx.provide(ToolsKey, tools)
 
@@ -109,6 +116,8 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     )
     yield* ctx.serve(IssueOutsideToken, () => outside.issue)
     yield* ctx.serve(RevokeOutsideTokens, () => outside.revokeAll)
+    yield* ctx.serve(WatchApprovals, () => approvals.pending)
+    yield* ctx.serve(AnswerApproval, ({ id, answer }) => approvals.answer(id, answer))
     yield* Effect.logInfo('Dia tools provided', { plugin: ctx.name, url: tools.url })
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)))
 

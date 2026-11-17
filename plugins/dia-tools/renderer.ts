@@ -1,8 +1,11 @@
 import type { PluginServices, PluginSetup } from '@dia/plugin'
 import { addEntry, callHost, toast } from '@dia/renderer-plugin'
 import { CommandsSlot } from '@dia-plugin/dia-command-palette/slots'
+import { DialogsSlot } from '@dia-plugin/dia-layout/slots'
 import { Effect } from 'effect'
 import { KeyRoundIcon, PlugIcon } from 'lucide-react'
+import { createElement } from 'react'
+import { ApprovalDialog, makeApprovalsAtom } from './approval-dialog'
 import { IssueOutsideToken, RevokeOutsideTokens } from './calls'
 
 const GROUP = 'Dia tools'
@@ -47,6 +50,12 @@ const revoke = (ctx: PluginServices) =>
 
 const setup: PluginSetup<PluginServices> = (ctx) =>
   Effect.gen(function* () {
+    const approvalsAtom = makeApprovalsAtom(ctx)
+    yield* addEntry(ctx, DialogsSlot, {
+      id: 'tool-approval',
+      order: 100,
+      component: () => createElement(ApprovalDialog, { ctx, approvalsAtom })
+    })
     yield* addEntry(ctx, CommandsSlot, {
       id: 'dia-tools-connect',
       order: 200,

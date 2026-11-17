@@ -5,7 +5,17 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'
-import { Crypto, Data, Effect, Option, Schema, type Scope, Stream } from 'effect'
+import {
+  Crypto,
+  Data,
+  Duration,
+  Effect,
+  Option,
+  Schema,
+  type Scope,
+  Stream,
+  SubscriptionRef
+} from 'effect'
 import { makeMcpServer } from './mcp-server'
 import type { ToolRegistry } from './registry'
 import { hashToken } from './tools'
@@ -25,7 +35,8 @@ export class McpListenError extends Data.TaggedError('McpListenError')<{
 
 /**
  * A listening MCP endpoint: `port` it listens on, and `closeSessions`, which ends every MCP
- * session a token with hash `tokenHash` opened.
+ * session a token with hash `tokenHash` opened, after waiting up to one second in total for the tool calls
+ * those sessions are running to return.
  */
 export interface McpEndpoint {
   readonly port: number
@@ -36,7 +47,27 @@ interface Session {
   readonly tokenHash: string
   readonly server: McpServer
   readonly transport: StreamableHTTPServerTransport | SSEServerTransport
+  readonly callsReturned: Effect.Effect<void>
 }
+
+const CALLS_RETURN_WAIT = Duration.seconds(1)
+
+const makeCallTracker = Effect.gen(function* () {
+  const running = yield* SubscriptionRef.make(0)
+  const track = <A>(call: Effect.Effect<A>) =>
+    Effect.acquireUseRelease(
+      SubscriptionRef.update(running, (count) => count + 1),
+      () => call,
+      () => SubscriptionRef.update(running, (count) => count - 1)
+    )
+  const returned = SubscriptionRef.changes(running).pipe(
+    Stream.filter((count) => count === 0),
+    Stream.runHead,
+    Effect.timeout(CALLS_RETURN_WAIT),
+    Effect.ignore
+  )
+  return { track, returned }
+})
 
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))
@@ -131,9 +162,10 @@ export const serveMcp = Effect.fn('DiaTools.serveMcp')(function* (
     transport: StreamableHTTPServerTransport | SSEServerTransport
   ) =>
     Effect.gen(function* () {
-      const server = makeMcpServer(registry, scope, services)
+      const calls = yield* makeCallTracker
+      const server = makeMcpServer(registry, scope, services, calls.track)
       yield* Effect.promise(() => server.connect(transport))
-      return { tokenHash: hash, server, transport } satisfies Session
+      return { tokenHash: hash, server, transport, callsReturned: calls.returned } satisfies Session
     })
 
   const streamable = Effect.fnUntraced(function* (
@@ -228,7 +260,8 @@ export const serveMcp = Effect.fn('DiaTools.serveMcp')(function* (
   )
 
   const closeSession = (id: string, session: Session) =>
-    Effect.promise(() => session.server.close()).pipe(
+    session.callsReturned.pipe(
+      Effect.andThen(Effect.promise(() => session.server.close())),
       Effect.ensuring(Effect.sync(() => sessions.delete(id)))
     )
 
@@ -248,6 +281,7 @@ export const serveMcp = Effect.fn('DiaTools.serveMcp')(function* (
     ),
     () =>
       Effect.forEach([...sessions], ([id, session]) => closeSession(id, session), {
+        concurrency: 'unbounded',
         discard: true
       }).pipe(
         Effect.andThen(
@@ -280,7 +314,7 @@ export const serveMcp = Effect.fn('DiaTools.serveMcp')(function* (
       Effect.forEach(
         [...sessions].filter(([, session]) => session.tokenHash === tokenHash),
         ([id, session]) => closeSession(id, session),
-        { discard: true }
+        { concurrency: 'unbounded', discard: true }
       )
   }
 })

@@ -1,6 +1,20 @@
 import { type DiaTool, ServiceKey, type ToolScope } from '@dia/plugin'
-import { Crypto, Effect, Predicate, Result, type Scope } from 'effect'
+import { Crypto, Effect, Predicate, Result, Schema, type Scope } from 'effect'
 import { Hex } from 'effect/encoding'
+
+/** What a tool asks the user to approve: `title` names the change; `before` and `after` show it. */
+export const ApprovalRequest = Schema.Struct({
+  title: Schema.NonEmptyString,
+  before: Schema.String,
+  after: Schema.String
+})
+/** The decoded type of {@link ApprovalRequest}. */
+export type ApprovalRequest = typeof ApprovalRequest.Type
+
+/** The user's answer to an {@link ApprovalRequest}. */
+export const ApprovalAnswer = Schema.Literals(['approved', 'declined'])
+/** The decoded type of {@link ApprovalAnswer}. */
+export type ApprovalAnswer = typeof ApprovalAnswer.Type
 
 /** How a registered {@link DiaTool} chooses its callers: `when` accepts the scopes that list it. */
 export interface ToolRegistration {
@@ -18,14 +32,24 @@ export interface ToolRegistration {
  * - `forScope` lists the tools a caller with `scope` sees.
  * - `grant` accepts the token whose {@link hashToken} is `tokenHash` as `scope`, until `revoke`.
  *   Granted hashes are held in memory only: a provider that appears after a reload holds none,
- *   so grant every live token again.
- * - `revoke` refuses that token from now on and ends its MCP sessions.
+ *   so grant every live token again. The scope is stored as a copy, so a handler receives an
+ *   equal scope, not the object passed to `grant`.
+ * - `revoke` refuses that token from now on, declines its pending approvals and ends its MCP
+ *   sessions.
  * - `url` is the Streamable HTTP endpoint (`http://127.0.0.1:<port>/mcp`); pass it to an agent
  *   with `Authorization: Bearer <token>`. It stays the same across a reload of `dia-tools`.
  * - `mcpServer` returns a new, unconnected `McpServer` of `@modelcontextprotocol/sdk` for
  *   `scope`, for a caller that runs the agent in process: pass it as the Agent SDK's
  *   `{ type: 'sdk', name: 'dia', instance }`. It is typed `object` because an exported module
- *   cannot import the MCP SDK.
+ *   cannot import the MCP SDK. Close the server when the run ends: its pending approvals end
+ *   only then.
+ * - `requestApproval` shows `request` to the user as coming from `scope` and waits for the
+ *   answer. Pass the scope the tool handler received. It succeeds with 'declined' when the user
+ *   declines, when the token `scope` was granted under is revoked (the run ended), or when
+ *   `dia-tools` closes; at once when that has already happened. It has no timeout. Interrupting
+ *   it withdraws the request. It dies when `request` has an empty `title`. A request through a
+ *   server from `mcpServer` is under no token: it ends when it is answered, when its call is
+ *   cancelled or its server closes, or when `dia-tools` closes.
  */
 export interface Tools {
   readonly register: (
@@ -37,6 +61,10 @@ export interface Tools {
   readonly revoke: (tokenHash: string) => Effect.Effect<void>
   readonly url: string
   readonly mcpServer: (scope: ToolScope) => Effect.Effect<object>
+  readonly requestApproval: (
+    scope: ToolScope,
+    request: ApprovalRequest
+  ) => Effect.Effect<ApprovalAnswer>
 }
 
 const isTools = (value: unknown): value is Tools =>
@@ -47,7 +75,9 @@ const isTools = (value: unknown): value is Tools =>
   Predicate.hasProperty(value, 'revoke') &&
   Predicate.isFunction(value.revoke) &&
   Predicate.hasProperty(value, 'url') &&
-  Predicate.isString(value.url)
+  Predicate.isString(value.url) &&
+  Predicate.hasProperty(value, 'requestApproval') &&
+  Predicate.isFunction(value.requestApproval)
 
 /** The key `dia-tools` provides its {@link Tools} under: `tools`. */
 export const ToolsKey = ServiceKey.make('tools', isTools)

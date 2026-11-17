@@ -82,7 +82,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0072](0072-org-composes-capability-plugins.md) | Split the org plugin into capability plugins that own registries, and make the org compose them | accepted, amended by ADR-0073 and ADR-0076 |
 | [0073](0073-worktree-ledger-and-issue-worktrees.md) | The worktrees plugin keeps a ledger of every worktree, and org issues run in their own worktree when a project opts in | accepted |
 | [0074](0074-dia-runs-plugin-owns-every-agent-session.md) | A `dia-runs` plugin owns every agent session and a `dia-run-events` plugin owns their event log, and tabs, org and the inbox are views or drivers of runs | accepted |
-| [0075](0075-dia-tools-plugin-serves-dia-tools-over-mcp.md) | A `dia-tools` plugin holds the registry of dia tools and serves it over stdio, HTTP, SSE and the in-process SDK transport | accepted |
+| [0075](0075-dia-tools-plugin-serves-dia-tools-over-mcp.md) | A `dia-tools` plugin holds the registry of dia tools and serves it over stdio, HTTP, SSE and the in-process SDK transport | accepted, amended by ADR-0085 |
 | [0076](0076-build-the-foundation-before-org.md) | Build ten foundation capabilities as plugins before more org work, freeze the org plugin, then rewrite it on them | accepted |
 | [0077](0077-first-party-plugins-are-named-dia.md) | Name every first-party plugin `dia-<name>`, and move each renamed plugin's data with a plugin data migration | accepted |
 | [0078](0078-plugin-data-migrations-and-paths-moved.md) | A plugin declares data migrations that move its data, and the Host records each move so every owner of a path reference rewrites it | accepted |
@@ -92,6 +92,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0082](0082-job-description-in-the-system-prompt.md) | A job title's job description is appended to its run's system prompt; a run can start without a first message | accepted |
 | [0083](0083-new-thread-page-and-drafts.md) | One new-thread page for every target, with drafts kept in renderer `localStorage` and plugin targets in `ThreadTargetsSlot` | accepted |
 | [0084](0084-manual-plugins-and-renderer-follows-host.md) | Plugins that stay unloaded until the user loads them, and renderer entries that follow the Host | accepted |
+| [0085](0085-dia-tools-asks-the-user-to-approve-a-tool-call.md) | `dia-tools` lets a tool handler ask the user to approve a call, in dia's window, whatever the session's permission mode | accepted |
 
 ## Adding a new ADR
 
