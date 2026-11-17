@@ -167,7 +167,6 @@ export const makePullRequests = (store: LinkStore, gh: GitHubCli) =>
         yield* SubscriptionRef.update(state.links, (links) =>
           links.filter((entry) => entry.url !== url)
         )
-        yield* Effect.sync(() => state.gates.delete(url))
         yield* Effect.logDebug('Unlinked a pull request', { runId, url })
       })
 

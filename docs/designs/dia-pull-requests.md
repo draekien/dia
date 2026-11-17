@@ -307,7 +307,7 @@ export interface PullRequests {
 export const makePullRequests: (store: LinkStore, gh: GitHubCli) => Effect<PullRequests, never, Scope>
 ```
 
-State: a `SynchronizedRef<HashMap<runId, RunState>>`, where `RunState` is `{ links: SubscriptionRef<ReadonlyArray<LinkedPullRequest>>, gates: Map<PullRequestUrl, Semaphore> }`. `runState(runId)` creates the entry inside `SynchronizedRef.modifyEffect` and loads the run's links from `LinkStore.list` once, each as `Reading`, so two concurrent first uses create one entry. `gate(url)` gets or creates the pull request's gate in one `Effect.sync` with `Semaphore.makeUnsafe(1)`; `unlink` deletes it. On first use of a run, the loaded links are read at once in the plugin's scope.
+State: a `SynchronizedRef<HashMap<runId, RunState>>`, where `RunState` is `{ links: SubscriptionRef<ReadonlyArray<LinkedPullRequest>>, gates: Map<PullRequestUrl, Semaphore> }`. `runState(runId)` creates the entry inside `SynchronizedRef.modifyEffect` and loads the run's links from `LinkStore.list` once, each as `Reading`, so two concurrent first uses create one entry. `gate(url)` gets or creates the pull request's gate in one `Effect.sync` with `Semaphore.makeUnsafe(1)`. `unlink` keeps it: a read still in flight holds that gate, so a re-link of the same URL must queue behind it rather than get a new gate and run a second `gh` read at once. On first use of a run, the loaded links are read at once in the plugin's scope.
 
 Plugin calls travel over `CallPlugin` and `SubscribePlugin` (`src/shared/ipc/rpc.ts`), so `DiaRpcs` does not change and `PROTOCOL_VERSION` stays.
 
@@ -475,7 +475,7 @@ It sets `open: true` and `selected` to the panel's key, and logs at debug. The k
 
 **Applied**
 - *Correctness, major*: `GH_TIMEOUT` had no mechanism; closing the spawn scope waits for the process. Now `Effect.timeoutOrElse` around a scoped run, with `forceKillAfter: 5s` (verified at `effect/process/ChildProcess.ts:270`); `gh.test.ts` covers a process that never exits.
-- *Minimize Complexity, major*: the gates map no longer sits in a second `SynchronizedRef`; it is a `Map` with synchronous get-or-create, and `unlink` removes the gate. The per-run single gate was considered and not chosen, because a user's `Refresh` would wait behind a tick reading every pull request of the run.
+- *Minimize Complexity, major*: the gates map no longer sits in a second `SynchronizedRef`; it is a `Map` with synchronous get-or-create. (Code review later stopped `unlink` removing the gate, so that a re-link waits for a read still in flight.) The per-run single gate was considered and not chosen, because a user's `Refresh` would wait behind a tick reading every pull request of the run.
 - *Correctness, minor*: the re-check also skips a `Read` newer than half the interval.
 - *Correctness, minor*: first-tick delay marked unverified and asserted by test.
 - *Unspecified, minor*: the `link` append is one atomic `SubscriptionRef.modify`.
