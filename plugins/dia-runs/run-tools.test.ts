@@ -30,7 +30,8 @@ const fakeTools = () => {
     grant: (hash, scope) => Effect.sync(() => void grants.set(hash, scope)),
     revoke: (hash) => Effect.sync(() => void grants.delete(hash)),
     url: URL,
-    mcpServer: () => Effect.die('not used')
+    mcpServer: () => Effect.die('not used'),
+    requestApproval: () => Effect.die('not used')
   }
   return { tools, grants }
 }

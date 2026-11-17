@@ -76,12 +76,15 @@ export const callTool = Effect.fn('DiaTools.call')(function* (
 
 /**
  * A new MCP server that lists and calls `registry`'s tools for `scope`, and announces
- * `notifications/tools/list_changed`. Connect it to one transport; tool calls run with `services`.
+ * `notifications/tools/list_changed`. Connect it to one transport; tool calls run with `services`,
+ * each wrapped in `track`, and a cancelled call, or closing the server, interrupts the call's tool
+ * handler.
  */
 export const makeMcpServer = (
   registry: ToolRegistry,
   scope: ToolScope,
-  services: Context.Context<never>
+  services: Context.Context<never>,
+  track: <A>(call: Effect.Effect<A>) => Effect.Effect<A> = (call) => call
 ): McpServer => {
   const run = Effect.runPromiseWith(services)
   const server = new McpServer(
@@ -91,12 +94,13 @@ export const makeMcpServer = (
   server.server.setRequestHandler(ListToolsRequestSchema, () =>
     run(Effect.map(registry.forScope(scope), (tools) => ({ tools: tools.map(describe) })))
   )
-  server.server.setRequestHandler(CallToolRequestSchema, (request) =>
+  server.server.setRequestHandler(CallToolRequestSchema, (request, extra) =>
     run(
       Effect.map(
-        callTool(registry, scope, request.params.name, request.params.arguments),
+        track(callTool(registry, scope, request.params.name, request.params.arguments)),
         toMcpResult
-      )
+      ),
+      { signal: extra.signal }
     )
   )
   return server

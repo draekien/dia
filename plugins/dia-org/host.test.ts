@@ -148,7 +148,8 @@ const fakeFoundation = () => {
         grant: ignored,
         revoke: ignored,
         url: 'http://127.0.0.1:1/mcp',
-        mcpServer: () => Effect.die('not called')
+        mcpServer: () => Effect.die('not called'),
+        requestApproval: () => Effect.die('not called')
       })
     })
   return { fake, limits, tools, setup }

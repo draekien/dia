@@ -4,8 +4,12 @@ import { assert, describe, it } from '@effect/vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js'
-import { Deferred, Effect, Schema } from 'effect'
+import {
+  CallToolResultSchema,
+  ToolListChangedNotificationSchema
+} from '@modelcontextprotocol/sdk/types.js'
+import { Deferred, Effect, Fiber, Option, Schema, Stream } from 'effect'
+import { type Approvals, makeApprovals } from './approvals'
 import { MCP_HOST, MCP_PATH, serveMcp } from './http-server'
 import { makeToolRegistry } from './registry'
 import { newToken } from './tools'
@@ -259,6 +263,70 @@ describe('the dia tools MCP endpoint', () => {
         listed.tools.map((tool) => tool.name),
         ['echo']
       )
+    }).pipe(Effect.scoped)
+  )
+})
+
+const approvalTool = (approvals: Approvals): DiaTool =>
+  diaTool({
+    name: 'ask',
+    description: 'Ask the user to approve a change.',
+    input: Schema.Struct({}),
+    run: (_, scope) =>
+      approvals
+        .request(scope, { title: 'Change it', before: 'a', after: 'b' })
+        .pipe(Effect.map((answer) => ({ text: answer, isError: false })))
+  })
+
+const servingApprovals = Effect.gen(function* () {
+  const env = yield* serve
+  const approvals = yield* makeApprovals.pipe(Effect.provide(NodeCrypto.layer))
+  yield* env.registry.register(approvalTool(approvals), { when: () => true })
+  const { token } = yield* env.grantNew(ISSUE_RUN)
+  return { approvals, client: yield* connect(env.url, token) }
+})
+
+const pendingIds = (approvals: Approvals, count: number) =>
+  approvals.pending.pipe(
+    Stream.filter((list) => list.length === count),
+    Stream.runHead,
+    Effect.map((found) => Option.getOrThrow(found).map((one) => one.id))
+  )
+
+describe('a tool that asks for approval over HTTP', () => {
+  for (const answer of ['approved', 'declined'] as const) {
+    it.effect(`returns ${answer} to the agent after the user answers ${answer}`, () =>
+      Effect.gen(function* () {
+        const { approvals, client } = yield* servingApprovals
+        const call = yield* Effect.forkChild(
+          Effect.promise(() => client.callTool({ name: 'ask', arguments: {} }))
+        )
+        const [id] = yield* pendingIds(approvals, 1)
+
+        yield* approvals.answer(id as string, answer)
+
+        const result = yield* Fiber.join(call)
+        assert.deepStrictEqual(result.content, [{ type: 'text', text: answer }])
+      }).pipe(Effect.scoped)
+    )
+  }
+
+  it.effect('withdraws the request when the agent cancels the call', () =>
+    Effect.gen(function* () {
+      const { approvals, client } = yield* servingApprovals
+      const controller = new AbortController()
+      yield* Effect.forkChild(
+        Effect.tryPromise(() =>
+          client.callTool({ name: 'ask', arguments: {} }, CallToolResultSchema, {
+            signal: controller.signal
+          })
+        ).pipe(Effect.ignore)
+      )
+      yield* pendingIds(approvals, 1)
+
+      controller.abort('the agent stopped')
+
+      assert.deepStrictEqual(yield* pendingIds(approvals, 0), [])
     }).pipe(Effect.scoped)
   )
 })
