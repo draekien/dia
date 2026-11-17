@@ -42,7 +42,7 @@ Chosen option: "Add `load: "manual"` and make the renderer registry follow the H
 ### Add `load: "manual"` and make the renderer registry follow the Host
 
 * Good, because the renderer follows unloads from every source.
-* Bad, because each status change of a plugin with a renderer entry costs one `plugins.list` call. Carrying the new status in `PluginStatusChanged` would remove that call, but changes the IPC contract and `PROTOCOL_VERSION`.
+* Bad, because status changes cost one `plugins.list` call per batch: the follower handles every plugin name that is waiting in one call. Carrying the new status in `PluginStatusChanged` would remove that call, but changes the IPC contract and `PROTOCOL_VERSION`.
 
 ### Add `load: "manual"` and make Settings call the renderer registry
 

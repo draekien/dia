@@ -1,5 +1,5 @@
 import { assert, describe, it } from '@effect/vitest'
-import type { PluginApi } from '@shared/ipc/contract'
+import { type PluginApi, PluginStatusChanged } from '@shared/ipc/contract'
 import { PLUGIN_API_VERSION, type PluginInfo, type PluginStatus } from '@shared/plugin/manifest'
 import type { PluginRegistry } from '@shared/plugin/plugin-registry'
 import { Effect } from 'effect'
@@ -121,9 +121,7 @@ const hostInfo = (name: string, status: PluginStatus): PluginInfo => ({
 
 const fakeHost = () => {
   const statuses = new Map<string, PluginStatus>()
-  const listeners = new Set<
-    (event: { readonly _tag: 'PluginStatusChanged'; readonly name: string }) => void
-  >()
+  const listeners = new Set<(event: PluginStatusChanged) => void>()
   let listFails = false
   const host: Pick<PluginApi, 'list' | 'onStatusChanged'> = {
     list: () => {
@@ -140,7 +138,7 @@ const fakeHost = () => {
   }
   const report = (name: string, tag: 'Loaded' | 'Unloaded') => {
     statuses.set(name, { _tag: tag })
-    for (const listener of listeners) listener({ _tag: 'PluginStatusChanged', name })
+    for (const listener of listeners) listener(PluginStatusChanged.make({ name }))
   }
   const failNextList = () => {
     listFails = true
@@ -241,6 +239,7 @@ describe('followHostPlugins', () => {
 
       failNextList()
       report('sidebar', 'Unloaded')
+      yield* Effect.yieldNow
       report('sidebar', 'Unloaded')
       const status = yield* awaitStatus(plugins, 'sidebar', 'Unloaded')
 

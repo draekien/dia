@@ -130,17 +130,15 @@ export const followHostPlugins = (
   host: Pick<PluginApi, 'list' | 'onStatusChanged'>
 ): Effect.Effect<void, never, Scope.Scope> =>
   Effect.gen(function* () {
-    const pending = yield* Queue.unbounded<ReadonlyArray<string>>()
+    const pending = yield* Queue.unbounded<string>()
     const everyEntry = (yield* renderer.list()).map((plugin) => plugin.name)
-    Queue.offerUnsafe(pending, everyEntry)
+    Queue.offerAllUnsafe(pending, everyEntry)
     yield* Effect.acquireRelease(
-      Effect.sync(() =>
-        host.onStatusChanged(({ name }) => void Queue.offerUnsafe(pending, [name]))
-      ),
+      Effect.sync(() => host.onStatusChanged(({ name }) => void Queue.offerUnsafe(pending, name))),
       (stopListening) => Effect.sync(stopListening)
     )
     yield* Stream.fromQueue(pending).pipe(
-      Stream.runForEach((names) => reconcile(renderer, host, names)),
+      Stream.runForEachArray((names) => reconcile(renderer, host, [...new Set(names)])),
       Effect.forkScoped
     )
   })
