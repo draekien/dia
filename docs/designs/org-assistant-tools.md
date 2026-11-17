@@ -122,7 +122,7 @@ The job description's first paragraph says it also changes the org when the user
 /**
  * Adds `ORG_READ_TOOL` to the allow list of the Executive assistant's override in `definitions`,
  * once per org database. Does nothing while job titles wait to be
- * handed over, so an override the handover imports is granted on a later launch. Call it after
+ * handed over; it is called again after the handover, so an override the handover imports is granted. Call it after
  * the built-in definitions are registered.
  */
 export const grantOrgRead: (
@@ -193,7 +193,7 @@ Found while verifying in the app: no run that `org` starts received its job titl
 
 **Required nullable fields for clearing** — `hire_rename.name` and `hire_set_reports_to.reportsTo` take `null` explicitly, so an agent that leaves a field out gets a decoding error instead of clearing a name or moving a hire to the user.
 
-**The grant waits for the handover** — `handOverJobTitles` can import an Executive assistant override that lacks `ORG_READ_TOOL`; granting before that import would leave it ungranted. Deferring to a later launch is simpler than ordering two `whenProvided` callbacks.
+**The grant waits for the handover** — `handOverJobTitles` can import an Executive assistant override that lacks `ORG_READ_TOOL`; granting before that import would leave it ungranted. The callback that runs the handover calls `grantOrgRead` again once it is done, so the grant lands in the same launch.
 
 ## Rejected Alternatives
 

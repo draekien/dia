@@ -142,8 +142,8 @@ const grantPending = Effect.gen(function* () {
  * `definitions`, once per org database: an Executive assistant the user edited keeps its stored
  * permissions, which the built-in allow list does not reach. Changes nothing else, and nothing
  * for an Executive assistant that was never edited. Does nothing while job titles wait to be
- * handed over, so an override the handover imports is granted on a later launch. Call it after the
- * built-in definitions are registered.
+ * handed over; call it again after {@link handOverJobTitles}, so an override the handover imports
+ * is granted. Call it after the built-in definitions are registered.
  */
 export const grantOrgRead = (
   definitions: AgentDefinitionRegistry

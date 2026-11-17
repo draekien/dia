@@ -350,6 +350,7 @@ const holdRegistries = (ctx: HostPluginContext, org: Org, sql: SqlClient.SqlClie
       [AgentDefinitionRegistryKey, McpServerRegistryKey],
       ({ agentDefinitionRegistry, mcpServerRegistry }) =>
         handOverJobTitles(agentDefinitionRegistry, mcpServerRegistry).pipe(
+          Effect.andThen(grantOrgRead(agentDefinitionRegistry)),
           Effect.provideService(SqlClient.SqlClient, sql)
         )
     )
