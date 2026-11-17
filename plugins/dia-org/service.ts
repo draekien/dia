@@ -34,8 +34,8 @@ import type {
  * agents of that job title. The job titles are the agent definitions of the registry
  * `holdDefinitions` holds (ADR-0072); with none held, `jobTitles` is empty and every job title
  * change except `createJobTitle` fails with `JobTitleNotFound`. `jobTitles` lists the built-in job
- * titles in seed order, then the other definitions by name; `hiredAgents` lists by `hiredAt`, then creation order. A
- * database failure, or a failure to generate an id, is a defect.
+ * titles in seed order, then the other definitions by name; `hiredAgents` lists by `hiredAt`, then
+ * creation order. A database failure, or a failure to generate an id, is a defect.
  *
  * `watchJobTitleChanges` subscribes when run; the stream it returns emits once after each
  * `setJobTitleEnabled`, each change to the held registry's definitions, and each hold and release
@@ -47,18 +47,18 @@ import type {
  *
  * `copyJobTitle` copies every field of `jobTitleId` into a new enabled job title named `name` that
  * is not built in. `createJobTitle` stores a new enabled job title, not built in, with `fields`; it
- * fails with `JobTitlesNotLoaded` while no registry is held. `editJobTitle` applies `edit`'s present fields. `deleteJobTitle` deletes a copy
- * with no hired agents. `hire` hires an agent of an enabled job title, named `name` or unnamed when
- * null, reporting to hired agent `reportsTo` or to the user when null. `dismiss` removes a hired
- * agent and moves its reports to its own `reportsTo`; it fails with `HireHasOpenIssues` while the
- * agent is assigned to an issue that is neither `done` nor `canceled`, and with `IssuesNotLoaded`
- * while no issues are held. `renameHire` names a hired agent `name`, or clears its name
- * when null; the name must be free among the other hired agents, ignoring ASCII case.
- * `setBypassOverride` sets a hired agent's bypass override: true or false overrides its job
- * title's `bypassOptIn`, null follows the job title (ADR-0054). `setReportsTo` makes a hired agent
- * report to hired agent `reportsTo`, or to the user when null; it fails with `ReportsToCycle` when
- * `reportsTo` is the agent or reports to it. A missing hire, checked before a missing `reportsTo`,
- * fails with `HireNotFound` naming its id.
+ * fails with `JobTitlesNotLoaded` while no registry is held. `editJobTitle` applies `edit`'s
+ * present fields. `deleteJobTitle` deletes a copy with no hired agents. `hire` hires an agent of an
+ * enabled job title, named `name` or unnamed when null, reporting to hired agent `reportsTo` or to
+ * the user when null. `dismiss` removes a hired agent and moves its reports to its own `reportsTo`;
+ * it fails with `HireHasOpenIssues` while the agent is assigned to an issue that is neither `done`
+ * nor `canceled`, and with `IssuesNotLoaded` while no issues are held. `renameHire` names a hired
+ * agent `name`, or clears its name when null; the name must be free among the other hired agents,
+ * ignoring ASCII case. `setBypassOverride` sets a hired agent's bypass override: true or false
+ * overrides its job title's `bypassOptIn`, null follows the job title (ADR-0054). `setReportsTo`
+ * makes a hired agent report to hired agent `reportsTo`, or to the user when null; it fails with
+ * `ReportsToCycle` when `reportsTo` is the agent or reports to it. A missing hire, checked before a
+ * missing `reportsTo`, fails with `HireNotFound` naming its id.
  */
 export interface Org {
   readonly jobTitles: Effect.Effect<ReadonlyArray<JobTitle>>
