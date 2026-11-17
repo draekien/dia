@@ -114,6 +114,7 @@ interface AgentRow {
   readonly archived: number
   readonly cwd: string
   readonly model: string
+  readonly backend: string
   readonly thinking_level: string
   readonly permission_mode: string
   readonly worktree_path: string | null
@@ -144,6 +145,7 @@ const tabFromRow = (row: AgentRow) =>
       paneId: row.agent_id,
       cwd: row.cwd,
       model: row.model,
+      backend: row.backend,
       thinkingLevel: row.thinking_level,
       permissionMode: row.permission_mode,
       ...(row.worktree_path === null
@@ -200,7 +202,7 @@ const makeStore = Effect.gen(function* () {
       SELECT project_id, directory, directory_key, display_name, is_git_repo, owner
       FROM projects ORDER BY position`
     const agents = yield* sql<AgentRow>`
-      SELECT a.agent_id, a.project_id, a.name, a.archived_at IS NOT NULL AS archived, a.cwd, a.model, a.thinking_level,
+      SELECT a.agent_id, a.project_id, a.name, a.archived_at IS NOT NULL AS archived, a.cwd, a.model, a.backend, a.thinking_level,
              a.permission_mode, w.path AS worktree_path, w.branch AS worktree_branch,
              w.source_repo AS worktree_source_repo, s.session_id, a.owner
       FROM agents a
@@ -320,6 +322,7 @@ const makeStore = Effect.gen(function* () {
           archived_at: tab.archived ? now : null,
           cwd: tab.config.cwd,
           model: tab.config.model,
+          backend: tab.config.backend,
           thinking_level: tab.config.thinkingLevel,
           permission_mode: tab.config.permissionMode,
           owner: tab.owner ?? null
@@ -327,7 +330,7 @@ const makeStore = Effect.gen(function* () {
           project_id = excluded.project_id, position = excluded.position, name = excluded.name,
           archived_at = CASE WHEN excluded.archived_at IS NULL THEN NULL
             ELSE COALESCE(agents.archived_at, excluded.archived_at) END, cwd = excluded.cwd, model = excluded.model,
-          thinking_level = excluded.thinking_level, permission_mode = excluded.permission_mode,
+          backend = excluded.backend, thinking_level = excluded.thinking_level, permission_mode = excluded.permission_mode,
           owner = excluded.owner`
       }
     }

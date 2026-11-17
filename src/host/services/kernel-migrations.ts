@@ -127,6 +127,10 @@ const owners = runEach([
   `ALTER TABLE agents ADD COLUMN owner TEXT`
 ])
 
+const agentBackend = runEach([
+  `ALTER TABLE agents ADD COLUMN backend TEXT NOT NULL DEFAULT 'dia-claude-code'`
+])
+
 /**
  * The migrations of `<userData>/host.db`, keyed `<id>_<name>` and applied in id order by
  * `makeHostDatabaseLive`. Add a migration as a new key; never change an applied one.
@@ -137,5 +141,6 @@ export const kernelMigrations = {
   '3_agent_events': agentEvents,
   '4_agent_event_cleanup': agentEventCleanup,
   '5_path_moves': pathMoves,
-  '6_owners': owners
+  '6_owners': owners,
+  '7_agent_backend': agentBackend
 }

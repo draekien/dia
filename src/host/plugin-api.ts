@@ -25,6 +25,7 @@ export {
 } from '../shared/domain/attention'
 export { ActivityId } from '../shared/domain/background-activity'
 export { TokenUsage } from '../shared/domain/context-usage'
+export { LEGACY_ADAPTER_ID } from '../shared/domain/legacy-adapter'
 export {
   EMPTY_MESSAGE_QUEUE,
   MessageQueueSnapshot,

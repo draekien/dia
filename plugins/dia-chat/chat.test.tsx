@@ -43,6 +43,7 @@ const archivedWorkspace = (): Workspace => ({
             paneId: PANE,
             cwd: '/worktrees/old-heron',
             model: 'm',
+            backend: 'dia-claude-code',
             thinkingLevel: 'adaptive',
             permissionMode: 'default'
           },

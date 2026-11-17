@@ -48,6 +48,7 @@ import {
   targetEntryOf
 } from '@dia-plugin/dia-chat/slots'
 import { useAtomValue } from '@effect/atom-react'
+import { LEGACY_ADAPTER_ID } from '@shared/domain/legacy-adapter'
 import type { ModelOption } from '@shared/domain/model'
 import {
   type AdapterPreferences,
@@ -326,6 +327,7 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
         paneId,
         name: null,
         model: startModel,
+        backend: LEGACY_ADAPTER_ID,
         thinkingLevel,
         permissionMode,
         worktree,

@@ -39,6 +39,7 @@ const tab = (n: number, archived = false): Tab => ({
     paneId: paneId(n),
     cwd: 'F:\\Dev',
     model: 'claude-sonnet-5-5',
+    backend: 'dia-claude-code',
     thinkingLevel: 'adaptive',
     permissionMode: 'default'
   },

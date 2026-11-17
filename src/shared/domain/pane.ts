@@ -1,6 +1,7 @@
 import { Effect, Schema } from 'effect'
 import { Attachment } from './attachment'
 import { AttentionState } from './attention'
+import { LEGACY_ADAPTER_ID } from './legacy-adapter'
 import { Uuid } from './uuid'
 
 /** Identifier for a pane: the `paneId` of its `PaneConfig`, unique across the workspace. */
@@ -145,6 +146,9 @@ export const PaneConfig = Schema.Struct({
   paneId: Uuid,
   cwd: Schema.String,
   model: Schema.String,
+  backend: Schema.NonEmptyString.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(LEGACY_ADAPTER_ID))
+  ),
   thinkingLevel: ThinkingLevel.pipe(
     Schema.withDecodingDefaultType(Effect.succeed(DEFAULT_THINKING_LEVEL))
   ),

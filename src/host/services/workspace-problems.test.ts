@@ -36,6 +36,7 @@ const tab = (paneId: string, name: string, overrides: Partial<Tab> = {}): Tab =>
     paneId,
     cwd: 'F:\\x',
     model: 'claude-sonnet-5-5',
+    backend: 'dia-claude-code',
     thinkingLevel: 'adaptive',
     permissionMode: 'default'
   },

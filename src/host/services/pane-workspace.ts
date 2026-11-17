@@ -338,6 +338,7 @@ export const PaneWorkspaceLive = Layer.effect(
           paneId,
           cwd: directory,
           model: session.model,
+          backend: session.backend,
           thinkingLevel: DEFAULT_THINKING_LEVEL,
           permissionMode: DEFAULT_PERMISSION_MODE
         },
@@ -632,6 +633,7 @@ export const PaneWorkspaceLive = Layer.effect(
         runId: paneId,
         sourceCwd: entry.project.directory,
         model: request.model,
+        backend: request.backend,
         thinkingLevel: request.thinkingLevel,
         permissionMode: request.permissionMode,
         worktree:
@@ -856,6 +858,7 @@ export const PaneWorkspaceLive = Layer.effect(
         runId: paneId,
         sourceCwd: config.worktree?.sourceRepo ?? config.cwd,
         model: config.model,
+        backend: config.backend,
         thinkingLevel: config.thinkingLevel,
         permissionMode: config.permissionMode,
         worktree:
@@ -911,6 +914,7 @@ export const PaneWorkspaceLive = Layer.effect(
           paneId: change.runId,
           cwd: change.directory,
           model: change.model,
+          backend: change.backend,
           thinkingLevel: change.thinkingLevel,
           permissionMode: change.permissionMode
         },

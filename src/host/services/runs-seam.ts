@@ -28,7 +28,7 @@ export type WorktreeRequest =
   | { readonly _tag: 'Reattach'; readonly info: WorktreeInfo }
 
 /**
- * What a run opens with: its id, the directory and model the user chose, how its worktree is
+ * What a run opens with: its id, the directory and model the user chose, the `backend` (adapter id) that holds the model, which the run keeps for life, how its worktree is
  * obtained, and the conversation it continues (`resume`), or none for a new one. `labels` and
  * `context` become the run's dia tool scope (see `ToolScope`); `context` must be
  * JSON-serialisable, because it is stored with the run. `systemPromptAppend` is appended to the
@@ -39,6 +39,7 @@ export interface RunSpec {
   readonly runId: string
   readonly sourceCwd: string
   readonly model: string
+  readonly backend: string
   readonly thinkingLevel: ThinkingLevel
   readonly permissionMode: PermissionMode
   readonly worktree: WorktreeRequest | undefined
@@ -50,7 +51,7 @@ export interface RunSpec {
 }
 
 /**
- * What {@link Runs.start} starts: a run with no tab working in `cwd`, sent `text` at once, or
+ * What {@link Runs.start} starts: a run on adapter `backend` with no tab working in `cwd`, sent `text` at once, or
  * waiting for its first message when `text` is absent. `systemPromptAppend` is appended to the
  * run's system prompt and `permissions` are added to its sessions' permission rules, for its whole
  * life. `labels` and `context` become the run's dia tool scope; dia tools registered for that
@@ -59,6 +60,7 @@ export interface RunSpec {
 export interface StartRunOptions {
   readonly cwd: string
   readonly model: string
+  readonly backend: string
   readonly thinkingLevel: ThinkingLevel
   readonly permissionMode: PermissionMode
   readonly text?: string
@@ -71,13 +73,15 @@ export interface StartRunOptions {
 /**
  * A conversation an agent harness holds, as `Runs.discoverSessions` reports it. `title` is the
  * harness's name for it and may be empty; `startedAt` is when it began, in epoch milliseconds;
- * `model` is the model value a session that resumes it is opened with.
+ * `model` is the model value a session that resumes it is opened with, and `backend` is the id
+ * of the adapter that holds it.
  */
 export interface DiscoveredSession {
   readonly sessionId: SessionId
   readonly title: string
   readonly startedAt: number
   readonly model: string
+  readonly backend: string
 }
 
 /** Answers a permission request with `response`. */
@@ -106,13 +110,14 @@ export type RunStatus = typeof RunStatus.Type
 
 /**
  * One run as `Runs.list` reports it. `cwd` is where its session works (its worktree when it has
- * one); `model`, `thinkingLevel` and `permissionMode` are the ones it opens with. `live` is true
+ * one); `backend` is its adapter id; `model`, `thinkingLevel` and `permissionMode` are the ones it opens with. `live` is true
  * while its session runs.
  */
 export interface RunInfo {
   readonly runId: string
   readonly cwd: string
   readonly model: string
+  readonly backend: string
   readonly thinkingLevel: ThinkingLevel
   readonly permissionMode: PermissionMode
   readonly sessionId: Option.Option<SessionId>
@@ -146,13 +151,15 @@ export type TabPlacement = typeof TabPlacement.Type
 
 /**
  * Run `runId`, which has no tab, asks to be shown in a tab working in `directory`, in the project
- * at `projectDirectory`; the tab becomes the visible tab when `select` is true.
+ * at `projectDirectory`; the tab becomes the visible tab when `select` is true. `backend` is the
+ * run's adapter id.
  */
 export const RunTabRequested = Schema.TaggedStruct('RunTabRequested', {
   runId: Schema.String,
   directory: Schema.String,
   ...TabPlacement.fields,
   model: Schema.String,
+  backend: Schema.NonEmptyString,
   thinkingLevel: ThinkingLevel,
   permissionMode: PermissionMode,
   sessionId: Schema.NullOr(SessionId)
