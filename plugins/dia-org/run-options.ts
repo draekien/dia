@@ -1,4 +1,4 @@
-import { type StartRunOptions, startPermissionMode } from '@dia/plugin'
+import { LEGACY_ADAPTER_ID, type StartRunOptions, startPermissionMode } from '@dia/plugin'
 import type { Issue, Objective } from '@dia-plugin/dia-issues/domain'
 import type { AgentBackend } from '@dia-plugin/dia-runs/backend'
 import { Effect, Option, Stream } from 'effect'
@@ -74,7 +74,12 @@ export const runSettings = Effect.fn('Org.runSettings')(function* (
   }
   const permissionMode = startPermissionMode(input)
   yield* Effect.logInfo('Chose a run permission mode', { model, ...input, permissionMode })
-  return { model, thinkingLevel: jobTitle.thinkingLevel, permissionMode }
+  return {
+    model,
+    backend: LEGACY_ADAPTER_ID,
+    thinkingLevel: jobTitle.thinkingLevel,
+    permissionMode
+  }
 })
 
 /**

@@ -1,4 +1,5 @@
 import {
+  LEGACY_ADAPTER_ID,
   type ModelOption,
   ModelsReady,
   type RunInfo,
@@ -74,6 +75,7 @@ export const fakeRuns = () => {
       runId,
       cwd: options.cwd,
       model: options.model,
+      backend: LEGACY_ADAPTER_ID,
       thinkingLevel: 'medium',
       permissionMode: 'default',
       sessionId: Option.none(),

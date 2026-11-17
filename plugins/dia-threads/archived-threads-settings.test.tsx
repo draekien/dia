@@ -34,6 +34,7 @@ const tab = (n: number, name: string, archived: boolean): Tab => ({
     paneId: `00000000-0000-4000-8000-0000000001${String(n).padStart(2, '0')}`,
     cwd: '/dia',
     model: 'm',
+    backend: 'dia-claude-code',
     thinkingLevel: 'adaptive',
     permissionMode: 'default'
   },

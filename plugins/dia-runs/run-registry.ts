@@ -3,6 +3,7 @@ import {
   Attention,
   EMPTY_MESSAGE_QUEUE,
   type GitOps,
+  LEGACY_ADAPTER_ID,
   type PaneConfig,
   PaneEvents,
   type Parking,
@@ -99,6 +100,7 @@ const sameIds = (left: ReadonlyArray<string>, right: ReadonlyArray<string>) =>
 
 const withStoredScope = (spec: RunSpec, row: RunRow): RunSpec => ({
   ...spec,
+  backend: row.spec.backend,
   ...(spec.labels === undefined && row.spec.labels !== undefined
     ? { labels: row.spec.labels }
     : {}),
@@ -117,6 +119,7 @@ const specOfRow = (row: RunRow): RunSpec => ({
   runId: row.runId,
   sourceCwd: row.spec.sourceCwd,
   model: row.spec.model,
+  backend: row.spec.backend,
   thinkingLevel: row.spec.thinkingLevel,
   permissionMode: row.spec.permissionMode,
   worktree: row.spec.worktree === null ? undefined : { _tag: 'Reattach', info: row.spec.worktree },
@@ -249,6 +252,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
       paneId: spec.runId,
       cwd: spec.sourceCwd,
       model: spec.model,
+      backend: spec.backend,
       thinkingLevel: spec.thinkingLevel,
       permissionMode: spec.permissionMode
     }
@@ -297,6 +301,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
   const storedSpec = (spec: RunSpec, config: PaneConfig): StoredSpec => ({
     sourceCwd: spec.sourceCwd,
     model: config.model,
+    backend: config.backend,
     thinkingLevel: config.thinkingLevel,
     permissionMode: config.permissionMode,
     worktree: config.worktree ?? null,
@@ -329,6 +334,13 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
     }
     const prior = yield* rows.get(requested.runId)
     const spec = Option.isSome(prior) ? withStoredScope(requested, prior.value) : requested
+    if (Option.isSome(prior) && prior.value.spec.backend !== requested.backend) {
+      yield* Effect.logWarning('Kept the stored adapter of a run instead of the requested one', {
+        runId: requested.runId,
+        stored: prior.value.spec.backend,
+        requested: requested.backend
+      })
+    }
     const scope = yield* Scope.make()
     const prepared = yield* provision(spec).pipe(
       Effect.provideService(Scope.Scope, scope),
@@ -523,7 +535,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
         )
       })
 
-  const updateSpec = (runId: string, patch: Partial<StoredSpec>) =>
+  const updateSpec = (runId: string, patch: Partial<Omit<StoredSpec, 'backend'>>) =>
     Effect.flatMap(rows.get(runId), (row) =>
       Option.isSome(row) ? rows.setSpec(runId, { ...row.value.spec, ...patch }) : Effect.void
     )
@@ -547,6 +559,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
         runId,
         sourceCwd: options.cwd,
         model: options.model,
+        backend: options.backend,
         thinkingLevel: options.thinkingLevel,
         permissionMode: options.permissionMode,
         worktree: undefined,
@@ -594,6 +607,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
         ...(placement?.owner === undefined ? {} : { owner: placement.owner }),
         ...(placement?.name === undefined ? {} : { name: placement.name }),
         model: row.value.spec.model,
+        backend: row.value.spec.backend,
         thinkingLevel: row.value.spec.thinkingLevel,
         permissionMode: row.value.spec.permissionMode,
         sessionId: Option.getOrNull(row.value.sessionId)
@@ -666,6 +680,7 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
         runId: row.runId,
         cwd: cwdOf(row.spec),
         model: row.spec.model,
+        backend: row.spec.backend,
         thinkingLevel: row.spec.thinkingLevel,
         permissionMode: row.spec.permissionMode,
         sessionId: row.sessionId,
@@ -690,7 +705,13 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
           ? Effect.logDebug('The agent backend cannot discover sessions', { directory }).pipe(
               Effect.as([])
             )
-          : backend.discoverSessions(directory)
+          : backend
+              .discoverSessions(directory)
+              .pipe(
+                Effect.map((sessions) =>
+                  sessions.map((session) => ({ ...session, backend: LEGACY_ADAPTER_ID }))
+                )
+              )
       )
   }
 

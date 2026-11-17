@@ -27,6 +27,7 @@ import {
   FileSystem,
   Option,
   Schedule,
+  Schema,
   Scope,
   Stream
 } from 'effect'
@@ -41,7 +42,7 @@ import {
 } from './backend'
 import { runsMigrations } from './migrations'
 import { makeRunRegistry } from './run-registry'
-import { makeRunRows, type RunRows } from './run-rows'
+import { makeRunRows, type RunRows, StoredSpec } from './run-rows'
 
 const RUN = 'aaaaaaaa-0000-4000-8000-000000000001'
 const STARTED = 'bbbbbbbb-0000-4000-8000-000000000002'
@@ -156,6 +157,7 @@ const tabSpec = {
   runId: RUN,
   sourceCwd: '/repo',
   model: 'm',
+  backend: 'dia-claude-code',
   thinkingLevel: 'adaptive' as const,
   permissionMode: 'default' as const,
   worktree: undefined,
@@ -165,6 +167,7 @@ const tabSpec = {
 const startOptions = {
   cwd: '/repo',
   model: 'm',
+  backend: 'dia-claude-code',
   thinkingLevel: 'adaptive' as const,
   permissionMode: 'default' as const,
   text: 'tidy the README'
@@ -223,6 +226,97 @@ describe('run registry', () => {
       })
     )
   )
+
+  it.live('stores the backend a run starts with in its row', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const { runs } = yield* makeWorld(rows).registry
+
+        yield* runs.start({ ...startOptions, backend: 'other' })
+
+        assert.strictEqual(Option.getOrThrow(yield* rows.get(STARTED)).spec.backend, 'other')
+      })
+    )
+  )
+
+  it.live('stores dia-claude-code in the row of a run started on it', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const { runs } = yield* makeWorld(rows).registry
+
+        yield* runs.start(startOptions)
+
+        assert.strictEqual(
+          Option.getOrThrow(yield* rows.get(STARTED)).spec.backend,
+          'dia-claude-code'
+        )
+      })
+    )
+  )
+
+  it.live('keeps the stored backend when a run opens with a request naming another', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const { runs } = yield* makeWorld(rows).registry
+        yield* runs.open({ ...tabSpec, backend: 'first' })
+        yield* runs.close(RUN)
+
+        const config = yield* runs.open({ ...tabSpec, backend: 'second' })
+
+        assert.deepStrictEqual(
+          [config.backend, Option.getOrThrow(yield* rows.get(RUN)).spec.backend],
+          ['first', 'first']
+        )
+      })
+    )
+  )
+
+  it.live('reports the backend of every run in the list', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const { runs } = yield* makeWorld(rows).registry
+        yield* runs.start({ ...startOptions, backend: 'other' })
+
+        const listed = yield* runs.list
+
+        assert.deepStrictEqual(
+          listed.map((info) => info.backend),
+          ['other']
+        )
+      })
+    )
+  )
+
+  it.live('carries the backend of a run in its request for a tab', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const { runs } = yield* makeWorld(rows).registry
+        yield* runs.start({ ...startOptions, backend: 'other' })
+        const requested = yield* runs.changes.pipe(
+          Stream.filter((change: RunChange) => change._tag === 'RunTabRequested'),
+          Stream.runHead,
+          Effect.forkScoped({ startImmediately: true })
+        )
+
+        yield* runs.openInTab(STARTED)
+
+        const change = Option.getOrThrow(yield* Fiber.join(requested))
+        assert.strictEqual(change._tag === 'RunTabRequested' ? change.backend : undefined, 'other')
+      })
+    )
+  )
+
+  it('decodes a stored spec without a backend as dia-claude-code', () => {
+    const decoded = Schema.decodeUnknownSync(StoredSpec)({
+      sourceCwd: '/repo',
+      model: 'm',
+      thinkingLevel: 'adaptive',
+      permissionMode: 'default',
+      worktree: null
+    })
+
+    assert.strictEqual(decoded.backend, 'dia-claude-code')
+  })
 
   it.live("appends a started run's own text to dia's system prompt additions", () =>
     withRows((rows) =>
@@ -413,6 +507,7 @@ describe('run registry', () => {
           {
             sourceCwd: '/repo',
             model: 'm',
+            backend: 'dia-claude-code',
             thinkingLevel: 'adaptive',
             permissionMode: 'default',
             worktree: null
@@ -440,6 +535,7 @@ describe('run registry', () => {
             {
               sourceCwd: '/repo',
               model: 'm',
+              backend: 'dia-claude-code',
               thinkingLevel: 'adaptive',
               permissionMode: 'default',
               worktree: null
@@ -469,6 +565,7 @@ describe('run registry', () => {
           {
             sourceCwd: '/repo',
             model: 'm',
+            backend: 'dia-claude-code',
             thinkingLevel: 'adaptive',
             permissionMode: 'default',
             worktree: null

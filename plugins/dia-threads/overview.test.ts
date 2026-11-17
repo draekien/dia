@@ -34,6 +34,7 @@ const tab = (
     paneId: paneId(n),
     cwd: '/repo',
     model: 'm',
+    backend: 'dia-claude-code',
     thinkingLevel: 'adaptive',
     permissionMode
   },

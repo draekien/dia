@@ -1,4 +1,4 @@
-import { ActivityRunFailed, type PluginActivities } from '@dia/plugin'
+import { ActivityRunFailed, LEGACY_ADAPTER_ID, type PluginActivities } from '@dia/plugin'
 import type { RunQueue } from '@dia-plugin/dia-run-queue/queue'
 import {
   Cause,
@@ -60,7 +60,11 @@ export const makeSchedules = Effect.fnUntraced(function* (deps: SchedulesDeps) {
           const queue = yield* restore(queueOtherThan(used))
           const exit = yield* Effect.exit(
             restore(
-              queue.enqueue({ run: schedule.run, priority: schedule.priority, key: schedule.key })
+              queue.enqueue({
+                run: { ...schedule.run, backend: LEGACY_ADAPTER_ID },
+                priority: schedule.priority,
+                key: schedule.key
+              })
             )
           )
           if (Exit.isSuccess(exit)) {

@@ -193,6 +193,7 @@ export const makeMessagingTools = Effect.fnUntraced(function* (
       const runId = yield* runs.start({
         cwd: info.value.cwd,
         model: info.value.model,
+        backend: info.value.backend,
         thinkingLevel: info.value.thinkingLevel,
         permissionMode: info.value.permissionMode,
         text: input.task

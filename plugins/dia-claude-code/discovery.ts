@@ -10,7 +10,7 @@ const isIn = (directory: string) => (info: SDKSessionInfo) =>
   info.cwd === undefined || relative(info.cwd, directory) === ''
 
 /**
- * The {@link DiscoveredSession}s for `directory` among `infos`, the rows `listSessions` returned
+ * The {@link DiscoveredSession}s (without `backend`, which `dia-runs` sets) for `directory` among `infos`, the rows `listSessions` returned
  * for it. Leaves out a session whose working directory is another directory. Each session is
  * titled by its custom title, else its summary, starts at its creation time, else its last
  * change, and resumes on Claude Code's default model.
@@ -18,7 +18,7 @@ const isIn = (directory: string) => (info: SDKSessionInfo) =>
 export const toDiscoveredSessions = (
   infos: ReadonlyArray<SDKSessionInfo>,
   directory: string
-): ReadonlyArray<DiscoveredSession> =>
+): ReadonlyArray<Omit<DiscoveredSession, 'backend'>> =>
   infos.filter(isIn(directory)).map((info) => ({
     sessionId: SessionId.make(info.sessionId),
     title: info.customTitle ?? info.summary,

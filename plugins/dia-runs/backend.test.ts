@@ -7,6 +7,7 @@ const config: PaneConfig = {
   paneId: '00000000-0000-0000-0000-000000000001',
   cwd: '/work',
   model: 'claude-sonnet-5',
+  backend: 'dia-claude-code',
   thinkingLevel: 'off',
   permissionMode: 'default'
 }

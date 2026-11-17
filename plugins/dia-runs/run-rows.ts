@@ -1,4 +1,5 @@
 import {
+  LEGACY_ADAPTER_ID,
   PermissionMode,
   PermissionRules,
   RunStatus,
@@ -9,10 +10,17 @@ import {
 import { Clock, Effect, Option, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
 
-/** What a run opens with, as its row stores it; `cwd` is the worktree path when it has one. */
+/**
+ * What a run opens with, as its row stores it; `cwd` is the worktree path when it has one.
+ * `backend` is the id of the run's adapter; a row stored before adapters were recorded decodes
+ * it as the legacy adapter.
+ */
 export const StoredSpec = Schema.Struct({
   sourceCwd: Schema.String,
   model: Schema.String,
+  backend: Schema.NonEmptyString.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(LEGACY_ADAPTER_ID))
+  ),
   thinkingLevel: ThinkingLevel,
   permissionMode: PermissionMode,
   worktree: Schema.NullOr(WorktreeInfo),

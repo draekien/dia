@@ -27,6 +27,7 @@ const runInfo = (runId: string, cwd: string): RunInfo => ({
   runId,
   cwd,
   model: 'sonnet',
+  backend: 'dia-claude-code',
   thinkingLevel: 'off',
   permissionMode: 'default',
   sessionId: Option.none(),

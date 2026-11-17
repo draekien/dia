@@ -29,6 +29,7 @@ const info = (runId: string, overrides: Partial<RunInfo> = {}): RunInfo => ({
   runId,
   cwd: `/repo/${runId}`,
   model: 'opus',
+  backend: 'dia-claude-code',
   thinkingLevel: 'high',
   permissionMode: 'acceptEdits',
   sessionId: Option.none(),
@@ -184,7 +185,7 @@ const A_AND_B = [info(RUN_A), info(RUN_B)]
 describe('run_delegate', () => {
   it.effect("starts a run with the caller's settings and sends its reply to the caller once", () =>
     Effect.gen(function* () {
-      const world = yield* makeWorld([info(RUN_A)])
+      const world = yield* makeWorld([info(RUN_A, { backend: 'other' })])
       const task = 'Count the files'
       const call = yield* Effect.forkChild(world.call('run_delegate', { task }))
       yield* world.snapshotRead(RUN_B)
@@ -194,7 +195,7 @@ describe('run_delegate', () => {
       yield* world.publish(RUN_B, [reply('There are 3 files.'), completed(RUN_B)])
       yield* Effect.yieldNow.pipe(Effect.repeat({ times: 20 }))
 
-      const caller = info(RUN_A)
+      const caller = info(RUN_A, { backend: 'other' })
       assert.deepStrictEqual(
         {
           started: world.started,
@@ -206,6 +207,7 @@ describe('run_delegate', () => {
             {
               cwd: caller.cwd,
               model: caller.model,
+              backend: 'other',
               thinkingLevel: caller.thinkingLevel,
               permissionMode: caller.permissionMode,
               text: task

@@ -132,7 +132,7 @@ describe('makeSchedules', () => {
       yield* advance(Duration.minutes(1))
       assert.deepStrictEqual(
         world.recording.entries.map((entry) => entry.run),
-        [run('Write the report')]
+        [{ ...run('Write the report'), backend: 'dia-claude-code' }]
       )
     })
   )

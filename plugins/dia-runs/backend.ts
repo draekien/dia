@@ -214,7 +214,9 @@ export interface AgentBackend {
    * The conversations the harness holds whose working directory is `directory`, in any order.
    * Never fails: empty when there are none or they cannot be read.
    */
-  readonly discoverSessions?: (directory: string) => Effect.Effect<ReadonlyArray<DiscoveredSession>>
+  readonly discoverSessions?: (
+    directory: string
+  ) => Effect.Effect<ReadonlyArray<Omit<DiscoveredSession, 'backend'>>>
 }
 
 const ADAPTER_NOT_LOADED = 'The claude-code adapter is not loaded'

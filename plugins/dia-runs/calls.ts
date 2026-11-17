@@ -78,11 +78,12 @@ export const RewindToCheckpoint = Rpc.make('RewindToCheckpoint', {
   }
 })
 
-/** Starts a run with no tab in `cwd`, sends it `text`, and returns its id. */
+/** Starts a run on adapter `backend` with no tab in `cwd`, sends it `text`, and returns its id. */
 export const StartRun = Rpc.make('StartRun', {
   payload: {
     cwd: Schema.String,
     model: Schema.String,
+    backend: Schema.NonEmptyString,
     thinkingLevel: ThinkingLevel,
     permissionMode: PermissionMode,
     text: Schema.String

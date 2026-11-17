@@ -20,6 +20,7 @@ const SETTLE = Duration.millis(50)
 const runNamed = (name: string): StartRunOptions => ({
   cwd: name,
   model: 'm',
+  backend: 'dia-claude-code',
   thinkingLevel: 'adaptive',
   permissionMode: 'default',
   text: 'work'

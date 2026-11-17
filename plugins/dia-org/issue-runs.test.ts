@@ -57,6 +57,7 @@ const setUp = Effect.gen(function* () {
           run: {
             cwd: `C:/trees/${issue.id}`,
             model: 'opus',
+            backend: 'dia-claude-code',
             thinkingLevel: 'medium' as const,
             permissionMode: 'default' as const,
             text: issue.title
