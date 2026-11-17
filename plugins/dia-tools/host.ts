@@ -66,7 +66,7 @@ const makeOutsideTokens = Effect.fnUntraced(function* (
 
   const revokeAll = Effect.gen(function* () {
     const revoked = yield* Ref.getAndSet(hashes, [])
-    yield* Effect.forEach(revoked, revoke, { discard: true })
+    yield* Effect.forEach(revoked, revoke, { concurrency: 'unbounded', discard: true })
     yield* writeOutsideTokens(file, []).pipe(Effect.orDie)
     yield* Effect.logInfo('Revoked every outside agent dia tools token', {
       tokens: revoked.length

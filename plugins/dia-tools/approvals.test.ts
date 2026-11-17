@@ -166,6 +166,17 @@ describe('makeApprovals', () => {
     })
   )
 
+  it.effect('dies on a request with an empty title, listing nothing', () =>
+    Effect.gen(function* () {
+      const approvals = yield* scoped
+
+      const exit = yield* Effect.exit(approvals.request(RUN, { ...CHANGE, title: '' }))
+
+      assert.isTrue(Exit.hasDies(exit))
+      assert.strictEqual(yield* pendingCount(approvals), 0)
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('withdraws a request whose caller is interrupted', () =>
     Effect.gen(function* () {
       const approvals = yield* scoped

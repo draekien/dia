@@ -1,7 +1,10 @@
 import type { ToolScope } from '@dia/plugin'
-import { Crypto, Deferred, Effect, type Scope, Stream, SubscriptionRef } from 'effect'
+import { Crypto, Deferred, Effect, Schema, type Scope, Stream, SubscriptionRef } from 'effect'
 import { OutsideSource, type PendingApproval, RunSource } from './calls'
-import type { ApprovalAnswer, ApprovalRequest } from './tools'
+import { type ApprovalAnswer, ApprovalRequest } from './tools'
+
+const validRequest = (request: ApprovalRequest) =>
+  Schema.decodeUnknownEffect(ApprovalRequest)(request).pipe(Effect.orDie)
 
 interface Entry {
   readonly pending: PendingApproval
@@ -14,7 +17,7 @@ interface Entry {
  *
  * - `request` adds a request from `scope` and waits for its answer. It succeeds with 'declined'
  *   at once when `scope` was declined by `declineScope` or the approvals have closed. Interrupting
- *   it withdraws the request.
+ *   it withdraws the request. It dies when `request` does not satisfy the `ApprovalRequest` schema.
  * - `pending` streams the waiting requests, oldest first: the current list, then each change.
  * - `answer` answers request `id`; the first answer wins and an `id` not pending is ignored.
  * - `declineScope` declines every request whose scope is `scope` (the same object), and every
@@ -74,6 +77,9 @@ export const makeApprovals: Effect.Effect<Approvals, never, Crypto.Crypto | Scop
     const remove = (entry: Entry) =>
       SubscriptionRef.update(entries, (current) => current.filter((other) => other !== entry))
 
+    const declineIfRevoked = (scope: ToolScope, entry: Entry) =>
+      Effect.suspend(() => (closed || declined.has(scope) ? decline([entry]) : Effect.void))
+
     const request: Approvals['request'] = (scope, request) =>
       Effect.suspend(() =>
         closed || declined.has(scope)
@@ -81,9 +87,10 @@ export const makeApprovals: Effect.Effect<Approvals, never, Crypto.Crypto | Scop
               runId: scope.runId
             }).pipe(Effect.as<ApprovalAnswer>('declined'))
           : Effect.acquireUseRelease(
-              add(scope, request),
+              validRequest(request).pipe(Effect.flatMap((valid) => add(scope, valid))),
               (entry) =>
-                Deferred.await(entry.answer).pipe(
+                declineIfRevoked(scope, entry).pipe(
+                  Effect.andThen(Deferred.await(entry.answer)),
                   Effect.tap((answer) =>
                     Effect.logInfo('Approval answered', { id: entry.pending.id, answer })
                   ),

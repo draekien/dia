@@ -47,9 +47,9 @@ export interface ToolRegistration {
  *   answer. Pass the scope the tool handler received. It succeeds with 'declined' when the user
  *   declines, when the token `scope` was granted under is revoked (the run ended), or when
  *   `dia-tools` closes; at once when that has already happened. It has no timeout. Interrupting
- *   it withdraws the request. A request through a server from `mcpServer` is under no token: it
- *   ends when it is answered, when its call is cancelled or its server closes, or when
- *   `dia-tools` closes.
+ *   it withdraws the request. It dies when `request` has an empty `title`. A request through a
+ *   server from `mcpServer` is under no token: it ends when it is answered, when its call is
+ *   cancelled or its server closes, or when `dia-tools` closes.
  */
 export interface Tools {
   readonly register: (

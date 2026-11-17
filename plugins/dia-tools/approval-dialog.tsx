@@ -67,7 +67,7 @@ function Approval({
   const [busy, setBusy] = useState(false)
   const answer = (choice: ApprovalAnswer) => {
     setBusy(true)
-    void Effect.runPromise(answerApproval(ctx, approval.id, choice)).finally(() => setBusy(false))
+    void Effect.runPromiseExit(answerApproval(ctx, approval.id, choice)).then(() => setBusy(false))
   }
   return (
     <AlertDialogContent className="sm:max-w-2xl">
