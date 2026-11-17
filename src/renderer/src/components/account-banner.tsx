@@ -37,20 +37,20 @@ function BannerContent({
         </>
       )
     case 'LimitResetBanner':
-    case 'LimitUnknownBanner':
+    case 'LimitUnknownBanner': {
+      const lead =
+        banner._tag === 'LimitResetBanner'
+          ? 'Usage limit has reset'
+          : 'Usage limit reached, reset time unknown'
       return (
         <>
-          <span>
-            {banner._tag === 'LimitResetBanner'
-              ? 'Usage limit has reset'
-              : 'Usage limit reached, reset time unknown'}
-            , {agents(banner.paneIds.length)} waiting
-          </span>
+          <span>{`${lead}, ${agents(banner.paneIds.length)} waiting`}</span>
           <Button variant="ghost" size="xs" onClick={() => onResume(banner.paneIds)}>
             Resume all
           </Button>
         </>
       )
+    }
     case 'LimitWaitingBanner':
       return (
         <span>
