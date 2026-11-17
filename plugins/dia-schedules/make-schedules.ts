@@ -1,4 +1,4 @@
-import { ActivityRunFailed, LEGACY_ADAPTER_ID, type PluginActivities } from '@dia/plugin'
+import { ActivityRunFailed, type PluginActivities } from '@dia/plugin'
 import type { RunQueue } from '@dia-plugin/dia-run-queue/queue'
 import {
   Cause,
@@ -23,8 +23,15 @@ export interface SchedulesDeps {
   readonly queue: SubscriptionRef.SubscriptionRef<Option.Option<RunQueue>>
 }
 
+const startOptionsOf = ({ selection, ...rest }: Schedule['run']) => ({
+  ...rest,
+  model: selection.model,
+  backend: selection.backend
+})
+
 const DefinitionJson = Schema.fromJsonString(Schedule)
 const encodeDefinition = Schema.encodeSync(DefinitionJson)
+const decodeDefinition = Schema.decodeUnknownOption(DefinitionJson)
 const decodeRow = Schema.decodeUnknownOption(
   Schema.Struct({ id: Schema.String, definition_json: DefinitionJson, fired_at: Schema.Finite })
 )
@@ -61,7 +68,7 @@ export const makeSchedules = Effect.fnUntraced(function* (deps: SchedulesDeps) {
           const exit = yield* Effect.exit(
             restore(
               queue.enqueue({
-                run: { ...schedule.run, backend: LEGACY_ADAPTER_ID },
+                run: startOptionsOf(schedule.run),
                 priority: schedule.priority,
                 key: schedule.key
               })
@@ -158,7 +165,11 @@ export const makeSchedules = Effect.fnUntraced(function* (deps: SchedulesDeps) {
         const stored = yield* sql<{
           readonly definition_json: string
         }>`SELECT definition_json FROM schedules WHERE id = ${schedule.id}`.pipe(Effect.orDie)
-        if (stored[0]?.definition_json === definition) {
+        const storedDefinition = Option.flatMap(
+          Option.fromNullishOr(stored[0]?.definition_json),
+          decodeDefinition
+        ).pipe(Option.map(encodeDefinition))
+        if (Option.exists(storedDefinition, (previous) => previous === definition)) {
           yield* Effect.logInfo('Schedule unchanged', { schedule: schedule.id })
           return
         }

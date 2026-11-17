@@ -43,7 +43,7 @@ const TEN_MINUTES = Duration.minutes(10)
 
 const run = (text: string): typeof ScheduledRun.Type => ({
   cwd: 'C:/work',
-  model: 'haiku',
+  selection: { backend: 'dia-claude-code', model: 'haiku' },
   thinkingLevel: 'adaptive',
   permissionMode: 'default',
   text
@@ -132,7 +132,16 @@ describe('makeSchedules', () => {
       yield* advance(Duration.minutes(1))
       assert.deepStrictEqual(
         world.recording.entries.map((entry) => entry.run),
-        [{ ...run('Write the report'), backend: 'dia-claude-code' }]
+        [
+          {
+            cwd: 'C:/work',
+            model: 'haiku',
+            backend: 'dia-claude-code',
+            thinkingLevel: 'adaptive',
+            permissionMode: 'default',
+            text: 'Write the report'
+          }
+        ]
       )
     })
   )
@@ -368,5 +377,39 @@ describe('Schedule', () => {
         `${millis}`
       )
     }
+  })
+})
+
+describe('Schedule', () => {
+  const stored = {
+    id: 'test-report',
+    label: 'Report',
+    times: { _tag: 'Interval', interval: 600000 },
+    catchUp: 'skip',
+    run: {
+      cwd: 'C:/work',
+      model: 'haiku',
+      thinkingLevel: 'adaptive',
+      permissionMode: 'default',
+      text: 'Write the report'
+    }
+  }
+
+  it('decodes a stored run with a model as a selection on dia-claude-code', () => {
+    const decoded = Schema.decodeUnknownSync(Schedule)(stored)
+
+    assert.deepStrictEqual(decoded.run.selection, { backend: 'dia-claude-code', model: 'haiku' })
+  })
+
+  it('encodes a run with a selection in the new shape', () => {
+    const encoded = Schema.encodeSync(Schedule)(Schema.decodeUnknownSync(Schedule)(stored))
+
+    assert.deepStrictEqual(encoded.run, {
+      cwd: 'C:/work',
+      selection: { backend: 'dia-claude-code', model: 'haiku' },
+      thinkingLevel: 'adaptive',
+      permissionMode: 'default',
+      text: 'Write the report'
+    })
   })
 })
