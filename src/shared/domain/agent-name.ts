@@ -72,6 +72,21 @@ export const generateAgentName: Effect.Effect<AgentName> = Effect.gen(function* 
 })
 
 /**
+ * Whether `name` has the shape `generateAgentName` produces (`adjective-noun` from the two word
+ * lists). Use it to tell a name dia gave a tab from one a user typed.
+ */
+export const isGeneratedAgentName = (name: string): boolean => {
+  const [adjective, noun, ...rest] = name.split('-')
+  return (
+    rest.length === 0 &&
+    adjective !== undefined &&
+    noun !== undefined &&
+    (AGENT_NAME_ADJECTIVES as ReadonlyArray<string>).includes(adjective) &&
+    (AGENT_NAME_NOUNS as ReadonlyArray<string>).includes(noun)
+  )
+}
+
+/**
  * The agent name a `dia/<name>` worktree branch carries, for example `brave-otter` from
  * `dia/brave-otter`. `None` when `branch` is absent, lacks the `dia/` prefix, or the rest is not a
  * valid {@link AgentName}.
