@@ -66,13 +66,23 @@ const followBackend = (ctx: HostPluginContext) =>
         Ref.set(runs, Option.none())
       )
     )
+    const backendIds = yield* Ref.make(new Map<string, string>())
+    const backendIdOf = (runId: string, loadedRuns: Runs) =>
+      Effect.gen(function* () {
+        const known = (yield* Ref.get(backendIds)).get(runId)
+        if (known !== undefined) return known
+        const info = (yield* loadedRuns.list).find((candidate) => candidate.runId === runId)
+        if (info === undefined) return undefined
+        yield* Ref.update(backendIds, (ids) => new Map(ids).set(runId, info.backend))
+        return info.backend
+      })
     const adapterOf = (runId: string) =>
       Effect.gen(function* () {
         const loadedRuns = yield* Ref.get(runs)
         const loadedAdapters = yield* Ref.get(adapters)
         if (Option.isNone(loadedRuns) || Option.isNone(loadedAdapters)) return undefined
-        const info = (yield* loadedRuns.value.list).find((candidate) => candidate.runId === runId)
-        return info === undefined ? undefined : { id: info.backend, registry: loadedAdapters.value }
+        const id = yield* backendIdOf(runId, loadedRuns.value)
+        return id === undefined ? undefined : { id, registry: loadedAdapters.value }
       })
     const withBackend = <A>(
       runId: string,
