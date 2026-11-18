@@ -142,12 +142,16 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       Effect.map(Option.getOrElse((): ReadonlyArray<AgentAdapter> => []))
     )
     const backendOf = (id: string) =>
-      Effect.map(
-        currentAdapters,
-        (adapters) =>
-          adapters.find((adapter) => adapter.id === id)?.backend ??
-          unavailableBackend(notLoadedMessage(id))
-      )
+      Effect.gen(function* () {
+        const agentAdapters = yield* SubscriptionRef.get(providers.adapters)
+        const adapter = Option.isSome(agentAdapters)
+          ? yield* agentAdapters.value.get(id)
+          : Option.none<AgentAdapter>()
+        return Option.match(adapter, {
+          onNone: () => unavailableBackend(notLoadedMessage(id)),
+          onSome: (found) => found.backend
+        })
+      })
     const modelsOf = (id: string) =>
       followModels(providers.adapters, id).pipe(
         Stream.take(1),

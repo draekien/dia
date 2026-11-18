@@ -707,19 +707,22 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
     changes: Stream.fromPubSub(changes),
     discoverSessions: (directory) =>
       Effect.flatMap(deps.adapters, (adapters) =>
-        Effect.forEach(adapters, (adapter) =>
-          adapter.backend.discoverSessions === undefined
-            ? Effect.logDebug('The agent adapter cannot discover sessions', {
-                adapter: adapter.id,
-                directory
-              }).pipe(Effect.as([]))
-            : adapter.backend
-                .discoverSessions(directory)
-                .pipe(
-                  Effect.map((sessions) =>
-                    sessions.map((session) => ({ ...session, backend: adapter.id }))
-                  )
-                )
+        Effect.forEach(
+          adapters,
+          (adapter) =>
+            adapter.backend.discoverSessions === undefined
+              ? Effect.logDebug('The agent adapter cannot discover sessions', {
+                  adapter: adapter.id,
+                  directory
+                }).pipe(Effect.as([]))
+              : adapter.backend
+                  .discoverSessions(directory)
+                  .pipe(
+                    Effect.map((sessions) =>
+                      sessions.map((session) => ({ ...session, backend: adapter.id }))
+                    )
+                  ),
+          { concurrency: 'unbounded' }
         ).pipe(Effect.map((found) => found.flat()))
       )
   }
