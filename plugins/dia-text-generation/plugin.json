@@ -1,0 +1,9 @@
+{
+  "name": "dia-text-generation",
+  "api": "0.0.46",
+  "category": "feature",
+  "host": "host.ts",
+  "renderer": "renderer.ts",
+  "load": "eager",
+  "exports": ["calls.ts"]
+}

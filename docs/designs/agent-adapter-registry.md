@@ -188,7 +188,7 @@ Numbered items map to the confirmed success criteria 1–6.
 
 **The registry sets the id** — taking the id from `ctx.name` makes an adapter registered under another plugin's name unrepresentable.
 
-**One capability field until a second exists** — `backend: AgentBackend` is required now. The text generation PR changes the shape to optional capabilities with at least one present, when the second capability is known (AHA).
+**One capability field until a second exists** — `backend: AgentBackend` is required now. The text generation PR adds an optional `textGeneration` and keeps `backend` required until an adapter without sessions exists (AHA; `docs/designs/text-generation.md`).
 
 **Adapter facts move to the registry; run choices stay in runs** — models, status, health, install path and permission modes describe an adapter, so `dia-agent-adapters` serves them and owns their feeds. Favourites and defaults describe what new runs use and stay in `dia-runs`' table, which avoids moving stored data between plugins. `GetSlashCommands` stays in `dia-runs` because it needs session additions.
 

@@ -1,12 +1,34 @@
-import { type ModelCatalogState, ServiceKey } from '@dia/plugin'
-import { type Effect, type Option, Predicate, type Scope, Stream } from 'effect'
+import { type EffortLevel, type ModelCatalogState, ServiceKey } from '@dia/plugin'
+import { Data, type Effect, type Option, Predicate, type Scope, Stream } from 'effect'
 import type { AgentBackend } from './backend'
+
+/** One text generation call: the model follows `instructions` and answers `input` with text only. */
+export interface TextGenerationRequest {
+  readonly instructions: string
+  readonly input: string
+  readonly model: string
+  readonly effort: EffortLevel
+}
+
+/** The call failed or answered with no text; `reason` is a sentence for the log. */
+export class TextGenerationFailed extends Data.TaggedError('TextGenerationFailed')<{
+  readonly reason: string
+}> {}
+
+/** An adapter's one-shot text generation: no tools, no stored session. Interrupting `generate` stops the call. */
+export interface TextGeneration {
+  /** The model a caller uses when it has no model of this adapter saved. */
+  readonly defaultModel: string
+  readonly generate: (request: TextGenerationRequest) => Effect.Effect<string, TextGenerationFailed>
+}
 
 /** One registered adapter as consumers see it. `id` is the registering plugin's name, set by the registry. */
 export interface AgentAdapter {
   readonly id: string
   readonly label: string
   readonly backend: AgentBackend
+  /** The adapter's text generation, or none when it registered without one. */
+  readonly textGeneration: Option.Option<TextGeneration>
 }
 
 /**
@@ -18,11 +40,18 @@ export interface AgentAdapters {
    * Registers the calling plugin (`ctx.name`) as an adapter until the calling scope closes. A
    * registration under a name already registered replaces it and logs a warning (a reload
    * overlaps); closing the replaced registration's scope afterwards leaves the new one. A
-   * `backend` that is not an {@link AgentBackend} registers nothing and logs an error.
+   * `backend` that is not an {@link AgentBackend} registers nothing and logs an error. A
+   * `textGeneration` is offered to `adapters` readers with the registration and is replaced and
+   * removed with it. A `textGeneration` without a non-empty `defaultModel` and a `generate`
+   * function registers the adapter without text generation and logs an error naming `ctx.name`.
    */
   readonly register: (
     ctx: { readonly name: string },
-    adapter: { readonly label: string; readonly backend: AgentBackend }
+    adapter: {
+      readonly label: string
+      readonly backend: AgentBackend
+      readonly textGeneration?: TextGeneration
+    }
   ) => Effect.Effect<void, never, Scope.Scope>
   /** The registered adapters ordered by `label`, then `id`: the current list, then every change. */
   readonly adapters: Stream.Stream<ReadonlyArray<AgentAdapter>>

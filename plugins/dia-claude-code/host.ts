@@ -10,6 +10,7 @@ import { makeClaudeHealth } from './health'
 import { makeModelCatalog, probeModels } from './model-catalog'
 import { logShadowedCanUseToolWarnings } from './sdk-warnings'
 import { claudeCodeSources } from './skills'
+import { makeClaudeCodeTextGeneration } from './text-generation'
 import { claudeProjectsDir, moveTranscriptFolders, sessionCwds } from './transcript-folders'
 
 const setup: PluginSetup<HostPluginContext> = (ctx) =>
@@ -26,8 +27,13 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     const catalog = yield* makeModelCatalog(ctx, probeModels(install))
     const health = yield* makeClaudeHealth(install, ctx.dataDir, catalog.refreshModels)
     const backend = makeClaudeCodeBackend({ catalog, install, health })
+    const textGeneration = makeClaudeCodeTextGeneration({
+      install,
+      dataDir: ctx.dataDir,
+      catalog
+    })
     yield* ctx.whenProvided([AgentAdaptersKey], ({ agentAdapters }) =>
-      agentAdapters.register(ctx, { label: 'Claude Code', backend })
+      agentAdapters.register(ctx, { label: 'Claude Code', backend, textGeneration })
     )
     yield* Effect.forkScoped(health.check)
     for (const source of yield* claudeCodeSources(os.homedir())) {

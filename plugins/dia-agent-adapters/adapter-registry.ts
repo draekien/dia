@@ -5,20 +5,32 @@ import {
   ModelsLoading,
   type PermissionMode
 } from '@dia/plugin'
-import { Clock, Effect, Exit, Option, Scope, Stream, SubscriptionRef } from 'effect'
+import { Clock, Effect, Exit, Option, Predicate, Scope, Stream, SubscriptionRef } from 'effect'
 import {
   type AgentBackend,
   agentBackendProblems,
   isAgentBackend,
   unavailableBackend
 } from './backend'
-import { type AgentAdapter, type AgentAdapters, notLoadedMessage } from './registry'
+import {
+  type AgentAdapter,
+  type AgentAdapters,
+  notLoadedMessage,
+  type TextGeneration
+} from './registry'
 
 interface Registration {
   readonly adapter: AgentAdapter
   readonly models: SubscriptionRef.SubscriptionRef<ModelCatalogSnapshot>
   readonly status: SubscriptionRef.SubscriptionRef<AdapterStatusSnapshot>
 }
+
+const isTextGeneration = (value: unknown): value is TextGeneration =>
+  Predicate.hasProperty(value, 'defaultModel') &&
+  Predicate.isString(value.defaultModel) &&
+  value.defaultModel !== '' &&
+  Predicate.hasProperty(value, 'generate') &&
+  Predicate.isFunction(value.generate)
 
 const nextRevision = (previous: number, now: number) => Math.max(previous + 1, now)
 
@@ -91,7 +103,7 @@ export const makeAgentAdapterRegistry = Effect.fn('AgentAdapterRegistry.make')(f
     return { adapter, models, status } satisfies Registration
   })
 
-  const register: AgentAdapters['register'] = (ctx, { label, backend }) =>
+  const register: AgentAdapters['register'] = (ctx, { label, backend, textGeneration }) =>
     Effect.gen(function* () {
       if (!isAgentBackend(backend)) {
         return yield* Effect.logError('An adapter was not registered; its backend is invalid', {
@@ -99,10 +111,22 @@ export const makeAgentAdapterRegistry = Effect.fn('AgentAdapterRegistry.make')(f
           problems: agentBackendProblems(Option.some(backend))
         })
       }
+      const validTextGeneration = Option.fromNullishOr(textGeneration).pipe(
+        Option.filter(isTextGeneration)
+      )
+      if (textGeneration !== undefined && Option.isNone(validTextGeneration)) {
+        yield* Effect.logError(
+          'An adapter was registered without text generation; its textGeneration is invalid',
+          { adapter: ctx.name }
+        )
+      }
       yield* Effect.acquireRelease(
         Effect.gen(function* () {
           const feedScope = yield* Scope.make()
-          const registration = yield* startRegistration({ id: ctx.name, label, backend }, feedScope)
+          const registration = yield* startRegistration(
+            { id: ctx.name, label, backend, textGeneration: validTextGeneration },
+            feedScope
+          )
           const replaced = yield* SubscriptionRef.modify(registrations, (current) => [
             current.get(ctx.name),
             new Map(current).set(ctx.name, registration)
@@ -195,7 +219,11 @@ export const makeAgentAdapterRegistry = Effect.fn('AgentAdapterRegistry.make')(f
   return {
     service,
     summaries: Stream.map(registered, (adapters) =>
-      adapters.map(({ id, label }) => ({ id, label }))
+      adapters.map(({ id, label, textGeneration }) => ({
+        id,
+        label,
+        textGeneration: Option.isSome(textGeneration)
+      }))
     ),
     models: {
       current: (id: string) => first(modelSnapshots(id)),

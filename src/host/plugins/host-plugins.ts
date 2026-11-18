@@ -1,3 +1,4 @@
+import { TabNotFoundError } from '@shared/domain/project'
 import { PluginStatusChanged } from '@shared/ipc/contract'
 import { PLUGIN_MEMORY_LIMIT, type PluginInfo } from '@shared/plugin/manifest'
 import {
@@ -12,7 +13,9 @@ import {
   Effect,
   FileSystem,
   Layer,
+  Option,
   Path,
+  Ref,
   SubscriptionRef
 } from 'effect'
 import type { Rpc } from 'effect/rpc'
@@ -21,6 +24,7 @@ import { BackgroundActivities } from '../services/background-activities'
 import { makePluginDatabase } from '../services/database'
 import { EventHub } from '../services/event-hub'
 import { PathMoves, type PathsMovedHandler } from '../services/path-moves'
+import { TabRenamer } from '../services/tab-renamer'
 import { WorkspaceFeed } from '../services/workspace-feed'
 import { type DiaTool, makePluginTools } from '../session/dia-tools'
 import { makeDataMigrations } from './data-migrations'
@@ -47,13 +51,13 @@ export class HostPlugins extends Context.Service<HostPlugins, PluginRegistry>()(
  * opens `<dataDir>/data.db` only when the plugin calls it; `pluginsSettled`, which succeeds once `start` has settled every eager plugin; `workspace`, following
  * {@link WorkspaceFeed}; `window`, backed by {@link AppWindow}; `pluginTools`, the `plugin_*` tools over
  * this registry and `PluginSources`; and `onPathsMoved`, which subscribes the plugin to
- * {@link PathMoves} under its name. Before a plugin loads, its manifest's data migrations run
+ * {@link PathMoves} under its name; and `renameTab`, which renames a tab through {@link TabRenamer}. Before a plugin loads, its manifest's data migrations run
  * (see `makeDataMigrations`). Every plugin state
  * change is published to the hub as a `PluginStatusChanged` event. `pluginApiPath` is the
  * absolute path of the built module that `import '@dia/plugin'` resolves to inside a plugin
  * (`out/main/plugin-api.js`). Build the layer once per process, because it installs a
  * process-wide resolution hook. Requires `PluginSources`, `EventHub`, `BackgroundActivities`,
- * `WorkspaceFeed`, `AppWindow`, `PathMoves`, `FileSystem` and `Path`.
+ * `WorkspaceFeed`, `AppWindow`, `PathMoves`, `TabRenamer`, `FileSystem` and `Path`.
  */
 export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string) =>
   Layer.effect(
@@ -68,6 +72,7 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
       const path = yield* Path.Path
       const pluginApiUrl = yield* path.toFileUrl(pluginApiPath).pipe(Effect.orDie)
       const pathMoves = yield* PathMoves
+      const tabRenamer = yield* TabRenamer
       const modules = makePluginModules(pluginApiUrl.href)
       const migrate = yield* makeDataMigrations(userDataPath, modules.importEntry)
       const loader = yield* makeHostPluginLoader(modules, migrate)
@@ -93,6 +98,19 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
               ...services,
               events: hub.subscribe({}),
               workspace: SubscriptionRef.changes(workspaceFeed),
+              renameTab: (paneId, name) =>
+                Effect.gen(function* () {
+                  yield* Effect.logInfo('Plugin renames a tab', {
+                    plugin: services.name,
+                    paneId,
+                    name
+                  })
+                  const rename = yield* Ref.get(tabRenamer)
+                  if (Option.isNone(rename)) {
+                    return yield* new TabNotFoundError({ paneId })
+                  }
+                  yield* rename.value(paneId, name)
+                }),
               window: { attended: appWindow.attended, notify: appWindow.notify },
               pluginTools: (
                 turnEnded: (runId: string) => Effect.Effect<void>

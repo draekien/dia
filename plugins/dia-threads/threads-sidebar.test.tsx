@@ -177,6 +177,50 @@ describe('ThreadsSidebar expanded', () => {
 })
 
 describe('ThreadsSidebar row menu', () => {
+  const menuEntry = (
+    id: string,
+    label: string,
+    onSelect: (thread: { paneId: string }) => void
+  ) => ({
+    id,
+    order: 1,
+    label,
+    onSelect,
+    key: { plugin: 'dia-text-generation', id }
+  })
+
+  it('lists a contributed entry after Rename and calls it with the paneId of the row', () => {
+    const onSelect = vi.fn()
+    state.lists.set('threads.row-menu', [menuEntry('regenerate', 'Regenerate title', onSelect)])
+    render(<Harness initialOpen />)
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /^docs, / }))
+    const labels = screen.getAllByRole('menuitem').map((item) => item.textContent)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Regenerate title' }))
+
+    expect([labels.slice(0, 3), onSelect.mock.calls]).toEqual([
+      ['Show', 'RenameF2', 'Regenerate title'],
+      [[{ paneId: paneId(3) }]]
+    ])
+  })
+
+  it('lists contributed entries in the order the list gives them', () => {
+    state.lists.set('threads.row-menu', [
+      menuEntry('first', 'First entry', vi.fn()),
+      menuEntry('second', 'Second entry', vi.fn())
+    ])
+    render(<Harness initialOpen />)
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: /^docs, / }))
+
+    expect(
+      screen
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent)
+        .slice(2, 4)
+    ).toEqual(['First entry', 'Second entry'])
+  })
+
   it('archives an agent without a worktree from the row menu without asking', () => {
     const bridge = { archiveTab: vi.fn(async () => null) }
     Object.assign(window, { dia: bridge })

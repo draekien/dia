@@ -28,6 +28,7 @@ import {
   Path,
   PlatformError,
   Queue,
+  Ref,
   Result,
   Stream,
   SubscriptionRef
@@ -46,6 +47,7 @@ import {
   type RunSpec,
   RunTabRequested
 } from './runs-seam'
+import { TabRenamer, TabRenamerLive } from './tab-renamer'
 import { WorkspaceFeed, WorkspaceFeedLive } from './workspace-feed'
 import { type WorkspaceLoadError, WorkspaceStore, WorkspaceWriteError } from './workspace-store'
 import {
@@ -68,7 +70,7 @@ interface Harness {
   readonly requests: Array<RunSpec>
   readonly existing: Set<string>
   readonly emit: (change: RunChange) => Effect.Effect<void>
-  readonly layer: Layer.Layer<PaneWorkspace | WorkspaceFeed, WorkspaceLoadError>
+  readonly layer: Layer.Layer<PaneWorkspace | WorkspaceFeed | TabRenamer, WorkspaceLoadError>
 }
 
 interface HarnessOptions {
@@ -236,9 +238,10 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
       runEvents,
       fs,
       NodePath.layer,
-      NodeCrypto.layer
+      NodeCrypto.layer,
+      TabRenamerLive
     )
-  ).pipe(Layer.provideMerge(WorkspaceFeedLive))
+  ).pipe(Layer.provideMerge(Layer.merge(WorkspaceFeedLive, TabRenamerLive)))
   return { log, saves, published, requests, existing, emit, layer }
 }
 
@@ -287,8 +290,10 @@ const request = (overrides: Partial<CreateTabRequest> = {}): CreateTabRequest =>
 
 const ignore = (_event: IpcEvent): Effect.Effect<void> => Effect.void
 
-const run = <A, E>(harness: Harness, body: Effect.Effect<A, E, PaneWorkspace | WorkspaceFeed>) =>
-  body.pipe(Effect.provide(harness.layer))
+const run = <A, E>(
+  harness: Harness,
+  body: Effect.Effect<A, E, PaneWorkspace | WorkspaceFeed | TabRenamer>
+) => body.pipe(Effect.provide(harness.layer))
 
 const current = Effect.flatMap(PaneWorkspace, (workspace) => workspace.getWorkspace)
 
@@ -1060,6 +1065,36 @@ describe('PaneWorkspace tab changes', () => {
       )
 
       assert.strictEqual(workspace.projects[1].tabs[0].name, 'quiet-heron')
+    })
+  )
+
+  it.effect('fills the tab renamer with a rename that changes the workspace', () =>
+    Effect.gen(function* () {
+      const workspace = yield* run(
+        makeHarness({ persisted: twoProjects() }),
+        Effect.gen(function* () {
+          const rename = Option.getOrThrow(yield* Ref.get(yield* TabRenamer))
+          yield* rename(PANE_B, AgentName.make('quiet-heron'))
+          return yield* current
+        })
+      )
+
+      assert.strictEqual(workspace.projects[1].tabs[0].name, 'quiet-heron')
+    })
+  )
+
+  it.effect('fails the filled tab renamer with TabNotFoundError for an unknown tab', () =>
+    Effect.gen(function* () {
+      const error = yield* run(
+        makeHarness({ persisted: twoProjects() }),
+        Effect.gen(function* () {
+          const rename = Option.getOrThrow(yield* Ref.get(yield* TabRenamer))
+          return yield* Effect.flip(rename(PANE_NEW, AgentName.make('quiet-heron')))
+        })
+      )
+
+      assert.strictEqual(error._tag, 'TabNotFoundError')
+      assert.strictEqual(error.paneId, PANE_NEW)
     })
   )
 

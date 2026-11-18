@@ -27,7 +27,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0016](0016-electron-builder-distribution-and-auto-update.md) | Distribute dia as an electron-builder NSIS installer with GitHub-backed auto-update | accepted, amended by ADR-0044 |
 | [0017](0017-frameless-window-with-native-overlay-controls.md) | Replace the native window frame with a custom titlebar and native overlay controls | accepted, header strip and colour sync superseded by ADR-0038 |
 | [0018](0018-transcript-anchored-file-checkpointing-with-conversation-fork.md) | Transcript-anchored file checkpointing that forks the conversation on rewind | accepted; its rewind-control sentence superseded by ADR-0045 |
-| [0019](0019-thin-plugin-kernel-on-effect.md) | Build dia as a thin plugin kernel on Effect, with every feature as a plugin | accepted, amended by ADR-0029, ADR-0059, ADR-0065, ADR-0069 and ADR-0075; kernel row 1 superseded by ADR-0074 |
+| [0019](0019-thin-plugin-kernel-on-effect.md) | Build dia as a thin plugin kernel on Effect, with every feature as a plugin | accepted, amended by ADR-0029, ADR-0059, ADR-0065, ADR-0069, ADR-0075 and ADR-0087; kernel row 1 superseded by ADR-0074 |
 | [0020](0020-plugin-source-loading-and-hot-reload.md) | Load first-party plugins from source in the dia repo, with per-plugin worktree overrides and hot reload | accepted, amended by ADR-0059 |
 | [0021](0021-single-host-process-for-all-panes.md) | Run every pane's agent session and all non-UI plugins in one Host process | accepted |
 | [0022](0022-renderer-to-host-over-local-websocket.md) | Connect the renderer to the Host over an authenticated localhost WebSocket | accepted, amended by ADR-0051, ADR-0052 and ADR-0074 |
@@ -93,7 +93,8 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0083](0083-new-thread-page-and-drafts.md) | One new-thread page for every target, with drafts kept in renderer `localStorage` and plugin targets in `ThreadTargetsSlot` | accepted |
 | [0084](0084-manual-plugins-and-renderer-follows-host.md) | Plugins that stay unloaded until the user loads them, and renderer entries that follow the Host | accepted |
 | [0085](0085-dia-tools-asks-the-user-to-approve-a-tool-call.md) | `dia-tools` lets a tool handler ask the user to approve a call, in dia's window, whatever the session's permission mode | accepted |
-| [0086](0086-agent-adapter-registry.md) | Agent adapters register with `dia-agent-adapters`, every model choice names its adapter, and a run keeps the adapter it started on | accepted |
+| [0086](0086-agent-adapter-registry.md) | Agent adapters register with `dia-agent-adapters`, every model choice names its adapter, and a run keeps the adapter it started on | accepted, amended by ADR-0087 |
+| [0087](0087-host-plugins-rename-tabs.md) | A Host plugin renames a tab through `ctx.renameTab`, and agent adapters offer one-shot text generation | accepted |
 
 ## Adding a new ADR
 

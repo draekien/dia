@@ -7,6 +7,7 @@ import { bypassAvailable } from './bypass'
 const adapter = (id: string, disabled: ReadonlyArray<'bypassPermissions'>): AgentAdapter => ({
   id,
   label: id,
+  textGeneration: Option.none(),
   backend: {
     ...unavailableBackend('fake'),
     disabledPermissionModes: () => Effect.succeed(disabled)

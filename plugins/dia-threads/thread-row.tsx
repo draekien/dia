@@ -14,6 +14,7 @@ import {
   SidebarMenuItem,
   StatusIndicator,
   statusLabel,
+  useList,
   useSidebar
 } from '@dia/renderer-plugin'
 import type { PermissionMode } from '@shared/domain/pane'
@@ -23,6 +24,7 @@ import { Option, Schema } from 'effect'
 import { useState } from 'react'
 import { RETIREMENT_COPY, type Retirement, useRetirement } from './background-retirement'
 import { type OverviewRow, rowKey } from './overview'
+import { ThreadRowMenuSlot } from './slots'
 
 const decodeName = Schema.decodeUnknownOption(AgentName)
 
@@ -127,6 +129,7 @@ export function ThreadRow({
 }: AgentRowProps) {
   const collapsed = useSidebar().state === 'collapsed'
   const retirement = useRetirement(row.paneId)
+  const menuEntries = useList(ThreadRowMenuSlot)
   const line =
     retirement === null
       ? secondLine(row.summary)
@@ -209,6 +212,21 @@ export function ThreadRow({
               <ContextMenuShortcut>F2</ContextMenuShortcut>
             </ContextMenuItem>
           </ContextMenuGroup>
+          {menuEntries.length > 0 && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuGroup>
+                {menuEntries.map((entry) => (
+                  <ContextMenuItem
+                    key={`${entry.key.plugin}/${entry.key.id}`}
+                    onClick={() => entry.onSelect({ paneId: row.paneId })}
+                  >
+                    {entry.label}
+                  </ContextMenuItem>
+                ))}
+              </ContextMenuGroup>
+            </>
+          )}
           {retirement === null && (
             <>
               <ContextMenuSeparator />

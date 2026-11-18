@@ -1,6 +1,13 @@
-import { Option } from 'effect'
+import { Effect, Option, Random } from 'effect'
 import { describe, expect, it } from 'vitest'
-import { agentNameFromBranch, agentNameFromTitle } from './agent-name'
+import {
+  AGENT_NAME_ADJECTIVES,
+  AGENT_NAME_NOUNS,
+  agentNameFromBranch,
+  agentNameFromTitle,
+  generateAgentName,
+  isGeneratedAgentName
+} from './agent-name'
 
 describe('agentNameFromBranch', () => {
   it('takes the name after the dia/ prefix', () => {
@@ -53,5 +60,35 @@ describe('agentNameFromTitle', () => {
 
   it('gives no name for a blank title', () => {
     expect(agentNameFromTitle('   ')).toEqual(Option.none())
+  })
+})
+
+describe('isGeneratedAgentName', () => {
+  it('accepts every adjective-noun pair the word lists can produce', () => {
+    const rejected = AGENT_NAME_ADJECTIVES.flatMap((adjective) =>
+      AGENT_NAME_NOUNS.map((noun) => `${adjective}-${noun}`)
+    ).filter((name) => !isGeneratedAgentName(name))
+
+    expect(rejected).toEqual([])
+  })
+
+  it.each([1, 2, 3, 42])('accepts the name generateAgentName produces under seed %s', (seed) => {
+    const name = Effect.runSync(generateAgentName.pipe(Random.withSeed(seed)))
+
+    expect(isGeneratedAgentName(name)).toBe(true)
+  })
+
+  it.each([
+    'Fix login',
+    'brave',
+    'brave-otter-x',
+    'Brave-Otter',
+    'otter-brave',
+    '',
+    'brave-',
+    '-otter',
+    'brave-ottr'
+  ])('rejects the typed name %j', (name) => {
+    expect(isGeneratedAgentName(name)).toBe(false)
   })
 })

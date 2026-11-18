@@ -43,6 +43,7 @@ export const fakeChoices = (
           ? Option.some({
               id,
               label: id,
+              textGeneration: Option.none(),
               backend: {
                 ...unavailableBackend('fake'),
                 disabledPermissionModes: () => Effect.succeed(disabled)
