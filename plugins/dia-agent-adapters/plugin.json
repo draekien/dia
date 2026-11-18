@@ -1,6 +1,6 @@
 {
   "name": "dia-agent-adapters",
-  "api": "0.0.45",
+  "api": "0.0.46",
   "category": "feature",
   "host": "host.ts",
   "renderer": "renderer.ts",
