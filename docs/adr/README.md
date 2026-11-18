@@ -93,7 +93,8 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0083](0083-new-thread-page-and-drafts.md) | One new-thread page for every target, with drafts kept in renderer `localStorage` and plugin targets in `ThreadTargetsSlot` | accepted |
 | [0084](0084-manual-plugins-and-renderer-follows-host.md) | Plugins that stay unloaded until the user loads them, and renderer entries that follow the Host | accepted |
 | [0085](0085-dia-tools-asks-the-user-to-approve-a-tool-call.md) | `dia-tools` lets a tool handler ask the user to approve a call, in dia's window, whatever the session's permission mode | accepted |
-| [0086](0086-agent-adapter-registry.md) | Agent adapters register with `dia-agent-adapters`, every model choice names its adapter, and a run keeps the adapter it started on | accepted |
+| [0086](0086-agent-adapter-registry.md) | Agent adapters register with `dia-agent-adapters`, every model choice names its adapter, and a run keeps the adapter it started on | accepted, amended by ADR-0087 |
+| [0087](0087-host-plugins-rename-tabs.md) | A Host plugin renames a tab through `ctx.renameTab`, and agent adapters offer one-shot text generation | accepted |
 
 ## Adding a new ADR
 

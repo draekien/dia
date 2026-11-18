@@ -39,7 +39,7 @@ This ADR amends ADR-0065 (model preferences no longer belong to the plugin that 
 ### Consequences
 
 * Good, because a second adapter registers without changing `dia-runs`, `dia-org` or the kernel.
-* Good, because a consumer selects an adapter by id from one list, and the stacked text generation work adds a capability to the same registration.
+* Good, because a consumer selects an adapter by id from one list, and the stacked text generation work adds an optional `textGeneration` to the same registration (ADR-0087).
 * Bad, because the change reaches every plugin that starts a run, and the `CreateTab` RPC (`PROTOCOL_VERSION` bump).
 * Bad, because while an adapter is not registered its runs report `<id> is not loaded` with the plugin id, not the adapter's label: the label exists only in the registration.
 
