@@ -21,16 +21,16 @@ const effortOptions = (
   model: string,
   effort: EffortLevel
 ): ThinkingOptions =>
-  Option.match(state, {
-    onNone: () => DISABLED_THINKING,
-    onSome: (current) =>
+  Option.exists(
+    state,
+    (current) =>
       current._tag === 'Ready' &&
       current.models.some(
         (option) => option.value === model && option.effortLevels.includes(effort)
       )
-        ? thinkingOptions(effort)
-        : DISABLED_THINKING
-  })
+  )
+    ? thinkingOptions(effort)
+    : DISABLED_THINKING
 
 const readAnswer = (running: Query) =>
   Stream.fromAsyncIterable(running, (cause) =>
