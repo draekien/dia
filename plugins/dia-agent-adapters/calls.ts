@@ -13,8 +13,15 @@ import { Rpc } from 'effect/rpc'
  */
 const adapter = Schema.NonEmptyString
 
-/** One registered adapter as the renderer sees it: `id` is the plugin's name, `label` its display name. */
-export const AdapterSummary = Schema.Struct({ id: Schema.String, label: Schema.String })
+/**
+ * One registered adapter as the renderer sees it: `id` is the plugin's name, `label` its display
+ * name, `textGeneration` whether the adapter offers text generation.
+ */
+export const AdapterSummary = Schema.Struct({
+  id: Schema.String,
+  label: Schema.String,
+  textGeneration: Schema.Boolean
+})
 /** One registered adapter as the renderer sees it; see {@link AdapterSummary}. */
 export type AdapterSummary = typeof AdapterSummary.Type
 

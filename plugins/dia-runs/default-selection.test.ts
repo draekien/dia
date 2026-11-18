@@ -8,6 +8,7 @@ import { makeDefaultSelection } from './default-selection'
 const adapter = (id: string): AgentAdapter => ({
   id,
   label: id,
+  textGeneration: Option.none(),
   backend: unavailableBackend('fake')
 })
 

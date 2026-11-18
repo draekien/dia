@@ -123,7 +123,12 @@ const makeWorld = (
         Effect.sync(() => void logOrder.push(message._tag))
       )
   } as unknown as RunEvents
-  const adapters: Array<AgentAdapter> = registered.map((id) => ({ id, label: id, backend }))
+  const adapters: Array<AgentAdapter> = registered.map((id) => ({
+    id,
+    label: id,
+    backend,
+    textGeneration: Option.none()
+  }))
   const registry = makeRunRegistry({
     rows,
     backendOf: (id) =>
@@ -838,7 +843,12 @@ describe('run adapters', () => {
 
           yield* recover('adapter-a')
           const whileUnregistered = [world.sessions.length, yield* statusOf(rows, RUN)]
-          world.adapters.push({ id: 'adapter-b', label: 'B', backend: world.backend })
+          world.adapters.push({
+            id: 'adapter-b',
+            label: 'B',
+            backend: world.backend,
+            textGeneration: Option.none()
+          })
           yield* recover('adapter-b')
 
           assert.deepStrictEqual(
@@ -863,14 +873,21 @@ describe('run adapters', () => {
           {
             id: 'adapter-a',
             label: 'A',
+            textGeneration: Option.none(),
             backend: { ...world.backend, discoverSessions: found('s-a') }
           },
           {
             id: 'adapter-b',
             label: 'B',
+            textGeneration: Option.none(),
             backend: { ...world.backend, discoverSessions: found('s-b') }
           },
-          { id: 'adapter-c', label: 'C', backend: world.backend }
+          {
+            id: 'adapter-c',
+            label: 'C',
+            backend: world.backend,
+            textGeneration: Option.none()
+          }
         )
         const { runs } = yield* world.registry
 

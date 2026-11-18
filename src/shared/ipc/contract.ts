@@ -753,10 +753,11 @@ export interface ModelApi {
   onChanged(adapter: string, listener: (snapshot: ModelCatalogSnapshotJson) => void): () => void
 }
 
-/** One registered agent adapter as `window.dia.adapters` delivers it: `id` is the adapter plugin's name, `label` its display name. */
+/** One registered agent adapter as `window.dia.adapters` delivers it: `id` is the adapter plugin's name, `label` its display name, `textGeneration` whether it offers text generation. */
 export interface AdapterSummaryJson {
   readonly id: string
   readonly label: string
+  readonly textGeneration: boolean
 }
 
 /** The registered agent adapters of `window.dia.adapters`, served by the Host. */

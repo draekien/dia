@@ -3,7 +3,7 @@ import { assert, describe, it } from '@effect/vitest'
 import { Effect, Exit, Option, Scope, Stream } from 'effect'
 import { makeAgentAdapterRegistry } from './adapter-registry'
 import { type AgentBackend, unavailableBackend } from './backend'
-import { isAgentAdapters } from './registry'
+import { isAgentAdapters, type TextGeneration } from './registry'
 
 const backendReporting = (message: string): AgentBackend => ({
   ...unavailableBackend('unused'),
@@ -104,6 +104,76 @@ describe('agent adapter registry', () => {
 
       assert.deepStrictEqual(yield* service.get('broken'), Option.none())
       assert.deepStrictEqual(yield* current(service.adapters), [])
+    }).pipe(Effect.scoped)
+  )
+
+  const textGeneration: TextGeneration = {
+    defaultModel: 'haiku',
+    generate: () => Effect.succeed('title')
+  }
+
+  it.effect('offers a registered textGeneration to readers and summarises it as true', () =>
+    Effect.gen(function* () {
+      const { service, summaries } = yield* makeAgentAdapterRegistry()
+
+      yield* service.register(
+        { name: 'with' },
+        { label: 'With', backend: backendReporting('x'), textGeneration }
+      )
+
+      const found = yield* service.get('with')
+      assert.deepStrictEqual(
+        Option.map(found, (adapter) => adapter.textGeneration),
+        Option.some(Option.some(textGeneration))
+      )
+      assert.deepStrictEqual(yield* current(summaries), [
+        { id: 'with', label: 'With', textGeneration: true }
+      ])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect('registers an adapter without textGeneration as having none', () =>
+    Effect.gen(function* () {
+      const { service, summaries } = yield* makeAgentAdapterRegistry()
+
+      yield* service.register(
+        { name: 'without' },
+        { label: 'Without', backend: backendReporting('x') }
+      )
+
+      const found = yield* service.get('without')
+      assert.deepStrictEqual(
+        Option.map(found, (adapter) => adapter.textGeneration),
+        Option.some(Option.none())
+      )
+      assert.deepStrictEqual(yield* current(summaries), [
+        { id: 'without', label: 'Without', textGeneration: false }
+      ])
+    }).pipe(Effect.scoped)
+  )
+
+  it.effect.each([
+    ['an empty defaultModel', { defaultModel: '', generate: textGeneration.generate }],
+    ['a missing generate', { defaultModel: 'haiku' }],
+    ['a non-function generate', { defaultModel: 'haiku', generate: 'x' }],
+    ['a non-string defaultModel', { defaultModel: 1, generate: textGeneration.generate }]
+  ])('registers the adapter without textGeneration for %s', ([, invalid]) =>
+    Effect.gen(function* () {
+      const { service, summaries } = yield* makeAgentAdapterRegistry()
+
+      yield* service.register(
+        { name: 'bad' },
+        { label: 'Bad', backend: backendReporting('x'), textGeneration: invalid as never }
+      )
+
+      const found = yield* service.get('bad')
+      assert.deepStrictEqual(
+        Option.map(found, (adapter) => adapter.textGeneration),
+        Option.some(Option.none())
+      )
+      assert.deepStrictEqual(yield* current(summaries), [
+        { id: 'bad', label: 'Bad', textGeneration: false }
+      ])
     }).pipe(Effect.scoped)
   )
 
