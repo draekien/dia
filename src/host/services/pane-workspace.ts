@@ -66,6 +66,7 @@ import { probeProject } from './project-directory'
 import { RunEventLog } from './run-event-log'
 import { RunsClient } from './runs-client'
 import type { DiscoveredSession, RunChange, RunSpec, RunsNotLoadedError } from './runs-seam'
+import { TabRenamer } from './tab-renamer'
 import { WorkspaceFeed } from './workspace-feed'
 import { WorkspaceStore } from './workspace-store'
 import { type WorktreeCreateError, type WorktreeReattachError, withGitOps } from './worktrees-seam'
@@ -220,6 +221,7 @@ const gitOpsFailureText = (failure: ServiceWithdrawnError | { readonly cause: un
  * visible; with nothing persisted it starts empty. Requires {@link RunsClient}, {@link WorkspaceStore},
  * {@link RunEventLog}, {@link EventHub},
  * {@link HostPlugins} (for the worktree service), {@link WorkspaceFeed} (which it keeps current),
+ * {@link TabRenamer} (which it fills with its `renameTab`),
  * {@link PathMoves} (it rewrites tab paths under each moved folder, as the path owner `host:workspace`),
  * `FileSystem`, `Path` and `Crypto`.
  */
@@ -243,6 +245,7 @@ export const PaneWorkspaceLive = Layer.effect(
     })
 
     const workspaceRef = yield* WorkspaceFeed
+    const tabRenamer = yield* TabRenamer
     yield* SubscriptionRef.set(workspaceRef, initial)
     const removingRef = yield* Ref.make<ReadonlySet<ProjectId>>(new Set())
     const retiringRef = yield* Ref.make<ReadonlySet<PaneId>>(new Set())
@@ -668,6 +671,7 @@ export const PaneWorkspaceLive = Layer.effect(
 
     const renameTab = (paneId: PaneId, name: AgentName) =>
       mutate('renameTab', (workspace) => WorkspaceOps.renameTab(workspace, paneId, name))
+    yield* Ref.set(tabRenamer, Option.some(renameTab))
 
     const markRetiring = (paneId: PaneId) =>
       mutationLock.withPermits(1)(

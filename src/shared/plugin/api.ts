@@ -2,7 +2,7 @@ import { Data, type DateTime, type Effect, type Option, type Scope, type Stream 
 import type { Rpc } from 'effect/rpc'
 import type { SqlClient } from 'effect/sql'
 import type { AgentNotification } from '../domain/notification'
-import type { Workspace } from '../domain/project'
+import type { AgentName, TabNotFoundError, Workspace } from '../domain/project'
 import type { EventFrame } from '../ipc/rpc'
 import type { PluginCallAttempt } from './messages'
 import type { PathsMoved } from './paths-moved'
@@ -178,12 +178,14 @@ export interface PluginWindow {
  * across reloads, overrides and restarts; `activities`, where the plugin registers background
  * activities; `database`, which opens the plugin's own SQLite database `<dataDir>/data.db`;
  * `workspace`, the projects and tabs with the visible tab, first as they are now and then after
- * each change (consume it like `events`); and `window`, dia's window.
+ * each change (consume it like `events`); `window`, dia's window; and `renameTab`, which names a tab.
  */
 export interface HostPluginContext extends PluginServices {
   readonly events: Stream.Stream<EventFrame>
   readonly workspace: Stream.Stream<Workspace>
   readonly window: PluginWindow
+  /** Renames tab `paneId` to `name`. Fails with `TabNotFoundError` when no tab has that id. */
+  readonly renameTab: (paneId: string, name: AgentName) => Effect.Effect<void, TabNotFoundError>
   readonly dataDir: string
   /**
    * Subscribes this plugin as an owner of stored paths until the calling scope (the setup scope)

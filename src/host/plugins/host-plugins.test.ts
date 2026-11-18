@@ -1,7 +1,9 @@
 import { NodeFileSystem, NodePath } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
+import { AgentName } from '@shared/domain/project'
+import type { HostPluginContext } from '@shared/plugin/api'
 import { PLUGIN_API_VERSION } from '@shared/plugin/manifest'
-import { Effect, Fiber, FileSystem, Layer, Option, Path, Stream } from 'effect'
+import { Effect, Fiber, FileSystem, Layer, Option, Path, Ref, Stream } from 'effect'
 import { makeAppWindowLive } from '../services/app-window'
 import { BackgroundActivitiesLive } from '../services/background-activities'
 import { makeHostDatabaseLive } from '../services/database'
@@ -9,6 +11,7 @@ import { EventHub } from '../services/event-hub'
 import { EventHubTestLayer } from '../services/event-hub-test-layer'
 import { PathMovesLive } from '../services/path-moves'
 import { SettingsStore } from '../services/settings-store'
+import { TabRenamer, TabRenamerLive } from '../services/tab-renamer'
 import { WorkspaceFeedLive } from '../services/workspace-feed'
 import { HostPlugins, makeHostPluginsLive } from './host-plugins'
 import { makePluginSourcesLive } from './plugin-sources'
@@ -55,11 +58,12 @@ const hostPluginsFor = (root: string) => {
       platform,
       Layer.provide(BackgroundActivitiesLive, hub),
       WorkspaceFeedLive,
+      TabRenamerLive,
       makeAppWindowLive(() => Effect.void),
       Layer.provide(PathMovesLive, makeHostDatabaseLive(root))
     )
   )
-  return Layer.provideMerge(plugins, hub)
+  return Layer.provideMerge(plugins, Layer.merge(hub, TabRenamerLive))
 }
 
 describe('HostPlugins', () => {
@@ -124,4 +128,66 @@ describe('HostPlugins', () => {
       )
     }).pipe(Effect.scoped, Effect.provide(platform))
   )
+
+  describe('ctx.renameTab', () => {
+    const captureContext = (root: string) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem
+        const path = yield* Path.Path
+        yield* writePlugin(root, 'namer', { load: 'eager', host: 'host.mjs' })
+        yield* fs.writeFileString(
+          path.join(root, 'namer', 'host.mjs'),
+          'export default (ctx) => globalThis.__diaSetup(ctx)'
+        )
+        let captured: HostPluginContext | undefined
+        const g = globalThis as unknown as { __diaSetup?: unknown }
+        g.__diaSetup = (ctx: HostPluginContext) =>
+          Effect.sync(() => {
+            captured = ctx
+          })
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            delete g.__diaSetup
+          })
+        )
+        yield* Effect.flatMap(HostPlugins, (plugins) => plugins.start())
+        if (captured === undefined) return yield* Effect.die('the plugin setup did not run')
+        return captured
+      })
+
+    it.effect('renames the tab through the Host tab renamer', () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem
+        const root = yield* fs.makeTempDirectoryScoped()
+        const renamed: Array<[string, string]> = []
+        yield* Effect.gen(function* () {
+          yield* Ref.set(
+            yield* TabRenamer,
+            Option.some((paneId: string, name: AgentName) =>
+              Effect.sync(() => void renamed.push([paneId, name]))
+            )
+          )
+          const ctx = yield* captureContext(root)
+
+          yield* ctx.renameTab('pane-1', AgentName.make('Fix login'))
+        }).pipe(Effect.provide(hostPluginsFor(root)))
+
+        assert.deepStrictEqual(renamed, [['pane-1', 'Fix login']])
+      }).pipe(Effect.scoped, Effect.provide(platform))
+    )
+
+    it.effect('fails with TabNotFoundError before the Host has a tab renamer', () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem
+        const root = yield* fs.makeTempDirectoryScoped()
+        const failure = yield* Effect.gen(function* () {
+          const ctx = yield* captureContext(root)
+          return yield* Effect.flip(ctx.renameTab('pane-1', AgentName.make('Fix login')))
+        }).pipe(Effect.provide(hostPluginsFor(root)))
+
+        assert.strictEqual(failure._tag, 'TabNotFoundError')
+        assert.strictEqual(failure.paneId, 'pane-1')
+      }).pipe(Effect.scoped, Effect.provide(platform))
+    )
+  })
 })

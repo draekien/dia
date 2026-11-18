@@ -50,6 +50,7 @@ import {
 import { RunSummariesLive } from './services/run-summaries'
 import { RunsClientLive } from './services/runs-client'
 import { makeSettingsStoreLive } from './services/settings-store'
+import { TabRenamerLive } from './services/tab-renamer'
 import { WorkspaceFeedLive } from './services/workspace-feed'
 import { makeWorkspaceProblemsLive } from './services/workspace-problems'
 import { makeWorkspaceStoreLive } from './services/workspace-store'
@@ -127,6 +128,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
       eventHub,
       backgroundActivities,
       WorkspaceFeedLive,
+      TabRenamerLive,
       appWindow,
       pathMoves,
       NodeFileSystem.layer,
@@ -156,6 +158,7 @@ const buildHostLayer = (init: HostInit, token: string) => {
       hostPlugins,
       pathMoves,
       WorkspaceFeedLive,
+      TabRenamerLive,
       NodeServices.layer
     )
   )
