@@ -210,11 +210,11 @@ export const deleteTab = (
   )
 }
 
-/** Replaces fields of a tab's config. The pane id cannot change. */
+/** Replaces fields of a tab's config. The pane id and the backend cannot change. */
 export const updateTabConfig = (
   workspace: Workspace,
   paneId: PaneId,
-  patch: Partial<Omit<PaneConfig, 'paneId'>>
+  patch: Partial<Omit<PaneConfig, 'paneId' | 'backend'>>
 ): Result.Result<Workspace, TabNotFoundError> =>
   mapTab(workspace, paneId, (tab) => ({ ...tab, config: { ...tab.config, ...patch, paneId } }))
 

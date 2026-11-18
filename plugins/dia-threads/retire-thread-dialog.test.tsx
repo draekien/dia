@@ -20,6 +20,7 @@ const tab = (extra: Partial<Tab['config']> = {}): Tab => ({
     paneId: PANE,
     cwd: 'F:/Dev/dia',
     model: 'm',
+    backend: 'dia-claude-code',
     thinkingLevel: 'adaptive',
     permissionMode: 'default',
     ...extra

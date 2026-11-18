@@ -11,12 +11,19 @@ export interface ModelCatalog {
 }
 
 /**
- * Keeps the newest model list through `window.dia.models`: it listens for changes before reading
- * the current list, so no change is missed, and keeps whichever snapshot is newest. Call it from
- * any component that offers a model choice; each caller keeps its own copy.
+ * Keeps the newest model list of agent adapter `adapter` (an adapter id) through
+ * `window.dia.models`: it listens for changes before reading the current list, so no change is
+ * missed, and keeps whichever snapshot is newest. Call it from any component that offers a model
+ * choice; each caller keeps its own copy.
  */
-export function useModelCatalog(): ModelCatalog {
-  const snapshot = useRevisionedSnapshot(window.dia.models.onChanged, window.dia.models.get)
-  const refresh = useCallback(() => void window.dia.models.refresh(), [])
+export function useModelCatalog(adapter: string): ModelCatalog {
+  const subscribe = useCallback(
+    (listener: (snapshot: ModelCatalogSnapshotJson) => void) =>
+      window.dia.models.onChanged(adapter, listener),
+    [adapter]
+  )
+  const get = useCallback(() => window.dia.models.get(adapter), [adapter])
+  const snapshot = useRevisionedSnapshot(subscribe, get, adapter)
+  const refresh = useCallback(() => void window.dia.models.refresh(adapter), [adapter])
   return { state: snapshot?.state, refresh }
 }

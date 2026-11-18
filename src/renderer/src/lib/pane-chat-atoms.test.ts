@@ -50,6 +50,7 @@ const installFakeDia = () => {
   vi.stubGlobal('window', {
     dia: {
       getPaneChat,
+      getWorkspace: async () => ({ projects: [] }),
       models: { onChanged: noSubscription, get: async () => undefined },
       onHistoryReloadRequested: (listener: (paneId: string) => void) => {
         reloadListeners.add(listener)

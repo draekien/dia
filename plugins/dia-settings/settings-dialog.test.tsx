@@ -61,7 +61,7 @@ const startWithPages = (extra: Record<string, PluginSetup<PluginServices>> = {})
   act(() =>
     startRendererRegistry({
       'dia-settings': settings,
-      'dia-adapters': addsPage('adapters', 20, 'Adapters', SectionedPage),
+      'dia-agent-adapters': addsPage('adapters', 20, 'Adapters', SectionedPage),
       'dia-meta': addsPage('meta', 40, 'Meta repo', MetaPage, FolderGitIcon),
       ...extra
     })
@@ -182,14 +182,14 @@ describe('SettingsDialog sections', () => {
   it('passes the requested section to the page', async () => {
     await renderDialog()
 
-    await open({ plugin: 'dia-adapters', id: 'adapters', section: 'other-adapter' })
+    await open({ plugin: 'dia-agent-adapters', id: 'adapters', section: 'other-adapter' })
 
     expect(screen.getByText('Adapters page showing other-adapter')).toBeTruthy()
   })
 
   it('shows the section the page reports as the last breadcrumb', async () => {
     await renderDialog()
-    await open({ plugin: 'dia-adapters', id: 'adapters' })
+    await open({ plugin: 'dia-agent-adapters', id: 'adapters' })
 
     fireEvent.click(screen.getByRole('button', { name: 'Show Claude Code' }))
 
@@ -198,7 +198,7 @@ describe('SettingsDialog sections', () => {
 
   it('does not show one page section on another page', async () => {
     await renderDialog()
-    await open({ plugin: 'dia-adapters', id: 'adapters' })
+    await open({ plugin: 'dia-agent-adapters', id: 'adapters' })
     fireEvent.click(screen.getByRole('button', { name: 'Show Claude Code' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Plugins' }))

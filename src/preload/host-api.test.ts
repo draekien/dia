@@ -2,7 +2,7 @@ import { type AdapterStatusSnapshot, HealthNotChecked } from '@shared/domain/ada
 import { Deny, FreeformResponse } from '@shared/domain/attention'
 import { ActivityNotFound } from '@shared/domain/background-activity'
 import {
-  EMPTY_ADAPTER_PREFERENCES,
+  EMPTY_MODEL_PREFERENCES,
   type ModelPreferencesSnapshot
 } from '@shared/domain/model-preferences'
 import { emptyPaneChatState } from '@shared/domain/pane-chat'
@@ -78,7 +78,7 @@ const ADAPTER_STATUS: AdapterStatusSnapshot = {
 }
 const PREFERENCES: ModelPreferencesSnapshot = {
   revision: 5,
-  preferences: EMPTY_ADAPTER_PREFERENCES
+  preferences: EMPTY_MODEL_PREFERENCES
 }
 
 class ConnectionError extends Data.TaggedError('ConnectionError')<{ readonly reason: string }> {}
@@ -280,6 +280,51 @@ describe('makeHostApi', () => {
     ).toEqual([['dia-runs', 'SendMessage', { runId: PANE, text: 'change course', mode: 'steer' }]])
   })
 
+  it('sends the adapter calls to dia-agent-adapters with the adapter id in the payload and the slash command call to dia-runs', async () => {
+    const { client, callPlugin } = makeClient()
+    const { api } = makeApi(client)
+
+    void api.models.get('adapter-b')
+    void api.adapter.getDisabledPermissionModes('adapter-b', '/repo')
+    void api.adapter.getAttachmentTypes('adapter-b')
+    void api.adapter.setInstallPath('adapter-b', '/bin/agent')
+    void api.adapter.getSlashCommands('adapter-b', '/repo')
+    await advance(0)
+
+    expect(
+      callPlugin.mock.calls.map(([payload]) => [payload.plugin, payload.tag, payload.payload])
+    ).toEqual([
+      ['dia-agent-adapters', 'GetModels', { adapter: 'adapter-b' }],
+      ['dia-agent-adapters', 'GetDisabledPermissionModes', { adapter: 'adapter-b', cwd: '/repo' }],
+      ['dia-agent-adapters', 'GetAttachmentTypes', { adapter: 'adapter-b' }],
+      ['dia-agent-adapters', 'SetInstallPath', { adapter: 'adapter-b', path: '/bin/agent' }],
+      ['dia-runs', 'GetSlashCommands', { adapter: 'adapter-b', cwd: '/repo' }]
+    ])
+  })
+
+  it('subscribes to the adapter list and to the models of one adapter by its id', async () => {
+    const { client, subscribePlugin } = makeClient({
+      pluginSubscriptions: [
+        Stream.make([{ id: 'adapter-b', label: 'B' }]),
+        Stream.make(SNAPSHOT_JSON)
+      ]
+    })
+    const { api } = makeApi(client)
+    const received: Array<unknown> = []
+    api.adapters.onChanged((adapters) => received.push(adapters))
+    api.models.onChanged('adapter-b', (snapshot) => received.push(snapshot))
+
+    await advance(10)
+
+    expect(
+      subscribePlugin.mock.calls.map(([payload]) => [payload.plugin, payload.tag, payload.payload])
+    ).toEqual([
+      ['dia-agent-adapters', 'FollowAdapters', {}],
+      ['dia-agent-adapters', 'FollowModels', { adapter: 'adapter-b' }]
+    ])
+    expect(received).toEqual([[{ id: 'adapter-b', label: 'B' }], SNAPSHOT_JSON])
+  })
+
   it('sends the pending prompt requestId in the payload, apart from the call id, when resolving a prompt', async () => {
     const { client, callPlugin } = makeClient()
     const { api } = makeApi(client)
@@ -326,7 +371,9 @@ describe('makeHostApi', () => {
     })
     const { api } = makeApi(client)
 
-    expect(await api.adapter.setModelPreference('opus', 'hidden')).toEqual(refusal)
+    expect(await api.adapter.setModelPreference('dia-claude-code', 'opus', 'hidden')).toEqual(
+      refusal
+    )
   })
 
   it('subscribes with no cursors at first and resumes from the last received sequence number after a drop', async () => {
@@ -451,7 +498,7 @@ describe('makeHostApi', () => {
     expect(replaced.map((event) => event.summaries)).toEqual([[SUMMARY]])
   })
 
-  it('follows the model list, adapter status and model preferences through dia-runs subscriptions', async () => {
+  it('follows the model list and adapter status through dia-agent-adapters and the model preferences through dia-runs', async () => {
     const { client, subscribePlugin } = makeClient({
       pluginSubscriptions: [
         Stream.make(SNAPSHOT_JSON),
@@ -461,15 +508,15 @@ describe('makeHostApi', () => {
     })
     const { api } = makeApi(client)
     const received: Array<unknown> = []
-    api.models.onChanged((snapshot) => received.push(snapshot))
-    api.adapter.onStatusChanged((snapshot) => received.push(snapshot))
+    api.models.onChanged('dia-claude-code', (snapshot) => received.push(snapshot))
+    api.adapter.onStatusChanged('dia-claude-code', (snapshot) => received.push(snapshot))
     api.adapter.onPreferencesChanged((snapshot) => received.push(snapshot))
 
     await advance(10)
 
     expect(subscribePlugin.mock.calls.map(([payload]) => [payload.plugin, payload.tag])).toEqual([
-      ['dia-runs', 'FollowModels'],
-      ['dia-runs', 'FollowAdapterStatus'],
+      ['dia-agent-adapters', 'FollowModels'],
+      ['dia-agent-adapters', 'FollowAdapterStatus'],
       ['dia-runs', 'FollowModelPreferences']
     ])
     expect(received).toEqual([SNAPSHOT_JSON, ADAPTER_STATUS, PREFERENCES])

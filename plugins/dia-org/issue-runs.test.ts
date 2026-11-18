@@ -3,7 +3,7 @@ import { FirstIssue, type Issue, ObjectiveId, WorkTitle } from '@dia-plugin/dia-
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { assert, describe, it } from '@effect/vitest'
 import { AgentName } from '@shared/domain/project'
-import { Deferred, Effect, Exit, Option, Scope } from 'effect'
+import { Deferred, Effect, Exit, Option, Queue, Ref, Scope, Stream } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
 import { openIssues, orgRef, PROJECT } from '../dia-issues/issues.fake'
@@ -15,7 +15,7 @@ import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { holdBuiltInDefinitions } from './registries.fake'
 import { issueStartOptions } from './run-options'
-import { fakeBackend, fakeRuns, model } from './runs.fake'
+import { fakeChoices, fakeRuns, model } from './runs.fake'
 
 const OBJECTIVE = ObjectiveId.make('00000000-0000-4000-8000-600000000001')
 const TITLE = WorkTitle.make('Add a login page')
@@ -46,28 +46,35 @@ const setUp = Effect.gen(function* () {
   const grace = yield* org.hire(engineer.id, AgentName.make('Grace'), null)
   const fake = fakeRuns()
   const ready = yield* Deferred.make<void>()
+  const adapterRegistered = yield* Ref.make(true)
+  const adapterChanges = yield* Queue.unbounded<void>()
   const issueRuns = yield* runIssues({
     org,
     issues,
     provider,
     workspace: { retain: () => Effect.void },
     startOptions: (issue) =>
-      Effect.succeed(
-        Option.some({
-          run: {
-            cwd: `C:/trees/${issue.id}`,
-            model: 'opus',
-            thinkingLevel: 'medium' as const,
-            permissionMode: 'default' as const,
-            text: issue.title
-          },
-          projectDirectory: PROJECT_DIRECTORY
-        })
+      Effect.map(Ref.get(adapterRegistered), (registered) =>
+        Option.filter(
+          Option.some({
+            run: {
+              cwd: `C:/trees/${issue.id}`,
+              model: 'opus',
+              backend: 'dia-claude-code',
+              thinkingLevel: 'medium' as const,
+              permissionMode: 'default' as const,
+              text: issue.title
+            },
+            projectDirectory: PROJECT_DIRECTORY
+          }),
+          () => registered
+        )
       ),
     runs: fake.runs,
     queue: fake.queue,
     projectDirectoryOf: () => Effect.succeed(Option.some(PROJECT_DIRECTORY)),
-    ready: Deferred.await(ready)
+    ready: Deferred.await(ready),
+    adapterChanges: Stream.fromQueue(adapterChanges)
   }).pipe(Effect.provideService(SqlClient.SqlClient, sql))
   const createIssue = (assigneeId: string) =>
     Effect.gen(function* () {
@@ -104,7 +111,23 @@ const setUp = Effect.gen(function* () {
       Effect.orDie
     )
   const begin = Deferred.succeed(ready, undefined).pipe(Effect.andThen(settle))
-  return { issues, ada, grace, fake, issueRuns, createIssue, statusOf, storeRun, begin }
+  const registerAdapter = Ref.set(adapterRegistered, true).pipe(
+    Effect.andThen(Queue.offer(adapterChanges, undefined)),
+    Effect.andThen(settle)
+  )
+  return {
+    issues,
+    ada,
+    grace,
+    fake,
+    issueRuns,
+    createIssue,
+    statusOf,
+    storeRun,
+    begin,
+    adapterRegistered,
+    registerAdapter
+  }
 })
 
 describe('runIssues', () => {
@@ -133,6 +156,20 @@ describe('runIssues', () => {
         )
         assert.strictEqual(yield* env.statusOf(issue), 'todo', 'a queued issue has not started')
       }).pipe(Effect.scoped)
+  )
+
+  it.effect('queues an issue that found no adapter once an adapter registers', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      yield* Ref.set(env.adapterRegistered, false)
+      yield* env.createIssue(env.ada.id)
+      yield* env.begin
+      assert.strictEqual(env.fake.enqueued.length, 0, 'no adapter, so nothing is queued')
+
+      yield* env.registerAdapter
+
+      assert.strictEqual(env.fake.enqueued.length, 1)
+    }).pipe(Effect.scoped)
   )
 
   it.effect('moves the issue to understanding once the queue starts its run', () =>
@@ -356,11 +393,11 @@ describe('issueStartOptions', () => {
         }
         const jobTitle = {
           ...(yield* setUpJobTitle),
-          model: null,
+          selection: null,
           jobDescription: 'You write code.'
         }
 
-        const options = yield* issueStartOptions(workspace, fakeBackend([model('opus', true)]))(
+        const options = yield* issueStartOptions(workspace, fakeChoices([model('opus', true)]))(
           issue,
           objective,
           env.ada,
@@ -398,7 +435,7 @@ describe('issueStartOptions', () => {
       const permissions = { allow: ['Bash(cargo test)'], ask: [], deny: ['Bash(git push)'] }
       const jobTitle = { ...(yield* setUpJobTitle), permissions }
 
-      const options = yield* issueStartOptions(workspace, fakeBackend([model('opus', true)]))(
+      const options = yield* issueStartOptions(workspace, fakeChoices([model('opus', true)]))(
         issue,
         objective,
         env.ada,
@@ -412,6 +449,32 @@ describe('issueStartOptions', () => {
     }).pipe(Effect.scoped)
   )
 
+  it.effect('returns none while the job title has no selection and no adapter is loaded', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      const issue = yield* env.createIssue(env.ada.id)
+      const objective = (yield* env.issues.snapshot).objectives[0]
+      assert.isDefined(objective)
+      const workspace = {
+        open: () =>
+          Effect.succeed(
+            IssueDirectory.make({ path: ISSUE_PATH, projectDirectory: PROJECT_DIRECTORY })
+          )
+      }
+      const choices = {
+        ...fakeChoices([model('opus')]),
+        defaultSelection: Effect.succeed(Option.none())
+      }
+
+      const options = yield* issueStartOptions(workspace, choices)(issue, objective, env.ada, {
+        ...(yield* setUpJobTitle),
+        selection: null
+      })
+
+      assert.isTrue(Option.isNone(options))
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('returns none while the issue waits for its workspace', () =>
     Effect.gen(function* () {
       const env = yield* setUp
@@ -422,7 +485,7 @@ describe('issueStartOptions', () => {
         open: () => Effect.succeed(IssueWaiting.make({ reason: 'The project is not registered' }))
       }
 
-      const options = yield* issueStartOptions(workspace, fakeBackend([model('opus')]))(
+      const options = yield* issueStartOptions(workspace, fakeChoices([model('opus')]))(
         issue,
         objective,
         env.ada,

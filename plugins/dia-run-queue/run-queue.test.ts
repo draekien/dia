@@ -20,6 +20,7 @@ const SETTLE = Duration.millis(50)
 const runNamed = (name: string): StartRunOptions => ({
   cwd: name,
   model: 'm',
+  backend: 'dia-claude-code',
   thinkingLevel: 'adaptive',
   permissionMode: 'default',
   text: 'work'
@@ -65,7 +66,8 @@ const makeWorld = (initiallyBusy: ReadonlyArray<string> = []) =>
       list: Effect.succeed([]),
       openInTab: nothing,
       changes: Stream.empty,
-      discoverSessions: () => Effect.succeed([])
+      discoverSessions: () => Effect.succeed([]),
+      defaultSelection: Effect.succeed(Option.none())
     }
     const provider = yield* SubscriptionRef.make(Option.none<Runs>())
     const queue = yield* makeRunQueue(provider)

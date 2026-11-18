@@ -20,6 +20,7 @@ import {
   InputGroupTextarea,
   InstallNotice,
   installProblem,
+  type ModelCatalogStateJson,
   PluginThreadTarget,
   ProjectTarget,
   paneChatAtom,
@@ -31,11 +32,12 @@ import {
   TooltipTrigger,
   thinkingLevelsFor,
   useAdapterStatus,
+  useAdapters,
   useAttachmentTypes,
   useDisabledPermissionModes,
   useDrafts,
   useList,
-  useModelCatalog,
+  useModelCatalogs,
   useModelPreferences,
   usePluginList,
   useRunSummaries,
@@ -48,10 +50,11 @@ import {
   targetEntryOf
 } from '@dia-plugin/dia-chat/slots'
 import { useAtomValue } from '@effect/atom-react'
-import type { ModelOption } from '@shared/domain/model'
 import {
-  type AdapterPreferences,
-  EMPTY_ADAPTER_PREFERENCES,
+  adapterPreferencesOf,
+  EMPTY_MODEL_PREFERENCES,
+  type ModelPreferences,
+  type ModelSelection,
   pickerModels
 } from '@shared/domain/model-preferences'
 import {
@@ -105,21 +108,35 @@ const resolveTarget = (
 }
 
 /**
- * The model a new thread starts on: `chosen` while the picker offers it, else the adapter's default
- * model while offered, else the first offered model; undefined while no model is offered.
+ * The model a new thread starts on: `chosen` while a picker group offers it, else the stored
+ * default selection while offered, else the first offered model of the first adapter in `adapters`
+ * order; undefined while no model is offered. A picker group offers an adapter's favourite and
+ * other visible models, read from `catalogs` once its list is ready.
  */
-export const startingModel = (
-  models: ReadonlyArray<ModelOption>,
-  preferences: AdapterPreferences,
-  chosen: string | null
-): string | undefined => {
-  const { favourites, others } = pickerModels(models, preferences)
-  const offered = [...favourites, ...others].map((model) => model.value)
-  if (chosen !== null && offered.includes(chosen)) return chosen
-  const preferred = preferences.defaults.model
-  if (preferred !== undefined && offered.includes(preferred)) return preferred
+export const startingSelection = (
+  adapters: ReadonlyArray<{ readonly id: string }>,
+  catalogs: ReadonlyMap<string, ModelCatalogStateJson>,
+  preferences: ModelPreferences,
+  chosen: ModelSelection | null
+): ModelSelection | undefined => {
+  const offered = adapters.flatMap(({ id }) => {
+    const state = catalogs.get(id)
+    const models = state?._tag === 'Ready' ? state.models : []
+    const { favourites, others } = pickerModels(models, adapterPreferencesOf(preferences, id))
+    return [...favourites, ...others].map(
+      (model): ModelSelection => ({ backend: id, model: model.value })
+    )
+  })
+  const isOffered = (selection: ModelSelection | null | undefined) =>
+    selection != null &&
+    offered.some((o) => o.backend === selection.backend && o.model === selection.model)
+  if (chosen !== null && isOffered(chosen)) return chosen
+  const preferred = preferences.defaults.selection
+  if (preferred !== undefined && isOffered(preferred)) return preferred
   return offered[0]
 }
+
+const UNREGISTERED_ADAPTER = 'dia-no-adapter'
 
 /** The name of a thread working in `directory`'s checkout itself (not a worktree), or null. */
 const busyThreadIn = (
@@ -257,16 +274,15 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
   const workspace = useWorkspace()
   const entries = useList(ThreadTargetsSlot)
   const summaries = useRunSummaries()
-  const catalog = useModelCatalog()
+  const adapters = useAdapters()
+  const catalogs = useModelCatalogs(adapters)
   const preferences = useModelPreferences()
-  const adapterStatus = useAdapterStatus()
   const worktreesAvailable =
     usePluginList().plugins?.some((plugin) => plugin.provides.includes(WorktreesKey.name)) ?? false
   const [state, setState] = useState<SendState>({ step: 'editing' })
   const [dragging, setDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const attachments = useComposerAttachments(useAttachmentTypes())
 
   const draft: Draft =
     drafts.find((saved) => saved.draftId === draftId) ??
@@ -276,17 +292,19 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
   const projects = workspace === undefined ? [] : userProjects(workspace).map((e) => e.project)
   const resolved = resolveTarget(draft.target, projects, entries)
   const project = resolved?._tag === 'Project' ? resolved.project : undefined
-  const prefs = preferences ?? EMPTY_ADAPTER_PREFERENCES
-  const models = catalog.state?._tag === 'Ready' ? catalog.state.models : []
-  const model = startingModel(models, prefs, draft.model)
-  const modelOption = findModelOption(catalog.state, model)
+  const prefs = preferences ?? EMPTY_MODEL_PREFERENCES
+  const selection = startingSelection(adapters, catalogs, prefs, draft.selection)
+  const adapter = selection?.backend ?? adapters[0]?.id ?? UNREGISTERED_ADAPTER
+  const adapterStatus = useAdapterStatus(adapter)
+  const attachments = useComposerAttachments(useAttachmentTypes(adapter))
+  const modelOption = findModelOption(catalogs.get(adapter), selection?.model)
   const thinkingLevels = thinkingLevelsFor(modelOption)
   const thinkingLevel = fitThinkingLevel(
     draft.thinkingLevel ?? prefs.defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
     thinkingLevels
   )
   const disabledPermissionModes = disabledPermissionModesFor(
-    useDisabledPermissionModes(project?.directory ?? ''),
+    useDisabledPermissionModes(adapter, project?.directory ?? ''),
     modelOption
   )
   const chosenMode: StartupPermissionMode =
@@ -300,7 +318,7 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
   const blocked =
     resolved === null ||
     (resolved._tag === 'Project' &&
-      (model === undefined || installProblem(adapterStatus) !== undefined))
+      (selection === undefined || installProblem(adapterStatus) !== undefined))
 
   useEffect(() => {
     textareaRef.current?.focus()
@@ -315,7 +333,7 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
     })
   }, [draft.sentAs])
 
-  const sendToProject = (target: ProjectTarget, startModel: string) => {
+  const sendToProject = (target: ProjectTarget, start: ModelSelection) => {
     // @effect-diagnostics-next-line cryptoRandomUUID:off -- a React handler outside any Effect; the id only has to be unique.
     const paneId = Uuid.make(crypto.randomUUID())
     actions.saveDraft({ ...draft, sentAs: paneId })
@@ -325,7 +343,8 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
         projectId: target.projectId,
         paneId,
         name: null,
-        model: startModel,
+        model: start.model,
+        backend: start.backend,
         thinkingLevel,
         permissionMode,
         worktree,
@@ -348,7 +367,7 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
     if (resolved === null || blocked || sending || attachments.reading || !hasContent) return
     setState({ step: 'sending' })
     if (resolved._tag === 'Plugin') void sendToPlugin(resolved.target, resolved.entry)
-    else if (model !== undefined) sendToProject(resolved.target, model)
+    else if (selection !== undefined) sendToProject(resolved.target, selection)
   }
 
   const pickTarget = (target: ThreadTarget) => {
@@ -357,7 +376,7 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
     update({ target, worktree: null })
   }
 
-  const slashCommands = useSlashCommands(project?.directory ?? null)
+  const slashCommands = useSlashCommands(adapter, project?.directory ?? null)
   const completion = useComposerCompletion({
     text,
     setText: (value) => update({ text: value }),
@@ -512,9 +531,9 @@ export function NewThreadPage({ draftId }: { readonly draftId: Uuid }) {
             </div>
           </form>
           <div className="mt-1 flex min-w-0 items-center gap-0.5 pl-[5px]">
-            {resolved?._tag === 'Project' && model !== undefined ? (
+            {resolved?._tag === 'Project' && selection !== undefined ? (
               <>
-                <ModelPicker value={model} onChange={(next) => update({ model: next })} />
+                <ModelPicker value={selection} onChange={(next) => update({ selection: next })} />
                 <ThinkingLevelSelect
                   value={thinkingLevel}
                   levels={thinkingLevels}

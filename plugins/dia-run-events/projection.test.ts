@@ -26,6 +26,7 @@ const tab = (paneId: string, sessionId?: string): Tab => ({
     paneId,
     cwd: '/repo',
     model: 'm',
+    backend: 'dia-claude-code',
     thinkingLevel: 'adaptive',
     permissionMode: 'default'
   },
@@ -100,7 +101,7 @@ const makeSetup = ({
       })
     })
   )
-  const models = Layer.succeed(RunModelCatalog, { current: Effect.as(catalogReady, CATALOG) })
+  const models = Layer.succeed(RunModelCatalog, { current: () => Effect.as(catalogReady, CATALOG) })
   const workspace = Layer.effect(RunWorkspace, SubscriptionRef.make(workspaceOf([])))
   const layer = Layer.provideMerge(
     RunChatProjectionLive,

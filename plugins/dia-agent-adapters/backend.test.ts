@@ -7,9 +7,12 @@ const config: PaneConfig = {
   paneId: '00000000-0000-0000-0000-000000000001',
   cwd: '/work',
   model: 'claude-sonnet-5',
+  backend: 'dia-claude-code',
   thinkingLevel: 'off',
   permissionMode: 'default'
 }
+
+const NOT_LOADED = 'dia-claude-code is not loaded'
 
 const openOptions = {
   config,
@@ -23,19 +26,18 @@ const openOptions = {
 describe('unavailableBackend', () => {
   it.effect('ends every session at once saying the adapter is not loaded', () =>
     Effect.gen(function* () {
-      const session = yield* unavailableBackend.openSession(openOptions).pipe(Effect.scoped)
+      const session = yield* unavailableBackend(NOT_LOADED)
+        .openSession(openOptions)
+        .pipe(Effect.scoped)
 
-      assert.deepStrictEqual(
-        yield* session.ended,
-        SessionFailed.make({ reason: 'The claude-code adapter is not loaded' })
-      )
+      assert.deepStrictEqual(yield* session.ended, SessionFailed.make({ reason: NOT_LOADED }))
     })
   )
 
   it.effect('reads an empty history', () =>
     Effect.gen(function* () {
       assert.deepStrictEqual(
-        yield* unavailableBackend.readHistory(SessionId.make('s-1'), '/work'),
+        yield* unavailableBackend(NOT_LOADED).readHistory(SessionId.make('s-1'), '/work'),
         []
       )
     })
@@ -44,7 +46,7 @@ describe('unavailableBackend', () => {
   it.effect('reads no transcript info', () =>
     Effect.gen(function* () {
       assert.deepStrictEqual(
-        yield* unavailableBackend.transcriptInfo(SessionId.make('s-1'), '/work'),
+        yield* unavailableBackend(NOT_LOADED).transcriptInfo(SessionId.make('s-1'), '/work'),
         Option.none()
       )
     })
@@ -52,10 +54,10 @@ describe('unavailableBackend', () => {
 
   it.effect('reports the model list as unavailable', () =>
     Effect.gen(function* () {
-      assert.deepStrictEqual(yield* Stream.runCollect(unavailableBackend.models()), [
+      assert.deepStrictEqual(yield* Stream.runCollect(unavailableBackend(NOT_LOADED).models()), [
         {
           _tag: 'Unavailable',
-          message: 'The claude-code adapter is not loaded',
+          message: NOT_LOADED,
           refreshing: false
         }
       ])

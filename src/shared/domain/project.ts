@@ -207,6 +207,7 @@ export const CreateTabRequest = Schema.Struct({
   paneId: Uuid,
   name: Schema.NullOr(AgentName),
   model: Schema.String,
+  backend: Schema.NonEmptyString,
   thinkingLevel: ThinkingLevel,
   permissionMode: StartupPermissionMode,
   worktree: Schema.NullOr(WorktreeStart),

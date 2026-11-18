@@ -26,6 +26,7 @@ describe('PaneConfig', () => {
       paneId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
       cwd: '/home/william/projects/dia',
       model: 'claude-sonnet-5',
+      backend: 'dia-claude-code',
       thinkingLevel: 'high',
       permissionMode: 'acceptEdits'
     }
@@ -42,6 +43,7 @@ describe('PaneConfig', () => {
         paneId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
         cwd: '/home/william/projects/dia',
         model: 'claude-sonnet-5',
+        backend: 'dia-claude-code',
         thinkingLevel: 'adaptive',
         permissionMode
       }
@@ -60,6 +62,38 @@ describe('PaneConfig', () => {
     })
 
     expect(decoded.thinkingLevel).toBe('medium')
+  })
+
+  it('defaults backend to dia-claude-code when absent (migrating older records)', () => {
+    const decoded = Schema.decodeUnknownSync(PaneConfig)({
+      paneId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+      cwd: '/home/william/projects/dia',
+      model: 'claude-sonnet-5'
+    })
+
+    expect(decoded.backend).toBe('dia-claude-code')
+  })
+
+  it('keeps a stored backend instead of the default', () => {
+    const decoded = Schema.decodeUnknownSync(PaneConfig)({
+      paneId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+      cwd: '/home/william/projects/dia',
+      model: 'claude-sonnet-5',
+      backend: 'other'
+    })
+
+    expect(decoded.backend).toBe('other')
+  })
+
+  it('rejects an empty backend', () => {
+    expect(() =>
+      Schema.decodeUnknownSync(PaneConfig)({
+        paneId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+        cwd: '/home/william/projects/dia',
+        model: 'claude-sonnet-5',
+        backend: ''
+      })
+    ).toThrow()
   })
 
   it('defaults permissionMode to default when absent (migrating older records)', () => {
@@ -82,6 +116,7 @@ describe('PaneConfig', () => {
       paneId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
       cwd: worktree.path,
       model: 'claude-sonnet-5',
+      backend: 'dia-claude-code',
       thinkingLevel: 'adaptive',
       permissionMode: 'default',
       worktree
@@ -111,6 +146,7 @@ describe('PaneRecord', () => {
         paneId: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
         cwd: '/home/william/projects/dia',
         model: 'claude-sonnet-5',
+        backend: 'dia-claude-code',
         thinkingLevel: 'adaptive',
         permissionMode: 'default'
       },

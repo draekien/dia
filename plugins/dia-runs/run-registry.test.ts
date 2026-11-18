@@ -15,6 +15,13 @@ import {
   type ToolScope,
   UserMessagesSent
 } from '@dia/plugin'
+import {
+  type AgentBackend,
+  type AgentSession,
+  type SessionEnd,
+  unavailableBackend
+} from '@dia-plugin/dia-agent-adapters/backend'
+import { type AgentAdapter, notLoadedMessage } from '@dia-plugin/dia-agent-adapters/registry'
 import { NodeServices } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import type { IpcEvent } from '@shared/ipc/contract'
@@ -27,21 +34,16 @@ import {
   FileSystem,
   Option,
   Schedule,
+  Schema,
   Scope,
   Stream
 } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
 import { TurnCompleted, TurnUsageReported } from '../../src/host/session/protocol'
-import {
-  type AgentBackend,
-  type AgentSession,
-  type SessionEnd,
-  unavailableBackend
-} from './backend'
 import { runsMigrations } from './migrations'
 import { makeRunRegistry } from './run-registry'
-import { makeRunRows, type RunRows } from './run-rows'
+import { makeRunRows, type RunRows, StoredSpec } from './run-rows'
 
 const RUN = 'aaaaaaaa-0000-4000-8000-000000000001'
 const STARTED = 'bbbbbbbb-0000-4000-8000-000000000002'
@@ -59,6 +61,7 @@ const DIA_TOOLS: SessionToolOptions = {
 }
 
 interface FakeSession {
+  readonly backend: string
   readonly resume: Option.Option<SessionId>
   readonly systemPromptAppend: string
   readonly tools: Option.Option<SessionToolOptions>
@@ -69,19 +72,20 @@ interface FakeSession {
 const makeWorld = (
   rows: RunRows,
   additions: SessionAdditions = NO_SESSION_ADDITIONS,
-  diaTools: Option.Option<SessionToolOptions> = Option.none()
+  diaTools: Option.Option<SessionToolOptions> = Option.none(),
+  registered: ReadonlyArray<string> = ['dia-claude-code']
 ) => {
   const sessions: Array<FakeSession> = []
   const appended: Array<IpcEvent> = []
   const logOrder: Array<string> = []
   const toolScopes: Array<ToolScope> = []
   const backend: AgentBackend = {
-    ...unavailableBackend,
-    openSession: ({ resume, emit, systemPromptAppend, tools }) =>
+    ...unavailableBackend('fake'),
+    openSession: ({ config, resume, emit, systemPromptAppend, tools }) =>
       Effect.gen(function* () {
         const ended = yield* Deferred.make<SessionEnd>()
         const calls: Array<string> = []
-        sessions.push({ resume, systemPromptAppend, tools, calls, emit })
+        sessions.push({ backend: config.backend, resume, systemPromptAppend, tools, calls, emit })
         const record =
           (name: string) =>
           (...args: ReadonlyArray<unknown>) =>
@@ -119,9 +123,16 @@ const makeWorld = (
         Effect.sync(() => void logOrder.push(message._tag))
       )
   } as unknown as RunEvents
+  const adapters: Array<AgentAdapter> = registered.map((id) => ({ id, label: id, backend }))
   const registry = makeRunRegistry({
     rows,
-    backend: Effect.succeed(backend),
+    backendOf: (id) =>
+      Effect.sync(
+        () =>
+          adapters.find((adapter) => adapter.id === id)?.backend ??
+          unavailableBackend(notLoadedMessage(id))
+      ),
+    adapters: Effect.sync(() => [...adapters]),
     runEvents: Effect.succeed(Option.some(runEvents)),
     gitOps: Effect.succeed(Option.none()),
     additions: Effect.succeed(additions),
@@ -131,9 +142,10 @@ const makeWorld = (
         return diaTools
       }),
     usageLimitResume: Effect.succeed('automatic'),
-    newRunId: Effect.succeed(STARTED)
+    newRunId: Effect.succeed(STARTED),
+    defaultSelection: Effect.succeed(Option.none())
   })
-  return { sessions, appended, logOrder, toolScopes, registry }
+  return { sessions, appended, logOrder, toolScopes, registry, adapters, backend }
 }
 
 const eventually = <A>(read: Effect.Effect<A>, done: (value: A) => boolean) =>
@@ -156,6 +168,7 @@ const tabSpec = {
   runId: RUN,
   sourceCwd: '/repo',
   model: 'm',
+  backend: 'dia-claude-code',
   thinkingLevel: 'adaptive' as const,
   permissionMode: 'default' as const,
   worktree: undefined,
@@ -165,6 +178,7 @@ const tabSpec = {
 const startOptions = {
   cwd: '/repo',
   model: 'm',
+  backend: 'dia-claude-code',
   thinkingLevel: 'adaptive' as const,
   permissionMode: 'default' as const,
   text: 'tidy the README'
@@ -223,6 +237,97 @@ describe('run registry', () => {
       })
     )
   )
+
+  it.live('stores the backend a run starts with in its row', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const { runs } = yield* makeWorld(rows).registry
+
+        yield* runs.start({ ...startOptions, backend: 'other' })
+
+        assert.strictEqual(Option.getOrThrow(yield* rows.get(STARTED)).spec.backend, 'other')
+      })
+    )
+  )
+
+  it.live('stores dia-claude-code in the row of a run started on it', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const { runs } = yield* makeWorld(rows).registry
+
+        yield* runs.start(startOptions)
+
+        assert.strictEqual(
+          Option.getOrThrow(yield* rows.get(STARTED)).spec.backend,
+          'dia-claude-code'
+        )
+      })
+    )
+  )
+
+  it.live('keeps the stored backend when a run opens with a request naming another', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const { runs } = yield* makeWorld(rows).registry
+        yield* runs.open({ ...tabSpec, backend: 'first' })
+        yield* runs.close(RUN)
+
+        const config = yield* runs.open({ ...tabSpec, backend: 'second' })
+
+        assert.deepStrictEqual(
+          [config.backend, Option.getOrThrow(yield* rows.get(RUN)).spec.backend],
+          ['first', 'first']
+        )
+      })
+    )
+  )
+
+  it.live('reports the backend of every run in the list', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const { runs } = yield* makeWorld(rows).registry
+        yield* runs.start({ ...startOptions, backend: 'other' })
+
+        const listed = yield* runs.list
+
+        assert.deepStrictEqual(
+          listed.map((info) => info.backend),
+          ['other']
+        )
+      })
+    )
+  )
+
+  it.live('carries the backend of a run in its request for a tab', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const { runs } = yield* makeWorld(rows).registry
+        yield* runs.start({ ...startOptions, backend: 'other' })
+        const requested = yield* runs.changes.pipe(
+          Stream.filter((change: RunChange) => change._tag === 'RunTabRequested'),
+          Stream.runHead,
+          Effect.forkScoped({ startImmediately: true })
+        )
+
+        yield* runs.openInTab(STARTED)
+
+        const change = Option.getOrThrow(yield* Fiber.join(requested))
+        assert.strictEqual(change._tag === 'RunTabRequested' ? change.backend : undefined, 'other')
+      })
+    )
+  )
+
+  it('decodes a stored spec without a backend as dia-claude-code', () => {
+    const decoded = Schema.decodeUnknownSync(StoredSpec)({
+      sourceCwd: '/repo',
+      model: 'm',
+      thinkingLevel: 'adaptive',
+      permissionMode: 'default',
+      worktree: null
+    })
+
+    assert.strictEqual(decoded.backend, 'dia-claude-code')
+  })
 
   it.live("appends a started run's own text to dia's system prompt additions", () =>
     withRows((rows) =>
@@ -395,7 +500,7 @@ describe('run registry', () => {
 
         const after = makeWorld(rows)
         const { recover } = yield* after.registry
-        yield* recover
+        yield* recover('dia-claude-code')
 
         assert.deepStrictEqual(
           after.sessions.map((resumed) => [resumed.resume, resumed.calls]),
@@ -413,6 +518,7 @@ describe('run registry', () => {
           {
             sourceCwd: '/repo',
             model: 'm',
+            backend: 'dia-claude-code',
             thinkingLevel: 'adaptive',
             permissionMode: 'default',
             worktree: null
@@ -423,7 +529,7 @@ describe('run registry', () => {
         const world = makeWorld(rows)
         const { recover } = yield* world.registry
 
-        yield* recover
+        yield* recover('dia-claude-code')
 
         assert.deepStrictEqual(world.sessions, [])
       })
@@ -431,7 +537,7 @@ describe('run registry', () => {
   )
 
   it.live(
-    'sets a run that waited for an answer at shutdown idle on recovery, without opening it',
+    'sets a run that waited for an answer at shutdown idle at startup, without opening it',
     () =>
       withRows((rows) =>
         Effect.gen(function* () {
@@ -440,6 +546,7 @@ describe('run registry', () => {
             {
               sourceCwd: '/repo',
               model: 'm',
+              backend: 'dia-claude-code',
               thinkingLevel: 'adaptive',
               permissionMode: 'default',
               worktree: null
@@ -449,9 +556,9 @@ describe('run registry', () => {
           )
           yield* rows.setStatus(RUN, 'waiting')
           const world = makeWorld(rows)
-          const { recover } = yield* world.registry
+          const { normaliseWaiting } = yield* world.registry
 
-          yield* recover
+          yield* normaliseWaiting
 
           assert.deepStrictEqual(
             [yield* statusOf(rows, RUN), world.sessions.length],
@@ -469,6 +576,7 @@ describe('run registry', () => {
           {
             sourceCwd: '/repo',
             model: 'm',
+            backend: 'dia-claude-code',
             thinkingLevel: 'adaptive',
             permissionMode: 'default',
             worktree: null
@@ -480,7 +588,7 @@ describe('run registry', () => {
         const world = makeWorld(rows)
         const { recover } = yield* world.registry
 
-        yield* recover
+        yield* recover('dia-claude-code')
 
         assert.deepStrictEqual(yield* statusOf(rows, RUN), Option.some('idle'))
         assert.deepStrictEqual(world.sessions, [])
@@ -507,7 +615,7 @@ describe('run registry', () => {
         yield* session.emit(UserMessagesSent.make({ messages: [] }))
         yield* eventually(statusOf(rows, STARTED), (status) => Option.contains(status, 'running'))
 
-        yield* recover
+        yield* recover('dia-claude-code')
 
         assert.deepStrictEqual(
           [yield* statusOf(rows, STARTED), world.sessions.length, world.appended.length],
@@ -648,6 +756,137 @@ const busyNow = (runs: { readonly busy: Stream.Stream<ReadonlyArray<string>> }) 
     Stream.runHead(runs.busy),
     Option.getOrElse(() => [])
   )
+
+describe('run adapters', () => {
+  const runningRow = (rows: RunRows, backend: string) =>
+    Effect.gen(function* () {
+      yield* rows.upsert(
+        RUN,
+        {
+          sourceCwd: '/repo',
+          model: 'm',
+          backend,
+          thinkingLevel: 'adaptive',
+          permissionMode: 'default',
+          worktree: null
+        },
+        Option.some(SESSION),
+        true
+      )
+      yield* rows.setStatus(RUN, 'running')
+    })
+
+  it.live(
+    'ends a run opened while its adapter is not registered, saying so and keeping its adapter',
+    () =>
+      withRows((rows) =>
+        Effect.gen(function* () {
+          const world = makeWorld(rows, NO_SESSION_ADDITIONS, Option.none(), [])
+          const { runs } = yield* world.registry
+
+          yield* runs.open(tabSpec)
+          const errors = yield* eventually(
+            Effect.sync(() =>
+              world.appended.flatMap((event) =>
+                event._tag === 'PaneAttentionChanged' && event.attention._tag === 'Crashed'
+                  ? [event.attention.error.message]
+                  : []
+              )
+            ),
+            (messages) => messages.length > 0
+          )
+
+          assert.deepStrictEqual(errors, [
+            'Pane session ended unexpectedly: dia-claude-code is not loaded'
+          ])
+          assert.strictEqual(
+            Option.getOrThrow(yield* rows.get(RUN)).spec.backend,
+            'dia-claude-code'
+          )
+        })
+      )
+  )
+
+  it.live(
+    'lists a running run as idle while its adapter is not registered, leaving the stored row running',
+    () =>
+      withRows((rows) =>
+        Effect.gen(function* () {
+          yield* runningRow(rows, 'adapter-b')
+          const { runs } = yield* makeWorld(rows, NO_SESSION_ADDITIONS, Option.none(), [
+            'adapter-a'
+          ]).registry
+
+          const listed = yield* runs.list
+
+          assert.deepStrictEqual(
+            [listed[0]?.status, yield* statusOf(rows, RUN)],
+            ['idle', Option.some('running')]
+          )
+        })
+      )
+  )
+
+  it.live(
+    'resumes a running run of adapter B when B registers after A, and leaves it alone until then',
+    () =>
+      withRows((rows) =>
+        Effect.gen(function* () {
+          yield* runningRow(rows, 'adapter-b')
+          const world = makeWorld(rows, NO_SESSION_ADDITIONS, Option.none(), ['adapter-a'])
+          const { recover } = yield* world.registry
+
+          yield* recover('adapter-a')
+          const whileUnregistered = [world.sessions.length, yield* statusOf(rows, RUN)]
+          world.adapters.push({ id: 'adapter-b', label: 'B', backend: world.backend })
+          yield* recover('adapter-b')
+
+          assert.deepStrictEqual(
+            [whileUnregistered, world.sessions.map((opened) => [opened.backend, opened.resume])],
+            [[0, Option.some('running')], [['adapter-b', Option.some(SESSION)]]]
+          )
+        })
+      )
+  )
+
+  it.live('tags each discovered session with the adapter that found it', () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const world = makeWorld(rows, NO_SESSION_ADDITIONS, Option.none(), [])
+        const found =
+          (sessionId: string): AgentBackend['discoverSessions'] =>
+          () =>
+            Effect.succeed([
+              { sessionId: SessionId.make(sessionId), title: sessionId, startedAt: 1, model: 'm' }
+            ])
+        world.adapters.push(
+          {
+            id: 'adapter-a',
+            label: 'A',
+            backend: { ...world.backend, discoverSessions: found('s-a') }
+          },
+          {
+            id: 'adapter-b',
+            label: 'B',
+            backend: { ...world.backend, discoverSessions: found('s-b') }
+          },
+          { id: 'adapter-c', label: 'C', backend: world.backend }
+        )
+        const { runs } = yield* world.registry
+
+        const sessions = yield* runs.discoverSessions('/repo')
+
+        assert.deepStrictEqual(
+          sessions.map((session) => [session.sessionId, session.backend]),
+          [
+            ['s-a', 'adapter-a'],
+            ['s-b', 'adapter-b']
+          ]
+        )
+      })
+    )
+  )
+})
 
 describe('busy runs', () => {
   it.live('counts a started run as busy before its session reports the turn', () =>

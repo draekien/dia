@@ -34,10 +34,12 @@ import {
 import {
   type AdapterPreferences,
   type AgentDefaults,
-  EMPTY_ADAPTER_PREFERENCES,
+  adapterPreferencesOf,
+  EMPTY_MODEL_PREFERENCES,
   keepsAModelVisible,
   LAST_VISIBLE_MODEL_MESSAGE,
   type ModelPreference,
+  type ModelPreferences,
   pickerModels
 } from '@shared/domain/model-preferences'
 import { DEFAULT_THINKING_LEVEL } from '@shared/domain/pane'
@@ -54,6 +56,7 @@ import {
 } from 'lucide-react'
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 
+const ADAPTER = 'dia-claude-code'
 const STALE_CHECK = Duration.minutes(5)
 
 type Health = AdapterStatusJson['health']
@@ -130,7 +133,7 @@ function HealthSection({ status }: { readonly status: AdapterStatusJson | undefi
 
   const change = async () => {
     const path = await window.dia.pickFile()
-    if (path !== null) await window.dia.adapter.setInstallPath(path)
+    if (path !== null) await window.dia.adapter.setInstallPath(ADAPTER, path)
   }
 
   return (
@@ -180,7 +183,7 @@ function HealthSection({ status }: { readonly status: AdapterStatusJson | undefi
             size="xs"
             variant="ghost"
             disabled={checking}
-            onClick={() => void window.dia.adapter.setInstallPath(null)}
+            onClick={() => void window.dia.adapter.setInstallPath(ADAPTER, null)}
           >
             Use PATH
           </Button>
@@ -189,7 +192,7 @@ function HealthSection({ status }: { readonly status: AdapterStatusJson | undefi
           size="xs"
           variant="ghost"
           aria-disabled={checking}
-          onClick={checking ? undefined : () => void window.dia.adapter.checkHealth()}
+          onClick={checking ? undefined : () => void window.dia.adapter.checkHealth(ADAPTER)}
         >
           {checking ? <Loader2Icon className="motion-safe:animate-spin" /> : <RefreshCwIcon />}
           Check
@@ -204,12 +207,13 @@ function DefaultsSection({
   preferences
 }: {
   readonly models: ReadonlyArray<ModelOptionJson>
-  readonly preferences: AdapterPreferences
+  readonly preferences: ModelPreferences
 }) {
   const { defaults } = preferences
-  const { favourites, others } = pickerModels(models, preferences)
+  const { favourites, others } = pickerModels(models, adapterPreferencesOf(preferences, ADAPTER))
   const listed = [...favourites, ...others]
-  const model = listed.find((option) => option.value === defaults.model) ?? listed[0]
+  const chosen = defaults.selection?.backend === ADAPTER ? defaults.selection.model : undefined
+  const model = listed.find((option) => option.value === chosen) ?? listed[0]
   const thinkingLevels = thinkingLevelsFor(model)
   const thinkingLevel = fitThinkingLevel(
     defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
@@ -228,7 +232,8 @@ function DefaultsSection({
         <Select
           value={model?.value ?? null}
           onValueChange={(value) => {
-            if (value !== null) update({ ...defaults, model: value })
+            if (value !== null)
+              update({ ...defaults, selection: { backend: ADAPTER, model: value } })
           }}
         >
           <SelectTrigger className="w-full" aria-labelledby="default-model-label">
@@ -561,7 +566,7 @@ function ModelsSection({
   const refreshing = state !== undefined && state._tag !== 'Loading' && state.refreshing
 
   const set = async (model: string, preference: ModelPreference | null) => {
-    const refused = await window.dia.adapter.setModelPreference(model, preference)
+    const refused = await window.dia.adapter.setModelPreference(ADAPTER, model, preference)
     setRefusal(refused?.message)
   }
 
@@ -634,7 +639,7 @@ function ModelsSection({
  * line of the Claude Code row in the adapter list. Renders nothing until the first status arrives.
  */
 export function ClaudeCodeHealthLabel() {
-  const status = useAdapterStatus()
+  const status = useAdapterStatus(ADAPTER)
   if (status === undefined) return null
   return <span>{healthLabel(status.health, status.checking)}</span>
 }
@@ -646,16 +651,16 @@ export function ClaudeCodeHealthLabel() {
  * scrolling container; it sizes to its content.
  */
 export function ClaudeCodeSettings() {
-  const status = useAdapterStatus()
-  const catalog = useModelCatalog()
-  const preferences = useModelPreferences() ?? EMPTY_ADAPTER_PREFERENCES
+  const status = useAdapterStatus(ADAPTER)
+  const catalog = useModelCatalog(ADAPTER)
+  const preferences = useModelPreferences() ?? EMPTY_MODEL_PREFERENCES
   const checkedOnOpen = useRef(false)
   const models = catalog.state?._tag === 'Ready' ? catalog.state.models : []
 
   useEffect(() => {
     if (status === undefined || checkedOnOpen.current) return
     checkedOnOpen.current = true
-    if (!status.checking && isStale(status.health)) void window.dia.adapter.checkHealth()
+    if (!status.checking && isStale(status.health)) void window.dia.adapter.checkHealth(ADAPTER)
   }, [status])
 
   return (
@@ -672,7 +677,7 @@ export function ClaudeCodeSettings() {
       </section>
       <section className="flex flex-col gap-3 border-t pt-6" aria-labelledby="models-heading">
         <SettingsSectionHeading id="models-heading">Models</SettingsSectionHeading>
-        <ModelsSection catalog={catalog} preferences={preferences} />
+        <ModelsSection catalog={catalog} preferences={adapterPreferencesOf(preferences, ADAPTER)} />
       </section>
     </div>
   )

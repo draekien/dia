@@ -15,28 +15,26 @@ import {
   type SessionMetaRepo,
   WorktreesKey
 } from '@dia/plugin'
+import { unavailableBackend } from '@dia-plugin/dia-agent-adapters/backend'
+import {
+  type AgentAdapter,
+  type AgentAdapters,
+  AgentAdaptersKey,
+  notLoadedMessage
+} from '@dia-plugin/dia-agent-adapters/registry'
 import { ToolsKey } from '@dia-plugin/dia-tools/tools'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem'
 import { Crypto, Effect, Option, Stream, SubscriptionRef } from 'effect'
 import { SqlClient } from 'effect/sql'
-import { type AgentBackend, AgentBackendKey, unavailableBackend } from './backend'
 import {
-  CheckAdapterHealth,
   EditQueuedMessage,
-  FollowAdapterStatus,
   FollowModelPreferences,
-  FollowModels,
-  GetAdapterStatus,
-  GetAttachmentTypes,
-  GetDisabledPermissionModes,
   GetModelPreferences,
-  GetModels,
   GetSlashCommands,
   GetUsageLimitResume,
   InterruptRun,
   OpenRunInTab,
-  RefreshModels,
   RemoveQueuedMessage,
   ResolvePermission,
   ResolvePlanReview,
@@ -46,11 +44,11 @@ import {
   SendMessage,
   SendQueuedMessageNow,
   SetAgentDefaults,
-  SetInstallPath,
   SetModelPreference,
   SetUsageLimitResume,
   StartRun
 } from './calls'
+import { makeDefaultSelection } from './default-selection'
 import { makeFeeds } from './feeds'
 import { handOverSettings, storeUsageLimitResume, usageLimitResumeOf } from './handover'
 import { runsMigrations } from './migrations'
@@ -77,12 +75,12 @@ const follow = <A>(
   )
 
 const followProviders = Effect.fn('Runs.followProviders')(function* (ctx: HostPluginContext) {
-  const backend = yield* SubscriptionRef.make(Option.none<AgentBackend>())
+  const adapters = yield* SubscriptionRef.make(Option.none<AgentAdapters>())
   const runEvents = yield* SubscriptionRef.make(Option.none<RunEvents>())
   const gitOps = yield* SubscriptionRef.make(Option.none<GitOps>())
   const meta = yield* SubscriptionRef.make(Option.none<SessionMetaRepo>())
-  yield* ctx.whenProvided([AgentBackendKey], ({ agentBackend }) =>
-    follow(ctx, backend, 'agentBackend', agentBackend)
+  yield* ctx.whenProvided([AgentAdaptersKey], ({ agentAdapters }) =>
+    follow(ctx, adapters, 'agentAdapters', agentAdapters)
   )
   yield* ctx.whenProvided([RunEventsKey], ({ runEvents: provided }) =>
     follow(ctx, runEvents, 'runEvents', provided)
@@ -91,8 +89,21 @@ const followProviders = Effect.fn('Runs.followProviders')(function* (ctx: HostPl
     follow(ctx, gitOps, 'worktrees', worktrees)
   )
   yield* ctx.whenProvided([MetaRepoKey], ({ metaRepo }) => follow(ctx, meta, 'metaRepo', metaRepo))
-  return { backend, runEvents, gitOps, meta }
+  return { adapters, runEvents, gitOps, meta }
 })
+
+const followModels = (
+  adapters: SubscriptionRef.SubscriptionRef<Option.Option<AgentAdapters>>,
+  id: string
+) =>
+  SubscriptionRef.changes(adapters).pipe(
+    Stream.switchMap(
+      Option.match({
+        onNone: () => unavailableBackend(notLoadedMessage(id)).models(),
+        onSome: (agentAdapters) => agentAdapters.models(id)
+      })
+    )
+  )
 
 const once =
   (rows: RunRows) =>
@@ -117,10 +128,36 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       Effect.provide(NodeFileSystem.layer)
     )
     const providers = yield* followProviders(ctx)
-    const backend = Effect.map(
-      SubscriptionRef.get(providers.backend),
-      Option.getOrElse(() => unavailableBackend)
+    const registered = SubscriptionRef.changes(providers.adapters).pipe(
+      Stream.switchMap(
+        Option.match({
+          onNone: () => Stream.succeed<ReadonlyArray<AgentAdapter>>([]),
+          onSome: (agentAdapters) => agentAdapters.adapters
+        })
+      )
     )
+    const currentAdapters = registered.pipe(
+      Stream.take(1),
+      Stream.runHead,
+      Effect.map(Option.getOrElse((): ReadonlyArray<AgentAdapter> => []))
+    )
+    const backendOf = (id: string) =>
+      Effect.gen(function* () {
+        const agentAdapters = yield* SubscriptionRef.get(providers.adapters)
+        const adapter = Option.isSome(agentAdapters)
+          ? yield* agentAdapters.value.get(id)
+          : Option.none<AgentAdapter>()
+        return Option.match(adapter, {
+          onNone: () => unavailableBackend(notLoadedMessage(id)),
+          onSome: (found) => found.backend
+        })
+      })
+    const modelsOf = (id: string) =>
+      followModels(providers.adapters, id).pipe(
+        Stream.take(1),
+        Stream.runHead,
+        Effect.map(Option.getOrThrow)
+      )
     const crypto = yield* Effect.provide(Crypto.Crypto, NodeCrypto.layer)
     const runTools = yield* makeRunTools.pipe(Effect.provide(NodeCrypto.layer))
 
@@ -139,22 +176,24 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
       })
     )
 
+    const feeds = yield* makeFeeds({ models: modelsOf, rows })
+    const defaultSelection = makeDefaultSelection({
+      preferences: Effect.map(feeds.preferences.current, (snapshot) => snapshot.preferences),
+      adapters: registered,
+      models: (id) => followModels(providers.adapters, id)
+    })
+
     const registry = yield* makeRunRegistry({
       rows,
-      backend,
+      backendOf,
+      adapters: currentAdapters,
       runEvents: SubscriptionRef.get(providers.runEvents),
       gitOps: SubscriptionRef.get(providers.gitOps),
       additions: sessionAdditions,
       sessionTools: runTools.sessionTools,
       usageLimitResume: usageLimitResumeOf(rows),
-      newRunId: crypto.randomUUIDv4().pipe(Effect.orDie)
-    })
-    const feeds = yield* makeFeeds({
-      backends: SubscriptionRef.changes(providers.backend).pipe(
-        Stream.map(Option.getOrElse(() => unavailableBackend))
-      ),
-      backend,
-      rows
+      newRunId: crypto.randomUUIDv4().pipe(Effect.orDie),
+      defaultSelection
     })
     const { runs } = registry
     const sessionCall = once(rows)
@@ -232,42 +271,37 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
     yield* ctx.serve(SetUsageLimitResume, ({ mode }) =>
       storeUsageLimitResume(rows, mode).pipe(Effect.andThen(registry.setUsageLimitResume(mode)))
     )
-    yield* ctx.serve(GetModels, () => feeds.models.current)
-    yield* ctx.serve(RefreshModels, () => feeds.models.refresh)
-    yield* ctx.serve(FollowModels, () => feeds.models.changes)
-    yield* ctx.serve(GetAdapterStatus, () => feeds.status.current)
-    yield* ctx.serve(CheckAdapterHealth, () => feeds.status.check)
-    yield* ctx.serve(SetInstallPath, ({ path }) => feeds.status.setInstallPath(path))
-    yield* ctx.serve(FollowAdapterStatus, () => feeds.status.changes)
     yield* ctx.serve(GetModelPreferences, () => feeds.preferences.current)
-    yield* ctx.serve(SetModelPreference, ({ model, preference }) =>
-      feeds.preferences.set(model, Option.fromNullishOr(preference))
+    yield* ctx.serve(SetModelPreference, ({ adapter, model, preference }) =>
+      feeds.preferences.set(adapter, model, Option.fromNullishOr(preference))
     )
     yield* ctx.serve(SetAgentDefaults, ({ defaults }) => feeds.preferences.setDefaults(defaults))
     yield* ctx.serve(FollowModelPreferences, () => feeds.preferences.changes)
-    yield* ctx.serve(GetDisabledPermissionModes, ({ cwd }) =>
-      Effect.flatMap(backend, (loaded) => loaded.disabledPermissionModes(cwd))
-    )
-    yield* ctx.serve(GetSlashCommands, ({ cwd }) =>
+    yield* ctx.serve(GetSlashCommands, ({ adapter, cwd }) =>
       Effect.gen(function* () {
-        yield* Effect.logDebug('Reading slash commands', { cwd })
+        yield* Effect.logDebug('Reading slash commands', { adapter, cwd })
         const additions = yield* sessionAdditions
-        const loaded = yield* backend
+        const loaded = yield* backendOf(adapter)
         return yield* loaded.slashCommands(cwd, additions)
       })
-    )
-    yield* ctx.serve(GetAttachmentTypes, () =>
-      Effect.flatMap(backend, (loaded) => loaded.attachmentTypes())
     )
 
     yield* Effect.gen(function* () {
       yield* ctx.pluginsSettled
-      yield* SubscriptionRef.changes(providers.backend).pipe(
-        Stream.filter(Option.isSome),
-        Stream.take(1),
-        Stream.runDrain
+      yield* registry.normaliseWaiting
+      const recovered = new Map<string, AgentAdapter>()
+      yield* registered.pipe(
+        Stream.runForEach((adapters) =>
+          Effect.forEach(
+            adapters.filter((adapter) => recovered.get(adapter.id) !== adapter),
+            (adapter) =>
+              Effect.sync(() => recovered.set(adapter.id, adapter)).pipe(
+                Effect.andThen(registry.recover(adapter.id))
+              ),
+            { discard: true }
+          )
+        )
       )
-      yield* registry.recover
     }).pipe(Effect.forkScoped)
     yield* Effect.logInfo('Run service provided', { plugin: ctx.name })
   })

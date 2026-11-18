@@ -32,12 +32,13 @@ export class RunWorkspace extends Context.Service<
 >()('RunWorkspace') {}
 
 /**
- * The model list the loaded agent backend reports now, used to name a changed model. Reads
- * `Loading` when no backend is loaded.
+ * The model list of the adapter run `runId` recorded, as that adapter reports it now, used to name
+ * a changed model. Reads `Loading` when the run or the adapter registry is unknown, and
+ * `Unavailable` while the run's adapter is not loaded.
  */
 export class RunModelCatalog extends Context.Service<
   RunModelCatalog,
-  { readonly current: Effect.Effect<ModelCatalogState> }
+  { readonly current: (runId: string) => Effect.Effect<ModelCatalogState> }
 >()('RunModelCatalog') {}
 
 /**
@@ -196,10 +197,10 @@ export const RunChatProjectionLive = Layer.effect(
         : { state: entry.state, seq: entry.seq }
     })
 
-    const withDisplayName = (event: PaneChat.PaneStreamEvent) =>
+    const withDisplayName = (runId: string, event: PaneChat.PaneStreamEvent) =>
       Effect.gen(function* () {
         if (event._tag !== 'PaneModelChanged') return event
-        const catalog = yield* modelCatalog.current
+        const catalog = yield* modelCatalog.current(runId)
         const option =
           catalog._tag === 'Ready'
             ? catalog.models.find((candidate) => candidate.value === event.model)
@@ -216,7 +217,7 @@ export const RunChatProjectionLive = Layer.effect(
           const state = PaneChat.isPaneStreamEvent(event)
             ? PaneChat.reducePaneChat(
                 entry.state,
-                yield* withDisplayName(event),
+                yield* withDisplayName(committed.runId, event),
                 yield* Clock.currentTimeMillis
               )
             : entry.state

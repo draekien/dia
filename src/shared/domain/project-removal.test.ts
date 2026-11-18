@@ -12,6 +12,7 @@ const worktreeTab = (archived: boolean): Tab => ({
     paneId,
     cwd: worktree.path,
     model: 'claude-sonnet-5-5',
+    backend: 'dia-claude-code',
     thinkingLevel: 'adaptive',
     permissionMode: 'default',
     worktree

@@ -41,7 +41,7 @@ import {
   type SessionEnd,
   SessionFailed,
   SessionNotFound
-} from '@dia-plugin/dia-runs/backend'
+} from '@dia-plugin/dia-agent-adapters/backend'
 import type { Attachment } from '@shared/domain/attachment'
 import type { QuestionResponse } from '@shared/domain/attention'
 import type { OutgoingMessage, SendMode } from '@shared/domain/message-queue'

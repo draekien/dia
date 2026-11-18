@@ -1,6 +1,6 @@
 {
   "name": "dia-tools",
-  "api": "0.0.44",
+  "api": "0.0.45",
   "category": "feature",
   "host": "host.ts",
   "renderer": "renderer.ts",

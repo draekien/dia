@@ -1,6 +1,6 @@
 import type { PluginServices, PluginSetup } from '@dia/plugin'
 import { addEntry, declareList, openSettings } from '@dia/renderer-plugin'
-import { AdapterPanelsSlot } from '@dia-plugin/dia-adapters/slots'
+import { AdapterPanelsSlot } from '@dia-plugin/dia-agent-adapters/slots'
 import { CommandsSlot } from '@dia-plugin/dia-command-palette/slots'
 import { SettingsPagesSlot } from '@dia-plugin/dia-settings/slots'
 import { Effect } from 'effect'
@@ -25,7 +25,7 @@ const setup: PluginSetup<PluginServices> = (ctx) =>
       icon: SettingsIcon,
       keywords: ['adapter'],
       searchOnly: true,
-      run: () => openSettings({ plugin: 'dia-adapters', id: 'adapters' })
+      run: () => openSettings({ plugin: 'dia-agent-adapters', id: 'adapters' })
     })
   })
 

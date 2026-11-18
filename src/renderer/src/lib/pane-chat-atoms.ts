@@ -1,4 +1,5 @@
 import type { Attachment } from '@shared/domain/attachment'
+import { LEGACY_ADAPTER_ID } from '@shared/domain/legacy-adapter'
 import type { SendMode } from '@shared/domain/message-queue'
 import {
   isPaneStreamEvent,
@@ -6,9 +7,20 @@ import {
   type PaneStreamEvent,
   reducePaneChat
 } from '@shared/domain/pane-chat'
+import { tabOf } from '@shared/domain/workspace'
 import type { ModelCatalogSnapshotJson } from '@shared/ipc/contract'
 import type { PaneEventFrame } from '@shared/ipc/rpc'
-import { Clock, Duration, Effect, Queue, Ref, type Scope, Stream, SubscriptionRef } from 'effect'
+import {
+  Clock,
+  Duration,
+  Effect,
+  Queue,
+  Ref,
+  Result,
+  type Scope,
+  Stream,
+  SubscriptionRef
+} from 'effect'
 import { Atom } from 'effect/reactivity'
 import { findModelOption } from './model-options'
 import { type RewindCommand, type RewindProgress, rewindFailureMessage } from './pane-rewind'
@@ -27,8 +39,22 @@ const withDisplayName = (
     ? { ...event, displayName: findModelOption(catalog?.state, event.model)?.displayName }
     : event
 
+const adapterOfPane = (paneId: string): Effect.Effect<string> =>
+  Effect.gen(function* () {
+    const workspace = yield* Effect.promise(() => window.dia.getWorkspace())
+    const found = tabOf(workspace, paneId)
+    if (Result.isFailure(found)) {
+      yield* Effect.logWarning('No tab for the pane; reading models of the legacy adapter', {
+        paneId
+      })
+      return LEGACY_ADAPTER_ID
+    }
+    return found.success.tab.config.backend
+  })
+
 const paneFeed = (
   paneId: string,
+  adapter: string,
   queue: Queue.Queue<PaneFeedItem>
 ): Effect.Effect<() => ModelCatalogSnapshotJson | undefined, never, Scope.Scope> =>
   Effect.acquireRelease(
@@ -37,9 +63,9 @@ const paneFeed = (
       const keepCatalog = (next: ModelCatalogSnapshotJson): void => {
         if (catalog === undefined || next.revision > catalog.revision) catalog = next
       }
-      void window.dia.models.get().then(keepCatalog)
+      void window.dia.models.get(adapter).then(keepCatalog)
       const unsubscribes = [
-        window.dia.models.onChanged(keepCatalog),
+        window.dia.models.onChanged(adapter, keepCatalog),
         window.dia.onPaneEvent((frame) => {
           if (frame.paneId === paneId) Queue.offerUnsafe(queue, frame)
         }),
@@ -70,7 +96,8 @@ export const paneChatAtom = Atom.family((paneId: string) =>
   Atom.subscriptionRef(
     Effect.gen(function* () {
       const feed = yield* Queue.unbounded<PaneFeedItem>()
-      const currentCatalog = yield* paneFeed(paneId, feed)
+      const adapter = yield* adapterOfPane(paneId)
+      const currentCatalog = yield* paneFeed(paneId, adapter, feed)
       const floor = yield* Ref.make(0)
       const loadSnapshot = Effect.gen(function* () {
         const snapshot = yield* Effect.promise(() => window.dia.getPaneChat(paneId))

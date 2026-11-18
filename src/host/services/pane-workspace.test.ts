@@ -101,6 +101,7 @@ const configOf = (spec: RunSpec): PaneConfig => ({
   paneId: spec.runId,
   cwd: spec.sourceCwd,
   model: spec.model,
+  backend: spec.backend,
   thinkingLevel: spec.thinkingLevel,
   permissionMode: spec.permissionMode
 })
@@ -251,7 +252,14 @@ const project = (projectId: ProjectId, directory: string, isGitRepo = true): Pro
 
 const tab = (paneId: string, cwd: string, extra: Partial<Tab> = {}): Tab => ({
   name: AgentName.make(`agent-${paneId.slice(0, 4)}`),
-  config: { paneId, cwd, model: 'm', thinkingLevel: 'adaptive', permissionMode: 'default' },
+  config: {
+    paneId,
+    cwd,
+    model: 'm',
+    backend: 'dia-claude-code',
+    thinkingLevel: 'adaptive',
+    permissionMode: 'default'
+  },
   archived: false,
   ...extra
 })
@@ -269,6 +277,7 @@ const request = (overrides: Partial<CreateTabRequest> = {}): CreateTabRequest =>
   paneId: PANE_NEW,
   name: AgentName.make('heron'),
   model: 'claude-sonnet-5-5',
+  backend: 'dia-claude-code',
   thinkingLevel: 'adaptive',
   permissionMode: 'default',
   worktree: null,
@@ -323,6 +332,7 @@ describe('PaneWorkspace moved folders', () => {
       paneId: PANE_A,
       cwd: '/data/plugins/worktrees/trees/heron',
       model: 'm',
+      backend: 'dia-claude-code',
       thinkingLevel: 'adaptive',
       permissionMode: 'default',
       worktree: {
@@ -625,7 +635,8 @@ describe('PaneWorkspace.registerProject importing discovered sessions', () => {
     sessionId: SessionId.make(sessionId),
     title,
     startedAt,
-    model: 'adapter-model'
+    model: 'adapter-model',
+    backend: 'other'
   })
 
   const register = (harness: Harness) =>
@@ -673,6 +684,7 @@ describe('PaneWorkspace.registerProject importing discovered sessions', () => {
           {
             cwd: imported.config.cwd,
             model: imported.config.model,
+            backend: imported.config.backend,
             thinkingLevel: imported.config.thinkingLevel,
             permissionMode: imported.config.permissionMode,
             archived: imported.archived
@@ -680,6 +692,7 @@ describe('PaneWorkspace.registerProject importing discovered sessions', () => {
           {
             cwd: '/other',
             model: 'adapter-model',
+            backend: 'other',
             thinkingLevel: 'medium',
             permissionMode: 'default',
             archived: false
@@ -760,6 +773,28 @@ describe('PaneWorkspace.createTab', () => {
       assert.deepStrictEqual(tabsOf(workspace), [PANE_A, PANE_NEW])
       assert.deepStrictEqual(workspace.visibleTab, PANE_NEW)
       assert.strictEqual(workspace.projects[0].tabs[1].name, 'heron')
+    })
+  )
+
+  it.effect('opens the run on the requested backend and records it on the tab', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: oneProject() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* (yield* PaneWorkspace).createTab(request({ backend: 'other' }), ignore)
+          return yield* current
+        })
+      )
+
+      assert.deepStrictEqual(
+        {
+          opened: harness.requests[0].backend,
+          stored: workspace.projects[0].tabs[1].config.backend
+        },
+        { opened: 'other', stored: 'other' }
+      )
     })
   )
 
@@ -1794,6 +1829,22 @@ describe('PaneWorkspace sessions', () => {
     return { events, onEvent: (event: IpcEvent) => Effect.sync(() => void events.push(event)) }
   }
 
+  it.effect('resumePane opens the run on the backend recorded on the tab', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        persisted: withSession('/repo', { backend: 'other' }),
+        directories: ['/repo']
+      })
+
+      yield* run(
+        harness,
+        Effect.flatMap(PaneWorkspace, (s) => s.resumePane(PANE_A, ignore))
+      )
+
+      assert.strictEqual(harness.requests[0].backend, 'other')
+    })
+  )
+
   it.effect('resumePane continues the recorded session in the tab directory', () =>
     Effect.gen(function* () {
       const harness = makeHarness({ persisted: withSession(), directories: ['/repo'] })
@@ -1975,6 +2026,7 @@ describe('PaneWorkspace run tab requests', () => {
               projectDirectory: '/other',
               select: true,
               model: 'm',
+              backend: 'dia-claude-code',
               thinkingLevel: 'adaptive',
               permissionMode: 'default',
               sessionId: SessionId.make('s-new')
@@ -1990,6 +2042,34 @@ describe('PaneWorkspace run tab requests', () => {
       )
       assert.strictEqual(workspace.projects[1].tabs[1].sessionId, 's-new')
       assert.strictEqual(workspace.visibleTab, PANE_NEW)
+    })
+  )
+
+  it.effect('records the backend of the requesting run on the new tab', () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ persisted: twoProjects() })
+
+      const workspace = yield* run(
+        harness,
+        Effect.gen(function* () {
+          yield* harness.emit(
+            RunTabRequested.make({
+              runId: PANE_NEW,
+              directory: '/other',
+              projectDirectory: '/other',
+              select: true,
+              model: 'm',
+              backend: 'other',
+              thinkingLevel: 'adaptive',
+              permissionMode: 'default',
+              sessionId: null
+            })
+          )
+          return yield* current
+        })
+      )
+
+      assert.strictEqual(workspace.projects[1].tabs[1].config.backend, 'other')
     })
   )
 
@@ -2010,6 +2090,7 @@ describe('PaneWorkspace run tab requests', () => {
                 projectDirectory: '/repo',
                 select: false,
                 model: 'm',
+                backend: 'dia-claude-code',
                 thinkingLevel: 'adaptive',
                 permissionMode: 'default',
                 sessionId: null
@@ -2037,6 +2118,7 @@ describe('PaneWorkspace run tab requests', () => {
       owner: { plugin: 'dia-org', ownsProject },
       name: AgentName.make('Assistant'),
       model: 'm',
+      backend: 'dia-claude-code',
       thinkingLevel: 'adaptive',
       permissionMode: 'default',
       sessionId: null

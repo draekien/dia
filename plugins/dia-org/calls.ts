@@ -22,6 +22,7 @@ import {
   JobTitleNotFound,
   JobTitleNotHireable,
   JobTitlesNotLoaded,
+  NoAgentAdapter,
   OrgSettings,
   OverallCap,
   ReportsToCycle,
@@ -207,7 +208,7 @@ export const WatchAgentRuns = Rpc.make('WatchAgentRuns', {
 export const AskAssistant = Rpc.make('AskAssistant', {
   payload: { text: Schema.NonEmptyString },
   success: Schema.String,
-  error: AssistantDisabled
+  error: Schema.Union([AssistantDisabled, NoAgentAdapter])
 })
 
 /**
@@ -217,7 +218,7 @@ export const AskAssistant = Rpc.make('AskAssistant', {
 export const OpenAssistant = Rpc.make('OpenAssistant', {
   payload: {},
   success: Schema.String,
-  error: AssistantDisabled
+  error: Schema.Union([AssistantDisabled, NoAgentAdapter])
 })
 
 /** Archives the Executive assistant's run; the next request starts a new one. */

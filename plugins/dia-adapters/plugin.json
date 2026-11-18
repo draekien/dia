@@ -1,8 +1,0 @@
-{
-  "name": "dia-adapters",
-  "api": "0.0.44",
-  "category": "feature",
-  "renderer": "renderer.ts",
-  "load": "eager",
-  "exports": ["slots.ts"]
-}

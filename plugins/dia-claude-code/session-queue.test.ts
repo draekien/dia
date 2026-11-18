@@ -11,7 +11,7 @@ import {
   type AgentSessionOptions,
   SessionFailed,
   SessionNotFound
-} from '@dia-plugin/dia-runs/backend'
+} from '@dia-plugin/dia-agent-adapters/backend'
 import { assert, describe, it } from '@effect/vitest'
 import { ContentAttachment, PathAttachment } from '@shared/domain/attachment'
 import type { PaneConfig, SessionId } from '@shared/domain/pane'
@@ -113,6 +113,7 @@ const config: PaneConfig = {
   paneId: '00000000-0000-0000-0000-000000000001',
   cwd: 'F:/Dev/dia-verify/queue',
   model: 'claude-sonnet-5',
+  backend: 'dia-claude-code',
   thinkingLevel: 'off',
   permissionMode: 'default'
 }

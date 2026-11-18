@@ -26,6 +26,7 @@ const config = (paneId: string, cwd: string) => ({
   paneId,
   cwd,
   model: 'claude-sonnet-5-5',
+  backend: 'dia-claude-code',
   thinkingLevel: 'adaptive' as const,
   permissionMode: 'default' as const
 })
@@ -154,6 +155,32 @@ describe('WorkspaceStore round trip', () => {
         const second = yield* openStore(dir)
 
         assert.deepStrictEqual(yield* second.store.load, Option.some(workspace))
+      })
+    )
+  )
+
+  it.effect('loads the backend of a tab after a reopen', () =>
+    inTempDir((dir) =>
+      Effect.gen(function* () {
+        const workspace = workspaceOf(
+          [
+            entry(PROJECT_X, 'F:a', [
+              tab(PANE_A, { config: { ...config(PANE_A, 'F:a'), backend: 'other' } }),
+              tab(PANE_B)
+            ])
+          ],
+          PANE_A
+        )
+        const first = yield* openStore(dir)
+        yield* first.store.save(workspace)
+
+        const second = yield* openStore(dir)
+        const loaded = Option.getOrThrow(yield* second.store.load)
+
+        assert.deepStrictEqual(
+          loaded.projects[0].tabs.map((stored) => stored.config.backend),
+          ['other', 'dia-claude-code']
+        )
       })
     )
   )

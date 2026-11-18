@@ -1,5 +1,12 @@
-import { ActivityId, PermissionMode, ServiceKey, ThinkingLevel } from '@dia/plugin'
-import { type Effect, Predicate, Schema, SchemaTransformation } from 'effect'
+import {
+  ActivityId,
+  LEGACY_ADAPTER_ID,
+  ModelPreferences,
+  PermissionMode,
+  ServiceKey,
+  ThinkingLevel
+} from '@dia/plugin'
+import { type Effect, Predicate, Schema, SchemaTransformation, Struct } from 'effect'
 import { Rpc } from 'effect/rpc'
 
 /**
@@ -32,16 +39,41 @@ export type ScheduleTimes = typeof ScheduleTimes.Type
 export const CatchUp = Schema.Literals(['skip', 'once'])
 export type CatchUp = typeof CatchUp.Type
 
-/** The `StartRunOptions` a schedule's run starts with; `context` must be JSON. */
-export const ScheduledRun = Schema.Struct({
+const CurrentRun = Schema.Struct({
   cwd: Schema.String,
-  model: Schema.String,
+  selection: ModelPreferences.ModelSelection,
   thinkingLevel: ThinkingLevel,
   permissionMode: PermissionMode,
   text: Schema.String,
   labels: Schema.optional(Schema.Array(Schema.String)),
   context: Schema.optional(Schema.Json)
 })
+
+const LegacyRun = Schema.Struct({
+  ...Struct.omit(CurrentRun.fields, ['selection']),
+  model: Schema.String
+}).pipe(
+  Schema.decodeTo(
+    CurrentRun,
+    SchemaTransformation.transform<
+      typeof CurrentRun.Encoded,
+      { readonly model: string } & Omit<typeof CurrentRun.Type, 'selection'>
+    >({
+      decode: ({ model, ...rest }) => ({
+        ...rest,
+        selection: { backend: LEGACY_ADAPTER_ID, model }
+      }),
+      encode: ({ selection, ...rest }) => ({ ...rest, model: selection.model })
+    })
+  )
+)
+
+/**
+ * The `StartRunOptions` a schedule's run starts with: `selection` names the adapter and its model
+ * (its `backend` and `model`); `context` must be JSON. A stored run with a `model` and no
+ * `selection` decodes as a selection on `dia-claude-code`.
+ */
+export const ScheduledRun = Schema.Union([CurrentRun, LegacyRun])
 
 /**
  * A schedule: `id` (lowercase letters, digits and hyphens, starting with a letter; prefix it with

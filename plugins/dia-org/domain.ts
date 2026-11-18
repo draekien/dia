@@ -52,8 +52,8 @@ export type JobTitleName = typeof JobTitleName.Type
  * cannot be hired into. The definition fields are what its sessions run with: `jobDescription` is
  * appended to the system prompt, `skills` and `mcpServers` are names a session resolves when it
  * starts (empty `skills` means Claude Code's own skill set), `permissions` are added to the
- * session, `bypassOptIn` is the `bypassPermissions` opt-in (ADR-0054), and `model` (null for the
- * first model the agent backend lists) and `thinkingLevel` are what its sessions open with.
+ * session, `bypassOptIn` is the `bypassPermissions` opt-in (ADR-0054), and `selection` (null for the
+ * default model `Runs.defaultSelection` gives) and `thinkingLevel` are what its sessions open with.
  */
 export const JobTitle = Schema.Struct({
   ...AgentDefinition.fields,
@@ -285,6 +285,15 @@ export class AssistantDisabled extends Schema.TaggedError<AssistantDisabled>()(
   'AssistantDisabled',
   {}
 ) {}
+
+/** The sentence shown when a run cannot start because no agent adapter is loaded to choose a model from. */
+export const NO_AGENT_ADAPTER_MESSAGE = 'No agent adapter is loaded'
+
+/**
+ * Failure of starting a run for the Executive assistant: its job title chooses no model and no
+ * agent adapter is loaded to give a default. No run was started.
+ */
+export class NoAgentAdapter extends Schema.TaggedError<NoAgentAdapter>()('NoAgentAdapter', {}) {}
 
 /**
  * Failure of dismissing: hired agent `hireId` is assigned to `issues` issues that are neither

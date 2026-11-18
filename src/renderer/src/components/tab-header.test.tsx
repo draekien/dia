@@ -41,6 +41,7 @@ const entry: ProjectEntry = {
         paneId: PANE,
         cwd: 'F:/Dev/dia',
         model: 'm',
+        backend: 'dia-claude-code',
         thinkingLevel: 'adaptive',
         permissionMode: 'default',
         worktree: WORKTREE

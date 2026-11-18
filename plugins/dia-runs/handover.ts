@@ -1,4 +1,4 @@
-import { ModelPreferences, Parking } from '@dia/plugin'
+import { LEGACY_ADAPTER_ID, ModelPreferences, Parking } from '@dia/plugin'
 import { Effect, FileSystem, Option, Schema } from 'effect'
 import { PREFERENCES_KEY } from './feeds'
 import type { RunRows } from './run-rows'
@@ -9,7 +9,7 @@ const USAGE_LIMIT_RESUME_KEY = 'usageLimitResume'
 const KernelSettings = Schema.fromJsonString(
   Schema.Struct({
     usageLimitResume: Schema.optional(Parking.UsageLimitResume),
-    adapters: Schema.optional(Schema.Record(Schema.String, ModelPreferences.AdapterPreferences))
+    adapters: Schema.optional(Schema.Record(Schema.String, ModelPreferences.LegacyModelPreferences))
   })
 )
 
@@ -41,9 +41,9 @@ export const handOverSettings = Effect.fn('Runs.handOverSettings')(function* (
     const { usageLimitResume, adapters = {} } = settings.value
     if (usageLimitResume !== undefined) yield* storeUsageLimitResume(rows, usageLimitResume)
     const values = Object.values(adapters)
-    const preferences = adapters['dia-claude-code'] ?? (values.length === 1 ? values[0] : undefined)
+    const preferences = adapters[LEGACY_ADAPTER_ID] ?? (values.length === 1 ? values[0] : undefined)
     if (preferences !== undefined) {
-      yield* rows.setSetting(PREFERENCES_KEY, ModelPreferences.AdapterPreferences, preferences)
+      yield* rows.setSetting(PREFERENCES_KEY, ModelPreferences.StoredModelPreferences, preferences)
     }
     yield* Effect.logInfo('Copied run settings from settings.json', {
       usageLimitResume: usageLimitResume !== undefined,

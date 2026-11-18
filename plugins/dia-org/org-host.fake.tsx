@@ -44,7 +44,7 @@ const jobTitle = (n: number, name: string, builtIn: BuiltInJobTitle | null): Job
     permissions: { allow: [], ask: [], deny: [] },
     mcpServers: [],
     bypassOptIn: false,
-    model: null,
+    selection: null,
     thinkingLevel: 'medium'
   })
 
@@ -165,6 +165,14 @@ const FAKE_MODELS = {
   refresh: async () => {}
 }
 
+/** The adapter list the fake bridge reports: Claude Code alone. */
+const FAKE_ADAPTERS = {
+  onChanged: (listener: (adapters: ReadonlyArray<{ id: string; label: string }>) => void) => {
+    listener([{ id: 'dia-claude-code', label: 'Claude Code' }])
+    return () => {}
+  }
+}
+
 /**
  * A fake `org` host entry behind `window.dia.plugins.call` and `window.dia.plugins.subscribe`.
  * `push` replaces `live` and sends it to every `WatchOrgLive` subscriber.
@@ -272,6 +280,7 @@ export const installHost = (
     dia: {
       plugins: { call, subscribe, onStatusChanged: () => () => {} },
       models: FAKE_MODELS,
+      adapters: FAKE_ADAPTERS,
       getWorkspace: async () => WORKSPACE,
       onWorkspaceChanged: () => () => {},
       onRunSummariesReplaced: () => () => {},

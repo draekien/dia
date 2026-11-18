@@ -2,7 +2,7 @@
 import { setImmediate } from 'node:timers/promises'
 import type { Options, SDKUserMessage, SessionMessage } from '@anthropic-ai/claude-agent-sdk'
 import { type OutboundMessage, RewindFailed } from '@dia/plugin'
-import type { AgentSessionOptions } from '@dia-plugin/dia-runs/backend'
+import type { AgentSessionOptions } from '@dia-plugin/dia-agent-adapters/backend'
 import { assert, describe, it } from '@effect/vitest'
 import type { PaneConfig, SessionId } from '@shared/domain/pane'
 import { Deferred, Duration, Effect, Fiber, Option } from 'effect'
@@ -95,6 +95,7 @@ const config: PaneConfig = {
   paneId: '00000000-0000-0000-0000-000000000001',
   cwd: 'F:/Dev/dia-verify/rewind',
   model: 'claude-sonnet-5',
+  backend: 'dia-claude-code',
   thinkingLevel: 'off',
   permissionMode: 'default'
 }

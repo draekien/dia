@@ -30,6 +30,7 @@ const runInfo = (cwd: string): RunInfo => ({
   runId: RUN,
   cwd,
   model: 'sonnet',
+  backend: 'dia-claude-code',
   thinkingLevel: 'off',
   permissionMode: 'default',
   sessionId: Option.none(),
@@ -62,7 +63,8 @@ const fakeRuns = (cwd: string): Runs => {
     list: Effect.succeed([runInfo(cwd)]),
     openInTab: nothing,
     changes: Stream.empty,
-    discoverSessions: () => Effect.succeed([])
+    discoverSessions: () => Effect.succeed([]),
+    defaultSelection: Effect.succeed(Option.none())
   }
 }
 

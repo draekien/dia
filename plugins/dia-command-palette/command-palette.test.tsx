@@ -7,7 +7,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startRendererRegistry } from '../../src/renderer/src/lib/renderer-registry.fake'
-import adapters from '../dia-adapters/renderer'
+import adapters from '../dia-agent-adapters/renderer'
 import claudeCodeSettings from '../dia-claude-code-settings/renderer'
 import meta from '../dia-meta/renderer'
 import settings from '../dia-settings/renderer'
@@ -26,7 +26,7 @@ vi.mock('@dia/renderer-plugin', async (importOriginal) => {
 const PLUGINS: Record<string, PluginSetup<PluginServices>> = {
   'dia-command-palette': commandPalette,
   'dia-settings': settings,
-  'dia-adapters': adapters,
+  'dia-agent-adapters': adapters,
   'dia-claude-code-settings': claudeCodeSettings,
   'dia-meta': meta
 }
@@ -114,7 +114,7 @@ describe('CommandPalette', () => {
     fireEvent.click(screen.getByRole('option', { name: 'Settings › Adapters › Claude Code' }))
 
     expect(openSettings).toHaveBeenCalledWith({
-      plugin: 'dia-adapters',
+      plugin: 'dia-agent-adapters',
       id: 'adapters',
       section: 'dia-claude-code'
     })

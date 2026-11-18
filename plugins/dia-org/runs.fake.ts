@@ -1,6 +1,8 @@
 import {
+  LEGACY_ADAPTER_ID,
   type ModelOption,
   ModelsReady,
+  ModelsUnavailable,
   type RunInfo,
   type RunRequest,
   type RunStatus,
@@ -8,9 +10,10 @@ import {
   type StartRunOptions,
   type TabPlacement
 } from '@dia/plugin'
+import { unavailableBackend } from '@dia-plugin/dia-agent-adapters/backend'
 import type { QueuedRun, RunQueue } from '@dia-plugin/dia-run-queue/queue'
 import { DateTime, Deferred, Effect, Option, Stream, SubscriptionRef } from 'effect'
-import type { BackendReads } from './run-options'
+import type { RunChoices } from './run-options'
 
 /** A model option named `value` that supports `auto` when `autoMode` is true. */
 export const model = (value: string, autoMode = false): ModelOption => ({
@@ -23,14 +26,38 @@ export const model = (value: string, autoMode = false): ModelOption => ({
   fastMode: false
 })
 
-/** Backend reads whose catalog is ready with `models` and that disable `disabled` everywhere. */
-export const fakeBackend = (
+/**
+ * Run choices on one adapter, `adapter` (`dia-claude-code` by default), that is registered, whose
+ * catalog is ready with `models` and that disables `disabled` everywhere. The default selection is
+ * the first of `models` on it.
+ */
+export const fakeChoices = (
   models: readonly [ModelOption, ...Array<ModelOption>],
-  disabled: ReadonlyArray<'auto' | 'bypassPermissions'> = []
-): BackendReads => ({
-  models: () =>
-    Stream.make(ModelsReady.make({ models, fetchedAt: DateTime.makeUnsafe(0), refreshing: false })),
-  disabledPermissionModes: () => Effect.succeed(disabled)
+  disabled: ReadonlyArray<'auto' | 'bypassPermissions'> = [],
+  adapter = LEGACY_ADAPTER_ID
+): RunChoices => ({
+  adapters: {
+    get: (id) =>
+      Effect.succeed(
+        id === adapter
+          ? Option.some({
+              id,
+              label: id,
+              backend: {
+                ...unavailableBackend('fake'),
+                disabledPermissionModes: () => Effect.succeed(disabled)
+              }
+            })
+          : Option.none()
+      ),
+    models: (id) =>
+      id === adapter
+        ? Stream.make(
+            ModelsReady.make({ models, fetchedAt: DateTime.makeUnsafe(0), refreshing: false })
+          )
+        : Stream.make(ModelsUnavailable.make({ message: `${id} is not loaded`, refreshing: false }))
+  },
+  defaultSelection: Effect.succeed(Option.some({ backend: adapter, model: models[0].value }))
 })
 
 type FakeRuns = Pick<
@@ -74,6 +101,7 @@ export const fakeRuns = () => {
       runId,
       cwd: options.cwd,
       model: options.model,
+      backend: LEGACY_ADAPTER_ID,
       thinkingLevel: 'medium',
       permissionMode: 'default',
       sessionId: Option.none(),

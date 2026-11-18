@@ -69,10 +69,10 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0059](0059-plugin-module-exports.md) | Let a plugin export source modules that other plugins import | accepted, amended by ADR-0061 and ADR-0065 |
 | [0060](0060-typed-plugin-service-keys.md) | Type a plugin service by a key its provider exports | accepted, amended by ADR-0062 |
 | [0061](0061-list-slots.md) | List slots: a plugin declares a list it draws, and other plugins add entries to it | accepted |
-| [0062](0062-host-service-keys.md) | Type the services the Host reads by keys defined in `src/` | accepted, amended by ADR-0065, ADR-0073 and ADR-0074 |
+| [0062](0062-host-service-keys.md) | Type the services the Host reads by keys defined in `src/` | accepted, amended by ADR-0065, ADR-0073, ADR-0074 and ADR-0086 |
 | [0063](0063-settings-and-palette-plugins.md) | Plugins own the Settings dialog, the command palette and their entries | accepted, amended by ADR-0065 |
 | [0064](0064-job-titles-and-task-kinds.md) | Name what an agent is hired as a job title, ship seven built-in job titles, and make planning and retro kinds of task | accepted, amended by ADR-0069, ADR-0071 and ADR-0072 |
-| [0065](0065-adapter-plugins-are-ordinary-plugins.md) | Adapter plugins load, reload, unload and import under the same rules as feature plugins | accepted, amended by ADR-0074 |
+| [0065](0065-adapter-plugins-are-ordinary-plugins.md) | Adapter plugins load, reload, unload and import under the same rules as feature plugins | accepted, amended by ADR-0074 and ADR-0086 |
 | [0066](0066-plugin-owned-fields-in-kernel-contracts.md) | A kernel contract field whose shape a plugin owns is `unknown` in the kernel | accepted |
 | [0067](0067-hired-agent-sessions-run-headless-in-the-org-plugin.md) | Hired agents' sessions run headless inside the org plugin | superseded by ADR-0074 |
 | [0068](0068-plugin-host-entries-serve-streaming-calls.md) | Plugin host entries serve streaming calls, and a subscription holds no lease | accepted |
@@ -81,7 +81,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0071](0071-executive-assistant-session.md) | Run one Executive assistant session in the org plugin, and route a direct request to one work issue | accepted, amended by ADR-0072 |
 | [0072](0072-org-composes-capability-plugins.md) | Split the org plugin into capability plugins that own registries, and make the org compose them | accepted, amended by ADR-0073 and ADR-0076 |
 | [0073](0073-worktree-ledger-and-issue-worktrees.md) | The worktrees plugin keeps a ledger of every worktree, and org issues run in their own worktree when a project opts in | accepted |
-| [0074](0074-dia-runs-plugin-owns-every-agent-session.md) | A `dia-runs` plugin owns every agent session and a `dia-run-events` plugin owns their event log, and tabs, org and the inbox are views or drivers of runs | accepted |
+| [0074](0074-dia-runs-plugin-owns-every-agent-session.md) | A `dia-runs` plugin owns every agent session and a `dia-run-events` plugin owns their event log, and tabs, org and the inbox are views or drivers of runs | accepted, amended by ADR-0086 |
 | [0075](0075-dia-tools-plugin-serves-dia-tools-over-mcp.md) | A `dia-tools` plugin holds the registry of dia tools and serves it over stdio, HTTP, SSE and the in-process SDK transport | accepted, amended by ADR-0085 |
 | [0076](0076-build-the-foundation-before-org.md) | Build ten foundation capabilities as plugins before more org work, freeze the org plugin, then rewrite it on them | accepted |
 | [0077](0077-first-party-plugins-are-named-dia.md) | Name every first-party plugin `dia-<name>`, and move each renamed plugin's data with a plugin data migration | accepted |
@@ -93,6 +93,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0083](0083-new-thread-page-and-drafts.md) | One new-thread page for every target, with drafts kept in renderer `localStorage` and plugin targets in `ThreadTargetsSlot` | accepted |
 | [0084](0084-manual-plugins-and-renderer-follows-host.md) | Plugins that stay unloaded until the user loads them, and renderer entries that follow the Host | accepted |
 | [0085](0085-dia-tools-asks-the-user-to-approve-a-tool-call.md) | `dia-tools` lets a tool handler ask the user to approve a call, in dia's window, whatever the session's permission mode | accepted |
+| [0086](0086-agent-adapter-registry.md) | Agent adapters register with `dia-agent-adapters`, every model choice names its adapter, and a run keeps the adapter it started on | accepted |
 
 ## Adding a new ADR
 

@@ -305,4 +305,38 @@ describe('makeHostDatabaseLive', () => {
         )
       }).pipe(Effect.scoped, Effect.provide(platform))
   )
+
+  it.effect(
+    'gives an agent stored before migration 7_agent_backend the backend dia-claude-code',
+    () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path
+        const { dir } = yield* tempFile
+        const before = yield* openIn(path.join(dir, 'host.db'), {
+          '1_workspace': kernelMigrations['1_workspace'],
+          '2_import_resolutions': kernelMigrations['2_import_resolutions']
+        })
+        yield* before.sql`INSERT INTO projects ${before.sql.insert({
+          project_id: 'project',
+          position: 0,
+          directory: 'F:\\x',
+          directory_key: 'f:\\x',
+          display_name: 'x',
+          is_git_repo: 0
+        })}`
+        yield* insertAgentAtMigration2(before.sql, 'older-agent', 0)
+        yield* before.close
+
+        const sql = yield* openHostDatabase(dir)
+        const rows = yield* sql<{
+          agent_id: string
+          backend: string
+        }>`SELECT agent_id, backend FROM agents`
+
+        assert.deepStrictEqual(
+          rows.map((row) => [row.agent_id, row.backend]),
+          [['older-agent', 'dia-claude-code']]
+        )
+      }).pipe(Effect.scoped, Effect.provide(platform))
+  )
 })

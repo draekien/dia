@@ -1,5 +1,12 @@
-import { PermissionRules, ServiceKey, ThinkingLevel, Uuid } from '@dia/plugin'
-import { Effect, Predicate, Schema, type Scope, Stream, Struct } from 'effect'
+import {
+  LEGACY_ADAPTER_ID,
+  ModelPreferences,
+  PermissionRules,
+  ServiceKey,
+  ThinkingLevel,
+  Uuid
+} from '@dia/plugin'
+import { Effect, Predicate, Schema, SchemaTransformation, type Scope, Stream, Struct } from 'effect'
 
 /** Identifies an agent definition; a UUID. A contributed definition keeps the same id on every install. */
 export const AgentDefinitionId = Uuid.pipe(Schema.brand('AgentDefinitionId'))
@@ -16,8 +23,8 @@ export type AgentDefinitionName = typeof AgentDefinitionName.Type
 
 /**
  * The setup a session runs with. `skills` are names as `Options.skills` takes them; empty means
- * every skill. `mcpServers` are names in the `mcp` registry. `model` null means the first model
- * the backend lists.
+ * every skill. `mcpServers` are names in the `mcp` registry. `selection` is the model, with the
+ * adapter it belongs to, a session opens with; null means the model `Runs.defaultSelection` gives.
  */
 export const AgentDefinition = Schema.Struct({
   id: AgentDefinitionId,
@@ -27,11 +34,40 @@ export const AgentDefinition = Schema.Struct({
   permissions: PermissionRules,
   mcpServers: Schema.Array(Schema.String),
   bypassOptIn: Schema.Boolean,
-  model: Schema.NullOr(Schema.NonEmptyString),
+  selection: Schema.NullOr(ModelPreferences.ModelSelection),
   thinkingLevel: ThinkingLevel
 })
 /** The decoded type of {@link AgentDefinition}. */
 export type AgentDefinition = typeof AgentDefinition.Type
+
+const LegacyShape = AgentDefinition.mapFields((fields) => ({
+  ...Struct.map(Struct.omit(fields, ['selection']), Schema.toEncoded),
+  model: Schema.NullOr(Schema.NonEmptyString)
+}))
+
+/**
+ * A definition stored before model choices named their adapter: `model` (a model id or null)
+ * instead of `selection`, decoded into an {@link AgentDefinition} whose selection names the
+ * `dia-claude-code` adapter. Prefer {@link StoredAgentDefinition} to read stored definitions.
+ */
+export const LegacyAgentDefinition = LegacyShape.pipe(
+  Schema.decodeTo(
+    AgentDefinition,
+    SchemaTransformation.transform<typeof AgentDefinition.Encoded, typeof LegacyShape.Type>({
+      decode: ({ model, ...rest }) => ({
+        ...rest,
+        selection: model === null ? null : { backend: LEGACY_ADAPTER_ID, model }
+      }),
+      encode: ({ selection, ...rest }) => ({ ...rest, model: selection?.model ?? null })
+    })
+  )
+)
+
+/**
+ * Decodes a stored definition of either shape (current first) and encodes the current one. Use it
+ * to read and write definitions kept outside memory.
+ */
+export const StoredAgentDefinition = Schema.Union([AgentDefinition, LegacyAgentDefinition])
 
 /** A change to a definition's fields other than `id`; an absent field is left as it is. */
 export const AgentDefinitionEdit = AgentDefinition.mapFields((fields) =>

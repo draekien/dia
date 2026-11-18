@@ -326,7 +326,7 @@ const ARCHIVIST: JobTitleFields = {
   permissions: { allow: ['Read'], ask: ['Write'], deny: ['Bash'] },
   mcpServers: ['github'],
   bypassOptIn: true,
-  model: 'claude-sonnet-5-5',
+  selection: { backend: 'dia-claude-code', model: 'claude-sonnet-5-5' },
   thinkingLevel: 'high'
 }
 

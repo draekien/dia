@@ -78,6 +78,7 @@ const createTab = (commandId = 'req-1') => ({
     paneId: PANE_ID,
     name: AgentName.make('heron'),
     model: 'sonnet',
+    backend: 'other',
     thinkingLevel: 'high',
     permissionMode: 'acceptEdits',
     worktree: { base: null },
@@ -145,7 +146,7 @@ const makeHarness = (options: HarnessOptions = {}): Harness => {
   })
 
   const settings = Layer.succeed(SettingsStore, {
-    getAdapterPreferences: () => Effect.succeed({ models: {}, defaults: {} }),
+    getAdapterPreferences: () => Effect.succeed({ adapters: {}, defaults: {} }),
     setAdapterPreferences: () => Effect.void,
     getTheme: () => Effect.succeed(Option.none()),
     setTheme: () => Effect.void,
@@ -320,6 +321,7 @@ describe('Dia RPC handlers', () => {
           paneId: PANE_ID,
           name: 'heron',
           model: 'sonnet',
+          backend: 'other',
           thinkingLevel: 'high',
           permissionMode: 'acceptEdits',
           worktree: { base: null },

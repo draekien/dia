@@ -31,6 +31,7 @@ const workspace = (visibleTab: string | null): Workspace => ({
             paneId: PANE_B,
             cwd: '/beta',
             model: 'm',
+            backend: 'dia-claude-code',
             thinkingLevel: 'adaptive',
             permissionMode: 'default'
           },

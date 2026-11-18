@@ -1,6 +1,6 @@
 import type { PluginServices, PluginSetup } from '@dia/plugin'
 import { addEntry, CLAUDE_CODE_SETTINGS, openSettings } from '@dia/renderer-plugin'
-import { AdapterPanelsSlot } from '@dia-plugin/dia-adapters/slots'
+import { AdapterPanelsSlot } from '@dia-plugin/dia-agent-adapters/slots'
 import { CommandsSlot } from '@dia-plugin/dia-command-palette/slots'
 import { Effect } from 'effect'
 import { SettingsIcon } from 'lucide-react'

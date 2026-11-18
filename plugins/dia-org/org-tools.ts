@@ -191,8 +191,9 @@ const definitionField = {
   bypassOptIn: JobTitleFields.fields.bypassOptIn.annotate({
     description: 'Whether its sessions may start in bypassPermissions.'
   }),
-  model: JobTitleFields.fields.model.annotate({
-    description: 'Model its sessions open with; null for the first model dia lists.'
+  selection: JobTitleFields.fields.selection.annotate({
+    description:
+      "Model its sessions open with, as { backend, model }: backend is the id of an agent adapter plugin such as dia-claude-code and model is a model that adapter lists. Null for dia's default model: the user's chosen default, else the first model of the first adapter."
   }),
   thinkingLevel: JobTitleFields.fields.thinkingLevel.annotate({
     description: 'Thinking level its sessions open with.'
@@ -204,7 +205,7 @@ const NEW_JOB_TITLE_DEFAULTS = {
   permissions: { allow: [], ask: [], deny: [] },
   mcpServers: [],
   bypassOptIn: false,
-  model: null,
+  selection: null,
   thinkingLevel: 'medium'
 } as const satisfies Omit<JobTitleFields, 'name' | 'jobDescription'>
 
@@ -320,7 +321,7 @@ const createTool = (deps: OrgToolDeps): DiaTool =>
   orgTool({
     name: 'job_title_create',
     description:
-      'Create an enabled job title. Fields left out get the defaults of a new job title: no skills, permission rules or MCP servers, no bypass opt-in, the first model and medium thinking. Permission rules or the bypass opt-in wait for the user to approve them.',
+      'Create an enabled job title. Fields left out get the defaults of a new job title: no skills, permission rules or MCP servers, no bypass opt-in, the default model and medium thinking. Permission rules or the bypass opt-in wait for the user to approve them.',
     input: Schema.Struct({
       name: definitionField.name,
       jobDescription: definitionField.jobDescription,

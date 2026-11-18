@@ -12,6 +12,7 @@ import {
   type SessionId,
   type ThinkingLevel
 } from '@dia/plugin'
+import type { AgentSession } from '@dia-plugin/dia-agent-adapters/backend'
 import {
   type Cause,
   Clock,
@@ -29,7 +30,6 @@ import {
   Stream,
   SubscriptionRef
 } from 'effect'
-import type { AgentSession } from './backend'
 
 type AttentionState = Attention.AttentionState
 type IpcEvent = PaneEvents.IpcEvent

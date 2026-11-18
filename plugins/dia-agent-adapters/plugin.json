@@ -1,0 +1,9 @@
+{
+  "name": "dia-agent-adapters",
+  "api": "0.0.45",
+  "category": "feature",
+  "host": "host.ts",
+  "renderer": "renderer.ts",
+  "load": "eager",
+  "exports": ["registry.ts", "backend.ts", "calls.ts", "slots.ts"]
+}

@@ -2,7 +2,7 @@ import { Attention, PaneChat } from '@dia/plugin'
 import { FirstIssue, ObjectiveId, WorkTitle } from '@dia-plugin/dia-issues/domain'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { assert, describe, it } from '@effect/vitest'
-import { Effect, Exit, Scope, SubscriptionRef } from 'effect'
+import { Effect, Exit, Option, Scope, SubscriptionRef } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
 import { openIssues, PROJECT } from '../dia-issues/issues.fake'
@@ -12,7 +12,8 @@ import type { JobTitleId } from './domain'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { holdBuiltInDefinitions } from './registries.fake'
-import { fakeBackend, fakeRuns, model } from './runs.fake'
+import type { RunChoices } from './run-options'
+import { fakeChoices, fakeRuns, model } from './runs.fake'
 
 const DIRECTORY = 'C:/dia/plugins/dia-org/assistant'
 const CLAIMED = ObjectiveId.make('00000000-0000-4000-8000-500000000001')
@@ -22,49 +23,65 @@ const settle = Effect.gen(function* () {
   for (let turn = 0; turn < 50; turn += 1) yield* Effect.yieldNow
 })
 
-const setUp = Effect.gen(function* () {
-  const dbScope = yield* Scope.make()
-  yield* Effect.addFinalizer(() => Scope.close(dbScope, Exit.void))
-  const sql = yield* openDatabase(':memory:', orgMigrations).pipe(Scope.provide(dbScope))
-  const org = yield* makeOrg.pipe(
-    Effect.provideService(SqlClient.SqlClient, sql),
-    Effect.provide(NodeCrypto.layer)
-  )
-  yield* holdBuiltInDefinitions(org)
-  const { issues } = yield* openIssues
-  const fake = fakeRuns()
-  const runId = yield* SubscriptionRef.make<string | null>(null)
-  const assistant = yield* makeAssistant({
-    org,
-    work: issues,
-    runs: fake.runs,
-    backend: fakeBackend([model('opus')]),
-    directory: DIRECTORY,
-    runId
-  }).pipe(Effect.provideService(SqlClient.SqlClient, sql))
-  const createObjective = (id: ObjectiveId, title: string) =>
-    issues.createObjective(
-      {
-        id,
-        projectId: PROJECT,
-        title: WorkTitle.make(title),
-        description: '',
-        priority: 'normal',
-        assignee: null
-      },
-      [
-        FirstIssue.make({
-          kind: 'planning',
+const setUpWith = (choices: RunChoices) =>
+  Effect.gen(function* () {
+    const dbScope = yield* Scope.make()
+    yield* Effect.addFinalizer(() => Scope.close(dbScope, Exit.void))
+    const sql = yield* openDatabase(':memory:', orgMigrations).pipe(Scope.provide(dbScope))
+    const org = yield* makeOrg.pipe(
+      Effect.provideService(SqlClient.SqlClient, sql),
+      Effect.provide(NodeCrypto.layer)
+    )
+    yield* holdBuiltInDefinitions(org)
+    const { issues } = yield* openIssues
+    const fake = fakeRuns()
+    const runId = yield* SubscriptionRef.make<string | null>(null)
+    const assistant = yield* makeAssistant({
+      org,
+      work: issues,
+      runs: fake.runs,
+      choices,
+      directory: DIRECTORY,
+      runId
+    }).pipe(Effect.provideService(SqlClient.SqlClient, sql))
+    const createObjective = (id: ObjectiveId, title: string) =>
+      issues.createObjective(
+        {
+          id,
+          projectId: PROJECT,
           title: WorkTitle.make(title),
           description: '',
+          priority: 'normal',
           assignee: null
-        })
-      ]
-    )
-  return { org, issues, fake, runId, assistant, createObjective }
-})
+        },
+        [
+          FirstIssue.make({
+            kind: 'planning',
+            title: WorkTitle.make(title),
+            description: '',
+            assignee: null
+          })
+        ]
+      )
+    return { org, issues, fake, runId, assistant, createObjective }
+  })
+
+const setUp = setUpWith(fakeChoices([model('opus')]))
 
 describe('Executive assistant', () => {
+  it.effect('starts no run and fails while no agent adapter is loaded', () =>
+    Effect.gen(function* () {
+      const env = yield* setUpWith({
+        ...fakeChoices([model('opus')]),
+        defaultSelection: Effect.succeed(Option.none())
+      })
+
+      const failure = yield* Effect.flip(env.assistant.ask('Add dark mode'))
+
+      assert.deepStrictEqual([failure._tag, env.fake.started.length], ['NoAgentAdapter', 0])
+    }).pipe(Effect.scoped)
+  )
+
   it.effect('starts its run on the first request, labelled for the routing tools', () =>
     Effect.gen(function* () {
       const env = yield* setUp

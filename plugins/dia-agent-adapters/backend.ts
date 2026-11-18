@@ -16,7 +16,6 @@ import {
   type PermissionResponse,
   type QuestionResponse,
   type SendMode,
-  ServiceKey,
   type SessionAdditions,
   SessionId,
   type SessionToolOptions,
@@ -153,7 +152,7 @@ export interface AgentSessionOptions extends SessionAdditions {
 }
 
 /**
- * The agent dia drives, as the adapter plugin provides it under {@link AgentBackendKey}.
+ * The agent dia drives, as an adapter plugin registers it with `dia-agent-adapters`.
  * `openSession` starts one pane's session; the session and every process it starts live in the
  * surrounding scope, and closing that scope ends them. `readHistory` reads a past conversation
  * without starting a session and returns an empty list when it cannot be read. `models` streams
@@ -214,87 +213,81 @@ export interface AgentBackend {
    * The conversations the harness holds whose working directory is `directory`, in any order.
    * Never fails: empty when there are none or they cannot be read.
    */
-  readonly discoverSessions?: (directory: string) => Effect.Effect<ReadonlyArray<DiscoveredSession>>
+  readonly discoverSessions?: (
+    directory: string
+  ) => Effect.Effect<ReadonlyArray<Omit<DiscoveredSession, 'backend'>>>
 }
 
-const ADAPTER_NOT_LOADED = 'The claude-code adapter is not loaded'
-
 const ignored =
-  (command: string) =>
+  (command: string, message: string) =>
   (..._args: ReadonlyArray<unknown>): Effect.Effect<void> =>
     Effect.logWarning('Ignored a command; the agent session never started', {
       command,
-      reason: ADAPTER_NOT_LOADED
+      reason: message
     })
 
-const unavailableSession: AgentSession = {
-  sendText: ignored('sendText'),
-  editQueuedText: ignored('editQueuedText'),
-  removeQueuedText: ignored('removeQueuedText'),
-  sendQueuedNow: ignored('sendQueuedNow'),
+const unavailableSession = (message: string): AgentSession => ({
+  sendText: ignored('sendText', message),
+  editQueuedText: ignored('editQueuedText', message),
+  removeQueuedText: ignored('removeQueuedText', message),
+  sendQueuedNow: ignored('sendQueuedNow', message),
   messageQueue: Effect.succeed({ queued: [], held: false }),
-  setThinkingLevel: ignored('setThinkingLevel'),
-  setPermissionMode: ignored('setPermissionMode'),
-  setModel: ignored('setModel'),
-  resolvePermission: ignored('resolvePermission'),
-  resolveQuestion: ignored('resolveQuestion'),
-  resolvePlanReview: ignored('resolvePlanReview'),
-  interrupt: ignored('interrupt'),
-  rewindToCheckpoint: ignored('rewindToCheckpoint'),
-  resume: ignored('resume')(),
-  ended: Effect.succeed(SessionFailed.make({ reason: ADAPTER_NOT_LOADED }))
-}
+  setThinkingLevel: ignored('setThinkingLevel', message),
+  setPermissionMode: ignored('setPermissionMode', message),
+  setModel: ignored('setModel', message),
+  resolvePermission: ignored('resolvePermission', message),
+  resolveQuestion: ignored('resolveQuestion', message),
+  resolvePlanReview: ignored('resolvePlanReview', message),
+  interrupt: ignored('interrupt', message),
+  rewindToCheckpoint: ignored('rewindToCheckpoint', message),
+  resume: ignored('resume', message)(),
+  ended: Effect.succeed(SessionFailed.make({ reason: message }))
+})
 
 /**
- * The backend to use while no adapter provides {@link AgentBackendKey}: its sessions end at once with
- * `The claude-code adapter is not loaded`, its `readHistory` returns an empty list, and its
- * `transcriptInfo` and `readTranscriptAfter` return none.
+ * The backend that stands in for an adapter that is not registered. Its sessions end at once with
+ * `message`, its `readHistory` returns an empty list, its `transcriptInfo` and
+ * `readTranscriptAfter` return none, and its model list reports `message` as unavailable.
  */
-export const unavailableBackend: AgentBackend = {
+export const unavailableBackend = (message: string): AgentBackend => ({
   openSession: (options) =>
     Effect.logError('Cannot start an agent session', {
       paneId: options.config.paneId,
-      reason: ADAPTER_NOT_LOADED
-    }).pipe(Effect.as(unavailableSession)),
+      reason: message
+    }).pipe(Effect.as(unavailableSession(message))),
   readHistory: (sessionId) =>
-    Effect.logWarning('Cannot read a session transcript', {
-      sessionId,
-      reason: ADAPTER_NOT_LOADED
-    }).pipe(Effect.as([])),
+    Effect.logWarning('Cannot read a session transcript', { sessionId, reason: message }).pipe(
+      Effect.as([])
+    ),
   transcriptInfo: (sessionId) =>
-    Effect.logWarning('Cannot read a session transcript', {
-      sessionId,
-      reason: ADAPTER_NOT_LOADED
-    }).pipe(Effect.as(Option.none())),
+    Effect.logWarning('Cannot read a session transcript', { sessionId, reason: message }).pipe(
+      Effect.as(Option.none())
+    ),
   readTranscriptAfter: (sessionId) =>
-    Effect.logWarning('Cannot read a session transcript', {
-      sessionId,
-      reason: ADAPTER_NOT_LOADED
-    }).pipe(Effect.as(Option.none())),
-  models: () =>
-    Stream.make(ModelsUnavailable.make({ message: ADAPTER_NOT_LOADED, refreshing: false })),
-  refreshModels: ignored('refreshModels'),
+    Effect.logWarning('Cannot read a session transcript', { sessionId, reason: message }).pipe(
+      Effect.as(Option.none())
+    ),
+  models: () => Stream.make(ModelsUnavailable.make({ message, refreshing: false })),
+  refreshModels: ignored('refreshModels', message),
   status: () =>
     Stream.fromEffect(
       DateTime.now.pipe(
         Effect.map(
           (checkedAt): AdapterStatus => ({
-            health: HealthError.make({ message: ADAPTER_NOT_LOADED, checkedAt }),
+            health: HealthError.make({ message, checkedAt }),
             checking: false,
             installPathOverride: null
           })
         )
       )
     ),
-  checkHealth: ignored('checkHealth'),
-  setInstallPath: ignored('setInstallPath'),
+  checkHealth: ignored('checkHealth', message),
+  setInstallPath: ignored('setInstallPath', message),
   disabledPermissionModes: () => Effect.succeed([]),
   slashCommands: (cwd) =>
-    Effect.logWarning('Cannot read slash commands', { cwd, reason: ADAPTER_NOT_LOADED }).pipe(
-      Effect.as([])
-    ),
+    Effect.logWarning('Cannot read slash commands', { cwd, reason: message }).pipe(Effect.as([])),
   attachmentTypes: () => Effect.succeed([])
-}
+})
 
 const backendMethods = [
   'openSession',
@@ -312,7 +305,7 @@ const backendMethods = [
 ] as const
 
 /**
- * Lists what keeps `provided`, a value read under {@link AgentBackendKey}, from being an
+ * Lists what keeps `provided`, a value given as an adapter's backend, from being an
  * {@link AgentBackend}, one sentence per problem. Returns an empty list when it is one.
  */
 export const agentBackendProblems = (provided: Option.Option<unknown>): ReadonlyArray<string> => {
@@ -329,12 +322,6 @@ export const agentBackendProblems = (provided: Option.Option<unknown>): Readonly
     .map((method) => `"${BACKEND_KEY_NAME}.${method}" is not a function`)
 }
 
-const isAgentBackend = (value: unknown): value is AgentBackend =>
+/** Whether `value` is an {@link AgentBackend}: {@link agentBackendProblems} finds no problem with it. */
+export const isAgentBackend = (value: unknown): value is AgentBackend =>
   agentBackendProblems(Option.some(value)).length === 0
-
-/**
- * The key an adapter plugin provides its {@link AgentBackend} under. It reads as `AgentBackend` and
- * accepts a value {@link agentBackendProblems} finds no problem with; any other value reads as not
- * provided. Read it with `ctx.whenProvided`, so a reload of the adapter does not close the reader.
- */
-export const AgentBackendKey = ServiceKey.make(BACKEND_KEY_NAME, isAgentBackend)

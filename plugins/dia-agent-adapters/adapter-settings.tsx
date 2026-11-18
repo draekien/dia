@@ -12,7 +12,7 @@ import {
   useList,
   usePluginList
 } from '@dia/renderer-plugin'
-import { type AdapterPanel, AdapterPanelsSlot } from '@dia-plugin/dia-adapters/slots'
+import { type AdapterPanel, AdapterPanelsSlot } from '@dia-plugin/dia-agent-adapters/slots'
 import type { SettingsPageProps } from '@dia-plugin/dia-settings/slots'
 import type { PluginInfo } from '@shared/plugin/manifest'
 import { useEffect } from 'react'

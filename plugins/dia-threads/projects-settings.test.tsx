@@ -39,6 +39,7 @@ const entry = (n: number, displayName: string, withThread: boolean): ProjectEntr
             paneId: `00000000-0000-4000-8000-0000000001${n}0`,
             cwd: `F:/Dev/${displayName}`,
             model: 'm',
+            backend: 'dia-claude-code',
             thinkingLevel: 'adaptive',
             permissionMode: 'default'
           },

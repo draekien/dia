@@ -17,6 +17,7 @@ const tab = (paneId: string, name: string) => ({
     paneId,
     cwd: '/repo',
     model: 'm',
+    backend: 'dia-claude-code',
     thinkingLevel: 'adaptive' as const,
     permissionMode: 'default' as const
   },

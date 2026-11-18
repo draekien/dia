@@ -620,7 +620,7 @@ describe('Job titles', () => {
     permissions: { allow: [], ask: [], deny: [] },
     mcpServers: [],
     bypassOptIn: false,
-    model: null,
+    selection: null,
     thinkingLevel: 'medium'
   }
 
@@ -727,16 +727,36 @@ describe('Job titles', () => {
     await click('Save')
 
     expect(host.sent).toEqual([
-      ['EditJobTitle', { jobTitleId: REVIEWER.id, edit: { model: 'opus', thinkingLevel: 'high' } }]
+      [
+        'EditJobTitle',
+        {
+          jobTitleId: REVIEWER.id,
+          edit: {
+            selection: { backend: 'dia-claude-code', model: 'opus' },
+            thinkingLevel: 'high'
+          }
+        }
+      ]
     ])
   })
 
-  it('names the first listed model as the default model', async () => {
+  it('shows Default when the job title chooses no model', async () => {
     await showReviewer(installHost(snapshotOf()))
 
-    expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toMatch(
-      /^Default \(Default model\)/
-    )
+    expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toMatch(/^Default/)
+  })
+
+  it('groups the models of each adapter under the adapter label', async () => {
+    await showReviewer(installHost(snapshotOf()))
+
+    await openSelect('Model')
+    const group = screen.getByText('Claude Code', { selector: '[data-slot="select-label"]' })
+
+    expect(
+      within(group.closest('[role="group"]') as HTMLElement)
+        .getAllByRole('option', { hidden: true })
+        .map((option) => option.textContent)
+    ).toEqual(['Default model', 'Opus'])
   })
 
   it('keeps Save disabled when an edit changes only blank lines', async () => {

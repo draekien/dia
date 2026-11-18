@@ -302,7 +302,7 @@ describe('job_title_create', () => {
             permissions: { allow: [], ask: [], deny: [] },
             mcpServers: [],
             bypassOptIn: false,
-            model: null,
+            selection: null,
             thinkingLevel: 'medium',
             enabled: true,
             builtIn: null
@@ -332,7 +332,7 @@ describe('job_title_create', () => {
             permissions: RULES,
             mcpServers: [],
             bypassOptIn: false,
-            model: null,
+            selection: null,
             thinkingLevel: 'medium',
             name: 'Archivist',
             jobDescription: 'Keeps records.'

@@ -6,7 +6,7 @@ import {
   type SessionId,
   TranscriptCursor
 } from '@dia/plugin'
-import type { AgentBackend } from '@dia-plugin/dia-runs/backend'
+import type { AgentBackend } from '@dia-plugin/dia-agent-adapters/backend'
 import {
   type Cause,
   Clock,
@@ -42,12 +42,23 @@ type ToolInput = AgentEvents.ToolCallCompleted['input']
 export const STREAMING_WRITE_INTERVAL = Duration.millis(50)
 
 /**
- * Reads a session's transcript file without starting a session, as the loaded agent backend does.
- * Provide it from the backend `dia-run-events` reads; with no backend, both return none.
+ * Reads a session's transcript file without starting a session, through the agent backend of the
+ * adapter run `runId` recorded. Each method takes the `runId` first and otherwise behaves as the
+ * {@link AgentBackend} method of the same name; both return none when the run's adapter is not
+ * loaded. Provide it from the adapter registry `dia-run-events` reads.
  */
 export class Transcripts extends Context.Service<
   Transcripts,
-  Pick<AgentBackend, 'transcriptInfo' | 'readTranscriptAfter'>
+  {
+    readonly transcriptInfo: (
+      runId: string,
+      ...args: Parameters<AgentBackend['transcriptInfo']>
+    ) => ReturnType<AgentBackend['transcriptInfo']>
+    readonly readTranscriptAfter: (
+      runId: string,
+      ...args: Parameters<AgentBackend['readTranscriptAfter']>
+    ) => ReturnType<AgentBackend['readTranscriptAfter']>
+  }
 >()('Transcripts') {}
 
 /**
@@ -159,7 +170,7 @@ const makeRecorder = Effect.gen(function* () {
       readonly sessionId: SessionId
       readonly cwd: string
     }) {
-      const info = yield* reader.transcriptInfo(sessionId, cwd)
+      const info = yield* reader.transcriptInfo(runId, sessionId, cwd)
       if (Option.isNone(info)) {
         yield* Effect.logWarning('No transcript to catch up from', { runId, sessionId })
         return Option.none<SessionId>()
@@ -177,6 +188,7 @@ const makeRecorder = Effect.gen(function* () {
         return Option.some(sessionId)
       }
       const tail = yield* reader.readTranscriptAfter(
+        runId,
         sessionId,
         cwd,
         Option.map(cursor, (stored) => stored.lastUuid)
@@ -251,6 +263,7 @@ const makeRecorder = Effect.gen(function* () {
       if (state.cursorStalled) return
       const cursor = yield* store.readCursor(sessionId)
       const tail = yield* reader.readTranscriptAfter(
+        runId,
         sessionId,
         cwd,
         Option.map(cursor, (stored) => stored.lastUuid)

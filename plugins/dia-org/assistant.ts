@@ -3,8 +3,8 @@ import type { IssuesSnapshot, ObjectiveId } from '@dia-plugin/dia-issues/domain'
 import type { Issues } from '@dia-plugin/dia-issues/service'
 import { Effect, Option, Ref, type Scope, Semaphore, Stream, SubscriptionRef } from 'effect'
 import { SqlClient } from 'effect/sql'
-import { AssistantDisabled, type JobTitle } from './domain'
-import { type BackendReads, runSettings } from './run-options'
+import { AssistantDisabled, type JobTitle, NoAgentAdapter } from './domain'
+import { type RunChoices, runSettings } from './run-options'
 import type { Org } from './service'
 
 /** The label the Executive assistant's run carries in its dia tool scope. */
@@ -20,21 +20,23 @@ export interface Assistant {
   /**
    * Sends `text`, after the notices gathered since the last request, to the assistant run,
    * starting the run when there is none or it was archived; returns the run's id. Fails while the
-   * built-in Executive assistant job title is disabled.
+   * built-in Executive assistant job title is disabled, and with `NoAgentAdapter` when a run has
+   * to start and no model can be chosen.
    */
-  readonly ask: (text: string) => Effect.Effect<string, AssistantDisabled>
+  readonly ask: (text: string) => Effect.Effect<string, AssistantDisabled | NoAgentAdapter>
   /**
    * Returns the assistant run's id, starting a run that waits for its first message when there is
-   * none or it was archived. Fails while the built-in Executive assistant job title is disabled.
+   * none or it was archived. Fails while the built-in Executive assistant job title is disabled, and
+   * with `NoAgentAdapter` when the run has to start and no model can be chosen.
    */
-  readonly open: Effect.Effect<string, AssistantDisabled>
+  readonly open: Effect.Effect<string, AssistantDisabled | NoAgentAdapter>
   /** Archives the assistant run and drops pending notices; the next `ask` starts a new run. */
   readonly startOver: Effect.Effect<void>
 }
 
 /**
  * What the assistant reads and drives: the org's job titles, the work it reports on, the runs it
- * starts and messages, the backend reads its start options need, the working `directory` of its
+ * starts and messages, the choices its start options are made from, the working `directory` of its
  * run, which must exist and which only the assistant's tab uses, and `runId`, where it publishes
  * its run's id (null when it has none).
  */
@@ -45,7 +47,7 @@ export interface AssistantDeps {
     Runs,
     'start' | 'send' | 'list' | 'retire' | 'openInTab' | 'isLive' | 'busy' | 'requests'
   >
-  readonly backend: BackendReads
+  readonly choices: RunChoices
   readonly directory: string
   readonly runId: SubscriptionRef.SubscriptionRef<string | null>
 }
@@ -164,12 +166,9 @@ export const makeAssistant = Effect.fn('makeAssistant')(function* (
   )
 
   const startRun = Effect.fnUntraced(function* (jobTitle: JobTitle, message: string | undefined) {
-    const settings = yield* runSettings(
-      deps.backend,
-      jobTitle,
-      deps.directory,
-      jobTitle.bypassOptIn
-    )
+    const chosen = yield* runSettings(deps.choices, jobTitle, deps.directory, jobTitle.bypassOptIn)
+    if (Option.isNone(chosen)) return yield* new NoAgentAdapter()
+    const settings = chosen.value
     const runId = yield* deps.runs.start({
       cwd: deps.directory,
       ...settings,

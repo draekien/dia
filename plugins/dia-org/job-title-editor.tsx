@@ -7,13 +7,15 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
   Switch,
   Textarea,
   thinkingLevelLabel,
   thinkingLevelsFor,
-  useModelCatalog,
+  useAdapters,
+  useModelCatalogs,
   useProvided
 } from '@dia/renderer-plugin'
 import { McpServerPickerKey } from '@dia-plugin/dia-mcp/picker'
@@ -55,7 +57,7 @@ interface Draft {
   readonly deny: string
   readonly mcpServers: string
   readonly bypassOptIn: boolean
-  readonly model: JobTitle['model']
+  readonly selection: JobTitle['selection']
   readonly thinkingLevel: JobTitle['thinkingLevel']
 }
 
@@ -68,7 +70,7 @@ const draftOf = (jobTitle: JobTitle): Draft => ({
   deny: jobTitle.permissions.deny.join('\n'),
   mcpServers: jobTitle.mcpServers.join('\n'),
   bypassOptIn: jobTitle.bypassOptIn,
-  model: jobTitle.model,
+  selection: jobTitle.selection,
   thinkingLevel: jobTitle.thinkingLevel
 })
 
@@ -81,18 +83,24 @@ const NEW_JOB_TITLE_DRAFT: Draft = {
   deny: '',
   mcpServers: '',
   bypassOptIn: false,
-  model: null,
+  selection: null,
   thinkingLevel: 'medium'
 }
 
 const LIST_FIELDS = ['skills', 'allow', 'ask', 'deny', 'mcpServers'] as const
+
+const sameSelection = (a: JobTitle['selection'], b: JobTitle['selection']) =>
+  a === null || b === null ? a === b : a.backend === b.backend && a.model === b.model
+
+const selectionKey = (selection: NonNullable<JobTitle['selection']>) =>
+  JSON.stringify([selection.backend, selection.model])
 
 const sameDraft = (a: Draft, b: Draft) =>
   a.name.trim() === b.name.trim() &&
   a.jobDescription === b.jobDescription &&
   LIST_FIELDS.every((field) => sameLines(lines(a[field]), lines(b[field]))) &&
   a.bypassOptIn === b.bypassOptIn &&
-  a.model === b.model &&
+  sameSelection(a.selection, b.selection) &&
   a.thinkingLevel === b.thinkingLevel
 
 interface FormErrors {
@@ -110,7 +118,7 @@ const fieldsOf = (draft: Draft): Result.Result<JobTitleFields, Omit<FormErrors, 
     permissions: { allow: lines(draft.allow), ask: lines(draft.ask), deny: lines(draft.deny) },
     mcpServers: lines(draft.mcpServers),
     bypassOptIn: draft.bypassOptIn,
-    model: draft.model,
+    selection: draft.selection,
     thinkingLevel: draft.thinkingLevel
   })
 }
@@ -129,7 +137,7 @@ const editOf = (jobTitle: JobTitle, fields: JobTitleFields): JobTitleEdit => {
     ...(permissionsChanged ? { permissions: fields.permissions } : {}),
     ...(sameLines(fields.mcpServers, jobTitle.mcpServers) ? {} : { mcpServers: fields.mcpServers }),
     ...(fields.bypassOptIn === jobTitle.bypassOptIn ? {} : { bypassOptIn: fields.bypassOptIn }),
-    ...(fields.model === jobTitle.model ? {} : { model: fields.model }),
+    ...(sameSelection(fields.selection, jobTitle.selection) ? {} : { selection: fields.selection }),
     ...(fields.thinkingLevel === jobTitle.thinkingLevel
       ? {}
       : { thinkingLevel: fields.thinkingLevel })
@@ -161,51 +169,85 @@ function Field({
 
 function ModelFields({
   id,
-  model,
+  selection,
   thinkingLevel,
-  onModelChange,
+  onSelectionChange,
   onThinkingLevelChange
 }: {
   readonly id: string
-  readonly model: JobTitle['model']
+  readonly selection: JobTitle['selection']
   readonly thinkingLevel: JobTitle['thinkingLevel']
-  readonly onModelChange: (model: JobTitle['model']) => void
+  readonly onSelectionChange: (selection: JobTitle['selection']) => void
   readonly onThinkingLevelChange: (level: JobTitle['thinkingLevel']) => void
 }) {
-  const { state } = useModelCatalog()
-  const models = state?._tag === 'Ready' ? state.models : []
-  const option = model === null ? models[0] : models.find((candidate) => candidate.value === model)
+  const adapters = useAdapters()
+  const catalogs = useModelCatalogs(adapters)
+  const groups = adapters.map((adapter) => {
+    const state = catalogs.get(adapter.id)
+    return { adapter, models: state?._tag === 'Ready' ? state.models : [] }
+  })
+  const chosenState = selection === null ? undefined : catalogs.get(selection.backend)
+  const option =
+    chosenState?._tag === 'Ready'
+      ? chosenState.models.find((candidate) => candidate.value === selection?.model)
+      : undefined
   const offered = thinkingLevelsFor(option)
   const levels = offered.includes(thinkingLevel) ? offered : [thinkingLevel, ...offered]
-  const modelName = (value: string | null) =>
-    value === null
-      ? `Default${models[0] === undefined ? '' : ` (${models[0].displayName})`}`
-      : (models.find((candidate) => candidate.value === value)?.displayName ?? value)
+  const modelName = (value: JobTitle['selection']) => {
+    if (value === null) return 'Default'
+    const group = groups.find(({ adapter }) => adapter.id === value.backend)
+    const name = group?.models.find((candidate) => candidate.value === value.model)?.displayName
+    return name ?? value.model
+  }
+  const listed =
+    selection === null ||
+    groups.some(
+      ({ adapter, models }) =>
+        adapter.id === selection.backend &&
+        models.some((candidate) => candidate.value === selection.model)
+    )
 
   return (
     <div className="grid gap-4 @2xl:grid-cols-2 @3xl:grid-cols-1 @5xl:grid-cols-2">
       <Field
         label={<Label id={`${id}-model-label`}>Model</Label>}
-        caption="Default follows the first model Claude Code lists."
+        caption="Default uses the model chosen in the agent settings, else the first model of the first adapter."
       >
-        <Select<string | null> value={model} onValueChange={(next) => onModelChange(next)}>
+        <Select<string | null>
+          value={selection === null ? null : selectionKey(selection)}
+          onValueChange={(next) => {
+            if (next === null) return onSelectionChange(null)
+            const [backend, model] = JSON.parse(next) as [string, string]
+            onSelectionChange({ backend, model })
+          }}
+        >
           <SelectTrigger aria-labelledby={`${id}-model-label`}>
-            <SelectValue>{modelName(model)}</SelectValue>
+            <SelectValue>{modelName(selection)}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
-              <SelectItem value={null}>{modelName(null)}</SelectItem>
-              {model !== null && !models.some((candidate) => candidate.value === model) ? (
-                <SelectItem value={model} className="font-mono">
-                  {model}
+              <SelectItem value={null}>Default</SelectItem>
+              {listed || selection === null ? null : (
+                <SelectItem value={selectionKey(selection)} className="font-mono">
+                  {selection.model}
                 </SelectItem>
-              ) : null}
-              {models.map((candidate) => (
-                <SelectItem key={candidate.value} value={candidate.value}>
-                  {candidate.displayName}
-                </SelectItem>
-              ))}
+              )}
             </SelectGroup>
+            {groups.map(({ adapter, models }) =>
+              models.length === 0 ? null : (
+                <SelectGroup key={adapter.id}>
+                  <SelectLabel>{adapter.label}</SelectLabel>
+                  {models.map((candidate) => (
+                    <SelectItem
+                      key={candidate.value}
+                      value={selectionKey({ backend: adapter.id, model: candidate.value })}
+                    >
+                      {candidate.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              )
+            )}
           </SelectContent>
         </Select>
       </Field>
@@ -267,7 +309,7 @@ function JobTitleForm({
   }
 
   const textarea = (
-    field: Exclude<keyof Draft, 'bypassOptIn' | 'model' | 'thinkingLevel'>,
+    field: Exclude<keyof Draft, 'bypassOptIn' | 'selection' | 'thinkingLevel'>,
     label: string,
     mono: boolean,
     caption?: string,
@@ -323,9 +365,9 @@ function JobTitleForm({
       )}
       <ModelFields
         id={id}
-        model={draft.model}
+        selection={draft.selection}
         thinkingLevel={draft.thinkingLevel}
-        onModelChange={set('model')}
+        onSelectionChange={(next) => setDraft((current) => ({ ...current, selection: next }))}
         onThinkingLevelChange={set('thinkingLevel')}
       />
       <div className="grid gap-4 @2xl:grid-cols-3 @3xl:grid-cols-1 @5xl:grid-cols-3">

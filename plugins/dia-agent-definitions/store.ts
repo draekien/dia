@@ -1,7 +1,7 @@
 import type { PluginMigrations } from '@dia/plugin'
 import { Effect, Result, Schema } from 'effect'
 import { SqlClient } from 'effect/sql'
-import { AgentDefinition, type AgentDefinitionId } from './registry'
+import { type AgentDefinition, type AgentDefinitionId, StoredAgentDefinition } from './registry'
 
 /** A stored definition and whether it is an override of a contributed one. */
 export interface StoredDefinition {
@@ -27,8 +27,8 @@ const Row = Schema.Struct({
   definition: Schema.String
 })
 const decodeRows = Schema.decodeUnknownEffect(Schema.Array(Row))
-const decodeDefinition = Schema.decodeUnknownResult(Schema.fromJsonString(AgentDefinition))
-const encodeDefinition = Schema.encodeSync(Schema.fromJsonString(AgentDefinition))
+const decodeDefinition = Schema.decodeUnknownResult(Schema.fromJsonString(StoredAgentDefinition))
+const encodeDefinition = Schema.encodeSync(Schema.fromJsonString(StoredAgentDefinition))
 
 /** Every stored definition. A row that no longer decodes is left out and logged. */
 export const readDefinitions: Effect.Effect<

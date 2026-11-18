@@ -1,4 +1,8 @@
-import type { TranscriptEntry, TranscriptInfo, TranscriptTail } from '@dia-plugin/dia-runs/backend'
+import type {
+  TranscriptEntry,
+  TranscriptInfo,
+  TranscriptTail
+} from '@dia-plugin/dia-agent-adapters/backend'
 import { NodeCrypto, NodeServices } from '@effect/platform-node'
 import { assert, describe, it } from '@effect/vitest'
 import { TOOL_OUTPUT_LIMIT } from '@shared/domain/agent-event'
@@ -74,8 +78,8 @@ const scriptedReader = (
 ) => {
   const reads: Array<{ readonly sessionId: string; readonly afterUuid: Option.Option<string> }> = []
   const layer = Layer.succeed(Transcripts)({
-    transcriptInfo: (sessionId) => Effect.sync(() => info(sessionId)),
-    readTranscriptAfter: (sessionId, _cwd, afterUuid) =>
+    transcriptInfo: (_runId, sessionId) => Effect.sync(() => info(sessionId)),
+    readTranscriptAfter: (_runId, sessionId, _cwd, afterUuid) =>
       Effect.sync(() => {
         reads.push({ sessionId, afterUuid })
         return tail(afterUuid)

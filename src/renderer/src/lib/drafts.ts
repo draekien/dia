@@ -1,3 +1,4 @@
+import { ModelSelection } from '@shared/domain/model-preferences'
 import { StartupPermissionMode, ThinkingLevel } from '@shared/domain/pane'
 import { ProjectId, type Workspace, WorktreeStart } from '@shared/domain/project'
 import { Uuid } from '@shared/domain/uuid'
@@ -22,15 +23,17 @@ export type ThreadTarget = typeof ThreadTarget.Type
 
 /**
  * A new thread the user has not sent yet. `target` is null while there is nowhere to start it (no
- * project is registered). `model`, `thinkingLevel` and `permissionMode` are null to use the agent
- * defaults. `worktree` is null to work in the project's checkout. `text` is the composer text.
+ * project is registered). `selection` (a model of one adapter), `thinkingLevel` and `permissionMode` are null to use the agent
+ * defaults. A draft saved before `selection` existed decodes with `selection` null. `worktree` is null to work in the project's checkout. `text` is the composer text.
  * `sentAs` is the pane id of the tab the last Send asked the Host to create, or null before a Send.
  */
 export const Draft = Schema.Struct({
   draftId: Uuid,
   target: Schema.NullOr(ThreadTarget),
   text: Schema.String,
-  model: Schema.NullOr(Schema.String),
+  selection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(null))
+  ),
   thinkingLevel: Schema.NullOr(ThinkingLevel),
   permissionMode: Schema.NullOr(StartupPermissionMode),
   worktree: Schema.NullOr(WorktreeStart),
@@ -50,7 +53,7 @@ export const emptyDraft = (draftId: Uuid, target: ThreadTarget | null): Draft =>
   draftId,
   target,
   text: '',
-  model: null,
+  selection: null,
   thinkingLevel: null,
   permissionMode: null,
   worktree: null,

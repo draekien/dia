@@ -1,7 +1,10 @@
 import { Issue, IssueId, Objective, ObjectiveId, WorkTitle } from '@dia-plugin/dia-issues/domain'
 import { assert, describe, it } from '@effect/vitest'
+import { Effect, Option } from 'effect'
 import { PROJECT } from '../dia-issues/issues.fake'
-import { issuePrompt } from './run-options'
+import { type JobTitle, JobTitleId, JobTitleName } from './domain'
+import { issuePrompt, runSettings } from './run-options'
+import { fakeChoices, model } from './runs.fake'
 
 const ISSUE_ID = IssueId.make('00000000-0000-4000-8000-000000000001')
 const OBJECTIVE_ID = ObjectiveId.make('00000000-0000-4000-8000-000000000002')
@@ -72,4 +75,84 @@ describe('issuePrompt', () => {
       prompt.startsWith(`Plan the objective "Login bug".\n\n${REQUEST}\n\nBreak it into issues`)
     )
   })
+})
+
+const jobTitle = (selection: JobTitle['selection']): JobTitle => ({
+  id: JobTitleId.make('00000000-0000-4000-8000-000000000010'),
+  name: JobTitleName.make('Engineer'),
+  jobDescription: '',
+  skills: [],
+  permissions: { allow: [], ask: [], deny: [] },
+  mcpServers: [],
+  bypassOptIn: false,
+  selection,
+  thinkingLevel: 'high',
+  builtIn: null,
+  enabled: true
+})
+
+describe('runSettings', () => {
+  const choices = fakeChoices([model('opus', true)], [], 'adapter-a')
+
+  it.effect("starts on the backend of the job title's selection, with its model", () =>
+    Effect.gen(function* () {
+      const settings = yield* runSettings(
+        choices,
+        jobTitle({ backend: 'adapter-a', model: 'opus' }),
+        '/repo',
+        false
+      )
+
+      assert.deepStrictEqual(
+        settings,
+        Option.some({
+          model: 'opus',
+          backend: 'adapter-a',
+          thinkingLevel: 'high',
+          permissionMode: 'auto'
+        })
+      )
+    })
+  )
+
+  it.effect('starts a job title with no selection on the default selection', () =>
+    Effect.gen(function* () {
+      const settings = yield* runSettings(choices, jobTitle(null), '/repo', false)
+
+      assert.deepStrictEqual(
+        Option.map(settings, ({ backend, model }) => [backend, model]),
+        Option.some(['adapter-a', 'opus'])
+      )
+    })
+  )
+
+  it.effect('starts no run for a job title with no selection while no adapter is loaded', () =>
+    Effect.gen(function* () {
+      const none = { ...choices, defaultSelection: Effect.succeed(Option.none()) }
+
+      const settings = yield* runSettings(none, jobTitle(null), '/repo', false)
+
+      assert.isTrue(Option.isNone(settings))
+    })
+  )
+
+  it.effect('still starts a run whose selection names an adapter that is not registered', () =>
+    Effect.gen(function* () {
+      const settings = yield* runSettings(
+        choices,
+        jobTitle({ backend: 'unloaded-adapter', model: 'beta' }),
+        '/repo',
+        false
+      )
+
+      assert.deepStrictEqual(
+        Option.map(settings, ({ backend, model, permissionMode }) => [
+          backend,
+          model,
+          permissionMode
+        ]),
+        Option.some(['unloaded-adapter', 'beta', 'default'])
+      )
+    })
+  )
 })
