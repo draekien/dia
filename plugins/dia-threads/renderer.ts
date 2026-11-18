@@ -1,15 +1,24 @@
 import type { PluginServices, PluginSetup } from '@dia/plugin'
-import { actions, addEntry, fillSlot, openSettings, SIDEBAR } from '@dia/renderer-plugin'
+import {
+  actions,
+  addEntry,
+  declareList,
+  fillSlot,
+  openSettings,
+  SIDEBAR
+} from '@dia/renderer-plugin'
 import { CommandsSlot } from '@dia-plugin/dia-command-palette/slots'
 import { SettingsPagesSlot } from '@dia-plugin/dia-settings/slots'
 import { Effect } from 'effect'
 import { ArchiveIcon, FolderIcon, SettingsIcon, SquarePenIcon } from 'lucide-react'
 import { ArchivedThreadsSettings } from './archived-threads-settings'
 import { ProjectsSettings } from './projects-settings'
+import { ThreadRowMenuSlot } from './slots'
 import { ThreadsSidebar } from './threads-sidebar'
 
 const setup: PluginSetup<PluginServices> = (ctx) =>
   Effect.gen(function* () {
+    yield* declareList(ctx, ThreadRowMenuSlot)
     yield* fillSlot(ctx, SIDEBAR, ThreadsSidebar)
     yield* addEntry(ctx, CommandsSlot, {
       id: 'new-thread',

@@ -94,6 +94,7 @@
     "plugins/dia-command-palette/slots.ts",
     "plugins/dia-layout/slots.ts",
     "plugins/dia-settings/slots.ts",
+    "plugins/dia-threads/slots.ts",
     "plugins/dia-chat/composer-action.ts",
     "plugins/dia-chat/attachment-draft.ts",
     "plugins/dia-chat/composer-settings.ts",

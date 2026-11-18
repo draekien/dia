@@ -51,6 +51,7 @@
     "plugins/dia-agent-adapters/slots.ts",
     "plugins/dia-command-palette/slots.ts",
     "plugins/dia-layout/slots.ts",
-    "plugins/dia-settings/slots.ts"
+    "plugins/dia-settings/slots.ts",
+    "plugins/dia-threads/slots.ts"
   ]
 }
