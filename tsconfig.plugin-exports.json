@@ -38,6 +38,7 @@
     "plugins/dia-agent-adapters/backend.ts",
     "plugins/dia-agent-adapters/registry.ts",
     "plugins/dia-agent-adapters/calls.ts",
+    "plugins/dia-text-generation/calls.ts",
     "plugins/dia-runs/calls.ts",
     "plugins/dia-tools/tools.ts",
     "plugins/dia-tools/calls.ts",
