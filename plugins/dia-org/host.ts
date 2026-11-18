@@ -224,7 +224,8 @@ const runOnFoundation = (ctx: HostPluginContext, deps: RunDeps) =>
             runs,
             queue,
             projectDirectoryOf: (issue) => projectDirectoryOf(deps, issue),
-            ready: ctx.pluginsSettled
+            ready: ctx.pluginsSettled,
+            adapterChanges: agentAdapters.adapters
           })
           yield* ctx.serve(WatchAgentRuns, () =>
             watchAgentRuns({

@@ -3,7 +3,7 @@ import { FirstIssue, type Issue, ObjectiveId, WorkTitle } from '@dia-plugin/dia-
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { assert, describe, it } from '@effect/vitest'
 import { AgentName } from '@shared/domain/project'
-import { Deferred, Effect, Exit, Option, Scope } from 'effect'
+import { Deferred, Effect, Exit, Option, Queue, Ref, Scope, Stream } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { openDatabase } from '../../src/host/services/database'
 import { openIssues, orgRef, PROJECT } from '../dia-issues/issues.fake'
@@ -46,29 +46,35 @@ const setUp = Effect.gen(function* () {
   const grace = yield* org.hire(engineer.id, AgentName.make('Grace'), null)
   const fake = fakeRuns()
   const ready = yield* Deferred.make<void>()
+  const adapterRegistered = yield* Ref.make(true)
+  const adapterChanges = yield* Queue.unbounded<void>()
   const issueRuns = yield* runIssues({
     org,
     issues,
     provider,
     workspace: { retain: () => Effect.void },
     startOptions: (issue) =>
-      Effect.succeed(
-        Option.some({
-          run: {
-            cwd: `C:/trees/${issue.id}`,
-            model: 'opus',
-            backend: 'dia-claude-code',
-            thinkingLevel: 'medium' as const,
-            permissionMode: 'default' as const,
-            text: issue.title
-          },
-          projectDirectory: PROJECT_DIRECTORY
-        })
+      Effect.map(Ref.get(adapterRegistered), (registered) =>
+        Option.filter(
+          Option.some({
+            run: {
+              cwd: `C:/trees/${issue.id}`,
+              model: 'opus',
+              backend: 'dia-claude-code',
+              thinkingLevel: 'medium' as const,
+              permissionMode: 'default' as const,
+              text: issue.title
+            },
+            projectDirectory: PROJECT_DIRECTORY
+          }),
+          () => registered
+        )
       ),
     runs: fake.runs,
     queue: fake.queue,
     projectDirectoryOf: () => Effect.succeed(Option.some(PROJECT_DIRECTORY)),
-    ready: Deferred.await(ready)
+    ready: Deferred.await(ready),
+    adapterChanges: Stream.fromQueue(adapterChanges)
   }).pipe(Effect.provideService(SqlClient.SqlClient, sql))
   const createIssue = (assigneeId: string) =>
     Effect.gen(function* () {
@@ -105,7 +111,23 @@ const setUp = Effect.gen(function* () {
       Effect.orDie
     )
   const begin = Deferred.succeed(ready, undefined).pipe(Effect.andThen(settle))
-  return { issues, ada, grace, fake, issueRuns, createIssue, statusOf, storeRun, begin }
+  const registerAdapter = Ref.set(adapterRegistered, true).pipe(
+    Effect.andThen(Queue.offer(adapterChanges, undefined)),
+    Effect.andThen(settle)
+  )
+  return {
+    issues,
+    ada,
+    grace,
+    fake,
+    issueRuns,
+    createIssue,
+    statusOf,
+    storeRun,
+    begin,
+    adapterRegistered,
+    registerAdapter
+  }
 })
 
 describe('runIssues', () => {
@@ -134,6 +156,20 @@ describe('runIssues', () => {
         )
         assert.strictEqual(yield* env.statusOf(issue), 'todo', 'a queued issue has not started')
       }).pipe(Effect.scoped)
+  )
+
+  it.effect('queues an issue that found no adapter once an adapter registers', () =>
+    Effect.gen(function* () {
+      const env = yield* setUp
+      yield* Ref.set(env.adapterRegistered, false)
+      yield* env.createIssue(env.ada.id)
+      yield* env.begin
+      assert.strictEqual(env.fake.enqueued.length, 0, 'no adapter, so nothing is queued')
+
+      yield* env.registerAdapter
+
+      assert.strictEqual(env.fake.enqueued.length, 1)
+    }).pipe(Effect.scoped)
   )
 
   it.effect('moves the issue to understanding once the queue starts its run', () =>

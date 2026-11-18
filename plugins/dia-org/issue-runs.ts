@@ -53,6 +53,8 @@ export interface IssueRunsDeps {
   readonly projectDirectoryOf: (issue: Issue) => Effect.Effect<Option.Option<string>>
   /** Completes when the first pass may run: once the Host's startup has settled. */
   readonly ready: Effect.Effect<void>
+  /** Emits when the registered agent adapters change, so issues that found no adapter are tried again. */
+  readonly adapterChanges: Stream.Stream<unknown>
 }
 
 interface IssueRunRow {
@@ -278,7 +280,8 @@ export const runIssues = Effect.fn('Org.runIssues')(function* (
     [
       yield* deps.issues.watchChanges,
       yield* deps.org.watchHireChanges,
-      yield* deps.org.watchJobTitleChanges
+      yield* deps.org.watchJobTitleChanges,
+      deps.adapterChanges
     ],
     { concurrency: 'unbounded' }
   )
