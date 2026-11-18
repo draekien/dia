@@ -2,6 +2,9 @@ import { EffortLevel } from '@dia/plugin'
 import { Schema } from 'effect'
 import { Rpc } from 'effect/rpc'
 
+/** The id of this plugin, the `plugin` argument of `callHost` for its RPCs. */
+export const TEXT_GENERATION_PLUGIN = 'dia-text-generation'
+
 /** The adapter, model and effort that write a thread title. `adapter` is the id of a registered adapter; `model` is a model id of that adapter. */
 export const TextGenerationSettings = Schema.Struct({
   adapter: Schema.NonEmptyString,

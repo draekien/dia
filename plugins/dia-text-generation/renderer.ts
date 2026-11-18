@@ -5,7 +5,7 @@ import { ThreadRowMenuSlot } from '@dia-plugin/dia-threads/slots'
 import { Effect } from 'effect'
 import { TypeIcon } from 'lucide-react'
 import { createElement } from 'react'
-import { RegenerateTitle } from './calls'
+import { RegenerateTitle, TEXT_GENERATION_PLUGIN } from './calls'
 import {
   makeTextGenerationSettingsAtom,
   TextGenerationSettingsPage
@@ -13,7 +13,7 @@ import {
 
 const regenerate = (paneId: string) =>
   Effect.runFork(
-    callHost('dia-text-generation', RegenerateTitle, { paneId }).pipe(
+    callHost(TEXT_GENERATION_PLUGIN, RegenerateTitle, { paneId }).pipe(
       Effect.tap(() => Effect.logInfo('Regenerated a thread title', { paneId })),
       Effect.catch((error) =>
         Effect.logWarning('Could not regenerate a thread title', { paneId, reason: error._tag })

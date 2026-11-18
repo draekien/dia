@@ -195,8 +195,8 @@ export const RegenerateTitle = Rpc.make('RegenerateTitle', { payload: { paneId: 
 Where the code differs from the sections above:
 
 - `conversation.ts` holds `conversationText` (the `User: …` / `Assistant: …` lines, cut to the last 8 000 characters), used by both `AutoTitle` and `RegenerateTitle`. `regenerate.ts` holds `regenerateTitle`; `host.ts` only wires it.
-- The modules are functions over their boundaries: `makeTitleSettings(dataDir)`, `makeTitleWriter({ settings, adapters })`, `startAutoTitle({ events, snapshot, workspace, writer, rename })`.
-- An empty conversation text is skipped by `AutoTitle` and fails `RegenerateTitle` with `TitleNotGenerated`, as does `RegenerateTitle` while the run event log is not loaded.
+- The modules are functions over their boundaries: `makeTitleSettings(dataDir)`, `makeTitleWriter({ settings, adapters })`, `startAutoTitle({ events, snapshot, workspace, writer, rename })`, where `workspace` is an `Effect` reading the latest workspace, and `snapshot`, `writer` and `rename` form the `TitleDeps` that `regenerateTitle` also takes (`titling.ts`).
+- An empty conversation text is skipped by `AutoTitle` and fails `RegenerateTitle` with `TitleNotGenerated`.
 - The settings page changes the adapter only once the new adapter's model list has loaded, because `model` must be non-empty. The page has order 25; the row menu entry `regenerate-title` has order 10.
 - `plugins/dia-threads/slots.ts` and `plugins/dia-text-generation/calls.ts` are listed in `tsconfig.web.json` and `tsconfig.plugin-exports.json`, which `plugin-exports.test.ts` requires of every exported plugin module.
 - Row menu entries render in the order `useList` returns, and also while a thread is being archived or deleted.

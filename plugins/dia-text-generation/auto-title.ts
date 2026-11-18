@@ -1,33 +1,24 @@
 import type { HostPluginContext } from '@dia/plugin'
-import {
-  type AgentName,
-  type CommittedEvent,
-  isGeneratedAgentName,
-  type PaneChat,
-  type TabNotFoundError,
-  tabOf
-} from '@dia/plugin'
-import { Effect, Option, Ref, Result, type Scope, Stream } from 'effect'
+import { type CommittedEvent, isGeneratedAgentName, tabOf } from '@dia/plugin'
+import { Effect, Result, type Scope, Stream } from 'effect'
 import { conversationText } from './conversation'
-import type { TitleWriter } from './writer'
+import type { TitleDeps } from './titling'
 
 type Workspace = Stream.Success<HostPluginContext['workspace']>
 
 /** What {@link startAutoTitle} reads and writes; each member is a seam to the Host. */
-export interface AutoTitleDeps {
+export interface AutoTitleDeps extends TitleDeps {
   /** Subscribes to the events committed from now on, as `RunEvents.subscribe` does. */
   readonly events: Effect.Effect<Stream.Stream<CommittedEvent>, never, Scope.Scope>
-  /** The chat state of a run, as `RunEvents.snapshot` returns it. */
-  readonly snapshot: (runId: string) => Effect.Effect<PaneChat.PaneChatSnapshot>
-  /** The workspace now and after each change, as `ctx.workspace` streams it. */
-  readonly workspace: Stream.Stream<Workspace>
-  readonly writer: TitleWriter
-  /** Renames a tab, as `ctx.renameTab` does. */
-  readonly rename: (paneId: string, name: AgentName) => Effect.Effect<void, TabNotFoundError>
+  /** The workspace as it is when read, as the latest value of `ctx.workspace`. */
+  readonly workspace: Effect.Effect<Workspace>
 }
 
 const skip = (runId: string, reason: string) =>
   Effect.logDebug('Skipped titling a thread', { runId, reason })
+
+const isUserMessage = (entry: CommittedEvent): boolean =>
+  entry.event._tag === 'MessageUpdated' && entry.event.message.role === 'user'
 
 /**
  * Starts titling threads automatically in the calling scope: after the first user message of a
@@ -39,28 +30,21 @@ export const startAutoTitle = Effect.fnUntraced(function* (
   deps: AutoTitleDeps
 ): Effect.fn.Return<void, never, Scope.Scope> {
   const scope = yield* Effect.scope
-  const workspace = yield* Ref.make(Option.none<Workspace>())
-  const decided = yield* Ref.make(new Set<string>())
+  const decided = new Set<string>()
   const committed = yield* deps.events
 
-  yield* deps.workspace.pipe(
-    Stream.runForEach((latest) => Ref.set(workspace, Option.some(latest))),
-    Effect.forkScoped
-  )
-
-  const claim = (runId: string) =>
-    Ref.modify(decided, (known) =>
-      known.has(runId) ? [false, known] : [true, new Set(known).add(runId)]
-    )
+  const claim = (entry: CommittedEvent): boolean => {
+    if (decided.has(entry.runId)) return false
+    decided.add(entry.runId)
+    return true
+  }
 
   const titleRun = Effect.fnUntraced(function* (runId: string) {
     const { state } = yield* deps.snapshot(runId)
     if (state.messages.filter((message) => message.role === 'user').length > 1) {
       return yield* skip(runId, 'the thread holds more than one user message')
     }
-    const latest = yield* Ref.get(workspace)
-    if (Option.isNone(latest)) return yield* skip(runId, 'the workspace is not known yet')
-    const found = tabOf(latest.value, runId)
+    const found = tabOf(yield* deps.workspace, runId)
     if (Result.isFailure(found)) return yield* skip(runId, 'the thread has no tab')
     const { tab } = found.success
     if (tab.owner !== undefined) return yield* skip(runId, `the tab is owned by ${tab.owner}`)
@@ -85,14 +69,9 @@ export const startAutoTitle = Effect.fnUntraced(function* (
     )
 
   yield* committed.pipe(
-    Stream.runForEach((entry) =>
-      Effect.gen(function* () {
-        const { event } = entry
-        if (event._tag !== 'MessageUpdated' || event.message.role !== 'user') return
-        if (!(yield* claim(entry.runId))) return
-        yield* handle(entry.runId)
-      })
-    ),
+    Stream.filter(isUserMessage),
+    Stream.filter(claim),
+    Stream.runForEach((entry) => handle(entry.runId)),
     Effect.forkScoped
   )
   yield* Effect.logInfo('Automatic thread titling started')

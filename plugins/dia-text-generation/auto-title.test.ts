@@ -64,7 +64,7 @@ const started = (options: {
           snapshotOf(options.messages ?? [messageOf('u1', 'user', 'Fix the login bug')])
         )
       },
-      workspace: Stream.make(options.workspace as never),
+      workspace: Effect.succeed(options.workspace as never),
       writer,
       rename:
         options.rename ??
@@ -260,7 +260,7 @@ describe('AutoTitle', () => {
           Effect.succeed(
             snapshotOf([messageOf('u1', 'user', runId === RUN ? 'slow request' : 'quick request')])
           ),
-        workspace: Stream.make(two as never),
+        workspace: Effect.succeed(two as never),
         writer,
         rename: (paneId) => Effect.sync(() => void renames.push(paneId))
       })

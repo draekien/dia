@@ -18,9 +18,11 @@ import { useAtomValue } from '@effect/atom-react'
 import type { ModelCatalogSnapshotJson } from '@shared/ipc/contract'
 import { Effect, Option } from 'effect'
 import { AsyncResult, Atom } from 'effect/reactivity'
+import type { ReactNode } from 'react'
 import {
   FollowTextGenerationSettings,
   SetTextGenerationSettings,
+  TEXT_GENERATION_PLUGIN,
   type TextGenerationSettings
 } from './calls'
 
@@ -28,8 +30,6 @@ type ModelOptionJson = Extract<
   ModelCatalogSnapshotJson['state'],
   { _tag: 'Ready' }
 >['models'][number]
-
-const SETTINGS_PLUGIN = 'dia-text-generation'
 
 const modelsOf = (state: ModelCatalogSnapshotJson['state'] | undefined) =>
   state?._tag === 'Ready' ? state.models : []
@@ -46,13 +46,53 @@ export type TextGenerationSettingsAtom = ReturnType<typeof makeTextGenerationSet
 
 const save = (settings: TextGenerationSettings) =>
   Effect.runFork(
-    callHost(SETTINGS_PLUGIN, SetTextGenerationSettings, { settings }).pipe(
+    callHost(TEXT_GENERATION_PLUGIN, SetTextGenerationSettings, { settings }).pipe(
       Effect.tap(() => Effect.logInfo('Saved the text generation settings', settings)),
       Effect.catch((error) =>
         Effect.logWarning('Could not save the text generation settings', { reason: error._tag })
       )
     )
   )
+
+function Field({
+  id,
+  label,
+  value,
+  display,
+  disabled,
+  onValueChange,
+  children
+}: {
+  readonly id: string
+  readonly label: string
+  readonly value: string
+  readonly display: ReactNode
+  readonly disabled?: boolean
+  readonly onValueChange: (value: string) => void
+  readonly children: ReactNode
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <span id={id} className="text-xs text-ink-muted">
+        {label}
+      </span>
+      <Select
+        value={value}
+        disabled={disabled}
+        onValueChange={(next) => {
+          if (next !== null) onValueChange(next)
+        }}
+      >
+        <SelectTrigger className="w-full" aria-labelledby={id}>
+          <SelectValue>{display}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>{children}</SelectGroup>
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
 
 /**
  * The selects that choose the adapter, model and effort that write thread titles. `settings` is
@@ -85,79 +125,46 @@ export function TextGenerationSettingsForm({
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <div className="flex min-w-0 flex-col gap-1">
-        <span id="title-adapter-label" className="text-xs text-ink-muted">
-          Adapter
-        </span>
-        <Select
-          value={settings.adapter}
-          onValueChange={(value) => {
-            if (value !== null) changeAdapter(value)
-          }}
-        >
-          <SelectTrigger className="w-full" aria-labelledby="title-adapter-label">
-            <SelectValue>{adapterLabel ?? settings.adapter}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {adapters.map((adapter) => (
-                <SelectItem key={adapter.id} value={adapter.id}>
-                  {adapter.label}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex min-w-0 flex-col gap-1">
-        <span id="title-model-label" className="text-xs text-ink-muted">
-          Model
-        </span>
-        <Select
-          value={settings.model}
-          onValueChange={(value) => {
-            if (value !== null) changeModel(value)
-          }}
-        >
-          <SelectTrigger className="w-full" aria-labelledby="title-model-label">
-            <SelectValue>{model?.displayName ?? settings.model}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {models.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.displayName}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex min-w-0 flex-col gap-1">
-        <span id="title-effort-label" className="text-xs text-ink-muted">
-          Effort
-        </span>
-        <Select
-          value={settings.effort}
-          disabled={(model?.effortLevels.length ?? 0) === 0}
-          onValueChange={(value) => {
-            if (value !== null) onChange({ ...settings, effort: value })
-          }}
-        >
-          <SelectTrigger className="w-full" aria-labelledby="title-effort-label">
-            <SelectValue>{thinkingLevelLabel(settings.effort)}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {(model?.effortLevels ?? []).map((level) => (
-                <SelectItem key={level} value={level}>
-                  {thinkingLevelLabel(level)}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-      </div>
+      <Field
+        id="title-adapter-label"
+        label="Adapter"
+        value={settings.adapter}
+        display={adapterLabel ?? settings.adapter}
+        onValueChange={changeAdapter}
+      >
+        {adapters.map((adapter) => (
+          <SelectItem key={adapter.id} value={adapter.id}>
+            {adapter.label}
+          </SelectItem>
+        ))}
+      </Field>
+      <Field
+        id="title-model-label"
+        label="Model"
+        value={settings.model}
+        display={model?.displayName ?? settings.model}
+        onValueChange={changeModel}
+      >
+        {models.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.displayName}
+          </SelectItem>
+        ))}
+      </Field>
+      <Field
+        id="title-effort-label"
+        label="Effort"
+        value={settings.effort}
+        display={thinkingLevelLabel(settings.effort)}
+        disabled={(model?.effortLevels.length ?? 0) === 0}
+        onValueChange={(value) => onChange({ ...settings, effort: value as EffortLevel })}
+      >
+        {(model?.effortLevels ?? []).map((level) => (
+          <SelectItem key={level} value={level}>
+            {thinkingLevelLabel(level)}
+          </SelectItem>
+        ))}
+      </Field>
     </div>
   )
 }

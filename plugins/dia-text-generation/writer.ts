@@ -13,18 +13,17 @@ const TITLE_INSTRUCTIONS = [
   'Answer in plain text only: no markdown, no explanation, nothing but the title.'
 ].join('\n')
 
-const SURROUNDING = '"\'`“”‘’'
+const LEADING_QUOTES = /^["'`“”‘’]+/
+const TRAILING_QUOTES = /["'`“”‘’.]+$/
+const LINE_BREAK = /\r?\n/
 
 const titleLineOf = (answer: string): string => {
-  const line = answer
-    .split(/\r?\n/)
-    .map((candidate) => candidate.trim())
-    .find((candidate) => candidate.length > 0)
-  if (line === undefined) return ''
-  return line
-    .replace(new RegExp(`^[${SURROUNDING}]+`), '')
-    .replace(new RegExp(`[${SURROUNDING}.]+$`), '')
-    .trim()
+  const line =
+    answer
+      .split(LINE_BREAK)
+      .map((candidate) => candidate.trim())
+      .find((candidate) => candidate.length > 0) ?? ''
+  return line.replace(LEADING_QUOTES, '').replace(TRAILING_QUOTES, '').trim()
 }
 
 interface Chosen {
@@ -55,34 +54,36 @@ export const makeTitleWriter = (deps: {
   readonly adapters: Effect.Effect<ReadonlyArray<AgentAdapter>>
 }): TitleWriter => {
   const choose = Effect.fnUntraced(function* (): Effect.fn.Return<Chosen, TitleNotGenerated> {
-    const saved = yield* deps.settings
+    const settings = yield* deps.settings
     const registered = yield* deps.adapters
-    const savedAdapter = registered.find(
-      (adapter) => adapter.id === saved.adapter && Option.isSome(adapter.textGeneration)
+    const capable = registered.flatMap((adapter) =>
+      Option.isSome(adapter.textGeneration)
+        ? [{ id: adapter.id, textGeneration: adapter.textGeneration.value }]
+        : []
     )
-    if (savedAdapter !== undefined && Option.isSome(savedAdapter.textGeneration)) {
+    const saved = capable.find((adapter) => adapter.id === settings.adapter)
+    if (saved !== undefined) {
       return {
-        adapterId: savedAdapter.id,
-        textGeneration: savedAdapter.textGeneration.value,
-        model: saved.model,
-        effort: saved.effort
+        adapterId: saved.id,
+        textGeneration: saved.textGeneration,
+        model: settings.model,
+        effort: settings.effort
       }
     }
-    for (const adapter of registered) {
-      if (Option.isSome(adapter.textGeneration)) {
-        yield* Effect.logWarning(
-          'The saved text generation adapter is not available; using the first adapter with text generation',
-          { saved: saved.adapter, fallback: adapter.id }
-        )
-        return {
-          adapterId: adapter.id,
-          textGeneration: adapter.textGeneration.value,
-          model: adapter.textGeneration.value.defaultModel,
-          effort: saved.effort
-        }
-      }
+    const [fallback] = capable
+    if (fallback === undefined) {
+      return yield* new TitleNotGenerated({ reason: 'No adapter offers text generation' })
     }
-    return yield* new TitleNotGenerated({ reason: 'No adapter offers text generation' })
+    yield* Effect.logWarning(
+      'The saved text generation adapter is not available; using the first adapter with text generation',
+      { saved: settings.adapter, fallback: fallback.id }
+    )
+    return {
+      adapterId: fallback.id,
+      textGeneration: fallback.textGeneration,
+      model: fallback.textGeneration.defaultModel,
+      effort: settings.effort
+    }
   })
 
   const generate = Effect.fnUntraced(function* (
