@@ -26,11 +26,15 @@ const MEMBERS = [
 const methods = Object.fromEntries(MEMBERS.map((member) => [member, () => undefined]))
 
 describe('RunsKey', () => {
-  it('accepts a run service that has every method and busy', () => {
-    expect(RunsKey.is({ ...methods, busy: {} })).toBe(true)
+  it('accepts a run service that has every method, busy and defaultSelection', () => {
+    expect(RunsKey.is({ ...methods, busy: {}, defaultSelection: {} })).toBe(true)
   })
 
   it('rejects a run service without busy, which the run queue reads', () => {
-    expect(RunsKey.is(methods)).toBe(false)
+    expect(RunsKey.is({ ...methods, defaultSelection: {} })).toBe(false)
+  })
+
+  it('rejects a run service without defaultSelection, which callers with no model choice read', () => {
+    expect(RunsKey.is({ ...methods, busy: {} })).toBe(false)
   })
 })

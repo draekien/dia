@@ -1,7 +1,6 @@
 import {
   type GitOps,
   type HostPluginContext,
-  LEGACY_ADAPTER_ID,
   type PluginSetup,
   type ProjectId,
   RunsKey,
