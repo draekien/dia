@@ -52,6 +52,11 @@ export const startAutoTitle = Effect.fnUntraced(function* (
     const conversation = conversationText(state.messages)
     if (conversation.length === 0) return yield* skip(runId, 'the thread has no text yet')
     const name = yield* deps.writer.title(conversation)
+    const current = tabOf(yield* deps.workspace, runId)
+    if (Result.isFailure(current)) return yield* skip(runId, 'the thread has no tab')
+    if (current.success.tab.name !== tab.name || current.success.tab.owner !== undefined) {
+      return yield* skip(runId, 'the tab was renamed or claimed while its title was written')
+    }
     yield* deps.rename(runId, name)
     yield* Effect.logInfo('Titled a thread', { runId, from: tab.name, to: name })
   })

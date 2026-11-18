@@ -44,6 +44,7 @@ const started = (options: {
   readonly answer: Parameters<typeof adapterWithText>[2]
   readonly messages?: Parameters<typeof snapshotOf>[0]
   readonly rename?: AutoTitleDeps['rename']
+  readonly readWorkspace?: AutoTitleDeps['workspace']
   readonly requests?: Array<TextGenerationRequest>
 }) =>
   Effect.gen(function* () {
@@ -64,7 +65,7 @@ const started = (options: {
           snapshotOf(options.messages ?? [messageOf('u1', 'user', 'Fix the login bug')])
         )
       },
-      workspace: Effect.succeed(options.workspace as never),
+      workspace: options.readWorkspace ?? Effect.succeed(options.workspace as never),
       writer,
       rename:
         options.rename ??
@@ -238,6 +239,25 @@ describe('AutoTitle', () => {
       assert.isTrue(logs.some((log) => log.level === 'Warn'))
     }).pipe(Effect.scoped, Effect.provide(layer))
   })
+
+  it.effect('keeps a name the user typed while the title was being written', () =>
+    Effect.gen(function* () {
+      const reads = [
+        workspaceWithTab(RUN, 'brave-otter'),
+        workspaceWithTab(RUN, 'fix login')
+      ] as const
+      let read = 0
+      const harness = yield* started({
+        workspace: reads[0],
+        readWorkspace: Effect.sync(() => reads[Math.min(read++, 1)] as never),
+        answer: answering('Fix the login bug')
+      })
+
+      yield* harness.send(userMessage('u1', 'Fix the login bug'))
+
+      assert.deepStrictEqual(harness.renames, [], 'the name typed during the call is kept')
+    }).pipe(Effect.scoped)
+  )
 
   it.effect('does not let a slow title block another run', () =>
     Effect.gen(function* () {

@@ -168,6 +168,21 @@ describe('makeClaudeCodeTextGeneration', () => {
     })
   )
 
+  it.effect('fails when the query cannot start', () =>
+    Effect.gen(function* () {
+      sdk.query.mockImplementation(() => {
+        throw new Error('spawn ENOENT')
+      })
+
+      const failure = yield* Effect.flip(
+        generation(ready(model('haiku', ['low']))).generate(request)
+      )
+
+      assert.strictEqual(failure._tag, 'TextGenerationFailed')
+      assert.include(failure.reason, 'spawn ENOENT')
+    })
+  )
+
   it.effect('fails when the result is an error', () =>
     Effect.gen(function* () {
       sdk.query.mockReturnValue(

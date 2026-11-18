@@ -84,23 +84,25 @@ export const makeClaudeCodeTextGeneration = ({
       effort: thinking.effort
     })
     const text = yield* Effect.acquireUseRelease(
-      Effect.sync(() =>
-        query({
-          prompt: request.input,
-          options: {
-            systemPrompt: request.instructions,
-            model: request.model,
-            ...thinking,
-            tools: [],
-            persistSession: false,
-            strictMcpConfig: true,
-            settingSources: [],
-            maxTurns: 1,
-            cwd: dataDir,
-            ...installQueryOptions(path.value)
-          }
-        })
-      ),
+      Effect.try({
+        try: () =>
+          query({
+            prompt: request.input,
+            options: {
+              systemPrompt: request.instructions,
+              model: request.model,
+              ...thinking,
+              tools: [],
+              persistSession: false,
+              strictMcpConfig: true,
+              settingSources: [],
+              maxTurns: 1,
+              cwd: dataDir,
+              ...installQueryOptions(path.value)
+            }
+          }),
+        catch: (cause) => failed(`Claude Code could not start: ${messageOf(cause)}`)
+      }),
       readAnswer,
       (running) =>
         Effect.sync(() => running.close()).pipe(
