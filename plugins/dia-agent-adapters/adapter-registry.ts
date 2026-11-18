@@ -111,10 +111,9 @@ export const makeAgentAdapterRegistry = Effect.fn('AgentAdapterRegistry.make')(f
           problems: agentBackendProblems(Option.some(backend))
         })
       }
-      const validTextGeneration =
-        textGeneration === undefined || isTextGeneration(textGeneration)
-          ? Option.fromNullishOr(textGeneration)
-          : Option.none<TextGeneration>()
+      const validTextGeneration = Option.fromNullishOr(textGeneration).pipe(
+        Option.filter(isTextGeneration)
+      )
       if (textGeneration !== undefined && Option.isNone(validTextGeneration)) {
         yield* Effect.logError(
           'An adapter was registered without text generation; its textGeneration is invalid',
