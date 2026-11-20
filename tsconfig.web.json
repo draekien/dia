@@ -53,6 +53,8 @@
     "plugins/dia-markdown/markdown.ts",
     "plugins/dia-mcp/registry.ts",
     "plugins/dia-agent-definitions/registry.ts",
+    "plugins/dia-agent-definitions/run-settings.ts",
+    "plugins/dia-checkpoints/boundaries.ts",
     "plugins/dia-mcp/picker.ts",
     "plugins/dia-skills/registry.ts",
     "plugins/dia-skills/directory.ts",

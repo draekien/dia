@@ -1,4 +1,5 @@
 import { Attention, PaneChat } from '@dia/plugin'
+import type { RunChoices } from '@dia-plugin/dia-agent-definitions/run-settings'
 import { FirstIssue, ObjectiveId, WorkTitle } from '@dia-plugin/dia-issues/domain'
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto'
 import { assert, describe, it } from '@effect/vitest'
@@ -12,7 +13,6 @@ import type { JobTitleId } from './domain'
 import { orgMigrations } from './migrations'
 import { makeOrg } from './org'
 import { holdBuiltInDefinitions } from './registries.fake'
-import type { RunChoices } from './run-options'
 import { fakeChoices, fakeRuns, model } from './runs.fake'
 
 const DIRECTORY = 'C:/dia/plugins/dia-org/assistant'

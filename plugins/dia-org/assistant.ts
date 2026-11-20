@@ -1,10 +1,10 @@
 import { AgentName, PaneChat, type RunRequest, type Runs } from '@dia/plugin'
+import { type RunChoices, runSettings } from '@dia-plugin/dia-agent-definitions/run-settings'
 import type { IssuesSnapshot, ObjectiveId } from '@dia-plugin/dia-issues/domain'
 import type { Issues } from '@dia-plugin/dia-issues/service'
 import { Effect, Option, Ref, type Scope, Semaphore, Stream, SubscriptionRef } from 'effect'
 import { SqlClient } from 'effect/sql'
 import { AssistantDisabled, type JobTitle, NoAgentAdapter } from './domain'
-import { type RunChoices, runSettings } from './run-options'
 import type { Org } from './service'
 
 /** The label the Executive assistant's run carries in its dia tool scope. */
