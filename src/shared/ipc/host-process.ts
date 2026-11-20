@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
 import { AgentNotification } from '../domain/notification'
+import { PluginStartupEvent } from '../domain/startup'
 
 /**
  * First message the Host sends: it has registered its module loader and is listening on
@@ -67,6 +68,16 @@ export type HostShutdownComplete = typeof HostShutdownComplete.Type
 export const Notify = Schema.TaggedStruct('Notify', { notification: AgentNotification })
 export type Notify = typeof Notify.Type
 
+/** Message the Host sends with one step of the plugin kernel's startup, for main's startup log. */
+export const StartupProgress = Schema.TaggedStruct('StartupProgress', { event: PluginStartupEvent })
+export type StartupProgress = typeof StartupProgress.Type
+
 /** Every message the Host may send to main over `parentPort`. */
-export const HostToMainMessage = Schema.Union([HostBooted, HostReady, HostShutdownComplete, Notify])
+export const HostToMainMessage = Schema.Union([
+  HostBooted,
+  HostReady,
+  HostShutdownComplete,
+  Notify,
+  StartupProgress
+])
 export type HostToMainMessage = typeof HostToMainMessage.Type

@@ -23,6 +23,7 @@ import {
   wireChooseDirectory,
   wireGetAppVersion,
   wireGetHostConnection,
+  wireGetStartupLog,
   wireGetUpdateStatus,
   wireRevealPath,
   wireTitleBarOverlay,
@@ -30,6 +31,7 @@ import {
   wireUpdaterCommands
 } from './ipc/window-ipc'
 import { DEFAULT_LOG_RETENTION, makeLoggerLive, pruneOldLogEntries } from './logger'
+import { makeStartupRecorder } from './services/startup-recorder'
 import { makeUpdaterBridge, type UpdaterSignal } from './services/updater'
 import { loadWindowState, saveWindowStateOnClose } from './window-state'
 
@@ -203,6 +205,8 @@ app.whenReady().then(async () => {
       Effect.gen(function* () {
         const services = yield* Effect.context<never>()
         runLog = (effect) => void Effect.runForkWith(services)(effect)
+        const startupRecorder = yield* makeStartupRecorder(mainWindow.webContents)
+        wireGetStartupLog(startupRecorder.current)
         const host = yield* startHostProcess({
           hostEntry: join(import.meta.dirname, 'host.js'),
           init: HostInit.make({
@@ -227,7 +231,8 @@ app.whenReady().then(async () => {
             }
             runLog(Effect.logInfo('Showing an agent notification', notification))
             showNotification(notification)
-          }
+          },
+          onStartup: (event) => Effect.runSyncWith(services)(startupRecorder.record(event))
         })
         const showNotification = makeAgentNotifier(mainWindow, (paneId) =>
           runLog(host.send(ShowAgent.make({ paneId })))

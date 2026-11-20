@@ -152,7 +152,8 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
             {
               discard: true
             }
-          )
+          ),
+        onStartup: appWindow.reportStartup
       })
       return {
         ...registry,

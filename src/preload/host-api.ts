@@ -48,6 +48,8 @@ export type HostApi = Omit<
   | 'installUpdate'
   | 'toggleDevTools'
   | 'onUpdateStatusChanged'
+  | 'getStartupLog'
+  | 'onStartupLogChanged'
   | 'revealPath'
   | 'pickFile'
   | 'pathForFile'

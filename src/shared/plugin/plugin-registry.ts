@@ -15,6 +15,15 @@ import {
   Semaphore,
   Stream
 } from 'effect'
+import {
+  EagerPluginLoadSettled,
+  EagerPluginLoadStarted,
+  EagerPluginsSettled,
+  EagerPluginsStarting,
+  type PluginStartupEvent,
+  type StartupOutcome,
+  StartupSkipped
+} from '../domain/startup'
 import type { AnyServiceKey, PluginServices, PluginSetup, ServiceKey } from './api'
 import { ServiceKeyTakenError, ServiceNotDeclaredError, WhenProvidedRefusedError } from './api'
 import {
@@ -194,6 +203,16 @@ const describeCause = (cause: Cause.Cause<unknown>): string => errorMessage(Caus
 
 const sameInfo = Schema.toEquivalence(PluginInfo)
 
+const startupOutcomeOf = (status: PluginStatus): StartupOutcome => {
+  switch (status._tag) {
+    case 'Loading':
+    case 'Unloaded':
+      return StartupSkipped.make({})
+    default:
+      return status
+  }
+}
+
 interface Entry<Context extends PluginServices> {
   origin: PluginOrigin
   root: string
@@ -283,6 +302,10 @@ const isRunning = <Context extends PluginServices>(entry: Entry<Context>): boole
  * limits the memory each plugin's loads may retain and fills `PluginInfo.memoryBytes`.
  * `onChange`, when given, runs after every operation with the plugins whose `PluginInfo` differs
  * from the last one it reported (the first report covers every plugin the registry has seen).
+ * `onStartup`, when given, runs for each step of `start` until it resolves: the eager plugin
+ * count, each eager plugin's load start and outcome, and the end of the eager loads. Lazy and
+ * manual plugins produce no startup step. A failing `onStartup` is logged and does not stop
+ * startup.
  */
 export const makePluginRegistry = <Context extends PluginServices>(deps: {
   readonly catalog: PluginCatalog
@@ -290,6 +313,7 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
   readonly extend: (services: PluginServices) => Effect.Effect<Context, PluginLoadError>
   readonly memory?: PluginMemoryGuard
   readonly onChange?: (changed: ReadonlyArray<PluginInfo>) => Effect.Effect<void>
+  readonly onStartup?: (event: PluginStartupEvent) => Effect.Effect<void>
 }): Effect.Effect<PluginRegistry, never, Scope.Scope> =>
   Effect.gen(function* () {
     const parentScope = yield* Scope.Scope
@@ -1090,6 +1114,26 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
 
     const loadIfQueued = (name: string): Effect.Effect<void> => Effect.asVoid(loadNamed(name, true))
 
+    const reportStartup = (event: PluginStartupEvent): Effect.Effect<void> =>
+      deps.onStartup === undefined
+        ? Effect.void
+        : deps.onStartup(event).pipe(
+            Effect.catchCause((cause) =>
+              Effect.logWarning('Could not report a startup step', {
+                step: event._tag,
+                cause: Cause.pretty(cause)
+              })
+            )
+          )
+
+    const loadEagerReporting = Effect.fnUntraced(function* (name: string) {
+      yield* reportStartup(EagerPluginLoadStarted.make({ name }))
+      const info = yield* loadNamed(name, true)
+      yield* reportStartup(
+        EagerPluginLoadSettled.make({ name, outcome: startupOutcomeOf(info.status) })
+      )
+    })
+
     const start = Effect.fn('PluginRegistry.start')(function* () {
       const names = (yield* list()).map((info) => info.name)
       const modes = yield* Effect.forEach(names, loadModeOf, { concurrency: 'unbounded' })
@@ -1098,8 +1142,10 @@ export const makePluginRegistry = <Context extends PluginServices>(deps: {
       const manual = names.filter((_, index) => modes[index] === 'manual')
       yield* markAllLoading(names.filter((_, index) => modes[index] !== 'manual'))
       yield* Effect.logInfo('Plugins starting', { eager, lazy, manual })
-      yield* Effect.forEach(eager, loadIfQueued, { discard: true })
+      yield* reportStartup(EagerPluginsStarting.make({ count: eager.length }))
+      yield* Effect.forEach(eager, loadEagerReporting, { discard: true })
       yield* Effect.logInfo('Eager plugins settled', { count: eager.length })
+      yield* reportStartup(EagerPluginsSettled.make({}))
       yield* Effect.forEach(lazy, loadIfQueued, { discard: true }).pipe(
         Effect.tap(() => Effect.logInfo('Lazy plugins settled', { count: lazy.length })),
         Effect.forkIn(parentScope)
