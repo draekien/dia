@@ -17,7 +17,10 @@ export const EagerPluginLoadStarted = Schema.TaggedStruct('EagerPluginLoadStarte
   name: PluginName
 })
 
-/** Startup did not load the plugin: the user loaded or unloaded it before startup reached it. */
+/**
+ * Startup did not load the plugin: the user unloaded it, or asked to load it, before startup
+ * reached it. A plugin the user already loaded reports its current status instead.
+ */
 export const StartupSkipped = Schema.TaggedStruct('Skipped', {})
 
 /** How one eager plugin's startup load ended. */

@@ -205,7 +205,11 @@ app.whenReady().then(async () => {
       Effect.gen(function* () {
         const services = yield* Effect.context<never>()
         runLog = (effect) => void Effect.runForkWith(services)(effect)
-        const startupRecorder = yield* makeStartupRecorder(mainWindow.webContents)
+        const startupRecorder = yield* makeStartupRecorder({
+          send: (channel, ...args) => {
+            if (!mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args)
+          }
+        })
         wireGetStartupLog(startupRecorder.current)
         const host = yield* startHostProcess({
           hostEntry: join(import.meta.dirname, 'host.js'),

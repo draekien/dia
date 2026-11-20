@@ -22,7 +22,7 @@ export const PluginStepLine = Schema.TaggedStruct('PluginStep', {
   detail: Schema.optional(Schema.String)
 })
 
-/** One rendered startup line; `key` is the entry's index in the log. */
+/** One rendered startup line; `key` identifies the entry within its Host run's log. */
 export const StartupLine = Schema.Union([HostStepLine, PluginStepLine])
 export type StartupLine = typeof StartupLine.Type
 
@@ -117,7 +117,7 @@ export const describeStartup = (log: StartupLog): StartupDescription => {
   const originMillis = log[0]?.atMillis ?? 0
   const startedAt = new Map<string, number>()
   const lines = log.map(({ atMillis, event }, index): StartupLine => {
-    const step = { key: String(index), offsetMillis: atMillis - originMillis }
+    const step = { key: `${originMillis}:${index}`, offsetMillis: atMillis - originMillis }
     switch (event._tag) {
       case 'EagerPluginLoadStarted':
         startedAt.set(event.name, atMillis)
