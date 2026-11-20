@@ -299,7 +299,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .stream-cursor > :last-child::after {
+  .stream-cursor > :last-child::after,
+  .animate-pulse-slow,
+  .animate-stream-enter {
     animation: none;
   }
 }
