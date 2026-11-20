@@ -106,7 +106,13 @@ export {
   GitFileChange,
   GitKey,
   type GitRef,
-  type GitStatusEntry
+  type GitStatusEntry,
+  MergeConflict,
+  Merged,
+  MergeResult,
+  RevertConflict,
+  Reverted,
+  RevertResult
 } from './services/git-seam'
 export {
   type MetaRepo,

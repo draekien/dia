@@ -4,7 +4,11 @@ import {
   GitError,
   type GitFileChange,
   type GitRef,
-  type GitStatusEntry
+  type GitStatusEntry,
+  MergeConflict,
+  Merged,
+  RevertConflict,
+  Reverted
 } from '@dia/plugin'
 import { Effect, FileSystem, Option, Path, Stream } from 'effect'
 import { ChildProcess, ChildProcessSpawner } from 'effect/process'
@@ -213,24 +217,39 @@ export const makeGit = Effect.gen(function* () {
       })
     )
 
+  const identity = (author: GitAuthor) => [
+    '-c',
+    `user.name=${author.name}`,
+    '-c',
+    `user.email=${author.email}`,
+    '-c',
+    'commit.gpgsign=false'
+  ]
+
+  const conflictMessage = (output: Output) => `${output.stdout}${output.stderr}`.trim()
+
+  const abortOnConflict = Effect.fnUntraced(function* (
+    cwd: string,
+    args: ReadonlyArray<string>,
+    output: Output,
+    operation: 'revert' | 'merge'
+  ) {
+    const aborted = yield* run(cwd, [operation, '--abort'])
+    if (aborted.exitCode !== 0) return yield* failure(cwd, args, output)
+    yield* Effect.logInfo(`Aborted a ${operation} that stopped at a conflict`, { cwd })
+    return conflictMessage(output)
+  })
+
+  const head = (cwd: string) =>
+    runOk(cwd, ['rev-parse', 'HEAD']).pipe(Effect.map((output) => output.trim()))
+
   const commitArgs = ({
     message,
     author
   }: {
     readonly message: string
     readonly author: GitAuthor
-  }) => [
-    '-c',
-    `user.name=${author.name}`,
-    '-c',
-    `user.email=${author.email}`,
-    '-c',
-    'commit.gpgsign=false',
-    'commit',
-    '--no-verify',
-    '-m',
-    message
-  ]
+  }) => [...identity(author), 'commit', '--no-verify', '-m', message]
 
   const git: Git = {
     init: (cwd) => runOk(cwd, ['init']).pipe(Effect.asVoid),
@@ -318,7 +337,30 @@ export const makeGit = Effect.gen(function* () {
     changedFiles: (cwd, from, to) =>
       runOk(cwd, ['diff', '--numstat', '-z', '--no-renames', from, to]).pipe(
         Effect.map(parseNumstat)
-      )
+      ),
+    revert: Effect.fnUntraced(function* (cwd, commits, { message, author }) {
+      const args = ['revert', '--no-commit', ...commits]
+      const output = yield* run(cwd, args)
+      if (output.exitCode !== 0) {
+        return RevertConflict.make({
+          message: yield* abortOnConflict(cwd, args, output, 'revert')
+        })
+      }
+      yield* runOk(cwd, commitArgs({ message, author }))
+      const commit = yield* head(cwd)
+      yield* Effect.logInfo('Reverted commits', { cwd, commits, commit })
+      return Reverted.make({ commit })
+    }),
+    merge: Effect.fnUntraced(function* (cwd, branch, { message, author }) {
+      const args = [...identity(author), 'merge', '--no-ff', '--no-verify', '-m', message, branch]
+      const output = yield* run(cwd, args)
+      if (output.exitCode !== 0) {
+        return MergeConflict.make({ message: yield* abortOnConflict(cwd, args, output, 'merge') })
+      }
+      const commit = yield* head(cwd)
+      yield* Effect.logInfo('Merged a branch', { cwd, branch, commit })
+      return Merged.make({ commit })
+    })
   }
   return git
 })

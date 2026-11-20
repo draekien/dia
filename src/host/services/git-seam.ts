@@ -44,6 +44,24 @@ export const GitFileChange = Schema.Struct({
 /** A changed file; see {@link GitFileChange}. */
 export type GitFileChange = typeof GitFileChange.Type
 
+/** {@link Git.revert} made revert commit `commit`. */
+export const Reverted = Schema.TaggedStruct('Reverted', { commit: Schema.String })
+/** {@link Git.revert} stopped at a conflict and left the working tree as it was; `message` is git's output. */
+export const RevertConflict = Schema.TaggedStruct('RevertConflict', { message: Schema.String })
+/** The outcome of {@link Git.revert}. */
+export const RevertResult = Schema.Union([Reverted, RevertConflict])
+/** The outcome of {@link Git.revert}; see {@link RevertResult}. */
+export type RevertResult = typeof RevertResult.Type
+
+/** {@link Git.merge} made merge commit `commit`. */
+export const Merged = Schema.TaggedStruct('Merged', { commit: Schema.String })
+/** {@link Git.merge} stopped at a conflict and left the working tree as it was; `message` is git's output. */
+export const MergeConflict = Schema.TaggedStruct('MergeConflict', { message: Schema.String })
+/** The outcome of {@link Git.merge}. */
+export const MergeResult = Schema.Union([Merged, MergeConflict])
+/** The outcome of {@link Git.merge}; see {@link MergeResult}. */
+export type MergeResult = typeof MergeResult.Type
+
 /** The author of a commit {@link Git.commitAll} or {@link Git.commitPaths} makes. */
 export interface GitAuthor {
   readonly name: string
@@ -182,6 +200,28 @@ export interface Git {
     from: string,
     to: string
   ) => Effect.Effect<ReadonlyArray<GitFileChange>, GitError>
+  /**
+   * Makes one commit in `cwd`, with `message` by `author`, that reverts every commit in `commits`
+   * (list them newest first). On a conflict it aborts, leaving the working tree as it was, and
+   * returns `RevertConflict`. Fails when git cannot run or refuses to start, for example because
+   * uncommitted changes would be overwritten.
+   */
+  readonly revert: (
+    cwd: string,
+    commits: Arr.NonEmptyReadonlyArray<string>,
+    options: { readonly message: string; readonly author: GitAuthor }
+  ) => Effect.Effect<RevertResult, GitError>
+  /**
+   * Merges `branch` into the branch checked out in `cwd` with a merge commit, even when a fast
+   * forward is possible, with `message` by `author`. On a conflict it aborts, leaving the working
+   * tree as it was, and returns `MergeConflict`. Fails when git cannot run or refuses to start,
+   * for example because uncommitted changes would be overwritten.
+   */
+  readonly merge: (
+    cwd: string,
+    branch: string,
+    options: { readonly message: string; readonly author: GitAuthor }
+  ) => Effect.Effect<MergeResult, GitError>
 }
 
 const GIT_MEMBERS = [
@@ -210,7 +250,9 @@ const GIT_MEMBERS = [
   'stopFsmonitor',
   'snapshot',
   'refs',
-  'changedFiles'
+  'changedFiles',
+  'revert',
+  'merge'
 ] as const satisfies ReadonlyArray<keyof Git>
 
 const isGit = (value: unknown): value is Git =>
