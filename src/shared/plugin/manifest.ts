@@ -21,7 +21,7 @@ export type PluginApiVersion = typeof PluginApiVersion.Type
  * increment the minor version when the plugin context gains something, and the major version when
  * it changes in a way an older plugin cannot use.
  */
-export const PLUGIN_API_VERSION: PluginApiVersion = '0.0.46'
+export const PLUGIN_API_VERSION: PluginApiVersion = '0.0.47'
 
 const versionParts = (version: string): ReadonlyArray<number> | undefined => {
   const match = SEMVER.exec(version)
@@ -205,6 +205,29 @@ export const PluginInfo = Schema.Struct({
   provides: Schema.Array(Schema.String)
 })
 export type PluginInfo = typeof PluginInfo.Type
+
+/**
+ * One plugin's {@link PluginInfo} with the `plugin.json` fields an author reads: `inject` and
+ * `exports` are empty when the manifest lists none, and `load` has the default `lazy` filled in.
+ */
+export const PluginDescription = Schema.Struct({
+  info: PluginInfo,
+  inject: Schema.Array(Schema.String),
+  exports: Schema.Array(PluginExport),
+  load: PluginLoadMode
+})
+export type PluginDescription = typeof PluginDescription.Type
+
+/** No plugin named `plugin` is known to the Host. */
+export class PluginNotFound extends Schema.TaggedError<PluginNotFound>()('PluginNotFound', {
+  plugin: Schema.String
+}) {}
+
+/** Plugin `plugin`'s `plugin.json` could not be read or decoded; `message` says why. */
+export class PluginManifestUnreadable extends Schema.TaggedError<PluginManifestUnreadable>()(
+  'PluginManifestUnreadable',
+  { plugin: Schema.String, message: Schema.String }
+) {}
 
 /** Result of setting a plugin override that was saved. */
 export const PluginOverrideApplied = Schema.TaggedStruct('Applied', {})

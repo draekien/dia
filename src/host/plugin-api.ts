@@ -87,10 +87,17 @@ export * as PaneEvents from '../shared/ipc/contract'
 export { PaneAgentEvent } from '../shared/ipc/contract'
 export * from '../shared/plugin/api'
 export * from '../shared/plugin/list-slot'
+export {
+  PluginDescription,
+  type PluginInfo,
+  PluginManifestUnreadable,
+  PluginNotFound,
+  type PluginOverrideResult
+} from '../shared/plugin/manifest'
 export { PluginCallAttempt, PluginCallInvalid, PluginNotServing } from '../shared/plugin/messages'
 export * from '../shared/plugin/paths-moved'
 export { errorMessage } from '../shared/plugin/plugin-registry'
-export type { HostPluginContext } from './plugins/host-plugin-context'
+export type { HostPluginContext, PluginControl } from './plugins/host-plugin-context'
 export { hostDatabaseOf, hostSettingsOf } from './plugins/plugin-paths'
 export {
   type Git,
