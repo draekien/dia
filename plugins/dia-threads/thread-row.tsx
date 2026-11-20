@@ -114,7 +114,8 @@ interface AgentRowProps {
 /**
  * One agent in the overview: its status dot, name and second line. Clicking it or pressing
  * `Enter` shows the agent's tab; `F2` or the row menu renames it. The row menu also archives or deletes
- * the agent through `onRetire`. While the agent is being archived or deleted, the row is muted, says
+ * the agent through `onRetire`; a row whose tab a plugin owns (`row.owned`) offers Delete but not
+ * Archive, because Settings › Archived threads does not list owned tabs. While the agent is being archived or deleted, the row is muted, says
  * so on its second line, does not open, and its menu cannot archive or delete it. A `projectName` of
  * null leaves the project out of the tooltip and accessible name.
  */
@@ -231,7 +232,9 @@ export function ThreadRow({
             <>
               <ContextMenuSeparator />
               <ContextMenuGroup>
-                <ContextMenuItem onClick={() => onRetire('archive')}>Archive</ContextMenuItem>
+                {!row.owned && (
+                  <ContextMenuItem onClick={() => onRetire('archive')}>Archive</ContextMenuItem>
+                )}
                 <ContextMenuItem variant="destructive" onClick={() => onRetire('delete')}>
                   Delete…
                 </ContextMenuItem>

@@ -95,6 +95,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0085](0085-dia-tools-asks-the-user-to-approve-a-tool-call.md) | `dia-tools` lets a tool handler ask the user to approve a call, in dia's window, whatever the session's permission mode | accepted |
 | [0086](0086-agent-adapter-registry.md) | Agent adapters register with `dia-agent-adapters`, every model choice names its adapter, and a run keeps the adapter it started on | accepted, amended by ADR-0087 |
 | [0087](0087-host-plugins-rename-tabs.md) | A Host plugin renames a tab through `ctx.renameTab`, and agent adapters offer one-shot text generation | accepted |
+| [0088](0088-creator-mode-threads-on-a-meta-repo-worktree.md) | Creator mode threads change dia on a worktree branch of the meta repo, and the user merges them | accepted |
 
 ## Adding a new ADR
 

@@ -6,24 +6,29 @@ import { ChildProcess, ChildProcessSpawner } from 'effect/process'
 import { ensureMetaRepo, makeMetaRepo } from './meta-repo'
 
 const SHIPPED_SKILL = '---\nname: building-dia-plugins\n---\n\nWrite plugin.json first.\n'
+const SHIPPED_META_SKILL = '---\nname: writing-meta-skills\n---\n\nName the folder first.\n'
 const SHIPPED_REFERENCE = '# @dia/plugin API reference\n\n### MetaRepoKey\n'
 const CHANGED_REFERENCE = `${SHIPPED_REFERENCE}\n### WorktreesKey\n`
 const SKILL_PATH = 'plugin/skills/building-dia-plugins/SKILL.md'
+const META_SKILL_PATH = 'plugin/skills/writing-meta-skills/SKILL.md'
 const REFERENCE_PATH = 'plugin/skills/building-dia-plugins/references/api.md'
-const SKILL_COMMIT_SUBJECT = 'docs: update the built-in building-dia-plugins skill'
+const SKILL_COMMIT_SUBJECT = 'docs: update the built-in meta repo skills'
 
 const scratchRepo = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const root = yield* fs.makeTempDirectoryScoped({ prefix: 'dia-meta-' })
-  const skillSource = path.join(root, 'shipped', 'building-dia-plugins')
-  const ship = (file: string, content: string) =>
+  const skillSource = path.join(root, 'shipped')
+  const shipTo = (skill: string, file: string, content: string) =>
     Effect.gen(function* () {
-      yield* fs.makeDirectory(path.dirname(path.join(skillSource, file)), { recursive: true })
-      yield* fs.writeFileString(path.join(skillSource, file), content)
+      const target = path.join(skillSource, skill, file)
+      yield* fs.makeDirectory(path.dirname(target), { recursive: true })
+      yield* fs.writeFileString(target, content)
     })
+  const ship = (file: string, content: string) => shipTo('building-dia-plugins', file, content)
   yield* ship('SKILL.md', SHIPPED_SKILL)
   yield* ship('references/api.md', SHIPPED_REFERENCE)
+  yield* shipTo('writing-meta-skills', 'SKILL.md', SHIPPED_META_SKILL)
   return { fs, path, root, directory: path.join(root, 'repo'), skillSource, ship }
 })
 
@@ -44,6 +49,19 @@ describe('ensureMetaRepo', () => {
         yield* fs.readFileString(path.join(directory, 'plugin', '.claude-plugin', 'plugin.json'))
       )
       assert.strictEqual(manifest.name, 'dia-meta')
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
+  )
+
+  it.effect('copies the shipped writing-meta-skills skill', () =>
+    Effect.gen(function* () {
+      const { fs, path, directory, skillSource } = yield* scratchRepo
+
+      yield* ensureMetaRepo(directory, skillSource, yield* makeGit)
+
+      assert.strictEqual(
+        yield* fs.readFileString(path.join(directory, META_SKILL_PATH)),
+        SHIPPED_META_SKILL
+      )
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
   )
 
@@ -72,7 +90,8 @@ describe('ensureMetaRepo', () => {
         'instructions.md',
         'plugin/.claude-plugin/plugin.json',
         SKILL_PATH,
-        REFERENCE_PATH
+        REFERENCE_PATH,
+        META_SKILL_PATH
       ])
       assert.strictEqual(yield* git(directory, 'status', '--porcelain'), '')
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
@@ -206,7 +225,7 @@ describe('ensureMetaRepo', () => {
       assert.strictEqual(yield* git(directory, 'rev-list', '--count', 'HEAD'), '2')
       assert.deepStrictEqual(
         (yield* git(directory, 'show', '--name-only', '--format=', 'HEAD')).split('\n').sort(),
-        [SKILL_PATH, REFERENCE_PATH]
+        [SKILL_PATH, REFERENCE_PATH, META_SKILL_PATH]
       )
       assert.strictEqual(yield* git(directory, 'status', '--porcelain'), '')
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
@@ -250,6 +269,16 @@ describe('ensureMetaRepo', () => {
 })
 
 describe('makeMetaRepo', () => {
+  it.effect('reports the directory it was made for', () =>
+    Effect.gen(function* () {
+      const { directory } = yield* scratchRepo
+
+      const repo = yield* makeMetaRepo(directory, Effect.succeed(Option.some(yield* makeGit)))
+
+      assert.strictEqual(repo.directory, directory)
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer))
+  )
+
   it.effect('offers the trimmed instructions and the plugin directory', () =>
     Effect.gen(function* () {
       const { fs, path, directory, skillSource } = yield* scratchRepo

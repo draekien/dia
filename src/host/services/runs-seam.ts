@@ -11,7 +11,7 @@ import {
   PermissionMode,
   SessionId,
   ThinkingLevel,
-  type WorktreeInfo
+  WorktreeInfo
 } from '@shared/domain/pane'
 import { AgentName, TabOwner } from '@shared/domain/project'
 import type { PermissionRules } from '@shared/domain/session-tools'
@@ -153,11 +153,13 @@ export type TabPlacement = typeof TabPlacement.Type
 /**
  * Run `runId`, which has no tab, asks to be shown in a tab working in `directory`, in the project
  * at `projectDirectory`; the tab becomes the visible tab when `select` is true. `backend` is the
- * run's adapter id.
+ * run's adapter id. `worktree` is the run's worktree, whose path is `directory`, or null when the
+ * run works in its source directory.
  */
 export const RunTabRequested = Schema.TaggedStruct('RunTabRequested', {
   runId: Schema.String,
   directory: Schema.String,
+  worktree: Schema.NullOr(WorktreeInfo),
   ...TabPlacement.fields,
   model: Schema.String,
   backend: Schema.NonEmptyString,

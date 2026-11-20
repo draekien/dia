@@ -34,3 +34,18 @@ export interface SettingsPage {
  * `addEntry(ctx, SettingsPagesSlot, page)`, and open it with `openSettings({ plugin, id })`.
  */
 export const SettingsPagesSlot = ListSlot.make<SettingsPage>('settings.pages')
+
+/** A button above the Settings › Plugins list: `label` is its text, `run` its click handler. */
+export interface PluginPageAction {
+  readonly id: string
+  readonly order: number
+  readonly label: string
+  readonly icon: ComponentType<{ readonly className?: string }>
+  readonly run: () => void
+}
+
+/**
+ * The buttons above the Settings › Plugins list, declared by the settings plugin. Add one with
+ * `addEntry(ctx, PluginPageActionsSlot, action)`; they show in `order`.
+ */
+export const PluginPageActionsSlot = ListSlot.make<PluginPageAction>('settings.pluginActions')

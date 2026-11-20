@@ -472,3 +472,142 @@ describe('redactUrlCredentials', () => {
     )
   })
 })
+
+describe('makeGit revert and merge', { timeout: 30_000 }, () => {
+  it.live('reverts several commits in one commit that restores the earlier content', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, write, fs, path } = yield* committedRepo
+        yield* write('a.txt', 'two\n')
+        yield* git.commitAll(directory, { message: 'two', author: AUTHOR })
+        const two = Option.getOrThrow(yield* git.resolveCommit(directory, 'HEAD'))
+        yield* write('b.txt', 'new\n')
+        yield* git.commitAll(directory, { message: 'add b', author: AUTHOR })
+        const addB = Option.getOrThrow(yield* git.resolveCommit(directory, 'HEAD'))
+
+        const result = yield* git.revert(directory, [addB, two], {
+          message: 'Revert 2 commits',
+          author: AUTHOR
+        })
+
+        assert.strictEqual(result._tag, 'Reverted')
+        assert.strictEqual(
+          result._tag === 'Reverted' ? result.commit : '',
+          Option.getOrThrow(yield* git.resolveCommit(directory, 'HEAD'))
+        )
+        assert.strictEqual(
+          (yield* fs.readFileString(path.join(directory, 'a.txt'))).replaceAll('\r\n', '\n'),
+          'one\n'
+        )
+        assert.isFalse(yield* fs.exists(path.join(directory, 'b.txt')))
+        assert.strictEqual(
+          (yield* git.log(directory, ['-1', '--format=%s'])).trim(),
+          'Revert 2 commits'
+        )
+      })
+    )
+  )
+
+  it.live('aborts a revert that conflicts and leaves HEAD and the working tree unchanged', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, write, fs, path } = yield* committedRepo
+        yield* write('a.txt', 'two\n')
+        yield* git.commitAll(directory, { message: 'two', author: AUTHOR })
+        const two = Option.getOrThrow(yield* git.resolveCommit(directory, 'HEAD'))
+        yield* write('a.txt', 'three\n')
+        yield* git.commitAll(directory, { message: 'three', author: AUTHOR })
+        const before = Option.getOrThrow(yield* git.resolveCommit(directory, 'HEAD'))
+
+        const result = yield* git.revert(directory, [two], { message: 'Revert', author: AUTHOR })
+
+        assert.strictEqual(result._tag, 'RevertConflict')
+        assert.strictEqual(Option.getOrThrow(yield* git.resolveCommit(directory, 'HEAD')), before)
+        assert.deepStrictEqual(yield* git.status(directory), [])
+        assert.strictEqual(
+          (yield* fs.readFileString(path.join(directory, 'a.txt'))).replaceAll('\r\n', '\n'),
+          'three\n'
+        )
+      })
+    )
+  )
+
+  it.live('fails a revert that uncommitted changes would overwrite, keeping the changes', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, write, fs, path } = yield* committedRepo
+        yield* write('a.txt', 'two\n')
+        yield* git.commitAll(directory, { message: 'two', author: AUTHOR })
+        const two = Option.getOrThrow(yield* git.resolveCommit(directory, 'HEAD'))
+        yield* write('a.txt', 'edited\n')
+
+        const result = yield* git
+          .revert(directory, [two], { message: 'Revert', author: AUTHOR })
+          .pipe(Effect.result)
+
+        assert.isTrue(Result.isFailure(result))
+        assert.strictEqual(
+          (yield* fs.readFileString(path.join(directory, 'a.txt'))).replaceAll('\r\n', '\n'),
+          'edited\n'
+        )
+      })
+    )
+  )
+
+  it.live('merges a branch with a merge commit even when a fast forward is possible', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, write, fs, path } = yield* committedRepo
+        const main = Option.getOrThrow(yield* git.currentBranch(directory))
+        yield* gitIn(directory, ['switch', '--quiet', '-c', 'feature'])
+        yield* write('b.txt', 'feature\n')
+        yield* git.commitAll(directory, { message: 'feature', author: AUTHOR })
+        yield* git.switchBranch(directory, main)
+
+        const result = yield* git.merge(directory, 'feature', {
+          message: 'Merge feature',
+          author: AUTHOR
+        })
+
+        assert.strictEqual(result._tag, 'Merged')
+        const parents = (yield* git.log(directory, ['-1', '--format=%P'])).trim().split(' ')
+        assert.strictEqual(parents.length, 2)
+        assert.strictEqual(
+          (yield* fs.readFileString(path.join(directory, 'b.txt'))).replaceAll('\r\n', '\n'),
+          'feature\n'
+        )
+        assert.strictEqual(
+          (yield* git.log(directory, ['-1', '--format=%s'])).trim(),
+          'Merge feature'
+        )
+      })
+    )
+  )
+
+  it.live('aborts a merge that conflicts and leaves HEAD and the working tree unchanged', () =>
+    live(
+      Effect.gen(function* () {
+        const { git, directory, write, fs, path } = yield* committedRepo
+        const main = Option.getOrThrow(yield* git.currentBranch(directory))
+        yield* gitIn(directory, ['switch', '--quiet', '-c', 'feature'])
+        yield* write('a.txt', 'feature\n')
+        yield* git.commitAll(directory, { message: 'feature', author: AUTHOR })
+        yield* git.switchBranch(directory, main)
+        yield* write('a.txt', 'main\n')
+        yield* git.commitAll(directory, { message: 'main', author: AUTHOR })
+        const before = Option.getOrThrow(yield* git.resolveCommit(directory, 'HEAD'))
+
+        const result = yield* git.merge(directory, 'feature', { message: 'Merge', author: AUTHOR })
+
+        assert.strictEqual(result._tag, 'MergeConflict')
+        assert.include(result._tag === 'MergeConflict' ? result.message : '', 'a.txt')
+        assert.strictEqual(Option.getOrThrow(yield* git.resolveCommit(directory, 'HEAD')), before)
+        assert.deepStrictEqual(yield* git.status(directory), [])
+        assert.strictEqual(
+          (yield* fs.readFileString(path.join(directory, 'a.txt'))).replaceAll('\r\n', '\n'),
+          'main\n'
+        )
+      })
+    )
+  )
+})

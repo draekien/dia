@@ -121,8 +121,9 @@ const fromRegistry = <A>(
 
 /**
  * Builds the {@link Org} over the `org` plugin's database, which `orgMigrations` must already have
- * migrated. The job titles are the agent definitions of the registry `holdDefinitions` holds;
- * while none is held, there are none. `dismiss` counts open issues through the issues
+ * migrated. The job titles are the agent definitions of the registry `holdDefinitions` holds that
+ * the user made or the plugin `holdDefinitions` names contributes; definitions other plugins
+ * contribute are not job titles. While no registry is held, there are none. `dismiss` counts open issues through the issues
  * `holdIssues` holds. Call it once in the plugin's setup and provide the result under
  * `OrgService`.
  */
@@ -134,7 +135,9 @@ export const makeOrg = Effect.gen(function* () {
   const hireChanges = yield* PubSub.unbounded<void>()
   const publishHireChange = PubSub.publish(hireChanges, undefined)
   const heldIssues = yield* Ref.make(Option.none<HeldIssues>())
-  const definitions = yield* Ref.make(Option.none<AgentDefinitionRegistry>())
+  const definitions = yield* Ref.make(
+    Option.none<{ readonly registry: AgentDefinitionRegistry; readonly plugin: string }>()
+  )
   const hireLock = yield* Semaphore.make(1)
 
   const transaction = <A, E>(effect: Effect.Effect<A, E | SqlError.SqlError>) =>
@@ -145,14 +148,15 @@ export const makeOrg = Effect.gen(function* () {
   const newId = crypto.randomUUIDv4().pipe(Effect.orDie)
 
   const jobTitles = Effect.gen(function* () {
-    const registry = yield* Ref.get(definitions)
-    if (Option.isNone(registry)) return []
-    const listed = yield* registry.value.list
+    const held = yield* Ref.get(definitions)
+    if (Option.isNone(held)) return []
+    const listed = yield* held.value.registry.list
     const settings = yield* decodeJobTitleSettingsRows(
       yield* orDie(sql`SELECT job_title_id, enabled FROM job_title_settings`)
     )
     const enabled = new Map(settings.map((row) => [row.job_title_id, row.enabled]))
     return listed
+      .filter(({ source }) => source._tag === 'User' || source.plugin === held.value.plugin)
       .map(({ definition }) => toJobTitle(definition, enabled.get(definition.id) ?? true))
       .sort(listOrder)
   })
@@ -170,13 +174,13 @@ export const makeOrg = Effect.gen(function* () {
     if (Option.isNone(registry)) {
       return yield* JobTitleNotFound.make({ jobTitleId })
     }
-    return registry.value
+    return registry.value.registry
   })
 
-  const holdDefinitions = (registry: AgentDefinitionRegistry) =>
+  const holdDefinitions = (registry: AgentDefinitionRegistry, plugin: string) =>
     Effect.gen(function* () {
       yield* Effect.acquireRelease(
-        Ref.set(definitions, Option.some(registry)).pipe(
+        Ref.set(definitions, Option.some({ registry, plugin })).pipe(
           Effect.andThen(publishJobTitleChange),
           Effect.andThen(Effect.logDebug('Org holds the agent definition registry'))
         ),
@@ -285,7 +289,7 @@ export const makeOrg = Effect.gen(function* () {
       })
       return yield* JobTitlesNotLoaded.make({})
     }
-    const created = yield* createIn(registry.value, fields)
+    const created = yield* createIn(registry.value.registry, fields)
     yield* Effect.logInfo('Created job title', { jobTitleId: created.id, name: created.name })
     return created
   })

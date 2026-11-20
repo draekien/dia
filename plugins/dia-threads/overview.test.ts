@@ -12,6 +12,7 @@ import {
 } from '@shared/domain/run-summary'
 import { describe, expect, it } from 'vitest'
 import {
+  buildMetaRows,
   buildOverview,
   HeaderTarget,
   NO_FILTERS,
@@ -253,7 +254,7 @@ describe('navigationOrder', () => {
   const groups = buildOverview(workspace, summaries(), NO_FILTERS)
 
   it('moves through each header followed by its rows', () => {
-    expect(navigationOrder(groups, new Set())).toEqual([
+    expect(navigationOrder([], groups, new Set())).toEqual([
       HeaderTarget.make({ projectId: projectId(1) }),
       RowTarget.make({ paneId: paneId(1) }),
       RowTarget.make({ paneId: paneId(2) }),
@@ -262,11 +263,90 @@ describe('navigationOrder', () => {
     ])
   })
 
+  it('puts the Meta rows before the first header', () => {
+    const creator: Tab = { ...tab(4, 'Creator'), owner: 'dia-creator' }
+    const meta = buildMetaRows(
+      { projects: [project(3, 'meta', [creator])], visibleTab: null },
+      summaries(),
+      new Set(['dia-creator'])
+    )
+
+    expect(navigationOrder(meta, groups, new Set()).slice(0, 2)).toEqual([
+      RowTarget.make({ paneId: paneId(4) }),
+      HeaderTarget.make({ projectId: projectId(1) })
+    ])
+  })
+
   it('skips the rows of a collapsed group', () => {
-    expect(navigationOrder(groups, new Set([projectId(1)]))).toEqual([
+    expect(navigationOrder([], groups, new Set([projectId(1)]))).toEqual([
       HeaderTarget.make({ projectId: projectId(1) }),
       HeaderTarget.make({ projectId: projectId(2) }),
       RowTarget.make({ paneId: paneId(3) })
     ])
+  })
+})
+
+describe('buildMetaRows', () => {
+  const owned = (n: number, name: string, owner: string, archived = false): Tab => ({
+    ...tab(n, name, archived),
+    owner
+  })
+
+  it('lists the open tabs of the given owners from every project, marked owned', () => {
+    const workspace: Workspace = {
+      projects: [
+        project(1, 'dia', [tab(1, 'mine'), owned(2, 'Creator', 'dia-creator')]),
+        project(2, 'meta', [owned(3, 'Plugin work', 'dia-creator')])
+      ],
+      visibleTab: null
+    }
+
+    const rows = buildMetaRows(workspace, summaries(), new Set(['dia-creator']))
+
+    expect(rows.map((row) => [row.name, row.owned])).toEqual([
+      ['Creator', true],
+      ['Plugin work', true]
+    ])
+  })
+
+  it("leaves out archived tabs, unowned tabs and other owners' tabs", () => {
+    const workspace: Workspace = {
+      projects: [
+        project(1, 'dia', [
+          tab(1, 'mine'),
+          owned(2, 'Assistant', 'dia-org'),
+          owned(3, 'Old', 'dia-creator', true)
+        ])
+      ],
+      visibleTab: null
+    }
+
+    expect(buildMetaRows(workspace, summaries(), new Set(['dia-creator']))).toEqual([])
+  })
+
+  it('lists the most urgent row first', () => {
+    const workspace: Workspace = {
+      projects: [
+        project(1, 'meta', [owned(1, 'idle', 'dia-creator'), owned(2, 'failed', 'dia-creator')])
+      ],
+      visibleTab: null
+    }
+
+    const rows = buildMetaRows(
+      workspace,
+      summaries(summary(2, StatusFailed.make({ reason: 'crashed' }))),
+      new Set(['dia-creator'])
+    )
+
+    expect(rows.map((row) => row.name)).toEqual(['failed', 'idle'])
+  })
+
+  it('marks the rows buildOverview lists as not owned', () => {
+    const workspace: Workspace = {
+      projects: [project(1, 'dia', [tab(1, 'mine')])],
+      visibleTab: null
+    }
+
+    expect(buildOverview(workspace, summaries(), NO_FILTERS)[0]?.rows[0]?.owned).toBe(false)
   })
 })

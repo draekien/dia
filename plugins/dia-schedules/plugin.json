@@ -1,6 +1,6 @@
 {
   "name": "dia-schedules",
-  "api": "0.0.46",
+  "api": "0.0.47",
   "category": "feature",
   "host": "host.ts",
   "load": "eager",

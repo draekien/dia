@@ -920,7 +920,8 @@ export const PaneWorkspaceLive = Layer.effect(
           model: change.model,
           backend: change.backend,
           thinkingLevel: change.thinkingLevel,
-          permissionMode: change.permissionMode
+          permissionMode: change.permissionMode,
+          ...(change.worktree === null ? {} : { worktree: change.worktree })
         },
         ...(change.sessionId === null ? {} : { sessionId: change.sessionId }),
         archived: false

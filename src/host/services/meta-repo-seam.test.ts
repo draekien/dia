@@ -13,6 +13,7 @@ const nothingAdded = { systemPromptAppend: '', pluginPaths: [] }
 const unusedState = Effect.die(new Error('not used in this test'))
 
 const metaRepo = (overrides: Partial<MetaRepo>): MetaRepo => ({
+  directory: 'C:/meta',
   forNewSession: Effect.succeed(nothingAdded),
   state: unusedState,
   setRemote: () => unusedState,

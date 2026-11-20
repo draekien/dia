@@ -29,6 +29,7 @@ import { WorkspaceFeed } from '../services/workspace-feed'
 import { type DiaTool, makePluginTools } from '../session/dia-tools'
 import { makeDataMigrations } from './data-migrations'
 import type { HostPluginContext } from './host-plugin-context'
+import { makePluginControl } from './plugin-control'
 import { makeHostPluginLoader } from './plugin-loader'
 import { heapUsedAfterGc, makePluginMemoryGuard } from './plugin-memory-guard'
 import { servePluginCall } from './plugin-messages'
@@ -50,7 +51,7 @@ export class HostPlugins extends Context.Service<HostPlugins, PluginRegistry>()(
  * registration with {@link BackgroundActivities} under the plugin's name; and `database`, which
  * opens `<dataDir>/data.db` only when the plugin calls it; `pluginsSettled`, which succeeds once `start` has settled every eager plugin; `workspace`, following
  * {@link WorkspaceFeed}; `window`, backed by {@link AppWindow}; `pluginTools`, the `plugin_*` tools over
- * this registry and `PluginSources`; and `onPathsMoved`, which subscribes the plugin to
+ * this registry and `PluginSources`; `plugins`, a `PluginControl` over the same; and `onPathsMoved`, which subscribes the plugin to
  * {@link PathMoves} under its name; and `renameTab`, which renames a tab through {@link TabRenamer}. Before a plugin loads, its manifest's data migrations run
  * (see `makeDataMigrations`). Every plugin state
  * change is published to the hub as a `PluginStatusChanged` event. `pluginApiPath` is the
@@ -123,6 +124,12 @@ export const makeHostPluginsLive = (pluginApiPath: string, userDataPath: string)
                   },
                   { plugin: services.name, turnEnded }
                 ),
+              plugins: makePluginControl({
+                list: (): Effect.Effect<ReadonlyArray<PluginInfo>> => registry.list(),
+                load: (name): Effect.Effect<PluginInfo> => registry.load(name),
+                peek: loader.peek,
+                setOverride: (name, directory) => applyOverride(sources, name, directory)
+              }),
               dataDir,
               onPathsMoved: (handle: PathsMovedHandler) =>
                 pathMoves.subscribe(services.name, handle),

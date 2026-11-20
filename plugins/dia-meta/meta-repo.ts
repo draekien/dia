@@ -26,33 +26,38 @@ const PLUGIN_MANIFEST = `${JSON.stringify(
 )}\n`
 
 const SKILL_FILE = 'SKILL.md'
+const REFERENCE_SKILL = 'building-dia-plugins'
 const REFERENCE_FILE = 'references/api.md'
-const SKILL_DIRECTORY = `${PLUGIN_DIRECTORY}/skills/building-dia-plugins`
-const SKILL_PATH = `${SKILL_DIRECTORY}/${SKILL_FILE}`
-const REFERENCE_PATH = `${SKILL_DIRECTORY}/${REFERENCE_FILE}`
+
+/** The skills dia ships in the meta repo, by folder name; each folder holds a `SKILL.md`. */
+export const SHIPPED_SKILLS = ['building-dia-plugins', 'writing-meta-skills'] as const
+
+const skillPath = (skill: string) => `${PLUGIN_DIRECTORY}/skills/${skill}/${SKILL_FILE}`
+const SKILL_PATHS = SHIPPED_SKILLS.map(skillPath)
+const REFERENCE_PATH = `${PLUGIN_DIRECTORY}/skills/${REFERENCE_SKILL}/${REFERENCE_FILE}`
 
 const AUTHOR = { name: 'dia', email: 'dia@localhost' }
 
 const FIRST_COMMIT = { message: 'chore: create the meta repo', author: AUTHOR }
 
 const SKILL_COMMIT = {
-  message: 'docs: update the built-in building-dia-plugins skill',
+  message: 'docs: update the built-in meta repo skills',
   author: AUTHOR
 }
 
 /**
  * Creates the files of the meta repo (ADR-0025) in `directory` where they are missing:
  * `instructions.md`, empty, `plugin/.claude-plugin/plugin.json`, a Claude Code plugin manifest,
- * and the `building-dia-plugins` skill's `SKILL.md`, copied from `skillSource`, the folder dia
- * ships the skill in. An existing file is never overwritten, except the skill's
- * `references/api.md`, which is rewritten whenever its content, ignoring line endings, differs
- * from the copy in `skillSource`. A file missing from `skillSource` is logged and skipped. Needs no
+ * and the `SKILL.md` of each of the {@link SHIPPED_SKILLS}, copied from the skill's folder in
+ * `skillsSource`, the folder dia ships the skills in. An existing file is never overwritten,
+ * except the `building-dia-plugins` skill's `references/api.md`, which is rewritten whenever its
+ * content, ignoring line endings, differs from the copy in `skillsSource`. A file missing from `skillsSource` is logged and skipped. Needs no
  * git. Fails only when a file or directory cannot be created. Run it with the Node platform
  * services provided.
  */
 export const ensureMetaFiles = Effect.fn('MetaRepo.ensureFiles')(function* (
   directory: string,
-  skillSource: string
+  skillsSource: string
 ) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
@@ -70,7 +75,7 @@ export const ensureMetaFiles = Effect.fn('MetaRepo.ensureFiles')(function* (
   })
 
   const readShipped = (file: string) =>
-    fs.readFileString(path.join(skillSource, file)).pipe(
+    fs.readFileString(path.join(skillsSource, file)).pipe(
       Effect.tapError((error) =>
         Effect.logWarning('dia shipped no copy of a built-in skill file; skipping it', {
           file,
@@ -85,10 +90,17 @@ export const ensureMetaFiles = Effect.fn('MetaRepo.ensureFiles')(function* (
     path.join(directory, PLUGIN_DIRECTORY, '.claude-plugin', 'plugin.json'),
     Effect.succeed(PLUGIN_MANIFEST)
   )
-  yield* writeIfMissing(path.join(directory, SKILL_PATH), readShipped(SKILL_FILE))
+  for (const skill of SHIPPED_SKILLS) {
+    yield* writeIfMissing(
+      path.join(directory, skillPath(skill)),
+      readShipped(path.join(skill, SKILL_FILE))
+    )
+  }
 
   const referenceFile = path.join(directory, REFERENCE_PATH)
-  const shippedReference = (yield* readShipped(REFERENCE_FILE))?.replaceAll('\r\n', '\n')
+  const shippedReference = (yield* readShipped(
+    path.join(REFERENCE_SKILL, REFERENCE_FILE)
+  ))?.replaceAll('\r\n', '\n')
   const currentReference = yield* fs.readFileString(referenceFile).pipe(
     Effect.map((text) => text.replaceAll('\r\n', '\n')),
     Effect.orElseSucceed(() => undefined)
@@ -107,26 +119,26 @@ const skillPathsToCommit = (entries: ReadonlyArray<GitStatusEntry>): ReadonlyArr
         (entry.path === file || (entry.path.endsWith('/') && file.startsWith(entry.path)))
     )
   const changed = (file: string) => untracked(file) || entries.some((entry) => entry.path === file)
-  return [SKILL_PATH].filter(untracked).concat([REFERENCE_PATH].filter(changed))
+  return SKILL_PATHS.filter(untracked).concat([REFERENCE_PATH].filter(changed))
 }
 
 /**
  * Creates the meta repo (ADR-0025) in `directory`: its files, as {@link ensureMetaFiles} does
- * with `skillSource`, and, when `directory` is not yet a git repo with a commit, a repository with
- * the files committed. In a repository that has a commit it commits, on their own, the skill's
- * `SKILL.md` when git does not track it yet and the skill's `references/api.md` when it differs
+ * with `skillsSource`, and, when `directory` is not yet a git repo with a commit, a repository with
+ * the files committed. In a repository that has a commit it commits, on their own, each shipped
+ * skill's `SKILL.md` when git does not track it yet and `references/api.md` when it differs
  * from the committed one; other changes in the repository stay out of that commit. A failed git
  * command is logged and stops the history step, so the files are usable without git. Fails only
  * when a file or directory cannot be created. Run it with the Node platform services provided.
  */
 export const ensureMetaRepo = Effect.fn('MetaRepo.ensure')(function* (
   directory: string,
-  skillSource: string,
+  skillsSource: string,
   git: Git
 ) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  yield* ensureMetaFiles(directory, skillSource)
+  yield* ensureMetaFiles(directory, skillsSource)
 
   const logGitFailure = (step: string) => (error: GitError) =>
     Effect.logWarning(`Stopped ${step}; a git command failed`, {
@@ -159,17 +171,16 @@ export const ensureMetaRepo = Effect.fn('MetaRepo.ensure')(function* (
         : git
             .commitPaths(directory, paths, SKILL_COMMIT)
             .pipe(
-              Effect.andThen(
-                Effect.logInfo('Committed the built-in building-dia-plugins skill', { paths })
-              )
+              Effect.andThen(Effect.logInfo('Committed the built-in meta repo skills', { paths }))
             )
     ),
-    Effect.catch(logGitFailure('committing the built-in building-dia-plugins skill'))
+    Effect.catch(logGitFailure('committing the built-in meta repo skills'))
   )
 })
 
 /**
  * The {@link MetaRepo} for the meta repo in `directory`, created with {@link ensureMetaRepo}.
+ * Its `directory` is `directory`.
  * Each run of `forNewSession` reads `instructions.md` again, trimmed, as the system-prompt append
  * (empty when it cannot be read) and offers `plugin/` as the one plugin path; it needs no git.
  * `state`, `setRemote` and `push` are those of {@link makeMetaPush}, run with the `Git`
@@ -195,5 +206,5 @@ export const makeMetaRepo = Effect.fn('MetaRepo.make')(function* (
     Effect.map((systemPromptAppend) => ({ systemPromptAppend, pluginPaths }))
   )
   const metaPush = yield* makeMetaPush(directory, currentGit)
-  return { forNewSession, ...metaPush } satisfies MetaRepo
+  return { directory, forNewSession, ...metaPush } satisfies MetaRepo
 })

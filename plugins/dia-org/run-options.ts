@@ -1,8 +1,8 @@
-import { type Runs, type StartRunOptions, startPermissionMode } from '@dia/plugin'
-import type { AgentAdapters } from '@dia-plugin/dia-agent-adapters/registry'
+import type { StartRunOptions } from '@dia/plugin'
+import { type RunChoices, runSettings } from '@dia-plugin/dia-agent-definitions/run-settings'
 import type { Issue, Objective } from '@dia-plugin/dia-issues/domain'
-import { Effect, Option, Stream } from 'effect'
-import { type HiredAgent, type JobTitle, NO_AGENT_ADAPTER_MESSAGE } from './domain'
+import { Effect, Option } from 'effect'
+import type { HiredAgent, JobTitle } from './domain'
 import type { IssueWorkspace } from './issue-workspace'
 
 /**
@@ -12,21 +12,6 @@ import type { IssueWorkspace } from './issue-workspace'
 export interface IssueStart {
   readonly run: StartRunOptions
   readonly projectDirectory: string
-}
-
-/** The run options {@link runSettings} chooses; the caller adds `cwd`, the prompt and the rest. */
-export type RunSettings = Pick<
-  StartRunOptions,
-  'model' | 'backend' | 'thinkingLevel' | 'permissionMode'
->
-
-/**
- * What a run's start options are chosen from: `adapters` to find the backend of the selection's
- * adapter, and `defaultSelection`, the model of a caller that has no selection of its own.
- */
-export interface RunChoices {
-  readonly adapters: Pick<AgentAdapters, 'get' | 'models'>
-  readonly defaultSelection: Runs['defaultSelection']
 }
 
 const PLANNING_STEPS = `Break it into issues with create_issue: one per piece of work another agent can finish on its own,
@@ -59,54 +44,6 @@ export const issuePrompt = (issue: Issue, objective: Objective): string =>
   issue.kind === 'planning'
     ? paragraphs(`Plan the objective "${objective.title}".`, objective.description, PLANNING_STEPS)
     : workIssuePrompt(issue, objective)
-
-/**
- * The model, backend, thinking level and permission mode a run of `jobTitle` starts with in
- * `cwd`, or none when the job title has no selection and no adapter is loaded to give a default.
- * The model is the job title's selection or `choices.defaultSelection`; the permission mode is the
- * one `startPermissionMode` gives (ADR-0054), with `bypassOptedIn` the hire's override or the job
- * title's opt-in. Waits until the selection's adapter has a ready model list; an adapter that is
- * not registered does not wait, and its run ends with the adapter's not-loaded message.
- */
-export const runSettings = Effect.fn('Org.runSettings')(function* (
-  choices: RunChoices,
-  jobTitle: JobTitle,
-  cwd: string,
-  bypassOptedIn: boolean
-) {
-  const selection =
-    jobTitle.selection === null
-      ? Option.getOrNull(yield* choices.defaultSelection)
-      : jobTitle.selection
-  if (selection === null) {
-    yield* Effect.logWarning(NO_AGENT_ADAPTER_MESSAGE, { jobTitle: jobTitle.name })
-    return Option.none<RunSettings>()
-  }
-  const adapter = yield* choices.adapters.get(selection.backend)
-  const catalog = Option.isNone(adapter)
-    ? Option.none()
-    : yield* choices.adapters.models(selection.backend).pipe(
-        Stream.filter((state) => state._tag === 'Ready'),
-        Stream.runHead,
-        Effect.map(Option.map((state) => state.models))
-      )
-  const models = Option.getOrElse(catalog, () => [])
-  const input = {
-    modelSupportsAuto: models.find((option) => option.value === selection.model)?.autoMode ?? false,
-    disabled: Option.isNone(adapter)
-      ? []
-      : yield* adapter.value.backend.disabledPermissionModes(cwd),
-    bypassOptedIn
-  }
-  const permissionMode = startPermissionMode(input)
-  yield* Effect.logInfo('Chose a run permission mode', { ...selection, ...input, permissionMode })
-  return Option.some<RunSettings>({
-    model: selection.model,
-    backend: selection.backend,
-    thinkingLevel: jobTitle.thinkingLevel,
-    permissionMode
-  })
-})
 
 /**
  * The {@link IssueStart} of `hire`'s run of `issue`, or none while its workspace waits (the

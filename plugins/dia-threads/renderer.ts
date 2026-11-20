@@ -13,12 +13,13 @@ import { Effect } from 'effect'
 import { ArchiveIcon, FolderIcon, SettingsIcon, SquarePenIcon } from 'lucide-react'
 import { ArchivedThreadsSettings } from './archived-threads-settings'
 import { ProjectsSettings } from './projects-settings'
-import { ThreadRowMenuSlot } from './slots'
+import { MetaThreadSourcesSlot, ThreadRowMenuSlot } from './slots'
 import { ThreadsSidebar } from './threads-sidebar'
 
 const setup: PluginSetup<PluginServices> = (ctx) =>
   Effect.gen(function* () {
     yield* declareList(ctx, ThreadRowMenuSlot)
+    yield* declareList(ctx, MetaThreadSourcesSlot)
     yield* fillSlot(ctx, SIDEBAR, ThreadsSidebar)
     yield* addEntry(ctx, CommandsSlot, {
       id: 'new-thread',
