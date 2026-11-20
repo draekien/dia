@@ -1,6 +1,7 @@
 import {
   actions,
   Button,
+  cn,
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -10,6 +11,7 @@ import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
+  SidebarGroupAction,
   SidebarGroupLabel,
   SidebarHeader,
   SidebarInput,
@@ -59,6 +61,7 @@ import { type Retirement, retireInBackground, retirementOf } from './background-
 import { DraftsGroup } from './drafts-group'
 import { FilterPopover } from './filter-popover'
 import {
+  buildMetaRows,
   buildOverview,
   filtersApply,
   headerKey,
@@ -67,6 +70,7 @@ import {
   navigationOrder,
   type OverviewFilters,
   type OverviewGroup,
+  type OverviewRow,
   rowKey,
   STATUS_TAGS,
   type StatusTag
@@ -74,6 +78,8 @@ import {
 import { ProjectGroup } from './project-group'
 import { RemoveProjectDialog } from './remove-project-dialog'
 import { RetireThreadDialog } from './retire-thread-dialog'
+import { MetaThreadSourcesSlot } from './slots'
+import { ThreadRow } from './thread-row'
 
 const COLLAPSED_KEY = 'dia.threads.collapsed'
 const LEGACY_COLLAPSED_KEY = 'dia.agent-overview.collapsed'
@@ -155,15 +161,30 @@ function MetaMarker() {
   return <span aria-hidden className="size-2 shrink-0 rounded-[2px] bg-primary/60" />
 }
 
-function MetaGroup() {
+interface MetaGroupProps {
+  readonly rows: ReadonlyArray<OverviewRow>
+  readonly visibleTab: PaneId | null
+  readonly renaming: PaneId | null
+  readonly tabStop: string | null
+  readonly onRename: (paneId: PaneId | null) => void
+  readonly onRetire: (paneId: PaneId, retirement: Retirement) => void
+}
+
+const ACTION_SPACING_REM = 1.5
+
+function MetaGroup({ rows, visibleTab, renaming, tabStop, onRename, onRetire }: MetaGroupProps) {
+  const sources = useList(MetaThreadSourcesSlot)
   return (
-    <SidebarGroup>
-      <SidebarMenu>
+    <SidebarGroup className="group/meta">
+      <SidebarMenu className="gap-0">
         <SidebarMenuItem>
           <SidebarMenuButton
             render={<div />}
             tooltip="Meta, no open proposals"
-            className="cursor-default group-data-[collapsible=icon]:justify-center"
+            className={cn(
+              'cursor-default group-data-[collapsible=icon]:justify-center',
+              sources.length > 0 && 'pr-8'
+            )}
           >
             <span className="sr-only">Meta, no open proposals</span>
             <MetaMarker />
@@ -181,7 +202,46 @@ function MetaGroup() {
             </span>
           </SidebarMenuButton>
         </SidebarMenuItem>
+        {rows.map((row) => (
+          <ThreadRow
+            key={row.paneId}
+            row={row}
+            projectName={null}
+            selected={row.paneId === visibleTab}
+            renaming={row.paneId === renaming}
+            tabbable={tabStop === rowKey(row.paneId)}
+            onRename={(next) => onRename(next ? row.paneId : null)}
+            onRetire={(retirement) => onRetire(row.paneId, retirement)}
+          />
+        ))}
       </SidebarMenu>
+      {sources.map((source, index) => (
+        <PluginBoundary
+          key={`${source.key.plugin}.${source.key.id}`}
+          plugin={source.key.plugin}
+          at={MetaThreadSourcesSlot.name}
+          resetKey={source}
+        >
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <SidebarGroupAction
+                  tabIndex={-1}
+                  aria-label={source.newThreadLabel}
+                  onClick={source.newThread}
+                  style={
+                    index === 0 ? undefined : { right: `${0.75 + index * ACTION_SPACING_REM}rem` }
+                  }
+                  className="opacity-0 group-focus-within/meta:opacity-100 group-hover/meta:opacity-100"
+                >
+                  <PlusIcon />
+                </SidebarGroupAction>
+              }
+            />
+            <TooltipContent>{source.newThreadLabel}</TooltipContent>
+          </Tooltip>
+        </PluginBoundary>
+      ))}
     </SidebarGroup>
   )
 }
@@ -328,8 +388,10 @@ function NoMatches({
 /**
  * The threads sidebar: search, filters and add-project in its header, the Meta group, the pages and
  * the sidebar sections, then every user project as a collapsible, reorderable group of thread rows.
- * Render it inside a `SidebarProvider`. `Ctrl P` expands the sidebar and focuses the search; while
- * the sidebar is collapsed it shows Meta and one status dot per thread.
+ * The Meta group lists the open tabs of each `MetaThreadSourcesSlot` source's owner as thread rows,
+ * with a hover `+` per source. Render it inside a `SidebarProvider`. `Ctrl P` expands the sidebar
+ * and focuses the search; while the sidebar is collapsed it shows Meta and one status dot per
+ * thread.
  */
 export function ThreadsSidebar() {
   const workspace = useWorkspace()
@@ -372,13 +434,21 @@ export function ThreadsSidebar() {
         : orderGroups(buildOverview(workspace, summaries, activeFilters), order),
     [workspace, summaries, activeFilters, order]
   )
+  const metaSources = useList(MetaThreadSourcesSlot)
+  const metaRows = useMemo(
+    () =>
+      workspace === undefined || narrowing
+        ? []
+        : buildMetaRows(workspace, summaries, new Set(metaSources.map((source) => source.owner))),
+    [workspace, summaries, narrowing, metaSources]
+  )
   const effectiveCollapsed = narrowing || iconMode ? NO_COLLAPSED : collapsed
   const targets = useMemo(
     () =>
-      navigationOrder(groups, effectiveCollapsed).filter(
+      navigationOrder(metaRows, groups, effectiveCollapsed).filter(
         (target) => !iconMode || target._tag === 'RowTarget'
       ),
-    [groups, effectiveCollapsed, iconMode]
+    [metaRows, groups, effectiveCollapsed, iconMode]
   )
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -610,7 +680,16 @@ export function ThreadsSidebar() {
               if (key !== undefined) setTabStop(key)
             }}
           >
-            {!narrowing && <MetaGroup />}
+            {!narrowing && (
+              <MetaGroup
+                rows={metaRows}
+                visibleTab={workspace.visibleTab}
+                renaming={renaming}
+                tabStop={currentStop}
+                onRename={setRenaming}
+                onRetire={retire}
+              />
+            )}
             {!narrowing && <PagesGroup />}
             {!narrowing && <SectionsGroup iconMode={iconMode} />}
             {!narrowing && <DraftsGroup />}

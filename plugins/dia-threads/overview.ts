@@ -49,12 +49,16 @@ export const NO_FILTERS: OverviewFilters = OverviewFilters.make({
 export const filtersApply = (filters: OverviewFilters): boolean =>
   filters.query.trim() !== '' || filters.statuses.length > 0
 
-/** One agent row: its pane id, name and current permission mode, and its current summary. */
+/**
+ * One agent row: its pane id, name and current permission mode, its current summary, and whether a
+ * plugin owns its tab (`owned`), as for a row of the Meta group.
+ */
 export const OverviewRow = Schema.Struct({
   paneId: Uuid,
   name: Schema.String,
   summary: RunSummary,
-  permissionMode: PermissionMode
+  permissionMode: PermissionMode,
+  owned: Schema.Boolean
 })
 export type OverviewRow = typeof OverviewRow.Type
 
@@ -113,7 +117,8 @@ export const buildOverview = (
         paneId: tab.config.paneId,
         name: tab.name,
         summary: summaryOf(tab.config.paneId),
-        permissionMode: tab.config.permissionMode
+        permissionMode: tab.config.permissionMode,
+        owned: false
       })
     const matches = (row: OverviewRow): boolean =>
       (projectMatches || contains(row.name, query)) &&
@@ -136,6 +141,34 @@ export const buildOverview = (
   })
 }
 
+/**
+ * The Meta group's rows: every tab that is not archived and whose `owner` is one of `owners`, in
+ * any project, most urgent first and then in workspace order. A tab with no summary yet shows as
+ * idle with no activity.
+ */
+export const buildMetaRows = (
+  workspace: Workspace,
+  summaries: ReadonlyMap<PaneId, RunSummary>,
+  owners: ReadonlySet<string>
+): ReadonlyArray<OverviewRow> =>
+  byUrgency(
+    workspace.projects.flatMap((entry) =>
+      entry.tabs
+        .filter((tab) => !tab.archived && tab.owner !== undefined && owners.has(tab.owner))
+        .map((tab) =>
+          OverviewRow.make({
+            paneId: tab.config.paneId,
+            name: tab.name,
+            summary:
+              summaries.get(tab.config.paneId) ??
+              idleSummary(tab.config.paneId, NoActivity.make({})),
+            permissionMode: tab.config.permissionMode,
+            owned: true
+          })
+        )
+    )
+  )
+
 /** The `data-nav` key of the header of project `projectId`, which keyboard navigation focuses. */
 export const headerKey = (projectId: ProjectId): string => `header:${projectId}`
 
@@ -155,15 +188,19 @@ export const NavigationTarget = Schema.Union([HeaderTarget, RowTarget])
 export type NavigationTarget = typeof NavigationTarget.Type
 
 /**
- * The order `↑` and `↓` move through: each group header, followed, unless the group is in
- * `collapsed`, by its rows. Pass an empty `collapsed` while filters apply, because every group is
- * open then.
+ * The order `↑` and `↓` move through: the Meta group's `metaRows`, then each group header,
+ * followed, unless the group is in `collapsed`, by its rows. Pass an empty `collapsed` while
+ * filters apply, because every group is open then, and no `metaRows`, because the Meta group is
+ * hidden then.
  */
 export const navigationOrder = (
+  metaRows: ReadonlyArray<OverviewRow>,
   groups: ReadonlyArray<OverviewGroup>,
   collapsed: ReadonlySet<ProjectId>
-): ReadonlyArray<NavigationTarget> =>
-  groups.flatMap(({ project: { projectId }, rows }) => [
+): ReadonlyArray<NavigationTarget> => [
+  ...metaRows.map((row) => RowTarget.make({ paneId: row.paneId })),
+  ...groups.flatMap(({ project: { projectId }, rows }) => [
     HeaderTarget.make({ projectId }),
     ...(collapsed.has(projectId) ? [] : rows.map((row) => RowTarget.make({ paneId: row.paneId })))
   ])
+]
