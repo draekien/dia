@@ -2,7 +2,7 @@ import { usePrevious } from '@renderer/hooks/use-previous'
 import { MAIN_TAB, Slot } from '../lib/slots'
 import { TabOpenedFromNewAgent } from '../lib/tab-opened-from-new-agent'
 import { useView, useWorkspace } from '../plugin-api'
-import { StartupSkeleton } from './startup-skeleton'
+import { StartupStream } from './startup-stream'
 import { WindowStatus } from './window-status'
 
 function NoChatPlugin() {
@@ -23,14 +23,14 @@ function NoChatPlugin() {
  * The kernel's content area, shown in the `main` slot unless a plugin fills it. Renders by the
  * current view: nothing for a plugin's page (the layout plugin draws it), and the `main.tab` slot
  * for the visible tab and for the new-thread page (or a notice that no chat plugin is loaded); the
- * startup skeleton until the workspace loads.
+ * startup stream until the workspace loads.
  */
 export function TabContent() {
   const view = useView()
   const workspace = useWorkspace()
   const previousView = usePrevious(view)
   const cameFromNewThread = previousView?._tag === 'NewThreadView'
-  if (view === undefined || workspace === undefined) return <StartupSkeleton />
+  if (view === undefined || workspace === undefined) return <StartupStream />
   switch (view._tag) {
     case 'PageView':
       return null

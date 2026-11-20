@@ -1,6 +1,13 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- composes the unpacked esbuild binary path from Electron's resourcesPath outside any Effect.
 import { join } from 'node:path'
 import type { AgentNotification } from '@shared/domain/notification'
+import {
+  HostReadyReached,
+  HostServicesStarting,
+  HostStarted,
+  HostStarting,
+  type StartupEvent
+} from '@shared/domain/startup'
 import type { HostConnection } from '@shared/ipc/contract'
 import {
   type HostInit,
@@ -62,7 +69,10 @@ export const resolveEsbuildBinaryPath = (isPackaged: boolean): string | undefine
  * `onRestarted` runs after every restart once the new Host is ready, so the caller can make the
  * renderer reconnect to the new port and token. `readyMessages` runs each time a Host becomes
  * ready, and the messages it returns are sent to that Host. `onNotify` runs for each notification
- * the Host asks main to show. The returned {@link HostProcess} lives in the surrounding scope.
+ * the Host asks main to show. `onStartup` runs, in order, for each startup step of every Host run:
+ * the fork, the Host's first message, the hand-over of {@link HostInit}, each step the Host's plugin
+ * kernel reports, and `Ready` (before `connection` completes). The returned {@link HostProcess}
+ * lives in the surrounding scope.
  */
 export const startHostProcess = Effect.fn('HostProcess.start')(function* (options: {
   readonly hostEntry: string
@@ -71,6 +81,7 @@ export const startHostProcess = Effect.fn('HostProcess.start')(function* (option
   readonly onRestarted: Effect.Effect<void>
   readonly readyMessages: Effect.Effect<ReadonlyArray<MainToHostMessage>>
   readonly onNotify: (notification: AgentNotification) => void
+  readonly onStartup: (event: StartupEvent) => void
 }): Effect.fn.Return<HostProcess, never, Scope.Scope> {
   const connectionRef = yield* SubscriptionRef.make<Option.Option<HostConnection>>(Option.none())
   const childRef = yield* Ref.make<Option.Option<UtilityProcess>>(Option.none())
@@ -94,6 +105,7 @@ export const startHostProcess = Effect.fn('HostProcess.start')(function* (option
         (live) => Effect.sync(() => live.kill())
       )
       yield* Ref.set(childRef, Option.some(child))
+      options.onStartup(HostStarting.make({}))
 
       const exited = yield* Deferred.make<number>()
       child.on('exit', (code) => void Effect.runFork(Deferred.succeed(exited, code)))
@@ -104,6 +116,10 @@ export const startHostProcess = Effect.fn('HostProcess.start')(function* (option
         if (Option.isNone(decoded)) return
         if (decoded.value._tag === 'Notify') {
           options.onNotify(decoded.value.notification)
+          return
+        }
+        if (decoded.value._tag === 'StartupProgress') {
+          options.onStartup(decoded.value.event)
           return
         }
         Queue.offerUnsafe(messages, decoded.value)
@@ -119,8 +135,12 @@ export const startHostProcess = Effect.fn('HostProcess.start')(function* (option
 
       const handshake = Effect.gen(function* () {
         yield* awaitMessage('Booted')
+        options.onStartup(HostStarted.make({}))
         child.postMessage(encodeToHost(options.init))
-        return yield* awaitMessage('Ready')
+        options.onStartup(HostServicesStarting.make({}))
+        const ready = yield* awaitMessage('Ready')
+        options.onStartup(HostReadyReached.make({}))
+        return ready
       }).pipe(Effect.timeout(READY_TIMEOUT))
 
       const ready = yield* handshake.pipe(Effect.option)

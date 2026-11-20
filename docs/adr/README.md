@@ -35,7 +35,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0024](0024-background-agents-run-in-tabs-not-on-screen.md) | Run background agents in tabs that are not on screen; closing the window still quits dia | accepted |
 | [0025](0025-meta-project-as-a-dia-owned-git-repo.md) | Run a meta project: a dia-owned git repo loaded into every agent, changed through approved proposals | accepted, amended by ADR-0036 |
 | [0026](0026-plugin-reload-as-a-transaction-with-rollback-and-a-memory-limit.md) | Reload a plugin as a transaction with rollback, per-module generations and a memory limit | accepted, amended by ADR-0069 |
-| [0027](0027-eager-and-lazy-plugin-startup.md) | Load plugins as eager or lazy at startup, and report each plugin's progress to the renderer | accepted, amended by ADR-0065 and ADR-0084 |
+| [0027](0027-eager-and-lazy-plugin-startup.md) | Load plugins as eager or lazy at startup, and report each plugin's progress to the renderer | accepted, amended by ADR-0065, ADR-0084 and ADR-0089 |
 | [0028](0028-essential-plugins-and-the-permissions-plugin.md) | Keep essential plugins loaded and un-overridable, and move permission handling into one | superseded by ADR-0029 |
 | [0029](0029-plugin-categories-adapter-and-feature.md) | Split plugins into one adapter category and one feature category, and move the Agent SDK into a Claude Code adapter | accepted, category rules superseded by ADR-0065 |
 | [0030](0030-user-turns-appear-when-the-host-reports-them-sent.md) | Show a user turn in the transcript when the Host reports it sent, not when the composer submits it | accepted |
@@ -96,6 +96,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0086](0086-agent-adapter-registry.md) | Agent adapters register with `dia-agent-adapters`, every model choice names its adapter, and a run keeps the adapter it started on | accepted, amended by ADR-0087 |
 | [0087](0087-host-plugins-rename-tabs.md) | A Host plugin renames a tab through `ctx.renameTab`, and agent adapters offer one-shot text generation | accepted |
 | [0088](0088-creator-mode-threads-on-a-meta-repo-worktree.md) | Creator mode threads change dia on a worktree branch of the meta repo, and the user merges them | accepted |
+| [0089](0089-startup-progress-through-main.md) | Report startup progress to the renderer through main before `HostReady`, and show it as an event stream | accepted |
 
 ## Adding a new ADR
 

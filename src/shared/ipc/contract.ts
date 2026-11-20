@@ -32,6 +32,7 @@ import type { RemovalProgress } from '../domain/project-removal'
 import { RewindFailureCause } from '../domain/rewind'
 import { RunSummary } from '../domain/run-summary'
 import { SlashCommandInfo } from '../domain/slash-command'
+import { StartupLog } from '../domain/startup'
 import { SetupStep } from '../domain/tab-setup'
 import type { ThemePreference } from '../domain/theme'
 import { TranscriptWidth } from '../domain/transcript-width'
@@ -61,6 +62,7 @@ export const CHANNEL = {
   setTitleBarOverlay: 'dia:setTitleBarOverlay',
   getAppVersion: 'dia:getAppVersion',
   getUpdateStatus: 'dia:getUpdateStatus',
+  getStartupLog: 'dia:getStartupLog',
   checkForUpdates: 'dia:checkForUpdates',
   installUpdate: 'dia:installUpdate',
   toggleDevTools: 'dia:toggleDevTools',
@@ -610,6 +612,14 @@ export const UpdateStatusChanged = Schema.TaggedStruct('UpdateStatusChanged', {
 export type UpdateStatusChanged = typeof UpdateStatusChanged.Type
 
 /**
+ * Event pushed to the renderer each time main records a startup step. `log` is the whole
+ * {@link StartupLog} of the current Host run and replaces the renderer's held log. Drives the
+ * startup stream shown until the workspace loads.
+ */
+export const StartupLogChanged = Schema.TaggedStruct('StartupLogChanged', { log: StartupLog })
+export type StartupLogChanged = typeof StartupLogChanged.Type
+
+/**
  * Event pushed to the renderer whenever the state of plugin `name` changes (it started loading,
  * finished loading, failed, was unloaded, or began waiting for a service). It carries no state:
  * read the current one with `window.dia.plugins.list`. Never replayed after a reconnect, so
@@ -673,7 +683,8 @@ export const IpcEvent = Schema.Union([
   RunSummariesReplaced,
   PluginStatusChanged,
   ActivitiesChanged,
-  UpdateStatusChanged
+  UpdateStatusChanged,
+  StartupLogChanged
 ])
 export type IpcEvent = typeof IpcEvent.Type
 
@@ -965,6 +976,10 @@ export interface DiaApi {
   installUpdate(): void
   toggleDevTools(): void
   onUpdateStatusChanged(listener: (event: UpdateStatusChanged) => void): () => void
+  /** The startup steps of the current Host run that main has recorded so far. */
+  getStartupLog(): Promise<StartupLog>
+  /** Calls `listener` with the whole startup log each time main records a step; returns the unsubscribe function. */
+  onStartupLogChanged(listener: (log: StartupLog) => void): () => void
   /**
    * Subscribes to the Host telling the renderer it no longer holds the events the renderer
    * missed for `paneId` while disconnected. The listener should read the pane's state again with

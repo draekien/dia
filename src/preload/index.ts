@@ -1,3 +1,4 @@
+import { StartupLog } from '@shared/domain/startup'
 import { UpdateStatus } from '@shared/domain/update'
 import {
   CHANNEL,
@@ -23,6 +24,7 @@ const decodeHostConnection = Schema.decodeUnknownSync(HostConnection)
 const decodeEvent = Schema.decodeUnknownResult(IpcEvent)
 const encodeTitleBarOverlay = Schema.encodeSync(TitleBarOverlayColors)
 const decodeUpdateStatus = Schema.decodeUnknownSync(UpdateStatus)
+const decodeStartupLog = Schema.decodeUnknownSync(StartupLog)
 
 class DiaClient extends Context.Service<DiaClient, DiaRpcClient>()('preload/DiaClient') {}
 
@@ -51,6 +53,7 @@ const runtime = ManagedRuntime.make(hostClientLayer)
 const clientPromise = runtime.runPromise(Effect.service(DiaClient))
 
 const updateListeners = new Set<(event: UpdateStatusChanged) => void>()
+const startupListeners = new Set<(log: StartupLog) => void>()
 
 ipcRenderer.on(CHANNEL.event, (_electronEvent, raw: unknown) => {
   const decoded = decodeEvent(raw)
@@ -59,8 +62,12 @@ ipcRenderer.on(CHANNEL.event, (_electronEvent, raw: unknown) => {
     console.warn('Dropped malformed IPC event', decoded.failure)
     return
   }
-  if (decoded.success._tag !== 'UpdateStatusChanged') return
-  for (const listener of updateListeners) listener(decoded.success)
+  const event = decoded.success
+  if (event._tag === 'UpdateStatusChanged') {
+    for (const listener of updateListeners) listener(event)
+  } else if (event._tag === 'StartupLogChanged') {
+    for (const listener of startupListeners) listener(event.log)
+  }
 })
 
 const hostApi = makeHostApi({
@@ -104,6 +111,13 @@ const api: DiaApi = {
   onUpdateStatusChanged(listener) {
     updateListeners.add(listener)
     return () => updateListeners.delete(listener)
+  },
+  getStartupLog() {
+    return ipcRenderer.invoke(CHANNEL.getStartupLog).then((raw) => decodeStartupLog(raw))
+  },
+  onStartupLogChanged(listener) {
+    startupListeners.add(listener)
+    return () => startupListeners.delete(listener)
   }
 }
 

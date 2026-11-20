@@ -29,7 +29,7 @@ src/renderer/src/hooks/use-plugin-list.ts
   usePluginList(): { plugins | undefined, refresh }
 src/renderer/src/components/
   plugin-load-indicator.tsx   PluginLoadIndicator()   header text, `Loading plugins 2 of 5`
-  startup-skeleton.tsx        StartupSkeleton()       pane-area placeholder, `Starting dia`
+  startup-stream.tsx          StartupStream()         pane-area startup log (ADR-0089)
   ui/skeleton.tsx             Skeleton                shadcn component
 ```
 
@@ -45,7 +45,7 @@ src/renderer/src/components/
 - `host-main.ts` calls `start()` and then posts `HostReady`; the renderer's `startRendererPlugins` calls `start()` and `main.tsx` renders after it resolves.
 - `PluginLoadIndicator` shows `Loading plugins <settled> of <total>` while at least one plugin is `Loading`, and nothing before the first list or when none is loading. Settled means not `Loading`.
 - The plugins page shows three placeholder rows until its first list arrives, and for a `Loading` plugin the real name and folder, the text `Loading…`, a placeholder in place of the memory line and disabled actions.
-- `StartupSkeleton` replaces the pane area while the layout is unavailable. Placeholder blocks stop animating under `prefers-reduced-motion`.
+- `StartupStream` replaces the pane area while the layout is unavailable, listing each startup step main records (ADR-0089, `docs/designs/startup-event-stream.md`).
 
 ## Constraints
 

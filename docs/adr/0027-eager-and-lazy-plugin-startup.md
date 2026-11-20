@@ -1,5 +1,5 @@
 ---
-status: "accepted, amended by ADR-0065 and ADR-0084"
+status: "accepted, amended by ADR-0065, ADR-0084 and ADR-0089"
 date: 2026-10-24
 decision-makers: William Pei
 ---
@@ -68,3 +68,5 @@ Spec: `docs/designs/lazy-plugin-startup.md`. Extends ADR-0019 and ADR-0026.
 ADR-0029 moves `session-reducer` into the `plugins/claude-code` adapter, which always loads before `HostReady`. `load: "eager" | "lazy"` now applies to feature plugins only.
 
 ADR-0084 adds `load: "manual"`: `start()` leaves such a plugin `Unloaded`.
+
+ADR-0089 replaces the `Starting dia` placeholder with a startup event stream that main feeds before `HostReady`, so the renderer names the eager plugin being loaded; a failed plugin's verb there is Error Red.

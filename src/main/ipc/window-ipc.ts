@@ -1,4 +1,5 @@
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem'
+import { StartupLog } from '@shared/domain/startup'
 import { UpdateStatus } from '@shared/domain/update'
 import { CHANNEL, HostConnection, TitleBarOverlayColors } from '@shared/ipc/contract'
 import { Effect, FileSystem, Option, Result, Schema } from 'effect'
@@ -9,6 +10,7 @@ export const TITLE_BAR_OVERLAY_COLOR = '#01000000'
 
 const decodeTitleBarOverlay = Schema.decodeUnknownResult(TitleBarOverlayColors)
 const encodeUpdateStatus = Schema.encodeSync(UpdateStatus)
+const encodeStartupLog = Schema.encodeSync(StartupLog)
 const encodeHostConnection = Schema.encodeSync(HostConnection)
 
 /**
@@ -108,6 +110,17 @@ export function wireGetAppVersion(version: string): void {
 export function wireGetUpdateStatus(current: Effect.Effect<UpdateStatus>): void {
   ipcMain.handle(CHANNEL.getUpdateStatus, () =>
     Effect.runPromise(current.pipe(Effect.map(encodeUpdateStatus)))
+  )
+}
+
+/**
+ * Registers the IPC handler that returns the startup log of the current Host run, so a renderer
+ * that mounts or reloads after some startup steps can show them. Back it with a startup recorder's
+ * `current` effect. Call once during main-process startup.
+ */
+export function wireGetStartupLog(current: Effect.Effect<StartupLog>): void {
+  ipcMain.handle(CHANNEL.getStartupLog, () =>
+    Effect.runPromise(current.pipe(Effect.map(encodeStartupLog)))
   )
 }
 
