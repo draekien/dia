@@ -654,6 +654,47 @@ describe('run registry', () => {
     )
   )
 
+  it.live("puts a worktree run's tab in its worktree and passes the worktree on", () =>
+    withRows((rows) =>
+      Effect.gen(function* () {
+        const worktree = {
+          path: '/trees/brave-otter',
+          branch: 'dia/brave-otter',
+          sourceRepo: '/repo'
+        }
+        yield* rows.upsert(
+          RUN,
+          {
+            sourceCwd: '/repo',
+            model: 'm',
+            backend: 'dia-claude-code',
+            thinkingLevel: 'adaptive',
+            permissionMode: 'default',
+            worktree
+          },
+          Option.none(),
+          false
+        )
+        const { runs } = yield* makeWorld(rows).registry
+        const requested = yield* runs.changes.pipe(
+          Stream.filter((change: RunChange) => change._tag === 'RunTabRequested'),
+          Stream.runHead,
+          Effect.forkScoped({ startImmediately: true })
+        )
+
+        yield* runs.openInTab(RUN, { projectDirectory: '/repo', select: false })
+
+        const change = Option.getOrThrow(yield* Fiber.join(requested))
+        assert.deepStrictEqual(
+          change._tag === 'RunTabRequested'
+            ? [change.directory, change.worktree, change.projectDirectory]
+            : change._tag,
+          [worktree.path, worktree, '/repo']
+        )
+      })
+    )
+  )
+
   const requestedPlacement = (placement?: TabPlacement) =>
     withRows((rows) =>
       Effect.gen(function* () {

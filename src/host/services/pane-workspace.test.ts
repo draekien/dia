@@ -2058,6 +2058,7 @@ describe('PaneWorkspace run tab requests', () => {
             RunTabRequested.make({
               runId: PANE_NEW,
               directory: '/other',
+              worktree: null,
               projectDirectory: '/other',
               select: true,
               model: 'm',
@@ -2091,6 +2092,7 @@ describe('PaneWorkspace run tab requests', () => {
             RunTabRequested.make({
               runId: PANE_NEW,
               directory: '/other',
+              worktree: null,
               projectDirectory: '/other',
               select: true,
               model: 'm',
@@ -2122,6 +2124,7 @@ describe('PaneWorkspace run tab requests', () => {
               RunTabRequested.make({
                 runId: PANE_NEW,
                 directory: worktree,
+                worktree: { path: worktree, branch: 'dia/issue-1', sourceRepo: '/repo' },
                 projectDirectory: '/repo',
                 select: false,
                 model: 'm',
@@ -2140,6 +2143,11 @@ describe('PaneWorkspace run tab requests', () => {
           [[PANE_A, PANE_NEW], [PANE_B]]
         )
         assert.strictEqual(workspace.projects[0].tabs[1].config.cwd, worktree)
+        assert.deepStrictEqual(workspace.projects[0].tabs[1].config.worktree, {
+          path: worktree,
+          branch: 'dia/issue-1',
+          sourceRepo: '/repo'
+        })
         assert.strictEqual(workspace.visibleTab, PANE_A)
       })
   )
@@ -2148,6 +2156,7 @@ describe('PaneWorkspace run tab requests', () => {
     RunTabRequested.make({
       runId,
       directory: '/other',
+      worktree: null,
       projectDirectory: '/other',
       select: false,
       owner: { plugin: 'dia-org', ownsProject },

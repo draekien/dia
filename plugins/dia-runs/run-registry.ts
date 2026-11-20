@@ -605,7 +605,8 @@ export const makeRunRegistry = Effect.fn('RunRegistry.make')(function* (deps: Ru
       changes,
       RunTabRequested.make({
         runId,
-        directory: row.value.spec.sourceCwd,
+        directory: cwdOf(row.value.spec),
+        worktree: row.value.spec.worktree,
         projectDirectory: placement?.projectDirectory ?? row.value.spec.sourceCwd,
         select: placement?.select ?? true,
         ...(placement?.owner === undefined ? {} : { owner: placement.owner }),
