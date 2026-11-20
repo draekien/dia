@@ -11,6 +11,7 @@ import {
   Stream
 } from 'effect'
 import { TestClock } from 'effect/testing'
+import type { PluginStartupEvent } from '../domain/startup'
 import { type PluginServices, type PluginSetup, ServiceKey } from './api'
 import { PLUGIN_API_VERSION, type PluginInfo, type PluginManifest } from './manifest'
 import {
@@ -66,6 +67,7 @@ const makeRegistry = (
     readonly memory?: PluginMemoryGuard
     readonly loader?: PluginLoader<PluginServices>
     readonly onChange?: (changed: ReadonlyArray<PluginInfo>) => Effect.Effect<void>
+    readonly onStartup?: (event: PluginStartupEvent) => Effect.Effect<void>
     readonly extend?: (services: PluginServices) => Effect.Effect<PluginServices, PluginLoadError>
   } = {}
 ) =>
@@ -95,8 +97,30 @@ const makeRegistry = (
     },
     extend: options.extend ?? ((services) => Effect.succeed(services)),
     ...(options.memory === undefined ? {} : { memory: options.memory }),
-    ...(options.onChange === undefined ? {} : { onChange: options.onChange })
+    ...(options.onChange === undefined ? {} : { onChange: options.onChange }),
+    ...(options.onStartup === undefined ? {} : { onStartup: options.onStartup })
   })
+
+const recordStartup = () => {
+  const steps: Array<string> = []
+  const onStartup = (event: PluginStartupEvent) =>
+    Effect.sync(() => {
+      switch (event._tag) {
+        case 'EagerPluginsStarting':
+          steps.push(`starting ${event.count}`)
+          return
+        case 'EagerPluginLoadStarted':
+          steps.push(`${event.name} started`)
+          return
+        case 'EagerPluginLoadSettled':
+          steps.push(`${event.name} ${event.outcome._tag}`)
+          return
+        case 'EagerPluginsSettled':
+          steps.push('settled')
+      }
+    })
+  return { steps, onStartup }
+}
 
 const recordChanges = (until: string) =>
   Effect.gen(function* () {
@@ -899,6 +923,77 @@ describe('plugin registry', () => {
           'core:Loaded',
           'alpha:Loaded'
         ])
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect(
+      'reports the eager count, each eager load and its outcome in order, then the end',
+      () =>
+        Effect.gen(function* () {
+          const startup = recordStartup()
+          const registry = yield* makeRegistry(
+            {
+              'a-core': plugin(
+                manifest('a-core', { load: 'eager' }),
+                recording('a-core', [], () => Effect.fail('boom'))
+              ),
+              'b-core': plugin(manifest('b-core', { load: 'eager' }), recording('b-core', [])),
+              later: plugin(manifest('later'), recording('later', [])),
+              opt: plugin(manifest('opt', { load: 'manual' }), recording('opt', []))
+            },
+            { onStartup: startup.onStartup }
+          )
+
+          yield* registry.start()
+
+          assert.deepStrictEqual(startup.steps, [
+            'starting 2',
+            'a-core started',
+            'a-core Failed',
+            'b-core started',
+            'b-core Loaded',
+            'settled'
+          ])
+        }).pipe(Effect.scoped)
+    )
+
+    it.effect('reports an eager plugin unloaded before startup reaches it as Skipped', () =>
+      Effect.gen(function* () {
+        const gate = yield* Deferred.make<void>()
+        const firstOpened = yield* Deferred.make<void>()
+        const startup = recordStartup()
+        const registry = yield* makeRegistry(
+          {
+            'a-core': plugin(manifest('a-core', { load: 'eager' }), () =>
+              Deferred.succeed(firstOpened, undefined).pipe(Effect.andThen(Deferred.await(gate)))
+            ),
+            'b-core': plugin(manifest('b-core', { load: 'eager' }), recording('b-core', []))
+          },
+          { onStartup: startup.onStartup }
+        )
+
+        const starting = yield* Effect.forkChild(registry.start())
+        yield* Deferred.await(firstOpened)
+        const unloading = yield* Effect.forkChild(registry.unload('b-core'))
+        yield* Effect.yieldNow
+        yield* Deferred.succeed(gate, undefined)
+        yield* Fiber.join(starting)
+        yield* Fiber.join(unloading)
+
+        assert.include(startup.steps, 'b-core Skipped')
+      }).pipe(Effect.scoped)
+    )
+
+    it.effect('finishes startup when reporting a startup step fails', () =>
+      Effect.gen(function* () {
+        const registry = yield* makeRegistry(
+          { core: plugin(manifest('core', { load: 'eager' }), recording('core', [])) },
+          { onStartup: () => Effect.die(new Error('main is gone')) }
+        )
+
+        yield* registry.start()
+
+        assert.strictEqual(yield* statusOf(registry, 'core'), 'Loaded')
       }).pipe(Effect.scoped)
     )
 
