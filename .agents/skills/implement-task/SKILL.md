@@ -19,12 +19,13 @@ Write down, and confirm with the user:
 
 - **Scope** — what changes and what explicitly does not.
 - **Success criteria** — each one observable in a test or in the running app, so `verify-in-app` can prove it later. "Closing a worktree pane removes the worktree directory" is a criterion; "worktrees work better" is not.
+- **User journey** — for a change the user sees or operates, the steps the user takes from the moment they need the feature until their goal is met. Read `PRODUCT.md` for who the user is and how they work in dia, and start the journey where the user actually is: someone who returns to an agent only when it needs them starts from a notification or a sidebar row, not from the new screen. For each step, record where the user is in the app, the action they take, and the information they need on screen to choose that action; information the user would have to find elsewhere is a gap the UI must close. "From the OS notification, the user opens the decision queue, sees the objective the decision belongs to and its options, and accepts one without opening the agent's tab" is a journey; "the user reviews decisions" is not. Record "no user-facing surface" instead when the change has none.
 - **Runtime effect** — whether the change alters what the app does at runtime. A change to docs, skills or CI config does not; **Verify** is then skipped.
 - **Conflicts** — any ADR the task would contradict. Raise it with the user before designing; if they agree to change course, **Design** writes a new ADR or supersedes the old one.
 
 Put open decisions to the user one at a time with options and a recommendation, using the `get-aligned` skill (`/plugin install productivity-skills@draekien-skills`, or `npx skills add draekien/skills --skill "get-aligned"`).
 
-Completion criterion: the user has confirmed the scope, the success criteria and the runtime effect, and no open decision remains.
+Completion criterion: the user has confirmed the scope, the success criteria, the user journey and the runtime effect, and no open decision remains.
 
 ## Branch
 
@@ -36,7 +37,7 @@ Completion criterion: `git branch --show-current` prints the new branch, before 
 
 ## Design
 
-Invoke the `module-design` skill in `design` mode on the module the task creates or changes (`/plugin install software-design-skills@draekien-skills`, or `npx skills add draekien/skills --skill "module-design"`). Hand it the scope and success criteria from **Understand** so it does not interview for them again. A change confined to one method or class runs `module-design` at that scope, and its spec stays in chat.
+Invoke the `module-design` skill in `design` mode on the module the task creates or changes (`/plugin install software-design-skills@draekien-skills`, or `npx skills add draekien/skills --skill "module-design"`). Hand it the scope, success criteria and user journey from **Understand** so it does not interview for them again; the UI it specifies shows each step's information where that step happens. A change confined to one method or class runs `module-design` at that scope, and its spec stays in chat.
 
 Completion criterion: `module-design` has finished its rounds, the user has replied at its gate, and the spec is written to `docs/designs/` (or held in chat at method or class scope).
 
