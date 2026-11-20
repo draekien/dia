@@ -238,17 +238,20 @@ describe('Org job titles from the agent definition registry', () => {
     }).pipe(Effect.scoped)
   )
 
-  it.effect('refuses to delete a definition another plugin contributes', () =>
+  it.effect('lists no job title for a definition another plugin contributes', () =>
     Effect.gen(function* () {
       const { org, definitions } = yield* openOrgIn(':memory:')
       const engineer = jobTitleNamed(yield* org.jobTitles, 'Software engineer')
       const contributed = JobTitleId.make('00000000-0000-4000-8000-0000000000c1')
       yield* definitions.register(
         { ...engineer, id: contributed, name: JobTitleName.make('Contributed') },
-        'example'
+        'dia-creator'
       )
-      const error = yield* Effect.flip(org.deleteJobTitle(contributed))
-      assert.strictEqual(error._tag, 'BuiltInJobTitleDeleted')
+
+      const listed = yield* org.jobTitles
+
+      assert.isFalse(listed.some((jobTitle) => jobTitle.id === contributed))
+      assert.isTrue(listed.some((jobTitle) => jobTitle.id === engineer.id))
     }).pipe(Effect.scoped)
   )
 })

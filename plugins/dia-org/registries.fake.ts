@@ -27,7 +27,7 @@ export const builtInDefinitionRegistry = (
       Effect.provide(NodeCrypto.layer)
     )
     for (const definition of BUILT_IN_DEFINITIONS) {
-      yield* registry.register(definition, 'org').pipe(Effect.orDie)
+      yield* registry.register(definition, 'dia-org').pipe(Effect.orDie)
     }
     return registry
   })
@@ -39,7 +39,7 @@ export const builtInDefinitionRegistry = (
 export const holdBuiltInDefinitions = (org: Pick<Org, 'holdDefinitions'>, filename?: string) =>
   Effect.gen(function* () {
     const registry = yield* builtInDefinitionRegistry(filename)
-    yield* org.holdDefinitions(registry)
+    yield* org.holdDefinitions(registry, 'dia-org')
     return registry
   })
 

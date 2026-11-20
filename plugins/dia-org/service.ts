@@ -32,7 +32,8 @@ import type {
  * The org (ADR-0033), as the `org` plugin provides it under {@link OrgService}. Reads return the
  * current state; each change returns the changed value. A job title's cap is the number of hired
  * agents of that job title. The job titles are the agent definitions of the registry
- * `holdDefinitions` holds (ADR-0072); with none held, `jobTitles` is empty and every job title
+ * `holdDefinitions` holds (ADR-0072) that the user made or that the org's own plugin contributes;
+ * a definition another plugin contributes is not a job title. With none held, `jobTitles` is empty and every job title
  * change except `createJobTitle` fails with `JobTitleNotFound`. `jobTitles` lists the built-in job
  * titles in seed order, then the other definitions by name; `hiredAgents` lists by `hiredAt`, then
  * creation order. A database failure, or a failure to generate an id, is a defect.
@@ -40,7 +41,8 @@ import type {
  * `watchJobTitleChanges` subscribes when run; the stream it returns emits once after each
  * `setJobTitleEnabled`, each change to the held registry's definitions, and each hold and release
  * of a registry since the subscription. `holdDefinitions` holds `registry` until the calling scope
- * closes; call it inside `whenProvided([AgentDefinitionRegistryKey], …)`. `watchHireChanges`
+ * closes, with `plugin` the name the org registers its built-in job titles under (`ctx.name`);
+ * call it inside `whenProvided([AgentDefinitionRegistryKey], …)`. `watchHireChanges`
  * subscribes when run; the stream it returns emits once after each `hire`, `dismiss` and
  * `renameHire` since the subscription. `holdIssues` holds the issues assigned to the org's hired
  * agents until the calling scope closes; call it after registering the org as an assignee provider.
@@ -64,7 +66,8 @@ export interface Org {
   readonly jobTitles: Effect.Effect<ReadonlyArray<JobTitle>>
   readonly watchJobTitleChanges: Effect.Effect<Stream.Stream<void>, never, Scope.Scope>
   readonly holdDefinitions: (
-    registry: AgentDefinitionRegistry
+    registry: AgentDefinitionRegistry,
+    plugin: string
   ) => Effect.Effect<void, never, Scope.Scope>
   readonly watchHireChanges: Effect.Effect<Stream.Stream<void>, never, Scope.Scope>
   readonly holdIssues: (issues: HeldIssues) => Effect.Effect<void, never, Scope.Scope>

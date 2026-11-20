@@ -338,7 +338,7 @@ const holdRegistries = (ctx: HostPluginContext, org: Org, sql: SqlClient.SqlClie
   Effect.gen(function* () {
     yield* ctx.whenProvided([AgentDefinitionRegistryKey], ({ agentDefinitionRegistry }) =>
       Effect.gen(function* () {
-        yield* org.holdDefinitions(agentDefinitionRegistry)
+        yield* org.holdDefinitions(agentDefinitionRegistry, ctx.name)
         yield* registerBuiltIns(ctx, agentDefinitionRegistry)
         yield* grantOrgRead(agentDefinitionRegistry).pipe(
           Effect.provideService(SqlClient.SqlClient, sql)
