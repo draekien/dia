@@ -160,8 +160,8 @@ export const PluginStepLine = Schema.TaggedStruct('PluginStep', {
 /** One rendered log line; `key` is the entry's index in the log. Build with `HostStepLine.make` / `PluginStepLine.make`. */
 export const StartupLine = Schema.Union([HostStepLine, PluginStepLine])
 export type StartupLine = typeof StartupLine.Type
-/** What the pinned line says and since when; `sinceMillis` is `undefined` for an empty log. */
-export type StartupWaiting = { label: string; sinceMillis: number | undefined }
+/** What the pinned line says and since when: `label`, then `plugin` in its own mono span when startup waits on one; `sinceMillis` is `undefined` for an empty log. */
+export interface StartupWaiting { readonly label: string; readonly plugin?: string; readonly sinceMillis: number | undefined }
 /** Turns a startup log into its lines and the step in progress. Pure. */
 export const describeStartup: (log: StartupLog) => { lines: ReadonlyArray<StartupLine>; waiting: StartupWaiting }
 
