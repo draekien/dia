@@ -22,13 +22,14 @@ export interface SessionAdditions {
  * The meta repo (ADR-0025), as the `meta` plugin provides it under {@link MetaRepoKey}. None of its
  * members fails.
  *
- * `forNewSession` reads what the meta repo adds to an agent session now; run it each time a
+ * `directory` is the absolute path of the meta repo's working tree. `forNewSession` reads what the meta repo adds to an agent session now; run it each time a
  * session starts so a change to the repo applies to sessions started after it. `state` reads the
  * remote and branch a push uses. `setRemote` sets the remote to `url` and returns the new state.
  * `push` scans the commits the remote does not have for secrets (ADR-0047) and pushes the current
  * branch only when the scan finds none.
  */
 export interface MetaRepo {
+  readonly directory: string
   readonly forNewSession: Effect.Effect<SessionAdditions>
   readonly state: Effect.Effect<MetaRepoStateResult>
   readonly setRemote: (url: string) => Effect.Effect<MetaRepoStateResult>
@@ -37,7 +38,8 @@ export interface MetaRepo {
 
 /**
  * What {@link MetaRepoKey} reads as: a {@link MetaRepo} whose members other than `forNewSession` may
- * be missing, because an older `meta` plugin provides only `forNewSession`.
+ * be missing, because an older `meta` plugin provides only `forNewSession`. Check `directory` with
+ * `typeof repo.directory === 'string'` before using it.
  */
 export type SessionMetaRepo = Pick<MetaRepo, 'forNewSession'> &
   Partial<Omit<MetaRepo, 'forNewSession'>>
@@ -47,14 +49,14 @@ export const NO_SESSION_ADDITIONS: SessionAdditions = { systemPromptAppend: '', 
 
 const ALL_MEMBERS = ['forNewSession', 'state', 'setRemote', 'push'] as const
 
-const hasMember = (value: unknown, member: keyof MetaRepo): boolean =>
+const hasMember = (value: unknown, member: (typeof ALL_MEMBERS)[number]): boolean =>
   Predicate.hasProperty(value, member) &&
   (member === 'setRemote' ? Predicate.isFunction : Effect.isEffect)(value[member])
 
 const hasSessionMembers = (value: unknown): value is SessionMetaRepo =>
   hasMember(value, 'forNewSession')
 
-const hasAllMembers = (value: SessionMetaRepo): value is MetaRepo =>
+const hasAllMembers = (value: SessionMetaRepo): value is Omit<MetaRepo, 'directory'> =>
   ALL_MEMBERS.every((member) => hasMember(value, member))
 
 /**
@@ -75,7 +77,7 @@ const NOT_LOADED = MetaRepoFailed.make({ message: 'The meta plugin is not loaded
  */
 export const withMetaRepo = Effect.fn('MetaRepo.with')(function* <A>(
   registry: Pick<PluginRegistry, 'use'>,
-  run: (repo: MetaRepo) => Effect.Effect<A>
+  run: (repo: Omit<MetaRepo, 'directory'>) => Effect.Effect<A>
 ) {
   const result = yield* registry
     .use(MetaRepoKey, (value) =>
