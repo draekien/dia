@@ -61,7 +61,7 @@ const setup: PluginSetup<PluginServices> = (ctx) =>
     yield* addEntry(ctx, ThreadTargetsSlot, {
       id: 'creator',
       order: 20,
-      label: 'Creator mode',
+      label: 'Creator',
       icon: HammerIcon,
       send: (text) =>
         callHost(ctx, StartCreatorThread, { text }).pipe(

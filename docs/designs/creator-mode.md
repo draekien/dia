@@ -6,9 +6,9 @@ Scope: module (a new feature plugin) plus small seams in existing code. Brief: c
 
 ## Success criteria
 
-1. The new-thread page's target picker lists `Creator mode`. Sending from it starts a run whose `cwd` is a new worktree of the meta repo on a `dia/<slug>` branch, listed on Settings › Worktrees, and whose `labels` include `dia-creator`, and shows its tab.
+1. The new-thread page's target picker lists `Creator`, and the page heading reads "What are we building today with the Creator?". Sending from it starts a run whose `cwd` is a new worktree of the meta repo on a `dia/<slug>` branch, listed on Settings › Worktrees, and whose `labels` include `dia-creator`, and shows its tab.
 2. The run's tab is a row in the sidebar's Meta group, with the status indicator and activity line of a thread row, and in no project group. The row's menu offers Show, Rename and Delete, not Archive. The breadcrumb shows the tab name only, as for the Assistant.
-3. The Meta group header's `+` and Settings › Plugins › `Create a plugin…` each open a Creator draft (a new-thread page whose target is Creator mode).
+3. The Meta group header's `+` and Settings › Plugins › `Create a plugin…` each open a Creator draft (a new-thread page whose target is `Creator`).
 4. Agent definitions list a built-in `Creator`. Editing its model changes the model of the next Creator run. Deleting or renaming it is refused. Org job titles do not include `Creator`.
 5. A Creator run is offered `plugin_list` and `plugin_inspect`; a run in a project is offered neither. `plugin_list` returns each plugin's name, status and source folder; `plugin_inspect` returns one plugin's manifest fields and service keys.
 6. A turn that commits to the thread's branch shows a footer naming the plugins it loaded and the commit(s), with `Revert`. A turn with no commit and no plugin load shows no footer.
