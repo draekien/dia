@@ -18,7 +18,7 @@ export function useStartupLog(): StartupLog {
     let receivedPush = false
     const unsubscribe = window.dia.onStartupLogChanged((pushed) => {
       receivedPush = true
-      if (!cancelled) setLog(pushed)
+      setLog(pushed)
     })
     window.dia.getStartupLog().then(
       (seed) => {

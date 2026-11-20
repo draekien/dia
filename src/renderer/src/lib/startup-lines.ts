@@ -1,4 +1,4 @@
-import type { StartupEntry, StartupEvent, StartupLog } from '@shared/domain/startup'
+import type { StartupEntry, StartupEvent, StartupLog, StartupOutcome } from '@shared/domain/startup'
 import { PluginName } from '@shared/plugin/manifest'
 import { Schema } from 'effect'
 
@@ -71,57 +71,20 @@ const hostStepText = (event: HostStepEvent): string => {
   }
 }
 
-const startedAtOf = (log: StartupLog, index: number, plugin: string): number | undefined => {
-  for (let earlier = index - 1; earlier >= 0; earlier--) {
-    const event = log[earlier].event
-    if (event._tag === 'EagerPluginLoadStarted' && event.name === plugin) {
-      return log[earlier].atMillis
-    }
+const settledStepOf = (outcome: StartupOutcome, durationMillis: number | undefined) => {
+  const timed = durationMillis === undefined ? {} : { durationMillis }
+  switch (outcome._tag) {
+    case 'Loaded':
+      return { verb: 'loaded', ...timed } as const
+    case 'Failed':
+      return { verb: 'failed', ...timed, detail: outcome.message } as const
+    case 'Waiting':
+      return { verb: 'waiting', ...timed, detail: `for ${outcome.missing.join(', ')}` } as const
+    case 'RestartRequired':
+      return { verb: 'restart required', ...timed, detail: outcome.message } as const
+    case 'Skipped':
+      return { verb: 'skipped' } as const
   }
-  return undefined
-}
-
-const lineOf = (log: StartupLog, index: number, originMillis: number): StartupLine => {
-  const { atMillis, event } = log[index]
-  const key = String(index)
-  const offsetMillis = atMillis - originMillis
-  if (event._tag === 'EagerPluginLoadStarted') {
-    return PluginStepLine.make({ key, offsetMillis, plugin: event.name, verb: 'loading' })
-  }
-  if (event._tag === 'EagerPluginLoadSettled') {
-    const startedAt = startedAtOf(log, index, event.name)
-    const durationMillis = startedAt === undefined ? undefined : atMillis - startedAt
-    const base = { key, offsetMillis, plugin: event.name }
-    const { outcome } = event
-    switch (outcome._tag) {
-      case 'Loaded':
-        return PluginStepLine.make({ ...base, verb: 'loaded', durationMillis })
-      case 'Failed':
-        return PluginStepLine.make({
-          ...base,
-          verb: 'failed',
-          durationMillis,
-          detail: outcome.message
-        })
-      case 'Waiting':
-        return PluginStepLine.make({
-          ...base,
-          verb: 'waiting',
-          durationMillis,
-          detail: `for ${outcome.missing.join(', ')}`
-        })
-      case 'RestartRequired':
-        return PluginStepLine.make({
-          ...base,
-          verb: 'restart required',
-          durationMillis,
-          detail: outcome.message
-        })
-      case 'Skipped':
-        return PluginStepLine.make({ ...base, verb: 'skipped' })
-    }
-  }
-  return HostStepLine.make({ key, offsetMillis, text: hostStepText(event) })
 }
 
 const waitingAfter = (last: StartupEntry | undefined): StartupWaiting => {
@@ -152,8 +115,26 @@ const waitingAfter = (last: StartupEntry | undefined): StartupWaiting => {
  */
 export const describeStartup = (log: StartupLog): StartupDescription => {
   const originMillis = log[0]?.atMillis ?? 0
-  return {
-    lines: log.map((_, index) => lineOf(log, index, originMillis)),
-    waiting: waitingAfter(log.at(-1))
-  }
+  const startedAt = new Map<string, number>()
+  const lines = log.map(({ atMillis, event }, index): StartupLine => {
+    const step = { key: String(index), offsetMillis: atMillis - originMillis }
+    switch (event._tag) {
+      case 'EagerPluginLoadStarted':
+        startedAt.set(event.name, atMillis)
+        return PluginStepLine.make({ ...step, plugin: event.name, verb: 'loading' })
+      case 'EagerPluginLoadSettled': {
+        const startedAtMillis = startedAt.get(event.name)
+        const durationMillis =
+          startedAtMillis === undefined ? undefined : atMillis - startedAtMillis
+        return PluginStepLine.make({
+          ...step,
+          plugin: event.name,
+          ...settledStepOf(event.outcome, durationMillis)
+        })
+      }
+      default:
+        return HostStepLine.make({ ...step, text: hostStepText(event) })
+    }
+  })
+  return { lines, waiting: waitingAfter(log.at(-1)) }
 }

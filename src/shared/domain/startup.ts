@@ -60,16 +60,19 @@ export const HostServicesStarting = Schema.TaggedStruct('HostServicesStarting', 
 /** The log entry for the Host's `Ready` message: the renderer can connect. */
 export const HostReadyReached = Schema.TaggedStruct('HostReadyReached', {})
 
-/** One startup step, recorded by main or reported by the plugin kernel. */
-export const StartupEvent = Schema.Union([
+/** A startup step main records about the Host process itself. */
+export const HostStartupEvent = Schema.Union([
   HostStarting,
   HostStarted,
   HostServicesStarting,
-  EagerPluginsStarting,
-  EagerPluginLoadStarted,
-  EagerPluginLoadSettled,
-  EagerPluginsSettled,
   HostReadyReached
+])
+export type HostStartupEvent = typeof HostStartupEvent.Type
+
+/** One startup step, recorded by main or reported by the plugin kernel. */
+export const StartupEvent = Schema.Union([
+  ...HostStartupEvent.members,
+  ...PluginStartupEvent.members
 ])
 export type StartupEvent = typeof StartupEvent.Type
 

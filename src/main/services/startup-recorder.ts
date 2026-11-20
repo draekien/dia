@@ -24,11 +24,6 @@ export interface StartupRecorder {
   readonly current: Effect.Effect<StartupLog>
 }
 
-const pluginOf = (event: StartupEvent): string | undefined =>
-  event._tag === 'EagerPluginLoadStarted' || event._tag === 'EagerPluginLoadSettled'
-    ? event.name
-    : undefined
-
 /**
  * Builds a {@link StartupRecorder} over `sender`, holding an empty log. Build one per app run,
  * before the Host process starts, and back the `getStartupLog` IPC handler with its `current`.
@@ -41,13 +36,12 @@ export const makeStartupRecorder = Effect.fn('makeStartupRecorder')(function* (
   const record = Effect.fnUntraced(function* (event: StartupEvent) {
     const atMillis = yield* Clock.currentTimeMillis
     const entry = { atMillis, event }
+    const startsNewRun = event._tag === 'HostStarting'
     const log = yield* Ref.updateAndGet(logRef, (previous) =>
-      event._tag === 'HostStarting' ? [entry] : [...previous, entry]
+      startsNewRun ? [entry] : [...previous, entry]
     )
-    if (event._tag === 'HostStarting') {
-      yield* Effect.logInfo('Startup log reset for a new Host run')
-    }
-    yield* Effect.logDebug('Startup step recorded', { step: event._tag, plugin: pluginOf(event) })
+    if (startsNewRun) yield* Effect.logInfo('Startup log reset for a new Host run')
+    yield* Effect.logDebug('Startup step recorded', { event })
     yield* Effect.sync(() =>
       sender.send(CHANNEL.event, encodeEvent(StartupLogChanged.make({ log })))
     )

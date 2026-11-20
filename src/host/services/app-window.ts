@@ -33,10 +33,7 @@ export const makeAppWindowLive = (post: (message: HostToMainMessage) => Effect.E
             Effect.andThen(Effect.logDebug('Window attention changed', { attended }))
           ),
         notify: (notification) => post(Notify.make({ notification })),
-        reportStartup: (event) =>
-          post(StartupProgress.make({ event })).pipe(
-            Effect.andThen(Effect.logDebug('Reported a startup step to main', { step: event._tag }))
-          )
+        reportStartup: (event) => post(StartupProgress.make({ event }))
       }
     })
   )
