@@ -66,9 +66,8 @@ const RELOADED_LAST = new Set(['dia-creator', 'dia-runs'])
 
 /**
  * Reloads the plugins in `names` other than `dia-creator` and `dia-runs` and waits for them, then
- * returns an effect that starts the `dia-creator` and `dia-runs` reloads without waiting. Run that
- * effect after the caller's reply is built: reloading either plugin closes the scope of the
- * dia-creator call that asked for it.
+ * starts the `dia-creator` and `dia-runs` reloads without waiting: reloading either plugin closes
+ * the scope of the dia-creator call that asked for it. Call it last, after the caller's other work.
  */
 export const reloadPlugins = Effect.fn('Creator.reloadPlugins')(function* (
   plugins: Pick<PluginControl, 'reload'>,
@@ -79,8 +78,7 @@ export const reloadPlugins = Effect.fn('Creator.reloadPlugins')(function* (
   const last = unique.filter((name) => RELOADED_LAST.has(name))
   yield* Effect.logInfo('Reloading plugins a Creator change touched', { now, last })
   yield* Effect.forEach(now, (name) => plugins.reload(name), { discard: true })
-  return Effect.forEach(last, (name) => plugins.reload(name), { discard: true }).pipe(
-    Effect.forkDetach,
-    Effect.asVoid
+  yield* Effect.forEach(last, (name) => plugins.reload(name), { discard: true }).pipe(
+    Effect.forkDetach
   )
 })

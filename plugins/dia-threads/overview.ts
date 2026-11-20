@@ -93,6 +93,22 @@ const mostUrgentOf = (first: OverviewRow, rows: ReadonlyArray<OverviewRow>): Run
 
 const contains = (text: string, query: string): boolean => text.toLocaleLowerCase().includes(query)
 
+type WorkspaceTab = Workspace['projects'][number]['tabs'][number]
+
+const toRow = (
+  tab: WorkspaceTab,
+  summaries: ReadonlyMap<PaneId, RunSummary>,
+  owned: boolean
+): OverviewRow =>
+  OverviewRow.make({
+    paneId: tab.config.paneId,
+    name: tab.name,
+    summary:
+      summaries.get(tab.config.paneId) ?? idleSummary(tab.config.paneId, NoActivity.make({})),
+    permissionMode: tab.config.permissionMode,
+    owned
+  })
+
 /**
  * The project groups the overview lists, in the user's project order, with their rows filtered
  * by `filters`. A project with no open thread (a tab that is not archived and has no `owner`) is
@@ -110,20 +126,12 @@ export const buildOverview = (
   return userProjects(workspace).flatMap((owned) => {
     const entry = { ...owned, tabs: owned.tabs.filter((tab) => tab.owner === undefined) }
     const projectMatches = query === '' || contains(entry.project.displayName, query)
-    const summaryOf = (paneId: PaneId) =>
-      summaries.get(paneId) ?? idleSummary(paneId, NoActivity.make({}))
-    const toRow = (tab: (typeof entry.tabs)[number]): OverviewRow =>
-      OverviewRow.make({
-        paneId: tab.config.paneId,
-        name: tab.name,
-        summary: summaryOf(tab.config.paneId),
-        permissionMode: tab.config.permissionMode,
-        owned: false
-      })
     const matches = (row: OverviewRow): boolean =>
       (projectMatches || contains(row.name, query)) &&
       (filters.statuses.length === 0 || filters.statuses.includes(row.summary.status._tag))
-    const active = entry.tabs.filter((tab) => !tab.archived).map(toRow)
+    const active = entry.tabs
+      .filter((tab) => !tab.archived)
+      .map((tab) => toRow(tab, summaries, false))
     const [first] = active
     if (first === undefined) return []
     const rows = byUrgency(active.filter(matches))
@@ -155,17 +163,7 @@ export const buildMetaRows = (
     workspace.projects.flatMap((entry) =>
       entry.tabs
         .filter((tab) => !tab.archived && tab.owner !== undefined && owners.has(tab.owner))
-        .map((tab) =>
-          OverviewRow.make({
-            paneId: tab.config.paneId,
-            name: tab.name,
-            summary:
-              summaries.get(tab.config.paneId) ??
-              idleSummary(tab.config.paneId, NoActivity.make({})),
-            permissionMode: tab.config.permissionMode,
-            owned: true
-          })
-        )
+        .map((tab) => toRow(tab, summaries, true))
     )
   )
 

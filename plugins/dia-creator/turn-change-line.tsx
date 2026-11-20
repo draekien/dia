@@ -1,6 +1,7 @@
 // @effect-diagnostics asyncFunction:off -- React callbacks await Effect.runPromise; components hold no Effect runtime.
-import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@dia/renderer-plugin'
+import { Button, Tooltip, TooltipContent, TooltipTrigger, useWorkspace } from '@dia/renderer-plugin'
 import { useAtomValue } from '@effect/atom-react'
+
 import { Option } from 'effect'
 import { AsyncResult, type Atom } from 'effect/reactivity'
 import { Loader2Icon } from 'lucide-react'
@@ -14,6 +15,8 @@ export type CreatorThreadAtoms = (
 
 /** The outcome of a revert or merge request: `null` when it succeeded, otherwise the text to show. */
 export type ActionOutcome = Promise<string | null>
+
+const CREATOR_OWNER = 'dia-creator'
 
 const short = (sha: string) => sha.slice(0, 7)
 
@@ -183,24 +186,29 @@ export function TurnChangeView({ change, merge, onRevert, onMerge }: TurnChangeV
 const newestWithCommits = (turns: ReadonlyArray<TurnChange>) =>
   [...turns].reverse().find((turn) => turn.commits.length > 0)
 
-/**
- * The turn footer of Creator run `runId` for the turn its user messages `messageIds` opened:
- * {@link TurnChangeView} for that turn, following `threads(runId)`. Renders nothing for a turn
- * that changed nothing, and in a tab that is not a Creator thread.
- */
-export function TurnChangeLine({
-  runId,
-  messageIds,
-  threads,
-  revert,
-  merge
-}: {
+interface TurnChangeLineProps {
   readonly runId: string
   readonly messageIds: ReadonlyArray<string>
   readonly threads: CreatorThreadAtoms
   readonly revert: (runId: string, turnId: string) => ActionOutcome
   readonly merge: (runId: string) => ActionOutcome
-}) {
+}
+
+const isCreatorTab = (workspace: ReturnType<typeof useWorkspace>, runId: string) =>
+  workspace?.projects.some((entry) =>
+    entry.tabs.some((tab) => tab.config.paneId === runId && tab.owner === CREATOR_OWNER)
+  ) === true
+
+/**
+ * The turn footer of run `runId` for the turn its user messages `messageIds` opened: in a tab
+ * `dia-creator` owns, {@link TurnChangeView} for that turn, following `threads(runId)`. Renders
+ * nothing for a turn that changed nothing, and in any other tab, which does not follow the thread.
+ */
+export function TurnChangeLine(props: TurnChangeLineProps) {
+  return isCreatorTab(useWorkspace(), props.runId) ? <CreatorTurnChangeLine {...props} /> : null
+}
+
+function CreatorTurnChangeLine({ runId, messageIds, threads, revert, merge }: TurnChangeLineProps) {
   const result = useAtomValue(threads(runId))
   const state = AsyncResult.isSuccess(result) ? Option.getOrUndefined(result.value) : undefined
   if (state === undefined) return null

@@ -145,6 +145,15 @@ const parseCommits = (output: string): ReadonlyArray<TurnCommit> =>
       return { sha: sha.trim(), subject }
     })
 
+const failLogged = <E extends { readonly reason: string; readonly message: string }>(
+  log: string,
+  error: E
+) =>
+  Effect.andThen(
+    Effect.logWarning(log, { reason: error.reason, message: error.message }),
+    Effect.fail(error)
+  )
+
 const gitReason = (error: GitError) => error.stderr.trim() || error.message
 
 const revertMessage = (commits: ReadonlyArray<TurnCommit>) =>
@@ -209,9 +218,8 @@ export const makeTurnChanges = Effect.fn('makeTurnChanges')(function* (
       )
     )
 
-  const closeTurn = (runId: string, open: TurnRow, worktree: WorktreeInfo) =>
+  const closeTurn = (runId: string, open: TurnRow, head: string) =>
     Effect.gen(function* () {
-      const head = yield* branchHead(worktree)
       const commits =
         head === open.from_sha
           ? []
@@ -222,7 +230,7 @@ export const makeTurnChanges = Effect.fn('makeTurnChanges')(function* (
                 `${open.from_sha}..${head}`
               ])
             )
-      const list = yield* plugins.list
+      const list = open.plugins.length === 0 ? [] : yield* plugins.list
       const loads = open.plugins.map((name) => {
         const status = list.find((info) => info.name === name)?.status
         return {
@@ -255,8 +263,8 @@ export const makeTurnChanges = Effect.fn('makeTurnChanges')(function* (
       if (turnId === undefined) return NO_WRITE
       if ((yield* turnRows(runId, { turnId })).length > 0) return NO_WRITE
       const [open] = yield* turnRows(runId, 'open')
-      const close = open === undefined ? NO_WRITE : yield* closeTurn(runId, open, run.worktree)
       const from = yield* branchHead(run.worktree)
+      const close = open === undefined ? NO_WRITE : yield* closeTurn(runId, open, from)
       const [last] = yield* sql<{ readonly position: number | null }>`
         SELECT MAX(position) AS position FROM creator_turns WHERE run_id = ${runId}`.pipe(
         Effect.orDie
@@ -302,7 +310,7 @@ export const makeTurnChanges = Effect.fn('makeTurnChanges')(function* (
       const [open] = yield* turnRows(runId, 'open')
       return open === undefined
         ? NO_WRITE
-        : Effect.asVoid(yield* closeTurn(runId, open, run.worktree))
+        : Effect.asVoid(yield* closeTurn(runId, open, yield* branchHead(run.worktree)))
     }).pipe(
       Effect.catchTag('GitError', (error) =>
         Effect.as(
@@ -330,6 +338,10 @@ export const makeTurnChanges = Effect.fn('makeTurnChanges')(function* (
       const run = yield* trackedRun(runId)
       if (Option.isNone(run) || sequence <= run.value.lastSequence) return
       const writes = yield* writesFor(runId, run.value, event)
+      yield* Ref.update(tracked, (runs) =>
+        new Map(runs).set(runId, { ...run.value, lastSequence: sequence })
+      )
+      if (writes === NO_WRITE) return
       yield* sql
         .withTransaction(
           writes.pipe(
@@ -339,12 +351,7 @@ export const makeTurnChanges = Effect.fn('makeTurnChanges')(function* (
           )
         )
         .pipe(Effect.orDie)
-      yield* Ref.update(tracked, (runs) =>
-        new Map(runs).set(runId, { ...run.value, lastSequence: sequence })
-      )
-      if (event._tag !== 'ToolCallCompleted' || PLUGIN_TOOLS.has(event.toolName)) {
-        yield* PubSub.publish(changed, runId)
-      }
+      yield* PubSub.publish(changed, runId)
     })
 
   const track = (runId: string, worktree: WorktreeInfo, lastSequence: number) =>
@@ -415,15 +422,13 @@ export const makeTurnChanges = Effect.fn('makeTurnChanges')(function* (
     const runs = yield* Ref.get(tracked)
     return yield* Effect.filter(
       [...runs].map(([runId, run]) => ({ runId, worktree: run.worktree })),
-      (run) => Effect.map(unmergedCount(run.worktree), (count) => count > 0)
+      (run) => Effect.map(unmergedCount(run.worktree), (count) => count > 0),
+      { concurrency: 4 }
     )
   })
 
   const revertFailed = (reason: RevertFailed['reason'], message: string) =>
-    Effect.andThen(
-      Effect.logWarning('Could not revert a Creator turn', { reason, message }),
-      Effect.fail(new RevertFailed({ reason, message }))
-    )
+    failLogged('Could not revert a Creator turn', new RevertFailed({ reason, message }))
 
   const revert = (runId: string, turnId: string) =>
     lock.withPermits(1)(
@@ -468,21 +473,13 @@ export const makeTurnChanges = Effect.fn('makeTurnChanges')(function* (
             )
           )
         )
-        const reloadLast = yield* reloadPlugins(
-          plugins,
-          pluginsTouched(yield* plugins.list, worktree.path, files)
-        )
-        const reverted = toChange({ ...row, revert_sha: result.commit })
-        yield* reloadLast
-        return reverted
+        yield* reloadPlugins(plugins, pluginsTouched(yield* plugins.list, worktree.path, files))
+        return toChange({ ...row, revert_sha: result.commit })
       })
     )
 
   const mergeFailed = (reason: MergeFailed['reason'], message: string) =>
-    Effect.andThen(
-      Effect.logWarning('Could not merge a Creator thread', { reason, message }),
-      Effect.fail(new MergeFailed({ reason, message }))
-    )
+    failLogged('Could not merge a Creator thread', new MergeFailed({ reason, message }))
 
   const moveOverrides = (worktree: WorktreeInfo) =>
     Effect.gen(function* () {
@@ -535,12 +532,8 @@ export const makeTurnChanges = Effect.fn('makeTurnChanges')(function* (
         yield* Effect.logInfo('Merged a Creator thread', { runId, branch: worktree.branch, sha })
         const moved = yield* moveOverrides(worktree)
         const touched = pluginsTouched(yield* plugins.list, metaDirectory, result.files)
-        const reloadLast = yield* reloadPlugins(plugins, [
-          ...moved.map(({ name }) => name),
-          ...touched
-        ])
         yield* PubSub.publish(changed, runId)
-        yield* reloadLast
+        yield* reloadPlugins(plugins, [...moved.map(({ name }) => name), ...touched])
         return { sha }
       })
     )

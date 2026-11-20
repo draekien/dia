@@ -53,6 +53,7 @@ import { useAtomValue } from '@effect/atom-react'
 import type { PaneId } from '@shared/domain/pane'
 import { ProjectId, type Workspace } from '@shared/domain/project'
 import { tabOf, userProjects } from '@shared/domain/workspace'
+import type { ListEntry } from '@shared/plugin/list-slot'
 import { Option, Result, Schema } from 'effect'
 import { Atom } from 'effect/reactivity'
 import { FolderPlusIcon, PlusIcon, SearchIcon, SquarePenIcon } from 'lucide-react'
@@ -78,7 +79,7 @@ import {
 import { ProjectGroup } from './project-group'
 import { RemoveProjectDialog } from './remove-project-dialog'
 import { RetireThreadDialog } from './retire-thread-dialog'
-import { MetaThreadSourcesSlot } from './slots'
+import { type MetaThreadSource, MetaThreadSourcesSlot } from './slots'
 import { ThreadRow } from './thread-row'
 
 const COLLAPSED_KEY = 'dia.threads.collapsed'
@@ -162,6 +163,7 @@ function MetaMarker() {
 }
 
 interface MetaGroupProps {
+  readonly sources: ReadonlyArray<ListEntry<MetaThreadSource>>
   readonly rows: ReadonlyArray<OverviewRow>
   readonly visibleTab: PaneId | null
   readonly renaming: PaneId | null
@@ -172,8 +174,15 @@ interface MetaGroupProps {
 
 const ACTION_SPACING_REM = 1.5
 
-function MetaGroup({ rows, visibleTab, renaming, tabStop, onRename, onRetire }: MetaGroupProps) {
-  const sources = useList(MetaThreadSourcesSlot)
+function MetaGroup({
+  sources,
+  rows,
+  visibleTab,
+  renaming,
+  tabStop,
+  onRename,
+  onRetire
+}: MetaGroupProps) {
   return (
     <SidebarGroup className="group/meta">
       <SidebarMenu className="gap-0">
@@ -682,6 +691,7 @@ export function ThreadsSidebar() {
           >
             {!narrowing && (
               <MetaGroup
+                sources={metaSources}
                 rows={metaRows}
                 visibleTab={workspace.visibleTab}
                 renaming={renaming}
