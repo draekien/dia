@@ -73,6 +73,7 @@
     "plugins/dia-inbox/calls.ts",
     "plugins/dia-checkpoints/calls.ts",
     "plugins/dia-cost/calls.ts",
+    "plugins/dia-creator/calls.ts",
     "plugins/dia-cost/usage.ts",
     "plugins/dia-terminals/calls.ts",
     "plugins/dia-terminals/terminals.ts",
