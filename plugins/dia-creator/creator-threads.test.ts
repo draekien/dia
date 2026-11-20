@@ -1,4 +1,4 @@
-import type { PluginControl, PluginInfo, RunSpec, Runs, TabPlacement } from '@dia/plugin'
+import type { PluginControl, PluginInfo, RunInfo, RunSpec, Runs, TabPlacement } from '@dia/plugin'
 import { fakeChoices, model } from '@dia-plugin/dia-agent-definitions/run-settings.fake'
 import { assert, describe, it } from '@effect/vitest'
 import { Effect, Exit, Option } from 'effect'
@@ -25,6 +25,7 @@ interface Options {
   readonly listed?: boolean
   readonly unmerged?: ReadonlyArray<UnmergedRun>
   readonly plugins?: ReadonlyArray<PluginInfo>
+  readonly runIds?: ReadonlyArray<string>
 }
 
 const threadsWith = (options: Options = {}) => {
@@ -33,7 +34,8 @@ const threadsWith = (options: Options = {}) => {
   const tabs: Array<TabPlacement | undefined> = []
   const reloaded: Array<string> = []
   const worktree = options.worktree === undefined ? WORKTREE : options.worktree
-  const runs: Pick<Runs, 'open' | 'retire' | 'openInTab' | 'send'> = {
+  const runs: Pick<Runs, 'open' | 'retire' | 'openInTab' | 'send' | 'list'> = {
+    list: Effect.succeed((options.runIds ?? [RUN]).map((runId) => ({ runId }) as RunInfo)),
     open: (spec) =>
       Effect.sync(() => {
         opened.push(spec)
@@ -71,6 +73,7 @@ const threadsWith = (options: Options = {}) => {
         return loaded(name, '', { _tag: 'Loaded' })
       })
   }
+  const reattachedRuns: Array<string> = []
   const threads = makeCreatorThreads({
     runs,
     runEvents: { highestSequence: Effect.succeed(41) },
@@ -90,12 +93,18 @@ const threadsWith = (options: Options = {}) => {
       )
     },
     choices: fakeChoices([model('opus')]),
-    gitOps: { reattachWorktree: (info) => Effect.succeed(info) },
+    gitOps: {
+      reattachWorktree: (info, runId) =>
+        Effect.sync(() => {
+          reattachedRuns.push(runId)
+          return info
+        })
+    },
     plugins,
     turnChanges,
     newRunId: Effect.succeed(RUN)
   })
-  return { threads, calls, opened, tabs, reloaded }
+  return { threads, calls, opened, tabs, reloaded, reattachedRuns }
 }
 
 const failureReason = <A>(exit: Exit.Exit<A, { readonly reason: string }>) =>
@@ -177,6 +186,23 @@ describe('makeCreatorThreads', () => {
       yield* threads.reattachUnmerged
 
       assert.deepStrictEqual(reloaded, ['clock'])
+    })
+  )
+
+  it.effect('does not reattach the worktree of an unmerged thread whose run was deleted', () =>
+    Effect.gen(function* () {
+      const { threads, reattachedRuns, reloaded } = threadsWith({
+        unmerged: [{ runId: RUN, worktree: WORKTREE }],
+        runIds: [],
+        plugins: [
+          loaded('clock', 'C:/trees/creator/plugins/clock', { _tag: 'Failed', message: 'missing' })
+        ]
+      })
+
+      yield* threads.reattachUnmerged
+
+      assert.deepStrictEqual(reattachedRuns, [])
+      assert.deepStrictEqual(reloaded, [])
     })
   )
 })

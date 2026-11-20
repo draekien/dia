@@ -3,17 +3,19 @@ import { Effect, Option } from 'effect'
 
 const normalise = (path: string) => path.replaceAll('\\', '/').replace(/\/+$/, '')
 
+const comparable = (path: string) => (/^[a-zA-Z]:/.test(path) ? path.toLowerCase() : path)
+
 /**
  * The path of `path` relative to `directory`, with forward slashes, when `path` is `directory` or
- * lies inside it (`''` for `directory` itself); `None` otherwise. Case is ignored, so a Windows
- * path matches whatever drive-letter case it was written in.
+ * lies inside it (`''` for `directory` itself); `None` otherwise. Case is ignored for Windows
+ * drive paths only, so a Windows path matches whatever case it was written in.
  */
 export const relativeInside = (directory: string, path: string): Option.Option<string> => {
   const base = normalise(directory)
   const target = normalise(path)
-  if (target.toLowerCase() === base.toLowerCase()) return Option.some('')
+  if (comparable(target) === comparable(base)) return Option.some('')
   const prefix = `${base}/`
-  return target.toLowerCase().startsWith(prefix.toLowerCase())
+  return comparable(target).startsWith(comparable(prefix))
     ? Option.some(target.slice(prefix.length))
     : Option.none()
 }
@@ -62,12 +64,22 @@ export const overridesInside = (
         })
   )
 
-const RELOADED_LAST = new Set(['dia-creator', 'dia-runs'])
+const RELOADED_LAST = new Set([
+  'dia-creator',
+  'dia-runs',
+  'dia-run-events',
+  'dia-git',
+  'dia-meta',
+  'dia-worktrees',
+  'dia-agent-definitions',
+  'dia-agent-adapters'
+])
 
 /**
- * Reloads the plugins in `names` other than `dia-creator` and `dia-runs` and waits for them, then
- * starts the `dia-creator` and `dia-runs` reloads without waiting: reloading either plugin closes
- * the scope of the dia-creator call that asked for it. Call it last, after the caller's other work.
+ * Reloads the plugins in `names` other than `dia-creator` and the plugins whose services it serves
+ * its calls with, and waits for them, then starts those reloads without waiting: reloading any of
+ * them closes the scope of the dia-creator call that asked for it. Call it last, after the
+ * caller's other work.
  */
 export const reloadPlugins = Effect.fn('Creator.reloadPlugins')(function* (
   plugins: Pick<PluginControl, 'reload'>,

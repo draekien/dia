@@ -24,7 +24,7 @@ export const CREATOR_TAB_NAME = AgentName.make('Creator')
  * them, and `newRunId`, which returns a new run id.
  */
 export interface CreatorThreadsDeps {
-  readonly runs: Pick<Runs, 'open' | 'retire' | 'openInTab' | 'send'>
+  readonly runs: Pick<Runs, 'open' | 'retire' | 'openInTab' | 'send' | 'list'>
   readonly runEvents: Pick<RunEvents, 'highestSequence'>
   readonly git: Pick<Git, 'resolveCommit'>
   readonly metaDirectory: string
@@ -44,7 +44,8 @@ export interface CreatorThreads {
    */
   readonly start: (text: string) => Effect.Effect<string, CreatorUnavailable>
   /**
-   * Re-adds the worktree of every Creator thread with unmerged commits, and reloads each failed
+   * Re-adds the worktree of every Creator thread that still has a run row and has unmerged
+   * commits, and reloads each failed
    * plugin overridden to a folder inside one of them. Call it once the services are provided.
    */
   readonly reattachUnmerged: Effect.Effect<void>
@@ -125,7 +126,8 @@ export const makeCreatorThreads = (deps: CreatorThreadsDeps): CreatorThreads => 
   })
 
   const reattachUnmerged = Effect.gen(function* () {
-    const unmerged = yield* deps.turnChanges.unmerged
+    const existing = new Set((yield* runs.list).map((run) => run.runId))
+    const unmerged = (yield* deps.turnChanges.unmerged).filter(({ runId }) => existing.has(runId))
     const reattached = yield* Effect.filter(unmerged, ({ runId, worktree }) =>
       deps.gitOps.reattachWorktree(worktree, runId).pipe(
         Effect.tap(() =>

@@ -23,6 +23,13 @@ describe('relativeInside', () => {
     )
   })
 
+  it('keeps case significant for a path without a drive letter', () => {
+    assert.deepStrictEqual(
+      relativeInside('/home/Trees/creator', '/home/trees/creator/plugins/clock'),
+      Option.none()
+    )
+  })
+
   it('refuses a sibling folder that only shares a name prefix', () => {
     assert.deepStrictEqual(
       relativeInside('C:/trees/creator', 'C:/trees/creator-2/x'),

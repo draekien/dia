@@ -81,7 +81,20 @@ const setup: PluginSetup<HostPluginContext> = (ctx) =>
           const events = yield* runEvents.subscribe
           yield* threads.reattachUnmerged
           yield* turnChanges.catchUp
-          yield* events.pipe(Stream.runForEach(turnChanges.fold), Effect.forkScoped)
+          yield* events.pipe(
+            Stream.runForEach((committed) =>
+              turnChanges.fold(committed).pipe(
+                Effect.catchDefect((defect) =>
+                  Effect.logError('Could not fold a Creator run event', {
+                    runId: committed.runId,
+                    sequence: committed.sequence,
+                    defect: String(defect)
+                  })
+                )
+              )
+            ),
+            Effect.forkScoped
+          )
           yield* ctx.serve(StartCreatorThread, ({ text }) => threads.start(text))
           yield* ctx.serve(FollowCreatorThread, ({ runId }) => turnChanges.follow(runId))
           yield* ctx.serve(RevertTurn, ({ runId, turnId }) => turnChanges.revert(runId, turnId))

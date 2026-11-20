@@ -43,17 +43,15 @@ export const makePluginControl = (host: PluginControlHost): PluginControl => ({
     return description
   }),
   setOverride: (name, directory) =>
-    host
-      .setOverride(name, directory)
-      .pipe(
-        Effect.tap((result) =>
-          Effect.logInfo('Plugin override set by a plugin', {
-            name,
-            directory,
-            result: result._tag
-          })
-        )
-      ),
+    host.setOverride(name, directory).pipe(
+      Effect.tap((result) =>
+        Effect.logInfo('Plugin override set by a plugin', {
+          name,
+          directory,
+          result: result._tag
+        })
+      )
+    ),
   reload: (name) =>
     host.load(name).pipe(
       Effect.forkDetach,

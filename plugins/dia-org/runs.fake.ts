@@ -7,11 +7,10 @@ import {
   type StartRunOptions,
   type TabPlacement
 } from '@dia/plugin'
-import { unavailableBackend } from '@dia-plugin/dia-agent-adapters/backend'
 import type { QueuedRun, RunQueue } from '@dia-plugin/dia-run-queue/queue'
-import { DateTime, Deferred, Effect, Option, Stream, SubscriptionRef } from 'effect'
+import { Deferred, Effect, Option, SubscriptionRef } from 'effect'
 
-export { fakeChoices, model } from '../dia-agent-definitions/run-settings.fake'
+export { fakeChoices, model } from '@dia-plugin/dia-agent-definitions/run-settings.fake'
 
 type FakeRuns = Pick<
   Runs,
