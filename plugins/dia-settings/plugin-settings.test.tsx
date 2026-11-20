@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 // @effect-diagnostics newPromise:off -- the test holds a bridge call open with a manually resolved Promise.
+import { addEntry } from '@dia/renderer-plugin'
 import type { ActivityInfoJson } from '@shared/ipc/contract'
 import type { PluginInfo } from '@shared/plugin/manifest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { HammerIcon } from 'lucide-react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { startRendererRegistry } from '../../src/renderer/src/lib/renderer-registry.fake'
 import { PluginSettings } from './plugin-settings'
+import settings from './renderer'
+import { PluginPageActionsSlot } from './slots'
 
 const info = (name: string, overrides: Partial<PluginInfo> = {}): PluginInfo => ({
   name,
@@ -417,5 +422,30 @@ describe('PluginSettings', () => {
     ])
 
     await waitFor(() => expect(screen.getByRole('status').textContent).toBe('Model list failed'))
+  })
+})
+
+describe('PluginPageActionsSlot', () => {
+  it('shows each action as a button that runs it when clicked', async () => {
+    installBridge([])
+    const createPlugin = vi.fn()
+    await act(() =>
+      startRendererRegistry({
+        'dia-settings': settings,
+        'dia-creator': (ctx) =>
+          addEntry(ctx, PluginPageActionsSlot, {
+            id: 'create-plugin',
+            order: 10,
+            label: 'Create a plugin…',
+            icon: HammerIcon,
+            run: createPlugin
+          })
+      })
+    )
+
+    render(<PluginSettings />)
+    fireEvent.click(screen.getByRole('button', { name: 'Create a plugin…' }))
+
+    expect(createPlugin).toHaveBeenCalledOnce()
   })
 })

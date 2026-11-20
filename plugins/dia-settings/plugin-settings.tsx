@@ -10,12 +10,14 @@ import {
   ListRowName,
   ListRowSubject,
   type OverrideRejection,
+  PluginBoundary,
   pluginStatusLabel,
   Skeleton,
   Status,
   StatusMedia,
   StatusName,
   useActivities,
+  useList,
   usePlugins
 } from '@dia/renderer-plugin'
 import type { ActivityInfoJson } from '@shared/ipc/contract'
@@ -28,6 +30,7 @@ import {
 import { ByteSize } from 'effect'
 import { FolderIcon, Loader2Icon, PlayIcon, RefreshCwIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { PluginPageActionsSlot } from './slots'
 
 const limitBytes = ByteSize.toNumberUnsafe(PLUGIN_MEMORY_LIMIT)
 
@@ -241,6 +244,28 @@ function PluginRow({
   )
 }
 
+function PluginPageActions() {
+  const actions = useList(PluginPageActionsSlot)
+  if (actions.length === 0) return null
+  return (
+    <div className="flex flex-wrap gap-2 px-4 pb-3">
+      {actions.map((action) => (
+        <PluginBoundary
+          key={`${action.key.plugin}.${action.key.id}`}
+          plugin={action.key.plugin}
+          at={PluginPageActionsSlot.name}
+          resetKey={action}
+        >
+          <Button variant="outline" size="sm" onClick={action.run}>
+            <action.icon data-icon="inline-start" />
+            {action.label}
+          </Button>
+        </PluginBoundary>
+      ))}
+    </div>
+  )
+}
+
 const SKELETON_ROWS = ['first', 'second', 'third']
 
 function PluginListSkeleton() {
@@ -262,7 +287,8 @@ function PluginListSkeleton() {
  * The plugin list: every plugin with its state, the folder it loads from, the reason for its last
  * failed reload, and its memory use against the limit, with actions to load, reload and unload it
  * and to point it at a folder on disk or back at the bundled copy. Render it inside a scrolling
- * container; it sizes to its content.
+ * container; it sizes to its content. Each `PluginPageActionsSlot` entry shows as a button above
+ * the list.
  */
 export function PluginSettings() {
   const { plugins, pending, rejection, reload, unload, chooseOverride, clearOverride } =
@@ -272,6 +298,7 @@ export function PluginSettings() {
 
   return (
     <>
+      <PluginPageActions />
       {plugins === undefined ? (
         <PluginListSkeleton />
       ) : plugins.length === 0 ? (
