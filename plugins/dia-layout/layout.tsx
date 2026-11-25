@@ -168,7 +168,9 @@ function StatusBar() {
   const items = useList(StatusBarItemsSlot)
   const shown = items.length > 0
   useEffect(() => {
-    log(shown ? 'Showed the status bar' : 'Hid the status bar')
+    if (!shown) return
+    log('Showed the status bar')
+    return () => log('Hid the status bar')
   }, [shown])
   if (!shown) return null
   const start = items.filter((item) => item.side === 'start')

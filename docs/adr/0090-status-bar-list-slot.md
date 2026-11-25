@@ -32,7 +32,7 @@ Chosen options: across the full window width; `component` draws the whole entry;
 * `plugins/dia-layout/slots.ts` exports:
 
   ```ts
-  /** An entry in the status bar. `side` picks the left (`start`) or right (`end`) group; `order` sorts within the group. `component` draws the whole entry, including any tooltip or click action. */
+  /** An entry in the status bar. `side` picks the left (`start`) or right (`end`) group; `order` sorts within the group, the lowest `order` nearest the group's outer edge. `component` draws the whole entry, including any tooltip or click action. */
   export interface StatusBarItem {
     readonly id: string
     readonly order: number
