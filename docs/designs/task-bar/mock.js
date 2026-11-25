@@ -51,7 +51,10 @@ function barEl(opt, state) {
   start.className = 'group start'
   const end = document.createElement('div')
   end.className = 'group end'
-  for (const entry of ENTRIES) {
+  const outerFirst = [...ENTRIES].sort((a, b) =>
+    a.side === 'start' ? a.order - b.order : b.order - a.order
+  )
+  for (const entry of outerFirst) {
     const el = entryEl(entry, opt)
     el.classList.toggle('focus', state.focus === entry.id)
     ;(entry.side === 'start' ? start : end).append(el)
@@ -114,7 +117,7 @@ function fitOverflow(frame, opt, state) {
       .sort((a, b) => a.order - b.order)
       .map(
         (entry) =>
-          `<div>${entry.icon ? svg(entry.icon) : '<svg></svg>'}${labelHtml(entry, '')}</div>`
+          `<div class="${entry.id}">${entry.icon ? svg(entry.icon) : '<svg></svg>'}${labelHtml(entry, '')}</div>`
       )
       .join('')
     frame.append(menu)

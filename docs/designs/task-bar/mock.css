@@ -146,7 +146,8 @@ h1 {
   font-size: 12px;
   line-height: 16px;
   color: var(--ink-muted);
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: 3px;
   white-space: nowrap;
 }
 .bar .group {
@@ -228,6 +229,7 @@ h1 {
 .bar.flat {
   padding: 0;
   gap: 0;
+  align-items: stretch;
 }
 .bar.flat .group {
   gap: 0;
@@ -273,6 +275,12 @@ h1 {
   width: 16px;
   height: 16px;
   color: var(--ink-muted);
+}
+.menu .update svg {
+  color: var(--primary);
+}
+.menu .errors svg {
+  color: var(--error);
 }
 .menu .mono {
   font-family: 'Geist Mono Variable', monospace;

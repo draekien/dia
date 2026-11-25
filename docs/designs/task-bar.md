@@ -23,7 +23,7 @@ The user chose option A on 2026-11-25 from the three rendered options below.
 ┌ sidebar ───────────┬ content ───────────────────────────────────────────┐
 │                    │                                                    │
 ├────────────────────┴────────────────────────────────────────────────────┤ 1px --border
-│ v0.42.0  ⤓ Restart to update                 ⓘ 2 plugins failed to load │ 28px
+│ ⤓ Restart to update  v0.42.0                 ⓘ 2 plugins failed to load │ 28px
 └─────────────────────────────────────────────────────────────────────────┘
  ↑ 4px bar padding, then 8px entry padding: labels start 12px from the edge
 ```
@@ -81,7 +81,7 @@ These three entries are the reference for anyone adding one. Their `order` value
 
 | Window | Visible in the bar | In the `…` menu |
 |---|---|---|
-| 1072px, sidebar open | `v0.42.0`, `Restart to update`, `2 plugins failed to load` | nothing; no `…` |
+| 1072px, sidebar open | `Restart to update`, `v0.42.0`, `2 plugins failed to load` | nothing; no `…` |
 | 340px, sidebar collapsed | `Restart to update`, `…`, `2 plugins failed to load` | `v0.42.0` |
 | 160px | `…` | `2 plugins failed to load`, `Restart to update`, `v0.42.0` |
 
