@@ -25,6 +25,7 @@ Scope: the `issues` plugin (`plugins/dia-issues`) and the `org` plugin (`plugins
 | Assistant | The Executive assistant's one persistent run. It has its own sidebar entry under Org and belongs to no project | (none) |
 | Routine | A run a `dia-schedules` schedule starts | (none) |
 | Run | The code term for any of the above (`RunSummary`, `RunSummaryStatus`) | (none) |
+| Status bar | The row along the bottom of the dia window that shows entries from `StatusBarItemsSlot` (ADR-0090) | (none) |
 
 ## Issue statuses
 

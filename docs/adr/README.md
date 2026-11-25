@@ -97,6 +97,7 @@ This directory holds dia's Architecture Decision Records (ADRs), written in [MAD
 | [0087](0087-host-plugins-rename-tabs.md) | A Host plugin renames a tab through `ctx.renameTab`, and agent adapters offer one-shot text generation | accepted |
 | [0088](0088-creator-mode-threads-on-a-meta-repo-worktree.md) | Creator mode threads change dia on a worktree branch of the meta repo, and the user merges them | accepted |
 | [0089](0089-startup-progress-through-main.md) | Report startup progress to the renderer through main before `HostReady`, and show it as an event stream | accepted |
+| [0090](0090-status-bar-list-slot.md) | Draw a full-width status bar from `layout.statusBar`, a list slot `dia-layout` owns; dia's own entries come from `dia-status-bar` | accepted |
 
 ## Adding a new ADR
 
