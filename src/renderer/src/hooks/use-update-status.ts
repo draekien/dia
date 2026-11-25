@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 /**
  * Tracks the app's background self-update status for the current session.
  * Subscribes first, then seeds from the main process, so a late seed can't
- * clobber a fresher pushed event. Returns the current {@link UpdateStatus} for
- * rendering the header indicator and the About dialog's update line.
+ * clobber a fresher pushed event. Returns the current {@link UpdateStatus}, for
+ * any component that shows or acts on the update state.
  */
 export function useUpdateStatus(): UpdateStatus {
   const [status, setStatus] = useState<UpdateStatus>(DEFAULT_UPDATE_STATUS)
