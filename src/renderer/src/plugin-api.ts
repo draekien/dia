@@ -209,6 +209,7 @@ export { type ModelCatalogStateJson, useModelCatalogs } from './hooks/use-model-
 export { useModelPreferences } from './hooks/use-model-preferences'
 export { usePluginList } from './hooks/use-plugin-list'
 export { type OverrideRejection, usePlugins } from './hooks/use-plugins'
+export { useUpdateStatus } from './hooks/use-update-status'
 export { awaitsUser } from './lib/account-banner'
 export { formatWhen } from './lib/format-when'
 export { initials } from './lib/initials'
