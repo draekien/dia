@@ -39,3 +39,14 @@ export interface DialogEntry {
 
 /** The window's dialogs, declared by the layout plugin. Add a dialog with `addEntry(ctx, DialogsSlot, dialog)`. */
 export const DialogsSlot = ListSlot.make<DialogEntry>('layout.dialogs')
+
+/** An entry in the status bar. `side` picks the left (`start`) or right (`end`) group; `order` sorts within the group, the lowest `order` nearest the group's outer edge. `component` draws the whole entry, including any tooltip or click action. */
+export interface StatusBarItem {
+  readonly id: string
+  readonly order: number
+  readonly side: 'start' | 'end'
+  readonly component: ComponentType
+}
+
+/** The status bar's entries, declared by the layout plugin. Add one with `addEntry(ctx, StatusBarItemsSlot, item)`. */
+export const StatusBarItemsSlot = ListSlot.make<StatusBarItem>('layout.statusBar')

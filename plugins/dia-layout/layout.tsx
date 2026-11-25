@@ -1,10 +1,11 @@
-import { sameEntryKey } from '@dia/plugin'
+import { type ListEntry, sameEntryKey } from '@dia/plugin'
 import {
   AccountBanner,
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbList,
   BreadcrumbPage,
+  Button,
   MAIN,
   MAIN_HEADER,
   PluginBoundary,
@@ -19,9 +20,15 @@ import {
   useView,
   WorkspaceProblemsBanner
 } from '@dia/renderer-plugin'
-import { DialogsSlot, PagesSlot } from '@dia-plugin/dia-layout/slots'
+import {
+  DialogsSlot,
+  PagesSlot,
+  type StatusBarItem,
+  StatusBarItemsSlot
+} from '@dia-plugin/dia-layout/slots'
 import { Effect } from 'effect'
-import { useState } from 'react'
+import { CircleAlertIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 const OPEN_KEY = 'dia.sidebar.open'
 const LEGACY_RAIL_KEY = 'dia.agent-overview.rail'
@@ -86,8 +93,9 @@ function useOpenPage() {
  * column; the content column holds a draggable header row (sidebar toggle, then the `main.header`
  * slot) above the `main` slot. While a page from the pages list is open, the header row shows its
  * label before the `main.header` slot and the content area shows the page instead of the `main`
- * slot. Persists the sidebar's open state and width in `localStorage`, and draws every dialog in
- * the dialogs list.
+ * slot. Persists the sidebar's open state and width in `localStorage`, draws the status bar's
+ * entries in a full-width row along the bottom of the window while there are any, and draws every
+ * dialog in the dialogs list.
  * Fill the `root` slot with it.
  */
 export function Layout() {
@@ -108,9 +116,9 @@ export function Layout() {
   }
 
   return (
-    <>
+    <div className="flex h-full flex-col">
       <SidebarProvider
-        className="h-full min-h-0"
+        className="min-h-0 flex-1"
         open={open}
         onOpenChange={saveOpen}
         resize={{
@@ -150,8 +158,62 @@ export function Layout() {
           </div>
         </SidebarInset>
       </SidebarProvider>
+      <StatusBar />
       <Dialogs />
-    </>
+    </div>
+  )
+}
+
+function StatusBar() {
+  const items = useList(StatusBarItemsSlot)
+  const shown = items.length > 0
+  useEffect(() => {
+    log(shown ? 'Showed the status bar' : 'Hid the status bar')
+  }, [shown])
+  if (!shown) return null
+  const start = items.filter((item) => item.side === 'start')
+  const end = items.filter((item) => item.side === 'end').reverse()
+  return (
+    <footer
+      role="contentinfo"
+      aria-label="Status bar"
+      className="flex h-7 shrink-0 items-center gap-0.5 border-t border-border bg-background px-1"
+    >
+      <div className="flex min-w-0 items-center gap-0.5">{start.map(statusBarEntry)}</div>
+      <div className="ml-auto flex min-w-0 items-center gap-0.5">{end.map(statusBarEntry)}</div>
+    </footer>
+  )
+}
+
+function statusBarEntry(item: ListEntry<StatusBarItem>) {
+  return (
+    <PluginBoundary
+      key={`${item.key.plugin}/${item.key.id}`}
+      plugin={item.key.plugin}
+      at={StatusBarItemsSlot.name}
+      resetKey={item.component}
+      fallback={(_error, retry) => (
+        <StatusBarEntryFailed plugin={item.key.plugin} onRetry={retry} />
+      )}
+    >
+      <item.component />
+    </PluginBoundary>
+  )
+}
+
+function StatusBarEntryFailed({
+  plugin,
+  onRetry
+}: {
+  readonly plugin: string
+  readonly onRetry: () => void
+}) {
+  const label = `The ${plugin} plugin failed to show its status bar entry. Try again`
+  return (
+    <Button variant="ghost" size="xs" aria-label={label} title={label} onClick={onRetry}>
+      <CircleAlertIcon data-icon="inline-start" aria-hidden className="text-error" />
+      <span className="font-mono font-normal">{plugin}</span>
+    </Button>
   )
 }
 
