@@ -67,6 +67,44 @@ export default setup
 - `ctx.dataDir` is a directory for the plugin's own files. It survives reloads and restarts.
 - `HostPluginContext` in `references/api.md` lists the rest of the context: `ctx.provide`, `ctx.inject`, `ctx.whenProvided`, `ctx.serve`, `ctx.events`, `ctx.activities`, `ctx.database` and others.
 
+## Status bar entry
+
+The status bar is the row along the bottom of dia's window. A plugin adds an entry to it from its renderer entry with `addEntry`. dia loads a renderer entry only for the plugins built into dia (`plugins/<name>/` in the dia repository), so a plugin loaded from a folder with `plugin_override` cannot add a status bar entry.
+
+```ts
+import type { PluginServices, PluginSetup } from '@dia/plugin'
+import { addEntry } from '@dia/renderer-plugin'
+import { StatusBarItemsSlot } from '@dia-plugin/dia-layout/slots'
+import { Effect } from 'effect'
+import { Atom } from 'effect/reactivity'
+import { createElement } from 'react'
+import { ClickCountEntry } from './click-count-entry'
+
+const setup: PluginSetup<PluginServices> = (ctx) =>
+  Effect.gen(function* () {
+    const clicks = Atom.make(0).pipe(Atom.keepAlive)
+    yield* addEntry(ctx, StatusBarItemsSlot, {
+      id: 'clicks',
+      order: 100,
+      side: 'end',
+      component: () => createElement(ClickCountEntry, { clicks })
+    })
+  })
+
+export default setup
+```
+
+| Field | Rule |
+| --- | --- |
+| `id` | Unique within the plugin. |
+| `side` | `start` puts the entry in the left group, `end` in the right group. |
+| `order` | Sorts the entries in a group. The lowest `order` sits nearest the window edge. |
+| `component` | A React component that draws the whole entry, including its tooltip and click action. Draw it as `<Button variant="ghost" size="xs">` from `@dia/renderer-plugin`, as dia's own entries do. |
+
+- Unloading the plugin removes its entry. Reloading `dia-layout` draws the entry again without reloading the plugin.
+- Create the state the entry shows in setup with `Atom.keepAlive`, as above. Without `keepAlive`, the state returns to its initial value whenever the status bar is drawn again, for example after `dia-layout` reloads.
+- `plugins/dia-example/renderer.ts` and `plugins/dia-example/click-count-entry.tsx` in the dia repository hold the complete example.
+
 ## Load and reload
 
 | Tool | Input | Effect |
