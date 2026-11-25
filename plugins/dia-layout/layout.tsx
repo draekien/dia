@@ -27,7 +27,7 @@ import {
   StatusBarItemsSlot
 } from '@dia-plugin/dia-layout/slots'
 import { Effect } from 'effect'
-import { CircleAlertIcon } from 'lucide-react'
+import { TriangleAlertIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 const OPEN_KEY = 'dia.sidebar.open'
@@ -193,27 +193,20 @@ function statusBarEntry(item: ListEntry<StatusBarItem>) {
       at={StatusBarItemsSlot.name}
       resetKey={item.component}
       fallback={(_error, retry) => (
-        <StatusBarEntryFailed plugin={item.key.plugin} onRetry={retry} />
+        <Button
+          variant="ghost"
+          size="xs"
+          aria-label={`The ${item.key.plugin} plugin failed to show this. Try again`}
+          title={`The ${item.key.plugin} plugin failed to show this. Try again`}
+          onClick={retry}
+        >
+          <TriangleAlertIcon data-icon="inline-start" aria-hidden className="text-error" />
+          <span className="font-mono font-normal">{item.key.plugin}</span>
+        </Button>
       )}
     >
       <item.component />
     </PluginBoundary>
-  )
-}
-
-function StatusBarEntryFailed({
-  plugin,
-  onRetry
-}: {
-  readonly plugin: string
-  readonly onRetry: () => void
-}) {
-  const label = `The ${plugin} plugin failed to show its status bar entry. Try again`
-  return (
-    <Button variant="ghost" size="xs" aria-label={label} title={label} onClick={onRetry}>
-      <CircleAlertIcon data-icon="inline-start" aria-hidden className="text-error" />
-      <span className="font-mono font-normal">{plugin}</span>
-    </Button>
   )
 }
 
