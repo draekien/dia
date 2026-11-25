@@ -2,6 +2,7 @@ import type { PluginServices, PluginSetup } from '@dia/plugin'
 import { addEntry } from '@dia/renderer-plugin'
 import { StatusBarItemsSlot } from '@dia-plugin/dia-layout/slots'
 import { Effect } from 'effect'
+import { PluginLoadEntry } from './plugin-load-entry'
 import { UpdateEntry } from './update-entry'
 import { VersionEntry } from './version-entry'
 
@@ -19,7 +20,15 @@ const setup: PluginSetup<PluginServices> = (ctx) =>
       side: 'start',
       component: VersionEntry
     })
-    yield* Effect.logInfo('Version and update status bar entries added', { plugin: ctx.name })
+    yield* addEntry(ctx, StatusBarItemsSlot, {
+      id: 'plugin-load',
+      order: 0,
+      side: 'end',
+      component: PluginLoadEntry
+    })
+    yield* Effect.logInfo('Version, update and plugin load status bar entries added', {
+      plugin: ctx.name
+    })
   })
 
 export default setup
