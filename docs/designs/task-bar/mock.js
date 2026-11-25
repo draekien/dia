@@ -10,60 +10,51 @@ const svg = (name) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`
 
 const ENTRIES = [
-  {
-    id: 'version',
-    side: 'start',
-    order: 20,
-    cls: '',
-    html: '<span class="label mono">v0.42.0</span>',
-    menu: '<span class="mono">v0.42.0</span>'
-  },
+  { id: 'version', side: 'start', order: 20, label: 'v0.42.0', mono: true },
   {
     id: 'update',
     side: 'start',
     order: 10,
-    cls: 'update',
     icon: 'download',
-    html: '<span class="label">Restart to update</span>',
-    menu: 'Restart to update'
+    label: 'Restart to update',
+    shrink: true
   },
   {
     id: 'errors',
     side: 'end',
     order: 0,
-    cls: 'error',
     icon: 'alert',
-    html: '<span class="label">2 plugins failed to load</span>',
-    menu: '2 plugins failed to load'
+    label: '2 plugins failed to load',
+    shrink: true
   }
 ]
 
+const labelHtml = (entry, cls) =>
+  `<span class="${cls}${entry.mono ? ' mono' : ''}">${entry.label}</span>`
+
 function entryEl(entry, opt) {
   const el = document.createElement('span')
-  el.className = `entry ${entry.cls} ${opt.overflow === 'truncate' && entry.id !== 'version' ? 'shrink' : ''}`
-  el.dataset.order = entry.order
-  el.innerHTML = (entry.icon ? svg(entry.icon) : '') + entry.html
+  el.classList.add('entry', entry.id)
+  el.classList.toggle('shrink', opt.overflow === 'truncate' && entry.shrink === true)
+  el.dataset.id = entry.id
+  el.innerHTML = (entry.icon ? svg(entry.icon) : '') + labelHtml(entry, 'label')
   return el
 }
 
 function barEl(opt, state) {
   const bar = document.createElement('div')
-  bar.className = `bar ${opt.flat ? 'flat' : ''}`
+  bar.classList.add('bar')
+  bar.classList.toggle('flat', opt.flat === true)
+  bar.classList.toggle('rule', opt.separator === 'rule')
   bar.style.height = `${opt.height}px`
   const start = document.createElement('div')
   start.className = 'group start'
   const end = document.createElement('div')
   end.className = 'group end'
   for (const entry of ENTRIES) {
-    const group = entry.side === 'start' ? start : end
-    if (opt.separator === 'rule' && group.children.length > 0) {
-      const sep = document.createElement('span')
-      sep.className = 'sep'
-      group.append(sep)
-    }
     const el = entryEl(entry, opt)
-    if (state.focus === entry.id) el.classList.add('focus')
-    group.append(el)
+    el.classList.toggle('focus', state.focus === entry.id)
+    ;(entry.side === 'start' ? start : end).append(el)
   }
   bar.append(start, end)
   return bar
@@ -71,22 +62,18 @@ function barEl(opt, state) {
 
 function windowEl(opt, state) {
   const win = document.createElement('div')
-  win.className = `win ${state.dark ? 'dark' : ''}`
+  win.classList.add('win')
+  win.classList.toggle('dark', state.dark === true)
   win.style.width = `${state.width}px`
   const cols = document.createElement('div')
   cols.className = 'cols'
-  cols.innerHTML = state.collapsed
-    ? `
-    <div class="sidebar rail"><span class="dot half"></span><span class="dot"></span></div>
-    <div class="content">
-      <div class="transcript">The bar sits under the composer.</div>
-      <div class="composer">Ask for follow-up changes</div>
-    </div>`
-    : `
-    <div class="sidebar">
+  const sidebar = state.collapsed
+    ? '<div class="sidebar rail"><span class="dot half"></span><span class="dot"></span></div>'
+    : `<div class="sidebar">
       <div class="thread sel"><span class="dot half"></span><span><b>task-bar-design</b><small>Edit docs/designs/task-bar.md</small></span></div>
       <div class="thread"><span class="dot"></span><span><b>brave-otter</b><small>pnpm typecheck</small></span></div>
-    </div>
+    </div>`
+  cols.innerHTML = `${sidebar}
     <div class="content">
       <div class="transcript">The bar sits under the composer.</div>
       <div class="composer">Ask for follow-up changes</div>
@@ -106,19 +93,11 @@ function fitOverflow(frame, opt, state) {
   const hidden = []
   let more
   while (!fits()) {
-    const visible = [...bar.querySelectorAll('.entry:not(.more)')].filter(
-      (el) => el.style.display !== 'none'
-    )
+    const visible = ENTRIES.filter((entry) => !hidden.includes(entry))
     if (visible.length === 0) break
-    const victim = visible.reduce((a, b) =>
-      Number(b.dataset.order) > Number(a.dataset.order) ? b : a
-    )
-    victim.style.display = 'none'
-    const sep = victim.previousElementSibling?.classList.contains('sep')
-      ? victim.previousElementSibling
-      : victim.nextElementSibling
-    if (sep?.classList.contains('sep')) sep.style.display = 'none'
-    hidden.push(ENTRIES.find((entry) => String(entry.order) === victim.dataset.order))
+    const victim = visible.reduce((a, b) => (b.order > a.order ? b : a))
+    bar.querySelector(`[data-id="${victim.id}"]`).hidden = true
+    hidden.push(victim)
     if (opt.overflow === 'menu' && !more) {
       more = document.createElement('span')
       more.className = 'entry more'
@@ -129,10 +108,14 @@ function fitOverflow(frame, opt, state) {
   if (more && state.menuOpen) {
     more.classList.add('hover')
     const menu = document.createElement('div')
-    menu.className = `menu ${state.dark ? 'dark' : ''}`
+    menu.classList.add('menu')
+    menu.classList.toggle('dark', state.dark === true)
     menu.innerHTML = hidden
       .sort((a, b) => a.order - b.order)
-      .map((entry) => `<div>${entry.icon ? svg(entry.icon) : '<svg></svg>'}${entry.menu}</div>`)
+      .map(
+        (entry) =>
+          `<div>${entry.icon ? svg(entry.icon) : '<svg></svg>'}${labelHtml(entry, '')}</div>`
+      )
       .join('')
     frame.append(menu)
     const f = frame.getBoundingClientRect()
@@ -174,3 +157,5 @@ function render(opt) {
     fitOverflow(frame, opt, state)
   }
 }
+
+window.render = render
