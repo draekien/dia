@@ -85,10 +85,13 @@ describe('PluginLoadEntry', () => {
     const listener = (event: Event) =>
       opened.push((event as CustomEvent<SettingsLocation | undefined>).detail)
     window.addEventListener(OPEN_SETTINGS_EVENT, listener)
-    await showWith([failed('dia-cost')])
+    try {
+      await showWith([failed('dia-cost')])
 
-    fireEvent.click(screen.getByRole('button', { name: '1 plugin failed to load' }))
-    window.removeEventListener(OPEN_SETTINGS_EVENT, listener)
+      fireEvent.click(screen.getByRole('button', { name: '1 plugin failed to load' }))
+    } finally {
+      window.removeEventListener(OPEN_SETTINGS_EVENT, listener)
+    }
 
     expect(opened).toEqual([{ plugin: 'dia-settings', id: 'plugins' }])
   })
