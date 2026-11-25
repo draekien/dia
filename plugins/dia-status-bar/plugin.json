@@ -1,0 +1,7 @@
+{
+  "name": "dia-status-bar",
+  "api": "0.0.47",
+  "category": "feature",
+  "renderer": "renderer.ts",
+  "load": "eager"
+}
