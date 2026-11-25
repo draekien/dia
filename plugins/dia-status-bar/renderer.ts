@@ -26,9 +26,7 @@ const setup: PluginSetup<PluginServices> = (ctx) =>
       side: 'end',
       component: PluginLoadEntry
     })
-    yield* Effect.logInfo('Version, update and plugin load status bar entries added', {
-      plugin: ctx.name
-    })
+    yield* Effect.logInfo('Status bar entries added', { plugin: ctx.name })
   })
 
 export default setup

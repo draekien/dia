@@ -31,9 +31,7 @@ export function PluginLoadEntry() {
         }
       >
         <CircleAlertIcon aria-hidden className="text-error" />
-        {failed.length === 1
-          ? '1 plugin failed to load'
-          : `${failed.length} plugins failed to load`}
+        {`${failed.length} plugin${failed.length === 1 ? '' : 's'} failed to load`}
       </TooltipTrigger>
       <TooltipContent side="top" className="font-mono">
         {failed.map((plugin) => plugin.name).join(', ')}
