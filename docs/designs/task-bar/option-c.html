@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="mock.css"><script src="mock.js"></script></head>
+<body>
+<script>
+document.fonts.ready.then(() =>
+  render({
+    title: 'Option C: full window width, 24px, full-height flat entries, truncate then hide',
+    spec: '24px bar under the sidebar and the content. Entries fill the bar height with square hover fills and a 12px rule between them. Labels truncate to 72px, then entries hide by order. No overflow menu.',
+    placement: 'full', separator: 'rule', overflow: 'truncate', flat: true, height: 24
+  })
+)
+</script>
+</body>
+</html>

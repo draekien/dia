@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><link rel="stylesheet" href="mock.css"><script src="mock.js"></script></head>
+<body>
+<script>
+document.fonts.ready.then(() =>
+  render({
+    title: 'Option B: content column only, 28px, hairline rule between entries, overflow menu',
+    spec: '28px bar under the content column; the sidebar keeps its full height. Entries are Button variant="ghost" size="xs", with a 12px vertical Separator between entries of the same side. Entries that do not fit move into a "More" icon-xs menu.',
+    placement: 'content', separator: 'rule', overflow: 'menu', height: 28
+  })
+)
+</script>
+</body>
+</html>
