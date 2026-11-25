@@ -1,5 +1,11 @@
-import { AboutDialog, Button, Tooltip, TooltipContent, TooltipTrigger } from '@dia/renderer-plugin'
-import { useQuery } from '@tanstack/react-query'
+import {
+  AboutDialog,
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  useAppVersion
+} from '@dia/renderer-plugin'
 import { useState } from 'react'
 
 /**
@@ -9,10 +15,7 @@ import { useState } from 'react'
  */
 export function VersionEntry() {
   const [aboutOpen, setAboutOpen] = useState(false)
-  const { data: version } = useQuery({
-    queryKey: ['appVersion'],
-    queryFn: () => window.dia.getAppVersion()
-  })
+  const version = useAppVersion()
   if (version === undefined) return null
   return (
     <>
@@ -31,7 +34,7 @@ export function VersionEntry() {
         </TooltipTrigger>
         <TooltipContent side="top">About dia</TooltipContent>
       </Tooltip>
-      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+      {aboutOpen && <AboutDialog open onOpenChange={setAboutOpen} />}
     </>
   )
 }

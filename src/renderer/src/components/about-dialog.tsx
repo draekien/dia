@@ -1,8 +1,8 @@
 import type { UpdateStatus } from '@shared/domain/update'
-import { useQuery } from '@tanstack/react-query'
 import { RotateCwIcon } from 'lucide-react'
 import markOnDark from '../../../../brand/mark-on-dark.svg'
 import markOnLight from '../../../../brand/mark-on-light.svg'
+import { useAppVersion } from '../hooks/use-app-version'
 import { useUpdateStatus } from '../hooks/use-update-status'
 import { Button } from './ui/button'
 import {
@@ -49,10 +49,7 @@ export function AboutDialog({
   readonly open: boolean
   readonly onOpenChange: (open: boolean) => void
 }) {
-  const { data: version } = useQuery({
-    queryKey: ['appVersion'],
-    queryFn: () => window.dia.getAppVersion()
-  })
+  const version = useAppVersion()
   const status = useUpdateStatus()
   const description = describeUpdateStatus(status)
   const busy = BUSY_TAGS.has(status._tag)

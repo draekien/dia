@@ -16,6 +16,7 @@ import { UpdateEntry } from './update-entry'
 import { VersionEntry } from './version-entry'
 
 const APP_VERSION = '0.42.0'
+const VERSION_LABEL = `v${APP_VERSION}`
 
 let pushStatus: (status: UpdateStatus) => void
 const installUpdate = vi.fn()
@@ -52,13 +53,13 @@ describe('VersionEntry', () => {
   it('shows the running version prefixed with v', async () => {
     show(<VersionEntry />)
 
-    expect(await screen.findByRole('button', { name: 'v0.42.0' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: VERSION_LABEL })).toBeTruthy()
   })
 
   it('opens the About dia dialog when clicked', async () => {
     show(<VersionEntry />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'v0.42.0' }))
+    fireEvent.click(await screen.findByRole('button', { name: VERSION_LABEL }))
 
     expect(await screen.findByRole('dialog', { name: 'About dia' })).toBeTruthy()
   })
