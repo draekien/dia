@@ -21,7 +21,7 @@ export function ClickCountEntry({ clicks }: { readonly clicks: Atom.Writable<num
           />
         }
       >
-        {count === 1 ? 'Example: 1 click' : `Example: ${count} clicks`}
+        {`Example: ${count} ${count === 1 ? 'click' : 'clicks'}`}
       </TooltipTrigger>
       <TooltipContent side="top">The example plugin counts clicks on this entry</TooltipContent>
     </Tooltip>
