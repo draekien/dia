@@ -34,7 +34,7 @@ export function VersionEntry() {
         </TooltipTrigger>
         <TooltipContent side="top">About dia</TooltipContent>
       </Tooltip>
-      {aboutOpen && <AboutDialog open onOpenChange={setAboutOpen} />}
+      <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
     </>
   )
 }
